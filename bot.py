@@ -1,45 +1,30 @@
-"""
-Author: SakuraiCora
-Date: 2024-12-21 02:03:13
-LastEditors: SakuraiCora
-LastEditTime: 2024-12-21 12:59:58
-Description: 启动文件
-"""
-
 import nonebot
+from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter
 
 nonebot.init()
 
-from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter  # noqa:E402
-
-from src.scripts.init_database import (  # noqa:E402
-    create_database,
-    init_system_database,
-    init_system_table,
-)
-from src.scripts.init_memory_cache import init_memory_cache  # noqa:E402
 
 driver = nonebot.get_driver()
 driver.register_adapter(OneBotV11Adapter)
 
 
 @driver.on_startup
-async def _():
-    await create_database()
+async def _on_startup():
+    pass
 
 
 @driver.on_bot_connect
-async def startup():
-    await init_system_table()
-    await init_system_database()
-
-    await init_memory_cache()
+async def _on_bot_connect():
+    pass
 
 
 @driver.on_shutdown
-async def shutdown(): ...
+async def shutdown():
+    pass
 
 
+nonebot.load_plugins("src/core/")
 nonebot.load_plugins("src/plugins/")
+
 if __name__ == "__main__":
     nonebot.run()

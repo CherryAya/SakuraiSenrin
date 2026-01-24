@@ -3,6 +3,7 @@ name = "sakuraisenrin"
 version = "3.0.0"
 description = "🥰 A powerful and cute QQ bot designed for galgame enthusiasts, powered by NoneBot2. ｜ 原来你也玩 GalGame？"
 readme = "README.md"
+requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.22.1",
     "nonebot-adapter-onebot>=2.4.6",
@@ -15,5 +16,47 @@ dependencies = [
 [tool.uv]
 index-url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.ruff.format]
+line-ending = "lf"
+
 [tool.ruff.lint]
-extend-select = ["I"]
+select = [
+    "F",     # Pyflakes
+    "W",     # pycodestyle warnings
+    "E",     # pycodestyle errors
+    "I",     # isort
+    "UP",    # pyupgrade
+    "ASYNC", # flake8-async
+    "C4",    # flake8-comprehensions
+    "T10",   # flake8-debugger
+    "T20",   # flake8-print
+    "PYI",   # flake8-pyi
+    "PT",    # flake8-pytest-style
+    "Q",     # flake8-quotes
+    "TID",   # flake8-tidy-imports
+    "RUF",   # Ruff-specific rules
+]
+ignore = [
+    "E402",   # module-import-not-at-top-of-file
+    "UP037",  # quoted-annotation
+    "RUF001", # ambiguous-unicode-character-string
+    "RUF002", # ambiguous-unicode-character-docstring
+    "RUF003", # ambiguous-unicode-character-comment
+]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["nonebot", "tests/*"]
+extra-standard-library = ["typing_extensions"]
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
