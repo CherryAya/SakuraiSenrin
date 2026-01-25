@@ -6,11 +6,15 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.22.1",
+    "arrow>=1.4.0",
+    "greenlet>=3.3.1",
     "nonebot-adapter-onebot>=2.4.6",
     "nonebot-plugin-apscheduler>=0.5.0",
     "nonebot2[fastapi]>=2.4.4",
     "pil-utils>=0.2.2",
     "ruff>=0.14.14",
+    "sentry-sdk>=2.50.0",
+    "sqlalchemy>=2.0.46",
 ]
 
 
@@ -20,7 +24,7 @@ index-url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 
 [tool.ruff]
 line-length = 88
-target-version = "py39"
+target-version = "py312"
 
 [tool.ruff.format]
 line-ending = "lf"
@@ -41,6 +45,7 @@ select = [
     "Q",     # flake8-quotes
     "TID",   # flake8-tidy-imports
     "RUF",   # Ruff-specific rules
+    "COM",   # flake8-commas
 ]
 ignore = [
     "E402",   # module-import-not-at-top-of-file
