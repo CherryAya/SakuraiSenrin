@@ -1,5 +1,9 @@
+import asyncio
+
 import sentry_sdk
 
+from nonebot import get_bot
+from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 from src.common.enums import Permission, TriggerType
 from src.config import config
@@ -26,8 +30,39 @@ __plugin_meta__ = PluginMetadata(
     },
 )
 
+background_tasks: set[asyncio.Task] = set()
+
+
+async def notify_admin(error_message: str):
+    try:
+        bot = get_bot()
+        for user_id in config.SUPERUSERS:
+            await bot.send_private_msg(
+                user_id=int(user_id),
+                message=f"[Sentry Alert] 捕获到未处理异常:\n\n{error_message}",
+            )
+    except Exception as e:
+        logger.error(f"Sentry 报警发送失败: {e}")
+
+
+def before_send_handler(event, hint):
+    if "exc_info" in hint:
+        exc_type, exc_value, _ = hint["exc_info"]
+        error_msg = f"Type: {exc_type.__name__}\nValue: {exc_value}"
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(notify_admin(error_msg))
+            background_tasks.add(task)
+            task.add_done_callback(background_tasks.discard)
+        except RuntimeError:
+            pass
+
+    return event
+
+
 sentry_sdk.init(
     dsn=config.SENTRY_DSN,
     send_default_pii=True,
+    before_send=before_send_handler,
     enable_logs=True,
 )
