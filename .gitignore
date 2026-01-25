@@ -12,7 +12,7 @@ wheels/
 
 .devtest
 
-data/database/*.db
+data/db/*.db*
 
 .VSCodeCounter
 .DS_Store
