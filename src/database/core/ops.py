@@ -1,6 +1,6 @@
 from typing import cast
 
-from sqlalchemy import CursorResult, bindparam, update
+from sqlalchemy import CursorResult
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.db.ops import BaseOps
@@ -32,16 +32,18 @@ class GroupOps(BaseOps[Group]):
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount
 
-    async def bulk_update_names(self, groups_data: list[GroupUpdateNamePayload]) -> int:
+    async def bulk_upsert_names(self, groups_data: list[GroupUpdateNamePayload]) -> int:
         if not groups_data:
             return 0
-        stmt = (
-            update(Group)
-            .where(Group.group_id == bindparam("group_id"))
-            .values(group_name=bindparam("group_name"))
+        stmt = sqlite_insert(Group).values(groups_data)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Group.group_id],
+            set_={
+                "group_name": stmt.excluded.group_name,
+                "updated_at": stmt.excluded.updated_at,
+            },
         )
-
-        result = await self.session.execute(stmt, groups_data)
+        result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount
 
     async def upsert_group_status(self, group_id: str, status: GroupStatus) -> Group:
@@ -76,15 +78,18 @@ class UserOps(BaseOps[User]):
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount
 
-    async def bulk_update_names(self, users_data: list[UserUpdateNamePayload]) -> int:
+    async def bulk_upsert_names(self, users_data: list[UserUpdateNamePayload]) -> int:
         if not users_data:
             return 0
-        stmt = (
-            update(User)
-            .where(User.user_id == bindparam("user_id"))
-            .values(user_name=bindparam("user_name"))
+        stmt = sqlite_insert(User).values(users_data)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[User.user_id],
+            set_={
+                "user_name": stmt.excluded.user_name,
+                "updated_at": stmt.excluded.updated_at,
+            },
         )
-        result = await self.session.execute(stmt, users_data)
+        result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount
 
 

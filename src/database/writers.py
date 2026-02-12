@@ -44,7 +44,7 @@ async def _flush_update_user_name(batch_data: list[UserUpdateNamePayload]) -> No
         return
 
     async with COREDB.session() as session:
-        await UserOps(session).bulk_update_names(final_data)
+        await UserOps(session).bulk_upsert_names(final_data)
 
     async with SNAPSHOTDB.session() as session:
         snapshots: list[UserSnapshotPayload] = [
@@ -87,7 +87,7 @@ async def _flush_update_group_name(batch_data: list[GroupUpdateNamePayload]) -> 
         return
 
     async with COREDB.session() as session:
-        await GroupOps(session).bulk_update_names(final_data)
+        await GroupOps(session).bulk_upsert_names(final_data)
 
     async with SNAPSHOTDB.session() as session:
         snapshots: list[GroupSnapshotPayload] = [
