@@ -1,6 +1,5 @@
-from pydantic import BaseModel
-
 import nonebot
+from pydantic import BaseModel
 
 
 class GlobalConfig(BaseModel):
@@ -19,4 +18,4 @@ class GlobalConfig(BaseModel):
     SENTRY_DSN: str | None = None
 
 
-config = nonebot.get_plugin_config(GlobalConfig)
+config: GlobalConfig = nonebot.get_plugin_config(GlobalConfig)

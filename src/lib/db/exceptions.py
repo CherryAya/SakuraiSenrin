@@ -1,0 +1,2 @@
+class DBNameDuplicateError(Exception):
+    pass

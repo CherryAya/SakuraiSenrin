@@ -1,12 +1,14 @@
 import asyncio
 
-import sentry_sdk
-
 from nonebot import get_bot
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
-from src.common.enums import Permission, TriggerType
+import sentry_sdk
+from sentry_sdk.types import Event, Hint
+
 from src.config import config
+from src.database.core.consts import Permission
+from src.lib.consts import TriggerType
 
 name = "Sentry"
 description = """
@@ -24,7 +26,7 @@ __plugin_meta__ = PluginMetadata(
     usage=usage,
     extra={
         "author": "SakuraiCora",
-        "version": "0.2.0",
+        "version": "0.1.0",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
     },
@@ -33,19 +35,19 @@ __plugin_meta__ = PluginMetadata(
 background_tasks: set[asyncio.Task] = set()
 
 
-async def notify_admin(error_message: str):
+async def notify_admin(error_message: str) -> None:
     try:
         bot = get_bot()
         for user_id in config.SUPERUSERS:
             await bot.send_private_msg(
                 user_id=int(user_id),
-                message=f"[Sentry Alert] 捕获到未处理异常:\n\n{error_message}",
+                message=f"[Sentry Alert] 捕获到未处理异常:\n{error_message}",
             )
     except Exception as e:
         logger.error(f"Sentry 报警发送失败: {e}")
 
 
-def before_send_handler(event, hint):
+def before_send_handler(event: Event, hint: Hint) -> Event:
     if "exc_info" in hint:
         exc_type, exc_value, _ = hint["exc_info"]
         error_msg = f"Type: {exc_type.__name__}\nValue: {exc_value}"
