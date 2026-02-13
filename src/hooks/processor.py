@@ -50,7 +50,7 @@ async def _runtime_sync(bot: Bot, event: Event) -> None:
     user_id = str(getattr(event, "user_id", ""))
     group_id = str(getattr(event, "group_id", ""))
     user_name = str(getattr(getattr(event, "sender", object), "nickname", ""))
-    group_card = str(getattr(getattr(event, "sender", object), "card", ""))
+    group_card = str(getattr(getattr(event, "sender", object), "card", "")) or user_name
     role = str(getattr(getattr(event, "sender", object), "role", ""))
     await sync_user_runtime(user_id, user_name)
     await sync_group_runtime(bot, group_id)

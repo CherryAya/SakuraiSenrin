@@ -9,7 +9,6 @@ from src.services.sync import (
     load_members_from_db,
     load_users_from_db,
     sync_groups_from_api,
-    sync_members_from_api,
     sync_users_from_api,
 )
 
