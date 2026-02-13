@@ -1,6 +1,6 @@
 from typing import NotRequired, TypedDict
 
-from .consts import Permission, UserStatus
+from .consts import GroupStatus, Permission, UserStatus
 
 
 class UserPayload(TypedDict):
@@ -19,7 +19,7 @@ class UserUpdateNamePayload(TypedDict):
 class GroupPayload(TypedDict):
     group_id: str
     group_name: str
-    status: NotRequired[UserStatus]
+    status: NotRequired[GroupStatus]
 
 
 class GroupUpdateNamePayload(TypedDict):

@@ -22,7 +22,7 @@ class BaseOps[T: DeclarativeBase]:
             "例如: class UserOps(BaseOps[User])",
         )
 
-    async def get_by_id(self, id: int) -> T | None:
+    async def get_by_id(self, id: str) -> T | None:
         return await self.session.get(self.model, id)
 
     async def get_list(

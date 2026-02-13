@@ -33,7 +33,7 @@ class User(CoreBase, TimeMixin):
         nullable=False,
         index=True,
     )
-    user_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_name: Mapped[str] = mapped_column(String(64), nullable=False)
     permission: Mapped[Permission] = mapped_column(
         IntFlagType(Permission),
         default=Permission.NORMAL,
@@ -91,7 +91,7 @@ class Group(CoreBase, TimeMixin):
         nullable=False,
         index=True,
     )
-    group_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    group_name: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[GroupStatus] = mapped_column(
         SQLAEnum(GroupStatus),
         default=GroupStatus.UNAUTHORIZED,
@@ -126,9 +126,9 @@ class Group(CoreBase, TimeMixin):
 
 
 class Member(CoreBase, TimeMixin):
-    __tablename__ = "biz_group_member"
+    __tablename__ = "biz_member"
     __table_args__ = (
-        UniqueConstraint("group_id", "user_id", name="uq_group_member"),
+        UniqueConstraint("group_id", "user_id", name="uq_member"),
         Index("idx_member_group", "group_id"),
         Index("idx_member_user", "user_id"),
     )
@@ -144,7 +144,7 @@ class Member(CoreBase, TimeMixin):
         ForeignKey("biz_user.user_id", ondelete="CASCADE"),
         nullable=False,
     )
-    group_card: Mapped[str | None] = mapped_column(String(64))
+    group_card: Mapped[str] = mapped_column(String(64), nullable=False)
     permission: Mapped[Permission] = mapped_column(
         IntFlagType(Permission),
         default=Permission.NORMAL,

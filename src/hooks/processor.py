@@ -9,7 +9,7 @@ from nonebot.plugin import PluginMetadata
 
 from src.config import config
 from src.database.core.consts import GroupStatus, UserStatus
-from src.lib.cache import GROUP_CACHE, USER_CACHE
+from src.lib.cache import group_cache, user_cache
 from src.services.sync import sync_group_runtime, sync_member_runtime, sync_user_runtime
 
 name = "检测服务"
@@ -58,7 +58,7 @@ async def _runtime_sync(bot: Bot, event: Event) -> None:
 
 
 async def _runtime_check(event: Event, matcher: Matcher) -> None:
-    """运行时检查钩子函数，在所有事件触发前执行。
+    """运行时检查钩子函数，在所有事件触发前执行，集中处理缓存击穿。
     主要 check 的点:
 
     1. 插件是否开启了 no_check 标记
@@ -88,14 +88,14 @@ async def _runtime_check(event: Event, matcher: Matcher) -> None:
     if user_id in config.SUPERUSERS:
         return
 
-    if not (user := USER_CACHE.get(user_id)):
+    if not (user := user_cache.get(user_id)):
         return
     if user.status == UserStatus.BANNED:
         raise IgnoredException("用户被封禁")
     if user.is_self_ignore and group_id:
         raise IgnoredException("用户已启用 self_ignore")
 
-    if not (group := GROUP_CACHE.get(group_id)):
+    if not (group := group_cache.get(group_id)):
         raise IgnoredException("未命中缓存，默认阻止")
     if group.is_all_shut or group.status != GroupStatus.NORMAL:
         raise IgnoredException("群聊被全员禁言或未授权")

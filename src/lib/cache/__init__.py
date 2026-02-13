@@ -9,18 +9,18 @@ from .impl import (
     UserCacheItem,
 )
 
-BLACKLIST_CACHE = BlacklistCache()
-GROUP_CACHE = GroupCache()
-MEMBER_CACHE = MemberCache()
-USER_CACHE = UserCache()
+blacklist_cache = BlacklistCache()
+group_cache = GroupCache()
+member_cache = MemberCache()
+user_cache = UserCache()
 
 __all__ = [
-    "BLACKLIST_CACHE",
-    "GROUP_CACHE",
-    "MEMBER_CACHE",
-    "USER_CACHE",
     "BlacklistCacheItem",
     "GroupCacheItem",
     "MemberCacheItem",
     "UserCacheItem",
+    "blacklist_cache",
+    "group_cache",
+    "member_cache",
+    "user_cache",
 ]

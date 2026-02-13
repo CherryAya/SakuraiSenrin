@@ -1,7 +1,5 @@
-from src.lib.db.batch import BatchWriter
-
-from .core.ops import GroupOps, MemberOps, UserOps
-from .core.types import (
+from src.database.core.ops import GroupOps, MemberOps, UserOps
+from src.database.core.types import (
     GroupPayload,
     GroupUpdateNamePayload,
     MemberPayload,
@@ -10,13 +8,18 @@ from .core.types import (
     UserPayload,
     UserUpdateNamePayload,
 )
-from .instances import COREDB, SNAPSHOTDB
-from .snapshot.ops import GroupSnapshotOps, MemberSnapshotOps, UserSnapshotOps
-from .snapshot.types import (
+from src.database.instances import core_db, snapshot_db
+from src.database.snapshot.ops import (
+    GroupSnapshotOps,
+    MemberSnapshotOps,
+    UserSnapshotOps,
+)
+from src.database.snapshot.types import (
     GroupSnapshotPayload,
     MemberSnapshotPayload,
     UserSnapshotPayload,
 )
+from src.lib.db.batch import BatchWriter
 
 
 async def _flush_create_user(batch_data: list[UserPayload]) -> None:
@@ -25,10 +28,10 @@ async def _flush_create_user(batch_data: list[UserPayload]) -> None:
     if not final_data:
         return
 
-    async with COREDB.session() as session:
+    async with core_db.session() as session:
         await UserOps(session).bulk_upsert_users(final_data)
 
-    async with SNAPSHOTDB.session() as session:
+    async with snapshot_db.session() as session:
         snapshots: list[UserSnapshotPayload] = [
             {
                 "user_id": d["user_id"],
@@ -45,10 +48,10 @@ async def _flush_update_user_name(batch_data: list[UserUpdateNamePayload]) -> No
     if not final_data:
         return
 
-    async with COREDB.session() as session:
+    async with core_db.session() as session:
         await UserOps(session).bulk_upsert_names(final_data)
 
-    async with SNAPSHOTDB.session() as session:
+    async with snapshot_db.session() as session:
         snapshots: list[UserSnapshotPayload] = [
             {
                 "user_id": d["user_id"],
@@ -65,10 +68,10 @@ async def _flush_create_group(batch_data: list[GroupPayload]) -> None:
     if not final_data:
         return
 
-    async with COREDB.session() as session:
+    async with core_db.session() as session:
         await GroupOps(session).bulk_upsert_groups(final_data)
 
-    async with SNAPSHOTDB.session() as session:
+    async with snapshot_db.session() as session:
         snapshots: list[GroupSnapshotPayload] = [
             {
                 "group_id": d["group_id"],
@@ -85,10 +88,10 @@ async def _flush_update_group_name(batch_data: list[GroupUpdateNamePayload]) -> 
     if not final_data:
         return
 
-    async with COREDB.session() as session:
+    async with core_db.session() as session:
         await GroupOps(session).bulk_upsert_names(final_data)
 
-    async with SNAPSHOTDB.session() as session:
+    async with snapshot_db.session() as session:
         snapshots: list[GroupSnapshotPayload] = [
             {
                 "group_id": d["group_id"],
@@ -122,12 +125,12 @@ async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
         for item in members_data
     ]
 
-    async with COREDB.session() as session:
+    async with core_db.session() as session:
         await UserOps(session).bulk_insert_ignore(users_data)
         await GroupOps(session).bulk_insert_ignore(groups_data)
         await MemberOps(session).bulk_upsert_members(members_data)
 
-    async with SNAPSHOTDB.session() as session:
+    async with snapshot_db.session() as session:
         snapshots: list[MemberSnapshotPayload] = [
             {
                 "user_id": d["user_id"],
@@ -154,13 +157,12 @@ user_create_writer = BatchWriter[UserPayload](
     batch_size=50,
     flush_interval=3.0,
 )
-
-
 user_update_name_writer = BatchWriter[UserUpdateNamePayload](
     flush_callback=_flush_update_user_name,
     batch_size=50,
     flush_interval=3.0,
 )
+
 
 group_create_writer = BatchWriter[GroupPayload](
     flush_callback=_flush_create_group,
@@ -172,6 +174,7 @@ group_update_name_writer = BatchWriter[GroupUpdateNamePayload](
     batch_size=50,
     flush_interval=3.0,
 )
+
 
 member_create_writer = BatchWriter[MemberPayload](
     flush_callback=_flush_create_member,
