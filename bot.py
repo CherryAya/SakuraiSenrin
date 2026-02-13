@@ -6,7 +6,6 @@ from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.services.db import init_db
 from src.services.sync import (
     sync_groups_from_api,
-    sync_members_from_api,
     sync_users_from_api,
 )
 

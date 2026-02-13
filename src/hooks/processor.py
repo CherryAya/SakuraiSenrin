@@ -9,7 +9,7 @@ from nonebot.plugin import PluginMetadata
 
 from src.config import config
 from src.database.core.consts import GroupStatus, UserStatus
-from src.lib.cache import group_cache, user_cache
+from src.repositories import group_repo, user_repo
 from src.services.sync import sync_group_runtime, sync_member_runtime, sync_user_runtime
 
 name = "检测服务"
@@ -88,14 +88,16 @@ async def _runtime_check(event: Event, matcher: Matcher) -> None:
     if user_id in config.SUPERUSERS:
         return
 
-    if not (user := user_cache.get(user_id)):
+    user = await user_repo.get_user(user_id)
+    if not user:
         return
     if user.status == UserStatus.BANNED:
         raise IgnoredException("用户被封禁")
     if user.is_self_ignore and group_id:
         raise IgnoredException("用户已启用 self_ignore")
 
-    if not (group := group_cache.get(group_id)):
+    group = await group_repo.get_group(group_id)
+    if not group:
         raise IgnoredException("未命中缓存，默认阻止")
     if group.is_all_shut or group.status != GroupStatus.NORMAL:
         raise IgnoredException("群聊被全员禁言或未授权")

@@ -4,7 +4,6 @@ from collections import defaultdict
 from nonebot.adapters.onebot.v11.bot import Bot
 
 from src.database.core.consts import Permission
-from src.lib.cache import group_cache
 from src.lib.types import UNSET
 from src.repositories import group_repo, member_repo, user_repo
 
@@ -144,10 +143,10 @@ async def sync_group_runtime(bot: Bot, group_id: str) -> None:
 
     对于群名同步，参考 `sync_groups_from_api()`。
     """
-    if group_cache.get(group_id):
+    if group_repo.get_group(group_id):
         return
     async with _locks[group_id]:
-        if group_cache.get(group_id):
+        if group_repo.get_group(group_id):
             return
 
         try:
