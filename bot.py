@@ -31,7 +31,7 @@ async def _on_bot_connect(bot: Bot) -> None:
 
     await sync_users_from_api(bot)
     await sync_groups_from_api(bot)
-    await sync_members_from_api(bot, "1107576103")
+    # await sync_members_from_api(bot, "1107576103")
 
 
 nonebot.load_plugins("src/hooks/")
