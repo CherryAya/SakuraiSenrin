@@ -25,12 +25,13 @@ class BatchWriter[T]:
         self.batch_size = batch_size
         self.flush_interval = flush_interval
         self._task: asyncio.Task | None = None
+        self._worker_name: str | None = None
 
     def _ensure_worker_running(self) -> None:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._worker())
-            worker_name = getattr(self.flush_callback, "__name__", "Unknown")
-            logger.debug(f"BatchWriter worker [{worker_name}] started/restarted.")
+            self._worker_name = getattr(self.flush_callback, "__name__", "Unknown")
+            logger.debug(f"BatchWriter worker [{self._worker_name}] started/restarted.")
 
     async def add(self, item: T) -> None:
         self._ensure_worker_running()
@@ -63,7 +64,7 @@ class BatchWriter[T]:
                 try:
                     await self.flush_callback(buffer)
                 except Exception as e:
-                    logger.error(f"BatchWriter 写入失败: {e}")
+                    logger.error(f"BatchWriter {self._worker_name} flush error: {e}")
                 finally:
                     buffer.clear()
                     last_flush = time.time()

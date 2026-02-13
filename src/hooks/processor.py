@@ -10,7 +10,7 @@ from nonebot.plugin import PluginMetadata
 from src.config import config
 from src.database.core.consts import GroupStatus, UserStatus
 from src.lib.cache import GROUP_CACHE, USER_CACHE
-from src.services.sync import sync_group_runtime, sync_user_runtime
+from src.services.sync import sync_group_runtime, sync_member_runtime, sync_user_runtime
 
 name = "检测服务"
 description = """
@@ -39,25 +39,25 @@ __plugin_meta__ = PluginMetadata(
 
 
 async def _runtime_sync(bot: Bot, event: Event) -> None:
-    """运行时同步钩子函数，主要控制自动解禁，新增用户群组等，防止出现缓存未命中的情况。
-    同时也具有同步数据库的功能，用于视奸用户 id 变化
+    """运行时同步钩子函数。
 
-    1. 群聊信息同步，由于无法直接拿到群名，直接拿一次所有群信息。60s 冷却时间
-    2. 用户信息同步
-
-    对于缓存未命中的情况，都是创建对应的对象，立即同步数据库与 cache。
-    其中 member 和 user 涉及的量可能较大，采用 BatchWriter 批量写入数据库。
-
+    1. 用户信息同步，记录用户昵称变化。
+    2. 群聊信息同步，记录群组名变化。
+    3. 群成员信息同步，记录群名片、群权限变化。
+    4. 黑名单信息同步，控制自动解禁。
     """
 
     user_id = str(getattr(event, "user_id", ""))
     group_id = str(getattr(event, "group_id", ""))
     user_name = str(getattr(getattr(event, "sender", object), "nickname", ""))
+    group_card = str(getattr(getattr(event, "sender", object), "card", ""))
+    role = str(getattr(getattr(event, "sender", object), "role", ""))
     await sync_user_runtime(user_id, user_name)
     await sync_group_runtime(bot, group_id)
+    await sync_member_runtime(group_id, user_id, user_name, group_card, role)
 
 
-async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
+async def _runtime_check(event: Event, matcher: Matcher) -> None:
     """运行时检查钩子函数，在所有事件触发前执行。
     主要 check 的点:
 
@@ -104,4 +104,4 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
 @run_preprocessor
 async def _runtime_action(bot: Bot, event: Event, matcher: Matcher) -> None:
     await _runtime_sync(bot, event)
-    await _runtime_check(bot, event, matcher)
+    await _runtime_check(event, matcher)

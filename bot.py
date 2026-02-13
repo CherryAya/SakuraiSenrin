@@ -9,6 +9,7 @@ from src.services.sync import (
     load_members_from_db,
     load_users_from_db,
     sync_groups_from_api,
+    sync_members_from_api,
     sync_users_from_api,
 )
 
@@ -30,8 +31,10 @@ async def _on_bot_connect(bot: Bot) -> None:
     await load_groups_from_db()
     await load_members_from_db()
     await load_blacklist_from_db()
+
     await sync_users_from_api(bot)
     await sync_groups_from_api(bot)
+
 
 nonebot.load_plugins("src/hooks/")
 nonebot.load_plugins("src/plugins/")

@@ -30,5 +30,17 @@ class GroupUpdateNamePayload(TypedDict):
 class MemberPayload(TypedDict):
     group_id: str
     user_id: str
-    group_card: NotRequired[str]
+    group_card: str
     permission: NotRequired[Permission]
+
+
+class MemberUpdateCardPayload(TypedDict):
+    group_id: str
+    user_id: str
+    group_card: str
+
+
+class MemberUpdatePermPayload(TypedDict):
+    group_id: str
+    user_id: str
+    permission: Permission

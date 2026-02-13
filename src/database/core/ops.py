@@ -32,6 +32,14 @@ class GroupOps(BaseOps[Group]):
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount
 
+    async def bulk_insert_ignore(self, groups_data: list[GroupPayload]) -> int:
+        if not groups_data:
+            return 0
+        stmt = sqlite_insert(Group).values(groups_data)
+        stmt = stmt.on_conflict_do_nothing()
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
+
     async def bulk_upsert_names(self, groups_data: list[GroupUpdateNamePayload]) -> int:
         if not groups_data:
             return 0
@@ -45,6 +53,22 @@ class GroupOps(BaseOps[Group]):
         )
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount
+
+    async def upsert_group(self, group_id: str, group_name: str) -> Group:
+        stmt = sqlite_insert(Group).values(
+            group_id=group_id,
+            group_name=group_name,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Group.group_id],
+            set_={
+                "group_name": stmt.excluded.group_name,
+                "updated_at": stmt.excluded.updated_at,
+            },
+        )
+        stmt = stmt.returning(Group)
+        result = await self.session.execute(stmt)
+        return result.scalars().one()
 
     async def upsert_group_status(self, group_id: str, status: GroupStatus) -> Group:
         stmt = sqlite_insert(Group).values(
@@ -75,6 +99,14 @@ class UserOps(BaseOps[User]):
                 "updated_at": stmt.excluded.updated_at,
             },
         )
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
+
+    async def bulk_insert_ignore(self, users_data: list[UserPayload]) -> int:
+        if not users_data:
+            return 0
+        stmt = sqlite_insert(User).values(users_data)
+        stmt = stmt.on_conflict_do_nothing()
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount
 

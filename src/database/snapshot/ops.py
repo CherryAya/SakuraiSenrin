@@ -5,9 +5,8 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.db.ops import BaseOps
 
-from .consts import SnapshotEventType
-from .tables import GroupSnapshot, UserSnapshot
-from .types import GroupSnapshotPayload, UserSnapshotPayload
+from .tables import GroupSnapshot, MemberSnapshot, UserSnapshot
+from .types import GroupSnapshotPayload, MemberSnapshotPayload, UserSnapshotPayload
 
 
 class UserSnapshotOps(BaseOps[UserSnapshot]):
@@ -25,13 +24,11 @@ class UserSnapshotOps(BaseOps[UserSnapshot]):
         self,
         user_id: str,
         group_id: str,
-        event_type: SnapshotEventType,
         content: str,
     ) -> None:
         stmt = sqlite_insert(UserSnapshot).values(
             user_id=user_id,
             group_id=group_id,
-            event_type=event_type,
             content=content,
         )
         await self.session.execute(stmt)
@@ -51,12 +48,35 @@ class GroupSnapshotOps(BaseOps[GroupSnapshot]):
     async def create_group_snapshot(
         self,
         group_id: str,
-        event_type: SnapshotEventType,
         content: str,
     ) -> None:
         stmt = sqlite_insert(GroupSnapshot).values(
             group_id=group_id,
-            event_type=event_type,
+            content=content,
+        )
+        await self.session.execute(stmt)
+
+
+class MemberSnapshotOps(BaseOps[MemberSnapshot]):
+    async def bulk_create_member_snapshots(
+        self,
+        snapshots: list[MemberSnapshotPayload],
+    ) -> int:
+        if not snapshots:
+            return 0
+        stmt = sqlite_insert(MemberSnapshot).values(snapshots)
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
+
+    async def create_member_snapshot(
+        self,
+        user_id: str,
+        group_id: str,
+        content: str,
+    ) -> None:
+        stmt = sqlite_insert(MemberSnapshot).values(
+            user_id=user_id,
+            group_id=group_id,
             content=content,
         )
         await self.session.execute(stmt)

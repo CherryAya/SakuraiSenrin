@@ -1,18 +1,22 @@
-from src.lib.consts import GLOBAL_SCOPE
 from src.lib.db.batch import BatchWriter
 
-from .core.ops import GroupOps, UserOps
+from .core.ops import GroupOps, MemberOps, UserOps
 from .core.types import (
     GroupPayload,
     GroupUpdateNamePayload,
     MemberPayload,
+    MemberUpdateCardPayload,
+    MemberUpdatePermPayload,
     UserPayload,
     UserUpdateNamePayload,
 )
 from .instances import COREDB, SNAPSHOTDB
-from .snapshot.consts import SnapshotEventType
-from .snapshot.ops import GroupSnapshotOps, UserSnapshotOps
-from .snapshot.types import GroupSnapshotPayload, UserSnapshotPayload
+from .snapshot.ops import GroupSnapshotOps, MemberSnapshotOps, UserSnapshotOps
+from .snapshot.types import (
+    GroupSnapshotPayload,
+    MemberSnapshotPayload,
+    UserSnapshotPayload,
+)
 
 
 async def _flush_create_user(batch_data: list[UserPayload]) -> None:
@@ -28,8 +32,6 @@ async def _flush_create_user(batch_data: list[UserPayload]) -> None:
         snapshots: list[UserSnapshotPayload] = [
             {
                 "user_id": d["user_id"],
-                "group_id": GLOBAL_SCOPE,
-                "event_type": SnapshotEventType.USERNAME,
                 "content": d["user_name"],
             }
             for d in final_data
@@ -50,8 +52,6 @@ async def _flush_update_user_name(batch_data: list[UserUpdateNamePayload]) -> No
         snapshots: list[UserSnapshotPayload] = [
             {
                 "user_id": d["user_id"],
-                "group_id": GLOBAL_SCOPE,
-                "event_type": SnapshotEventType.USERNAME,
                 "content": d["user_name"],
             }
             for d in final_data
@@ -72,7 +72,6 @@ async def _flush_create_group(batch_data: list[GroupPayload]) -> None:
         snapshots: list[GroupSnapshotPayload] = [
             {
                 "group_id": d["group_id"],
-                "event_type": SnapshotEventType.GROUPNAME,
                 "content": d["group_name"],
             }
             for d in final_data
@@ -93,7 +92,6 @@ async def _flush_update_group_name(batch_data: list[GroupUpdateNamePayload]) -> 
         snapshots: list[GroupSnapshotPayload] = [
             {
                 "group_id": d["group_id"],
-                "event_type": SnapshotEventType.GROUPNAME,
                 "content": d["group_name"],
             }
             for d in final_data
@@ -105,28 +103,50 @@ async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
     unique_data = {
         (item["group_id"], item["user_id"]): item for item in batch_data
     }.values()
-    final_data = list(unique_data)
-
-    if not final_data:
+    members_data: list[MemberPayload] = list(unique_data)
+    if not members_data:
         return
-    # async with COREDB.session() as session:
-    # 这里可能还需要顺便 Upsert User 和 Group 表，防止外键报错
-    # ... logic to upsert users/groups ...
-    # await MemberOps(session).bulk_upsert_members(final_data)
 
-    # # 批量写入 Monitor (Insert 快照)
-    # async with MONITOR.session() as session:
-    #     # 转换为 Snapshot 模型需要的格式
-    #     snapshots = [
-    #         {
-    #             "user_id": d["user_id"],
-    #             "group_id": d["group_id"],
-    #             "event_type": "card",
-    #             "content": d["card"],
-    #         }
-    #         for d in final_data
-    #     ]
-    #     await UserSnapshotOps(session).bulk_create(snapshots)
+    users_data: list[UserPayload] = [
+        {
+            "user_id": item["user_id"],
+            "user_name": "",
+        }
+        for item in members_data
+    ]
+    groups_data: list[GroupPayload] = [
+        {
+            "group_id": item["group_id"],
+            "group_name": "",
+        }
+        for item in members_data
+    ]
+
+    async with COREDB.session() as session:
+        await UserOps(session).bulk_insert_ignore(users_data)
+        await GroupOps(session).bulk_insert_ignore(groups_data)
+        await MemberOps(session).bulk_upsert_members(members_data)
+
+    async with SNAPSHOTDB.session() as session:
+        snapshots: list[MemberSnapshotPayload] = [
+            {
+                "user_id": d["user_id"],
+                "group_id": d["group_id"],
+                "content": d["group_card"],
+            }
+            for d in members_data
+        ]
+        await MemberSnapshotOps(session).bulk_create_member_snapshots(snapshots)
+
+
+async def _flush_update_member_card(batch_data: list[MemberUpdateCardPayload]) -> None:
+    pass
+
+
+async def _flush_update_member_permission(
+    batch_data: list[MemberUpdatePermPayload],
+) -> None:
+    pass
 
 
 user_create_writer = BatchWriter[UserPayload](
@@ -134,11 +154,14 @@ user_create_writer = BatchWriter[UserPayload](
     batch_size=50,
     flush_interval=3.0,
 )
+
+
 user_update_name_writer = BatchWriter[UserUpdateNamePayload](
     flush_callback=_flush_update_user_name,
     batch_size=50,
     flush_interval=3.0,
 )
+
 group_create_writer = BatchWriter[GroupPayload](
     flush_callback=_flush_create_group,
     batch_size=50,
@@ -152,6 +175,16 @@ group_update_name_writer = BatchWriter[GroupUpdateNamePayload](
 
 member_create_writer = BatchWriter[MemberPayload](
     flush_callback=_flush_create_member,
+    batch_size=50,
+    flush_interval=3.0,
+)
+member_update_card_writer = BatchWriter[MemberUpdateCardPayload](
+    flush_callback=_flush_update_member_card,
+    batch_size=50,
+    flush_interval=3.0,
+)
+member_update_perm_writer = BatchWriter[MemberUpdatePermPayload](
+    flush_callback=_flush_update_member_permission,
     batch_size=50,
     flush_interval=3.0,
 )
