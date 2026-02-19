@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-01-26 01:28:36
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-20 00:00:03
+Description: 同步逻辑
+"""
+
 import asyncio
 from collections import defaultdict
 
@@ -143,10 +151,10 @@ async def sync_group_runtime(bot: Bot, group_id: str) -> None:
 
     对于群名同步，参考 `sync_groups_from_api()`。
     """
-    if group_repo.get_group(group_id):
+    if group_repo.get_group_by_id(group_id):
         return
     async with _locks[group_id]:
-        if group_repo.get_group(group_id):
+        if group_repo.get_group_by_id(group_id):
             return
 
         try:

@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-07 02:52:53
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 22:34:05
+Description: snapshot db tabel 定义
+"""
+
 from sqlalchemy import Index, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 

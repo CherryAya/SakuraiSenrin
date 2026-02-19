@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-01 03:37:55
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 23:19:04
+Description: 公共枚举
+"""
+
 from enum import Enum, IntFlag
 from typing import Any
 

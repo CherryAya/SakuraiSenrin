@@ -1,15 +1,22 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-13 15:31:40
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 22:58:56
+Description: 缓存 item 定义
+"""
+
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Self
 
-from src.database.core.consts import GroupStatus, Permission, UserStatus
+from src.database.core.consts import GroupStatus, Permission
 
 
 @dataclass(slots=True, frozen=True)
 class UserCacheItem:
     user_id: str
     name_hash: int
-    status: UserStatus
     permission: Permission
     is_self_ignore: bool = False
 
@@ -17,11 +24,6 @@ class UserCacheItem:
         if self.name_hash == new_hash:
             return self
         return replace(self, name_hash=new_hash)
-
-    def with_status(self, new_status: UserStatus) -> Self:
-        if self.status == new_status:
-            return self
-        return replace(self, status=new_status)
 
     def with_permission(self, new_permission: Permission) -> Self:
         if self.permission == new_permission:
@@ -73,17 +75,11 @@ class GroupCacheItem:
 @dataclass(slots=True, frozen=True)
 class BlacklistCacheItem:
     expiry: datetime = datetime.min
-    reason: str | None = None
 
     def with_expiry(self, new_expiry: datetime) -> Self:
         if self.expiry == new_expiry:
             return self
         return replace(self, expiry=new_expiry)
-
-    def with_reason(self, new_reason: str | None) -> Self:
-        if self.reason == new_reason:
-            return self
-        return replace(self, reason=new_reason)
 
 
 @dataclass(slots=True, frozen=True)

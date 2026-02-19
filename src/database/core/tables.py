@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-01-25 15:07:33
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 22:32:11
+Description: core db tabel 定义
+"""
+
 from datetime import datetime
 
 from sqlalchemy import (
@@ -16,7 +24,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from src.lib.consts import GLOBAL_SCOPE
 from src.lib.db.orm import IntFlagType, TimeMixin
 
-from .consts import GroupStatus, InvitationStatus, Permission, UserStatus
+from .consts import GroupStatus, InvitationStatus, Permission
 
 
 class CoreBase(DeclarativeBase):
@@ -37,11 +45,6 @@ class User(CoreBase, TimeMixin):
     permission: Mapped[Permission] = mapped_column(
         IntFlagType(Permission),
         default=Permission.NORMAL,
-        nullable=False,
-    )
-    status: Mapped[UserStatus] = mapped_column(
-        SQLAEnum(UserStatus),
-        default=UserStatus.NORMAL,
         nullable=False,
     )
     is_self_ignore: Mapped[bool] = mapped_column(
@@ -178,6 +181,34 @@ class Invitation(CoreBase, TimeMixin):
 
     group: Mapped["Group"] = relationship("Group", back_populates="active_invitation")
     inviter: Mapped["User"] = relationship("User", back_populates="sent_invitations")
+    messages: Mapped[list["InvitationMessage"]] = relationship(
+        "InvitationMessage",
+        back_populates="invitation",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class InvitationMessage(CoreBase, TimeMixin):
+    __tablename__ = "biz_invitation_message"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    invitation_id: Mapped[int] = mapped_column(
+        ForeignKey("biz_invitation.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    message_id: Mapped[str] = mapped_column(
+        String(64),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    invitation: Mapped["Invitation"] = relationship(
+        "Invitation",
+        back_populates="messages",
+    )
 
 
 class Blacklist(CoreBase, TimeMixin):

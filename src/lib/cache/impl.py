@@ -1,6 +1,14 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-12 18:53:21
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 22:59:02
+Description: 缓存声明
+"""
+
 from datetime import datetime
 
-from src.database.core.consts import GroupStatus, Permission, UserStatus
+from src.database.core.consts import GroupStatus, Permission
 from src.lib.cache.field import (
     BlacklistCacheItem,
     GroupCacheItem,
@@ -18,7 +26,6 @@ class UserCache(BaseCache[UserCacheItem]):
         self,
         user_id: str,
         user_name: str | Unset = UNSET,
-        status: UserStatus | Unset = UNSET,
         permission: Permission | Unset = UNSET,
     ) -> None:
         """更新或创建用户缓存。
@@ -34,7 +41,6 @@ class UserCache(BaseCache[UserCacheItem]):
             user = UserCacheItem(
                 user_id=user_id,
                 name_hash=name_hash,
-                status=resolve_unset(status, UserStatus.NORMAL),
                 permission=resolve_unset(permission, Permission.NORMAL),
             )
             self.set(user_id, user)
@@ -42,8 +48,6 @@ class UserCache(BaseCache[UserCacheItem]):
 
         if is_set(user_name) and user.name_hash != hash(user_name):
             user = user.with_name_hash(name_hash)
-        if is_set(status):
-            user = user.with_status(status)
         if is_set(permission):
             user = user.with_permission(permission)
         self.set(user_id, user)
@@ -55,7 +59,9 @@ class UserCache(BaseCache[UserCacheItem]):
             return False
         if item.permission.has(Permission.SUPERUSER):
             return True
-        return (item.status == UserStatus.NORMAL) and (not item.is_self_ignore)
+        if not item.is_self_ignore:
+            return True
+        return False
 
     def needs_update_name(self, user_id: str, user_name: str) -> bool:
         user = self.get(user_id)
@@ -120,7 +126,7 @@ class GroupCache(BaseCache[GroupCacheItem]):
 
     def is_available(self, group_id: str) -> bool:
         group = self.get(group_id)
-        return bool(group and group.status == GroupStatus.NORMAL)
+        return bool(group and group.status == GroupStatus.AUTHORIZED)
 
     def is_shut(self, group_id: str) -> bool:
         group = self.get(group_id)
@@ -174,15 +180,28 @@ class BlacklistCache(BaseCache[BlacklistCacheItem]):
     def _gen_key(self, user_id: str, scope: str) -> str:
         return f"BAN:{scope}:{user_id}"
 
+    def _check_and_clean(self, key: str) -> bool:
+        blacklist = self.get(key)
+        if not blacklist:
+            return False
+        if datetime.now() > blacklist.expiry:
+            self.delete(key)
+            return False
+
+        return True
+
     def set_ban(
         self,
         user_id: str,
         group_id: str,
         expiry: datetime,
-        reason: str | None = None,
     ) -> None:
         key = self._gen_key(user_id, group_id)
-        self.set(key, BlacklistCacheItem(expiry=expiry, reason=reason))
+        self.set(key, BlacklistCacheItem(expiry=expiry))
+
+    def get_ban(self, user_id: str, group_id: str) -> BlacklistCacheItem | None:
+        key = self._gen_key(user_id, group_id)
+        return self.get(key)
 
     def is_banned(self, user_id: str, group_id: str) -> bool:
         """
@@ -194,13 +213,3 @@ class BlacklistCache(BaseCache[BlacklistCacheItem]):
         if self._check_and_clean(self._gen_key(user_id, group_id)):
             return True
         return False
-
-    def _check_and_clean(self, key: str) -> bool:
-        blacklist = self.get(key)
-        if not blacklist:
-            return False
-        if datetime.now() > blacklist.expiry:
-            self.delete(key)
-            return False
-
-        return True

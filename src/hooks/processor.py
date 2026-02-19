@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-01-25 16:27:42
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 22:35:19
+Description: 运行时同步检查 hook
+"""
+
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
     Event,
@@ -8,7 +16,7 @@ from nonebot.message import run_preprocessor
 from nonebot.plugin import PluginMetadata
 
 from src.config import config
-from src.database.core.consts import GroupStatus, UserStatus
+from src.database.core.consts import GroupStatus
 from src.repositories import group_repo, user_repo
 from src.services.sync import sync_group_runtime, sync_member_runtime, sync_user_runtime
 
@@ -91,15 +99,13 @@ async def _runtime_check(event: Event, matcher: Matcher) -> None:
     user = await user_repo.get_user(user_id)
     if not user:
         return
-    if user.status == UserStatus.BANNED:
-        raise IgnoredException("用户被封禁")
     if user.is_self_ignore and group_id:
         raise IgnoredException("用户已启用 self_ignore")
 
-    group = await group_repo.get_group(group_id)
+    group = await group_repo.get_group_by_id(group_id)
     if not group:
         raise IgnoredException("未命中缓存，默认阻止")
-    if group.is_all_shut or group.status != GroupStatus.NORMAL:
+    if group.is_all_shut or group.status != GroupStatus.AUTHORIZED:
         raise IgnoredException("群聊被全员禁言或未授权")
 
 

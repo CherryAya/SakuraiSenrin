@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-01-25 21:43:39
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 22:36:07
+Description: 缓存基类
+"""
+
 from abc import ABC
 
 

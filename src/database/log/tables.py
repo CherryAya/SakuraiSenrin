@@ -1,8 +1,15 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-01 14:11:33
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 22:33:33
+Description: log db tabel 定义
+"""
+
 from sqlalchemy import (
     JSON,
     Index,
     String,
-    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -16,25 +23,20 @@ class LogBase(DeclarativeBase):
 class AuditLog(LogBase, TimeMixin):
     __tablename__ = "sys_audit_log"
     __table_args__ = (
-        Index("idx_audit_target", "target_id", "category", "created_at"),
+        Index("idx_audit_context", "context_type", "context_id", "created_at"),
         Index("idx_audit_operator", "operator_id", "created_at"),
-        Index("idx_audit_action", "action", "created_at"),
+        Index("idx_audit_target", "target_id", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-
-    operator_id: Mapped[str | None] = mapped_column(String(32))
     target_id: Mapped[str] = mapped_column(String(32), nullable=False)
-    category: Mapped[str] = mapped_column(String(16), nullable=False)
+    context_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    context_id: Mapped[str | None] = mapped_column(String(32))
+    operator_id: Mapped[str | None] = mapped_column(String(32))
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
     action: Mapped[str] = mapped_column(String(32), nullable=False)
     summary: Mapped[str | None] = mapped_column(String(255))
-    meta_data: Mapped[dict] = mapped_column(
-        JSON,
-        nullable=False,
-        default=dict,
-        server_default=text("'{}'"),
-        comment="结构化参数/新值快照",
-    )
+    meta_data: Mapped[dict | None] = mapped_column(JSON, default=dict)
 
 
 class PluginUsageLog(LogBase, TimeMixin):

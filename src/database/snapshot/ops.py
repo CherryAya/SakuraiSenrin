@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-07 02:54:36
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 22:33:56
+Description: snapshot db 操作类
+"""
+
 from typing import cast
 
 from sqlalchemy import CursorResult
@@ -23,12 +31,10 @@ class UserSnapshotOps(BaseOps[UserSnapshot]):
     async def create_user_snapshot(
         self,
         user_id: str,
-        group_id: str,
         content: str,
     ) -> None:
         stmt = sqlite_insert(UserSnapshot).values(
             user_id=user_id,
-            group_id=group_id,
             content=content,
         )
         await self.session.execute(stmt)

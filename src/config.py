@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-01-24 18:13:05
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-20 00:00:56
+Description: bot 全局配置类
+"""
+
 import nonebot
 from pydantic import BaseModel
 

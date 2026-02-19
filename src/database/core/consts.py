@@ -1,30 +1,26 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-01 03:34:40
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 22:31:26
+Description: core db 常量
+"""
+
 from enum import IntFlag, StrEnum, auto
 from types import MappingProxyType
 
 from src.lib.enums import LocalizedMixin
 
 
-class UserStatus(LocalizedMixin, StrEnum):
-    NORMAL = "NORMAL"
-    BANNED = "BANNED"
-
-    __labels__ = MappingProxyType(
-        {
-            NORMAL: "正常",
-            BANNED: "封禁",
-        },
-    )
-
-
 class GroupStatus(LocalizedMixin, StrEnum):
-    NORMAL = "NORMAL"
+    AUTHORIZED = "AUTHORIZED"
     BANNED = "BANNED"
     LEFT = "LEFT"
     UNAUTHORIZED = "UNAUTHORIZED"
 
     __labels__ = MappingProxyType(
         {
-            NORMAL: "正常",
+            AUTHORIZED: "已授权",
             BANNED: "封禁",
             LEFT: "已退群",
             UNAUTHORIZED: "未授权",

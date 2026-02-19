@@ -1,14 +1,28 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-13 19:46:09
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 23:59:36
+Description: group 相关实现
+"""
+
 from dataclasses import dataclass
 
 from src.database.consts import WritePolicy
 from src.database.core.consts import GroupStatus
 from src.database.core.ops import GroupOps
-from src.database.core.types import GroupPayload, GroupUpdateNamePayload
-from src.database.instances import core_db
+from src.database.instances import core_db, log_db, snapshot_db
+from src.database.log.consts import AuditAction, AuditCategory, AuditContext
+from src.database.log.ops import AuditLogOps
+from src.database.snapshot.ops import GroupSnapshotOps
 from src.lib.cache.field import GroupCacheItem
 from src.lib.cache.impl import GroupCache
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
-from src.services.writers import group_create_writer, group_update_name_writer
+from src.services.writers import (
+    group_create_writer,
+    group_update_name_writer,
+    group_update_status_writer,
+)
 
 
 @dataclass
@@ -43,71 +57,64 @@ class GroupRepository:
 
     async def _save_buffered(self, ctx: GroupChangeContext) -> None:
         if ctx.is_new:
-            payload: GroupPayload = {
-                "group_id": ctx.group_id,
-                "group_name": ctx.resolve_name(),
-                "status": ctx.resolve_status(),
-            }
-            await group_create_writer.add(payload)
-            return
-
-        if is_set(ctx.group_name):
-            payload_update: GroupUpdateNamePayload = {
-                "group_id": ctx.group_id,
-                "group_name": ctx.group_name,
-            }
-            await group_update_name_writer.add(payload_update)
-
-    async def _save_immediate(self, ctx: GroupChangeContext) -> None:
-        async with core_db.session() as session:
-            ops = GroupOps(session)
-            if ctx.is_new:
-                payload: GroupPayload = {
+            await group_create_writer.add(
+                {
                     "group_id": ctx.group_id,
                     "group_name": ctx.resolve_name(),
                     "status": ctx.resolve_status(),
-                }
-                await ops.upsert_group(payload)
+                },
+            )
+            return
+
+        if is_set(ctx.group_name):
+            await group_update_name_writer.add(
+                {
+                    "group_id": ctx.group_id,
+                    "group_name": ctx.group_name,
+                },
+            )
+
+        if is_set(ctx.status):
+            await group_update_status_writer.add(
+                {
+                    "group_id": ctx.group_id,
+                    "status": ctx.status,
+                },
+            )
+
+    async def _save_immediate(self, ctx: GroupChangeContext) -> None:
+        async with (
+            core_db.session() as core_session,
+            log_db.session() as log_session,
+            snapshot_db.session() as snapshot_session,
+        ):
+            group_ops = GroupOps(core_session)
+            audit_log_ops = AuditLogOps(log_session)
+            group_snapshot_ops = GroupSnapshotOps(snapshot_session)
+
+            if ctx.is_new:
+                await group_ops.upsert_group(
+                    group_id=ctx.group_id,
+                    group_name=ctx.resolve_name(),
+                    status=ctx.resolve_status(),
+                )
                 return
 
             if is_set(ctx.group_name):
-                await ops.upsert_name(ctx.group_id, ctx.group_name)
+                await group_ops.upsert_name(ctx.group_id, ctx.group_name)
+                await group_snapshot_ops.create_group_snapshot(
+                    group_id=ctx.group_id,
+                    content=ctx.group_name,
+                )
 
             if is_set(ctx.status):
-                await ops.upsert_status(ctx.group_id, ctx.status)
-
-    async def warm_up(self) -> None:
-        async with core_db.session() as session:
-            db_groups = await GroupOps(session).get_all()
-
-        self.cache.set_batch(
-            {
-                g.group_id: GroupCacheItem(
-                    group_id=str(g.group_id),
-                    name_hash=hash(g.group_name),
-                    status=g.status,
-                    is_all_shut=False,
+                await group_ops.update_status(ctx.group_id, ctx.status)
+                await audit_log_ops.create_audit_log(
+                    target_id=ctx.group_id,
+                    context_type=AuditContext.GROUP,
+                    category=AuditCategory.PERMISSION,
+                    action=AuditAction.CHANGE,
                 )
-                for g in db_groups
-            },
-        )
-
-    async def get_group(self, group_id: str) -> GroupCacheItem | None:
-        if item := self.cache.get(group_id):
-            return item
-
-        async with core_db.session() as session:
-            db_group = await GroupOps(session).get_by_group_id(group_id)
-            if not db_group:
-                return None
-
-            self.cache.upsert_group(
-                group_id=str(db_group.group_id),
-                group_name=db_group.group_name,
-                status=db_group.status,
-                is_all_shut=False,
-            )
-            return self.cache.get(group_id)
 
     async def save_group(
         self,
@@ -140,3 +147,42 @@ class GroupRepository:
             await self._save_buffered(ctx)
         elif policy == WritePolicy.IMMEDIATE:
             await self._save_immediate(ctx)
+
+    async def warm_up(self) -> None:
+        async with core_db.session() as session:
+            db_groups = await GroupOps(session).get_all()
+
+        self.cache.set_batch(
+            {
+                g.group_id: GroupCacheItem(
+                    group_id=str(g.group_id),
+                    name_hash=hash(g.group_name),
+                    status=g.status,
+                    is_all_shut=False,
+                )
+                for g in db_groups
+            },
+        )
+
+    async def get_group_by_id(self, group_id: str) -> GroupCacheItem | None:
+        if item := self.cache.get(group_id):
+            return item
+
+        async with core_db.session() as session:
+            db_group = await GroupOps(session).get_by_group_id(group_id)
+            if not db_group:
+                return None
+
+    async def update_status(self, group_id: str, status: GroupStatus) -> None:
+        return await self.save_group(
+            group_id=group_id,
+            status=status,
+            policy=WritePolicy.IMMEDIATE,
+        )
+
+    async def update_name(self, group_id: str, group_name: str) -> None:
+        return await self.save_group(
+            group_id=group_id,
+            group_name=group_name,
+            policy=WritePolicy.IMMEDIATE,
+        )

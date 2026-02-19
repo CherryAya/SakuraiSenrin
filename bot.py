@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2025-11-02 23:26:30
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 22:30:46
+Description: 入口文件
+"""
+
 import nonebot
 from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter
 from nonebot.adapters.onebot.v11 import Bot
@@ -10,7 +18,6 @@ from src.services.sync import (
 )
 
 nonebot.init()
-
 
 driver = nonebot.get_driver()
 driver.register_adapter(OneBotV11Adapter)

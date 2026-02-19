@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-01 16:10:12
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-19 23:19:00
+Description: 公有常量
+"""
+
 from enum import StrEnum
 from types import MappingProxyType
 
