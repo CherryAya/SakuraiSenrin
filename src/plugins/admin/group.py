@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-15 23:24:21
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 23:19:52
+LastEditTime: 2026-02-21 00:56:28
 Description: 群聊管理插件
 """
 
@@ -77,8 +77,13 @@ __plugin_meta__ = PluginMetadata(
     },
 )
 
-group_cmd = CommandGroup("admin", permission=SUPERUSER, priority=5, block=False)
-admin_group = group_cmd.command("group")
+admin_command_group = CommandGroup(
+    "admin",
+    permission=SUPERUSER,
+    priority=5,
+    block=False,
+)
+admin_group = admin_command_group.command("group")
 
 
 @dataclass
