@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 18:59:47
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 23:59:50
+LastEditTime: 2026-02-21 02:01:50
 Description: user 相关实现
 """
 
@@ -156,10 +156,3 @@ class UserRepository:
             db_user = await UserOps(session).get_by_user_id(user_id)
             if not db_user:
                 return None
-            await self.save_user(
-                user_id=user_id,
-                user_name=db_user.user_name,
-                policy=WritePolicy.IMMEDIATE,
-            )
-
-        return self.cache.get(user_id)

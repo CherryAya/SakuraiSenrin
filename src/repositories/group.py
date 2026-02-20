@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 19:46:09
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 23:59:36
+LastEditTime: 2026-02-21 02:02:21
 Description: group 相关实现
 """
 
@@ -164,7 +164,7 @@ class GroupRepository:
             },
         )
 
-    async def get_group_by_id(self, group_id: str) -> GroupCacheItem | None:
+    async def get_group(self, group_id: str) -> GroupCacheItem | None:
         if item := self.cache.get(group_id):
             return item
 

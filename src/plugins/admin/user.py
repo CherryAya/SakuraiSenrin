@@ -185,9 +185,7 @@ async def _(
             results.append(f"[{uid}] 这位用户还没有和凛凛聊过哦，随意操作会挨揍哦？")
             continue
 
-        if group_id != GLOBAL_SCOPE and not (
-            await group_repo.get_group_by_id(group_id)
-        ):
+        if group_id != GLOBAL_SCOPE and not (await group_repo.get_group(group_id)):
             results.append(f"[{uid}] 群组({group_id})不存在，随意操作会挨揍哦？")
             continue
 

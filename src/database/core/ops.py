@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 16:18:02
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 22:31:49
+LastEditTime: 2026-02-21 02:03:11
 Description: core db 操作类逻辑
 """
 
@@ -315,6 +315,15 @@ class MemberOps(BaseOps[Member]):
 
     async def get_by_uid(self, user_id: str) -> Sequence[Member]:
         stmt = select(Member).where(Member.user_id == user_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_admin_by_uid(self, user_id: str) -> Sequence[Member]:
+        stmt = select(Member).where(Member.user_id == user_id)
+        stmt = stmt.where(
+            Member.permission == Permission.GROUP_ADMIN
+            or Member.permission == Permission.GROUP_OWNER
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 

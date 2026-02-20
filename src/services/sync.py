@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-01-26 01:28:36
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-20 01:28:43
+LastEditTime: 2026-02-21 02:50:19
 Description: 同步逻辑
 """
 
@@ -151,10 +151,10 @@ async def sync_group_runtime(bot: Bot, group_id: str) -> None:
 
     对于群名同步，参考 `sync_groups_from_api()`。
     """
-    if await group_repo.get_group_by_id(group_id):
+    if not group_id or await group_repo.get_group(group_id):
         return
     async with _locks[group_id]:
-        if await group_repo.get_group_by_id(group_id):
+        if await group_repo.get_group(group_id):
             return
 
         try:
@@ -181,7 +181,7 @@ async def sync_member_runtime(
     """运行时群成员同步，可差量同步。
 
     单个事件 -> 处理 -> 立即入队"""
-    if not user_id:
+    if not user_id or not user_name:
         return
     permission = _ROLE_MAPPING.get(role, Permission.NORMAL)
 

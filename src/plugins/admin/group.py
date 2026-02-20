@@ -188,7 +188,7 @@ async def _(
 
     results = []
     for gid in valid_group_ids:
-        group = await group_repo.get_group_by_id(gid)
+        group = await group_repo.get_group(gid)
         if not group:
             results.append(f"[{gid}] 数据库中不存在该群组记录")
             continue
