@@ -8,6 +8,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "arrow>=1.4.0",
     "greenlet>=3.3.1",
+    "httpx>=0.28.1",
     "nonebot-adapter-onebot>=2.4.6",
     "nonebot-plugin-apscheduler>=0.5.0",
     "nonebot2[fastapi]>=2.4.4",
@@ -54,6 +55,8 @@ ignore = [
     "RUF001", # ambiguous-unicode-character-string
     "RUF002", # ambiguous-unicode-character-docstring
     "RUF003", # ambiguous-unicode-character-comment
+    "COM812", # missing-trailing-comma
+    "ISC001", # single-line-implicit-string-concatenation
 ]
 
 [tool.ruff.lint.isort]

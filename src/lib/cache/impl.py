@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-12 18:53:21
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 22:59:02
+LastEditTime: 2026-02-20 01:24:27
 Description: 缓存声明
 """
 
@@ -198,6 +198,10 @@ class BlacklistCache(BaseCache[BlacklistCacheItem]):
     ) -> None:
         key = self._gen_key(user_id, group_id)
         self.set(key, BlacklistCacheItem(expiry=expiry))
+
+    def set_unban(self, user_id: str, group_id: str) -> None:
+        key = self._gen_key(user_id, group_id)
+        self.delete(key)
 
     def get_ban(self, user_id: str, group_id: str) -> BlacklistCacheItem | None:
         key = self._gen_key(user_id, group_id)

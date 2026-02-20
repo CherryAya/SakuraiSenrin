@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import cast
 
-from sqlalchemy import CursorResult, select, text, update
+from sqlalchemy import CursorResult, delete, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import selectinload
 
@@ -502,6 +502,13 @@ class BlacklistOps(BaseOps[Blacklist]):
         stmt = stmt.returning(Blacklist)
         result = await self.session.execute(stmt)
         return result.scalars().one()
+
+    async def unban(self, target_user_id: str, group_id: str) -> None:
+        stmt = delete(Blacklist).where(
+            Blacklist.target_user_id == target_user_id,
+            Blacklist.group_id == group_id,
+        )
+        await self.session.execute(stmt)
 
     async def get_all(self) -> Sequence[Blacklist]:
         result = await self.session.execute(select(Blacklist))
