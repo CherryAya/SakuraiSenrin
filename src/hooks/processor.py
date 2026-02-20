@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-01-25 16:27:42
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 22:35:19
+LastEditTime: 2026-02-21 02:38:11
 Description: 运行时同步检查 hook
 """
 
@@ -102,7 +102,7 @@ async def _runtime_check(event: Event, matcher: Matcher) -> None:
     if user.is_self_ignore and group_id:
         raise IgnoredException("用户已启用 self_ignore")
 
-    group = await group_repo.get_group_by_id(group_id)
+    group = await group_repo.get_group(group_id)
     if not group:
         raise IgnoredException("未命中缓存，默认阻止")
     if group.is_all_shut or group.status != GroupStatus.AUTHORIZED:

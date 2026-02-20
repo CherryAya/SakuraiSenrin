@@ -2,15 +2,17 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 19:46:12
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 23:59:44
+LastEditTime: 2026-02-21 02:02:08
 Description: member 相关实现
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from src.database.consts import WritePolicy
 from src.database.core.consts import Permission
 from src.database.core.ops import MemberOps
+from src.database.core.tables import Member
 from src.database.core.types import (
     MemberPayload,
     MemberUpdateCardPayload,
@@ -191,3 +193,7 @@ class MemberRepository:
                 permission=db_member.permission,
             )
             return self.cache.get_member(user_id, group_id)
+
+    async def get_admin_member_by_uid(self, user_id: str) -> Sequence[Member]:
+        async with core_db.session() as session:
+            return await MemberOps(session).get_admin_by_uid(user_id)
