@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-15 23:24:21
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-21 00:56:28
+LastEditTime: 2026-02-22 04:24:50
 Description: 群聊管理插件
 """
 
@@ -104,8 +104,8 @@ async def unban_group(ctx: AdminGroupContext) -> str:
     if ctx.group.status != GroupStatus.BANNED:
         return "未被封禁，无需解封"
 
-    await group_repo.update_status(ctx.group.group_id, GroupStatus.AUTHORIZED)
-    return "已解封"
+    await group_repo.update_status(ctx.group.group_id, GroupStatus.UNAUTHORIZED)
+    return "已解封，状态变更为未授权"
 
 
 async def auth_group(ctx: AdminGroupContext) -> str:
@@ -138,7 +138,7 @@ async def leave_group(ctx: AdminGroupContext) -> str:
 
 
 async def status_group(ctx: AdminGroupContext) -> str:
-    return f"当前状态: {ctx.group.status.name}"
+    return f"当前状态: {ctx.group.status}"
 
 
 @admin_group.handle()

@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-21 01:00:56
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-21 02:41:13
+LastEditTime: 2026-02-22 05:19:03
 Description: 群聊通知处理
 """
 
@@ -23,7 +23,7 @@ from nonebot.rule import Rule, is_type
 
 from src.config import config
 from src.database.core.consts import GroupStatus, Permission
-from src.lib.consts import TriggerType
+from src.lib.consts import GLOBAL_SCOPE, TriggerType
 from src.lib.utils import AlertTemplate
 from src.repositories import blacklist_repo, group_repo, member_repo
 
@@ -74,20 +74,25 @@ async def ban_user_and_cleanup_groups(ctx: AdminNoticeContext) -> str:
     await group_repo.update_status(group_id=ctx.group_id, status=GroupStatus.BANNED)
     await blacklist_repo.add_ban(
         target_user_id=ctx.user_id,
-        group_id=ctx.group_id,
+        group_id=GLOBAL_SCOPE,
         operator_id=str(ctx.bot.self_id),
         reason=ctx.reason,
     )
     for member in await member_repo.get_admin_member_by_uid(ctx.user_id):
-        try:
-            await ctx.bot.set_group_leave(group_id=int(member.group_id))
-            msg += f"连坐退群：{member.group_id} {member.group.group_name}\n"
-        except ActionFailed:
-            msg += f"连坐退群失败：{member.group_id} {member.group.group_name}\n"
         await group_repo.update_status(
             group_id=member.group_id,
             status=GroupStatus.BANNED,
         )
+        if member.group_id == ctx.group_id:
+            continue
+        try:
+            # await ctx.bot.set_group_leave(group_id=int(member.group_id))
+            await ctx.bot.send_group_msg(
+                group_id=int(member.group_id), message="连坐退群测试"
+            )  # TODO: mock
+            msg += f"连坐退群：{member.group_id} {member.group.group_name}\n"
+        except ActionFailed:
+            msg += f"连坐退群失败：{member.group_id} {member.group.group_name}\n"
 
     return msg
 
@@ -104,7 +109,7 @@ async def _(
         AdminNoticeContext(
             bot,
             str(event.group_id),
-            str(event.user_id),
+            str(event.operator_id),
             "恶意踢出凛凛",
         )
     )
@@ -141,12 +146,12 @@ async def _(
         group.set_all_shut(False)
 
     if event.is_tome():
-        await bot.set_group_leave(group_id=event.group_id)
+        # await bot.set_group_leave(group_id=event.group_id)    #TODO: mock
         msg = await ban_user_and_cleanup_groups(
             AdminNoticeContext(
                 bot,
                 str(event.group_id),
-                str(event.user_id),
+                str(event.operator_id),
                 "恶意禁言凛凛",
             )
         )
