@@ -2,7 +2,7 @@
  * Author: SakuraiCora<1479559098@qq.com>
  * Date: 2026-02-18 22:40:38
  * LastEditors: SakuraiCora<1479559098@qq.com>
- * LastEditTime: 2026-02-21 01:50:43
+ * LastEditTime: 2026-02-22 16:22:10
  * Description: 
 -->
 
@@ -12,3 +12,6 @@ notice
     invite: 邀请上报，先查看状态，如果是 已授权 群组，自动同意；解决一下重复上报的问题
         有 flag ->
         无 flag -> 
+
+        y
+        n

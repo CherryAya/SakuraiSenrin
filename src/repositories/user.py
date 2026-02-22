@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 18:59:47
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-21 02:01:50
+LastEditTime: 2026-02-22 16:58:10
 Description: user 相关实现
 """
 
@@ -156,3 +156,17 @@ class UserRepository:
             db_user = await UserOps(session).get_by_user_id(user_id)
             if not db_user:
                 return None
+
+            self.cache.upsert_user(
+                user_id=str(db_user.user_id),
+                user_name=db_user.user_name,
+                permission=db_user.permission,
+            )
+            return self.cache.get(user_id)
+
+    async def get_name_by_uid(self, user_id: str) -> str | None:
+        async with core_db.session() as session:
+            db_user = await UserOps(session).get_by_user_id(user_id)
+            if not db_user:
+                return None
+            return db_user.user_name

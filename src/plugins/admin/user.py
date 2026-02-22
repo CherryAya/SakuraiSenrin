@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-19 00:20:20
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-21 00:43:58
+LastEditTime: 2026-02-22 18:31:15
 Description: 用户管理插件
 """
 
@@ -13,6 +13,7 @@ from datetime import datetime
 import math
 
 import arrow
+from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.matcher import Matcher
 from nonebot.params import ShellCommandArgs, ShellCommandArgv
@@ -22,10 +23,11 @@ from nonebot.rule import ArgumentParser
 
 from src.database.core.consts import Permission
 from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
-from src.lib.consts import GLOBAL_SCOPE, TriggerType
+from src.lib.consts import GLOBAL_GROUP_SCOPE, TriggerType
 from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils import time_to_timedelta
 from src.repositories import blacklist_repo, group_repo, user_repo
+from src.services.info import resolve_user_name
 
 name = "用户管理模块"
 description = "用户管理模块: 采用标准 Shell 风格解析 (argparse)"
@@ -47,7 +49,7 @@ __plugin_meta__ = PluginMetadata(
     usage=usage,
     extra={
         "author": "SakuraiCora",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
     },
@@ -59,13 +61,13 @@ subparsers = user_parser.add_subparsers(dest="action", required=True, help="执�
 
 ban_parser = subparsers.add_parser(name="ban", aliases=["拉黑"], help="加入黑名单")
 ban_parser.add_argument("uids", nargs="+", help="目标用户 ID 列表")
-ban_parser.add_argument("-g", "--group", type=str, default=GLOBAL_SCOPE, help="群组 ID")
+ban_parser.add_argument("-g", "--group", type=str, default=GLOBAL_GROUP_SCOPE, help="群组 ID")  # noqa: E501
 ban_parser.add_argument("-r", "--reason", type=str, default=UNSET, help="操作原因")
 ban_parser.add_argument("-t", "--time", type=str, default=UNSET, help="封禁时长 (缺省为永久)")  # noqa: E501
 
 unban_parser = subparsers.add_parser(name="unban", aliases=["加白"], help="解除黑名单")
 unban_parser.add_argument("uids", nargs="+", help="目标用户 ID 列表")
-unban_parser.add_argument("-g", "--group", type=str, default=GLOBAL_SCOPE, help="群组 ID")  # noqa: E501
+unban_parser.add_argument("-g", "--group", type=str, default=GLOBAL_GROUP_SCOPE, help="群组 ID")  # noqa: E501
 unban_parser.add_argument("-r", "--reason", type=str, default=UNSET, help="操作原因")
 
 status_parser = subparsers.add_parser("status", aliases=["状态"], help="查询状态")
@@ -151,6 +153,7 @@ async def status_user(ctx: AdminUserContext) -> str:
 
 @admin_user.handle()
 async def _(
+    bot: Bot,
     event: MessageEvent,
     matcher: Matcher,
     args: Namespace = ShellCommandArgs(),
@@ -158,7 +161,7 @@ async def _(
 ) -> None:
     action = args.action
     uids = list(set(args.uids))
-    group_id = getattr(args, "group", GLOBAL_SCOPE)
+    group_id = getattr(args, "group", GLOBAL_GROUP_SCOPE)
     reason = getattr(args, "reason", UNSET)
     time_str = getattr(args, "time", UNSET)
 
@@ -178,15 +181,20 @@ async def _(
 
     for uid in uids:
         if not uid.isdigit():
-            results.append(f"[{uid}] 非法 ID，必须为纯数字")
+            results.append(f"[{uid} 非法 ID，必须为纯数字")
             continue
 
+        name = await resolve_user_name(bot, uid)
         if not (user := await user_repo.get_user(uid)):
-            results.append(f"[{uid}] 这位用户还没有和凛凛聊过哦，随意操作会挨揍哦？")
+            results.append(
+                f"[{uid}|{name}] 这位用户还没有和凛凛聊过哦，随意操作会挨揍哦？"
+            )
             continue
 
-        if group_id != GLOBAL_SCOPE and not (await group_repo.get_group(group_id)):
-            results.append(f"[{uid}] 群组({group_id})不存在，随意操作会挨揍哦？")
+        if group_id != GLOBAL_GROUP_SCOPE and not (
+            await group_repo.get_group(group_id)
+        ):
+            results.append(f"[{uid}|{name}] 群组({group_id})不存在，随意操作会挨揍哦？")
             continue
 
         blacklist = await blacklist_repo.get_blacklist(user.user_id, group_id) or UNSET
@@ -199,6 +207,6 @@ async def _(
             time_str=time_str,
         )
         res_msg = await handler(ctx)
-        results.append(f"[{uid}] {res_msg}")
+        results.append(f"[{uid}|{name}] {res_msg}")
 
     await matcher.finish("\n".join(results))

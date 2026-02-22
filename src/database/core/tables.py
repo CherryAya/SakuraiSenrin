@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-01-25 15:07:33
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 22:32:11
+LastEditTime: 2026-02-22 17:33:21
 Description: core db tabel 定义
 """
 
@@ -21,7 +21,7 @@ from sqlalchemy import (
 from sqlalchemy import Enum as SQLAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from src.lib.consts import GLOBAL_SCOPE
+from src.lib.consts import GLOBAL_GROUP_SCOPE
 from src.lib.db.orm import IntFlagType, TimeMixin
 
 from .consts import GroupStatus, InvitationStatus, Permission
@@ -164,7 +164,6 @@ class Invitation(CoreBase, TimeMixin):
     group_id: Mapped[str] = mapped_column(
         ForeignKey("biz_group.group_id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
         index=True,
     )
     inviter_id: Mapped[str] = mapped_column(
@@ -172,7 +171,7 @@ class Invitation(CoreBase, TimeMixin):
         nullable=False,
         index=True,
     )
-    flag: Mapped[str] = mapped_column(String(32), nullable=False)
+    flag: Mapped[str | None] = mapped_column(String(32))
     status: Mapped[InvitationStatus] = mapped_column(
         SQLAEnum(InvitationStatus),
         default=InvitationStatus.PENDING,
@@ -227,9 +226,9 @@ class Blacklist(CoreBase, TimeMixin):
     group_id: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
-        default=GLOBAL_SCOPE,
-        server_default=GLOBAL_SCOPE,
-        comment=f"生效范围，{GLOBAL_SCOPE} 代表全局",
+        default=GLOBAL_GROUP_SCOPE,
+        server_default=GLOBAL_GROUP_SCOPE,
+        comment=f"生效范围，{GLOBAL_GROUP_SCOPE} 代表全局",
     )
     operator_id: Mapped[str] = mapped_column(
         ForeignKey("biz_user.user_id", ondelete="SET NULL"),

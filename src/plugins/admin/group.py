@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-15 23:24:21
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 04:24:50
+LastEditTime: 2026-02-22 18:30:46
 Description: 群聊管理插件
 """
 
@@ -22,6 +22,7 @@ from src.database.core.consts import GroupStatus, Permission
 from src.lib.cache.field import GroupCacheItem
 from src.lib.consts import TriggerType
 from src.repositories import group_repo
+from src.services.info import resolve_group_name
 
 name = "群组管理模块"
 description = "群组管理模块: 处理群组黑白名单 (支持批量操作)"
@@ -71,7 +72,7 @@ __plugin_meta__ = PluginMetadata(
     usage=usage,
     extra={
         "author": "SakuraiCora",
-        "version": "0.1.3",
+        "version": "0.2.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
     },
@@ -180,21 +181,19 @@ async def _(
         else:
             await matcher.finish("错误: 请在指令后提供至少一个目标群组 ID。")
 
-    valid_group_ids = []
+    results = []
     for gid in set(group_ids):
         if not gid.isdigit():
             await matcher.finish(f"错误: 存在非法群组 ID [{gid}]，群号必须为纯数字。")
-        valid_group_ids.append(gid)
 
-    results = []
-    for gid in valid_group_ids:
+        name = await resolve_group_name(bot, gid)
         group = await group_repo.get_group(gid)
         if not group:
-            results.append(f"[{gid}] 数据库中不存在该群组记录")
+            results.append(f"[{gid}|{name}] 数据库中不存在该群组记录")
             continue
 
         ctx = AdminGroupContext(bot, group)
         res_msg = await handler(ctx)
-        results.append(f"[{gid}] {res_msg}")
+        results.append(f"[{gid}|{name}] {res_msg}")
 
     await matcher.finish("\n".join(results))

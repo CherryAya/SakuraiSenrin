@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 16:18:02
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 04:59:09
+LastEditTime: 2026-02-22 17:38:45
 Description: core db 操作类逻辑
 """
 
@@ -401,8 +401,7 @@ class InvitationOps(BaseOps[Invitation]):
         self,
         group_id: str,
         inviter_id: str,
-        flag: str,
-        first_message_id: str,
+        flag: str | None,
     ) -> Invitation:
         invitation = Invitation(
             group_id=group_id,
@@ -411,12 +410,6 @@ class InvitationOps(BaseOps[Invitation]):
             status=InvitationStatus.PENDING,
         )
         self.session.add(invitation)
-        await self.session.flush()
-        msg_record = InvitationMessage(
-            invitation_id=invitation.id,
-            message_id=str(first_message_id),
-        )
-        self.session.add(msg_record)
         return invitation
 
     async def add_message_record(
@@ -484,8 +477,21 @@ class InvitationOps(BaseOps[Invitation]):
             .values(status=status)
             .returning(Invitation)
         )
-        result = await self.session.execute(stmt)
-        return result.scalars().one()
+        target_result = await self.session.execute(stmt)
+        target_invitation = target_result.scalars().one()
+
+        stmt_others = (
+            update(Invitation)
+            .where(
+                Invitation.group_id == target_invitation.group_id,
+                Invitation.id != invitation_id,
+                Invitation.status == InvitationStatus.PENDING,
+            )
+            .values(status=InvitationStatus.IGNORED)
+        )
+        await self.session.execute(stmt_others)
+
+        return target_invitation
 
 
 class BlacklistOps(BaseOps[Blacklist]):

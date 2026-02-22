@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-20 00:26:45
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-21 01:22:28
+LastEditTime: 2026-02-22 18:19:06
 Description: 通用工具
 """
 
@@ -71,14 +71,14 @@ class AlertTemplate:
             "━━━━━━ 输入错误 ━━━━━━",
             f"错误类型:\t{exception_type}",
             f"发生时间:\t{time_str}",
-            "────────────────────",
+            "────────────────",
             "原始输入:",
             f"\t{user_input}",
-            "────────────────────",
+            "────────────────",
             "操作指引:",
             f"\t帮助指令:\t{help_command}",
             f"\t反馈群组:\t{config.MAIN_GROUP_ID}",
-            "━━━━━━━━━━━━━━━━━━━━",
+            "━━━━━━━━━━━━━━━━",
         ]
         return "\n".join(lines)
 
@@ -102,15 +102,12 @@ class AlertTemplate:
 
         header = "━━━━━━ 管理通知 ━━━━━━\n"
         body = (
-            f"事件名称:\t{name}\n"
-            f"通知时间:\t{time_str}\n"
-            "────────────────────\n"
-            "事件详情:\n"
+            f"事件名称:\t{name}\n通知时间:\t{time_str}\n────────────────\n事件详情:\n"
         )
 
         details_str = str(event_details or "无详细说明")
         indented_details = "\n".join([f"\t{line}" for line in details_str.split("\n")])
 
-        footer = "\n━━━━━━━━━━━━━━━━━━━━"
+        footer = "\n━━━━━━━━━━━━━━━━"
 
         return header + body + indented_details + footer

@@ -15,11 +15,11 @@ from src.database.log.consts import AuditAction, AuditCategory, AuditContext
 from src.database.log.ops import AuditLogOps
 from src.lib.cache.field import BlacklistCacheItem
 from src.lib.cache.impl import BlacklistCache
-from src.lib.consts import GLOBAL_SCOPE
+from src.lib.consts import GLOBAL_GROUP_SCOPE
 from src.lib.types import UNSET, Unset
 
 _AUDIT_CTX_TYPE_DICT = {
-    GLOBAL_SCOPE: AuditContext.GLOBAL,
+    GLOBAL_GROUP_SCOPE: AuditContext.GLOBAL,
 }
 
 

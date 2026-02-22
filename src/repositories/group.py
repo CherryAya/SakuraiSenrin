@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 19:46:09
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-21 02:02:21
+LastEditTime: 2026-02-22 16:58:40
 Description: group 相关实现
 """
 
@@ -172,6 +172,19 @@ class GroupRepository:
             db_group = await GroupOps(session).get_by_group_id(group_id)
             if not db_group:
                 return None
+
+            self.cache.upsert_group(
+                group_id=str(db_group.group_id),
+                group_name=db_group.group_name,
+                status=db_group.status,
+            )
+
+    async def get_name_by_gid(self, group_id: str) -> str | None:
+        async with core_db.session() as session:
+            db_group = await GroupOps(session).get_by_group_id(group_id)
+            if not db_group:
+                return None
+            return db_group.group_name
 
     async def update_status(self, group_id: str, status: GroupStatus) -> None:
         return await self.save_group(

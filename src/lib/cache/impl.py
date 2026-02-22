@@ -15,7 +15,7 @@ from src.lib.cache.field import (
     MemberCacheItem,
     UserCacheItem,
 )
-from src.lib.consts import GLOBAL_SCOPE
+from src.lib.consts import GLOBAL_GROUP_SCOPE
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
 
 from .base import BaseCache
@@ -212,7 +212,7 @@ class BlacklistCache(BaseCache[BlacklistCacheItem]):
         检查用户是否被封禁。
         优先级：全局封禁 -> 群内封禁
         """
-        if self._check_and_clean(self._gen_key(user_id, GLOBAL_SCOPE)):
+        if self._check_and_clean(self._gen_key(user_id, GLOBAL_GROUP_SCOPE)):
             return True
         if self._check_and_clean(self._gen_key(user_id, group_id)):
             return True

@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-01-25 16:27:42
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-21 02:38:11
+LastEditTime: 2026-02-22 18:02:40
 Description: 运行时同步检查 hook
 """
 
@@ -17,8 +17,13 @@ from nonebot.plugin import PluginMetadata
 
 from src.config import config
 from src.database.core.consts import GroupStatus
-from src.repositories import group_repo, user_repo
-from src.services.sync import sync_group_runtime, sync_member_runtime, sync_user_runtime
+from src.repositories import group_repo, member_repo, user_repo
+from src.services.sync import (
+    sync_group_runtime,
+    sync_member_runtime,
+    sync_members_from_api,
+    sync_user_runtime,
+)
 
 name = "检测服务"
 description = """
@@ -65,7 +70,7 @@ async def _runtime_sync(bot: Bot, event: Event) -> None:
     await sync_member_runtime(group_id, user_id, user_name, group_card, role)
 
 
-async def _runtime_check(event: Event, matcher: Matcher) -> None:
+async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
     """运行时检查钩子函数，在所有事件触发前执行，集中处理缓存击穿。
     主要 check 的点:
 
@@ -105,6 +110,10 @@ async def _runtime_check(event: Event, matcher: Matcher) -> None:
     group = await group_repo.get_group(group_id)
     if not group:
         raise IgnoredException("未命中缓存，默认阻止")
+
+    if not await member_repo.get_member(str(bot.self_id), group_id):
+        await sync_members_from_api(bot, group_id)
+
     if group.is_all_shut or group.status != GroupStatus.AUTHORIZED:
         raise IgnoredException("群聊被全员禁言或未授权")
 
@@ -112,4 +121,4 @@ async def _runtime_check(event: Event, matcher: Matcher) -> None:
 @run_preprocessor
 async def _runtime_action(bot: Bot, event: Event, matcher: Matcher) -> None:
     await _runtime_sync(bot, event)
-    await _runtime_check(event, matcher)
+    await _runtime_check(bot, event, matcher)
