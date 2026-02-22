@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-21 01:50:57
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-21 02:03:48
+LastEditTime: 2026-02-22 18:40:44
 Description: 好友通知处理
 """
 
@@ -38,6 +38,7 @@ __plugin_meta__ = PluginMetadata(
         "version": "0.2.0",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
+        "no_check": True,
     },
 )
 

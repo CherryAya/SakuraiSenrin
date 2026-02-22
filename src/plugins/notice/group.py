@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-21 01:00:56
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 18:22:52
+LastEditTime: 2026-02-22 18:40:04
 Description: 群聊通知处理
 """
 
@@ -33,7 +33,6 @@ from src.services.sync import sync_members_from_api
 name = "群组事件处理"
 description = """
 群组事件处理:
-  群组通知事件处理
   被禁言自动退群拉黑
   更新群组状态
   进群同步群组成员
