@@ -137,7 +137,7 @@ async def _(
                 event_name="群组被踢出",
                 event_details=(
                     "不好，被扔出来了，已自动拉黑\n"
-                    f"群组：{event.group_id}\n"
+                    f"群号：{event.group_id}\n"
                     f"群名：{group_name}\n"
                     f"操作者：{event.operator_id}\n"
                     f"{msg}"
@@ -190,7 +190,7 @@ async def _(
                 event_name="群组禁言",
                 event_details=(
                     "检测到禁言行为，已自动退出群聊\n"
-                    f"群组：{event.group_id}\n"
+                    f"群号：{event.group_id}\n"
                     f"群名：{group_name}\n"
                     f"操作者：{event.operator_id}\n"
                     f"禁言时长：{ban_duration}\n"

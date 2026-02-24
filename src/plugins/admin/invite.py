@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-19 00:20:23
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-24 17:28:53
+LastEditTime: 2026-02-24 19:23:34
 Description: 邀请管理插件
 """
 
@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 import io
-from typing import Any, NoReturn
+from typing import Any
 
 import httpx
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -26,7 +26,6 @@ from nonebot.plugin import CommandGroup, PluginMetadata, on_fullmatch
 from nonebot.rule import ArgumentParser, to_me
 from PIL import Image, ImageDraw, ImageFont
 
-from src.config import config
 from src.database.core.consts import GroupStatus, InvitationStatus, Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.types import UNSET, Unset, is_set
@@ -40,39 +39,42 @@ description = """
 """.strip()
 
 usage = f"""
-📖 ===== {name} =====
+===== {name} =====
 
 命令前缀: #admin.invite / #邀请管理
 
-1.同意群聊邀请并加入白名单 ✅
-  示例: 回复 y / approve / 通过 / 同意 / 批准
-  需要【Senrin】管理员权限
+1.查看列表
+  list / show / ls / 列表
+  示例: #admin.invite list
 
-2.拒绝群聊邀请 ❌
-  示例: 回复 n / reject / 拒绝 / 驳回 / 反对
-  需要【Senrin】管理员权限
+2.同意邀请
+  approve / 同意
+  示例: #admin.invite approve -g <群号>
+  快捷操作: 对邀请通知消息直接回复 y / 同意
 
-3.邀请详情 📝
-  info <邀请 ID> / 查看 <邀请 ID>
-  示例: #admin.invite info 123
-  需要【Senrin】管理员权限
+3.拒绝邀请
+  reject / 拒绝
+  示例: #admin.invite reject -g <群号>
+  批量操作: #admin.invite reject --all
+  快捷操作: 对邀请通知消息直接回复 n / 拒绝
 
-4.列表
-  list | show | ls -> 考虑 PIL，做个 list
+4.忽略邀请
+  ignore / 忽略
+  示例: #admin.invite ignore -g <群号>
+  批量操作: #admin.invite ignore --all
 
-4.状态查询 🔍
-  log / 记录
-  示例: #admin.invite log <status>
-  需要【Senrin】管理员权限
+5.操作日志
+  log / 日志
+  示例: #admin.invite log [-g <群号>]
 
-6.帮助信息 📖
+6.帮助信息
   help / 帮助
   示例: #admin.invite help
-  需要【Senrin】管理员权限
 
-⚠️ 注意事项:
-1. 请勿回复无关消息，否则将忽略命令。
-2. 如需进一步支持，请联系管理员，或加入反馈群「{config.MAIN_GROUP_ID}」💬。
+[注意事项]:
+1. 所有操作均需要【Senrin】管理员 (SUPERUSER) 权限。
+2. 同意/拒绝/忽略 操作支持使用 -g <群号> 或 -f <Flag> 进行精准匹配。
+3. 快捷回复操作 (y/n) 仅限直接回复机器人推送的邀请通知消息时生效。
 """.strip()
 
 __plugin_meta__ = PluginMetadata(
@@ -155,6 +157,7 @@ class InviteContext:
     flag: str | Unset = UNSET
     group_id: str | Unset = UNSET
     invitation_id: int | Unset = UNSET
+    silent: bool = False
 
 
 @dataclass
@@ -353,7 +356,6 @@ class InvitationListRenderer:
 
             current_y += card_height + item_spacing
 
-        # 导出为 Bytes
         output = io.BytesIO()
         img.save(output, format="PNG")
         return output.getvalue()
@@ -391,32 +393,40 @@ async def generate_invitation_image_bytes(
     return renderer.render(invitations_data)
 
 
-async def handel_invitation(ctx: InviteContext) -> NoReturn:
+async def handle_invitation(ctx: InviteContext) -> bool:
     if is_set(ctx.msg_id):
         invitation = await invite_repo.get_by_message_id(ctx.msg_id)
         if not invitation:
-            await ctx.matcher.finish()
+            return False
     elif is_set(ctx.invitation_id):
         invitation = await invite_repo.get_by_id(ctx.invitation_id)
         if not invitation:
-            await ctx.matcher.finish()
+            return False
     elif is_set(ctx.group_id):
         invitation = await invite_repo.get_by_group_id(ctx.group_id)
         if not invitation:
-            await ctx.matcher.finish()
+            return False
     elif is_set(ctx.flag):
         invitation = await invite_repo.get_by_flag(ctx.flag)
         if not invitation:
-            await ctx.matcher.finish()
+            return False
     else:
-        await ctx.matcher.finish()
+        await ctx.matcher.send("无法使用所提供的信息找到对应的邀请。")
+        return False
 
     if invitation.status != InvitationStatus.PENDING:
         operator = invitation.operator
-        await ctx.matcher.finish(
-            f"邀请已被 {operator.user_name}({operator.user_id}) 处理，无法操作。\n"
-            f"当前状态：{invitation.status}"
-        )
+        if not ctx.silent:
+            await ctx.matcher.send(
+                f"邀请已被 {operator.user_name}({operator.user_id}) 处理，无法操作。\n"
+                f"当前状态：{invitation.status}\n"
+                "━━━━━━━━━━━━━━━━\n"
+                f"群号：{invitation.group_id}\n"
+                f"群名：{invitation.group.group_name}\n"
+                f"邀请者：{invitation.inviter.user_name}\n"
+                f"邀请 flag：{invitation.flag}\n"
+            )
+        return False
 
     if flag := invitation.flag:
         await ctx.bot.set_group_add_request(
@@ -424,6 +434,9 @@ async def handel_invitation(ctx: InviteContext) -> NoReturn:
             sub_type="invite",
             approve=ctx.approve,
         )
+    elif not ctx.approve:
+        await ctx.bot.set_group_leave(group_id=int(invitation.group_id))
+
     if ctx.approve:
         action = "同意"
         invitation_status = InvitationStatus.APPROVED
@@ -441,23 +454,25 @@ async def handel_invitation(ctx: InviteContext) -> NoReturn:
         group_id=invitation.group_id,
         status=group_status,
     )
-    await ctx.matcher.finish(
-        (
-            f"已{action}群聊邀请 {invitation.id}\n"
-            f"群组：{invitation.group_id}\n"
-            f"群名：{invitation.group.group_name}\n"
-            f"邀请者：{invitation.inviter.user_name}\n"
-            f"邀请 flag：{invitation.flag}\n"
-        ),
-        reply_message=True,
-    )
+    if not ctx.silent:
+        await ctx.matcher.send(
+            (
+                f"已{action}群聊邀请 {invitation.id}\n"
+                f"群号：{invitation.group_id}\n"
+                f"群名：{invitation.group.group_name}\n"
+                f"邀请者：{invitation.inviter.user_name}\n"
+                f"邀请 flag：{invitation.flag}\n"
+            ),
+            reply_message=True,
+        )
+    return True
 
 
-async def handle_list(ctx: AdminInviteContext) -> str:
+async def handle_list(ctx: AdminInviteContext) -> None:
     db_results = await invite_repo.get_by_status(InvitationStatus.PENDING)
 
     if not db_results:
-        return "当前没有待处理的邀请哦。"
+        await ctx.matcher.finish("当前没有待处理的邀请哦。")
 
     render_data = []
     for inv in db_results:
@@ -475,10 +490,10 @@ async def handle_list(ctx: AdminInviteContext) -> str:
 
     img_bytes = await generate_invitation_image_bytes(render_data)
 
-    await ctx.matcher.finish(MessageSegment.image(img_bytes))
+    await ctx.matcher.send(MessageSegment.image(img_bytes))
 
 
-async def handle_approve(ctx: AdminInviteContext) -> str:
+async def handle_approve(ctx: AdminInviteContext) -> None:
     ic_ctx = InviteContext(
         bot=ctx.bot,
         matcher=ctx.matcher,
@@ -486,31 +501,87 @@ async def handle_approve(ctx: AdminInviteContext) -> str:
         group_id=ctx.group_id,
         approve=True,
     )
-    await handel_invitation(ic_ctx)
+    await handle_invitation(ic_ctx)
 
 
-async def handle_reject(ctx: AdminInviteContext) -> str:
-    if ctx.is_all:
-        return "已拒绝所有待处理邀请"
+async def handle_reject(ctx: AdminInviteContext) -> None:
+    if not ctx.is_all:
+        ic_ctx = InviteContext(
+            bot=ctx.bot,
+            matcher=ctx.matcher,
+            flag=ctx.flag,
+            group_id=ctx.group_id,
+            approve=False,
+        )
+        await handle_invitation(ic_ctx)
+        return
 
-    ic_ctx = InviteContext(
-        bot=ctx.bot,
-        matcher=ctx.matcher,
-        flag=ctx.flag,
-        group_id=ctx.group_id,
-        approve=False,
-    )
-    await handel_invitation(ic_ctx)
+    invs = await invite_repo.get_by_status(InvitationStatus.PENDING)
+    if not invs:
+        await ctx.matcher.finish("当前没有需要拒绝的待处理邀请哦。")
+
+    success_count = 0
+    details = []
+    for inv in invs:
+        ic_ctx = InviteContext(
+            bot=ctx.bot,
+            matcher=ctx.matcher,
+            invitation_id=inv.id,
+            approve=False,
+            silent=True,
+        )
+        if await handle_invitation(ic_ctx):
+            success_count += 1
+
+            details.append(f"{inv.group.group_name} ({inv.group_id})")
+
+    msg = "========== 批量拒绝 ==========\n"
+    if details:
+        msg += "\n".join(details) + "\n"
+    else:
+        msg += "  (无成功处理的邀请记录)\n"
+    msg += "------------------------------\n"
+    msg += f"统计: 共拒绝了 {success_count} 个待处理邀请。"
+
+    await ctx.matcher.send(msg)
 
 
-async def handle_ignore(ctx: AdminInviteContext) -> str:
-    if ctx.is_all:
-        return "已忽略所有待处理邀请"
-    return f"已忽略 (Flag: {ctx.flag}, 群组: {ctx.group_id})"
+async def handle_ignore(ctx: AdminInviteContext) -> None:
+    if not ctx.is_all:
+        inv = None
+        if is_set(ctx.group_id):
+            inv = await invite_repo.get_by_group_id(ctx.group_id)
+        elif is_set(ctx.flag):
+            inv = await invite_repo.get_by_flag(ctx.flag)
+
+        if not inv:
+            await ctx.matcher.finish("未找到对应的邀请记录。")
+        await invite_repo.update_status(inv.id, InvitationStatus.IGNORED)
+        msg = (
+            "======= 操作成功: 已忽略 =======\n"
+            f"群名：{inv.group.group_name}\n"
+            f"群号：{inv.group_id}\n"
+        )
+        await ctx.matcher.send(msg)
+        return
+    invs = await invite_repo.ignore_all_pending()
+    if not invs:
+        await ctx.matcher.finish("当前没有需要忽略的待处理邀请哦。")
+
+    details = []
+    for inv in invs:
+        details.append(f"{inv.group.group_name} ({inv.group_id})")
+    msg = "========== 批量忽略 ==========\n"
+    if details:
+        msg += "\n".join(details) + "\n"
+    msg += "------------------------------\n"
+    msg += f"统计: 共清理了 {len(invs)} 个待处理邀请。"
+
+    await ctx.matcher.send(msg)
 
 
-async def handle_log(ctx: AdminInviteContext) -> str:
-    return "日志图片生成中..."
+async def handle_log(ctx: AdminInviteContext) -> None:
+    raise NotImplementedError("还没做")  # TODO
 
 
 @approve_matcher.handle()
@@ -522,7 +593,7 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         approve=True,
         msg_id=msg_id,
     )
-    await handel_invitation(ctx)
+    await handle_invitation(ctx)
 
 
 @reject_matcher.handle()
@@ -534,7 +605,7 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         approve=False,
         msg_id=msg_id,
     )
-    await handel_invitation(ctx)
+    await handle_invitation(ctx)
 
 
 @admin_invite.handle()
@@ -564,7 +635,7 @@ async def _(
         is_all=is_all,
     )
 
-    handler: Callable[[AdminInviteContext], Awaitable[str]]
+    handler: Callable[[AdminInviteContext], Awaitable[None]]
     match action:
         case "list" | "show" | "ls" | "列表":
             handler = handle_list
@@ -579,5 +650,5 @@ async def _(
         case _:
             await admin_invite.finish("未知的操作指令。")
 
-    res_msg = await handler(ctx)
-    await admin_invite.finish(res_msg)
+    await handler(ctx)
+    await admin_invite.finish()

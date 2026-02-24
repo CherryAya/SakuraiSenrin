@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-22 17:13:38
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-24 17:18:26
+LastEditTime: 2026-02-24 17:54:52
 Description: 邀请相关实现
 """
 
@@ -71,3 +71,11 @@ class InviteRepository:
     async def get_by_flag(self, flag: str) -> Invitation | None:
         async with core_db.session() as core_session:
             return await InvitationOps(core_session).get_by_flag(flag)
+
+    async def ignore_all_pending(self) -> Sequence[Invitation]:
+        async with core_db.session() as core_session:
+            return await InvitationOps(core_session).ignore_all_pending()
+
+    async def reject_all_pending(self) -> Sequence[Invitation]:
+        async with core_db.session() as core_session:
+            return await InvitationOps(core_session).reject_all_pending()

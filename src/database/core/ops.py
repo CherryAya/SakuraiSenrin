@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 16:18:02
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-24 17:18:55
+LastEditTime: 2026-02-24 17:54:34
 Description: core db 操作类逻辑
 """
 
@@ -522,6 +522,26 @@ class InvitationOps(BaseOps[Invitation]):
         await self.session.execute(stmt_others)
 
         return target_invitation
+
+    async def ignore_all_pending(self) -> Sequence[Invitation]:
+        stmt = (
+            update(Invitation)
+            .where(Invitation.status == InvitationStatus.PENDING)
+            .values(status=InvitationStatus.IGNORED)
+            .options(selectinload(Invitation.group))
+        ).returning(Invitation)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def reject_all_pending(self) -> Sequence[Invitation]:
+        stmt = (
+            update(Invitation)
+            .where(Invitation.status == InvitationStatus.PENDING)
+            .values(status=InvitationStatus.REJECTED)
+            .options(selectinload(Invitation.group))
+        ).returning(Invitation)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
 
 
 class BlacklistOps(BaseOps[Blacklist]):

@@ -112,7 +112,7 @@ async def _(
             user_id=int(inviter_id),
             message=(
                 "🚫 自动拒绝\n"
-                f"群组：{event.group_id}\n"
+                f"群号：{event.group_id}\n"
                 f"群名：{group_name}\n"
                 f"邀请者：{inviter_id}\n"
                 "群聊已被拉黑，凛凛不想加入此群组。\n"
@@ -126,7 +126,7 @@ async def _(
                     event_name="自动拒绝",
                     event_details=(
                         "黑名单群组发起邀请，已自动拒绝\n"
-                        f"群组：{event.group_id}\n"
+                        f"群号：{event.group_id}\n"
                         f"群名：{group_name}\n"
                         f"邀请者：{inviter_id}"
                     ),
@@ -139,7 +139,7 @@ async def _(
         user_id=int(inviter_id),
         message=(
             "📩 谢谢您对凛凛发起的邀请 ^_^\n"
-            f"群组：{group_id}\n"
+            f"群号：{group_id}\n"
             f"群名：{group_name}\n"
             f"邀请者：{inviter_id}\n\n"
             "======重要提示======\n"
@@ -156,7 +156,7 @@ async def _(
 
     report_message = (
         f"📩 新的邀请事件通知\n"
-        f"群组：{group_id}\n"
+        f"群号：{group_id}\n"
         f"群名：{group_name}\n"
         f"邀请者：{inviter_id}\n"
         f"邀请 flag：{flag}\n\n"
