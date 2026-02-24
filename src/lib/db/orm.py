@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-01-25 00:56:11
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-24 17:16:54
+Description: db orm
+"""
+
 from datetime import datetime
 from enum import IntFlag
 from typing import Any, TypeVar

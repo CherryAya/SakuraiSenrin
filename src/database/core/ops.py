@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 16:18:02
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 17:38:45
+LastEditTime: 2026-02-24 17:18:55
 Description: core db 操作类逻辑
 """
 
@@ -10,9 +10,9 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import cast
 
-from sqlalchemy import CursorResult, delete, select, text, update
+from sqlalchemy import CursorResult, delete, func, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from src.lib.db.ops import BaseOps
 from src.lib.types import UNSET, Unset, is_set
@@ -431,6 +431,7 @@ class InvitationOps(BaseOps[Invitation]):
             .options(
                 selectinload(Invitation.inviter),
                 selectinload(Invitation.group),
+                selectinload(Invitation.operator),
             )
         )
         result = await self.session.execute(stmt)
@@ -445,26 +446,55 @@ class InvitationOps(BaseOps[Invitation]):
                 selectinload(Invitation.inviter),
                 selectinload(Invitation.group),
                 selectinload(Invitation.messages),
+                selectinload(Invitation.operator),
             )
         )
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
-    async def get_pending_requests(
-        self,
-        group_id: str | None = None,
-    ) -> list[Invitation]:
-        stmt = (
-            select(Invitation)
-            .where(Invitation.status == InvitationStatus.PENDING)
-            .options(selectinload(Invitation.inviter), selectinload(Invitation.group))
+    async def get_by_status(self, status: InvitationStatus) -> Sequence[Invitation]:
+        subq = (
+            select(
+                Invitation,
+                func.row_number()
+                .over(
+                    partition_by=Invitation.group_id,
+                    order_by=Invitation.created_at.desc(),
+                )
+                .label("rn"),
+            )
+            .where(Invitation.status == status)
+            .subquery()
         )
 
-        if group_id:
-            stmt = stmt.where(Invitation.group_id == group_id)
+        inv_alias = aliased(Invitation, subq)
+
+        stmt = (
+            select(inv_alias)
+            .where(subq.c.rn == 1)
+            .options(
+                selectinload(inv_alias.inviter),
+                selectinload(inv_alias.group),
+                selectinload(inv_alias.operator),
+            )
+            .order_by(inv_alias.created_at.desc())
+        )
 
         result = await self.session.execute(stmt)
-        return list(result.scalars().all())
+        return result.scalars().all()
+
+    async def get_by_group_id(self, group_id: str) -> Invitation | None:
+        stmt = (
+            select(Invitation)
+            .where(Invitation.group_id == group_id)
+            .options(
+                selectinload(Invitation.inviter),
+                selectinload(Invitation.group),
+                selectinload(Invitation.operator),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
 
     async def update_status(
         self,

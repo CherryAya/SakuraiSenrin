@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-01 00:40:09
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-24 17:16:36
+Description: db 管理器
+"""
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any

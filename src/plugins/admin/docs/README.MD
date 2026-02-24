@@ -2,7 +2,7 @@
  * Author: SakuraiCora<1479559098@qq.com>
  * Date: 2026-02-18 22:40:38
  * LastEditors: SakuraiCora<1479559098@qq.com>
- * LastEditTime: 2026-02-22 04:02:15
+ * LastEditTime: 2026-02-24 15:10:40
  * Description: 
 -->
 #admin.group 
@@ -20,6 +20,7 @@
 
 #admin.invite
     list | show | ls -> 考虑 PIL，做个 list
-    approve <flag>
-    reject | ignore <flag|all>
-    
+    approve [-f] <flag> | [-g] <gid>
+    reject [-f] <flag> | [-g] <gid> | --all
+    ignore [-f] <flag> | [-g] <gid> | --all
+    log [-g] <gid>

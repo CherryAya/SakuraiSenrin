@@ -2,9 +2,11 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-22 17:13:38
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 17:37:27
+LastEditTime: 2026-02-24 17:18:26
 Description: 邀请相关实现
 """
+
+from collections.abc import Sequence
 
 from src.database.core.consts import InvitationStatus
 from src.database.core.ops import InvitationOps
@@ -47,3 +49,25 @@ class InviteRepository:
                 invitation_id=invitation_id,
                 status=status,
             )
+
+    async def get_by_message_id(self, message_id: str) -> Invitation | None:
+        async with core_db.session() as core_session:
+            return await InvitationOps(core_session).get_by_message_id(
+                message_id=message_id,
+            )
+
+    async def get_by_status(self, status: InvitationStatus) -> Sequence[Invitation]:
+        async with core_db.session() as core_session:
+            return await InvitationOps(core_session).get_by_status(status)
+
+    async def get_by_id(self, invitation_id: int) -> Invitation | None:
+        async with core_db.session() as core_session:
+            return await InvitationOps(core_session).get_by_id(invitation_id)
+
+    async def get_by_group_id(self, group_id: str) -> Invitation | None:
+        async with core_db.session() as core_session:
+            return await InvitationOps(core_session).get_by_group_id(group_id)
+
+    async def get_by_flag(self, flag: str) -> Invitation | None:
+        async with core_db.session() as core_session:
+            return await InvitationOps(core_session).get_by_flag(flag)

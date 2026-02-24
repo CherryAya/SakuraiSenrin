@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 03:34:40
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 22:31:26
+LastEditTime: 2026-02-24 12:44:52
 Description: core db 常量
 """
 
@@ -37,7 +37,7 @@ class InvitationStatus(LocalizedMixin, StrEnum):
     __labels__ = MappingProxyType(
         {
             PENDING: "待审批",
-            APPROVED: "已同意",
+            APPROVED: "已接受",
             REJECTED: "已拒绝",
             IGNORED: "已忽略",
         },

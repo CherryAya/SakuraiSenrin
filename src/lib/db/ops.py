@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-01 16:26:36
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-24 17:16:00
+Description: db 基类
+"""
+
 from collections.abc import Sequence
 from typing import Any, cast, get_args
 
@@ -22,7 +30,7 @@ class BaseOps[T: DeclarativeBase]:
             "例如: class UserOps(BaseOps[User])",
         )
 
-    async def get_by_id(self, id: str) -> T | None:
+    async def get_by_id(self, id: int) -> T | None:
         return await self.session.get(self.model, id)
 
     async def get_list(

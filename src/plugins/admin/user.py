@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-19 00:20:20
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 18:31:15
+LastEditTime: 2026-02-24 15:27:18
 Description: 用户管理插件
 """
 
@@ -15,8 +15,9 @@ import math
 import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.exception import ParserExit
 from nonebot.matcher import Matcher
-from nonebot.params import ShellCommandArgs, ShellCommandArgv
+from nonebot.params import ShellCommandArgs
 from nonebot.permission import SUPERUSER
 from nonebot.plugin import CommandGroup, PluginMetadata
 from nonebot.rule import ArgumentParser
@@ -156,9 +157,14 @@ async def _(
     bot: Bot,
     event: MessageEvent,
     matcher: Matcher,
-    args: Namespace = ShellCommandArgs(),
-    argv: list[str] = ShellCommandArgv(),
+    args: Namespace | ParserExit = ShellCommandArgs(),
 ) -> None:
+    if isinstance(args, ParserExit):
+        if args.status == 0:
+            await matcher.finish(args.message)
+        else:
+            await matcher.finish(f"参数错误:\n{args.message}")
+
     action = args.action
     uids = list(set(args.uids))
     group_id = getattr(args, "group", GLOBAL_GROUP_SCOPE)
@@ -181,7 +187,7 @@ async def _(
 
     for uid in uids:
         if not uid.isdigit():
-            results.append(f"[{uid} 非法 ID，必须为纯数字")
+            results.append(f"[{uid}] 非法 ID，必须为纯数字")
             continue
 
         name = await resolve_user_name(bot, uid)

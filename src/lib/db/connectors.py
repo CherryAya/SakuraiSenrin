@@ -1,3 +1,11 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-01 00:39:22
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-24 17:16:10
+Description: db 连接器
+"""
+
 from abc import ABC, abstractmethod
 from contextlib import _AsyncGeneratorContextManager
 from dataclasses import dataclass

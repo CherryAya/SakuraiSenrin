@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-01-25 15:07:33
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 17:33:21
+LastEditTime: 2026-02-24 15:38:42
 Description: core db tabel 定义
 """
 
@@ -64,6 +64,13 @@ class User(CoreBase, TimeMixin):
     sent_invitations: Mapped[list["Invitation"]] = relationship(
         "Invitation",
         back_populates="inviter",
+        foreign_keys="[Invitation.inviter_id]",
+        cascade="all, delete-orphan",
+    )
+    operated_invitations: Mapped[list["Invitation"]] = relationship(
+        "Invitation",
+        back_populates="operator",
+        foreign_keys="[Invitation.operator_id]",
         cascade="all, delete-orphan",
     )
     blacklist_records: Mapped[list["Blacklist"]] = relationship(
@@ -171,6 +178,10 @@ class Invitation(CoreBase, TimeMixin):
         nullable=False,
         index=True,
     )
+    operator_id: Mapped[str | None] = mapped_column(
+        ForeignKey("biz_user.user_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     flag: Mapped[str | None] = mapped_column(String(32))
     status: Mapped[InvitationStatus] = mapped_column(
         SQLAEnum(InvitationStatus),
@@ -179,7 +190,16 @@ class Invitation(CoreBase, TimeMixin):
     )
 
     group: Mapped["Group"] = relationship("Group", back_populates="active_invitation")
-    inviter: Mapped["User"] = relationship("User", back_populates="sent_invitations")
+    inviter: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[inviter_id],
+        back_populates="sent_invitations",
+    )
+    operator: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[operator_id],
+        back_populates="operated_invitations",
+    )
     messages: Mapped[list["InvitationMessage"]] = relationship(
         "InvitationMessage",
         back_populates="invitation",
