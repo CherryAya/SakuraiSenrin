@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-19 00:30:24
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-25 13:10:57
+LastEditTime: 2026-02-27 12:32:24
 Description: 水王
 """
 
@@ -14,7 +14,7 @@ from nonebot.plugin import PluginMetadata, on_command
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 
-from .test import run_mock
+from .img import run_mock
 
 name = "吹水记录"
 description = """
