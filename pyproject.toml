@@ -1,0 +1,19 @@
+[project]
+name = "sakuraisenrin"
+version = "3.0.0"
+description = "🥰 A powerful and cute QQ bot designed for galgame enthusiasts, powered by NoneBot2. ｜ 原来你也玩 GalGame？"
+readme = "README.md"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "nonebot-adapter-onebot>=2.4.6",
+    "nonebot2[fastapi]>=2.4.4",
+    "pil-utils>=0.2.2",
+    "ruff>=0.14.14",
+]
+
+
+[tool.uv]
+index-url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+
+[tool.ruff.lint]
+extend-select = ["I"]

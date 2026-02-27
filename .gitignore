@@ -1,0 +1,21 @@
+# python generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# venv
+.venv
+.env.*
+
+.devtest
+
+data/database/*.db
+
+.VSCodeCounter
+.DS_Store
+.ruff_cache
+
+backup/
