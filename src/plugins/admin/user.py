@@ -26,7 +26,7 @@ from src.database.core.consts import Permission
 from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
 from src.lib.consts import GLOBAL_GROUP_SCOPE, TriggerType
 from src.lib.types import UNSET, Unset, is_set
-from src.lib.utils import time_to_timedelta
+from src.lib.utils.common import time_to_timedelta
 from src.repositories import blacklist_repo, group_repo, user_repo
 from src.services.info import resolve_user_name
 

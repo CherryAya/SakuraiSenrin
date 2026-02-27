@@ -2,13 +2,13 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-22 16:55:55
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 17:00:11
+LastEditTime: 2026-02-26 17:27:11
 Description: 平台相关信息获取
 """
 
 from nonebot.adapters.onebot.v11.bot import Bot
-from nonebot.log import logger
 
+from src.logger import logger
 from src.repositories import group_repo, user_repo
 
 

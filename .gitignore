@@ -12,10 +12,14 @@ wheels/
 
 .devtest
 
-data/db/*.db*
+
 
 .VSCodeCounter
 .DS_Store
 .ruff_cache
 
 backup/
+
+data/font/.fonts_installed.lock
+data/db/*
+!data/db/.gitkeep

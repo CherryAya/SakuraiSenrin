@@ -2,14 +2,13 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-01-25 01:39:00
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 23:58:46
+LastEditTime: 2026-02-26 17:26:54
 Description: sentry 异常记录插件
 """
 
 import asyncio
 
 from nonebot import get_bot
-from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 import sentry_sdk
 from sentry_sdk.types import Event, Hint
@@ -17,6 +16,7 @@ from sentry_sdk.types import Event, Hint
 from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.logger import logger
 
 name = "Sentry"
 description = """

@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-20 00:26:45
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-24 16:45:11
+LastEditTime: 2026-02-25 01:57:37
 Description: 通用工具
 """
 
@@ -122,6 +122,7 @@ class AvatarFetcher:
         """生成默认头像"""
         img = Image.new("RGBA", (size, size), bg_color)
         draw = ImageDraw.Draw(img)
+
         try:
             font = ImageFont.truetype(MAPLE_FONT_PATH, int(size * 0.5))
             bbox = draw.textbbox((0, 0), text, font=font)

@@ -2,15 +2,15 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 00:40:09
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-24 17:16:36
+LastEditTime: 2026-02-26 17:27:25
 Description: db 管理器
 """
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from nonebot.log import logger
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -19,11 +19,14 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from src.logger import logger
+
 
 class DatabaseManager:
     def __init__(self) -> None:
         self._engines: dict[str, AsyncEngine] = {}
         self._session_factories: dict[str, async_sessionmaker] = {}
+        self._lock = asyncio.Lock()
 
     def _init_sqlite_pragma(
         self,
@@ -40,18 +43,31 @@ class DatabaseManager:
         if url in self._session_factories:
             return
 
-        engine = create_async_engine(url, echo=True)
-        event.listen(engine.sync_engine, "connect", self._init_sqlite_pragma)
+        async with self._lock:
+            if url in self._session_factories:
+                return
 
-        async with engine.begin() as conn:
-            await conn.execute(text("SELECT 1"))
+            engine = create_async_engine(url, echo=True)  # TODO: 记得 echo 改为 False
+            event.listen(engine.sync_engine, "connect", self._init_sqlite_pragma)
 
-        self._engines[url] = engine
-        self._session_factories[url] = async_sessionmaker(
-            engine,
-            expire_on_commit=False,
-        )
-        logger.success(f"数据库初始化成功: {url}")
+            async with engine.begin() as conn:
+                await conn.execute(text("SELECT 1"))
+
+            self._engines[url] = engine
+            self._session_factories[url] = async_sessionmaker(
+                engine,
+                expire_on_commit=False,
+            )
+            logger.success(f"数据库初始化成功: {url}")
+
+    async def dispose(self, full_path: str) -> None:
+        url = f"sqlite+aiosqlite:///{full_path}"
+        async with self._lock:
+            if url in self._engines:
+                engine = self._engines.pop(url)
+                self._session_factories.pop(url, None)
+                await engine.dispose()
+                logger.debug(f"释放 connection: {full_path}")
 
     @asynccontextmanager
     async def open(

@@ -22,7 +22,7 @@ from nonebot.rule import is_type, to_me
 from src.config import config
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.consts import TriggerType
-from src.lib.utils import AlertTemplate
+from src.lib.utils.common import AlertTemplate
 from src.repositories import group_repo, invite_repo
 from src.services.info import resolve_group_name
 

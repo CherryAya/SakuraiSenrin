@@ -25,7 +25,7 @@ from nonebot.rule import Rule, is_type, to_me
 from src.config import config
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.consts import GLOBAL_GROUP_SCOPE, TriggerType
-from src.lib.utils import AlertTemplate
+from src.lib.utils.common import AlertTemplate
 from src.repositories import blacklist_repo, group_repo, member_repo
 from src.services.info import resolve_group_name
 from src.services.sync import sync_members_from_api

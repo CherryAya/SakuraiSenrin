@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-19 00:20:23
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-24 19:23:34
+LastEditTime: 2026-02-26 19:24:23
 Description: 邀请管理插件
 """
 
@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 import io
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -29,7 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 from src.database.core.consts import GroupStatus, InvitationStatus, Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.types import UNSET, Unset, is_set
-from src.lib.utils import AvatarFetcher
+from src.lib.utils.common import AvatarFetcher
 from src.repositories import group_repo, invite_repo
 
 name = "邀请管理模块"
@@ -184,8 +185,7 @@ class InvitationListRenderer:
     有股味我也懒得改了你就说他能不能用，能用的代码就是好代码对吧！
     """
 
-    def __init__(self, font_path: str = MAPLE_FONT_PATH) -> None:
-        # 基础配色
+    def __init__(self, font_path: str | Path = MAPLE_FONT_PATH) -> None:
         self.BG_COLOR = (255, 217, 222)  # #ffd9de
         self.TEXT_COLOR = (180, 76, 76)  # #b44c4c
         self.ITEM_BG_COLOR = (255, 240, 245)  # #fff0f5

@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2025-11-02 23:26:30
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 22:30:46
+LastEditTime: 2026-02-26 19:36:04
 Description: 入口文件
 """
 
@@ -11,12 +11,14 @@ from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter
 from nonebot.adapters.onebot.v11 import Bot
 
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
+from src.scripts.install import init_fonts
 from src.services.db import init_db
 from src.services.sync import (
     sync_groups_from_api,
     sync_users_from_api,
 )
 
+init_fonts()
 nonebot.init()
 
 driver = nonebot.get_driver()

@@ -2,18 +2,16 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-08 17:18:19
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-24 17:16:21
+LastEditTime: 2026-02-26 18:01:20
 Description: 批量处理器
 """
 
 import asyncio
 from collections.abc import Awaitable, Callable
 import time
-from typing import NoReturn, TypeVar
+from typing import NoReturn
 
 from loguru import logger
-
-T = TypeVar("T")
 
 
 class BatchWriter[T]:
