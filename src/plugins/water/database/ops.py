@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-26 19:15:52
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-26 20:26:06
+LastEditTime: 2026-02-27 20:08:58
 Description: water db ops
 """
 
@@ -16,7 +16,7 @@ from sqlalchemy.engine.row import Row
 from src.lib.db.ops import BaseOps
 
 from .tables import WaterDailySummary, WaterMessage
-from .types import WaterMessagePayload
+from .types import WaterMessagePayload, WaterSummaryPayload
 
 
 class WaterMessageOps(BaseOps[WaterMessage]):
@@ -32,7 +32,7 @@ class WaterMessageOps(BaseOps[WaterMessage]):
 
     async def get_top_users(
         self,
-        group_id: int,
+        group_id: str,
         start_ts: int,
         end_ts: int,
         limit: int = 20,
@@ -51,9 +51,41 @@ class WaterMessageOps(BaseOps[WaterMessage]):
         result = await self.session.execute(stmt)
         return result.all()
 
+    async def get_today_group_rank(
+        self, group_id: str, start_ts: int, end_ts: int
+    ) -> int:
+        """获取当前群在全站（所有群）中的今日活跃度排名"""
+        stmt = (
+            select(WaterMessage.group_id)
+            .where(
+                WaterMessage.created_at >= start_ts, WaterMessage.created_at <= end_ts
+            )
+            .group_by(WaterMessage.group_id)
+            .order_by(func.count(WaterMessage.created_at).desc())
+        )
+        result = await self.session.execute(stmt)
+        groups = result.scalars().all()
+        try:
+            return groups.index(group_id) + 1
+        except ValueError:
+            return 999
+
+    async def get_users_timestamps(
+        self, group_id: str, user_ids: list[str], start_ts: int, end_ts: int
+    ) -> Sequence[Row[tuple[str, int]]]:
+        """提取指定用户的今日所有发言时间戳 (用于在内存快速构建 24小时分布图)"""
+        stmt = select(WaterMessage.user_id, WaterMessage.created_at).where(
+            WaterMessage.group_id == group_id,
+            WaterMessage.user_id.in_(user_ids),
+            WaterMessage.created_at >= start_ts,
+            WaterMessage.created_at <= end_ts,
+        )
+        result = await self.session.execute(stmt)
+        return result.all()
+
 
 class WaterSummaryOps(BaseOps[WaterDailySummary]):
-    async def bulk_upsert_summary(self, summary_data: list[dict]) -> int:
+    async def bulk_upsert_summary(self, summary_data: list[WaterSummaryPayload]) -> int:
         if not summary_data:
             return 0
 
@@ -71,7 +103,7 @@ class WaterSummaryOps(BaseOps[WaterDailySummary]):
 
     async def get_ranks_by_date(
         self,
-        group_id: int,
+        group_id: str,
         record_date: int,
     ) -> dict[str, int]:
         stmt = (

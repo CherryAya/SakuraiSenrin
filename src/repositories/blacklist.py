@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 21:03:25
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-20 00:44:20
+LastEditTime: 2026-02-28 14:15:06
 Description: blacklist 相关实现
 """
 
@@ -44,19 +44,26 @@ class BlacklistRepository:
 
     async def get_blacklist(
         self,
-        target_user_id: str,
+        user_id: str,
         group_id: str,
     ) -> BlacklistCacheItem | None:
-        if item := self.cache.get_ban(target_user_id, group_id):
+        if item := self.cache.get_ban(user_id, group_id):
             return item
 
         async with core_db.session() as session:
-            db_item = await BlacklistOps(session).get_by_target_user_id_and_group_id(
-                target_user_id=target_user_id,
+            db_item = await BlacklistOps(session).get_by_uid_and_gid(
+                target_user_id=user_id,
                 group_id=group_id,
             )
             if not db_item:
                 return None
+
+        self.cache.set_ban(user_id, group_id, db_item.ban_expiry)
+        return self.cache.get_ban(user_id, group_id)
+
+    async def is_banned(self, user_id: str, group_id: str) -> bool:
+        # await self.get_blacklist(user_id, group_id)   #TODO: 🤔
+        return self.cache.is_banned(user_id, group_id)
 
     async def add_ban(
         self,
@@ -109,4 +116,5 @@ class BlacklistRepository:
                 context_type=_AUDIT_CTX_TYPE_DICT.get(group_id, AuditContext.GROUP),
                 category=AuditCategory.ACCESS,
                 action=AuditAction.UNBAN,
+                operator_id=operator_id,
             )

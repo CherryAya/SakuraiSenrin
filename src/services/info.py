@@ -2,22 +2,23 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-22 16:55:55
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-26 17:27:11
+LastEditTime: 2026-02-27 20:20:24
 Description: 平台相关信息获取
 """
 
 from nonebot.adapters.onebot.v11.bot import Bot
 
 from src.logger import logger
-from src.repositories import group_repo, user_repo
+from src.repositories import group_repo, member_repo, user_repo
 
 
-async def resolve_user_name(bot: Bot, user_id: str) -> str:
+async def resolve_user_name(bot: Bot | None, user_id: str) -> str:
     db_name = await user_repo.get_name_by_uid(user_id)
     if db_name:
         return db_name
 
     try:
+        assert bot is not None
         info = await bot.get_stranger_info(user_id=int(user_id))
         real_name = info.get("nickname", f"用户_{user_id}")
 
@@ -28,12 +29,13 @@ async def resolve_user_name(bot: Bot, user_id: str) -> str:
         return f"用户_{user_id[-4:]}"
 
 
-async def resolve_group_name(bot: Bot, group_id: str) -> str:
+async def resolve_group_name(bot: Bot | None, group_id: str) -> str:
     db_name = await group_repo.get_name_by_gid(group_id)
     if db_name:
         return db_name
 
     try:
+        assert bot is not None
         info = await bot.get_group_info(group_id=int(group_id))
         real_name = info.get("group_name", f"群聊_{group_id}")
 
@@ -41,4 +43,23 @@ async def resolve_group_name(bot: Bot, group_id: str) -> str:
         return real_name
     except Exception as e:
         logger.warning(f"获取新群聊 {group_id} 名字失败: {e}")
+        return f"群聊_{group_id[-4:]}"
+
+
+async def resolve_group_card(bot: Bot | None, user_id: str, group_id: str) -> str:
+    db_card = await member_repo.get_card_by_uid_gid(user_id, group_id)
+    if db_card:
+        return db_card
+
+    try:
+        assert bot is not None
+        info = await bot.get_group_info(group_id=int(group_id))
+        real_card = info.get("group_card", f"群聊_{group_id}")
+
+        await member_repo.save_member(
+            user_id=user_id, group_id=group_id, group_card=real_card
+        )
+        return real_card
+    except Exception as e:
+        logger.warning(f"获取新群员 {group_id} 名片失败: {e}")
         return f"群聊_{group_id[-4:]}"

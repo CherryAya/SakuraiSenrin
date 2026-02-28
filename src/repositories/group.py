@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 19:46:09
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 16:58:40
+LastEditTime: 2026-02-27 21:58:21
 Description: group 相关实现
 """
 
@@ -18,6 +18,7 @@ from src.database.snapshot.ops import GroupSnapshotOps
 from src.lib.cache.field import GroupCacheItem
 from src.lib.cache.impl import GroupCache
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
+from src.lib.utils.common import get_current_time
 from src.services.writers import (
     group_create_writer,
     group_update_name_writer,
@@ -56,12 +57,15 @@ class GroupRepository:
         self.cache = cache
 
     async def _save_buffered(self, ctx: GroupChangeContext) -> None:
+        event_time = get_current_time()
         if ctx.is_new:
             await group_create_writer.add(
                 {
                     "group_id": ctx.group_id,
                     "group_name": ctx.resolve_name(),
                     "status": ctx.resolve_status(),
+                    "created_at": event_time,
+                    "updated_at": event_time,
                 },
             )
             return
@@ -71,6 +75,7 @@ class GroupRepository:
                 {
                     "group_id": ctx.group_id,
                     "group_name": ctx.group_name,
+                    "updated_at": event_time,
                 },
             )
 
@@ -79,6 +84,7 @@ class GroupRepository:
                 {
                     "group_id": ctx.group_id,
                     "status": ctx.status,
+                    "updated_at": event_time,
                 },
             )
 
@@ -181,10 +187,7 @@ class GroupRepository:
 
     async def get_name_by_gid(self, group_id: str) -> str | None:
         async with core_db.session() as session:
-            db_group = await GroupOps(session).get_by_group_id(group_id)
-            if not db_group:
-                return None
-            return db_group.group_name
+            return await GroupOps(session).get_name_by_gid(group_id)
 
     async def update_status(self, group_id: str, status: GroupStatus) -> None:
         return await self.save_group(
@@ -198,4 +201,10 @@ class GroupRepository:
             group_id=group_id,
             group_name=group_name,
             policy=WritePolicy.IMMEDIATE,
+        )
+
+    def update_all_shut(self, group_id: str, is_shut: bool) -> None:
+        return self.cache.upsert_group(
+            group_id=group_id,
+            is_all_shut=is_shut,
         )

@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-19 00:20:23
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-26 19:24:23
+LastEditTime: 2026-02-27 17:03:57
 Description: 邀请管理插件
 """
 
@@ -15,6 +15,7 @@ import io
 from pathlib import Path
 from typing import Any
 
+import arrow
 import httpx
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
@@ -483,7 +484,7 @@ async def handle_list(ctx: AdminInviteContext) -> None:
                 "group_id": inv.group.group_id,
                 "inviter_name": inv.inviter.user_name,
                 "inviter_id": inv.inviter.user_id,
-                "time": inv.created_at.strftime("%Y-%m-%d %H:%M"),
+                "time": arrow.get(inv.created_at).strftime("%Y-%m-%d %H:%M"),
                 "flag": inv.flag or "无",
             }
         )

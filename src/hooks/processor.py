@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-01-25 16:27:42
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 18:02:40
+LastEditTime: 2026-02-27 21:41:21
 Description: 运行时同步检查 hook
 """
 
@@ -17,7 +17,9 @@ from nonebot.plugin import PluginMetadata
 
 from src.config import config
 from src.database.core.consts import GroupStatus
-from src.repositories import group_repo, member_repo, user_repo
+from src.lib.consts import GLOBAL_GROUP_SCOPE
+from src.lib.types import UNSET, is_set
+from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.services.sync import (
     sync_group_runtime,
     sync_member_runtime,
@@ -86,36 +88,57 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
     1. 用户未命中缓存，默认放行
     2. 群聊未命中缓存，默认阻止
     """
+
+    _user_id = getattr(event, "user_id", UNSET)
+    _group_id = getattr(event, "group_id", UNSET)
+
+    is_group_event = is_set(_group_id)
+    is_user_event = is_set(_user_id)
+    user_id = group_id = ""
+
+    if is_group_event:
+        group_id = str(_group_id)
+    if is_user_event:
+        user_id = str(_user_id)
+
+    user = await user_repo.get_user(user_id) if is_user_event else None
+    group = await group_repo.get_group(group_id) if is_group_event else None
+
     if (
-        (plugin := matcher.plugin)
-        and (metadata := plugin.metadata)
-        and metadata.extra.get("no_check", False)
+        is_group_event
+        and group
+        and not await member_repo.get_member(str(bot.self_id), group_id)
     ):
-        return
-
-    user_id = str(getattr(event, "user_id", ""))
-    group_id = str(getattr(event, "group_id", ""))
-
-    if user_id in config.IGNORED_USERS:
-        raise IgnoredException("用户已被全局配置忽略")
-    if user_id in config.SUPERUSERS:
-        return
-
-    user = await user_repo.get_user(user_id)
-    if not user:
-        return
-    if user.is_self_ignore and group_id:
-        raise IgnoredException("用户已启用 self_ignore")
-
-    group = await group_repo.get_group(group_id)
-    if not group:
-        raise IgnoredException("未命中缓存，默认阻止")
-
-    if not await member_repo.get_member(str(bot.self_id), group_id):
         await sync_members_from_api(bot, group_id)
+        user = await user_repo.get_user(user_id) if is_user_event else None
 
-    if group.is_all_shut or group.status != GroupStatus.AUTHORIZED:
-        raise IgnoredException("群聊被全员禁言或未授权")
+    plugin = matcher.plugin
+    is_no_check = (
+        plugin and plugin.metadata and plugin.metadata.extra.get("no_check", False)
+    )
+    if is_no_check:
+        return
+
+    if is_user_event and user_id in config.IGNORED_USERS:
+        raise IgnoredException("用户已被全局配置忽略")
+    if is_user_event and user_id in config.SUPERUSERS:
+        return
+    if is_user_event and await blacklist_repo.is_banned(user_id, GLOBAL_GROUP_SCOPE):
+        raise IgnoredException("用户已被全局黑名单")
+    if is_group_event and user and getattr(user, "is_self_ignore", False):
+        raise IgnoredException("用户已启用 self_ignore")
+    if is_group_event:
+        if not group:
+            raise IgnoredException("未命中群缓存，默认阻止")
+
+        if group.status != GroupStatus.AUTHORIZED:
+            raise IgnoredException("群聊未授权")
+
+        if group.is_all_shut:
+            raise IgnoredException("群聊被全员禁言")
+
+        if is_user_event and await blacklist_repo.is_banned(user_id, group_id):
+            raise IgnoredException("用户已被群组黑名单")
 
 
 @run_preprocessor

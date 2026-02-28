@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 16:18:08
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 22:33:26
+LastEditTime: 2026-02-27 17:00:56
 Description: log db 操作类
 """
 
@@ -15,6 +15,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.db.ops import BaseOps
 from src.lib.types import UNSET, Unset, is_set
+from src.lib.utils.common import get_current_time
 
 from .base import BaseAuditEnum
 from .tables import AuditLog, PluginUsageLog
@@ -40,11 +41,13 @@ class AuditLogOps(BaseOps[AuditLog]):
         summary: str | Unset = UNSET,
         meta_data: dict | Unset = UNSET,
     ) -> AuditLog:
+        event_time = get_current_time()
         audit_log_payload: AuditLogPayload = {
             "target_id": target_id,
             "context_type": context_type.value,
             "category": category.value,
             "action": action.value,
+            "created_at": event_time,
         }
         if is_set(meta_data):
             audit_log_payload["meta_data"] = meta_data

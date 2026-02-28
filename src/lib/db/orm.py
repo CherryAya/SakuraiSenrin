@@ -2,16 +2,15 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-01-25 00:56:11
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-24 17:16:54
+LastEditTime: 2026-02-27 20:44:57
 Description: db orm
 """
 
-from datetime import datetime
 from enum import IntFlag
 from typing import Any, TypeVar
 
-from sqlalchemy import DateTime, Integer, Table, TypeDecorator, event, func, text
-from sqlalchemy.engine import Connection, Dialect
+from sqlalchemy import Integer, TypeDecorator
+from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import Mapped, mapped_column
 
 T = TypeVar("T", bound=IntFlag)
@@ -40,44 +39,5 @@ class IntFlagType(TypeDecorator[T]):
 
 
 class TimeMixin:
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
-
-
-def _add_sqlite_updated_at_trigger(
-    target: Table,
-    connection: Connection,
-    **kwargs: Any,
-) -> None:
-    if connection.dialect.name != "sqlite":
-        return
-
-    if "updated_at" not in target.c:
-        return
-
-    table_name = target.name
-    trigger_name = f"trg_update_{table_name}_timestamp"
-    sql = f"""
-    CREATE TRIGGER IF NOT EXISTS {trigger_name}
-    AFTER UPDATE ON {table_name}
-    FOR EACH ROW
-    BEGIN
-        UPDATE {table_name}
-        SET updated_at = CURRENT_TIMESTAMP
-        WHERE id = OLD.id;
-    END;
-    """
-
-    connection.execute(text(sql))
-
-
-event.listen(Table, "after_create", _add_sqlite_updated_at_trigger)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[int] = mapped_column(Integer, nullable=False)

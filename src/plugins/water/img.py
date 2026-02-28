@@ -1,24 +1,35 @@
+"""
+Author: SakuraiCora<1479559098@qq.com>
+Date: 2026-02-27 12:18:33
+LastEditors: SakuraiCora<1479559098@qq.com>
+LastEditTime: 2026-02-28 14:35:41
+Description: 图片渲染组件，AI 神力！
+"""
+
 import asyncio
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-import random
 from typing import Any
 
 from PIL import ImageFont
 from pil_utils import BuildImage
 
+from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
 from src.lib.utils.img import QQAvatar
+from src.repositories import member_repo
+from src.services.info import resolve_group_card, resolve_group_name
 
-SYS_FONT_NAME = "Maple Mono NF CN"
-FALLBACK_FONT_PATH = "./data/font/MapleMono-NF-CN-Regular.ttf"
+from .database import water_repo
+
+SYS_FONT_NAME = MAPLE_FONT_NAME
+FALLBACK_FONT_PATH = MAPLE_FONT_PATH
 
 
 @dataclass
 class WaterInfo:
     user_id: str
     group_id: str
-    created_at: datetime
+    created_at: int
 
 
 class WaterRankRenderer:
@@ -246,7 +257,7 @@ class WaterRankRenderer:
         group_name: str,
         today_king: str,
         group_rank: int,
-        users_data: list[dict[str, Any]],
+        users_data: dict[str, dict[str, Any]],
     ) -> bytes:
         item_h, item_spacing = int(110 * self.SCALE), int(20 * self.SCALE)
         header_height = int(260 * self.SCALE)
@@ -268,7 +279,7 @@ class WaterRankRenderer:
                 self.RENDER_WIDTH - self.PADDING,
                 y + int(50 * self.SCALE),
             ),
-            "🐉🐉🐉🐉🐉🐉🐉快来水快来水快来水🐉🐉🐉🐉🐉🐉🐉",
+            "🐉🐉🐉🐉🐉🐉🐉🐉🐉水王排行榜🐉🐉🐉🐉🐉🐉🐉🐉🐉",
             max_fontsize=int(40 * self.SCALE),
             fill=self.TEXT_COLOR,
             halign="center",
@@ -293,7 +304,10 @@ class WaterRankRenderer:
         )
         y += int(50 * self.SCALE)
 
-        info_text = f"今日水王: {today_king}\n本群排名: 第{group_rank}名"
+        info_text = (
+            f"今日水王: {users_data[today_king]['username']}\n"
+            f"本群排名: 第{group_rank}名"
+        )
         main_img.draw_text(
             (
                 self.PADDING,
@@ -311,7 +325,7 @@ class WaterRankRenderer:
 
         tasks = [
             asyncio.to_thread(self._render_user_row, rank, user)
-            for rank, user in enumerate(users_data, 1)
+            for rank, user in enumerate(users_data.values(), 1)
         ]
         row_images = await asyncio.gather(*tasks)
 
@@ -355,97 +369,54 @@ class WaterRankRenderer:
         return (await asyncio.to_thread(final_img.save, "PNG")).getvalue()
 
 
-async def generate_water_rank_image_by_pillow(
-    group_id: str, group_name: str, water_info_sequence: Sequence[WaterInfo]
-) -> bytes | None:
-    today_date = datetime.now().date()
-    group_counts, user_counts, user_hourly = {}, {}, {}
-
-    for msg in water_info_sequence:
-        group_counts[msg.group_id] = group_counts.get(msg.group_id, 0) + 1
-        if msg.group_id == group_id and msg.created_at.date() == today_date:
-            uid = msg.user_id
-            user_counts[uid] = user_counts.get(uid, 0) + 1
-            if uid not in user_hourly:
-                user_hourly[uid] = [0] * 24
-            user_hourly[uid][msg.created_at.hour] += 1
-
-    sorted_groups = sorted(group_counts.items(), key=lambda x: -x[1])
-    group_rank = next(
-        (i + 1 for i, (gid, _) in enumerate(sorted_groups) if gid == group_id), 999
-    )
-
-    sorted_users = sorted(user_counts.items(), key=lambda x: -x[1])[:10]
-    if not sorted_users:
+async def build_water_rank_image(group_id: str) -> bytes | None:
+    group_name = await resolve_group_name(None, group_id)
+    top_users = await water_repo.get_today_leaderboard(group_id, limit=10)
+    if not top_users:
         return None
 
-    king_uid, king_count = sorted_users[0]
-
-    avatar_tasks = [QQAvatar.fetch_user(uid) for uid, _ in sorted_users]
-    avatars = await asyncio.gather(*avatar_tasks)
-
-    mock_trends = [3, 0, -1, None, 2, -5, 1, 0, None, -2]
-    EXTREME_USERNAMES = [
-        "꧁༺傲世★狂少༻꧂",  # 游戏特殊符号
-        "👨‍👩‍👧‍👦👨‍💻🏳️‍⚧️🍎🌍",  # ZWJ 零宽连字组合 Emoji 与 旗帜
-        "T̴h̷i̵s̸ ̵i̷s̴ ̵Z̷a̵l̸g̷o̷",  # Zalgo 溢出乱码文本（火星文）
-        "مرحبا العالم (Arabic)",  # RTL (从右到左) 语言
-        "สวัสดีชาวโลก (Thai)",  # 复杂垂直字形堆叠
-        "Iñtërnâtiônàlizætiøn",  # 多语种拉丁文特殊发音符号
-        "(╯°□°）╯︵ ┻━┻",  # 颜文字测试
-        "𪚥𮧵𪾢𩇩 (Rare CJK)",  # 极度生僻的 CJK 汉字扩展区
-        "This\nIs\tA\rTest",  # 恶意控制字符（换行/制表符）
-        "슈퍼마리오 (Korean)",  # 韩文渲染
-        "Я люблю тебя (Russian)",  # 西里尔字母
-        "   空白 边界  测试   ",  # 连续空格与首尾空白
-        "这是一个超级无敌长长长长长长长长长长长长长长长长长长的名字用来测试物理框防爆截断机制",
-    ]
-
-    users_data = [
-        {
-            "user_id": uid,
-            "username": random.choice(EXTREME_USERNAMES),  # 🔥 随机抽取噩梦级测试用例
-            "count": count,
-            "hourly_data": user_hourly[uid],
-            "avatar_img": avatars[i],
-            "trend": mock_trends[i] if i < len(mock_trends) else 0,
-        }
-        for i, (uid, count) in enumerate(sorted_users)
-    ]
-
-    renderer = WaterRankRenderer()
-    return await renderer.render_async(
-        group_name, f"UID:{king_uid} ({king_count}次)", group_rank, users_data
+    user_ids = [u.user_id for u in top_users]
+    (
+        group_rank,
+        user_hourly_dict,
+        avatars,
+    ) = await asyncio.gather(
+        water_repo.get_today_group_rank(group_id),
+        water_repo.get_users_hourly_distribution(group_id, user_ids),
+        asyncio.gather(
+            *(QQAvatar.fetch_user(uid) for uid in user_ids), return_exceptions=True
+        ),
     )
 
+    users_data = {}
+    for idx, rank_item in enumerate(top_users):
+        uid = rank_item.user_id
 
-async def run_mock() -> bytes | None:
-    group_id = "12345678"
-    now = datetime.now()
-    test_users = [str(random.randint(10000000, 999999999)) for _ in range(200)]
+        avatar_bytes = avatars[idx]
+        if isinstance(avatar_bytes, Exception) or not avatar_bytes:
+            avatar_bytes = b""
 
-    mock_data = [
-        WaterInfo(
-            user_id=random.choice(test_users),
-            group_id=group_id,
-            created_at=now.replace(
-                hour=random.randint(0, 23), minute=random.randint(0, 59)
-            ),
+        member = await member_repo.get_member(uid, group_id)
+        username = (
+            await resolve_group_card(None, uid, group_id)
+            if member
+            else f"群员_{uid[-4:]}"
         )
-        for _ in range(30000)
-    ]
+        users_data[uid] = {
+            "user_id": uid,
+            "username": username,
+            "count": rank_item.msg_count,
+            "hourly_data": user_hourly_dict.get(uid, [0] * 24),
+            "avatar_img": avatar_bytes,
+            "trend": rank_item.trend or 0,
+        }
 
-    img_bytes = await generate_water_rank_image_by_pillow(
-        group_id=group_id,
-        group_name="❄️凛雪列車｜描摹重日冷影❄️ [分轨1群] (严禁发涩图违者女装)",
-        water_info_sequence=mock_data,
+    king = top_users[0]
+    renderer = WaterRankRenderer()
+    img_bytes = await renderer.render_async(
+        group_name=group_name,
+        today_king=king.user_id,
+        group_rank=group_rank,
+        users_data=users_data,
     )
-
     return img_bytes
-
-
-if __name__ == "__main__":
-    img_bytes = asyncio.run(run_mock())
-    if img_bytes:
-        with open("test_water_rank.png", "wb") as f:
-            f.write(img_bytes)

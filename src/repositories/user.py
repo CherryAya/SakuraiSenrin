@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 18:59:47
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 16:58:10
+LastEditTime: 2026-02-27 14:48:25
 Description: user 相关实现
 """
 
@@ -18,6 +18,7 @@ from src.database.snapshot.ops import UserSnapshotOps
 from src.lib.cache.field import UserCacheItem
 from src.lib.cache.impl import UserCache
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
+from src.lib.utils.common import get_current_time
 from src.services.writers import (
     user_create_writer,
     user_update_name_writer,
@@ -52,12 +53,15 @@ class UserRepository:
         self.cache = cache
 
     async def _save_buffered(self, ctx: UserChangeContext) -> None:
+        event_time = get_current_time()
         if ctx.is_new:
             await user_create_writer.add(
                 {
                     "user_id": ctx.user_id,
                     "user_name": ctx.resolve_name(),
                     "permission": ctx.resolve_perm(),
+                    "created_at": event_time,
+                    "updated_at": event_time,
                 },
             )
             return
@@ -66,6 +70,7 @@ class UserRepository:
                 {
                     "user_id": ctx.user_id,
                     "user_name": ctx.user_name,
+                    "updated_at": event_time,
                 },
             )
         if is_set(ctx.permission):
@@ -73,6 +78,7 @@ class UserRepository:
                 {
                     "user_id": ctx.user_id,
                     "permission": ctx.permission,
+                    "updated_at": event_time,
                 },
             )
 
@@ -166,7 +172,4 @@ class UserRepository:
 
     async def get_name_by_uid(self, user_id: str) -> str | None:
         async with core_db.session() as session:
-            db_user = await UserOps(session).get_by_user_id(user_id)
-            if not db_user:
-                return None
-            return db_user.user_name
+            return await UserOps(session).get_name_by_uid(user_id)

@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-12 20:48:16
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-20 00:00:40
+LastEditTime: 2026-02-27 20:16:29
 Description: 批量写入逻辑
 注：所有的 update / create 操作均为 **带 log / snapshot** 的操作。
 """
@@ -50,6 +50,7 @@ async def _flush_create_user(batch_data: list[UserPayload]) -> None:
             {
                 "user_id": d["user_id"],
                 "content": d["user_name"],
+                "created_at": d["updated_at"],
             }
             for d in final_data
         ]
@@ -70,6 +71,7 @@ async def _flush_update_user_name(batch_data: list[UserUpdateNamePayload]) -> No
             {
                 "user_id": d["user_id"],
                 "content": d["user_name"],
+                "created_at": d["updated_at"],
             }
             for d in final_data
         ]
@@ -81,8 +83,10 @@ async def _flush_update_user_perm(batch_data: list[UserUpdatePermPayload]) -> No
     final_data = list(unique_data)
     if not final_data:
         return
+
     async with core_db.session() as session:
         await UserOps(session).bulk_update_permissions(final_data)
+
     async with log_db.session() as session:
         audit_logs: list[AuditLogPayload] = [
             {
@@ -90,6 +94,7 @@ async def _flush_update_user_perm(batch_data: list[UserUpdatePermPayload]) -> No
                 "context_type": AuditContext.USER,
                 "category": AuditCategory.PERMISSION.value,
                 "action": AuditAction.CHANGE.value,
+                "created_at": d["updated_at"],
             }
             for d in final_data
         ]
@@ -110,6 +115,7 @@ async def _flush_create_group(batch_data: list[GroupPayload]) -> None:
             {
                 "group_id": d["group_id"],
                 "content": d["group_name"],
+                "created_at": d["updated_at"],
             }
             for d in final_data
         ]
@@ -130,6 +136,7 @@ async def _flush_update_group_name(batch_data: list[GroupUpdateNamePayload]) -> 
             {
                 "group_id": d["group_id"],
                 "content": d["group_name"],
+                "created_at": d["updated_at"],
             }
             for d in final_data
         ]
@@ -155,6 +162,7 @@ async def _flush_update_group_status(
                 "context_id": d["group_id"],
                 "category": AuditCategory.ACCESS.value,
                 "action": AuditAction.CHANGE.value,
+                "created_at": d["updated_at"],
             }
             for d in final_data
         ]
@@ -174,6 +182,8 @@ async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
             {
                 "user_id": item["user_id"],
                 "user_name": "",
+                "created_at": item["updated_at"],
+                "updated_at": item["updated_at"],
             }
             for item in members_data
         ]
@@ -181,6 +191,8 @@ async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
             {
                 "group_id": item["group_id"],
                 "group_name": "",
+                "created_at": item["updated_at"],
+                "updated_at": item["updated_at"],
             }
             for item in members_data
         ]
@@ -194,13 +206,14 @@ async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
                 "user_id": d["user_id"],
                 "group_id": d["group_id"],
                 "content": d["group_card"],
+                "created_at": d["updated_at"],
             }
             for d in members_data
         ]
         await MemberSnapshotOps(session).bulk_create_member_snapshots(snapshots)
 
 
-async def _flush_update_member_card(batch_data: list[MemberUpdateCardPayload]) -> None:
+async def _flush_update_group_card(batch_data: list[MemberUpdateCardPayload]) -> None:
     unique_data = {item["group_id"]: item for item in batch_data}.values()
     final_data = list(unique_data)
     if not final_data:
@@ -214,6 +227,7 @@ async def _flush_update_member_card(batch_data: list[MemberUpdateCardPayload]) -
                 "user_id": d["user_id"],
                 "group_id": d["group_id"],
                 "content": d["group_card"],
+                "created_at": d["updated_at"],
             }
             for d in final_data
         ]
@@ -238,6 +252,7 @@ async def _flush_update_member_permission(
                 "context_id": d["group_id"],
                 "category": AuditCategory.PERMISSION.value,
                 "action": AuditAction.CHANGE.value,
+                "created_at": d["updated_at"],
             }
             for d in final_data
         ]
@@ -283,7 +298,7 @@ member_create_writer = BatchWriter[MemberPayload](
     flush_interval=3.0,
 )
 member_update_card_writer = BatchWriter[MemberUpdateCardPayload](
-    flush_callback=_flush_update_member_card,
+    flush_callback=_flush_update_group_card,
     batch_size=50,
     flush_interval=3.0,
 )

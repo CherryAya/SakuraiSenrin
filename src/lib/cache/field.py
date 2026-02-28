@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 15:31:40
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 22:58:56
+LastEditTime: 2026-02-27 21:53:32
 Description: 缓存 item 定义
 """
 
@@ -54,7 +54,7 @@ class GroupCacheItem:
             return self
         return replace(self, status=new_status)
 
-    def set_all_shut(self, is_shut: bool) -> Self:
+    def with_all_shut(self, is_shut: bool) -> Self:
         if self.is_all_shut == is_shut:
             return self
         return replace(self, is_all_shut=is_shut)

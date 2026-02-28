@@ -2,21 +2,19 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-07 02:52:53
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 22:34:05
+LastEditTime: 2026-02-27 20:45:34
 Description: snapshot db tabel 定义
 """
 
-from sqlalchemy import Index, String
+from sqlalchemy import Index, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
-from src.lib.db.orm import TimeMixin
 
 
 class SnapshotBase(DeclarativeBase):
     pass
 
 
-class UserSnapshot(SnapshotBase, TimeMixin):
+class UserSnapshot(SnapshotBase):
     """用户快照流水，记录昵称变更"""
 
     __tablename__ = "obs_user_snapshot"
@@ -25,9 +23,10 @@ class UserSnapshot(SnapshotBase, TimeMixin):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
-class GroupSnapshot(SnapshotBase, TimeMixin):
+class GroupSnapshot(SnapshotBase):
     """群组信息快照流水，记录群名变更"""
 
     __tablename__ = "obs_group_snapshot"
@@ -36,9 +35,10 @@ class GroupSnapshot(SnapshotBase, TimeMixin):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     group_id: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
-class MemberSnapshot(SnapshotBase, TimeMixin):
+class MemberSnapshot(SnapshotBase):
     """群成员信息快照流水，记录群名片变更"""
 
     __tablename__ = "obs_member_snapshot"
@@ -51,3 +51,4 @@ class MemberSnapshot(SnapshotBase, TimeMixin):
     user_id: Mapped[str] = mapped_column(String(32), nullable=False)
     group_id: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)

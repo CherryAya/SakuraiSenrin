@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 16:18:02
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-24 17:54:34
+LastEditTime: 2026-02-27 21:12:52
 Description: core db 操作类逻辑
 """
 
@@ -16,6 +16,7 @@ from sqlalchemy.orm import aliased, selectinload
 
 from src.lib.db.ops import BaseOps
 from src.lib.types import UNSET, Unset, is_set
+from src.lib.utils.common import get_current_time
 
 from .consts import GroupStatus, InvitationStatus, Permission
 from .tables import Blacklist, Group, Invitation, InvitationMessage, Member, User
@@ -92,6 +93,11 @@ class UserOps(BaseOps[User]):
         result = await self.session.execute(stmt)
         return result.scalars().one_or_none()
 
+    async def get_name_by_uid(self, user_id: str) -> str | None:
+        stmt = select(User.user_name).where(User.user_id == user_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().one_or_none()
+
     async def upsert_user(
         self,
         user_id: str,
@@ -99,9 +105,12 @@ class UserOps(BaseOps[User]):
         permission: Permission | Unset = UNSET,
         remark: str | Unset = UNSET,
     ) -> User:
+        event_time = get_current_time()
         user_payload: UserPayload = {
             "user_id": user_id,
             "user_name": user_name,
+            "created_at": event_time,
+            "updated_at": event_time,
         }
         if is_set(permission):
             user_payload["permission"] = permission
@@ -204,15 +213,23 @@ class GroupOps(BaseOps[Group]):
         result = await self.session.execute(stmt)
         return result.scalars().one_or_none()
 
+    async def get_name_by_gid(self, group_id: str) -> str | None:
+        stmt = select(Group.group_name).where(Group.group_id == group_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().one_or_none()
+
     async def upsert_group(
         self,
         group_id: str,
         group_name: str,
         status: GroupStatus | Unset = UNSET,
     ) -> Group:
+        event_time = get_current_time()
         group_payload: GroupPayload = {
             "group_id": group_id,
             "group_name": group_name,
+            "created_at": event_time,
+            "updated_at": event_time,
         }
         if is_set(status):
             group_payload["status"] = status
@@ -330,6 +347,13 @@ class MemberOps(BaseOps[Member]):
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    async def get_card_by_uid_gid(self, user_id: str, group_id: str) -> str | None:
+        stmt = select(Member.group_card).where(
+            Member.group_id == group_id, Member.user_id == user_id
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().one_or_none()
+
     async def upsert_member(
         self,
         group_id: str,
@@ -337,10 +361,13 @@ class MemberOps(BaseOps[Member]):
         group_card: str,
         permission: Permission | Unset = UNSET,
     ) -> Member:
+        event_time = get_current_time()
         member_payload: MemberPayload = {
             "group_id": group_id,
             "user_id": user_id,
             "group_card": group_card,
+            "created_at": event_time,
+            "updated_at": event_time,
         }
         if is_set(permission):
             member_payload["permission"] = permission
@@ -582,7 +609,7 @@ class BlacklistOps(BaseOps[Blacklist]):
         result = await self.session.execute(select(Blacklist))
         return result.scalars().all()
 
-    async def get_by_target_user_id(
+    async def get_by_uid(
         self,
         target_user_id: str,
         group_id: str,
@@ -594,7 +621,7 @@ class BlacklistOps(BaseOps[Blacklist]):
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def get_by_group_id(
+    async def get_by_gid(
         self,
         group_id: str,
     ) -> Sequence[Blacklist]:
@@ -602,14 +629,18 @@ class BlacklistOps(BaseOps[Blacklist]):
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def get_by_target_user_id_and_group_id(
+    async def get_by_uid_and_gid(
         self,
         target_user_id: str,
         group_id: str,
-    ) -> Sequence[Blacklist]:
-        stmt = select(Blacklist).where(
-            Blacklist.target_user_id == target_user_id,
-            Blacklist.group_id == group_id,
+    ) -> Blacklist | None:
+        stmt = (
+            select(Blacklist)
+            .where(
+                Blacklist.target_user_id == target_user_id,
+                Blacklist.group_id == group_id,
+            )
+            .order_by(Blacklist.created_at.desc())
         )
         result = await self.session.execute(stmt)
-        return result.scalars().all()
+        return result.scalars().one_or_none()

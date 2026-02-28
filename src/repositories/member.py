@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 19:46:12
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-21 02:02:08
+LastEditTime: 2026-02-27 20:18:40
 Description: member 相关实现
 """
 
@@ -25,6 +25,7 @@ from src.database.snapshot.ops import MemberSnapshotOps
 from src.lib.cache.field import MemberCacheItem
 from src.lib.cache.impl import MemberCache
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
+from src.lib.utils.common import get_current_time
 from src.services.writers import (
     member_create_writer,
     member_update_card_writer,
@@ -65,12 +66,15 @@ class MemberRepository:
         2. update_card: 改名片
         3. update_perm: 改权限
         """
+        event_time = get_current_time()
         if ctx.is_new:
             payload: MemberPayload = {
                 "group_id": ctx.group_id,
                 "user_id": ctx.user_id,
                 "group_card": ctx.resolve_card(),
                 "permission": ctx.resolve_perm(),
+                "created_at": event_time,
+                "updated_at": event_time,
             }
             await member_create_writer.add(payload)
             return
@@ -80,6 +84,7 @@ class MemberRepository:
                 "group_id": ctx.group_id,
                 "user_id": ctx.user_id,
                 "group_card": ctx.group_card,
+                "updated_at": event_time,
             }
             await member_update_card_writer.add(card_payload)
 
@@ -88,6 +93,7 @@ class MemberRepository:
                 "group_id": ctx.group_id,
                 "user_id": ctx.user_id,
                 "permission": ctx.permission,
+                "updated_at": event_time,
             }
             await member_update_perm_writer.add(perm_payload)
 
@@ -193,6 +199,10 @@ class MemberRepository:
                 permission=db_member.permission,
             )
             return self.cache.get_member(user_id, group_id)
+
+    async def get_card_by_uid_gid(self, user_id: str, group_id: str) -> str | None:
+        async with core_db.session() as session:
+            return await MemberOps(session).get_card_by_uid_gid(user_id, group_id)
 
     async def get_admin_member_by_uid(self, user_id: str) -> Sequence[Member]:
         async with core_db.session() as session:

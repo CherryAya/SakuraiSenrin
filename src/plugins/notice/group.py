@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-21 01:00:56
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 18:40:04
+LastEditTime: 2026-02-27 21:59:07
 Description: 群聊通知处理
 """
 
@@ -147,9 +147,7 @@ async def _(
         await asyncio.sleep(1)
 
 
-@on_notice(
-    priority=5, rule=is_type(GroupBanNoticeEvent) & to_me(), block=False
-).handle()
+@on_notice(priority=5, rule=is_type(GroupBanNoticeEvent), block=False).handle()
 async def _(
     bot: Bot,
     event: GroupBanNoticeEvent,
@@ -159,10 +157,12 @@ async def _(
     on_all_shut = event.sub_type == "ban" and event.user_id == 0
     off_all_shut = event.sub_type == "lift_ban" and event.user_id == 0
 
-    if on_all_shut and group and group.status == GroupStatus.AUTHORIZED:
-        group.set_all_shut(True)
-    if off_all_shut and group and group.status == GroupStatus.AUTHORIZED:
-        group.set_all_shut(False)
+    if on_all_shut and group:
+        group_repo.update_all_shut(group_id, True)
+    if off_all_shut and group:
+        group_repo.update_all_shut(group_id, False)
+    if not event.is_tome():
+        return
 
     await bot.set_group_leave(group_id=event.group_id)
     msg = await ban_user_and_cleanup_groups(

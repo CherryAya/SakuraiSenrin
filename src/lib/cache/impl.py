@@ -92,7 +92,7 @@ class GroupCache(BaseCache[GroupCacheItem]):
         if is_set(group_name) and group.name_hash != hash(group_name):
             group = group.with_name_hash(name_hash)
         if is_set(is_all_shut):
-            group = group.set_all_shut(is_all_shut)
+            group = group.with_all_shut(is_all_shut)
         if is_set(status):
             group = group.with_status(status)
         self.set(group_id, group)

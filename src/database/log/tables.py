@@ -2,25 +2,24 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 14:11:33
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-19 22:33:33
+LastEditTime: 2026-02-27 20:47:46
 Description: log db tabel 定义
 """
 
 from sqlalchemy import (
     JSON,
     Index,
+    Integer,
     String,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
-from src.lib.db.orm import TimeMixin
 
 
 class LogBase(DeclarativeBase):
     pass
 
 
-class AuditLog(LogBase, TimeMixin):
+class AuditLog(LogBase):
     __tablename__ = "sys_audit_log"
     __table_args__ = (
         Index("idx_audit_context", "context_type", "context_id", "created_at"),
@@ -37,9 +36,10 @@ class AuditLog(LogBase, TimeMixin):
     action: Mapped[str] = mapped_column(String(32), nullable=False)
     summary: Mapped[str | None] = mapped_column(String(255))
     meta_data: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
-class PluginUsageLog(LogBase, TimeMixin):
+class PluginUsageLog(LogBase):
     __tablename__ = "sys_plugin_log"
     __table_args__ = (
         Index("idx_plugin_stat", "plugin_name", "created_at"),
@@ -54,3 +54,4 @@ class PluginUsageLog(LogBase, TimeMixin):
     command: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(32), default="SUCCESS")
     cost_ms: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)

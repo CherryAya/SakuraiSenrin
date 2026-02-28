@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-20 00:26:45
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-25 01:57:37
+LastEditTime: 2026-02-27 20:33:25
 Description: 通用工具
 """
 
@@ -13,7 +13,6 @@ import re
 import httpx
 from PIL import Image, ImageDraw, ImageFont
 
-from src.config import config
 from src.lib.consts import MAPLE_FONT_PATH
 
 
@@ -40,6 +39,10 @@ def split_list(input_list: list, size: int) -> list[list]:
     return [input_list[i : i + size] for i in range(0, len(input_list), size)]
 
 
+def get_current_time() -> int:
+    return int(datetime.now().timestamp())
+
+
 class AlertTemplate:
     @staticmethod
     def build_exception_notification(
@@ -48,6 +51,8 @@ class AlertTemplate:
         help_command: str,
         timestamp: datetime | None = None,
     ) -> str:
+        from src.config import config
+
         """
         构造异常消息模板，用于提示用户输入错误，并提供帮助文档或具体指令。
 
