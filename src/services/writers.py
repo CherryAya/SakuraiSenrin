@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-12 20:48:16
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 20:16:29
+LastEditTime: 2026-03-01 03:01:47
 Description: 批量写入逻辑
 注：所有的 update / create 操作均为 **带 log / snapshot** 的操作。
 """
@@ -33,7 +33,7 @@ from src.database.snapshot.types import (
     MemberSnapshotPayload,
     UserSnapshotPayload,
 )
-from src.lib.db.batch import BatchWriter
+from src.lib.db.batch import BatchWriter, execute_batch_write
 
 
 async def _flush_create_user(batch_data: list[UserPayload]) -> None:
@@ -45,16 +45,21 @@ async def _flush_create_user(batch_data: list[UserPayload]) -> None:
     async with core_db.session() as session:
         await UserOps(session).bulk_upsert_users(final_data)
 
-    async with snapshot_db.session() as session:
-        snapshots: list[UserSnapshotPayload] = [
-            {
-                "user_id": d["user_id"],
-                "content": d["user_name"],
-                "created_at": d["updated_at"],
-            }
-            for d in final_data
-        ]
-        await UserSnapshotOps(session).bulk_create_user_snapshots(snapshots)
+    snapshots: list[UserSnapshotPayload] = [
+        {
+            "user_id": d["user_id"],
+            "content": d["user_name"],
+            "created_at": d["updated_at"],
+        }
+        for d in final_data
+    ]
+    await execute_batch_write(
+        batch=snapshots,
+        db_instance=snapshot_db,
+        ops_class=UserSnapshotOps,
+        method=UserSnapshotOps.bulk_create_user_snapshots,
+        time_field="created_at",
+    )
 
 
 async def _flush_update_user_name(batch_data: list[UserUpdateNamePayload]) -> None:
@@ -66,16 +71,21 @@ async def _flush_update_user_name(batch_data: list[UserUpdateNamePayload]) -> No
     async with core_db.session() as session:
         await UserOps(session).bulk_upsert_names(final_data)
 
-    async with snapshot_db.session() as session:
-        snapshots: list[UserSnapshotPayload] = [
-            {
-                "user_id": d["user_id"],
-                "content": d["user_name"],
-                "created_at": d["updated_at"],
-            }
-            for d in final_data
-        ]
-        await UserSnapshotOps(session).bulk_create_user_snapshots(snapshots)
+    snapshots: list[UserSnapshotPayload] = [
+        {
+            "user_id": d["user_id"],
+            "content": d["user_name"],
+            "created_at": d["updated_at"],
+        }
+        for d in final_data
+    ]
+    await execute_batch_write(
+        batch=snapshots,
+        db_instance=snapshot_db,
+        ops_class=UserSnapshotOps,
+        method=UserSnapshotOps.bulk_create_user_snapshots,
+        time_field="created_at",
+    )
 
 
 async def _flush_update_user_perm(batch_data: list[UserUpdatePermPayload]) -> None:
@@ -87,18 +97,23 @@ async def _flush_update_user_perm(batch_data: list[UserUpdatePermPayload]) -> No
     async with core_db.session() as session:
         await UserOps(session).bulk_update_permissions(final_data)
 
-    async with log_db.session() as session:
-        audit_logs: list[AuditLogPayload] = [
-            {
-                "target_id": d["user_id"],
-                "context_type": AuditContext.USER,
-                "category": AuditCategory.PERMISSION.value,
-                "action": AuditAction.CHANGE.value,
-                "created_at": d["updated_at"],
-            }
-            for d in final_data
-        ]
-        await AuditLogOps(session).bulk_create_audit_logs(audit_logs)
+    audit_logs: list[AuditLogPayload] = [
+        {
+            "target_id": d["user_id"],
+            "context_type": AuditContext.USER,
+            "category": AuditCategory.PERMISSION.value,
+            "action": AuditAction.CHANGE.value,
+            "created_at": d["updated_at"],
+        }
+        for d in final_data
+    ]
+    await execute_batch_write(
+        batch=audit_logs,
+        db_instance=log_db,
+        ops_class=AuditLogOps,
+        method=AuditLogOps.bulk_create_audit_logs,
+        time_field="created_at",
+    )
 
 
 async def _flush_create_group(batch_data: list[GroupPayload]) -> None:
@@ -110,16 +125,21 @@ async def _flush_create_group(batch_data: list[GroupPayload]) -> None:
     async with core_db.session() as session:
         await GroupOps(session).bulk_upsert_groups(final_data)
 
-    async with snapshot_db.session() as session:
-        snapshots: list[GroupSnapshotPayload] = [
-            {
-                "group_id": d["group_id"],
-                "content": d["group_name"],
-                "created_at": d["updated_at"],
-            }
-            for d in final_data
-        ]
-        await GroupSnapshotOps(session).bulk_create_group_snapshots(snapshots)
+    snapshots: list[GroupSnapshotPayload] = [
+        {
+            "group_id": d["group_id"],
+            "content": d["group_name"],
+            "created_at": d["updated_at"],
+        }
+        for d in final_data
+    ]
+    await execute_batch_write(
+        batch=snapshots,
+        db_instance=snapshot_db,
+        ops_class=GroupSnapshotOps,
+        method=GroupSnapshotOps.bulk_create_group_snapshots,
+        time_field="created_at",
+    )
 
 
 async def _flush_update_group_name(batch_data: list[GroupUpdateNamePayload]) -> None:
@@ -131,16 +151,21 @@ async def _flush_update_group_name(batch_data: list[GroupUpdateNamePayload]) -> 
     async with core_db.session() as session:
         await GroupOps(session).bulk_upsert_names(final_data)
 
-    async with snapshot_db.session() as session:
-        snapshots: list[GroupSnapshotPayload] = [
-            {
-                "group_id": d["group_id"],
-                "content": d["group_name"],
-                "created_at": d["updated_at"],
-            }
-            for d in final_data
-        ]
-        await GroupSnapshotOps(session).bulk_create_group_snapshots(snapshots)
+    snapshots: list[GroupSnapshotPayload] = [
+        {
+            "group_id": d["group_id"],
+            "content": d["group_name"],
+            "created_at": d["updated_at"],
+        }
+        for d in final_data
+    ]
+    await execute_batch_write(
+        batch=snapshots,
+        db_instance=snapshot_db,
+        ops_class=GroupSnapshotOps,
+        method=GroupSnapshotOps.bulk_create_group_snapshots,
+        time_field="created_at",
+    )
 
 
 async def _flush_update_group_status(
@@ -154,19 +179,24 @@ async def _flush_update_group_status(
     async with core_db.session() as session:
         await GroupOps(session).bulk_update_statuses(final_data)
 
-    async with log_db.session() as session:
-        audit_logs: list[AuditLogPayload] = [
-            {
-                "target_id": d["group_id"],
-                "context_type": AuditContext.GROUP,
-                "context_id": d["group_id"],
-                "category": AuditCategory.ACCESS.value,
-                "action": AuditAction.CHANGE.value,
-                "created_at": d["updated_at"],
-            }
-            for d in final_data
-        ]
-        await AuditLogOps(session).bulk_create_audit_logs(audit_logs)
+    audit_logs: list[AuditLogPayload] = [
+        {
+            "target_id": d["group_id"],
+            "context_type": AuditContext.GROUP,
+            "context_id": d["group_id"],
+            "category": AuditCategory.ACCESS.value,
+            "action": AuditAction.CHANGE.value,
+            "created_at": d["updated_at"],
+        }
+        for d in final_data
+    ]
+    await execute_batch_write(
+        batch=audit_logs,
+        db_instance=log_db,
+        ops_class=AuditLogOps,
+        method=AuditLogOps.bulk_create_audit_logs,
+        time_field="created_at",
+    )
 
 
 async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
@@ -200,17 +230,22 @@ async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
         await GroupOps(session).bulk_insert_ignore(groups_data)
         await MemberOps(session).bulk_upsert_members(members_data)
 
-    async with snapshot_db.session() as session:
-        snapshots: list[MemberSnapshotPayload] = [
-            {
-                "user_id": d["user_id"],
-                "group_id": d["group_id"],
-                "content": d["group_card"],
-                "created_at": d["updated_at"],
-            }
-            for d in members_data
-        ]
-        await MemberSnapshotOps(session).bulk_create_member_snapshots(snapshots)
+    snapshots: list[MemberSnapshotPayload] = [
+        {
+            "user_id": d["user_id"],
+            "group_id": d["group_id"],
+            "content": d["group_card"],
+            "created_at": d["updated_at"],
+        }
+        for d in members_data
+    ]
+    await execute_batch_write(
+        batch=snapshots,
+        db_instance=snapshot_db,
+        ops_class=MemberSnapshotOps,
+        method=MemberSnapshotOps.bulk_create_member_snapshots,
+        time_field="created_at",
+    )
 
 
 async def _flush_update_group_card(batch_data: list[MemberUpdateCardPayload]) -> None:
@@ -221,17 +256,23 @@ async def _flush_update_group_card(batch_data: list[MemberUpdateCardPayload]) ->
 
     async with core_db.session() as session:
         await MemberOps(session).bulk_upsert_cards(final_data)
-    async with snapshot_db.session() as session:
-        snapshots: list[MemberSnapshotPayload] = [
-            {
-                "user_id": d["user_id"],
-                "group_id": d["group_id"],
-                "content": d["group_card"],
-                "created_at": d["updated_at"],
-            }
-            for d in final_data
-        ]
-        await MemberSnapshotOps(session).bulk_create_member_snapshots(snapshots)
+
+    snapshots: list[MemberSnapshotPayload] = [
+        {
+            "user_id": d["user_id"],
+            "group_id": d["group_id"],
+            "content": d["group_card"],
+            "created_at": d["updated_at"],
+        }
+        for d in final_data
+    ]
+    await execute_batch_write(
+        batch=snapshots,
+        db_instance=snapshot_db,
+        ops_class=MemberSnapshotOps,
+        method=MemberSnapshotOps.bulk_create_member_snapshots,
+        time_field="created_at",
+    )
 
 
 async def _flush_update_member_permission(
@@ -244,19 +285,25 @@ async def _flush_update_member_permission(
 
     async with core_db.session() as session:
         await MemberOps(session).bulk_update_permissions(final_data)
-    async with log_db.session() as session:
-        audit_logs: list[AuditLogPayload] = [
-            {
-                "target_id": d["user_id"],
-                "context_type": AuditContext.GROUP,
-                "context_id": d["group_id"],
-                "category": AuditCategory.PERMISSION.value,
-                "action": AuditAction.CHANGE.value,
-                "created_at": d["updated_at"],
-            }
-            for d in final_data
-        ]
-        await AuditLogOps(session).bulk_create_audit_logs(audit_logs)
+
+    audit_logs: list[AuditLogPayload] = [
+        {
+            "target_id": d["user_id"],
+            "context_type": AuditContext.GROUP,
+            "context_id": d["group_id"],
+            "category": AuditCategory.PERMISSION.value,
+            "action": AuditAction.CHANGE.value,
+            "created_at": d["updated_at"],
+        }
+        for d in final_data
+    ]
+    await execute_batch_write(
+        batch=audit_logs,
+        db_instance=log_db,
+        ops_class=AuditLogOps,
+        method=AuditLogOps.bulk_create_audit_logs,
+        time_field="created_at",
+    )
 
 
 user_create_writer = BatchWriter[UserPayload](

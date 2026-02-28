@@ -2,13 +2,14 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-20 00:26:45
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 20:33:25
+LastEditTime: 2026-03-01 02:19:03
 Description: 通用工具
 """
 
 from datetime import datetime, timedelta
 import io
 import re
+import time
 
 import httpx
 from PIL import Image, ImageDraw, ImageFont
@@ -40,7 +41,7 @@ def split_list(input_list: list, size: int) -> list[list]:
 
 
 def get_current_time() -> int:
-    return int(datetime.now().timestamp())
+    return int(time.time())
 
 
 class AlertTemplate:

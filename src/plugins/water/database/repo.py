@@ -18,7 +18,7 @@ from src.database.consts import WritePolicy
 
 from .instances import water_message, water_summary_db
 from .ops import WaterMessageOps, WaterSummaryOps
-from .tables import WaterBase
+from .tables import WaterMessageBase, WaterSummaryBase
 from .types import WaterMessagePayload, WaterSummaryPayload
 from .writers import water_writer
 
@@ -48,8 +48,8 @@ class WaterMessageContext:
 class WaterRepository:
     @classmethod
     async def init_all_tables(cls) -> None:
-        await water_message.init(WaterBase)
-        await water_summary_db.init(WaterBase)
+        await water_message.init(WaterMessageBase)
+        await water_summary_db.init(WaterSummaryBase)
 
     async def _save_buffered(self, ctx: WaterMessageContext) -> None:
         await water_writer.add(ctx.to_payload())

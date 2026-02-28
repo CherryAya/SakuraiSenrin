@@ -2,16 +2,25 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-08 17:18:19
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-26 18:01:20
+LastEditTime: 2026-03-01 02:49:30
 Description: 批量处理器
 """
 
-import asyncio
-from collections.abc import Awaitable, Callable
-import time
-from typing import NoReturn
+from __future__ import annotations
 
+import asyncio
+from collections import defaultdict
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from datetime import datetime
+import time
+from typing import TYPE_CHECKING, Any, NoReturn
+
+import arrow
 from loguru import logger
+
+if TYPE_CHECKING:
+    from .connectors import ShardedDB
+    from .ops import BaseOps
 
 
 class BatchWriter[T]:
@@ -74,3 +83,59 @@ class BatchWriter[T]:
                 finally:
                     buffer.clear()
                     last_flush = time.time()
+
+
+async def execute_batch_write[PayloadT: Mapping[str, Any], OpsT: BaseOps[Any]](
+    batch: Sequence[PayloadT],
+    db_instance: ShardedDB,
+    ops_class: type[OpsT],
+    method: Callable[[OpsT, list[PayloadT]], Awaitable[Any]],
+    time_field: str,
+) -> None:
+    """按时间戳对批量数据进行分组路由，并写入对应的分片数据库。
+
+    Args:
+        batch: 待写入的数据列表。
+        db_instance: 目标分片数据库实例 (ShardedDB)。
+        ops_class: 执行写入操作的 BaseOps 子类。
+        method: 目标 Ops 类的未绑定异步写入方法。
+        time_field: 用于计算路由的 Unix 时间戳字段名。
+
+    注意事项:
+        1. 仅支持传入 `ShardedDB` 实例，不可混用静态主库 (`StaticDB`)。
+        2. `batch` 中所有字典项必须包含由 `time_field` 指定的整型时间戳字段。
+        3. 内部按东八区 (Asia/Shanghai) 截取月份作为路由上下文。
+        4. 任意切片写入失败将被捕获并记录日志，不会阻断其他月份切片的执行。
+
+    Example:
+        >>> logs: list[AuditLogPayload] = [{"target_id": 1, "created_at": 1735660800}]
+        >>> await execute_sharded_write(
+        ...     batch=logs,
+        ...     db_instance=log_db,
+        ...     ops_class=AuditLogOps,
+        ...     method=AuditLogOps.bulk_create,
+        ...     time_field="created_at"
+        ... )
+    """
+    if not batch:
+        return
+
+    logger_name = ops_class.__name__
+    route_map: dict[datetime, list[PayloadT]] = defaultdict(list)
+
+    for item in batch:
+        ts = item[time_field]
+        dt = arrow.get(ts).to("Asia/Shanghai").datetime
+        route_ctx = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        route_map[route_ctx].append(item)
+
+    for time_ctx, grouped_items in route_map.items():
+        try:
+            async with db_instance.session(time_ctx=time_ctx, commit=True) as session:
+                ops_instance = ops_class(session)
+                await method(ops_instance, grouped_items)
+
+        except Exception as e:
+            logger.error(
+                f"[{logger_name}] 落盘至 {time_ctx.strftime('%Y_%m')} 分片时发生错误: {e}"  # noqa: E501
+            )

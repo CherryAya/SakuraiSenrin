@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-26 19:16:05
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 20:46:26
+LastEditTime: 2026-03-01 02:06:27
 Description: water db 表定义
 """
 
@@ -12,11 +12,15 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from src.lib.db.orm import TimeMixin
 
 
-class WaterBase(DeclarativeBase):
+class WaterMessageBase(DeclarativeBase):
     pass
 
 
-class WaterMessage(WaterBase):
+class WaterSummaryBase(DeclarativeBase):
+    pass
+
+
+class WaterMessage(WaterMessageBase):
     __tablename__ = "water_message"
     __table_args__ = (Index("idx_group_time", "group_id", "created_at"),)
 
@@ -26,7 +30,7 @@ class WaterMessage(WaterBase):
     created_at: Mapped[int] = mapped_column()
 
 
-class WaterDailySummary(WaterBase, TimeMixin):
+class WaterDailySummary(WaterSummaryBase, TimeMixin):
     __tablename__ = "water_daily_summary"
     __table_args__ = (Index("idx_summary_group_user", "group_id", "user_id"),)
 
