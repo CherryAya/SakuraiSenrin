@@ -2,12 +2,15 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 21:03:25
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-28 14:15:06
+LastEditTime: 2026-03-01 14:41:22
 Description: blacklist 相关实现
 """
 
-from datetime import datetime, timedelta
+from __future__ import annotations
+
 import math
+
+import arrow
 
 from src.database.core.ops import BlacklistOps
 from src.database.instances import core_db, log_db
@@ -17,6 +20,7 @@ from src.lib.cache.field import BlacklistCacheItem
 from src.lib.cache.impl import BlacklistCache
 from src.lib.consts import GLOBAL_GROUP_SCOPE
 from src.lib.types import UNSET, Unset
+from src.lib.utils.common import get_current_time
 
 _AUDIT_CTX_TYPE_DICT = {
     GLOBAL_GROUP_SCOPE: AuditContext.GLOBAL,
@@ -36,7 +40,7 @@ class BlacklistRepository:
         self.cache.set_batch(
             {
                 self.cache._gen_key(d.target_user_id, d.group_id): BlacklistCacheItem(
-                    expiry=d.ban_expiry,
+                    expiry=d.ban_expiry if d.ban_expiry != -1 else math.inf,
                 )
                 for d in data
             },
@@ -74,9 +78,9 @@ class BlacklistRepository:
         reason: str | Unset = UNSET,
     ) -> None:
         expiry = (
-            datetime.max
+            -1
             if duration == math.inf
-            else datetime.now() + timedelta(seconds=duration)
+            else arrow.get(get_current_time()).shift(seconds=duration).int_timestamp
         )
         self.cache.set_ban(target_user_id, group_id, expiry)
 

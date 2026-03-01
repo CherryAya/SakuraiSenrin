@@ -2,15 +2,20 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 15:31:40
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 21:53:32
+LastEditTime: 2026-03-01 14:34:51
 Description: 缓存 item 定义
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field, replace
-from datetime import datetime
-from typing import Self
+import math
+from typing import TYPE_CHECKING, Self
 
 from src.database.core.consts import GroupStatus, Permission
+
+if TYPE_CHECKING:
+    pass
 
 
 @dataclass(slots=True, frozen=True)
@@ -74,9 +79,9 @@ class GroupCacheItem:
 
 @dataclass(slots=True, frozen=True)
 class BlacklistCacheItem:
-    expiry: datetime = datetime.min
+    expiry: float = math.inf
 
-    def with_expiry(self, new_expiry: datetime) -> Self:
+    def with_expiry(self, new_expiry: int) -> Self:
         if self.expiry == new_expiry:
             return self
         return replace(self, expiry=new_expiry)

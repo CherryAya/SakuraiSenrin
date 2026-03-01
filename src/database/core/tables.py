@@ -6,14 +6,12 @@ LastEditTime: 2026-02-24 15:38:42
 Description: core db tabel 定义
 """
 
-from datetime import datetime
-
 from sqlalchemy import (
     JSON,
     Boolean,
-    DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     UniqueConstraint,
     text,
@@ -254,10 +252,7 @@ class Blacklist(CoreBase, TimeMixin):
         ForeignKey("biz_user.user_id", ondelete="SET NULL"),
         nullable=False,
     )
-    ban_expiry: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-    )
+    ban_expiry: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     target_user: Mapped["User"] = relationship(

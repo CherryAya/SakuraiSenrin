@@ -2,19 +2,25 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-20 00:26:45
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-01 02:19:03
+LastEditTime: 2026-03-01 14:17:04
 Description: 通用工具
 """
 
-from datetime import datetime, timedelta
+from __future__ import annotations
+
 import io
 import re
 import time
+from typing import TYPE_CHECKING
 
+import arrow
 import httpx
 from PIL import Image, ImageDraw, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
+
+if TYPE_CHECKING:
+    from datetime import datetime, timedelta
 
 
 def time_to_timedelta(time_str: str) -> timedelta:
@@ -41,7 +47,7 @@ def split_list(input_list: list, size: int) -> list[list]:
 
 
 def get_current_time() -> int:
-    return int(time.time())
+    return int(time.time())  # noqa: TID251
 
 
 class AlertTemplate:
@@ -50,10 +56,8 @@ class AlertTemplate:
         user_input: str,
         exception_type: str,
         help_command: str,
-        timestamp: datetime | None = None,
+        timestamp: int | None = None,
     ) -> str:
-        from src.config import config
-
         """
         构造异常消息模板，用于提示用户输入错误，并提供帮助文档或具体指令。
 
@@ -63,7 +67,9 @@ class AlertTemplate:
         :param timestamp: 错误发生的时间，默认为当前时间。
         :return: 适配移动端展示的结构化异常消息。
         """
-        now = timestamp or datetime.now()
+        from src.config import config
+
+        now = arrow.get(timestamp or get_current_time())
         time_str = now.strftime("%Y-%m-%d %H:%M:%S")
 
         lines = [
@@ -95,7 +101,7 @@ class AlertTemplate:
         :param timestamp: 事件发生的时间，默认为当前时间。
         :return: 格式化的 Message 对象。
         """
-        now = timestamp or datetime.now()
+        now = now = arrow.get(timestamp or get_current_time())
         time_str = now.strftime("%Y-%m-%d %H:%M:%S")
         name = event_name or "系统通知"
 

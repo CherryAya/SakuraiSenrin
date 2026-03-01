@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-21 01:00:56
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 21:59:07
+LastEditTime: 2026-03-01 14:13:03
 Description: 群聊通知处理
 """
 
@@ -25,7 +25,7 @@ from nonebot.rule import Rule, is_type, to_me
 from src.config import config
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.consts import GLOBAL_GROUP_SCOPE, TriggerType
-from src.lib.utils.common import AlertTemplate
+from src.lib.utils.common import AlertTemplate, get_current_time
 from src.repositories import blacklist_repo, group_repo, member_repo
 from src.services.info import resolve_group_name
 from src.services.sync import sync_members_from_api
@@ -174,7 +174,7 @@ async def _(
         )
     )
     ban_duration = (
-        arrow.now()
+        arrow.get(get_current_time())
         .shift(seconds=event.duration)
         .humanize(
             locale="zh",

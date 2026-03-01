@@ -2,15 +2,16 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-19 00:20:23
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 17:03:57
+LastEditTime: 2026-03-01 14:17:23
 Description: 邀请管理插件
 """
+
+from __future__ import annotations
 
 from argparse import Namespace
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime
 import io
 from pathlib import Path
 from typing import Any
@@ -31,7 +32,7 @@ from PIL import Image, ImageDraw, ImageFont
 from src.database.core.consts import GroupStatus, InvitationStatus, Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.types import UNSET, Unset, is_set
-from src.lib.utils.common import AvatarFetcher
+from src.lib.utils.common import AvatarFetcher, get_current_time
 from src.repositories import group_repo, invite_repo
 
 name = "邀请管理模块"
@@ -253,7 +254,7 @@ class InvitationListRenderer:
             fill=self.TEXT_COLOR,
         )
 
-        current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_time_str = arrow.get(get_current_time()).strftime("%Y-%m-%d %H:%M:%S")
         stats_text = (
             f"总计: {len(invitations)} 条未处理请求 | 生成时间: {current_time_str}"
         )

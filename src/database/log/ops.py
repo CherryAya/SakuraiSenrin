@@ -2,13 +2,14 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 16:18:08
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 17:00:56
+LastEditTime: 2026-03-01 14:14:56
 Description: log db 操作类
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
-from datetime import datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import CursorResult, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -20,6 +21,9 @@ from src.lib.utils.common import get_current_time
 from .base import BaseAuditEnum
 from .tables import AuditLog, PluginUsageLog
 from .types import AuditLogPayload, PluginUsageLogPayload
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class AuditLogOps(BaseOps[AuditLog]):

@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-26 19:16:14
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 20:39:56
+LastEditTime: 2026-03-01 14:13:13
 Description: water db repo
 """
 
@@ -15,6 +15,7 @@ import arrow
 from sqlalchemy.engine.row import Row
 
 from src.database.consts import WritePolicy
+from src.lib.utils.common import get_current_time
 
 from .instances import water_message, water_summary_db
 from .ops import WaterMessageOps, WaterSummaryOps
@@ -94,7 +95,7 @@ class WaterRepository:
     async def get_today_leaderboard(
         self, group_id: str, limit: int = 20
     ) -> list[RankItem]:
-        now = arrow.now()
+        now = arrow.get(get_current_time())
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
         yesterday_int = int(now.shift(days=-1).format("YYYYMMDD"))
@@ -135,7 +136,7 @@ class WaterRepository:
 
     async def get_today_group_rank(self, group_id: str) -> int:
         """获取群今日活跃度全站排名"""
-        now = arrow.now()
+        now = arrow.get(get_current_time())
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 
@@ -156,7 +157,7 @@ class WaterRepository:
         if not user_ids:
             return {}
 
-        now = arrow.now()
+        now = arrow.get(get_current_time())
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 

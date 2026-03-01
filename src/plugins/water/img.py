@@ -2,19 +2,22 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-27 12:18:33
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-28 14:35:41
+LastEditTime: 2026-03-01 14:16:16
 Description: 图片渲染组件，AI 神力！
 """
 
+from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
+import arrow
 from PIL import ImageFont
 from pil_utils import BuildImage
 
 from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
+from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
 from src.repositories import member_repo
 from src.services.info import resolve_group_card, resolve_group_name
@@ -334,7 +337,7 @@ class WaterRankRenderer:
             main_img.paste(row, (0, y - base_y_offset), alpha=True)
             y += item_h + item_spacing
 
-        now = datetime.now()
+        now = arrow.get(get_current_time()).datetime
         footer_y = y + int(20 * self.SCALE)
         main_img.draw.text(
             (self.PADDING, footer_y),

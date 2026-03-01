@@ -2,13 +2,14 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 16:18:02
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 21:12:52
+LastEditTime: 2026-03-01 14:36:49
 Description: core db 操作类逻辑
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
-from datetime import datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import CursorResult, delete, func, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -31,6 +32,9 @@ from .types import (
     UserUpdateNamePayload,
     UserUpdatePermPayload,
 )
+
+if TYPE_CHECKING:
+    pass
 
 
 class UserOps(BaseOps[User]):
@@ -577,7 +581,7 @@ class BlacklistOps(BaseOps[Blacklist]):
         target_user_id: str,
         group_id: str,
         operator_id: str,
-        ban_expiry: datetime,
+        ban_expiry: int,
         reason: str | Unset = UNSET,
     ) -> Blacklist:
         stmt = sqlite_insert(Blacklist).values(

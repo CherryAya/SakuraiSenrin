@@ -6,7 +6,7 @@ LastEditTime: 2026-02-20 01:24:27
 Description: 缓存声明
 """
 
-from datetime import datetime
+from __future__ import annotations
 
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.cache.field import (
@@ -17,6 +17,7 @@ from src.lib.cache.field import (
 )
 from src.lib.consts import GLOBAL_GROUP_SCOPE
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
+from src.lib.utils.common import get_current_time
 
 from .base import BaseCache
 
@@ -184,7 +185,7 @@ class BlacklistCache(BaseCache[BlacklistCacheItem]):
         blacklist = self.get(key)
         if not blacklist:
             return False
-        if datetime.now() > blacklist.expiry:
+        if get_current_time() > blacklist.expiry:
             self.delete(key)
             return False
 
@@ -194,7 +195,7 @@ class BlacklistCache(BaseCache[BlacklistCacheItem]):
         self,
         user_id: str,
         group_id: str,
-        expiry: datetime,
+        expiry: int,
     ) -> None:
         key = self._gen_key(user_id, group_id)
         self.set(key, BlacklistCacheItem(expiry=expiry))

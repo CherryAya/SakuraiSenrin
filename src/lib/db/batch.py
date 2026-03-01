@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-08 17:18:19
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-01 02:49:30
+LastEditTime: 2026-03-01 14:07:17
 Description: 批量处理器
 """
 
@@ -11,14 +11,16 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from datetime import datetime
-import time
 from typing import TYPE_CHECKING, Any, NoReturn
 
 import arrow
 from loguru import logger
 
+from src.lib.utils.common import get_current_time
+
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from .connectors import ShardedDB
     from .ops import BaseOps
 
@@ -61,11 +63,11 @@ class BatchWriter[T]:
 
     async def _worker(self) -> NoReturn:
         buffer = []
-        last_flush = time.time()
+        last_flush = get_current_time()
 
         while True:
             try:
-                timeout = self.flush_interval - (time.time() - last_flush)
+                timeout = self.flush_interval - (get_current_time() - last_flush)
                 timeout = max(0.1, timeout)
 
                 item = await asyncio.wait_for(self.queue.get(), timeout=timeout)
@@ -74,7 +76,7 @@ class BatchWriter[T]:
                 pass
 
             if len(buffer) >= self.batch_size or (
-                buffer and time.time() - last_flush >= self.flush_interval
+                buffer and get_current_time() - last_flush >= self.flush_interval
             ):
                 try:
                     await self.flush_callback(buffer)
@@ -82,7 +84,7 @@ class BatchWriter[T]:
                     logger.error(f"BatchWriter {self._worker_name} flush error: {e}")
                 finally:
                     buffer.clear()
-                    last_flush = time.time()
+                    last_flush = get_current_time()
 
 
 async def execute_batch_write[PayloadT: Mapping[str, Any], OpsT: BaseOps[Any]](

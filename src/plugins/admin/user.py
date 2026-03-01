@@ -2,14 +2,15 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-19 00:20:20
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-24 15:27:18
+LastEditTime: 2026-03-01 14:16:24
 Description: 用户管理插件
 """
+
+from __future__ import annotations
 
 from argparse import Namespace
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime
 import math
 
 import arrow
@@ -26,7 +27,7 @@ from src.database.core.consts import Permission
 from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
 from src.lib.consts import GLOBAL_GROUP_SCOPE, TriggerType
 from src.lib.types import UNSET, Unset, is_set
-from src.lib.utils.common import time_to_timedelta
+from src.lib.utils.common import get_current_time, time_to_timedelta
 from src.repositories import blacklist_repo, group_repo, user_repo
 from src.services.info import resolve_user_name
 
@@ -102,7 +103,7 @@ async def ban_user(ctx: AdminUserContext) -> str:
     if ctx.user.permission == Permission.SUPERUSER:
         return "无法操作超级用户"
 
-    if is_set(ctx.blacklist) and datetime.now() < ctx.blacklist.expiry:
+    if is_set(ctx.blacklist) and get_current_time() < ctx.blacklist.expiry:
         return "已处于封禁状态"
 
     duration = math.inf
@@ -111,7 +112,7 @@ async def ban_user(ctx: AdminUserContext) -> str:
         try:
             duration = time_to_timedelta(ctx.time_str).total_seconds()
             human_time = (
-                arrow.now()
+                arrow.get(get_current_time())
                 .shift(seconds=duration)
                 .humanize(
                     locale="zh",

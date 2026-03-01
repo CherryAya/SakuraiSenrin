@@ -60,6 +60,14 @@ ignore = [
     "COM812", # missing-trailing-comma
     "ISC001", # single-line-implicit-string-concatenation
 ]
+extend-select = ["TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"datetime.datetime.now".msg = "禁止直接调用，请统一使用项目提供的 get_current_time()"
+"datetime.datetime.utcnow".msg = "utcnow 已被 Python 官方废弃，请统一使用 get_current_time()"
+"datetime.date.today".msg = "禁止直接获取日期，请统一使用 get_current_time()"
+"time.time".msg = "禁止直接获取时间戳，请统一使用 get_current_time()"
+"arrow.now".msg = "禁止直接调用 arrow.now，请统一使用 get_current_time()"
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
