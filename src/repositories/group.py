@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 19:46:09
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 21:58:21
+LastEditTime: 2026-03-02 19:30:37
 Description: group 相关实现
 """
 
@@ -99,7 +99,7 @@ class GroupRepository:
             group_snapshot_ops = GroupSnapshotOps(snapshot_session)
 
             if ctx.is_new:
-                await group_ops.upsert_group(
+                await group_ops.add_group(
                     group_id=ctx.group_id,
                     group_name=ctx.resolve_name(),
                     status=ctx.resolve_status(),
@@ -107,7 +107,7 @@ class GroupRepository:
                 return
 
             if is_set(ctx.group_name):
-                await group_ops.upsert_name(ctx.group_id, ctx.group_name)
+                await group_ops.update_name(ctx.group_id, ctx.group_name)
                 await group_snapshot_ops.create_group_snapshot(
                     group_id=ctx.group_id,
                     content=ctx.group_name,

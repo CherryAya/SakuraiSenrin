@@ -17,7 +17,7 @@ from nonebot.plugin import PluginMetadata
 
 from src.config import config
 from src.database.core.consts import GroupStatus
-from src.lib.consts import GLOBAL_GROUP_SCOPE
+from src.lib.consts import GLOBAL_GROUP_FLAG
 from src.lib.types import UNSET, is_set
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.services.sync import (
@@ -123,7 +123,7 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
         raise IgnoredException("用户已被全局配置忽略")
     if is_user_event and user_id in config.SUPERUSERS:
         return
-    if is_user_event and await blacklist_repo.is_banned(user_id, GLOBAL_GROUP_SCOPE):
+    if is_user_event and await blacklist_repo.is_banned(user_id, GLOBAL_GROUP_FLAG):
         raise IgnoredException("用户已被全局黑名单")
     if is_group_event and user and getattr(user, "is_self_ignore", False):
         raise IgnoredException("用户已启用 self_ignore")

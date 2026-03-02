@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 16:10:12
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-28 14:34:43
+LastEditTime: 2026-03-02 15:43:09
 Description: 公有常量
 """
 
@@ -12,11 +12,16 @@ from types import MappingProxyType
 
 from src.lib.enums import LocalizedMixin
 
-GLOBAL_GROUP_SCOPE = "GLOBAL_GROUP"
-RESERVED_USER_SCOPE = "RESERVED_USER"
+GLOBAL_GROUP_FLAG = "GLOBAL_GROUP"
+RESERVED_USER_FLAG = "RESERVED_USER"
+PERMANENT_BAN_FLAG = -1
+
+
 LXGW_FONG_PATH = Path("./data/font/LXGWWenKaiMono-Regular.ttf")
 MAPLE_FONT_PATH = Path("./data/font/MapleMono-NF-CN-Regular.ttf")
 MAPLE_FONT_NAME = "Maple Mono NF CN"
+
+
 GLOBAL_DB_ROOT = Path("./data/db")
 
 

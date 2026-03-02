@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 18:59:47
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 14:48:25
+LastEditTime: 2026-03-02 19:05:38
 Description: user 相关实现
 """
 
@@ -92,14 +92,14 @@ class UserRepository:
             audit_log_ops = AuditLogOps(log_session)
             user_snapshot_ops = UserSnapshotOps(snapshot_session)
             if ctx.is_new:
-                await user_ops.upsert_user(
+                await user_ops.add_user(
                     user_id=ctx.user_id,
                     user_name=ctx.resolve_name(),
                     permission=ctx.resolve_perm(),
                 )
                 return
             if is_set(ctx.user_name):
-                await user_ops.upsert_name(ctx.user_id, ctx.user_name)
+                await user_ops.update_name(ctx.user_id, ctx.user_name)
                 await user_snapshot_ops.create_user_snapshot(
                     user_id=ctx.user_id,
                     content=ctx.user_name,

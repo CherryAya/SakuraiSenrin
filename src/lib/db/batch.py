@@ -111,7 +111,7 @@ async def execute_batch_write[PayloadT: Mapping[str, Any], OpsT: BaseOps[Any]](
 
     Example:
         >>> logs: list[AuditLogPayload] = [{"target_id": 1, "created_at": 1735660800}]
-        >>> await execute_sharded_write(
+        >>> await execute_batch_write(
         ...     batch=logs,
         ...     db_instance=log_db,
         ...     ops_class=AuditLogOps,

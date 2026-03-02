@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-21 01:00:56
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-01 14:13:03
+LastEditTime: 2026-03-02 19:26:30
 Description: 群聊通知处理
 """
 
@@ -24,7 +24,7 @@ from nonebot.rule import Rule, is_type, to_me
 
 from src.config import config
 from src.database.core.consts import GroupStatus, Permission
-from src.lib.consts import GLOBAL_GROUP_SCOPE, TriggerType
+from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
 from src.lib.utils.common import AlertTemplate, get_current_time
 from src.repositories import blacklist_repo, group_repo, member_repo
 from src.services.info import resolve_group_name
@@ -77,8 +77,9 @@ async def ban_user_and_cleanup_groups(ctx: AdminNoticeContext) -> str:
     await group_repo.update_status(group_id=ctx.group_id, status=GroupStatus.BANNED)
     await blacklist_repo.add_ban(
         target_user_id=ctx.user_id,
-        group_id=GLOBAL_GROUP_SCOPE,
+        group_id=GLOBAL_GROUP_FLAG,
         operator_id=str(ctx.bot.self_id),
+        duration=PERMANENT_BAN_FLAG,
         reason=ctx.reason,
     )
     for member in await member_repo.get_admin_member_by_uid(ctx.user_id):

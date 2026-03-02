@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-19 00:20:20
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-01 14:16:24
+LastEditTime: 2026-03-02 19:25:29
 Description: 用户管理插件
 """
 
@@ -11,7 +11,6 @@ from __future__ import annotations
 from argparse import Namespace
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-import math
 
 import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -25,8 +24,8 @@ from nonebot.rule import ArgumentParser
 
 from src.database.core.consts import Permission
 from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
-from src.lib.consts import GLOBAL_GROUP_SCOPE, TriggerType
-from src.lib.types import UNSET, Unset, is_set
+from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
+from src.lib.types import UNSET, Unset, is_set, resolve_unset
 from src.lib.utils.common import get_current_time, time_to_timedelta
 from src.repositories import blacklist_repo, group_repo, user_repo
 from src.services.info import resolve_user_name
@@ -63,13 +62,13 @@ subparsers = user_parser.add_subparsers(dest="action", required=True, help="执�
 
 ban_parser = subparsers.add_parser(name="ban", aliases=["拉黑"], help="加入黑名单")
 ban_parser.add_argument("uids", nargs="+", help="目标用户 ID 列表")
-ban_parser.add_argument("-g", "--group", type=str, default=GLOBAL_GROUP_SCOPE, help="群组 ID")  # noqa: E501
+ban_parser.add_argument("-g", "--group", type=str, default=GLOBAL_GROUP_FLAG, help="群组 ID")  # noqa: E501
 ban_parser.add_argument("-r", "--reason", type=str, default=UNSET, help="操作原因")
 ban_parser.add_argument("-t", "--time", type=str, default=UNSET, help="封禁时长 (缺省为永久)")  # noqa: E501
 
 unban_parser = subparsers.add_parser(name="unban", aliases=["加白"], help="解除黑名单")
 unban_parser.add_argument("uids", nargs="+", help="目标用户 ID 列表")
-unban_parser.add_argument("-g", "--group", type=str, default=GLOBAL_GROUP_SCOPE, help="群组 ID")  # noqa: E501
+unban_parser.add_argument("-g", "--group", type=str, default=GLOBAL_GROUP_FLAG, help="群组 ID")  # noqa: E501
 unban_parser.add_argument("-r", "--reason", type=str, default=UNSET, help="操作原因")
 
 status_parser = subparsers.add_parser("status", aliases=["状态"], help="查询状态")
@@ -106,11 +105,11 @@ async def ban_user(ctx: AdminUserContext) -> str:
     if is_set(ctx.blacklist) and get_current_time() < ctx.blacklist.expiry:
         return "已处于封禁状态"
 
-    duration = math.inf
+    duration = PERMANENT_BAN_FLAG
     human_time = "永久"
     if is_set(ctx.time_str):
         try:
-            duration = time_to_timedelta(ctx.time_str).total_seconds()
+            duration = int(time_to_timedelta(ctx.time_str).total_seconds())
             human_time = (
                 arrow.get(get_current_time())
                 .shift(seconds=duration)
@@ -127,7 +126,7 @@ async def ban_user(ctx: AdminUserContext) -> str:
         group_id=ctx.group_id,
         operator_id=ctx.operator_id,
         duration=duration,
-        reason=ctx.reason,
+        reason=resolve_unset(ctx.reason, None),
     )
 
     return f"已封禁 (时长: {human_time} 范围: {ctx.group_id})"
@@ -168,7 +167,7 @@ async def _(
 
     action = args.action
     uids = list(set(args.uids))
-    group_id = getattr(args, "group", GLOBAL_GROUP_SCOPE)
+    group_id = getattr(args, "group", GLOBAL_GROUP_FLAG)
     reason = getattr(args, "reason", UNSET)
     time_str = getattr(args, "time", UNSET)
 
@@ -198,9 +197,7 @@ async def _(
             )
             continue
 
-        if group_id != GLOBAL_GROUP_SCOPE and not (
-            await group_repo.get_group(group_id)
-        ):
+        if group_id != GLOBAL_GROUP_FLAG and not (await group_repo.get_group(group_id)):
             results.append(f"[{uid}|{name}] 群组({group_id})不存在，随意操作会挨揍哦？")
             continue
 

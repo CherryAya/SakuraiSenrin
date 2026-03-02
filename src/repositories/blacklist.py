@@ -2,13 +2,11 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 21:03:25
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-01 14:41:22
+LastEditTime: 2026-03-02 19:25:01
 Description: blacklist 相关实现
 """
 
 from __future__ import annotations
-
-import math
 
 import arrow
 
@@ -18,12 +16,11 @@ from src.database.log.consts import AuditAction, AuditCategory, AuditContext
 from src.database.log.ops import AuditLogOps
 from src.lib.cache.field import BlacklistCacheItem
 from src.lib.cache.impl import BlacklistCache
-from src.lib.consts import GLOBAL_GROUP_SCOPE
-from src.lib.types import UNSET, Unset
+from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG
 from src.lib.utils.common import get_current_time
 
 _AUDIT_CTX_TYPE_DICT = {
-    GLOBAL_GROUP_SCOPE: AuditContext.GLOBAL,
+    GLOBAL_GROUP_FLAG: AuditContext.GLOBAL,
 }
 
 
@@ -40,7 +37,7 @@ class BlacklistRepository:
         self.cache.set_batch(
             {
                 self.cache._gen_key(d.target_user_id, d.group_id): BlacklistCacheItem(
-                    expiry=d.ban_expiry if d.ban_expiry != -1 else math.inf,
+                    expiry=d.ban_expiry
                 )
                 for d in data
             },
@@ -74,12 +71,12 @@ class BlacklistRepository:
         target_user_id: str,
         group_id: str,
         operator_id: str,
-        duration: float = math.inf,
-        reason: str | Unset = UNSET,
+        duration: int,
+        reason: str | None,
     ) -> None:
         expiry = (
-            -1
-            if duration == math.inf
+            PERMANENT_BAN_FLAG
+            if duration == PERMANENT_BAN_FLAG
             else arrow.get(get_current_time()).shift(seconds=duration).int_timestamp
         )
         self.cache.set_ban(target_user_id, group_id, expiry)

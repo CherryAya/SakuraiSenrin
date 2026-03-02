@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-12 18:53:21
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-20 01:24:27
+LastEditTime: 2026-03-02 18:54:24
 Description: 缓存声明
 """
 
@@ -15,7 +15,7 @@ from src.lib.cache.field import (
     MemberCacheItem,
     UserCacheItem,
 )
-from src.lib.consts import GLOBAL_GROUP_SCOPE
+from src.lib.consts import GLOBAL_GROUP_FLAG
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
 from src.lib.utils.common import get_current_time
 
@@ -213,7 +213,7 @@ class BlacklistCache(BaseCache[BlacklistCacheItem]):
         检查用户是否被封禁。
         优先级：全局封禁 -> 群内封禁
         """
-        if self._check_and_clean(self._gen_key(user_id, GLOBAL_GROUP_SCOPE)):
+        if self._check_and_clean(self._gen_key(user_id, GLOBAL_GROUP_FLAG)):
             return True
         if self._check_and_clean(self._gen_key(user_id, group_id)):
             return True

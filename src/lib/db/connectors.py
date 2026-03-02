@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 00:39:22
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-01 14:15:10
+LastEditTime: 2026-03-02 19:57:44
 Description: db 连接器
 """
 
@@ -17,12 +17,12 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, final
 
-from anyio import current_time
 import arrow
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
 from src.lib.consts import GLOBAL_DB_ROOT
+from src.lib.utils.common import get_current_time
 from src.logger import logger
 
 from .manager import db_manager
@@ -213,7 +213,7 @@ class ShardedDB(BaseDB):
         time_ctx: datetime | None = None,
     ) -> AsyncGenerator[AsyncSession, None]:
         if time_ctx is None:
-            time_ctx = arrow.get(current_time()).datetime
+            time_ctx = arrow.get(get_current_time()).datetime
 
         shard_key = self._get_shard_key(time_ctx)
         await self._ensure_shard_online(shard_key)
@@ -252,7 +252,7 @@ class ShardedDB(BaseDB):
         return results
 
     async def run_archiver_task(self) -> None:
-        now = arrow.get(current_time())
+        now = arrow.get(get_current_time())
         active_keys = [now.strftime(self.fmt), now.shift(months=-1).strftime(self.fmt)]
 
         for db_file in self.base_dir.glob(f"{self.prefix}_*.db"):

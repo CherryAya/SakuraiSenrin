@@ -2,22 +2,23 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-12 20:48:16
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-01 03:01:47
+LastEditTime: 2026-03-02 19:49:22
 Description: 批量写入逻辑
 注：所有的 update / create 操作均为 **带 log / snapshot** 的操作。
 """
 
+from src.database.core.consts import GroupStatus, Permission
 from src.database.core.ops import GroupOps, MemberOps, UserOps
 from src.database.core.types import (
+    BulkUpdateGroupNamePayload,
+    BulkUpdateGroupStatusPayload,
+    BulkUpdateMemberCardPayload,
+    BulkUpdateMemberPermPayload,
+    BulkUpdateUserNamePayload,
+    BulkUpdateUserPermPayload,
     GroupPayload,
-    GroupUpdateNamePayload,
-    GroupUpdateStatusPayload,
     MemberPayload,
-    MemberUpdateCardPayload,
-    MemberUpdatePermPayload,
     UserPayload,
-    UserUpdateNamePayload,
-    UserUpdatePermPayload,
 )
 from src.database.instances import core_db, log_db, snapshot_db
 from src.database.log.consts import AuditAction, AuditCategory, AuditContext
@@ -62,7 +63,7 @@ async def _flush_create_user(batch_data: list[UserPayload]) -> None:
     )
 
 
-async def _flush_update_user_name(batch_data: list[UserUpdateNamePayload]) -> None:
+async def _flush_update_user_name(batch_data: list[BulkUpdateUserNamePayload]) -> None:
     unique_data = {item["user_id"]: item for item in batch_data}.values()
     final_data = list(unique_data)
     if not final_data:
@@ -88,7 +89,7 @@ async def _flush_update_user_name(batch_data: list[UserUpdateNamePayload]) -> No
     )
 
 
-async def _flush_update_user_perm(batch_data: list[UserUpdatePermPayload]) -> None:
+async def _flush_update_user_perm(batch_data: list[BulkUpdateUserPermPayload]) -> None:
     unique_data = {item["user_id"]: item for item in batch_data}.values()
     final_data = list(unique_data)
     if not final_data:
@@ -142,7 +143,9 @@ async def _flush_create_group(batch_data: list[GroupPayload]) -> None:
     )
 
 
-async def _flush_update_group_name(batch_data: list[GroupUpdateNamePayload]) -> None:
+async def _flush_update_group_name(
+    batch_data: list[BulkUpdateGroupNamePayload],
+) -> None:
     unique_data = {item["group_id"]: item for item in batch_data}.values()
     final_data = list(unique_data)
     if not final_data:
@@ -169,7 +172,7 @@ async def _flush_update_group_name(batch_data: list[GroupUpdateNamePayload]) -> 
 
 
 async def _flush_update_group_status(
-    batch_data: list[GroupUpdateStatusPayload],
+    batch_data: list[BulkUpdateGroupStatusPayload],
 ) -> None:
     unique_data = {item["group_id"]: item for item in batch_data}.values()
     final_data = list(unique_data)
@@ -212,6 +215,8 @@ async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
             {
                 "user_id": item["user_id"],
                 "user_name": "",
+                "permission": Permission.NORMAL,
+                "remark": None,
                 "created_at": item["updated_at"],
                 "updated_at": item["updated_at"],
             }
@@ -221,6 +226,7 @@ async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
             {
                 "group_id": item["group_id"],
                 "group_name": "",
+                "status": GroupStatus.UNAUTHORIZED,
                 "created_at": item["updated_at"],
                 "updated_at": item["updated_at"],
             }
@@ -248,7 +254,9 @@ async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
     )
 
 
-async def _flush_update_group_card(batch_data: list[MemberUpdateCardPayload]) -> None:
+async def _flush_update_group_card(
+    batch_data: list[BulkUpdateMemberCardPayload],
+) -> None:
     unique_data = {item["group_id"]: item for item in batch_data}.values()
     final_data = list(unique_data)
     if not final_data:
@@ -276,7 +284,7 @@ async def _flush_update_group_card(batch_data: list[MemberUpdateCardPayload]) ->
 
 
 async def _flush_update_member_permission(
-    batch_data: list[MemberUpdatePermPayload],
+    batch_data: list[BulkUpdateMemberPermPayload],
 ) -> None:
     unique_data = {item["group_id"]: item for item in batch_data}.values()
     final_data = list(unique_data)
@@ -311,29 +319,28 @@ user_create_writer = BatchWriter[UserPayload](
     batch_size=50,
     flush_interval=3.0,
 )
-user_update_name_writer = BatchWriter[UserUpdateNamePayload](
+user_update_name_writer = BatchWriter[BulkUpdateUserNamePayload](
     flush_callback=_flush_update_user_name,
     batch_size=50,
     flush_interval=3.0,
 )
-user_update_perm_writer = BatchWriter[UserUpdatePermPayload](
+user_update_perm_writer = BatchWriter[BulkUpdateUserPermPayload](
     flush_callback=_flush_update_user_perm,
     batch_size=50,
     flush_interval=3.0,
 )
-
 
 group_create_writer = BatchWriter[GroupPayload](
     flush_callback=_flush_create_group,
     batch_size=50,
     flush_interval=3.0,
 )
-group_update_name_writer = BatchWriter[GroupUpdateNamePayload](
+group_update_name_writer = BatchWriter[BulkUpdateGroupNamePayload](
     flush_callback=_flush_update_group_name,
     batch_size=50,
     flush_interval=3.0,
 )
-group_update_status_writer = BatchWriter[GroupUpdateStatusPayload](
+group_update_status_writer = BatchWriter[BulkUpdateGroupStatusPayload](
     flush_callback=_flush_update_group_status,
     batch_size=50,
     flush_interval=3.0,
@@ -344,12 +351,12 @@ member_create_writer = BatchWriter[MemberPayload](
     batch_size=50,
     flush_interval=3.0,
 )
-member_update_card_writer = BatchWriter[MemberUpdateCardPayload](
+member_update_card_writer = BatchWriter[BulkUpdateMemberCardPayload](
     flush_callback=_flush_update_group_card,
     batch_size=50,
     flush_interval=3.0,
 )
-member_update_perm_writer = BatchWriter[MemberUpdatePermPayload](
+member_update_perm_writer = BatchWriter[BulkUpdateMemberPermPayload](
     flush_callback=_flush_update_member_permission,
     batch_size=50,
     flush_interval=3.0,

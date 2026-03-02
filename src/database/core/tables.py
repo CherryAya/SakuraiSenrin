@@ -19,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy import Enum as SQLAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from src.lib.consts import GLOBAL_GROUP_SCOPE
+from src.lib.consts import GLOBAL_GROUP_FLAG
 from src.lib.db.orm import IntFlagType, TimeMixin
 
 from .consts import GroupStatus, InvitationStatus, Permission
@@ -244,9 +244,9 @@ class Blacklist(CoreBase, TimeMixin):
     group_id: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
-        default=GLOBAL_GROUP_SCOPE,
-        server_default=GLOBAL_GROUP_SCOPE,
-        comment=f"生效范围，{GLOBAL_GROUP_SCOPE} 代表全局",
+        default=GLOBAL_GROUP_FLAG,
+        server_default=GLOBAL_GROUP_FLAG,
+        comment=f"生效范围，{GLOBAL_GROUP_FLAG} 代表全局",
     )
     operator_id: Mapped[str] = mapped_column(
         ForeignKey("biz_user.user_id", ondelete="SET NULL"),

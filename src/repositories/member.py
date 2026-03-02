@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 19:46:12
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 20:18:40
+LastEditTime: 2026-03-02 19:48:53
 Description: member 相关实现
 """
 
@@ -13,11 +13,6 @@ from src.database.consts import WritePolicy
 from src.database.core.consts import Permission
 from src.database.core.ops import MemberOps
 from src.database.core.tables import Member
-from src.database.core.types import (
-    MemberPayload,
-    MemberUpdateCardPayload,
-    MemberUpdatePermPayload,
-)
 from src.database.instances import core_db, log_db, snapshot_db
 from src.database.log.consts import AuditAction, AuditCategory, AuditContext
 from src.database.log.ops import AuditLogOps
@@ -68,34 +63,37 @@ class MemberRepository:
         """
         event_time = get_current_time()
         if ctx.is_new:
-            payload: MemberPayload = {
-                "group_id": ctx.group_id,
-                "user_id": ctx.user_id,
-                "group_card": ctx.resolve_card(),
-                "permission": ctx.resolve_perm(),
-                "created_at": event_time,
-                "updated_at": event_time,
-            }
-            await member_create_writer.add(payload)
+            await member_create_writer.add(
+                {
+                    "group_id": ctx.group_id,
+                    "user_id": ctx.user_id,
+                    "group_card": ctx.resolve_card(),
+                    "permission": ctx.resolve_perm(),
+                    "created_at": event_time,
+                    "updated_at": event_time,
+                }
+            )
             return
 
         if is_set(ctx.group_card):
-            card_payload: MemberUpdateCardPayload = {
-                "group_id": ctx.group_id,
-                "user_id": ctx.user_id,
-                "group_card": ctx.group_card,
-                "updated_at": event_time,
-            }
-            await member_update_card_writer.add(card_payload)
+            await member_update_card_writer.add(
+                {
+                    "group_id": ctx.group_id,
+                    "user_id": ctx.user_id,
+                    "group_card": ctx.resolve_card(),
+                    "updated_at": event_time,
+                }
+            )
 
         if is_set(ctx.permission):
-            perm_payload: MemberUpdatePermPayload = {
-                "group_id": ctx.group_id,
-                "user_id": ctx.user_id,
-                "permission": ctx.permission,
-                "updated_at": event_time,
-            }
-            await member_update_perm_writer.add(perm_payload)
+            await member_update_perm_writer.add(
+                {
+                    "group_id": ctx.group_id,
+                    "user_id": ctx.user_id,
+                    "permission": ctx.resolve_perm(),
+                    "updated_at": event_time,
+                }
+            )
 
     async def _save_immediate(self, ctx: MemberChangeContext) -> None:
         async with (
@@ -108,7 +106,7 @@ class MemberRepository:
             member_snapshot_ops = MemberSnapshotOps(snapshot_session)
 
             if ctx.is_new:
-                await member_ops.upsert_member(
+                await member_ops.add_member(
                     group_id=ctx.group_id,
                     user_id=ctx.user_id,
                     group_card=ctx.resolve_card(),
@@ -117,7 +115,7 @@ class MemberRepository:
                 return
 
             if is_set(ctx.group_card):
-                await member_ops.upsert_card(
+                await member_ops.update_card(
                     ctx.user_id,
                     ctx.group_id,
                     ctx.group_card,
