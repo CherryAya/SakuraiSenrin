@@ -1,0 +1,10 @@
+repos:
+  - repo: local
+    hooks:
+      - id: status-equality-check
+        name: "status-equality-check"
+        description: 强制要求读取状态时使用 is_xxx，禁止使用 == 或 != 直接判断枚举
+        language: pygrep
+        types: [python]
+        exclude: '^src/database/'
+        entry: '(==|!=|\bis\b|\bis\s+not\b)\s*\w+Status\.[A-Z0-9_]+'

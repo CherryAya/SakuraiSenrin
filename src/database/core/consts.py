@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 03:34:40
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-02 20:09:16
+LastEditTime: 2026-03-03 12:22:52
 Description: core db 常量
 """
 
@@ -29,6 +29,34 @@ class GroupStatus(LocalizedMixin, StrEnum):
         },
     )
 
+    @property
+    def is_unauthorized(self) -> bool:
+        return self == GroupStatus.UNAUTHORIZED
+
+    @property
+    def is_authorized(self) -> bool:
+        return self == GroupStatus.AUTHORIZED
+
+    @property
+    def is_dormant(self) -> bool:
+        return self == GroupStatus.DORMANT
+
+    @property
+    def is_banned(self) -> bool:
+        return self == GroupStatus.BANNED
+
+    @property
+    def is_left(self) -> bool:
+        return self == GroupStatus.LEFT
+
+    @property
+    def is_working(self) -> bool:
+        return self in (GroupStatus.AUTHORIZED, GroupStatus.DORMANT)
+
+    @property
+    def can_be_woken_up(self) -> bool:
+        return self == GroupStatus.DORMANT
+
 
 class InvitationStatus(LocalizedMixin, StrEnum):
     PENDING = "PENDING"
@@ -44,6 +72,30 @@ class InvitationStatus(LocalizedMixin, StrEnum):
             IGNORED: "已忽略",
         },
     )
+
+    @property
+    def is_pending(self) -> bool:
+        return self == InvitationStatus.PENDING
+
+    @property
+    def is_approved(self) -> bool:
+        return self == InvitationStatus.APPROVED
+
+    @property
+    def is_rejected(self) -> bool:
+        return self == InvitationStatus.REJECTED
+
+    @property
+    def is_ignored(self) -> bool:
+        return self == InvitationStatus.IGNORED
+
+    @property
+    def is_processed(self) -> bool:
+        return self != InvitationStatus.PENDING
+
+    @property
+    def is_denied(self) -> bool:
+        return self in (InvitationStatus.REJECTED, InvitationStatus.IGNORED)
 
 
 class Permission(LocalizedMixin, IntFlag):

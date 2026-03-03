@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-21 01:51:01
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 18:37:14
+LastEditTime: 2026-03-03 12:24:46
 Description: 邀请通知处理
 """
 
@@ -20,7 +20,7 @@ from nonebot.plugin import PluginMetadata
 from nonebot.rule import is_type, to_me
 
 from src.config import config
-from src.database.core.consts import GroupStatus, Permission
+from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.utils.common import AlertTemplate
 from src.repositories import group_repo, invite_repo
@@ -90,7 +90,7 @@ async def _(
         flag=flag,
     )
 
-    if group and group.status == GroupStatus.AUTHORIZED:
+    if group and group.status.is_working:
         if isinstance(event, GroupRequestEvent):
             await bot.set_group_add_request(
                 flag=event.flag,
@@ -99,7 +99,7 @@ async def _(
             )
         await matcher.finish()
 
-    elif group and group.status == GroupStatus.BANNED:
+    elif group and group.status.is_banned:
         if isinstance(event, GroupIncreaseNoticeEvent):
             await bot.set_group_leave(group_id=event.group_id)
         else:

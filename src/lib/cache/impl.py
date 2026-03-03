@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-12 18:53:21
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-02 18:54:24
+LastEditTime: 2026-03-03 12:18:44
 Description: 缓存声明
 """
 
@@ -124,20 +124,6 @@ class GroupCache(BaseCache[GroupCacheItem]):
         n_group = group.with_status(status)
         if n_group is not group:
             self.set(group_id, n_group)
-
-    def is_available(self, group_id: str) -> bool:
-        group = self.get(group_id)
-        return bool(group and group.status == GroupStatus.AUTHORIZED)
-
-    def is_shut(self, group_id: str) -> bool:
-        group = self.get(group_id)
-        return bool(group and group.is_all_shut)
-
-    def is_plugin_enabled(self, group_id: str, plugin_name: str) -> bool:
-        group = self.get(group_id)
-        if not group:
-            return True
-        return plugin_name not in group.disabled_plugins
 
 
 class MemberCache(BaseCache[MemberCacheItem]):

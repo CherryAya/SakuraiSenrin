@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-01-25 16:27:42
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-27 21:41:21
+LastEditTime: 2026-03-03 12:18:17
 Description: 运行时同步检查 hook
 """
 
@@ -16,7 +16,6 @@ from nonebot.message import run_preprocessor
 from nonebot.plugin import PluginMetadata
 
 from src.config import config
-from src.database.core.consts import GroupStatus
 from src.lib.consts import GLOBAL_GROUP_FLAG
 from src.lib.types import UNSET, is_set
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
@@ -131,7 +130,7 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
         if not group:
             raise IgnoredException("未命中群缓存，默认阻止")
 
-        if group.status != GroupStatus.AUTHORIZED:
+        if group.status.is_unauthorized:
             raise IgnoredException("群聊未授权")
 
         if group.is_all_shut:

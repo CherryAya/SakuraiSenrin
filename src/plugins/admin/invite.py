@@ -416,7 +416,7 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         await ctx.matcher.send("无法使用所提供的信息找到对应的邀请。")
         return False
 
-    if invitation.status != InvitationStatus.PENDING:
+    if invitation.status.is_processed:
         operator = invitation.operator
         if not ctx.silent:
             await ctx.matcher.send(

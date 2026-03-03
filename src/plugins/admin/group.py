@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-15 23:24:21
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-22 18:30:46
+LastEditTime: 2026-03-03 12:21:57
 Description: 群聊管理插件
 """
 
@@ -94,7 +94,7 @@ class AdminGroupContext:
 
 
 async def ban_group(ctx: AdminGroupContext) -> str:
-    if ctx.group.status == GroupStatus.BANNED:
+    if ctx.group.status.is_banned:
         return "已处于封禁状态"
 
     await group_repo.update_status(ctx.group.group_id, GroupStatus.BANNED)
@@ -102,7 +102,7 @@ async def ban_group(ctx: AdminGroupContext) -> str:
 
 
 async def unban_group(ctx: AdminGroupContext) -> str:
-    if ctx.group.status != GroupStatus.BANNED:
+    if not ctx.group.status.is_banned:
         return "未被封禁，无需解封"
 
     await group_repo.update_status(ctx.group.group_id, GroupStatus.UNAUTHORIZED)
@@ -110,9 +110,9 @@ async def unban_group(ctx: AdminGroupContext) -> str:
 
 
 async def auth_group(ctx: AdminGroupContext) -> str:
-    if ctx.group.status == GroupStatus.BANNED:
+    if ctx.group.status.is_banned:
         return "已被封禁，请先解封"
-    elif ctx.group.status == GroupStatus.AUTHORIZED:
+    elif ctx.group.status.is_working:
         return "已是授权状态"
 
     await group_repo.update_status(ctx.group.group_id, GroupStatus.AUTHORIZED)
@@ -120,9 +120,9 @@ async def auth_group(ctx: AdminGroupContext) -> str:
 
 
 async def unauth_group(ctx: AdminGroupContext) -> str:
-    if ctx.group.status == GroupStatus.BANNED:
+    if ctx.group.status.is_banned:
         return "处于封禁状态，无需取消授权"
-    elif ctx.group.status == GroupStatus.AUTHORIZED:
+    elif ctx.group.status.is_working:
         await group_repo.update_status(ctx.group.group_id, GroupStatus.UNAUTHORIZED)
         return "已取消授权"
 
