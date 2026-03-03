@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 03:34:40
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-24 12:44:52
+LastEditTime: 2026-03-02 20:09:16
 Description: core db 常量
 """
 
@@ -13,17 +13,19 @@ from src.lib.enums import LocalizedMixin
 
 
 class GroupStatus(LocalizedMixin, StrEnum):
+    UNAUTHORIZED = "UNAUTHORIZED"
     AUTHORIZED = "AUTHORIZED"
+    DORMANT = "DORMANT"
     BANNED = "BANNED"
     LEFT = "LEFT"
-    UNAUTHORIZED = "UNAUTHORIZED"
 
     __labels__ = MappingProxyType(
         {
-            AUTHORIZED: "已授权",
-            BANNED: "封禁",
-            LEFT: "已退群",
             UNAUTHORIZED: "未授权",
+            AUTHORIZED: "已授权",
+            DORMANT: "休眠中",
+            BANNED: "封禁中",
+            LEFT: "已退群",
         },
     )
 
