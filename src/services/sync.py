@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-01-26 01:28:36
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-02-21 02:50:19
+LastEditTime: 2026-03-03 14:25:30
 Description: 同步逻辑
 """
 
@@ -139,11 +139,16 @@ async def sync_members_from_api(bot: Bot, group_id: str) -> None:
 
 async def sync_user_runtime(user_id: str, user_name: str) -> None:
     """运行时用户同步，可差量同步。
-
     单个事件 -> 处理 -> 立即入队"""
+    from src.config import config
+
     if not user_id or not user_name:
         return
-    await user_repo.save_user(user_id, user_name)
+    if user_id in config.SUPERUSERS:
+        perm = Permission.SUPERUSER
+    else:
+        perm = Permission.NORMAL
+    await user_repo.save_user(user_id, user_name, permission=perm)
 
 
 async def sync_group_runtime(bot: Bot, group_id: str) -> None:

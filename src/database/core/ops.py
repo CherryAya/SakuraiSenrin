@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 16:18:02
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-02 19:48:03
+LastEditTime: 2026-03-03 14:40:10
 Description: core db 操作类逻辑
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Unpack, cast
 
-from sqlalchemy import CursorResult, bindparam, delete, func, select, update
+from sqlalchemy import CursorResult, delete, func, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import aliased, selectinload
 
@@ -111,16 +111,14 @@ class UserOps(BaseOps[User]):
     ) -> int:
         if not users_data:
             return 0
-
-        stmt = (
-            update(User)
-            .where(User.user_id == bindparam("user_id"))
-            .values(
-                permission=bindparam("permission"),
-                updated_at=bindparam("updated_at"),
-            )
-        )
-        result = await self.session.execute(stmt, users_data)
+        sql = f"""
+            UPDATE {User.__tablename__}
+            SET {User.permission.key} = :permission,
+                {User.updated_at.key} = :updated_at
+            WHERE {User.user_id.key} = :user_id
+        """
+        connection = await self.session.connection()
+        result = await connection.execute(text(sql), users_data)
         return cast(CursorResult, result).rowcount
 
     async def get_by_user_id(self, user_id: str) -> User | None:
@@ -227,15 +225,14 @@ class GroupOps(BaseOps[Group]):
     ) -> int:
         if not group_statuses:
             return 0
-        stmt = (
-            update(Group)
-            .where(Group.group_id == bindparam("group_id"))
-            .values(
-                status=bindparam("status"),
-                updated_at=bindparam("updated_at"),
-            )
-        )
-        result = await self.session.execute(stmt, group_statuses)
+        sql = f"""
+            UPDATE {User.__tablename__}
+            SET {User.permission.key} = :permission,
+                {User.updated_at.key} = :updated_at
+            WHERE {User.user_id.key} = :user_id
+        """
+        connection = await self.session.connection()
+        result = await connection.execute(text(sql), group_statuses)
         return cast(CursorResult, result).rowcount
 
     async def get_by_group_id(self, group_id: str) -> Group | None:
@@ -334,18 +331,15 @@ class MemberOps(BaseOps[Member]):
         if not perms_data:
             return 0
 
-        stmt = (
-            update(Member)
-            .where(
-                Member.user_id == bindparam("user_id"),
-                Member.group_id == bindparam("group_id"),
-            )
-            .values(
-                permission=bindparam("permission"),
-                updated_at=bindparam("updated_at"),
-            )
-        )
-        result = await self.session.execute(stmt, perms_data)
+        sql = f"""
+            UPDATE {Member.__tablename__}
+            SET {Member.permission.key} = :permission,
+                {Member.updated_at.key} = :updated_at
+            WHERE {Member.user_id.key} = :user_id
+                AND {Member.group_id.key} = :group_id
+        """
+        connection = await self.session.connection()
+        result = await connection.execute(text(sql), perms_data)
         return cast(CursorResult, result).rowcount
 
     async def get_by_uid_gid(self, user_id: str, group_id: str) -> Member | None:

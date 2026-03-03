@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-13 18:59:47
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-02 19:05:38
+LastEditTime: 2026-03-03 14:16:03
 Description: user 相关实现
 """
 
@@ -120,10 +120,6 @@ class UserRepository:
         permission: Permission | Unset = UNSET,
         policy: WritePolicy = WritePolicy.BUFFERED,
     ) -> None:
-        from src.config import config
-
-        if user_id in config.SUPERUSERS:
-            permission = Permission.SUPERUSER
         ctx = UserChangeContext(user_id, user_name, permission)
         old_item = self.cache.get(user_id)
         ctx.is_new = old_item is None
