@@ -205,3 +205,14 @@ class MemberRepository:
     async def get_admin_member_by_uid(self, user_id: str) -> Sequence[Member]:
         async with core_db.session() as session:
             return await MemberOps(session).get_admin_by_uid(user_id)
+
+    async def get_distinct_user_count(self, group_id: str) -> int:
+        async with core_db.session() as session:
+            return await MemberOps(session).get_distinct_user_count(group_id)
+
+    async def get_intersection_user_count(self, group_a: str, group_b: str) -> int:
+        async with core_db.session() as session:
+            return await MemberOps(session).get_intersection_user_count(
+                group_a,
+                group_b,
+            )
