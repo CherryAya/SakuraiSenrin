@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-01 16:18:02
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-03 14:40:10
+LastEditTime: 2026-03-03 19:40:29
 Description: core db 操作类逻辑
 """
 
@@ -245,6 +245,13 @@ class GroupOps(BaseOps[Group]):
         result = await self.session.execute(stmt)
         return result.scalars().one_or_none()
 
+    async def get_working_group_ids(self) -> list[str]:
+        stmt = select(Group.group_id).where(
+            Group.status.in_([GroupStatus.AUTHORIZED, GroupStatus.DORMANT]),
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def add_group(
         self,
         group_id: str,
@@ -360,6 +367,28 @@ class MemberOps(BaseOps[Member]):
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
+    async def get_distinct_user_count(self, group_id: str) -> int:
+        stmt = select(func.count(func.distinct(Member.user_id))).where(
+            Member.group_id == group_id
+        )
+        result = await self.session.execute(stmt)
+        return int(result.scalar() or 0)
+
+    async def get_intersection_user_count(self, group_a: str, group_b: str) -> int:
+        m1 = aliased(Member)
+        m2 = aliased(Member)
+        stmt = (
+            select(func.count(func.distinct(m1.user_id)))
+            .select_from(m1)
+            .join(m2, m1.user_id == m2.user_id)
+            .where(
+                m1.group_id == group_a,
+                m2.group_id == group_b,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return int(result.scalar() or 0)
+
     async def get_admin_by_uid(self, user_id: str) -> Sequence[Member]:
         stmt = (
             select(Member)
@@ -425,11 +454,15 @@ class InvitationOps(BaseOps[Invitation]):
         inviter_id: str,
         flag: str | None,
     ) -> Invitation:
+        event_time = get_current_time()
+
         invitation = Invitation(
             group_id=group_id,
             inviter_id=inviter_id,
             flag=flag,
             status=InvitationStatus.PENDING,
+            created_at=event_time,
+            updated_at=event_time,
         )
         self.session.add(invitation)
         return invitation
@@ -439,9 +472,13 @@ class InvitationOps(BaseOps[Invitation]):
         invitation_id: int,
         message_id: str,
     ) -> InvitationMessage:
+        event_time = get_current_time()
+
         record = InvitationMessage(
             invitation_id=invitation_id,
             message_id=str(message_id),
+            created_at=event_time,
+            updated_at=event_time,
         )
         self.session.add(record)
         return record

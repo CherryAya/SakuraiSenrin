@@ -31,6 +31,12 @@ class QQAvatar:
         return await cls._fetch(url, size, "人")
 
     @classmethod
+    async def fetch_group(cls, gid: str, size: int = 100) -> BuildImage:
+        s_param = 640 if size > 100 else 100
+        url = f"https://p.qlogo.cn/gh/{gid}/{gid}/{s_param}"
+        return await cls._fetch(url, size, "群")
+
+    @classmethod
     async def _fetch(cls, url: str, size: int, fallback: str) -> BuildImage:
         client = cls._get_shared_client()
         try:

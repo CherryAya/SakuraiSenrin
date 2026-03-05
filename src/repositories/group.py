@@ -208,3 +208,7 @@ class GroupRepository:
             group_id=group_id,
             is_all_shut=is_shut,
         )
+
+    async def get_working_group_ids(self) -> list[str]:
+        async with core_db.session() as session:
+            return await GroupOps(session).get_working_group_ids()
