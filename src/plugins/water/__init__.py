@@ -15,16 +15,19 @@ from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
-from nonebot.plugin import PluginMetadata, on_command
+from nonebot.plugin import on_command
 from nonebot.rule import is_type
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.plugins.water.img import (
     WaterProfileCardData,
     build_my_water_fallback_text,
     build_my_water_image,
+    build_my_water_simple_image,
     build_water_rank_image,
 )
 from src.services.info import resolve_group_card, resolve_group_name
@@ -57,14 +60,15 @@ description = """
 吹水记录模块
 """.strip()
 
-usage = f"""
+docs_content = f"""
 ===== {name} =====
 
 用户命令:
-1. 我有多水
-2. 水王排行榜 / 水王
-3. 我的水王成就 / 水王成就
-4. #water.merge yes / #water.merge no (群管理员)
+1. 我有多水 (简版，默认)
+2. 我有多水 详细/完整
+3. 水王排行榜 / 水王
+4. 我的水王成就 / 水王成就
+5. #water.merge yes / #water.merge no (群管理员)
 
 超管命令:
 1. #water help
@@ -75,15 +79,31 @@ usage = f"""
 6. #water state
 """.strip()
 
-__plugin_meta__ = PluginMetadata(
+
+def build_docs() -> Message:
+    return build_static_docs(
+        name=name,
+        description=description,
+        content=docs_content,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
         "version": "0.3.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.NORMAL,
+        "docs": create_docs_meta(
+            build_docs,
+            visible=True,
+            category="fun",
+            order=100,
+        ),
     },
 )
 asyncio.run(water_repo.init_all_tables())
@@ -157,7 +177,7 @@ async def _(bot: Bot, event: GroupIncreaseNoticeEvent) -> None:
 
 
 @self_global_water_status.handle()
-async def _(event: GroupMessageEvent) -> None:
+async def _(event: GroupMessageEvent, arg: Message = CommandArg()) -> None:
     user_id = str(event.user_id)
     group_id = str(event.group_id)
     matrix_id = await water_repo.get_or_create_group_matrix_id(group_id)
@@ -201,7 +221,7 @@ async def _(event: GroupMessageEvent) -> None:
 
     if global_level is None and matrix_level is None:
         await self_global_water_status.finish(
-            "你当前还没有水王资产记录，先多聊几句再来查吧。"
+            "嗯嗯……看上去你的水还不够多，先多聊几天再来查吧。"
         )
 
     profile_data = WaterProfileCardData(
@@ -222,8 +242,20 @@ async def _(event: GroupMessageEvent) -> None:
         achievement_items=achievement_items,
     )
 
+    raw_arg = arg.extract_plain_text().strip().lower()
+    prefer_full = any(
+        key in raw_arg for key in ("详细", "完整", "完整版", "full", "detail")
+    )
+    prefer_simple = any(key in raw_arg for key in ("简", "简单", "简版", "simple"))
+    use_full = prefer_full and not prefer_simple
+
     await self_global_water_status.send("凛凛制图中，请稍候……")
-    card = await build_my_water_image(profile_data)
+    if use_full:
+        card = await build_my_water_image(profile_data)
+    else:
+        card = await build_my_water_simple_image(profile_data)
+        if not card:
+            card = await build_my_water_image(profile_data)
     if card:
         await self_global_water_status.finish(MessageSegment.image(card))
 

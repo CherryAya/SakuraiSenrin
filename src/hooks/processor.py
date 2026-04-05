@@ -10,13 +10,15 @@ from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
     Event,
 )
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.exception import IgnoredException
 from nonebot.matcher import Matcher
 from nonebot.message import run_preprocessor
-from nonebot.plugin import PluginMetadata
 
 from src.config import config
 from src.lib.consts import GLOBAL_GROUP_FLAG
+from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, is_set
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.services.sync import (
@@ -34,20 +36,33 @@ description = """
   定时任务校验合法群组，对于不合法的进行退群处理
 """.strip()
 
-usage = """
-被动触发
-""".strip()
+docs_content = "被动触发"
 
 
-__plugin_meta__ = PluginMetadata(
+def build_docs() -> Message:
+    return build_static_docs(
+        name=name,
+        description=description,
+        content=docs_content,
+        trigger="PASSIVE",
+        permission="SUPERUSER",
+    )
+
+
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
         "version": "0.2.0",
         "trigger": "Passive",
         "permission": "SUPERUSER",
+        "docs": create_docs_meta(
+            build_docs,
+            visible=False,
+            category="internal",
+            order=10,
+        ),
     },
 )
 

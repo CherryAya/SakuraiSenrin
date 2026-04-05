@@ -15,16 +15,19 @@ from dataclasses import dataclass
 import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.exception import ParserExit
 from nonebot.matcher import Matcher
 from nonebot.params import ShellCommandArgs
 from nonebot.permission import SUPERUSER
-from nonebot.plugin import CommandGroup, PluginMetadata
+from nonebot.plugin import CommandGroup
 from nonebot.rule import ArgumentParser
 
 from src.database.core.consts import Permission
 from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
+from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
 from src.lib.utils.common import get_current_time, time_to_timedelta
 from src.repositories import blacklist_repo, group_repo, user_repo
@@ -33,7 +36,7 @@ from src.services.info import resolve_user_name
 name = "用户管理模块"
 description = "用户管理模块: 采用标准 Shell 风格解析 (argparse)"
 
-usage = f"""
+docs_content = f"""
 ===== {name} =====
 命令前缀: #admin.user / #用户管理
 
@@ -44,15 +47,31 @@ usage = f"""
   #admin.user status 12345
 """.strip()
 
-__plugin_meta__ = PluginMetadata(
+
+def build_docs() -> Message:
+    return build_static_docs(
+        name=name,
+        description=description,
+        content=docs_content,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+    )
+
+
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
         "version": "0.2.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
+        "docs": create_docs_meta(
+            build_docs,
+            visible=True,
+            category="admin",
+            order=120,
+        ),
     },
 )
 

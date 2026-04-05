@@ -15,13 +15,15 @@ from nonebot.adapters.onebot.v11.event import (
     GroupIncreaseNoticeEvent,
     GroupRequestEvent,
 )
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
-from nonebot.plugin import PluginMetadata
 from nonebot.rule import is_type, to_me
 
 from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.utils.common import AlertTemplate
 from src.repositories import group_repo, invite_repo
 from src.services.info import resolve_group_name
@@ -33,20 +35,34 @@ description = """
 
 """.strip()
 
-usage = """
+docs_content = "被动触发"
 
-""".strip()
 
-__plugin_meta__ = PluginMetadata(
+def build_docs() -> Message:
+    return build_static_docs(
+        name=name,
+        description=description,
+        content=docs_content,
+        trigger=TriggerType.PASSIVE,
+        permission=Permission.SUPERUSER,
+    )
+
+
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
         "version": "0.2.0",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
         "no_check": True,
+        "docs": create_docs_meta(
+            build_docs,
+            visible=False,
+            category="system",
+            order=130,
+        ),
     },
 )
 

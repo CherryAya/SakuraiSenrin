@@ -11,12 +11,15 @@ import random
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import FriendRequestEvent
-from nonebot.plugin import PluginMetadata, on_request
+from nonebot.adapters.onebot.v11.message import Message
+from nonebot.plugin import on_request
 
 from src.config import config
 from src.database.consts import WritePolicy
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import user_repo
 
 name = "好友通知事件处理"
@@ -25,20 +28,34 @@ description = """
   处理好友请求
 """.strip()
 
-usage = """
-被动触发
-""".strip()
+docs_content = "被动触发"
 
-__plugin_meta__ = PluginMetadata(
+
+def build_docs() -> Message:
+    return build_static_docs(
+        name=name,
+        description=description,
+        content=docs_content,
+        trigger=TriggerType.PASSIVE,
+        permission=Permission.SUPERUSER,
+    )
+
+
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
         "version": "0.2.0",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
         "no_check": True,
+        "docs": create_docs_meta(
+            build_docs,
+            visible=False,
+            category="system",
+            order=120,
+        ),
     },
 )
 

@@ -18,13 +18,15 @@ from nonebot.adapters.onebot.v11.event import (
     GroupIncreaseNoticeEvent,
     NotifyEvent,
 )
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.exception import ActionFailed
-from nonebot.plugin import PluginMetadata
 from nonebot.rule import Rule, is_type, to_me
 
 from src.config import config
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
+from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.utils.common import AlertTemplate, get_current_time
 from src.repositories import blacklist_repo, group_repo, member_repo
 from src.services.info import resolve_group_name
@@ -39,20 +41,34 @@ description = """
 
 """.strip()
 
-usage = """
-被动触发
-""".strip()
+docs_content = "被动触发"
 
-__plugin_meta__ = PluginMetadata(
+
+def build_docs() -> Message:
+    return build_static_docs(
+        name=name,
+        description=description,
+        content=docs_content,
+        trigger=TriggerType.PASSIVE,
+        permission=Permission.SUPERUSER,
+    )
+
+
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
         "version": "0.1.0",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
         "no_check": True,
+        "docs": create_docs_meta(
+            build_docs,
+            visible=False,
+            category="system",
+            order=110,
+        ),
     },
 )
 

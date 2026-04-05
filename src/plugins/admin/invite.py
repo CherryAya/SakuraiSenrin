@@ -20,17 +20,19 @@ import arrow
 import httpx
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
-from nonebot.adapters.onebot.v11.message import MessageSegment
+from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.exception import ParserExit
 from nonebot.matcher import Matcher
 from nonebot.params import ShellCommandArgs
 from nonebot.permission import SUPERUSER
-from nonebot.plugin import CommandGroup, PluginMetadata, on_fullmatch
+from nonebot.plugin import CommandGroup, on_fullmatch
 from nonebot.rule import ArgumentParser, to_me
 from PIL import Image, ImageDraw, ImageFont
 
 from src.database.core.consts import GroupStatus, InvitationStatus, Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
+from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils.common import AvatarFetcher, get_current_time
 from src.repositories import group_repo, invite_repo
@@ -41,7 +43,7 @@ description = """
   处理群聊邀请事件
 """.strip()
 
-usage = f"""
+docs_content = f"""
 ===== {name} =====
 
 命令前缀: #admin.invite / #邀请管理
@@ -80,16 +82,32 @@ usage = f"""
 3. 快捷回复操作 (y/n) 仅限直接回复机器人推送的邀请通知消息时生效。
 """.strip()
 
-__plugin_meta__ = PluginMetadata(
+
+def build_docs() -> Message:
+    return build_static_docs(
+        name=name,
+        description=description,
+        content=docs_content,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+    )
+
+
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
         "version": "0.2.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
         "no_check": True,
+        "docs": create_docs_meta(
+            build_docs,
+            visible=True,
+            category="admin",
+            order=130,
+        ),
     },
 )
 

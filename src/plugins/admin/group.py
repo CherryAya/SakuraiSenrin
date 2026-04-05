@@ -16,18 +16,20 @@ from nonebot.exception import ActionFailed
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
-from nonebot.plugin import CommandGroup, PluginMetadata
+from nonebot.plugin import CommandGroup
 
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.cache.field import GroupCacheItem
 from src.lib.consts import TriggerType
+from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import group_repo
 from src.services.info import resolve_group_name
 
 name = "群组管理模块"
 description = "群组管理模块: 处理群组黑白名单 (支持批量操作)"
 
-usage = f"""
+docs_content = f"""
 ===== {name} =====
 
 命令前缀: #admin.group / #群组管理
@@ -66,15 +68,31 @@ usage = f"""
 3. 若不填群号，默认对当前所在群组执行。
 """.strip()
 
-__plugin_meta__ = PluginMetadata(
+
+def build_docs() -> Message:
+    return build_static_docs(
+        name=name,
+        description=description,
+        content=docs_content,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+    )
+
+
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
         "version": "0.2.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
+        "docs": create_docs_meta(
+            build_docs,
+            visible=True,
+            category="admin",
+            order=110,
+        ),
     },
 )
 
@@ -151,11 +169,11 @@ async def _(
 ) -> None:
     args = arg.extract_plain_text().strip().split()
     if not args:
-        await matcher.finish(usage)
+        await matcher.finish(docs_content)
 
     command = args[0].lower()
     if command in ["help", "帮助"]:
-        await matcher.finish(usage)
+        await matcher.finish(docs_content)
 
     handler: Callable[[AdminGroupContext], Awaitable[str]]
     match command:
@@ -172,7 +190,7 @@ async def _(
         case "leave" | "退群":
             handler = leave_group
         case _:
-            await matcher.finish(f"未知的操作指令。\n\n{usage}")
+            await matcher.finish(f"未知的操作指令。\n\n{docs_content}")
 
     group_ids = args[1:]
     if not group_ids:
