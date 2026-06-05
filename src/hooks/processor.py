@@ -16,7 +16,8 @@ from nonebot.matcher import Matcher
 from nonebot.message import run_preprocessor
 
 from src.config import config
-from src.lib.consts import GLOBAL_GROUP_FLAG
+from src.database.core.consts import Permission
+from src.lib.consts import GLOBAL_GROUP_FLAG, TriggerType
 from src.lib.plugin_docs import build_static_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, is_set
@@ -44,8 +45,8 @@ def build_docs() -> Message:
         name=name,
         description=description,
         content=docs_content,
-        trigger="PASSIVE",
-        permission="SUPERUSER",
+        trigger=TriggerType.PASSIVE,
+        permission=Permission.SUPERUSER,
     )
 
 
@@ -55,8 +56,8 @@ __plugin_meta__ = create_plugin_metadata(
     extra={
         "author": "SakuraiCora",
         "version": "0.2.0",
-        "trigger": "Passive",
-        "permission": "SUPERUSER",
+        "trigger": TriggerType.PASSIVE,
+        "permission": Permission.SUPERUSER,
         "docs": create_docs_meta(
             build_docs,
             visible=False,

@@ -11,6 +11,10 @@ from typing import TypedDict
 
 from nonebot.adapters.onebot.v11.message import Message
 
+from src.database.core.consts import Permission
+
+from .consts import TriggerType
+
 type DocsProvider = Callable[[], Message | Awaitable[Message]]
 
 
@@ -41,8 +45,8 @@ def build_static_docs(
     name: str,
     description: str,
     content: str,
-    trigger: object,
-    permission: object,
+    trigger: TriggerType,
+    permission: Permission,
 ) -> Message:
     body = content.strip() or "暂无说明"
     desc = description.strip() or "暂无描述"

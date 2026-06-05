@@ -8,6 +8,8 @@ Description: 插件类 hook
 
 from nonebot.adapters.onebot.v11.message import Message
 
+from src.database.core.consts import Permission
+from src.lib.consts import TriggerType
 from src.lib.plugin_docs import build_static_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 
@@ -24,8 +26,8 @@ def build_docs() -> Message:
         name=name,
         description=description,
         content=docs_content,
-        trigger="PASSIVE",
-        permission="SUPERUSER",
+        trigger=TriggerType.PASSIVE,
+        permission=Permission.SUPERUSER,
     )
 
 
@@ -35,8 +37,8 @@ __plugin_meta__ = create_plugin_metadata(
     extra={
         "author": "SakuraiCora",
         "version": "0.1.0",
-        "trigger": "PASSIVE",
-        "permission": "SUPERUSER",
+        "trigger": TriggerType.PASSIVE,
+        "permission": Permission.SUPERUSER,
         "docs": create_docs_meta(
             build_docs,
             visible=False,
