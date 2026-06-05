@@ -7,6 +7,7 @@ from .admin import (
     handle_ignore,
     handle_ignored,
     handle_pardon,
+    handle_season,
     handle_settle,
     handle_state,
     water_help_message,
@@ -18,6 +19,8 @@ from .merge import (
     is_group_admin_event,
 )
 from .passive import handle_group_increase_notice, handle_water_record
+from .query import handle_water_query
+from .rank import handle_period_rank
 
 __all__ = [
     "WaterAdminContext",
@@ -30,8 +33,11 @@ __all__ = [
     "handle_merge_yes",
     "handle_my_achievements",
     "handle_pardon",
+    "handle_period_rank",
+    "handle_season",
     "handle_settle",
     "handle_state",
+    "handle_water_query",
     "handle_water_record",
     "is_group_admin_event",
     "water_help_message",

@@ -32,6 +32,8 @@ class WaterSettlementService:
         self,
         target_date: arrow.Arrow | None = None,
         force: bool = False,
+        chunk_pause_seconds: float = 0.1,
+        prune_after_settlement: bool = True,
     ) -> SettlementResult:
         """
         每日结算总入口，满足三道防线:
@@ -64,7 +66,13 @@ class WaterSettlementService:
             )
         try:
             aggregates = await water_repo.collect_daily_aggregates(target)
-            await water_repo.apply_daily_settlement(target, aggregates, chunk_size=500)
+            await water_repo.apply_daily_settlement(
+                target,
+                aggregates,
+                chunk_size=500,
+                chunk_pause_seconds=chunk_pause_seconds,
+                prune_after_settlement=prune_after_settlement,
+            )
             unlocked = await self._trigger_achievements(record_date, aggregates)
             await water_repo.mark_settlement_success(record_date)
 
@@ -99,6 +107,7 @@ class WaterSettlementService:
         if not user_context:
             return 0
 
+        active_seasons = await water_repo.list_current_activity_seasons(record_date)
         sem = asyncio.Semaphore(20)
         unlocked_total = 0
 
@@ -112,6 +121,15 @@ class WaterSettlementService:
                     today_msg_count=msg_count,
                 )
                 unlocked_total += len(unlocked)
+                for season in active_seasons:
+                    seasonal_unlocks = await self.achievement_service.check_and_unlock(
+                        user_id=user_id,
+                        matrix_id=matrix_id,
+                        record_date=record_date,
+                        today_msg_count=msg_count,
+                        season_id=season.season_id,
+                    )
+                    unlocked_total += len(seasonal_unlocks)
 
         await asyncio.gather(
             *[

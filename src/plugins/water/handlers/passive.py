@@ -9,7 +9,7 @@ from nonebot.adapters.onebot.v11.event import (
 from src.database.consts import WritePolicy
 from src.logger import logger
 from src.plugins.water.database import water_repo
-from src.plugins.water.services import matrix_suggestion_service
+from src.plugins.water.services.matrix_suggestion import matrix_suggestion_service
 
 
 async def handle_water_record(bot: Bot, event: GroupMessageEvent) -> None:

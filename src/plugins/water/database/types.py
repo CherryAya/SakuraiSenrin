@@ -94,3 +94,17 @@ class WaterAchievementPayload(TypedDict):
     season_id: str
     unlocked_at: int
     context: str
+
+
+class WaterActivitySeasonPayload(TypedDict):
+    season_id: str
+    name: str
+    normalized_name: str
+    description: str
+    start_date: int
+    end_date: int
+    status: str
+    published_at: int | None
+    created_by: str
+    created_at: int
+    updated_at: int

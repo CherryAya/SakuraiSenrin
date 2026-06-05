@@ -1,8 +1,9 @@
 """事件驱动成就服务。"""
 
-from collections.abc import Awaitable, Callable
+from collections import defaultdict
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import arrow
 
@@ -68,18 +69,13 @@ class AchievementService:
             "STEADY_COMPANION": "_check_steady_companion",
         }
 
-    @staticmethod
-    def current_season_id(ts: int | None = None) -> str:
-        now = arrow.get(ts or get_current_time()).to("Asia/Shanghai")
-        quarter = (now.month - 1) // 3 + 1
-        return f"{now.year}S{quarter}"
-
     async def check_and_unlock(
         self,
         user_id: str,
         matrix_id: str,
         record_date: int,
         today_msg_count: int,
+        season_id: str = "",
     ) -> list[str]:
         unlocked_items = await water_repo.get_user_achievement_items(user_id)
         unlocked_forever = {
@@ -92,7 +88,6 @@ class AchievementService:
             for achievement_id, track_type, season_id, _ in unlocked_items
             if track_type == "seasonal"
         }
-        season_id = self.current_season_id()
         now_ts = get_current_time()
         new_unlocks: list[WaterAchievementPayload] = []
 
@@ -101,6 +96,7 @@ class AchievementService:
                 continue
             if (
                 rule.track_type == "seasonal"
+                and season_id
                 and (achievement_id, season_id) in unlocked_in_season
             ):
                 continue
@@ -134,18 +130,17 @@ class AchievementService:
         record_date: int,
     ) -> str:
         unlocked_items = await water_repo.get_user_achievement_items(user_id)
-        current_season = self.current_season_id()
         unlocked_permanent = {
             achievement_id
             for achievement_id, track_type, _, _ in unlocked_items
             if track_type == "permanent"
         }
-        unlocked_current_season = {
+        unlocked_seasonal = {
             achievement_id
             for achievement_id, track_type, season_id, _ in unlocked_items
-            if track_type == "seasonal" and season_id == current_season
+            if track_type == "seasonal" and season_id
         }
-        unlocked_ids = unlocked_permanent | unlocked_current_season
+        unlocked_ids = unlocked_permanent | unlocked_seasonal
         total = len(ACHIEVEMENT_RULES)
         unlocked_count = len(unlocked_ids)
 
@@ -183,7 +178,7 @@ class AchievementService:
         locked_ids = [aid for aid in ACHIEVEMENT_RULES if aid not in unlocked_ids]
         lines.append("【下一目标】")
         if not locked_ids:
-            lines.append("你已达成全部成就，继续保持活跃，等新赛季新徽章上线。")
+            lines.append("你已达成全部成就，继续保持活跃，等新活动上线。")
             return "\n".join(lines)
 
         for achievement_id in locked_ids[:2]:
@@ -231,15 +226,16 @@ class AchievementService:
             start_date=int(start_day.format("YYYYMMDD")),
             end_date=record_date,
         )
-        if len(summaries) < 3:
+        merged = self._merge_summaries_by_date(summaries)
+        if len(merged) < 3:
             return False
 
-        day_to_hourly = {item.record_date: item.hourly_counts for item in summaries}
+        day_to_hourly = merged
         for i in range(3):
             cur_day = int(start_day.shift(days=i).format("YYYYMMDD"))
             if cur_day not in day_to_hourly:
                 return False
-            hourly = day_to_hourly[cur_day] or [0] * 24
+            hourly = day_to_hourly[cur_day]
             if sum(hourly[2:5]) <= 0:
                 return False
         return True
@@ -274,9 +270,10 @@ class AchievementService:
             start_date=int(start_day.format("YYYYMMDD")),
             end_date=record_date,
         )
-        if len(summaries) < 30:
+        merged = self._merge_summaries_by_date(summaries)
+        if len(merged) < 30:
             return False
-        summary_days = {item.record_date for item in summaries}
+        summary_days = set(merged)
         for i in range(30):
             cur_day = int(start_day.shift(days=i).format("YYYYMMDD"))
             if cur_day not in summary_days:
@@ -323,10 +320,10 @@ class AchievementService:
             start_date=int(start_day.format("YYYYMMDD")),
             end_date=record_date,
         )
-        day_to_night = {}
-        for item in summaries:
-            hourly = item.hourly_counts or [0] * 24
-            day_to_night[item.record_date] = sum(hourly[2:5]) > 0
+        day_to_night = {
+            record_day: sum(hourly[2:5]) > 0
+            for record_day, hourly in self._merge_summaries_by_date(summaries).items()
+        }
 
         streak = 0
         for i in range(2, -1, -1):
@@ -351,7 +348,7 @@ class AchievementService:
             start_date=int(start_day.format("YYYYMMDD")),
             end_date=record_date,
         )
-        summary_days = {item.record_date for item in summaries}
+        summary_days = set(self._merge_summaries_by_date(summaries))
         streak = 0
         for i in range(29, -1, -1):
             day = int(start_day.shift(days=i).format("YYYYMMDD"))
@@ -360,6 +357,20 @@ class AchievementService:
             else:
                 break
         return streak
+
+    @staticmethod
+    def _merge_summaries_by_date(
+        summaries: Sequence[Any],
+    ) -> dict[int, list[int]]:
+        merged: dict[int, list[int]] = defaultdict(lambda: [0] * 24)
+        for item in summaries:
+            hourly = list((item.hourly_counts or [0] * 24)[:24])
+            if len(hourly) < 24:
+                hourly.extend([0] * (24 - len(hourly)))
+            bucket = merged[item.record_date]
+            for idx, count in enumerate(hourly):
+                bucket[idx] += count
+        return dict(merged)
 
 
 achievement_service = AchievementService()

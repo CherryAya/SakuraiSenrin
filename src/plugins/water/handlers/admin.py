@@ -7,7 +7,16 @@ from nonebot.matcher import Matcher
 
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
-from src.plugins.water.services import SettlementResult, water_settlement_service
+from src.plugins.water.renderers import render_season_list
+from src.plugins.water.services.season import (
+    SeasonCreateInput,
+    SeasonStatus,
+    season_service,
+)
+from src.plugins.water.services.settlement import (
+    SettlementResult,
+    water_settlement_service,
+)
 
 
 @dataclass
@@ -30,7 +39,13 @@ def water_help_message() -> str:
         "5. ignored\n"
         "   查看忽略名单。\n"
         "6. state\n"
-        "   查看系统幂等锁状态。"
+        "   查看系统幂等锁状态。\n"
+        "7. season create <season_id> <start> <end> <name...>\n"
+        "8. season publish <season_id>\n"
+        "9. season archive <season_id>\n"
+        "10. season show <season_id>\n"
+        "11. season list [current|published|archived]\n"
+        "12. season delete <season_id>"
     )
 
 
@@ -183,3 +198,97 @@ async def handle_state(ctx: WaterAdminContext) -> None:
         f"ignored_count: {state['ignored_count']}\n"
         f"query_time: {arrow.get(get_current_time()).format('YYYY-MM-DD HH:mm:ss')}"
     )
+
+
+async def handle_season(ctx: WaterAdminContext) -> None:
+    if len(ctx.args) < 2:
+        await ctx.matcher.finish(
+            "参数缺失: 用法 #water season <create|publish|archive|show|list|delete> ..."
+        )
+    action = ctx.args[1].lower()
+    if action == "create":
+        if len(ctx.args) < 6:
+            await ctx.matcher.finish(
+                "参数缺失: 用法 #water season create "
+                "<season_id> <YYYYMMDD> <YYYYMMDD> <name...>"
+            )
+        season_id = ctx.args[2]
+        start_date = ctx.args[3]
+        end_date = ctx.args[4]
+        if not (start_date.isdigit() and end_date.isdigit()):
+            await ctx.matcher.finish("日期格式错误，请使用 YYYYMMDD。")
+        name = " ".join(ctx.args[5:]).strip()
+        try:
+            season = await season_service.create(
+                SeasonCreateInput(
+                    season_id=season_id,
+                    start_date=int(start_date),
+                    end_date=int(end_date),
+                    name=name,
+                )
+            )
+        except ValueError as exc:
+            await ctx.matcher.finish(str(exc))
+        await ctx.matcher.finish(
+            "===== Water Season =====\n"
+            f"状态: 已创建 draft\nseason_id: {season.season_id}\n"
+            f"名称: {season.name}\n时间: {season.start_date} ~ {season.end_date}"
+        )
+    if action == "publish":
+        if len(ctx.args) < 3:
+            await ctx.matcher.finish("参数缺失: 用法 #water season publish <season_id>")
+        try:
+            season = await season_service.publish(ctx.args[2])
+        except ValueError as exc:
+            await ctx.matcher.finish(str(exc))
+        await ctx.matcher.finish(f"已发布赛季: {season.season_id} | {season.name}")
+    if action == "archive":
+        if len(ctx.args) < 3:
+            await ctx.matcher.finish("参数缺失: 用法 #water season archive <season_id>")
+        try:
+            season = await season_service.archive(ctx.args[2])
+        except ValueError as exc:
+            await ctx.matcher.finish(str(exc))
+        await ctx.matcher.finish(f"已归档赛季: {season.season_id} | {season.name}")
+    if action == "show":
+        if len(ctx.args) < 3:
+            await ctx.matcher.finish("参数缺失: 用法 #water season show <season_id>")
+        try:
+            season = await season_service.require(ctx.args[2])
+        except ValueError as exc:
+            await ctx.matcher.finish(str(exc))
+        await ctx.matcher.finish(
+            "===== Water Season =====\n"
+            f"season_id: {season.season_id}\n"
+            f"name: {season.name}\n"
+            f"status: {season.status}\n"
+            f"window: {season.start_date} ~ {season.end_date}\n"
+            f"description: {season.description or '-'}"
+        )
+    if action == "list":
+        filter_arg = ctx.args[2].lower() if len(ctx.args) >= 3 else ""
+        if filter_arg == "current":
+            seasons = await season_service.list_current()
+            await ctx.matcher.finish(
+                render_season_list("===== Current Seasons =====", seasons)
+            )
+        statuses: list[SeasonStatus] | None = None
+        if filter_arg == "published":
+            statuses = ["published"]
+        elif filter_arg == "archived":
+            statuses = ["archived"]
+        elif filter_arg == "draft":
+            statuses = ["draft"]
+        seasons = await season_service.list(statuses)
+        await ctx.matcher.finish(
+            render_season_list("===== Water Seasons =====", seasons)
+        )
+    if action == "delete":
+        if len(ctx.args) < 3:
+            await ctx.matcher.finish("参数缺失: 用法 #water season delete <season_id>")
+        try:
+            ok = await season_service.delete_draft(ctx.args[2])
+        except ValueError as exc:
+            await ctx.matcher.finish(str(exc))
+        await ctx.matcher.finish("删除成功。" if ok else "删除失败。")
+    await ctx.matcher.finish(f"未知 season 子命令: {action}")

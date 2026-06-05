@@ -352,6 +352,96 @@ async def test_set_matrix_merge_intention_once_resolves_stale_target(
 
 
 @pytest.mark.asyncio
+async def test_get_global_period_leaderboard_builds_trends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    class FakeSummaryOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_global_period_top_users(
+            self,
+            start_date: int,
+            end_date: int,
+            limit: int = 10,
+        ) -> list[tuple]:
+            _ = (start_date, end_date, limit)
+            return [
+                ("10001", 20, 4, 9, *([1] * 24)),
+                ("10002", 16, 3, 7, *([0, 1] * 12)),
+            ]
+
+        async def get_global_period_ranks(
+            self,
+            start_date: int,
+            end_date: int,
+        ) -> dict[str, int]:
+            _ = (start_date, end_date)
+            return {"10001": 3, "10002": 1}
+
+    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
+    monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
+
+    rows = await repo.get_global_period_leaderboard(
+        20260501,
+        20260523,
+        20260401,
+        20260423,
+    )
+
+    assert len(rows) == 2
+    assert rows[0].trend == 2
+    assert rows[0].hourly_counts == [1] * 24
+    assert rows[1].trend == -1
+
+
+@pytest.mark.asyncio
+async def test_get_global_period_overview_reads_previous_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    class FakeSummaryOps:
+        call_count = 0
+
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_global_period_overview(
+            self,
+            start_date: int,
+            end_date: int,
+        ) -> tuple:
+            _ = (start_date, end_date)
+            FakeSummaryOps.call_count += 1
+            if FakeSummaryOps.call_count == 1:
+                return (120, 18, *([2] * 24))
+            return (90, 16, *([1] * 24))
+
+    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
+    monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
+
+    overview = await repo.get_global_period_overview(
+        20260501,
+        20260523,
+        20260401,
+        20260423,
+    )
+
+    assert overview.total_msg_count == 120
+    assert overview.active_user_count == 18
+    assert overview.previous_total_msg_count == 90
+    assert overview.delta_total_msg_count == 30
+    assert overview.hourly_counts == [2] * 24
+
+
+@pytest.mark.asyncio
 async def test_map_group_to_matrix_updates_mapping_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -410,3 +500,178 @@ async def test_map_group_to_matrix_noop_when_same_matrix(
     await repo.map_group_to_matrix("20001", "same0001")
 
     upsert_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_user_recent_summaries_uses_matrix_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    summary_mock = AsyncMock(return_value=["ok"])
+
+    class FakeMapOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_groups_by_matrix(self, matrix_id: str) -> list[str]:
+            assert matrix_id == "mtx_1234"
+            return ["20001", "20002"]
+
+    class FakeSummaryOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_user_recent_summaries(
+            self,
+            user_id: str,
+            group_ids: list[str],
+            start_date: int,
+            end_date: int,
+        ) -> list[str]:
+            return await summary_mock(user_id, group_ids, start_date, end_date)
+
+    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
+    monkeypatch.setattr(repo_module, "WaterGroupMatrixMapOps", FakeMapOps)
+    monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
+
+    result = await repo.get_user_recent_summaries(
+        user_id="10001",
+        matrix_id="mtx_1234",
+        start_date=20260301,
+        end_date=20260303,
+    )
+
+    assert result == ["ok"]
+    summary_mock.assert_awaited_once_with(
+        "10001",
+        ["20001", "20002"],
+        20260301,
+        20260303,
+    )
+
+
+@pytest.mark.asyncio
+async def test_pardon_penalty_restores_matrix_global_and_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    revoke_mock = AsyncMock(return_value=1)
+    upsert_matrix_mock = AsyncMock(return_value=1)
+    upsert_total_mock = AsyncMock(return_value=1)
+    upsert_global_mock = AsyncMock(return_value=1)
+
+    penalty_log = SimpleNamespace(
+        id=7,
+        user_id="10001",
+        matrix_id="mtx_1234",
+        group_id="20001",
+        record_date=20260302,
+        is_revoked=0,
+        delta_exp=-70,
+        extra={"candidate_delta": 70},
+    )
+    other_penalty = SimpleNamespace(
+        id=8,
+        user_id="10001",
+        matrix_id="mtx_5678",
+        group_id="20003",
+        record_date=20260302,
+        is_revoked=0,
+        delta_exp=-60,
+        extra={"candidate_delta": 60},
+    )
+
+    class FakePenaltyOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_penalty_by_id(self, penalty_id: int) -> Any:
+            assert penalty_id == 7
+            return penalty_log
+
+        async def get_user_penalties_by_date(
+            self,
+            user_id: str,
+            record_date: int,
+        ) -> list[Any]:
+            assert user_id == "10001"
+            assert record_date == 20260302
+            return [penalty_log, other_penalty]
+
+        async def revoke_penalty(self, penalty_id: int, revoked_at: int) -> int:
+            return await revoke_mock(penalty_id, revoked_at)
+
+    class FakeSummaryOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_user_summary_rows_by_date(
+            self,
+            user_id: str,
+            record_date: int,
+        ) -> list[tuple[str, int, int]]:
+            assert user_id == "10001"
+            assert record_date == 20260302
+            return [
+                ("20002", 400, 4),
+                ("20001", 49, 0),
+                ("20003", 36, 2),
+            ]
+
+    class FakeLevelOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_matrix_level(
+            self,
+            matrix_id: str,
+            user_id: str,
+        ) -> tuple[int, int, int] | None:
+            _ = (matrix_id, user_id)
+            return (100, 100, 1)
+
+        async def get_global_level(self, user_id: str) -> tuple[int, int, int] | None:
+            assert user_id == "10001"
+            return (200, 200, 1)
+
+        async def get_matrix_total(
+            self,
+            matrix_id: str,
+        ) -> tuple[int, int, int] | None:
+            assert matrix_id == "mtx_1234"
+            return (300, 300, 1)
+
+        async def upsert_matrix_levels(self, data: list[dict[str, Any]]) -> int:
+            return await upsert_matrix_mock(data)
+
+        async def upsert_matrix_totals(self, data: list[dict[str, Any]]) -> int:
+            return await upsert_total_mock(data)
+
+        async def upsert_global_levels(self, data: list[dict[str, Any]]) -> int:
+            return await upsert_global_mock(data)
+
+    monkeypatch.setattr(repo_module, "get_current_time", lambda: 1_700_000_000)
+    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
+    monkeypatch.setattr(repo_module, "WaterPenaltyOps", FakePenaltyOps)
+    monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
+    monkeypatch.setattr(repo_module, "WaterLevelOps", FakeLevelOps)
+
+    ok = await repo.pardon_penalty(7)
+
+    assert ok is True
+    upsert_matrix_mock.assert_awaited_once()
+    upsert_total_mock.assert_awaited_once()
+    upsert_global_mock.assert_awaited_once()
+    assert upsert_matrix_mock.await_args is not None
+    assert upsert_total_mock.await_args is not None
+    assert upsert_global_mock.await_args is not None
+    assert upsert_matrix_mock.await_args.args[0][0]["delta_exp"] == 170
+    assert upsert_total_mock.await_args.args[0][0]["delta_exp"] == 370
+    assert upsert_global_mock.await_args.args[0][0]["delta_exp"] == 235
+    revoke_mock.assert_awaited_once_with(7, 1_700_000_000)

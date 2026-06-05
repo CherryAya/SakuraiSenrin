@@ -155,3 +155,24 @@ class WaterUserAchievement(WaterCoreBase):
     season_id: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     unlocked_at: Mapped[int] = mapped_column(Integer, nullable=False)
     context: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class WaterActivitySeason(WaterCoreBase, TimeMixin):
+    __tablename__ = "water_activity_season"
+    __table_args__ = (
+        Index("idx_water_activity_season_status", "status"),
+        Index("idx_water_activity_season_window", "start_date", "end_date"),
+        UniqueConstraint("season_id", name="uq_water_activity_season_id"),
+    )
+
+    season_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True
+    )
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    start_date: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_date: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    published_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False, default="")

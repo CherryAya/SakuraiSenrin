@@ -10,8 +10,10 @@ from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.ops import BaseOps
+from src.lib.utils.common import split_list
 
 from .tables import (
+    WaterActivitySeason,
     WaterDailySummary,
     WaterGlobalLevel,
     WaterGroupMatrixMap,
@@ -25,6 +27,7 @@ from .tables import (
 )
 from .types import (
     WaterAchievementPayload,
+    WaterActivitySeasonPayload,
     WaterGroupMatrixMapPayload,
     WaterMatrixExpPayload,
     WaterMatrixMergeStatePayload,
@@ -161,6 +164,23 @@ class WaterMessageOps(BaseOps[WaterMessage]):
 
 
 class WaterSummaryOps(BaseOps[WaterDailySummary]):
+    @staticmethod
+    def _hourly_sum_columns() -> list:
+        return [
+            func.coalesce(
+                func.sum(
+                    func.coalesce(
+                        func.json_extract(
+                            WaterDailySummary.hourly_counts, f"$[{hour}]"
+                        ),
+                        0,
+                    )
+                ),
+                0,
+            ).label(f"hour_{hour}")
+            for hour in range(24)
+        ]
+
     async def bulk_upsert_summary(self, summary_data: list[WaterSummaryPayload]) -> int:
         if not summary_data:
             return 0
@@ -218,6 +238,45 @@ class WaterSummaryOps(BaseOps[WaterDailySummary]):
             .order_by(WaterDailySummary.record_date.asc())
         )
         result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_user_summary_rows_by_date(
+        self,
+        user_id: str,
+        record_date: int,
+    ) -> Sequence[Row[tuple[str, int, int]]]:
+        stmt = select(
+            WaterDailySummary.group_id,
+            WaterDailySummary.msg_count,
+            WaterDailySummary.active_hours,
+        ).where(
+            WaterDailySummary.user_id == user_id,
+            WaterDailySummary.record_date == record_date,
+        )
+        result = await self.session.execute(stmt)
+        return result.all()
+
+    async def get_summaries_in_window(
+        self,
+        start_date: int,
+        end_date: int,
+        *,
+        group_ids: list[str] | None = None,
+        user_id: str | None = None,
+    ) -> Sequence[WaterDailySummary]:
+        stmt = select(WaterDailySummary).where(
+            WaterDailySummary.record_date >= start_date,
+            WaterDailySummary.record_date <= end_date,
+        )
+        if group_ids is not None:
+            if not group_ids:
+                return []
+            stmt = stmt.where(WaterDailySummary.group_id.in_(group_ids))
+        if user_id is not None:
+            stmt = stmt.where(WaterDailySummary.user_id == user_id)
+        result = await self.session.execute(
+            stmt.order_by(WaterDailySummary.record_date.asc())
+        )
         return result.scalars().all()
 
     async def get_group_user_rank(self, group_id: str, user_id: str) -> int | None:
@@ -301,6 +360,86 @@ class WaterSummaryOps(BaseOps[WaterDailySummary]):
         higher_count = int(rank_result.scalar() or 0)
         return higher_count + 1
 
+    async def get_global_period_top_users(
+        self,
+        start_date: int,
+        end_date: int,
+        limit: int = 10,
+    ) -> Sequence[Row]:
+        total_expr = func.sum(WaterDailySummary.msg_count)
+        active_days_expr = func.count()
+        active_hours_expr = func.sum(WaterDailySummary.active_hours)
+        stmt = (
+            select(
+                WaterDailySummary.user_id,
+                total_expr.label("total_msg_count"),
+                active_days_expr.label("active_days"),
+                active_hours_expr.label("active_hours"),
+                *self._hourly_sum_columns(),
+            )
+            .where(
+                WaterDailySummary.record_date >= start_date,
+                WaterDailySummary.record_date <= end_date,
+            )
+            .group_by(WaterDailySummary.user_id)
+            .having(total_expr > 0)
+            .order_by(
+                total_expr.desc(),
+                active_days_expr.desc(),
+                active_hours_expr.desc(),
+                WaterDailySummary.user_id.asc(),
+            )
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return result.all()
+
+    async def get_global_period_ranks(
+        self,
+        start_date: int,
+        end_date: int,
+    ) -> dict[str, int]:
+        total_expr = func.sum(WaterDailySummary.msg_count)
+        active_days_expr = func.count()
+        active_hours_expr = func.sum(WaterDailySummary.active_hours)
+        stmt = (
+            select(WaterDailySummary.user_id)
+            .where(
+                WaterDailySummary.record_date >= start_date,
+                WaterDailySummary.record_date <= end_date,
+            )
+            .group_by(WaterDailySummary.user_id)
+            .having(total_expr > 0)
+            .order_by(
+                total_expr.desc(),
+                active_days_expr.desc(),
+                active_hours_expr.desc(),
+                WaterDailySummary.user_id.asc(),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return {user_id: rank for rank, user_id in enumerate(result.scalars(), 1)}
+
+    async def get_global_period_overview(
+        self,
+        start_date: int,
+        end_date: int,
+    ) -> Row | None:
+        stmt = select(
+            func.coalesce(func.sum(WaterDailySummary.msg_count), 0).label(
+                "total_msg_count"
+            ),
+            func.count(func.distinct(WaterDailySummary.user_id)).label(
+                "active_user_count"
+            ),
+            *self._hourly_sum_columns(),
+        ).where(
+            WaterDailySummary.record_date >= start_date,
+            WaterDailySummary.record_date <= end_date,
+        )
+        result = await self.session.execute(stmt)
+        return result.one_or_none()
+
 
 class WaterGroupMatrixMapOps(BaseOps[WaterGroupMatrixMap]):
     async def get_matrix_id_by_group(self, group_id: str) -> str | None:
@@ -356,6 +495,8 @@ class WaterGroupMatrixMapOps(BaseOps[WaterGroupMatrixMap]):
 class WaterLevelOps:
     """资产升级相关的聚合写入。"""
 
+    _READ_CHUNK_SIZE = 400
+
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
@@ -372,23 +513,28 @@ class WaterLevelOps:
     ) -> dict[tuple[str, str], tuple[int, int, int]]:
         if not keys:
             return {}
-        conditions = [
-            (WaterMatrixLevel.matrix_id == matrix_id)
-            & (WaterMatrixLevel.user_id == user_id)
-            for matrix_id, user_id in keys
-        ]
-        stmt = select(
-            WaterMatrixLevel.matrix_id,
-            WaterMatrixLevel.user_id,
-            WaterMatrixLevel.exp,
-            WaterMatrixLevel.season_exp,
-            WaterMatrixLevel.level,
-        ).where(or_(*conditions))
-        result = await self.session.execute(stmt)
-        return {
-            (matrix_id, user_id): (exp, season_exp, level)
-            for matrix_id, user_id, exp, season_exp, level in result.all()
-        }
+        rows: dict[tuple[str, str], tuple[int, int, int]] = {}
+        for chunk in split_list(keys, self._READ_CHUNK_SIZE):
+            conditions = [
+                (WaterMatrixLevel.matrix_id == matrix_id)
+                & (WaterMatrixLevel.user_id == user_id)
+                for matrix_id, user_id in chunk
+            ]
+            stmt = select(
+                WaterMatrixLevel.matrix_id,
+                WaterMatrixLevel.user_id,
+                WaterMatrixLevel.exp,
+                WaterMatrixLevel.season_exp,
+                WaterMatrixLevel.level,
+            ).where(or_(*conditions))
+            result = await self.session.execute(stmt)
+            rows.update(
+                {
+                    (matrix_id, user_id): (exp, season_exp, level)
+                    for matrix_id, user_id, exp, season_exp, level in result.all()
+                }
+            )
+        return rows
 
     async def get_matrix_level(
         self,
@@ -414,17 +560,22 @@ class WaterLevelOps:
     ) -> dict[str, tuple[int, int, int]]:
         if not user_ids:
             return {}
-        stmt = select(
-            WaterGlobalLevel.user_id,
-            WaterGlobalLevel.exp,
-            WaterGlobalLevel.season_exp,
-            WaterGlobalLevel.level,
-        ).where(WaterGlobalLevel.user_id.in_(user_ids))
-        result = await self.session.execute(stmt)
-        return {
-            user_id: (exp, season_exp, level)
-            for user_id, exp, season_exp, level in result.all()
-        }
+        rows: dict[str, tuple[int, int, int]] = {}
+        for chunk in split_list(user_ids, self._READ_CHUNK_SIZE):
+            stmt = select(
+                WaterGlobalLevel.user_id,
+                WaterGlobalLevel.exp,
+                WaterGlobalLevel.season_exp,
+                WaterGlobalLevel.level,
+            ).where(WaterGlobalLevel.user_id.in_(chunk))
+            result = await self.session.execute(stmt)
+            rows.update(
+                {
+                    user_id: (exp, season_exp, level)
+                    for user_id, exp, season_exp, level in result.all()
+                }
+            )
+        return rows
 
     async def get_global_level(self, user_id: str) -> tuple[int, int, int] | None:
         stmt = select(
@@ -477,17 +628,22 @@ class WaterLevelOps:
     ) -> dict[str, tuple[int, int, int]]:
         if not matrix_ids:
             return {}
-        stmt = select(
-            WaterMatrixTotalLevel.matrix_id,
-            WaterMatrixTotalLevel.exp,
-            WaterMatrixTotalLevel.season_exp,
-            WaterMatrixTotalLevel.level,
-        ).where(WaterMatrixTotalLevel.matrix_id.in_(matrix_ids))
-        result = await self.session.execute(stmt)
-        return {
-            mid: (exp, season_exp, level)
-            for mid, exp, season_exp, level in result.all()
-        }
+        rows: dict[str, tuple[int, int, int]] = {}
+        for chunk in split_list(matrix_ids, self._READ_CHUNK_SIZE):
+            stmt = select(
+                WaterMatrixTotalLevel.matrix_id,
+                WaterMatrixTotalLevel.exp,
+                WaterMatrixTotalLevel.season_exp,
+                WaterMatrixTotalLevel.level,
+            ).where(WaterMatrixTotalLevel.matrix_id.in_(chunk))
+            result = await self.session.execute(stmt)
+            rows.update(
+                {
+                    mid: (exp, season_exp, level)
+                    for mid, exp, season_exp, level in result.all()
+                }
+            )
+        return rows
 
     async def get_matrix_total(self, matrix_id: str) -> tuple[int, int, int] | None:
         stmt = select(
@@ -685,6 +841,18 @@ class WaterPenaltyOps(BaseOps[WaterPenaltyLog]):
 
     async def get_penalty_by_id(self, penalty_id: int) -> WaterPenaltyLog | None:
         return await self.session.get(WaterPenaltyLog, penalty_id)
+
+    async def get_user_penalties_by_date(
+        self,
+        user_id: str,
+        record_date: int,
+    ) -> list[WaterPenaltyLog]:
+        stmt = select(WaterPenaltyLog).where(
+            WaterPenaltyLog.user_id == user_id,
+            WaterPenaltyLog.record_date == record_date,
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
     async def revoke_penalty(self, penalty_id: int, revoked_at: int) -> int:
         stmt = (
@@ -990,3 +1158,88 @@ class WaterAchievementOps(BaseOps[WaterUserAchievement]):
         )
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount
+
+
+class WaterActivitySeasonOps(BaseOps[WaterActivitySeason]):
+    async def create(self, payload: WaterActivitySeasonPayload) -> int:
+        stmt = sqlite_insert(WaterActivitySeason).values(payload)
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
+
+    async def get_by_season_id(self, season_id: str) -> WaterActivitySeason | None:
+        return await self.session.get(WaterActivitySeason, season_id)
+
+    async def update(
+        self,
+        season_id: str,
+        **values: object,
+    ) -> int:
+        stmt = (
+            update(WaterActivitySeason)
+            .where(WaterActivitySeason.season_id == season_id)
+            .values(**values)
+        )
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
+
+    async def delete(self, season_id: str) -> int:
+        stmt = delete(WaterActivitySeason).where(
+            WaterActivitySeason.season_id == season_id
+        )
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
+
+    async def list_by_status(
+        self,
+        statuses: list[str] | None = None,
+    ) -> list[WaterActivitySeason]:
+        stmt = select(WaterActivitySeason)
+        if statuses:
+            stmt = stmt.where(WaterActivitySeason.status.in_(statuses))
+        stmt = stmt.order_by(
+            WaterActivitySeason.start_date.desc(),
+            WaterActivitySeason.season_id.asc(),
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_current_published(self, today: int) -> list[WaterActivitySeason]:
+        stmt = (
+            select(WaterActivitySeason)
+            .where(
+                WaterActivitySeason.status == "published",
+                WaterActivitySeason.start_date <= today,
+                WaterActivitySeason.end_date >= today,
+            )
+            .order_by(
+                WaterActivitySeason.start_date.asc(),
+                WaterActivitySeason.season_id.asc(),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def search_published_candidates(
+        self, keyword: str
+    ) -> list[WaterActivitySeason]:
+        like_pattern = f"%{keyword}%"
+        stmt = (
+            select(WaterActivitySeason)
+            .where(
+                WaterActivitySeason.status == "published",
+                or_(
+                    WaterActivitySeason.season_id == keyword,
+                    WaterActivitySeason.name == keyword,
+                    WaterActivitySeason.normalized_name == keyword,
+                    WaterActivitySeason.season_id.like(like_pattern),
+                    WaterActivitySeason.name.like(like_pattern),
+                    WaterActivitySeason.normalized_name.like(like_pattern),
+                ),
+            )
+            .order_by(
+                WaterActivitySeason.start_date.desc(),
+                WaterActivitySeason.season_id.asc(),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

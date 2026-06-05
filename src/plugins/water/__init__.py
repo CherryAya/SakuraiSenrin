@@ -1,9 +1,10 @@
 """水王插件入口。"""
 
-import asyncio
+from __future__ import annotations
+
 from collections.abc import Awaitable, Callable
 
-from nonebot import on_message, on_notice, require
+from nonebot import get_driver, on_message, on_notice, require
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
     GroupIncreaseNoticeEvent,
@@ -11,7 +12,7 @@ from nonebot.adapters.onebot.v11.event import (
     MessageEvent,
 )
 from nonebot.adapters.onebot.v11.helpers import Cooldown, CooldownIsolateLevel
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
@@ -23,14 +24,6 @@ from src.lib.consts import TriggerType
 from src.lib.plugin_docs import build_static_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
-from src.plugins.water.img import (
-    WaterProfileCardData,
-    build_my_water_fallback_text,
-    build_my_water_image,
-    build_my_water_simple_image,
-    build_water_rank_image,
-)
-from src.services.info import resolve_group_card, resolve_group_name
 
 from .database import water_repo
 from .handlers import (
@@ -44,39 +37,47 @@ from .handlers import (
     handle_merge_yes,
     handle_my_achievements,
     handle_pardon,
+    handle_period_rank,
+    handle_season,
     handle_settle,
     handle_state,
+    handle_water_query,
     handle_water_record,
     is_group_admin_event,
     water_help_message,
 )
-from .services import matrix_suggestion_service, water_settlement_service
+from .services.matrix_suggestion import matrix_suggestion_service
+from .services.settlement import water_settlement_service
 
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
 
 name = "吹水记录"
-description = """
-吹水记录模块
-""".strip()
+description = "群聊活跃记录、画像、榜单与活动赛季。"
 
-docs_content = f"""
-===== {name} =====
-
-用户命令:
-1. 我有多水 (简版，默认)
-2. 我有多水 详细/完整
-3. 水王排行榜 / 水王
-4. 我的水王成就 / 水王成就
-5. #water.merge yes / #water.merge no (群管理员)
-
-超管命令:
-1. #water help
-2. #water settle [YYYYMMDD] [-f|--force]
-3. #water pardon <penalty_id>
-4. #water ignore <group_id>
-5. #water ignored
-6. #water state
+docs_content = """
+1. 水王
+   个人画像（简版）
+2. 水王 完整
+   个人画像（完整版）
+3. 水王 日榜 / 月榜 / 季榜 / 年榜 / 总榜
+4. 水王 成就
+   个人成就
+5. 水王 赛季
+   当前活动赛季概览
+6. 水王 赛季 当前
+   当前活动赛季概览
+7. 水王 赛季 列表
+   已发布赛季
+8. 水王 赛季 当前列表
+   当前生效赛季
+9. 水王 赛季 <season_id|名称> [个人|群聊|矩阵] [概览|积分|排名|成就]
+10. #water season create <season_id> <start> <end> <name...>
+11. #water season publish <season_id>
+12. #water season archive <season_id>
+13. #water season show <season_id>
+14. #water season list [current|published|archived]
+15. #water season delete <season_id>
 """.strip()
 
 
@@ -95,7 +96,7 @@ __plugin_meta__ = create_plugin_metadata(
     description=description,
     extra={
         "author": "SakuraiCora",
-        "version": "0.3.0",
+        "version": "0.4.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.NORMAL,
         "docs": create_docs_meta(
@@ -106,21 +107,38 @@ __plugin_meta__ = create_plugin_metadata(
         ),
     },
 )
-asyncio.run(water_repo.init_all_tables())
-asyncio.run(matrix_suggestion_service.warm_up_first_record_cache())
-asyncio.run(water_repo.warm_up_group_matrix_cache())
 
-self_global_water_status = on_command(
-    "我有多水",
+_water_plugin_initialized = False
+
+
+async def initialize_water_plugin() -> None:
+    global _water_plugin_initialized
+    if _water_plugin_initialized:
+        return
+    await water_repo.init_all_tables()
+    await matrix_suggestion_service.warm_up_first_record_cache()
+    await water_repo.warm_up_group_matrix_cache()
+    _water_plugin_initialized = True
+
+
+driver = get_driver()
+
+
+@driver.on_startup
+async def _initialize_water_plugin() -> None:
+    await initialize_water_plugin()
+
+
+water_query = on_command(
+    "水王",
+    aliases={"水王排行榜", "我有多水"},
     priority=5,
     block=True,
 )
-water_rank = on_command(
-    "水王排行榜",
-    aliases={"水王"},
-    priority=5,
-    block=True,
-)
+water_week_rank = on_command("水王周榜", priority=5, block=True)
+water_month_rank = on_command("水王月榜", priority=5, block=True)
+water_season_rank = on_command("水王季榜", priority=5, block=True)
+water_year_rank = on_command("水王年榜", priority=5, block=True)
 water_achievement = on_command(
     "我的水王成就",
     aliases={"水王成就"},
@@ -176,94 +194,7 @@ async def _(bot: Bot, event: GroupIncreaseNoticeEvent) -> None:
     await handle_group_increase_notice(bot, event)
 
 
-@self_global_water_status.handle()
-async def _(event: GroupMessageEvent, arg: Message = CommandArg()) -> None:
-    user_id = str(event.user_id)
-    group_id = str(event.group_id)
-    matrix_id = await water_repo.get_or_create_group_matrix_id(group_id)
-    matrix_group_ids = await water_repo.get_groups_by_matrix_id(matrix_id)
-    if not matrix_group_ids:
-        matrix_group_ids = [group_id]
-    matrix_group_names = await asyncio.gather(
-        *(resolve_group_name(None, gid) for gid in matrix_group_ids)
-    )
-    matrix_groups = list(
-        zip(
-            matrix_group_ids,
-            [
-                name or f"群聊_{gid[-4:]}"
-                for gid, name in zip(matrix_group_ids, matrix_group_names, strict=False)
-            ],
-            strict=False,
-        )
-    )
-
-    global_level, matrix_level, matrix_total_level = await asyncio.gather(
-        water_repo.get_user_global_level(user_id),
-        water_repo.get_user_matrix_level(user_id, matrix_id),
-        water_repo.get_matrix_total_level(matrix_id),
-    )
-    (
-        global_rank,
-        group_user_rank,
-        matrix_user_rank,
-        matrix_rank,
-        group_activity_rank,
-        achievement_items,
-    ) = await asyncio.gather(
-        water_repo.get_user_global_rank(user_id),
-        water_repo.get_group_user_rank(group_id, user_id),
-        water_repo.get_user_matrix_rank(user_id, matrix_id),
-        water_repo.get_matrix_rank(matrix_id),
-        water_repo.get_group_activity_rank(group_id),
-        water_repo.get_user_achievement_items(user_id),
-    )
-
-    if global_level is None and matrix_level is None:
-        await self_global_water_status.finish(
-            "嗯嗯……看上去你的水还不够多，先多聊几天再来查吧。"
-        )
-
-    profile_data = WaterProfileCardData(
-        user_id=user_id,
-        group_id=group_id,
-        matrix_id=matrix_id,
-        group_name=await resolve_group_name(None, group_id),
-        username=await resolve_group_card(None, user_id, group_id),
-        global_level=global_level,
-        matrix_level=matrix_level,
-        global_rank=global_rank,
-        group_user_rank=group_user_rank,
-        matrix_user_rank=matrix_user_rank,
-        matrix_rank=matrix_rank,
-        group_rank=group_activity_rank,
-        matrix_total_level=matrix_total_level,
-        matrix_groups=matrix_groups,
-        achievement_items=achievement_items,
-    )
-
-    raw_arg = arg.extract_plain_text().strip().lower()
-    prefer_full = any(
-        key in raw_arg for key in ("详细", "完整", "完整版", "full", "detail")
-    )
-    prefer_simple = any(key in raw_arg for key in ("简", "简单", "简版", "simple"))
-    use_full = prefer_full and not prefer_simple
-
-    await self_global_water_status.send("凛凛制图中，请稍候……")
-    if use_full:
-        card = await build_my_water_image(profile_data)
-    else:
-        card = await build_my_water_simple_image(profile_data)
-        if not card:
-            card = await build_my_water_image(profile_data)
-    if card:
-        await self_global_water_status.finish(MessageSegment.image(card))
-
-    fallback = await build_my_water_fallback_text(profile_data)
-    await self_global_water_status.finish(fallback)
-
-
-@water_rank.handle(
+@water_query.handle(
     parameterless=[
         Cooldown(
             cooldown=30,
@@ -272,13 +203,31 @@ async def _(event: GroupMessageEvent, arg: Message = CommandArg()) -> None:
         )
     ]
 )
-async def _(event: GroupMessageEvent) -> None:
-    await water_rank.send("凛凛统计中，请稍后喔……")
-    res = await build_water_rank_image(str(event.group_id))
-    if res:
-        await water_rank.finish(MessageSegment.image(res))
-    else:
-        await water_rank.finish("凛凛，凛凛凛凛！无水无水！🏳️")
+async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) -> None:
+    if not isinstance(event, GroupMessageEvent):
+        await matcher.finish("这个命令要在群里用喔~")
+    await matcher.send("凛凛统计中，请稍后喔……")
+    await handle_water_query(matcher, event, arg)
+
+
+@water_week_rank.handle()
+async def _(matcher: Matcher) -> None:
+    await handle_period_rank(matcher, "week")
+
+
+@water_month_rank.handle()
+async def _(matcher: Matcher) -> None:
+    await handle_period_rank(matcher, "month")
+
+
+@water_season_rank.handle()
+async def _(matcher: Matcher) -> None:
+    await handle_period_rank(matcher, "season")
+
+
+@water_year_rank.handle()
+async def _(matcher: Matcher) -> None:
+    await handle_period_rank(matcher, "year")
 
 
 @water_achievement.handle()
@@ -334,6 +283,8 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
             handler = handle_ignored
         case "state" | "状态":
             handler = handle_state
+        case "season":
+            handler = handle_season
         case _:
             await matcher.finish(f"未知子命令: {action}\n\n{water_help_message()}")
 

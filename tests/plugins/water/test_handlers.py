@@ -2,7 +2,10 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
+from nonebot import on_message
 from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11.event import GroupMessageEvent
+from nonebot.matcher import Matcher
 from nonebug import App
 import pytest
 
@@ -11,6 +14,7 @@ from src.plugins.water.handlers.admin import (
     WaterAdminContext,
     format_settlement_message,
     handle_ignore,
+    handle_season,
     handle_settle,
 )
 from src.plugins.water.handlers.merge import (
@@ -34,14 +38,12 @@ from tests.plugins.water.helpers import (
 
 @pytest.mark.asyncio
 async def test_handle_merge_yes_first_intention(
+    app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.plugins.water.handlers import merge as merge_module
 
     event = build_group_message_event("#water.merge yes", role="admin")
-    matcher = DummyMatcher()
-    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event)
-
     monkeypatch.setattr(
         merge_module.water_repo,
         "set_matrix_merge_intention_once",
@@ -62,11 +64,28 @@ async def test_handle_merge_yes_first_intention(
         AsyncMock(return_value={"target_matrix_id": "abcd1234"}),
     )
 
-    with pytest.raises(MatcherFinished):
-        await handle_merge_yes(ctx)
+    matcher = on_message(priority=1, block=True)
 
-    assert matcher.finished is not None
-    assert "目标矩阵: abcd1234" in matcher.finished
+    @matcher.handle()
+    async def _(
+        matcher: Matcher,
+        event: GroupMessageEvent,
+    ) -> None:
+        await handle_merge_yes(WaterMergeContext(matcher=matcher, event=event))
+
+    async with app.test_matcher(matcher) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            "已记录为“同意合并”啦 (≧▽≦)\n"
+            "群号: 20001\n"
+            "目标矩阵: abcd1234\n"
+            "后续不会再重复询问这个群。\n"
+            "后续要改，请到反馈群 10001 联系超管。",
+            bot=bot,
+        )
+        ctx.should_finished(matcher)
 
 
 @pytest.mark.asyncio
@@ -189,6 +208,79 @@ async def test_handle_ignore_param_validation_and_success(
 
     assert matcher.finished is not None
     assert "状态: 成功" in matcher.finished
+
+
+@pytest.mark.asyncio
+async def test_handle_season_create_and_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.handlers import admin as admin_module
+
+    create_matcher = DummyMatcher()
+    create_ctx = WaterAdminContext(
+        matcher=cast(Any, create_matcher),
+        args=[
+            "season",
+            "create",
+            "spring_2026",
+            "20260301",
+            "20260331",
+            "2026",
+            "春日特别季",
+        ],
+    )
+
+    monkeypatch.setattr(
+        admin_module.season_service,
+        "create",
+        AsyncMock(
+            return_value=type(
+                "Season",
+                (),
+                {
+                    "season_id": "spring_2026",
+                    "name": "2026 春日特别季",
+                    "start_date": 20260301,
+                    "end_date": 20260331,
+                },
+            )()
+        ),
+    )
+
+    with pytest.raises(MatcherFinished):
+        await handle_season(create_ctx)
+
+    assert "已创建 draft" in str(create_matcher.finished)
+
+    list_matcher = DummyMatcher()
+    list_ctx = WaterAdminContext(
+        matcher=cast(Any, list_matcher),
+        args=["season", "list", "published"],
+    )
+    monkeypatch.setattr(
+        admin_module.season_service,
+        "list",
+        AsyncMock(
+            return_value=[
+                type(
+                    "Season",
+                    (),
+                    {
+                        "season_id": "spring_2026",
+                        "name": "2026 春日特别季",
+                        "start_date": 20260301,
+                        "end_date": 20260331,
+                        "status": "published",
+                    },
+                )()
+            ]
+        ),
+    )
+
+    with pytest.raises(MatcherFinished):
+        await handle_season(list_ctx)
+
+    assert "spring_2026" in str(list_matcher.finished)
 
 
 @pytest.mark.asyncio

@@ -6,7 +6,7 @@ from nonebot.matcher import Matcher
 
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
-from src.plugins.water.services import achievement_service
+from src.plugins.water.services.achievement import achievement_service
 
 
 async def handle_my_achievements(matcher: Matcher, event: GroupMessageEvent) -> None:

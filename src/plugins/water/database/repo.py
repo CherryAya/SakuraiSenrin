@@ -6,6 +6,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from math import floor, sqrt
 from secrets import token_hex
+import sqlite3
+import unicodedata
 
 import arrow
 from sqlalchemy.engine.row import Row
@@ -17,6 +19,7 @@ from src.lib.utils.common import get_current_time, split_list
 from .instances import water_core_db, water_message
 from .ops import (
     WaterAchievementOps,
+    WaterActivitySeasonOps,
     WaterGroupMatrixMapOps,
     WaterLevelOps,
     WaterMatrixMergeStateOps,
@@ -26,6 +29,7 @@ from .ops import (
     WaterSummaryOps,
 )
 from .tables import (
+    WaterActivitySeason,
     WaterCoreBase,
     WaterDailySummary,
     WaterMessageBase,
@@ -33,6 +37,7 @@ from .tables import (
 )
 from .types import (
     WaterAchievementPayload,
+    WaterActivitySeasonPayload,
     WaterMatrixExpPayload,
     WaterMessagePayload,
     WaterPenaltyPayload,
@@ -42,6 +47,7 @@ from .types import (
 from .writers import water_writer
 
 SETTLEMENT_STALE_SECONDS = 60 * 30
+GLOBAL_EXP_DECAY_WEIGHTS = (1.0, 0.5, 0.2)
 
 
 @dataclass
@@ -50,6 +56,80 @@ class RankItem:
     msg_count: int
     current_rank: int
     trend: int | None
+
+
+@dataclass
+class GlobalPeriodRankItem:
+    user_id: str
+    msg_count: int
+    active_days: int
+    active_hours: int
+    hourly_counts: list[int]
+    current_rank: int
+    trend: int | None
+
+
+@dataclass
+class GlobalPeriodOverview:
+    total_msg_count: int
+    active_user_count: int
+    hourly_counts: list[int]
+    previous_total_msg_count: int
+
+    @property
+    def delta_total_msg_count(self) -> int:
+        return self.total_msg_count - self.previous_total_msg_count
+
+    @property
+    def peak_hour(self) -> int:
+        if not any(self.hourly_counts):
+            return 0
+        return max(range(24), key=lambda hour: self.hourly_counts[hour])
+
+
+@dataclass(frozen=True)
+class WaterActivitySeasonRecord:
+    season_id: str
+    name: str
+    normalized_name: str
+    description: str
+    start_date: int
+    end_date: int
+    status: str
+    published_at: int | None
+    created_by: str
+    created_at: int
+    updated_at: int
+
+
+@dataclass(frozen=True)
+class SeasonUserAggregate:
+    user_id: str
+    msg_count: int
+    active_days: int
+    active_hours: int
+    hourly_counts: list[int]
+    rank: int
+
+
+@dataclass(frozen=True)
+class SeasonGroupAggregate:
+    group_id: str
+    msg_count: int
+    active_days: int
+    active_hours: int
+    hourly_counts: list[int]
+    rank: int
+
+
+@dataclass(frozen=True)
+class SeasonMatrixAggregate:
+    matrix_id: str
+    msg_count: int
+    active_days: int
+    active_hours: int
+    hourly_counts: list[int]
+    rank: int
 
 
 @dataclass
@@ -80,6 +160,19 @@ def calc_personal_delta_exp(msg_count: int, active_hours: int) -> int:
     return floor(10 * sqrt(msg_count) + 5 * active_hours)
 
 
+def calc_weighted_global_exp(gains: Sequence[int]) -> int:
+    total = 0
+    ordered = sorted((gain for gain in gains if gain > 0), reverse=True)
+    for idx, gain in enumerate(ordered):
+        weight = (
+            GLOBAL_EXP_DECAY_WEIGHTS[idx]
+            if idx < len(GLOBAL_EXP_DECAY_WEIGHTS)
+            else 0.0
+        )
+        total += floor(gain * weight)
+    return total
+
+
 class WaterRepository:
     def __init__(self) -> None:
         self._group_matrix_cache: dict[str, str] = {}
@@ -90,6 +183,161 @@ class WaterRepository:
     async def init_all_tables(cls) -> None:
         await water_message.init(WaterMessageBase)
         await water_core_db.init(WaterCoreBase)
+
+    @staticmethod
+    def normalize_season_name(name: str) -> str:
+        normalized = unicodedata.normalize("NFKC", name).strip().casefold()
+        return " ".join(normalized.split())
+
+    @staticmethod
+    def _to_season_record(row: WaterActivitySeason) -> WaterActivitySeasonRecord:
+        return WaterActivitySeasonRecord(
+            season_id=row.season_id,
+            name=row.name,
+            normalized_name=row.normalized_name,
+            description=row.description,
+            start_date=row.start_date,
+            end_date=row.end_date,
+            status=row.status,
+            published_at=row.published_at,
+            created_by=row.created_by,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    @staticmethod
+    def _sum_hourly(items: Sequence[WaterDailySummary]) -> list[int]:
+        hourly = [0] * 24
+        for item in items:
+            source = list((item.hourly_counts or [0] * 24)[:24])
+            if len(source) < 24:
+                source.extend([0] * (24 - len(source)))
+            for idx, count in enumerate(source):
+                hourly[idx] += int(count)
+        return hourly
+
+    @staticmethod
+    def _build_user_season_rank(
+        summaries: Sequence[WaterDailySummary],
+    ) -> list[SeasonUserAggregate]:
+        by_user: dict[str, list[WaterDailySummary]] = defaultdict(list)
+        for item in summaries:
+            by_user[item.user_id].append(item)
+        ordered = sorted(
+            (
+                (
+                    user_id,
+                    sum(int(row.msg_count) for row in rows),
+                    len({row.record_date for row in rows}),
+                    sum(int(row.active_hours) for row in rows),
+                    WaterRepository._sum_hourly(rows),
+                )
+                for user_id, rows in by_user.items()
+            ),
+            key=lambda item: (-item[1], -item[2], -item[3], item[0]),
+        )
+        return [
+            SeasonUserAggregate(
+                user_id=user_id,
+                msg_count=msg_count,
+                active_days=active_days,
+                active_hours=active_hours,
+                hourly_counts=hourly_counts,
+                rank=index,
+            )
+            for index, (
+                user_id,
+                msg_count,
+                active_days,
+                active_hours,
+                hourly_counts,
+            ) in enumerate(ordered, 1)
+            if msg_count > 0
+        ]
+
+    @staticmethod
+    def _build_group_season_rank(
+        summaries: Sequence[WaterDailySummary],
+    ) -> list[SeasonGroupAggregate]:
+        by_group: dict[str, list[WaterDailySummary]] = defaultdict(list)
+        for item in summaries:
+            by_group[item.group_id].append(item)
+        ordered = sorted(
+            (
+                (
+                    group_id,
+                    sum(int(row.msg_count) for row in rows),
+                    len({row.record_date for row in rows}),
+                    sum(int(row.active_hours) for row in rows),
+                    WaterRepository._sum_hourly(rows),
+                )
+                for group_id, rows in by_group.items()
+            ),
+            key=lambda item: (-item[1], -item[2], -item[3], item[0]),
+        )
+        return [
+            SeasonGroupAggregate(
+                group_id=group_id,
+                msg_count=msg_count,
+                active_days=active_days,
+                active_hours=active_hours,
+                hourly_counts=hourly_counts,
+                rank=index,
+            )
+            for index, (
+                group_id,
+                msg_count,
+                active_days,
+                active_hours,
+                hourly_counts,
+            ) in enumerate(ordered, 1)
+            if msg_count > 0
+        ]
+
+    async def _build_matrix_season_rank(
+        self,
+        summaries: Sequence[WaterDailySummary],
+    ) -> list[SeasonMatrixAggregate]:
+        if not summaries:
+            return []
+        group_ids = sorted({item.group_id for item in summaries})
+        group_map = await self.get_or_create_group_matrix_ids(group_ids)
+        by_matrix: dict[str, list[WaterDailySummary]] = defaultdict(list)
+        for item in summaries:
+            matrix_id = group_map.get(item.group_id)
+            if matrix_id:
+                by_matrix[matrix_id].append(item)
+        ordered = sorted(
+            (
+                (
+                    matrix_id,
+                    sum(int(row.msg_count) for row in rows),
+                    len({row.record_date for row in rows}),
+                    sum(int(row.active_hours) for row in rows),
+                    self._sum_hourly(rows),
+                )
+                for matrix_id, rows in by_matrix.items()
+            ),
+            key=lambda item: (-item[1], -item[2], -item[3], item[0]),
+        )
+        return [
+            SeasonMatrixAggregate(
+                matrix_id=matrix_id,
+                msg_count=msg_count,
+                active_days=active_days,
+                active_hours=active_hours,
+                hourly_counts=hourly_counts,
+                rank=index,
+            )
+            for index, (
+                matrix_id,
+                msg_count,
+                active_days,
+                active_hours,
+                hourly_counts,
+            ) in enumerate(ordered, 1)
+            if msg_count > 0
+        ]
 
     @staticmethod
     def _gen_matrix_id() -> str:
@@ -313,6 +561,78 @@ class WaterRepository:
             user_hourly[uid][hour] += 1
         return dict(user_hourly)
 
+    @staticmethod
+    def _extract_hourly_counts(row: Row, start_idx: int) -> list[int]:
+        return [int(row[idx] or 0) for idx in range(start_idx, start_idx + 24)]
+
+    async def get_global_period_leaderboard(
+        self,
+        start_date: int,
+        end_date: int,
+        previous_start_date: int,
+        previous_end_date: int,
+        limit: int = 10,
+    ) -> list[GlobalPeriodRankItem]:
+        async with water_core_db.session(commit=False) as session:
+            summary_ops = WaterSummaryOps(session)
+            current_rows = await summary_ops.get_global_period_top_users(
+                start_date,
+                end_date,
+                limit=limit,
+            )
+            previous_ranks = await summary_ops.get_global_period_ranks(
+                previous_start_date,
+                previous_end_date,
+            )
+
+        return [
+            GlobalPeriodRankItem(
+                user_id=str(row[0]),
+                msg_count=int(row[1] or 0),
+                active_days=int(row[2] or 0),
+                active_hours=int(row[3] or 0),
+                hourly_counts=self._extract_hourly_counts(row, 4),
+                current_rank=current_rank,
+                trend=(
+                    previous_ranks[str(row[0])] - current_rank
+                    if str(row[0]) in previous_ranks
+                    else None
+                ),
+            )
+            for current_rank, row in enumerate(current_rows, 1)
+        ]
+
+    async def get_global_period_overview(
+        self,
+        start_date: int,
+        end_date: int,
+        previous_start_date: int,
+        previous_end_date: int,
+    ) -> GlobalPeriodOverview:
+        async with water_core_db.session(commit=False) as session:
+            summary_ops = WaterSummaryOps(session)
+            current_row = await summary_ops.get_global_period_overview(
+                start_date,
+                end_date,
+            )
+            previous_row = await summary_ops.get_global_period_overview(
+                previous_start_date,
+                previous_end_date,
+            )
+
+        current = current_row
+        previous = previous_row
+        current_hourly = (
+            self._extract_hourly_counts(current, 2) if current is not None else [0] * 24
+        )
+        previous_total = int(previous[0] or 0) if previous is not None else 0
+        return GlobalPeriodOverview(
+            total_msg_count=int(current[0] or 0) if current is not None else 0,
+            active_user_count=int(current[1] or 0) if current is not None else 0,
+            hourly_counts=current_hourly,
+            previous_total_msg_count=previous_total,
+        )
+
     async def collect_daily_aggregates(
         self,
         target_date: arrow.Arrow,
@@ -425,6 +745,8 @@ class WaterRepository:
         target_date: arrow.Arrow,
         aggregates: list[DailyAggregateItem],
         chunk_size: int = 500,
+        chunk_pause_seconds: float = 0.1,
+        prune_after_settlement: bool = True,
     ) -> None:
         if not aggregates:
             return
@@ -452,6 +774,7 @@ class WaterRepository:
                 }
             )
 
+            delta = calc_personal_delta_exp(row.msg_count, row.active_hours)
             if row.msg_count > 1000 and row.active_hours <= 2:
                 penalty_logs.append(
                     {
@@ -462,29 +785,27 @@ class WaterRepository:
                         "group_id": row.group_id,
                         "matrix_id": row.matrix_id,
                         "reason": "ANTI_SPAM_ZERO_PROFIT",
-                        "delta_exp": 0,
+                        "delta_exp": -delta,
                         "is_revoked": 0,
                         "revoked_at": None,
                         "extra": {
                             "msg_count": row.msg_count,
                             "active_hours": row.active_hours,
+                            "candidate_delta": delta,
                         },
                     }
                 )
                 continue
 
-            delta = calc_personal_delta_exp(row.msg_count, row.active_hours)
             matrix_user_gain[(row.matrix_id, row.user_id)] += delta
             matrix_gain[row.matrix_id] += delta
             user_matrix_gain[row.user_id].append((row.matrix_id, delta))
 
         user_global_gain: dict[str, int] = defaultdict(int)
-        decay_weights = [1.0, 0.5, 0.2]
         for user_id, gains in user_matrix_gain.items():
-            ordered = sorted(gains, key=lambda x: x[1], reverse=True)
-            for idx, (_, gain) in enumerate(ordered):
-                weight = decay_weights[idx] if idx < len(decay_weights) else 0.0
-                user_global_gain[user_id] += floor(gain * weight)
+            user_global_gain[user_id] = calc_weighted_global_exp(
+                [gain for _, gain in gains]
+            )
 
         async with water_core_db.session(commit=True) as session:
             summary_ops = WaterSummaryOps(session)
@@ -554,27 +875,32 @@ class WaterRepository:
 
             for chunk in split_list(summary_payloads, chunk_size):
                 await summary_ops.bulk_upsert_summary(chunk)
-                await asyncio.sleep(0.1)
+                if chunk_pause_seconds > 0:
+                    await asyncio.sleep(chunk_pause_seconds)
 
             for chunk in split_list(matrix_payloads, chunk_size):
                 await level_ops.upsert_matrix_levels(chunk)
-                await asyncio.sleep(0.1)
+                if chunk_pause_seconds > 0:
+                    await asyncio.sleep(chunk_pause_seconds)
 
             for chunk in split_list(global_payloads, chunk_size):
                 await level_ops.upsert_global_levels(chunk)
-                await asyncio.sleep(0.1)
+                if chunk_pause_seconds > 0:
+                    await asyncio.sleep(chunk_pause_seconds)
 
             for chunk in split_list(matrix_total_payloads, chunk_size):
                 await level_ops.upsert_matrix_totals(chunk)
-                await asyncio.sleep(0.1)
+                if chunk_pause_seconds > 0:
+                    await asyncio.sleep(chunk_pause_seconds)
 
             if penalty_logs:
                 for chunk in split_list(penalty_logs, chunk_size):
                     await penalty_ops.insert_penalty_logs(chunk)
 
-        # 按规范执行裁剪钩子，保留最近 3 天流水。
-        prune_before_ts = target_date.shift(days=-2).floor("day").int_timestamp
-        await self.prune_old_messages(prune_before_ts)
+        if prune_after_settlement:
+            # 按规范执行裁剪钩子，保留最近 3 天流水。
+            prune_before_ts = target_date.shift(days=-2).floor("day").int_timestamp
+            await self.prune_old_messages(prune_before_ts)
 
     async def prune_old_messages(self, before_ts: int) -> int:
         before = arrow.get(before_ts).floor("month")
@@ -582,6 +908,25 @@ class WaterRepository:
         total = 0
         cursor = before
         while cursor <= now:
+            shard_key = cursor.datetime.strftime(water_message.fmt)
+            db_path, _ = water_message._get_file_paths(shard_key)
+            if not db_path.exists():
+                cursor = cursor.shift(months=1)
+                continue
+            conn = sqlite3.connect(db_path)
+            try:
+                row = conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM sqlite_master
+                    WHERE type = 'table' AND name = 'water_message'
+                    """
+                ).fetchone()
+            finally:
+                conn.close()
+            if row is None or int(row[0] or 0) <= 0:
+                cursor = cursor.shift(months=1)
+                continue
             async with water_message.session(
                 time_ctx=cursor.datetime,
                 commit=True,
@@ -603,6 +948,63 @@ class WaterRepository:
         async with water_core_db.session(commit=False) as session:
             return await WaterAchievementOps(session).get_unlocked_items(user_id)
 
+    async def create_activity_season(
+        self,
+        payload: WaterActivitySeasonPayload,
+    ) -> int:
+        async with water_core_db.session(commit=True) as session:
+            return await WaterActivitySeasonOps(session).create(payload)
+
+    async def get_activity_season(
+        self,
+        season_id: str,
+    ) -> WaterActivitySeasonRecord | None:
+        async with water_core_db.session(commit=False) as session:
+            row = await WaterActivitySeasonOps(session).get_by_season_id(season_id)
+        if row is None:
+            return None
+        return self._to_season_record(row)
+
+    async def update_activity_season(
+        self,
+        season_id: str,
+        **values: object,
+    ) -> bool:
+        async with water_core_db.session(commit=True) as session:
+            affected = await WaterActivitySeasonOps(session).update(season_id, **values)
+        return affected > 0
+
+    async def delete_activity_season(self, season_id: str) -> bool:
+        async with water_core_db.session(commit=True) as session:
+            affected = await WaterActivitySeasonOps(session).delete(season_id)
+        return affected > 0
+
+    async def list_activity_seasons(
+        self,
+        statuses: list[str] | None = None,
+    ) -> list[WaterActivitySeasonRecord]:
+        async with water_core_db.session(commit=False) as session:
+            rows = await WaterActivitySeasonOps(session).list_by_status(statuses)
+        return [self._to_season_record(row) for row in rows]
+
+    async def list_current_activity_seasons(
+        self,
+        today: int,
+    ) -> list[WaterActivitySeasonRecord]:
+        async with water_core_db.session(commit=False) as session:
+            rows = await WaterActivitySeasonOps(session).list_current_published(today)
+        return [self._to_season_record(row) for row in rows]
+
+    async def search_published_activity_seasons(
+        self,
+        keyword: str,
+    ) -> list[WaterActivitySeasonRecord]:
+        async with water_core_db.session(commit=False) as session:
+            rows = await WaterActivitySeasonOps(session).search_published_candidates(
+                keyword
+            )
+        return [self._to_season_record(row) for row in rows]
+
     async def get_penalty_log(self, penalty_id: int) -> WaterPenaltyLog | None:
         async with water_core_db.session(commit=False) as session:
             return await WaterPenaltyOps(session).get_penalty_by_id(penalty_id)
@@ -615,19 +1017,55 @@ class WaterRepository:
         end_date: int,
     ) -> Sequence[WaterDailySummary]:
         async with water_core_db.session(commit=False) as session:
-            all_mappings = await WaterGroupMatrixMapOps(session).get_all_mappings()
-        group_ids = [
-            group_id
-            for group_id, mapped_matrix_id in all_mappings.items()
-            if mapped_matrix_id == matrix_id
-        ]
-        async with water_core_db.session(commit=False) as session:
+            group_ids = await WaterGroupMatrixMapOps(session).get_groups_by_matrix(
+                matrix_id
+            )
             return await WaterSummaryOps(session).get_user_recent_summaries(
                 user_id=user_id,
                 group_ids=group_ids,
                 start_date=start_date,
                 end_date=end_date,
             )
+
+    async def get_summaries_in_window(
+        self,
+        start_date: int,
+        end_date: int,
+        *,
+        group_ids: list[str] | None = None,
+        user_id: str | None = None,
+    ) -> Sequence[WaterDailySummary]:
+        async with water_core_db.session(commit=False) as session:
+            return await WaterSummaryOps(session).get_summaries_in_window(
+                start_date=start_date,
+                end_date=end_date,
+                group_ids=group_ids,
+                user_id=user_id,
+            )
+
+    async def get_user_season_rankings(
+        self,
+        start_date: int,
+        end_date: int,
+    ) -> list[SeasonUserAggregate]:
+        summaries = await self.get_summaries_in_window(start_date, end_date)
+        return self._build_user_season_rank(summaries)
+
+    async def get_group_season_rankings(
+        self,
+        start_date: int,
+        end_date: int,
+    ) -> list[SeasonGroupAggregate]:
+        summaries = await self.get_summaries_in_window(start_date, end_date)
+        return self._build_group_season_rank(summaries)
+
+    async def get_matrix_season_rankings(
+        self,
+        start_date: int,
+        end_date: int,
+    ) -> list[SeasonMatrixAggregate]:
+        summaries = await self.get_summaries_in_window(start_date, end_date)
+        return await self._build_matrix_season_rank(summaries)
 
     async def get_user_global_level(self, user_id: str) -> tuple[int, int, int] | None:
         async with water_core_db.session(commit=False) as session:
@@ -830,13 +1268,99 @@ class WaterRepository:
         async with water_core_db.session(commit=True) as session:
             penalty_ops = WaterPenaltyOps(session)
             level_ops = WaterLevelOps(session)
+            summary_ops = WaterSummaryOps(session)
             log = await penalty_ops.get_penalty_by_id(penalty_id)
             if log is None or log.is_revoked:
                 return False
-            await level_ops.apply_exp_compensation_matrix(
-                matrix_id=log.matrix_id,
-                user_id=log.user_id,
-                delta=abs(log.delta_exp),
+
+            summary_rows = await summary_ops.get_user_summary_rows_by_date(
+                log.user_id,
+                log.record_date,
             )
+            penalties = await penalty_ops.get_user_penalties_by_date(
+                log.user_id,
+                log.record_date,
+            )
+            penalties_by_group = {penalty.group_id: penalty for penalty in penalties}
+
+            current_gains: list[int] = []
+            next_gains: list[int] = []
+            for group_id, msg_count, active_hours in summary_rows:
+                delta = calc_personal_delta_exp(msg_count, active_hours)
+                penalty = penalties_by_group.get(group_id)
+                if penalty is None or penalty.is_revoked:
+                    current_gains.append(delta)
+                    next_gains.append(delta)
+                    continue
+                if penalty.id == penalty_id:
+                    next_gains.append(delta)
+
+            matrix_delta = int(log.extra.get("candidate_delta", abs(log.delta_exp)))
+            global_delta = calc_weighted_global_exp(
+                next_gains
+            ) - calc_weighted_global_exp(current_gains)
+
+            matrix_level = await level_ops.get_matrix_level(log.matrix_id, log.user_id)
+            global_level = await level_ops.get_global_level(log.user_id)
+            matrix_total = await level_ops.get_matrix_total(log.matrix_id)
+
+            if matrix_delta > 0:
+                matrix_exp = (
+                    matrix_level[0] if matrix_level is not None else 0
+                ) + matrix_delta
+                matrix_season_exp = (
+                    matrix_level[1] if matrix_level is not None else 0
+                ) + matrix_delta
+                await level_ops.upsert_matrix_levels(
+                    [
+                        {
+                            "matrix_id": log.matrix_id,
+                            "user_id": log.user_id,
+                            "delta_exp": matrix_exp,
+                            "delta_season_exp": matrix_season_exp,
+                            "created_at": now_ts,
+                            "updated_at": now_ts,
+                        }
+                    ]
+                )
+
+                matrix_total_exp = (
+                    matrix_total[0] if matrix_total is not None else 0
+                ) + matrix_delta
+                matrix_total_season_exp = (
+                    matrix_total[1] if matrix_total is not None else 0
+                ) + matrix_delta
+                await level_ops.upsert_matrix_totals(
+                    [
+                        {
+                            "matrix_id": log.matrix_id,
+                            "delta_exp": matrix_total_exp,
+                            "delta_season_exp": matrix_total_season_exp,
+                            "created_at": now_ts,
+                            "updated_at": now_ts,
+                        }
+                    ]
+                )
+
+            if global_delta > 0:
+                global_exp = (
+                    global_level[0] if global_level is not None else 0
+                ) + global_delta
+                global_season_exp = (
+                    global_level[1] if global_level is not None else 0
+                ) + global_delta
+                await level_ops.upsert_global_levels(
+                    [
+                        {
+                            "matrix_id": "",
+                            "user_id": log.user_id,
+                            "delta_exp": global_exp,
+                            "delta_season_exp": global_season_exp,
+                            "created_at": now_ts,
+                            "updated_at": now_ts,
+                        }
+                    ]
+                )
+
             affected = await penalty_ops.revoke_penalty(penalty_id, now_ts)
             return affected > 0

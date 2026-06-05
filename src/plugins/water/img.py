@@ -2,7 +2,7 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-27 12:18:33
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-03-05 12:57:15
+LastEditTime: 2026-03-05 19:40:05
 Description: 图片渲染组件，AI 神力！
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from math import floor, sqrt
-from typing import Any
+from typing import Any, Literal
 
 import arrow
 from PIL import Image, ImageChops, ImageDraw, ImageFont
@@ -25,7 +25,7 @@ from src.repositories import member_repo
 from src.services.info import resolve_group_card, resolve_group_name
 
 from .database import water_repo
-from .services.achievement import ACHIEVEMENT_RULES, AchievementService
+from .services.achievement import ACHIEVEMENT_RULES
 
 SYS_FONT_NAME = MAPLE_FONT_NAME
 FALLBACK_FONT_PATH = MAPLE_FONT_PATH
@@ -55,6 +55,37 @@ class WaterProfileCardData:
     matrix_total_level: tuple[int, int, int] | None
     matrix_groups: list[tuple[str, str]]
     achievement_items: list[tuple[str, str, str, int]]
+
+
+@dataclass(frozen=True)
+class WaterPeriodRankUserItem:
+    user_id: str
+    username: str
+    avatar: BuildImage | None
+    msg_count: int
+    active_days: int
+    active_hours: int
+    hourly_counts: list[int]
+    current_rank: int
+    trend: int | None
+
+
+@dataclass(frozen=True)
+class WaterPeriodRankCardData:
+    period: Literal["week", "month", "season", "year"]
+    title: str
+    badge: str
+    range_text: str
+    compare_text: str
+    generated_at: int
+    total_msg_count: int
+    active_user_count: int
+    hourly_counts: list[int]
+    peak_hour: int
+    previous_total_msg_count: int
+    top_users: list[WaterPeriodRankUserItem]
+    champion_gap: int
+    champion_share: float
 
 
 class WaterRankRenderer:
@@ -402,11 +433,11 @@ class WaterRankRenderer:
         now = arrow.get(get_current_time()).datetime
         footer_y = y + int(20 * self.SCALE)
         main_img.draw.text(
-            (self.PADDING, footer_y),
-            f"© 2020-{now.year} SakuraiSenrin. All rights reserved.",
+            (self.RENDER_WIDTH / 2, footer_y),
+            _build_copyright_text(now.year),
             fill=self.TEXT_COLOR,
             font=self.num_small_font,
-            anchor="la",
+            anchor="ma",
         )
         time_footer_y = footer_y + int(30 * self.SCALE)
         main_img.draw.text(
@@ -534,7 +565,17 @@ def _seasonal_total_count(current_unlocked: int = 0) -> int:
 def _split_achievement_views(
     achievement_items: list[tuple[str, str, str, int]],
 ) -> tuple[list[str], list[tuple[str, str]]]:
-    current_season = AchievementService.current_season_id()
+    latest_season = ""
+    seasonal_items = [
+        (achievement_id, season_id, unlocked_at)
+        for achievement_id, track_type, season_id, unlocked_at in achievement_items
+        if track_type == "seasonal" and season_id
+    ]
+    if seasonal_items:
+        latest_season = max(
+            seasonal_items,
+            key=lambda item: int(item[2]),
+        )[1]
     current: list[str] = []
     history_raw: list[tuple[int, str, str]] = []
     for achievement_id, track_type, season_id, unlocked_at in achievement_items:
@@ -543,7 +584,7 @@ def _split_achievement_views(
             achievement_id.replace("_", " ").strip().title() or achievement_id
         )
         name = rule.name if rule is not None else fallback_name
-        if track_type == "seasonal" and season_id == current_season:
+        if track_type == "seasonal" and season_id == latest_season:
             current.append(name)
         if track_type == "seasonal":
             title = f"{season_id}赛季·{name}"
@@ -558,13 +599,12 @@ def _split_achievement_views(
 
 
 def _build_my_water_text_fallback(data: WaterProfileCardData) -> str:
-    current_season = AchievementService.current_season_id()
     current_achievements, history_achievements = _split_achievement_views(
         data.achievement_items
     )
     seasonal_total = max(1, _seasonal_total_count(len(current_achievements)))
 
-    lines = ["===== 我的水王资产 ====="]
+    lines = ["===== 你有多水？请看数据！ ====="]
     if data.matrix_level is not None:
         lines.extend(
             [
@@ -584,11 +624,8 @@ def _build_my_water_text_fallback(data: WaterProfileCardData) -> str:
     lines.extend(
         [
             "-----",
-            (
-                f"当前赛季成就({current_season}): "
-                f"{len(current_achievements)}/{seasonal_total}"
-            ),
-            "当前赛季已达成: "
+            (f"最近活动赛季成就: {len(current_achievements)}/{seasonal_total}"),
+            "最近赛季已达成: "
             + ("、".join(current_achievements[:3]) if current_achievements else "暂无"),
             "-----",
             f"我的全局排名: {_format_rank(data.global_rank)}",
@@ -607,6 +644,10 @@ def _build_my_water_text_fallback(data: WaterProfileCardData) -> str:
         for title, date_text in history_achievements[:6]:
             lines.append(f"- {title}  |  {date_text}")
     return "\n".join(lines)
+
+
+def _build_copyright_text(year: int) -> str:
+    return f"© 2020-{year} SakuraiSenrin"
 
 
 def _draw_progress_bar(
@@ -692,6 +733,702 @@ def _draw_gloss_lines(
     )
 
 
+def _format_delta(delta: int) -> str:
+    if delta > 0:
+        return f"+{delta}"
+    return str(delta)
+
+
+def _format_trend(trend: int | None) -> tuple[str, str]:
+    if trend is None:
+        return ("NEW", "#F0B36D")
+    if trend > 0:
+        return (f"↑{trend}", "#E96A96")
+    if trend < 0:
+        return (f"↓{abs(trend)}", "#66B3A5")
+    return ("-0", "#B8A1AE")
+
+
+def _safe_hourly_counts(hourly_counts: list[int]) -> list[int]:
+    if len(hourly_counts) >= 24:
+        return [int(item) for item in hourly_counts[:24]]
+    return [*map(int, hourly_counts), *([0] * (24 - len(hourly_counts)))]
+
+
+def _draw_hourly_histogram(
+    card: BuildImage,
+    *,
+    x: int,
+    y: int,
+    w: int,
+    h: int,
+    hourly_counts: list[int],
+    bar_color: str,
+    axis_color: str,
+    label_color: str,
+    scale: float,
+) -> None:
+    hourly = _safe_hourly_counts(hourly_counts)
+    chart_h = h - int(18 * scale)
+    max_count = max(hourly) or 1
+    bar_gap = max(2, int(2 * scale))
+    bar_w = max(4, int((w - bar_gap * 23) / 24))
+    card.draw.line(
+        (x, y + chart_h, x + w, y + chart_h),
+        fill=axis_color,
+        width=max(1, int(1 * scale)),
+    )
+    for hour, count in enumerate(hourly):
+        bx = x + hour * (bar_w + bar_gap)
+        bh = (
+            max(2, int((count / max_count) * (chart_h - int(6 * scale))))
+            if count > 0
+            else 2
+        )
+        by = y + chart_h - bh
+        fill = (
+            bar_color
+            if hour != max(range(24), key=lambda idx: hourly[idx])
+            else "#F5A340"
+        )
+        card.draw_rounded_rectangle(
+            (bx, by, bx + bar_w, y + chart_h),
+            radius=max(2, int(3 * scale)),
+            fill=fill,
+        )
+        if hour in {0, 6, 12, 18, 23}:
+            card.draw_text(
+                (
+                    bx - int(6 * scale),
+                    y + chart_h + int(4 * scale),
+                    bx + bar_w + int(6 * scale),
+                    y + h,
+                ),
+                f"{hour:02d}",
+                max_fontsize=int(9 * scale),
+                min_fontsize=int(7 * scale),
+                fill=label_color,
+                halign="center",
+                font_families=[SYS_FONT_NAME],
+            )
+
+
+def _draw_user_distribution(
+    card: BuildImage,
+    *,
+    x: int,
+    y: int,
+    w: int,
+    h: int,
+    hourly_counts: list[int],
+    base_color: str,
+    scale: float,
+) -> None:
+    hourly = _safe_hourly_counts(hourly_counts)
+    max_count = max(hourly) or 1
+    gap = max(1, int(2 * scale))
+    bar_w = max(2, int((w - gap * 23) / 24))
+    for hour, count in enumerate(hourly):
+        bx = x + hour * (bar_w + gap)
+        bh = max(2, int((count / max_count) * h)) if count > 0 else 2
+        by = y + h - bh
+        tone = base_color if count > 0 else _mix_hex(base_color, "#FFFFFF", 0.55)
+        card.draw_rounded_rectangle(
+            (bx, by, bx + bar_w, y + h),
+            radius=max(1, int(2 * scale)),
+            fill=tone,
+        )
+
+
+def _build_avatar_fallback(size: int, label: str, bg: str, fg: str) -> BuildImage:
+    avatar = BuildImage.new("RGBA", (size, size), (0, 0, 0, 0))
+    avatar.draw.ellipse((0, 0, size, size), fill=bg)
+    avatar.draw_text(
+        (0, 0, size, size),
+        label,
+        max_fontsize=max(14, int(size * 0.42)),
+        min_fontsize=max(10, int(size * 0.28)),
+        fill=fg,
+        halign="center",
+        valign="center",
+        font_families=[SYS_FONT_NAME],
+    )
+    return avatar
+
+
+async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes | None:
+    try:
+        scale = 2.0
+        width = int(760 * scale)
+        pad = int(24 * scale)
+        gap = int(12 * scale)
+        hero_h = int(144 * scale)
+        champion_h = int(128 * scale)
+        overview_h = int(168 * scale)
+        footer_h = int(42 * scale)
+        row_h = int(86 * scale)
+        row_gap = int(8 * scale)
+        board_header_h = int(34 * scale)
+        board_h = (
+            board_header_h
+            + int(12 * scale)
+            + len(data.top_users) * row_h
+            + max(0, len(data.top_users) - 1) * row_gap
+            + int(16 * scale)
+        )
+        height = (
+            pad * 2
+            + hero_h
+            + gap
+            + champion_h
+            + gap
+            + board_h
+            + gap
+            + overview_h
+            + gap
+            + footer_h
+        )
+
+        page_bg = "#FFF4F7"
+        hero_bg = "#FFE8F0"
+        panel_bg = "#FFF9FB"
+        panel_soft_bg = "#FFF3F8"
+        accent = "#7A2F4A"
+        strong = "#D84E7A"
+        deep = "#401828"
+        hint = "#AA6B82"
+        line = "#F6D9E6"
+        blue = "#5B8CFF"
+        gold = "#D4973C"
+        mint = "#67BAA6"
+        badge_bg = "#FFF0C7"
+        badge_fg = "#9A6723"
+
+        card = BuildImage.new("RGB", (width, height), page_bg)
+        y = pad
+
+        card.draw_rounded_rectangle(
+            (pad, y, width - pad, y + hero_h),
+            radius=int(20 * scale),
+            fill=hero_bg,
+        )
+        _draw_gloss_lines(
+            card,
+            pad,
+            y,
+            width - pad * 2,
+            hero_h,
+            tone="#FFF6FA",
+            strength=0.85,
+        )
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                y + int(12 * scale),
+                width - pad - int(180 * scale),
+                y + int(40 * scale),
+            ),
+            data.title,
+            max_fontsize=int(28 * scale),
+            min_fontsize=int(18 * scale),
+            fill=deep,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                y + int(42 * scale),
+                width - pad - int(18 * scale),
+                y + int(64 * scale),
+            ),
+            data.range_text,
+            max_fontsize=int(13 * scale),
+            min_fontsize=int(10 * scale),
+            fill=accent,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                y + int(64 * scale),
+                width - pad - int(18 * scale),
+                y + int(84 * scale),
+            ),
+            data.compare_text,
+            max_fontsize=int(11 * scale),
+            min_fontsize=int(8 * scale),
+            fill=hint,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+
+        badge_w = int(112 * scale)
+        badge_h = int(34 * scale)
+        badge_x = width - pad - badge_w - int(18 * scale)
+        badge_y = y + int(18 * scale)
+        card.draw_rounded_rectangle(
+            (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
+            radius=int(12 * scale),
+            fill=badge_bg,
+        )
+        card.draw_text(
+            (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
+            data.badge,
+            max_fontsize=int(13 * scale),
+            min_fontsize=int(10 * scale),
+            fill=badge_fg,
+            halign="center",
+            valign="center",
+            font_families=[SYS_FONT_NAME],
+        )
+
+        stat_top = y + int(92 * scale)
+        stat_gap = int(10 * scale)
+        stat_w = int((width - pad * 2 - int(36 * scale) - stat_gap * 2) / 3)
+        try:
+            stat_value_font = ImageFont.truetype(FALLBACK_FONT_PATH, int(20 * scale))
+        except OSError:
+            stat_value_font = ImageFont.load_default()
+        stats = [
+            ("总消息数", _short_exp(data.total_msg_count), strong, "#FFF0F6"),
+            ("上榜人数", str(data.active_user_count), blue, "#F0F6FF"),
+            (
+                "较上期",
+                _format_delta(data.total_msg_count - data.previous_total_msg_count),
+                mint
+                if data.total_msg_count >= data.previous_total_msg_count
+                else strong,
+                "#F1FFF9"
+                if data.total_msg_count >= data.previous_total_msg_count
+                else "#FFF0F6",
+            ),
+        ]
+        for idx, (label, value, value_color, bg) in enumerate(stats):
+            sx = pad + int(18 * scale) + idx * (stat_w + stat_gap)
+            card.draw_rounded_rectangle(
+                (sx, stat_top, sx + stat_w, y + hero_h - int(18 * scale)),
+                radius=int(12 * scale),
+                fill=bg,
+            )
+            card.draw_text(
+                (
+                    sx + int(10 * scale),
+                    stat_top + int(6 * scale),
+                    sx + stat_w - int(10 * scale),
+                    stat_top + int(24 * scale),
+                ),
+                label,
+                max_fontsize=int(11 * scale),
+                min_fontsize=int(8 * scale),
+                fill=accent,
+                halign="left",
+                font_families=[SYS_FONT_NAME],
+            )
+            card.draw.text(
+                (sx + int(10 * scale), stat_top + int(50 * scale)),
+                value,
+                fill=value_color,
+                font=stat_value_font,
+                anchor="lm",
+            )
+
+        y += hero_h + gap
+        champion = data.top_users[0]
+        card.draw_rounded_rectangle(
+            (pad, y, width - pad, y + champion_h),
+            radius=int(20 * scale),
+            fill=panel_bg,
+        )
+        _draw_gloss_lines(
+            card,
+            pad,
+            y,
+            width - pad * 2,
+            champion_h,
+            tone="#FFF7FB",
+            strength=0.82,
+        )
+        avatar_size = int(88 * scale)
+        avatar_x = pad + int(18 * scale)
+        avatar_y = y + int(18 * scale)
+        avatar = champion.avatar
+        if avatar is None:
+            avatar = _build_avatar_fallback(
+                avatar_size,
+                "1",
+                "#F6C65B",
+                "#FFFFFF",
+            )
+        card.paste(
+            avatar.circle().resize((avatar_size, avatar_size)),
+            (avatar_x, avatar_y),
+            alpha=True,
+        )
+        card.draw_text(
+            (
+                avatar_x + avatar_size + int(14 * scale),
+                y + int(18 * scale),
+                width - pad - int(18 * scale),
+                y + int(42 * scale),
+            ),
+            "本期冠军",
+            max_fontsize=int(14 * scale),
+            min_fontsize=int(10 * scale),
+            fill=gold,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        card.draw_text(
+            (
+                avatar_x + avatar_size + int(14 * scale),
+                y + int(40 * scale),
+                width - pad - int(18 * scale),
+                y + int(68 * scale),
+            ),
+            champion.username,
+            max_fontsize=int(24 * scale),
+            min_fontsize=int(15 * scale),
+            fill=deep,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        card.draw_text(
+            (
+                avatar_x + avatar_size + int(14 * scale),
+                y + int(70 * scale),
+                width - pad - int(18 * scale),
+                y + int(92 * scale),
+            ),
+            f"总消息 {champion.msg_count} 条 · 活跃 {champion.active_days} 天",
+            max_fontsize=int(12 * scale),
+            min_fontsize=int(9 * scale),
+            fill=accent,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        info_chip_w = int(150 * scale)
+        info_chip_h = int(28 * scale)
+        chip_specs = [
+            (
+                f"领先第2名 {data.champion_gap}",
+                "#FFF0D8",
+                "#B67828",
+            ),
+            (
+                f"贡献占比 {data.champion_share * 100:.1f}%",
+                "#F0F6FF",
+                blue,
+            ),
+        ]
+        for idx, (text, bg, fg) in enumerate(chip_specs):
+            cx = (
+                avatar_x
+                + avatar_size
+                + int(14 * scale)
+                + idx * (info_chip_w + int(8 * scale))
+            )
+            cy = y + int(94 * scale)
+            card.draw_rounded_rectangle(
+                (cx, cy, cx + info_chip_w, cy + info_chip_h),
+                radius=int(10 * scale),
+                fill=bg,
+            )
+            card.draw_text(
+                (
+                    cx + int(8 * scale),
+                    cy,
+                    cx + info_chip_w - int(8 * scale),
+                    cy + info_chip_h,
+                ),
+                text,
+                max_fontsize=int(10 * scale),
+                min_fontsize=int(8 * scale),
+                fill=fg,
+                halign="center",
+                valign="center",
+                font_families=[SYS_FONT_NAME],
+            )
+
+        y += champion_h + gap
+        card.draw_rounded_rectangle(
+            (pad, y, width - pad, y + board_h),
+            radius=int(20 * scale),
+            fill=panel_soft_bg,
+        )
+        _draw_gloss_lines(
+            card,
+            pad,
+            y,
+            width - pad * 2,
+            board_h,
+            tone="#FFF6FA",
+            strength=0.8,
+        )
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                y + int(8 * scale),
+                width - pad,
+                y + board_header_h,
+            ),
+            "TOP 10 总榜",
+            max_fontsize=int(18 * scale),
+            min_fontsize=int(12 * scale),
+            fill=deep,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+
+        row_y = y + board_header_h + int(10 * scale)
+        rank_themes = {
+            1: ("#FFE9C7", "#E0A141", "#FFFFFF"),
+            2: ("#EEE8FF", "#8D7AD8", "#FFFFFF"),
+            3: ("#E8F8F3", "#57A89A", "#FFFFFF"),
+        }
+        for item in data.top_users:
+            bg, badge_fill, badge_fg = rank_themes.get(
+                item.current_rank,
+                ("#FFF9FB", "#F4D8E5", accent),
+            )
+            card.draw_rounded_rectangle(
+                (
+                    pad + int(14 * scale),
+                    row_y,
+                    width - pad - int(14 * scale),
+                    row_y + row_h,
+                ),
+                radius=int(14 * scale),
+                fill=bg,
+            )
+            badge_x = pad + int(26 * scale)
+            badge_y = row_y + int(20 * scale)
+            badge_w = int(44 * scale)
+            badge_h = int(22 * scale)
+            card.draw_rounded_rectangle(
+                (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
+                radius=badge_h // 2,
+                fill=badge_fill,
+            )
+            card.draw_text(
+                (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
+                f"#{item.current_rank}",
+                max_fontsize=int(11 * scale),
+                min_fontsize=int(8 * scale),
+                fill=badge_fg,
+                halign="center",
+                valign="center",
+                font_families=[SYS_FONT_NAME],
+            )
+
+            item_avatar_size = int(52 * scale)
+            item_avatar_x = badge_x + badge_w + int(12 * scale)
+            item_avatar_y = row_y + (row_h - item_avatar_size) // 2
+            item_avatar = item.avatar
+            if item_avatar is None:
+                item_avatar = _build_avatar_fallback(
+                    item_avatar_size,
+                    item.username[:1] or "?",
+                    "#FFDDE9",
+                    strong,
+                )
+            card.paste(
+                item_avatar.circle().resize((item_avatar_size, item_avatar_size)),
+                (item_avatar_x, item_avatar_y),
+                alpha=True,
+            )
+
+            text_x = item_avatar_x + item_avatar_size + int(12 * scale)
+            card.draw_text(
+                (
+                    text_x,
+                    row_y + int(10 * scale),
+                    width - pad - int(300 * scale),
+                    row_y + int(34 * scale),
+                ),
+                item.username,
+                max_fontsize=int(16 * scale),
+                min_fontsize=int(10 * scale),
+                fill=deep,
+                halign="left",
+                font_families=[SYS_FONT_NAME],
+            )
+            avg_daily = item.msg_count / max(1, item.active_days)
+            card.draw_text(
+                (
+                    text_x,
+                    row_y + int(36 * scale),
+                    width - pad - int(300 * scale),
+                    row_y + int(58 * scale),
+                ),
+                f"{item.msg_count} 条 · {item.active_days} 天 · 日均 {avg_daily:.1f}",
+                max_fontsize=int(11 * scale),
+                min_fontsize=int(8 * scale),
+                fill=accent,
+                halign="left",
+                font_families=[SYS_FONT_NAME],
+            )
+            card.draw_text(
+                (
+                    text_x,
+                    row_y + int(56 * scale),
+                    width - pad - int(300 * scale),
+                    row_y + int(74 * scale),
+                ),
+                f"活跃时段覆盖 {item.active_hours} 小时",
+                max_fontsize=int(10 * scale),
+                min_fontsize=int(8 * scale),
+                fill=hint,
+                halign="left",
+                font_families=[SYS_FONT_NAME],
+            )
+
+            spark_x = width - pad - int(230 * scale)
+            _draw_user_distribution(
+                card,
+                x=spark_x,
+                y=row_y + int(18 * scale),
+                w=int(108 * scale),
+                h=int(40 * scale),
+                hourly_counts=item.hourly_counts,
+                base_color=strong if item.current_rank <= 3 else "#C0829B",
+                scale=scale,
+            )
+
+            trend_text, trend_color = _format_trend(item.trend)
+            trend_w = int(56 * scale)
+            trend_h = int(24 * scale)
+            trend_x = width - pad - int(100 * scale)
+            trend_y = row_y + int(16 * scale)
+            card.draw_rounded_rectangle(
+                (trend_x, trend_y, trend_x + trend_w, trend_y + trend_h),
+                radius=trend_h // 2,
+                fill=trend_color,
+            )
+            card.draw_text(
+                (trend_x, trend_y, trend_x + trend_w, trend_y + trend_h),
+                trend_text,
+                max_fontsize=int(11 * scale),
+                min_fontsize=int(8 * scale),
+                fill="#FFFFFF",
+                halign="center",
+                valign="center",
+                font_families=[SYS_FONT_NAME],
+            )
+            card.draw_text(
+                (
+                    width - pad - int(120 * scale),
+                    row_y + int(48 * scale),
+                    width - pad - int(20 * scale),
+                    row_y + int(68 * scale),
+                ),
+                "较上期排名",
+                max_fontsize=int(9 * scale),
+                min_fontsize=int(7 * scale),
+                fill=hint,
+                halign="center",
+                font_families=[SYS_FONT_NAME],
+            )
+
+            row_y += row_h + row_gap
+
+        y += board_h + gap
+        card.draw_rounded_rectangle(
+            (pad, y, width - pad, y + overview_h),
+            radius=int(20 * scale),
+            fill=panel_bg,
+        )
+        _draw_gloss_lines(
+            card,
+            pad,
+            y,
+            width - pad * 2,
+            overview_h,
+            tone="#FFF7FB",
+            strength=0.82,
+        )
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                y + int(8 * scale),
+                width - pad,
+                y + int(30 * scale),
+            ),
+            "全榜活跃画像",
+            max_fontsize=int(18 * scale),
+            min_fontsize=int(12 * scale),
+            fill=deep,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                y + int(32 * scale),
+                width - pad,
+                y + int(52 * scale),
+            ),
+            f"峰值时段 {data.peak_hour:02d}:00 - {data.peak_hour:02d}:59",
+            max_fontsize=int(11 * scale),
+            min_fontsize=int(8 * scale),
+            fill=accent,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        _draw_hourly_histogram(
+            card,
+            x=pad + int(18 * scale),
+            y=y + int(58 * scale),
+            w=width - pad * 2 - int(36 * scale),
+            h=overview_h - int(76 * scale),
+            hourly_counts=data.hourly_counts,
+            bar_color=strong,
+            axis_color=line,
+            label_color=hint,
+            scale=scale,
+        )
+
+        y += overview_h + gap
+        generated_at = arrow.get(data.generated_at).to("Asia/Shanghai")
+        footer_left = (
+            "统计口径: 基于已结算日汇总表生成，按消息总数排序，"
+            "同分按活跃天数与活跃小时稳定排序。"
+        )
+        card.draw_text(
+            (
+                pad,
+                y,
+                width - pad,
+                y + int(18 * scale),
+            ),
+            footer_left,
+            max_fontsize=int(10 * scale),
+            min_fontsize=int(8 * scale),
+            fill=hint,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        card.draw_text(
+            (
+                pad,
+                y + int(18 * scale),
+                width - pad,
+                y + footer_h,
+            ),
+            f"生成时间: {generated_at.format('YYYY-MM-DD HH:mm:ss')}",
+            max_fontsize=int(10 * scale),
+            min_fontsize=int(8 * scale),
+            fill=accent,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        return (await asyncio.to_thread(card.save, "PNG")).getvalue()
+    except Exception as e:
+        logger.exception(f"[Water] build period rank image failed: {e}")
+        return None
+
+
 def _next_level_target(level: int, base: int) -> int:
     cur = max(1, level)
     return base * (cur + 1) * (cur + 1)
@@ -703,6 +1440,582 @@ def _level_progress(exp: int, level: int, base: int) -> tuple[float, int]:
     span = max(1, next_exp - prev_exp)
     ratio = (exp - prev_exp) / span
     return max(0.0, min(1.0, ratio)), max(0, next_exp - exp)
+
+
+async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | None:
+    try:
+        scale = 2.0
+        width = int(680 * scale)
+        pad = int(24 * scale)
+        gap = int(10 * scale)
+        page_bg = "#FFF4F7"
+        title_panel_bg = "#FFE8F0"
+        panel_bg = "#FFF9FB"
+        panel_soft_bg = "#FFF5F9"
+        chip_bg = "#F3E8FF"
+        chip_alt_bg = "#E6F4FF"
+        accent = "#7A2F4A"
+        strong = "#D84E7A"
+        deep = "#3F1A29"
+        title_main = "#5E2138"
+        title_sub = "#7A2F4A"
+        title_hint = "#A54A6B"
+        global_color = "#4F7DF3"
+        matrix_color = "#F28A3B"
+        global_panel = "#F0F7FF"
+        matrix_panel = "#FFF0F6"
+
+        title_h = int(118 * scale)
+        exp_title_h = int(18 * scale)
+        exp_block_h = int(62 * scale)
+        exp_block_gap = int(10 * scale)
+        exp_panel_h = (
+            exp_title_h
+            + int(10 * scale)
+            + exp_block_h * 2
+            + exp_block_gap
+            + int(12 * scale)
+        )
+        ach_title_h = int(18 * scale)
+        ach_meta_h = int(14 * scale)
+        ach_bar_h = int(10 * scale)
+        ach_chip_h = int(20 * scale)
+        ach_chip_gap_y = int(6 * scale)
+        rank_title_h = int(18 * scale)
+        rank_chip_h = int(32 * scale)
+        rank_chip_gap = int(6 * scale)
+        rank_panel_h = (
+            rank_title_h
+            + int(10 * scale)
+            + rank_chip_h * 3
+            + rank_chip_gap * 2
+            + int(12 * scale)
+        )
+        footer_h = int(26 * scale)
+
+        current_achievements, history_achievements = _split_achievement_views(
+            data.achievement_items
+        )
+        seasonal_total = max(1, _seasonal_total_count(len(current_achievements)))
+        seasonal_progress = len(current_achievements) / seasonal_total
+        preview_items = current_achievements[:4]
+        if not preview_items and history_achievements:
+            preview_items = [title for title, _ in history_achievements[:4]]
+        ach_rows = max(1, (len(preview_items) + 1) // 2) if preview_items else 1
+        history_show = history_achievements[:4]
+        history_rows = max(1, len(history_show))
+        ach_panel_h = (
+            ach_title_h
+            + int(8 * scale)
+            + ach_meta_h
+            + int(6 * scale)
+            + ach_bar_h
+            + int(10 * scale)
+            + ach_rows * ach_chip_h
+            + (ach_rows - 1) * ach_chip_gap_y
+            + int(12 * scale)
+        )
+        history_h = int((52 + history_rows * 24) * scale)
+
+        height = (
+            pad * 2
+            + title_h
+            + gap
+            + exp_panel_h
+            + gap
+            + ach_panel_h
+            + gap
+            + rank_panel_h
+            + gap
+            + history_h
+            + footer_h
+        )
+
+        card = BuildImage.new("RGB", (width, height), page_bg)
+
+        avatar, group_avatar, member = await asyncio.gather(
+            QQAvatar.fetch_user(data.user_id, size=int(80 * scale)),
+            QQAvatar.fetch_group(data.group_id, size=int(24 * scale)),
+            member_repo.get_member(data.user_id, data.group_id),
+        )
+        if member:
+            username = await resolve_group_card(None, data.user_id, data.group_id)
+        else:
+            username = data.username
+
+        y = pad
+        card.draw_rounded_rectangle(
+            (pad, y, width - pad, y + title_h),
+            radius=int(18 * scale),
+            fill=title_panel_bg,
+        )
+        avatar_size = int(80 * scale)
+        card.paste(
+            avatar.circle().resize((avatar_size, avatar_size)),
+            (pad + int(12 * scale), y + int(10 * scale)),
+            alpha=True,
+        )
+        title_x = pad + int(12 * scale) + avatar_size + int(12 * scale)
+        title_right = width - pad
+        card.draw_text(
+            (title_x, y + int(8 * scale), title_right, y + int(30 * scale)),
+            "你有多水？",
+            max_fontsize=int(22 * scale),
+            min_fontsize=int(14 * scale),
+            fill=title_main,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        card.draw_text(
+            (title_x, y + int(30 * scale), title_right, y + int(52 * scale)),
+            f"{username} | {data.group_name}",
+            max_fontsize=int(14 * scale),
+            min_fontsize=int(10 * scale),
+            fill=title_sub,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        card.draw_text(
+            (title_x, y + int(52 * scale), title_right, y + int(72 * scale)),
+            f"矩阵: {data.matrix_id}",
+            max_fontsize=int(11 * scale),
+            min_fontsize=int(9 * scale),
+            fill=title_hint,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        chip_h = int(24 * scale)
+        chip_w = min(
+            int(260 * scale),
+            width - title_x - pad - int(12 * scale),
+        )
+        chip_x = title_x
+        chip_y = y + int(72 * scale)
+        card.draw_rounded_rectangle(
+            (chip_x, chip_y, chip_x + chip_w, chip_y + chip_h),
+            radius=int(8 * scale),
+            fill="#FFF0F6",
+        )
+        if isinstance(group_avatar, BuildImage):
+            g_avatar_size = chip_h - int(6 * scale)
+            card.paste(
+                group_avatar.circle().resize((g_avatar_size, g_avatar_size)),
+                (chip_x + int(4 * scale), chip_y + int(3 * scale)),
+                alpha=True,
+            )
+        card.draw_text(
+            (
+                chip_x + int(30 * scale),
+                chip_y + int(2 * scale),
+                chip_x + chip_w - int(8 * scale),
+                chip_y + chip_h - int(2 * scale),
+            ),
+            data.group_name,
+            max_fontsize=int(10 * scale),
+            min_fontsize=int(8 * scale),
+            fill=accent,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+
+        y += title_h + gap
+        card.draw_rounded_rectangle(
+            (pad, y, width - pad, y + exp_panel_h),
+            radius=int(18 * scale),
+            fill=panel_bg,
+        )
+        _draw_gloss_lines(
+            card,
+            pad,
+            y,
+            width - pad * 2,
+            exp_panel_h,
+            tone="#F7EAF1",
+            strength=0.72,
+        )
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                y + int(6 * scale),
+                width - pad,
+                y + exp_title_h + int(6 * scale),
+            ),
+            "经验概览",
+            max_fontsize=int(16 * scale),
+            min_fontsize=int(12 * scale),
+            fill=deep,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+
+        block_x = pad + int(18 * scale)
+        block_w = width - pad * 2 - int(36 * scale)
+        block_y = y + exp_title_h + int(8 * scale)
+
+        global_exp = data.global_level[0] if data.global_level is not None else 0
+        global_lv = data.global_level[2] if data.global_level is not None else 1
+        matrix_exp = data.matrix_level[0] if data.matrix_level is not None else 0
+        matrix_lv = data.matrix_level[2] if data.matrix_level is not None else 1
+        global_ratio = (
+            _level_progress(global_exp, global_lv, 100)[0]
+            if data.global_level is not None
+            else 0.0
+        )
+        matrix_ratio = (
+            _level_progress(matrix_exp, matrix_lv, 100)[0]
+            if data.matrix_level is not None
+            else 0.0
+        )
+        global_text = _short_exp(global_exp) if data.global_level is not None else "-"
+        matrix_text = _short_exp(matrix_exp) if data.matrix_level is not None else "-"
+
+        for idx, (label, value, ratio, bg, fg) in enumerate(
+            [
+                ("全局经验", global_text, global_ratio, global_panel, global_color),
+                ("矩阵经验", matrix_text, matrix_ratio, matrix_panel, matrix_color),
+            ]
+        ):
+            by = block_y + idx * (exp_block_h + exp_block_gap)
+            card.draw_rounded_rectangle(
+                (block_x, by, block_x + block_w, by + exp_block_h),
+                radius=int(10 * scale),
+                fill=bg,
+            )
+            pct = f"{int(max(0.0, min(1.0, ratio)) * 100)}%"
+            card.draw_text(
+                (
+                    block_x + int(10 * scale),
+                    by + int(6 * scale),
+                    block_x + block_w - int(80 * scale),
+                    by + int(20 * scale),
+                ),
+                label,
+                max_fontsize=int(12 * scale),
+                min_fontsize=int(9 * scale),
+                fill=accent,
+                halign="left",
+                font_families=[SYS_FONT_NAME],
+            )
+            card.draw_text(
+                (
+                    block_x + block_w - int(80 * scale),
+                    by + int(6 * scale),
+                    block_x + block_w - int(10 * scale),
+                    by + int(20 * scale),
+                ),
+                pct,
+                max_fontsize=int(12 * scale),
+                min_fontsize=int(9 * scale),
+                fill=fg,
+                halign="right",
+                font_families=[SYS_FONT_NAME],
+            )
+            card.draw_text(
+                (
+                    block_x + int(10 * scale),
+                    by + int(24 * scale),
+                    block_x + block_w - int(10 * scale),
+                    by + int(42 * scale),
+                ),
+                value,
+                max_fontsize=int(18 * scale),
+                min_fontsize=int(12 * scale),
+                fill=deep,
+                halign="left",
+                font_families=[SYS_FONT_NAME],
+            )
+            _draw_progress_bar(
+                card=card,
+                x=block_x + int(10 * scale),
+                y=by + int(44 * scale),
+                w=block_w - int(20 * scale),
+                h=int(10 * scale),
+                progress=ratio,
+                bg="#E5EEFF" if idx == 0 else "#FCEEDC",
+                fg=fg,
+            )
+
+        y += exp_panel_h + gap
+        card.draw_rounded_rectangle(
+            (pad, y, width - pad, y + ach_panel_h),
+            radius=int(18 * scale),
+            fill=panel_bg,
+        )
+        _draw_gloss_lines(
+            card,
+            pad,
+            y,
+            width - pad * 2,
+            ach_panel_h,
+            tone="#F7EAF1",
+            strength=0.72,
+        )
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                y + int(6 * scale),
+                width - pad,
+                y + ach_title_h + int(6 * scale),
+            ),
+            "成就一览",
+            max_fontsize=int(16 * scale),
+            min_fontsize=int(12 * scale),
+            fill=deep,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        meta_top = y + ach_title_h + int(6 * scale)
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                meta_top,
+                width - pad - int(18 * scale),
+                meta_top + ach_meta_h,
+            ),
+            f"最近活动赛季成就: {len(current_achievements)}/{seasonal_total}",
+            max_fontsize=int(12 * scale),
+            min_fontsize=int(9 * scale),
+            fill=accent,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        _draw_progress_bar(
+            card=card,
+            x=pad + int(18 * scale),
+            y=meta_top + ach_meta_h + int(2 * scale),
+            w=width - pad * 2 - int(36 * scale),
+            h=ach_bar_h,
+            progress=seasonal_progress,
+            bg=chip_bg,
+            fg=strong,
+        )
+        chip_top = meta_top + ach_meta_h + ach_bar_h + int(10 * scale)
+        chip_gap_x = int(8 * scale)
+        chip_w = int((width - pad * 2 - int(36 * scale) - chip_gap_x) / 2)
+        if not preview_items:
+            card.draw_text(
+                (
+                    pad + int(18 * scale),
+                    chip_top,
+                    width - pad - int(18 * scale),
+                    chip_top + ach_chip_h,
+                ),
+                "暂无成就，继续加油~",
+                max_fontsize=int(11 * scale),
+                min_fontsize=int(9 * scale),
+                fill=title_hint,
+                halign="left",
+                font_families=[SYS_FONT_NAME],
+            )
+        else:
+            for idx, title in enumerate(preview_items):
+                row = idx // 2
+                col = idx % 2
+                cx = pad + int(18 * scale) + col * (chip_w + chip_gap_x)
+                cy = chip_top + row * (ach_chip_h + ach_chip_gap_y)
+                card.draw_rounded_rectangle(
+                    (cx, cy, cx + chip_w, cy + ach_chip_h),
+                    radius=int(8 * scale),
+                    fill="#FFEFD6",
+                )
+                card.draw_text(
+                    (
+                        cx + int(8 * scale),
+                        cy + int(2 * scale),
+                        cx + chip_w - int(6 * scale),
+                        cy + ach_chip_h - int(2 * scale),
+                    ),
+                    title,
+                    max_fontsize=int(10 * scale),
+                    min_fontsize=int(8 * scale),
+                    fill="#B0712A",
+                    halign="left",
+                    font_families=[SYS_FONT_NAME],
+                )
+
+        y += ach_panel_h + gap
+        card.draw_rounded_rectangle(
+            (pad, y, width - pad, y + rank_panel_h),
+            radius=int(18 * scale),
+            fill=panel_soft_bg,
+        )
+        _draw_gloss_lines(
+            card,
+            pad,
+            y,
+            width - pad * 2,
+            rank_panel_h,
+            tone="#F2E8F3",
+            strength=0.72,
+        )
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                y + int(6 * scale),
+                width - pad,
+                y + rank_title_h + int(6 * scale),
+            ),
+            "排名速览",
+            max_fontsize=int(16 * scale),
+            min_fontsize=int(12 * scale),
+            fill=deep,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        rank_items = [
+            ("我的全局排名", _format_rank(data.global_rank)),
+            ("我在本群排名", _format_rank(data.group_user_rank)),
+            ("我在本矩阵排名", _format_rank(data.matrix_user_rank)),
+        ]
+        chip_x = pad + int(18 * scale)
+        chip_w = width - pad * 2 - int(36 * scale)
+        chip_y = y + rank_title_h + int(8 * scale)
+        for idx, (label, value) in enumerate(rank_items):
+            cy = chip_y + idx * (rank_chip_h + rank_chip_gap)
+            card.draw_rounded_rectangle(
+                (chip_x, cy, chip_x + chip_w, cy + rank_chip_h),
+                radius=int(10 * scale),
+                fill=chip_bg if idx % 2 == 0 else chip_alt_bg,
+            )
+            card.draw_text(
+                (
+                    chip_x + int(10 * scale),
+                    cy + int(4 * scale),
+                    chip_x + chip_w - int(80 * scale),
+                    cy + rank_chip_h - int(4 * scale),
+                ),
+                label,
+                max_fontsize=int(11 * scale),
+                min_fontsize=int(9 * scale),
+                fill=deep,
+                halign="left",
+                font_families=[SYS_FONT_NAME],
+            )
+            card.draw_text(
+                (
+                    chip_x + chip_w - int(80 * scale),
+                    cy + int(4 * scale),
+                    chip_x + chip_w - int(10 * scale),
+                    cy + rank_chip_h - int(4 * scale),
+                ),
+                value,
+                max_fontsize=int(13 * scale),
+                min_fontsize=int(10 * scale),
+                fill=strong,
+                halign="right",
+                font_families=[SYS_FONT_NAME],
+            )
+
+        y += rank_panel_h + gap
+        card.draw_rounded_rectangle(
+            (pad, y, width - pad, y + history_h),
+            radius=int(18 * scale),
+            fill=panel_bg,
+        )
+        _draw_gloss_lines(
+            card,
+            pad,
+            y,
+            width - pad * 2,
+            history_h,
+            tone="#F7EAF1",
+            strength=0.72,
+        )
+        card.draw_text(
+            (
+                pad + int(18 * scale),
+                y + int(6 * scale),
+                width - pad,
+                y + int(24 * scale),
+            ),
+            "成就记录",
+            max_fontsize=int(16 * scale),
+            min_fontsize=int(12 * scale),
+            fill=deep,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+        if not history_show:
+            card.draw_text(
+                (
+                    pad + int(18 * scale),
+                    y + int(28 * scale),
+                    width - pad - int(18 * scale),
+                    y + int(50 * scale),
+                ),
+                "暂无成就记录",
+                max_fontsize=int(11 * scale),
+                min_fontsize=int(9 * scale),
+                fill=title_hint,
+                halign="left",
+                font_families=[SYS_FONT_NAME],
+            )
+        else:
+            row_h = int(24 * scale)
+            list_start = y + int(30 * scale)
+            date_col_w = int(86 * scale)
+            for idx, (title, date_text) in enumerate(history_show):
+                row_top = list_start + idx * row_h
+                if idx > 0:
+                    card.draw.line(
+                        (
+                            pad + int(18 * scale),
+                            row_top,
+                            width - pad - int(18 * scale),
+                            row_top,
+                        ),
+                        fill="#EFD2DD",
+                        width=max(1, int(1.2 * scale)),
+                    )
+                card.draw_text(
+                    (
+                        pad + int(18 * scale),
+                        row_top + int(3 * scale),
+                        width - pad - date_col_w - int(10 * scale),
+                        row_top + row_h - int(3 * scale),
+                    ),
+                    title,
+                    max_fontsize=int(11 * scale),
+                    min_fontsize=int(9 * scale),
+                    fill=accent,
+                    halign="left",
+                    font_families=[SYS_FONT_NAME],
+                )
+                card.draw_text(
+                    (
+                        width - pad - date_col_w,
+                        row_top + int(3 * scale),
+                        width - pad - int(18 * scale),
+                        row_top + row_h - int(3 * scale),
+                    ),
+                    date_text,
+                    max_fontsize=int(11 * scale),
+                    min_fontsize=int(9 * scale),
+                    fill=strong,
+                    halign="right",
+                    font_families=[SYS_FONT_NAME],
+                )
+
+        now = arrow.get(get_current_time()).datetime
+        card.draw.text(
+            (width / 2, height - int(30 * scale)),
+            _build_copyright_text(now.year),
+            fill=accent,
+            font=ImageFont.truetype(FALLBACK_FONT_PATH, int(12 * scale)),
+            anchor="ms",
+        )
+        card.draw.text(
+            (pad, height - int(12 * scale)),
+            f"生成时间: {now.strftime('%Y-%m-%d %H:%M:%S')}",
+            fill=accent,
+            font=ImageFont.truetype(FALLBACK_FONT_PATH, int(12 * scale)),
+            anchor="ls",
+        )
+
+        return (await asyncio.to_thread(card.save, "PNG")).getvalue()
+    except Exception as e:
+        logger.exception(f"[Water] build_my_water_simple_image failed: {e}")
+        return None
 
 
 async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
@@ -728,7 +2041,6 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
         my_value = "#8B4FD4"
         group_value = "#2F83C9"
 
-        current_season = AchievementService.current_season_id()
         current_achievements, history_achievements = _split_achievement_views(
             data.achievement_items
         )
@@ -814,7 +2126,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
         title_x = pad + int(112 * scale)
         card.draw_text(
             (title_x, y + int(10 * scale), width - pad, y + int(42 * scale)),
-            "我的水王资产",
+            "你有多水？请看数据！",
             max_fontsize=int(26 * scale),
             min_fontsize=int(14 * scale),
             fill=title_main,
@@ -1007,10 +2319,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 width - pad - int(20 * scale),
                 y + int(92 * scale),
             ),
-            (
-                f"当前赛季成就 {current_season}: "
-                f"{len(current_achievements)}/{seasonal_total}"
-            ),
+            (f"最近活动赛季成就: {len(current_achievements)}/{seasonal_total}"),
             max_fontsize=int(13 * scale),
             min_fontsize=int(10 * scale),
             fill=season,
@@ -1034,7 +2343,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 width - pad - int(20 * scale),
                 y + int(132 * scale),
             ),
-            "当前赛季达成",
+            "最近赛季达成",
             max_fontsize=int(12 * scale),
             min_fontsize=int(9 * scale),
             fill=accent,
@@ -1183,7 +2492,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 right_x + col_w - int(10 * scale),
                 exp_panel_top + exp_header_h,
             ),
-            "当前赛季进度",
+            "活动赛季进度",
             max_fontsize=int(12 * scale),
             min_fontsize=int(10 * scale),
             fill="#B45309",
@@ -1587,6 +2896,13 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 )
 
         now = arrow.get(get_current_time()).datetime
+        card.draw.text(
+            (width / 2, height - int(36 * scale)),
+            _build_copyright_text(now.year),
+            fill=accent,
+            font=ImageFont.truetype(FALLBACK_FONT_PATH, int(13 * scale)),
+            anchor="ms",
+        )
         card.draw.text(
             (pad, height - int(18 * scale)),
             f"生成时间: {now.strftime('%Y-%m-%d %H:%M:%S')}",
