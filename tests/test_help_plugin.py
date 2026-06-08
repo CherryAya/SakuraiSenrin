@@ -2,14 +2,20 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import nonebot
-from nonebot.adapters.onebot.v11.message import Message
+from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.plugin import PluginMetadata
 
 from src.lib.plugin_docs import DocsMeta
 
 nonebot.init()
 
-from src.plugins.help import DocsEntry, _match_entry, _split_query
+from src.plugins.help import (
+    DocsEntry,
+    _build_index_message,
+    _match_entry,
+    _resolve_docs_message,
+    _split_query,
+)
 
 
 def _make_entry(
@@ -99,3 +105,49 @@ def test_match_entry_supports_exact_fuzzy_and_ambiguous() -> None:
     ]
 
     assert not_found.status == "not_found"
+
+
+def test_build_index_message_attaches_demo_image(monkeypatch: Any) -> None:
+    entry = _make_entry(
+        display_name="帮助中心",
+        plugin_name="help",
+        module_name="src.plugins.help",
+        category="core",
+    )
+    monkeypatch.setattr(
+        "src.plugins.help._load_help_index_demo",
+        lambda: Message(MessageSegment.image(b"fake-demo")),
+    )
+
+    message = _build_index_message([entry], "zh-CN")
+
+    assert "帮助中心" in str(message)
+    assert any(segment.type == "image" for segment in message)
+
+
+async def test_resolve_docs_message_requests_plugin_or_feature_view() -> None:
+    seen_views: list[str] = []
+
+    def provider(ctx: Any) -> Message:
+        seen_views.append(ctx.view)
+        if ctx.view == "feature":
+            assert ctx.feature_query == "ranking"
+        return Message(MessageSegment.image(b"fake-demo"))
+
+    entry = _make_entry(
+        display_name="吹水记录",
+        plugin_name="water",
+        module_name="src.plugins.water",
+    )
+    entry.docs["provider"] = provider
+
+    plugin_message = await _resolve_docs_message(entry, "zh-CN")
+    feature_message = await _resolve_docs_message(
+        entry,
+        "zh-CN",
+        feature_query="ranking",
+    )
+
+    assert seen_views == ["plugin", "feature"]
+    assert any(segment.type == "image" for segment in plugin_message)
+    assert any(segment.type == "image" for segment in feature_message)

@@ -9,6 +9,7 @@ from src.lib.plugin_docs import (
     audit_demo_layout,
     build_readme_docs,
     load_plugin_doc_bundle,
+    load_representative_demo_bytes,
     match_feature,
 )
 
@@ -166,6 +167,77 @@ BOT: 操作完成
     assert "这里是说明。" in str(message)
     assert "先发指令，再看返回。" in str(message)
     assert any(segment.type == "image" for segment in message)
+
+
+def test_build_readme_docs_can_attach_representative_overview_demo(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "README.MD"
+    source.write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试 overview demo。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `flow` 完整流程: 测试 overview demo。
+
+## 子功能详情
+### `flow` 完整流程
+- 摘要: 测试 overview demo。
+- 指令: `#flow`
+#### 说明
+这里是说明。
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #flow
+BOT: 操作完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+
+    text_only = build_readme_docs(
+        source=source,
+        name="测试插件",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        ctx=DocsRenderContext(locale="zh-CN"),
+    )
+    with_demo = build_readme_docs(
+        source=source,
+        name="测试插件",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        ctx=DocsRenderContext(locale="zh-CN", view="plugin"),
+    )
+
+    assert not any(segment.type == "image" for segment in text_only)
+    assert any(segment.type == "image" for segment in with_demo)
+
+
+def test_load_representative_demo_bytes_uses_first_available_feature() -> None:
+    source = Path("src/plugins/water/docs/README.MD")
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="吹水记录",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    assert load_representative_demo_bytes(bundle) is not None
 
 
 def test_load_plugin_doc_bundle_distinguishes_message_newlines_from_turns(

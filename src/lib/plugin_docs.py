@@ -30,6 +30,7 @@ class DocsRenderContext:
     locale: LocaleCode
     feature_query: str | None = None
     include_demo: bool = True
+    view: Literal["text", "index", "plugin", "feature"] = "text"
 
 
 type DocsResult = Message | Awaitable[Message] | str | Awaitable[str]
@@ -190,7 +191,14 @@ def build_readme_docs(
                 ).strip()
             )
         return Message(f"未找到子功能文档: {ctx.feature_query}".strip())
-    return render_overview_message(bundle, locale=locale)
+    include_demo = (
+        ctx.include_demo if ctx is not None and ctx.view == "plugin" else False
+    )
+    return render_overview_message(
+        bundle,
+        locale=locale,
+        include_demo=include_demo,
+    )
 
 
 def load_plugin_doc_bundle(
@@ -264,6 +272,7 @@ def render_overview_message(
     bundle: PluginDocBundle,
     *,
     locale: LocaleCode,
+    include_demo: bool = False,
 ) -> Message:
     lines = [
         f"===== {bundle.title} =====",
@@ -285,7 +294,13 @@ def render_overview_message(
                 "发送 #help <插件名> <子功能名> 查看完整流程与 demo。",
             ]
         )
-    return Message("\n".join(line for line in lines if line is not None).strip())
+    message = Message("\n".join(line for line in lines if line is not None).strip())
+    if not include_demo:
+        return message
+    demo_bytes = load_representative_demo_bytes(bundle)
+    if demo_bytes is None:
+        return message
+    return message + MessageSegment.image(demo_bytes)
 
 
 def render_feature_message(
@@ -329,12 +344,21 @@ def render_feature_message(
 
 
 def load_demo_bytes(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes | None:
-    demo_path = bundle.source_path.parent / "demos" / feature.demo_filename
-    if demo_path.exists():
-        return demo_path.read_bytes()
+    if feature.demo_filename:
+        demo_path = bundle.source_path.parent / "demos" / feature.demo_filename
+        if demo_path.is_file():
+            return demo_path.read_bytes()
     if not feature.demo_turns:
         return None
     return render_demo_png(bundle, feature)
+
+
+def load_representative_demo_bytes(bundle: PluginDocBundle) -> bytes | None:
+    for feature in bundle.index:
+        demo_bytes = load_demo_bytes(bundle, feature)
+        if demo_bytes is not None:
+            return demo_bytes
+    return None
 
 
 def render_demo_png(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes:

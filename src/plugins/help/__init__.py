@@ -15,7 +15,7 @@ from typing import Any, Literal, cast
 
 import nonebot
 from nonebot.adapters.onebot.v11.event import MessageEvent
-from nonebot.adapters.onebot.v11.message import Message
+from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.plugin import Plugin, PluginMetadata, on_command
@@ -30,6 +30,9 @@ from src.lib.plugin_docs import (
     DocsRenderContext,
     build_readme_docs,
     create_docs_meta,
+    load_demo_bytes,
+    load_plugin_doc_bundle,
+    match_feature,
 )
 from src.lib.plugin_meta import create_plugin_metadata
 
@@ -206,7 +209,28 @@ def _build_index_message(entries: list[DocsEntry], locale: LocaleCode) -> Messag
                 summary = tr(locale, "help.index.no_summary")
             lines.append(f"- {entry.display_name}: {summary}")
 
-    return Message("\n".join(lines).strip())
+    message = Message("\n".join(lines).strip())
+    demo_message = _load_help_index_demo()
+    if not demo_message:
+        return message
+    return message + demo_message
+
+
+def _load_help_index_demo() -> Message:
+    bundle = load_plugin_doc_bundle(
+        source=DOCS_SOURCE,
+        default_name=name,
+        default_description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    match = match_feature(bundle.index, "index")
+    if match.status != "matched" or match.feature is None:
+        return Message()
+    demo_bytes = load_demo_bytes(bundle, match.feature)
+    if demo_bytes is None:
+        return Message()
+    return Message(MessageSegment.image(demo_bytes))
 
 
 def _unique_entries(entries: list[DocsEntry]) -> list[DocsEntry]:
@@ -294,8 +318,15 @@ async def _resolve_docs_message(
         if len(inspect.signature(provider).parameters) == 0:
             result = provider()
         else:
+            view: Literal["plugin", "feature"] = (
+                "feature" if feature_query else "plugin"
+            )
             result = provider(
-                DocsRenderContext(locale=locale, feature_query=feature_query)
+                DocsRenderContext(
+                    locale=locale,
+                    feature_query=feature_query,
+                    view=view,
+                )
             )
         if inspect.isawaitable(result):
             awaited = cast(Awaitable[object], result)
