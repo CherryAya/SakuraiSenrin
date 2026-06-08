@@ -599,15 +599,22 @@ class DemoImageRenderer:
     SYSTEM_CARD_PADDING = 28
     HEADER_CHIP_TOP = 64
     HEADER_LEFT = 188
-    HEADER_TITLE_TOP = 98
-    HEADER_FEATURE_TOP = 164
-    HEADER_TRIGGER_TOP = 206
-    HEADER_PREVIEW_TOP = 210
-    HEADER_PREVIEW_RIGHT = 1096
+    HEADER_TITLE_TOP = 100
+    HEADER_FEATURE_TOP = 160
+    HEADER_TRIGGER_TOP = 202
+    HEADER_PREVIEW_TOP = 207
+    HEADER_PREVIEW_RIGHT = 1088
     USER_MIN_BUBBLE_WIDTH = 260
     USER_MULTI_LINE_MIN_WIDTH = 340
     BOT_MIN_BUBBLE_WIDTH = 320
     BOT_MULTI_LINE_MIN_WIDTH = 440
+    HEADER_CHIP_HEIGHT = 42
+    FOOTER_SIDE_PADDING = 26
+    FOOTER_TEXT_GAP = 20
+    RIGHT_BADGE_SIZE = 34
+    LEFT_BADGE_SIZE = 44
+    PREVIEW_TEXT = "Conversation Preview"
+    FOOTER_RIGHT_TEXT = "help docs"
 
     PAGE_BG = "#FFFDFB"
     SHELL_BG = "#FFFDFC"
@@ -631,12 +638,12 @@ class DemoImageRenderer:
 
     def __init__(self) -> None:
         try:
-            self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 18)
-            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 42)
-            self.feature_font = ImageFont.truetype(MAPLE_FONT_PATH, 28)
+            self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 17)
+            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 40)
+            self.feature_font = ImageFont.truetype(MAPLE_FONT_PATH, 26)
             self.body_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
-            self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 18)
-            self.footer_font = ImageFont.truetype(MAPLE_FONT_PATH, 16)
+            self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 17)
+            self.footer_font = ImageFont.truetype(MAPLE_FONT_PATH, 15)
         except OSError:
             self.eyebrow_font = ImageFont.load_default()
             self.title_font = ImageFont.load_default()
@@ -739,8 +746,22 @@ class DemoImageRenderer:
             fill=self.HERO_BG,
         )
         draw.rounded_rectangle((90, 84, 152, 146), radius=28, fill="#FFDDE8")
-        self._draw_avatar_badge(draw, 121, 115, "凛", self.STRONG, size=44)
-        self._draw_avatar_badge(draw, 1150, 115, "Q", self.MUTED_BLUE_TEXT, size=38)
+        self._draw_avatar_badge(
+            draw,
+            121,
+            115,
+            "凛",
+            self.STRONG,
+            size=self.LEFT_BADGE_SIZE,
+        )
+        self._draw_avatar_badge(
+            draw,
+            1150,
+            115,
+            "Q",
+            self.MUTED_BLUE_TEXT,
+            size=self.RIGHT_BADGE_SIZE,
+        )
         self._draw_chip(
             draw,
             x=self.HEADER_LEFT,
@@ -797,12 +818,11 @@ class DemoImageRenderer:
                 font=self.meta_font,
                 min_width=300,
             )
-        preview_text = "Conversation Preview"
-        preview_box = draw.textbbox((0, 0), preview_text, font=self.footer_font)
+        preview_box = draw.textbbox((0, 0), self.PREVIEW_TEXT, font=self.footer_font)
         preview_width = int(preview_box[2] - preview_box[0])
         draw.text(
             (self.HEADER_PREVIEW_RIGHT - preview_width, self.HEADER_PREVIEW_TOP),
-            preview_text,
+            self.PREVIEW_TEXT,
             font=self.footer_font,
             fill=self.PREVIEW_HINT,
         )
@@ -834,11 +854,19 @@ class DemoImageRenderer:
             radius=16,
             fill=self.PANEL_HEADER_BG,
         )
-        draw.text(
-            (self.OUTER_MARGIN + 74, top + 30),
+        self._draw_text_centered(
+            draw,
+            (
+                self.OUTER_MARGIN + 52,
+                top + 24,
+                self.WIDTH - self.OUTER_MARGIN - 52,
+                top + 58,
+            ),
             "Demo Conversation",
             font=self.meta_font,
             fill=self.HINT,
+            align="left",
+            padding_x=22,
         )
 
     def _measure_turn(self, turn: DocsDemoTurn) -> "_TurnSpec":
@@ -1029,22 +1057,46 @@ class DemoImageRenderer:
             radius=17,
             fill="#FFF4F8",
         )
-        draw.text(
-            (self.OUTER_MARGIN + 42, top + 17),
-            self._fit_text(
-                draw,
-                f"{plugin_title} · v{plugin_version.lstrip('v')} · {plugin_author}",
-                self.footer_font,
-                max_width=self.WIDTH - self.OUTER_MARGIN * 2 - 260,
-            ),
+        footer_rect = (
+            self.OUTER_MARGIN + 28,
+            top + 8,
+            self.WIDTH - self.OUTER_MARGIN - 28,
+            top + 42,
+        )
+        right_text = self.FOOTER_RIGHT_TEXT
+        right_bbox = draw.textbbox((0, 0), right_text, font=self.footer_font)
+        right_width = int(right_bbox[2] - right_bbox[0])
+        right_rect = (
+            footer_rect[2] - self.FOOTER_SIDE_PADDING - right_width,
+            footer_rect[1],
+            footer_rect[2] - self.FOOTER_SIDE_PADDING,
+            footer_rect[3],
+        )
+        left_text = self._fit_text(
+            draw,
+            f"{plugin_title} · v{plugin_version.lstrip('v')} · {plugin_author}",
+            self.footer_font,
+            max_width=right_rect[0]
+            - footer_rect[0]
+            - self.FOOTER_SIDE_PADDING
+            - self.FOOTER_TEXT_GAP,
+        )
+        self._draw_text_centered(
+            draw,
+            footer_rect,
+            left_text,
             font=self.footer_font,
             fill=self.HINT,
+            align="left",
+            padding_x=self.FOOTER_SIDE_PADDING,
         )
-        draw.text(
-            (self.WIDTH - self.OUTER_MARGIN - 198, top + 17),
-            "Generated by help docs",
+        self._draw_text_centered(
+            draw,
+            right_rect,
+            right_text,
             font=self.footer_font,
             fill="#C18AA0",
+            align="right",
         )
 
     def _draw_chip(
@@ -1061,9 +1113,15 @@ class DemoImageRenderer:
     ) -> None:
         bbox = draw.textbbox((0, 0), text, font=font)
         width = max(int(bbox[2] - bbox[0] + 28), min_width)
-        height = int(bbox[3] - bbox[1] + 18)
+        height = max(int(bbox[3] - bbox[1] + 18), self.HEADER_CHIP_HEIGHT)
         draw.rounded_rectangle((x, y, x + width, y + height), radius=16, fill=fill)
-        draw.text((x + 14, y + 8), text, font=font, fill=text_fill)
+        self._draw_text_centered(
+            draw,
+            (x, y, x + width, y + height),
+            text,
+            font=font,
+            fill=text_fill,
+        )
 
     def audit(
         self,
@@ -1142,16 +1200,22 @@ class DemoImageRenderer:
             - int(
                 draw.textbbox(
                     (0, 0),
-                    "Conversation Preview",
+                    self.PREVIEW_TEXT,
                     font=self.footer_font,
                 )[2]
             ),
             self.HEADER_PREVIEW_TOP,
-            "Conversation Preview",
+            self.PREVIEW_TEXT,
             self.footer_font,
         )
         left_badge_rect = (95, 88, 147, 140)
-        right_badge_rect = (1131, 96, 1169, 134)
+        right_badge_radius = self.RIGHT_BADGE_SIZE // 2
+        right_badge_rect = (
+            1150 - right_badge_radius,
+            115 - right_badge_radius,
+            1150 + right_badge_radius,
+            115 + right_badge_radius,
+        )
         trigger_rect: tuple[int, int, int, int] | None = None
         if feature_trigger.strip():
             trigger_rect = self._chip_rect(
@@ -1223,6 +1287,17 @@ class DemoImageRenderer:
             footer_top + 42,
         )
         self._ensure_inside(shell_rect, footer_rect, "footer bar", errors)
+        footer_right_bbox = draw.textbbox(
+            (0, 0), self.FOOTER_RIGHT_TEXT, font=self.footer_font
+        )
+        footer_right_width = int(footer_right_bbox[2] - footer_right_bbox[0])
+        footer_right_rect = (
+            footer_rect[2] - self.FOOTER_SIDE_PADDING - footer_right_width,
+            footer_rect[1],
+            footer_rect[2] - self.FOOTER_SIDE_PADDING,
+            footer_rect[3],
+        )
+        self._ensure_inside(footer_rect, footer_right_rect, "footer right text", errors)
         _ = plugin_version, plugin_author
         return tuple(errors)
 
@@ -1273,6 +1348,29 @@ class DemoImageRenderer:
     ) -> tuple[int, int, int, int]:
         bbox = draw.textbbox((x, y), text, font=font)
         return int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+
+    def _draw_text_centered(
+        self,
+        draw: ImageDraw.ImageDraw,
+        rect: tuple[int, int, int, int],
+        text: str,
+        *,
+        font: Any,
+        fill: str,
+        align: Literal["center", "left", "right"] = "center",
+        padding_x: int = 0,
+    ) -> None:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = int(bbox[2] - bbox[0])
+        text_height = int(bbox[3] - bbox[1])
+        if align == "left":
+            x = rect[0] + padding_x
+        elif align == "right":
+            x = rect[2] - text_width
+        else:
+            x = rect[0] + (rect[2] - rect[0] - text_width) / 2
+        y = rect[1] + (rect[3] - rect[1] - text_height) / 2 - bbox[1]
+        draw.text((x, y), text, font=font, fill=fill)
 
     def _chip_rect(
         self,
