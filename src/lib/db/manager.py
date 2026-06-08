@@ -9,6 +9,7 @@ Description: db 管理器
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+import os
 from typing import Any
 
 from sqlalchemy import event, text
@@ -33,9 +34,12 @@ class DatabaseManager:
         dbapi_connection: Any,
         connection_record: Any,
     ) -> None:
+        _ = connection_record
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.execute(f"PRAGMA mmap_size={256 * 1024 * 1024}")
         cursor.close()
 
@@ -47,7 +51,8 @@ class DatabaseManager:
             if url in self._session_factories:
                 return
 
-            engine = create_async_engine(url, echo=True)  # TODO: 记得 echo 改为 False
+            echo = os.getenv("DB_ECHO", "0") == "1"
+            engine = create_async_engine(url, echo=echo)
             event.listen(engine.sync_engine, "connect", self._init_sqlite_pragma)
 
             async with engine.begin() as conn:

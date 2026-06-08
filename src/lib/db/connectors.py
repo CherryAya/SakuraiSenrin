@@ -13,6 +13,7 @@ import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import _AsyncGeneratorContextManager, asynccontextmanager
 from dataclasses import dataclass, field
+from enum import StrEnum
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, final
@@ -26,9 +27,16 @@ from src.lib.utils.common import get_current_time
 from src.logger import logger
 
 from .manager import db_manager
+from .schema import PatchBase, PatchRegistry
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+
+class ColdPolicy(StrEnum):
+    DENY = "deny"
+    SKIP = "skip"
+    HYDRATE = "hydrate"
 
 
 @dataclass
@@ -40,14 +48,12 @@ class BaseDB(ABC):
 
     namespace: str
 
-    @abstractmethod
-    def session(
-        self,
-        commit: bool = True,
-        *args: Any,
-        **kwargs: Any,
-    ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
-        pass
+    patch_registry: PatchRegistry = field(default_factory=PatchRegistry, init=False)
+    _schema_base: type[DeclarativeBase] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     @property
     def base_dir(self) -> Path:
@@ -55,7 +61,36 @@ class BaseDB(ABC):
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    @abstractmethod
+    def read_session(
+        self,
+        *args: Any,
+        **kwargs: Any,
+    ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+        pass
+
+    @abstractmethod
+    def write_session(
+        self,
+        *args: Any,
+        **kwargs: Any,
+    ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+        pass
+
+    def session(
+        self,
+        commit: bool = True,
+        *args: Any,
+        **kwargs: Any,
+    ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+        if commit:
+            return self.write_session(*args, **kwargs)
+        return self.read_session(*args, **kwargs)
+
     async def init(self, base: type[DeclarativeBase]) -> None:
+        await self.init_schema(base)
+
+    async def init_schema(self, base: type[DeclarativeBase]) -> None:
         """根据提供的 ORM 基类初始化数据库表结构。
 
         该方法会连接数据库（如果不存在则创建），并执行 `create_all` 来创建所有定义的表。
@@ -67,11 +102,14 @@ class BaseDB(ABC):
             >>> # 在应用启动时调用
             >>> await my_db.init(Base)
         """
-        async with self.session() as session:
+        self._schema_base = base
+        async with self.write_session() as session:
             engine = session.bind
             assert isinstance(engine, AsyncEngine)
             async with engine.begin() as conn:
                 await conn.run_sync(base.metadata.create_all)
+                await conn.run_sync(PatchBase.metadata.create_all)
+            await self.patch_registry.apply_all(session, get_current_time())
 
 
 @final
@@ -94,12 +132,13 @@ class StaticDB(BaseDB):
 
     filename: str
 
-    def session(
-        self,
-        commit: bool = True,
-    ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+    def read_session(self) -> _AsyncGeneratorContextManager[AsyncSession, None]:
         path = self.base_dir / self.filename
-        return db_manager.open(str(path), commit)
+        return db_manager.open(str(path), commit=False)
+
+    def write_session(self) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+        path = self.base_dir / self.filename
+        return db_manager.open(str(path), commit=True)
 
 
 @final
@@ -149,7 +188,10 @@ class ShardedDB(BaseDB):
     prefix: str
     fmt: str = "%Y_%m"
     active_window_months: int = 2
+    cold_policy: ColdPolicy = ColdPolicy.DENY
+    map_reduce_concurrency: int = 4
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
+    _initialized_shards: set[str] = field(default_factory=set)
 
     def _get_shard_key(self, dt: datetime) -> str:
         return dt.strftime(self.fmt)
@@ -163,6 +205,14 @@ class ShardedDB(BaseDB):
             self._locks[shard_key] = asyncio.Lock()
         return self._locks[shard_key]
 
+    def _is_active_shard(self, shard_key: str) -> bool:
+        now = arrow.get(get_current_time()).floor("month")
+        active_keys = {
+            now.shift(months=-offset).strftime(self.fmt)
+            for offset in range(self.active_window_months)
+        }
+        return shard_key in active_keys
+
     def _safe_resolve(self, target_path: Path) -> Path:
         resolved_target = target_path.resolve()
         resolved_root = self.base_dir.resolve()
@@ -170,14 +220,46 @@ class ShardedDB(BaseDB):
             raise PermissionError("Access Denied: Path traversal attempt detected.")
         return resolved_target
 
-    async def _ensure_shard_online(self, shard_key: str) -> None:
-        db_path, zip_path = self._get_file_paths(shard_key)
-        if db_path.exists() or not zip_path.exists():
+    async def _initialize_shard_schema(self, shard_key: str) -> None:
+        if self._schema_base is None:
             return
+        if shard_key in self._initialized_shards:
+            return
+        async with self._get_lock(f"schema:{shard_key}"):
+            if shard_key in self._initialized_shards:
+                return
+            db_path, _ = self._get_file_paths(shard_key)
+            async with db_manager.open(str(db_path), commit=True) as session:
+                engine = session.bind
+                assert isinstance(engine, AsyncEngine)
+                async with engine.begin() as conn:
+                    await conn.run_sync(self._schema_base.metadata.create_all)
+                    await conn.run_sync(PatchBase.metadata.create_all)
+                await self.patch_registry.apply_all(session, get_current_time())
+            self._initialized_shards.add(shard_key)
+
+    async def _ensure_shard_online(
+        self,
+        shard_key: str,
+        *,
+        cold_policy: ColdPolicy | None = None,
+        create_if_missing: bool = False,
+    ) -> bool:
+        policy = cold_policy or self.cold_policy
+        db_path, zip_path = self._get_file_paths(shard_key)
+        if db_path.exists():
+            return True
+        if not zip_path.exists():
+            return create_if_missing
+        if policy == ColdPolicy.DENY:
+            raise FileNotFoundError(f"Cold shard is offline: {zip_path.name}")
+        if policy == ColdPolicy.SKIP:
+            logger.warning(f"冷库跳过: {zip_path.name}")
+            return False
 
         async with self._get_lock(shard_key):
             if db_path.exists():
-                return
+                return True
 
             safe_zip = self._safe_resolve(zip_path)
             safe_out = self._safe_resolve(self.base_dir)
@@ -203,23 +285,52 @@ class ShardedDB(BaseDB):
 
             if process.returncode == 0:
                 logger.success(f"冷库解压完成: {db_path.name}")
+                return True
             else:
                 logger.error(f"解压失败, Exit Code: {process.returncode}")
+                raise RuntimeError(f"Failed to hydrate shard: {safe_zip.name}")
 
     @asynccontextmanager
-    async def session(
+    async def read_session(
         self,
-        commit: bool = True,
+        time_ctx: datetime | None = None,
+        cold_policy: ColdPolicy | None = None,
+    ) -> AsyncGenerator[AsyncSession, None]:
+        if time_ctx is None:
+            time_ctx = arrow.get(get_current_time()).datetime
+
+        shard_key = self._get_shard_key(time_ctx)
+        is_online = await self._ensure_shard_online(
+            shard_key,
+            cold_policy=cold_policy,
+            create_if_missing=self._is_active_shard(shard_key),
+        )
+        if not is_online:
+            raise FileNotFoundError(f"Shard is not online: {shard_key}")
+
+        await self._initialize_shard_schema(shard_key)
+        db_path, _ = self._get_file_paths(shard_key)
+        async with db_manager.open(str(db_path), commit=False) as sess:
+            yield sess
+
+    @asynccontextmanager
+    async def write_session(
+        self,
         time_ctx: datetime | None = None,
     ) -> AsyncGenerator[AsyncSession, None]:
         if time_ctx is None:
             time_ctx = arrow.get(get_current_time()).datetime
 
         shard_key = self._get_shard_key(time_ctx)
-        await self._ensure_shard_online(shard_key)
+        await self._ensure_shard_online(
+            shard_key,
+            cold_policy=ColdPolicy.HYDRATE,
+            create_if_missing=True,
+        )
 
+        await self._initialize_shard_schema(shard_key)
         db_path, _ = self._get_file_paths(shard_key)
-        async with db_manager.open(str(db_path), commit) as sess:
+        async with db_manager.open(str(db_path), commit=True) as sess:
             yield sess
 
     async def map_reduce[T](
@@ -227,6 +338,8 @@ class ShardedDB(BaseDB):
         start_time: datetime,
         end_time: datetime,
         query_func: Callable[[AsyncSession], Awaitable[T]],
+        *,
+        cold_policy: ColdPolicy | None = None,
     ) -> list[T]:
         curr = arrow.get(start_time).floor("month")
         end = arrow.get(end_time).floor("month")
@@ -242,18 +355,39 @@ class ShardedDB(BaseDB):
 
         shard_keys = list(dict.fromkeys(keys))
 
-        results: list[T] = []
-        for key in shard_keys:
-            await self._ensure_shard_online(key)
-            db_path, _ = self._get_file_paths(key)
-            if db_path.exists():
+        semaphore = asyncio.Semaphore(self.map_reduce_concurrency)
+
+        async def _run(key: str) -> T | None:
+            policy = cold_policy or self.cold_policy
+            async with semaphore:
+                try:
+                    is_online = await self._ensure_shard_online(
+                        key,
+                        cold_policy=cold_policy,
+                        create_if_missing=False,
+                    )
+                except FileNotFoundError:
+                    if policy == ColdPolicy.SKIP:
+                        return None
+                    raise
+                if not is_online:
+                    return None
+                await self._initialize_shard_schema(key)
+                db_path, _ = self._get_file_paths(key)
+                if not db_path.exists():
+                    return None
                 async with db_manager.open(str(db_path), commit=False) as sess:
-                    results.append(await query_func(sess))
-        return results
+                    return await query_func(sess)
+
+        results = await asyncio.gather(*(_run(key) for key in shard_keys))
+        return [result for result in results if result is not None]
 
     async def run_archiver_task(self) -> None:
         now = arrow.get(get_current_time())
-        active_keys = [now.strftime(self.fmt), now.shift(months=-1).strftime(self.fmt)]
+        active_keys = [
+            now.shift(months=-offset).strftime(self.fmt)
+            for offset in range(self.active_window_months)
+        ]
 
         for db_file in self.base_dir.glob(f"{self.prefix}_*.db"):
             file_key = db_file.stem.replace(f"{self.prefix}_", "")

@@ -8,10 +8,17 @@ Description: db 实例
 
 from src.lib.db.connectors import ShardedDB, StaticDB
 
+from .patches import (
+    build_core_patch_registry,
+    build_log_patch_registry,
+    build_snapshot_patch_registry,
+)
+
 core_db = StaticDB(
     namespace="core_db",
     filename="core.db",
 )
+core_db.patch_registry = build_core_patch_registry()
 
 log_db = ShardedDB(
     namespace="log_db",
@@ -19,6 +26,7 @@ log_db = ShardedDB(
     fmt="%Y%m",
     active_window_months=2,
 )
+log_db.patch_registry = build_log_patch_registry()
 
 snapshot_db = ShardedDB(
     namespace="snapshot_db",
@@ -26,3 +34,4 @@ snapshot_db = ShardedDB(
     fmt="%Y%m",
     active_window_months=2,
 )
+snapshot_db.patch_registry = build_snapshot_patch_registry()
