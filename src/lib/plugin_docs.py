@@ -590,7 +590,8 @@ class DemoImageRenderer:
     BUBBLE_RADIUS = 28
     BUBBLE_PADDING_X = 30
     BUBBLE_PADDING_Y = 24
-    CONTENT_WIDTH = 760
+    USER_CONTENT_WIDTH = 500
+    BOT_CONTENT_WIDTH = 620
     TURN_GAP = 26
     SECTION_GAP = 28
     PANEL_HEADER_HEIGHT = 56
@@ -603,6 +604,10 @@ class DemoImageRenderer:
     HEADER_TRIGGER_TOP = 206
     HEADER_PREVIEW_TOP = 210
     HEADER_PREVIEW_RIGHT = 1096
+    USER_MIN_BUBBLE_WIDTH = 260
+    USER_MULTI_LINE_MIN_WIDTH = 340
+    BOT_MIN_BUBBLE_WIDTH = 320
+    BOT_MULTI_LINE_MIN_WIDTH = 440
 
     PAGE_BG = "#FFFDFB"
     SHELL_BG = "#FFFDFC"
@@ -850,13 +855,28 @@ class DemoImageRenderer:
                 height=text_height + self.SYSTEM_CARD_PADDING * 2,
             )
 
-        lines = self._wrap_text(turn.text, max_width=self.CONTENT_WIDTH)
+        is_user = turn.speaker == "USER"
+        lines = self._wrap_text(
+            turn.text,
+            max_width=self.USER_CONTENT_WIDTH if is_user else self.BOT_CONTENT_WIDTH,
+        )
         text_height = self._line_block_height(lines, self.body_font)
         bubble_height = text_height + self.BUBBLE_PADDING_Y * 2 + 18
+        bubble_width = (
+            self._max_line_width(lines, self.body_font) + self.BUBBLE_PADDING_X * 2
+        )
+        min_width = self.USER_MIN_BUBBLE_WIDTH if is_user else self.BOT_MIN_BUBBLE_WIDTH
+        if len(lines) > 1:
+            min_width = max(
+                min_width,
+                self.USER_MULTI_LINE_MIN_WIDTH
+                if is_user
+                else self.BOT_MULTI_LINE_MIN_WIDTH,
+            )
         return _TurnSpec(
             turn=turn,
             lines=lines,
-            width=min(self.CONTENT_WIDTH + self.BUBBLE_PADDING_X * 2, self.WIDTH - 320),
+            width=min(max(bubble_width, min_width), self.WIDTH - 320),
             height=max(bubble_height, self.AVATAR_SIZE),
         )
 
@@ -894,10 +914,7 @@ class DemoImageRenderer:
             return
 
         is_user = spec.turn.speaker == "USER"
-        bubble_width = (
-            self._max_line_width(spec.lines, self.body_font) + self.BUBBLE_PADDING_X * 2
-        )
-        bubble_width = min(max(bubble_width, 220), self.WIDTH - 320)
+        bubble_width = spec.width
         avatar_x = (
             self.WIDTH
             - self.OUTER_MARGIN
@@ -1220,10 +1237,7 @@ class DemoImageRenderer:
             return [("system bubble", (left, top, right, top + spec.height))]
 
         is_user = spec.turn.speaker == "USER"
-        bubble_width = (
-            self._max_line_width(spec.lines, self.body_font) + self.BUBBLE_PADDING_X * 2
-        )
-        bubble_width = min(max(bubble_width, 220), self.WIDTH - 320)
+        bubble_width = spec.width
         avatar_x = (
             self.WIDTH
             - self.OUTER_MARGIN
