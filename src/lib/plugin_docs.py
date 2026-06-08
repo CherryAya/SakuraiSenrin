@@ -579,70 +579,69 @@ def _extract_metadata_field(raw_text: str, field: str) -> str:
 
 
 class DemoImageRenderer:
-    """Render a flat pseudo-chat demo card using the water plugin palette."""
+    """Render a compact plugin docs demo card."""
 
     WIDTH = 1280
-    OUTER_MARGIN = 34
-    SHELL_RADIUS = 40
-    HEADER_HEIGHT = 238
-    FOOTER_HEIGHT = 56
-    CONVERSATION_SIDE_PADDING = 64
-    BUBBLE_RADIUS = 28
-    BUBBLE_PADDING_X = 30
-    BUBBLE_PADDING_Y = 24
-    USER_CONTENT_WIDTH = 500
-    BOT_CONTENT_WIDTH = 620
-    TURN_GAP = 26
-    SECTION_GAP = 28
-    PANEL_HEADER_HEIGHT = 56
-    AVATAR_SIZE = 68
-    SYSTEM_CARD_PADDING = 28
-    HEADER_CHIP_TOP = 64
-    HEADER_LEFT = 188
-    HEADER_TITLE_TOP = 100
-    HEADER_FEATURE_TOP = 160
+    OUTER_MARGIN = 40
+    SHELL_RADIUS = 32
+    HEADER_HEIGHT = 226
+    HEADER_LEFT = 126
+    HEADER_TOP = 70
+    HEADER_CHIP_TOP = 72
+    HEADER_TITLE_TOP = 112
+    HEADER_FEATURE_TOP = 166
     HEADER_TRIGGER_TOP = 202
-    HEADER_PREVIEW_TOP = 207
-    HEADER_PREVIEW_RIGHT = 1088
-    USER_MIN_BUBBLE_WIDTH = 260
-    USER_MULTI_LINE_MIN_WIDTH = 340
-    BOT_MIN_BUBBLE_WIDTH = 320
-    BOT_MULTI_LINE_MIN_WIDTH = 440
-    HEADER_CHIP_HEIGHT = 42
-    FOOTER_SIDE_PADDING = 26
+    HEADER_RIGHT = 1138
+    BODY_TOP_GAP = 20
+    BODY_PADDING_X = 40
+    BODY_PADDING_Y = 36
+    TURN_GAP = 24
+    FOOTER_HEIGHT = 52
+    FOOTER_TOP_GAP = 24
+    FOOTER_SIDE_PADDING = 28
     FOOTER_TEXT_GAP = 20
-    RIGHT_BADGE_SIZE = 34
-    LEFT_BADGE_SIZE = 44
-    PREVIEW_TEXT = "Conversation Preview"
+    CONVERSATION_SIDE_PADDING = 76
+    AVATAR_SIZE = 48
+    BUBBLE_RADIUS = 22
+    BUBBLE_PADDING_X = 24
+    BUBBLE_PADDING_Y = 20
+    BUBBLE_LABEL_GAP = 12
+    USER_CONTENT_WIDTH = 560
+    BOT_CONTENT_WIDTH = 640
+    SYSTEM_CONTENT_WIDTH = 860
+    USER_MIN_BUBBLE_WIDTH = 270
+    BOT_MIN_BUBBLE_WIDTH = 310
+    SYSTEM_MIN_BUBBLE_WIDTH = 480
+    CHIP_HEIGHT = 38
     FOOTER_RIGHT_TEXT = "help docs"
 
-    PAGE_BG = "#FFFDFB"
-    SHELL_BG = "#FFFDFC"
-    HERO_BG = "#FDE7EF"
+    PAGE_BG = "#FAFAF8"
+    SHELL_BG = "#FFFFFF"
+    SHELL_BORDER = "#EFE9ED"
     PANEL_BG = "#FFFFFF"
-    PANEL_HEADER_BG = "#FFF1D6"
-    ACCENT = "#7A2F4A"
-    STRONG = "#EE8BA8"
-    DEEP = "#401828"
-    HINT = "#B07A8D"
-    BLUE = "#8EAFFF"
-    BLUE_TEXT = "#355581"
-    USER_BUBBLE = "#FFEFF4"
-    BOT_BUBBLE = "#EAF2FF"
-    SYSTEM_BUBBLE = "#FFF4D8"
-    BADGE_BG = "#FFF0B8"
-    BADGE_FG = "#9A6E20"
-    MUTED_BLUE = "#DCE7FF"
-    MUTED_BLUE_TEXT = "#88A0D9"
-    PREVIEW_HINT = "#C5A3B0"
+    PANEL_BORDER = "#F0E8EE"
+    ACCENT = "#E987A5"
+    ACCENT_DARK = "#9A3F62"
+    INDIGO = "#4F6FAE"
+    INDIGO_SOFT = "#EAF0FF"
+    INDIGO_TEXT = "#2F4A7C"
+    DEEP = "#2E2630"
+    MUTED = "#8F8190"
+    MUTED_LIGHT = "#F7F3F5"
+    USER_BUBBLE = "#FFF0F5"
+    BOT_BUBBLE = "#EEF4FF"
+    SYSTEM_BUBBLE = "#FFF7DF"
+    SYSTEM_TEXT = "#67522B"
+    SYSTEM_LABEL = "#9B7524"
+    FOOTER_BG = "#FBF6F8"
 
     def __init__(self) -> None:
         try:
-            self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 17)
-            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 40)
+            self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 16)
+            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 42)
             self.feature_font = ImageFont.truetype(MAPLE_FONT_PATH, 26)
             self.body_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
-            self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 17)
+            self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 16)
             self.footer_font = ImageFont.truetype(MAPLE_FONT_PATH, 15)
         except OSError:
             self.eyebrow_font = ImageFont.load_default()
@@ -663,15 +662,11 @@ class DemoImageRenderer:
         turns: Sequence[DocsDemoTurn],
     ) -> bytes:
         turn_specs = [self._measure_turn(turn) for turn in turns]
-        conversation_height = sum(
-            spec.height for spec in turn_specs
-        ) + self.TURN_GAP * max(
-            len(turn_specs) - 1,
-            0,
-        )
-        conversation_top = self.HEADER_HEIGHT + self.SECTION_GAP
-        body_top = conversation_top + self.PANEL_HEADER_HEIGHT
-        footer_top = body_top + conversation_height + self.SECTION_GAP + 18
+        conversation_height = self._conversation_height(turn_specs)
+        panel_top = self.OUTER_MARGIN + self.HEADER_HEIGHT + self.BODY_TOP_GAP
+        body_top = panel_top + self.BODY_PADDING_Y
+        panel_bottom = body_top + conversation_height + self.BODY_PADDING_Y
+        footer_top = panel_bottom + self.FOOTER_TOP_GAP
         height = footer_top + self.FOOTER_HEIGHT + self.OUTER_MARGIN
         image = Image.new("RGB", (self.WIDTH, height), self.PAGE_BG)
         self._paint_background(image)
@@ -685,6 +680,8 @@ class DemoImageRenderer:
             ),
             radius=self.SHELL_RADIUS,
             fill=self.SHELL_BG,
+            outline=self.SHELL_BORDER,
+            width=2,
         )
         self._draw_header(
             draw,
@@ -695,8 +692,8 @@ class DemoImageRenderer:
         )
         self._draw_conversation_panel(
             draw,
-            top=conversation_top - 18,
-            bottom=footer_top - 18,
+            top=panel_top,
+            bottom=panel_bottom,
         )
 
         y = body_top
@@ -720,10 +717,12 @@ class DemoImageRenderer:
         draw = ImageDraw.Draw(image)
         width, height = image.size
         draw.rectangle((0, 0, width, height), fill=self.PAGE_BG)
+        draw.rectangle((0, 0, width, 10), fill=self.ACCENT)
+        draw.rounded_rectangle((74, 66, 112, height - 76), radius=19, fill="#FFF4F7")
         draw.rounded_rectangle(
-            (66, height - 154, width - 66, height - 70),
-            radius=34,
-            fill="#FFF3F7",
+            (width - 142, 126, width - 86, height - 124),
+            radius=28,
+            fill="#F1F4FF",
         )
 
     def _draw_header(
@@ -735,50 +734,25 @@ class DemoImageRenderer:
         feature_trigger: str,
         turn_count: int,
     ) -> None:
-        draw.rounded_rectangle(
-            (
-                self.OUTER_MARGIN + 28,
-                self.OUTER_MARGIN + 24,
-                self.WIDTH - self.OUTER_MARGIN - 28,
-                self.OUTER_MARGIN + self.HEADER_HEIGHT - 20,
-            ),
-            radius=34,
-            fill=self.HERO_BG,
-        )
-        draw.rounded_rectangle((90, 84, 152, 146), radius=28, fill="#FFDDE8")
-        self._draw_avatar_badge(
-            draw,
-            121,
-            115,
-            "凛",
-            self.STRONG,
-            size=self.LEFT_BADGE_SIZE,
-        )
-        self._draw_avatar_badge(
-            draw,
-            1150,
-            115,
-            "Q",
-            self.MUTED_BLUE_TEXT,
-            size=self.RIGHT_BADGE_SIZE,
-        )
+        draw.rounded_rectangle((96, 94, 106, 190), radius=5, fill=self.ACCENT)
         self._draw_chip(
             draw,
             x=self.HEADER_LEFT,
             y=self.HEADER_CHIP_TOP,
             text="PLUGIN DEMO",
-            fill="#FFF9FB",
-            text_fill=self.ACCENT,
+            fill=self.MUTED_LIGHT,
+            text_fill=self.ACCENT_DARK,
             font=self.eyebrow_font,
         )
         self._draw_chip(
             draw,
-            x=952,
-            y=self.HEADER_CHIP_TOP,
+            x=self.HEADER_RIGHT - 154,
+            y=self.HEADER_TOP,
             text=f"{turn_count} STEP{'S' if turn_count != 1 else ''}",
-            fill=self.BADGE_BG,
-            text_fill=self.BADGE_FG,
+            fill=self.INDIGO_SOFT,
+            text_fill=self.INDIGO_TEXT,
             font=self.eyebrow_font,
+            min_width=154,
         )
         draw.text(
             (self.HEADER_LEFT, self.HEADER_TITLE_TOP),
@@ -786,7 +760,7 @@ class DemoImageRenderer:
                 draw,
                 plugin_title,
                 self.title_font,
-                max_width=560,
+                max_width=760,
             ),
             font=self.title_font,
             fill=self.DEEP,
@@ -797,10 +771,10 @@ class DemoImageRenderer:
                 draw,
                 feature_title,
                 self.feature_font,
-                max_width=620,
+                max_width=760,
             ),
             font=self.feature_font,
-            fill=self.ACCENT,
+            fill=self.ACCENT_DARK,
         )
         if feature_trigger.strip():
             self._draw_chip(
@@ -811,21 +785,14 @@ class DemoImageRenderer:
                     draw,
                     f"指令示例: {feature_trigger}",
                     self.meta_font,
-                    max_width=520,
+                    max_width=760,
                 ),
-                fill="#FFFBFC",
-                text_fill=self.HINT,
+                fill="#FFF7FA",
+                text_fill=self.MUTED,
                 font=self.meta_font,
                 min_width=300,
             )
-        preview_box = draw.textbbox((0, 0), self.PREVIEW_TEXT, font=self.footer_font)
-        preview_width = int(preview_box[2] - preview_box[0])
-        draw.text(
-            (self.HEADER_PREVIEW_RIGHT - preview_width, self.HEADER_PREVIEW_TOP),
-            self.PREVIEW_TEXT,
-            font=self.footer_font,
-            fill=self.PREVIEW_HINT,
-        )
+        self._draw_avatar(draw, x=1088, y=128, label="凛", fill=self.INDIGO)
 
     def _draw_conversation_panel(
         self,
@@ -841,70 +808,55 @@ class DemoImageRenderer:
                 self.WIDTH - self.OUTER_MARGIN - 28,
                 bottom,
             ),
-            radius=34,
+            radius=28,
             fill=self.PANEL_BG,
-        )
-        draw.rounded_rectangle(
-            (
-                self.OUTER_MARGIN + 52,
-                top + 24,
-                self.WIDTH - self.OUTER_MARGIN - 52,
-                top + 58,
-            ),
-            radius=16,
-            fill=self.PANEL_HEADER_BG,
-        )
-        self._draw_text_centered(
-            draw,
-            (
-                self.OUTER_MARGIN + 52,
-                top + 24,
-                self.WIDTH - self.OUTER_MARGIN - 52,
-                top + 58,
-            ),
-            "Demo Conversation",
-            font=self.meta_font,
-            fill=self.HINT,
-            align="left",
-            padding_x=22,
+            outline=self.PANEL_BORDER,
+            width=2,
         )
 
     def _measure_turn(self, turn: DocsDemoTurn) -> "_TurnSpec":
         if turn.speaker == "SYSTEM":
             lines = self._wrap_text(
-                turn.text,
-                max_width=self.WIDTH - self.OUTER_MARGIN * 2 - 240,
+                self._normalize_demo_text(turn.text),
+                max_width=self.SYSTEM_CONTENT_WIDTH,
             )
             text_height = self._line_block_height(lines, self.body_font)
+            width = (
+                self._max_line_width(lines, self.body_font) + self.BUBBLE_PADDING_X * 2
+            )
             return _TurnSpec(
                 turn=turn,
                 lines=lines,
-                width=self.WIDTH - self.OUTER_MARGIN * 2 - 180,
-                height=text_height + self.SYSTEM_CARD_PADDING * 2,
+                width=max(width, self.SYSTEM_MIN_BUBBLE_WIDTH),
+                height=text_height + self.BUBBLE_PADDING_Y * 2 + 18,
             )
 
         is_user = turn.speaker == "USER"
         lines = self._wrap_text(
-            turn.text,
+            self._normalize_demo_text(turn.text),
             max_width=self.USER_CONTENT_WIDTH if is_user else self.BOT_CONTENT_WIDTH,
         )
         text_height = self._line_block_height(lines, self.body_font)
-        bubble_height = text_height + self.BUBBLE_PADDING_Y * 2 + 18
+        label_height = self._font_line_height(self.eyebrow_font)
+        bubble_height = (
+            text_height
+            + label_height
+            + self.BUBBLE_LABEL_GAP
+            + self.BUBBLE_PADDING_Y * 2
+        )
         bubble_width = (
             self._max_line_width(lines, self.body_font) + self.BUBBLE_PADDING_X * 2
         )
         min_width = self.USER_MIN_BUBBLE_WIDTH if is_user else self.BOT_MIN_BUBBLE_WIDTH
-        if len(lines) > 1:
-            min_width = max(
-                min_width,
-                self.USER_MULTI_LINE_MIN_WIDTH
-                if is_user
-                else self.BOT_MULTI_LINE_MIN_WIDTH,
-            )
         return _TurnSpec(
             turn=turn,
             lines=lines,
-            width=min(max(bubble_width, min_width), self.WIDTH - 320),
+            width=min(
+                max(bubble_width, min_width),
+                self.USER_CONTENT_WIDTH + self.BUBBLE_PADDING_X * 2
+                if is_user
+                else self.BOT_CONTENT_WIDTH + self.BUBBLE_PADDING_X * 2,
+            ),
             height=max(bubble_height, self.AVATAR_SIZE),
         )
 
@@ -915,29 +867,28 @@ class DemoImageRenderer:
         top: int,
     ) -> None:
         if spec.turn.speaker == "SYSTEM":
-            left = 140
-            right = self.WIDTH - 140
+            left = (self.WIDTH - spec.width) // 2
+            right = left + spec.width
             draw.rounded_rectangle(
                 (left, top, right, top + spec.height),
-                radius=24,
+                radius=20,
                 fill=self.SYSTEM_BUBBLE,
-            )
-            self._draw_chip(
-                draw,
-                x=left + 22,
-                y=top + 16,
-                text="SYSTEM",
-                fill="#FFF9EC",
-                text_fill="#8F6A45",
-                font=self.eyebrow_font,
             )
             self._draw_multiline_text(
                 draw,
-                x=left + 26,
-                y=top + 56,
+                x=left + self.BUBBLE_PADDING_X,
+                y=top + self.BUBBLE_PADDING_Y + 8,
                 lines=spec.lines,
                 font=self.body_font,
-                fill="#5D5143",
+                fill=self.SYSTEM_TEXT,
+            )
+            label = "SYSTEM"
+            label_box = draw.textbbox((0, 0), label, font=self.eyebrow_font)
+            draw.text(
+                (left + self.BUBBLE_PADDING_X, top + 12 - label_box[1]),
+                label,
+                font=self.eyebrow_font,
+                fill=self.SYSTEM_LABEL,
             )
             return
 
@@ -952,15 +903,15 @@ class DemoImageRenderer:
             else self.OUTER_MARGIN + self.CONVERSATION_SIDE_PADDING
         )
         bubble_x = (
-            avatar_x - 20 - bubble_width
+            avatar_x - 18 - bubble_width
             if is_user
-            else avatar_x + self.AVATAR_SIZE + 20
+            else avatar_x + self.AVATAR_SIZE + 18
         )
         bubble_y = top + max((self.AVATAR_SIZE - spec.height) // 2, 0)
         fill = self.USER_BUBBLE if is_user else self.BOT_BUBBLE
-        text_fill = self.DEEP if is_user else self.BLUE_TEXT
+        text_fill = self.DEEP if is_user else self.INDIGO_TEXT
         label = "你" if is_user else "凛"
-        avatar_fill = self.STRONG if is_user else self.BLUE
+        avatar_fill = self.ACCENT if is_user else self.INDIGO
 
         self._draw_avatar(
             draw,
@@ -974,19 +925,27 @@ class DemoImageRenderer:
             radius=self.BUBBLE_RADIUS,
             fill=fill,
         )
-        self._draw_chip(
-            draw,
-            x=bubble_x + 18,
-            y=bubble_y + 14,
-            text="USER" if is_user else "BOT",
-            fill="#FFF9FB" if is_user else "#F7FAFF",
-            text_fill=self.ACCENT if is_user else "#4C708C",
+        speaker = "USER" if is_user else "BOT"
+        label_fill = self.ACCENT_DARK if is_user else self.INDIGO
+        label_box = draw.textbbox((0, 0), speaker, font=self.eyebrow_font)
+        draw.text(
+            (
+                bubble_x + self.BUBBLE_PADDING_X,
+                bubble_y + self.BUBBLE_PADDING_Y - label_box[1],
+            ),
+            speaker,
             font=self.eyebrow_font,
+            fill=label_fill,
         )
         self._draw_multiline_text(
             draw,
             x=bubble_x + self.BUBBLE_PADDING_X,
-            y=bubble_y + self.BUBBLE_PADDING_Y + 18,
+            y=(
+                bubble_y
+                + self.BUBBLE_PADDING_Y
+                + self._font_line_height(self.eyebrow_font)
+                + self.BUBBLE_LABEL_GAP
+            ),
             lines=spec.lines,
             font=self.body_font,
             fill=text_fill,
@@ -1015,29 +974,6 @@ class DemoImageRenderer:
             fill="#FFFFFF",
         )
 
-    def _draw_avatar_badge(
-        self,
-        draw: ImageDraw.ImageDraw,
-        x: int,
-        y: int,
-        label: str,
-        fill: str,
-        *,
-        size: int = 52,
-    ) -> None:
-        radius = size // 2
-        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=fill)
-        bbox = draw.textbbox((0, 0), label, font=self.meta_font)
-        draw.text(
-            (
-                x - (bbox[2] - bbox[0]) / 2,
-                y - (bbox[3] - bbox[1]) / 2 - 1,
-            ),
-            label,
-            font=self.meta_font,
-            fill="#FFFFFF",
-        )
-
     def _draw_footer(
         self,
         draw: ImageDraw.ImageDraw,
@@ -1050,18 +986,18 @@ class DemoImageRenderer:
         draw.rounded_rectangle(
             (
                 self.OUTER_MARGIN + 28,
-                top + 8,
+                top,
                 self.WIDTH - self.OUTER_MARGIN - 28,
-                top + 42,
+                top + self.FOOTER_HEIGHT,
             ),
-            radius=17,
-            fill="#FFF4F8",
+            radius=18,
+            fill=self.FOOTER_BG,
         )
         footer_rect = (
             self.OUTER_MARGIN + 28,
-            top + 8,
+            top,
             self.WIDTH - self.OUTER_MARGIN - 28,
-            top + 42,
+            top + self.FOOTER_HEIGHT,
         )
         right_text = self.FOOTER_RIGHT_TEXT
         right_bbox = draw.textbbox((0, 0), right_text, font=self.footer_font)
@@ -1086,7 +1022,7 @@ class DemoImageRenderer:
             footer_rect,
             left_text,
             font=self.footer_font,
-            fill=self.HINT,
+            fill=self.MUTED,
             align="left",
             padding_x=self.FOOTER_SIDE_PADDING,
         )
@@ -1095,7 +1031,7 @@ class DemoImageRenderer:
             right_rect,
             right_text,
             font=self.footer_font,
-            fill="#C18AA0",
+            fill=self.MUTED,
             align="right",
         )
 
@@ -1111,13 +1047,13 @@ class DemoImageRenderer:
         font: Any,
         min_width: int = 0,
     ) -> None:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        width = max(int(bbox[2] - bbox[0] + 28), min_width)
-        height = max(int(bbox[3] - bbox[1] + 18), self.HEADER_CHIP_HEIGHT)
-        draw.rounded_rectangle((x, y, x + width, y + height), radius=16, fill=fill)
+        rect = self._chip_rect(
+            draw, x=x, y=y, text=text, font=font, min_width=min_width
+        )
+        draw.rounded_rectangle(rect, radius=15, fill=fill)
         self._draw_text_centered(
             draw,
-            (x, y, x + width, y + height),
+            rect,
             text,
             font=font,
             fill=text_fill,
@@ -1135,29 +1071,25 @@ class DemoImageRenderer:
     ) -> tuple[str, ...]:
         errors: list[str] = []
         turn_specs = [self._measure_turn(turn) for turn in turns]
-        conversation_height = sum(
-            spec.height for spec in turn_specs
-        ) + self.TURN_GAP * max(
-            len(turn_specs) - 1,
-            0,
-        )
-        conversation_top = self.HEADER_HEIGHT + self.SECTION_GAP
-        body_top = conversation_top + self.PANEL_HEADER_HEIGHT
-        footer_top = body_top + conversation_height + self.SECTION_GAP + 18
+        conversation_height = self._conversation_height(turn_specs)
+        panel_top = self.OUTER_MARGIN + self.HEADER_HEIGHT + self.BODY_TOP_GAP
+        body_top = panel_top + self.BODY_PADDING_Y
+        panel_bottom = body_top + conversation_height + self.BODY_PADDING_Y
+        footer_top = panel_bottom + self.FOOTER_TOP_GAP
         height = footer_top + self.FOOTER_HEIGHT + self.OUTER_MARGIN
         draw = ImageDraw.Draw(Image.new("RGB", (self.WIDTH, height), "#FFFFFF"))
 
         hero_rect = (
-            self.OUTER_MARGIN + 28,
-            self.OUTER_MARGIN + 24,
+            self.OUTER_MARGIN,
+            self.OUTER_MARGIN,
             self.WIDTH - self.OUTER_MARGIN - 28,
-            self.OUTER_MARGIN + self.HEADER_HEIGHT - 20,
+            self.OUTER_MARGIN + self.HEADER_HEIGHT,
         )
         panel_rect = (
             self.OUTER_MARGIN + 28,
-            conversation_top - 18,
+            panel_top,
             self.WIDTH - self.OUTER_MARGIN - 28,
-            footer_top - 18,
+            panel_bottom,
         )
         shell_rect = (
             self.OUTER_MARGIN,
@@ -1170,14 +1102,14 @@ class DemoImageRenderer:
             draw,
             self.HEADER_LEFT,
             self.HEADER_TITLE_TOP,
-            self._fit_text(draw, plugin_title, self.title_font, max_width=560),
+            self._fit_text(draw, plugin_title, self.title_font, max_width=760),
             self.title_font,
         )
         feature_rect = self._text_rect(
             draw,
             self.HEADER_LEFT,
             self.HEADER_FEATURE_TOP,
-            self._fit_text(draw, feature_title, self.feature_font, max_width=620),
+            self._fit_text(draw, feature_title, self.feature_font, max_width=760),
             self.feature_font,
         )
         plugin_chip_rect = self._chip_rect(
@@ -1189,32 +1121,18 @@ class DemoImageRenderer:
         )
         steps_chip_rect = self._chip_rect(
             draw,
-            x=952,
-            y=self.HEADER_CHIP_TOP,
+            x=self.HEADER_RIGHT - 154,
+            y=self.HEADER_TOP,
             text=f"{len(turns)} STEP{'S' if len(turns) != 1 else ''}",
             font=self.eyebrow_font,
+            min_width=154,
         )
-        preview_rect = self._text_rect(
-            draw,
-            self.HEADER_PREVIEW_RIGHT
-            - int(
-                draw.textbbox(
-                    (0, 0),
-                    self.PREVIEW_TEXT,
-                    font=self.footer_font,
-                )[2]
-            ),
-            self.HEADER_PREVIEW_TOP,
-            self.PREVIEW_TEXT,
-            self.footer_font,
-        )
-        left_badge_rect = (95, 88, 147, 140)
-        right_badge_radius = self.RIGHT_BADGE_SIZE // 2
-        right_badge_rect = (
-            1150 - right_badge_radius,
-            115 - right_badge_radius,
-            1150 + right_badge_radius,
-            115 + right_badge_radius,
+        accent_rect = (96, 94, 106, 190)
+        header_avatar_rect = (
+            1088,
+            128,
+            1088 + self.AVATAR_SIZE,
+            128 + self.AVATAR_SIZE,
         )
         trigger_rect: tuple[int, int, int, int] | None = None
         if feature_trigger.strip():
@@ -1226,7 +1144,7 @@ class DemoImageRenderer:
                     draw,
                     f"指令示例: {feature_trigger}",
                     self.meta_font,
-                    max_width=520,
+                    max_width=760,
                 ),
                 font=self.meta_font,
                 min_width=300,
@@ -1236,15 +1154,15 @@ class DemoImageRenderer:
         self._ensure_inside(hero_rect, title_rect, "plugin title", errors)
         self._ensure_inside(hero_rect, feature_rect, "feature title", errors)
         self._ensure_inside(hero_rect, steps_chip_rect, "steps chip", errors)
-        self._ensure_inside(hero_rect, preview_rect, "preview text", errors)
+        self._ensure_inside(hero_rect, header_avatar_rect, "header avatar", errors)
         if trigger_rect is not None:
             self._ensure_inside(hero_rect, trigger_rect, "trigger chip", errors)
 
         self._ensure_no_overlap(
-            left_badge_rect, title_rect, "left badge", "plugin title", errors
+            accent_rect, title_rect, "accent bar", "plugin title", errors
         )
         self._ensure_no_overlap(
-            left_badge_rect, feature_rect, "left badge", "feature title", errors
+            accent_rect, feature_rect, "accent bar", "feature title", errors
         )
         self._ensure_no_overlap(
             plugin_chip_rect, title_rect, "plugin chip", "plugin title", errors
@@ -1253,14 +1171,24 @@ class DemoImageRenderer:
             title_rect, feature_rect, "plugin title", "feature title", errors
         )
         self._ensure_no_overlap(
-            steps_chip_rect, right_badge_rect, "steps chip", "right badge", errors
+            steps_chip_rect, header_avatar_rect, "steps chip", "header avatar", errors
+        )
+        self._ensure_no_overlap(
+            title_rect, steps_chip_rect, "plugin title", "steps chip", errors
+        )
+        self._ensure_no_overlap(
+            feature_rect, header_avatar_rect, "feature title", "header avatar", errors
         )
         if trigger_rect is not None:
             self._ensure_no_overlap(
                 feature_rect, trigger_rect, "feature title", "trigger chip", errors
             )
             self._ensure_no_overlap(
-                trigger_rect, preview_rect, "trigger chip", "preview text", errors
+                trigger_rect,
+                header_avatar_rect,
+                "trigger chip",
+                "header avatar",
+                errors,
             )
 
         y = body_top
@@ -1282,9 +1210,9 @@ class DemoImageRenderer:
 
         footer_rect = (
             self.OUTER_MARGIN + 28,
-            footer_top + 8,
+            footer_top,
             self.WIDTH - self.OUTER_MARGIN - 28,
-            footer_top + 42,
+            footer_top + self.FOOTER_HEIGHT,
         )
         self._ensure_inside(shell_rect, footer_rect, "footer bar", errors)
         footer_right_bbox = draw.textbbox(
@@ -1307,8 +1235,8 @@ class DemoImageRenderer:
         top: int,
     ) -> list[tuple[str, tuple[int, int, int, int]]]:
         if spec.turn.speaker == "SYSTEM":
-            left = 140
-            right = self.WIDTH - 140
+            left = (self.WIDTH - spec.width) // 2
+            right = left + spec.width
             return [("system bubble", (left, top, right, top + spec.height))]
 
         is_user = spec.turn.speaker == "USER"
@@ -1322,9 +1250,9 @@ class DemoImageRenderer:
             else self.OUTER_MARGIN + self.CONVERSATION_SIDE_PADDING
         )
         bubble_x = (
-            avatar_x - 20 - bubble_width
+            avatar_x - 18 - bubble_width
             if is_user
-            else avatar_x + self.AVATAR_SIZE + 20
+            else avatar_x + self.AVATAR_SIZE + 18
         )
         bubble_y = top + max((self.AVATAR_SIZE - spec.height) // 2, 0)
         return [
@@ -1384,8 +1312,14 @@ class DemoImageRenderer:
     ) -> tuple[int, int, int, int]:
         bbox = draw.textbbox((0, 0), text, font=font)
         width = max(int(bbox[2] - bbox[0] + 28), min_width)
-        height = int(bbox[3] - bbox[1] + 18)
+        height = max(int(bbox[3] - bbox[1] + 18), self.CHIP_HEIGHT)
         return (x, y, x + width, y + height)
+
+    def _conversation_height(self, turn_specs: Sequence["_TurnSpec"]) -> int:
+        return sum(spec.height for spec in turn_specs) + self.TURN_GAP * max(
+            len(turn_specs) - 1,
+            0,
+        )
 
     def _ensure_inside(
         self,
@@ -1450,6 +1384,9 @@ class DemoImageRenderer:
             if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width:
                 return candidate
         return ellipsis
+
+    def _normalize_demo_text(self, text: str) -> str:
+        return text.replace("📩", "[通知]")
 
     def _wrap_text(self, text: str, *, max_width: int) -> list[str]:
         draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#FFFFFF"))

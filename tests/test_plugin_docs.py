@@ -241,3 +241,29 @@ def test_audit_demo_layout_detects_no_overlap_for_real_header_case() -> None:
     feature = next(item for item in bundle.index if item.slug == "reply-shortcut")
 
     assert audit_demo_layout(bundle, feature) == ()
+
+
+def test_audit_demo_layout_accepts_all_project_readmes() -> None:
+    readmes = [
+        path
+        for root in (Path("src/plugins"), Path("src/hooks"))
+        for path in sorted(root.glob("**/README.MD"))
+        if "/docs/" in path.as_posix()
+    ]
+    errors: list[str] = []
+
+    for source in readmes:
+        bundle = load_plugin_doc_bundle(
+            source=source,
+            default_name=source.parent.name,
+            default_description="desc",
+            trigger=TriggerType.COMMAND,
+            permission=Permission.NORMAL,
+        )
+        for feature in bundle.index:
+            errors.extend(
+                f"{source}: {feature.slug}: {message}"
+                for message in audit_demo_layout(bundle, feature)
+            )
+
+    assert errors == []
