@@ -1,21 +1,26 @@
-"""
-Author: SakuraiCora<1479559098@qq.com>
-Date: 2026-04-04 14:58:00
-LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-04-04 14:58:00
-Description: plugin docs 元数据与渲染工具
-"""
+"""plugin docs 元数据与渲染工具。"""
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import TypedDict
 
 from nonebot.adapters.onebot.v11.message import Message
 
 from src.database.core.consts import Permission
+from src.lib.i18n.keys import MessageKey
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 
 from .consts import TriggerType
 
-type DocsProvider = Callable[[], Message | Awaitable[Message]]
+
+@dataclass(slots=True, frozen=True)
+class DocsRenderContext:
+    locale: LocaleCode
+
+
+type DocsResult = Message | Awaitable[Message] | str | Awaitable[str]
+type DocsProvider = Callable[..., DocsResult]
 
 
 class DocsMeta(TypedDict):
@@ -42,21 +47,34 @@ def create_docs_meta(
 
 def build_static_docs(
     *,
-    name: str,
-    description: str,
-    content: str,
+    name: str | None = None,
+    description: str | None = None,
+    content: str | None = None,
+    name_key: MessageKey | None = None,
+    description_key: MessageKey | None = None,
+    content_key: MessageKey | None = None,
     trigger: TriggerType,
     permission: Permission,
+    locale: LocaleCode = "zh-CN",
 ) -> Message:
-    body = content.strip() or "暂无说明"
-    desc = description.strip() or "暂无描述"
+    body = (
+        tr(locale, content_key).strip()
+        if content_key is not None
+        else (content or "").strip()
+    ) or tr(locale, "docs.default.empty")
+    desc = (
+        tr(locale, description_key).strip()
+        if description_key is not None
+        else (description or "").strip()
+    ) or tr(locale, "docs.default.no_description")
+    title = tr(locale, name_key) if name_key is not None else (name or "")
     return Message(
         (
-            f"===== {name} =====\n"
-            f"触发方式: {trigger}\n"
-            f"权限: {permission}\n\n"
+            f"===== {title} =====\n"
+            f"{tr(locale, 'docs.default.trigger')}: {trigger}\n"
+            f"{tr(locale, 'docs.default.permission')}: {permission}\n\n"
             f"{desc}\n\n"
-            "用法:\n"
+            f"{tr(locale, 'docs.default.usage')}:\n"
             f"{body}"
         ).strip()
     )

@@ -20,15 +20,19 @@ from nonebot.plugin import Plugin, PluginMetadata, on_command
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import (
     DocsMeta,
     DocsProvider,
+    DocsRenderContext,
+    build_static_docs,
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
 
-name = "帮助中心"
-description = "统一汇总插件文档，并按插件 metadata.docs 自动注册。"
+name = tr("zh-CN", "plugin.help.name")
+description = tr("zh-CN", "plugin.help.description")
 
 
 @dataclass(slots=True)
@@ -46,17 +50,15 @@ class MatchResult:
     candidates: list[DocsEntry] | None = None
 
 
-def build_docs() -> Message:
-    return Message(
-        (
-            "===== 帮助中心 =====\n"
-            "触发方式: 指令触发\n"
-            "权限: 普通用户\n\n"
-            "统一汇总插件文档，并按 metadata.docs 自动注册。\n\n"
-            "用法:\n"
-            "#help\n"
-            "#help <插件名>"
-        ).strip()
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
+    return build_static_docs(
+        name_key="plugin.help.name",
+        description_key="plugin.help.description",
+        content_key="docs.help.content",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        locale=locale,
     )
 
 
@@ -151,7 +153,7 @@ def _iter_docs_entries() -> list[DocsEntry]:
     )
 
 
-def _build_index_message(entries: list[DocsEntry]) -> Message:
+def _build_index_message(entries: list[DocsEntry], locale: LocaleCode) -> Message:
     grouped: dict[str, list[DocsEntry]] = defaultdict(list)
     for entry in entries:
         if not entry.docs["visible"]:
@@ -159,12 +161,12 @@ def _build_index_message(entries: list[DocsEntry]) -> Message:
         grouped[entry.docs["category"]].append(entry)
 
     lines = [
-        "===== 插件帮助索引 =====",
-        "发送 #help <插件名> 查看详细文档。",
+        tr(locale, "help.index.title"),
+        tr(locale, "help.index.hint"),
     ]
 
     if not grouped:
-        lines.append("当前暂无可展示插件文档。")
+        lines.append(tr(locale, "help.index.empty"))
         return Message("\n".join(lines))
 
     for category in sorted(grouped.keys()):
@@ -173,7 +175,7 @@ def _build_index_message(entries: list[DocsEntry]) -> Message:
         for entry in grouped[category]:
             summary = _normalize_text(entry.metadata.description).splitlines()[0]
             if not summary:
-                summary = "暂无描述"
+                summary = tr(locale, "help.index.no_summary")
             lines.append(f"- {entry.display_name}: {summary}")
 
     return Message("\n".join(lines).strip())
@@ -223,38 +225,49 @@ def _match_entry(entries: list[DocsEntry], query: str) -> MatchResult:
     return MatchResult(status="not_found")
 
 
-def _build_fallback_docs(entry: DocsEntry, reason: str) -> Message:
+def _build_fallback_docs(
+    entry: DocsEntry,
+    locale: LocaleCode,
+    reason: str,
+) -> Message:
     return Message(
         (
             f"===== {entry.display_name} =====\n"
-            f"{_normalize_text(entry.metadata.description) or '暂无描述'}\n\n"
-            f"文档降级原因: {reason}"
+            f"{_normalize_text(entry.metadata.description) or tr(locale, 'docs.default.no_description')}\n\n"  # noqa: E501
+            f"{tr(locale, 'help.fallback.reason', reason=reason)}"
         ).strip()
     )
 
 
-def _build_ambiguous_message(query: str, candidates: list[DocsEntry]) -> Message:
+def _build_ambiguous_message(
+    query: str,
+    candidates: list[DocsEntry],
+    locale: LocaleCode,
+) -> Message:
     lines = [
-        f"插件查询存在歧义: {query}",
-        "请使用更精确的插件名。",
+        tr(locale, "help.query.ambiguous.title", query=query),
+        tr(locale, "help.query.ambiguous.hint"),
         "",
-        "候选项:",
+        tr(locale, "help.query.ambiguous.candidates"),
     ]
     for entry in candidates:
         lines.append(f"- {entry.display_name} ({entry.plugin.module_name})")
     return Message("\n".join(lines))
 
 
-async def _resolve_docs_message(entry: DocsEntry) -> Message:
+async def _resolve_docs_message(entry: DocsEntry, locale: LocaleCode) -> Message:
     provider = entry.docs["provider"]
     try:
-        result = provider()
+        if len(inspect.signature(provider).parameters) == 0:
+            result = provider()
+        else:
+            result = provider(DocsRenderContext(locale=locale))
         if inspect.isawaitable(result):
             awaited = cast(Awaitable[object], result)
             result = await awaited
         return _to_message(result)
     except Exception as e:
-        return _build_fallback_docs(entry, f"{type(e).__name__}: {e}")
+        return _build_fallback_docs(entry, locale, f"{type(e).__name__}: {e}")
 
 
 @help_matcher.handle()
@@ -263,22 +276,19 @@ async def _(
     arg: Message = CommandArg(),
 ) -> None:
     entries = _iter_docs_entries()
+    locale = await resolve_locale()
     query = arg.extract_plain_text().strip()
     if not query:
-        await matcher.finish(_build_index_message(entries))
+        await matcher.finish(_build_index_message(entries, locale))
 
     match_result = _match_entry(entries, query)
     if match_result.status == "not_found":
-        await matcher.finish(
-            Message(
-                (f"未找到插件文档: {query}\n请先发送 #help 查看可用插件列表。").strip()
-            )
-        )
+        await matcher.finish(Message(tr(locale, "help.query.not_found", query=query)))
     if match_result.status == "ambiguous":
         await matcher.finish(
-            _build_ambiguous_message(query, match_result.candidates or [])
+            _build_ambiguous_message(query, match_result.candidates or [], locale)
         )
 
     assert match_result.entry is not None
-    docs_message = await _resolve_docs_message(match_result.entry)
+    docs_message = await _resolve_docs_message(match_result.entry, locale)
     await matcher.finish(docs_message)

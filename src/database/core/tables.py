@@ -300,3 +300,20 @@ class GroupPluginSetting(CoreBase, TimeMixin):
     is_enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
     last_operator_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     group: Mapped["Group"] = relationship("Group", back_populates="plugin_settings")
+
+
+class GroupLocaleSetting(CoreBase, TimeMixin):
+    __tablename__ = "biz_group_locale_setting"
+    __table_args__ = (
+        UniqueConstraint("group_id", name="uq_group_locale_setting"),
+        Index("idx_group_locale", "group_id", "locale"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    group_id: Mapped[str] = mapped_column(
+        ForeignKey("biz_group.group_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    locale: Mapped[str] = mapped_column(String(32), nullable=False)
+    last_operator_id: Mapped[str | None] = mapped_column(String(32), nullable=True)

@@ -73,6 +73,10 @@ extend-select = ["TID251"]
 force-sort-within-sections = true
 extra-standard-library = ["typing_extensions"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/locales/*.py" = ["E501"]
+"src/lib/i18n/keys.py" = ["E501"]
+
 [tool.ruff.lint.flake8-pytest-style]
 fixture-parentheses = false
 mark-parentheses = false

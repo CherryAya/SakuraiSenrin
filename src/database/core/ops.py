@@ -19,7 +19,16 @@ from src.lib.db.ops import BaseOps
 from src.lib.utils.common import get_current_time
 
 from .consts import GroupStatus, InvitationStatus, Permission
-from .tables import Blacklist, Group, Invitation, InvitationMessage, Member, User
+from .tables import (
+    Blacklist,
+    Group,
+    GroupLocaleSetting,
+    Invitation,
+    InvitationMessage,
+    Member,
+    PluginConfig,
+    User,
+)
 from .types import (
     BulkUpdateGroupNamePayload,
     BulkUpdateGroupStatusPayload,
@@ -27,6 +36,7 @@ from .types import (
     BulkUpdateMemberPermPayload,
     BulkUpdateUserNamePayload,
     BulkUpdateUserPermPayload,
+    GroupLocaleSettingPayload,
     GroupPayload,
     GroupUpdateKwargs,
     MemberPayload,
@@ -269,6 +279,80 @@ class GroupOps(BaseOps[Group]):
 
     async def update_name(self, group_id: str, group_name: str) -> Group:
         return await self._upsert_group(group_id, group_name=group_name)
+
+
+class PluginConfigOps(BaseOps[PluginConfig]):
+    async def get_by_plugin_name(self, plugin_name: str) -> dict:
+        stmt = select(PluginConfig.config_data).where(
+            PluginConfig.plugin_name == plugin_name
+        )
+        result = await self.session.execute(stmt)
+        config = result.scalars().one_or_none()
+        if isinstance(config, dict):
+            return config
+        return {}
+
+    async def upsert_config(self, plugin_name: str, config_data: dict) -> None:
+        stmt = sqlite_insert(PluginConfig).values(
+            plugin_name=plugin_name,
+            is_enabled=True,
+            config_data=config_data,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[PluginConfig.plugin_name],
+            set_={
+                "config_data": stmt.excluded.config_data,
+                "is_enabled": stmt.excluded.is_enabled,
+            },
+        )
+        await self.session.execute(stmt)
+
+
+class GroupLocaleSettingOps(BaseOps[GroupLocaleSetting]):
+    async def get_locale(self, group_id: str) -> str | None:
+        stmt = select(GroupLocaleSetting.locale).where(
+            GroupLocaleSetting.group_id == group_id
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().one_or_none()
+
+    async def upsert_locale(
+        self,
+        group_id: str,
+        locale: str,
+        last_operator_id: str | None = None,
+    ) -> None:
+        event_time = get_current_time()
+        payload: GroupLocaleSettingPayload = {
+            "group_id": group_id,
+            "locale": locale,
+            "created_at": event_time,
+            "updated_at": event_time,
+        }
+        if last_operator_id is not None:
+            payload["last_operator_id"] = last_operator_id
+        stmt = sqlite_insert(GroupLocaleSetting).values(payload)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[GroupLocaleSetting.group_id],
+            set_={
+                "locale": stmt.excluded.locale,
+                "last_operator_id": stmt.excluded.last_operator_id,
+                "updated_at": stmt.excluded.updated_at,
+            },
+        )
+        await self.session.execute(stmt)
+
+    async def delete_locale(self, group_id: str) -> bool:
+        stmt = delete(GroupLocaleSetting).where(GroupLocaleSetting.group_id == group_id)
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount > 0
+
+    async def list_locales(self) -> list[tuple[str, str]]:
+        stmt = select(GroupLocaleSetting.group_id, GroupLocaleSetting.locale).order_by(
+            GroupLocaleSetting.group_id
+        )
+        result = await self.session.execute(stmt)
+        return [(str(group_id), str(locale)) for group_id, locale in result.all()]
 
 
 class MemberOps(BaseOps[Member]):

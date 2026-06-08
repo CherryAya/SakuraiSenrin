@@ -113,4 +113,13 @@ class BulkUpdateMemberPermPayload(TypedDict):
     permission: Permission
 
 
+class GroupLocaleSettingPayload(TypedDict):
+    created_at: int
+    updated_at: int
+
+    group_id: str
+    locale: str
+    last_operator_id: NotRequired[str | None]
+
+
 # endregion
