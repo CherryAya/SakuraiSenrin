@@ -226,10 +226,10 @@ class GroupOps(BaseOps[Group]):
         if not group_statuses:
             return 0
         sql = f"""
-            UPDATE {User.__tablename__}
-            SET {User.permission.key} = :permission,
-                {User.updated_at.key} = :updated_at
-            WHERE {User.user_id.key} = :user_id
+            UPDATE {Group.__tablename__}
+            SET {Group.status.key} = :status,
+                {Group.updated_at.key} = :updated_at
+            WHERE {Group.group_id.key} = :group_id
         """
         connection = await self.session.connection()
         result = await connection.execute(text(sql), group_statuses)

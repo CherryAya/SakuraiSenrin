@@ -66,6 +66,7 @@ class MemberPayload(TypedDict):
 
 # region 严格局部批量 Payload
 class BulkUpdateUserNamePayload(TypedDict):
+    created_at: int
     updated_at: int
 
     user_id: str
@@ -80,6 +81,7 @@ class BulkUpdateUserPermPayload(TypedDict):
 
 
 class BulkUpdateGroupNamePayload(TypedDict):
+    created_at: int
     updated_at: int
 
     group_id: str
@@ -94,11 +96,13 @@ class BulkUpdateGroupStatusPayload(TypedDict):
 
 
 class BulkUpdateMemberCardPayload(TypedDict):
+    created_at: int
     updated_at: int
 
     group_id: str
     user_id: str
     group_card: str
+    permission: Permission
 
 
 class BulkUpdateMemberPermPayload(TypedDict):

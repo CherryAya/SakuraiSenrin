@@ -257,7 +257,9 @@ async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
 async def _flush_update_group_card(
     batch_data: list[BulkUpdateMemberCardPayload],
 ) -> None:
-    unique_data = {item["group_id"]: item for item in batch_data}.values()
+    unique_data = {
+        (item["group_id"], item["user_id"]): item for item in batch_data
+    }.values()
     final_data = list(unique_data)
     if not final_data:
         return
@@ -286,7 +288,9 @@ async def _flush_update_group_card(
 async def _flush_update_member_permission(
     batch_data: list[BulkUpdateMemberPermPayload],
 ) -> None:
-    unique_data = {item["group_id"]: item for item in batch_data}.values()
+    unique_data = {
+        (item["group_id"], item["user_id"]): item for item in batch_data
+    }.values()
     final_data = list(unique_data)
     if not final_data:
         return
@@ -318,46 +322,55 @@ user_create_writer = BatchWriter[UserPayload](
     flush_callback=_flush_create_user,
     batch_size=50,
     flush_interval=3.0,
+    dedupe_key=lambda item: item["user_id"],
 )
 user_update_name_writer = BatchWriter[BulkUpdateUserNamePayload](
     flush_callback=_flush_update_user_name,
     batch_size=50,
     flush_interval=3.0,
+    dedupe_key=lambda item: item["user_id"],
 )
 user_update_perm_writer = BatchWriter[BulkUpdateUserPermPayload](
     flush_callback=_flush_update_user_perm,
     batch_size=50,
     flush_interval=3.0,
+    dedupe_key=lambda item: item["user_id"],
 )
 
 group_create_writer = BatchWriter[GroupPayload](
     flush_callback=_flush_create_group,
     batch_size=50,
     flush_interval=3.0,
+    dedupe_key=lambda item: item["group_id"],
 )
 group_update_name_writer = BatchWriter[BulkUpdateGroupNamePayload](
     flush_callback=_flush_update_group_name,
     batch_size=50,
     flush_interval=3.0,
+    dedupe_key=lambda item: item["group_id"],
 )
 group_update_status_writer = BatchWriter[BulkUpdateGroupStatusPayload](
     flush_callback=_flush_update_group_status,
     batch_size=50,
     flush_interval=3.0,
+    dedupe_key=lambda item: item["group_id"],
 )
 
 member_create_writer = BatchWriter[MemberPayload](
     flush_callback=_flush_create_member,
     batch_size=50,
     flush_interval=3.0,
+    dedupe_key=lambda item: f"{item['group_id']}:{item['user_id']}",
 )
 member_update_card_writer = BatchWriter[BulkUpdateMemberCardPayload](
     flush_callback=_flush_update_group_card,
     batch_size=50,
     flush_interval=3.0,
+    dedupe_key=lambda item: f"{item['group_id']}:{item['user_id']}",
 )
 member_update_perm_writer = BatchWriter[BulkUpdateMemberPermPayload](
     flush_callback=_flush_update_member_permission,
     batch_size=50,
     flush_interval=3.0,
+    dedupe_key=lambda item: f"{item['group_id']}:{item['user_id']}",
 )

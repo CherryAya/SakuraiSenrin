@@ -38,6 +38,7 @@ class MemberChangeContext:
     group_id: str
     group_card: str | Unset = UNSET
     permission: Permission | Unset = UNSET
+    persisted_permission: Permission = Permission.NORMAL
     is_new: bool = False
 
     def resolve_card(self, default: str = "") -> str:
@@ -78,9 +79,11 @@ class MemberRepository:
         if is_set(ctx.group_card):
             await member_update_card_writer.add(
                 {
+                    "created_at": event_time,
                     "group_id": ctx.group_id,
                     "user_id": ctx.user_id,
                     "group_card": ctx.resolve_card(),
+                    "permission": ctx.persisted_permission,
                     "updated_at": event_time,
                 }
             )
@@ -149,6 +152,10 @@ class MemberRepository:
         ctx = MemberChangeContext(user_id, group_id, group_card, permission)
         old_item = self.cache.get_member(user_id, group_id)
         ctx.is_new = old_item is None
+        if old_item is not None:
+            ctx.persisted_permission = old_item.permission
+        elif is_set(permission):
+            ctx.persisted_permission = permission
         self.cache.upsert_member(user_id, group_id, permission, group_card)
 
         if not ctx.is_new and old_item:

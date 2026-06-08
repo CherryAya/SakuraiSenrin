@@ -73,6 +73,7 @@ class GroupRepository:
         if is_set(ctx.group_name):
             await group_update_name_writer.add(
                 {
+                    "created_at": event_time,
                     "group_id": ctx.group_id,
                     "group_name": ctx.group_name,
                     "updated_at": event_time,
