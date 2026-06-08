@@ -17,6 +17,8 @@ Use this checklist after regenerating plugin demo PNG files.
 - Text: long commands and replies wrap cleanly without clipping or touching edges.
 - Message semantics: one sent message with newlines uses one speaker line plus continuation lines; multiple sent messages repeat `USER:`, `BOT:`, or `SYSTEM:`.
 - Bubbles: USER, BOT, and SYSTEM bubbles fit content without looking oversized.
+- Character art: the Senrin standee must stay in the header whitespace and never compete with title, chips, or command text.
+- Avatar crop: BOT avatars should show a recognizable face crop and stay aligned with the first line of the paired bubble.
 - Color: keep the visible palette restrained to white, sakura pink, indigo, muted gray, and soft system yellow.
 - Hierarchy: plugin title is strongest, feature title is secondary, command and footer are muted.
 - Consistency: all demo files use the same radius, typography, avatar size, and footer structure.

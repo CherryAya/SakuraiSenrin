@@ -20,6 +20,10 @@ from src.lib.i18n.types import LocaleCode
 
 from .consts import TriggerType
 
+DEMO_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+DEMO_AVATAR_PATH = DEMO_ASSETS_DIR / "senrin-demo-avatar.png"
+DEMO_STANDEE_PATH = DEMO_ASSETS_DIR / "senrin-demo-standee.png"
+
 
 @dataclass(slots=True, frozen=True)
 class DocsRenderContext:
@@ -599,6 +603,10 @@ class DemoImageRenderer:
     HEADER_FEATURE_TOP = 166
     HEADER_TRIGGER_TOP = 202
     HEADER_RIGHT = 1138
+    HEADER_STANDEE_SIZE = 150
+    HEADER_STANDEE_X = 1030
+    HEADER_STANDEE_Y = 96
+    HEADER_STEPS_X = 302
     BODY_TOP_GAP = 20
     BODY_PADDING_X = 40
     BODY_PADDING_Y = 36
@@ -657,6 +665,12 @@ class DemoImageRenderer:
             self.body_font = ImageFont.load_default()
             self.meta_font = ImageFont.load_default()
             self.footer_font = ImageFont.load_default()
+        self.senrin_avatar = self._load_asset(DEMO_AVATAR_PATH, self.AVATAR_SIZE)
+        self.senrin_standee = self._load_asset(
+            DEMO_STANDEE_PATH,
+            self.HEADER_STANDEE_SIZE,
+            alpha=168,
+        )
 
     def render(
         self,
@@ -691,6 +705,7 @@ class DemoImageRenderer:
             width=2,
         )
         self._draw_header(
+            image,
             draw,
             plugin_title=plugin_title,
             feature_title=feature_title,
@@ -705,7 +720,7 @@ class DemoImageRenderer:
 
         y = body_top
         for spec in turn_specs:
-            self._draw_turn(draw, spec, y)
+            self._draw_turn(image, draw, spec, y)
             y += spec.height + self.TURN_GAP
 
         self._draw_footer(
@@ -717,7 +732,7 @@ class DemoImageRenderer:
         )
 
         buffer = BytesIO()
-        image.save(buffer, format="PNG")
+        image.save(buffer, format="PNG", optimize=True)
         return buffer.getvalue()
 
     def _paint_background(self, image: Image.Image) -> None:
@@ -734,6 +749,7 @@ class DemoImageRenderer:
 
     def _draw_header(
         self,
+        image: Image.Image,
         draw: ImageDraw.ImageDraw,
         *,
         plugin_title: str,
@@ -753,8 +769,8 @@ class DemoImageRenderer:
         )
         self._draw_chip(
             draw,
-            x=self.HEADER_RIGHT - 154,
-            y=self.HEADER_TOP,
+            x=self.HEADER_STEPS_X,
+            y=self.HEADER_CHIP_TOP,
             text=f"{turn_count} STEP{'S' if turn_count != 1 else ''}",
             fill=self.INDIGO_SOFT,
             text_fill=self.INDIGO_TEXT,
@@ -767,7 +783,7 @@ class DemoImageRenderer:
                 draw,
                 plugin_title,
                 self.title_font,
-                max_width=760,
+                max_width=720,
             ),
             font=self.title_font,
             fill=self.DEEP,
@@ -778,7 +794,7 @@ class DemoImageRenderer:
                 draw,
                 feature_title,
                 self.feature_font,
-                max_width=760,
+                max_width=720,
             ),
             font=self.feature_font,
             fill=self.ACCENT_DARK,
@@ -799,7 +815,7 @@ class DemoImageRenderer:
                 font=self.meta_font,
                 min_width=300,
             )
-        self._draw_avatar(draw, x=1088, y=128, label="凛", fill=self.INDIGO)
+        self._draw_header_standee(image, draw)
 
     def _draw_conversation_panel(
         self,
@@ -869,6 +885,7 @@ class DemoImageRenderer:
 
     def _draw_turn(
         self,
+        image: Image.Image,
         draw: ImageDraw.ImageDraw,
         spec: "_TurnSpec",
         top: int,
@@ -920,13 +937,10 @@ class DemoImageRenderer:
         label = "你" if is_user else "凛"
         avatar_fill = self.ACCENT if is_user else self.INDIGO
 
-        self._draw_avatar(
-            draw,
-            x=avatar_x,
-            y=top,
-            label=label,
-            fill=avatar_fill,
-        )
+        if is_user:
+            self._draw_avatar(draw, x=avatar_x, y=top, label=label, fill=avatar_fill)
+        else:
+            self._draw_bot_avatar(image, draw, x=avatar_x, y=top)
         draw.rounded_rectangle(
             (bubble_x, bubble_y, bubble_x + bubble_width, bubble_y + spec.height),
             radius=self.BUBBLE_RADIUS,
@@ -980,6 +994,66 @@ class DemoImageRenderer:
             font=self.meta_font,
             fill="#FFFFFF",
         )
+
+    def _draw_bot_avatar(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        y: int,
+    ) -> None:
+        if self.senrin_avatar is None:
+            self._draw_avatar(draw, x=x, y=y, label="凛", fill=self.INDIGO)
+            return
+        avatar = self.senrin_avatar
+        mask = Image.new("L", avatar.size, 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.ellipse((0, 0, avatar.width - 1, avatar.height - 1), fill=255)
+        draw.ellipse(
+            (x, y, x + self.AVATAR_SIZE, y + self.AVATAR_SIZE),
+            fill="#F7FAFF",
+            outline="#D8E3FF",
+            width=2,
+        )
+        image.paste(avatar, (x, y), mask)
+
+    def _draw_header_standee(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+    ) -> None:
+        if self.senrin_standee is None:
+            self._draw_avatar(draw, x=1088, y=128, label="凛", fill=self.INDIGO)
+            return
+        image.paste(
+            self.senrin_standee,
+            (self.HEADER_STANDEE_X, self.HEADER_STANDEE_Y),
+            self.senrin_standee,
+        )
+
+    def _load_asset(
+        self,
+        path: Path,
+        size: int,
+        *,
+        alpha: int = 255,
+    ) -> Image.Image | None:
+        if not path.exists():
+            return None
+        try:
+            image = Image.open(path).convert("RGBA")
+        except OSError:
+            return None
+        image = image.resize((size, size), Image.Resampling.LANCZOS)
+        if alpha < 255:
+            image = image.copy()
+            alpha_channel = image.getchannel("A")
+            alpha_channel = alpha_channel.point(
+                [value * alpha // 255 for value in range(256)]
+            )
+            image.putalpha(alpha_channel)
+        return image
 
     def _draw_footer(
         self,
@@ -1109,14 +1183,14 @@ class DemoImageRenderer:
             draw,
             self.HEADER_LEFT,
             self.HEADER_TITLE_TOP,
-            self._fit_text(draw, plugin_title, self.title_font, max_width=760),
+            self._fit_text(draw, plugin_title, self.title_font, max_width=720),
             self.title_font,
         )
         feature_rect = self._text_rect(
             draw,
             self.HEADER_LEFT,
             self.HEADER_FEATURE_TOP,
-            self._fit_text(draw, feature_title, self.feature_font, max_width=760),
+            self._fit_text(draw, feature_title, self.feature_font, max_width=720),
             self.feature_font,
         )
         plugin_chip_rect = self._chip_rect(
@@ -1128,18 +1202,18 @@ class DemoImageRenderer:
         )
         steps_chip_rect = self._chip_rect(
             draw,
-            x=self.HEADER_RIGHT - 154,
-            y=self.HEADER_TOP,
+            x=self.HEADER_STEPS_X,
+            y=self.HEADER_CHIP_TOP,
             text=f"{len(turns)} STEP{'S' if len(turns) != 1 else ''}",
             font=self.eyebrow_font,
             min_width=154,
         )
         accent_rect = (96, 94, 106, 190)
-        header_avatar_rect = (
-            1088,
-            128,
-            1088 + self.AVATAR_SIZE,
-            128 + self.AVATAR_SIZE,
+        header_standee_rect = (
+            self.HEADER_STANDEE_X,
+            self.HEADER_STANDEE_Y,
+            self.HEADER_STANDEE_X + self.HEADER_STANDEE_SIZE,
+            self.HEADER_STANDEE_Y + self.HEADER_STANDEE_SIZE,
         )
         trigger_rect: tuple[int, int, int, int] | None = None
         if feature_trigger.strip():
@@ -1161,7 +1235,7 @@ class DemoImageRenderer:
         self._ensure_inside(hero_rect, title_rect, "plugin title", errors)
         self._ensure_inside(hero_rect, feature_rect, "feature title", errors)
         self._ensure_inside(hero_rect, steps_chip_rect, "steps chip", errors)
-        self._ensure_inside(hero_rect, header_avatar_rect, "header avatar", errors)
+        self._ensure_inside(hero_rect, header_standee_rect, "header standee", errors)
         if trigger_rect is not None:
             self._ensure_inside(hero_rect, trigger_rect, "trigger chip", errors)
 
@@ -1178,13 +1252,13 @@ class DemoImageRenderer:
             title_rect, feature_rect, "plugin title", "feature title", errors
         )
         self._ensure_no_overlap(
-            steps_chip_rect, header_avatar_rect, "steps chip", "header avatar", errors
+            steps_chip_rect, header_standee_rect, "steps chip", "header standee", errors
         )
         self._ensure_no_overlap(
             title_rect, steps_chip_rect, "plugin title", "steps chip", errors
         )
         self._ensure_no_overlap(
-            feature_rect, header_avatar_rect, "feature title", "header avatar", errors
+            feature_rect, header_standee_rect, "feature title", "header standee", errors
         )
         if trigger_rect is not None:
             self._ensure_no_overlap(
@@ -1192,9 +1266,9 @@ class DemoImageRenderer:
             )
             self._ensure_no_overlap(
                 trigger_rect,
-                header_avatar_rect,
+                header_standee_rect,
                 "trigger chip",
-                "header avatar",
+                "header standee",
                 errors,
             )
 
