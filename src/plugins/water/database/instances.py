@@ -8,12 +8,15 @@ Description: db 实例
 
 from src.lib.db.connectors import ShardedDB, StaticDB
 
+from .patches import build_water_patch_registry
+
 water_message = ShardedDB(
     namespace="water_db",
     prefix="logs",
     fmt="%Y_%m",
     active_window_months=2,
 )
+water_message.patch_registry = build_water_patch_registry()
 
 water_core_db = StaticDB(
     namespace="water_db",

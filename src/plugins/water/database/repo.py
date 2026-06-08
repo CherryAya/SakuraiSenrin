@@ -14,6 +14,7 @@ from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.consts import WritePolicy
+from src.lib.db.connectors import ColdPolicy
 from src.lib.utils.common import get_current_time, split_list
 
 from .instances import water_core_db, water_message
@@ -454,7 +455,7 @@ class WaterRepository:
         dt = arrow.get(ctx.created_at).datetime
         time_ctx = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        async with water_message.session(time_ctx=time_ctx, commit=True) as session:
+        async with water_message.write_session(time_ctx=time_ctx) as session:
             await WaterMessageOps(session).bulk_insert_water_message([ctx.to_payload()])
 
     async def save_message(
@@ -491,8 +492,8 @@ class WaterRepository:
         yesterday_int = int(now.shift(days=-1).format("YYYYMMDD"))
 
         async def _fetch_today() -> Sequence[Row[tuple[str, int]]]:
-            async with water_message.session(
-                time_ctx=now.datetime, commit=False
+            async with water_message.read_session(
+                time_ctx=now.datetime,
             ) as session:
                 return await WaterMessageOps(session).get_top_users(
                     group_id,
@@ -529,9 +530,8 @@ class WaterRepository:
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 
-        async with water_message.session(
+        async with water_message.read_session(
             time_ctx=now.datetime,
-            commit=False,
         ) as session:
             return await WaterMessageOps(session).get_today_group_rank(
                 group_id, start_ts, end_ts
@@ -547,9 +547,8 @@ class WaterRepository:
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 
-        async with water_message.session(
+        async with water_message.read_session(
             time_ctx=now.datetime,
-            commit=False,
         ) as session:
             raw_timestamps = await WaterMessageOps(session).get_users_timestamps(
                 group_id, user_ids, start_ts, end_ts
@@ -662,11 +661,13 @@ class WaterRepository:
             day_start.datetime,
             day_end.datetime,
             _stats_in_shard,
+            cold_policy=ColdPolicy.HYDRATE,
         )
         hourly_per_shard = await water_message.map_reduce(
             day_start.datetime,
             day_end.datetime,
             _hourly_in_shard,
+            cold_policy=ColdPolicy.HYDRATE,
         )
 
         merged_stats: dict[tuple[str, str], tuple[int, int]] = {}
@@ -927,10 +928,7 @@ class WaterRepository:
             if row is None or int(row[0] or 0) <= 0:
                 cursor = cursor.shift(months=1)
                 continue
-            async with water_message.session(
-                time_ctx=cursor.datetime,
-                commit=True,
-            ) as session:
+            async with water_message.write_session(time_ctx=cursor.datetime) as session:
                 total += await WaterMessageOps(session).prune_before(before_ts)
             cursor = cursor.shift(months=1)
         return total
