@@ -6,6 +6,7 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.plugin_docs import (
     DocsRenderContext,
+    audit_demo_layout,
     build_readme_docs,
     load_plugin_doc_bundle,
     match_feature,
@@ -226,3 +227,17 @@ beta
     assert "子功能查询存在歧义: 公共" in str(message)
     assert "- Alpha 功能 (alpha)" in str(message)
     assert "- Beta 功能 (beta)" in str(message)
+
+
+def test_audit_demo_layout_detects_no_overlap_for_real_header_case() -> None:
+    source = Path("src/plugins/admin/docs/invite/README.MD")
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="邀请管理模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    feature = next(item for item in bundle.index if item.slug == "reply-shortcut")
+
+    assert audit_demo_layout(bundle, feature) == ()

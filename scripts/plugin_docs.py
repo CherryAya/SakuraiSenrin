@@ -14,6 +14,7 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.plugin_docs import (
     PluginDocBundle,
+    audit_demo_layout,
     load_plugin_doc_bundle,
     render_demo_png,
 )
@@ -108,6 +109,12 @@ def validate() -> int:
                 errors.append(
                     f"{path.relative_to(ROOT)}: feature {feature.slug} "
                     f"missing demo file {feature.demo_filename}"
+                )
+            layout_errors = audit_demo_layout(bundle, feature)
+            if layout_errors:
+                errors.extend(
+                    f"{path.relative_to(ROOT)}: feature {feature.slug} {message}"
+                    for message in layout_errors
                 )
 
     if errors:
