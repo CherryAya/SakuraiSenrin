@@ -10,6 +10,7 @@ from collections import defaultdict
 from collections.abc import Awaitable
 from dataclasses import dataclass
 import inspect
+from pathlib import Path
 from typing import Any, Literal, cast
 
 import nonebot
@@ -27,13 +28,14 @@ from src.lib.plugin_docs import (
     DocsMeta,
     DocsProvider,
     DocsRenderContext,
-    build_static_docs,
+    build_readme_docs,
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
 
 name = tr("zh-CN", "plugin.help.name")
 description = tr("zh-CN", "plugin.help.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "help" / "README.MD"
 
 
 @dataclass(slots=True)
@@ -53,14 +55,13 @@ class MatchResult:
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    locale = ctx.locale if ctx is not None else "zh-CN"
-    return build_static_docs(
-        name_key="plugin.help.name",
-        description_key="plugin.help.description",
-        content_key="docs.help.content",
+    return build_readme_docs(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
-        locale=locale,
+        ctx=ctx,
     )
 
 
@@ -81,6 +82,7 @@ __plugin_meta__ = create_plugin_metadata(
             visible=True,
             category="core",
             order=10,
+            source=DOCS_SOURCE,
         ),
     },
 )
@@ -123,6 +125,8 @@ def _read_docs_meta(metadata: PluginMetadata) -> DocsMeta | None:
         "visible": bool(docs.get("visible", True)),
         "category": _normalize_text(docs.get("category", "general")) or "general",
         "order": int(docs.get("order", 100)),
+        "source": _normalize_text(docs.get("source", "")),
+        "hidden": bool(docs.get("hidden", False)),
     }
 
 
@@ -279,19 +283,36 @@ def _build_ambiguous_message(
     return Message("\n".join(lines))
 
 
-async def _resolve_docs_message(entry: DocsEntry, locale: LocaleCode) -> Message:
+async def _resolve_docs_message(
+    entry: DocsEntry,
+    locale: LocaleCode,
+    *,
+    feature_query: str | None = None,
+) -> Message:
     provider = entry.docs["provider"]
     try:
         if len(inspect.signature(provider).parameters) == 0:
             result = provider()
         else:
-            result = provider(DocsRenderContext(locale=locale))
+            result = provider(
+                DocsRenderContext(locale=locale, feature_query=feature_query)
+            )
         if inspect.isawaitable(result):
             awaited = cast(Awaitable[object], result)
             result = await awaited
         return _to_message(result)
     except Exception as e:
         return _build_fallback_docs(entry, locale, f"{type(e).__name__}: {e}")
+
+
+def _split_query(query: str) -> tuple[str, str | None]:
+    normalized = query.strip()
+    if not normalized:
+        return "", None
+    if " " not in normalized:
+        return normalized, None
+    plugin_query, feature_query = normalized.split(maxsplit=1)
+    return plugin_query.strip(), feature_query.strip() or None
 
 
 @help_matcher.handle()
@@ -307,6 +328,11 @@ async def _(
         await matcher.finish(_build_index_message(entries, locale))
 
     match_result = _match_entry(entries, query)
+    feature_query: str | None = None
+    if match_result.status == "not_found" and " " in query:
+        plugin_query, feature_query = _split_query(query)
+        match_result = _match_entry(entries, plugin_query)
+
     if match_result.status == "not_found":
         await matcher.finish(Message(tr(locale, "help.query.not_found", query=query)))
     if match_result.status == "ambiguous":
@@ -315,5 +341,9 @@ async def _(
         )
 
     assert match_result.entry is not None
-    docs_message = await _resolve_docs_message(match_result.entry, locale)
+    docs_message = await _resolve_docs_message(
+        match_result.entry,
+        locale,
+        feature_query=feature_query,
+    )
     await matcher.finish(docs_message)

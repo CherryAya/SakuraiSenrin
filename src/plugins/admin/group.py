@@ -8,6 +8,7 @@ Description: 群聊管理插件
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
@@ -25,7 +26,7 @@ from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_static_docs,
+    build_readme_docs,
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
@@ -34,17 +35,17 @@ from src.services.info import resolve_group_name
 
 name = tr("zh-CN", "plugin.admin_group.name")
 description = tr("zh-CN", "plugin.admin_group.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "group" / "README.MD"
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    locale = ctx.locale if ctx is not None else "zh-CN"
-    return build_static_docs(
-        name_key="plugin.admin_group.name",
-        description_key="plugin.admin_group.description",
-        content_key="plugin.admin_group.docs",
+    return build_readme_docs(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
         trigger=TriggerType.COMMAND,
         permission=Permission.SUPERUSER,
-        locale=locale,
+        ctx=ctx,
     )
 
 
@@ -65,6 +66,7 @@ __plugin_meta__ = create_plugin_metadata(
             visible=True,
             category="admin",
             order=110,
+            source=DOCS_SOURCE,
         ),
     },
 )

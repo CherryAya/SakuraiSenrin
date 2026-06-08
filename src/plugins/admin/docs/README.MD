@@ -1,26 +1,91 @@
-<!--
- * Author: SakuraiCora<1479559098@qq.com>
- * Date: 2026-02-18 22:40:38
- * LastEditors: SakuraiCora<1479559098@qq.com>
- * LastEditTime: 2026-02-24 15:10:40
- * Description: 
--->
-#admin.group 
-    ban <gid>
-    unban <gid>
-    auth <gid>
-    unauth <gid>
-    leave <gid>
-    status <gid>
+# 管理模块总览
 
-#admin.user
-    ban <uid> [-r] <reason> [-t] <duration>
-    unban <uid> [-r] <reason>
-    status <uid>
+## 概览
+管理模块汇总了当前项目所有面向超级管理员的主动控制能力，覆盖群组状态管理、用户黑名单、邀请处理以及语言配置。
 
-#admin.invite
-    list | show | ls -> 考虑 PIL，做个 list
-    approve [-f] <flag> | [-g] <gid>
-    reject [-f] <flag> | [-g] <gid> | --all
-    ignore [-f] <flag> | [-g] <gid> | --all
-    log [-g] <gid>
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 超级管理员
+
+## 子功能目录
+- `group` 群组管理: 管理群授权、封禁、退群和状态查询。
+- `user` 用户管理: 管理用户封禁、解封和状态查询。
+- `invite` 邀请管理: 处理待审批邀请、批量拒绝/忽略，并查看日志。
+- `i18n` 语言管理: 调整全局默认语言和群级覆盖。
+
+## 子功能详情
+### `group` 群组管理
+- 摘要: 管理群授权、封禁、退群和状态查询。
+- 别名: admin.group, 群组管理
+- 指令: `#help 群组管理模块`
+- Demo: admin-overview-group.png
+#### 说明
+这是 `#admin.group` 的总入口说明，用于告诉管理员去哪里查看详细子功能文档。
+#### 前置条件
+需要具备超级管理员权限。
+#### 完整流程
+先定位到具体子模块，再看该子模块里的完整流程。
+```demo
+USER: #help 管理模块总览 group
+BOT: 群组管理负责处理群授权、封禁、退群和状态查询。
+BOT: 继续发送 #help 群组管理模块 <子功能名> 查看 demo。
+```
+#### 失败情况
+如果直接把所有管理动作塞进总览文档，帮助消息会过长且不利于维护。
+
+### `user` 用户管理
+- 摘要: 管理用户封禁、解封和状态查询。
+- 别名: admin.user, 用户管理
+- 指令: `#help 用户管理模块`
+- Demo: admin-overview-user.png
+#### 说明
+这是 `#admin.user` 的总入口说明。
+#### 前置条件
+需要具备超级管理员权限。
+#### 完整流程
+先查总览，再进入具体动作。
+```demo
+USER: #help 管理模块总览 user
+BOT: 用户管理支持 ban / unban / status 三类操作。
+BOT: 继续发送 #help 用户管理模块 ban 查看完整流程。
+```
+#### 失败情况
+若后续新增动作，记得同步更新本总览和子模块 README。
+
+### `invite` 邀请管理
+- 摘要: 处理待审批邀请、批量拒绝/忽略，并查看日志。
+- 别名: admin.invite, 邀请管理
+- 指令: `#help 邀请管理模块`
+- Demo: admin-overview-invite.png
+#### 说明
+这是 `#admin.invite` 的总入口说明。
+#### 前置条件
+需要具备超级管理员权限，并且项目正在接收邀请事件。
+#### 完整流程
+先看概览，再进入具体审批动作。
+```demo
+USER: #help 管理模块总览 invite
+BOT: 邀请管理支持 list / approve / reject / ignore / log。
+BOT: 继续发送 #help 邀请管理模块 approve 查看完整流程。
+```
+#### 失败情况
+如果项目当前没有邀请记录，详情页会说明如何用 list 或日志功能排查。
+
+### `i18n` 语言管理
+- 摘要: 调整全局默认语言和群级覆盖。
+- 别名: admin.i18n, 语言管理
+- 指令: `#help 语言管理模块`
+- Demo: admin-overview-i18n.png
+#### 说明
+这是 `#admin.i18n` 的总入口说明。
+#### 前置条件
+需要具备超级管理员权限。
+#### 完整流程
+先看概览，再进入查看、设置、清除等动作。
+```demo
+USER: #help 管理模块总览 i18n
+BOT: 语言管理支持 show / default / set / clear / list。
+BOT: 继续发送 #help 语言管理模块 set 查看完整流程。
+```
+#### 失败情况
+如果没有精确定位到子模块，帮助中心会先返回歧义或插件详情页。

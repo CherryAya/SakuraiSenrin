@@ -6,6 +6,8 @@ LastEditTime: 2026-04-04 15:09:52
 Description: 学习词库-传统版
 """
 
+from pathlib import Path
+
 from nonebot.adapters.onebot.v11.message import Message
 
 from src.database.core.consts import Permission
@@ -13,24 +15,24 @@ from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import tr
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_static_docs,
+    build_readme_docs,
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
 
 name = tr("zh-CN", "plugin.study.name")
 description = tr("zh-CN", "plugin.study.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "study" / "README.MD"
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    locale = ctx.locale if ctx is not None else "zh-CN"
-    return build_static_docs(
-        name_key="plugin.study.name",
-        description_key="plugin.study.description",
-        content_key="plugin.study.docs",
+    return build_readme_docs(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
-        locale=locale,
+        ctx=ctx,
     )
 
 
@@ -51,6 +53,7 @@ __plugin_meta__ = create_plugin_metadata(
             visible=False,
             category="fun",
             order=85,
+            source=DOCS_SOURCE,
         ),
     },
 )

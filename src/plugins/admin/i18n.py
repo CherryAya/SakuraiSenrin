@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
@@ -10,23 +12,23 @@ from nonebot.plugin import CommandGroup
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import LOCALE_NAMES, normalize_locale, resolve_locale, tr
-from src.lib.plugin_docs import DocsRenderContext, build_static_docs, create_docs_meta
+from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import i18n_repo
 
 name = tr("zh-CN", "plugin.admin_i18n.name")
 description = tr("zh-CN", "plugin.admin_i18n.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "i18n" / "README.MD"
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    locale = ctx.locale if ctx is not None else "zh-CN"
-    return build_static_docs(
-        name_key="plugin.admin_i18n.name",
-        description_key="plugin.admin_i18n.description",
-        content_key="plugin.admin_i18n.docs",
+    return build_readme_docs(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
         trigger=TriggerType.COMMAND,
         permission=Permission.SUPERUSER,
-        locale=locale,
+        ctx=ctx,
     )
 
 
@@ -47,6 +49,7 @@ __plugin_meta__ = create_plugin_metadata(
             visible=True,
             category="admin",
             order=125,
+            source=DOCS_SOURCE,
         ),
     },
 )

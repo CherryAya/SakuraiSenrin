@@ -6,6 +6,8 @@ LastEditTime: 2026-03-03 12:18:17
 Description: 运行时同步检查 hook
 """
 
+from pathlib import Path
+
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
     Event,
@@ -21,7 +23,7 @@ from src.lib.consts import GLOBAL_GROUP_FLAG, TriggerType
 from src.lib.i18n.runtime import tr
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_static_docs,
+    build_readme_docs,
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
@@ -36,17 +38,17 @@ from src.services.sync import (
 
 name = tr("zh-CN", "plugin.hook_processor.name")
 description = tr("zh-CN", "plugin.hook_processor.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "processor" / "README.MD"
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    locale = ctx.locale if ctx is not None else "zh-CN"
-    return build_static_docs(
-        name_key="plugin.hook_processor.name",
-        description_key="plugin.hook_processor.description",
-        content_key="plugin.hook_processor.docs",
+    return build_readme_docs(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
         trigger=TriggerType.PASSIVE,
         permission=Permission.SUPERUSER,
-        locale=locale,
+        ctx=ctx,
     )
 
 
@@ -67,6 +69,7 @@ __plugin_meta__ = create_plugin_metadata(
             visible=False,
             category="internal",
             order=10,
+            source=DOCS_SOURCE,
         ),
     },
 )

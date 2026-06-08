@@ -7,6 +7,7 @@ Description: sentry 异常记录插件
 """
 
 import asyncio
+from pathlib import Path
 from typing import cast
 
 from nonebot import get_bot
@@ -21,7 +22,7 @@ from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import send_private_i18n, tr
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_static_docs,
+    build_readme_docs,
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
@@ -29,17 +30,17 @@ from src.logger import logger
 
 name = tr("zh-CN", "plugin.sentry.name")
 description = tr("zh-CN", "plugin.sentry.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "sentry" / "README.MD"
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    locale = ctx.locale if ctx is not None else "zh-CN"
-    return build_static_docs(
-        name_key="plugin.sentry.name",
-        description_key="plugin.sentry.description",
-        content_key="plugin.sentry.docs",
+    return build_readme_docs(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
         trigger=TriggerType.PASSIVE,
         permission=Permission.SUPERUSER,
-        locale=locale,
+        ctx=ctx,
     )
 
 
@@ -60,6 +61,7 @@ __plugin_meta__ = create_plugin_metadata(
             visible=False,
             category="system",
             order=30,
+            source=DOCS_SOURCE,
         ),
     },
 )

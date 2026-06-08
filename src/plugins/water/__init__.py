@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from time import monotonic
 from typing import Any
 
@@ -25,7 +26,7 @@ from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_static_docs,
+    build_readme_docs,
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
@@ -60,17 +61,17 @@ from nonebot_plugin_apscheduler import scheduler
 
 name = tr("zh-CN", "plugin.water.name")
 description = tr("zh-CN", "plugin.water.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    locale = ctx.locale if ctx is not None else "zh-CN"
-    return build_static_docs(
-        name_key="plugin.water.name",
-        description_key="plugin.water.description",
-        content_key="plugin.water.docs",
+    return build_readme_docs(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
-        locale=locale,
+        ctx=ctx,
     )
 
 
@@ -91,6 +92,7 @@ __plugin_meta__ = create_plugin_metadata(
             visible=True,
             category="fun",
             order=100,
+            source=DOCS_SOURCE,
         ),
     },
 )
