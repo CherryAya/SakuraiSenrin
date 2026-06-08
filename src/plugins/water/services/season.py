@@ -7,6 +7,7 @@ from typing import Literal
 
 import arrow
 
+from src.lib.i18n.keys import MessageKey
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo import WaterActivitySeasonRecord
@@ -30,6 +31,16 @@ class SeasonCreateInput:
     created_by: str = ""
 
 
+class SeasonServiceError(ValueError):
+    key: MessageKey
+    params: dict[str, object]
+
+    def __init__(self, key: MessageKey, **params: object) -> None:
+        super().__init__(key)
+        self.key = key
+        self.params = dict(params)
+
+
 class SeasonService:
     def normalize_name(self, name: str) -> str:
         return water_repo.normalize_season_name(name)
@@ -40,9 +51,12 @@ class SeasonService:
     async def create(self, data: SeasonCreateInput) -> WaterActivitySeasonRecord:
         existing = await water_repo.get_activity_season(data.season_id)
         if existing is not None:
-            raise ValueError(f"season_id 已存在: {data.season_id}")
+            raise SeasonServiceError(
+                "water.admin.season.create.exists",
+                season_id=data.season_id,
+            )
         if data.start_date > data.end_date:
-            raise ValueError("开始日期不能晚于结束日期")
+            raise SeasonServiceError("water.admin.season.create.range_invalid")
 
         now_ts = get_current_time()
         await water_repo.create_activity_season(
@@ -99,13 +113,16 @@ class SeasonService:
     async def delete_draft(self, season_id: str) -> bool:
         season = await self.require(season_id)
         if season.status != "draft":
-            raise ValueError("仅 draft 赛季允许删除")
+            raise SeasonServiceError("water.admin.season.delete.only_draft")
         return await water_repo.delete_activity_season(season_id)
 
     async def require(self, season_id: str) -> WaterActivitySeasonRecord:
         season = await water_repo.get_activity_season(season_id)
         if season is None:
-            raise ValueError(f"赛季不存在: {season_id}")
+            raise SeasonServiceError(
+                "water.admin.season.not_found",
+                season_id=season_id,
+            )
         return season
 
     async def list(

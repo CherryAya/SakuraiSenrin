@@ -14,6 +14,7 @@ from src.plugins.water.database import water_repo
 from src.plugins.water.renderers import render_season_list
 from src.plugins.water.services.season import (
     SeasonCreateInput,
+    SeasonServiceError,
     SeasonStatus,
     season_service,
 )
@@ -220,8 +221,8 @@ async def handle_season(ctx: WaterAdminContext) -> None:
                     name=name,
                 )
             )
-        except ValueError as exc:
-            await ctx.matcher.finish(str(exc))
+        except SeasonServiceError as exc:
+            await ctx.matcher.finish(tr(ctx.locale, exc.key, **exc.params))
         await ctx.matcher.finish(
             tr(
                 ctx.locale,
@@ -237,8 +238,8 @@ async def handle_season(ctx: WaterAdminContext) -> None:
             await ctx.matcher.finish(tr(ctx.locale, "water.admin.season.publish.usage"))
         try:
             season = await season_service.publish(ctx.args[2])
-        except ValueError as exc:
-            await ctx.matcher.finish(str(exc))
+        except SeasonServiceError as exc:
+            await ctx.matcher.finish(tr(ctx.locale, exc.key, **exc.params))
         await ctx.matcher.finish(
             tr(
                 ctx.locale,
@@ -252,8 +253,8 @@ async def handle_season(ctx: WaterAdminContext) -> None:
             await ctx.matcher.finish(tr(ctx.locale, "water.admin.season.archive.usage"))
         try:
             season = await season_service.archive(ctx.args[2])
-        except ValueError as exc:
-            await ctx.matcher.finish(str(exc))
+        except SeasonServiceError as exc:
+            await ctx.matcher.finish(tr(ctx.locale, exc.key, **exc.params))
         await ctx.matcher.finish(
             tr(
                 ctx.locale,
@@ -267,8 +268,8 @@ async def handle_season(ctx: WaterAdminContext) -> None:
             await ctx.matcher.finish(tr(ctx.locale, "water.admin.season.show.usage"))
         try:
             season = await season_service.require(ctx.args[2])
-        except ValueError as exc:
-            await ctx.matcher.finish(str(exc))
+        except SeasonServiceError as exc:
+            await ctx.matcher.finish(tr(ctx.locale, exc.key, **exc.params))
         await ctx.matcher.finish(
             tr(
                 ctx.locale,
@@ -312,8 +313,8 @@ async def handle_season(ctx: WaterAdminContext) -> None:
             await ctx.matcher.finish(tr(ctx.locale, "water.admin.season.delete.usage"))
         try:
             ok = await season_service.delete_draft(ctx.args[2])
-        except ValueError as exc:
-            await ctx.matcher.finish(str(exc))
+        except SeasonServiceError as exc:
+            await ctx.matcher.finish(tr(ctx.locale, exc.key, **exc.params))
         await ctx.matcher.finish(
             tr(
                 ctx.locale,

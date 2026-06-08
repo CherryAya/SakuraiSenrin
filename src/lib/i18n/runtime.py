@@ -94,6 +94,28 @@ def msg(locale_code: LocaleCode, key: MessageKey, **params: object) -> Message:
     return Message(tr(locale_code, key, **params))
 
 
+def format_duration(locale_code: LocaleCode, seconds: int) -> str:
+    total_seconds = max(0, int(seconds))
+    if total_seconds <= 0:
+        return tr(locale_code, "i18n.duration.zero")
+
+    day, remain = divmod(total_seconds, 86400)
+    hour, remain = divmod(remain, 3600)
+    minute, second = divmod(remain, 60)
+
+    parts: list[str] = []
+    if day:
+        parts.append(tr(locale_code, "i18n.duration.day", count=day))
+    if hour:
+        parts.append(tr(locale_code, "i18n.duration.hour", count=hour))
+    if minute:
+        parts.append(tr(locale_code, "i18n.duration.minute", count=minute))
+    if second:
+        parts.append(tr(locale_code, "i18n.duration.second", count=second))
+
+    return " ".join(parts) if parts else tr(locale_code, "i18n.duration.zero")
+
+
 def get_group_locale(event: Event | None) -> str | None:
     if event is None:
         return None

@@ -9,7 +9,6 @@ Description: 群聊通知处理
 import asyncio
 from dataclasses import dataclass
 
-import arrow
 from nonebot import on_notice
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
@@ -25,14 +24,18 @@ from nonebot.rule import Rule, is_type, to_me
 from src.config import config
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
-from src.lib.i18n.runtime import send_private_i18n, tr
+from src.lib.i18n.runtime import (
+    format_duration,
+    resolve_locale,
+    send_private_i18n,
+    tr,
+)
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_static_docs,
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
-from src.lib.utils.common import get_current_time
 from src.repositories import blacklist_repo, group_repo, member_repo
 from src.services.info import resolve_group_name
 from src.services.sync import sync_members_from_api
@@ -206,14 +209,8 @@ async def _(
             "恶意禁言凛凛",
         )
     )
-    ban_duration = (
-        arrow.get(get_current_time())
-        .shift(seconds=event.duration)
-        .humanize(
-            locale="zh",
-            only_distance=True,
-        )
-    )
+    locale = await resolve_locale(group_id)
+    ban_duration = format_duration(locale, event.duration)
     group_name = await resolve_group_name(bot, str(event.group_id))
 
     for superuser in config.SUPERUSERS:

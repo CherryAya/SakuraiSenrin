@@ -72,6 +72,10 @@ __plugin_meta__ = create_plugin_metadata(
         "version": "0.1.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.NORMAL,
+        "i18n": {
+            "name_key": "plugin.help.name",
+            "description_key": "plugin.help.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=True,

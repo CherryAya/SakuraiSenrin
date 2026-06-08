@@ -68,6 +68,10 @@ __plugin_meta__ = create_plugin_metadata(
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
         "no_check": True,
+        "i18n": {
+            "name_key": "plugin.admin_invite.name",
+            "description_key": "plugin.admin_invite.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=True,
@@ -161,6 +165,8 @@ class AdminInviteContext:
 
 
 class InvitationListRenderer:
+    locale: LocaleCode
+
     """
     邀请列表排版与高分辨率图像渲染器
 
@@ -173,7 +179,12 @@ class InvitationListRenderer:
     有股味我也懒得改了你就说他能不能用，能用的代码就是好代码对吧！
     """
 
-    def __init__(self, font_path: str | Path = MAPLE_FONT_PATH) -> None:
+    def __init__(
+        self,
+        locale: LocaleCode,
+        font_path: str | Path = MAPLE_FONT_PATH,
+    ) -> None:
+        self.locale = locale
         self.BG_COLOR = (255, 217, 222)  # #ffd9de
         self.TEXT_COLOR = (180, 76, 76)  # #b44c4c
         self.ITEM_BG_COLOR = (255, 240, 245)  # #fff0f5
@@ -230,7 +241,7 @@ class InvitationListRenderer:
         draw = ImageDraw.Draw(img)
 
         # --- 1. 绘制顶部标题与统计信息 ---
-        title_text = "待 处 理 邀 请 列 表"
+        title_text = tr(self.locale, "admin.invite.image.title")
         title_bbox = draw.textbbox((0, 0), title_text, font=self.font_title)
         title_x = (self.RENDER_WIDTH - (title_bbox[2] - title_bbox[0])) // 2
         draw.text(
@@ -241,8 +252,11 @@ class InvitationListRenderer:
         )
 
         current_time_str = arrow.get(get_current_time()).strftime("%Y-%m-%d %H:%M:%S")
-        stats_text = (
-            f"总计: {len(invitations)} 条未处理请求 | 生成时间: {current_time_str}"
+        stats_text = tr(
+            self.locale,
+            "admin.invite.image.stats",
+            count=len(invitations),
+            time=current_time_str,
         )
         stats_bbox = draw.textbbox((0, 0), stats_text, font=self.font_stats)
         stats_x = (self.RENDER_WIDTH - (stats_bbox[2] - stats_bbox[0])) // 2
@@ -301,7 +315,11 @@ class InvitationListRenderer:
                     content_x + idx_width + gname_width + int(10 * self.SCALE),
                     line_y + int(5 * self.SCALE),
                 ),
-                f"(群号: {item['group_id']})",
+                tr(
+                    self.locale,
+                    "admin.invite.image.group_id",
+                    group_id=item["group_id"],
+                ),
                 font=self.font_p,
                 fill=self.SUB_TEXT_COLOR,
             )
@@ -324,7 +342,11 @@ class InvitationListRenderer:
 
             line_y += max(self.H2_SIZE, user_avatar_size) + int(15 * self.SCALE)
 
-            id_text = f"邀请ID: {item['invitation_id']}"
+            id_text = tr(
+                self.locale,
+                "admin.invite.image.invitation_id",
+                invitation_id=item["invitation_id"],
+            )
             draw.text(
                 (content_x, line_y),
                 id_text,
@@ -334,7 +356,12 @@ class InvitationListRenderer:
             id_bbox = draw.textbbox((0, 0), id_text, font=self.font_p)
             id_width = id_bbox[2] - id_bbox[0]
 
-            other_info = f" | flag: {item['flag']} | 申请时间: {item['time']}"
+            other_info = tr(
+                self.locale,
+                "admin.invite.image.other_info",
+                flag=item["flag"],
+                time=item["time"],
+            )
             draw.text(
                 (content_x + id_width, line_y),
                 other_info,
@@ -351,6 +378,7 @@ class InvitationListRenderer:
 
 async def generate_invitation_image_bytes(
     invitations_data: list[dict[str, Any]],
+    locale: LocaleCode,
 ) -> bytes:
     """
     提供给外部调用的异步门面函数。
@@ -377,7 +405,7 @@ async def generate_invitation_image_bytes(
             item["group_avatar_img"] = fetched_images[i * 2]
             item["user_avatar_img"] = fetched_images[i * 2 + 1]
 
-    renderer = InvitationListRenderer()
+    renderer = InvitationListRenderer(locale)
     return renderer.render(invitations_data)
 
 
@@ -430,11 +458,11 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         await ctx.bot.set_group_leave(group_id=int(invitation.group_id))
 
     if ctx.approve:
-        action = "同意"
+        action = tr(ctx.locale, "admin.invite.action.approve")
         invitation_status = InvitationStatus.APPROVED
         group_status = GroupStatus.AUTHORIZED
     else:
-        action = "拒绝"
+        action = tr(ctx.locale, "admin.invite.action.reject")
         invitation_status = InvitationStatus.REJECTED
         group_status = GroupStatus.UNAUTHORIZED
 
@@ -479,11 +507,11 @@ async def handle_list(ctx: AdminInviteContext) -> None:
                 "inviter_name": inv.inviter.user_name,
                 "inviter_id": inv.inviter.user_id,
                 "time": arrow.get(inv.created_at).strftime("%Y-%m-%d %H:%M"),
-                "flag": inv.flag or "无",
+                "flag": inv.flag or tr(ctx.locale, "admin.invite.image.flag.none"),
             }
         )
 
-    img_bytes = await generate_invitation_image_bytes(render_data)
+    img_bytes = await generate_invitation_image_bytes(render_data, ctx.locale)
 
     await ctx.matcher.send(MessageSegment.image(img_bytes))
 
@@ -619,10 +647,14 @@ async def _(
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if isinstance(args, ParserExit):
         if args.status == 0:
-            await admin_invite.finish(args.message)
+            await admin_invite.finish(build_docs(DocsRenderContext(locale=locale)))
         else:
             await admin_invite.finish(
-                tr(locale, "admin.invite.args_error", message=args.message)
+                tr(
+                    locale,
+                    "admin.invite.args_error",
+                    message=tr(locale, "admin.invite.args_error.detail"),
+                )
             )
 
     action = args.action

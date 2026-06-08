@@ -27,6 +27,7 @@ from src.plugins.water.handlers.passive import (
     handle_group_increase_notice,
     handle_water_record,
 )
+from src.plugins.water.services.season import SeasonServiceError
 from src.plugins.water.services.settlement import SettlementResult
 from tests.plugins.water.helpers import (
     DummyMatcher,
@@ -289,6 +290,44 @@ async def test_handle_season_create_and_list(
         await handle_season(list_ctx)
 
     assert "spring_2026" in str(list_matcher.finished)
+
+
+@pytest.mark.asyncio
+async def test_handle_season_create_surfaces_localized_service_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.handlers import admin as admin_module
+
+    matcher = DummyMatcher()
+    ctx = WaterAdminContext(
+        matcher=cast(Any, matcher),
+        args=[
+            "season",
+            "create",
+            "spring_2026",
+            "20260301",
+            "20260331",
+            "2026",
+            "春日特别季",
+        ],
+        locale="zh-CN",
+    )
+
+    monkeypatch.setattr(
+        admin_module.season_service,
+        "create",
+        AsyncMock(
+            side_effect=SeasonServiceError(
+                "water.admin.season.create.exists",
+                season_id="spring_2026",
+            )
+        ),
+    )
+
+    with pytest.raises(MatcherFinished):
+        await handle_season(ctx)
+
+    assert matcher.finished == "season_id 已存在: spring_2026"
 
 
 @pytest.mark.asyncio

@@ -82,6 +82,10 @@ __plugin_meta__ = create_plugin_metadata(
         "version": "0.4.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.NORMAL,
+        "i18n": {
+            "name_key": "plugin.water.name",
+            "description_key": "plugin.water.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=True,

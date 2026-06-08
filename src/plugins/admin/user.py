@@ -12,7 +12,6 @@ from argparse import Namespace
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
@@ -26,7 +25,7 @@ from nonebot.rule import ArgumentParser
 from src.database.core.consts import Permission
 from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
-from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.i18n.runtime import format_duration, resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import (
     DocsRenderContext,
@@ -127,18 +126,11 @@ async def ban_user(ctx: AdminUserContext) -> str:
         return tr(ctx.locale, "admin.user.action_banned")
 
     duration = PERMANENT_BAN_FLAG
-    human_time = "永久"
+    human_time = tr(ctx.locale, "admin.user.duration.permanent")
     if is_set(ctx.time_str):
         try:
             duration = int(time_to_timedelta(ctx.time_str).total_seconds())
-            human_time = (
-                arrow.get(get_current_time())
-                .shift(seconds=duration)
-                .humanize(
-                    locale="zh",
-                    only_distance=True,
-                )
-            )
+            human_time = format_duration(ctx.locale, duration)
         except ValueError:
             return tr(ctx.locale, "admin.user.time_invalid")
 
@@ -172,9 +164,9 @@ async def unban_user(ctx: AdminUserContext) -> str:
 
 async def status_user(ctx: AdminUserContext) -> str:
     if is_set(ctx.blacklist):
-        status = "封禁"
+        status = tr(ctx.locale, "admin.user.status.banned")
     else:
-        status = "正常"
+        status = tr(ctx.locale, "admin.user.status.normal")
     return tr(ctx.locale, "admin.user.status", status=status)
 
 
@@ -188,10 +180,14 @@ async def _(
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if isinstance(args, ParserExit):
         if args.status == 0:
-            await matcher.finish(args.message)
+            await matcher.finish(build_docs(DocsRenderContext(locale=locale)))
         else:
             await matcher.finish(
-                tr(locale, "admin.user.args_error", message=args.message)
+                tr(
+                    locale,
+                    "admin.user.args_error",
+                    message=tr(locale, "admin.user.args_error.detail"),
+                )
             )
 
     action = args.action
