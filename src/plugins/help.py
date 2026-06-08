@@ -13,6 +13,7 @@ import inspect
 from typing import Literal, cast
 
 import nonebot
+from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
@@ -273,10 +274,11 @@ async def _resolve_docs_message(entry: DocsEntry, locale: LocaleCode) -> Message
 @help_matcher.handle()
 async def _(
     matcher: Matcher,
+    event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
     entries = _iter_docs_entries()
-    locale = await resolve_locale()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     query = arg.extract_plain_text().strip()
     if not query:
         await matcher.finish(_build_index_message(entries, locale))

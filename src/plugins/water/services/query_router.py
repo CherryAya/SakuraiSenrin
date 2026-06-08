@@ -7,6 +7,8 @@ from typing import Literal
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 from src.plugins.water.img import (
     build_my_water_fallback_text,
     build_my_water_image,
@@ -148,12 +150,14 @@ class WaterQueryRouter:
         spec: WaterQuerySpec,
         user_id: str,
         group_id: str,
+        locale: LocaleCode,
     ) -> Message:
         if spec.scope_type == "activity":
             return await self._execute_activity(
                 spec=spec,
                 user_id=user_id,
                 group_id=group_id,
+                locale=locale,
             )
         if spec.view == "achievement":
             from src.plugins.water.services.achievement import achievement_service
@@ -170,7 +174,7 @@ class WaterQueryRouter:
                 group_id=group_id,
             )
             if profile_data is None:
-                return Message("嗯嗯……看上去你的水还不够多，先多聊几天再来查吧。")
+                return Message(tr(locale, "water.query.profile_not_enough"))
             if spec.mode == "full":
                 card = await build_my_water_image(profile_data)
             else:
@@ -181,16 +185,16 @@ class WaterQueryRouter:
                 return Message(MessageSegment.image(card))
             return Message(await build_my_water_fallback_text(profile_data))
         if spec.scope_value == "day":
-            return await absolute_rank_service.build_group_day_rank(group_id)
+            return await absolute_rank_service.build_group_day_rank(group_id, locale)
         if spec.scope_value == "month":
-            return await absolute_rank_service.build_period_rank("month")
+            return await absolute_rank_service.build_period_rank("month", locale)
         if spec.scope_value == "season":
-            return await absolute_rank_service.build_period_rank("season")
+            return await absolute_rank_service.build_period_rank("season", locale)
         if spec.scope_value == "year":
-            return await absolute_rank_service.build_period_rank("year")
+            return await absolute_rank_service.build_period_rank("year", locale)
         if spec.scope_value == "total":
             return await absolute_rank_service.build_total_rank()
-        return Message("暂不支持该查询。")
+        return Message(tr(locale, "water.query.unsupported"))
 
     async def _execute_activity(
         self,
@@ -198,32 +202,51 @@ class WaterQueryRouter:
         spec: WaterQuerySpec,
         user_id: str,
         group_id: str,
+        locale: LocaleCode,
     ) -> Message:
         if spec.scope_value == "列表":
             seasons = await season_service.list(["published"])
-            return Message(render_season_list("===== 已发布活动赛季 =====", seasons))
+            return Message(
+                render_season_list(
+                    tr(locale, "water.query.season_list.published"),
+                    seasons,
+                )
+            )
         if spec.scope_value == "当前列表":
             seasons = await season_service.list_current()
-            return Message(render_season_list("===== 当前活动赛季 =====", seasons))
+            return Message(
+                render_season_list(
+                    tr(locale, "water.query.season_list.current"),
+                    seasons,
+                )
+            )
 
         resolved = await season_service.resolve_one_or_many(spec.scope_value)
         if isinstance(resolved, SeasonLookupAmbiguous):
             if not resolved.candidates:
-                return Message("没有找到匹配的活动赛季。可以先用“水王 赛季 列表”查看。")
+                return Message(tr(locale, "water.query.season_not_found"))
             return Message(
-                "赛季名存在歧义，请改用 season_id:\n"
-                + "\n".join(
-                    f"- {item.season_id} | {item.name} | "
-                    f"{item.start_date}~{item.end_date}"
-                    for item in resolved.candidates
+                tr(
+                    locale,
+                    "water.query.season_ambiguous",
+                    items="\n".join(
+                        f"- {item.season_id} | {item.name} | "
+                        f"{item.start_date}~{item.end_date}"
+                        for item in resolved.candidates
+                    ),
                 )
             )
         if not resolved:
-            return Message("当前没有可查询的活动赛季。")
+            return Message(tr(locale, "water.query.season_empty"))
 
         messages: list[str] = []
         if len(resolved) > 1:
-            messages.append(render_season_list("===== 当前活动赛季 =====", resolved))
+            messages.append(
+                render_season_list(
+                    tr(locale, "water.query.season_list.current"),
+                    resolved,
+                )
+            )
         for season in resolved:
             messages.append(
                 await season_rank_service.build_message(

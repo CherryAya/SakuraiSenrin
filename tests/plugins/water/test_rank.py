@@ -29,7 +29,7 @@ async def test_handle_period_rank_returns_image(
     )
 
     with pytest.raises(MatcherFinished):
-        await handle_period_rank(cast(Any, matcher), "week")
+        await handle_period_rank(cast(Any, matcher), "week", "zh-CN")
 
     assert matcher.sent == ["凛凛统计周榜中，请稍后喔……"]
     assert matcher.finished is not None
@@ -50,7 +50,7 @@ async def test_handle_period_rank_returns_fallback_when_no_data(
     )
 
     with pytest.raises(MatcherFinished):
-        await handle_period_rank(cast(Any, matcher), "year")
+        await handle_period_rank(cast(Any, matcher), "year", "zh-CN")
 
     assert matcher.sent == ["凛凛统计年榜中，请稍后喔……"]
     assert matcher.finished == "凛凛翻了翻账本，这个周期还没有可用结算数据喔。"

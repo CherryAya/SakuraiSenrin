@@ -25,9 +25,10 @@ from nonebot.rule import Rule, is_type, to_me
 from src.config import config
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
+from src.lib.i18n.runtime import send_private_i18n, tr
 from src.lib.plugin_docs import build_static_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
-from src.lib.utils.common import AlertTemplate, get_current_time
+from src.lib.utils.common import get_current_time
 from src.repositories import blacklist_repo, group_repo, member_repo
 from src.services.info import resolve_group_name
 from src.services.sync import sync_members_from_api
@@ -107,9 +108,25 @@ async def ban_user_and_cleanup_groups(ctx: AdminNoticeContext) -> str:
             continue
         try:
             await ctx.bot.set_group_leave(group_id=int(member.group_id))
-            msg += f"连坐退群：{member.group_id} {member.group.group_name}\n"
+            msg += (
+                tr(
+                    "zh-CN",
+                    "notice.group.leave_success",
+                    group_id=member.group_id,
+                    group_name=member.group.group_name,
+                )
+                + "\n"
+            )
         except ActionFailed:
-            msg += f"连坐退群失败：{member.group_id} {member.group.group_name}\n"
+            msg += (
+                tr(
+                    "zh-CN",
+                    "notice.group.leave_failed",
+                    group_id=member.group_id,
+                    group_name=member.group.group_name,
+                )
+                + "\n"
+            )
 
     return msg
 
@@ -148,18 +165,15 @@ async def _(
     group_name = await resolve_group_name(bot, str(event.group_id))
 
     for superuser in config.SUPERUSERS:
-        await bot.send_private_msg(
-            user_id=int(superuser),
-            message=AlertTemplate.build_tip_notification(
-                event_name="群组被踢出",
-                event_details=(
-                    "不好，被扔出来了，已自动拉黑\n"
-                    f"群号：{event.group_id}\n"
-                    f"群名：{group_name}\n"
-                    f"操作者：{event.operator_id}\n"
-                    f"{msg}"
-                ).strip(),
-            ),
+        await send_private_i18n(
+            bot,
+            int(superuser),
+            "notice.group.kick.details",
+            locale_group_id=str(event.group_id),
+            group_id=str(event.group_id),
+            group_name=group_name,
+            operator_id=event.operator_id,
+            extra=msg.strip(),
         )
         await asyncio.sleep(1)
 
@@ -201,19 +215,16 @@ async def _(
     group_name = await resolve_group_name(bot, str(event.group_id))
 
     for superuser in config.SUPERUSERS:
-        await bot.send_private_msg(
-            user_id=int(superuser),
-            message=AlertTemplate.build_tip_notification(
-                event_name="群组禁言",
-                event_details=(
-                    "检测到禁言行为，已自动退出群聊\n"
-                    f"群号：{event.group_id}\n"
-                    f"群名：{group_name}\n"
-                    f"操作者：{event.operator_id}\n"
-                    f"禁言时长：{ban_duration}\n"
-                    f"{msg}"
-                ).strip(),
-            ),
+        await send_private_i18n(
+            bot,
+            int(superuser),
+            "notice.group.ban.details",
+            locale_group_id=str(event.group_id),
+            group_id=str(event.group_id),
+            group_name=group_name,
+            operator_id=event.operator_id,
+            ban_duration=ban_duration,
+            extra=msg.strip(),
         )
         await asyncio.sleep(1)
 

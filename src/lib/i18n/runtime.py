@@ -132,10 +132,10 @@ async def send_private_i18n(
     target_user_id: int,
     key: MessageKey,
     *,
-    group_id: str | None = None,
+    locale_group_id: str | None = None,
     **params: object,
 ) -> dict[str, Any]:
-    locale = await resolve_locale(group_id)
+    locale = await resolve_locale(locale_group_id)
     return await bot.send_private_msg(
         user_id=target_user_id,
         message=msg(locale, key, **params),

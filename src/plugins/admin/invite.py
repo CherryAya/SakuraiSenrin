@@ -31,65 +31,31 @@ from PIL import Image, ImageDraw, ImageFont
 
 from src.database.core.consts import GroupStatus, InvitationStatus, Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.i18n.types import LocaleCode
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils.common import AvatarFetcher, get_current_time
 from src.repositories import group_repo, invite_repo
 
-name = "邀请管理模块"
-description = """
-群组管理模块:
-  处理群聊邀请事件
-""".strip()
-
-docs_content = f"""
-===== {name} =====
-
-命令前缀: #admin.invite / #邀请管理
-
-1.查看列表
-  list / show / ls / 列表
-  示例: #admin.invite list
-
-2.同意邀请
-  approve / 同意
-  示例: #admin.invite approve -g <群号>
-  快捷操作: 对邀请通知消息直接回复 y / 同意
-
-3.拒绝邀请
-  reject / 拒绝
-  示例: #admin.invite reject -g <群号>
-  批量操作: #admin.invite reject --all
-  快捷操作: 对邀请通知消息直接回复 n / 拒绝
-
-4.忽略邀请
-  ignore / 忽略
-  示例: #admin.invite ignore -g <群号>
-  批量操作: #admin.invite ignore --all
-
-5.操作日志
-  log / 日志
-  示例: #admin.invite log [-g <群号>]
-
-6.帮助信息
-  help / 帮助
-  示例: #admin.invite help
-
-[注意事项]:
-1. 所有操作均需要【Senrin】管理员 (SUPERUSER) 权限。
-2. 同意/拒绝/忽略 操作支持使用 -g <群号> 或 -f <Flag> 进行精准匹配。
-3. 快捷回复操作 (y/n) 仅限直接回复机器人推送的邀请通知消息时生效。
-""".strip()
+name = tr("zh-CN", "plugin.admin_invite.name")
+description = tr("zh-CN", "plugin.admin_invite.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.admin_invite.name",
+        description_key="plugin.admin_invite.description",
+        content_key="plugin.admin_invite.docs",
         trigger=TriggerType.COMMAND,
         permission=Permission.SUPERUSER,
+        locale=locale,
     )
 
 
@@ -173,6 +139,7 @@ class InviteContext:
     bot: Bot
     matcher: Matcher
     approve: bool
+    locale: LocaleCode
 
     msg_id: str | Unset = UNSET
     flag: str | Unset = UNSET
@@ -186,6 +153,7 @@ class AdminInviteContext:
     bot: Bot
     matcher: Matcher
     operator_id: str
+    locale: LocaleCode
 
     flag: str | Unset = UNSET
     group_id: str | Unset = UNSET
@@ -431,20 +399,24 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         if not invitation:
             return False
     else:
-        await ctx.matcher.send("无法使用所提供的信息找到对应的邀请。")
+        await ctx.matcher.send(tr(ctx.locale, "admin.invite.lookup_failed"))
         return False
 
     if invitation.status.is_processed:
         operator = invitation.operator
         if not ctx.silent:
             await ctx.matcher.send(
-                f"邀请已被 {operator.user_name}({operator.user_id}) 处理，无法操作。\n"
-                f"当前状态：{invitation.status}\n"
-                "━━━━━━━━━━━━━━━━\n"
-                f"群号：{invitation.group_id}\n"
-                f"群名：{invitation.group.group_name}\n"
-                f"邀请者：{invitation.inviter.user_name}\n"
-                f"邀请 flag：{invitation.flag}\n"
+                tr(
+                    ctx.locale,
+                    "admin.invite.processed",
+                    operator_name=operator.user_name,
+                    operator_id=operator.user_id,
+                    status=invitation.status,
+                    group_id=invitation.group_id,
+                    group_name=invitation.group.group_name,
+                    inviter_name=invitation.inviter.user_name,
+                    flag=invitation.flag,
+                )
             )
         return False
 
@@ -476,12 +448,15 @@ async def handle_invitation(ctx: InviteContext) -> bool:
     )
     if not ctx.silent:
         await ctx.matcher.send(
-            (
-                f"已{action}群聊邀请 {invitation.id}\n"
-                f"群号：{invitation.group_id}\n"
-                f"群名：{invitation.group.group_name}\n"
-                f"邀请者：{invitation.inviter.user_name}\n"
-                f"邀请 flag：{invitation.flag}\n"
+            tr(
+                ctx.locale,
+                "admin.invite.action_done",
+                action=action,
+                invitation_id=invitation.id,
+                group_id=invitation.group_id,
+                group_name=invitation.group.group_name,
+                inviter_name=invitation.inviter.user_name,
+                flag=invitation.flag,
             ),
             reply_message=True,
         )
@@ -492,7 +467,7 @@ async def handle_list(ctx: AdminInviteContext) -> None:
     db_results = await invite_repo.get_by_status(InvitationStatus.PENDING)
 
     if not db_results:
-        await ctx.matcher.finish("当前没有待处理的邀请哦。")
+        await ctx.matcher.finish(tr(ctx.locale, "admin.invite.pending.none"))
 
     render_data = []
     for inv in db_results:
@@ -520,6 +495,7 @@ async def handle_approve(ctx: AdminInviteContext) -> None:
         flag=ctx.flag,
         group_id=ctx.group_id,
         approve=True,
+        locale=ctx.locale,
     )
     await handle_invitation(ic_ctx)
 
@@ -532,13 +508,14 @@ async def handle_reject(ctx: AdminInviteContext) -> None:
             flag=ctx.flag,
             group_id=ctx.group_id,
             approve=False,
+            locale=ctx.locale,
         )
         await handle_invitation(ic_ctx)
         return
 
     invs = await invite_repo.get_by_status(InvitationStatus.PENDING)
     if not invs:
-        await ctx.matcher.finish("当前没有需要拒绝的待处理邀请哦。")
+        await ctx.matcher.finish(tr(ctx.locale, "admin.invite.reject.none"))
 
     success_count = 0
     details = []
@@ -549,19 +526,20 @@ async def handle_reject(ctx: AdminInviteContext) -> None:
             invitation_id=inv.id,
             approve=False,
             silent=True,
+            locale=ctx.locale,
         )
         if await handle_invitation(ic_ctx):
             success_count += 1
 
             details.append(f"{inv.group.group_name} ({inv.group_id})")
 
-    msg = "========== 批量拒绝 ==========\n"
+    msg = tr(ctx.locale, "admin.invite.bulk.reject.title") + "\n"
     if details:
         msg += "\n".join(details) + "\n"
     else:
-        msg += "  (无成功处理的邀请记录)\n"
-    msg += "------------------------------\n"
-    msg += f"统计: 共拒绝了 {success_count} 个待处理邀请。"
+        msg += tr(ctx.locale, "admin.invite.bulk.none_processed") + "\n"
+    msg += tr(ctx.locale, "admin.invite.bulk.separator") + "\n"
+    msg += tr(ctx.locale, "admin.invite.bulk.reject.summary", count=success_count)
 
     await ctx.matcher.send(msg)
 
@@ -575,27 +553,28 @@ async def handle_ignore(ctx: AdminInviteContext) -> None:
             inv = await invite_repo.get_by_flag(ctx.flag)
 
         if not inv:
-            await ctx.matcher.finish("未找到对应的邀请记录。")
+            await ctx.matcher.finish(tr(ctx.locale, "admin.invite.record.not_found"))
         await invite_repo.update_status(inv.id, InvitationStatus.IGNORED)
-        msg = (
-            "======= 操作成功: 已忽略 =======\n"
-            f"群名：{inv.group.group_name}\n"
-            f"群号：{inv.group_id}\n"
+        msg = tr(
+            ctx.locale,
+            "admin.invite.ignore.done",
+            group_name=inv.group.group_name,
+            group_id=inv.group_id,
         )
         await ctx.matcher.send(msg)
         return
     invs = await invite_repo.ignore_all_pending()
     if not invs:
-        await ctx.matcher.finish("当前没有需要忽略的待处理邀请哦。")
+        await ctx.matcher.finish(tr(ctx.locale, "admin.invite.ignore.none"))
 
     details = []
     for inv in invs:
         details.append(f"{inv.group.group_name} ({inv.group_id})")
-    msg = "========== 批量忽略 ==========\n"
+    msg = tr(ctx.locale, "admin.invite.bulk.ignore.title") + "\n"
     if details:
         msg += "\n".join(details) + "\n"
-    msg += "------------------------------\n"
-    msg += f"统计: 共清理了 {len(invs)} 个待处理邀请。"
+    msg += tr(ctx.locale, "admin.invite.bulk.separator") + "\n"
+    msg += tr(ctx.locale, "admin.invite.bulk.ignore.summary", count=len(invs))
 
     await ctx.matcher.send(msg)
 
@@ -612,6 +591,7 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         matcher=matcher,
         approve=True,
         msg_id=msg_id,
+        locale=await resolve_locale(),
     )
     await handle_invitation(ctx)
 
@@ -624,6 +604,7 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         matcher=matcher,
         approve=False,
         msg_id=msg_id,
+        locale=await resolve_locale(),
     )
     await handle_invitation(ctx)
 
@@ -635,11 +616,14 @@ async def _(
     matcher: Matcher,
     args: Namespace | ParserExit = ShellCommandArgs(),
 ) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if isinstance(args, ParserExit):
         if args.status == 0:
             await admin_invite.finish(args.message)
         else:
-            await admin_invite.finish(f"参数错误:\n{args.message}")
+            await admin_invite.finish(
+                tr(locale, "admin.invite.args_error", message=args.message)
+            )
 
     action = args.action
     flag = getattr(args, "flag", UNSET)
@@ -650,6 +634,7 @@ async def _(
         bot=bot,
         matcher=matcher,
         operator_id=str(event.user_id),
+        locale=locale,
         flag=flag,
         group_id=group_id,
         is_all=is_all,
@@ -668,7 +653,7 @@ async def _(
         case "log" | "日志":
             handler = handle_log
         case _:
-            await admin_invite.finish("未知的操作指令。")
+            await admin_invite.finish(tr(locale, "admin.invite.unknown_command"))
 
     await handler(ctx)
     await admin_invite.finish()

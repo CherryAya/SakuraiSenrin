@@ -71,7 +71,9 @@ async def test_handle_merge_yes_first_intention(
         matcher: Matcher,
         event: GroupMessageEvent,
     ) -> None:
-        await handle_merge_yes(WaterMergeContext(matcher=matcher, event=event))
+        await handle_merge_yes(
+            WaterMergeContext(matcher=matcher, event=event, locale="zh-CN")
+        )
 
     async with app.test_matcher(matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -96,7 +98,7 @@ async def test_handle_merge_yes_shows_stale_target_hint(
 
     event = build_group_message_event("#water.merge yes", role="admin")
     matcher = DummyMatcher()
-    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event)
+    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event, locale="zh-CN")
 
     monkeypatch.setattr(
         merge_module.water_repo,
@@ -132,7 +134,7 @@ async def test_handle_merge_no_locked(monkeypatch: pytest.MonkeyPatch) -> None:
 
     event = build_group_message_event("#water.merge no", role="admin")
     matcher = DummyMatcher()
-    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event)
+    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event, locale="zh-CN")
 
     monkeypatch.setattr(
         merge_module.water_repo,
@@ -158,7 +160,7 @@ async def test_handle_merge_yes_no_need(monkeypatch: pytest.MonkeyPatch) -> None
 
     event = build_group_message_event("#water.merge yes", role="admin")
     matcher = DummyMatcher()
-    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event)
+    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event, locale="zh-CN")
 
     set_intention_mock = AsyncMock(return_value=(False, {"action": "no_need"}))
     monkeypatch.setattr(
@@ -195,7 +197,11 @@ async def test_handle_ignore_param_validation_and_success(
     from src.plugins.water.handlers import admin as admin_module
 
     matcher = DummyMatcher()
-    ctx = WaterAdminContext(matcher=cast(Any, matcher), args=["ignore", "20001"])
+    ctx = WaterAdminContext(
+        matcher=cast(Any, matcher),
+        args=["ignore", "20001"],
+        locale="zh-CN",
+    )
 
     monkeypatch.setattr(
         admin_module.water_repo,
@@ -228,6 +234,7 @@ async def test_handle_season_create_and_list(
             "2026",
             "春日特别季",
         ],
+        locale="zh-CN",
     )
 
     monkeypatch.setattr(
@@ -256,6 +263,7 @@ async def test_handle_season_create_and_list(
     list_ctx = WaterAdminContext(
         matcher=cast(Any, list_matcher),
         args=["season", "list", "published"],
+        locale="zh-CN",
     )
     monkeypatch.setattr(
         admin_module.season_service,
@@ -341,7 +349,8 @@ def test_format_settlement_message_reason_mapping() -> None:
             aggregate_rows=0,
             unlocked_achievements=0,
             reason="already_settled",
-        )
+        ),
+        "zh-CN",
     )
     assert "该日期已结算成功" in msg
 
@@ -355,7 +364,8 @@ def test_format_settlement_message_shows_force_mode() -> None:
             aggregate_rows=8,
             unlocked_achievements=1,
             forced=True,
-        )
+        ),
+        "zh-CN",
     )
     assert "模式: 强制重结算" in msg
 
@@ -367,7 +377,11 @@ async def test_handle_settle_parses_force_flag(
     from src.plugins.water.handlers import admin as admin_module
 
     matcher = DummyMatcher()
-    ctx = WaterAdminContext(matcher=cast(Any, matcher), args=["settle", "-f"])
+    ctx = WaterAdminContext(
+        matcher=cast(Any, matcher),
+        args=["settle", "-f"],
+        locale="zh-CN",
+    )
     settle_mock = AsyncMock(
         return_value=SettlementResult(
             success=True,

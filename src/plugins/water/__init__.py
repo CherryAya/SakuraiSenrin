@@ -21,7 +21,12 @@ from nonebot.rule import is_type
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 
@@ -52,42 +57,19 @@ from .services.settlement import water_settlement_service
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
 
-name = "吹水记录"
-description = "群聊活跃记录、画像、榜单与活动赛季。"
-
-docs_content = """
-1. 水王
-   个人画像（简版）
-2. 水王 完整
-   个人画像（完整版）
-3. 水王 日榜 / 月榜 / 季榜 / 年榜 / 总榜
-4. 水王 成就
-   个人成就
-5. 水王 赛季
-   当前活动赛季概览
-6. 水王 赛季 当前
-   当前活动赛季概览
-7. 水王 赛季 列表
-   已发布赛季
-8. 水王 赛季 当前列表
-   当前生效赛季
-9. 水王 赛季 <season_id|名称> [个人|群聊|矩阵] [概览|积分|排名|成就]
-10. #water season create <season_id> <start> <end> <name...>
-11. #water season publish <season_id>
-12. #water season archive <season_id>
-13. #water season show <season_id>
-14. #water season list [current|published|archived]
-15. #water season delete <season_id>
-""".strip()
+name = tr("zh-CN", "plugin.water.name")
+description = tr("zh-CN", "plugin.water.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.water.name",
+        description_key="plugin.water.description",
+        content_key="plugin.water.docs",
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
+        locale=locale,
     )
 
 
@@ -204,45 +186,52 @@ async def _(bot: Bot, event: GroupIncreaseNoticeEvent) -> None:
     ]
 )
 async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
-        await matcher.finish("这个命令要在群里用喔~")
-    await matcher.send("凛凛统计中，请稍后喔……")
-    await handle_water_query(matcher, event, arg)
+        await matcher.finish(tr(locale, "water.common.group_only"))
+    await matcher.send(tr(locale, "water.common.working"))
+    await handle_water_query(matcher, event, arg, locale)
 
 
 @water_week_rank.handle()
-async def _(matcher: Matcher) -> None:
-    await handle_period_rank(matcher, "week")
+async def _(matcher: Matcher, event: MessageEvent) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    await handle_period_rank(matcher, "week", locale)
 
 
 @water_month_rank.handle()
-async def _(matcher: Matcher) -> None:
-    await handle_period_rank(matcher, "month")
+async def _(matcher: Matcher, event: MessageEvent) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    await handle_period_rank(matcher, "month", locale)
 
 
 @water_season_rank.handle()
-async def _(matcher: Matcher) -> None:
-    await handle_period_rank(matcher, "season")
+async def _(matcher: Matcher, event: MessageEvent) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    await handle_period_rank(matcher, "season", locale)
 
 
 @water_year_rank.handle()
-async def _(matcher: Matcher) -> None:
-    await handle_period_rank(matcher, "year")
+async def _(matcher: Matcher, event: MessageEvent) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    await handle_period_rank(matcher, "year", locale)
 
 
 @water_achievement.handle()
 async def _(matcher: Matcher, event: MessageEvent) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
-        await matcher.finish("这个命令要在群里用喔~")
+        await matcher.finish(tr(locale, "water.common.group_only"))
     await handle_my_achievements(matcher, event)
 
 
 @water_merge.handle()
 async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
-        await matcher.finish("这个命令要在群里用喔~")
+        await matcher.finish(tr(locale, "water.common.group_only"))
     if not is_group_admin_event(event):
-        await matcher.finish("这条要群管理员或群主来确认喔~")
+        await matcher.finish(tr(locale, "water.common.admin_confirm"))
 
     choice = arg.extract_plain_text().strip().lower()
     handler: Callable[[WaterMergeContext], Awaitable[None]]
@@ -252,18 +241,17 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
         case "no" | "拒绝":
             handler = handle_merge_no
         case _:
-            await matcher.finish(
-                "凛凛没看懂，你可以发 #water.merge yes 或 #water.merge no"
-            )
+            await matcher.finish(tr(locale, "water.common.merge_choice_invalid"))
 
-    await handler(WaterMergeContext(matcher=matcher, event=event))
+    await handler(WaterMergeContext(matcher=matcher, event=event, locale=locale))
 
 
 @water_admin.handle()
 async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     text = arg.extract_plain_text().strip()
     if not text:
-        await matcher.finish(water_help_message())
+        await matcher.finish(water_help_message(locale))
 
     args = text.split()
     action = args[0].lower().removeprefix(".")
@@ -286,6 +274,13 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
         case "season":
             handler = handle_season
         case _:
-            await matcher.finish(f"未知子命令: {action}\n\n{water_help_message()}")
+            await matcher.finish(
+                tr(
+                    locale,
+                    "water.common.unknown_subcommand",
+                    action=action,
+                    docs=water_help_message(locale),
+                )
+            )
 
-    await handler(WaterAdminContext(matcher=matcher, args=args))
+    await handler(WaterAdminContext(matcher=matcher, args=args, locale=locale))

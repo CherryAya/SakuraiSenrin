@@ -21,6 +21,8 @@ from nonebot.plugin import CommandGroup
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.cache.field import GroupCacheItem
 from src.lib.consts import TriggerType
+from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import build_static_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import group_repo
@@ -109,55 +111,56 @@ admin_group = admin_command_group.command("group")
 class AdminGroupContext:
     bot: Bot
     group: GroupCacheItem
+    locale: LocaleCode
 
 
 async def ban_group(ctx: AdminGroupContext) -> str:
     if ctx.group.status.is_banned:
-        return "已处于封禁状态"
+        return tr(ctx.locale, "admin.group.already_banned")
 
     await group_repo.update_status(ctx.group.group_id, GroupStatus.BANNED)
-    return "已封禁"
+    return tr(ctx.locale, "admin.group.banned")
 
 
 async def unban_group(ctx: AdminGroupContext) -> str:
     if not ctx.group.status.is_banned:
-        return "未被封禁，无需解封"
+        return tr(ctx.locale, "admin.group.not_banned")
 
     await group_repo.update_status(ctx.group.group_id, GroupStatus.UNAUTHORIZED)
-    return "已解封，状态变更为未授权"
+    return tr(ctx.locale, "admin.group.unbanned")
 
 
 async def auth_group(ctx: AdminGroupContext) -> str:
     if ctx.group.status.is_banned:
-        return "已被封禁，请先解封"
+        return tr(ctx.locale, "admin.group.need_unban_first")
     elif ctx.group.status.is_working:
-        return "已是授权状态"
+        return tr(ctx.locale, "admin.group.already_authorized")
 
     await group_repo.update_status(ctx.group.group_id, GroupStatus.AUTHORIZED)
-    return "授权成功"
+    return tr(ctx.locale, "admin.group.authorized")
 
 
 async def unauth_group(ctx: AdminGroupContext) -> str:
     if ctx.group.status.is_banned:
-        return "处于封禁状态，无需取消授权"
+        return tr(ctx.locale, "admin.group.banned_skip_unauth")
     elif ctx.group.status.is_working:
         await group_repo.update_status(ctx.group.group_id, GroupStatus.UNAUTHORIZED)
-        return "已取消授权"
+        return tr(ctx.locale, "admin.group.unauthorized")
 
-    return "当前未授权，无需操作"
+    return tr(ctx.locale, "admin.group.already_unauthorized")
 
 
 async def leave_group(ctx: AdminGroupContext) -> str:
     await group_repo.update_status(ctx.group.group_id, GroupStatus.LEFT)
     try:
         await ctx.bot.set_group_leave(group_id=int(ctx.group.group_id))
-        return "已退群"
+        return tr(ctx.locale, "admin.group.left")
     except ActionFailed:
-        return "退群失败，仅更新数据库状态"
+        return tr(ctx.locale, "admin.group.leave_failed")
 
 
 async def status_group(ctx: AdminGroupContext) -> str:
-    return f"当前状态: {ctx.group.status}"
+    return tr(ctx.locale, "admin.group.status", status=ctx.group.status)
 
 
 @admin_group.handle()
@@ -167,6 +170,7 @@ async def _(
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     args = arg.extract_plain_text().strip().split()
     if not args:
         await matcher.finish(docs_content)
@@ -190,28 +194,45 @@ async def _(
         case "leave" | "退群":
             handler = leave_group
         case _:
-            await matcher.finish(f"未知的操作指令。\n\n{docs_content}")
+            await matcher.finish(
+                tr(locale, "admin.group.unknown_command", docs=docs_content)
+            )
 
     group_ids = args[1:]
     if not group_ids:
         if isinstance(event, GroupMessageEvent):
             group_ids = [str(event.group_id)]
         else:
-            await matcher.finish("错误: 请在指令后提供至少一个目标群组 ID。")
+            await matcher.finish(tr(locale, "admin.group.group_required"))
 
     results = []
     for gid in set(group_ids):
         if not gid.isdigit():
-            await matcher.finish(f"错误: 存在非法群组 ID [{gid}]，群号必须为纯数字。")
+            await matcher.finish(tr(locale, "admin.group.group_invalid", group_id=gid))
 
         name = await resolve_group_name(bot, gid)
         group = await group_repo.get_group(gid)
         if not group:
-            results.append(f"[{gid}|{name}] 数据库中不存在该群组记录")
+            results.append(
+                tr(
+                    locale,
+                    "admin.group.not_found",
+                    group_id=gid,
+                    group_name=name,
+                )
+            )
             continue
 
-        ctx = AdminGroupContext(bot, group)
+        ctx = AdminGroupContext(bot, group, locale)
         res_msg = await handler(ctx)
-        results.append(f"[{gid}|{name}] {res_msg}")
+        results.append(
+            tr(
+                locale,
+                "admin.group.result",
+                group_id=gid,
+                group_name=name,
+                message=res_msg,
+            )
+        )
 
     await matcher.finish("\n".join(results))

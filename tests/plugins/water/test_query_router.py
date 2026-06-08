@@ -72,7 +72,12 @@ async def test_execute_activity_default_queries_all_current(
         AsyncMock(side_effect=["A_OVERVIEW", "B_OVERVIEW"]),
     )
 
-    message = await router.execute(spec=spec, user_id="10001", group_id="20001")
+    message = await router.execute(
+        spec=spec,
+        user_id="10001",
+        group_id="20001",
+        locale="zh-CN",
+    )
     text = str(message)
 
     assert "spring_a" in text
@@ -128,7 +133,12 @@ async def test_execute_activity_ambiguity_message(
         ),
     )
 
-    message = await router.execute(spec=spec, user_id="10001", group_id="20001")
+    message = await router.execute(
+        spec=spec,
+        user_id="10001",
+        group_id="20001",
+        locale="zh-CN",
+    )
 
     assert "歧义" in str(message)
     assert "ny_a" in str(message)

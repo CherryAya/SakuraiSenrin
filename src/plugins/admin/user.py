@@ -26,6 +26,8 @@ from nonebot.rule import ArgumentParser
 from src.database.core.consts import Permission
 from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
+from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import build_static_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
@@ -112,6 +114,7 @@ class AdminUserContext:
     user: UserCacheItem
     group_id: str
     operator_id: str
+    locale: LocaleCode
     blacklist: BlacklistCacheItem | Unset = UNSET
     time_str: str | Unset = UNSET
     reason: str | Unset = UNSET
@@ -119,10 +122,10 @@ class AdminUserContext:
 
 async def ban_user(ctx: AdminUserContext) -> str:
     if ctx.user.permission == Permission.SUPERUSER:
-        return "无法操作超级用户"
+        return tr(ctx.locale, "admin.user.action_superuser")
 
     if is_set(ctx.blacklist) and get_current_time() < ctx.blacklist.expiry:
-        return "已处于封禁状态"
+        return tr(ctx.locale, "admin.user.action_banned")
 
     duration = PERMANENT_BAN_FLAG
     human_time = "永久"
@@ -138,7 +141,7 @@ async def ban_user(ctx: AdminUserContext) -> str:
                 )
             )
         except ValueError:
-            return "时间格式错误"
+            return tr(ctx.locale, "admin.user.time_invalid")
 
     await blacklist_repo.add_ban(
         target_user_id=ctx.user.user_id,
@@ -148,7 +151,12 @@ async def ban_user(ctx: AdminUserContext) -> str:
         reason=resolve_unset(ctx.reason, None),
     )
 
-    return f"已封禁 (时长: {human_time} 范围: {ctx.group_id})"
+    return tr(
+        ctx.locale,
+        "admin.user.banned",
+        duration=human_time,
+        group_id=ctx.group_id,
+    )
 
 
 async def unban_user(ctx: AdminUserContext) -> str:
@@ -158,9 +166,9 @@ async def unban_user(ctx: AdminUserContext) -> str:
             ctx.group_id,
             ctx.operator_id,
         )
-        return "已解封"
+        return tr(ctx.locale, "admin.user.unbanned")
     else:
-        return "未封禁"
+        return tr(ctx.locale, "admin.user.not_banned")
 
 
 async def status_user(ctx: AdminUserContext) -> str:
@@ -168,7 +176,7 @@ async def status_user(ctx: AdminUserContext) -> str:
         status = "封禁"
     else:
         status = "正常"
-    return f"状态: {status}"
+    return tr(ctx.locale, "admin.user.status", status=status)
 
 
 @admin_user.handle()
@@ -178,11 +186,14 @@ async def _(
     matcher: Matcher,
     args: Namespace | ParserExit = ShellCommandArgs(),
 ) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if isinstance(args, ParserExit):
         if args.status == 0:
             await matcher.finish(args.message)
         else:
-            await matcher.finish(f"参数错误:\n{args.message}")
+            await matcher.finish(
+                tr(locale, "admin.user.args_error", message=args.message)
+            )
 
     action = args.action
     uids = list(set(args.uids))
@@ -199,25 +210,38 @@ async def _(
         case "status" | "状态":
             handler = status_user
         case _:
-            await matcher.finish("未知的操作指令。")
+            await matcher.finish(tr(locale, "admin.user.unknown_command"))
 
     operator_id = str(event.user_id)
     results = []
 
     for uid in uids:
         if not uid.isdigit():
-            results.append(f"[{uid}] 非法 ID，必须为纯数字")
+            results.append(tr(locale, "admin.user.uid_invalid", user_id=uid))
             continue
 
         name = await resolve_user_name(bot, uid)
         if not (user := await user_repo.get_user(uid)):
             results.append(
-                f"[{uid}|{name}] 这位用户还没有和凛凛聊过哦，随意操作会挨揍哦？"
+                tr(
+                    locale,
+                    "admin.user.user_missing",
+                    user_id=uid,
+                    user_name=name,
+                )
             )
             continue
 
         if group_id != GLOBAL_GROUP_FLAG and not (await group_repo.get_group(group_id)):
-            results.append(f"[{uid}|{name}] 群组({group_id})不存在，随意操作会挨揍哦？")
+            results.append(
+                tr(
+                    locale,
+                    "admin.user.group_missing",
+                    user_id=uid,
+                    user_name=name,
+                    group_id=group_id,
+                )
+            )
             continue
 
         blacklist = await blacklist_repo.get_blacklist(user.user_id, group_id) or UNSET
@@ -225,11 +249,20 @@ async def _(
             user=user,
             group_id=group_id,
             operator_id=operator_id,
+            locale=locale,
             reason=reason,
             blacklist=blacklist,
             time_str=time_str,
         )
         res_msg = await handler(ctx)
-        results.append(f"[{uid}|{name}] {res_msg}")
+        results.append(
+            tr(
+                locale,
+                "admin.user.result",
+                user_id=uid,
+                user_name=name,
+                message=res_msg,
+            )
+        )
 
     await matcher.finish("\n".join(results))

@@ -3,6 +3,7 @@
 from .achievement import handle_my_achievements
 from .admin import (
     WaterAdminContext,
+    format_settlement_message,
     handle_help,
     handle_ignore,
     handle_ignored,
@@ -25,6 +26,7 @@ from .rank import handle_period_rank
 __all__ = [
     "WaterAdminContext",
     "WaterMergeContext",
+    "format_settlement_message",
     "handle_group_increase_notice",
     "handle_help",
     "handle_ignore",

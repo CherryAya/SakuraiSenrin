@@ -7,6 +7,8 @@ from typing import Literal
 from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.matcher import Matcher
 
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 from src.plugins.water.services.rank import water_rank_service
 
 PeriodType = Literal["week", "month", "season", "year"]
@@ -19,9 +21,13 @@ PERIOD_LABELS: dict[PeriodType, str] = {
 }
 
 
-async def handle_period_rank(matcher: Matcher, period: PeriodType) -> None:
-    await matcher.send(f"凛凛统计{PERIOD_LABELS[period]}中，请稍后喔……")
+async def handle_period_rank(
+    matcher: Matcher,
+    period: PeriodType,
+    locale: LocaleCode,
+) -> None:
+    await matcher.send(tr(locale, "water.rank.working", period=PERIOD_LABELS[period]))
     res = await water_rank_service.build_period_rank_image(period)
     if res:
         await matcher.finish(MessageSegment.image(res))
-    await matcher.finish("凛凛翻了翻账本，这个周期还没有可用结算数据喔。")
+    await matcher.finish(tr(locale, "water.rank.empty"))

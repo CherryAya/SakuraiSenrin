@@ -18,6 +18,7 @@ from src.config import config
 from src.database.consts import WritePolicy
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.i18n.runtime import send_private_i18n
 from src.lib.plugin_docs import build_static_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import user_repo
@@ -80,8 +81,10 @@ async def _(
         )
 
     for super_user_id in config.SUPERUSERS:
-        await bot.send_private_msg(
-            user_id=int(super_user_id),
-            message=f"收到了新的好友请求，已同意：{event.user_id}",
+        await send_private_i18n(
+            bot,
+            int(super_user_id),
+            "notice.user.friend_request",
+            user_id=str(event.user_id),
         )
         await asyncio.sleep(1)
