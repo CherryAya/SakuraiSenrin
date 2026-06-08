@@ -307,3 +307,10 @@ uv run pytest
 4. 测试覆盖核心行为与边界路径。
 5. 质量门禁通过（有 Python 改动时）。
 6. 无新增高优先级安全或数据一致性风险。
+
+## 14. Commit Policy
+- After each completed feature or independently deliverable unit of work, create
+  exactly one git commit before moving on to the next feature.
+- Use a gitmoji-based commit message format.
+- Preferred format: `<gitmoji> <type>(<scope>): <summary>`.
+- Example: `✨ feat(xxx): 完成xxx功能`
