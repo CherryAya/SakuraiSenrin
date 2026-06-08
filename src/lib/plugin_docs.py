@@ -585,29 +585,23 @@ class DemoImageRenderer:
     PANEL_HEADER_HEIGHT = 56
     AVATAR_SIZE = 68
     SYSTEM_CARD_PADDING = 28
-    SHADOW_OFFSET = 10
 
-    PAGE_BG = "#FFF4F7"
-    SHELL_SHADOW = "#F5DCE6"
-    SHELL_BG = "#FFFDFE"
-    HERO_BG = "#FFE6F0"
-    HERO_LAYER = "#FFD8E8"
+    PAGE_BG = "#FFFDFB"
+    SHELL_BG = "#FFFDFC"
+    HERO_BG = "#FDE7EF"
     PANEL_BG = "#FFFFFF"
-    PANEL_HEADER_BG = "#FFF1F6"
-    PANEL_SOFT_BG = "#FFF5F9"
+    PANEL_HEADER_BG = "#FFF1D6"
     ACCENT = "#7A2F4A"
-    STRONG = "#D84E7A"
+    STRONG = "#EE8BA8"
     DEEP = "#401828"
-    HINT = "#AA6B82"
-    SUBTLE = "#EAC7D6"
-    BLUE = "#5B8CFF"
-    BLUE_SOFT = "#EAF1FF"
-    BLUE_TEXT = "#314D7C"
-    USER_BUBBLE = "#FFF0F6"
-    BOT_BUBBLE = "#EEF4FF"
-    SYSTEM_BUBBLE = "#FFF5DC"
-    BADGE_BG = "#FFF0C7"
-    BADGE_FG = "#9A6723"
+    HINT = "#B07A8D"
+    BLUE = "#7FA8FF"
+    BLUE_TEXT = "#355581"
+    USER_BUBBLE = "#FFEFF4"
+    BOT_BUBBLE = "#EAF2FF"
+    SYSTEM_BUBBLE = "#FFF4D8"
+    BADGE_BG = "#FFF0B8"
+    BADGE_FG = "#9A6E20"
 
     def __init__(self) -> None:
         try:
@@ -652,16 +646,6 @@ class DemoImageRenderer:
         draw.rounded_rectangle(
             (
                 self.OUTER_MARGIN,
-                self.OUTER_MARGIN + self.SHADOW_OFFSET,
-                self.WIDTH - self.OUTER_MARGIN,
-                height - self.OUTER_MARGIN + self.SHADOW_OFFSET,
-            ),
-            radius=self.SHELL_RADIUS,
-            fill=self.SHELL_SHADOW,
-        )
-        draw.rounded_rectangle(
-            (
-                self.OUTER_MARGIN,
                 self.OUTER_MARGIN,
                 self.WIDTH - self.OUTER_MARGIN,
                 height - self.OUTER_MARGIN,
@@ -702,28 +686,14 @@ class DemoImageRenderer:
     def _paint_background(self, image: Image.Image) -> None:
         draw = ImageDraw.Draw(image)
         width, height = image.size
-        top_color = (255, 244, 247)
-        bottom_color = (255, 249, 251)
-        for y in range(height):
-            ratio = y / max(height - 1, 1)
-            color = tuple(
-                int(top_color[index] * (1 - ratio) + bottom_color[index] * ratio)
-                for index in range(3)
-            )
-            draw.line((0, y, width, y), fill=color)
-
-        decorations = [
-            ((54, 70, 214, 210), "#FFE7F0"),
-            ((1034, 88, 1204, 230), "#FFF3D4"),
-            ((118, height - 226, 286, height - 88), "#FFEAF3"),
-            ((986, height - 204, 1144, height - 74), "#EEF4FF"),
-        ]
-        for bounds, fill in decorations:
-            draw.ellipse(bounds, fill=fill)
-
-        self._draw_sparkle(draw, 202, 138, "#FFFFFF")
-        self._draw_sparkle(draw, 1114, 146, "#FFFFFF")
-        self._draw_sparkle(draw, 1022, height - 116, "#FFFFFF")
+        draw.rectangle((0, 0, width, height), fill=self.PAGE_BG)
+        draw.rounded_rectangle((28, 32, 218, 162), radius=48, fill="#FFE9C8")
+        draw.rounded_rectangle((1038, 42, 1246, 182), radius=54, fill="#E7F0FF")
+        draw.rounded_rectangle(
+            (66, height - 154, width - 66, height - 70),
+            radius=34,
+            fill="#FFF3F7",
+        )
 
     def _draw_header(
         self,
@@ -737,16 +707,6 @@ class DemoImageRenderer:
         draw.rounded_rectangle(
             (
                 self.OUTER_MARGIN + 28,
-                self.OUTER_MARGIN + 34,
-                self.WIDTH - self.OUTER_MARGIN - 28,
-                self.OUTER_MARGIN + self.HEADER_HEIGHT - 10,
-            ),
-            radius=34,
-            fill=self.HERO_LAYER,
-        )
-        draw.rounded_rectangle(
-            (
-                self.OUTER_MARGIN + 28,
                 self.OUTER_MARGIN + 24,
                 self.WIDTH - self.OUTER_MARGIN - 28,
                 self.OUTER_MARGIN + self.HEADER_HEIGHT - 20,
@@ -754,8 +714,8 @@ class DemoImageRenderer:
             radius=34,
             fill=self.HERO_BG,
         )
-        draw.rounded_rectangle((88, 82, 154, 148), radius=20, fill="#FFC3D5")
-        draw.rounded_rectangle((1116, 84, 1184, 150), radius=20, fill="#E9F0FF")
+        draw.rounded_rectangle((88, 82, 154, 148), radius=24, fill="#FFD8E4")
+        draw.rounded_rectangle((1116, 84, 1184, 150), radius=24, fill="#DCE9FF")
         self._draw_avatar_badge(draw, 121, 114, "凛", self.STRONG)
         self._draw_avatar_badge(draw, 1150, 116, "Q", self.BLUE)
         self._draw_chip(
@@ -763,7 +723,7 @@ class DemoImageRenderer:
             x=132,
             y=56,
             text="PLUGIN DEMO",
-            fill="#FFF8FB",
+            fill="#FFF9FB",
             text_fill=self.ACCENT,
             font=self.eyebrow_font,
         )
@@ -789,7 +749,7 @@ class DemoImageRenderer:
                     self.meta_font,
                     max_width=560,
                 ),
-                fill="#FFF9FC",
+                fill="#FFFBFC",
                 text_fill=self.HINT,
                 font=self.meta_font,
                 min_width=300,
@@ -808,16 +768,6 @@ class DemoImageRenderer:
         top: int,
         bottom: int,
     ) -> None:
-        draw.rounded_rectangle(
-            (
-                self.OUTER_MARGIN + 28,
-                top + 10,
-                self.WIDTH - self.OUTER_MARGIN - 28,
-                bottom + 10,
-            ),
-            radius=34,
-            fill="#FBE6EE",
-        )
         draw.rounded_rectangle(
             (
                 self.OUTER_MARGIN + 28,
@@ -879,11 +829,6 @@ class DemoImageRenderer:
             left = 140
             right = self.WIDTH - 140
             draw.rounded_rectangle(
-                (left + 8, top + 10, right + 8, top + spec.height + 10),
-                radius=24,
-                fill="#F6E4B7",
-            )
-            draw.rounded_rectangle(
                 (left, top, right, top + spec.height),
                 radius=24,
                 fill=self.SYSTEM_BUBBLE,
@@ -939,16 +884,6 @@ class DemoImageRenderer:
             fill=avatar_fill,
         )
         draw.rounded_rectangle(
-            (
-                bubble_x + 8,
-                bubble_y + 10,
-                bubble_x + bubble_width + 8,
-                bubble_y + spec.height + 10,
-            ),
-            radius=self.BUBBLE_RADIUS,
-            fill="#F8DDE8" if is_user else "#DCE8FF",
-        )
-        draw.rounded_rectangle(
             (bubble_x, bubble_y, bubble_x + bubble_width, bubble_y + spec.height),
             radius=self.BUBBLE_RADIUS,
             fill=fill,
@@ -958,7 +893,7 @@ class DemoImageRenderer:
             x=bubble_x + 18,
             y=bubble_y + 14,
             text="USER" if is_user else "BOT",
-            fill="#FFF9FC" if is_user else "#F8FBFF",
+            fill="#FFF9FB" if is_user else "#F7FAFF",
             text_fill=self.ACCENT if is_user else "#4C708C",
             font=self.eyebrow_font,
         )
@@ -980,17 +915,7 @@ class DemoImageRenderer:
         label: str,
         fill: str,
     ) -> None:
-        draw.ellipse(
-            (
-                x + 6,
-                y + 8,
-                x + self.AVATAR_SIZE + 6,
-                y + self.AVATAR_SIZE + 8,
-            ),
-            fill="#F7DDE8" if fill == self.STRONG else "#DCE7FF",
-        )
         draw.ellipse((x, y, x + self.AVATAR_SIZE, y + self.AVATAR_SIZE), fill=fill)
-        draw.ellipse((x + 12, y + 10, x + 28, y + 24), fill="#FFFFFF")
         bbox = draw.textbbox((0, 0), label, font=self.meta_font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
@@ -1013,8 +938,6 @@ class DemoImageRenderer:
         fill: str,
     ) -> None:
         draw.ellipse((x - 26, y - 26, x + 26, y + 26), fill=fill)
-        draw.polygon(((x - 18, y - 24), (x - 6, y - 48), (x + 2, y - 20)), fill=fill)
-        draw.polygon(((x + 18, y - 24), (x + 6, y - 48), (x - 2, y - 20)), fill=fill)
         bbox = draw.textbbox((0, 0), label, font=self.meta_font)
         draw.text(
             (
@@ -1043,7 +966,7 @@ class DemoImageRenderer:
                 top + 42,
             ),
             radius=17,
-            fill="#FFF1F6",
+            fill="#FFF4F8",
         )
         draw.text(
             (self.OUTER_MARGIN + 42, top + 17),
@@ -1080,18 +1003,6 @@ class DemoImageRenderer:
         height = int(bbox[3] - bbox[1] + 18)
         draw.rounded_rectangle((x, y, x + width, y + height), radius=16, fill=fill)
         draw.text((x + 14, y + 8), text, font=font, fill=text_fill)
-
-    def _draw_sparkle(
-        self,
-        draw: ImageDraw.ImageDraw,
-        x: int,
-        y: int,
-        fill: str,
-    ) -> None:
-        draw.line((x - 10, y, x + 10, y), fill=fill, width=3)
-        draw.line((x, y - 10, x, y + 10), fill=fill, width=3)
-        draw.line((x - 7, y - 7, x + 7, y + 7), fill=fill, width=2)
-        draw.line((x - 7, y + 7, x + 7, y - 7), fill=fill, width=2)
 
     def _fit_text(
         self,
