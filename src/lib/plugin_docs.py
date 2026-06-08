@@ -568,7 +568,7 @@ def _extract_metadata_field(raw_text: str, field: str) -> str:
 
 
 class DemoImageRenderer:
-    """Render a polished pseudo-chat demo card using the water plugin palette."""
+    """Render a flat pseudo-chat demo card using the water plugin palette."""
 
     WIDTH = 1280
     OUTER_MARGIN = 34
@@ -585,17 +585,27 @@ class DemoImageRenderer:
     PANEL_HEADER_HEIGHT = 56
     AVATAR_SIZE = 68
     SYSTEM_CARD_PADDING = 28
+    SHADOW_OFFSET = 10
 
     PAGE_BG = "#FFF4F7"
-    HERO_BG = "#FFE8F0"
-    PANEL_BG = "#FFF9FB"
-    PANEL_SOFT_BG = "#FFF3F8"
+    SHELL_SHADOW = "#F5DCE6"
+    SHELL_BG = "#FFFDFE"
+    HERO_BG = "#FFE6F0"
+    HERO_LAYER = "#FFD8E8"
+    PANEL_BG = "#FFFFFF"
+    PANEL_HEADER_BG = "#FFF1F6"
+    PANEL_SOFT_BG = "#FFF5F9"
     ACCENT = "#7A2F4A"
     STRONG = "#D84E7A"
     DEEP = "#401828"
     HINT = "#AA6B82"
-    LINE = "#F6D9E6"
+    SUBTLE = "#EAC7D6"
     BLUE = "#5B8CFF"
+    BLUE_SOFT = "#EAF1FF"
+    BLUE_TEXT = "#314D7C"
+    USER_BUBBLE = "#FFF0F6"
+    BOT_BUBBLE = "#EEF4FF"
+    SYSTEM_BUBBLE = "#FFF5DC"
     BADGE_BG = "#FFF0C7"
     BADGE_FG = "#9A6723"
 
@@ -642,14 +652,22 @@ class DemoImageRenderer:
         draw.rounded_rectangle(
             (
                 self.OUTER_MARGIN,
+                self.OUTER_MARGIN + self.SHADOW_OFFSET,
+                self.WIDTH - self.OUTER_MARGIN,
+                height - self.OUTER_MARGIN + self.SHADOW_OFFSET,
+            ),
+            radius=self.SHELL_RADIUS,
+            fill=self.SHELL_SHADOW,
+        )
+        draw.rounded_rectangle(
+            (
+                self.OUTER_MARGIN,
                 self.OUTER_MARGIN,
                 self.WIDTH - self.OUTER_MARGIN,
                 height - self.OUTER_MARGIN,
             ),
             radius=self.SHELL_RADIUS,
-            fill=self.PANEL_BG,
-            outline=self.LINE,
-            width=3,
+            fill=self.SHELL_BG,
         )
         self._draw_header(
             draw,
@@ -695,10 +713,10 @@ class DemoImageRenderer:
             draw.line((0, y, width, y), fill=color)
 
         decorations = [
-            ((70, 88, 246, 244), "#FFE3ED"),
-            ((1014, 92, 1200, 248), "#FFF2CC"),
-            ((132, height - 238, 304, height - 94), "#FFEAF3"),
-            ((966, height - 214, 1168, height - 54), "#F4EFFF"),
+            ((54, 70, 214, 210), "#FFE7F0"),
+            ((1034, 88, 1204, 230), "#FFF3D4"),
+            ((118, height - 226, 286, height - 88), "#FFEAF3"),
+            ((986, height - 204, 1144, height - 74), "#EEF4FF"),
         ]
         for bounds, fill in decorations:
             draw.ellipse(bounds, fill=fill)
@@ -719,14 +737,22 @@ class DemoImageRenderer:
         draw.rounded_rectangle(
             (
                 self.OUTER_MARGIN + 28,
+                self.OUTER_MARGIN + 34,
+                self.WIDTH - self.OUTER_MARGIN - 28,
+                self.OUTER_MARGIN + self.HEADER_HEIGHT - 10,
+            ),
+            radius=34,
+            fill=self.HERO_LAYER,
+        )
+        draw.rounded_rectangle(
+            (
+                self.OUTER_MARGIN + 28,
                 self.OUTER_MARGIN + 24,
                 self.WIDTH - self.OUTER_MARGIN - 28,
                 self.OUTER_MARGIN + self.HEADER_HEIGHT - 20,
             ),
             radius=34,
             fill=self.HERO_BG,
-            outline=self.LINE,
-            width=2,
         )
         draw.rounded_rectangle((88, 82, 154, 148), radius=20, fill="#FFC3D5")
         draw.rounded_rectangle((1116, 84, 1184, 150), radius=20, fill="#E9F0FF")
@@ -750,26 +776,26 @@ class DemoImageRenderer:
             text_fill=self.BADGE_FG,
             font=self.eyebrow_font,
         )
-        draw.text((132, 100), plugin_title, font=self.title_font, fill=self.DEEP)
-        draw.text((132, 154), feature_title, font=self.feature_font, fill=self.ACCENT)
+        draw.text((132, 98), plugin_title, font=self.title_font, fill=self.DEEP)
+        draw.text((132, 162), feature_title, font=self.feature_font, fill=self.ACCENT)
         if feature_trigger.strip():
             self._draw_chip(
                 draw,
                 x=132,
-                y=186,
+                y=198,
                 text=self._fit_text(
                     draw,
                     f"指令示例: {feature_trigger}",
                     self.meta_font,
                     max_width=560,
                 ),
-                fill="#FFF8FB",
+                fill="#FFF9FC",
                 text_fill=self.HINT,
                 font=self.meta_font,
                 min_width=300,
             )
         draw.text(
-            (936, 190),
+            (936, 198),
             "Conversation Preview",
             font=self.meta_font,
             fill=self.HINT,
@@ -785,14 +811,22 @@ class DemoImageRenderer:
         draw.rounded_rectangle(
             (
                 self.OUTER_MARGIN + 28,
+                top + 10,
+                self.WIDTH - self.OUTER_MARGIN - 28,
+                bottom + 10,
+            ),
+            radius=34,
+            fill="#FBE6EE",
+        )
+        draw.rounded_rectangle(
+            (
+                self.OUTER_MARGIN + 28,
                 top,
                 self.WIDTH - self.OUTER_MARGIN - 28,
                 bottom,
             ),
             radius=34,
-            fill="#FFFFFF",
-            outline=self.LINE,
-            width=2,
+            fill=self.PANEL_BG,
         )
         draw.rounded_rectangle(
             (
@@ -802,7 +836,7 @@ class DemoImageRenderer:
                 top + 58,
             ),
             radius=16,
-            fill=self.PANEL_SOFT_BG,
+            fill=self.PANEL_HEADER_BG,
         )
         draw.text(
             (self.OUTER_MARGIN + 74, top + 30),
@@ -845,18 +879,21 @@ class DemoImageRenderer:
             left = 140
             right = self.WIDTH - 140
             draw.rounded_rectangle(
+                (left + 8, top + 10, right + 8, top + spec.height + 10),
+                radius=24,
+                fill="#F6E4B7",
+            )
+            draw.rounded_rectangle(
                 (left, top, right, top + spec.height),
                 radius=24,
-                fill="#FFF7E8",
-                outline="#F3E1B6",
-                width=2,
+                fill=self.SYSTEM_BUBBLE,
             )
             self._draw_chip(
                 draw,
                 x=left + 22,
                 y=top + 16,
                 text="SYSTEM",
-                fill="#FFFDF6",
+                fill="#FFF9EC",
                 text_fill="#8F6A45",
                 font=self.eyebrow_font,
             )
@@ -889,9 +926,8 @@ class DemoImageRenderer:
             else avatar_x + self.AVATAR_SIZE + 20
         )
         bubble_y = top + max((self.AVATAR_SIZE - spec.height) // 2, 0)
-        fill = "#FFF0F6" if is_user else "#F2F6FF"
-        outline = "#F4C5D7" if is_user else "#CFE0FF"
-        text_fill = self.DEEP if is_user else "#314D7C"
+        fill = self.USER_BUBBLE if is_user else self.BOT_BUBBLE
+        text_fill = self.DEEP if is_user else self.BLUE_TEXT
         label = "你" if is_user else "凛"
         avatar_fill = self.STRONG if is_user else self.BLUE
 
@@ -903,18 +939,26 @@ class DemoImageRenderer:
             fill=avatar_fill,
         )
         draw.rounded_rectangle(
+            (
+                bubble_x + 8,
+                bubble_y + 10,
+                bubble_x + bubble_width + 8,
+                bubble_y + spec.height + 10,
+            ),
+            radius=self.BUBBLE_RADIUS,
+            fill="#F8DDE8" if is_user else "#DCE8FF",
+        )
+        draw.rounded_rectangle(
             (bubble_x, bubble_y, bubble_x + bubble_width, bubble_y + spec.height),
             radius=self.BUBBLE_RADIUS,
             fill=fill,
-            outline=outline,
-            width=2,
         )
         self._draw_chip(
             draw,
             x=bubble_x + 18,
             y=bubble_y + 14,
             text="USER" if is_user else "BOT",
-            fill="#FFFDFE",
+            fill="#FFF9FC" if is_user else "#F8FBFF",
             text_fill=self.ACCENT if is_user else "#4C708C",
             font=self.eyebrow_font,
         )
@@ -943,7 +987,7 @@ class DemoImageRenderer:
                 x + self.AVATAR_SIZE + 6,
                 y + self.AVATAR_SIZE + 8,
             ),
-            fill="#F7DDE8",
+            fill="#F7DDE8" if fill == self.STRONG else "#DCE7FF",
         )
         draw.ellipse((x, y, x + self.AVATAR_SIZE, y + self.AVATAR_SIZE), fill=fill)
         draw.ellipse((x + 12, y + 10, x + 28, y + 24), fill="#FFFFFF")
@@ -991,18 +1035,18 @@ class DemoImageRenderer:
         plugin_version: str,
         plugin_author: str,
     ) -> None:
-        draw.line(
+        draw.rounded_rectangle(
             (
-                self.OUTER_MARGIN + 32,
-                top + 4,
-                self.WIDTH - self.OUTER_MARGIN - 32,
-                top + 4,
+                self.OUTER_MARGIN + 28,
+                top + 8,
+                self.WIDTH - self.OUTER_MARGIN - 28,
+                top + 42,
             ),
-            fill=self.LINE,
-            width=2,
+            radius=17,
+            fill="#FFF1F6",
         )
         draw.text(
-            (self.OUTER_MARGIN + 36, top + 18),
+            (self.OUTER_MARGIN + 42, top + 17),
             self._fit_text(
                 draw,
                 f"{plugin_title} · v{plugin_version.lstrip('v')} · {plugin_author}",
@@ -1013,7 +1057,7 @@ class DemoImageRenderer:
             fill=self.HINT,
         )
         draw.text(
-            (self.WIDTH - self.OUTER_MARGIN - 198, top + 18),
+            (self.WIDTH - self.OUTER_MARGIN - 198, top + 17),
             "Generated by help docs",
             font=self.footer_font,
             fill="#C18AA0",
