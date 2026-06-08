@@ -1,14 +1,15 @@
 """
 Author: SakuraiCora<1479559098@qq.com>
-Date: 2026-02-18 23:51:56
+Date: 2026-02-07 22:12:20
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-04-04 15:09:52
-Description: 学习词库-传统版
+LastEditTime: 2026-04-04 15:09:58
+Description: 测试 matcher
 """
 
 from pathlib import Path
 
 from nonebot.adapters.onebot.v11.message import Message
+from nonebot.plugin import on_message
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
@@ -20,9 +21,9 @@ from src.lib.plugin_docs import (
 )
 from src.lib.plugin_meta import create_plugin_metadata
 
-name = tr("zh-CN", "plugin.study.name")
-description = tr("zh-CN", "plugin.study.description")
-DOCS_SOURCE = Path(__file__).parent / "docs" / "study" / "README.MD"
+name = tr("zh-CN", "plugin.test.name")
+description = tr("zh-CN", "plugin.test.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
@@ -30,8 +31,8 @@ def build_docs(ctx: DocsRenderContext | None = None) -> Message:
         source=DOCS_SOURCE,
         name=name,
         description=description,
-        trigger=TriggerType.COMMAND,
-        permission=Permission.NORMAL,
+        trigger=TriggerType.PASSIVE,
+        permission=Permission.SUPERUSER,
         ctx=ctx,
     )
 
@@ -42,18 +43,25 @@ __plugin_meta__ = create_plugin_metadata(
     extra={
         "author": "SakuraiCora",
         "version": "0.1.0",
-        "trigger": TriggerType.COMMAND,
-        "permission": Permission.NORMAL,
+        "trigger": TriggerType.PASSIVE,
+        "permission": Permission.SUPERUSER,
         "i18n": {
-            "name_key": "plugin.study.name",
-            "description_key": "plugin.study.description",
+            "name_key": "plugin.test.name",
+            "description_key": "plugin.test.description",
         },
         "docs": create_docs_meta(
             build_docs,
             visible=False,
-            category="fun",
-            order=85,
+            category="internal",
+            order=99,
             source=DOCS_SOURCE,
         ),
     },
 )
+
+test_matcher = on_message(block=False)
+
+
+@test_matcher.handle()
+async def _() -> None:
+    pass

@@ -1,15 +1,14 @@
 """
 Author: SakuraiCora<1479559098@qq.com>
-Date: 2026-02-07 22:12:20
+Date: 2026-02-19 00:22:29
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-04-04 15:09:58
-Description: 测试 matcher
+LastEditTime: 2026-04-04 15:09:46
+Description: 引导式退群
 """
 
 from pathlib import Path
 
 from nonebot.adapters.onebot.v11.message import Message
-from nonebot.plugin import on_message
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
@@ -21,9 +20,9 @@ from src.lib.plugin_docs import (
 )
 from src.lib.plugin_meta import create_plugin_metadata
 
-name = tr("zh-CN", "plugin.test.name")
-description = tr("zh-CN", "plugin.test.description")
-DOCS_SOURCE = Path(__file__).parent / "docs" / "test" / "README.MD"
+name = tr("zh-CN", "plugin.remove.name")
+description = tr("zh-CN", "plugin.remove.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
@@ -31,8 +30,8 @@ def build_docs(ctx: DocsRenderContext | None = None) -> Message:
         source=DOCS_SOURCE,
         name=name,
         description=description,
-        trigger=TriggerType.PASSIVE,
-        permission=Permission.SUPERUSER,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.GROUP_ADMIN,
         ctx=ctx,
     )
 
@@ -43,25 +42,18 @@ __plugin_meta__ = create_plugin_metadata(
     extra={
         "author": "SakuraiCora",
         "version": "0.1.0",
-        "trigger": TriggerType.PASSIVE,
-        "permission": Permission.SUPERUSER,
+        "trigger": TriggerType.COMMAND,
+        "permission": Permission.GROUP_ADMIN,
         "i18n": {
-            "name_key": "plugin.test.name",
-            "description_key": "plugin.test.description",
+            "name_key": "plugin.remove.name",
+            "description_key": "plugin.remove.description",
         },
         "docs": create_docs_meta(
             build_docs,
             visible=False,
-            category="internal",
-            order=99,
+            category="system",
+            order=90,
             source=DOCS_SOURCE,
         ),
     },
 )
-
-test_matcher = on_message(block=False)
-
-
-@test_matcher.handle()
-async def _() -> None:
-    pass

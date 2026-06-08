@@ -35,7 +35,7 @@ from src.lib.plugin_meta import create_plugin_metadata
 
 name = tr("zh-CN", "plugin.help.name")
 description = tr("zh-CN", "plugin.help.description")
-DOCS_SOURCE = Path(__file__).parent / "docs" / "help" / "README.MD"
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
 @dataclass(slots=True)

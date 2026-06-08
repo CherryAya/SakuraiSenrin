@@ -30,7 +30,7 @@ from src.logger import logger
 
 name = tr("zh-CN", "plugin.sentry.name")
 description = tr("zh-CN", "plugin.sentry.description")
-DOCS_SOURCE = Path(__file__).parent / "docs" / "sentry" / "README.MD"
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:

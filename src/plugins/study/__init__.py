@@ -1,9 +1,9 @@
 """
 Author: SakuraiCora<1479559098@qq.com>
-Date: 2026-02-19 00:22:29
+Date: 2026-02-18 23:51:56
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-04-04 15:09:46
-Description: 引导式退群
+LastEditTime: 2026-04-04 15:09:52
+Description: 学习词库-传统版
 """
 
 from pathlib import Path
@@ -20,9 +20,9 @@ from src.lib.plugin_docs import (
 )
 from src.lib.plugin_meta import create_plugin_metadata
 
-name = tr("zh-CN", "plugin.remove.name")
-description = tr("zh-CN", "plugin.remove.description")
-DOCS_SOURCE = Path(__file__).parent / "docs" / "remove" / "README.MD"
+name = tr("zh-CN", "plugin.study.name")
+description = tr("zh-CN", "plugin.study.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
@@ -31,7 +31,7 @@ def build_docs(ctx: DocsRenderContext | None = None) -> Message:
         name=name,
         description=description,
         trigger=TriggerType.COMMAND,
-        permission=Permission.GROUP_ADMIN,
+        permission=Permission.NORMAL,
         ctx=ctx,
     )
 
@@ -43,16 +43,16 @@ __plugin_meta__ = create_plugin_metadata(
         "author": "SakuraiCora",
         "version": "0.1.0",
         "trigger": TriggerType.COMMAND,
-        "permission": Permission.GROUP_ADMIN,
+        "permission": Permission.NORMAL,
         "i18n": {
-            "name_key": "plugin.remove.name",
-            "description_key": "plugin.remove.description",
+            "name_key": "plugin.study.name",
+            "description_key": "plugin.study.description",
         },
         "docs": create_docs_meta(
             build_docs,
             visible=False,
-            category="system",
-            order=90,
+            category="fun",
+            order=85,
             source=DOCS_SOURCE,
         ),
     },

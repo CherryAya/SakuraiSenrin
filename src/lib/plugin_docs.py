@@ -568,40 +568,52 @@ def _extract_metadata_field(raw_text: str, field: str) -> str:
 
 
 class DemoImageRenderer:
-    """Render a cute but serious pseudo-chat demo card from a docs script."""
+    """Render a polished pseudo-chat demo card using the water plugin palette."""
 
     WIDTH = 1280
-    OUTER_MARGIN = 32
+    OUTER_MARGIN = 34
     SHELL_RADIUS = 40
-    HEADER_HEIGHT = 236
-    FOOTER_HEIGHT = 132
-    CONVERSATION_SIDE_PADDING = 56
-    BUBBLE_RADIUS = 30
-    BUBBLE_PADDING_X = 32
+    HEADER_HEIGHT = 214
+    FOOTER_HEIGHT = 56
+    CONVERSATION_SIDE_PADDING = 64
+    BUBBLE_RADIUS = 28
+    BUBBLE_PADDING_X = 30
     BUBBLE_PADDING_Y = 24
     CONTENT_WIDTH = 760
-    TURN_GAP = 28
-    SECTION_GAP = 32
+    TURN_GAP = 26
+    SECTION_GAP = 28
+    PANEL_HEADER_HEIGHT = 56
     AVATAR_SIZE = 68
     SYSTEM_CARD_PADDING = 28
+
+    PAGE_BG = "#FFF4F7"
+    HERO_BG = "#FFE8F0"
+    PANEL_BG = "#FFF9FB"
+    PANEL_SOFT_BG = "#FFF3F8"
+    ACCENT = "#7A2F4A"
+    STRONG = "#D84E7A"
+    DEEP = "#401828"
+    HINT = "#AA6B82"
+    LINE = "#F6D9E6"
+    BLUE = "#5B8CFF"
+    BADGE_BG = "#FFF0C7"
+    BADGE_FG = "#9A6723"
 
     def __init__(self) -> None:
         try:
             self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 18)
-            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 40)
-            self.feature_font = ImageFont.truetype(MAPLE_FONT_PATH, 30)
+            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 42)
+            self.feature_font = ImageFont.truetype(MAPLE_FONT_PATH, 28)
             self.body_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
             self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 18)
-            self.footer_label_font = ImageFont.truetype(MAPLE_FONT_PATH, 16)
-            self.footer_value_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)
+            self.footer_font = ImageFont.truetype(MAPLE_FONT_PATH, 16)
         except OSError:
             self.eyebrow_font = ImageFont.load_default()
             self.title_font = ImageFont.load_default()
             self.feature_font = ImageFont.load_default()
             self.body_font = ImageFont.load_default()
             self.meta_font = ImageFont.load_default()
-            self.footer_label_font = ImageFont.load_default()
-            self.footer_value_font = ImageFont.load_default()
+            self.footer_font = ImageFont.load_default()
 
     def render(
         self,
@@ -621,9 +633,10 @@ class DemoImageRenderer:
             0,
         )
         conversation_top = self.HEADER_HEIGHT + self.SECTION_GAP
-        footer_top = conversation_top + conversation_height + self.SECTION_GAP + 32
+        body_top = conversation_top + self.PANEL_HEADER_HEIGHT
+        footer_top = body_top + conversation_height + self.SECTION_GAP + 18
         height = footer_top + self.FOOTER_HEIGHT + self.OUTER_MARGIN
-        image = Image.new("RGB", (self.WIDTH, height), "#fffaf6")
+        image = Image.new("RGB", (self.WIDTH, height), self.PAGE_BG)
         self._paint_background(image)
         draw = ImageDraw.Draw(image)
         draw.rounded_rectangle(
@@ -634,8 +647,8 @@ class DemoImageRenderer:
                 height - self.OUTER_MARGIN,
             ),
             radius=self.SHELL_RADIUS,
-            fill="#fffdfb",
-            outline="#f3d8d1",
+            fill=self.PANEL_BG,
+            outline=self.LINE,
             width=3,
         )
         self._draw_header(
@@ -651,7 +664,7 @@ class DemoImageRenderer:
             bottom=footer_top - 18,
         )
 
-        y = conversation_top
+        y = body_top
         for spec in turn_specs:
             self._draw_turn(draw, spec, y)
             y += spec.height + self.TURN_GAP
@@ -671,8 +684,8 @@ class DemoImageRenderer:
     def _paint_background(self, image: Image.Image) -> None:
         draw = ImageDraw.Draw(image)
         width, height = image.size
-        top_color = (255, 247, 243)
-        bottom_color = (245, 250, 255)
+        top_color = (255, 244, 247)
+        bottom_color = (255, 249, 251)
         for y in range(height):
             ratio = y / max(height - 1, 1)
             color = tuple(
@@ -682,17 +695,17 @@ class DemoImageRenderer:
             draw.line((0, y, width, y), fill=color)
 
         decorations = [
-            ((84, 96, 252, 252), "#ffd9ce"),
-            ((1036, 84, 1206, 242), "#dff3ff"),
-            ((108, height - 280, 300, height - 120), "#ffe9d8"),
-            ((930, height - 240, 1160, height - 60), "#eef4ff"),
+            ((70, 88, 246, 244), "#FFE3ED"),
+            ((1014, 92, 1200, 248), "#FFF2CC"),
+            ((132, height - 238, 304, height - 94), "#FFEAF3"),
+            ((966, height - 214, 1168, height - 54), "#F4EFFF"),
         ]
         for bounds, fill in decorations:
             draw.ellipse(bounds, fill=fill)
 
-        self._draw_sparkle(draw, 188, 148, "#ffffff")
-        self._draw_sparkle(draw, 1128, 132, "#ffffff")
-        self._draw_sparkle(draw, 1030, height - 132, "#ffffff")
+        self._draw_sparkle(draw, 202, 138, "#FFFFFF")
+        self._draw_sparkle(draw, 1114, 146, "#FFFFFF")
+        self._draw_sparkle(draw, 1022, height - 116, "#FFFFFF")
 
     def _draw_header(
         self,
@@ -711,53 +724,55 @@ class DemoImageRenderer:
                 self.OUTER_MARGIN + self.HEADER_HEIGHT - 20,
             ),
             radius=34,
-            fill="#fff1ec",
-            outline="#ffd8c9",
+            fill=self.HERO_BG,
+            outline=self.LINE,
             width=2,
         )
-        draw.rounded_rectangle((96, 86, 164, 154), radius=22, fill="#ffbfa9")
-        draw.rounded_rectangle((1110, 74, 1178, 142), radius=22, fill="#b9e3ff")
-        self._draw_avatar_badge(draw, 130, 120, "凛", "#ff9a7d")
-        self._draw_avatar_badge(draw, 1144, 108, "Q", "#79bfff")
+        draw.rounded_rectangle((88, 82, 154, 148), radius=20, fill="#FFC3D5")
+        draw.rounded_rectangle((1116, 84, 1184, 150), radius=20, fill="#E9F0FF")
+        self._draw_avatar_badge(draw, 121, 114, "凛", self.STRONG)
+        self._draw_avatar_badge(draw, 1150, 116, "Q", self.BLUE)
         self._draw_chip(
             draw,
-            x=136,
+            x=132,
             y=56,
             text="PLUGIN DEMO",
-            fill="#ffffff",
-            text_fill="#a85b4d",
+            fill="#FFF8FB",
+            text_fill=self.ACCENT,
             font=self.eyebrow_font,
         )
         self._draw_chip(
             draw,
-            x=950,
+            x=952,
             y=56,
             text=f"{turn_count} STEP{'S' if turn_count != 1 else ''}",
-            fill="#ffffff",
-            text_fill="#4d7598",
+            fill=self.BADGE_BG,
+            text_fill=self.BADGE_FG,
             font=self.eyebrow_font,
         )
-        draw.text((136, 104), plugin_title, font=self.title_font, fill="#56352d")
-        draw.text((136, 158), feature_title, font=self.feature_font, fill="#7b4a3f")
+        draw.text((132, 100), plugin_title, font=self.title_font, fill=self.DEEP)
+        draw.text((132, 154), feature_title, font=self.feature_font, fill=self.ACCENT)
         if feature_trigger.strip():
             self._draw_chip(
                 draw,
-                x=136,
-                y=198,
-                text=f"指令示例: {feature_trigger}",
-                fill="#fffaf6",
-                text_fill="#805a52",
+                x=132,
+                y=186,
+                text=self._fit_text(
+                    draw,
+                    f"指令示例: {feature_trigger}",
+                    self.meta_font,
+                    max_width=560,
+                ),
+                fill="#FFF8FB",
+                text_fill=self.HINT,
                 font=self.meta_font,
-                min_width=320,
+                min_width=300,
             )
-        self._draw_chip(
-            draw,
-            x=920,
-            y=198,
-            text="Serious Copy, Cute Layout",
-            fill="#fffaf6",
-            text_fill="#5d7088",
+        draw.text(
+            (936, 190),
+            "Conversation Preview",
             font=self.meta_font,
+            fill=self.HINT,
         )
 
     def _draw_conversation_panel(
@@ -775,8 +790,8 @@ class DemoImageRenderer:
                 bottom,
             ),
             radius=34,
-            fill="#ffffff",
-            outline="#eee1db",
+            fill="#FFFFFF",
+            outline=self.LINE,
             width=2,
         )
         draw.rounded_rectangle(
@@ -787,13 +802,13 @@ class DemoImageRenderer:
                 top + 58,
             ),
             radius=16,
-            fill="#fff5ef",
+            fill=self.PANEL_SOFT_BG,
         )
         draw.text(
             (self.OUTER_MARGIN + 74, top + 30),
             "Demo Conversation",
             font=self.meta_font,
-            fill="#936a60",
+            fill=self.HINT,
         )
 
     def _measure_turn(self, turn: DocsDemoTurn) -> "_TurnSpec":
@@ -812,7 +827,7 @@ class DemoImageRenderer:
 
         lines = self._wrap_text(turn.text, max_width=self.CONTENT_WIDTH)
         text_height = self._line_block_height(lines, self.body_font)
-        bubble_height = text_height + self.BUBBLE_PADDING_Y * 2
+        bubble_height = text_height + self.BUBBLE_PADDING_Y * 2 + 18
         return _TurnSpec(
             turn=turn,
             lines=lines,
@@ -832,8 +847,8 @@ class DemoImageRenderer:
             draw.rounded_rectangle(
                 (left, top, right, top + spec.height),
                 radius=24,
-                fill="#fff3db",
-                outline="#f0dcc3",
+                fill="#FFF7E8",
+                outline="#F3E1B6",
                 width=2,
             )
             self._draw_chip(
@@ -841,8 +856,8 @@ class DemoImageRenderer:
                 x=left + 22,
                 y=top + 16,
                 text="SYSTEM",
-                fill="#ffffff",
-                text_fill="#8f6a45",
+                fill="#FFFDF6",
+                text_fill="#8F6A45",
                 font=self.eyebrow_font,
             )
             self._draw_multiline_text(
@@ -851,7 +866,7 @@ class DemoImageRenderer:
                 y=top + 56,
                 lines=spec.lines,
                 font=self.body_font,
-                fill="#5d5143",
+                fill="#5D5143",
             )
             return
 
@@ -874,11 +889,11 @@ class DemoImageRenderer:
             else avatar_x + self.AVATAR_SIZE + 20
         )
         bubble_y = top + max((self.AVATAR_SIZE - spec.height) // 2, 0)
-        fill = "#ffe2d9" if is_user else "#e4f3ff"
-        outline = "#f2bfb0" if is_user else "#bfdff0"
-        text_fill = "#3d2f31" if is_user else "#2d4b5f"
+        fill = "#FFF0F6" if is_user else "#F2F6FF"
+        outline = "#F4C5D7" if is_user else "#CFE0FF"
+        text_fill = self.DEEP if is_user else "#314D7C"
         label = "你" if is_user else "凛"
-        avatar_fill = "#ff9f87" if is_user else "#7dc1f5"
+        avatar_fill = self.STRONG if is_user else self.BLUE
 
         self._draw_avatar(
             draw,
@@ -899,8 +914,8 @@ class DemoImageRenderer:
             x=bubble_x + 18,
             y=bubble_y + 14,
             text="USER" if is_user else "BOT",
-            fill="#fffaf6",
-            text_fill="#815e58" if is_user else "#4c708c",
+            fill="#FFFDFE",
+            text_fill=self.ACCENT if is_user else "#4C708C",
             font=self.eyebrow_font,
         )
         self._draw_multiline_text(
@@ -928,10 +943,10 @@ class DemoImageRenderer:
                 x + self.AVATAR_SIZE + 6,
                 y + self.AVATAR_SIZE + 8,
             ),
-            fill="#f4d7cf",
+            fill="#F7DDE8",
         )
         draw.ellipse((x, y, x + self.AVATAR_SIZE, y + self.AVATAR_SIZE), fill=fill)
-        draw.ellipse((x + 12, y + 10, x + 28, y + 24), fill="#ffffff")
+        draw.ellipse((x + 12, y + 10, x + 28, y + 24), fill="#FFFFFF")
         bbox = draw.textbbox((0, 0), label, font=self.meta_font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
@@ -942,7 +957,7 @@ class DemoImageRenderer:
             ),
             label,
             font=self.meta_font,
-            fill="#ffffff",
+            fill="#FFFFFF",
         )
 
     def _draw_avatar_badge(
@@ -964,7 +979,7 @@ class DemoImageRenderer:
             ),
             label,
             font=self.meta_font,
-            fill="#ffffff",
+            fill="#FFFFFF",
         )
 
     def _draw_footer(
@@ -976,45 +991,33 @@ class DemoImageRenderer:
         plugin_version: str,
         plugin_author: str,
     ) -> None:
-        left = self.OUTER_MARGIN + 28
-        right = self.WIDTH - self.OUTER_MARGIN - 28
-        draw.rounded_rectangle(
-            (left, top, right, top + self.FOOTER_HEIGHT),
-            radius=30,
-            fill="#fff2ee",
-            outline="#f3d8d1",
+        draw.line(
+            (
+                self.OUTER_MARGIN + 32,
+                top + 4,
+                self.WIDTH - self.OUTER_MARGIN - 32,
+                top + 4,
+            ),
+            fill=self.LINE,
             width=2,
         )
-        self._draw_chip(
-            draw,
-            x=left + 28,
-            y=top + 20,
-            text="PLUGIN SIGNATURE",
-            fill="#ffffff",
-            text_fill="#9c6557",
-            font=self.eyebrow_font,
+        draw.text(
+            (self.OUTER_MARGIN + 36, top + 18),
+            self._fit_text(
+                draw,
+                f"{plugin_title} · v{plugin_version.lstrip('v')} · {plugin_author}",
+                self.footer_font,
+                max_width=self.WIDTH - self.OUTER_MARGIN * 2 - 260,
+            ),
+            font=self.footer_font,
+            fill=self.HINT,
         )
-        columns = [
-            ("Plugin", plugin_title),
-            ("Version", f"v{plugin_version.lstrip('v')}"),
-            ("Author", plugin_author),
-        ]
-        base_x = left + 34
-        gap = 364
-        for index, (label, value) in enumerate(columns):
-            x = base_x + index * gap
-            draw.text(
-                (x, top + 58),
-                label,
-                font=self.footer_label_font,
-                fill="#a17b71",
-            )
-            draw.text(
-                (x, top + 82),
-                value,
-                font=self.footer_value_font,
-                fill="#4f3a35",
-            )
+        draw.text(
+            (self.WIDTH - self.OUTER_MARGIN - 198, top + 18),
+            "Generated by help docs",
+            font=self.footer_font,
+            fill="#C18AA0",
+        )
 
     def _draw_chip(
         self,
@@ -1046,8 +1049,28 @@ class DemoImageRenderer:
         draw.line((x - 7, y - 7, x + 7, y + 7), fill=fill, width=2)
         draw.line((x - 7, y + 7, x + 7, y - 7), fill=fill, width=2)
 
+    def _fit_text(
+        self,
+        draw: ImageDraw.ImageDraw,
+        text: str,
+        font: Any,
+        *,
+        max_width: int,
+    ) -> str:
+        if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
+            return text
+
+        ellipsis = "..."
+        current = text
+        while current:
+            current = current[:-1]
+            candidate = current.rstrip() + ellipsis
+            if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width:
+                return candidate
+        return ellipsis
+
     def _wrap_text(self, text: str, *, max_width: int) -> list[str]:
-        draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#ffffff"))
+        draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#FFFFFF"))
         lines: list[str] = []
         current = ""
         for char in text:
@@ -1071,7 +1094,7 @@ class DemoImageRenderer:
         return count * self._font_line_height(font) - 10
 
     def _max_line_width(self, lines: Sequence[str], font: Any) -> int:
-        draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#ffffff"))
+        draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#FFFFFF"))
         return int(
             max(
                 (draw.textbbox((0, 0), line, font=font)[2] for line in lines),
@@ -1094,7 +1117,7 @@ class DemoImageRenderer:
             draw.text((x, y + index * line_height), line, font=font, fill=fill)
 
     def _font_line_height(self, font: Any) -> int:
-        draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#ffffff"))
+        draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#FFFFFF"))
         bbox = draw.textbbox((0, 0), "Ag", font=font)
         return int(bbox[3] - bbox[1] + 10)
 
