@@ -601,7 +601,8 @@ class DemoImageRenderer:
     HEADER_TITLE_TOP = 98
     HEADER_FEATURE_TOP = 164
     HEADER_TRIGGER_TOP = 206
-    HEADER_PREVIEW_TOP = 206
+    HEADER_PREVIEW_TOP = 210
+    HEADER_PREVIEW_RIGHT = 1096
 
     PAGE_BG = "#FFFDFB"
     SHELL_BG = "#FFFDFC"
@@ -612,13 +613,16 @@ class DemoImageRenderer:
     STRONG = "#EE8BA8"
     DEEP = "#401828"
     HINT = "#B07A8D"
-    BLUE = "#7FA8FF"
+    BLUE = "#8EAFFF"
     BLUE_TEXT = "#355581"
     USER_BUBBLE = "#FFEFF4"
     BOT_BUBBLE = "#EAF2FF"
     SYSTEM_BUBBLE = "#FFF4D8"
     BADGE_BG = "#FFF0B8"
     BADGE_FG = "#9A6E20"
+    MUTED_BLUE = "#DCE7FF"
+    MUTED_BLUE_TEXT = "#88A0D9"
+    PREVIEW_HINT = "#C5A3B0"
 
     def __init__(self) -> None:
         try:
@@ -729,10 +733,9 @@ class DemoImageRenderer:
             radius=34,
             fill=self.HERO_BG,
         )
-        draw.rounded_rectangle((88, 82, 154, 148), radius=24, fill="#FFD8E4")
-        draw.rounded_rectangle((1116, 84, 1184, 150), radius=24, fill="#DCE9FF")
-        self._draw_avatar_badge(draw, 121, 114, "凛", self.STRONG)
-        self._draw_avatar_badge(draw, 1150, 116, "Q", self.BLUE)
+        draw.rounded_rectangle((90, 84, 152, 146), radius=28, fill="#FFDDE8")
+        self._draw_avatar_badge(draw, 121, 115, "凛", self.STRONG, size=44)
+        self._draw_avatar_badge(draw, 1150, 115, "Q", self.MUTED_BLUE_TEXT, size=38)
         self._draw_chip(
             draw,
             x=self.HEADER_LEFT,
@@ -789,11 +792,14 @@ class DemoImageRenderer:
                 font=self.meta_font,
                 min_width=300,
             )
+        preview_text = "Conversation Preview"
+        preview_box = draw.textbbox((0, 0), preview_text, font=self.footer_font)
+        preview_width = int(preview_box[2] - preview_box[0])
         draw.text(
-            (936, self.HEADER_PREVIEW_TOP),
-            "Conversation Preview",
-            font=self.meta_font,
-            fill=self.HINT,
+            (self.HEADER_PREVIEW_RIGHT - preview_width, self.HEADER_PREVIEW_TOP),
+            preview_text,
+            font=self.footer_font,
+            fill=self.PREVIEW_HINT,
         )
 
     def _draw_conversation_panel(
@@ -971,8 +977,11 @@ class DemoImageRenderer:
         y: int,
         label: str,
         fill: str,
+        *,
+        size: int = 52,
     ) -> None:
-        draw.ellipse((x - 26, y - 26, x + 26, y + 26), fill=fill)
+        radius = size // 2
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=fill)
         bbox = draw.textbbox((0, 0), label, font=self.meta_font)
         draw.text(
             (
@@ -1112,13 +1121,20 @@ class DemoImageRenderer:
         )
         preview_rect = self._text_rect(
             draw,
-            936,
+            self.HEADER_PREVIEW_RIGHT
+            - int(
+                draw.textbbox(
+                    (0, 0),
+                    "Conversation Preview",
+                    font=self.footer_font,
+                )[2]
+            ),
             self.HEADER_PREVIEW_TOP,
             "Conversation Preview",
-            self.meta_font,
+            self.footer_font,
         )
         left_badge_rect = (95, 88, 147, 140)
-        right_badge_rect = (1124, 90, 1176, 142)
+        right_badge_rect = (1131, 96, 1169, 134)
         trigger_rect: tuple[int, int, int, int] | None = None
         if feature_trigger.strip():
             trigger_rect = self._chip_rect(
