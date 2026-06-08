@@ -57,7 +57,7 @@ def generate() -> int:
             if not feature.demo_turns or not feature.demo_filename:
                 continue
             output = demos_dir / feature.demo_filename
-            output.write_bytes(render_demo_png(bundle.title, feature))
+            output.write_bytes(render_demo_png(bundle, feature))
             total_images += 1
             _write_line(f"generated {output.relative_to(ROOT)}")
     _write_line(

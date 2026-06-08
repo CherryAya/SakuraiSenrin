@@ -34,7 +34,7 @@ def test_load_plugin_doc_bundle_parses_real_readme() -> None:
     assert "月榜" in ranking.aliases
     assert ranking.demo_filename == "water-ranking.png"
     assert ranking.demo_turns[0].speaker == "USER"
-    assert ranking.demo_turns[0].text == "水王 月榜"
+    assert ranking.demo_turns[0].text == "#水王 月榜"
 
 
 def test_match_feature_supports_exact_fuzzy_ambiguous_and_not_found(
