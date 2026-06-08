@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 import arrow
 
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.types import WaterAchievementPayload
@@ -128,6 +130,7 @@ class AchievementService:
         user_id: str,
         matrix_id: str,
         record_date: int,
+        locale: LocaleCode,
     ) -> str:
         unlocked_items = await water_repo.get_user_achievement_items(user_id)
         unlocked_permanent = {
@@ -145,12 +148,17 @@ class AchievementService:
         unlocked_count = len(unlocked_ids)
 
         lines = [
-            "===== 我的水王成就 =====",
-            f"已解锁: {unlocked_count}/{total}",
+            tr(locale, "water.achievement.title"),
+            tr(
+                locale,
+                "water.achievement.unlocked_progress",
+                unlocked_count=unlocked_count,
+                total=total,
+            ),
         ]
 
         if unlocked_items:
-            lines.append("【已解锁】")
+            lines.append(tr(locale, "water.achievement.unlocked.section"))
             for achievement_id, track_type, season_id, unlocked_at in unlocked_items:
                 rule = ACHIEVEMENT_RULES.get(achievement_id)
                 if rule is None:
@@ -161,24 +169,48 @@ class AchievementService:
                     .format("YYYY-MM-DD HH:mm")
                 )
                 if track_type == "seasonal":
-                    tag = f"赛季成就 {season_id}"
+                    tag = tr(
+                        locale,
+                        "water.achievement.tag.seasonal",
+                        season_id=season_id,
+                    )
                 else:
-                    tag = "永久成就"
-                lines.append(f"- {rule.name} ({rule.id}) [{tag}]")
-                lines.append(f"  {rule.desc}")
-                lines.append(f"  解锁时间: {unlocked_text}")
+                    tag = tr(locale, "water.achievement.tag.permanent")
+                lines.append(
+                    tr(
+                        locale,
+                        "water.achievement.unlocked.item",
+                        name=rule.name,
+                        achievement_id=rule.id,
+                        tag=tag,
+                    )
+                )
+                lines.append(
+                    tr(
+                        locale,
+                        "water.achievement.unlocked.desc",
+                        desc=rule.desc,
+                    )
+                )
+                lines.append(
+                    tr(
+                        locale,
+                        "water.achievement.unlocked.time",
+                        unlocked_text=unlocked_text,
+                    )
+                )
         else:
             lines.extend(
                 [
-                    "【已解锁】",
-                    "- 暂无",
+                    tr(locale, "water.achievement.unlocked.section"),
+                    tr(locale, "water.achievement.unlocked.none"),
                 ]
             )
 
         locked_ids = [aid for aid in ACHIEVEMENT_RULES if aid not in unlocked_ids]
-        lines.append("【下一目标】")
+        lines.append(tr(locale, "water.achievement.next.section"))
         if not locked_ids:
-            lines.append("你已达成全部成就，继续保持活跃，等新活动上线。")
+            lines.append(tr(locale, "water.achievement.next.all_done"))
             return "\n".join(lines)
 
         for achievement_id in locked_ids[:2]:
@@ -188,15 +220,39 @@ class AchievementService:
                 user_id=user_id,
                 matrix_id=matrix_id,
                 record_date=record_date,
+                locale=locale,
             )
-            lines.append(f"- {rule.name} ({rule.id})")
-            lines.append(f"  {rule.desc}")
-            lines.append(f"  当前进度: {progress}")
-            lines.append(f"  动机: {rule.motivation}")
+            lines.append(
+                tr(
+                    locale,
+                    "water.achievement.next.item",
+                    name=rule.name,
+                    achievement_id=rule.id,
+                )
+            )
+            lines.append(tr(locale, "water.achievement.unlocked.desc", desc=rule.desc))
+            lines.append(
+                tr(
+                    locale,
+                    "water.achievement.next.progress",
+                    progress=progress,
+                )
+            )
+            lines.append(
+                tr(
+                    locale,
+                    "water.achievement.next.motivation",
+                    motivation=rule.motivation,
+                )
+            )
 
         if len(locked_ids) > 2:
             lines.append(
-                f"另有 {len(locked_ids) - 2} 个成就待解锁，持续活跃可逐步点亮。"
+                tr(
+                    locale,
+                    "water.achievement.next.remaining",
+                    count=len(locked_ids) - 2,
+                )
             )
         return "\n".join(lines)
 
@@ -286,25 +342,37 @@ class AchievementService:
         user_id: str,
         matrix_id: str,
         record_date: int,
+        locale: LocaleCode,
     ) -> str:
         if achievement_id == "FIRST_BLOOD":
-            return "任意发言 1 次即可达成"
+            return tr(locale, "water.achievement.progress.first_blood")
         if achievement_id == "NIGHT_OWL":
             streak = await self._night_owl_streak(user_id, matrix_id, record_date)
-            return f"{streak}/3 天凌晨活跃 (2:00-5:00)"
+            return tr(locale, "water.achievement.progress.night_owl", streak=streak)
         if achievement_id == "STEADY_COMPANION":
             streak = await self._steady_streak(user_id, matrix_id, record_date)
-            return f"{streak}/30 天连续活跃"
+            return tr(
+                locale,
+                "water.achievement.progress.steady_companion",
+                streak=streak,
+            )
         if achievement_id == "MATRIX_PIONEER":
             level_info = await water_repo.get_user_global_level(user_id)
             lv = level_info[2] if level_info is not None else 0
             if lv >= 10:
                 has_predecessor = await water_repo.exists_other_global_lv10(user_id)
                 if has_predecessor:
-                    return "已达到 Lv10，但先驱称号已被他人抢先"
-                return "已满足门槛，等待下次结算自动解锁"
-            return f"全局等级 Lv{lv}/10"
-        return "进行中"
+                    return tr(
+                        locale,
+                        "water.achievement.progress.matrix_pioneer.blocked",
+                    )
+                return tr(locale, "water.achievement.progress.matrix_pioneer.ready")
+            return tr(
+                locale,
+                "water.achievement.progress.matrix_pioneer.level",
+                level=lv,
+            )
+        return tr(locale, "water.achievement.progress.pending")
 
     async def _night_owl_streak(
         self,

@@ -10,26 +10,27 @@ from nonebot.adapters.onebot.v11.message import Message
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.i18n.runtime import tr
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 
-name = "引导式退群"
-description = """
-用于引导管理员以规范流程让机器人退出群聊。
-""".strip()
-
-docs_content = """
-命令触发（待实现）
-""".strip()
+name = tr("zh-CN", "plugin.remove.name")
+description = tr("zh-CN", "plugin.remove.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.remove.name",
+        description_key="plugin.remove.description",
+        content_key="plugin.remove.docs",
         trigger=TriggerType.COMMAND,
         permission=Permission.GROUP_ADMIN,
+        locale=locale,
     )
 
 
@@ -41,6 +42,10 @@ __plugin_meta__ = create_plugin_metadata(
         "version": "0.1.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.GROUP_ADMIN,
+        "i18n": {
+            "name_key": "plugin.remove.name",
+            "description_key": "plugin.remove.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=False,

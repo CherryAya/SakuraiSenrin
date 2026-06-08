@@ -26,32 +26,30 @@ from src.config import config
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
 from src.lib.i18n.runtime import send_private_i18n, tr
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.utils.common import get_current_time
 from src.repositories import blacklist_repo, group_repo, member_repo
 from src.services.info import resolve_group_name
 from src.services.sync import sync_members_from_api
 
-name = "群组事件处理"
-description = """
-群组事件处理:
-  被禁言自动退群拉黑
-  更新群组状态
-  进群同步群组成员
-
-""".strip()
-
-docs_content = "被动触发"
+name = tr("zh-CN", "plugin.notice_group.name")
+description = tr("zh-CN", "plugin.notice_group.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.notice_group.name",
+        description_key="plugin.notice_group.description",
+        content_key="plugin.notice_group.docs",
         trigger=TriggerType.PASSIVE,
         permission=Permission.SUPERUSER,
+        locale=locale,
     )
 
 
@@ -64,6 +62,10 @@ __plugin_meta__ = create_plugin_metadata(
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
         "no_check": True,
+        "i18n": {
+            "name_key": "plugin.notice_group.name",
+            "description_key": "plugin.notice_group.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=False,

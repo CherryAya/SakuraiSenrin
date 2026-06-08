@@ -4,12 +4,17 @@ import arrow
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent
 from nonebot.matcher import Matcher
 
+from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.services.achievement import achievement_service
 
 
-async def handle_my_achievements(matcher: Matcher, event: GroupMessageEvent) -> None:
+async def handle_my_achievements(
+    matcher: Matcher,
+    event: GroupMessageEvent,
+    locale: LocaleCode,
+) -> None:
     user_id = str(event.user_id)
     group_id = str(event.group_id)
     matrix_id = await water_repo.get_or_create_group_matrix_id(group_id)
@@ -19,5 +24,6 @@ async def handle_my_achievements(matcher: Matcher, event: GroupMessageEvent) -> 
         user_id=user_id,
         matrix_id=matrix_id,
         record_date=record_date,
+        locale=locale,
     )
     await matcher.finish(message)

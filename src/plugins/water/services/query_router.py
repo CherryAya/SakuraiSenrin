@@ -166,6 +166,7 @@ class WaterQueryRouter:
                 user_id=user_id,
                 matrix_id=await self._matrix_id(group_id),
                 record_date=season_service.today_record_date(),
+                locale=locale,
             )
             return Message(text)
         if spec.view == "profile":
@@ -176,14 +177,14 @@ class WaterQueryRouter:
             if profile_data is None:
                 return Message(tr(locale, "water.query.profile_not_enough"))
             if spec.mode == "full":
-                card = await build_my_water_image(profile_data)
+                card = await build_my_water_image(profile_data, locale)
             else:
-                card = await build_my_water_simple_image(profile_data)
+                card = await build_my_water_simple_image(profile_data, locale)
                 if not card:
-                    card = await build_my_water_image(profile_data)
+                    card = await build_my_water_image(profile_data, locale)
             if card:
                 return Message(MessageSegment.image(card))
-            return Message(await build_my_water_fallback_text(profile_data))
+            return Message(await build_my_water_fallback_text(profile_data, locale))
         if spec.scope_value == "day":
             return await absolute_rank_service.build_group_day_rank(group_id, locale)
         if spec.scope_value == "month":
@@ -193,7 +194,7 @@ class WaterQueryRouter:
         if spec.scope_value == "year":
             return await absolute_rank_service.build_period_rank("year", locale)
         if spec.scope_value == "total":
-            return await absolute_rank_service.build_total_rank()
+            return await absolute_rank_service.build_total_rank(locale)
         return Message(tr(locale, "water.query.unsupported"))
 
     async def _execute_activity(
@@ -210,6 +211,7 @@ class WaterQueryRouter:
                 render_season_list(
                     tr(locale, "water.query.season_list.published"),
                     seasons,
+                    locale,
                 )
             )
         if spec.scope_value == "当前列表":
@@ -218,6 +220,7 @@ class WaterQueryRouter:
                 render_season_list(
                     tr(locale, "water.query.season_list.current"),
                     seasons,
+                    locale,
                 )
             )
 
@@ -245,6 +248,7 @@ class WaterQueryRouter:
                 render_season_list(
                     tr(locale, "water.query.season_list.current"),
                     resolved,
+                    locale,
                 )
             )
         for season in resolved:
@@ -255,6 +259,7 @@ class WaterQueryRouter:
                     view=self._season_view(spec.view),
                     user_id=user_id,
                     group_id=group_id,
+                    locale=locale,
                 )
             )
         return Message("\n\n".join(messages))

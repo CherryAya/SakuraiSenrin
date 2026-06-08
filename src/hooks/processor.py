@@ -18,7 +18,12 @@ from nonebot.message import run_preprocessor
 from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import GLOBAL_GROUP_FLAG, TriggerType
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.i18n.runtime import tr
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, is_set
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
@@ -29,24 +34,19 @@ from src.services.sync import (
     sync_user_runtime,
 )
 
-name = "检测服务"
-description = """
-黑白名单检测:
-  检测用户是否在黑名单中
-  检测群组是否在白名单中
-  定时任务校验合法群组，对于不合法的进行退群处理
-""".strip()
-
-docs_content = "被动触发"
+name = tr("zh-CN", "plugin.hook_processor.name")
+description = tr("zh-CN", "plugin.hook_processor.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.hook_processor.name",
+        description_key="plugin.hook_processor.description",
+        content_key="plugin.hook_processor.docs",
         trigger=TriggerType.PASSIVE,
         permission=Permission.SUPERUSER,
+        locale=locale,
     )
 
 
@@ -58,6 +58,10 @@ __plugin_meta__ = create_plugin_metadata(
         "version": "0.2.0",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
+        "i18n": {
+            "name_key": "plugin.hook_processor.name",
+            "description_key": "plugin.hook_processor.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=False,

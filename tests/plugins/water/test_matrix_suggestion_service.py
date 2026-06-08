@@ -57,6 +57,9 @@ async def test_maybe_suggest_sends_group_prompt(
         service, "_find_best_candidate", AsyncMock(return_value=candidate)
     )
     monkeypatch.setattr(
+        suggestion_module, "resolve_locale", AsyncMock(return_value="zh-CN")
+    )
+    monkeypatch.setattr(
         service, "_build_suggestion_message", AsyncMock(return_value="SUGGEST")
     )
 

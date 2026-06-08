@@ -28,35 +28,30 @@ from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
 from src.lib.utils.common import get_current_time, time_to_timedelta
 from src.repositories import blacklist_repo, group_repo, user_repo
 from src.services.info import resolve_user_name
 
-name = "用户管理模块"
-description = "用户管理模块: 采用标准 Shell 风格解析 (argparse)"
-
-docs_content = f"""
-===== {name} =====
-命令前缀: #admin.user / #用户管理
-
-本模块使用标准 CLI 语法，支持 -h 或 --help 查看详细帮助。
-示例:
-  #admin.user ban 12345 67890 -r 恶意刷屏 -t 1d
-  #admin.user unban 12345 -r 申诉通过
-  #admin.user status 12345
-""".strip()
+name = tr("zh-CN", "plugin.admin_user.name")
+description = tr("zh-CN", "plugin.admin_user.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.admin_user.name",
+        description_key="plugin.admin_user.description",
+        content_key="plugin.admin_user.docs",
         trigger=TriggerType.COMMAND,
         permission=Permission.SUPERUSER,
+        locale=locale,
     )
 
 
@@ -68,6 +63,10 @@ __plugin_meta__ = create_plugin_metadata(
         "version": "0.2.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
+        "i18n": {
+            "name_key": "plugin.admin_user.name",
+            "description_key": "plugin.admin_user.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=True,

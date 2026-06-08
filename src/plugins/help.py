@@ -10,7 +10,7 @@ from collections import defaultdict
 from collections.abc import Awaitable
 from dataclasses import dataclass
 import inspect
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import nonebot
 from nonebot.adapters.onebot.v11.event import MessageEvent
@@ -42,6 +42,7 @@ class DocsEntry:
     metadata: PluginMetadata
     docs: DocsMeta
     display_name: str
+    summary: str
 
 
 @dataclass(slots=True)
@@ -121,7 +122,23 @@ def _read_docs_meta(metadata: PluginMetadata) -> DocsMeta | None:
     }
 
 
-def _iter_docs_entries() -> list[DocsEntry]:
+def _resolve_metadata_text(
+    metadata: PluginMetadata,
+    locale: LocaleCode,
+    field: Literal["name", "description"],
+) -> str:
+    extra = metadata.extra
+    raw_i18n = extra.get("i18n")
+    if isinstance(raw_i18n, dict):
+        key_name = f"{field}_key"
+        maybe_key = raw_i18n.get(key_name)
+        if isinstance(maybe_key, str):
+            return tr(locale, cast(Any, maybe_key))
+    raw_value = getattr(metadata, field, "")
+    return _normalize_text(raw_value)
+
+
+def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
     entries: list[DocsEntry] = []
 
     for plugin in nonebot.get_loaded_plugins():
@@ -134,13 +151,15 @@ def _iter_docs_entries() -> list[DocsEntry]:
         if docs is None:
             continue
 
-        display_name = _normalize_text(metadata.name) or plugin.name
+        display_name = _resolve_metadata_text(metadata, locale, "name") or plugin.name
+        summary = _resolve_metadata_text(metadata, locale, "description")
         entries.append(
             DocsEntry(
                 plugin=plugin,
                 metadata=metadata,
                 docs=docs,
                 display_name=display_name,
+                summary=summary,
             )
         )
 
@@ -174,7 +193,7 @@ def _build_index_message(entries: list[DocsEntry], locale: LocaleCode) -> Messag
         lines.append("")
         lines.append(f"[{category}]")
         for entry in grouped[category]:
-            summary = _normalize_text(entry.metadata.description).splitlines()[0]
+            summary = entry.summary.splitlines()[0]
             if not summary:
                 summary = tr(locale, "help.index.no_summary")
             lines.append(f"- {entry.display_name}: {summary}")
@@ -234,7 +253,7 @@ def _build_fallback_docs(
     return Message(
         (
             f"===== {entry.display_name} =====\n"
-            f"{_normalize_text(entry.metadata.description) or tr(locale, 'docs.default.no_description')}\n\n"  # noqa: E501
+            f"{entry.summary or tr(locale, 'docs.default.no_description')}\n\n"
             f"{tr(locale, 'help.fallback.reason', reason=reason)}"
         ).strip()
     )
@@ -277,8 +296,8 @@ async def _(
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
-    entries = _iter_docs_entries()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    entries = _iter_docs_entries(locale)
     query = arg.extract_plain_text().strip()
     if not query:
         await matcher.finish(_build_index_message(entries, locale))

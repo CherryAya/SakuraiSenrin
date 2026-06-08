@@ -18,6 +18,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 from pil_utils import BuildImage
 
 from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
 from src.logger import logger
@@ -169,7 +171,12 @@ class WaterRankRenderer:
 
         return chart
 
-    def _render_user_row(self, rank: int, user: dict[str, Any]) -> BuildImage:
+    def _render_user_row(
+        self,
+        rank: int,
+        user: dict[str, Any],
+        locale: LocaleCode,
+    ) -> BuildImage:
         item_h = int(110 * self.SCALE)
         avatar_size = int(64 * self.SCALE)
         base_y = int(10 * self.SCALE)
@@ -295,7 +302,7 @@ class WaterRankRenderer:
         except ValueError:
             row.draw_text(
                 box_coords,
-                "🏳️名字过于混沌🏳️",
+                tr(locale, "water.image.name_chaos"),
                 max_fontsize=int(20 * self.SCALE),
                 min_fontsize=int(12 * self.SCALE),
                 fill=self.TEXT_COLOR,
@@ -305,7 +312,7 @@ class WaterRankRenderer:
 
         row.draw.text(
             (text_x, base_y + int(65 * self.SCALE)),
-            f"今日发言: {user['count']} 条",
+            tr(locale, "water.image.day_rank.row_count", count=user["count"]),
             fill=self.HIGHLIGHT_COLOR,
             font=self.num_small_font,
             anchor="la",
@@ -322,6 +329,7 @@ class WaterRankRenderer:
         today_king: str,
         group_rank: int,
         users_data: dict[str, dict[str, Any]],
+        locale: LocaleCode,
     ) -> bytes:
         item_h, item_spacing = int(110 * self.SCALE), int(20 * self.SCALE)
         header_height = int(300 * self.SCALE)
@@ -343,7 +351,7 @@ class WaterRankRenderer:
                 self.RENDER_WIDTH - self.PADDING,
                 y + int(50 * self.SCALE),
             ),
-            "呃啊不知道写什么总之来看看大水怪们吧……",
+            tr(locale, "water.image.day_rank.header"),
             max_fontsize=int(40 * self.SCALE),
             fill=self.HEADER_TEXT,
             halign="center",
@@ -379,7 +387,11 @@ class WaterRankRenderer:
                 self.RENDER_WIDTH - self.PADDING - int(16 * self.SCALE),
                 group_card_top + group_card_h - int(6 * self.SCALE),
             ),
-            f"当前群: {safe_group_name}",
+            tr(
+                locale,
+                "water.image.day_rank.current_group",
+                group_name=safe_group_name,
+            ),
             max_fontsize=int(22 * self.SCALE),
             min_fontsize=int(16 * self.SCALE),
             fill=self.HEADER_TEXT,
@@ -388,9 +400,11 @@ class WaterRankRenderer:
         )
         y += group_card_h + int(10 * self.SCALE)
 
-        info_text = (
-            f"今日水王: {users_data[today_king]['username']}\n"
-            f"本群排名: 第{group_rank}名"
+        info_text = tr(
+            locale,
+            "water.image.day_rank.summary",
+            username=users_data[today_king]["username"],
+            rank=group_rank,
         )
         info_card_h = int(54 * self.SCALE)
         info_card_top = y
@@ -420,7 +434,7 @@ class WaterRankRenderer:
         y += info_card_h + int(14 * self.SCALE)
 
         tasks = [
-            asyncio.to_thread(self._render_user_row, rank, user)
+            asyncio.to_thread(self._render_user_row, rank, user, locale)
             for rank, user in enumerate(users_data.values(), 1)
         ]
         row_images = await asyncio.gather(*tasks)
@@ -442,7 +456,11 @@ class WaterRankRenderer:
         time_footer_y = footer_y + int(30 * self.SCALE)
         main_img.draw.text(
             (self.PADDING, time_footer_y),
-            f"生成时间: {now.strftime('%Y-%m-%d %H:%M:%S')}",
+            tr(
+                locale,
+                "water.image.generated_at",
+                time=now.strftime("%Y-%m-%d %H:%M:%S"),
+            ),
             fill=self.TEXT_COLOR,
             font=self.num_small_font,
             anchor="la",
@@ -451,7 +469,7 @@ class WaterRankRenderer:
         msg_y = time_footer_y + int(50 * self.SCALE)
         main_img.draw_text(
             (0, msg_y, self.RENDER_WIDTH, msg_y + int(30 * self.SCALE)),
-            "------------哦嚯嚯！下一个水王会是你吗？٩(๑>◡<๑)۶凛凛很期待喔！------------",
+            tr(locale, "water.image.day_rank.footer"),
             max_fontsize=int(18 * self.SCALE),
             fill=self.HIGHLIGHT_COLOR,
             halign="center",
@@ -465,7 +483,10 @@ class WaterRankRenderer:
         return (await asyncio.to_thread(final_img.save, "PNG")).getvalue()
 
 
-async def build_water_rank_image(group_id: str) -> bytes | None:
+async def build_water_rank_image(
+    group_id: str,
+    locale: LocaleCode,
+) -> bytes | None:
     group_name = await resolve_group_name(None, group_id)
     top_users = await water_repo.get_today_leaderboard(group_id, limit=10)
     if not top_users:
@@ -498,7 +519,7 @@ async def build_water_rank_image(group_id: str) -> bytes | None:
         username = (
             await resolve_group_card(None, uid, group_id)
             if member
-            else f"群员_{uid[-4:]}"
+            else tr(locale, "water.image.day_rank.member_fallback", tail=uid[-4:])
         )
         users_data[uid] = {
             "user_id": uid,
@@ -517,12 +538,15 @@ async def build_water_rank_image(group_id: str) -> bytes | None:
         today_king=king.user_id,
         group_rank=group_rank,
         users_data=users_data,
+        locale=locale,
     )
     return img_bytes
 
 
-def _format_rank(rank: int | None) -> str:
-    return f"第 {rank} 名" if rank is not None else "-"
+def _format_rank(rank: int | None, locale: LocaleCode = "zh-CN") -> str:
+    if rank is None:
+        return "-"
+    return tr(locale, "water.image.rank_format", rank=rank)
 
 
 def _short_exp(exp: int | str) -> str:
@@ -564,6 +588,7 @@ def _seasonal_total_count(current_unlocked: int = 0) -> int:
 
 def _split_achievement_views(
     achievement_items: list[tuple[str, str, str, int]],
+    locale: LocaleCode,
 ) -> tuple[list[str], list[tuple[str, str]]]:
     latest_season = ""
     seasonal_items = [
@@ -587,9 +612,18 @@ def _split_achievement_views(
         if track_type == "seasonal" and season_id == latest_season:
             current.append(name)
         if track_type == "seasonal":
-            title = f"{season_id}赛季·{name}"
+            title = tr(
+                locale,
+                "water.profile.fallback.achievement_history.seasonal",
+                season_id=season_id,
+                name=name,
+            )
         else:
-            title = f"永久成就 {name}"
+            title = tr(
+                locale,
+                "water.profile.fallback.achievement_history.permanent",
+                name=name,
+            )
         date_text = arrow.get(unlocked_at).to("Asia/Shanghai").format("YYYY-MM-DD")
         history_raw.append((int(unlocked_at), title, date_text))
 
@@ -598,51 +632,118 @@ def _split_achievement_views(
     return current, history
 
 
-def _build_my_water_text_fallback(data: WaterProfileCardData) -> str:
+def _build_my_water_text_fallback(
+    data: WaterProfileCardData,
+    locale: LocaleCode,
+) -> str:
     current_achievements, history_achievements = _split_achievement_views(
-        data.achievement_items
+        data.achievement_items,
+        locale,
     )
     seasonal_total = max(1, _seasonal_total_count(len(current_achievements)))
 
-    lines = ["===== 你有多水？请看数据！ ====="]
+    lines = [tr(locale, "water.profile.fallback.title")]
     if data.matrix_level is not None:
         lines.extend(
             [
-                f"矩阵等级: Lv{data.matrix_level[2]}",
-                f"矩阵总经验: {data.matrix_level[0]}",
-                f"矩阵赛季经验: {data.matrix_level[1]}",
+                tr(
+                    locale,
+                    "water.profile.fallback.matrix_level",
+                    level=data.matrix_level[2],
+                ),
+                tr(
+                    locale,
+                    "water.profile.fallback.matrix_total_exp",
+                    exp=data.matrix_level[0],
+                ),
+                tr(
+                    locale,
+                    "water.profile.fallback.matrix_season_exp",
+                    exp=data.matrix_level[1],
+                ),
             ]
         )
     if data.global_level is not None:
         lines.extend(
             [
-                f"全局等级: Lv{data.global_level[2]}",
-                f"全局总经验: {data.global_level[0]}",
-                f"全局赛季经验: {data.global_level[1]}",
+                tr(
+                    locale,
+                    "water.profile.fallback.global_level",
+                    level=data.global_level[2],
+                ),
+                tr(
+                    locale,
+                    "water.profile.fallback.global_total_exp",
+                    exp=data.global_level[0],
+                ),
+                tr(
+                    locale,
+                    "water.profile.fallback.global_season_exp",
+                    exp=data.global_level[1],
+                ),
             ]
         )
     lines.extend(
         [
             "-----",
-            (f"最近活动赛季成就: {len(current_achievements)}/{seasonal_total}"),
-            "最近赛季已达成: "
-            + ("、".join(current_achievements[:3]) if current_achievements else "暂无"),
+            tr(
+                locale,
+                "water.profile.fallback.season_achievement",
+                count=len(current_achievements),
+                total=seasonal_total,
+            ),
+            tr(
+                locale,
+                "water.profile.fallback.season_achievement_names",
+                items=(
+                    "、".join(current_achievements[:3])
+                    if current_achievements
+                    else tr(locale, "water.profile.fallback.none")
+                ),
+            ),
             "-----",
-            f"我的全局排名: {_format_rank(data.global_rank)}",
-            f"我在本群活跃排名: {_format_rank(data.group_user_rank)}",
-            f"我在当前矩阵排名: {_format_rank(data.matrix_user_rank)}",
+            tr(
+                locale,
+                "water.profile.fallback.global_rank",
+                rank=_format_rank(data.global_rank),
+            ),
+            tr(
+                locale,
+                "water.profile.fallback.group_user_rank",
+                rank=_format_rank(data.group_user_rank),
+            ),
+            tr(
+                locale,
+                "water.profile.fallback.matrix_user_rank",
+                rank=_format_rank(data.matrix_user_rank),
+            ),
             "-----",
-            f"当前矩阵总榜排名: {_format_rank(data.matrix_rank)}",
-            f"当前群活跃排名: {_format_rank(data.group_rank)}",
+            tr(
+                locale,
+                "water.profile.fallback.matrix_rank",
+                rank=_format_rank(data.matrix_rank),
+            ),
+            tr(
+                locale,
+                "water.profile.fallback.group_rank",
+                rank=_format_rank(data.group_rank),
+            ),
             "-----",
-            "成就记录:",
+            tr(locale, "water.profile.fallback.achievement_history"),
         ]
     )
     if not history_achievements:
-        lines.append("- 暂无")
+        lines.append(tr(locale, "water.achievement.unlocked.none"))
     else:
         for title, date_text in history_achievements[:6]:
-            lines.append(f"- {title}  |  {date_text}")
+            lines.append(
+                tr(
+                    locale,
+                    "water.profile.fallback.achievement_history_item",
+                    title=title,
+                    date_text=date_text,
+                )
+            )
     return "\n".join(lines)
 
 
@@ -856,7 +957,10 @@ def _build_avatar_fallback(size: int, label: str, bg: str, fg: str) -> BuildImag
     return avatar
 
 
-async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes | None:
+async def build_water_period_rank_image(
+    data: WaterPeriodRankCardData,
+    locale: LocaleCode,
+) -> bytes | None:
     try:
         scale = 2.0
         width = int(760 * scale)
@@ -992,10 +1096,20 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
         except OSError:
             stat_value_font = ImageFont.load_default()
         stats = [
-            ("总消息数", _short_exp(data.total_msg_count), strong, "#FFF0F6"),
-            ("上榜人数", str(data.active_user_count), blue, "#F0F6FF"),
             (
-                "较上期",
+                tr(locale, "water.image.period.stats.total_msg_count"),
+                _short_exp(data.total_msg_count),
+                strong,
+                "#FFF0F6",
+            ),
+            (
+                tr(locale, "water.image.period.stats.active_user_count"),
+                str(data.active_user_count),
+                blue,
+                "#F0F6FF",
+            ),
+            (
+                tr(locale, "water.image.period.stats.delta"),
                 _format_delta(data.total_msg_count - data.previous_total_msg_count),
                 mint
                 if data.total_msg_count >= data.previous_total_msg_count
@@ -1073,7 +1187,7 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
                 width - pad - int(18 * scale),
                 y + int(42 * scale),
             ),
-            "本期冠军",
+            tr(locale, "water.image.period.champion.title"),
             max_fontsize=int(14 * scale),
             min_fontsize=int(10 * scale),
             fill=gold,
@@ -1101,7 +1215,12 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
                 width - pad - int(18 * scale),
                 y + int(92 * scale),
             ),
-            f"总消息 {champion.msg_count} 条 · 活跃 {champion.active_days} 天",
+            tr(
+                locale,
+                "water.image.period.champion.summary",
+                msg_count=champion.msg_count,
+                active_days=champion.active_days,
+            ),
             max_fontsize=int(12 * scale),
             min_fontsize=int(9 * scale),
             fill=accent,
@@ -1112,12 +1231,16 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
         info_chip_h = int(28 * scale)
         chip_specs = [
             (
-                f"领先第2名 {data.champion_gap}",
+                tr(locale, "water.image.period.champion.gap", gap=data.champion_gap),
                 "#FFF0D8",
                 "#B67828",
             ),
             (
-                f"贡献占比 {data.champion_share * 100:.1f}%",
+                tr(
+                    locale,
+                    "water.image.period.champion.share",
+                    share=f"{data.champion_share * 100:.1f}",
+                ),
                 "#F0F6FF",
                 blue,
             ),
@@ -1173,7 +1296,7 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
                 width - pad,
                 y + board_header_h,
             ),
-            "TOP 10 总榜",
+            tr(locale, "water.image.period.board.title"),
             max_fontsize=int(18 * scale),
             min_fontsize=int(12 * scale),
             fill=deep,
@@ -1262,7 +1385,13 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
                     width - pad - int(300 * scale),
                     row_y + int(58 * scale),
                 ),
-                f"{item.msg_count} 条 · {item.active_days} 天 · 日均 {avg_daily:.1f}",
+                tr(
+                    locale,
+                    "water.image.period.board.summary",
+                    msg_count=item.msg_count,
+                    active_days=item.active_days,
+                    avg_daily=f"{avg_daily:.1f}",
+                ),
                 max_fontsize=int(11 * scale),
                 min_fontsize=int(8 * scale),
                 fill=accent,
@@ -1276,7 +1405,11 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
                     width - pad - int(300 * scale),
                     row_y + int(74 * scale),
                 ),
-                f"活跃时段覆盖 {item.active_hours} 小时",
+                tr(
+                    locale,
+                    "water.image.period.board.active_hours",
+                    active_hours=item.active_hours,
+                ),
                 max_fontsize=int(10 * scale),
                 min_fontsize=int(8 * scale),
                 fill=hint,
@@ -1323,7 +1456,7 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
                     width - pad - int(20 * scale),
                     row_y + int(68 * scale),
                 ),
-                "较上期排名",
+                tr(locale, "water.image.period.board.trend_label"),
                 max_fontsize=int(9 * scale),
                 min_fontsize=int(7 * scale),
                 fill=hint,
@@ -1355,7 +1488,7 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
                 width - pad,
                 y + int(30 * scale),
             ),
-            "全榜活跃画像",
+            tr(locale, "water.image.period.overview.title"),
             max_fontsize=int(18 * scale),
             min_fontsize=int(12 * scale),
             fill=deep,
@@ -1369,7 +1502,12 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
                 width - pad,
                 y + int(52 * scale),
             ),
-            f"峰值时段 {data.peak_hour:02d}:00 - {data.peak_hour:02d}:59",
+            tr(
+                locale,
+                "water.image.period.overview.peak_hour",
+                start=f"{data.peak_hour:02d}",
+                end=f"{data.peak_hour:02d}",
+            ),
             max_fontsize=int(11 * scale),
             min_fontsize=int(8 * scale),
             fill=accent,
@@ -1391,10 +1529,7 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
 
         y += overview_h + gap
         generated_at = arrow.get(data.generated_at).to("Asia/Shanghai")
-        footer_left = (
-            "统计口径: 基于已结算日汇总表生成，按消息总数排序，"
-            "同分按活跃天数与活跃小时稳定排序。"
-        )
+        footer_left = tr(locale, "water.image.period.footer")
         card.draw_text(
             (
                 pad,
@@ -1416,7 +1551,11 @@ async def build_water_period_rank_image(data: WaterPeriodRankCardData) -> bytes 
                 width - pad,
                 y + footer_h,
             ),
-            f"生成时间: {generated_at.format('YYYY-MM-DD HH:mm:ss')}",
+            tr(
+                locale,
+                "water.image.generated_at",
+                time=generated_at.format("YYYY-MM-DD HH:mm:ss"),
+            ),
             max_fontsize=int(10 * scale),
             min_fontsize=int(8 * scale),
             fill=accent,
@@ -1442,7 +1581,10 @@ def _level_progress(exp: int, level: int, base: int) -> tuple[float, int]:
     return max(0.0, min(1.0, ratio)), max(0, next_exp - exp)
 
 
-async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | None:
+async def build_my_water_simple_image(
+    data: WaterProfileCardData,
+    locale: LocaleCode,
+) -> bytes | None:
     try:
         scale = 2.0
         width = int(680 * scale)
@@ -1494,7 +1636,8 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
         footer_h = int(26 * scale)
 
         current_achievements, history_achievements = _split_achievement_views(
-            data.achievement_items
+            data.achievement_items,
+            locale,
         )
         seasonal_total = max(1, _seasonal_total_count(len(current_achievements)))
         seasonal_progress = len(current_achievements) / seasonal_total
@@ -1559,7 +1702,7 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
         title_right = width - pad
         card.draw_text(
             (title_x, y + int(8 * scale), title_right, y + int(30 * scale)),
-            "你有多水？",
+            tr(locale, "water.profile.image.simple.title"),
             max_fontsize=int(22 * scale),
             min_fontsize=int(14 * scale),
             fill=title_main,
@@ -1577,7 +1720,7 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
         )
         card.draw_text(
             (title_x, y + int(52 * scale), title_right, y + int(72 * scale)),
-            f"矩阵: {data.matrix_id}",
+            tr(locale, "water.profile.image.matrix", matrix_id=data.matrix_id),
             max_fontsize=int(11 * scale),
             min_fontsize=int(9 * scale),
             fill=title_hint,
@@ -1640,7 +1783,7 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
                 width - pad,
                 y + exp_title_h + int(6 * scale),
             ),
-            "经验概览",
+            tr(locale, "water.profile.image.exp_overview"),
             max_fontsize=int(16 * scale),
             min_fontsize=int(12 * scale),
             fill=deep,
@@ -1671,8 +1814,20 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
 
         for idx, (label, value, ratio, bg, fg) in enumerate(
             [
-                ("全局经验", global_text, global_ratio, global_panel, global_color),
-                ("矩阵经验", matrix_text, matrix_ratio, matrix_panel, matrix_color),
+                (
+                    tr(locale, "water.profile.image.exp.global"),
+                    global_text,
+                    global_ratio,
+                    global_panel,
+                    global_color,
+                ),
+                (
+                    tr(locale, "water.profile.image.exp.matrix"),
+                    matrix_text,
+                    matrix_ratio,
+                    matrix_panel,
+                    matrix_color,
+                ),
             ]
         ):
             by = block_y + idx * (exp_block_h + exp_block_gap)
@@ -1757,7 +1912,7 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
                 width - pad,
                 y + ach_title_h + int(6 * scale),
             ),
-            "成就一览",
+            tr(locale, "water.profile.image.achievement_overview"),
             max_fontsize=int(16 * scale),
             min_fontsize=int(12 * scale),
             fill=deep,
@@ -1772,7 +1927,12 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
                 width - pad - int(18 * scale),
                 meta_top + ach_meta_h,
             ),
-            f"最近活动赛季成就: {len(current_achievements)}/{seasonal_total}",
+            tr(
+                locale,
+                "water.profile.fallback.season_achievement",
+                count=len(current_achievements),
+                total=seasonal_total,
+            ),
             max_fontsize=int(12 * scale),
             min_fontsize=int(9 * scale),
             fill=accent,
@@ -1800,7 +1960,7 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
                     width - pad - int(18 * scale),
                     chip_top + ach_chip_h,
                 ),
-                "暂无成就，继续加油~",
+                tr(locale, "water.profile.image.achievement_empty"),
                 max_fontsize=int(11 * scale),
                 min_fontsize=int(9 * scale),
                 fill=title_hint,
@@ -1855,7 +2015,7 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
                 width - pad,
                 y + rank_title_h + int(6 * scale),
             ),
-            "排名速览",
+            tr(locale, "water.profile.image.rank_overview"),
             max_fontsize=int(16 * scale),
             min_fontsize=int(12 * scale),
             fill=deep,
@@ -1863,9 +2023,18 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
             font_families=[SYS_FONT_NAME],
         )
         rank_items = [
-            ("我的全局排名", _format_rank(data.global_rank)),
-            ("我在本群排名", _format_rank(data.group_user_rank)),
-            ("我在本矩阵排名", _format_rank(data.matrix_user_rank)),
+            (
+                tr(locale, "water.profile.image.rank.global"),
+                _format_rank(data.global_rank, locale),
+            ),
+            (
+                tr(locale, "water.profile.image.rank.group"),
+                _format_rank(data.group_user_rank, locale),
+            ),
+            (
+                tr(locale, "water.profile.image.rank.matrix"),
+                _format_rank(data.matrix_user_rank, locale),
+            ),
         ]
         chip_x = pad + int(18 * scale)
         chip_w = width - pad * 2 - int(36 * scale)
@@ -1928,7 +2097,7 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
                 width - pad,
                 y + int(24 * scale),
             ),
-            "成就记录",
+            tr(locale, "water.profile.image.history_title"),
             max_fontsize=int(16 * scale),
             min_fontsize=int(12 * scale),
             fill=deep,
@@ -1943,7 +2112,7 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
                     width - pad - int(18 * scale),
                     y + int(50 * scale),
                 ),
-                "暂无成就记录",
+                tr(locale, "water.profile.image.history_empty"),
                 max_fontsize=int(11 * scale),
                 min_fontsize=int(9 * scale),
                 fill=title_hint,
@@ -2006,7 +2175,11 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
         )
         card.draw.text(
             (pad, height - int(12 * scale)),
-            f"生成时间: {now.strftime('%Y-%m-%d %H:%M:%S')}",
+            tr(
+                locale,
+                "water.image.generated_at",
+                time=now.strftime("%Y-%m-%d %H:%M:%S"),
+            ),
             fill=accent,
             font=ImageFont.truetype(FALLBACK_FONT_PATH, int(12 * scale)),
             anchor="ls",
@@ -2018,7 +2191,10 @@ async def build_my_water_simple_image(data: WaterProfileCardData) -> bytes | Non
         return None
 
 
-async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
+async def build_my_water_image(
+    data: WaterProfileCardData,
+    locale: LocaleCode,
+) -> bytes | None:
     try:
         scale = 2.2
         width = int(680 * scale)
@@ -2042,7 +2218,8 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
         group_value = "#2F83C9"
 
         current_achievements, history_achievements = _split_achievement_views(
-            data.achievement_items
+            data.achievement_items,
+            locale,
         )
         seasonal_total = max(1, _seasonal_total_count(len(current_achievements)))
         seasonal_progress = len(current_achievements) / seasonal_total
@@ -2126,7 +2303,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
         title_x = pad + int(112 * scale)
         card.draw_text(
             (title_x, y + int(10 * scale), width - pad, y + int(42 * scale)),
-            "你有多水？请看数据！",
+            tr(locale, "water.profile.image.full.title"),
             max_fontsize=int(26 * scale),
             min_fontsize=int(14 * scale),
             fill=title_main,
@@ -2144,7 +2321,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
         )
         card.draw_text(
             (title_x, y + int(68 * scale), width - pad, y + int(96 * scale)),
-            f"当前矩阵: {data.matrix_id}",
+            tr(locale, "water.profile.image.current_matrix", matrix_id=data.matrix_id),
             max_fontsize=int(12 * scale),
             min_fontsize=int(10 * scale),
             fill=title_hint,
@@ -2159,7 +2336,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 width - pad - int(12 * scale),
                 group_block_top + int(16 * scale),
             ),
-            "矩阵群聊",
+            tr(locale, "water.profile.image.matrix_groups"),
             max_fontsize=int(11 * scale),
             min_fontsize=int(9 * scale),
             fill=title_hint,
@@ -2245,7 +2422,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 width - pad,
                 y + int(30 * scale),
             ),
-            "等级与赛季概览",
+            tr(locale, "water.profile.image.level_overview"),
             max_fontsize=int(17 * scale),
             min_fontsize=int(12 * scale),
             fill=deep,
@@ -2285,9 +2462,12 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 left_metric_x + metric_w - int(8 * scale),
                 metric_top + metric_h - int(5 * scale),
             ),
-            (
-                f"矩阵 Lv{matrix_lv} · 总{_short_exp(matrix_exp)}"
-                f" · 季{_short_exp(matrix_season)}"
+            tr(
+                locale,
+                "water.profile.image.metric.matrix_summary",
+                level=matrix_lv,
+                total=_short_exp(matrix_exp),
+                season=_short_exp(matrix_season),
             ),
             max_fontsize=int(11 * scale),
             min_fontsize=int(8 * scale),
@@ -2302,9 +2482,12 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 right_metric_x + metric_w - int(8 * scale),
                 metric_top + metric_h - int(5 * scale),
             ),
-            (
-                f"全局 Lv{global_lv} · 总{_short_exp(global_exp)}"
-                f" · 季{_short_exp(global_season)}"
+            tr(
+                locale,
+                "water.profile.image.metric.global_summary",
+                level=global_lv,
+                total=_short_exp(global_exp),
+                season=_short_exp(global_season),
             ),
             max_fontsize=int(11 * scale),
             min_fontsize=int(8 * scale),
@@ -2319,7 +2502,12 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 width - pad - int(20 * scale),
                 y + int(92 * scale),
             ),
-            (f"最近活动赛季成就: {len(current_achievements)}/{seasonal_total}"),
+            tr(
+                locale,
+                "water.profile.fallback.season_achievement",
+                count=len(current_achievements),
+                total=seasonal_total,
+            ),
             max_fontsize=int(13 * scale),
             min_fontsize=int(10 * scale),
             fill=season,
@@ -2343,7 +2531,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 width - pad - int(20 * scale),
                 y + int(132 * scale),
             ),
-            "最近赛季达成",
+            tr(locale, "water.profile.image.recent_achievements"),
             max_fontsize=int(12 * scale),
             min_fontsize=int(9 * scale),
             fill=accent,
@@ -2359,7 +2547,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                     width - pad - int(20 * scale),
                     y + int(160 * scale),
                 ),
-                "暂无，继续加油冲成就~",
+                tr(locale, "water.profile.image.recent_achievements.empty"),
                 max_fontsize=int(12 * scale),
                 min_fontsize=int(9 * scale),
                 fill=accent,
@@ -2423,14 +2611,30 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
         gmt_ratio, gmt_gap = _level_progress(matrix_total_exp, matrix_total_lv, 2000)
 
         seasonal_progress_items = [
-            ("全局赛季", sg_gap, sg_ratio),
-            ("矩阵赛季", sm_gap, sm_ratio),
-            ("矩阵总赛季", smt_gap, smt_ratio),
+            (
+                tr(locale, "water.profile.image.progress.global_season"),
+                sg_gap,
+                sg_ratio,
+            ),
+            (
+                tr(locale, "water.profile.image.progress.matrix_season"),
+                sm_gap,
+                sm_ratio,
+            ),
+            (
+                tr(locale, "water.profile.image.progress.matrix_total_season"),
+                smt_gap,
+                smt_ratio,
+            ),
         ]
         global_progress_items = [
-            ("全局累计", gg_gap, gg_ratio),
-            ("矩阵累计", gm_gap, gm_ratio),
-            ("矩阵总累计", gmt_gap, gmt_ratio),
+            (tr(locale, "water.profile.image.progress.global_total"), gg_gap, gg_ratio),
+            (tr(locale, "water.profile.image.progress.matrix_total"), gm_gap, gm_ratio),
+            (
+                tr(locale, "water.profile.image.progress.matrix_total_all"),
+                gmt_gap,
+                gmt_ratio,
+            ),
         ]
         exp_panel_top = chip_block_end + int(16 * scale)
         col_gap = int(14 * scale)
@@ -2478,7 +2682,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 left_x + col_w - int(10 * scale),
                 exp_panel_top + exp_header_h,
             ),
-            "全局累计进度",
+            tr(locale, "water.profile.image.progress.global_section"),
             max_fontsize=int(12 * scale),
             min_fontsize=int(10 * scale),
             fill="#1E40AF",
@@ -2492,7 +2696,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 right_x + col_w - int(10 * scale),
                 exp_panel_top + exp_header_h,
             ),
-            "活动赛季进度",
+            tr(locale, "water.profile.image.progress.season_section"),
             max_fontsize=int(12 * scale),
             min_fontsize=int(10 * scale),
             fill="#B45309",
@@ -2539,7 +2743,11 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                     left_x + col_w - int(10 * scale),
                     row_top + exp_title_h + exp_meta_h,
                 ),
-                f"距下一级还差 {_short_exp(gap_value)} 经验",
+                tr(
+                    locale,
+                    "water.profile.image.progress.gap",
+                    exp=_short_exp(gap_value),
+                ),
                 max_fontsize=int(10 * scale),
                 min_fontsize=int(9 * scale),
                 fill=meta_color,
@@ -2594,7 +2802,11 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                     right_x + col_w - int(10 * scale),
                     row_top + exp_title_h + exp_meta_h,
                 ),
-                f"距下一级还差 {_short_exp(gap_value)} 经验",
+                tr(
+                    locale,
+                    "water.profile.image.progress.gap",
+                    exp=_short_exp(gap_value),
+                ),
                 max_fontsize=int(10 * scale),
                 min_fontsize=int(9 * scale),
                 fill=meta_color,
@@ -2644,7 +2856,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 width - pad,
                 y + int(34 * scale),
             ),
-            "排名面板",
+            tr(locale, "water.profile.image.rank_panel"),
             max_fontsize=int(17 * scale),
             min_fontsize=int(12 * scale),
             fill=deep,
@@ -2652,32 +2864,79 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
             font_families=[SYS_FONT_NAME],
         )
         global_meta = (
-            f"Lv{data.global_level[2]} · {_short_exp(data.global_level[0])}经验"
+            tr(
+                locale,
+                "water.profile.image.rank.meta.level",
+                level=data.global_level[2],
+                exp=_short_exp(data.global_level[0]),
+            )
             if data.global_level is not None
-            else "Lv- · -"
+            else tr(
+                locale,
+                "water.profile.image.rank.meta.level",
+                level="-",
+                exp="-",
+            )
         )
         matrix_user_meta = (
-            f"Lv{data.matrix_level[2]} · {_short_exp(data.matrix_level[0])}经验"
+            tr(
+                locale,
+                "water.profile.image.rank.meta.level",
+                level=data.matrix_level[2],
+                exp=_short_exp(data.matrix_level[0]),
+            )
             if data.matrix_level is not None
-            else "Lv- · -"
+            else tr(
+                locale,
+                "water.profile.image.rank.meta.level",
+                level="-",
+                exp="-",
+            )
         )
         matrix_total_meta = (
-            (
-                f"Lv{data.matrix_total_level[2]} · "
-                f"{_short_exp(data.matrix_total_level[0])}经验"
+            tr(
+                locale,
+                "water.profile.image.rank.meta.level",
+                level=data.matrix_total_level[2],
+                exp=_short_exp(data.matrix_total_level[0]),
             )
             if data.matrix_total_level is not None
-            else "Lv- · -"
+            else tr(
+                locale,
+                "water.profile.image.rank.meta.level",
+                level="-",
+                exp="-",
+            )
         )
-        group_total_meta = "按消息次数统计"
+        group_total_meta = tr(locale, "water.profile.image.rank.meta.msg_count")
         my_rank_items = [
-            ("我的全局排名", _format_rank(data.global_rank), global_meta),
-            ("我在本群排名", _format_rank(data.group_user_rank), "按消息次数统计"),
-            ("我在本矩阵排名", _format_rank(data.matrix_user_rank), matrix_user_meta),
+            (
+                tr(locale, "water.profile.image.rank.global"),
+                _format_rank(data.global_rank, locale),
+                global_meta,
+            ),
+            (
+                tr(locale, "water.profile.image.rank.group"),
+                _format_rank(data.group_user_rank, locale),
+                tr(locale, "water.profile.image.rank.meta.msg_count"),
+            ),
+            (
+                tr(locale, "water.profile.image.rank.matrix"),
+                _format_rank(data.matrix_user_rank, locale),
+                matrix_user_meta,
+            ),
         ]
         group_rank_items = [
-            ("矩阵总榜排名", _format_rank(data.matrix_rank), matrix_total_meta),
-            ("群聊活跃排名", _format_rank(data.group_rank), group_total_meta),
+            (
+                tr(locale, "water.profile.image.rank.matrix_total"),
+                _format_rank(data.matrix_rank, locale),
+                matrix_total_meta,
+            ),
+            (
+                tr(locale, "water.profile.image.rank.group_active"),
+                _format_rank(data.group_rank, locale),
+                group_total_meta,
+            ),
         ]
         section_y = y + int(34 * scale)
         side_gap = int(16 * scale)
@@ -2827,7 +3086,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                 width - pad,
                 y + int(32 * scale),
             ),
-            "成就记录",
+            tr(locale, "water.profile.image.history_title"),
             max_fontsize=int(17 * scale),
             min_fontsize=int(12 * scale),
             fill=deep,
@@ -2842,7 +3101,7 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
                     width - pad - int(18 * scale),
                     y + int(62 * scale),
                 ),
-                "暂无成就记录",
+                tr(locale, "water.profile.image.history_empty"),
                 max_fontsize=int(12 * scale),
                 min_fontsize=int(10 * scale),
                 fill=accent,
@@ -2905,7 +3164,11 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
         )
         card.draw.text(
             (pad, height - int(18 * scale)),
-            f"生成时间: {now.strftime('%Y-%m-%d %H:%M:%S')}",
+            tr(
+                locale,
+                "water.image.generated_at",
+                time=now.strftime("%Y-%m-%d %H:%M:%S"),
+            ),
             fill=accent,
             font=ImageFont.truetype(FALLBACK_FONT_PATH, int(13 * scale)),
             anchor="ls",
@@ -2917,5 +3180,8 @@ async def build_my_water_image(data: WaterProfileCardData) -> bytes | None:
         return None
 
 
-async def build_my_water_fallback_text(data: WaterProfileCardData) -> str:
-    return _build_my_water_text_fallback(data)
+async def build_my_water_fallback_text(
+    data: WaterProfileCardData,
+    locale: LocaleCode,
+) -> str:
+    return _build_my_water_text_fallback(data, locale)

@@ -7,8 +7,10 @@ Description: sentry 异常记录插件
 """
 
 import asyncio
+from typing import cast
 
 from nonebot import get_bot
+from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message
 import sentry_sdk
 from sentry_sdk.types import Event, Hint
@@ -16,25 +18,28 @@ from sentry_sdk.types import Event, Hint
 from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.i18n.runtime import send_private_i18n, tr
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 
-name = "Sentry"
-description = """
-发送错误日志到 Sentry
-""".strip()
-
-docs_content = "被动触发"
+name = tr("zh-CN", "plugin.sentry.name")
+description = tr("zh-CN", "plugin.sentry.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.sentry.name",
+        description_key="plugin.sentry.description",
+        content_key="plugin.sentry.docs",
         trigger=TriggerType.PASSIVE,
         permission=Permission.SUPERUSER,
+        locale=locale,
     )
 
 
@@ -46,6 +51,10 @@ __plugin_meta__ = create_plugin_metadata(
         "version": "0.1.0",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
+        "i18n": {
+            "name_key": "plugin.sentry.name",
+            "description_key": "plugin.sentry.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=False,
@@ -60,11 +69,13 @@ background_tasks: set[asyncio.Task] = set()
 
 async def notify_admin(error_message: str) -> None:
     try:
-        bot = get_bot()
+        bot = cast(Bot, get_bot())
         for user_id in config.SUPERUSERS:
-            await bot.send_private_msg(
-                user_id=int(user_id),
-                message=f"[Sentry Alert] 捕获到未处理异常:\n{error_message}",
+            await send_private_i18n(
+                bot,
+                int(user_id),
+                "sentry.alert",
+                error_message=error_message,
             )
     except Exception as e:
         logger.error(f"Sentry 报警发送失败: {e}")

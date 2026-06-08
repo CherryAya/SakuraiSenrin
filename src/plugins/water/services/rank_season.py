@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo import WaterActivitySeasonRecord
 from src.plugins.water.renderers.season_overview import render_season_overview
@@ -32,6 +34,7 @@ class SeasonRankService:
         view: SeasonView,
         user_id: str,
         group_id: str,
+        locale: LocaleCode,
     ) -> str:
         if view == "rank":
             return await self._build_rank_message(
@@ -39,6 +42,7 @@ class SeasonRankService:
                 subject=subject,
                 user_id=user_id,
                 group_id=group_id,
+                locale=locale,
             )
         if view == "score":
             return await self._build_score_message(
@@ -46,17 +50,20 @@ class SeasonRankService:
                 subject=subject,
                 user_id=user_id,
                 group_id=group_id,
+                locale=locale,
             )
         if view == "achievement":
             return await self._build_achievement_message(
                 season=season,
                 user_id=user_id,
+                locale=locale,
             )
         return await self._build_overview_message(
             season=season,
             subject=subject,
             user_id=user_id,
             group_id=group_id,
+            locale=locale,
         )
 
     async def _build_overview_message(
@@ -66,23 +73,26 @@ class SeasonRankService:
         subject: SeasonSubject,
         user_id: str,
         group_id: str,
+        locale: LocaleCode,
     ) -> str:
         score = await self._build_score_lines(
             season=season,
             subject=subject,
             user_id=user_id,
             group_id=group_id,
+            locale=locale,
         )
         rank = await self._build_rank_lines(
             season=season,
             subject=subject,
             user_id=user_id,
             group_id=group_id,
+            locale=locale,
         )
         achievement = await self._build_achievement_lines(
-            season=season, user_id=user_id
+            season=season, user_id=user_id, locale=locale
         )
-        return render_season_overview(season, score + rank + achievement)
+        return render_season_overview(season, score + rank + achievement, locale)
 
     async def _build_score_message(
         self,
@@ -91,6 +101,7 @@ class SeasonRankService:
         subject: SeasonSubject,
         user_id: str,
         group_id: str,
+        locale: LocaleCode,
     ) -> str:
         return render_season_overview(
             season,
@@ -99,7 +110,9 @@ class SeasonRankService:
                 subject=subject,
                 user_id=user_id,
                 group_id=group_id,
+                locale=locale,
             ),
+            locale,
         )
 
     async def _build_rank_message(
@@ -109,6 +122,7 @@ class SeasonRankService:
         subject: SeasonSubject,
         user_id: str,
         group_id: str,
+        locale: LocaleCode,
     ) -> str:
         return render_season_overview(
             season,
@@ -117,7 +131,9 @@ class SeasonRankService:
                 subject=subject,
                 user_id=user_id,
                 group_id=group_id,
+                locale=locale,
             ),
+            locale,
         )
 
     async def _build_achievement_message(
@@ -125,10 +141,16 @@ class SeasonRankService:
         *,
         season: WaterActivitySeasonRecord,
         user_id: str,
+        locale: LocaleCode,
     ) -> str:
         return render_season_overview(
             season,
-            await self._build_achievement_lines(season=season, user_id=user_id),
+            await self._build_achievement_lines(
+                season=season,
+                user_id=user_id,
+                locale=locale,
+            ),
+            locale,
         )
 
     async def _build_score_lines(
@@ -138,6 +160,7 @@ class SeasonRankService:
         subject: SeasonSubject,
         user_id: str,
         group_id: str,
+        locale: LocaleCode,
     ) -> list[str]:
         if subject == "group":
             rankings = await water_repo.get_group_season_rankings(
@@ -147,12 +170,34 @@ class SeasonRankService:
             own = next((item for item in rankings if item.group_id == group_id), None)
             group_name = await resolve_group_name(None, group_id)
             if own is None:
-                return [f"群聊积分: {group_name or group_id} 暂无赛季数据"]
+                return [
+                    tr(
+                        locale,
+                        "water.query.season.score.group.empty",
+                        name=group_name or group_id,
+                    )
+                ]
             return [
-                f"群聊积分: {group_name or group_id}",
-                f"累计发言: {own.msg_count}",
-                f"活跃天数: {own.active_days}",
-                f"活跃小时: {own.active_hours}",
+                tr(
+                    locale,
+                    "water.query.season.score.group.title",
+                    name=group_name or group_id,
+                ),
+                tr(
+                    locale,
+                    "water.query.season.score.msg_count",
+                    msg_count=own.msg_count,
+                ),
+                tr(
+                    locale,
+                    "water.query.season.score.active_days",
+                    active_days=own.active_days,
+                ),
+                tr(
+                    locale,
+                    "water.query.season.score.active_hours",
+                    active_hours=own.active_hours,
+                ),
             ]
         if subject == "matrix":
             matrix_id = await water_repo.get_or_create_group_matrix_id(group_id)
@@ -162,12 +207,30 @@ class SeasonRankService:
             )
             own = next((item for item in rankings if item.matrix_id == matrix_id), None)
             if own is None:
-                return [f"矩阵积分: {matrix_id} 暂无赛季数据"]
+                return [
+                    tr(
+                        locale,
+                        "water.query.season.score.matrix.empty",
+                        name=matrix_id,
+                    )
+                ]
             return [
-                f"矩阵积分: {matrix_id}",
-                f"累计发言: {own.msg_count}",
-                f"活跃天数: {own.active_days}",
-                f"活跃小时: {own.active_hours}",
+                tr(locale, "water.query.season.score.matrix.title", name=matrix_id),
+                tr(
+                    locale,
+                    "water.query.season.score.msg_count",
+                    msg_count=own.msg_count,
+                ),
+                tr(
+                    locale,
+                    "water.query.season.score.active_days",
+                    active_days=own.active_days,
+                ),
+                tr(
+                    locale,
+                    "water.query.season.score.active_hours",
+                    active_hours=own.active_hours,
+                ),
             ]
         rankings = await water_repo.get_user_season_rankings(
             season.start_date,
@@ -176,12 +239,26 @@ class SeasonRankService:
         own = next((item for item in rankings if item.user_id == user_id), None)
         name = await user_repo.get_name_by_uid(user_id)
         if own is None:
-            return [f"个人积分: {name or user_id} 暂无赛季数据"]
+            return [
+                tr(
+                    locale,
+                    "water.query.season.score.personal.empty",
+                    name=name or user_id,
+                )
+            ]
         return [
-            f"个人积分: {name or user_id}",
-            f"累计发言: {own.msg_count}",
-            f"活跃天数: {own.active_days}",
-            f"活跃小时: {own.active_hours}",
+            tr(locale, "water.query.season.score.personal.title", name=name or user_id),
+            tr(locale, "water.query.season.score.msg_count", msg_count=own.msg_count),
+            tr(
+                locale,
+                "water.query.season.score.active_days",
+                active_days=own.active_days,
+            ),
+            tr(
+                locale,
+                "water.query.season.score.active_hours",
+                active_hours=own.active_hours,
+            ),
         ]
 
     async def _build_rank_lines(
@@ -191,6 +268,7 @@ class SeasonRankService:
         subject: SeasonSubject,
         user_id: str,
         group_id: str,
+        locale: LocaleCode,
     ) -> list[str]:
         if subject == "group":
             rankings = await water_repo.get_group_season_rankings(
@@ -203,14 +281,25 @@ class SeasonRankService:
                 item.group_id: await resolve_group_name(None, item.group_id)
                 for item in top
             }
-            lines = ["群聊排名:"]
+            lines = [tr(locale, "water.query.season.rank.group.title")]
             for item in top:
                 lines.append(
-                    f"- #{item.rank} "
-                    f"{names.get(item.group_id) or item.group_id}: {item.msg_count}"
+                    tr(
+                        locale,
+                        "water.query.season.rank.item",
+                        rank=item.rank,
+                        name=names.get(item.group_id) or item.group_id,
+                        msg_count=item.msg_count,
+                    )
                 )
             if own is not None:
-                lines.append(f"当前群名次: #{own.rank}")
+                lines.append(
+                    tr(
+                        locale,
+                        "water.query.season.rank.group.current",
+                        rank=own.rank,
+                    )
+                )
             return lines
         if subject == "matrix":
             rankings = await water_repo.get_matrix_season_rankings(
@@ -220,11 +309,25 @@ class SeasonRankService:
             top = rankings[:10]
             matrix_id = await water_repo.get_or_create_group_matrix_id(group_id)
             own = next((item for item in rankings if item.matrix_id == matrix_id), None)
-            lines = ["矩阵排名:"]
+            lines = [tr(locale, "water.query.season.rank.matrix.title")]
             for item in top:
-                lines.append(f"- #{item.rank} {item.matrix_id}: {item.msg_count}")
+                lines.append(
+                    tr(
+                        locale,
+                        "water.query.season.rank.item",
+                        rank=item.rank,
+                        name=item.matrix_id,
+                        msg_count=item.msg_count,
+                    )
+                )
             if own is not None:
-                lines.append(f"当前矩阵名次: #{own.rank}")
+                lines.append(
+                    tr(
+                        locale,
+                        "water.query.season.rank.matrix.current",
+                        rank=own.rank,
+                    )
+                )
             return lines
         rankings = await water_repo.get_user_season_rankings(
             season.start_date,
@@ -235,14 +338,25 @@ class SeasonRankService:
             item.user_id: await user_repo.get_name_by_uid(item.user_id) for item in top
         }
         own = next((item for item in rankings if item.user_id == user_id), None)
-        lines = ["个人排名:"]
+        lines = [tr(locale, "water.query.season.rank.personal.title")]
         for item in top:
             lines.append(
-                f"- #{item.rank} "
-                f"{names.get(item.user_id) or item.user_id}: {item.msg_count}"
+                tr(
+                    locale,
+                    "water.query.season.rank.item",
+                    rank=item.rank,
+                    name=names.get(item.user_id) or item.user_id,
+                    msg_count=item.msg_count,
+                )
             )
         if own is not None:
-            lines.append(f"你的名次: #{own.rank}")
+            lines.append(
+                tr(
+                    locale,
+                    "water.query.season.rank.personal.current",
+                    rank=own.rank,
+                )
+            )
         return lines
 
     async def _build_achievement_lines(
@@ -250,6 +364,7 @@ class SeasonRankService:
         *,
         season: WaterActivitySeasonRecord,
         user_id: str,
+        locale: LocaleCode,
     ) -> list[str]:
         unlocked_items = await water_repo.get_user_achievement_items(user_id)
         unlocked = [
@@ -258,8 +373,18 @@ class SeasonRankService:
             if track_type == "seasonal" and season_id == season.season_id
         ]
         if not unlocked:
-            return ["赛季成就: 暂无已解锁项目"]
-        return ["赛季成就:", *[f"- {achievement_id}" for achievement_id in unlocked]]
+            return [tr(locale, "water.query.season.achievement.empty")]
+        return [
+            tr(locale, "water.query.season.achievement.title"),
+            *[
+                tr(
+                    locale,
+                    "water.query.season.achievement.item",
+                    achievement_id=achievement_id,
+                )
+                for achievement_id in unlocked
+            ],
+        ]
 
 
 season_rank_service = SeasonRankService()

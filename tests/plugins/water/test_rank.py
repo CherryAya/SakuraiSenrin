@@ -125,7 +125,7 @@ async def test_build_period_rank_data_uses_settled_anchor(
     )
     monkeypatch.setattr(service, "_resolve_avatar", AsyncMock(return_value=None))
 
-    data = await service.build_period_rank_data("week")
+    data = await service.build_period_rank_data("week", "zh-CN")
 
     assert data is not None
     assert data.title == "水王周榜"
@@ -178,7 +178,7 @@ async def test_build_water_period_rank_image_smoke() -> None:
         champion_share=120 / 420,
     )
 
-    img = await build_water_period_rank_image(data)
+    img = await build_water_period_rank_image(data, "zh-CN")
 
     assert img is not None
     assert img.startswith(b"\x89PNG")

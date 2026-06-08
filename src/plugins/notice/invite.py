@@ -22,30 +22,29 @@ from nonebot.rule import is_type, to_me
 from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.i18n.runtime import send_private_i18n, tr
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.i18n.runtime import resolve_locale, send_private_i18n, tr
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
-from src.lib.utils.common import AlertTemplate
 from src.repositories import group_repo, invite_repo
 from src.services.info import resolve_group_name
 
-name = "群组邀请处理"
-description = """
-群组邀请处理:
-  邀请事件上报
-
-""".strip()
-
-docs_content = "被动触发"
+name = tr("zh-CN", "plugin.notice_invite.name")
+description = tr("zh-CN", "plugin.notice_invite.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.notice_invite.name",
+        description_key="plugin.notice_invite.description",
+        content_key="plugin.notice_invite.docs",
         trigger=TriggerType.PASSIVE,
         permission=Permission.SUPERUSER,
+        locale=locale,
     )
 
 
@@ -58,6 +57,10 @@ __plugin_meta__ = create_plugin_metadata(
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
         "no_check": True,
+        "i18n": {
+            "name_key": "plugin.notice_invite.name",
+            "description_key": "plugin.notice_invite.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=False,
@@ -159,8 +162,9 @@ async def _(
         main_group_id=config.MAIN_GROUP_ID,
     )
 
+    locale = await resolve_locale(group_id)
     report_message = tr(
-        "zh-CN",
+        locale,
         "notice.invite.report",
         group_id=group_id,
         group_name=group_name,
@@ -171,9 +175,7 @@ async def _(
         message_id = (
             await bot.send_private_msg(
                 user_id=int(super_user_id),
-                message=AlertTemplate.build_tip_notification(
-                    matcher.plugin_name, report_message
-                ),
+                message=report_message,
             )
         )["message_id"]
         if not message_id:

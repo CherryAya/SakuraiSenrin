@@ -23,61 +23,28 @@ from src.lib.cache.field import GroupCacheItem
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import group_repo
 from src.services.info import resolve_group_name
 
-name = "群组管理模块"
-description = "群组管理模块: 处理群组黑白名单 (支持批量操作)"
-
-docs_content = f"""
-===== {name} =====
-
-命令前缀: #admin.group / #群组管理
-
-1.加入黑名单
-  ban / 禁止 / 拉黑 / 封禁
-  示例: #admin.group ban <群号1> [群号2] ...
-
-2.解除黑名单
-  unban / 解除 / 加白 / 解封
-  示例: #admin.group unban <群号1> [群号2] ...
-
-3.授权群组
-  auth / 授权
-  示例: #admin.group auth <群号1> [群号2] ...
-
-4.取消授权
-  unauth / 取消授权
-  示例: #admin.group unauth <群号1> [群号2] ...
-
-5.查询状态
-  status / 状态
-  示例: #admin.group status <群号1> [群号2] ...
-
-6.退群
-  leave / 退群
-  示例: #admin.group leave <群号1> [群号2] ...
-
-7.帮助信息
-  help / 帮助
-  示例: #admin.group help
-
-[注意事项]:
-1. 需要【Senrin】管理员权限。
-2. 支持同时输入多个群组 ID，用空格隔开。
-3. 若不填群号，默认对当前所在群组执行。
-""".strip()
+name = tr("zh-CN", "plugin.admin_group.name")
+description = tr("zh-CN", "plugin.admin_group.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.admin_group.name",
+        description_key="plugin.admin_group.description",
+        content_key="plugin.admin_group.docs",
         trigger=TriggerType.COMMAND,
         permission=Permission.SUPERUSER,
+        locale=locale,
     )
 
 
@@ -89,6 +56,10 @@ __plugin_meta__ = create_plugin_metadata(
         "version": "0.2.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
+        "i18n": {
+            "name_key": "plugin.admin_group.name",
+            "description_key": "plugin.admin_group.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=True,
@@ -171,13 +142,15 @@ async def _(
     arg: Message = CommandArg(),
 ) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    docs_message = build_docs(DocsRenderContext(locale=locale))
+    docs_text = str(docs_message)
     args = arg.extract_plain_text().strip().split()
     if not args:
-        await matcher.finish(docs_content)
+        await matcher.finish(docs_message)
 
     command = args[0].lower()
     if command in ["help", "帮助"]:
-        await matcher.finish(docs_content)
+        await matcher.finish(docs_message)
 
     handler: Callable[[AdminGroupContext], Awaitable[str]]
     match command:
@@ -195,7 +168,7 @@ async def _(
             handler = leave_group
         case _:
             await matcher.finish(
-                tr(locale, "admin.group.unknown_command", docs=docs_content)
+                tr(locale, "admin.group.unknown_command", docs=docs_text)
             )
 
     group_ids = args[1:]

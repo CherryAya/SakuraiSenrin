@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from time import monotonic
+from typing import Any
 
 from nonebot import get_driver, on_message, on_notice, require
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -11,10 +13,9 @@ from nonebot.adapters.onebot.v11.event import (
     GroupMessageEvent,
     MessageEvent,
 )
-from nonebot.adapters.onebot.v11.helpers import Cooldown, CooldownIsolateLevel
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
-from nonebot.params import CommandArg
+from nonebot.params import CommandArg, Depends
 from nonebot.permission import SUPERUSER
 from nonebot.plugin import on_command
 from nonebot.rule import is_type
@@ -91,6 +92,26 @@ __plugin_meta__ = create_plugin_metadata(
 )
 
 _water_plugin_initialized = False
+_water_query_cooldowns: dict[str, float] = {}
+
+
+def water_query_cooldown(cooldown: float = 30) -> Any:
+    async def dependency(matcher: Matcher, event: MessageEvent) -> None:
+        try:
+            user_id = event.get_user_id()
+        except Exception:
+            return
+
+        now = monotonic()
+        expires_at = _water_query_cooldowns.get(user_id, 0.0)
+        if expires_at > now:
+            locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+            await matcher.finish(
+                tr(locale, "water.common.cooldown", seconds=int(cooldown))
+            )
+        _water_query_cooldowns[user_id] = now + cooldown
+
+    return Depends(dependency)
 
 
 async def initialize_water_plugin() -> None:
@@ -178,11 +199,7 @@ async def _(bot: Bot, event: GroupIncreaseNoticeEvent) -> None:
 
 @water_query.handle(
     parameterless=[
-        Cooldown(
-            cooldown=30,
-            isolate_level=CooldownIsolateLevel.USER,
-            prompt="冷却时间 30s，请耐心等待 qwq",
-        )
+        water_query_cooldown(30),
     ]
 )
 async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) -> None:
@@ -222,7 +239,7 @@ async def _(matcher: Matcher, event: MessageEvent) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
         await matcher.finish(tr(locale, "water.common.group_only"))
-    await handle_my_achievements(matcher, event)
+    await handle_my_achievements(matcher, event, locale)
 
 
 @water_merge.handle()

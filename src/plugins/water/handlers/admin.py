@@ -289,6 +289,7 @@ async def handle_season(ctx: WaterAdminContext) -> None:
                 render_season_list(
                     tr(ctx.locale, "water.query.season_list.admin.current"),
                     seasons,
+                    ctx.locale,
                 )
             )
         statuses: list[SeasonStatus] | None = None
@@ -303,6 +304,7 @@ async def handle_season(ctx: WaterAdminContext) -> None:
             render_season_list(
                 tr(ctx.locale, "water.query.season_list.admin.all"),
                 seasons,
+                ctx.locale,
             )
         )
     if action == "delete":

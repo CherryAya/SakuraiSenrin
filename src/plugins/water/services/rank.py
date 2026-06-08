@@ -9,6 +9,9 @@ from typing import ClassVar, Literal
 import arrow
 from pil_utils import BuildImage
 
+from src.lib.i18n.keys import MessageKey
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.img import (
@@ -24,6 +27,7 @@ PeriodType = Literal["week", "month", "season", "year"]
 @dataclass(frozen=True)
 class PeriodWindow:
     period: PeriodType
+    locale: LocaleCode
     title: str
     badge: str
     current_start: arrow.Arrow
@@ -57,36 +61,40 @@ class PeriodWindow:
 
     @property
     def compare_text(self) -> str:
-        return (
-            f"对比区间 {self.previous_start.format('YYYY.MM.DD')}"
-            f" - {self.previous_end.format('YYYY.MM.DD')}"
+        return tr(
+            self.locale,
+            "water.rank.compare_text",
+            start=self.previous_start.format("YYYY.MM.DD"),
+            end=self.previous_end.format("YYYY.MM.DD"),
         )
 
 
 class WaterRankService:
-    PERIOD_TITLES: ClassVar[dict[PeriodType, str]] = {
-        "week": "水王周榜",
-        "month": "水王月榜",
-        "season": "水王季榜",
-        "year": "水王年榜",
+    PERIOD_TITLE_KEYS: ClassVar[dict[PeriodType, MessageKey]] = {
+        "week": "water.rank.title.week",
+        "month": "water.rank.title.month",
+        "season": "water.rank.title.season",
+        "year": "water.rank.title.year",
     }
 
     async def build_period_rank_image(
         self,
         period: PeriodType,
+        locale: LocaleCode,
         limit: int = 10,
     ) -> bytes | None:
-        data = await self.build_period_rank_data(period, limit=limit)
+        data = await self.build_period_rank_data(period, locale=locale, limit=limit)
         if data is None:
             return None
-        return await build_water_period_rank_image(data)
+        return await build_water_period_rank_image(data, locale)
 
     async def build_period_rank_data(
         self,
         period: PeriodType,
+        locale: LocaleCode,
         limit: int = 10,
     ) -> WaterPeriodRankCardData | None:
-        window = await self._resolve_period_window(period)
+        window = await self._resolve_period_window(period, locale)
         top_users, overview = await asyncio.gather(
             water_repo.get_global_period_leaderboard(
                 window.start_date,
@@ -107,7 +115,7 @@ class WaterRankService:
 
         names, avatars = await asyncio.gather(
             asyncio.gather(
-                *(self._resolve_user_name(item.user_id) for item in top_users)
+                *(self._resolve_user_name(item.user_id, locale) for item in top_users)
             ),
             asyncio.gather(
                 *(self._resolve_avatar(item.user_id) for item in top_users),
@@ -159,22 +167,40 @@ class WaterRankService:
             ),
         )
 
-    async def build_total_rank_lines(self, limit: int = 10) -> list[str]:
+    async def build_total_rank_lines(
+        self,
+        locale: LocaleCode,
+        limit: int = 10,
+    ) -> list[str]:
         rows = await water_repo.get_user_season_rankings(0, 99991231)
         if not rows:
-            return ["===== 水王总榜 =====", "暂无全历史数据。"]
+            return [
+                tr(locale, "water.rank.total.title"),
+                tr(locale, "water.rank.total.empty"),
+            ]
         top = rows[:limit]
         names = await asyncio.gather(
-            *(self._resolve_user_name(item.user_id) for item in top)
+            *(self._resolve_user_name(item.user_id, locale) for item in top)
         )
-        lines = ["===== 水王总榜 ====="]
+        lines = [tr(locale, "water.rank.total.title")]
         for item, name in zip(top, names, strict=False):
             lines.append(
-                f"- #{item.rank} {name}: {item.msg_count} 条 / {item.active_days} 天"
+                tr(
+                    locale,
+                    "water.rank.total.item",
+                    rank=item.rank,
+                    name=name,
+                    msg_count=item.msg_count,
+                    active_days=item.active_days,
+                )
             )
         return lines
 
-    async def _resolve_period_window(self, period: PeriodType) -> PeriodWindow:
+    async def _resolve_period_window(
+        self,
+        period: PeriodType,
+        locale: LocaleCode,
+    ) -> PeriodWindow:
         state = await water_repo.get_settlement_state()
         last_success = int(state["last_success_record_date"])
         if last_success > 0:
@@ -188,7 +214,8 @@ class WaterRankService:
         previous_start = previous_end.shift(days=-(day_count - 1)).floor("day")
         return PeriodWindow(
             period=period,
-            title=self.PERIOD_TITLES[period],
+            locale=locale,
+            title=tr(locale, self.PERIOD_TITLE_KEYS[period]),
             badge=self._build_badge(anchor, period),
             current_start=current_start,
             current_end=anchor,
@@ -222,11 +249,11 @@ class WaterRankService:
         return f"{day.year} S{quarter}"
 
     @staticmethod
-    async def _resolve_user_name(user_id: str) -> str:
+    async def _resolve_user_name(user_id: str, locale: LocaleCode) -> str:
         name = await user_repo.get_name_by_uid(user_id)
         if name:
             return name
-        return f"用户_{user_id[-4:]}"
+        return tr(locale, "water.rank.user_fallback", tail=user_id[-4:])
 
     @staticmethod
     async def _resolve_avatar(user_id: str) -> BuildImage:

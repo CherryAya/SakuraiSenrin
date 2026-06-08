@@ -224,6 +224,7 @@ async def test_build_user_achievement_message_contains_progress(
         user_id="u1",
         matrix_id="m1",
         record_date=20260304,
+        locale="zh-CN",
     )
 
     assert "我的水王成就" in message

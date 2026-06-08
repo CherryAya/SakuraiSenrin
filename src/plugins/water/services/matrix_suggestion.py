@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from nonebot.adapters.onebot.v11.bot import Bot
 
 from src.config import config
+from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.i18n.types import LocaleCode
 from src.plugins.water.database import water_repo
 from src.repositories import group_repo, member_repo
 from src.services.info import resolve_group_name
@@ -91,9 +93,15 @@ class MatrixSuggestionService:
             group_id=group_id,
             target_matrix_id=candidate.matrix_id,
         )
+        locale = await resolve_locale(group_id)
         await bot.send_group_msg(
             group_id=int(group_id),
-            message=await self._build_suggestion_message(bot, group_id, candidate),
+            message=await self._build_suggestion_message(
+                bot,
+                group_id,
+                candidate,
+                locale,
+            ),
         )
 
     async def _find_best_candidate(
@@ -184,28 +192,59 @@ class MatrixSuggestionService:
         bot: Bot,
         current_group_id: str,
         candidate: MergeCandidate,
+        locale: LocaleCode,
     ) -> str:
         current_name = await resolve_group_name(bot, current_group_id)
-        related_lines = []
+        related_lines = [
+            tr(
+                locale,
+                "water.matrix_suggestion.group_line",
+                name=current_name,
+                group_id=current_group_id,
+            )
+        ]
         for gid in candidate.matched_group_ids:
             gname = await resolve_group_name(bot, gid)
-            related_lines.append(f"「{gname}({gid})」")
-        related_text = "\n".join(related_lines) if related_lines else ""
-        return (
-            "===== 零域矩阵 Matrix 合并建议 =====\n"
-            "这些群🧐：\n\n"
-            f"「{current_name}({current_group_id})」\n"
-            f"{related_text}\n\n"
-            f"成员重合率： {candidate.score:.2%}（{candidate.overlap_users}人） \n"
-            f"建议合并到： {candidate.matrix_id}\n"
-            "合并后影响：\n"
-            "「这些群会一起算排名和成长」\n"
-            "「历史数据会按同一分组累计」\n\n"
-            "管理员发送：\n"
-            "1) #water.merge yes  是同一群人，合并\n"
-            "2) #water.merge no   不是或先不合并（后续不再提示）\n\n"
-            f"仅允许操作一次，如后续想改，请到加入 {config.MAIN_GROUP_ID} 联系群主。"
-        )
+            related_lines.append(
+                tr(
+                    locale,
+                    "water.matrix_suggestion.group_line",
+                    name=gname,
+                    group_id=gid,
+                )
+            )
+        lines = [
+            tr(locale, "water.matrix_suggestion.title"),
+            tr(locale, "water.matrix_suggestion.groups"),
+            "",
+            *related_lines,
+            "",
+            tr(
+                locale,
+                "water.matrix_suggestion.overlap",
+                score=f"{candidate.score:.2%}",
+                overlap_users=candidate.overlap_users,
+            ),
+            tr(
+                locale,
+                "water.matrix_suggestion.target",
+                matrix_id=candidate.matrix_id,
+            ),
+            tr(locale, "water.matrix_suggestion.impact_title"),
+            tr(locale, "water.matrix_suggestion.impact.rank"),
+            tr(locale, "water.matrix_suggestion.impact.history"),
+            "",
+            tr(locale, "water.matrix_suggestion.actions_title"),
+            tr(locale, "water.matrix_suggestion.action_yes"),
+            tr(locale, "water.matrix_suggestion.action_no"),
+            "",
+            tr(
+                locale,
+                "water.matrix_suggestion.footer",
+                main_group_id=config.MAIN_GROUP_ID,
+            ),
+        ]
+        return "\n".join(lines)
 
 
 matrix_suggestion_service = MatrixSuggestionService()

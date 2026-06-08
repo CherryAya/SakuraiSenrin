@@ -13,27 +13,27 @@ from nonebot.adapters.onebot.v11.message import Message
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.i18n.runtime import tr
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 
-name = "词库模块"
-description = """
-词条学习与检索模块。
-""".strip()
-
-docs_content = """
-1. #wordbank.add / #加词条 / #添加词条
-2. #wordbank.search / #搜词条 / #搜索词条
-""".strip()
+name = tr("zh-CN", "plugin.wordbank.name")
+description = tr("zh-CN", "plugin.wordbank.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.wordbank.name",
+        description_key="plugin.wordbank.description",
+        content_key="plugin.wordbank.docs",
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
+        locale=locale,
     )
 
 
@@ -45,6 +45,10 @@ __plugin_meta__ = create_plugin_metadata(
         "version": "0.1.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.NORMAL,
+        "i18n": {
+            "name_key": "plugin.wordbank.name",
+            "description_key": "plugin.wordbank.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=True,

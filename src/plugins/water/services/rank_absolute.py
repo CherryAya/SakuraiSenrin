@@ -20,7 +20,7 @@ class AbsoluteRankService:
         group_id: str,
         locale: LocaleCode,
     ) -> Message:
-        res = await build_water_rank_image(group_id)
+        res = await build_water_rank_image(group_id, locale)
         if res:
             return Message(MessageSegment.image(res))
         return Message(tr(locale, "water.rank.absolute.none"))
@@ -30,13 +30,13 @@ class AbsoluteRankService:
         period: PeriodType,
         locale: LocaleCode,
     ) -> Message:
-        res = await water_rank_service.build_period_rank_image(period)
+        res = await water_rank_service.build_period_rank_image(period, locale)
         if res:
             return Message(MessageSegment.image(res))
         return Message(tr(locale, "water.rank.empty"))
 
-    async def build_total_rank(self) -> Message:
-        rows = await water_rank_service.build_total_rank_lines()
+    async def build_total_rank(self, locale: LocaleCode) -> Message:
+        rows = await water_rank_service.build_total_rank_lines(locale)
         return Message("\n".join(rows))
 
 

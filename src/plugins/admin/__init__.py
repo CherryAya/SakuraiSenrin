@@ -13,28 +13,27 @@ from nonebot.adapters.onebot.v11.message import Message
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.i18n.runtime import tr
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 
-name = "管理模块总览"
-description = """
-管理员命令合集入口，含群组管理、用户管理、邀请管理。
-""".strip()
-
-docs_content = """
-1. #admin.group ...
-2. #admin.user ...
-3. #admin.invite ...
-""".strip()
+name = tr("zh-CN", "plugin.admin_overview.name")
+description = tr("zh-CN", "plugin.admin_overview.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.admin_overview.name",
+        description_key="plugin.admin_overview.description",
+        content_key="plugin.admin_overview.docs",
         trigger=TriggerType.COMMAND,
         permission=Permission.SUPERUSER,
+        locale=locale,
     )
 
 
@@ -46,6 +45,10 @@ __plugin_meta__ = create_plugin_metadata(
         "version": "0.1.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
+        "i18n": {
+            "name_key": "plugin.admin_overview.name",
+            "description_key": "plugin.admin_overview.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=False,

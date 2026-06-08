@@ -13,24 +13,27 @@ from nonebot.adapters.onebot.v11.message import Message
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.plugin_docs import build_static_docs, create_docs_meta
+from src.lib.i18n.runtime import tr
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_static_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 
-name = "通知模块总览"
-description = """
-通知事件处理合集入口，含好友请求、群组事件、邀请事件。
-""".strip()
-
-docs_content = "被动触发"
+name = tr("zh-CN", "plugin.notice.name")
+description = tr("zh-CN", "plugin.notice.description")
 
 
-def build_docs() -> Message:
+def build_docs(ctx: DocsRenderContext | None = None) -> Message:
+    locale = ctx.locale if ctx is not None else "zh-CN"
     return build_static_docs(
-        name=name,
-        description=description,
-        content=docs_content,
+        name_key="plugin.notice.name",
+        description_key="plugin.notice.description",
+        content_key="plugin.notice.docs",
         trigger=TriggerType.PASSIVE,
         permission=Permission.SUPERUSER,
+        locale=locale,
     )
 
 
@@ -42,6 +45,10 @@ __plugin_meta__ = create_plugin_metadata(
         "version": "0.1.0",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
+        "i18n": {
+            "name_key": "plugin.notice.name",
+            "description_key": "plugin.notice.description",
+        },
         "docs": create_docs_meta(
             build_docs,
             visible=False,

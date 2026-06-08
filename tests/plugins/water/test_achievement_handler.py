@@ -36,7 +36,7 @@ async def test_handle_my_achievements_returns_message(
         matcher: Matcher,
         event: GroupMessageEvent,
     ) -> None:
-        await handle_my_achievements(matcher, event)
+        await handle_my_achievements(matcher, event, "zh-CN")
 
     event = build_group_message_event("我的水王成就")
 
