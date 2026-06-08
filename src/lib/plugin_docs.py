@@ -509,18 +509,25 @@ def _parse_flow_section(block: str) -> tuple[str, tuple[DocsDemoTurn, ...]]:
         cleaned = (block[: fence_match.start()] + block[fence_match.end() :]).strip()
         for line in fence_match.group(1).splitlines():
             stripped = line.strip()
-            if not stripped or ":" not in stripped:
+            if not stripped:
                 continue
-            speaker, text = stripped.split(":", 1)
-            normalized = speaker.strip().upper()
-            if normalized not in {"USER", "BOT", "SYSTEM"}:
-                continue
-            demo_turns.append(
-                DocsDemoTurn(
-                    cast(Literal["USER", "BOT", "SYSTEM"], normalized),
-                    text.strip(),
+            if ":" in stripped:
+                speaker, text = stripped.split(":", 1)
+                normalized = speaker.strip().upper()
+                if normalized in {"USER", "BOT", "SYSTEM"}:
+                    demo_turns.append(
+                        DocsDemoTurn(
+                            cast(Literal["USER", "BOT", "SYSTEM"], normalized),
+                            text.strip(),
+                        )
+                    )
+                    continue
+            if demo_turns:
+                previous = demo_turns[-1]
+                demo_turns[-1] = DocsDemoTurn(
+                    previous.speaker,
+                    f"{previous.text}\n{stripped}",
                 )
-            )
     return cleaned.strip(), tuple(demo_turns)
 
 
@@ -1391,16 +1398,16 @@ class DemoImageRenderer:
     def _wrap_text(self, text: str, *, max_width: int) -> list[str]:
         draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#FFFFFF"))
         lines: list[str] = []
-        current = ""
-        for char in text:
-            candidate = current + char
-            bbox = draw.textbbox((0, 0), candidate, font=self.body_font)
-            if bbox[2] - bbox[0] <= max_width or not current:
-                current = candidate
-                continue
-            lines.append(current)
-            current = char
-        if current:
+        for paragraph in text.splitlines():
+            current = ""
+            for char in paragraph:
+                candidate = current + char
+                bbox = draw.textbbox((0, 0), candidate, font=self.body_font)
+                if bbox[2] - bbox[0] <= max_width or not current:
+                    current = candidate
+                    continue
+                lines.append(current)
+                current = char
             lines.append(current)
         return lines or [text]
 

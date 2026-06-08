@@ -15,6 +15,7 @@ Use this checklist after regenerating plugin demo PNG files.
 - Bounds: no text, avatar, chip, bubble, or footer content leaves its container.
 - Overlap: no color block covers text, avatars, bubbles, panel borders, or footer text.
 - Text: long commands and replies wrap cleanly without clipping or touching edges.
+- Message semantics: one sent message with newlines uses one speaker line plus continuation lines; multiple sent messages repeat `USER:`, `BOT:`, or `SYSTEM:`.
 - Bubbles: USER, BOT, and SYSTEM bubbles fit content without looking oversized.
 - Color: keep the visible palette restrained to white, sakura pink, indigo, muted gray, and soft system yellow.
 - Hierarchy: plugin title is strongest, feature title is secondary, command and footer are muted.

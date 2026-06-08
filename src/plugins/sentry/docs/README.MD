@@ -25,8 +25,8 @@ Sentry 监控插件负责捕获运行时异常，并把精简后的错误摘要�
 ```demo
 SYSTEM: 某个插件抛出了未捕获异常。
 BOT: [私聊超管] Sentry 异常告警
-BOT: Type: ValueError
-BOT: Value: invalid season id
+Type: ValueError
+Value: invalid season id
 ```
 #### 失败情况
 如果当前没有可用 Bot 实例，或私聊发送失败，插件只会写错误日志，不会阻塞原始异常上报。

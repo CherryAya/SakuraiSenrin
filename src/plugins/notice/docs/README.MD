@@ -27,7 +27,7 @@
 ```demo
 USER: #help 通知模块总览 group
 BOT: 群组事件处理负责禁言退群、被踢清理和入群同步。
-BOT: 继续发送 #help 群组事件处理 ban-cleanup 查看完整流程。
+继续发送 #help 群组事件处理 ban-cleanup 查看完整流程。
 ```
 #### 失败情况
 如果希望在索引中直接展示该模块，需要同步调整 metadata 的 visible 设置。

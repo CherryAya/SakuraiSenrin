@@ -168,6 +168,62 @@ BOT: 操作完成
     assert any(segment.type == "image" for segment in message)
 
 
+def test_load_plugin_doc_bundle_distinguishes_message_newlines_from_turns(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "README.MD"
+    source.write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试 demo 换行。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `flow` 完整流程: 测试 demo 换行。
+
+## 子功能详情
+### `flow` 完整流程
+- 摘要: 测试 demo 换行。
+- 指令: `#flow`
+#### 说明
+这里是说明。
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #flow
+BOT: 第一条消息第一行
+第一条消息第二行
+BOT: 第二条消息
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="测试插件",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    feature = bundle.index[0]
+
+    assert len(feature.demo_turns) == 3
+    assert feature.demo_turns[1].speaker == "BOT"
+    assert feature.demo_turns[1].text == "第一条消息第一行\n第一条消息第二行"
+    assert feature.demo_turns[2].speaker == "BOT"
+    assert feature.demo_turns[2].text == "第二条消息"
+
+
 def test_build_readme_docs_returns_ambiguous_hint(tmp_path: Path) -> None:
     source = tmp_path / "README.MD"
     source.write_text(

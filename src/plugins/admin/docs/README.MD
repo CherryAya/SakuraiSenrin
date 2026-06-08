@@ -28,7 +28,7 @@
 ```demo
 USER: #help 管理模块总览 group
 BOT: 群组管理负责处理群授权、封禁、退群和状态查询。
-BOT: 继续发送 #help 群组管理模块 <子功能名> 查看 demo。
+继续发送 #help 群组管理模块 <子功能名> 查看 demo。
 ```
 #### 失败情况
 如果直接把所有管理动作塞进总览文档，帮助消息会过长且不利于维护。
@@ -47,7 +47,7 @@ BOT: 继续发送 #help 群组管理模块 <子功能名> 查看 demo。
 ```demo
 USER: #help 管理模块总览 user
 BOT: 用户管理支持 ban / unban / status 三类操作。
-BOT: 继续发送 #help 用户管理模块 ban 查看完整流程。
+继续发送 #help 用户管理模块 ban 查看完整流程。
 ```
 #### 失败情况
 若后续新增动作，记得同步更新本总览和子模块 README。
@@ -66,7 +66,7 @@ BOT: 继续发送 #help 用户管理模块 ban 查看完整流程。
 ```demo
 USER: #help 管理模块总览 invite
 BOT: 邀请管理支持 list / approve / reject / ignore / log。
-BOT: 继续发送 #help 邀请管理模块 approve 查看完整流程。
+继续发送 #help 邀请管理模块 approve 查看完整流程。
 ```
 #### 失败情况
 如果项目当前没有邀请记录，详情页会说明如何用 list 或日志功能排查。
@@ -85,7 +85,7 @@ BOT: 继续发送 #help 邀请管理模块 approve 查看完整流程。
 ```demo
 USER: #help 管理模块总览 i18n
 BOT: 语言管理支持 show / default / set / clear / list。
-BOT: 继续发送 #help 语言管理模块 set 查看完整流程。
+继续发送 #help 语言管理模块 set 查看完整流程。
 ```
 #### 失败情况
 如果没有精确定位到子模块，帮助中心会先返回歧义或插件详情页。

@@ -85,7 +85,7 @@ BOT: [发送月榜图片]
 ```demo
 USER: #水王 成就
 BOT: ===== 成就总览 =====
-BOT: [成就进度文本或图片]
+[成就进度文本或图片]
 ```
 #### 失败情况
 如果当前没有足够数据，可能会只返回基础提示，不会展示完整进度。
@@ -143,8 +143,8 @@ BOT: 已记录为“同意合并”啦
 ```demo
 USER: #water help
 BOT: ===== Water Admin =====
-BOT: 1. settle [YYYYMMDD] [-f|--force]
-BOT: 2. pardon <penalty_id>
+1. settle [YYYYMMDD] [-f|--force]
+2. pardon <penalty_id>
 USER: #water settle 20260608 -f
 BOT: Water 结算任务执行中，请稍候...
 ```
