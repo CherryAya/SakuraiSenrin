@@ -6,6 +6,7 @@ from .commands import (
     extract_image_urls,
     handle_add_image,
     handle_study_shortcut,
+    localize_command_error,
     wordbank_help_text,
 )
 from .passive import handle_passive_message
@@ -17,5 +18,6 @@ __all__ = [
     "handle_add_image",
     "handle_passive_message",
     "handle_study_shortcut",
+    "localize_command_error",
     "wordbank_help_text",
 ]

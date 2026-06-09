@@ -18,7 +18,7 @@ from nonebot.plugin import on_command
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_readme_docs,
@@ -33,12 +33,13 @@ from .handlers import (
     extract_image_urls,
     handle_add_image,
     handle_passive_message,
+    localize_command_error,
 )
 from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError
 
 name = tr("zh-CN", "plugin.wordbank.name")
-description = "低资源优先的群聊词库，支持文本与图片触发。"
+description = tr("zh-CN", "plugin.wordbank.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
@@ -111,17 +112,18 @@ async def _(
     arg: Message = CommandArg(),
 ) -> None:
     await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     text = arg.extract_plain_text().strip()
     action = text.split(maxsplit=1)[0].lower() if text else ""
     if action in IMAGE_ALIASES:
         urls = extract_image_urls(arg)
         if not urls:
-            await matcher.finish("图片词条需要在命令消息中附带图片。")
+            await matcher.finish(tr(locale, "wordbank.error.image_missing"))
         from .handlers.passive import fetch_image_bytes
 
         data = await fetch_image_bytes(urls[0])
         if data is None:
-            await matcher.finish("图片下载失败，无法加入词库。")
+            await matcher.finish(tr(locale, "wordbank.error.image_download_failed"))
         try:
             _, _, rest = text.partition(" ")
             msg = await handle_add_image(
@@ -130,9 +132,10 @@ async def _(
                 event=event,
                 image_bytes=data,
                 text=rest,
+                locale=locale,
             )
         except (RuleError, ValueError) as exc:
-            await matcher.finish(str(exc))
+            await matcher.finish(localize_command_error(exc, locale))
         await matcher.finish(msg)
 
     try:
@@ -140,9 +143,10 @@ async def _(
             wordbank_service,
             event=event,
             text=text,
+            locale=locale,
         )
     except (RuleError, ValueError) as exc:
-        await matcher.finish(str(exc))
+        await matcher.finish(localize_command_error(exc, locale))
     await matcher.finish(msg)
 
 

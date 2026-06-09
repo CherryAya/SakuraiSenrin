@@ -12,8 +12,8 @@ HEADER = (
 
 def build_keys_module() -> str:
     keys = tuple(sorted(CATALOG))
-    literal_values = ",\n    ".join(repr(key) for key in keys)
-    tuple_values = ",\n    ".join(repr(key) for key in keys)
+    literal_values = ",\n    ".join(f'"{key}"' for key in keys)
+    tuple_values = ",\n    ".join(f'"{key}"' for key in keys)
     return (
         HEADER
         + "MessageKey = Literal[\n"

@@ -15,7 +15,6 @@
 - 摘要: 使用旧式简短命令添加词库。
 - 别名: study, 学习
 - 指令: `study 触发词 => 响应词`
-- Demo: study-placeholder.png
 #### 说明
 支持 `=>`、`->`、`回答`、`回复` 分隔触发词和响应词。内部会调用 `wordbank add` 使用的固定规则模型，默认群聊范围为当前群，私聊范围为本人。需要搜索、删除、恢复或添加图片词条时请使用 `wordbank` 命令。
 #### 前置条件
@@ -24,6 +23,18 @@
 ```demo
 USER: #study 晚安 => 做个好梦
 BOT: 词条已加入词库
+ID: 12
+触发: 晚安
+响应: 做个好梦
+模式: contains
+范围: current_group
+概率: 1
+权重: 3
+USER: #wordbank search 晚安
+BOT: 词库搜索结果:
+#12 [contains/current_group] 晚安 => 做个好梦
+USER: 大家晚安啦
+BOT: 做个好梦
 ```
 #### 失败情况
 缺少触发词或响应词时返回格式说明；撤回类 `revoke` / `recall` 信号由 `wordbank` 被动匹配入口直接跳过。

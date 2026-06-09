@@ -252,6 +252,37 @@ def test_load_representative_demo_bytes_uses_first_available_feature() -> None:
     assert load_representative_demo_bytes(bundle) is not None
 
 
+def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
+    wordbank = load_plugin_doc_bundle(
+        source=Path("src/plugins/wordbank/docs/README.MD"),
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    study = load_plugin_doc_bundle(
+        source=Path("src/plugins/study/docs/README.MD"),
+        default_name="学习模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    add = next(feature for feature in wordbank.index if feature.slug == "add")
+    passive = next(feature for feature in wordbank.index if feature.slug == "passive")
+    shortcut = next(feature for feature in study.index if feature.slug == "shortcut")
+
+    assert add.demo_filename == "wordbank-add.png"
+    assert [turn.speaker for turn in add.demo_turns] == ["USER", "BOT", "USER", "BOT"]
+    assert "ID: 12" in add.demo_turns[1].text
+    assert passive.demo_turns[-1].speaker == "SYSTEM"
+    assert "group_recall" in passive.demo_turns[-1].text
+    assert shortcut.demo_filename == "study-shortcut.png"
+    assert len(shortcut.demo_turns) == 6
+    assert load_representative_demo_bytes(wordbank) is not None
+    assert load_representative_demo_bytes(study) is not None
+
+
 def test_load_plugin_doc_bundle_distinguishes_message_newlines_from_turns(
     tmp_path: Path,
 ) -> None:

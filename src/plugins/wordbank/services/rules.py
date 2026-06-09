@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal, TypedDict, cast
 
+from src.lib.i18n.keys import MessageKey
+from src.plugins.wordbank.services.errors import WordbankUserError
+
 Scope = Literal[
     "current_group",
     "all_groups",
@@ -34,8 +37,12 @@ SCOPE_PRIORITY: dict[str, int] = {
 }
 
 
-class RuleError(ValueError):
+class RuleError(WordbankUserError):
     """Raised when a wordbank rule cannot be canonicalized."""
+
+
+def _rule_error(fallback: str, key: MessageKey, **params: object) -> RuleError:
+    return RuleError(fallback, key=key, **params)
 
 
 class CallCountRule(TypedDict):
@@ -70,7 +77,11 @@ def _single_value(value: Any, field: str) -> Any:
     if isinstance(value, list | tuple | set):
         values = list(value)
         if len(values) != 1:
-            raise RuleError(f"{field} 只能设置一个约束")
+            raise _rule_error(
+                f"{field} 只能设置一个约束",
+                "wordbank.error.single_constraint",
+                field=field,
+            )
         return values[0]
     return value
 
@@ -83,11 +94,18 @@ def _normalize_scope(value: Any, *, is_group: bool) -> Scope:
         if values == {"self", "current_group"}:
             return "self_in_current_group"
         if len(values) != 1:
-            raise RuleError("scope 只能设置一个生效范围")
+            raise _rule_error(
+                "scope 只能设置一个生效范围",
+                "wordbank.error.scope_single",
+            )
         value = next(iter(values))
     scope = str(value).strip()
     if scope not in VALID_SCOPES:
-        raise RuleError(f"不支持的生效范围: {scope}")
+        raise _rule_error(
+            f"不支持的生效范围: {scope}",
+            "wordbank.error.scope_unsupported",
+            scope=scope,
+        )
     return cast(Scope, scope)
 
 
@@ -97,7 +115,11 @@ def _normalize_role(value: Any) -> Role:
         return "any"
     role = str(value).strip()
     if role not in VALID_ROLES:
-        raise RuleError(f"不支持的角色限制: {role}")
+        raise _rule_error(
+            f"不支持的角色限制: {role}",
+            "wordbank.error.role_unsupported",
+            role=role,
+        )
     return cast(Role, role)
 
 
@@ -108,9 +130,15 @@ def _normalize_probability(value: Any, *, short_trigger: bool) -> float:
     try:
         probability = float(value)
     except (TypeError, ValueError) as exc:
-        raise RuleError("概率必须是 0.0 到 1.0 之间的数字") from exc
+        raise _rule_error(
+            "概率必须是 0.0 到 1.0 之间的数字",
+            "wordbank.error.probability_invalid",
+        ) from exc
     if probability < 0 or probability > 1:
-        raise RuleError("概率必须是 0.0 到 1.0 之间的数字")
+        raise _rule_error(
+            "概率必须是 0.0 到 1.0 之间的数字",
+            "wordbank.error.probability_invalid",
+        )
     return probability
 
 
@@ -121,9 +149,15 @@ def _normalize_weight(value: Any) -> int:
     try:
         weight = int(value)
     except (TypeError, ValueError) as exc:
-        raise RuleError("权重必须是 1 到 5 之间的整数") from exc
+        raise _rule_error(
+            "权重必须是 1 到 5 之间的整数",
+            "wordbank.error.weight_invalid",
+        ) from exc
     if weight < 1 or weight > 5:
-        raise RuleError("权重必须是 1 到 5 之间的整数")
+        raise _rule_error(
+            "权重必须是 1 到 5 之间的整数",
+            "wordbank.error.weight_invalid",
+        )
     return weight
 
 
@@ -131,23 +165,43 @@ def _normalize_call_count(value: Any) -> CallCountRule | None:
     if value in (None, "", {}):
         return None
     if not isinstance(value, dict):
-        raise RuleError("调用次数窗口必须使用固定结构")
+        raise _rule_error(
+            "调用次数窗口必须使用固定结构",
+            "wordbank.error.call_structure",
+        )
     allowed = {"window_seconds", "min", "max"}
     unknown = set(value) - allowed
     if unknown:
-        raise RuleError(f"调用次数窗口包含不支持字段: {', '.join(sorted(unknown))}")
+        fields = ", ".join(sorted(unknown))
+        raise _rule_error(
+            f"调用次数窗口包含不支持字段: {fields}",
+            "wordbank.error.call_unknown",
+            fields=fields,
+        )
     try:
         window_seconds = int(value.get("window_seconds", 0))
         min_count = int(value.get("min", 0))
         max_count = int(value.get("max", 0))
     except (TypeError, ValueError) as exc:
-        raise RuleError("调用次数窗口参数必须是整数") from exc
+        raise _rule_error(
+            "调用次数窗口参数必须是整数",
+            "wordbank.error.call_integer",
+        ) from exc
     if window_seconds <= 0:
-        raise RuleError("调用次数窗口必须大于 0 秒")
+        raise _rule_error(
+            "调用次数窗口必须大于 0 秒",
+            "wordbank.error.call_window_positive",
+        )
     if min_count < 0 or max_count < 0:
-        raise RuleError("调用次数上下限不能小于 0")
+        raise _rule_error(
+            "调用次数上下限不能小于 0",
+            "wordbank.error.call_non_negative",
+        )
     if max_count and min_count > max_count:
-        raise RuleError("调用次数最小值不能大于最大值")
+        raise _rule_error(
+            "调用次数最小值不能大于最大值",
+            "wordbank.error.call_min_lte_max",
+        )
     return {
         "window_seconds": window_seconds,
         "min": min_count,
@@ -165,7 +219,12 @@ def canonicalize_rule(
     allowed = {"scope", "roles", "call_count", "probability", "priority", "weight"}
     unknown = set(raw) - allowed
     if unknown:
-        raise RuleError(f"规则包含不支持字段: {', '.join(sorted(unknown))}")
+        fields = ", ".join(sorted(unknown))
+        raise _rule_error(
+            f"规则包含不支持字段: {fields}",
+            "wordbank.error.rule_unknown",
+            fields=fields,
+        )
 
     scope = _normalize_scope(raw.get("scope"), is_group=is_group)
     role = _normalize_role(raw.get("roles"))
@@ -196,7 +255,11 @@ def normalize_trigger_mode(value: str | None, *, short_trigger: bool) -> Trigger
         return "fullmatch" if short_trigger else "contains"
     mode = value.strip().lower()
     if mode not in VALID_TRIGGER_MODES:
-        raise RuleError(f"不支持的触发模式: {mode}")
+        raise _rule_error(
+            f"不支持的触发模式: {mode}",
+            "wordbank.error.trigger_mode_unsupported",
+            mode=mode,
+        )
     return cast(TriggerMode, mode)
 
 
@@ -263,9 +326,15 @@ def parse_legacy_study_text(text: str) -> tuple[str, str, dict[str, Any]]:
             trigger = trigger.strip()
             response = response.strip()
             if not trigger or not response:
-                raise RuleError("学习内容需要同时包含触发词和响应词")
+                raise _rule_error(
+                    "学习内容需要同时包含触发词和响应词",
+                    "wordbank.error.study_pair_required",
+                )
             return trigger, response, {}
     parts = source.split(maxsplit=1)
     if len(parts) == 2:
         return parts[0].strip(), parts[1].strip(), {}
-    raise RuleError("学习格式: study 触发词 => 响应词")
+    raise _rule_error(
+        "学习格式: study 触发词 => 响应词",
+        "wordbank.error.study_format",
+    )

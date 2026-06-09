@@ -10,12 +10,15 @@ import random
 from typing import Any
 
 from src.database.consts import WritePolicy
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import (
     WordbankLogPayload,
     WordbankSearchItem,
 )
+from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.services.matching import (
     MatchCandidate,
     RuntimeIndex,
@@ -94,9 +97,15 @@ class WordbankService:
         trigger_text = trigger_text.strip()
         response_text = response_text.strip()
         if not trigger_text:
-            raise ValueError("触发词不能为空")
+            raise WordbankUserError(
+                "触发词不能为空",
+                key="wordbank.error.trigger_empty",
+            )
         if not response_text:
-            raise ValueError("响应词不能为空")
+            raise WordbankUserError(
+                "响应词不能为空",
+                key="wordbank.error.response_empty",
+            )
 
         normalized = normalize_text(trigger_text)
         short_trigger = len(normalized.replace(" ", "")) <= 2
@@ -142,7 +151,10 @@ class WordbankService:
     ) -> WordbankAddResult:
         response_text = response_text.strip()
         if not response_text:
-            raise ValueError("响应词不能为空")
+            raise WordbankUserError(
+                "响应词不能为空",
+                key="wordbank.error.response_empty",
+            )
 
         rule = canonicalize_rule(
             raw_rule,
@@ -272,26 +284,38 @@ class WordbankService:
         return counts
 
 
-def format_search_items(items: Sequence[WordbankSearchItem]) -> str:
+def format_search_items(
+    items: Sequence[WordbankSearchItem],
+    *,
+    locale: LocaleCode,
+) -> str:
     if not items:
-        return "没有找到匹配词条。"
-    lines = ["词库搜索结果:"]
+        return tr(locale, "wordbank.search.empty")
+    lines = [tr(locale, "wordbank.search.title")]
     for item in items:
         lines.append(
-            f"#{item.entry_id} [{item.trigger_mode}/{item.scope}] "
-            f"{item.trigger_text} => {item.response_text}"
+            tr(
+                locale,
+                "wordbank.search.item",
+                entry_id=item.entry_id,
+                trigger_mode=item.trigger_mode,
+                scope=item.scope,
+                trigger_text=item.trigger_text,
+                response_text=item.response_text,
+            )
         )
     return "\n".join(lines)
 
 
-def format_add_result(result: WordbankAddResult) -> str:
-    return (
-        "词条已加入词库\n"
-        f"ID: {result.entry_id}\n"
-        f"触发: {result.trigger_text}\n"
-        f"响应: {result.response_text}\n"
-        f"模式: {result.trigger_mode}\n"
-        f"范围: {result.scope}\n"
-        f"概率: {result.probability:g}\n"
-        f"权重: {result.weight}"
+def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
+    return tr(
+        locale,
+        "wordbank.add.success",
+        entry_id=result.entry_id,
+        trigger_text=result.trigger_text,
+        response_text=result.response_text,
+        trigger_mode=result.trigger_mode,
+        scope=result.scope,
+        probability=f"{result.probability:g}",
+        weight=result.weight,
     )

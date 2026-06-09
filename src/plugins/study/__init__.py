@@ -16,7 +16,7 @@ from nonebot.plugin import on_command
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_readme_docs,
@@ -25,7 +25,7 @@ from src.lib.plugin_docs import (
 from src.lib.plugin_meta import create_plugin_metadata
 
 name = tr("zh-CN", "plugin.study.name")
-description = "词库快捷学习入口，内部复用 wordbank 固定规则模型。"
+description = tr("zh-CN", "plugin.study.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
@@ -77,16 +77,19 @@ async def _(
     arg: Message = CommandArg(),
 ) -> None:
     from src.plugins.wordbank.handlers import handle_study_shortcut
+    from src.plugins.wordbank.handlers.commands import localize_command_error
     from src.plugins.wordbank.services import wordbank_service
     from src.plugins.wordbank.services.rules import RuleError
 
     await wordbank_service.initialize()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     try:
         msg = await handle_study_shortcut(
             wordbank_service,
             event=event,
             text=arg.extract_plain_text(),
+            locale=locale,
         )
     except (RuleError, ValueError) as exc:
-        await matcher.finish(str(exc))
+        await matcher.finish(localize_command_error(exc, locale))
     await matcher.finish(msg)

@@ -17,11 +17,12 @@ from src.plugins.wordbank.database.types import (
     WordbankImagePayload,
     WordbankImageRecord,
 )
+from src.plugins.wordbank.services.errors import WordbankUserError
 
 DEFAULT_MEDIA_ROOT: Final[Path] = Path("./data/wordbank/media")
 
 
-class MediaError(ValueError):
+class MediaError(WordbankUserError):
     """Raised when an image cannot be processed for wordbank media storage."""
 
 
@@ -97,7 +98,10 @@ def fingerprint_image(data: bytes) -> ImageFingerprint:
                 file_size=len(data),
             )
     except UnidentifiedImageError as exc:
-        raise MediaError("无法识别图片内容") from exc
+        raise MediaError(
+            "无法识别图片内容",
+            key="wordbank.error.image_unrecognized",
+        ) from exc
 
 
 class WordbankMediaService:
