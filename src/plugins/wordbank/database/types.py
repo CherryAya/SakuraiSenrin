@@ -1,0 +1,131 @@
+"""Wordbank database payload and record types."""
+
+from dataclasses import dataclass, field
+from typing import NotRequired, TypedDict
+
+
+class WordbankEntryPayload(TypedDict):
+    status: str
+    enabled: int
+    scope: str
+    priority: int
+    probability: float
+    weight: int
+    rule: dict
+    group_id: str
+    created_by: str
+    approved_by: str
+    deleted_at: int
+    created_at: int
+    updated_at: int
+
+
+class WordbankTriggerPayload(TypedDict):
+    entry_id: int
+    kind: str
+    trigger_text: str
+    normalized_text: str
+    trigger_mode: str
+    canonical_image_id: int | None
+    created_at: int
+    updated_at: int
+
+
+class WordbankResponsePayload(TypedDict):
+    entry_id: int
+    kind: str
+    text: str
+    canonical_image_id: int | None
+    weight: int
+    created_at: int
+    updated_at: int
+
+
+class WordbankImagePayload(TypedDict):
+    canonical_image_id: NotRequired[int | None]
+    md5: str
+    dhash: str
+    phash: str
+    width: int
+    height: int
+    file_size: int
+    storage_path: str
+    created_at: int
+    updated_at: int
+
+
+class WordbankLogPayload(TypedDict):
+    entry_id: int
+    trigger_id: int
+    group_id: str
+    user_id: str
+    message_type: str
+    matched_text: str
+    created_at: int
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankTriggerRecord:
+    id: int
+    entry_id: int
+    kind: str
+    trigger_text: str
+    normalized_text: str
+    trigger_mode: str
+    canonical_image_id: int | None
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankResponseRecord:
+    id: int
+    entry_id: int
+    kind: str
+    text: str
+    canonical_image_id: int | None
+    weight: int
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankEntryRecord:
+    id: int
+    status: str
+    enabled: int
+    scope: str
+    priority: int
+    probability: float
+    weight: int
+    rule: dict
+    group_id: str
+    created_by: str
+    deleted_at: int
+    triggers: tuple[WordbankTriggerRecord, ...] = field(default_factory=tuple)
+    responses: tuple[WordbankResponseRecord, ...] = field(default_factory=tuple)
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankImageRecord:
+    id: int
+    canonical_image_id: int | None
+    md5: str
+    dhash: str
+    phash: str
+    width: int
+    height: int
+    file_size: int
+    storage_path: str
+
+    @property
+    def canonical_id(self) -> int:
+        return self.canonical_image_id or self.id
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankSearchItem:
+    entry_id: int
+    trigger_text: str
+    trigger_mode: str
+    response_text: str
+    scope: str
+    probability: float
+    weight: int
+    created_by: str

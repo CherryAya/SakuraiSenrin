@@ -6,10 +6,11 @@ from types import SimpleNamespace
 from nonebug import NONEBOT_INIT_KWARGS
 import pytest
 
-# Prevent importing src.plugins.water.__init__ during test collection.
-# We only test submodules (handlers/services/repo), not plugin bootstrap side effects.
+# Prevent importing plugin bootstrap modules during test collection.
+# We only test submodules (handlers/services/repo), not NoneBot side effects.
 _root = Path(__file__).resolve().parents[1]
 _water_pkg_path = _root / "src" / "plugins" / "water"
+_wordbank_pkg_path = _root / "src" / "plugins" / "wordbank"
 
 
 def _ensure_pkg(name: str, path: Path) -> None:
@@ -21,6 +22,7 @@ def _ensure_pkg(name: str, path: Path) -> None:
 
 
 _ensure_pkg("src.plugins.water", _water_pkg_path)
+_ensure_pkg("src.plugins.wordbank", _wordbank_pkg_path)
 if "src.config" not in sys.modules:
     config_module = types.ModuleType("src.config")
     setattr(

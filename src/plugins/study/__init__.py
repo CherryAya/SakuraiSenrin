@@ -8,7 +8,11 @@ Description: 学习词库-传统版
 
 from pathlib import Path
 
+from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
+from nonebot.matcher import Matcher
+from nonebot.params import CommandArg
+from nonebot.plugin import on_command
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
@@ -21,7 +25,7 @@ from src.lib.plugin_docs import (
 from src.lib.plugin_meta import create_plugin_metadata
 
 name = tr("zh-CN", "plugin.study.name")
-description = tr("zh-CN", "plugin.study.description")
+description = "词库快捷学习入口，内部复用 wordbank 固定规则模型。"
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
@@ -57,3 +61,32 @@ __plugin_meta__ = create_plugin_metadata(
         ),
     },
 )
+
+study_command = on_command(
+    "study",
+    aliases={"学习"},
+    priority=5,
+    block=True,
+)
+
+
+@study_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    from src.plugins.wordbank.handlers import handle_study_shortcut
+    from src.plugins.wordbank.services import wordbank_service
+    from src.plugins.wordbank.services.rules import RuleError
+
+    await wordbank_service.initialize()
+    try:
+        msg = await handle_study_shortcut(
+            wordbank_service,
+            event=event,
+            text=arg.extract_plain_text(),
+        )
+    except (RuleError, ValueError) as exc:
+        await matcher.finish(str(exc))
+    await matcher.finish(msg)

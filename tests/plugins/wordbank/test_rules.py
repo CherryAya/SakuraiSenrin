@@ -1,0 +1,81 @@
+import pytest
+
+from src.plugins.wordbank.services.rules import (
+    RuleContext,
+    RuleError,
+    canonicalize_rule,
+    normalize_trigger_mode,
+    parse_legacy_study_text,
+    rule_allows,
+)
+
+
+def test_canonicalize_defaults_and_short_trigger_probability() -> None:
+    rule = canonicalize_rule({}, is_group=True, short_trigger=True)
+
+    assert rule.rule == {}
+    assert rule.scope == "current_group"
+    assert rule.priority == 30
+    assert rule.probability == 0.5
+    assert rule.weight == 3
+    assert normalize_trigger_mode(None, short_trigger=True) == "fullmatch"
+
+
+def test_canonicalize_rejects_conflicting_scope_and_bad_weight() -> None:
+    with pytest.raises(RuleError, match="scope"):
+        canonicalize_rule(
+            {"scope": ["self", "all_groups"]},
+            is_group=True,
+            short_trigger=False,
+        )
+
+    with pytest.raises(RuleError, match="权重"):
+        canonicalize_rule({"weight": 9}, is_group=True, short_trigger=False)
+
+
+def test_self_current_group_scope_is_internalized() -> None:
+    rule = canonicalize_rule(
+        {"scope": ["self", "current_group"], "roles": "admin"},
+        is_group=True,
+        short_trigger=False,
+    )
+
+    assert rule.scope == "self_in_current_group"
+    assert rule.priority == 50
+    assert rule.rule == {"roles": "admin"}
+
+
+def test_rule_allows_scope_role_and_call_count() -> None:
+    context = RuleContext(
+        group_id="20001",
+        user_id="10001",
+        message_type="group",
+        sender_role="admin",
+    )
+
+    assert rule_allows(
+        scope="self_in_current_group",
+        entry_group_id="20001",
+        entry_created_by="10001",
+        rule={"roles": "admin", "call_count": {"window_seconds": 60, "min": 1}},
+        context=context,
+        current_call_count=1,
+    )
+    assert not rule_allows(
+        scope="self_in_current_group",
+        entry_group_id="20002",
+        entry_created_by="10001",
+        rule={"roles": "admin"},
+        context=context,
+    )
+
+
+def test_parse_legacy_study_text() -> None:
+    trigger, response, rule = parse_legacy_study_text("晚安 => 做个好梦")
+
+    assert trigger == "晚安"
+    assert response == "做个好梦"
+    assert rule == {}
+
+    with pytest.raises(RuleError, match="学习格式"):
+        parse_legacy_study_text("只有一个词")
