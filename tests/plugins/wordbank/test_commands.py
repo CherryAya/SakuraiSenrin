@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -29,7 +29,11 @@ from tests.plugins.water.helpers import build_group_message_event
 
 class _SilentFinishMatcher:
     def __init__(self) -> None:
-        self.finish = AsyncMock(side_effect=RuntimeError("finished"))
+        self.finished_with: Any | None = None
+
+    async def finish(self, message: Any | None = None) -> None:
+        self.finished_with = message
+        raise RuntimeError("finished")
 
 
 def test_parse_text_add_args_keeps_fallback_message_and_i18n_key() -> None:
@@ -71,7 +75,7 @@ async def test_abort_if_revoke_signal_finishes_silently_on_revoke() -> None:
     with pytest.raises(RuntimeError, match="finished"):
         await abort_if_revoke_signal(event, matcher)
 
-    matcher.finish.assert_awaited_once_with()
+    assert matcher.finished_with is None
 
 
 async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:

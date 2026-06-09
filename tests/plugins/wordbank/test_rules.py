@@ -3,6 +3,7 @@ import pytest
 from src.plugins.wordbank.services.rules import (
     RuleContext,
     RuleError,
+    build_legacy_study_shortcut_rule,
     canonicalize_rule,
     normalize_trigger_mode,
     parse_legacy_study_text,
@@ -95,6 +96,11 @@ def test_parse_legacy_study_shortcut_modes() -> None:
     }
     assert parse_legacy_study_text("a t 晚安 做个好梦", is_group=False)[2] == {
         "scope": "private_only"
+    }
+
+    assert build_legacy_study_shortcut_rule("a", "t") == {"scope": "current_group"}
+    assert build_legacy_study_shortcut_rule("m", "t") == {
+        "scope": {"self", "current_group"}
     }
 
     with pytest.raises(RuleError, match="学习格式"):

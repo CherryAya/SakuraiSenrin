@@ -326,6 +326,19 @@ def _legacy_study_shortcut_rule(
     return {"scope": "self"}
 
 
+def build_legacy_study_shortcut_rule(
+    trig_mode: str,
+    group_block: str,
+    *,
+    is_group: bool = True,
+) -> dict[str, Any]:
+    return _legacy_study_shortcut_rule(
+        trig_mode,
+        group_block,
+        is_group=is_group,
+    )
+
+
 def parse_legacy_study_text(
     text: str,
     *,

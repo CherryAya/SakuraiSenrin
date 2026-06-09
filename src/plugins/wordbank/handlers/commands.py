@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import shlex
-from typing import Any
+from typing import Any, Protocol
 
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
-from nonebot.matcher import Matcher
 
 from src.config import config
 from src.lib.i18n.keys import MessageKey
@@ -23,7 +22,11 @@ from src.plugins.wordbank.services.core import (
 )
 from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.services.media import WordbankMediaService
-from src.plugins.wordbank.services.rules import RuleError, parse_legacy_study_text
+from src.plugins.wordbank.services.rules import (
+    RuleError,
+    build_legacy_study_shortcut_rule,
+    parse_legacy_study_text,
+)
 
 ADD_ALIASES = {"add", "添加", "学习"}
 SEARCH_ALIASES = {"search", "find", "查询", "搜索"}
@@ -66,7 +69,14 @@ class GuidedAdvancedOptions:
     trigger_mode: str | None
 
 
-async def abort_if_revoke_signal(event: MessageEvent, matcher: Matcher) -> None:
+class SupportsFinish(Protocol):
+    async def finish(self, message: Any | None = None) -> Any: ...
+
+
+async def abort_if_revoke_signal(
+    event: MessageEvent,
+    matcher: SupportsFinish,
+) -> None:
     if not is_revoke_signal(event):
         return
     await matcher.finish()
@@ -534,8 +544,9 @@ async def handle_guided_study_shortcut(
     group_block = parse_study_group_block_choice(group_block_text)
     weight = parse_guided_weight(weight_text)
     is_group = isinstance(event, GroupMessageEvent)
-    _, _, raw_rule = parse_legacy_study_text(
-        f"{trig_mode} {group_block} trigger response",
+    raw_rule = build_legacy_study_shortcut_rule(
+        trig_mode,
+        group_block,
         is_group=is_group,
     )
     raw_rule["weight"] = weight

@@ -281,6 +281,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert add.demo_turns[-1].text == "做个好梦"
     assert "revoke" in add.failures
     assert "直接中止" in add.failures
+    assert "wordbank.help" in wordbank.summary
     assert "ID: 12" in add.demo_turns[9].text
     assert passive.demo_turns[-1].speaker == "SYSTEM"
     assert "group_recall" in passive.demo_turns[-1].text

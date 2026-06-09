@@ -90,6 +90,7 @@ async def _(
     await abort_if_revoke_signal(event, matcher)
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not arg.extract_plain_text().strip():
+        await wordbank_service.initialize()
         state["study_locale"] = locale
         await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
         return

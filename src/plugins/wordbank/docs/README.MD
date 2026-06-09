@@ -1,7 +1,7 @@
 # 词库模块
 
 ## 概览
-词库模块提供低资源优先的群聊词库能力。`wordbank` 负责完整词库管理、运行时匹配、图片指纹和日志；`study` 只是快捷添加入口。运行时使用内存索引匹配文本、图片和事件触发词，普通文本消息路径不查询数据库；新增、删除、恢复后通过延迟重建刷新索引。检测到 `revoke` / `recall` 相关信号时会直接跳过匹配，不回复也不写日志；`wordbank add` / `wordbank.add` / `添加词条` 的引导流程里如果收到撤回信号，会直接中止，不发送取消提示。为兼容旧入口，`wordbank.add`、`wordbank.search`、`wordbank.delete`、`wordbank.restore`、`wordbank.image`、`wordbank.support`、`wordbank.vote` 和常用中文直达命令会自动转入对应新版子命令。
+词库模块提供低资源优先的群聊词库能力。`wordbank` 负责完整词库管理、运行时匹配、图片指纹和日志；`study` 只是快捷添加入口。运行时使用内存索引匹配文本、图片和事件触发词，普通文本消息路径不查询数据库；新增、删除、恢复后通过延迟重建刷新索引。检测到 `revoke` / `recall` 相关信号时会直接跳过匹配，不回复也不写日志；`wordbank / 词库 / wordbank.help` 可查看帮助，`wordbank add` / `wordbank.add` / `添加词条` 的引导流程里如果收到撤回信号，会直接中止，不发送取消提示。为兼容旧入口，`wordbank.add`、`wordbank.search`、`wordbank.delete`、`wordbank.restore`、`wordbank.image`、`wordbank.support`、`wordbank.vote` 和常用中文直达命令会自动转入对应新版子命令。
 
 ## 权限与触发
 - 触发方式: 指令触发 / 被动触发
