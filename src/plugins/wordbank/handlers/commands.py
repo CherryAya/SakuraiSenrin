@@ -302,14 +302,15 @@ async def handle_study_shortcut(
     text: str,
     locale: LocaleCode,
 ) -> str:
-    trigger, response, raw_rule = parse_legacy_study_text(text)
+    is_group = isinstance(event, GroupMessageEvent)
+    trigger, response, raw_rule = parse_legacy_study_text(text, is_group=is_group)
     result = await service.add_text_entry(
         trigger_text=trigger,
         response_text=response,
         raw_rule=raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),
-        is_group=isinstance(event, GroupMessageEvent),
+        is_group=is_group,
     )
     return format_add_result(result, locale=locale)
 

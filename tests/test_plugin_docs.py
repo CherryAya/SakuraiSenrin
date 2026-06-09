@@ -278,7 +278,9 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert passive.demo_turns[-1].speaker == "SYSTEM"
     assert "group_recall" in passive.demo_turns[-1].text
     assert shortcut.demo_filename == "study-shortcut.png"
-    assert len(shortcut.demo_turns) == 6
+    assert len(shortcut.demo_turns) == 8
+    assert "#study m t" in shortcut.demo_turns[-2].text
+    assert "self_in_current_group" in shortcut.demo_turns[-1].text
     assert load_representative_demo_bytes(wordbank) is not None
     assert load_representative_demo_bytes(study) is not None
 

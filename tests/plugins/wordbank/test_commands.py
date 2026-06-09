@@ -10,6 +10,7 @@ from src.plugins.wordbank.handlers.commands import (
     build_mutation_actor,
     dispatch_wordbank_command,
     handle_delete,
+    handle_study_shortcut,
     localize_command_error,
     parse_search_args,
     parse_text_add_args,
@@ -216,3 +217,36 @@ async def test_dispatch_add_uses_i18n_add_formatter() -> None:
     assert "词条已加入词库" in message
     assert "ID: 12" in message
     assert "触发: 晚安" in message
+
+
+async def test_handle_study_shortcut_supports_legacy_one_line_modes() -> None:
+    add_text_entry = AsyncMock(
+        return_value=WordbankAddResult(
+            entry_id=12,
+            trigger_text="晚安",
+            response_text="做个好梦",
+            trigger_mode="contains",
+            scope="self_in_current_group",
+            probability=1.0,
+            weight=3,
+        )
+    )
+    service = cast(WordbankService, SimpleNamespace(add_text_entry=add_text_entry))
+    event = build_group_message_event("#study m t 晚安 做个好梦")
+
+    message = await handle_study_shortcut(
+        service,
+        event=event,
+        text="m t 晚安 做个好梦",
+        locale="zh-CN",
+    )
+
+    assert "词条已加入词库" in message
+    add_text_entry.assert_awaited_once_with(
+        trigger_text="晚安",
+        response_text="做个好梦",
+        raw_rule={"scope": {"self", "current_group"}},
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )

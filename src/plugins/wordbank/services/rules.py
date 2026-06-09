@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import shlex
 from typing import Any, Literal, TypedDict, cast
 
 from src.lib.i18n.keys import MessageKey
@@ -310,13 +311,33 @@ def rule_allows(
     return True
 
 
-def parse_legacy_study_text(text: str) -> tuple[str, str, dict[str, Any]]:
+def _legacy_study_shortcut_rule(
+    trig_mode: str,
+    group_block: str,
+    *,
+    is_group: bool,
+) -> dict[str, Any]:
+    if trig_mode == "a":
+        if not is_group:
+            return {"scope": "private_only"}
+        return {"scope": "current_group" if group_block == "t" else "all_groups"}
+    if is_group and group_block == "t":
+        return {"scope": {"self", "current_group"}}
+    return {"scope": "self"}
+
+
+def parse_legacy_study_text(
+    text: str,
+    *,
+    is_group: bool = True,
+) -> tuple[str, str, dict[str, Any]]:
     """Convert legacy study text into a fixed-schema add request.
 
     Supported forms:
     - ``触发词 => 响应词``
     - ``触发词 -> 响应词``
     - ``触发词 回答 响应词``
+    - ``a t 触发词 响应词``
     """
 
     source = text.strip()
@@ -331,6 +352,39 @@ def parse_legacy_study_text(text: str) -> tuple[str, str, dict[str, Any]]:
                     "wordbank.error.study_pair_required",
                 )
             return trigger, response, {}
+    try:
+        tokens = shlex.split(source)
+    except ValueError as exc:
+        raise _rule_error(
+            "学习格式: study 触发词 => 响应词",
+            "wordbank.error.study_format",
+        ) from exc
+    if (
+        len(tokens) >= 4
+        and tokens[0].casefold() in {"a", "m"}
+        and tokens[1].casefold() in {"t", "f"}
+    ):
+        trigger = tokens[2].strip()
+        response = " ".join(tokens[3:]).strip()
+        if not trigger or not response:
+            raise _rule_error(
+                "学习内容需要同时包含触发词和响应词",
+                "wordbank.error.study_pair_required",
+            )
+        return (
+            trigger,
+            response,
+            _legacy_study_shortcut_rule(
+                tokens[0].casefold(),
+                tokens[1].casefold(),
+                is_group=is_group,
+            ),
+        )
+    if tokens and tokens[0].casefold() in {"a", "m"}:
+        raise _rule_error(
+            "学习格式: study 触发词 => 响应词",
+            "wordbank.error.study_format",
+        )
     parts = source.split(maxsplit=1)
     if len(parts) == 2:
         return parts[0].strip(), parts[1].strip(), {}

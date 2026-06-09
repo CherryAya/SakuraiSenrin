@@ -21,7 +21,7 @@
 - 别名: 添加, 学习
 - 指令: `wordbank add 触发词 => 响应词`
 #### 说明
-默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`study 触发词 => 响应词` 会走同一套添加逻辑。
+默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`study 触发词 => 响应词` 会走同一套添加逻辑；旧版 `study <a|m> <t|f> 触发词 响应词` 也会转换为新版固定 scope。
 #### 前置条件
 当前用户所在群聊需要通过运行时检查。
 #### 完整流程

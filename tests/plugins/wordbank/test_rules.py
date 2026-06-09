@@ -79,3 +79,23 @@ def test_parse_legacy_study_text() -> None:
 
     with pytest.raises(RuleError, match="学习格式"):
         parse_legacy_study_text("只有一个词")
+
+
+def test_parse_legacy_study_shortcut_modes() -> None:
+    trigger, response, rule = parse_legacy_study_text("a t 晚安 做个好梦")
+
+    assert trigger == "晚安"
+    assert response == "做个好梦"
+    assert rule == {"scope": "current_group"}
+
+    assert parse_legacy_study_text("a f 晚安 做个好梦")[2] == {"scope": "all_groups"}
+    assert parse_legacy_study_text("m f 晚安 做个好梦")[2] == {"scope": "self"}
+    assert parse_legacy_study_text("m t 晚安 做个好梦")[2] == {
+        "scope": {"self", "current_group"}
+    }
+    assert parse_legacy_study_text("a t 晚安 做个好梦", is_group=False)[2] == {
+        "scope": "private_only"
+    }
+
+    with pytest.raises(RuleError, match="学习格式"):
+        parse_legacy_study_text("a t 晚安")
