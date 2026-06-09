@@ -6,7 +6,6 @@ LastEditTime: 2026-04-04 15:06:18
 Description: 帮助插件
 """
 
-from collections import defaultdict
 from collections.abc import Awaitable
 from dataclasses import dataclass
 import inspect
@@ -185,29 +184,29 @@ def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
 
 
 def _build_index_message(entries: list[DocsEntry], locale: LocaleCode) -> Message:
-    grouped: dict[str, list[DocsEntry]] = defaultdict(list)
-    for entry in entries:
-        if not entry.docs["visible"]:
-            continue
-        grouped[entry.docs["category"]].append(entry)
-
     lines = [
-        tr(locale, "help.index.title"),
-        tr(locale, "help.index.hint"),
+        "📖 ===== 帮助文档 =====",
+        "",
+        "命令前缀: #help / #帮助",
+        "",
+        "帮助信息",
+        "  示例: #help <插件名 / 别名>",
+        "",
+        "⚠️ 注意事项:",
+        "1. 请确保输入的插件名称存在。",
+        "2. 如需进一步支持，请联系管理员，或加入反馈群「427842039」💬。",
     ]
 
-    if not grouped:
+    visible_entries = [entry for entry in entries if entry.docs["visible"]]
+    if not visible_entries:
+        lines.append("")
         lines.append(tr(locale, "help.index.empty"))
         return Message("\n".join(lines))
 
-    for category in sorted(grouped.keys()):
-        lines.append("")
-        lines.append(f"[{category}]")
-        for entry in grouped[category]:
-            summary = entry.summary.splitlines()[0]
-            if not summary:
-                summary = tr(locale, "help.index.no_summary")
-            lines.append(f"- {entry.display_name}: {summary}")
+    lines.extend(["", "🔧 当前可用插件如下:", ""])
+    for index, entry in enumerate(visible_entries, start=1):
+        lines.append(f"{index}. {entry.display_name}")
+        lines.append(f"  #help {entry.display_name}")
 
     message = Message("\n".join(lines).strip())
     demo_message = _load_help_index_demo()

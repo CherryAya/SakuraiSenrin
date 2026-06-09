@@ -163,9 +163,14 @@ BOT: 操作完成
     )
 
     assert isinstance(message, Message)
-    assert "===== 测试插件 / 完整流程 =====" in str(message)
-    assert "这里是说明。" in str(message)
-    assert "先发指令，再看返回。" in str(message)
+    assert "📖 ===== 测试插件 / 完整流程 =====" in str(message)
+    assert "功能名: 完整流程" in str(message)
+    assert "指令:\n  #flow" in str(message)
+    assert "⚠️ 注意事项:" in str(message)
+    assert "这里是前置条件。" in str(message)
+    assert "这里是说明。" not in str(message)
+    assert "先发指令，再看返回。" not in str(message)
+    assert "反馈群「427842039」" in str(message)
     assert any(segment.type == "image" for segment in message)
 
 
@@ -224,6 +229,13 @@ BOT: 操作完成
     )
 
     assert not any(segment.type == "image" for segment in text_only)
+    assert "📖 ===== 测试插件 =====" in str(with_demo)
+    assert "1. 完整流程" in str(with_demo)
+    assert "  #flow" in str(with_demo)
+    assert "触发方式" not in str(with_demo)
+    assert "权限" not in str(with_demo)
+    assert "子功能目录" not in str(with_demo)
+    assert "反馈群「427842039」" in str(with_demo)
     assert any(segment.type == "image" for segment in with_demo)
 
 

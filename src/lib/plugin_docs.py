@@ -23,6 +23,7 @@ from .consts import TriggerType
 DEMO_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 DEMO_AVATAR_PATH = DEMO_ASSETS_DIR / "senrin-demo-avatar.png"
 DEMO_STANDEE_PATH = DEMO_ASSETS_DIR / "senrin-demo-standee.png"
+SUPPORT_NOTE = "如需进一步支持，请联系管理员，或加入反馈群「427842039」💬。"
 
 
 @dataclass(slots=True, frozen=True)
@@ -275,25 +276,24 @@ def render_overview_message(
     include_demo: bool = False,
 ) -> Message:
     lines = [
-        f"===== {bundle.title} =====",
-        f"{tr(locale, 'docs.default.trigger')}: {bundle.trigger}",
-        f"{tr(locale, 'docs.default.permission')}: {bundle.permission}",
+        f"📖 ===== {bundle.title} =====",
         "",
-        bundle.summary.strip(),
     ]
     if bundle.index:
-        lines.extend(
-            [
-                "",
-                "子功能目录",
-                *(
-                    f"- {feature.title} ({feature.slug}): {feature.summary}"
-                    for feature in bundle.index
-                ),
-                "",
-                "发送 #help <插件名> <子功能名> 查看完整流程与 demo。",
-            ]
-        )
+        for index, feature in enumerate(bundle.index, start=1):
+            lines.append(f"{index}. {feature.title}")
+            lines.append(f"  {_feature_command_for_display(bundle, feature)}")
+            lines.append("")
+    else:
+        lines.append("暂无可用功能。")
+        lines.append("")
+    lines.extend(
+        [
+            "⚠️ 注意事项:",
+            "1. 请确认指令参数填写完整。",
+            f"2. {SUPPORT_NOTE}",
+        ]
+    )
     message = Message("\n".join(line for line in lines if line is not None).strip())
     if not include_demo:
         return message
@@ -311,29 +311,17 @@ def render_feature_message(
     include_demo: bool = True,
 ) -> Message:
     lines = [
-        f"===== {bundle.title} / {feature.title} =====",
-        f"{tr(locale, 'docs.default.trigger')}: {feature.trigger}",
+        f"📖 ===== {bundle.title} / {feature.title} =====",
+        "",
+        f"功能名: {feature.title}",
+        "",
+        "指令:",
+        f"  {_feature_command_for_display(bundle, feature)}",
+        "",
+        "⚠️ 注意事项:",
     ]
-    if feature.aliases:
-        lines.append(f"别名: {' / '.join(feature.aliases)}")
-    lines.extend(
-        [
-            "",
-            feature.summary,
-            "",
-            "说明",
-            feature.overview or tr(locale, "docs.default.empty"),
-            "",
-            "前置条件",
-            feature.preconditions or tr(locale, "docs.default.empty"),
-            "",
-            "完整流程",
-            feature.flow_notes or "见下方 demo 图。",
-            "",
-            "失败情况",
-            feature.failures or tr(locale, "docs.default.empty"),
-        ]
-    )
+    for index, note in enumerate(_feature_notice_items(feature), start=1):
+        lines.append(f"{index}. {note}")
     message = Message("\n".join(lines).strip())
     if not include_demo:
         return message
@@ -341,6 +329,32 @@ def render_feature_message(
     if demo_bytes is None:
         return message
     return message + MessageSegment.image(demo_bytes)
+
+
+def _feature_command_for_display(
+    bundle: PluginDocBundle,
+    feature: FeatureDoc,
+) -> str:
+    command = _normalize_inline_text(feature.trigger)
+    if command:
+        return command
+    return f"#help {bundle.title} {feature.slug}"
+
+
+def _feature_notice_items(feature: FeatureDoc) -> list[str]:
+    notes: list[str] = []
+    preconditions = _normalize_inline_text(feature.preconditions)
+    if preconditions and preconditions != "无":
+        notes.append(preconditions)
+    else:
+        notes.append("请确认指令参数填写完整。")
+    notes.append(SUPPORT_NOTE)
+    return notes
+
+
+def _normalize_inline_text(value: str) -> str:
+    text = re.sub(r"`([^`]*)`", r"\1", value.strip())
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def load_demo_bytes(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes | None:

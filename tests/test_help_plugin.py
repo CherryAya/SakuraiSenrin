@@ -121,7 +121,11 @@ def test_build_index_message_attaches_demo_image(monkeypatch: Any) -> None:
 
     message = _build_index_message([entry], "zh-CN")
 
+    assert "📖 ===== 帮助文档 =====" in str(message)
+    assert "命令前缀: #help / #帮助" in str(message)
     assert "帮助中心" in str(message)
+    assert "#help 帮助中心" in str(message)
+    assert "反馈群「427842039」" in str(message)
     assert any(segment.type == "image" for segment in message)
 
 
