@@ -17,10 +17,12 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.plugin import on_command, on_fullmatch
 from nonebot.rule import to_me
+from nonebot.typing import T_State
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_readme_docs,
@@ -33,10 +35,12 @@ from .handlers import (
     IMAGE_ALIASES,
     REPLY_COMMAND_ALIASES,
     PassiveResponse,
+    abort_if_revoke_signal,
     build_forced_command_text,
     dispatch_wordbank_command,
     extract_image_urls,
     handle_add_image,
+    handle_guided_add_text,
     handle_passive_message,
     handle_passive_notice,
     handle_reply_command,
@@ -106,49 +110,53 @@ async def _initialize_wordbank_plugin() -> None:
 
 wordbank_command = on_command(
     "wordbank",
-    aliases={"词库"},
+    aliases={"词库", "wordbank.help"},
     priority=5,
     block=True,
 )
 wordbank_add_command = on_command(
     ("wordbank", "add"),
-    aliases={"添加词条"},
+    aliases={"添加词条", "wordbank.add"},
     priority=5,
     block=True,
 )
 wordbank_search_command = on_command(
     ("wordbank", "search"),
-    aliases={"搜索词条"},
+    aliases={"搜索词条", "wordbank.search"},
     priority=5,
     block=True,
 )
 wordbank_delete_command = on_command(
     ("wordbank", "delete"),
-    aliases={("wordbank", "del"), "删除词条"},
+    aliases={("wordbank", "del"), "删除词条", "wordbank.delete", "wordbank.del"},
     priority=5,
     block=True,
 )
 wordbank_restore_command = on_command(
     ("wordbank", "restore"),
-    aliases={"恢复词条"},
+    aliases={"恢复词条", "wordbank.restore"},
     priority=5,
     block=True,
 )
 wordbank_image_command = on_command(
     ("wordbank", "image"),
-    aliases={("wordbank", "img"), "图片词条"},
+    aliases={("wordbank", "img"), "图片词条", "wordbank.image", "wordbank.img"},
     priority=5,
     block=True,
 )
 wordbank_support_command = on_command(
     ("wordbank", "support"),
-    aliases={"支持删除"},
+    aliases={"支持删除", "wordbank.support"},
     priority=5,
     block=True,
 )
 wordbank_vote_command = on_command(
     ("wordbank", "vote"),
-    aliases={"查看投票状态", "查看投票结果"},
+    aliases={
+        "查看投票状态",
+        "查看投票结果",
+        "wordbank.vote",
+    },
     priority=5,
     block=True,
 )
@@ -209,22 +217,130 @@ async def _handle_wordbank_command_message(
     await matcher.finish(msg)
 
 
+async def _start_guided_add(
+    matcher: Matcher,
+    state: T_State,
+    locale: LocaleCode,
+) -> None:
+    await initialize_wordbank_plugin()
+    state["wordbank_locale"] = locale
+    await matcher.pause(tr(locale, "wordbank.guided.add.trigger_prompt"))
+
+
+async def _finish_guided_add(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+) -> None:
+    locale = state.get("wordbank_locale", "zh-CN")
+    try:
+        msg = await handle_guided_add_text(
+            wordbank_service,
+            event=event,
+            trigger_text=str(state.get("wordbank_guided_trigger", "")),
+            response_text=str(state.get("wordbank_guided_response", "")),
+            scope_text=str(state.get("wordbank_guided_scope", "")),
+            advanced_text=event.message.extract_plain_text(),
+            locale=locale,
+        )
+    except (RuleError, ValueError) as exc:
+        await matcher.finish(localize_command_error(exc, locale))
+    await matcher.finish(msg)
+
+
 @wordbank_command.handle()
 async def _(
     matcher: Matcher,
     event: MessageEvent,
+    state: T_State,
     arg: Message = CommandArg(),
 ) -> None:
+    await abort_if_revoke_signal(event, matcher)
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    text = arg.extract_plain_text().strip()
+    if text:
+        first, _, tail = text.partition(" ")
+        if first.lower() in {"add", "添加", "学习"} and not tail.strip():
+            await _start_guided_add(matcher, state, locale)
+            return
+    await initialize_wordbank_plugin()
     await _handle_wordbank_command_message(matcher, event, arg)
+
+
+@wordbank_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    await abort_if_revoke_signal(event, matcher)
+    locale = state.get("wordbank_locale", "zh-CN")
+    state["wordbank_guided_trigger"] = event.message.extract_plain_text()
+    await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
+
+
+@wordbank_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    await abort_if_revoke_signal(event, matcher)
+    locale = state.get("wordbank_locale", "zh-CN")
+    state["wordbank_guided_response"] = event.message.extract_plain_text()
+    await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
+
+
+@wordbank_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    await abort_if_revoke_signal(event, matcher)
+    locale = state.get("wordbank_locale", "zh-CN")
+    state["wordbank_guided_scope"] = event.message.extract_plain_text()
+    await matcher.pause(tr(locale, "wordbank.guided.add.advanced_prompt"))
+
+
+@wordbank_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    await abort_if_revoke_signal(event, matcher)
+    await _finish_guided_add(matcher, event, state)
 
 
 @wordbank_add_command.handle()
 async def _(
     matcher: Matcher,
     event: MessageEvent,
+    state: T_State,
     arg: Message = CommandArg(),
 ) -> None:
+    await abort_if_revoke_signal(event, matcher)
+    await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    if not arg.extract_plain_text().strip():
+        await _start_guided_add(matcher, state, locale)
+        return
     await _handle_wordbank_command_message(matcher, event, arg, forced_action="add")
+
+
+@wordbank_add_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    await abort_if_revoke_signal(event, matcher)
+    locale = state.get("wordbank_locale", "zh-CN")
+    state["wordbank_guided_trigger"] = event.message.extract_plain_text()
+    await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
+
+
+@wordbank_add_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    await abort_if_revoke_signal(event, matcher)
+    locale = state.get("wordbank_locale", "zh-CN")
+    state["wordbank_guided_response"] = event.message.extract_plain_text()
+    await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
+
+
+@wordbank_add_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    await abort_if_revoke_signal(event, matcher)
+    locale = state.get("wordbank_locale", "zh-CN")
+    state["wordbank_guided_scope"] = event.message.extract_plain_text()
+    await matcher.pause(tr(locale, "wordbank.guided.add.advanced_prompt"))
+
+
+@wordbank_add_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    await abort_if_revoke_signal(event, matcher)
+    await _finish_guided_add(matcher, event, state)
 
 
 @wordbank_search_command.handle()

@@ -276,16 +276,23 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     shortcut = next(feature for feature in study.index if feature.slug == "shortcut")
 
     assert add.demo_filename == "wordbank-add.png"
-    assert [turn.speaker for turn in add.demo_turns] == ["USER", "BOT", "USER", "BOT"]
-    assert "ID: 12" in add.demo_turns[1].text
+    assert len(add.demo_turns) == 12
+    assert add.demo_turns[0].text == "#wordbank.add"
+    assert add.demo_turns[-1].text == "做个好梦"
+    assert "revoke" in add.failures
+    assert "直接中止" in add.failures
+    assert "ID: 12" in add.demo_turns[9].text
     assert passive.demo_turns[-1].speaker == "SYSTEM"
     assert "group_recall" in passive.demo_turns[-1].text
     assert reply.demo_filename == "wordbank-reply-shortcut.png"
     assert "词条详情 #12" in reply.demo_turns[3].text
     assert shortcut.demo_filename == "study-shortcut.png"
-    assert len(shortcut.demo_turns) == 8
-    assert "#study m t" in shortcut.demo_turns[-2].text
-    assert "self_in_current_group" in shortcut.demo_turns[-1].text
+    assert len(shortcut.demo_turns) == 14
+    assert shortcut.demo_turns[0].text == "#study"
+    assert shortcut.demo_turns[2].text == "a"
+    assert shortcut.demo_turns[-1].text == "做个好梦"
+    assert "revoke" in shortcut.failures
+    assert "直接中止" in shortcut.failures
     assert load_representative_demo_bytes(wordbank) is not None
     assert load_representative_demo_bytes(study) is not None
 

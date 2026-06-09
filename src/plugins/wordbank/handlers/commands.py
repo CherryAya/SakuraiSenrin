@@ -8,11 +8,13 @@ from typing import Any
 
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
+from nonebot.matcher import Matcher
 
 from src.config import config
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.plugins.wordbank.handlers.passive import is_revoke_signal
 from src.plugins.wordbank.services.core import (
     WordbankDeleteVoteResult,
     WordbankService,
@@ -56,6 +58,18 @@ class MutationActor:
     group_id: str
     can_moderate_group: bool
     is_superuser: bool
+
+
+@dataclass(slots=True, frozen=True)
+class GuidedAdvancedOptions:
+    raw_rule: dict[str, Any]
+    trigger_mode: str | None
+
+
+async def abort_if_revoke_signal(event: MessageEvent, matcher: Matcher) -> None:
+    if not is_revoke_signal(event):
+        return
+    await matcher.finish()
 
 
 def _split_command(text: str) -> tuple[str, str]:
@@ -195,6 +209,93 @@ def parse_text_add_args(text: str) -> ParsedTextAdd:
         "添加格式: wordbank add 触发词 => 响应词",
         key="wordbank.error.add_format",
     )
+
+
+def parse_guided_scope_choice(text: str, *, is_group: bool) -> str:
+    choice = text.strip().casefold()
+    if choice in {"", "1", "default", "默认", "本群", "当前群", "current_group"}:
+        return "current_group" if is_group else "self"
+    if choice in {"2", "all", "all_groups", "全群", "所有群"}:
+        return "all_groups"
+    if choice in {"3", "self", "only_me", "仅自己", "自己"}:
+        return "self_in_current_group" if is_group else "self"
+    if choice in {"4", "private", "private_only", "私聊"}:
+        return "private_only"
+    raise RuleError(
+        "生效范围选择无效",
+        key="wordbank.error.guided_scope_invalid",
+    )
+
+
+def parse_guided_advanced_options(text: str) -> GuidedAdvancedOptions:
+    choice = text.strip()
+    if not choice or choice.casefold() in {
+        "n",
+        "no",
+        "否",
+        "不",
+        "不用",
+        "不需要",
+        "无",
+        "跳过",
+    }:
+        return GuidedAdvancedOptions(raw_rule={}, trigger_mode=None)
+    source, raw_rule, trigger_mode = _parse_flags(choice)
+    if source.strip():
+        raise RuleError(
+            f"无法识别高级选项: {source.strip()}",
+            key="wordbank.error.guided_advanced_unknown",
+            options=source.strip(),
+        )
+    if "scope" in raw_rule:
+        raise RuleError(
+            "引导模式中生效范围已经单独选择，请不要在高级选项里重复设置 --scope",
+            key="wordbank.error.guided_scope_in_advanced",
+        )
+    return GuidedAdvancedOptions(raw_rule=raw_rule, trigger_mode=trigger_mode)
+
+
+def parse_study_mode_choice(text: str) -> str:
+    choice = text.strip().casefold()
+    if choice in {"a", "all", "所有人", "所有"}:
+        return "a"
+    if choice in {"m", "me", "self", "自己", "仅自己"}:
+        return "m"
+    raise RuleError(
+        "触发方式输入错误，请输入 a 或 m",
+        key="wordbank.error.study_mode_invalid",
+    )
+
+
+def parse_study_group_block_choice(text: str) -> str:
+    choice = text.strip().casefold()
+    if choice in {"t", "true", "yes", "y", "开", "开启", "本群"}:
+        return "t"
+    if choice in {"f", "false", "no", "n", "关", "关闭", "全群"}:
+        return "f"
+    raise RuleError(
+        "群组隔离开关输入错误，请输入 t 或 f",
+        key="wordbank.error.study_group_block_invalid",
+    )
+
+
+def parse_guided_weight(text: str) -> int:
+    choice = text.strip()
+    if not choice or choice.casefold() in {"default", "默认"}:
+        return 3
+    try:
+        weight = int(choice)
+    except ValueError as exc:
+        raise RuleError(
+            "权重必须是 1 到 5 之间的整数",
+            key="wordbank.error.weight_invalid",
+        ) from exc
+    if weight < 1 or weight > 5:
+        raise RuleError(
+            "权重必须是 1 到 5 之间的整数",
+            key="wordbank.error.weight_invalid",
+        )
+    return weight
 
 
 def parse_search_args(text: str) -> ParsedSearch:
@@ -372,6 +473,32 @@ async def handle_add_text(
     return format_add_result(result, locale=locale)
 
 
+async def handle_guided_add_text(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    trigger_text: str,
+    response_text: str,
+    scope_text: str,
+    advanced_text: str = "",
+    locale: LocaleCode,
+) -> str:
+    is_group = isinstance(event, GroupMessageEvent)
+    scope = parse_guided_scope_choice(scope_text, is_group=is_group)
+    advanced = parse_guided_advanced_options(advanced_text)
+    raw_rule = {"scope": scope, **advanced.raw_rule}
+    result = await service.add_text_entry(
+        trigger_text=trigger_text,
+        response_text=response_text,
+        trigger_mode=advanced.trigger_mode,
+        raw_rule=raw_rule,
+        group_id=str(getattr(event, "group_id", "")),
+        user_id=str(event.user_id),
+        is_group=is_group,
+    )
+    return format_add_result(result, locale=locale)
+
+
 async def handle_study_shortcut(
     service: WordbankService,
     *,
@@ -384,6 +511,37 @@ async def handle_study_shortcut(
     result = await service.add_text_entry(
         trigger_text=trigger,
         response_text=response,
+        raw_rule=raw_rule,
+        group_id=str(getattr(event, "group_id", "")),
+        user_id=str(event.user_id),
+        is_group=is_group,
+    )
+    return format_add_result(result, locale=locale)
+
+
+async def handle_guided_study_shortcut(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    trig_mode_text: str,
+    group_block_text: str,
+    trigger_text: str,
+    response_text: str,
+    weight_text: str,
+    locale: LocaleCode,
+) -> str:
+    trig_mode = parse_study_mode_choice(trig_mode_text)
+    group_block = parse_study_group_block_choice(group_block_text)
+    weight = parse_guided_weight(weight_text)
+    is_group = isinstance(event, GroupMessageEvent)
+    _, _, raw_rule = parse_legacy_study_text(
+        f"{trig_mode} {group_block} trigger response",
+        is_group=is_group,
+    )
+    raw_rule["weight"] = weight
+    result = await service.add_text_entry(
+        trigger_text=trigger_text,
+        response_text=response_text,
         raw_rule=raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),

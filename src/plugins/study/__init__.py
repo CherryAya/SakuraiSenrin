@@ -13,10 +13,12 @@ from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.plugin import on_command
+from nonebot.typing import T_State
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_readme_docs,
@@ -74,20 +76,102 @@ study_command = on_command(
 async def _(
     matcher: Matcher,
     event: MessageEvent,
+    state: T_State,
     arg: Message = CommandArg(),
 ) -> None:
     from src.plugins.wordbank.handlers import handle_study_shortcut
-    from src.plugins.wordbank.handlers.commands import localize_command_error
+    from src.plugins.wordbank.handlers.commands import (
+        abort_if_revoke_signal,
+        localize_command_error,
+    )
     from src.plugins.wordbank.services import wordbank_service
     from src.plugins.wordbank.services.rules import RuleError
 
-    await wordbank_service.initialize()
+    await abort_if_revoke_signal(event, matcher)
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    if not arg.extract_plain_text().strip():
+        state["study_locale"] = locale
+        await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
+        return
+    await wordbank_service.initialize()
     try:
         msg = await handle_study_shortcut(
             wordbank_service,
             event=event,
             text=arg.extract_plain_text(),
+            locale=locale,
+        )
+    except (RuleError, ValueError) as exc:
+        await matcher.finish(localize_command_error(exc, locale))
+    await matcher.finish(msg)
+
+
+def _study_locale(state: T_State) -> LocaleCode:
+    locale = state.get("study_locale", "zh-CN")
+    return locale if locale in {"zh-CN", "lzh", "x-meme"} else "zh-CN"
+
+
+@study_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    from src.plugins.wordbank.handlers.commands import abort_if_revoke_signal
+
+    await abort_if_revoke_signal(event, matcher)
+    locale = _study_locale(state)
+    state["study_trig_mode"] = event.message.extract_plain_text()
+    await matcher.pause(tr(locale, "wordbank.guided.study.group_block_prompt"))
+
+
+@study_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    from src.plugins.wordbank.handlers.commands import abort_if_revoke_signal
+
+    await abort_if_revoke_signal(event, matcher)
+    locale = _study_locale(state)
+    state["study_group_block"] = event.message.extract_plain_text()
+    await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
+
+
+@study_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    from src.plugins.wordbank.handlers.commands import abort_if_revoke_signal
+
+    await abort_if_revoke_signal(event, matcher)
+    locale = _study_locale(state)
+    state["study_trigger"] = event.message.extract_plain_text()
+    await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
+
+
+@study_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    from src.plugins.wordbank.handlers.commands import abort_if_revoke_signal
+
+    await abort_if_revoke_signal(event, matcher)
+    locale = _study_locale(state)
+    state["study_response"] = event.message.extract_plain_text()
+    await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
+
+
+@study_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    from src.plugins.wordbank.handlers import handle_guided_study_shortcut
+    from src.plugins.wordbank.handlers.commands import (
+        abort_if_revoke_signal,
+        localize_command_error,
+    )
+    from src.plugins.wordbank.services import wordbank_service
+    from src.plugins.wordbank.services.rules import RuleError
+
+    await abort_if_revoke_signal(event, matcher)
+    locale = _study_locale(state)
+    try:
+        msg = await handle_guided_study_shortcut(
+            wordbank_service,
+            event=event,
+            trig_mode_text=str(state.get("study_trig_mode", "")),
+            group_block_text=str(state.get("study_group_block", "")),
+            trigger_text=str(state.get("study_trigger", "")),
+            response_text=str(state.get("study_response", "")),
+            weight_text=event.message.extract_plain_text(),
             locale=locale,
         )
     except (RuleError, ValueError) as exc:

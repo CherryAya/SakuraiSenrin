@@ -1,7 +1,7 @@
 # 词库模块
 
 ## 概览
-词库模块提供低资源优先的群聊词库能力。`wordbank` 负责完整词库管理、运行时匹配、图片指纹和日志；`study` 只是快捷添加入口。运行时使用内存索引匹配文本、图片和事件触发词，普通文本消息路径不查询数据库；新增、删除、恢复后通过延迟重建刷新索引。检测到 `revoke` / `recall` 相关信号时会直接跳过匹配，不回复也不写日志。为兼容旧入口，`wordbank.add`、`wordbank.search`、`wordbank.delete`、`wordbank.restore`、`wordbank.image`、`wordbank.support`、`wordbank.vote` 和常用中文直达命令会自动转入对应新版子命令。
+词库模块提供低资源优先的群聊词库能力。`wordbank` 负责完整词库管理、运行时匹配、图片指纹和日志；`study` 只是快捷添加入口。运行时使用内存索引匹配文本、图片和事件触发词，普通文本消息路径不查询数据库；新增、删除、恢复后通过延迟重建刷新索引。检测到 `revoke` / `recall` 相关信号时会直接跳过匹配，不回复也不写日志；`wordbank add` / `wordbank.add` / `添加词条` 的引导流程里如果收到撤回信号，会直接中止，不发送取消提示。为兼容旧入口，`wordbank.add`、`wordbank.search`、`wordbank.delete`、`wordbank.restore`、`wordbank.image`、`wordbank.support`、`wordbank.vote` 和常用中文直达命令会自动转入对应新版子命令。
 
 ## 权限与触发
 - 触发方式: 指令触发 / 被动触发
@@ -25,12 +25,24 @@
 - 指令: `wordbank add 触发词 => 响应词`
 - 兼容指令: `wordbank.add 触发词 => 响应词`、`添加词条 触发词 => 响应词`
 #### 说明
-默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`study 触发词 => 响应词` 会走同一套添加逻辑；旧版 `study <a|m> <t|f> 触发词 响应词` 也会转换为新版固定 scope。
+默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`study 触发词 => 响应词` 会走同一套添加逻辑；旧版 `study <a|m> <t|f> 触发词 响应词` 也会转换为新版固定 scope。引导任一步收到 `revoke` / `recall` 会直接中止，不发送取消提示。
 #### 前置条件
 当前用户所在群聊需要通过运行时检查。
 #### 完整流程
 ```demo
-USER: #wordbank add 晚安 => 做个好梦 --mode contains --scope current_group --prob 1 --weight 3
+USER: #wordbank.add
+BOT: 请输入触发词：
+USER: 晚安
+BOT: 请输入响应词：
+USER: 做个好梦
+BOT: 请选择生效范围：
+1. 当前群（默认）
+2. 所有群
+3. 仅自己
+4. 仅私聊
+USER: 1
+BOT: 是否需要高级选项？发送 n 跳过；需要请直接输入参数，例如 --mode fullmatch --prob 0.5 --weight 3 --role admin --call 60:0:3
+USER: n
 BOT: 词条已加入词库
 ID: 12
 触发: 晚安
@@ -43,7 +55,7 @@ USER: 大家晚安啦
 BOT: 做个好梦
 ```
 #### 失败情况
-触发词或响应词为空、规则字段冲突、概率和权重越界时会返回当前群语言的原因。
+触发词或响应词为空、规则字段冲突、概率和权重越界时会返回当前群语言的原因；引导中若检测到 `revoke` / `recall` 会直接中止，不发送取消提示。
 
 ### `search` 搜索词条
 - 摘要: 查询词库中的触发词和响应词。
