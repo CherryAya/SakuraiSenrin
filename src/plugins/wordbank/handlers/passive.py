@@ -19,6 +19,7 @@ from src.plugins.wordbank.services.rules import Role, RuleContext
 
 REVOKE_MARKERS = ("revoke", "recall")
 MAX_PASSIVE_IMAGES = 4
+MAX_IMAGE_DOWNLOAD_BYTES = 4 * 1024 * 1024
 
 
 def _contains_revoke_marker(value: object) -> bool:
@@ -112,12 +113,27 @@ def build_event_triggers(
     return ()
 
 
-async def fetch_image_bytes(url: str) -> bytes | None:
+async def fetch_image_bytes(
+    url: str,
+    *,
+    max_bytes: int = MAX_IMAGE_DOWNLOAD_BYTES,
+) -> bytes | None:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            return response.content
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                content_length = response.headers.get("content-length")
+                if content_length and int(content_length) > max_bytes:
+                    return None
+
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > max_bytes:
+                        return None
+                    chunks.append(chunk)
+                return b"".join(chunks)
     except Exception as exc:
         logger.warning(f"[Wordbank] image fetch skipped: {exc}")
         return None

@@ -1,11 +1,15 @@
-from types import SimpleNamespace
-from typing import cast
+from collections.abc import AsyncIterator
+from types import SimpleNamespace, TracebackType
+from typing import Self, cast
 from unittest.mock import AsyncMock
 
 from nonebot.adapters.onebot.v11.bot import Bot
+import pytest
 
+from src.plugins.wordbank.handlers import passive
 from src.plugins.wordbank.handlers.passive import (
     build_event_triggers,
+    fetch_image_bytes,
     handle_passive_message,
     handle_passive_notice,
     is_revoke_signal,
@@ -17,6 +21,60 @@ from tests.plugins.water.helpers import (
     build_group_message_event,
     build_group_poke_event,
 )
+
+
+class _FakeStreamResponse:
+    def __init__(
+        self,
+        chunks: list[bytes],
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.chunks = chunks
+        self.headers = headers or {}
+        self.iterated = False
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool:
+        return False
+
+    def raise_for_status(self) -> None:
+        return None
+
+    async def aiter_bytes(self) -> AsyncIterator[bytes]:
+        self.iterated = True
+        for chunk in self.chunks:
+            yield chunk
+
+
+class _FakeAsyncClient:
+    response: _FakeStreamResponse
+
+    def __init__(self, *, timeout: float) -> None:
+        self.timeout = timeout
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool:
+        return False
+
+    def stream(self, method: str, url: str) -> _FakeStreamResponse:
+        assert method == "GET"
+        assert url == "https://example.test/image.png"
+        return self.response
 
 
 def test_is_revoke_signal_detects_event_fields_and_segments() -> None:
@@ -116,3 +174,38 @@ def test_build_event_triggers_ignores_poke_to_other_user() -> None:
     bot = cast(Bot, SimpleNamespace(self_id="99999"))
 
     assert build_event_triggers(build_group_poke_event(target_id=10002), bot) == ()
+
+
+async def test_fetch_image_bytes_skips_content_length_over_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = _FakeStreamResponse(
+        [b"body"],
+        headers={"content-length": "6"},
+    )
+    _FakeAsyncClient.response = response
+    monkeypatch.setattr(passive.httpx, "AsyncClient", _FakeAsyncClient)
+
+    data = await fetch_image_bytes(
+        "https://example.test/image.png",
+        max_bytes=5,
+    )
+
+    assert data is None
+    assert not response.iterated
+
+
+async def test_fetch_image_bytes_skips_stream_over_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = _FakeStreamResponse([b"123", b"456"])
+    _FakeAsyncClient.response = response
+    monkeypatch.setattr(passive.httpx, "AsyncClient", _FakeAsyncClient)
+
+    data = await fetch_image_bytes(
+        "https://example.test/image.png",
+        max_bytes=5,
+    )
+
+    assert data is None
+    assert response.iterated
