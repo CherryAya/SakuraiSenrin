@@ -29,6 +29,7 @@ from src.logger import logger
 
 from .handlers import (
     IMAGE_ALIASES,
+    build_forced_command_text,
     dispatch_wordbank_command,
     extract_image_urls,
     handle_add_image,
@@ -103,19 +104,50 @@ wordbank_command = on_command(
     priority=5,
     block=True,
 )
+wordbank_add_command = on_command(
+    ("wordbank", "add"),
+    aliases={"添加词条"},
+    priority=5,
+    block=True,
+)
+wordbank_search_command = on_command(
+    ("wordbank", "search"),
+    aliases={"搜索词条"},
+    priority=5,
+    block=True,
+)
+wordbank_delete_command = on_command(
+    ("wordbank", "delete"),
+    aliases={("wordbank", "del"), "删除词条"},
+    priority=5,
+    block=True,
+)
+wordbank_restore_command = on_command(
+    ("wordbank", "restore"),
+    aliases={"恢复词条"},
+    priority=5,
+    block=True,
+)
+wordbank_image_command = on_command(
+    ("wordbank", "image"),
+    aliases={("wordbank", "img"), "图片词条"},
+    priority=5,
+    block=True,
+)
 wordbank_passive = on_message(priority=95, block=False)
 wordbank_notice = on_notice(priority=95, block=False)
 
 
-@wordbank_command.handle()
-async def _(
+async def _handle_wordbank_command_message(
     matcher: Matcher,
     event: MessageEvent,
-    arg: Message = CommandArg(),
+    arg: Message,
+    *,
+    forced_action: str | None = None,
 ) -> None:
     await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-    text = arg.extract_plain_text().strip()
+    text = build_forced_command_text(forced_action, arg.extract_plain_text())
     action = text.split(maxsplit=1)[0].lower() if text else ""
     if action in IMAGE_ALIASES:
         urls = extract_image_urls(arg)
@@ -150,6 +182,60 @@ async def _(
     except (RuleError, ValueError) as exc:
         await matcher.finish(localize_command_error(exc, locale))
     await matcher.finish(msg)
+
+
+@wordbank_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(matcher, event, arg)
+
+
+@wordbank_add_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(matcher, event, arg, forced_action="add")
+
+
+@wordbank_search_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(matcher, event, arg, forced_action="search")
+
+
+@wordbank_delete_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(matcher, event, arg, forced_action="delete")
+
+
+@wordbank_restore_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(matcher, event, arg, forced_action="restore")
+
+
+@wordbank_image_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(matcher, event, arg, forced_action="image")
 
 
 @wordbank_passive.handle()

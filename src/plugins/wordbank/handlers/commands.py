@@ -62,6 +62,11 @@ def _split_command(text: str) -> tuple[str, str]:
     return action.lower(), rest.strip()
 
 
+def build_forced_command_text(action: str | None, raw_text: str) -> str:
+    raw_text = raw_text.strip()
+    return f"{action} {raw_text}".strip() if action else raw_text
+
+
 def _parse_flags(text: str) -> tuple[str, dict[str, Any], str | None]:
     try:
         tokens = shlex.split(text)

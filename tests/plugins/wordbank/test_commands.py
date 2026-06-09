@@ -7,6 +7,7 @@ import pytest
 from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.handlers import commands
 from src.plugins.wordbank.handlers.commands import (
+    build_forced_command_text,
     build_mutation_actor,
     dispatch_wordbank_command,
     handle_delete,
@@ -43,6 +44,14 @@ def test_wordbank_help_text_uses_requested_locale(
 
     assert wordbank_help_text("lzh") == "localized-help"
     assert calls == [("lzh", "wordbank.help", {})]
+
+
+def test_build_forced_command_text_keeps_legacy_entrypoints_thin() -> None:
+    assert (
+        build_forced_command_text("add", "晚安 => 做个好梦") == "add 晚安 => 做个好梦"
+    )
+    assert build_forced_command_text(None, " search 晚安 ") == "search 晚安"
+    assert build_forced_command_text("delete", " 12 ") == "delete 12"
 
 
 async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
