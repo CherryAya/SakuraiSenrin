@@ -78,7 +78,7 @@ CATALOG: Final[dict[str, str]] = {
     "plugin.wordbank.name": "词库模块",
     "plugin.wordbank.description": "低资源优先的群聊词库，支持文本与图片触发。",
     "plugin.wordbank.docs": "词库功能开发中。",
-    "wordbank.help": "词库命令:\nwordbank add 触发词 => 响应词 [--mode contains|fullmatch|prefix]\n  可选: --scope current_group|all_groups|self|private_only\n  可选: --prob 0.0-1.0 --weight 1-5 --role owner|admin|member\n  可选: --call window:min:max\nwordbank search [关键词] [--page 页码] [--limit 每页数量]\nwordbank delete <id>\nwordbank restore <id>\nwordbank image 响应词  并附带一张图片\nstudy 触发词 => 响应词\n被动匹配: 文本/图片命中词条会自动回复；检测到 revoke/recall 时跳过。",
+    "wordbank.help": "词库命令:\nwordbank add 触发词 => 响应词 [--mode contains|fullmatch|prefix]\n  可选: --scope current_group|all_groups|self|private_only\n  可选: --prob 0.0-1.0 --weight 1-5 --role owner|admin|member\n  可选: --call window:min:max\nwordbank search [关键词] [--page 页码] [--limit 每页数量]\nwordbank delete <id>\nwordbank restore <id>\nwordbank image 响应词  并附带一张图片\nstudy 触发词 => 响应词\n事件触发词: event:at、event:poke、event:join、event:leave\n被动匹配: 文本/图片/@/戳一戳/入退群命中词条会自动回复；检测到 revoke/recall 时跳过。",
     "wordbank.add.success": "词条已加入词库\nID: {entry_id}\n触发: {trigger_text}\n响应: {response_text}\n模式: {trigger_mode}\n范围: {scope}\n概率: {probability}\n权重: {weight}",
     "wordbank.search.empty": "第 {page} 页没有找到匹配词条。",
     "wordbank.search.title": "词库搜索结果 (第 {page} 页):",

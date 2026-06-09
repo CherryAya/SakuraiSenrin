@@ -109,7 +109,11 @@ class WordbankService:
 
         normalized = normalize_text(trigger_text)
         short_trigger = len(normalized.replace(" ", "")) <= 2
-        mode = normalize_trigger_mode(trigger_mode, short_trigger=short_trigger)
+        event_trigger = normalized.startswith("event:")
+        mode = normalize_trigger_mode(
+            trigger_mode,
+            short_trigger=short_trigger or event_trigger,
+        )
         rule = canonicalize_rule(
             raw_rule,
             is_group=is_group,
@@ -256,6 +260,19 @@ class WordbankService:
             candidates,
             context=context,
             message_type="image",
+        )
+
+    async def match_event(
+        self,
+        event_triggers: Sequence[str],
+        *,
+        context: RuleContext,
+    ) -> SelectedMatch | None:
+        candidates = self._index.find_texts(event_triggers)
+        return await self._select_and_log(
+            candidates,
+            context=context,
+            message_type="event",
         )
 
     async def _select_and_log(

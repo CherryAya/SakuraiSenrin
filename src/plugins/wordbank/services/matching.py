@@ -209,6 +209,12 @@ class RuntimeIndex:
 
         return _dedupe_candidates(candidates)
 
+    def find_texts(self, texts: Sequence[str]) -> list[MatchCandidate]:
+        candidates: list[MatchCandidate] = []
+        for text in texts:
+            candidates.extend(self.find_text(text))
+        return _dedupe_candidates(candidates)
+
     def find_images(self, canonical_image_ids: Sequence[int]) -> list[MatchCandidate]:
         candidates: list[MatchCandidate] = []
         for canonical_id in canonical_image_ids[:4]:

@@ -1,7 +1,11 @@
 from dataclasses import dataclass, field
 
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message
-from nonebot.adapters.onebot.v11.event import GroupIncreaseNoticeEvent
+from nonebot.adapters.onebot.v11.event import (
+    GroupDecreaseNoticeEvent,
+    GroupIncreaseNoticeEvent,
+    PokeNotifyEvent,
+)
 
 
 class MatcherFinished(Exception):
@@ -74,5 +78,49 @@ def build_group_increase_event(
             "user_id": user_id,
             "group_id": group_id,
             "operator_id": operator_id,
+        }
+    )
+
+
+def build_group_decrease_event(
+    *,
+    user_id: int = 10002,
+    group_id: int = 20001,
+    operator_id: int = 10001,
+    self_id: int = 99999,
+    time: int = 1_700_000_000,
+) -> GroupDecreaseNoticeEvent:
+    return GroupDecreaseNoticeEvent.model_validate(
+        {
+            "time": time,
+            "self_id": str(self_id),
+            "post_type": "notice",
+            "notice_type": "group_decrease",
+            "sub_type": "leave",
+            "user_id": user_id,
+            "group_id": group_id,
+            "operator_id": operator_id,
+        }
+    )
+
+
+def build_group_poke_event(
+    *,
+    user_id: int = 10001,
+    group_id: int = 20001,
+    target_id: int = 99999,
+    self_id: int = 99999,
+    time: int = 1_700_000_000,
+) -> PokeNotifyEvent:
+    return PokeNotifyEvent.model_validate(
+        {
+            "time": time,
+            "self_id": str(self_id),
+            "post_type": "notice",
+            "notice_type": "notify",
+            "sub_type": "poke",
+            "user_id": user_id,
+            "group_id": group_id,
+            "target_id": target_id,
         }
     )

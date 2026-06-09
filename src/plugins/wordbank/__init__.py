@@ -8,9 +8,9 @@ Description: 插件入口
 
 from pathlib import Path
 
-from nonebot import get_driver, on_message
+from nonebot import get_driver, on_message, on_notice
 from nonebot.adapters.onebot.v11.bot import Bot
-from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.adapters.onebot.v11.event import MessageEvent, NoticeEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
@@ -33,6 +33,7 @@ from .handlers import (
     extract_image_urls,
     handle_add_image,
     handle_passive_message,
+    handle_passive_notice,
     localize_command_error,
 )
 from .services import wordbank_media_service, wordbank_service
@@ -103,6 +104,7 @@ wordbank_command = on_command(
     block=True,
 )
 wordbank_passive = on_message(priority=95, block=False)
+wordbank_notice = on_notice(priority=95, block=False)
 
 
 @wordbank_command.handle()
@@ -165,3 +167,15 @@ async def _(bot: Bot, event: MessageEvent) -> None:
         return
     if response:
         await wordbank_passive.send(response)
+
+
+@wordbank_notice.handle()
+async def _(bot: Bot, event: NoticeEvent) -> None:
+    await initialize_wordbank_plugin()
+    try:
+        response = await handle_passive_notice(bot, event, wordbank_service)
+    except Exception as exc:
+        logger.warning(f"[Wordbank] passive notice skipped: {exc}")
+        return
+    if response:
+        await wordbank_notice.send(response)

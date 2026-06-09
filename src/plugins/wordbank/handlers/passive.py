@@ -6,7 +6,11 @@ from collections.abc import Sequence
 
 import httpx
 from nonebot.adapters.onebot.v11.bot import Bot
-from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
+from nonebot.adapters.onebot.v11.event import (
+    GroupMessageEvent,
+    MessageEvent,
+    NoticeEvent,
+)
 
 from src.logger import logger
 from src.plugins.wordbank.services.core import WordbankService
@@ -14,6 +18,7 @@ from src.plugins.wordbank.services.media import MediaError, WordbankMediaService
 from src.plugins.wordbank.services.rules import Role, RuleContext
 
 REVOKE_MARKERS = ("revoke", "recall")
+MAX_PASSIVE_IMAGES = 4
 
 
 def _contains_revoke_marker(value: object) -> bool:
@@ -50,7 +55,7 @@ def is_revoke_signal(event: object) -> bool:
     return False
 
 
-def build_rule_context(event: MessageEvent) -> RuleContext:
+def build_rule_context(event: MessageEvent | NoticeEvent) -> RuleContext:
     role: Role = "member"
     sender = getattr(event, "sender", None)
     sender_role = str(getattr(sender, "role", "") or "")
@@ -58,10 +63,13 @@ def build_rule_context(event: MessageEvent) -> RuleContext:
         role = "owner"
     elif sender_role == "admin":
         role = "admin"
+    group_id = str(getattr(event, "group_id", "") or "")
     return RuleContext(
-        group_id=str(getattr(event, "group_id", "")),
-        user_id=str(event.user_id),
-        message_type="group" if isinstance(event, GroupMessageEvent) else "private",
+        group_id=group_id,
+        user_id=str(getattr(event, "user_id", "")),
+        message_type=(
+            "group" if isinstance(event, GroupMessageEvent) or group_id else "private"
+        ),
         sender_role=role,
     )
 
@@ -75,6 +83,33 @@ def extract_image_urls(event: MessageEvent) -> list[str]:
         if url:
             urls.append(url)
     return urls
+
+
+def build_event_triggers(
+    event: MessageEvent | NoticeEvent,
+    bot: Bot,
+) -> tuple[str, ...]:
+    if isinstance(event, MessageEvent):
+        for segment in event.message:
+            if segment.type != "at":
+                continue
+            target = str(segment.data.get("qq", ""))
+            if target == str(bot.self_id):
+                return ("event:at", "event:mention")
+        return ()
+
+    notice_type = str(getattr(event, "notice_type", ""))
+    sub_type = str(getattr(event, "sub_type", ""))
+    if notice_type == "notify" and sub_type == "poke":
+        target_id = str(getattr(event, "target_id", ""))
+        if target_id != str(bot.self_id):
+            return ()
+        return ("event:poke",)
+    if notice_type == "group_increase":
+        return ("event:join", "event:group_join", "event:group_increase")
+    if notice_type == "group_decrease":
+        return ("event:leave", "event:group_leave", "event:group_decrease")
+    return ()
 
 
 async def fetch_image_bytes(url: str) -> bytes | None:
@@ -93,7 +128,7 @@ async def resolve_message_image_ids(
     urls: Sequence[str],
 ) -> list[int]:
     canonical_ids: list[int] = []
-    for url in urls[:4]:
+    for url in urls[:MAX_PASSIVE_IMAGES]:
         data = await fetch_image_bytes(url)
         if data is None:
             continue
@@ -126,6 +161,12 @@ async def handle_passive_message(
         if selected is not None:
             return selected.response.text
 
+    event_triggers = build_event_triggers(event, bot)
+    if event_triggers:
+        selected = await service.match_event(event_triggers, context=context)
+        if selected is not None:
+            return selected.response.text
+
     image_urls = extract_image_urls(event)
     if not image_urls:
         return None
@@ -133,4 +174,21 @@ async def handle_passive_message(
     if not image_ids:
         return None
     selected = await service.match_images(image_ids, context=context)
+    return selected.response.text if selected is not None else None
+
+
+async def handle_passive_notice(
+    bot: Bot,
+    event: NoticeEvent,
+    service: WordbankService,
+) -> str | None:
+    if is_revoke_signal(event):
+        return None
+
+    event_triggers = build_event_triggers(event, bot)
+    if not event_triggers:
+        return None
+
+    context = build_rule_context(event)
+    selected = await service.match_event(event_triggers, context=context)
     return selected.response.text if selected is not None else None
