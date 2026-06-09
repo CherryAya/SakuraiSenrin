@@ -183,14 +183,42 @@ class WordbankService:
             weight=rule.weight,
         )
 
-    async def delete_entry(self, entry_id: int) -> bool:
-        ok = await self.repository.delete_entry(entry_id)
+    async def delete_entry(
+        self,
+        entry_id: int,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        ok = await self.repository.delete_entry(
+            entry_id,
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
         if ok:
             self.mark_dirty()
         return ok
 
-    async def restore_entry(self, entry_id: int) -> bool:
-        ok = await self.repository.restore_entry(entry_id)
+    async def restore_entry(
+        self,
+        entry_id: int,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        ok = await self.repository.restore_entry(
+            entry_id,
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
         if ok:
             self.mark_dirty()
         return ok

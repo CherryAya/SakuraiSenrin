@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import cast
 
-from sqlalchemy import CursorResult, select, update
+from sqlalchemy import CursorResult, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.db.ops import BaseOps
@@ -32,23 +32,70 @@ class WordbankEntryOps(BaseOps[WordbankEntry]):
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def mark_deleted(self, entry_id: int, deleted_at: int) -> bool:
+    async def mark_deleted(
+        self,
+        entry_id: int,
+        deleted_at: int,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        conditions = self._mutation_permission_conditions(
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
         stmt = (
             update(WordbankEntry)
             .where(WordbankEntry.id == entry_id, WordbankEntry.deleted_at == 0)
+            .where(*conditions)
             .values(deleted_at=deleted_at, updated_at=deleted_at)
         )
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount > 0
 
-    async def restore(self, entry_id: int, updated_at: int) -> bool:
+    async def restore(
+        self,
+        entry_id: int,
+        updated_at: int,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        conditions = self._mutation_permission_conditions(
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
         stmt = (
             update(WordbankEntry)
             .where(WordbankEntry.id == entry_id, WordbankEntry.deleted_at != 0)
+            .where(*conditions)
             .values(deleted_at=0, updated_at=updated_at)
         )
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount > 0
+
+    @staticmethod
+    def _mutation_permission_conditions(
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> tuple:
+        if is_superuser:
+            return ()
+        allowed = [WordbankEntry.created_by == actor_user_id]
+        if can_moderate_group and actor_group_id:
+            allowed.append(WordbankEntry.group_id == actor_group_id)
+        return (or_(*allowed),)
 
 
 class WordbankTriggerOps(BaseOps[WordbankTrigger]):

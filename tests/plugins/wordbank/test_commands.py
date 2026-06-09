@@ -7,6 +7,7 @@ import pytest
 from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.handlers import commands
 from src.plugins.wordbank.handlers.commands import (
+    build_mutation_actor,
     dispatch_wordbank_command,
     handle_delete,
     localize_command_error,
@@ -133,19 +134,57 @@ def test_parse_search_args_rejects_invalid_pagination() -> None:
 
 
 async def test_handle_delete_localizes_result() -> None:
+    delete_mock = AsyncMock(return_value=True)
     service = cast(
         WordbankService,
-        SimpleNamespace(delete_entry=AsyncMock(return_value=True)),
+        SimpleNamespace(delete_entry=delete_mock),
     )
+    event = build_group_message_event("#wordbank delete 12", role="admin")
 
     assert (
-        await handle_delete(service, entry_id_text="12", locale="zh-CN")
+        await handle_delete(
+            service,
+            event=event,
+            entry_id_text="12",
+            locale="zh-CN",
+        )
         == "词条 #12 已删除。"
     )
+    delete_mock.assert_awaited_once_with(
+        12,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
     assert (
-        await handle_delete(service, entry_id_text="abc", locale="zh-CN")
+        await handle_delete(
+            service,
+            event=event,
+            entry_id_text="abc",
+            locale="zh-CN",
+        )
         == "词条 ID 必须是数字。"
     )
+
+
+def test_build_mutation_actor_detects_roles_and_superuser() -> None:
+    admin = build_mutation_actor(
+        build_group_message_event("#wordbank delete 12", role="admin")
+    )
+    member = build_mutation_actor(
+        build_group_message_event("#wordbank delete 12", role="member")
+    )
+    superuser = build_mutation_actor(
+        build_group_message_event("#wordbank delete 12", user_id=1, role="member")
+    )
+
+    assert admin.user_id == "10001"
+    assert admin.group_id == "20001"
+    assert admin.can_moderate_group
+    assert not admin.is_superuser
+    assert not member.can_moderate_group
+    assert superuser.is_superuser
 
 
 async def test_dispatch_add_uses_i18n_add_formatter() -> None:

@@ -9,6 +9,7 @@ from typing import Any
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 
+from src.config import config
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -43,6 +44,14 @@ class ParsedSearch:
     keyword: str
     page: int
     limit: int
+
+
+@dataclass(slots=True, frozen=True)
+class MutationActor:
+    user_id: str
+    group_id: str
+    can_moderate_group: bool
+    is_superuser: bool
 
 
 def _split_command(text: str) -> tuple[str, str]:
@@ -241,6 +250,20 @@ def parse_search_args(text: str) -> ParsedSearch:
     )
 
 
+def build_mutation_actor(event: MessageEvent) -> MutationActor:
+    user_id = str(event.user_id)
+    group_id = str(getattr(event, "group_id", ""))
+    sender = getattr(event, "sender", None)
+    role = str(getattr(sender, "role", "") or "")
+    return MutationActor(
+        user_id=user_id,
+        group_id=group_id,
+        can_moderate_group=isinstance(event, GroupMessageEvent)
+        and role in {"owner", "admin"},
+        is_superuser=user_id in config.SUPERUSERS,
+    )
+
+
 def extract_image_urls(message: Message) -> list[str]:
     urls: list[str] = []
     for segment in message:
@@ -317,13 +340,21 @@ async def handle_search(
 async def handle_delete(
     service: WordbankService,
     *,
+    event: MessageEvent,
     entry_id_text: str,
     locale: LocaleCode,
 ) -> str:
     if not entry_id_text.isdigit():
         return tr(locale, "wordbank.error.entry_id_numeric")
     entry_id = int(entry_id_text)
-    if await service.delete_entry(entry_id):
+    actor = build_mutation_actor(event)
+    if await service.delete_entry(
+        entry_id,
+        actor_user_id=actor.user_id,
+        actor_group_id=actor.group_id,
+        can_moderate_group=actor.can_moderate_group,
+        is_superuser=actor.is_superuser,
+    ):
         return tr(locale, "wordbank.delete.success", entry_id=entry_id)
     return tr(locale, "wordbank.delete.not_found", entry_id=entry_id)
 
@@ -331,13 +362,21 @@ async def handle_delete(
 async def handle_restore(
     service: WordbankService,
     *,
+    event: MessageEvent,
     entry_id_text: str,
     locale: LocaleCode,
 ) -> str:
     if not entry_id_text.isdigit():
         return tr(locale, "wordbank.error.entry_id_numeric")
     entry_id = int(entry_id_text)
-    if await service.restore_entry(entry_id):
+    actor = build_mutation_actor(event)
+    if await service.restore_entry(
+        entry_id,
+        actor_user_id=actor.user_id,
+        actor_group_id=actor.group_id,
+        can_moderate_group=actor.can_moderate_group,
+        is_superuser=actor.is_superuser,
+    ):
         return tr(locale, "wordbank.restore.success", entry_id=entry_id)
     return tr(locale, "wordbank.restore.not_found", entry_id=entry_id)
 
@@ -389,9 +428,19 @@ async def dispatch_wordbank_command(
     if action in SEARCH_ALIASES:
         return await handle_search(service, keyword=rest, locale=locale)
     if action in DELETE_ALIASES:
-        return await handle_delete(service, entry_id_text=rest, locale=locale)
+        return await handle_delete(
+            service,
+            event=event,
+            entry_id_text=rest,
+            locale=locale,
+        )
     if action in RESTORE_ALIASES:
-        return await handle_restore(service, entry_id_text=rest, locale=locale)
+        return await handle_restore(
+            service,
+            event=event,
+            entry_id_text=rest,
+            locale=locale,
+        )
     if action in IMAGE_ALIASES:
         return tr(locale, "wordbank.error.image_missing")
     return tr(

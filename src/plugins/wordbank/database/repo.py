@@ -303,15 +303,45 @@ class WordbankRepository:
             for entry, trigger, response in rows
         ]
 
-    async def delete_entry(self, entry_id: int) -> bool:
+    async def delete_entry(
+        self,
+        entry_id: int,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
-            return await WordbankEntryOps(session).mark_deleted(entry_id, now)
+            return await WordbankEntryOps(session).mark_deleted(
+                entry_id,
+                now,
+                actor_user_id=actor_user_id,
+                actor_group_id=actor_group_id,
+                can_moderate_group=can_moderate_group,
+                is_superuser=is_superuser,
+            )
 
-    async def restore_entry(self, entry_id: int) -> bool:
+    async def restore_entry(
+        self,
+        entry_id: int,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
-            return await WordbankEntryOps(session).restore(entry_id, now)
+            return await WordbankEntryOps(session).restore(
+                entry_id,
+                now,
+                actor_user_id=actor_user_id,
+                actor_group_id=actor_group_id,
+                can_moderate_group=can_moderate_group,
+                is_superuser=is_superuser,
+            )
 
     async def get_image_by_md5(self, md5: str) -> WordbankImageRecord | None:
         async with wordbank_main_db.read_session() as session:
