@@ -4,6 +4,7 @@ Use this checklist after regenerating plugin demo PNG files.
 
 ## Automated Checks
 
+- Run `uv run python scripts/plugin_docs.py generate -j 8` to regenerate demo PNG files; use `-j 1` for serial rendering when debugging.
 - Run `uv run python scripts/plugin_docs.py validate`.
 - Run `uv run pytest tests/test_plugin_docs.py`.
 - Confirm every demo image is `1280px` wide and has a non-zero, content-driven height.

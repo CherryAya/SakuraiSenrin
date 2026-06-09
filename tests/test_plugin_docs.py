@@ -1,7 +1,9 @@
 from pathlib import Path
+from typing import Any
 
 from nonebot.adapters.onebot.v11.message import Message
 
+import scripts.plugin_docs as plugin_docs_script
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.plugin_docs import (
@@ -436,6 +438,78 @@ def test_audit_demo_layout_detects_no_overlap_for_real_header_case() -> None:
     feature = next(item for item in bundle.index if item.slug == "reply-shortcut")
 
     assert audit_demo_layout(bundle, feature) == ()
+
+
+def test_plugin_docs_generate_supports_parallel_workers(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    docs_root = tmp_path / "src" / "plugins" / "sample" / "docs"
+    docs_root.mkdir(parents=True)
+    (docs_root / "README.MD").write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试并发生成 demo。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一个功能。
+- `beta` Beta 功能: 第二个功能。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一个功能。
+- 指令: `#alpha`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+
+### `beta` Beta 功能
+- 摘要: 第二个功能。
+- 指令: `#beta`
+#### 说明
+beta
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #beta
+BOT: Beta 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "render_demo_png",
+        lambda _bundle, feature: f"demo:{feature.slug}".encode(),
+    )
+
+    assert plugin_docs_script.generate(workers=2) == 0
+    assert (docs_root / "demos" / "sample-alpha.png").read_bytes() == b"demo:alpha"
+    assert (docs_root / "demos" / "sample-beta.png").read_bytes() == b"demo:beta"
 
 
 def test_audit_demo_layout_accepts_all_project_readmes() -> None:

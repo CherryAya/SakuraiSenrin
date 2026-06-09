@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+import os
 from pathlib import Path
 import sys
 
@@ -23,6 +26,13 @@ DOCS_ROOTS = (
     ROOT / "src" / "plugins",
     ROOT / "src" / "hooks",
 )
+
+
+@dataclass(slots=True, frozen=True)
+class DemoRenderJob:
+    bundle: PluginDocBundle
+    feature_index: int
+    output: Path
 
 
 def iter_readmes() -> list[Path]:
@@ -46,23 +56,65 @@ def load_bundle(path: Path) -> PluginDocBundle:
     )
 
 
-def generate() -> int:
+def default_worker_count() -> int:
+    return max(1, os.cpu_count() or 1)
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
+
+
+def collect_demo_jobs() -> tuple[int, tuple[DemoRenderJob, ...]]:
     total_files = 0
-    total_images = 0
+    jobs: list[DemoRenderJob] = []
     for path in iter_readmes():
         bundle = load_bundle(path)
         demos_dir = path.parent / "demos"
         demos_dir.mkdir(parents=True, exist_ok=True)
         total_files += 1
-        for feature in bundle.index:
+        for feature_index, feature in enumerate(bundle.index):
             if not feature.demo_turns or not feature.demo_filename:
                 continue
-            output = demos_dir / feature.demo_filename
-            output.write_bytes(render_demo_png(bundle, feature))
-            total_images += 1
+            jobs.append(
+                DemoRenderJob(
+                    bundle=bundle,
+                    feature_index=feature_index,
+                    output=demos_dir / feature.demo_filename,
+                )
+            )
+    return total_files, tuple(jobs)
+
+
+def render_demo_job(job: DemoRenderJob) -> tuple[Path, bytes]:
+    feature = job.bundle.index[job.feature_index]
+    return job.output, render_demo_png(job.bundle, feature)
+
+
+def write_demo_result(result: tuple[Path, bytes]) -> Path:
+    output, demo_bytes = result
+    output.write_bytes(demo_bytes)
+    return output
+
+
+def generate(*, workers: int | None = None) -> int:
+    worker_count = workers if workers is not None else default_worker_count()
+    total_files, jobs = collect_demo_jobs()
+    if worker_count == 1 or len(jobs) <= 1:
+        for job in jobs:
+            output = write_demo_result(render_demo_job(job))
             _write_line(f"generated {output.relative_to(ROOT)}")
+    else:
+        max_workers = min(worker_count, len(jobs))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for result in executor.map(render_demo_job, jobs):
+                output = write_demo_result(result)
+                _write_line(f"generated {output.relative_to(ROOT)}")
+
     _write_line(
-        f"processed {total_files} README files, generated {total_images} demo images"
+        f"processed {total_files} README files, generated {len(jobs)} demo images"
     )
     return 0
 
@@ -128,7 +180,19 @@ def validate() -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Plugin docs helper")
     subparsers = parser.add_subparsers(dest="action", required=True)
-    subparsers.add_parser("generate", help="generate demo PNG assets from README specs")
+    generate_parser = subparsers.add_parser(
+        "generate",
+        help="generate demo PNG assets from README specs",
+    )
+    generate_parser.add_argument(
+        "-j",
+        "--workers",
+        type=positive_int,
+        default=default_worker_count(),
+        help=(
+            "parallel render workers; use 1 for serial rendering (default: %(default)s)"
+        ),
+    )
     subparsers.add_parser("validate", help="validate README structure and demo assets")
     return parser
 
@@ -138,7 +202,7 @@ def main() -> int:
     args = parser.parse_args()
     match args.action:
         case "generate":
-            return generate()
+            return generate(workers=args.workers)
         case "validate":
             return validate()
         case _:
