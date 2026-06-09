@@ -414,6 +414,8 @@ MessageKey = Literal[
     "wordbank.error.rule_unknown",
     "wordbank.error.scope_single",
     "wordbank.error.scope_unsupported",
+    "wordbank.error.search_limit_invalid",
+    "wordbank.error.search_page_invalid",
     "wordbank.error.single_constraint",
     "wordbank.error.study_format",
     "wordbank.error.study_pair_required",
@@ -426,6 +428,7 @@ MessageKey = Literal[
     "wordbank.restore.success",
     "wordbank.search.empty",
     "wordbank.search.item",
+    "wordbank.search.more",
     "wordbank.search.title",
 ]
 
@@ -841,6 +844,8 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.error.rule_unknown",
     "wordbank.error.scope_single",
     "wordbank.error.scope_unsupported",
+    "wordbank.error.search_limit_invalid",
+    "wordbank.error.search_page_invalid",
     "wordbank.error.single_constraint",
     "wordbank.error.study_format",
     "wordbank.error.study_pair_required",
@@ -853,5 +858,6 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.restore.success",
     "wordbank.search.empty",
     "wordbank.search.item",
+    "wordbank.search.more",
     "wordbank.search.title",
 )

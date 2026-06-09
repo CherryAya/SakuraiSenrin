@@ -10,6 +10,7 @@ from src.plugins.wordbank.handlers.commands import (
     dispatch_wordbank_command,
     handle_delete,
     localize_command_error,
+    parse_search_args,
     parse_text_add_args,
     wordbank_help_text,
 )
@@ -44,24 +45,23 @@ def test_wordbank_help_text_uses_requested_locale(
 
 async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
     event = build_group_message_event("#wordbank search 晚安")
+    search_mock = AsyncMock(
+        return_value=[
+            WordbankSearchItem(
+                entry_id=12,
+                trigger_text="晚安",
+                trigger_mode="contains",
+                response_text="做个好梦",
+                scope="current_group",
+                probability=1.0,
+                weight=3,
+                created_by="10001",
+            )
+        ]
+    )
     service = cast(
         WordbankService,
-        SimpleNamespace(
-            search=AsyncMock(
-                return_value=[
-                    WordbankSearchItem(
-                        entry_id=12,
-                        trigger_text="晚安",
-                        trigger_mode="contains",
-                        response_text="做个好梦",
-                        scope="current_group",
-                        probability=1.0,
-                        weight=3,
-                        created_by="10001",
-                    )
-                ]
-            )
-        ),
+        SimpleNamespace(search=search_mock),
     )
 
     message = await dispatch_wordbank_command(
@@ -71,7 +71,65 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
         locale="zh-CN",
     )
 
-    assert message == "词库搜索结果:\n#12 [contains/current_group] 晚安 => 做个好梦"
+    assert message == (
+        "词库搜索结果 (第 1 页):\n#12 [contains/current_group] 晚安 => 做个好梦"
+    )
+    search_mock.assert_awaited_once_with("晚安", limit=11, offset=0)
+
+
+async def test_dispatch_wordbank_search_supports_page_limit_and_more_hint() -> None:
+    event = build_group_message_event("#wordbank search 晚安")
+    items = [
+        WordbankSearchItem(
+            entry_id=index,
+            trigger_text=f"晚安{index}",
+            trigger_mode="contains",
+            response_text=f"做个好梦{index}",
+            scope="current_group",
+            probability=1.0,
+            weight=3,
+            created_by="10001",
+        )
+        for index in range(11, 15)
+    ]
+    search_mock = AsyncMock(return_value=items)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(search=search_mock),
+    )
+
+    message = await dispatch_wordbank_command(
+        service,
+        event=event,
+        text="search 晚安 --page 2 --limit 3",
+        locale="zh-CN",
+    )
+
+    assert message == (
+        "词库搜索结果 (第 2 页):\n"
+        "#11 [contains/current_group] 晚安11 => 做个好梦11\n"
+        "#12 [contains/current_group] 晚安12 => 做个好梦12\n"
+        "#13 [contains/current_group] 晚安13 => 做个好梦13\n"
+        "还有更多结果，可使用 --page 3 --limit 3 查看下一页。"
+    )
+    search_mock.assert_awaited_once_with("晚安", limit=4, offset=3)
+
+
+def test_parse_search_args_rejects_invalid_pagination() -> None:
+    parsed = parse_search_args("晚安 --page 2 --limit 5")
+
+    assert parsed.keyword == "晚安"
+    assert parsed.page == 2
+    assert parsed.limit == 5
+
+    with pytest.raises(RuleError) as page_error:
+        parse_search_args("晚安 --page 0")
+    assert page_error.value.key == "wordbank.error.search_page_invalid"
+
+    with pytest.raises(RuleError) as limit_error:
+        parse_search_args("晚安 --limit 21")
+    assert limit_error.value.key == "wordbank.error.search_limit_invalid"
+    assert limit_error.value.params == {"max_limit": 20}
 
 
 async def test_handle_delete_localizes_result() -> None:

@@ -31,7 +31,7 @@ ID: 12
 概率: 1
 权重: 3
 USER: #wordbank search 晚安
-BOT: 词库搜索结果:
+BOT: 词库搜索结果 (第 1 页):
 #12 [contains/current_group] 晚安 => 做个好梦
 USER: 大家晚安啦
 BOT: 做个好梦

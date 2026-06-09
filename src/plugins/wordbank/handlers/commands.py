@@ -9,6 +9,7 @@ from typing import Any
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 
+from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.services.core import (
@@ -25,6 +26,8 @@ SEARCH_ALIASES = {"search", "find", "查询", "搜索"}
 DELETE_ALIASES = {"delete", "del", "remove", "删除"}
 RESTORE_ALIASES = {"restore", "恢复"}
 IMAGE_ALIASES = {"image", "img", "图片"}
+DEFAULT_SEARCH_LIMIT = 10
+MAX_SEARCH_LIMIT = 20
 
 
 @dataclass(slots=True, frozen=True)
@@ -33,6 +36,13 @@ class ParsedTextAdd:
     response_text: str
     trigger_mode: str | None
     raw_rule: dict[str, Any]
+
+
+@dataclass(slots=True, frozen=True)
+class ParsedSearch:
+    keyword: str
+    page: int
+    limit: int
 
 
 def _split_command(text: str) -> tuple[str, str]:
@@ -134,6 +144,22 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any], str | None]:
     return " ".join(remaining), raw_rule, trigger_mode
 
 
+def _parse_positive_int(
+    value: str,
+    *,
+    fallback: str,
+    key: MessageKey,
+    **params: object,
+) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise RuleError(fallback, key=key, **params) from exc
+    if parsed <= 0:
+        raise RuleError(fallback, key=key, **params)
+    return parsed
+
+
 def parse_text_add_args(text: str) -> ParsedTextAdd:
     source, raw_rule, trigger_mode = _parse_flags(text)
     for sep in ("=>", "->", "回答", "回复"):
@@ -150,6 +176,68 @@ def parse_text_add_args(text: str) -> ParsedTextAdd:
     raise RuleError(
         "添加格式: wordbank add 触发词 => 响应词",
         key="wordbank.error.add_format",
+    )
+
+
+def parse_search_args(text: str) -> ParsedSearch:
+    try:
+        tokens = shlex.split(text)
+    except ValueError as exc:
+        raise RuleError(
+            f"参数解析失败: {exc}",
+            key="wordbank.error.parse_flags",
+            reason=str(exc),
+        ) from exc
+
+    keyword_parts: list[str] = []
+    page = 1
+    limit = DEFAULT_SEARCH_LIMIT
+    idx = 0
+    while idx < len(tokens):
+        token = tokens[idx]
+        if token in {"--page", "-p"}:
+            idx += 1
+            if idx >= len(tokens):
+                raise RuleError(
+                    "--page 需要提供页码",
+                    key="wordbank.error.flag_missing",
+                    flag="--page",
+                    expected="页码",
+                )
+            page = _parse_positive_int(
+                tokens[idx],
+                fallback="页码必须是大于 0 的整数",
+                key="wordbank.error.search_page_invalid",
+            )
+        elif token in {"--limit", "-n"}:
+            idx += 1
+            if idx >= len(tokens):
+                raise RuleError(
+                    "--limit 需要提供每页数量",
+                    key="wordbank.error.flag_missing",
+                    flag="--limit",
+                    expected="每页数量",
+                )
+            limit = _parse_positive_int(
+                tokens[idx],
+                fallback=f"每页数量必须是 1 到 {MAX_SEARCH_LIMIT} 之间的整数",
+                key="wordbank.error.search_limit_invalid",
+                max_limit=MAX_SEARCH_LIMIT,
+            )
+            if limit > MAX_SEARCH_LIMIT:
+                raise RuleError(
+                    f"每页数量必须是 1 到 {MAX_SEARCH_LIMIT} 之间的整数",
+                    key="wordbank.error.search_limit_invalid",
+                    max_limit=MAX_SEARCH_LIMIT,
+                )
+        else:
+            keyword_parts.append(token)
+        idx += 1
+
+    return ParsedSearch(
+        keyword=" ".join(keyword_parts).strip(),
+        page=page,
+        limit=limit,
     )
 
 
@@ -209,9 +297,20 @@ async def handle_search(
     keyword: str,
     locale: LocaleCode,
 ) -> str:
+    parsed = parse_search_args(keyword)
+    offset = (parsed.page - 1) * parsed.limit
+    items = await service.search(
+        parsed.keyword,
+        limit=parsed.limit + 1,
+        offset=offset,
+    )
+    has_more = len(items) > parsed.limit
     return format_search_items(
-        await service.search(keyword.strip(), limit=10),
+        items[: parsed.limit],
         locale=locale,
+        page=parsed.page,
+        limit=parsed.limit,
+        has_more=has_more,
     )
 
 

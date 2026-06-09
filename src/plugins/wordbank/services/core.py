@@ -288,10 +288,13 @@ def format_search_items(
     items: Sequence[WordbankSearchItem],
     *,
     locale: LocaleCode,
+    page: int = 1,
+    limit: int = 10,
+    has_more: bool = False,
 ) -> str:
     if not items:
-        return tr(locale, "wordbank.search.empty")
-    lines = [tr(locale, "wordbank.search.title")]
+        return tr(locale, "wordbank.search.empty", page=page)
+    lines = [tr(locale, "wordbank.search.title", page=page)]
     for item in items:
         lines.append(
             tr(
@@ -303,6 +306,10 @@ def format_search_items(
                 trigger_text=item.trigger_text,
                 response_text=item.response_text,
             )
+        )
+    if has_more:
+        lines.append(
+            tr(locale, "wordbank.search.more", next_page=page + 1, limit=limit)
         )
     return "\n".join(lines)
 
