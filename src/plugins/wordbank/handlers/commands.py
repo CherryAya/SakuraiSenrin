@@ -217,11 +217,14 @@ def wordbank_help_text() -> str:
     return (
         "词库命令:\n"
         "wordbank add 触发词 => 响应词 [--mode contains|fullmatch|prefix]\n"
+        "  可选: --scope current_group|all_groups|self|private_only\n"
+        "  可选: --prob 0.0-1.0 --weight 1-5 --role owner|admin|member\n"
         "wordbank search [关键词]\n"
         "wordbank delete <id>\n"
         "wordbank restore <id>\n"
         "wordbank image 响应词  并附带一张图片\n"
-        "study 触发词 => 响应词"
+        "study 触发词 => 响应词\n"
+        "被动匹配: 文本/图片命中词条会自动回复；检测到 revoke/recall 时跳过。"
     )
 
 
