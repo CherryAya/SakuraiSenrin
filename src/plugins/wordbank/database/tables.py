@@ -126,6 +126,23 @@ class WordbankDeleteVoteSupport(WordbankMainBase, TimeMixin):
     user_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
+class WordbankResponseMessage(WordbankMainBase, TimeMixin):
+    __tablename__ = "wordbank_response_message"
+    __table_args__ = (
+        UniqueConstraint("message_id", name="uq_wordbank_response_message_id"),
+        Index("idx_wordbank_response_message_entry", "entry_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    message_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    entry_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    trigger_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    response_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    group_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    message_type: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+
+
 class WordbankLog(WordbankLogBase):
     __tablename__ = "wordbank_log"
     __table_args__ = (

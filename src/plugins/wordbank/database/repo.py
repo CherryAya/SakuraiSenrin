@@ -11,8 +11,10 @@ from .instances import wordbank_log_db, wordbank_main_db
 from .ops import (
     WordbankDeleteVoteOps,
     WordbankDeleteVoteSupportOps,
+    WordbankEntryDetailOps,
     WordbankEntryOps,
     WordbankImageOps,
+    WordbankResponseMessageOps,
     WordbankResponseOps,
     WordbankTriggerOps,
 )
@@ -24,15 +26,19 @@ from .tables import (
     WordbankLogBase,
     WordbankMainBase,
     WordbankResponse,
+    WordbankResponseMessage,
     WordbankTrigger,
 )
 from .types import (
     WordbankDeleteVoteMutation,
     WordbankDeleteVoteRecord,
+    WordbankEntryDetail,
     WordbankEntryRecord,
     WordbankImagePayload,
     WordbankImageRecord,
     WordbankLogPayload,
+    WordbankResponseMessagePayload,
+    WordbankResponseMessageRecord,
     WordbankResponseRecord,
     WordbankSearchItem,
     WordbankTriggerRecord,
@@ -102,6 +108,46 @@ class WordbankRepository:
             reason=vote.reason,
             created_at=vote.created_at,
             updated_at=vote.updated_at,
+        )
+
+    @staticmethod
+    def _to_response_message_record(
+        row: WordbankResponseMessage,
+    ) -> WordbankResponseMessageRecord:
+        return WordbankResponseMessageRecord(
+            message_id=row.message_id,
+            entry_id=row.entry_id,
+            trigger_id=row.trigger_id,
+            response_id=row.response_id,
+            group_id=row.group_id,
+            user_id=row.user_id,
+            message_type=row.message_type,
+        )
+
+    @staticmethod
+    def _to_entry_detail(
+        entry: WordbankEntry,
+        trigger: WordbankTrigger,
+        response: WordbankResponse,
+    ) -> WordbankEntryDetail:
+        trigger_text = (
+            f"image:{trigger.canonical_image_id}"
+            if trigger.kind == "image"
+            else trigger.trigger_text
+        )
+        return WordbankEntryDetail(
+            entry_id=entry.id,
+            status=entry.status,
+            enabled=entry.enabled,
+            scope=entry.scope,
+            probability=entry.probability,
+            weight=entry.weight,
+            group_id=entry.group_id,
+            created_by=entry.created_by,
+            deleted_at=entry.deleted_at,
+            trigger_text=trigger_text,
+            trigger_mode=trigger.trigger_mode,
+            response_text=response.text,
         )
 
     async def create_text_entry(
@@ -453,6 +499,41 @@ class WordbankRepository:
                 return None
             support_count = await vote_ops.support_count(vote.id)
             return self._to_delete_vote_record(vote, support_count=support_count)
+
+    async def record_response_message(
+        self,
+        payload: WordbankResponseMessagePayload,
+    ) -> None:
+        async with wordbank_main_db.write_session() as session:
+            await WordbankResponseMessageOps(session).upsert_response_message(payload)
+
+    async def get_response_message(
+        self,
+        message_id: str,
+    ) -> WordbankResponseMessageRecord | None:
+        async with wordbank_main_db.read_session() as session:
+            row = await WordbankResponseMessageOps(session).get_by_message_id(
+                message_id
+            )
+        return self._to_response_message_record(row) if row else None
+
+    async def get_entry_detail(
+        self,
+        entry_id: int,
+        *,
+        trigger_id: int | None = None,
+        response_id: int | None = None,
+    ) -> WordbankEntryDetail | None:
+        async with wordbank_main_db.read_session() as session:
+            row = await WordbankEntryDetailOps(session).get_detail(
+                entry_id,
+                trigger_id=trigger_id,
+                response_id=response_id,
+            )
+        if row is None:
+            return None
+        entry, trigger, response = row
+        return self._to_entry_detail(entry, trigger, response)
 
     @staticmethod
     def _entry_allows_group_vote(entry: WordbankEntry, group_id: str) -> bool:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import httpx
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -14,12 +15,24 @@ from nonebot.adapters.onebot.v11.event import (
 
 from src.logger import logger
 from src.plugins.wordbank.services.core import WordbankService
+from src.plugins.wordbank.services.matching import SelectedMatch
 from src.plugins.wordbank.services.media import MediaError, WordbankMediaService
 from src.plugins.wordbank.services.rules import Role, RuleContext
 
 REVOKE_MARKERS = ("revoke", "recall")
 MAX_PASSIVE_IMAGES = 4
 MAX_IMAGE_DOWNLOAD_BYTES = 4 * 1024 * 1024
+
+
+@dataclass(slots=True, frozen=True)
+class PassiveResponse:
+    text: str
+    entry_id: int
+    trigger_id: int
+    response_id: int
+    group_id: str
+    user_id: str
+    message_type: str
 
 
 def _contains_revoke_marker(value: object) -> bool:
@@ -84,6 +97,23 @@ def extract_image_urls(event: MessageEvent) -> list[str]:
         if url:
             urls.append(url)
     return urls
+
+
+def build_passive_response(
+    selected: SelectedMatch,
+    *,
+    context: RuleContext,
+    message_type: str,
+) -> PassiveResponse:
+    return PassiveResponse(
+        text=selected.response.text,
+        entry_id=selected.candidate.entry.id,
+        trigger_id=selected.candidate.trigger.id,
+        response_id=selected.response.id,
+        group_id=context.group_id,
+        user_id=context.user_id,
+        message_type=message_type,
+    )
 
 
 def build_event_triggers(
@@ -163,7 +193,7 @@ async def handle_passive_message(
     event: MessageEvent,
     service: WordbankService,
     media_service: WordbankMediaService,
-) -> str | None:
+) -> PassiveResponse | None:
     if is_revoke_signal(event):
         return None
 
@@ -175,13 +205,21 @@ async def handle_passive_message(
     if text.strip():
         selected = await service.match_text(text, context=context)
         if selected is not None:
-            return selected.response.text
+            return build_passive_response(
+                selected,
+                context=context,
+                message_type="text",
+            )
 
     event_triggers = build_event_triggers(event, bot)
     if event_triggers:
         selected = await service.match_event(event_triggers, context=context)
         if selected is not None:
-            return selected.response.text
+            return build_passive_response(
+                selected,
+                context=context,
+                message_type="event",
+            )
 
     image_urls = extract_image_urls(event)
     if not image_urls:
@@ -190,14 +228,16 @@ async def handle_passive_message(
     if not image_ids:
         return None
     selected = await service.match_images(image_ids, context=context)
-    return selected.response.text if selected is not None else None
+    if selected is None:
+        return None
+    return build_passive_response(selected, context=context, message_type="image")
 
 
 async def handle_passive_notice(
     bot: Bot,
     event: NoticeEvent,
     service: WordbankService,
-) -> str | None:
+) -> PassiveResponse | None:
     if is_revoke_signal(event):
         return None
 
@@ -207,4 +247,6 @@ async def handle_passive_notice(
 
     context = build_rule_context(event)
     selected = await service.match_event(event_triggers, context=context)
-    return selected.response.text if selected is not None else None
+    if selected is None:
+        return None
+    return build_passive_response(selected, context=context, message_type="event")

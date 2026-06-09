@@ -15,7 +15,9 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import (
+    WordbankEntryDetail,
     WordbankLogPayload,
+    WordbankResponseMessageRecord,
     WordbankSearchItem,
 )
 from src.plugins.wordbank.services.errors import WordbankUserError
@@ -319,6 +321,57 @@ class WordbankService:
             already_supported=False,
             passed=vote.status == "passed",
             entry_deleted=False,
+        )
+
+    async def record_response_message(
+        self,
+        *,
+        message_id: str,
+        entry_id: int,
+        trigger_id: int,
+        response_id: int,
+        group_id: str,
+        user_id: str,
+        message_type: str,
+    ) -> None:
+        message_id = message_id.strip()
+        if not message_id:
+            return
+        now = get_current_time()
+        await self.repository.record_response_message(
+            {
+                "message_id": message_id,
+                "entry_id": entry_id,
+                "trigger_id": trigger_id,
+                "response_id": response_id,
+                "group_id": group_id,
+                "user_id": user_id,
+                "message_type": message_type,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
+    async def get_response_message(
+        self,
+        message_id: str,
+    ) -> WordbankResponseMessageRecord | None:
+        message_id = message_id.strip()
+        if not message_id:
+            return None
+        return await self.repository.get_response_message(message_id)
+
+    async def get_entry_detail(
+        self,
+        entry_id: int,
+        *,
+        trigger_id: int | None = None,
+        response_id: int | None = None,
+    ) -> WordbankEntryDetail | None:
+        return await self.repository.get_entry_detail(
+            entry_id,
+            trigger_id=trigger_id,
+            response_id=response_id,
         )
 
     async def search(

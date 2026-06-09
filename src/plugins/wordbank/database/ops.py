@@ -15,9 +15,14 @@ from .tables import (
     WordbankImage,
     WordbankLog,
     WordbankResponse,
+    WordbankResponseMessage,
     WordbankTrigger,
 )
-from .types import WordbankDeleteVotePayload, WordbankLogPayload
+from .types import (
+    WordbankDeleteVotePayload,
+    WordbankLogPayload,
+    WordbankResponseMessagePayload,
+)
 
 
 class WordbankEntryOps(BaseOps[WordbankEntry]):
@@ -246,6 +251,66 @@ class WordbankDeleteVoteSupportOps(BaseOps[WordbankDeleteVoteSupport]):
         self.session.add(support)
         await self.session.flush()
         return support
+
+
+class WordbankResponseMessageOps(BaseOps[WordbankResponseMessage]):
+    async def upsert_response_message(
+        self,
+        payload: WordbankResponseMessagePayload,
+    ) -> int:
+        stmt = sqlite_insert(WordbankResponseMessage).values(payload)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[WordbankResponseMessage.message_id],
+            set_={
+                "entry_id": stmt.excluded.entry_id,
+                "trigger_id": stmt.excluded.trigger_id,
+                "response_id": stmt.excluded.response_id,
+                "group_id": stmt.excluded.group_id,
+                "user_id": stmt.excluded.user_id,
+                "message_type": stmt.excluded.message_type,
+                "updated_at": stmt.excluded.updated_at,
+            },
+        )
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
+
+    async def get_by_message_id(
+        self,
+        message_id: str,
+    ) -> WordbankResponseMessage | None:
+        stmt = select(WordbankResponseMessage).where(
+            WordbankResponseMessage.message_id == message_id
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+
+class WordbankEntryDetailOps(BaseOps[WordbankEntry]):
+    async def get_detail(
+        self,
+        entry_id: int,
+        *,
+        trigger_id: int | None = None,
+        response_id: int | None = None,
+    ) -> tuple[WordbankEntry, WordbankTrigger, WordbankResponse] | None:
+        stmt = (
+            select(WordbankEntry, WordbankTrigger, WordbankResponse)
+            .join(WordbankTrigger, WordbankTrigger.entry_id == WordbankEntry.id)
+            .join(WordbankResponse, WordbankResponse.entry_id == WordbankEntry.id)
+            .where(WordbankEntry.id == entry_id)
+            .order_by(WordbankTrigger.id.asc(), WordbankResponse.id.asc())
+            .limit(1)
+        )
+        if trigger_id is not None:
+            stmt = stmt.where(WordbankTrigger.id == trigger_id)
+        if response_id is not None:
+            stmt = stmt.where(WordbankResponse.id == response_id)
+        result = await self.session.execute(stmt)
+        row = result.first()
+        if row is None:
+            return None
+        entry, trigger, response = row
+        return entry, trigger, response
 
 
 class WordbankLogOps(BaseOps[WordbankLog]):

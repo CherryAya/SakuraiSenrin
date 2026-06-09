@@ -1,7 +1,7 @@
 # 学习模块
 
 ## 概览
-学习模块保留传统 `study` / `学习` 快捷入口，用于把简单文本词条加入 `wordbank`。它不维护独立数据库、规则或运行时索引；查询、删除、投票删除、恢复、图片词条和被动匹配都由 `wordbank` 负责。完整管理命令请使用 `wordbank add/search/delete/support/vote/restore/image`，也兼容旧式 `wordbank.add`、`wordbank.search`、`wordbank.delete`、`wordbank.support`、`wordbank.vote`、`wordbank.restore`、`wordbank.image` 入口。
+学习模块保留传统 `study` / `学习` 快捷入口，用于把简单文本词条加入 `wordbank`。它不维护独立数据库、规则或运行时索引；查询、删除、投票删除、恢复、图片词条、回复式词条管理和被动匹配都由 `wordbank` 负责。完整管理命令请使用 `wordbank add/search/delete/support/vote/restore/image`，也兼容旧式 `wordbank.add`、`wordbank.search`、`wordbank.delete`、`wordbank.support`、`wordbank.vote`、`wordbank.restore`、`wordbank.image` 入口。
 
 ## 权限与触发
 - 触发方式: 指令触发
@@ -17,7 +17,7 @@
 - 指令: `study 触发词 => 响应词`
 - 兼容指令: `study <a|m> <t|f> 触发词 响应词`
 #### 说明
-支持 `=>`、`->`、`回答`、`回复` 分隔触发词和响应词。也兼容旧版一键格式：`a` 表示对所有人有效，`m` 表示仅对自己有效；`t` 表示开启群组隔离，`f` 表示关闭群组隔离。内部会调用 `wordbank add` 使用的固定规则模型，默认群聊范围为当前群，私聊范围为本人。需要搜索、删除、投票删除、恢复或添加图片词条时请使用 `wordbank` 命令；中文直达入口 `添加词条`、`搜索词条`、`删除词条`、`支持删除`、`查看投票状态`、`恢复词条`、`图片词条` 也会转入对应新版子命令。
+支持 `=>`、`->`、`回答`、`回复` 分隔触发词和响应词。也兼容旧版一键格式：`a` 表示对所有人有效，`m` 表示仅对自己有效；`t` 表示开启群组隔离，`f` 表示关闭群组隔离。内部会调用 `wordbank add` 使用的固定规则模型，默认群聊范围为当前群，私聊范围为本人。需要搜索、删除、投票删除、恢复、回复机器人自动回复查看详情或添加图片词条时请使用 `wordbank` 命令；中文直达入口 `添加词条`、`搜索词条`、`删除词条`、`支持删除`、`查看投票状态`、`恢复词条`、`图片词条` 也会转入对应新版子命令。
 #### 前置条件
 当前用户所在群聊需要通过运行时检查。
 #### 完整流程

@@ -7,6 +7,7 @@ Description: 插件入口
 """
 
 from pathlib import Path
+from typing import Any
 
 from nonebot import get_driver, on_message, on_notice
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -14,7 +15,8 @@ from nonebot.adapters.onebot.v11.event import MessageEvent, NoticeEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
-from nonebot.plugin import on_command
+from nonebot.plugin import on_command, on_fullmatch
+from nonebot.rule import to_me
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
@@ -29,12 +31,16 @@ from src.logger import logger
 
 from .handlers import (
     IMAGE_ALIASES,
+    REPLY_COMMAND_ALIASES,
+    PassiveResponse,
     build_forced_command_text,
     dispatch_wordbank_command,
     extract_image_urls,
     handle_add_image,
     handle_passive_message,
     handle_passive_notice,
+    handle_reply_command,
+    is_reply,
     localize_command_error,
 )
 from .services import wordbank_media_service, wordbank_service
@@ -143,6 +149,13 @@ wordbank_support_command = on_command(
 wordbank_vote_command = on_command(
     ("wordbank", "vote"),
     aliases={"查看投票状态", "查看投票结果"},
+    priority=5,
+    block=True,
+)
+wordbank_reply_command = on_fullmatch(
+    tuple(REPLY_COMMAND_ALIASES),
+    ignorecase=True,
+    rule=to_me() & is_reply,
     priority=5,
     block=True,
 )
@@ -268,6 +281,53 @@ async def _(
     await _handle_wordbank_command_message(matcher, event, arg, forced_action="vote")
 
 
+@wordbank_reply_command.handle()
+async def _(matcher: Matcher, event: MessageEvent) -> None:
+    await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    try:
+        msg = await handle_reply_command(
+            wordbank_service,
+            event=event,
+            text=event.message.extract_plain_text(),
+            locale=locale,
+        )
+    except (RuleError, ValueError) as exc:
+        await matcher.finish(localize_command_error(exc, locale))
+    await matcher.finish(msg)
+
+
+def _extract_sent_message_id(result: Any) -> str | None:
+    if isinstance(result, dict):
+        value = result.get("message_id")
+    else:
+        value = getattr(result, "message_id", None)
+    if value is None:
+        return None
+    return str(value)
+
+
+async def _record_passive_response_message(
+    response: PassiveResponse,
+    send_result: Any,
+) -> None:
+    message_id = _extract_sent_message_id(send_result)
+    if message_id is None:
+        return
+    try:
+        await wordbank_service.record_response_message(
+            message_id=message_id,
+            entry_id=response.entry_id,
+            trigger_id=response.trigger_id,
+            response_id=response.response_id,
+            group_id=response.group_id,
+            user_id=response.user_id,
+            message_type=response.message_type,
+        )
+    except Exception as exc:
+        logger.warning(f"[Wordbank] response message record skipped: {exc}")
+
+
 @wordbank_passive.handle()
 async def _(bot: Bot, event: MessageEvent) -> None:
     await initialize_wordbank_plugin()
@@ -282,7 +342,8 @@ async def _(bot: Bot, event: MessageEvent) -> None:
         logger.warning(f"[Wordbank] passive match skipped: {exc}")
         return
     if response:
-        await wordbank_passive.send(response)
+        send_result = await wordbank_passive.send(response.text)
+        await _record_passive_response_message(response, send_result)
 
 
 @wordbank_notice.handle()
@@ -294,4 +355,5 @@ async def _(bot: Bot, event: NoticeEvent) -> None:
         logger.warning(f"[Wordbank] passive notice skipped: {exc}")
         return
     if response:
-        await wordbank_notice.send(response)
+        send_result = await wordbank_notice.send(response.text)
+        await _record_passive_response_message(response, send_result)

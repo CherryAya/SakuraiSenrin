@@ -42,6 +42,30 @@ async def test_repository_round_trip_and_index_refresh(
     assert selected is not None
     assert selected.response.text == "做个好梦"
 
+    await service.record_response_message(
+        message_id="90001",
+        entry_id=selected.candidate.entry.id,
+        trigger_id=selected.candidate.trigger.id,
+        response_id=selected.response.id,
+        group_id="20001",
+        user_id="10001",
+        message_type="text",
+    )
+    response_message = await service.get_response_message("90001")
+    assert response_message is not None
+    assert response_message.entry_id == result.entry_id
+    assert response_message.trigger_id == selected.candidate.trigger.id
+    assert response_message.response_id == selected.response.id
+
+    detail = await service.get_entry_detail(
+        response_message.entry_id,
+        trigger_id=response_message.trigger_id,
+        response_id=response_message.response_id,
+    )
+    assert detail is not None
+    assert detail.trigger_text == "晚安啦"
+    assert detail.response_text == "做个好梦"
+
     assert await service.delete_entry(
         result.entry_id,
         actor_user_id="10001",

@@ -270,6 +270,9 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
 
     add = next(feature for feature in wordbank.index if feature.slug == "add")
     passive = next(feature for feature in wordbank.index if feature.slug == "passive")
+    reply = next(
+        feature for feature in wordbank.index if feature.slug == "reply-shortcut"
+    )
     shortcut = next(feature for feature in study.index if feature.slug == "shortcut")
 
     assert add.demo_filename == "wordbank-add.png"
@@ -277,6 +280,8 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert "ID: 12" in add.demo_turns[1].text
     assert passive.demo_turns[-1].speaker == "SYSTEM"
     assert "group_recall" in passive.demo_turns[-1].text
+    assert reply.demo_filename == "wordbank-reply-shortcut.png"
+    assert "词条详情 #12" in reply.demo_turns[3].text
     assert shortcut.demo_filename == "study-shortcut.png"
     assert len(shortcut.demo_turns) == 8
     assert "#study m t" in shortcut.demo_turns[-2].text

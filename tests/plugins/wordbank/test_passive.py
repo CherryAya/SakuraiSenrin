@@ -77,6 +77,16 @@ class _FakeAsyncClient:
         return self.response
 
 
+def _selected(text: str = "我在") -> SimpleNamespace:
+    return SimpleNamespace(
+        response=SimpleNamespace(id=300, text=text),
+        candidate=SimpleNamespace(
+            entry=SimpleNamespace(id=12),
+            trigger=SimpleNamespace(id=120),
+        ),
+    )
+
+
 def test_is_revoke_signal_detects_event_fields_and_segments() -> None:
     assert is_revoke_signal(SimpleNamespace(notice_type="group_recall"))
     assert is_revoke_signal(SimpleNamespace(sub_type="message_revoke"))
@@ -118,9 +128,7 @@ async def test_handle_passive_message_matches_at_event_after_text_miss() -> None
     event = build_group_message_event("[CQ:at,qq=99999] 在吗")
     bot = cast(Bot, SimpleNamespace(self_id="99999"))
     match_text = AsyncMock(return_value=None)
-    match_event = AsyncMock(
-        return_value=SimpleNamespace(response=SimpleNamespace(text="我在"))
-    )
+    match_event = AsyncMock(return_value=_selected("我在"))
     match_images = AsyncMock()
     service = cast(
         WordbankService,
@@ -134,7 +142,12 @@ async def test_handle_passive_message_matches_at_event_after_text_miss() -> None
 
     response = await handle_passive_message(bot, event, service, media_service)
 
-    assert response == "我在"
+    assert response is not None
+    assert response.text == "我在"
+    assert response.entry_id == 12
+    assert response.trigger_id == 120
+    assert response.response_id == 300
+    assert response.message_type == "event"
     match_text.assert_awaited_once()
     match_event.assert_awaited_once()
     assert match_event.await_args_list[0].args == (("event:at", "event:mention"),)
@@ -145,8 +158,8 @@ async def test_handle_passive_notice_matches_poke_and_join_events() -> None:
     bot = cast(Bot, SimpleNamespace(self_id="99999"))
     match_event = AsyncMock(
         side_effect=[
-            SimpleNamespace(response=SimpleNamespace(text="别戳啦")),
-            SimpleNamespace(response=SimpleNamespace(text="欢迎")),
+            _selected("别戳啦"),
+            _selected("欢迎"),
         ]
     )
     service = cast(WordbankService, SimpleNamespace(match_event=match_event))
@@ -162,8 +175,10 @@ async def test_handle_passive_notice_matches_poke_and_join_events() -> None:
         service,
     )
 
-    assert poke_response == "别戳啦"
-    assert join_response == "欢迎"
+    assert poke_response is not None
+    assert join_response is not None
+    assert poke_response.text == "别戳啦"
+    assert join_response.text == "欢迎"
     assert match_event.await_args_list[0].args == (("event:poke",),)
     assert match_event.await_args_list[1].args == (
         ("event:join", "event:group_join", "event:group_increase"),

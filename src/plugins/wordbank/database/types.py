@@ -75,6 +75,18 @@ class WordbankDeleteVotePayload(TypedDict):
     updated_at: int
 
 
+class WordbankResponseMessagePayload(TypedDict):
+    message_id: str
+    entry_id: int
+    trigger_id: int
+    response_id: int
+    group_id: str
+    user_id: str
+    message_type: str
+    created_at: int
+    updated_at: int
+
+
 @dataclass(slots=True, frozen=True)
 class WordbankTriggerRecord:
     id: int
@@ -163,3 +175,30 @@ class WordbankDeleteVoteMutation:
     already_supported: bool
     passed: bool
     entry_deleted: bool
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankResponseMessageRecord:
+    message_id: str
+    entry_id: int
+    trigger_id: int
+    response_id: int
+    group_id: str
+    user_id: str
+    message_type: str
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankEntryDetail:
+    entry_id: int
+    status: str
+    enabled: int
+    scope: str
+    probability: float
+    weight: int
+    group_id: str
+    created_by: str
+    deleted_at: int
+    trigger_text: str
+    trigger_mode: str
+    response_text: str
