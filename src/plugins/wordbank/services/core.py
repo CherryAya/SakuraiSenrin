@@ -43,6 +43,19 @@ class WordbankAddResult:
     weight: int
 
 
+@dataclass(slots=True, frozen=True)
+class WordbankDeleteVoteResult:
+    vote_id: int
+    entry_id: int
+    status: str
+    support_count: int
+    threshold: int
+    created: bool
+    already_supported: bool
+    passed: bool
+    entry_deleted: bool
+
+
 class WordbankService:
     def __init__(
         self,
@@ -226,6 +239,87 @@ class WordbankService:
         if ok:
             self.mark_dirty()
         return ok
+
+    async def request_delete_vote(
+        self,
+        *,
+        entry_id: int,
+        group_id: str,
+        user_id: str,
+        threshold: int = 3,
+        reason: str = "",
+    ) -> WordbankDeleteVoteResult | None:
+        mutation = await self.repository.request_delete_vote(
+            entry_id=entry_id,
+            group_id=group_id,
+            user_id=user_id,
+            threshold=threshold,
+            reason=reason,
+        )
+        if mutation is None:
+            return None
+        if mutation.entry_deleted:
+            self.mark_dirty()
+        return WordbankDeleteVoteResult(
+            vote_id=mutation.vote.id,
+            entry_id=mutation.vote.entry_id,
+            status=mutation.vote.status,
+            support_count=mutation.vote.support_count,
+            threshold=mutation.vote.threshold,
+            created=mutation.created,
+            already_supported=mutation.already_supported,
+            passed=mutation.passed,
+            entry_deleted=mutation.entry_deleted,
+        )
+
+    async def support_delete_vote(
+        self,
+        *,
+        vote_id: int,
+        group_id: str,
+        user_id: str,
+    ) -> WordbankDeleteVoteResult | None:
+        mutation = await self.repository.support_delete_vote(
+            vote_id=vote_id,
+            group_id=group_id,
+            user_id=user_id,
+        )
+        if mutation is None:
+            return None
+        if mutation.entry_deleted:
+            self.mark_dirty()
+        return WordbankDeleteVoteResult(
+            vote_id=mutation.vote.id,
+            entry_id=mutation.vote.entry_id,
+            status=mutation.vote.status,
+            support_count=mutation.vote.support_count,
+            threshold=mutation.vote.threshold,
+            created=mutation.created,
+            already_supported=mutation.already_supported,
+            passed=mutation.passed,
+            entry_deleted=mutation.entry_deleted,
+        )
+
+    async def get_delete_vote(
+        self,
+        vote_id: int,
+        *,
+        group_id: str,
+    ) -> WordbankDeleteVoteResult | None:
+        vote = await self.repository.get_delete_vote(vote_id, group_id=group_id)
+        if vote is None:
+            return None
+        return WordbankDeleteVoteResult(
+            vote_id=vote.id,
+            entry_id=vote.entry_id,
+            status=vote.status,
+            support_count=vote.support_count,
+            threshold=vote.threshold,
+            created=False,
+            already_supported=False,
+            passed=vote.status == "passed",
+            entry_deleted=False,
+        )
 
     async def search(
         self,

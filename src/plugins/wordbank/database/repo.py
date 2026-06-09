@@ -9,12 +9,15 @@ from src.lib.utils.common import get_current_time
 
 from .instances import wordbank_log_db, wordbank_main_db
 from .ops import (
+    WordbankDeleteVoteOps,
+    WordbankDeleteVoteSupportOps,
     WordbankEntryOps,
     WordbankImageOps,
     WordbankResponseOps,
     WordbankTriggerOps,
 )
 from .tables import (
+    WordbankDeleteVote,
     WordbankEntry,
     WordbankImage,
     WordbankLog,
@@ -24,6 +27,8 @@ from .tables import (
     WordbankTrigger,
 )
 from .types import (
+    WordbankDeleteVoteMutation,
+    WordbankDeleteVoteRecord,
     WordbankEntryRecord,
     WordbankImagePayload,
     WordbankImageRecord,
@@ -78,6 +83,25 @@ class WordbankRepository:
             height=image.height,
             file_size=image.file_size,
             storage_path=image.storage_path,
+        )
+
+    @staticmethod
+    def _to_delete_vote_record(
+        vote: WordbankDeleteVote,
+        *,
+        support_count: int,
+    ) -> WordbankDeleteVoteRecord:
+        return WordbankDeleteVoteRecord(
+            id=vote.id,
+            entry_id=vote.entry_id,
+            group_id=vote.group_id,
+            created_by=vote.created_by,
+            status=vote.status,
+            threshold=vote.threshold,
+            support_count=support_count,
+            reason=vote.reason,
+            created_at=vote.created_at,
+            updated_at=vote.updated_at,
         )
 
     async def create_text_entry(
@@ -342,6 +366,150 @@ class WordbankRepository:
                 can_moderate_group=can_moderate_group,
                 is_superuser=is_superuser,
             )
+
+    async def request_delete_vote(
+        self,
+        *,
+        entry_id: int,
+        group_id: str,
+        user_id: str,
+        threshold: int,
+        reason: str = "",
+    ) -> WordbankDeleteVoteMutation | None:
+        now = get_current_time()
+        async with wordbank_main_db.write_session() as session:
+            entry = await session.get(WordbankEntry, entry_id)
+            if entry is None or entry.deleted_at != 0:
+                return None
+            if not self._entry_allows_group_vote(entry, group_id):
+                return None
+
+            vote_ops = WordbankDeleteVoteOps(session)
+            support_ops = WordbankDeleteVoteSupportOps(session)
+            vote = await vote_ops.get_open_vote_by_entry(entry_id, group_id)
+            created = False
+            if vote is None:
+                vote = await vote_ops.create_vote(
+                    {
+                        "entry_id": entry_id,
+                        "group_id": group_id,
+                        "created_by": user_id,
+                        "status": "open",
+                        "threshold": threshold,
+                        "reason": reason,
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                )
+                created = True
+
+            return await self._support_delete_vote_in_session(
+                entry_id=entry_id,
+                vote=vote,
+                user_id=user_id,
+                now=now,
+                created=created,
+                vote_ops=vote_ops,
+                support_ops=support_ops,
+                entry_ops=WordbankEntryOps(session),
+            )
+
+    async def support_delete_vote(
+        self,
+        *,
+        vote_id: int,
+        group_id: str,
+        user_id: str,
+    ) -> WordbankDeleteVoteMutation | None:
+        now = get_current_time()
+        async with wordbank_main_db.write_session() as session:
+            vote_ops = WordbankDeleteVoteOps(session)
+            vote = await vote_ops.get_vote_by_id(vote_id)
+            if vote is None:
+                return None
+            if vote.group_id != group_id:
+                return None
+            return await self._support_delete_vote_in_session(
+                entry_id=vote.entry_id,
+                vote=vote,
+                user_id=user_id,
+                now=now,
+                created=False,
+                vote_ops=vote_ops,
+                support_ops=WordbankDeleteVoteSupportOps(session),
+                entry_ops=WordbankEntryOps(session),
+            )
+
+    async def get_delete_vote(
+        self,
+        vote_id: int,
+        *,
+        group_id: str,
+    ) -> WordbankDeleteVoteRecord | None:
+        async with wordbank_main_db.read_session() as session:
+            vote_ops = WordbankDeleteVoteOps(session)
+            vote = await vote_ops.get_vote_by_id(vote_id)
+            if vote is None or vote.group_id != group_id:
+                return None
+            support_count = await vote_ops.support_count(vote.id)
+            return self._to_delete_vote_record(vote, support_count=support_count)
+
+    @staticmethod
+    def _entry_allows_group_vote(entry: WordbankEntry, group_id: str) -> bool:
+        if not group_id:
+            return False
+        if entry.scope == "all_groups":
+            return True
+        if entry.scope in {"current_group", "self_in_current_group"}:
+            return entry.group_id == group_id
+        return False
+
+    async def _support_delete_vote_in_session(
+        self,
+        *,
+        entry_id: int,
+        vote: WordbankDeleteVote,
+        user_id: str,
+        now: int,
+        created: bool,
+        vote_ops: WordbankDeleteVoteOps,
+        support_ops: WordbankDeleteVoteSupportOps,
+        entry_ops: WordbankEntryOps,
+    ) -> WordbankDeleteVoteMutation:
+        support_count = await vote_ops.support_count(vote.id)
+        if vote.status != "open":
+            return WordbankDeleteVoteMutation(
+                vote=self._to_delete_vote_record(vote, support_count=support_count),
+                created=created,
+                already_supported=True,
+                passed=vote.status == "passed",
+                entry_deleted=False,
+            )
+
+        already_supported = await support_ops.has_supported(vote.id, user_id)
+        if not already_supported:
+            await support_ops.create_support(
+                vote_id=vote.id,
+                user_id=user_id,
+                created_at=now,
+            )
+            support_count += 1
+
+        passed = support_count >= vote.threshold
+        entry_deleted = False
+        if passed:
+            entry_deleted = await entry_ops.mark_deleted_by_vote(entry_id, now)
+            vote.status = "passed" if entry_deleted else "closed"
+            vote.updated_at = now
+            await vote_ops.update_status(vote.id, vote.status, now)
+
+        return WordbankDeleteVoteMutation(
+            vote=self._to_delete_vote_record(vote, support_count=support_count),
+            created=created,
+            already_supported=already_supported,
+            passed=passed,
+            entry_deleted=entry_deleted,
+        )
 
     async def get_image_by_md5(self, md5: str) -> WordbankImageRecord | None:
         async with wordbank_main_db.read_session() as session:

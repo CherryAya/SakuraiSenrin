@@ -114,3 +114,63 @@ async def test_mutation_permissions_for_owner_group_admin_and_superuser(
         can_moderate_group=False,
         is_superuser=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_delete_vote_reaches_threshold_and_refreshes_index(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+
+    service = WordbankService(WordbankRepository(), debounce_seconds=0.01)
+    await service.initialize()
+    result = await service.add_text_entry(
+        trigger_text="投票删除测试",
+        response_text="ok",
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    await service.rebuild_index()
+    assert service.index.find_text("投票删除测试")
+
+    created = await service.request_delete_vote(
+        entry_id=result.entry_id,
+        group_id="20001",
+        user_id="20002",
+        threshold=2,
+    )
+    assert created is not None
+    assert created.created
+    assert created.support_count == 1
+    assert not created.entry_deleted
+
+    duplicate = await service.support_delete_vote(
+        vote_id=created.vote_id,
+        group_id="20001",
+        user_id="20002",
+    )
+    assert duplicate is not None
+    assert duplicate.already_supported
+    assert duplicate.support_count == 1
+
+    passed = await service.support_delete_vote(
+        vote_id=created.vote_id,
+        group_id="20001",
+        user_id="20003",
+    )
+    assert passed is not None
+    assert passed.entry_deleted
+    assert passed.status == "passed"
+    assert passed.support_count == 2
+
+    status = await service.get_delete_vote(created.vote_id, group_id="20001")
+    assert status is not None
+    assert status.status == "passed"
+    assert status.support_count == 2
+
+    await service.rebuild_index()
+    assert service.index.find_text("投票删除测试") == []

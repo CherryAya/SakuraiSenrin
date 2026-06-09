@@ -422,6 +422,7 @@ MessageKey = Literal[
     "wordbank.error.trigger_empty",
     "wordbank.error.trigger_mode_unsupported",
     "wordbank.error.unknown_subcommand",
+    "wordbank.error.vote_id_numeric",
     "wordbank.error.weight_invalid",
     "wordbank.help",
     "wordbank.restore.not_found",
@@ -430,6 +431,13 @@ MessageKey = Literal[
     "wordbank.search.item",
     "wordbank.search.more",
     "wordbank.search.title",
+    "wordbank.vote.already_supported",
+    "wordbank.vote.closed",
+    "wordbank.vote.created",
+    "wordbank.vote.not_found",
+    "wordbank.vote.passed",
+    "wordbank.vote.status",
+    "wordbank.vote.supported",
 ]
 
 ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
@@ -852,6 +860,7 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.error.trigger_empty",
     "wordbank.error.trigger_mode_unsupported",
     "wordbank.error.unknown_subcommand",
+    "wordbank.error.vote_id_numeric",
     "wordbank.error.weight_invalid",
     "wordbank.help",
     "wordbank.restore.not_found",
@@ -860,4 +869,11 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.search.item",
     "wordbank.search.more",
     "wordbank.search.title",
+    "wordbank.vote.already_supported",
+    "wordbank.vote.closed",
+    "wordbank.vote.created",
+    "wordbank.vote.not_found",
+    "wordbank.vote.passed",
+    "wordbank.vote.status",
+    "wordbank.vote.supported",
 )

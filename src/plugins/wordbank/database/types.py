@@ -64,6 +64,17 @@ class WordbankLogPayload(TypedDict):
     created_at: int
 
 
+class WordbankDeleteVotePayload(TypedDict):
+    entry_id: int
+    group_id: str
+    created_by: str
+    status: str
+    threshold: int
+    reason: str
+    created_at: int
+    updated_at: int
+
+
 @dataclass(slots=True, frozen=True)
 class WordbankTriggerRecord:
     id: int
@@ -129,3 +140,26 @@ class WordbankSearchItem:
     probability: float
     weight: int
     created_by: str
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankDeleteVoteRecord:
+    id: int
+    entry_id: int
+    group_id: str
+    created_by: str
+    status: str
+    threshold: int
+    support_count: int
+    reason: str
+    created_at: int
+    updated_at: int
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankDeleteVoteMutation:
+    vote: WordbankDeleteVoteRecord
+    created: bool
+    already_supported: bool
+    passed: bool
+    entry_deleted: bool

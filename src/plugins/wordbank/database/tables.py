@@ -98,6 +98,34 @@ class WordbankImage(WordbankMainBase, TimeMixin):
     storage_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
+class WordbankDeleteVote(WordbankMainBase, TimeMixin):
+    __tablename__ = "wordbank_delete_vote"
+    __table_args__ = (
+        Index("idx_wordbank_delete_vote_entry", "entry_id", "status"),
+        Index("idx_wordbank_delete_vote_group", "group_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entry_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    group_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class WordbankDeleteVoteSupport(WordbankMainBase, TimeMixin):
+    __tablename__ = "wordbank_delete_vote_support"
+    __table_args__ = (
+        UniqueConstraint("vote_id", "user_id", name="uq_wordbank_vote_support_user"),
+        Index("idx_wordbank_vote_support_vote", "vote_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vote_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
 class WordbankLog(WordbankLogBase):
     __tablename__ = "wordbank_log"
     __table_args__ = (

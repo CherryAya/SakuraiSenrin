@@ -17,7 +17,11 @@ from src.plugins.wordbank.handlers.commands import (
     parse_text_add_args,
     wordbank_help_text,
 )
-from src.plugins.wordbank.services.core import WordbankAddResult, WordbankService
+from src.plugins.wordbank.services.core import (
+    WordbankAddResult,
+    WordbankDeleteVoteResult,
+    WordbankService,
+)
 from src.plugins.wordbank.services.rules import RuleError
 from tests.plugins.water.helpers import build_group_message_event
 
@@ -147,7 +151,7 @@ async def test_handle_delete_localizes_result() -> None:
     delete_mock = AsyncMock(return_value=True)
     service = cast(
         WordbankService,
-        SimpleNamespace(delete_entry=delete_mock),
+        SimpleNamespace(delete_entry=delete_mock, request_delete_vote=AsyncMock()),
     )
     event = build_group_message_event("#wordbank delete 12", role="admin")
 
@@ -176,6 +180,102 @@ async def test_handle_delete_localizes_result() -> None:
         )
         == "词条 ID 必须是数字。"
     )
+
+
+async def test_handle_delete_starts_vote_when_user_cannot_delete() -> None:
+    delete_mock = AsyncMock(return_value=False)
+    request_vote = AsyncMock(
+        return_value=WordbankDeleteVoteResult(
+            vote_id=3,
+            entry_id=12,
+            status="open",
+            support_count=1,
+            threshold=3,
+            created=True,
+            already_supported=False,
+            passed=False,
+            entry_deleted=False,
+        )
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(delete_entry=delete_mock, request_delete_vote=request_vote),
+    )
+    event = build_group_message_event("#wordbank delete 12", role="member")
+
+    message = await handle_delete(
+        service,
+        event=event,
+        entry_id_text="12",
+        locale="zh-CN",
+    )
+
+    assert "已发起删除投票 #3" in message
+    request_vote.assert_awaited_once_with(
+        entry_id=12,
+        group_id="20001",
+        user_id="10001",
+        threshold=3,
+    )
+
+
+async def test_dispatch_support_and_vote_commands_use_delete_vote_service() -> None:
+    event = build_group_message_event("#wordbank support 3", user_id=10002)
+    support_delete_vote = AsyncMock(
+        return_value=WordbankDeleteVoteResult(
+            vote_id=3,
+            entry_id=12,
+            status="open",
+            support_count=2,
+            threshold=3,
+            created=False,
+            already_supported=False,
+            passed=False,
+            entry_deleted=False,
+        )
+    )
+    get_delete_vote = AsyncMock(
+        return_value=WordbankDeleteVoteResult(
+            vote_id=3,
+            entry_id=12,
+            status="open",
+            support_count=2,
+            threshold=3,
+            created=False,
+            already_supported=False,
+            passed=False,
+            entry_deleted=False,
+        )
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            support_delete_vote=support_delete_vote,
+            get_delete_vote=get_delete_vote,
+        ),
+    )
+
+    support_message = await dispatch_wordbank_command(
+        service,
+        event=event,
+        text="support 3",
+        locale="zh-CN",
+    )
+    vote_message = await dispatch_wordbank_command(
+        service,
+        event=event,
+        text="vote 3",
+        locale="zh-CN",
+    )
+
+    assert support_message == ("已支持删除投票 #3。\n词条: #12\n当前支持票: 2/3")
+    assert vote_message == "删除投票 #3\n词条: #12\n状态: open\n支持票: 2/3"
+    support_delete_vote.assert_awaited_once_with(
+        vote_id=3,
+        group_id="20001",
+        user_id="10002",
+    )
+    get_delete_vote.assert_awaited_once_with(3, group_id="20001")
 
 
 def test_build_mutation_actor_detects_roles_and_superuser() -> None:

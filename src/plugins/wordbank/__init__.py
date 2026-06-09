@@ -134,6 +134,18 @@ wordbank_image_command = on_command(
     priority=5,
     block=True,
 )
+wordbank_support_command = on_command(
+    ("wordbank", "support"),
+    aliases={"支持删除"},
+    priority=5,
+    block=True,
+)
+wordbank_vote_command = on_command(
+    ("wordbank", "vote"),
+    aliases={"查看投票状态", "查看投票结果"},
+    priority=5,
+    block=True,
+)
 wordbank_passive = on_message(priority=95, block=False)
 wordbank_notice = on_notice(priority=95, block=False)
 
@@ -236,6 +248,24 @@ async def _(
     arg: Message = CommandArg(),
 ) -> None:
     await _handle_wordbank_command_message(matcher, event, arg, forced_action="image")
+
+
+@wordbank_support_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(matcher, event, arg, forced_action="support")
+
+
+@wordbank_vote_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(matcher, event, arg, forced_action="vote")
 
 
 @wordbank_passive.handle()
