@@ -253,15 +253,17 @@ def test_load_representative_demo_bytes_uses_first_available_feature() -> None:
 
 
 def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
+    wordbank_source = Path("src/plugins/wordbank/docs/README.MD")
+    study_source = Path("src/plugins/study/docs/README.MD")
     wordbank = load_plugin_doc_bundle(
-        source=Path("src/plugins/wordbank/docs/README.MD"),
+        source=wordbank_source,
         default_name="词库模块",
         default_description="desc",
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
     )
     study = load_plugin_doc_bundle(
-        source=Path("src/plugins/study/docs/README.MD"),
+        source=study_source,
         default_name="学习模块",
         default_description="desc",
         trigger=TriggerType.COMMAND,
@@ -294,6 +296,13 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert shortcut.demo_turns[-1].text == "做个好梦"
     assert "revoke" in shortcut.failures
     assert "直接中止" in shortcut.failures
+    for source, bundle in ((wordbank_source, wordbank), (study_source, study)):
+        for feature in bundle.index:
+            if not feature.demo_turns:
+                continue
+            demo_path = source.parent / "demos" / feature.demo_filename
+            assert demo_path.is_file(), demo_path
+            assert demo_path.stat().st_size > 0
     assert load_representative_demo_bytes(wordbank) is not None
     assert load_representative_demo_bytes(study) is not None
 
