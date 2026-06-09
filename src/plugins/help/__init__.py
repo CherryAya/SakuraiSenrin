@@ -13,10 +13,12 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import nonebot
-from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.adapters.onebot.v11.bot import Bot
+from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
+from nonebot.permission import SUPERUSER
 from nonebot.plugin import Plugin, PluginMetadata, on_command
 
 from src.database.core.consts import Permission
@@ -47,6 +49,7 @@ class DocsEntry:
     docs: DocsMeta
     display_name: str
     summary: str
+    permission: Permission
 
 
 @dataclass(slots=True)
@@ -170,6 +173,7 @@ def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
                 docs=docs,
                 display_name=display_name,
                 summary=summary,
+                permission=_read_plugin_permission(metadata),
             )
         )
 
@@ -181,6 +185,51 @@ def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
             e.display_name.lower(),
         ),
     )
+
+
+def _read_plugin_permission(metadata: PluginMetadata) -> Permission:
+    raw_permission = metadata.extra.get("permission", Permission.NORMAL)
+    if isinstance(raw_permission, Permission):
+        return raw_permission
+    if isinstance(raw_permission, str):
+        try:
+            return Permission[raw_permission]
+        except KeyError:
+            return Permission.NORMAL
+    try:
+        return Permission(raw_permission)
+    except (TypeError, ValueError):
+        return Permission.NORMAL
+
+
+async def _resolve_actor_permission(bot: Bot, event: MessageEvent) -> Permission:
+    if await SUPERUSER(bot, event):
+        return (
+            Permission.NORMAL
+            | Permission.GROUP_ADMIN
+            | Permission.GROUP_OWNER
+            | Permission.SUPERUSER
+        )
+    if isinstance(event, GroupMessageEvent):
+        role = getattr(event.sender, "role", "")
+        if role == "owner":
+            return Permission.NORMAL | Permission.GROUP_ADMIN | Permission.GROUP_OWNER
+        if role == "admin":
+            return Permission.NORMAL | Permission.GROUP_ADMIN
+    return Permission.NORMAL
+
+
+def _can_view_entry(entry: DocsEntry, actor_permission: Permission) -> bool:
+    if entry.permission == Permission.NONE:
+        return True
+    return actor_permission.has(entry.permission)
+
+
+def _filter_authorized_entries(
+    entries: list[DocsEntry],
+    actor_permission: Permission,
+) -> list[DocsEntry]:
+    return [entry for entry in entries if _can_view_entry(entry, actor_permission)]
 
 
 def _build_index_message(entries: list[DocsEntry], locale: LocaleCode) -> Message:
@@ -276,6 +325,28 @@ def _match_entry(entries: list[DocsEntry], query: str) -> MatchResult:
     return MatchResult(status="not_found")
 
 
+def _is_exact_entry_match(entry: DocsEntry, query: str) -> bool:
+    q = query.strip().lower()
+    if not q:
+        return False
+    candidates = {
+        entry.display_name.lower(),
+        entry.plugin.name.lower(),
+        entry.plugin.module_name.lower(),
+        entry.plugin.module_name.split(".")[-1].lower(),
+    }
+    return q in candidates
+
+
+def _match_exact_entry(entries: list[DocsEntry], query: str) -> MatchResult:
+    exact = [entry for entry in entries if _is_exact_entry_match(entry, query)]
+    if len(exact) == 1:
+        return MatchResult(status="matched", entry=exact[0])
+    if len(exact) > 1:
+        return MatchResult(status="ambiguous", candidates=_unique_entries(exact))
+    return MatchResult(status="not_found")
+
+
 def _build_fallback_docs(
     entry: DocsEntry,
     locale: LocaleCode,
@@ -304,6 +375,15 @@ def _build_ambiguous_message(
     for entry in candidates:
         lines.append(f"- {entry.display_name} ({entry.plugin.module_name})")
     return Message("\n".join(lines))
+
+
+def _build_permission_denied_message(entry: DocsEntry) -> Message:
+    return Message(
+        (
+            f"无权限查看插件文档: {entry.display_name}\n"
+            f"需要权限: {entry.permission.label}"
+        ).strip()
+    )
 
 
 async def _resolve_docs_message(
@@ -347,23 +427,36 @@ def _split_query(query: str) -> tuple[str, str | None]:
 
 @help_matcher.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     entries = _iter_docs_entries(locale)
+    actor_permission = await _resolve_actor_permission(bot, event)
+    authorized_entries = _filter_authorized_entries(entries, actor_permission)
     query = arg.extract_plain_text().strip()
     if not query:
-        await matcher.finish(_build_index_message(entries, locale))
+        await matcher.finish(_build_index_message(authorized_entries, locale))
 
-    match_result = _match_entry(entries, query)
+    match_result = _match_entry(authorized_entries, query)
     feature_query: str | None = None
     if match_result.status == "not_found" and " " in query:
         plugin_query, feature_query = _split_query(query)
-        match_result = _match_entry(entries, plugin_query)
+        match_result = _match_entry(authorized_entries, plugin_query)
 
     if match_result.status == "not_found":
+        denied_match = _match_exact_entry(entries, query)
+        if denied_match.status == "not_found" and " " in query:
+            plugin_query, _ = _split_query(query)
+            denied_match = _match_exact_entry(entries, plugin_query)
+        if (
+            denied_match.status == "matched"
+            and denied_match.entry is not None
+            and not _can_view_entry(denied_match.entry, actor_permission)
+        ):
+            await matcher.finish(_build_permission_denied_message(denied_match.entry))
         await matcher.finish(Message(tr(locale, "help.query.not_found", query=query)))
     if match_result.status == "ambiguous":
         await matcher.finish(
@@ -371,6 +464,9 @@ async def _(
         )
 
     assert match_result.entry is not None
+    if not _can_view_entry(match_result.entry, actor_permission):
+        await matcher.finish(_build_permission_denied_message(match_result.entry))
+
     docs_message = await _resolve_docs_message(
         match_result.entry,
         locale,

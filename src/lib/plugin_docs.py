@@ -5,15 +5,18 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from io import BytesIO
+from math import ceil
 from pathlib import Path
 import re
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, ClassVar, Literal, TypedDict, cast
 
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from PIL import Image, ImageDraw, ImageFont
+from pil_utils import BuildImage
+from pil_utils.text2image import Text2Image
 
 from src.database.core.consts import Permission
-from src.lib.consts import MAPLE_FONT_PATH
+from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -633,17 +636,17 @@ class DemoImageRenderer:
     WIDTH = 1280
     OUTER_MARGIN = 40
     SHELL_RADIUS = 32
-    HEADER_HEIGHT = 226
+    HEADER_HEIGHT = 248
     HEADER_LEFT = 126
     HEADER_TOP = 70
     HEADER_CHIP_TOP = 72
     HEADER_TITLE_TOP = 112
-    HEADER_FEATURE_TOP = 166
-    HEADER_TRIGGER_TOP = 202
+    HEADER_FEATURE_TOP = 178
+    HEADER_TRIGGER_TOP = 218
     HEADER_RIGHT = 1138
     HEADER_STANDEE_SIZE = 150
     HEADER_STANDEE_X = 1030
-    HEADER_STANDEE_Y = 96
+    HEADER_STANDEE_Y = 104
     HEADER_STEPS_X = 302
     BODY_TOP_GAP = 20
     BODY_PADDING_X = 40
@@ -687,6 +690,7 @@ class DemoImageRenderer:
     SYSTEM_TEXT = "#67522B"
     SYSTEM_LABEL = "#9B7524"
     FOOTER_BG = "#FBF6F8"
+    FONT_FAMILIES: ClassVar[list[str]] = [MAPLE_FONT_NAME]
 
     def __init__(self) -> None:
         try:
@@ -815,25 +819,31 @@ class DemoImageRenderer:
             font=self.eyebrow_font,
             min_width=154,
         )
-        draw.text(
-            (self.HEADER_LEFT, self.HEADER_TITLE_TOP),
-            self._fit_text(
-                draw,
-                plugin_title,
-                self.title_font,
-                max_width=720,
-            ),
+        title_text = self._fit_text(
+            draw,
+            plugin_title,
+            self.title_font,
+            max_width=720,
+        )
+        self._draw_text(
+            draw,
+            x=self.HEADER_LEFT,
+            y=self.HEADER_TITLE_TOP,
+            text=title_text,
             font=self.title_font,
             fill=self.DEEP,
         )
-        draw.text(
-            (self.HEADER_LEFT, self.HEADER_FEATURE_TOP),
-            self._fit_text(
-                draw,
-                feature_title,
-                self.feature_font,
-                max_width=720,
-            ),
+        feature_text = self._fit_text(
+            draw,
+            feature_title,
+            self.feature_font,
+            max_width=720,
+        )
+        self._draw_text(
+            draw,
+            x=self.HEADER_LEFT,
+            y=self.HEADER_FEATURE_TOP,
+            text=feature_text,
             font=self.feature_font,
             fill=self.ACCENT_DARK,
         )
@@ -945,10 +955,12 @@ class DemoImageRenderer:
                 fill=self.SYSTEM_TEXT,
             )
             label = "SYSTEM"
-            label_box = draw.textbbox((0, 0), label, font=self.eyebrow_font)
-            draw.text(
-                (left + self.BUBBLE_PADDING_X, top + 12 - label_box[1]),
-                label,
+            label_box = self._text_size(label, self.eyebrow_font)
+            self._draw_text(
+                draw,
+                x=left + self.BUBBLE_PADDING_X,
+                y=top + 12 - label_box[1],
+                text=label,
                 font=self.eyebrow_font,
                 fill=self.SYSTEM_LABEL,
             )
@@ -986,13 +998,12 @@ class DemoImageRenderer:
         )
         speaker = "USER" if is_user else "BOT"
         label_fill = self.ACCENT_DARK if is_user else self.INDIGO
-        label_box = draw.textbbox((0, 0), speaker, font=self.eyebrow_font)
-        draw.text(
-            (
-                bubble_x + self.BUBBLE_PADDING_X,
-                bubble_y + self.BUBBLE_PADDING_Y - label_box[1],
-            ),
-            speaker,
+        label_box = self._text_size(speaker, self.eyebrow_font)
+        self._draw_text(
+            draw,
+            x=bubble_x + self.BUBBLE_PADDING_X,
+            y=bubble_y + self.BUBBLE_PADDING_Y - label_box[1],
+            text=speaker,
             font=self.eyebrow_font,
             fill=label_fill,
         )
@@ -1020,15 +1031,14 @@ class DemoImageRenderer:
         fill: str,
     ) -> None:
         draw.ellipse((x, y, x + self.AVATAR_SIZE, y + self.AVATAR_SIZE), fill=fill)
-        bbox = draw.textbbox((0, 0), label, font=self.meta_font)
+        bbox = self._text_size(label, self.meta_font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-        draw.text(
-            (
-                x + (self.AVATAR_SIZE - text_width) / 2,
-                y + (self.AVATAR_SIZE - text_height) / 2 - 2,
-            ),
-            label,
+        self._draw_text(
+            draw,
+            x=x + (self.AVATAR_SIZE - text_width) / 2,
+            y=y + (self.AVATAR_SIZE - text_height) / 2 - 2,
+            text=label,
             font=self.meta_font,
             fill="#FFFFFF",
         )
@@ -1119,7 +1129,7 @@ class DemoImageRenderer:
             top + self.FOOTER_HEIGHT,
         )
         right_text = self.FOOTER_RIGHT_TEXT
-        right_bbox = draw.textbbox((0, 0), right_text, font=self.footer_font)
+        right_bbox = self._text_size(right_text, self.footer_font)
         right_width = int(right_bbox[2] - right_bbox[0])
         right_rect = (
             footer_rect[2] - self.FOOTER_SIDE_PADDING - right_width,
@@ -1334,9 +1344,7 @@ class DemoImageRenderer:
             footer_top + self.FOOTER_HEIGHT,
         )
         self._ensure_inside(shell_rect, footer_rect, "footer bar", errors)
-        footer_right_bbox = draw.textbbox(
-            (0, 0), self.FOOTER_RIGHT_TEXT, font=self.footer_font
-        )
+        footer_right_bbox = self._text_size(self.FOOTER_RIGHT_TEXT, self.footer_font)
         footer_right_width = int(footer_right_bbox[2] - footer_right_bbox[0])
         footer_right_rect = (
             footer_rect[2] - self.FOOTER_SIDE_PADDING - footer_right_width,
@@ -1393,8 +1401,13 @@ class DemoImageRenderer:
         text: str,
         font: Any,
     ) -> tuple[int, int, int, int]:
-        bbox = draw.textbbox((x, y), text, font=font)
-        return int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+        left, top, right, bottom = self._text_size(text, font)
+        return (
+            int(x + left),
+            int(y + top),
+            int(x + right),
+            int(y + bottom),
+        )
 
     def _draw_text_centered(
         self,
@@ -1407,7 +1420,7 @@ class DemoImageRenderer:
         align: Literal["center", "left", "right"] = "center",
         padding_x: int = 0,
     ) -> None:
-        bbox = draw.textbbox((0, 0), text, font=font)
+        bbox = self._text_size(text, font)
         text_width = int(bbox[2] - bbox[0])
         text_height = int(bbox[3] - bbox[1])
         if align == "left":
@@ -1417,7 +1430,7 @@ class DemoImageRenderer:
         else:
             x = rect[0] + (rect[2] - rect[0] - text_width) / 2
         y = rect[1] + (rect[3] - rect[1] - text_height) / 2 - bbox[1]
-        draw.text((x, y), text, font=font, fill=fill)
+        self._draw_text(draw, x=x, y=y, text=text, font=font, fill=fill)
 
     def _chip_rect(
         self,
@@ -1429,7 +1442,7 @@ class DemoImageRenderer:
         font: Any,
         min_width: int = 0,
     ) -> tuple[int, int, int, int]:
-        bbox = draw.textbbox((0, 0), text, font=font)
+        bbox = self._text_size(text, font)
         width = max(int(bbox[2] - bbox[0] + 28), min_width)
         height = max(int(bbox[3] - bbox[1] + 18), self.CHIP_HEIGHT)
         return (x, y, x + width, y + height)
@@ -1492,7 +1505,7 @@ class DemoImageRenderer:
         *,
         max_width: int,
     ) -> str:
-        if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
+        if self._text_width(text, font) <= max_width:
             return text
 
         ellipsis = "..."
@@ -1500,22 +1513,23 @@ class DemoImageRenderer:
         while current:
             current = current[:-1]
             candidate = current.rstrip() + ellipsis
-            if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width:
+            if self._text_width(candidate, font) <= max_width:
                 return candidate
         return ellipsis
 
     def _normalize_demo_text(self, text: str) -> str:
-        return text.replace("📩", "[通知]")
+        return text
 
     def _wrap_text(self, text: str, *, max_width: int) -> list[str]:
-        draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#FFFFFF"))
         lines: list[str] = []
         for paragraph in text.splitlines():
             current = ""
             for char in paragraph:
                 candidate = current + char
-                bbox = draw.textbbox((0, 0), candidate, font=self.body_font)
-                if bbox[2] - bbox[0] <= max_width or not current:
+                if (
+                    self._text_width(candidate, self.body_font) <= max_width
+                    or not current
+                ):
                     current = candidate
                     continue
                 lines.append(current)
@@ -1532,10 +1546,9 @@ class DemoImageRenderer:
         return count * self._font_line_height(font) - 10
 
     def _max_line_width(self, lines: Sequence[str], font: Any) -> int:
-        draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#FFFFFF"))
         return int(
             max(
-                (draw.textbbox((0, 0), line, font=font)[2] for line in lines),
+                (self._text_width(line, font) for line in lines),
                 default=0,
             )
         )
@@ -1552,12 +1565,74 @@ class DemoImageRenderer:
     ) -> None:
         line_height = self._font_line_height(font)
         for index, line in enumerate(lines):
-            draw.text((x, y + index * line_height), line, font=font, fill=fill)
+            self._draw_text(
+                draw,
+                x=x,
+                y=y + index * line_height,
+                text=line,
+                font=font,
+                fill=fill,
+            )
 
     def _font_line_height(self, font: Any) -> int:
-        draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#FFFFFF"))
-        bbox = draw.textbbox((0, 0), "Ag", font=font)
+        bbox = self._text_size("Ag", font)
         return int(bbox[3] - bbox[1] + 10)
+
+    def _draw_text(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: float,
+        y: float,
+        text: str,
+        font: Any,
+        fill: str,
+    ) -> None:
+        if not text:
+            return
+        if not self._contains_emoji(text):
+            draw.text((x, y), text, font=font, fill=fill)
+            return
+        text_box = self._text_size(text, font)
+        text_width = max(text_box[2] - text_box[0] + 8, 1)
+        text_height = max(text_box[3] - text_box[1] + 8, 1)
+        text_layer = Image.new("RGBA", (text_width, text_height), (0, 0, 0, 0))
+        BuildImage(text_layer).draw_text(
+            (0, 0),
+            text,
+            font_size=self._font_size(font),
+            fill=fill,
+            font_families=self.FONT_FAMILIES,
+            stroke_ratio=0,
+        )
+        draw._image.paste(text_layer, (int(x), int(y)), text_layer)
+
+    def _text_size(self, text: str, font: Any) -> tuple[int, int, int, int]:
+        if not text:
+            return (0, 0, 0, self._font_line_height(font))
+        if not self._contains_emoji(text):
+            draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#FFFFFF"))
+            bbox = draw.textbbox((0, 0), text, font=font)
+            return int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+        text_image = Text2Image.from_text(
+            text,
+            self._font_size(font),
+            fill="#000000",
+            stroke_width=0,
+            font_families=self.FONT_FAMILIES,
+        )
+        return (0, 0, ceil(text_image.longest_line), ceil(text_image.height))
+
+    def _text_width(self, text: str, font: Any) -> int:
+        return self._text_size(text, font)[2]
+
+    def _font_size(self, font: Any) -> int:
+        return int(getattr(font, "size", 16))
+
+    def _contains_emoji(self, text: str) -> bool:
+        return any(
+            "\U0001f000" <= char <= "\U0001faff" or char == "\ufe0f" for char in text
+        )
 
 
 @dataclass(slots=True, frozen=True)

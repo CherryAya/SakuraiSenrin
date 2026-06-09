@@ -28,7 +28,7 @@ CATALOG: Final[dict[str, str]] = {
     "help.query.ambiguous.hint": "请使用更精确的插件名。",
     "help.query.ambiguous.candidates": "候选项:",
     "help.fallback.reason": "文档降级原因: {reason}",
-    "plugin.help.name": "帮助中心",
+    "plugin.help.name": "帮助文档",
     "plugin.help.description": "统一汇总插件文档，并按插件 metadata.docs 自动注册。",
     "plugin.admin_overview.name": "管理模块总览",
     "plugin.admin_overview.description": "管理员命令合集入口，含群组管理、用户管理、邀请管理与语言管理。",

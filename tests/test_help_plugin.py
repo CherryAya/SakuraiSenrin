@@ -5,6 +5,7 @@ import nonebot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.plugin import PluginMetadata
 
+from src.database.core.consts import Permission
 from src.lib.plugin_docs import DocsMeta
 
 nonebot.init()
@@ -12,7 +13,11 @@ nonebot.init()
 from src.plugins.help import (
     DocsEntry,
     _build_index_message,
+    _build_permission_denied_message,
+    _can_view_entry,
+    _filter_authorized_entries,
     _match_entry,
+    _read_plugin_permission,
     _resolve_docs_message,
     _split_query,
 )
@@ -26,6 +31,7 @@ def _make_entry(
     summary: str = "summary",
     category: str = "general",
     order: int = 100,
+    permission: Permission = Permission.NORMAL,
 ) -> DocsEntry:
     plugin = cast(
         Any,
@@ -55,6 +61,7 @@ def _make_entry(
         docs=docs,
         display_name=display_name,
         summary=summary,
+        permission=permission,
     )
 
 
@@ -105,6 +112,111 @@ def test_match_entry_supports_exact_fuzzy_and_ambiguous() -> None:
     ]
 
     assert not_found.status == "not_found"
+
+
+def test_read_plugin_permission_supports_enum_name_and_raw_value() -> None:
+    metadata_by_enum = PluginMetadata(
+        name="enum",
+        description="",
+        usage="",
+        config=None,
+        extra={"permission": Permission.SUPERUSER},
+    )
+    metadata_by_name = PluginMetadata(
+        name="name",
+        description="",
+        usage="",
+        config=None,
+        extra={"permission": "GROUP_ADMIN"},
+    )
+    metadata_by_value = PluginMetadata(
+        name="value",
+        description="",
+        usage="",
+        config=None,
+        extra={"permission": int(Permission.GROUP_OWNER)},
+    )
+    metadata_invalid = PluginMetadata(
+        name="invalid",
+        description="",
+        usage="",
+        config=None,
+        extra={"permission": "missing"},
+    )
+
+    assert _read_plugin_permission(metadata_by_enum) == Permission.SUPERUSER
+    assert _read_plugin_permission(metadata_by_name) == Permission.GROUP_ADMIN
+    assert _read_plugin_permission(metadata_by_value) == Permission.GROUP_OWNER
+    assert _read_plugin_permission(metadata_invalid) == Permission.NORMAL
+
+
+def test_filter_authorized_entries_matches_tutorials_permission_visibility() -> None:
+    normal = _make_entry(
+        display_name="吹水记录",
+        plugin_name="water",
+        module_name="src.plugins.water",
+        permission=Permission.NORMAL,
+    )
+    group_admin = _make_entry(
+        display_name="退群说明",
+        plugin_name="remove",
+        module_name="src.plugins.remove",
+        permission=Permission.GROUP_ADMIN,
+    )
+    superuser = _make_entry(
+        display_name="好友管理模块",
+        plugin_name="user",
+        module_name="src.plugins.admin.user",
+        permission=Permission.SUPERUSER,
+    )
+    entries = [normal, group_admin, superuser]
+
+    normal_entries = _filter_authorized_entries(entries, Permission.NORMAL)
+    group_admin_entries = _filter_authorized_entries(
+        entries,
+        Permission.NORMAL | Permission.GROUP_ADMIN,
+    )
+    owner_entries = _filter_authorized_entries(
+        entries,
+        Permission.NORMAL | Permission.GROUP_ADMIN | Permission.GROUP_OWNER,
+    )
+    superuser_entries = _filter_authorized_entries(
+        entries,
+        Permission.NORMAL
+        | Permission.GROUP_ADMIN
+        | Permission.GROUP_OWNER
+        | Permission.SUPERUSER,
+    )
+
+    assert [entry.display_name for entry in normal_entries] == ["吹水记录"]
+    assert [entry.display_name for entry in group_admin_entries] == [
+        "吹水记录",
+        "退群说明",
+    ]
+    assert [entry.display_name for entry in owner_entries] == [
+        "吹水记录",
+        "退群说明",
+    ]
+    assert [entry.display_name for entry in superuser_entries] == [
+        "吹水记录",
+        "退群说明",
+        "好友管理模块",
+    ]
+    assert not _can_view_entry(superuser, Permission.NORMAL)
+
+
+def test_permission_denied_message_uses_required_permission_label() -> None:
+    entry = _make_entry(
+        display_name="好友管理模块",
+        plugin_name="user",
+        module_name="src.plugins.admin.user",
+        permission=Permission.SUPERUSER,
+    )
+
+    message = _build_permission_denied_message(entry)
+
+    assert "无权限查看插件文档: 好友管理模块" in str(message)
+    assert "需要权限: 超级管理员" in str(message)
 
 
 def test_build_index_message_attaches_demo_image(monkeypatch: Any) -> None:
