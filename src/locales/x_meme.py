@@ -1,10 +1,12 @@
 from typing import Final
 
 from src.lib.i18n.types import LocaleCode
+from src.locales.zh_cn import CATALOG as ZH_CATALOG
 
 LOCALE: Final[LocaleCode] = "x-meme"
 
 CATALOG: Final[dict[str, str]] = {
+    **ZH_CATALOG,
     "docs.default.empty": "暂无说明，先脑补一下。",
     "help.index.hint": "发 `#help <插件名>`，直接开看。",
     "help.query.not_found": "没翻到这个插件：{query}\n先打 `#help` 看总表。",

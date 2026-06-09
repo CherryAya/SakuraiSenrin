@@ -17,6 +17,7 @@ def test_normalize_locale_aliases() -> None:
 
 def test_tr_falls_back_to_zh_cn_for_partial_catalog() -> None:
     assert tr("x-meme", "admin.group.banned") == "已封禁"
+    assert "wordbank / 词库 / wordbank.help" in tr("x-meme", "wordbank.help")
 
 
 @pytest.mark.asyncio
