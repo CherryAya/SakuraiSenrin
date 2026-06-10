@@ -15,6 +15,7 @@ from src.services.backup import (
     BackupRetention,
     BackupService,
     ResticConfig,
+    build_default_backup_plan,
 )
 
 
@@ -133,3 +134,15 @@ async def test_backup_service_skips_disabled_plan(
 
     assert result is None
     assert events[-1].__class__.__name__ == "BackupSkipped"
+
+
+def test_default_backup_plan_reads_cron_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(backup_module.config, "BACKUP_ENABLED", True)
+    monkeypatch.setattr(backup_module.config, "BACKUP_CRON_HOUR", 4)
+    monkeypatch.setattr(backup_module.config, "BACKUP_CRON_MINUTE", 35)
+
+    plan = build_default_backup_plan()
+
+    assert plan.enabled is True
+    assert plan.cron_hour == 4
+    assert plan.cron_minute == 35

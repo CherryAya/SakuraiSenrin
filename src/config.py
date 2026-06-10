@@ -36,6 +36,8 @@ class GlobalConfig(BaseModel):
     BACKUP_RESTIC_REPOSITORY: str | None = None
     BACKUP_RESTIC_PASSWORD: str | None = None
     BACKUP_LOCAL_ROOT: str = "./data/backup"
+    BACKUP_CRON_HOUR: int = 3
+    BACKUP_CRON_MINUTE: int = 20
     BACKUP_RETENTION_DAILY: int = 7
     BACKUP_RETENTION_WEEKLY: int = 4
     BACKUP_RETENTION_MONTHLY: int = 6

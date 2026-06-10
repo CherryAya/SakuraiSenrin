@@ -41,6 +41,8 @@ class BackupRetention:
 class BackupPlan:
     id: str = "default"
     enabled: bool = False
+    cron_hour: int = 3
+    cron_minute: int = 20
     include_archives: bool = True
     retention: BackupRetention = BackupRetention()
 
@@ -309,6 +311,8 @@ def build_default_backup_plan() -> BackupPlan:
     return BackupPlan(
         id="default",
         enabled=config.BACKUP_ENABLED,
+        cron_hour=config.BACKUP_CRON_HOUR,
+        cron_minute=config.BACKUP_CRON_MINUTE,
         include_archives=True,
         retention=BackupRetention(
             keep_daily=config.BACKUP_RETENTION_DAILY,

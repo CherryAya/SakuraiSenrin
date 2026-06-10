@@ -21,11 +21,12 @@ def install_backup_scheduler() -> None:
 
     if scheduler.get_job("database_backup_default") is not None:
         return
+    plan = build_default_backup_plan()
 
     @scheduler.scheduled_job(
         "cron",
-        hour=3,
-        minute=20,
+        hour=plan.cron_hour,
+        minute=plan.cron_minute,
         id="database_backup_default",
         coalesce=True,
         misfire_grace_time=600,
@@ -33,7 +34,6 @@ def install_backup_scheduler() -> None:
     )
     async def _database_backup_default_job() -> None:
         service = build_backup_service_from_config()
-        plan = build_default_backup_plan()
         try:
             await service.run(plan)
         except Exception as exc:
