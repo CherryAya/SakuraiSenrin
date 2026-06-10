@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 import shlex
 from typing import Any
@@ -38,6 +39,9 @@ ADD_SEPARATORS = ("=>", "->", "回答", "回复")
 DEFAULT_SEARCH_LIMIT = 10
 MAX_SEARCH_LIMIT = 20
 DEFAULT_DELETE_VOTE_THRESHOLD = 3
+IMAGE_DOWNLOAD_RETRY_ATTEMPTS = 3
+IMAGE_DOWNLOAD_RETRY_DELAY_SECONDS = 0.8
+IMAGE_PREPARE_TIMEOUT_SECONDS = 12.0
 
 
 @dataclass(slots=True, frozen=True)
@@ -67,6 +71,12 @@ class MutationActor:
 class GuidedAdvancedOptions:
     raw_rule: dict[str, Any]
     trigger_mode: str | None
+
+
+@dataclass(slots=True, frozen=True)
+class PendingWordbankImage:
+    url: str
+    task: asyncio.Task[WordbankImageRecord]
 
 
 def _split_command(text: str) -> tuple[str, str]:
@@ -456,14 +466,29 @@ def extract_image_urls(message: Message) -> list[str]:
     return urls
 
 
+async def fetch_image_bytes_with_retry(
+    url: str,
+    *,
+    attempts: int = IMAGE_DOWNLOAD_RETRY_ATTEMPTS,
+    retry_delay_seconds: float = IMAGE_DOWNLOAD_RETRY_DELAY_SECONDS,
+) -> bytes | None:
+    from .passive import fetch_image_bytes
+
+    for attempt_index in range(max(1, attempts)):
+        data = await fetch_image_bytes(url)
+        if data is not None:
+            return data
+        if attempt_index < attempts - 1:
+            await asyncio.sleep(retry_delay_seconds)
+    return None
+
+
 async def fetch_first_image_bytes_from_message(message: Message) -> bytes | None:
     urls = extract_image_urls(message)
     if not urls:
         return None
 
-    from .passive import fetch_image_bytes
-
-    data = await fetch_image_bytes(urls[0])
+    data = await fetch_image_bytes_with_retry(urls[0])
     if data is None:
         raise WordbankUserError(
             "图片下载失败，无法加入词库。",
@@ -480,6 +505,65 @@ async def ingest_first_image_from_message(
     if data is None:
         return None
     return await media_service.ingest_image_bytes(data)
+
+
+def start_ingest_first_image_from_message(
+    media_service: WordbankMediaService,
+    message: Message,
+) -> PendingWordbankImage | None:
+    urls = extract_image_urls(message)
+    if not urls:
+        return None
+
+    async def _download_and_ingest() -> WordbankImageRecord:
+        data = await fetch_image_bytes_with_retry(urls[0])
+        if data is None:
+            raise WordbankUserError(
+                "图片下载失败，无法加入词库。",
+                key="wordbank.error.image_download_failed",
+            )
+        return await media_service.ingest_image_bytes(data)
+
+    def _consume_task_exception(task: asyncio.Task[WordbankImageRecord]) -> None:
+        if task.cancelled():
+            return
+        task.exception()
+
+    task = asyncio.create_task(_download_and_ingest())
+    task.add_done_callback(_consume_task_exception)
+    return PendingWordbankImage(
+        url=urls[0],
+        task=task,
+    )
+
+
+async def resolve_pending_image(
+    pending: PendingWordbankImage,
+    *,
+    timeout_seconds: float = IMAGE_PREPARE_TIMEOUT_SECONDS,
+) -> WordbankImageRecord:
+    try:
+        return await asyncio.wait_for(pending.task, timeout=timeout_seconds)
+    except TimeoutError as exc:
+        pending.task.cancel()
+        raise WordbankUserError(
+            "词条设置失败：图片下载超时，无法加入词库。",
+            key="wordbank.error.image_prepare_failed",
+            reason="图片下载超时，无法加入词库。",
+        ) from exc
+    except WordbankUserError as exc:
+        raise WordbankUserError(
+            f"词条设置失败：{exc}",
+            key="wordbank.error.image_prepare_failed",
+            reason=str(exc),
+        ) from exc
+    except Exception as exc:
+        reason = str(exc) or "图片处理失败，无法加入词库。"
+        raise WordbankUserError(
+            f"词条设置失败：{reason}",
+            key="wordbank.error.image_prepare_failed",
+            reason=reason,
+        ) from exc
 
 
 async def handle_add_text(

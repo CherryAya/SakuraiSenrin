@@ -1,7 +1,10 @@
+import asyncio
+import importlib
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
 
+from nonebot.adapters.onebot.v11.message import Message
 import pytest
 
 from src.plugins.wordbank.database.types import WordbankSearchItem
@@ -10,6 +13,7 @@ from src.plugins.wordbank.handlers.commands import (
     build_forced_command_text,
     build_mutation_actor,
     dispatch_wordbank_command,
+    fetch_first_image_bytes_from_message,
     handle_add_with_media,
     handle_delete,
     handle_guided_add_image_trigger,
@@ -21,6 +25,8 @@ from src.plugins.wordbank.handlers.commands import (
     localize_command_error,
     parse_search_args,
     parse_text_add_args,
+    resolve_pending_image,
+    start_ingest_first_image_from_message,
     wordbank_help_text,
 )
 from src.plugins.wordbank.services.core import (
@@ -28,6 +34,7 @@ from src.plugins.wordbank.services.core import (
     WordbankDeleteVoteResult,
     WordbankService,
 )
+from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import RuleError
 from tests.plugins.water.helpers import build_group_message_event
@@ -383,6 +390,79 @@ async def test_handle_add_with_media_plain_text_to_image_response() -> None:
         user_id="10001",
         is_group=True,
     )
+
+
+async def test_fetch_first_image_bytes_retries_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    passive = importlib.import_module("src.plugins.wordbank.handlers.passive")
+    fetch_image_bytes = AsyncMock(side_effect=[None, b"image-bytes"])
+    monkeypatch.setattr(passive, "fetch_image_bytes", fetch_image_bytes)
+    monkeypatch.setattr(commands.asyncio, "sleep", AsyncMock())
+
+    data = await fetch_first_image_bytes_from_message(
+        Message("[CQ:image,url=https://example.test/retry.png]")
+    )
+
+    assert data == b"image-bytes"
+    assert fetch_image_bytes.await_count == 2
+
+
+async def test_pending_image_resolves_download_failure_as_entry_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    passive = importlib.import_module("src.plugins.wordbank.handlers.passive")
+    fetch_image_bytes = AsyncMock(return_value=None)
+    monkeypatch.setattr(passive, "fetch_image_bytes", fetch_image_bytes)
+    monkeypatch.setattr(commands.asyncio, "sleep", AsyncMock())
+    ingest_image_bytes = AsyncMock()
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(ingest_image_bytes=ingest_image_bytes),
+    )
+
+    pending = start_ingest_first_image_from_message(
+        media_service,
+        Message("[CQ:image,url=https://example.test/missing.png]"),
+    )
+
+    assert pending is not None
+    with pytest.raises(WordbankUserError) as exc_info:
+        await resolve_pending_image(pending)
+    assert exc_info.value.key == "wordbank.error.image_prepare_failed"
+    assert "图片下载失败" in str(exc_info.value)
+    ingest_image_bytes.assert_not_awaited()
+
+
+async def test_pending_image_runs_download_in_background(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    passive = importlib.import_module("src.plugins.wordbank.handlers.passive")
+    gate = asyncio.Event()
+
+    async def fake_fetch_image_bytes(_url: str) -> bytes:
+        await gate.wait()
+        return b"image-bytes"
+
+    monkeypatch.setattr(passive, "fetch_image_bytes", fake_fetch_image_bytes)
+    ingest_image_bytes = AsyncMock(return_value=SimpleNamespace(canonical_id=12))
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(ingest_image_bytes=ingest_image_bytes),
+    )
+
+    pending = start_ingest_first_image_from_message(
+        media_service,
+        Message("[CQ:image,url=https://example.test/slow.png]"),
+    )
+
+    assert pending is not None
+    await asyncio.sleep(0)
+    assert not pending.task.done()
+    gate.set()
+    image = await resolve_pending_image(pending)
+    assert image.canonical_id == 12
+    ingest_image_bytes.assert_awaited_once_with(b"image-bytes")
 
 
 async def test_handle_add_with_media_text_and_image_response() -> None:

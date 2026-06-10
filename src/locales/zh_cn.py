@@ -129,6 +129,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.error.entry_id_numeric": "词条 ID 必须是数字。",
     "wordbank.error.vote_id_numeric": "投票 ID 必须是数字。",
     "wordbank.error.image_download_failed": "图片下载失败，无法加入词库。",
+    "wordbank.error.image_prepare_failed": "词条设置失败：{reason}",
     "wordbank.error.image_storage_missing": "图片文件不存在，无法发送词库图片回复。",
     "wordbank.error.image_unrecognized": "无法识别图片内容",
     "wordbank.error.unknown_subcommand": "未知词库子命令: {action}\n\n{help}",

@@ -24,7 +24,7 @@
 - 指令: `wordbank add 触发词 => 响应词`
 - 兼容指令: `wordbank.add 触发词 => 响应词`、`添加词条 触发词 => 响应词`
 #### 说明
-默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`wordbank add 触发词 [图片]` 表示文本触发、图片回复；`wordbank add [图片] => 响应词` 表示图片触发、文本回复；`wordbank add 触发词 => 响应词 [图片]` 表示文本触发、图文混排回复。图片入库时会计算 MD5、dHash、pHash、尺寸和文件大小，相似图片会归并到同一个 canonical image。`study 触发词 => 响应词`、`study 触发词 [图片]` 和 `study [图片] => 响应词` 会走同一套添加逻辑；旧版 `study <a|m> <t|f> 触发词 响应词` 也会转换为新版固定 scope。引导任一步收到 `revoke` / `recall` 会发送取消提示并中止；连续输错 3 次会强制终止对话。
+默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`wordbank add 触发词 [图片]` 表示文本触发、图片回复；`wordbank add [图片] => 响应词` 表示图片触发、文本回复；`wordbank add 触发词 => 响应词 [图片]` 表示文本触发、图文混排回复。引导模式收到图片后会在后台下载并自动重试，用户可继续配置范围和高级选项；最终仍无法下载或识别时，会提示词条设置失败且不写入词库。图片入库时会计算 MD5、dHash、pHash、尺寸和文件大小，相似图片会归并到同一个 canonical image。`study 触发词 => 响应词`、`study 触发词 [图片]` 和 `study [图片] => 响应词` 会走同一套添加逻辑；旧版 `study <a|m> <t|f> 触发词 响应词` 也会转换为新版固定 scope。引导任一步收到 `revoke` / `recall` 会发送取消提示并中止；连续输错 3 次会强制终止对话。
 #### 前置条件
 当前用户所在群聊需要通过运行时检查。
 #### 完整流程

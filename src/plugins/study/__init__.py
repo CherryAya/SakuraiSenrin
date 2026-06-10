@@ -7,6 +7,7 @@ Description: 学习词库-传统版
 """
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
@@ -30,6 +31,9 @@ from src.lib.plugin_docs import (
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
+
+if TYPE_CHECKING:
+    from src.plugins.wordbank.handlers import PendingWordbankImage
 
 name = tr("zh-CN", "plugin.study.name")
 description = tr("zh-CN", "plugin.study.description")
@@ -114,33 +118,47 @@ def _is_truthy_state_flag(state: T_State, key: str) -> bool:
     return bool(state.get(key, False))
 
 
-async def _ingest_study_image(
-    matcher: Matcher,
-    event: MessageEvent,
+def _state_pending_image(
     state: T_State,
-    locale: LocaleCode,
+    key: str,
+) -> "PendingWordbankImage | None":
+    from src.plugins.wordbank.handlers import PendingWordbankImage
+
+    value = state.get(key)
+    return value if isinstance(value, PendingWordbankImage) else None
+
+
+async def _resolve_state_image_id(
+    state: T_State,
+    *,
+    id_key: str,
+    pending_key: str,
 ) -> int | None:
+    from src.plugins.wordbank.handlers import resolve_pending_image
+
+    image_id = _state_image_id(state, id_key)
+    if image_id is not None:
+        return image_id
+
+    pending = _state_pending_image(state, pending_key)
+    if pending is None:
+        return None
+
+    image = await resolve_pending_image(pending)
+    state[id_key] = image.canonical_id
+    state.pop(pending_key, None)
+    return image.canonical_id
+
+
+def _start_study_image_task(
+    message: Message,
+) -> "PendingWordbankImage | None":
     from src.plugins.wordbank.handlers import (
-        ingest_first_image_from_message,
-        localize_command_error,
+        start_ingest_first_image_from_message,
     )
     from src.plugins.wordbank.services import wordbank_media_service
-    from src.plugins.wordbank.services.rules import RuleError
 
-    try:
-        image = await ingest_first_image_from_message(
-            wordbank_media_service,
-            event.message,
-        )
-    except (RuleError, ValueError) as exc:
-        await _reject_study_error(
-            matcher,
-            state,
-            locale,
-            localize_command_error(exc, locale),
-        )
-        return None
-    return image.canonical_id if image is not None else None
+    return start_ingest_first_image_from_message(wordbank_media_service, message)
 
 
 async def _record_study_trigger(
@@ -152,10 +170,10 @@ async def _record_study_trigger(
     from src.plugins.wordbank.handlers import extract_image_urls
 
     text = event.message.extract_plain_text().strip()
-    image_id = await _ingest_study_image(matcher, event, state, locale)
-    if image_id is None and extract_image_urls(event.message):
+    pending_image = _start_study_image_task(event.message)
+    if pending_image is None and extract_image_urls(event.message):
         return
-    if image_id is None and not text:
+    if pending_image is None and not text:
         await _reject_study_error(
             matcher,
             state,
@@ -164,11 +182,13 @@ async def _record_study_trigger(
         )
         return
     clear_interaction_errors(state)
-    if image_id is not None:
+    if pending_image is not None:
         state["study_trigger"] = ""
-        state["study_trigger_image_id"] = image_id
+        state["study_trigger_image_pending"] = pending_image
+        state.pop("study_trigger_image_id", None)
     else:
         state["study_trigger"] = text
+        state.pop("study_trigger_image_pending", None)
         state.pop("study_trigger_image_id", None)
     await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
 
@@ -182,10 +202,10 @@ async def _record_study_response(
     from src.plugins.wordbank.handlers import extract_image_urls
 
     text = event.message.extract_plain_text().strip()
-    image_id = await _ingest_study_image(matcher, event, state, locale)
-    if image_id is None and extract_image_urls(event.message):
+    pending_image = _start_study_image_task(event.message)
+    if pending_image is None and extract_image_urls(event.message):
         return
-    if image_id is None and not text:
+    if pending_image is None and not text:
         await _reject_study_error(
             matcher,
             state,
@@ -195,9 +215,11 @@ async def _record_study_response(
         return
     clear_interaction_errors(state)
     state["study_response"] = text
-    if image_id is not None:
-        state["study_response_image_id"] = image_id
+    if pending_image is not None:
+        state["study_response_image_pending"] = pending_image
+        state.pop("study_response_image_id", None)
     else:
+        state.pop("study_response_image_pending", None)
         state.pop("study_response_image_id", None)
     await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
 
@@ -242,9 +264,17 @@ async def _finish_guided_study(
     from src.plugins.wordbank.services import wordbank_service
     from src.plugins.wordbank.services.rules import RuleError
 
-    trigger_image_id = _state_image_id(state, "study_trigger_image_id")
-    response_image_id = _state_image_id(state, "study_response_image_id")
     try:
+        trigger_image_id = await _resolve_state_image_id(
+            state,
+            id_key="study_trigger_image_id",
+            pending_key="study_trigger_image_pending",
+        )
+        response_image_id = await _resolve_state_image_id(
+            state,
+            id_key="study_response_image_id",
+            pending_key="study_response_image_pending",
+        )
         if trigger_image_id is not None:
             msg = await handle_guided_study_image_trigger(
                 wordbank_service,
@@ -287,26 +317,18 @@ async def _start_guided_study_with_trigger_image(
     locale: LocaleCode,
     arg: Message,
 ) -> None:
-    from src.plugins.wordbank.handlers import (
-        ingest_first_image_from_message,
-        localize_command_error,
-    )
-    from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
-    from src.plugins.wordbank.services.rules import RuleError
+    from src.plugins.wordbank.services import wordbank_service
 
     await wordbank_service.initialize()
     state["study_locale"] = locale
-    try:
-        image = await ingest_first_image_from_message(wordbank_media_service, arg)
-    except (RuleError, ValueError) as exc:
-        await matcher.finish(localize_command_error(exc, locale))
-        return
-    if image is None:
+    pending_image = _start_study_image_task(arg)
+    if pending_image is None:
         await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
         return
     clear_interaction_errors(state)
     state["study_trigger"] = ""
-    state["study_trigger_image_id"] = image.canonical_id
+    state["study_trigger_image_pending"] = pending_image
+    state.pop("study_trigger_image_id", None)
     state["study_trigger_preloaded"] = True
     await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
 
