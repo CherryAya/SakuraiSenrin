@@ -125,31 +125,31 @@ wordbank_command = on_command(
 )
 wordbank_add_command = on_command(
     ("wordbank", "add"),
-    aliases={"添加词条", "wordbank.add"},
+    aliases={"添加词条"},
     priority=5,
     block=True,
 )
 wordbank_search_command = on_command(
     ("wordbank", "search"),
-    aliases={"搜索词条", "wordbank.search"},
+    aliases={"搜索词条"},
     priority=5,
     block=True,
 )
 wordbank_delete_command = on_command(
     ("wordbank", "delete"),
-    aliases={("wordbank", "del"), "删除词条", "wordbank.delete", "wordbank.del"},
+    aliases={("wordbank", "del"), "删除词条"},
     priority=5,
     block=True,
 )
 wordbank_restore_command = on_command(
     ("wordbank", "restore"),
-    aliases={"恢复词条", "wordbank.restore"},
+    aliases={"恢复词条"},
     priority=5,
     block=True,
 )
 wordbank_support_command = on_command(
     ("wordbank", "support"),
-    aliases={"支持删除", "wordbank.support"},
+    aliases={"支持删除"},
     priority=5,
     block=True,
 )
@@ -158,7 +158,6 @@ wordbank_vote_command = on_command(
     aliases={
         "查看投票状态",
         "查看投票结果",
-        "wordbank.vote",
     },
     priority=5,
     block=True,
