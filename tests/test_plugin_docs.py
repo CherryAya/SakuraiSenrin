@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from nonebot.adapters.onebot.v11.message import Message
+from PIL import Image
 
 import scripts.plugin_docs as plugin_docs_script
 from src.database.core.consts import Permission
@@ -510,6 +511,129 @@ BOT: Beta 完成
     assert plugin_docs_script.generate(workers=2) == 0
     assert (docs_root / "demos" / "sample-alpha.png").read_bytes() == b"demo:alpha"
     assert (docs_root / "demos" / "sample-beta.png").read_bytes() == b"demo:beta"
+
+
+def test_representative_demo_prefers_collection_image(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "plugins" / "sample" / "docs" / "README.MD"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试合集优先级。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一个功能。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一个功能。
+- 指令: `#alpha`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    demos_dir = source.parent / "demos"
+    demos_dir.mkdir()
+    (demos_dir / "sample-alpha.png").write_bytes(b"feature-demo")
+    (demos_dir / "sample-collection.png").write_bytes(b"collection-demo")
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="测试插件",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    assert load_representative_demo_bytes(bundle) == b"collection-demo"
+
+
+def test_plugin_docs_compose_builds_collection_image(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    docs_root = tmp_path / "src" / "plugins" / "sample" / "docs"
+    demos_dir = docs_root / "demos"
+    demos_dir.mkdir(parents=True)
+    (docs_root / "README.MD").write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试合集生成。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一个功能。
+- `beta` Beta 功能: 第二个功能。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一个功能。
+- 指令: `#alpha`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+
+### `beta` Beta 功能
+- 摘要: 第二个功能。
+- 指令: `#beta`
+#### 说明
+beta
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #beta
+BOT: Beta 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    Image.new("RGB", (320, 240), "#FFF0F5").save(demos_dir / "sample-alpha.png")
+    Image.new("RGB", (320, 180), "#EEF4FF").save(demos_dir / "sample-beta.png")
+
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+
+    assert plugin_docs_script.compose(workers=2, columns=2, thumb_width=240) == 0
+    collection_path = demos_dir / "sample-collection.png"
+    assert collection_path.is_file()
+    with Image.open(collection_path) as collection:
+        assert collection.width == 1280
+        assert collection.height > 300
 
 
 def test_audit_demo_layout_accepts_all_project_readmes() -> None:

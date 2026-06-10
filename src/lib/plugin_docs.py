@@ -370,7 +370,21 @@ def load_demo_bytes(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes | Non
     return render_demo_png(bundle, feature)
 
 
+def load_collection_demo_bytes(bundle: PluginDocBundle) -> bytes | None:
+    demo_path = (
+        bundle.source_path.parent
+        / "demos"
+        / collection_demo_filename(bundle.source_path)
+    )
+    if demo_path.is_file():
+        return demo_path.read_bytes()
+    return None
+
+
 def load_representative_demo_bytes(bundle: PluginDocBundle) -> bytes | None:
+    collection_demo = load_collection_demo_bytes(bundle)
+    if collection_demo is not None:
+        return collection_demo
     for feature in bundle.index:
         demo_bytes = load_demo_bytes(bundle, feature)
         if demo_bytes is not None:
@@ -387,6 +401,42 @@ def render_demo_png(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes:
         plugin_author=bundle.author,
         turns=feature.demo_turns,
     )
+
+
+def collection_demo_filename(source_path: Path) -> str:
+    src_root = next(
+        (parent for parent in source_path.parents if parent.name == "src"),
+        None,
+    )
+    if src_root is None:
+        return f"{source_path.parent.name}-collection.png"
+
+    try:
+        rel_path = source_path.relative_to(src_root)
+    except ValueError:
+        return f"{source_path.parent.name}-collection.png"
+
+    parts = rel_path.parts
+    namespace = parts[0] if parts else ""
+    try:
+        docs_index = parts.index("docs")
+    except ValueError:
+        return f"{source_path.parent.name}-collection.png"
+
+    if namespace == "plugins" and len(parts) > 1:
+        name_parts = (parts[1], *parts[docs_index + 1 : -1])
+    elif namespace == "hooks":
+        name_parts = ("hook", *parts[docs_index + 1 : -1])
+    else:
+        name_parts = (*parts[docs_index + 1 : -1],)
+
+    stem = "-".join(_slugify_doc_path_part(part) for part in name_parts if part)
+    return f"{stem or source_path.parent.name}-collection.png"
+
+
+def _slugify_doc_path_part(value: str) -> str:
+    slug = "".join(char if char.isalnum() else "-" for char in value.lower())
+    return "-".join(part for part in slug.split("-") if part)
 
 
 def audit_demo_layout(bundle: PluginDocBundle, feature: FeatureDoc) -> tuple[str, ...]:
