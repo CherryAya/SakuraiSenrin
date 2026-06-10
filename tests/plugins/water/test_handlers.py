@@ -186,9 +186,13 @@ async def test_handle_merge_yes_no_need(monkeypatch: pytest.MonkeyPatch) -> None
 def test_is_group_admin_event() -> None:
     member_event = build_group_message_event("hello", role="member")
     admin_event = build_group_message_event("hello", role="admin")
+    owner_event = build_group_message_event("hello", role="owner")
+    superuser_event = build_group_message_event("hello", user_id=1, role="member")
 
     assert is_group_admin_event(member_event) is False
     assert is_group_admin_event(admin_event) is True
+    assert is_group_admin_event(owner_event) is True
+    assert is_group_admin_event(superuser_event) is True
 
 
 @pytest.mark.asyncio

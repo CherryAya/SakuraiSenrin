@@ -21,6 +21,8 @@ class WaterMergeContext:
 def is_group_admin_event(event: MessageEvent) -> bool:
     if not isinstance(event, GroupMessageEvent):
         return False
+    if str(event.user_id) in config.SUPERUSERS:
+        return True
     role = getattr(event.sender, "role", "member")
     return role in {"owner", "admin"}
 
