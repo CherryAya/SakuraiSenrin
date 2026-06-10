@@ -565,14 +565,14 @@ async def _record_passive_response_message(
         logger.warning(f"[Wordbank] response message record skipped: {exc}")
 
 
-def _build_passive_message(response: PassiveResponse) -> Message | str:
+async def _build_passive_message(response: PassiveResponse) -> Message | str:
     if (
         response.response_kind != "image"
         or response.response_canonical_image_id is None
     ):
         return response.text
 
-    image_bytes = wordbank_media_service.load_canonical_storage_bytes(
+    image_bytes = await wordbank_media_service.load_canonical_storage_bytes(
         response.response_canonical_image_id
     )
     if image_bytes is None:
@@ -599,7 +599,8 @@ async def _(bot: Bot, event: MessageEvent) -> None:
         logger.warning(f"[Wordbank] passive match skipped: {exc}")
         return
     if response:
-        send_result = await wordbank_passive.send(_build_passive_message(response))
+        message = await _build_passive_message(response)
+        send_result = await wordbank_passive.send(message)
         await _record_passive_response_message(response, send_result)
 
 
@@ -612,5 +613,5 @@ async def _(bot: Bot, event: NoticeEvent) -> None:
         logger.warning(f"[Wordbank] passive notice skipped: {exc}")
         return
     if response:
-        send_result = await wordbank_notice.send(_build_passive_message(response))
+        send_result = await wordbank_notice.send(await _build_passive_message(response))
         await _record_passive_response_message(response, send_result)

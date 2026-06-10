@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -12,7 +13,9 @@ from typing import Final, Protocol
 
 from PIL import Image, UnidentifiedImageError
 
+from src.lib.object_storage import ObjectStorageClient
 from src.lib.utils.common import get_current_time
+from src.logger import logger
 from src.plugins.wordbank.database.types import (
     WordbankImagePayload,
     WordbankImageRecord,
@@ -52,6 +55,120 @@ class MediaRepository(Protocol):
         self,
         payload: WordbankImagePayload,
     ) -> WordbankImageRecord: ...
+
+
+class WordbankMediaStorage(Protocol):
+    async def save_image(
+        self,
+        data: bytes,
+        *,
+        md5_hex: str,
+        keep_original: bool,
+    ) -> str: ...
+
+    async def load_bytes(self, storage_path: str) -> bytes | None: ...
+
+
+class LocalWordbankMediaStorage:
+    def __init__(self, media_root: Path = DEFAULT_MEDIA_ROOT) -> None:
+        self.media_root = media_root
+
+    async def save_image(
+        self,
+        data: bytes,
+        *,
+        md5_hex: str,
+        keep_original: bool,
+    ) -> str:
+        return await asyncio.to_thread(
+            self._save_image,
+            data,
+            md5_hex=md5_hex,
+            keep_original=keep_original,
+        )
+
+    def _save_image(
+        self,
+        data: bytes,
+        *,
+        md5_hex: str,
+        keep_original: bool,
+    ) -> str:
+        self.media_root.mkdir(parents=True, exist_ok=True)
+        webp_path = self.media_root / f"{md5_hex}.webp"
+        with Image.open(BytesIO(data)) as image:
+            image.save(webp_path, format="WEBP", quality=82, method=4)
+        if keep_original:
+            original_path = self.media_root / f"{md5_hex}.source"
+            original_path.write_bytes(data)
+        return str(webp_path)
+
+    async def load_bytes(self, storage_path: str) -> bytes | None:
+        return await asyncio.to_thread(self._load_bytes, storage_path)
+
+    def _load_bytes(self, storage_path: str) -> bytes | None:
+        path = Path(storage_path)
+        if not path.is_file():
+            return None
+        return path.read_bytes()
+
+
+class R2WordbankMediaStorage:
+    def __init__(
+        self,
+        object_storage: ObjectStorageClient,
+        *,
+        fallback: WordbankMediaStorage,
+        key_prefix: str = "wordbank/media",
+    ) -> None:
+        self.object_storage = object_storage
+        self.fallback = fallback
+        self.key_prefix = key_prefix.strip("/")
+
+    async def save_image(
+        self,
+        data: bytes,
+        *,
+        md5_hex: str,
+        keep_original: bool,
+    ) -> str:
+        key = f"{self.key_prefix}/{md5_hex}.webp"
+        try:
+            stored = await self.object_storage.put_bytes(
+                key,
+                self._to_webp(data),
+                content_type="image/webp",
+            )
+            if keep_original:
+                await self.object_storage.put_bytes(
+                    f"{self.key_prefix}/{md5_hex}.source",
+                    data,
+                    content_type="application/octet-stream",
+                )
+            return stored.uri
+        except Exception as exc:
+            logger.warning(f"[Wordbank] R2 media save fallback to local: {exc}")
+            return await self.fallback.save_image(
+                data,
+                md5_hex=md5_hex,
+                keep_original=keep_original,
+            )
+
+    async def load_bytes(self, storage_path: str) -> bytes | None:
+        if not storage_path.startswith("r2://"):
+            return await self.fallback.load_bytes(storage_path)
+        try:
+            key = storage_path.removeprefix("r2://").split("/", 1)[1]
+            return await self.object_storage.get_bytes(key)
+        except Exception as exc:
+            logger.warning(f"[Wordbank] R2 media load skipped: {exc}")
+            return None
+
+    def _to_webp(self, data: bytes) -> bytes:
+        buffer = BytesIO()
+        with Image.open(BytesIO(data)) as image:
+            image.save(buffer, format="WEBP", quality=82, method=4)
+        return buffer.getvalue()
 
 
 def hamming_distance(left: str, right: str) -> int:
@@ -110,11 +227,13 @@ class WordbankMediaService:
         repository: MediaRepository,
         *,
         media_root: Path = DEFAULT_MEDIA_ROOT,
+        storage: WordbankMediaStorage | None = None,
         similarity_threshold: int = 8,
         candidate_limit: int = 128,
     ) -> None:
         self.repository = repository
         self.media_root = media_root
+        self.storage = storage or LocalWordbankMediaStorage(media_root)
         self.similarity_threshold = similarity_threshold
         self.candidate_limit = candidate_limit
         self._by_md5: dict[str, WordbankImageRecord] = {}
@@ -161,7 +280,7 @@ class WordbankMediaService:
                 canonical_id = candidate.canonical_id
                 break
 
-        storage_path = self._save_image(
+        storage_path = await self.storage.save_image(
             data,
             md5_hex=fingerprint.md5,
             keep_original=keep_original,
@@ -176,7 +295,7 @@ class WordbankMediaService:
                 "width": fingerprint.width,
                 "height": fingerprint.height,
                 "file_size": fingerprint.file_size,
-                "storage_path": str(storage_path),
+                "storage_path": storage_path,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -207,30 +326,14 @@ class WordbankMediaService:
                 return candidate.canonical_id
         return None
 
-    def _save_image(
+    async def load_storage_bytes(self, image: WordbankImageRecord) -> bytes | None:
+        return await self.storage.load_bytes(image.storage_path)
+
+    async def load_canonical_storage_bytes(
         self,
-        data: bytes,
-        *,
-        md5_hex: str,
-        keep_original: bool,
-    ) -> Path:
-        self.media_root.mkdir(parents=True, exist_ok=True)
-        webp_path = self.media_root / f"{md5_hex}.webp"
-        with Image.open(BytesIO(data)) as image:
-            image.save(webp_path, format="WEBP", quality=82, method=4)
-        if keep_original:
-            original_path = self.media_root / f"{md5_hex}.source"
-            original_path.write_bytes(data)
-        return webp_path
-
-    def load_storage_bytes(self, image: WordbankImageRecord) -> bytes | None:
-        path = Path(image.storage_path)
-        if not path.is_file():
-            return None
-        return path.read_bytes()
-
-    def load_canonical_storage_bytes(self, canonical_image_id: int) -> bytes | None:
+        canonical_image_id: int,
+    ) -> bytes | None:
         image = self._by_canonical_id.get(canonical_image_id)
         if image is None:
             return None
-        return self.load_storage_bytes(image)
+        return await self.load_storage_bytes(image)

@@ -17,9 +17,29 @@ class GlobalConfig(BaseModel):
 
     HTTP_PROXY: str | None = None
 
+    OBJECT_STORAGE_DEFAULT_PROVIDER: str | None = None
+
+    R2_ACCOUNT_ID: str | None = None
+    R2_ACCESS_KEY_ID: str | None = None
+    R2_SECRET_ACCESS_KEY: str | None = None
+    R2_BUCKET: str | None = None
+    R2_PUBLIC_BASE_URL: str | None = None
+    R2_ENDPOINT: str | None = None
+
     GITHUB_TOKEN: str
     GITHUB_REPO: str
     GITHUB_BRANCH: str
+
+    WORDBANK_MEDIA_PROVIDER: str = "local"
+
+    BACKUP_ENABLED: bool = False
+    BACKUP_RESTIC_REPOSITORY: str | None = None
+    BACKUP_RESTIC_PASSWORD: str | None = None
+    BACKUP_LOCAL_ROOT: str = "./data/backup"
+    BACKUP_RETENTION_DAILY: int = 7
+    BACKUP_RETENTION_WEEKLY: int = 4
+    BACKUP_RETENTION_MONTHLY: int = 6
+    BACKUP_REQUIRE_RESTIC: bool = True
 
     SAUCENAO_KEY: str | None = None
     ASCII2D_KEY: str | None = None

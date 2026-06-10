@@ -19,6 +19,8 @@ wheels/
 .ruff_cache
 
 backup/
+!src/lib/backup/
+!src/lib/backup/*.py
 
 data/font/.fonts_installed.lock
 data/db/*

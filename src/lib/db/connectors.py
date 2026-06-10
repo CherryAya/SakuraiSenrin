@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
 from src.lib.consts import GLOBAL_DB_ROOT
+from src.lib.db.backup import BackupSource
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 
@@ -90,6 +91,9 @@ class BaseDB(ABC):
     async def init(self, base: type[DeclarativeBase]) -> None:
         await self.init_schema(base)
 
+    def iter_backup_sources(self) -> list[BackupSource]:
+        return []
+
     async def init_schema(self, base: type[DeclarativeBase]) -> None:
         """根据提供的 ORM 基类初始化数据库表结构。
 
@@ -139,6 +143,18 @@ class StaticDB(BaseDB):
     def write_session(self) -> _AsyncGeneratorContextManager[AsyncSession, None]:
         path = self.base_dir / self.filename
         return db_manager.open(str(path), commit=True)
+
+    def iter_backup_sources(self) -> list[BackupSource]:
+        path = self.base_dir / self.filename
+        if not path.exists():
+            return []
+        return [
+            BackupSource(
+                namespace=self.namespace,
+                kind=Path(self.filename).stem,
+                path=path,
+            )
+        ]
 
 
 @final
@@ -199,6 +215,33 @@ class ShardedDB(BaseDB):
     def _get_file_paths(self, shard_key: str) -> tuple[Path, Path]:
         base = self.base_dir / f"{self.prefix}_{shard_key}"
         return base.with_suffix(".db"), base.with_suffix(".7z")
+
+    def iter_backup_sources(self) -> list[BackupSource]:
+        sources: list[BackupSource] = []
+        for db_file in sorted(self.base_dir.glob(f"{self.prefix}_*.db")):
+            shard_key = db_file.stem.replace(f"{self.prefix}_", "")
+            sources.append(
+                BackupSource(
+                    namespace=self.namespace,
+                    kind=self.prefix,
+                    path=db_file,
+                    shard_key=shard_key,
+                    is_active=self._is_active_shard(shard_key),
+                )
+            )
+        for archive_file in sorted(self.base_dir.glob(f"{self.prefix}_*.7z")):
+            shard_key = archive_file.stem.replace(f"{self.prefix}_", "")
+            sources.append(
+                BackupSource(
+                    namespace=self.namespace,
+                    kind=self.prefix,
+                    path=archive_file,
+                    shard_key=shard_key,
+                    is_active=False,
+                    is_archive=True,
+                )
+            )
+        return sources
 
     def _get_lock(self, shard_key: str) -> asyncio.Lock:
         if shard_key not in self._locks:
