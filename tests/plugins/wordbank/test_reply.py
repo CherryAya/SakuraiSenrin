@@ -5,10 +5,15 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent
 
 from src.plugins.wordbank.database.types import (
+    WordbankApprovalMessageRecord,
     WordbankEntryDetail,
     WordbankResponseMessageRecord,
 )
-from src.plugins.wordbank.handlers.reply import handle_reply_command
+from src.plugins.wordbank.handlers.reply import (
+    handle_approval_reply,
+    handle_approval_reply_result,
+    handle_reply_command,
+)
 from src.plugins.wordbank.services.core import WordbankService
 from tests.plugins.water.helpers import build_group_message_event
 
@@ -28,6 +33,17 @@ def _response_message() -> WordbankResponseMessageRecord:
         group_id="20001",
         user_id="10001",
         message_type="text",
+    )
+
+
+def _approval_message() -> WordbankApprovalMessageRecord:
+    return WordbankApprovalMessageRecord(
+        message_id="90001",
+        entry_id=12,
+        group_id="20001",
+        user_id="10001",
+        source_message_id="1",
+        message_type="approval",
     )
 
 
@@ -180,3 +196,78 @@ async def test_reply_target_missing_and_unknown_message() -> None:
         )
         == "未找到消息 90001 对应的词条记录。"
     )
+
+
+async def test_approval_reply_approves_mapped_pending_entry() -> None:
+    get_approval_message = AsyncMock(return_value=_approval_message())
+    approve_entry = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_approval_message=get_approval_message,
+            approve_entry=approve_entry,
+        ),
+    )
+
+    outcome = await handle_approval_reply_result(
+        service,
+        event=_event_with_reply("y"),
+        text="y",
+        locale="zh-CN",
+    )
+
+    assert outcome.message == "审批已完成：词条 #12 已通过。"
+    assert outcome.completed
+    assert outcome.action == "approve"
+    assert outcome.approval_message == _approval_message()
+    get_approval_message.assert_awaited_once_with("90001")
+    approve_entry.assert_awaited_once_with(
+        12,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+
+
+async def test_approval_reply_rejects_mapped_pending_entry() -> None:
+    reject_entry = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_approval_message=AsyncMock(return_value=_approval_message()),
+            reject_entry=reject_entry,
+        ),
+    )
+
+    message = await handle_approval_reply(
+        service,
+        event=_event_with_reply("拒绝"),
+        text="拒绝",
+        locale="zh-CN",
+    )
+
+    assert message == "审批已完成：词条 #12 已拒绝。"
+    reject_entry.assert_awaited_once_with(
+        12,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+
+
+async def test_approval_reply_unknown_message_reports_target_not_found() -> None:
+    service = cast(
+        WordbankService,
+        SimpleNamespace(get_approval_message=AsyncMock(return_value=None)),
+    )
+
+    message = await handle_approval_reply(
+        service,
+        event=_event_with_reply("y"),
+        text="y",
+        locale="zh-CN",
+    )
+
+    assert message == "未找到消息 90001 对应的待审核词条。"

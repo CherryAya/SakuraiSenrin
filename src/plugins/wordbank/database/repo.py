@@ -9,6 +9,7 @@ from src.lib.utils.common import get_current_time
 
 from .instances import wordbank_log_db, wordbank_main_db
 from .ops import (
+    WordbankApprovalMessageOps,
     WordbankDeleteVoteOps,
     WordbankDeleteVoteSupportOps,
     WordbankEntryDetailOps,
@@ -19,6 +20,7 @@ from .ops import (
     WordbankTriggerOps,
 )
 from .tables import (
+    WordbankApprovalMessage,
     WordbankDeleteVote,
     WordbankEntry,
     WordbankImage,
@@ -30,6 +32,8 @@ from .tables import (
     WordbankTrigger,
 )
 from .types import (
+    WordbankApprovalMessagePayload,
+    WordbankApprovalMessageRecord,
     WordbankDeleteVoteMutation,
     WordbankDeleteVoteRecord,
     WordbankEntryDetail,
@@ -121,6 +125,19 @@ class WordbankRepository:
             response_id=row.response_id,
             group_id=row.group_id,
             user_id=row.user_id,
+            message_type=row.message_type,
+        )
+
+    @staticmethod
+    def _to_approval_message_record(
+        row: WordbankApprovalMessage,
+    ) -> WordbankApprovalMessageRecord:
+        return WordbankApprovalMessageRecord(
+            message_id=row.message_id,
+            entry_id=row.entry_id,
+            group_id=row.group_id,
+            user_id=row.user_id,
+            source_message_id=row.source_message_id,
             message_type=row.message_type,
         )
 
@@ -619,6 +636,13 @@ class WordbankRepository:
         async with wordbank_main_db.write_session() as session:
             await WordbankResponseMessageOps(session).upsert_response_message(payload)
 
+    async def record_approval_message(
+        self,
+        payload: WordbankApprovalMessagePayload,
+    ) -> None:
+        async with wordbank_main_db.write_session() as session:
+            await WordbankApprovalMessageOps(session).upsert_approval_message(payload)
+
     async def get_response_message(
         self,
         message_id: str,
@@ -628,6 +652,16 @@ class WordbankRepository:
                 message_id
             )
         return self._to_response_message_record(row) if row else None
+
+    async def get_approval_message(
+        self,
+        message_id: str,
+    ) -> WordbankApprovalMessageRecord | None:
+        async with wordbank_main_db.read_session() as session:
+            row = await WordbankApprovalMessageOps(session).get_by_message_id(
+                message_id
+            )
+        return self._to_approval_message_record(row) if row else None
 
     async def get_entry_detail(
         self,

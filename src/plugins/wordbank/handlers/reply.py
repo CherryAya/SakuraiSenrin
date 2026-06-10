@@ -2,17 +2,26 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from nonebot.adapters.onebot.v11.event import MessageEvent
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import (
+    WordbankApprovalMessageRecord,
     WordbankEntryDetail,
     WordbankResponseMessageRecord,
 )
 from src.plugins.wordbank.services.core import WordbankService
 
-from .commands import handle_delete, handle_restore
+from .approval import APPROVAL_APPROVE_ALIASES, APPROVAL_REJECT_ALIASES
+from .commands import (
+    actor_can_review,
+    build_mutation_actor,
+    handle_delete,
+    handle_restore,
+)
 
 INFO_ALIASES = {"info", "详情"}
 HISTORY_ALIASES = {"history", "历史", "历史记录", "审批记录", "审批历史"}
@@ -41,6 +50,14 @@ RESTORE_ALIASES = {
 REPLY_COMMAND_ALIASES = (
     INFO_ALIASES | HISTORY_ALIASES | DELETE_ALIASES | RESTORE_ALIASES
 )
+
+
+@dataclass(slots=True, frozen=True)
+class ApprovalReplyOutcome:
+    message: str
+    approval_message: WordbankApprovalMessageRecord | None = None
+    completed: bool = False
+    action: str = ""
 
 
 async def is_reply(event: MessageEvent) -> bool:
@@ -110,6 +127,115 @@ async def handle_reply_command(
         )
 
     return tr(locale, "wordbank.reply.unknown_command", action=action)
+
+
+async def handle_approval_reply(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    text: str,
+    locale: LocaleCode,
+) -> str:
+    outcome = await handle_approval_reply_result(
+        service,
+        event=event,
+        text=text,
+        locale=locale,
+    )
+    return outcome.message
+
+
+async def handle_approval_reply_result(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    text: str,
+    locale: LocaleCode,
+) -> ApprovalReplyOutcome:
+    message_id = get_reply_message_id(event)
+    if message_id is None:
+        return ApprovalReplyOutcome(tr(locale, "wordbank.reply.target_missing"))
+
+    approval_message = await service.get_approval_message(message_id)
+    if approval_message is None:
+        return ApprovalReplyOutcome(
+            tr(
+                locale,
+                "wordbank.approval.reply_target_not_found",
+                message_id=message_id,
+            )
+        )
+
+    actor = build_mutation_actor(event)
+    if not actor_can_review(actor):
+        return ApprovalReplyOutcome(
+            tr(locale, "wordbank.approval.permission_denied"),
+            approval_message=approval_message,
+        )
+
+    action = normalize_reply_command(text)
+    if action in APPROVAL_APPROVE_ALIASES:
+        ok = await service.approve_entry(
+            approval_message.entry_id,
+            actor_user_id=actor.user_id,
+            actor_group_id=actor.group_id,
+            can_moderate_group=actor.can_moderate_group,
+            is_superuser=actor.is_superuser,
+        )
+        if ok:
+            return ApprovalReplyOutcome(
+                tr(
+                    locale,
+                    "wordbank.approval.reply_approved",
+                    entry_id=approval_message.entry_id,
+                ),
+                approval_message=approval_message,
+                completed=True,
+                action="approve",
+            )
+        return ApprovalReplyOutcome(
+            tr(
+                locale,
+                "wordbank.approval.not_found",
+                entry_id=approval_message.entry_id,
+            ),
+            approval_message=approval_message,
+            action="approve",
+        )
+
+    if action in APPROVAL_REJECT_ALIASES:
+        ok = await service.reject_entry(
+            approval_message.entry_id,
+            actor_user_id=actor.user_id,
+            actor_group_id=actor.group_id,
+            can_moderate_group=actor.can_moderate_group,
+            is_superuser=actor.is_superuser,
+        )
+        if ok:
+            return ApprovalReplyOutcome(
+                tr(
+                    locale,
+                    "wordbank.approval.reply_rejected",
+                    entry_id=approval_message.entry_id,
+                ),
+                approval_message=approval_message,
+                completed=True,
+                action="reject",
+            )
+        return ApprovalReplyOutcome(
+            tr(
+                locale,
+                "wordbank.approval.not_found",
+                entry_id=approval_message.entry_id,
+            ),
+            approval_message=approval_message,
+            action="reject",
+        )
+
+    return ApprovalReplyOutcome(
+        tr(locale, "wordbank.reply.unknown_command", action=action),
+        approval_message=approval_message,
+    )
 
 
 def normalize_reply_command(text: str) -> str:

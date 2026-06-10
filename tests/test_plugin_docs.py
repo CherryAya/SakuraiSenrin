@@ -336,14 +336,17 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     shortcut = next(feature for feature in study.index if feature.slug == "shortcut")
 
     assert add.demo_filename == "wordbank-add.png"
-    assert len(add.demo_turns) == 18
+    assert len(add.demo_turns) == 19
     assert add.demo_turns[0].text == "#wordbank.add"
-    assert add.demo_turns[11].text == "词条 #12 已通过审核，稍后会参与被动匹配。"
-    assert add.demo_turns[13].text == "做个好梦"
-    assert "#wordbank add 是这张图喔 [图片]" in add.demo_turns[14].text
-    assert "响应: [图片:7]" in add.demo_turns[15].text
-    assert "#wordbank add [图片] => 是这张图喔" in add.demo_turns[16].text
-    assert "触发: [图片:7]" in add.demo_turns[17].text
+    assert add.demo_turns[10].speaker == "SYSTEM"
+    assert "新增词条待审核通知" in add.demo_turns[10].text
+    assert add.demo_turns[11].text == "[回复审批通知] @机器人 y"
+    assert add.demo_turns[12].text == "审批已完成：词条 #12 已通过。"
+    assert add.demo_turns[14].text == "做个好梦"
+    assert "#wordbank add 是这张图喔 [图片]" in add.demo_turns[15].text
+    assert "响应: [图片:7]" in add.demo_turns[16].text
+    assert "#wordbank add [图片] => 是这张图喔" in add.demo_turns[17].text
+    assert "触发: [图片:7]" in add.demo_turns[18].text
     assert all(feature.slug != "image" for feature in wordbank.index)
     assert "revoke" in add.failures
     assert "发送取消提示并中止" in add.failures
@@ -355,13 +358,16 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert reply.demo_filename == "wordbank-reply-shortcut.png"
     assert "词条详情 #12" in reply.demo_turns[3].text
     assert shortcut.demo_filename == "study-shortcut.png"
-    assert len(shortcut.demo_turns) == 20
+    assert len(shortcut.demo_turns) == 21
     assert shortcut.demo_turns[0].text == "#study"
     assert shortcut.demo_turns[2].text == "a"
-    assert "词条 #12 已通过审核" in shortcut.demo_turns[13].text
-    assert "响应: [图片:7]" in shortcut.demo_turns[17].text
-    assert "#study [图片] => 是这张图喔" in shortcut.demo_turns[18].text
-    assert "触发: [图片:7]" in shortcut.demo_turns[19].text
+    assert shortcut.demo_turns[12].speaker == "SYSTEM"
+    assert "新增词条待审核通知" in shortcut.demo_turns[12].text
+    assert shortcut.demo_turns[13].text == "[回复审批通知] @机器人 y"
+    assert shortcut.demo_turns[14].text == "审批已完成：词条 #12 已通过。"
+    assert "响应: [图片:7]" in shortcut.demo_turns[18].text
+    assert "#study [图片] => 是这张图喔" in shortcut.demo_turns[19].text
+    assert "触发: [图片:7]" in shortcut.demo_turns[20].text
     assert "revoke" in shortcut.failures
     assert "发送取消提示并中止" in shortcut.failures
     assert "连续输错 3 次" in shortcut.failures

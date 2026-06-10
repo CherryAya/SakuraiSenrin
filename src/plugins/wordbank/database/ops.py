@@ -9,6 +9,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from src.lib.db.ops import BaseOps
 
 from .tables import (
+    WordbankApprovalMessage,
     WordbankDeleteVote,
     WordbankDeleteVoteSupport,
     WordbankEntry,
@@ -19,6 +20,7 @@ from .tables import (
     WordbankTrigger,
 )
 from .types import (
+    WordbankApprovalMessagePayload,
     WordbankDeleteVotePayload,
     WordbankLogPayload,
     WordbankResponseMessagePayload,
@@ -359,6 +361,37 @@ class WordbankResponseMessageOps(BaseOps[WordbankResponseMessage]):
     ) -> WordbankResponseMessage | None:
         stmt = select(WordbankResponseMessage).where(
             WordbankResponseMessage.message_id == message_id
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+
+class WordbankApprovalMessageOps(BaseOps[WordbankApprovalMessage]):
+    async def upsert_approval_message(
+        self,
+        payload: WordbankApprovalMessagePayload,
+    ) -> int:
+        stmt = sqlite_insert(WordbankApprovalMessage).values(payload)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[WordbankApprovalMessage.message_id],
+            set_={
+                "entry_id": stmt.excluded.entry_id,
+                "group_id": stmt.excluded.group_id,
+                "user_id": stmt.excluded.user_id,
+                "source_message_id": stmt.excluded.source_message_id,
+                "message_type": stmt.excluded.message_type,
+                "updated_at": stmt.excluded.updated_at,
+            },
+        )
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
+
+    async def get_by_message_id(
+        self,
+        message_id: str,
+    ) -> WordbankApprovalMessage | None:
+        stmt = select(WordbankApprovalMessage).where(
+            WordbankApprovalMessage.message_id == message_id
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

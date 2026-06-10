@@ -143,6 +143,26 @@ class WordbankResponseMessage(WordbankMainBase, TimeMixin):
     message_type: Mapped[str] = mapped_column(String(16), nullable=False, default="")
 
 
+class WordbankApprovalMessage(WordbankMainBase, TimeMixin):
+    __tablename__ = "wordbank_approval_message"
+    __table_args__ = (
+        UniqueConstraint("message_id", name="uq_wordbank_approval_message_id"),
+        Index("idx_wordbank_approval_message_entry", "entry_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    message_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    entry_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    group_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    source_message_id: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="",
+    )
+    message_type: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+
+
 class WordbankLog(WordbankLogBase):
     __tablename__ = "wordbank_log"
     __table_args__ = (

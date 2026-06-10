@@ -15,6 +15,7 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import (
+    WordbankApprovalMessageRecord,
     WordbankEntryDetail,
     WordbankLogPayload,
     WordbankResponseMessageRecord,
@@ -404,6 +405,33 @@ class WordbankService:
             }
         )
 
+    async def record_approval_message(
+        self,
+        *,
+        message_id: str,
+        entry_id: int,
+        group_id: str,
+        user_id: str,
+        source_message_id: str,
+        message_type: str,
+    ) -> None:
+        message_id = message_id.strip()
+        if not message_id:
+            return
+        now = get_current_time()
+        await self.repository.record_approval_message(
+            {
+                "message_id": message_id,
+                "entry_id": entry_id,
+                "group_id": group_id,
+                "user_id": user_id,
+                "source_message_id": source_message_id,
+                "message_type": message_type,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
     async def get_response_message(
         self,
         message_id: str,
@@ -412,6 +440,15 @@ class WordbankService:
         if not message_id:
             return None
         return await self.repository.get_response_message(message_id)
+
+    async def get_approval_message(
+        self,
+        message_id: str,
+    ) -> WordbankApprovalMessageRecord | None:
+        message_id = message_id.strip()
+        if not message_id:
+            return None
+        return await self.repository.get_approval_message(message_id)
 
     async def get_entry_detail(
         self,

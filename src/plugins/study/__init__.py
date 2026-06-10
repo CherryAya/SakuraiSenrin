@@ -9,6 +9,7 @@ Description: 学习词库-传统版
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
@@ -225,6 +226,7 @@ async def _record_study_response(
 
 
 async def _record_study_weight_and_finish(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
@@ -247,21 +249,25 @@ async def _record_study_weight_and_finish(
         )
         return
     clear_interaction_errors(state)
-    await _finish_guided_study(matcher, event, state, locale)
+    await _finish_guided_study(bot, matcher, event, state, locale)
 
 
 async def _finish_guided_study(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
     locale: LocaleCode,
 ) -> None:
     from src.plugins.wordbank.handlers import (
-        handle_guided_study_image_trigger,
-        handle_guided_study_shortcut,
+        handle_guided_study_image_trigger_result,
+        handle_guided_study_shortcut_result,
+        record_submission_approval_message,
+        send_pending_approval_notice,
     )
     from src.plugins.wordbank.handlers.commands import localize_command_error
     from src.plugins.wordbank.services import wordbank_service
+    from src.plugins.wordbank.services.core import format_add_result
     from src.plugins.wordbank.services.rules import RuleError
 
     try:
@@ -276,7 +282,7 @@ async def _finish_guided_study(
             pending_key="study_response_image_pending",
         )
         if trigger_image_id is not None:
-            msg = await handle_guided_study_image_trigger(
+            result = await handle_guided_study_image_trigger_result(
                 wordbank_service,
                 event=event,
                 trig_mode_text=str(state.get("study_trig_mode", "")),
@@ -285,10 +291,9 @@ async def _finish_guided_study(
                 response_text=str(state.get("study_response", "")),
                 response_canonical_image_id=response_image_id,
                 weight_text=event.message.extract_plain_text(),
-                locale=locale,
             )
         else:
-            msg = await handle_guided_study_shortcut(
+            result = await handle_guided_study_shortcut_result(
                 wordbank_service,
                 event=event,
                 trig_mode_text=str(state.get("study_trig_mode", "")),
@@ -297,7 +302,6 @@ async def _finish_guided_study(
                 response_text=str(state.get("study_response", "")),
                 response_canonical_image_id=response_image_id,
                 weight_text=event.message.extract_plain_text(),
-                locale=locale,
             )
     except (RuleError, ValueError) as exc:
         await _reject_study_error(
@@ -307,7 +311,21 @@ async def _finish_guided_study(
             localize_command_error(exc, locale),
         )
         return
-    await matcher.finish(msg)
+    await send_pending_approval_notice(
+        bot,
+        wordbank_service,
+        event=event,
+        result=result,
+        locale=locale,
+    )
+    send_result = await matcher.send(format_add_result(result, locale=locale))
+    await record_submission_approval_message(
+        wordbank_service,
+        event=event,
+        result=result,
+        send_result=send_result,
+    )
+    await matcher.finish()
 
 
 async def _start_guided_study_with_trigger_image(
@@ -335,6 +353,7 @@ async def _start_guided_study_with_trigger_image(
 
 @study_command.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
@@ -343,10 +362,13 @@ async def _(
     from src.plugins.wordbank.handlers import (
         extract_image_urls,
         fetch_first_image_bytes_from_message,
-        handle_study_with_media,
+        handle_study_with_media_result,
+        record_submission_approval_message,
+        send_pending_approval_notice,
     )
     from src.plugins.wordbank.handlers.commands import localize_command_error
     from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
+    from src.plugins.wordbank.services.core import format_add_result
     from src.plugins.wordbank.services.rules import RuleError
 
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
@@ -368,17 +390,31 @@ async def _(
         return
     await wordbank_service.initialize()
     try:
-        msg = await handle_study_with_media(
+        result = await handle_study_with_media_result(
             wordbank_service,
             wordbank_media_service,
             event=event,
             text=arg.extract_plain_text(),
             image_bytes=await fetch_first_image_bytes_from_message(arg),
-            locale=locale,
         )
     except (RuleError, ValueError) as exc:
         await matcher.finish(localize_command_error(exc, locale))
-    await matcher.finish(msg)
+        return
+    await send_pending_approval_notice(
+        bot,
+        wordbank_service,
+        event=event,
+        result=result,
+        locale=locale,
+    )
+    send_result = await matcher.send(format_add_result(result, locale=locale))
+    await record_submission_approval_message(
+        wordbank_service,
+        event=event,
+        result=result,
+        send_result=send_result,
+    )
+    await matcher.finish()
 
 
 def _study_locale(state: T_State) -> LocaleCode:
@@ -454,17 +490,17 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
 
 
 @study_command.handle()
-async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
     if _is_truthy_state_flag(state, "study_weight_after_preloaded_trigger"):
-        await _record_study_weight_and_finish(matcher, event, state, locale)
+        await _record_study_weight_and_finish(bot, matcher, event, state, locale)
         return
     await _record_study_response(matcher, event, state, locale)
 
 
 @study_command.handle()
-async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    await _record_study_weight_and_finish(matcher, event, state, locale)
+    await _record_study_weight_and_finish(bot, matcher, event, state, locale)

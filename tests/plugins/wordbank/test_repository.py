@@ -77,6 +77,22 @@ async def test_repository_round_trip_and_index_refresh(
     assert response_message.trigger_id == selected.candidate.trigger.id
     assert response_message.response_id == selected.response.id
 
+    await service.record_approval_message(
+        message_id="91001",
+        entry_id=result.entry_id,
+        group_id="20001",
+        user_id="10001",
+        source_message_id="1",
+        message_type="approval",
+    )
+    approval_message = await service.get_approval_message("91001")
+    assert approval_message is not None
+    assert approval_message.entry_id == result.entry_id
+    assert approval_message.group_id == "20001"
+    assert approval_message.user_id == "10001"
+    assert approval_message.source_message_id == "1"
+    assert approval_message.message_type == "approval"
+
     detail = await service.get_entry_detail(
         response_message.entry_id,
         trigger_id=response_message.trigger_id,

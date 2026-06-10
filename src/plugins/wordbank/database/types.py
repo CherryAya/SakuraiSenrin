@@ -87,6 +87,17 @@ class WordbankResponseMessagePayload(TypedDict):
     updated_at: int
 
 
+class WordbankApprovalMessagePayload(TypedDict):
+    message_id: str
+    entry_id: int
+    group_id: str
+    user_id: str
+    source_message_id: str
+    message_type: str
+    created_at: int
+    updated_at: int
+
+
 @dataclass(slots=True, frozen=True)
 class WordbankTriggerRecord:
     id: int
@@ -188,6 +199,16 @@ class WordbankResponseMessageRecord:
     response_id: int
     group_id: str
     user_id: str
+    message_type: str
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankApprovalMessageRecord:
+    message_id: str
+    entry_id: int
+    group_id: str
+    user_id: str
+    source_message_id: str
     message_type: str
 
 

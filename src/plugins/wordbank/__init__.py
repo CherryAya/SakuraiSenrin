@@ -37,7 +37,9 @@ from src.lib.plugin_docs import (
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 
+from .database.types import WordbankApprovalMessageRecord
 from .handlers import (
+    APPROVAL_REPLY_ALIASES,
     REPLY_COMMAND_ALIASES,
     PassiveResponse,
     PendingWordbankImage,
@@ -45,19 +47,24 @@ from .handlers import (
     dispatch_wordbank_command,
     extract_image_urls,
     fetch_first_image_bytes_from_message,
-    handle_add_with_media,
-    handle_guided_add_image_trigger,
-    handle_guided_add_text,
+    handle_add_text_result,
+    handle_add_with_media_result,
+    handle_approval_reply_result,
+    handle_guided_add_image_trigger_result,
+    handle_guided_add_text_result,
     handle_passive_message,
     handle_passive_notice,
     handle_reply_command,
     is_reply,
     localize_command_error,
+    record_submission_approval_message,
     resolve_pending_image,
+    send_pending_approval_notice,
     start_ingest_first_image_from_message,
 )
 from .handlers.commands import parse_guided_advanced_options, parse_guided_scope_choice
 from .services import wordbank_media_service, wordbank_service
+from .services.core import WordbankAddResult, format_add_result
 from .services.rules import RuleError
 
 name = tr("zh-CN", "plugin.wordbank.name")
@@ -117,6 +124,16 @@ driver = get_driver()
 @driver.on_startup
 async def _initialize_wordbank_plugin() -> None:
     await initialize_wordbank_plugin()
+
+
+async def is_wordbank_approval_reply(event: MessageEvent) -> bool:
+    if event.reply is None:
+        return False
+    message_id = getattr(event.reply, "message_id", None)
+    if message_id is None:
+        return False
+    await initialize_wordbank_plugin()
+    return await wordbank_service.get_approval_message(str(message_id)) is not None
 
 
 wordbank_command = on_command(
@@ -189,11 +206,69 @@ wordbank_reply_command = on_fullmatch(
     priority=5,
     block=True,
 )
+wordbank_approval_reply_command = on_fullmatch(
+    tuple(APPROVAL_REPLY_ALIASES),
+    ignorecase=True,
+    rule=to_me() & is_reply & is_wordbank_approval_reply,
+    priority=5,
+    block=True,
+)
 wordbank_passive = on_message(priority=95, block=False)
 wordbank_notice = on_notice(priority=95, block=False)
 
 
+async def _finish_add_result(
+    matcher: Matcher,
+    bot: Bot,
+    event: MessageEvent,
+    result: WordbankAddResult,
+    locale: LocaleCode,
+) -> None:
+    await send_pending_approval_notice(
+        bot,
+        wordbank_service,
+        event=event,
+        result=result,
+        locale=locale,
+    )
+    send_result = await matcher.send(format_add_result(result, locale=locale))
+    await record_submission_approval_message(
+        wordbank_service,
+        event=event,
+        result=result,
+        send_result=send_result,
+    )
+    await matcher.finish()
+
+
+async def _notify_approval_source(
+    bot: Bot,
+    approval_message: WordbankApprovalMessageRecord,
+    message: str,
+) -> None:
+    source = Message()
+    if approval_message.source_message_id.isdigit():
+        source += MessageSegment.reply(int(approval_message.source_message_id))
+    source += MessageSegment.text(message)
+
+    try:
+        if approval_message.group_id:
+            await bot.send_group_msg(
+                group_id=int(approval_message.group_id),
+                message=source,
+            )
+            return
+        if approval_message.user_id:
+            await bot.send_private_msg(
+                user_id=int(approval_message.user_id),
+                message=source,
+            )
+    except Exception as exc:
+        logger.warning(f"[Wordbank] approval source notice skipped: {exc}")
+
+
 async def _handle_wordbank_command_message(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     arg: Message,
@@ -205,21 +280,27 @@ async def _handle_wordbank_command_message(
     text = build_forced_command_text(forced_action, arg.extract_plain_text())
     action = text.split(maxsplit=1)[0].lower() if text else ""
     if action in {"add", "添加", "学习"}:
+        _, _, rest = text.partition(" ")
         try:
             data = await fetch_first_image_bytes_from_message(arg)
             if data is not None:
-                _, _, rest = text.partition(" ")
-                msg = await handle_add_with_media(
+                result = await handle_add_with_media_result(
                     wordbank_service,
                     wordbank_media_service,
                     event=event,
                     image_bytes=data,
                     text=rest,
-                    locale=locale,
                 )
-                await matcher.finish(msg)
+            else:
+                result = await handle_add_text_result(
+                    wordbank_service,
+                    event=event,
+                    text=rest,
+                )
         except (RuleError, ValueError) as exc:
             await matcher.finish(localize_command_error(exc, locale))
+            return
+        await _finish_add_result(matcher, bot, event, result, locale)
 
     try:
         msg = await dispatch_wordbank_command(
@@ -230,6 +311,7 @@ async def _handle_wordbank_command_message(
         )
     except (RuleError, ValueError) as exc:
         await matcher.finish(localize_command_error(exc, locale))
+        return
     await matcher.finish(msg)
 
 
@@ -382,6 +464,7 @@ async def _start_guided_add(
 
 
 async def _finish_guided_add(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
@@ -399,7 +482,7 @@ async def _finish_guided_add(
             pending_key="wordbank_guided_response_image_pending",
         )
         if trigger_image_id is not None:
-            msg = await handle_guided_add_image_trigger(
+            result = await handle_guided_add_image_trigger_result(
                 wordbank_service,
                 event=event,
                 trigger_canonical_image_id=trigger_image_id,
@@ -407,10 +490,9 @@ async def _finish_guided_add(
                 response_canonical_image_id=response_image_id,
                 scope_text=str(state.get("wordbank_guided_scope", "")),
                 advanced_text=event.message.extract_plain_text(),
-                locale=locale,
             )
         else:
-            msg = await handle_guided_add_text(
+            result = await handle_guided_add_text_result(
                 wordbank_service,
                 event=event,
                 trigger_text=str(state.get("wordbank_guided_trigger", "")),
@@ -418,7 +500,6 @@ async def _finish_guided_add(
                 response_canonical_image_id=response_image_id,
                 scope_text=str(state.get("wordbank_guided_scope", "")),
                 advanced_text=event.message.extract_plain_text(),
-                locale=locale,
             )
     except (RuleError, ValueError) as exc:
         await _reject_guided_error(
@@ -428,11 +509,12 @@ async def _finish_guided_add(
             localize_command_error(exc, locale),
         )
         return
-    await matcher.finish(msg)
+    await _finish_add_result(matcher, bot, event, result, locale)
 
 
 @wordbank_command.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
@@ -455,7 +537,7 @@ async def _(
                 await _start_guided_add(matcher, state, locale)
             return
     await initialize_wordbank_plugin()
-    await _handle_wordbank_command_message(matcher, event, arg)
+    await _handle_wordbank_command_message(bot, matcher, event, arg)
 
 
 @wordbank_command.handle()
@@ -496,7 +578,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
 
 
 @wordbank_command.handle()
-async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
     try:
@@ -510,11 +592,12 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         )
         return
     clear_interaction_errors(state)
-    await _finish_guided_add(matcher, event, state)
+    await _finish_guided_add(bot, matcher, event, state)
 
 
 @wordbank_add_command.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
@@ -529,7 +612,13 @@ async def _(
     if not arg.extract_plain_text().strip() and extract_image_urls(arg):
         await _start_guided_add_with_trigger_image(matcher, event, state, locale)
         return
-    await _handle_wordbank_command_message(matcher, event, arg, forced_action="add")
+    await _handle_wordbank_command_message(
+        bot,
+        matcher,
+        event,
+        arg,
+        forced_action="add",
+    )
 
 
 @wordbank_add_command.handle()
@@ -570,7 +659,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
 
 
 @wordbank_add_command.handle()
-async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
     try:
@@ -584,79 +673,135 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         )
         return
     clear_interaction_errors(state)
-    await _finish_guided_add(matcher, event, state)
+    await _finish_guided_add(bot, matcher, event, state)
 
 
 @wordbank_search_command.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
-    await _handle_wordbank_command_message(matcher, event, arg, forced_action="search")
+    await _handle_wordbank_command_message(
+        bot,
+        matcher,
+        event,
+        arg,
+        forced_action="search",
+    )
 
 
 @wordbank_pending_command.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
-    await _handle_wordbank_command_message(matcher, event, arg, forced_action="pending")
+    await _handle_wordbank_command_message(
+        bot,
+        matcher,
+        event,
+        arg,
+        forced_action="pending",
+    )
 
 
 @wordbank_approve_command.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
-    await _handle_wordbank_command_message(matcher, event, arg, forced_action="approve")
+    await _handle_wordbank_command_message(
+        bot,
+        matcher,
+        event,
+        arg,
+        forced_action="approve",
+    )
 
 
 @wordbank_reject_command.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
-    await _handle_wordbank_command_message(matcher, event, arg, forced_action="reject")
+    await _handle_wordbank_command_message(
+        bot,
+        matcher,
+        event,
+        arg,
+        forced_action="reject",
+    )
 
 
 @wordbank_delete_command.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
-    await _handle_wordbank_command_message(matcher, event, arg, forced_action="delete")
+    await _handle_wordbank_command_message(
+        bot,
+        matcher,
+        event,
+        arg,
+        forced_action="delete",
+    )
 
 
 @wordbank_restore_command.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
-    await _handle_wordbank_command_message(matcher, event, arg, forced_action="restore")
+    await _handle_wordbank_command_message(
+        bot,
+        matcher,
+        event,
+        arg,
+        forced_action="restore",
+    )
 
 
 @wordbank_support_command.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
-    await _handle_wordbank_command_message(matcher, event, arg, forced_action="support")
+    await _handle_wordbank_command_message(
+        bot,
+        matcher,
+        event,
+        arg,
+        forced_action="support",
+    )
 
 
 @wordbank_vote_command.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
-    await _handle_wordbank_command_message(matcher, event, arg, forced_action="vote")
+    await _handle_wordbank_command_message(
+        bot,
+        matcher,
+        event,
+        arg,
+        forced_action="vote",
+    )
 
 
 @wordbank_reply_command.handle()
@@ -672,7 +817,27 @@ async def _(matcher: Matcher, event: MessageEvent) -> None:
         )
     except (RuleError, ValueError) as exc:
         await matcher.finish(localize_command_error(exc, locale))
+        return
     await matcher.finish(msg)
+
+
+@wordbank_approval_reply_command.handle()
+async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
+    await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    try:
+        outcome = await handle_approval_reply_result(
+            wordbank_service,
+            event=event,
+            text=event.message.extract_plain_text(),
+            locale=locale,
+        )
+    except (RuleError, ValueError) as exc:
+        await matcher.finish(localize_command_error(exc, locale))
+        return
+    if outcome.completed and outcome.approval_message is not None:
+        await _notify_approval_source(bot, outcome.approval_message, outcome.message)
+    await matcher.finish(outcome.message)
 
 
 def _extract_sent_message_id(result: Any) -> str | None:
