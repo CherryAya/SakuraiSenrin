@@ -290,8 +290,7 @@ def parse_study_mode_choice(text: str) -> str:
     if choice in {"m", "me", "self", "自己", "仅自己"}:
         return "m"
     raise RuleError(
-        "触发方式输入错误，请输入 a 或 m。"
-        "a 表示对所有人有效，m 表示仅对自己有效。",
+        "触发方式输入错误，请输入 a 或 m。a 表示对所有人有效，m 表示仅对自己有效。",
         key="wordbank.error.study_mode_invalid",
     )
 

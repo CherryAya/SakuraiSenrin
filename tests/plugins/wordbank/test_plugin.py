@@ -707,6 +707,292 @@ async def test_wordbank_add_guided_flow_retries_invalid_scope_and_advanced_optio
 
 
 @pytest.mark.asyncio
+async def test_wordbank_add_group_recall_of_root_cancels_session(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_text_entry = _patch_wordbank_services(monkeypatch)
+
+    async with app.test_matcher(
+        {
+            0: [],
+            5: [wordbank_plugin.wordbank_add_command],
+            95: [wordbank_plugin.wordbank_notice],
+        }
+    ) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        first = _message_event("#wordbank.add", message_id=91)
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            "请输入触发词，或直接发送图片作为图片触发：",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        recall = build_group_recall_event(message_id=91)
+        ctx.receive_event(bot, recall)
+        ctx.should_call_send(recall, "本次操作已被取消。", bot=bot)
+
+    add_text_entry.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_wordbank_add_friend_recall_of_latest_step_rewinds_current_step(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_text_entry = _patch_wordbank_services(
+        monkeypatch,
+        add_result=_add_result(
+            entry_id=302,
+            trigger_text="晚安",
+            response_text="做个好梦",
+            scope="self",
+        ),
+    )
+
+    async with app.test_matcher(
+        {
+            0: [],
+            5: [wordbank_plugin.wordbank_add_command],
+            95: [wordbank_plugin.wordbank_notice],
+        }
+    ) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        first = _private_message_event("#wordbank.add", message_id=101)
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            "请输入触发词，或直接发送图片作为图片触发：",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        trigger = _private_message_event("晚安", message_id=102)
+        ctx.receive_event(bot, trigger)
+        ctx.should_call_send(
+            trigger,
+            "请输入响应词，或发送图片作为图片回复：",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        response = _private_message_event("做个好梦", message_id=103)
+        ctx.receive_event(bot, response)
+        ctx.should_call_send(
+            response,
+            "请选择生效范围：\n1. 当前群（默认）\n2. 所有群\n3. 仅自己\n4. 仅私聊",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        recall = build_friend_recall_event(message_id=103)
+        ctx.receive_event(bot, recall)
+        ctx.should_call_send(
+            recall,
+            "请输入响应词，或发送图片作为图片回复：",
+            bot=bot,
+        )
+
+        fixed_response = _private_message_event("早点休息", message_id=104)
+        ctx.receive_event(bot, fixed_response)
+        ctx.should_call_send(
+            fixed_response,
+            "请选择生效范围：\n1. 当前群（默认）\n2. 所有群\n3. 仅自己\n4. 仅私聊",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        scope = _private_message_event("3", message_id=105)
+        ctx.receive_event(bot, scope)
+        ctx.should_call_send(
+            scope,
+            "是否需要高级选项？发送 n 跳过；需要请直接输入参数，例如 "
+            "--mode fullmatch --prob 0.5 --weight 3 --role admin --call 60:0:3",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        advanced = _private_message_event("n", message_id=106)
+        ctx.receive_event(bot, advanced)
+        ctx.should_call_send(
+            advanced,
+            Message(
+                "词条已提交审核\n"
+                "ID: 302\n"
+                "状态: pending\n"
+                "触发: 晚安\n"
+                "响应: 做个好梦\n"
+                "模式: contains\n"
+                "范围: self\n"
+                "概率: 1\n"
+                "权重: 3\n"
+                "管理员通过前不会触发。"
+            ),
+            bot=bot,
+            result={"message_id": 7005},
+        )
+        ctx.should_finished(wordbank_plugin.wordbank_add_command)
+
+    add_text_entry.assert_awaited_once_with(
+        trigger_text="晚安",
+        response_text="早点休息",
+        response_canonical_image_id=None,
+        trigger_mode=None,
+        raw_rule={"scope": "self"},
+        group_id="",
+        user_id="10001",
+        is_group=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_wordbank_add_recall_of_older_step_is_ignored(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_text_entry = _patch_wordbank_services(monkeypatch)
+
+    async with app.test_matcher(
+        {
+            0: [],
+            5: [wordbank_plugin.wordbank_add_command],
+            95: [wordbank_plugin.wordbank_notice],
+        }
+    ) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        first = _message_event("#wordbank.add", message_id=111)
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            "请输入触发词，或直接发送图片作为图片触发：",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        trigger = _message_event("晚安", message_id=112)
+        ctx.receive_event(bot, trigger)
+        ctx.should_call_send(
+            trigger,
+            "请输入响应词，或发送图片作为图片回复：",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        response = _message_event("做个好梦", message_id=113)
+        ctx.receive_event(bot, response)
+        ctx.should_call_send(
+            response,
+            "请选择生效范围：\n1. 当前群（默认）\n2. 所有群\n3. 仅自己\n4. 仅私聊",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        recall_old = build_group_recall_event(message_id=112)
+        ctx.receive_event(bot, recall_old)
+
+        scope = _message_event("1", message_id=114)
+        ctx.receive_event(bot, scope)
+        ctx.should_call_send(
+            scope,
+            "是否需要高级选项？发送 n 跳过；需要请直接输入参数，例如 "
+            "--mode fullmatch --prob 0.5 --weight 3 --role admin --call 60:0:3",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+    add_text_entry.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_wordbank_add_guided_flow_reports_pending_images_before_finish(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_text_entry = _patch_wordbank_services(
+        monkeypatch,
+        add_result=_add_result(entry_id=402),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "_wordbank_guided_pending_image_count",
+        lambda state: 2,
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_add_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        first = _message_event("#wordbank.add", message_id=121)
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            "请输入触发词，或直接发送图片作为图片触发：",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        trigger = _message_event("晚安", message_id=122)
+        ctx.receive_event(bot, trigger)
+        ctx.should_call_send(
+            trigger,
+            "请输入响应词，或发送图片作为图片回复：",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        response = _message_event("做个好梦", message_id=123)
+        ctx.receive_event(bot, response)
+        ctx.should_call_send(
+            response,
+            "请选择生效范围：\n1. 当前群（默认）\n2. 所有群\n3. 仅自己\n4. 仅私聊",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        scope = _message_event("1", message_id=124)
+        ctx.receive_event(bot, scope)
+        ctx.should_call_send(
+            scope,
+            "是否需要高级选项？发送 n 跳过；需要请直接输入参数，例如 "
+            "--mode fullmatch --prob 0.5 --weight 3 --role admin --call 60:0:3",
+            bot=bot,
+        )
+        ctx.should_paused(wordbank_plugin.wordbank_add_command)
+
+        advanced = _message_event("n", message_id=125)
+        ctx.receive_event(bot, advanced)
+        ctx.should_call_send(
+            advanced,
+            "还有 2 张图片正在处理中，请稍等。",
+            bot=bot,
+        )
+        ctx.should_call_send(
+            advanced,
+            Message(
+                "词条已提交审核\n"
+                "ID: 402\n"
+                "状态: pending\n"
+                "触发: 晚安\n"
+                "响应: 做个好梦\n"
+                "模式: contains\n"
+                "范围: current_group\n"
+                "概率: 1\n"
+                "权重: 3\n"
+                "管理员通过前不会触发。"
+            ),
+            bot=bot,
+            result={"message_id": 7006},
+        )
+        ctx.should_finished(wordbank_plugin.wordbank_add_command)
+
+    add_text_entry.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_wordbank_passive_message_sends_and_records_response(
     app: App,
     monkeypatch: pytest.MonkeyPatch,

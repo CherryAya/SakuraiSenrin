@@ -6,13 +6,19 @@ LastEditTime: 2026-04-04 15:09:39
 Description: 插件入口
 """
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from nonebot import get_driver, on_message, on_notice
 from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.bot import Bot
-from nonebot.adapters.onebot.v11.event import MessageEvent, NoticeEvent
+from nonebot.adapters.onebot.v11.event import (
+    FriendRecallNoticeEvent,
+    GroupRecallNoticeEvent,
+    MessageEvent,
+    NoticeEvent,
+)
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
@@ -28,6 +34,17 @@ from src.lib.interaction import (
     abort_if_revoke_signal,
     clear_interaction_errors,
     reject_or_abort_on_error,
+)
+from src.lib.interactive_recall import (
+    INTERACTION_ROOT_MESSAGE_ID,
+    INTERACTION_SESSION_KEY,
+    cancel_state_resources,
+    find_recall_session,
+    get_interaction_session_key,
+    is_supported_recall_notice,
+    rebuild_temp_matcher,
+    register_recall_checkpoint,
+    register_root_message,
 )
 from src.lib.plugin_docs import (
     DocsRenderContext,
@@ -108,6 +125,14 @@ __plugin_meta__ = create_plugin_metadata(
 
 _wordbank_initialized = False
 GUIDED_MAX_ERRORS = 3
+WORDBANK_GUIDED_STEP_TRIGGER = 1
+WORDBANK_GUIDED_STEP_RESPONSE = 2
+WORDBANK_GUIDED_STEP_SCOPE = 3
+WORDBANK_GUIDED_STEP_ADVANCED = 4
+WORDBANK_GUIDED_RECALL_PENDING_KEYS = (
+    "wordbank_guided_trigger_image_pending",
+    "wordbank_guided_response_image_pending",
+)
 
 
 async def initialize_wordbank_plugin() -> None:
@@ -377,6 +402,8 @@ async def _record_guided_trigger(
         )
         return
     clear_interaction_errors(state)
+    locale = _wordbank_guided_locale(state)
+    snapshot = _copy_guided_state(state, keep_keys=())
     if pending_image is not None:
         state["wordbank_guided_trigger"] = ""
         state["wordbank_guided_trigger_image_pending"] = pending_image
@@ -385,6 +412,14 @@ async def _record_guided_trigger(
         state["wordbank_guided_trigger"] = text
         state.pop("wordbank_guided_trigger_image_pending", None)
         state.pop("wordbank_guided_trigger_image_id", None)
+    _register_guided_checkpoint(
+        state,
+        event,
+        step_index=WORDBANK_GUIDED_STEP_TRIGGER,
+        locale=locale,
+        snapshot=snapshot,
+        cleanup_keys=WORDBANK_GUIDED_RECALL_PENDING_KEYS,
+    )
     await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
 
 
@@ -405,6 +440,15 @@ async def _record_guided_response(
         )
         return
     clear_interaction_errors(state)
+    locale = _wordbank_guided_locale(state)
+    snapshot = _copy_guided_state(
+        state,
+        keep_keys=(
+            "wordbank_guided_trigger",
+            "wordbank_guided_trigger_image_pending",
+            "wordbank_guided_trigger_image_id",
+        ),
+    )
     state["wordbank_guided_response"] = text
     if pending_image is not None:
         state["wordbank_guided_response_image_pending"] = pending_image
@@ -412,6 +456,14 @@ async def _record_guided_response(
     else:
         state.pop("wordbank_guided_response_image_pending", None)
         state.pop("wordbank_guided_response_image_id", None)
+    _register_guided_checkpoint(
+        state,
+        event,
+        step_index=WORDBANK_GUIDED_STEP_RESPONSE,
+        locale=locale,
+        snapshot=snapshot,
+        cleanup_keys=("wordbank_guided_response_image_pending",),
+    )
     await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
 
 
@@ -425,9 +477,10 @@ async def _start_guided_add_with_trigger_image(
     state["wordbank_locale"] = locale
     pending_image = _start_guided_image_task(event)
     if pending_image is None:
-        await _start_guided_add(matcher, state, locale)
+        await _start_guided_add(matcher, event, state, locale)
         return
     clear_interaction_errors(state)
+    register_root_message(state, event)
     state["wordbank_guided_trigger"] = ""
     state["wordbank_guided_trigger_image_pending"] = pending_image
     state.pop("wordbank_guided_trigger_image_id", None)
@@ -461,13 +514,121 @@ async def _reject_guided_error(
     )
 
 
+def _wordbank_guided_locale(state: Mapping[str, Any]) -> LocaleCode:
+    locale = state.get("wordbank_locale", "zh-CN")
+    return locale if locale in {"zh-CN", "lzh", "x-meme"} else "zh-CN"
+
+
+def _copy_guided_state(
+    state: Mapping[str, Any],
+    *,
+    keep_keys: tuple[str, ...],
+) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {}
+    for key, value in state.items():
+        if key.startswith("__nonebug"):
+            snapshot[key] = value
+    session_key = get_interaction_session_key(state)
+    if session_key is not None:
+        snapshot[INTERACTION_SESSION_KEY] = session_key
+    if "wordbank_locale" in state:
+        snapshot["wordbank_locale"] = state["wordbank_locale"]
+    if INTERACTION_ROOT_MESSAGE_ID in state:
+        snapshot[INTERACTION_ROOT_MESSAGE_ID] = state[INTERACTION_ROOT_MESSAGE_ID]
+    for key in keep_keys:
+        if key in state:
+            snapshot[key] = state[key]
+    clear_interaction_errors(snapshot)
+    return snapshot
+
+
+def _guided_prompt_for_step(locale: LocaleCode, step_index: int) -> str:
+    prompt_by_step = {
+        WORDBANK_GUIDED_STEP_TRIGGER: tr(locale, "wordbank.guided.add.trigger_prompt"),
+        WORDBANK_GUIDED_STEP_RESPONSE: tr(
+            locale,
+            "wordbank.guided.add.response_prompt",
+        ),
+        WORDBANK_GUIDED_STEP_SCOPE: tr(locale, "wordbank.guided.add.scope_prompt"),
+        WORDBANK_GUIDED_STEP_ADVANCED: tr(
+            locale,
+            "wordbank.guided.add.advanced_prompt",
+        ),
+    }
+    return prompt_by_step[step_index]
+
+
+def _register_guided_checkpoint(
+    state: T_State,
+    event: MessageEvent,
+    *,
+    step_index: int,
+    locale: LocaleCode,
+    snapshot: Mapping[str, Any],
+    cleanup_keys: tuple[str, ...] = (),
+) -> None:
+    register_recall_checkpoint(
+        state,
+        message_id=getattr(event, "message_id", ""),
+        step_index=step_index,
+        prompt=_guided_prompt_for_step(locale, step_index),
+        state_snapshot=snapshot,
+        cleanup_keys=cleanup_keys,
+    )
+
+
+async def _cancel_pending_guided_image_task(
+    state: Mapping[str, Any],
+    key: str,
+) -> None:
+    pending = _state_pending_image(dict(state), key)
+    if pending is None or pending.task.done():
+        return
+    pending.task.cancel()
+
+
+async def _cancel_guided_resources(
+    state: Mapping[str, Any],
+    cleanup_keys: tuple[str, ...] = WORDBANK_GUIDED_RECALL_PENDING_KEYS,
+) -> None:
+    await cancel_state_resources(
+        state,
+        cleanup_keys,
+        cleaners={
+            "wordbank_guided_trigger_image_pending": (
+                lambda: _cancel_pending_guided_image_task(
+                    state,
+                    "wordbank_guided_trigger_image_pending",
+                )
+            ),
+            "wordbank_guided_response_image_pending": (
+                lambda: _cancel_pending_guided_image_task(
+                    state,
+                    "wordbank_guided_response_image_pending",
+                )
+            ),
+        },
+    )
+
+
+def _wordbank_guided_pending_image_count(state: Mapping[str, Any]) -> int:
+    count = 0
+    for key in WORDBANK_GUIDED_RECALL_PENDING_KEYS:
+        pending = _state_pending_image(dict(state), key)
+        if pending is not None and not pending.task.done():
+            count += 1
+    return count
+
+
 async def _start_guided_add(
     matcher: Matcher,
+    event: MessageEvent,
     state: T_State,
     locale: LocaleCode,
 ) -> None:
     await initialize_wordbank_plugin()
     state["wordbank_locale"] = locale
+    register_root_message(state, event)
     await matcher.pause(tr(locale, "wordbank.guided.add.trigger_prompt"))
 
 
@@ -477,8 +638,17 @@ async def _finish_guided_add(
     event: MessageEvent,
     state: T_State,
 ) -> None:
-    locale = state.get("wordbank_locale", "zh-CN")
+    locale = _wordbank_guided_locale(state)
     try:
+        pending_count = _wordbank_guided_pending_image_count(state)
+        if pending_count:
+            await matcher.send(
+                tr(
+                    locale,
+                    "wordbank.guided.add.pending_images",
+                    count=pending_count,
+                )
+            )
         trigger_image_id = await _resolve_state_image_id(
             state,
             id_key="wordbank_guided_trigger_image_id",
@@ -542,7 +712,7 @@ async def _(
                     locale,
                 )
             else:
-                await _start_guided_add(matcher, state, locale)
+                await _start_guided_add(matcher, event, state, locale)
             return
     await initialize_wordbank_plugin()
     await _handle_wordbank_command_message(bot, matcher, event, arg)
@@ -581,6 +751,24 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         )
         return
     clear_interaction_errors(state)
+    locale = _wordbank_guided_locale(state)
+    _register_guided_checkpoint(
+        state,
+        event,
+        step_index=WORDBANK_GUIDED_STEP_SCOPE,
+        locale=locale,
+        snapshot=_copy_guided_state(
+            state,
+            keep_keys=(
+                "wordbank_guided_trigger",
+                "wordbank_guided_response",
+                "wordbank_guided_trigger_image_pending",
+                "wordbank_guided_trigger_image_id",
+                "wordbank_guided_response_image_pending",
+                "wordbank_guided_response_image_id",
+            ),
+        ),
+    )
     state["wordbank_guided_scope"] = text
     await matcher.pause(tr(locale, "wordbank.guided.add.advanced_prompt"))
 
@@ -600,6 +788,25 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
         )
         return
     clear_interaction_errors(state)
+    locale = _wordbank_guided_locale(state)
+    _register_guided_checkpoint(
+        state,
+        event,
+        step_index=WORDBANK_GUIDED_STEP_ADVANCED,
+        locale=locale,
+        snapshot=_copy_guided_state(
+            state,
+            keep_keys=(
+                "wordbank_guided_trigger",
+                "wordbank_guided_response",
+                "wordbank_guided_scope",
+                "wordbank_guided_trigger_image_pending",
+                "wordbank_guided_trigger_image_id",
+                "wordbank_guided_response_image_pending",
+                "wordbank_guided_response_image_id",
+            ),
+        ),
+    )
     await _finish_guided_add(bot, matcher, event, state)
 
 
@@ -615,7 +822,7 @@ async def _(
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     await _abort_guided_on_revoke(matcher, event, locale)
     if not arg.extract_plain_text().strip() and not extract_image_urls(arg):
-        await _start_guided_add(matcher, state, locale)
+        await _start_guided_add(matcher, event, state, locale)
         return
     if not arg.extract_plain_text().strip() and extract_image_urls(arg):
         await _start_guided_add_with_trigger_image(matcher, event, state, locale)
@@ -662,6 +869,24 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         )
         return
     clear_interaction_errors(state)
+    locale = _wordbank_guided_locale(state)
+    _register_guided_checkpoint(
+        state,
+        event,
+        step_index=WORDBANK_GUIDED_STEP_SCOPE,
+        locale=locale,
+        snapshot=_copy_guided_state(
+            state,
+            keep_keys=(
+                "wordbank_guided_trigger",
+                "wordbank_guided_response",
+                "wordbank_guided_trigger_image_pending",
+                "wordbank_guided_trigger_image_id",
+                "wordbank_guided_response_image_pending",
+                "wordbank_guided_response_image_id",
+            ),
+        ),
+    )
     state["wordbank_guided_scope"] = text
     await matcher.pause(tr(locale, "wordbank.guided.add.advanced_prompt"))
 
@@ -681,6 +906,25 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
         )
         return
     clear_interaction_errors(state)
+    locale = _wordbank_guided_locale(state)
+    _register_guided_checkpoint(
+        state,
+        event,
+        step_index=WORDBANK_GUIDED_STEP_ADVANCED,
+        locale=locale,
+        snapshot=_copy_guided_state(
+            state,
+            keep_keys=(
+                "wordbank_guided_trigger",
+                "wordbank_guided_response",
+                "wordbank_guided_scope",
+                "wordbank_guided_trigger_image_pending",
+                "wordbank_guided_trigger_image_id",
+                "wordbank_guided_response_image_pending",
+                "wordbank_guided_response_image_id",
+            ),
+        ),
+    )
     await _finish_guided_add(bot, matcher, event, state)
 
 
@@ -920,6 +1164,37 @@ async def _(bot: Bot, event: MessageEvent) -> None:
 
 @wordbank_notice.handle()
 async def _(bot: Bot, event: NoticeEvent) -> None:
+    if is_supported_recall_notice(event):
+        recall_event = cast(GroupRecallNoticeEvent | FriendRecallNoticeEvent, event)
+        for matcher_source in (wordbank_add_command, wordbank_command):
+            session = find_recall_session(matcher_source, recall_event)
+            if session is None:
+                continue
+
+            state = session.matcher_cls._default_state
+            locale = _wordbank_guided_locale(state)
+            checkpoint = session.checkpoint
+            await _cancel_guided_resources(
+                state,
+                checkpoint.cleanup_keys
+                if checkpoint is not None and not session.is_root_message
+                else WORDBANK_GUIDED_RECALL_PENDING_KEYS,
+            )
+            session.matcher_cls.destroy()
+
+            if session.is_root_message or checkpoint is None:
+                await wordbank_notice.send(tr(locale, "interaction.cancelled"))
+                return
+
+            rebuild_temp_matcher(
+                session.matcher_cls,
+                matcher_source,
+                step_index=checkpoint.step_index,
+                state=checkpoint.state_snapshot,
+            )
+            await wordbank_notice.send(checkpoint.prompt)
+            return
+
     await initialize_wordbank_plugin()
     try:
         response = await handle_passive_notice(bot, event, wordbank_service)
