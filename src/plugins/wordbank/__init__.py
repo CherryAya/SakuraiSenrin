@@ -43,11 +43,14 @@ from .handlers import (
     build_forced_command_text,
     dispatch_wordbank_command,
     extract_image_urls,
+    fetch_first_image_bytes_from_message,
     handle_add_with_media,
+    handle_guided_add_image_trigger,
     handle_guided_add_text,
     handle_passive_message,
     handle_passive_notice,
     handle_reply_command,
+    ingest_first_image_from_message,
     is_reply,
     localize_command_error,
 )
@@ -183,14 +186,9 @@ async def _handle_wordbank_command_message(
     text = build_forced_command_text(forced_action, arg.extract_plain_text())
     action = text.split(maxsplit=1)[0].lower() if text else ""
     if action in {"add", "添加", "学习"}:
-        urls = extract_image_urls(arg)
-        if urls:
-            from .handlers.passive import fetch_image_bytes
-
-            data = await fetch_image_bytes(urls[0])
-            if data is None:
-                await matcher.finish(tr(locale, "wordbank.error.image_download_failed"))
-            try:
+        try:
+            data = await fetch_first_image_bytes_from_message(arg)
+            if data is not None:
                 _, _, rest = text.partition(" ")
                 msg = await handle_add_with_media(
                     wordbank_service,
@@ -200,9 +198,9 @@ async def _handle_wordbank_command_message(
                     text=rest,
                     locale=locale,
                 )
-            except (RuleError, ValueError) as exc:
-                await matcher.finish(localize_command_error(exc, locale))
-            await matcher.finish(msg)
+                await matcher.finish(msg)
+        except (RuleError, ValueError) as exc:
+            await matcher.finish(localize_command_error(exc, locale))
 
     try:
         msg = await dispatch_wordbank_command(
@@ -214,6 +212,106 @@ async def _handle_wordbank_command_message(
     except (RuleError, ValueError) as exc:
         await matcher.finish(localize_command_error(exc, locale))
     await matcher.finish(msg)
+
+
+def _state_image_id(state: T_State, key: str) -> int | None:
+    value = state.get(key)
+    return int(value) if value is not None else None
+
+
+async def _ingest_guided_image(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+) -> int | None:
+    try:
+        image = await ingest_first_image_from_message(
+            wordbank_media_service,
+            event.message,
+        )
+    except (RuleError, ValueError) as exc:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            localize_command_error(exc, locale),
+        )
+        return None
+    return image.canonical_id if image is not None else None
+
+
+async def _record_guided_trigger(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+) -> None:
+    text = event.message.extract_plain_text().strip()
+    image_id = await _ingest_guided_image(matcher, event, state, locale)
+    if image_id is None and extract_image_urls(event.message):
+        return
+    if image_id is None and not text:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            tr(locale, "wordbank.error.trigger_empty"),
+        )
+        return
+    clear_interaction_errors(state)
+    if image_id is not None:
+        state["wordbank_guided_trigger"] = ""
+        state["wordbank_guided_trigger_image_id"] = image_id
+    else:
+        state["wordbank_guided_trigger"] = text
+        state.pop("wordbank_guided_trigger_image_id", None)
+    await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
+
+
+async def _record_guided_response(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+) -> None:
+    text = event.message.extract_plain_text().strip()
+    image_id = await _ingest_guided_image(matcher, event, state, locale)
+    if image_id is None and extract_image_urls(event.message):
+        return
+    if image_id is None and not text:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            tr(locale, "wordbank.error.response_empty"),
+        )
+        return
+    clear_interaction_errors(state)
+    state["wordbank_guided_response"] = text
+    if image_id is not None:
+        state["wordbank_guided_response_image_id"] = image_id
+    else:
+        state.pop("wordbank_guided_response_image_id", None)
+    await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
+
+
+async def _start_guided_add_with_trigger_image(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+) -> None:
+    await initialize_wordbank_plugin()
+    state["wordbank_locale"] = locale
+    image_id = await _ingest_guided_image(matcher, event, state, locale)
+    if image_id is None:
+        await _start_guided_add(matcher, state, locale)
+        return
+    clear_interaction_errors(state)
+    state["wordbank_guided_trigger"] = ""
+    state["wordbank_guided_trigger_image_id"] = image_id
+    await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
 
 
 async def _abort_guided_on_revoke(
@@ -260,15 +358,30 @@ async def _finish_guided_add(
 ) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     try:
-        msg = await handle_guided_add_text(
-            wordbank_service,
-            event=event,
-            trigger_text=str(state.get("wordbank_guided_trigger", "")),
-            response_text=str(state.get("wordbank_guided_response", "")),
-            scope_text=str(state.get("wordbank_guided_scope", "")),
-            advanced_text=event.message.extract_plain_text(),
-            locale=locale,
-        )
+        trigger_image_id = _state_image_id(state, "wordbank_guided_trigger_image_id")
+        response_image_id = _state_image_id(state, "wordbank_guided_response_image_id")
+        if trigger_image_id is not None:
+            msg = await handle_guided_add_image_trigger(
+                wordbank_service,
+                event=event,
+                trigger_canonical_image_id=trigger_image_id,
+                response_text=str(state.get("wordbank_guided_response", "")),
+                response_canonical_image_id=response_image_id,
+                scope_text=str(state.get("wordbank_guided_scope", "")),
+                advanced_text=event.message.extract_plain_text(),
+                locale=locale,
+            )
+        else:
+            msg = await handle_guided_add_text(
+                wordbank_service,
+                event=event,
+                trigger_text=str(state.get("wordbank_guided_trigger", "")),
+                response_text=str(state.get("wordbank_guided_response", "")),
+                response_canonical_image_id=response_image_id,
+                scope_text=str(state.get("wordbank_guided_scope", "")),
+                advanced_text=event.message.extract_plain_text(),
+                locale=locale,
+            )
     except (RuleError, ValueError) as exc:
         await _reject_guided_error(
             matcher,
@@ -292,12 +405,16 @@ async def _(
     text = arg.extract_plain_text().strip()
     if text:
         first, _, tail = text.partition(" ")
-        if (
-            first.lower() in {"add", "添加", "学习"}
-            and not tail.strip()
-            and not extract_image_urls(arg)
-        ):
-            await _start_guided_add(matcher, state, locale)
+        if first.lower() in {"add", "添加", "学习"} and not tail.strip():
+            if extract_image_urls(arg):
+                await _start_guided_add_with_trigger_image(
+                    matcher,
+                    event,
+                    state,
+                    locale,
+                )
+            else:
+                await _start_guided_add(matcher, state, locale)
             return
     await initialize_wordbank_plugin()
     await _handle_wordbank_command_message(matcher, event, arg)
@@ -307,36 +424,14 @@ async def _(
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    text = event.message.extract_plain_text().strip()
-    if not text:
-        await _reject_guided_error(
-            matcher,
-            state,
-            locale,
-            tr(locale, "wordbank.error.trigger_empty"),
-        )
-        return
-    clear_interaction_errors(state)
-    state["wordbank_guided_trigger"] = text
-    await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
+    await _record_guided_trigger(matcher, event, state, locale)
 
 
 @wordbank_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    text = event.message.extract_plain_text().strip()
-    if not text:
-        await _reject_guided_error(
-            matcher,
-            state,
-            locale,
-            tr(locale, "wordbank.error.response_empty"),
-        )
-        return
-    clear_interaction_errors(state)
-    state["wordbank_guided_response"] = text
-    await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
+    await _record_guided_response(matcher, event, state, locale)
 
 
 @wordbank_command.handle()
@@ -393,6 +488,9 @@ async def _(
     if not arg.extract_plain_text().strip() and not extract_image_urls(arg):
         await _start_guided_add(matcher, state, locale)
         return
+    if not arg.extract_plain_text().strip() and extract_image_urls(arg):
+        await _start_guided_add_with_trigger_image(matcher, event, state, locale)
+        return
     await _handle_wordbank_command_message(matcher, event, arg, forced_action="add")
 
 
@@ -400,36 +498,14 @@ async def _(
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    text = event.message.extract_plain_text().strip()
-    if not text:
-        await _reject_guided_error(
-            matcher,
-            state,
-            locale,
-            tr(locale, "wordbank.error.trigger_empty"),
-        )
-        return
-    clear_interaction_errors(state)
-    state["wordbank_guided_trigger"] = text
-    await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
+    await _record_guided_trigger(matcher, event, state, locale)
 
 
 @wordbank_add_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    text = event.message.extract_plain_text().strip()
-    if not text:
-        await _reject_guided_error(
-            matcher,
-            state,
-            locale,
-            tr(locale, "wordbank.error.response_empty"),
-        )
-        return
-    clear_interaction_errors(state)
-    state["wordbank_guided_response"] = text
-    await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
+    await _record_guided_response(matcher, event, state, locale)
 
 
 @wordbank_add_command.handle()

@@ -105,6 +105,212 @@ async def _reject_study_error(
     )
 
 
+def _state_image_id(state: T_State, key: str) -> int | None:
+    value = state.get(key)
+    return int(value) if value is not None else None
+
+
+def _is_truthy_state_flag(state: T_State, key: str) -> bool:
+    return bool(state.get(key, False))
+
+
+async def _ingest_study_image(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+) -> int | None:
+    from src.plugins.wordbank.handlers import (
+        ingest_first_image_from_message,
+        localize_command_error,
+    )
+    from src.plugins.wordbank.services import wordbank_media_service
+    from src.plugins.wordbank.services.rules import RuleError
+
+    try:
+        image = await ingest_first_image_from_message(
+            wordbank_media_service,
+            event.message,
+        )
+    except (RuleError, ValueError) as exc:
+        await _reject_study_error(
+            matcher,
+            state,
+            locale,
+            localize_command_error(exc, locale),
+        )
+        return None
+    return image.canonical_id if image is not None else None
+
+
+async def _record_study_trigger(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+) -> None:
+    from src.plugins.wordbank.handlers import extract_image_urls
+
+    text = event.message.extract_plain_text().strip()
+    image_id = await _ingest_study_image(matcher, event, state, locale)
+    if image_id is None and extract_image_urls(event.message):
+        return
+    if image_id is None and not text:
+        await _reject_study_error(
+            matcher,
+            state,
+            locale,
+            tr(locale, "wordbank.error.trigger_empty"),
+        )
+        return
+    clear_interaction_errors(state)
+    if image_id is not None:
+        state["study_trigger"] = ""
+        state["study_trigger_image_id"] = image_id
+    else:
+        state["study_trigger"] = text
+        state.pop("study_trigger_image_id", None)
+    await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
+
+
+async def _record_study_response(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+) -> None:
+    from src.plugins.wordbank.handlers import extract_image_urls
+
+    text = event.message.extract_plain_text().strip()
+    image_id = await _ingest_study_image(matcher, event, state, locale)
+    if image_id is None and extract_image_urls(event.message):
+        return
+    if image_id is None and not text:
+        await _reject_study_error(
+            matcher,
+            state,
+            locale,
+            tr(locale, "wordbank.error.response_empty"),
+        )
+        return
+    clear_interaction_errors(state)
+    state["study_response"] = text
+    if image_id is not None:
+        state["study_response_image_id"] = image_id
+    else:
+        state.pop("study_response_image_id", None)
+    await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
+
+
+async def _record_study_weight_and_finish(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+) -> None:
+    from src.plugins.wordbank.handlers.commands import (
+        localize_command_error,
+        parse_guided_weight,
+    )
+    from src.plugins.wordbank.services.rules import RuleError
+
+    try:
+        parse_guided_weight(event.message.extract_plain_text())
+    except RuleError as exc:
+        await _reject_study_error(
+            matcher,
+            state,
+            locale,
+            localize_command_error(exc, locale),
+        )
+        return
+    clear_interaction_errors(state)
+    await _finish_guided_study(matcher, event, state, locale)
+
+
+async def _finish_guided_study(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+) -> None:
+    from src.plugins.wordbank.handlers import (
+        handle_guided_study_image_trigger,
+        handle_guided_study_shortcut,
+    )
+    from src.plugins.wordbank.handlers.commands import localize_command_error
+    from src.plugins.wordbank.services import wordbank_service
+    from src.plugins.wordbank.services.rules import RuleError
+
+    trigger_image_id = _state_image_id(state, "study_trigger_image_id")
+    response_image_id = _state_image_id(state, "study_response_image_id")
+    try:
+        if trigger_image_id is not None:
+            msg = await handle_guided_study_image_trigger(
+                wordbank_service,
+                event=event,
+                trig_mode_text=str(state.get("study_trig_mode", "")),
+                group_block_text=str(state.get("study_group_block", "")),
+                trigger_canonical_image_id=trigger_image_id,
+                response_text=str(state.get("study_response", "")),
+                response_canonical_image_id=response_image_id,
+                weight_text=event.message.extract_plain_text(),
+                locale=locale,
+            )
+        else:
+            msg = await handle_guided_study_shortcut(
+                wordbank_service,
+                event=event,
+                trig_mode_text=str(state.get("study_trig_mode", "")),
+                group_block_text=str(state.get("study_group_block", "")),
+                trigger_text=str(state.get("study_trigger", "")),
+                response_text=str(state.get("study_response", "")),
+                response_canonical_image_id=response_image_id,
+                weight_text=event.message.extract_plain_text(),
+                locale=locale,
+            )
+    except (RuleError, ValueError) as exc:
+        await _reject_study_error(
+            matcher,
+            state,
+            locale,
+            localize_command_error(exc, locale),
+        )
+        return
+    await matcher.finish(msg)
+
+
+async def _start_guided_study_with_trigger_image(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+    arg: Message,
+) -> None:
+    from src.plugins.wordbank.handlers import (
+        ingest_first_image_from_message,
+        localize_command_error,
+    )
+    from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
+    from src.plugins.wordbank.services.rules import RuleError
+
+    await wordbank_service.initialize()
+    state["study_locale"] = locale
+    try:
+        image = await ingest_first_image_from_message(wordbank_media_service, arg)
+    except (RuleError, ValueError) as exc:
+        await matcher.finish(localize_command_error(exc, locale))
+        return
+    if image is None:
+        await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
+        return
+    clear_interaction_errors(state)
+    state["study_trigger"] = ""
+    state["study_trigger_image_id"] = image.canonical_id
+    state["study_trigger_preloaded"] = True
+    await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
+
+
 @study_command.handle()
 async def _(
     matcher: Matcher,
@@ -112,24 +318,40 @@ async def _(
     state: T_State,
     arg: Message = CommandArg(),
 ) -> None:
-    from src.plugins.wordbank.handlers import handle_study_shortcut
+    from src.plugins.wordbank.handlers import (
+        extract_image_urls,
+        fetch_first_image_bytes_from_message,
+        handle_study_with_media,
+    )
     from src.plugins.wordbank.handlers.commands import localize_command_error
-    from src.plugins.wordbank.services import wordbank_service
+    from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
     from src.plugins.wordbank.services.rules import RuleError
 
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     await _abort_study_on_revoke(matcher, event, locale)
-    if not arg.extract_plain_text().strip():
+    arg_text = arg.extract_plain_text().strip()
+    if not arg_text:
+        if extract_image_urls(arg):
+            await _start_guided_study_with_trigger_image(
+                matcher,
+                event,
+                state,
+                locale,
+                arg,
+            )
+            return
         await wordbank_service.initialize()
         state["study_locale"] = locale
         await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
         return
     await wordbank_service.initialize()
     try:
-        msg = await handle_study_shortcut(
+        msg = await handle_study_with_media(
             wordbank_service,
+            wordbank_media_service,
             event=event,
             text=arg.extract_plain_text(),
+            image_bytes=await fetch_first_image_bytes_from_message(arg),
             locale=locale,
         )
     except (RuleError, ValueError) as exc:
@@ -191,6 +413,10 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         return
     clear_interaction_errors(state)
     state["study_group_block"] = text
+    if _is_truthy_state_flag(state, "study_trigger_preloaded"):
+        state["study_response_after_preloaded_trigger"] = True
+        await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
+        return
     await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
 
 
@@ -198,78 +424,25 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    text = event.message.extract_plain_text().strip()
-    if not text:
-        await _reject_study_error(
-            matcher,
-            state,
-            locale,
-            tr(locale, "wordbank.error.trigger_empty"),
-        )
+    if _is_truthy_state_flag(state, "study_response_after_preloaded_trigger"):
+        state["study_weight_after_preloaded_trigger"] = True
+        await _record_study_response(matcher, event, state, locale)
         return
-    clear_interaction_errors(state)
-    state["study_trigger"] = text
-    await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
+    await _record_study_trigger(matcher, event, state, locale)
 
 
 @study_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    text = event.message.extract_plain_text().strip()
-    if not text:
-        await _reject_study_error(
-            matcher,
-            state,
-            locale,
-            tr(locale, "wordbank.error.response_empty"),
-        )
+    if _is_truthy_state_flag(state, "study_weight_after_preloaded_trigger"):
+        await _record_study_weight_and_finish(matcher, event, state, locale)
         return
-    clear_interaction_errors(state)
-    state["study_response"] = text
-    await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
+    await _record_study_response(matcher, event, state, locale)
 
 
 @study_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    from src.plugins.wordbank.handlers import handle_guided_study_shortcut
-    from src.plugins.wordbank.handlers.commands import (
-        localize_command_error,
-        parse_guided_weight,
-    )
-    from src.plugins.wordbank.services import wordbank_service
-    from src.plugins.wordbank.services.rules import RuleError
-
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    try:
-        parse_guided_weight(event.message.extract_plain_text())
-    except RuleError as exc:
-        await _reject_study_error(
-            matcher,
-            state,
-            locale,
-            localize_command_error(exc, locale),
-        )
-        return
-    clear_interaction_errors(state)
-    try:
-        msg = await handle_guided_study_shortcut(
-            wordbank_service,
-            event=event,
-            trig_mode_text=str(state.get("study_trig_mode", "")),
-            group_block_text=str(state.get("study_group_block", "")),
-            trigger_text=str(state.get("study_trigger", "")),
-            response_text=str(state.get("study_response", "")),
-            weight_text=event.message.extract_plain_text(),
-            locale=locale,
-        )
-    except (RuleError, ValueError) as exc:
-        await _reject_study_error(
-            matcher,
-            state,
-            locale,
-            localize_command_error(exc, locale),
-        )
-        return
-    await matcher.finish(msg)
+    await _record_study_weight_and_finish(matcher, event, state, locale)

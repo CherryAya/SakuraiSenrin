@@ -171,13 +171,14 @@ class WordbankService:
         *,
         canonical_image_id: int,
         response_text: str,
+        response_canonical_image_id: int | None = None,
         group_id: str,
         user_id: str,
         is_group: bool,
         raw_rule: dict[str, Any] | None = None,
     ) -> WordbankAddResult:
         response_text = response_text.strip()
-        if not response_text:
+        if not response_text and response_canonical_image_id is None:
             raise WordbankUserError(
                 "响应词不能为空",
                 key="wordbank.error.response_empty",
@@ -191,6 +192,7 @@ class WordbankService:
         entry = await self.repository.create_image_entry(
             canonical_image_id=canonical_image_id,
             response_text=response_text,
+            response_canonical_image_id=response_canonical_image_id,
             rule=dict(rule.rule),
             scope=rule.scope,
             priority=rule.priority,
@@ -208,6 +210,10 @@ class WordbankService:
             scope=rule.scope,
             probability=rule.probability,
             weight=rule.weight,
+            response_kind=(
+                "image" if response_canonical_image_id is not None else "text"
+            ),
+            response_canonical_image_id=response_canonical_image_id,
         )
 
     async def delete_entry(

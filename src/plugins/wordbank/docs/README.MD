@@ -1,7 +1,7 @@
 # 词库模块
 
 ## 概览
-词库模块提供低资源优先的群聊词库能力。`wordbank` 负责完整词库管理、运行时匹配、图片指纹和日志；`study` 只是快捷添加入口。运行时使用内存索引匹配文本、图片和事件触发词，普通文本消息路径不查询数据库；新增、删除、恢复后通过延迟重建刷新索引。检测到 `revoke` / `recall` 相关信号时会直接跳过匹配，不回复也不写日志；`wordbank / 词库 / wordbank.help` 可查看帮助，`wordbank add` / `wordbank.add` / `添加词条` 的引导流程里如果收到撤回信号，会发送取消提示并中止，连续输错 3 次也会终止。图片回复和图片触发都统一走 `wordbank add`，不再提供单独的图片子命令。为兼容旧入口，`wordbank.add`、`wordbank.search`、`wordbank.delete`、`wordbank.restore`、`wordbank.support`、`wordbank.vote` 和常用中文直达命令会自动转入对应新版子命令。
+词库模块提供低资源优先的群聊词库能力。`wordbank` 负责完整词库管理、运行时匹配、图片指纹和日志；`study` 只是快捷添加入口，内部仍写入同一套词库服务。运行时使用内存索引匹配文本、图片和事件触发词，普通文本消息路径不查询数据库；新增、删除、恢复后通过延迟重建刷新索引。检测到 `revoke` / `recall` 相关信号时会直接跳过匹配，不回复也不写日志；`wordbank / 词库 / wordbank.help` 可查看帮助，`wordbank add` / `wordbank.add` / `添加词条` 的引导流程里如果收到撤回信号，会发送取消提示并中止，连续输错 3 次也会终止。图片回复、图文回复和图片触发都统一走 `wordbank add` 的媒体处理逻辑，`study` 直接命令和引导流程也复用同一套解析，不再提供单独的图片子命令。为兼容旧入口，`wordbank.add`、`wordbank.search`、`wordbank.delete`、`wordbank.restore`、`wordbank.support`、`wordbank.vote` 和常用中文直达命令会自动转入对应新版子命令。
 
 ## 权限与触发
 - 触发方式: 指令触发 / 被动触发
@@ -24,15 +24,15 @@
 - 指令: `wordbank add 触发词 => 响应词`
 - 兼容指令: `wordbank.add 触发词 => 响应词`、`添加词条 触发词 => 响应词`
 #### 说明
-默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`wordbank add 触发词 [图片]` 表示文本触发、图片回复；`wordbank add [图片] => 响应词` 表示图片触发、文本回复；`wordbank add 触发词 => 响应词 [图片]` 表示文本触发、图文混排回复。图片入库时会计算 MD5、dHash、pHash、尺寸和文件大小，相似图片会归并到同一个 canonical image。`study 触发词 => 响应词` 会走同一套文本添加逻辑；旧版 `study <a|m> <t|f> 触发词 响应词` 也会转换为新版固定 scope。引导任一步收到 `revoke` / `recall` 会发送取消提示并中止；连续输错 3 次会强制终止对话。
+默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`wordbank add 触发词 [图片]` 表示文本触发、图片回复；`wordbank add [图片] => 响应词` 表示图片触发、文本回复；`wordbank add 触发词 => 响应词 [图片]` 表示文本触发、图文混排回复。图片入库时会计算 MD5、dHash、pHash、尺寸和文件大小，相似图片会归并到同一个 canonical image。`study 触发词 => 响应词`、`study 触发词 [图片]` 和 `study [图片] => 响应词` 会走同一套添加逻辑；旧版 `study <a|m> <t|f> 触发词 响应词` 也会转换为新版固定 scope。引导任一步收到 `revoke` / `recall` 会发送取消提示并中止；连续输错 3 次会强制终止对话。
 #### 前置条件
 当前用户所在群聊需要通过运行时检查。
 #### 完整流程
 ```demo
 USER: #wordbank.add
-BOT: 请输入触发词：
+BOT: 请输入触发词，或直接发送图片作为图片触发：
 USER: 晚安
-BOT: 请输入响应词：
+BOT: 请输入响应词，或发送图片作为图片回复：
 USER: 做个好梦
 BOT: 请选择生效范围：
 1. 当前群（默认）

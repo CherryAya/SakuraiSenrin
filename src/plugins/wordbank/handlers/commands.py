@@ -13,6 +13,7 @@ from src.config import config
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.plugins.wordbank.database.types import WordbankImageRecord
 from src.plugins.wordbank.services.core import (
     WordbankDeleteVoteResult,
     WordbankService,
@@ -455,6 +456,32 @@ def extract_image_urls(message: Message) -> list[str]:
     return urls
 
 
+async def fetch_first_image_bytes_from_message(message: Message) -> bytes | None:
+    urls = extract_image_urls(message)
+    if not urls:
+        return None
+
+    from .passive import fetch_image_bytes
+
+    data = await fetch_image_bytes(urls[0])
+    if data is None:
+        raise WordbankUserError(
+            "图片下载失败，无法加入词库。",
+            key="wordbank.error.image_download_failed",
+        )
+    return data
+
+
+async def ingest_first_image_from_message(
+    media_service: WordbankMediaService,
+    message: Message,
+) -> WordbankImageRecord | None:
+    data = await fetch_first_image_bytes_from_message(message)
+    if data is None:
+        return None
+    return await media_service.ingest_image_bytes(data)
+
+
 async def handle_add_text(
     service: WordbankService,
     *,
@@ -553,6 +580,7 @@ async def handle_guided_add_text(
     trigger_text: str,
     response_text: str,
     scope_text: str,
+    response_canonical_image_id: int | None = None,
     advanced_text: str = "",
     locale: LocaleCode,
 ) -> str:
@@ -563,7 +591,35 @@ async def handle_guided_add_text(
     result = await service.add_text_entry(
         trigger_text=trigger_text,
         response_text=response_text,
+        response_canonical_image_id=response_canonical_image_id,
         trigger_mode=advanced.trigger_mode,
+        raw_rule=raw_rule,
+        group_id=str(getattr(event, "group_id", "")),
+        user_id=str(event.user_id),
+        is_group=is_group,
+    )
+    return format_add_result(result, locale=locale)
+
+
+async def handle_guided_add_image_trigger(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    trigger_canonical_image_id: int,
+    response_text: str,
+    scope_text: str,
+    response_canonical_image_id: int | None = None,
+    advanced_text: str = "",
+    locale: LocaleCode,
+) -> str:
+    is_group = isinstance(event, GroupMessageEvent)
+    scope = parse_guided_scope_choice(scope_text, is_group=is_group)
+    advanced = parse_guided_advanced_options(advanced_text)
+    raw_rule = {"scope": scope, **advanced.raw_rule}
+    result = await service.add_image_entry(
+        canonical_image_id=trigger_canonical_image_id,
+        response_text=response_text,
+        response_canonical_image_id=response_canonical_image_id,
         raw_rule=raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),
@@ -592,6 +648,32 @@ async def handle_study_shortcut(
     return format_add_result(result, locale=locale)
 
 
+async def handle_study_with_media(
+    service: WordbankService,
+    media_service: WordbankMediaService,
+    *,
+    event: MessageEvent,
+    text: str,
+    image_bytes: bytes | None,
+    locale: LocaleCode,
+) -> str:
+    if image_bytes is None:
+        return await handle_study_shortcut(
+            service,
+            event=event,
+            text=text,
+            locale=locale,
+        )
+    return await handle_add_with_media(
+        service,
+        media_service,
+        event=event,
+        text=text,
+        image_bytes=image_bytes,
+        locale=locale,
+    )
+
+
 async def handle_guided_study_shortcut(
     service: WordbankService,
     *,
@@ -601,6 +683,7 @@ async def handle_guided_study_shortcut(
     trigger_text: str,
     response_text: str,
     weight_text: str,
+    response_canonical_image_id: int | None = None,
     locale: LocaleCode,
 ) -> str:
     trig_mode = parse_study_mode_choice(trig_mode_text)
@@ -616,6 +699,41 @@ async def handle_guided_study_shortcut(
     result = await service.add_text_entry(
         trigger_text=trigger_text,
         response_text=response_text,
+        response_canonical_image_id=response_canonical_image_id,
+        raw_rule=raw_rule,
+        group_id=str(getattr(event, "group_id", "")),
+        user_id=str(event.user_id),
+        is_group=is_group,
+    )
+    return format_add_result(result, locale=locale)
+
+
+async def handle_guided_study_image_trigger(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    trig_mode_text: str,
+    group_block_text: str,
+    trigger_canonical_image_id: int,
+    response_text: str,
+    weight_text: str,
+    response_canonical_image_id: int | None = None,
+    locale: LocaleCode,
+) -> str:
+    trig_mode = parse_study_mode_choice(trig_mode_text)
+    group_block = parse_study_group_block_choice(group_block_text)
+    weight = parse_guided_weight(weight_text)
+    is_group = isinstance(event, GroupMessageEvent)
+    raw_rule = build_legacy_study_shortcut_rule(
+        trig_mode,
+        group_block,
+        is_group=is_group,
+    )
+    raw_rule["weight"] = weight
+    result = await service.add_image_entry(
+        canonical_image_id=trigger_canonical_image_id,
+        response_text=response_text,
+        response_canonical_image_id=response_canonical_image_id,
         raw_rule=raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),

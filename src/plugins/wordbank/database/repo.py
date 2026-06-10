@@ -239,6 +239,7 @@ class WordbankRepository:
         *,
         canonical_image_id: int,
         response_text: str,
+        response_canonical_image_id: int | None = None,
         rule: dict,
         scope: str,
         priority: int,
@@ -279,9 +280,9 @@ class WordbankRepository:
             )
             response = WordbankResponse(
                 entry_id=entry.id,
-                kind="text",
+                kind="image" if response_canonical_image_id is not None else "text",
                 text=response_text,
-                canonical_image_id=None,
+                canonical_image_id=response_canonical_image_id,
                 weight=weight,
                 created_at=now,
                 updated_at=now,

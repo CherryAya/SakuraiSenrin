@@ -299,10 +299,12 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert reply.demo_filename == "wordbank-reply-shortcut.png"
     assert "词条详情 #12" in reply.demo_turns[3].text
     assert shortcut.demo_filename == "study-shortcut.png"
-    assert len(shortcut.demo_turns) == 14
+    assert len(shortcut.demo_turns) == 18
     assert shortcut.demo_turns[0].text == "#study"
     assert shortcut.demo_turns[2].text == "a"
-    assert shortcut.demo_turns[-1].text == "做个好梦"
+    assert "响应: [图片:7]" in shortcut.demo_turns[15].text
+    assert "#study [图片] => 是这张图喔" in shortcut.demo_turns[16].text
+    assert "触发: [图片:7]" in shortcut.demo_turns[17].text
     assert "revoke" in shortcut.failures
     assert "发送取消提示并中止" in shortcut.failures
     assert "连续输错 3 次" in shortcut.failures
