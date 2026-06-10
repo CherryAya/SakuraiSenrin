@@ -22,6 +22,7 @@ from src.plugins.wordbank.handlers.commands import (
     handle_guided_study_shortcut,
     handle_study_shortcut,
     handle_study_with_media,
+    handle_study_with_media_result,
     localize_command_error,
     parse_search_args,
     parse_text_add_args,
@@ -773,6 +774,113 @@ async def test_handle_study_with_media_reuses_wordbank_add_image_trigger() -> No
         canonical_image_id=9,
         response_text="是这张图喔",
         raw_rule={},
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+
+
+async def test_handle_study_with_media_legacy_flags_two_images() -> None:
+    event = build_group_message_event(
+        "#study a f [CQ:image,url=https://example.test/a.png] "
+        "[CQ:image,url=https://example.test/b.png]"
+    )
+    ingest_image_bytes = AsyncMock(
+        side_effect=[
+            SimpleNamespace(canonical_id=21),
+            SimpleNamespace(canonical_id=22),
+        ]
+    )
+    add_image_entry = AsyncMock(
+        return_value=WordbankAddResult(
+            entry_id=18,
+            trigger_text="[图片:21]",
+            response_text="",
+            trigger_mode="fullmatch",
+            scope="all_groups",
+            probability=1.0,
+            weight=3,
+            response_kind="image",
+            response_canonical_image_id=22,
+        )
+    )
+    add_text_entry = AsyncMock()
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            add_image_entry=add_image_entry,
+            add_text_entry=add_text_entry,
+        ),
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(ingest_image_bytes=ingest_image_bytes),
+    )
+
+    result = await handle_study_with_media_result(
+        service,
+        media_service,
+        event=event,
+        text="a f",
+        image_bytes=b"trigger-image",
+        extra_image_bytes=(b"response-image",),
+    )
+
+    assert result.trigger_text == "[图片:21]"
+    assert result.response_canonical_image_id == 22
+    add_text_entry.assert_not_awaited()
+    ingest_image_bytes.assert_any_await(b"trigger-image")
+    ingest_image_bytes.assert_any_await(b"response-image")
+    add_image_entry.assert_awaited_once_with(
+        canonical_image_id=21,
+        response_text="",
+        response_canonical_image_id=22,
+        raw_rule={"scope": "all_groups"},
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+
+
+async def test_handle_study_with_media_legacy_text_trigger_image_response() -> None:
+    event = build_group_message_event(
+        "#study a f 晚安 [CQ:image,url=https://example.test/a.png]"
+    )
+    ingest_image_bytes = AsyncMock(return_value=SimpleNamespace(canonical_id=23))
+    add_text_entry = AsyncMock(
+        return_value=WordbankAddResult(
+            entry_id=19,
+            trigger_text="晚安",
+            response_text="",
+            trigger_mode="contains",
+            scope="all_groups",
+            probability=1.0,
+            weight=3,
+            response_kind="image",
+            response_canonical_image_id=23,
+        )
+    )
+    service = cast(WordbankService, SimpleNamespace(add_text_entry=add_text_entry))
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(ingest_image_bytes=ingest_image_bytes),
+    )
+
+    result = await handle_study_with_media_result(
+        service,
+        media_service,
+        event=event,
+        text="a f 晚安",
+        image_bytes=b"response-image",
+    )
+
+    assert result.trigger_text == "晚安"
+    assert result.response_canonical_image_id == 23
+    add_text_entry.assert_awaited_once_with(
+        trigger_text="晚安",
+        response_text="",
+        response_canonical_image_id=23,
+        raw_rule={"scope": "all_groups"},
         group_id="20001",
         user_id="10001",
         is_group=True,

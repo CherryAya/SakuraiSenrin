@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
 import shlex
 from typing import Any
@@ -76,6 +77,12 @@ class MutationActor:
 class GuidedAdvancedOptions:
     raw_rule: dict[str, Any]
     trigger_mode: str | None
+
+
+@dataclass(slots=True, frozen=True)
+class ParsedStudyMediaPrefix:
+    source: str
+    raw_rule: dict[str, Any]
 
 
 @dataclass(slots=True, frozen=True)
@@ -493,17 +500,29 @@ async def fetch_image_bytes_with_retry(
 
 
 async def fetch_first_image_bytes_from_message(message: Message) -> bytes | None:
+    items = await fetch_image_bytes_from_message(message, limit=1)
+    return items[0] if items else None
+
+
+async def fetch_image_bytes_from_message(
+    message: Message,
+    *,
+    limit: int = 2,
+) -> tuple[bytes, ...]:
     urls = extract_image_urls(message)
     if not urls:
-        return None
+        return ()
 
-    data = await fetch_image_bytes_with_retry(urls[0])
-    if data is None:
-        raise WordbankUserError(
-            "图片下载失败，无法加入词库。",
-            key="wordbank.error.image_download_failed",
-        )
-    return data
+    items: list[bytes] = []
+    for url in urls[: max(1, limit)]:
+        data = await fetch_image_bytes_with_retry(url)
+        if data is None:
+            raise WordbankUserError(
+                "图片下载失败，无法加入词库。",
+                key="wordbank.error.image_download_failed",
+            )
+        items.append(data)
+    return tuple(items)
 
 
 async def ingest_first_image_from_message(
@@ -842,19 +861,146 @@ async def handle_study_with_media_result(
     event: MessageEvent,
     text: str,
     image_bytes: bytes | None,
+    extra_image_bytes: Sequence[bytes] = (),
 ) -> WordbankAddResult:
-    if image_bytes is None:
+    image_items = ((image_bytes,) if image_bytes is not None else ()) + tuple(
+        extra_image_bytes
+    )
+    if not image_items:
         return await handle_study_shortcut_result(
             service,
             event=event,
             text=text,
         )
+
+    is_group = isinstance(event, GroupMessageEvent)
+    parsed = parse_study_media_prefix(text, is_group=is_group)
+    if parsed.raw_rule:
+        return await handle_study_media_with_rule_result(
+            service,
+            media_service,
+            event=event,
+            source=parsed.source,
+            raw_rule=parsed.raw_rule,
+            image_bytes=image_items,
+        )
+
     return await handle_add_with_media_result(
         service,
         media_service,
         event=event,
         text=text,
-        image_bytes=image_bytes,
+        image_bytes=image_items[0],
+    )
+
+
+def parse_study_media_prefix(text: str, *, is_group: bool) -> ParsedStudyMediaPrefix:
+    source = text.strip()
+    try:
+        tokens = shlex.split(source)
+    except ValueError as exc:
+        raise RuleError(
+            "学习格式: study 触发词 => 响应词",
+            key="wordbank.error.study_format",
+        ) from exc
+    if (
+        len(tokens) >= 2
+        and tokens[0].casefold() in {"a", "m"}
+        and tokens[1].casefold() in {"t", "f"}
+    ):
+        return ParsedStudyMediaPrefix(
+            source=" ".join(tokens[2:]).strip(),
+            raw_rule=build_legacy_study_shortcut_rule(
+                tokens[0].casefold(),
+                tokens[1].casefold(),
+                is_group=is_group,
+            ),
+        )
+    if tokens and tokens[0].casefold() in {"a", "m"}:
+        raise RuleError(
+            "学习格式: study 触发词 => 响应词",
+            key="wordbank.error.study_format",
+        )
+    return ParsedStudyMediaPrefix(source=source, raw_rule={})
+
+
+async def handle_study_media_with_rule_result(
+    service: WordbankService,
+    media_service: WordbankMediaService,
+    *,
+    event: MessageEvent,
+    source: str,
+    raw_rule: dict[str, Any],
+    image_bytes: Sequence[bytes],
+) -> WordbankAddResult:
+    if not image_bytes:
+        return await handle_study_shortcut_result(
+            service,
+            event=event,
+            text=source,
+        )
+
+    is_group = isinstance(event, GroupMessageEvent)
+    group_id = str(getattr(event, "group_id", ""))
+    user_id = str(event.user_id)
+    pair = split_add_pair(source)
+
+    if pair is None and not source:
+        if len(image_bytes) < 2:
+            raise RuleError(
+                "学习内容需要同时包含触发词和响应词",
+                key="wordbank.error.study_pair_required",
+            )
+        trigger_image = await media_service.ingest_image_bytes(image_bytes[0])
+        response_image = await media_service.ingest_image_bytes(image_bytes[1])
+        return await service.add_image_entry(
+            canonical_image_id=trigger_image.canonical_id,
+            response_text="",
+            response_canonical_image_id=response_image.canonical_id,
+            raw_rule=raw_rule,
+            group_id=group_id,
+            user_id=user_id,
+            is_group=is_group,
+        )
+
+    if pair is None:
+        response_image = await media_service.ingest_image_bytes(image_bytes[0])
+        return await service.add_text_entry(
+            trigger_text=source,
+            response_text="",
+            response_canonical_image_id=response_image.canonical_id,
+            raw_rule=raw_rule,
+            group_id=group_id,
+            user_id=user_id,
+            is_group=is_group,
+        )
+
+    trigger_text, response_text = pair
+    if trigger_text:
+        response_image = await media_service.ingest_image_bytes(image_bytes[0])
+        return await service.add_text_entry(
+            trigger_text=trigger_text,
+            response_text=response_text,
+            response_canonical_image_id=response_image.canonical_id,
+            raw_rule=raw_rule,
+            group_id=group_id,
+            user_id=user_id,
+            is_group=is_group,
+        )
+
+    trigger_image = await media_service.ingest_image_bytes(image_bytes[0])
+    response_image_id: int | None = None
+    if len(image_bytes) >= 2:
+        response_image = await media_service.ingest_image_bytes(image_bytes[1])
+        response_image_id = response_image.canonical_id
+    return await service.add_image_entry(
+        canonical_image_id=trigger_image.canonical_id,
+        response_text=response_text,
+        response_canonical_image_id=response_image_id,
+        raw_rule=raw_rule,
+        group_id=group_id,
+        user_id=user_id,
+        is_group=is_group,
     )
 
 

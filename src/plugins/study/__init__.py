@@ -260,14 +260,14 @@ async def _finish_guided_study(
     locale: LocaleCode,
 ) -> None:
     from src.plugins.wordbank.handlers import (
+        build_add_result_message,
         handle_guided_study_image_trigger_result,
         handle_guided_study_shortcut_result,
         record_submission_approval_message,
         send_pending_approval_notice,
     )
     from src.plugins.wordbank.handlers.commands import localize_command_error
-    from src.plugins.wordbank.services import wordbank_service
-    from src.plugins.wordbank.services.core import format_add_result
+    from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
     from src.plugins.wordbank.services.rules import RuleError
 
     try:
@@ -317,8 +317,15 @@ async def _finish_guided_study(
         event=event,
         result=result,
         locale=locale,
+        media_service=wordbank_media_service,
     )
-    send_result = await matcher.send(format_add_result(result, locale=locale))
+    send_result = await matcher.send(
+        await build_add_result_message(
+            result,
+            locale=locale,
+            media_service=wordbank_media_service,
+        )
+    )
     await record_submission_approval_message(
         wordbank_service,
         event=event,
@@ -360,15 +367,15 @@ async def _(
     arg: Message = CommandArg(),
 ) -> None:
     from src.plugins.wordbank.handlers import (
+        build_add_result_message,
         extract_image_urls,
-        fetch_first_image_bytes_from_message,
+        fetch_image_bytes_from_message,
         handle_study_with_media_result,
         record_submission_approval_message,
         send_pending_approval_notice,
     )
     from src.plugins.wordbank.handlers.commands import localize_command_error
     from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
-    from src.plugins.wordbank.services.core import format_add_result
     from src.plugins.wordbank.services.rules import RuleError
 
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
@@ -390,12 +397,14 @@ async def _(
         return
     await wordbank_service.initialize()
     try:
+        image_items = await fetch_image_bytes_from_message(arg, limit=2)
         result = await handle_study_with_media_result(
             wordbank_service,
             wordbank_media_service,
             event=event,
             text=arg.extract_plain_text(),
-            image_bytes=await fetch_first_image_bytes_from_message(arg),
+            image_bytes=image_items[0] if image_items else None,
+            extra_image_bytes=image_items[1:],
         )
     except (RuleError, ValueError) as exc:
         await matcher.finish(localize_command_error(exc, locale))
@@ -406,8 +415,15 @@ async def _(
         event=event,
         result=result,
         locale=locale,
+        media_service=wordbank_media_service,
     )
-    send_result = await matcher.send(format_add_result(result, locale=locale))
+    send_result = await matcher.send(
+        await build_add_result_message(
+            result,
+            locale=locale,
+            media_service=wordbank_media_service,
+        )
+    )
     await record_submission_approval_message(
         wordbank_service,
         event=event,

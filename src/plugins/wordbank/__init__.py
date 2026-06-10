@@ -43,6 +43,7 @@ from .handlers import (
     REPLY_COMMAND_ALIASES,
     PassiveResponse,
     PendingWordbankImage,
+    build_add_result_message,
     build_forced_command_text,
     dispatch_wordbank_command,
     extract_image_urls,
@@ -64,7 +65,7 @@ from .handlers import (
 )
 from .handlers.commands import parse_guided_advanced_options, parse_guided_scope_choice
 from .services import wordbank_media_service, wordbank_service
-from .services.core import WordbankAddResult, format_add_result
+from .services.core import WordbankAddResult
 from .services.rules import RuleError
 
 name = tr("zh-CN", "plugin.wordbank.name")
@@ -230,8 +231,15 @@ async def _finish_add_result(
         event=event,
         result=result,
         locale=locale,
+        media_service=wordbank_media_service,
     )
-    send_result = await matcher.send(format_add_result(result, locale=locale))
+    send_result = await matcher.send(
+        await build_add_result_message(
+            result,
+            locale=locale,
+            media_service=wordbank_media_service,
+        )
+    )
     await record_submission_approval_message(
         wordbank_service,
         event=event,

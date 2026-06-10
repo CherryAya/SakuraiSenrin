@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 
@@ -14,8 +15,10 @@ from src.logger import logger
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
+    format_add_result,
     format_response_summary,
 )
+from src.plugins.wordbank.services.media import WordbankMediaService
 
 APPROVAL_APPROVE_ALIASES = {"y", "approve", "通过", "同意", "批准"}
 APPROVAL_REJECT_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
@@ -57,6 +60,55 @@ def format_pending_approval_notice(
     )
 
 
+async def build_add_result_message(
+    result: WordbankAddResult,
+    *,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> Message:
+    text = format_add_result(result, locale=locale)
+    return await _append_response_image(result, text=text, media_service=media_service)
+
+
+async def build_pending_approval_notice_message(
+    result: WordbankAddResult,
+    *,
+    event: MessageEvent,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> Message:
+    text = format_pending_approval_notice(result, event=event, locale=locale)
+    return await _append_response_image(result, text=text, media_service=media_service)
+
+
+async def _append_response_image(
+    result: WordbankAddResult,
+    *,
+    text: str,
+    media_service: WordbankMediaService,
+) -> Message:
+    canonical_id = result.response_canonical_image_id
+    if result.response_kind != "image" or canonical_id is None:
+        return Message(text)
+
+    image_bytes = await media_service.load_canonical_storage_bytes(canonical_id)
+    if image_bytes is None:
+        return Message(text)
+
+    return Message(_strip_response_image_placeholder(text, canonical_id)) + (
+        MessageSegment.image(image_bytes)
+    )
+
+
+def _strip_response_image_placeholder(text: str, canonical_id: int) -> str:
+    marker = f"[图片:{canonical_id}]"
+    if f"响应: {marker}" in text:
+        return text.replace(f"响应: {marker}", "响应: 图片回复如下")
+    if f" {marker}" in text:
+        return text.replace(f" {marker}", "")
+    return text.replace(marker, "图片回复如下")
+
+
 async def send_pending_approval_notice(
     bot: Bot,
     service: WordbankService,
@@ -64,11 +116,21 @@ async def send_pending_approval_notice(
     event: MessageEvent,
     result: WordbankAddResult,
     locale: LocaleCode,
+    media_service: WordbankMediaService | None = None,
 ) -> None:
     if result.status != "pending":
         return
 
-    message = format_pending_approval_notice(result, event=event, locale=locale)
+    message = (
+        await build_pending_approval_notice_message(
+            result,
+            event=event,
+            locale=locale,
+            media_service=media_service,
+        )
+        if media_service is not None
+        else Message(format_pending_approval_notice(result, event=event, locale=locale))
+    )
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")
     user_id = str(event.user_id)
