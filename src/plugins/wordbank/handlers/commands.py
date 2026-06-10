@@ -31,9 +31,9 @@ ADD_ALIASES = {"add", "添加", "学习"}
 SEARCH_ALIASES = {"search", "find", "查询", "搜索"}
 DELETE_ALIASES = {"delete", "del", "remove", "删除"}
 RESTORE_ALIASES = {"restore", "恢复"}
-IMAGE_ALIASES = {"image", "img", "图片"}
 SUPPORT_ALIASES = {"support", "支持", "支持删除"}
 VOTE_ALIASES = {"vote", "投票", "查看投票", "查看投票状态", "查看投票结果"}
+ADD_SEPARATORS = ("=>", "->", "回答", "回复")
 DEFAULT_SEARCH_LIMIT = 10
 MAX_SEARCH_LIMIT = 20
 DEFAULT_DELETE_VOTE_THRESHOLD = 3
@@ -190,21 +190,27 @@ def _parse_positive_int(
 
 def parse_text_add_args(text: str) -> ParsedTextAdd:
     source, raw_rule, trigger_mode = _parse_flags(text)
-    for sep in ("=>", "->", "回答", "回复"):
-        if sep in source:
-            trigger, response = source.split(sep, 1)
-            trigger = trigger.strip()
-            response = response.strip()
-            if not trigger or not response:
-                raise RuleError(
-                    "添加词条需要同时包含触发词和响应词",
-                    key="wordbank.error.add_pair_required",
-                )
-            return ParsedTextAdd(trigger, response, trigger_mode, raw_rule)
+    pair = split_add_pair(source)
+    if pair is not None:
+        trigger, response = pair
+        if not trigger or not response:
+            raise RuleError(
+                "添加词条需要同时包含触发词和响应词",
+                key="wordbank.error.add_pair_required",
+            )
+        return ParsedTextAdd(trigger, response, trigger_mode, raw_rule)
     raise RuleError(
-        "添加格式: wordbank add 触发词 => 响应词",
+        "添加格式: wordbank add 触发词 => 响应词；图片回复: wordbank add 触发词 [图片]",
         key="wordbank.error.add_format",
     )
+
+
+def split_add_pair(source: str) -> tuple[str, str] | None:
+    for sep in ADD_SEPARATORS:
+        if sep in source:
+            trigger, response = source.split(sep, 1)
+            return trigger.strip(), response.strip()
+    return None
 
 
 def parse_guided_scope_choice(text: str, *, is_group: bool) -> str:
@@ -469,6 +475,77 @@ async def handle_add_text(
     return format_add_result(result, locale=locale)
 
 
+async def handle_add_with_media(
+    service: WordbankService,
+    media_service: WordbankMediaService,
+    *,
+    event: MessageEvent,
+    text: str,
+    image_bytes: bytes | None,
+    locale: LocaleCode,
+) -> str:
+    if image_bytes is None:
+        return await handle_add_text(service, event=event, text=text, locale=locale)
+
+    source, raw_rule, trigger_mode = _parse_flags(text)
+    pair = split_add_pair(source)
+    is_group = isinstance(event, GroupMessageEvent)
+    group_id = str(getattr(event, "group_id", ""))
+    user_id = str(event.user_id)
+
+    if pair is None:
+        trigger_text = source.strip()
+        if not trigger_text:
+            raise RuleError(
+                "触发词不能为空",
+                key="wordbank.error.trigger_empty",
+            )
+        image = await media_service.ingest_image_bytes(image_bytes)
+        result = await service.add_text_entry(
+            trigger_text=trigger_text,
+            response_text="",
+            response_canonical_image_id=image.canonical_id,
+            trigger_mode=trigger_mode,
+            raw_rule=raw_rule,
+            group_id=group_id,
+            user_id=user_id,
+            is_group=is_group,
+        )
+        return format_add_result(result, locale=locale)
+
+    trigger_text, response_text = pair
+    if trigger_text:
+        image = await media_service.ingest_image_bytes(image_bytes)
+        result = await service.add_text_entry(
+            trigger_text=trigger_text,
+            response_text=response_text,
+            response_canonical_image_id=image.canonical_id,
+            trigger_mode=trigger_mode,
+            raw_rule=raw_rule,
+            group_id=group_id,
+            user_id=user_id,
+            is_group=is_group,
+        )
+        return format_add_result(result, locale=locale)
+
+    if response_text:
+        image = await media_service.ingest_image_bytes(image_bytes)
+        result = await service.add_image_entry(
+            canonical_image_id=image.canonical_id,
+            response_text=response_text,
+            raw_rule=raw_rule,
+            group_id=group_id,
+            user_id=user_id,
+            is_group=is_group,
+        )
+        return format_add_result(result, locale=locale)
+
+    raise RuleError(
+        "添加词条需要同时包含触发词和响应词",
+        key="wordbank.error.add_pair_required",
+    )
+
+
 async def handle_guided_add_text(
     service: WordbankService,
     *,
@@ -668,34 +745,6 @@ async def handle_restore(
     return tr(locale, "wordbank.restore.not_found", entry_id=entry_id)
 
 
-async def handle_add_image(
-    service: WordbankService,
-    media_service: WordbankMediaService,
-    *,
-    event: MessageEvent,
-    image_bytes: bytes,
-    text: str,
-    locale: LocaleCode,
-) -> str:
-    source, raw_rule, _ = _parse_flags(text)
-    response_text = source.strip()
-    if not response_text:
-        raise RuleError(
-            "图片词条需要提供响应词",
-            key="wordbank.error.image_response_required",
-        )
-    image = await media_service.ingest_image_bytes(image_bytes)
-    result = await service.add_image_entry(
-        canonical_image_id=image.canonical_id,
-        response_text=response_text,
-        raw_rule=raw_rule,
-        group_id=str(getattr(event, "group_id", "")),
-        user_id=str(event.user_id),
-        is_group=isinstance(event, GroupMessageEvent),
-    )
-    return format_add_result(result, locale=locale)
-
-
 def wordbank_help_text(locale: LocaleCode = "zh-CN") -> str:
     return tr(locale, "wordbank.help")
 
@@ -742,8 +791,6 @@ async def dispatch_wordbank_command(
             entry_id_text=rest,
             locale=locale,
         )
-    if action in IMAGE_ALIASES:
-        return tr(locale, "wordbank.error.image_missing")
     return tr(
         locale,
         "wordbank.error.unknown_subcommand",

@@ -130,11 +130,6 @@ class WordbankRepository:
         trigger: WordbankTrigger,
         response: WordbankResponse,
     ) -> WordbankEntryDetail:
-        trigger_text = (
-            f"image:{trigger.canonical_image_id}"
-            if trigger.kind == "image"
-            else trigger.trigger_text
-        )
         return WordbankEntryDetail(
             entry_id=entry.id,
             status=entry.status,
@@ -145,10 +140,25 @@ class WordbankRepository:
             group_id=entry.group_id,
             created_by=entry.created_by,
             deleted_at=entry.deleted_at,
-            trigger_text=trigger_text,
+            trigger_text=WordbankRepository._format_trigger_text(trigger),
             trigger_mode=trigger.trigger_mode,
-            response_text=response.text,
+            response_text=WordbankRepository._format_response_text(response),
+            response_kind=response.kind,
+            response_canonical_image_id=response.canonical_image_id,
         )
+
+    @staticmethod
+    def _format_trigger_text(trigger: WordbankTrigger) -> str:
+        if trigger.kind == "image":
+            return f"[图片:{trigger.canonical_image_id}]"
+        return trigger.trigger_text
+
+    @staticmethod
+    def _format_response_text(response: WordbankResponse) -> str:
+        if response.kind != "image":
+            return response.text
+        image_text = f"[图片:{response.canonical_image_id}]"
+        return f"{response.text} {image_text}".strip()
 
     async def create_text_entry(
         self,
@@ -156,6 +166,7 @@ class WordbankRepository:
         trigger_text: str,
         normalized_text: str,
         response_text: str,
+        response_canonical_image_id: int | None = None,
         trigger_mode: str,
         rule: dict,
         scope: str,
@@ -197,9 +208,9 @@ class WordbankRepository:
             )
             response = WordbankResponse(
                 entry_id=entry.id,
-                kind="text",
+                kind="image" if response_canonical_image_id is not None else "text",
                 text=response_text,
-                canonical_image_id=None,
+                canonical_image_id=response_canonical_image_id,
                 weight=weight,
                 created_at=now,
                 updated_at=now,
@@ -362,13 +373,15 @@ class WordbankRepository:
         return [
             WordbankSearchItem(
                 entry_id=entry.id,
-                trigger_text=trigger.trigger_text,
+                trigger_text=self._format_trigger_text(trigger),
                 trigger_mode=trigger.trigger_mode,
-                response_text=response.text,
+                response_text=self._format_response_text(response),
                 scope=entry.scope,
                 probability=entry.probability,
                 weight=entry.weight,
                 created_by=entry.created_by,
+                response_kind=response.kind,
+                response_canonical_image_id=response.canonical_image_id,
             )
             for entry, trigger, response in rows
         ]

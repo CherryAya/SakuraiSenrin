@@ -152,6 +152,8 @@ class WordbankSearchItem:
     probability: float
     weight: int
     created_by: str
+    response_kind: str = "text"
+    response_canonical_image_id: int | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -202,3 +204,5 @@ class WordbankEntryDetail:
     trigger_text: str
     trigger_mode: str
     response_text: str
+    response_kind: str = "text"
+    response_canonical_image_id: int | None = None

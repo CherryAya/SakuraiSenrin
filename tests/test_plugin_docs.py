@@ -281,9 +281,14 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     shortcut = next(feature for feature in study.index if feature.slug == "shortcut")
 
     assert add.demo_filename == "wordbank-add.png"
-    assert len(add.demo_turns) == 12
+    assert len(add.demo_turns) == 16
     assert add.demo_turns[0].text == "#wordbank.add"
-    assert add.demo_turns[-1].text == "做个好梦"
+    assert add.demo_turns[11].text == "做个好梦"
+    assert "#wordbank add 是这张图喔 [图片]" in add.demo_turns[12].text
+    assert "响应: [图片:7]" in add.demo_turns[13].text
+    assert "#wordbank add [图片] => 是这张图喔" in add.demo_turns[14].text
+    assert "触发: [图片:7]" in add.demo_turns[15].text
+    assert all(feature.slug != "image" for feature in wordbank.index)
     assert "revoke" in add.failures
     assert "发送取消提示并中止" in add.failures
     assert "连续输错 3 次" in add.failures

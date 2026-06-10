@@ -43,6 +43,8 @@ class WordbankAddResult:
     scope: str
     probability: float
     weight: int
+    response_kind: str = "text"
+    response_canonical_image_id: int | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -103,6 +105,7 @@ class WordbankService:
         *,
         trigger_text: str,
         response_text: str,
+        response_canonical_image_id: int | None = None,
         group_id: str,
         user_id: str,
         is_group: bool,
@@ -116,7 +119,7 @@ class WordbankService:
                 "触发词不能为空",
                 key="wordbank.error.trigger_empty",
             )
-        if not response_text:
+        if not response_text and response_canonical_image_id is None:
             raise WordbankUserError(
                 "响应词不能为空",
                 key="wordbank.error.response_empty",
@@ -138,6 +141,7 @@ class WordbankService:
             trigger_text=trigger_text,
             normalized_text=normalized,
             response_text=response_text,
+            response_canonical_image_id=response_canonical_image_id,
             trigger_mode=mode,
             rule=dict(rule.rule),
             scope=rule.scope,
@@ -156,6 +160,10 @@ class WordbankService:
             scope=rule.scope,
             probability=rule.probability,
             weight=rule.weight,
+            response_kind=(
+                "image" if response_canonical_image_id is not None else "text"
+            ),
+            response_canonical_image_id=response_canonical_image_id,
         )
 
     async def add_image_entry(
@@ -194,7 +202,7 @@ class WordbankService:
         self.mark_dirty()
         return WordbankAddResult(
             entry_id=entry.id,
-            trigger_text=f"image:{canonical_image_id}",
+            trigger_text=f"[图片:{canonical_image_id}]",
             response_text=response_text,
             trigger_mode="fullmatch",
             scope=rule.scope,
@@ -512,9 +520,25 @@ def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
         "wordbank.add.success",
         entry_id=result.entry_id,
         trigger_text=result.trigger_text,
-        response_text=result.response_text,
+        response_text=format_response_summary(
+            result.response_text,
+            kind=result.response_kind,
+            canonical_image_id=result.response_canonical_image_id,
+        ),
         trigger_mode=result.trigger_mode,
         scope=result.scope,
         probability=f"{result.probability:g}",
         weight=result.weight,
     )
+
+
+def format_response_summary(
+    text: str,
+    *,
+    kind: str,
+    canonical_image_id: int | None,
+) -> str:
+    if kind != "image":
+        return text
+    image_text = f"[图片:{canonical_image_id}]"
+    return f"{text} {image_text}".strip()

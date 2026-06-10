@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from nonebot import get_driver, on_message, on_notice
+from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent, NoticeEvent
 from nonebot.adapters.onebot.v11.message import Message
@@ -37,13 +38,12 @@ from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 
 from .handlers import (
-    IMAGE_ALIASES,
     REPLY_COMMAND_ALIASES,
     PassiveResponse,
     build_forced_command_text,
     dispatch_wordbank_command,
     extract_image_urls,
-    handle_add_image,
+    handle_add_with_media,
     handle_guided_add_text,
     handle_passive_message,
     handle_passive_notice,
@@ -144,12 +144,6 @@ wordbank_restore_command = on_command(
     priority=5,
     block=True,
 )
-wordbank_image_command = on_command(
-    ("wordbank", "image"),
-    aliases={("wordbank", "img"), "图片词条", "wordbank.image", "wordbank.img"},
-    priority=5,
-    block=True,
-)
 wordbank_support_command = on_command(
     ("wordbank", "support"),
     aliases={"支持删除", "wordbank.support"},
@@ -188,28 +182,27 @@ async def _handle_wordbank_command_message(
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     text = build_forced_command_text(forced_action, arg.extract_plain_text())
     action = text.split(maxsplit=1)[0].lower() if text else ""
-    if action in IMAGE_ALIASES:
+    if action in {"add", "添加", "学习"}:
         urls = extract_image_urls(arg)
-        if not urls:
-            await matcher.finish(tr(locale, "wordbank.error.image_missing"))
-        from .handlers.passive import fetch_image_bytes
+        if urls:
+            from .handlers.passive import fetch_image_bytes
 
-        data = await fetch_image_bytes(urls[0])
-        if data is None:
-            await matcher.finish(tr(locale, "wordbank.error.image_download_failed"))
-        try:
-            _, _, rest = text.partition(" ")
-            msg = await handle_add_image(
-                wordbank_service,
-                wordbank_media_service,
-                event=event,
-                image_bytes=data,
-                text=rest,
-                locale=locale,
-            )
-        except (RuleError, ValueError) as exc:
-            await matcher.finish(localize_command_error(exc, locale))
-        await matcher.finish(msg)
+            data = await fetch_image_bytes(urls[0])
+            if data is None:
+                await matcher.finish(tr(locale, "wordbank.error.image_download_failed"))
+            try:
+                _, _, rest = text.partition(" ")
+                msg = await handle_add_with_media(
+                    wordbank_service,
+                    wordbank_media_service,
+                    event=event,
+                    image_bytes=data,
+                    text=rest,
+                    locale=locale,
+                )
+            except (RuleError, ValueError) as exc:
+                await matcher.finish(localize_command_error(exc, locale))
+            await matcher.finish(msg)
 
     try:
         msg = await dispatch_wordbank_command(
@@ -299,7 +292,11 @@ async def _(
     text = arg.extract_plain_text().strip()
     if text:
         first, _, tail = text.partition(" ")
-        if first.lower() in {"add", "添加", "学习"} and not tail.strip():
+        if (
+            first.lower() in {"add", "添加", "学习"}
+            and not tail.strip()
+            and not extract_image_urls(arg)
+        ):
             await _start_guided_add(matcher, state, locale)
             return
     await initialize_wordbank_plugin()
@@ -393,7 +390,7 @@ async def _(
     await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     await _abort_guided_on_revoke(matcher, event, locale)
-    if not arg.extract_plain_text().strip():
+    if not arg.extract_plain_text().strip() and not extract_image_urls(arg):
         await _start_guided_add(matcher, state, locale)
         return
     await _handle_wordbank_command_message(matcher, event, arg, forced_action="add")
@@ -503,15 +500,6 @@ async def _(
     await _handle_wordbank_command_message(matcher, event, arg, forced_action="restore")
 
 
-@wordbank_image_command.handle()
-async def _(
-    matcher: Matcher,
-    event: MessageEvent,
-    arg: Message = CommandArg(),
-) -> None:
-    await _handle_wordbank_command_message(matcher, event, arg, forced_action="image")
-
-
 @wordbank_support_command.handle()
 async def _(
     matcher: Matcher,
@@ -577,6 +565,26 @@ async def _record_passive_response_message(
         logger.warning(f"[Wordbank] response message record skipped: {exc}")
 
 
+def _build_passive_message(response: PassiveResponse) -> Message | str:
+    if (
+        response.response_kind != "image"
+        or response.response_canonical_image_id is None
+    ):
+        return response.text
+
+    image_bytes = wordbank_media_service.load_canonical_storage_bytes(
+        response.response_canonical_image_id
+    )
+    if image_bytes is None:
+        return tr("zh-CN", "wordbank.error.image_storage_missing")
+
+    message = Message()
+    if response.text:
+        message += MessageSegment.text(response.text)
+    message += MessageSegment.image(image_bytes)
+    return message
+
+
 @wordbank_passive.handle()
 async def _(bot: Bot, event: MessageEvent) -> None:
     await initialize_wordbank_plugin()
@@ -591,7 +599,7 @@ async def _(bot: Bot, event: MessageEvent) -> None:
         logger.warning(f"[Wordbank] passive match skipped: {exc}")
         return
     if response:
-        send_result = await wordbank_passive.send(response.text)
+        send_result = await wordbank_passive.send(_build_passive_message(response))
         await _record_passive_response_message(response, send_result)
 
 
@@ -604,5 +612,5 @@ async def _(bot: Bot, event: NoticeEvent) -> None:
         logger.warning(f"[Wordbank] passive notice skipped: {exc}")
         return
     if response:
-        send_result = await wordbank_notice.send(response.text)
+        send_result = await wordbank_notice.send(_build_passive_message(response))
         await _record_passive_response_message(response, send_result)

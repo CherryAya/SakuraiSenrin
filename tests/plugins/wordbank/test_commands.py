@@ -10,6 +10,7 @@ from src.plugins.wordbank.handlers.commands import (
     build_forced_command_text,
     build_mutation_actor,
     dispatch_wordbank_command,
+    handle_add_with_media,
     handle_delete,
     handle_study_shortcut,
     localize_command_error,
@@ -22,6 +23,7 @@ from src.plugins.wordbank.services.core import (
     WordbankDeleteVoteResult,
     WordbankService,
 )
+from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import RuleError
 from tests.plugins.water.helpers import build_group_message_event
 
@@ -30,7 +32,9 @@ def test_parse_text_add_args_keeps_fallback_message_and_i18n_key() -> None:
     with pytest.raises(RuleError) as exc_info:
         parse_text_add_args("晚安")
 
-    assert str(exc_info.value) == "添加格式: wordbank add 触发词 => 响应词"
+    assert str(exc_info.value) == (
+        "添加格式: wordbank add 触发词 => 响应词；图片回复: wordbank add 触发词 [图片]"
+    )
     assert exc_info.value.key == "wordbank.error.add_format"
     assert localize_command_error(exc_info.value, "zh-CN") == str(exc_info.value)
 
@@ -326,6 +330,143 @@ async def test_dispatch_add_uses_i18n_add_formatter() -> None:
     assert "词条已加入词库" in message
     assert "ID: 12" in message
     assert "触发: 晚安" in message
+
+
+async def test_handle_add_with_media_plain_text_to_image_response() -> None:
+    event = build_group_message_event(
+        "#wordbank add 是这张图喔 [CQ:image,url=https://example.test/a.png]"
+    )
+    ingest_image_bytes = AsyncMock(return_value=SimpleNamespace(canonical_id=7))
+    add_text_entry = AsyncMock(
+        return_value=WordbankAddResult(
+            entry_id=13,
+            trigger_text="是这张图喔",
+            response_text="",
+            trigger_mode="contains",
+            scope="current_group",
+            probability=1.0,
+            weight=3,
+            response_kind="image",
+            response_canonical_image_id=7,
+        )
+    )
+    service = cast(WordbankService, SimpleNamespace(add_text_entry=add_text_entry))
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(ingest_image_bytes=ingest_image_bytes),
+    )
+
+    message = await handle_add_with_media(
+        service,
+        media_service,
+        event=event,
+        text="是这张图喔",
+        image_bytes=b"image-bytes",
+        locale="zh-CN",
+    )
+
+    assert "触发: 是这张图喔" in message
+    assert "响应: [图片:7]" in message
+    ingest_image_bytes.assert_awaited_once_with(b"image-bytes")
+    add_text_entry.assert_awaited_once_with(
+        trigger_text="是这张图喔",
+        response_text="",
+        response_canonical_image_id=7,
+        trigger_mode=None,
+        raw_rule={},
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+
+
+async def test_handle_add_with_media_text_and_image_response() -> None:
+    event = build_group_message_event(
+        "#wordbank add 晚安 => 做个好梦 [CQ:image,url=https://example.test/a.png]"
+    )
+    ingest_image_bytes = AsyncMock(return_value=SimpleNamespace(canonical_id=8))
+    add_text_entry = AsyncMock(
+        return_value=WordbankAddResult(
+            entry_id=14,
+            trigger_text="晚安",
+            response_text="做个好梦",
+            trigger_mode="contains",
+            scope="current_group",
+            probability=1.0,
+            weight=3,
+            response_kind="image",
+            response_canonical_image_id=8,
+        )
+    )
+    service = cast(WordbankService, SimpleNamespace(add_text_entry=add_text_entry))
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(ingest_image_bytes=ingest_image_bytes),
+    )
+
+    message = await handle_add_with_media(
+        service,
+        media_service,
+        event=event,
+        text="晚安 => 做个好梦",
+        image_bytes=b"image-bytes",
+        locale="zh-CN",
+    )
+
+    assert "响应: 做个好梦 [图片:8]" in message
+    add_text_entry.assert_awaited_once_with(
+        trigger_text="晚安",
+        response_text="做个好梦",
+        response_canonical_image_id=8,
+        trigger_mode=None,
+        raw_rule={},
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+
+
+async def test_handle_add_with_media_treats_empty_left_pair_as_image_trigger() -> None:
+    event = build_group_message_event(
+        "#wordbank add [CQ:image,url=https://example.test/a.png] => 是这张图喔"
+    )
+    ingest_image_bytes = AsyncMock(return_value=SimpleNamespace(canonical_id=9))
+    add_image_entry = AsyncMock(
+        return_value=WordbankAddResult(
+            entry_id=15,
+            trigger_text="[图片:9]",
+            response_text="是这张图喔",
+            trigger_mode="fullmatch",
+            scope="current_group",
+            probability=1.0,
+            weight=3,
+        )
+    )
+    service = cast(WordbankService, SimpleNamespace(add_image_entry=add_image_entry))
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(ingest_image_bytes=ingest_image_bytes),
+    )
+
+    message = await handle_add_with_media(
+        service,
+        media_service,
+        event=event,
+        text="=> 是这张图喔",
+        image_bytes=b"image-bytes",
+        locale="zh-CN",
+    )
+
+    assert "触发: [图片:9]" in message
+    assert "响应: 是这张图喔" in message
+    add_image_entry.assert_awaited_once_with(
+        canonical_image_id=9,
+        response_text="是这张图喔",
+        raw_rule={},
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
 
 
 async def test_handle_study_shortcut_supports_legacy_one_line_modes() -> None:

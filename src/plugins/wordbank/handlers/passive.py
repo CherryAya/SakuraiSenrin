@@ -33,6 +33,8 @@ class PassiveResponse:
     group_id: str
     user_id: str
     message_type: str
+    response_kind: str = "text"
+    response_canonical_image_id: int | None = None
 
 
 def build_rule_context(event: MessageEvent | NoticeEvent) -> RuleContext:
@@ -79,6 +81,12 @@ def build_passive_response(
         group_id=context.group_id,
         user_id=context.user_id,
         message_type=message_type,
+        response_kind=str(getattr(selected.response, "kind", "text") or "text"),
+        response_canonical_image_id=getattr(
+            selected.response,
+            "canonical_image_id",
+            None,
+        ),
     )
 
 

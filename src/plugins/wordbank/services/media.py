@@ -119,6 +119,7 @@ class WordbankMediaService:
         self.candidate_limit = candidate_limit
         self._by_md5: dict[str, WordbankImageRecord] = {}
         self._by_dhash_prefix: dict[str, list[WordbankImageRecord]] = {}
+        self._by_canonical_id: dict[int, WordbankImageRecord] = {}
 
     async def rebuild_cache(self) -> None:
         images = await self.repository.list_images()
@@ -127,11 +128,14 @@ class WordbankMediaService:
     def load_cache(self, images: Sequence[WordbankImageRecord]) -> None:
         by_prefix: dict[str, list[WordbankImageRecord]] = defaultdict(list)
         by_md5: dict[str, WordbankImageRecord] = {}
+        by_canonical_id: dict[int, WordbankImageRecord] = {}
         for image in images:
             by_md5[image.md5] = image
             by_prefix[image.dhash[:4]].append(image)
+            by_canonical_id.setdefault(image.canonical_id, image)
         self._by_md5 = by_md5
         self._by_dhash_prefix = dict(by_prefix)
+        self._by_canonical_id = by_canonical_id
 
     async def ingest_image_bytes(
         self,
@@ -142,7 +146,7 @@ class WordbankMediaService:
         fingerprint = fingerprint_image(data)
         existing = await self.repository.get_image_by_md5(fingerprint.md5)
         if existing is not None:
-            self._by_md5[existing.md5] = existing
+            self._cache_image(existing)
             return existing
 
         canonical_id: int | None = None
@@ -177,9 +181,15 @@ class WordbankMediaService:
                 "updated_at": now,
             }
         )
-        self._by_md5[image.md5] = image
-        self._by_dhash_prefix.setdefault(image.dhash[:4], []).append(image)
+        self._cache_image(image)
         return image
+
+    def _cache_image(self, image: WordbankImageRecord) -> None:
+        self._by_md5[image.md5] = image
+        bucket = self._by_dhash_prefix.setdefault(image.dhash[:4], [])
+        if all(item.id != image.id for item in bucket):
+            bucket.append(image)
+        self._by_canonical_id.setdefault(image.canonical_id, image)
 
     def resolve_canonical_id(self, data: bytes) -> int | None:
         fingerprint = fingerprint_image(data)
@@ -218,3 +228,9 @@ class WordbankMediaService:
         if not path.is_file():
             return None
         return path.read_bytes()
+
+    def load_canonical_storage_bytes(self, canonical_image_id: int) -> bytes | None:
+        image = self._by_canonical_id.get(canonical_image_id)
+        if image is None:
+            return None
+        return self.load_storage_bytes(image)

@@ -10,12 +10,15 @@ from src.lib.interaction import is_revoke_signal
 from src.plugins.wordbank.handlers import passive
 from src.plugins.wordbank.handlers.passive import (
     build_event_triggers,
+    build_passive_response,
     fetch_image_bytes,
     handle_passive_message,
     handle_passive_notice,
 )
 from src.plugins.wordbank.services.core import WordbankService
+from src.plugins.wordbank.services.matching import SelectedMatch
 from src.plugins.wordbank.services.media import WordbankMediaService
+from src.plugins.wordbank.services.rules import RuleContext
 from tests.plugins.water.helpers import (
     build_group_increase_event,
     build_group_message_event,
@@ -85,6 +88,34 @@ def _selected(text: str = "我在") -> SimpleNamespace:
             trigger=SimpleNamespace(id=120),
         ),
     )
+
+
+def test_build_passive_response_preserves_image_response_metadata() -> None:
+    selected = cast(
+        SelectedMatch,
+        SimpleNamespace(
+            response=SimpleNamespace(
+                id=300,
+                text="配图如下",
+                kind="image",
+                canonical_image_id=7,
+            ),
+            candidate=SimpleNamespace(
+                entry=SimpleNamespace(id=12),
+                trigger=SimpleNamespace(id=120),
+            ),
+        ),
+    )
+
+    response = build_passive_response(
+        selected,
+        context=cast(RuleContext, SimpleNamespace(group_id="20001", user_id="10001")),
+        message_type="text",
+    )
+
+    assert response.text == "配图如下"
+    assert response.response_kind == "image"
+    assert response.response_canonical_image_id == 7
 
 
 def test_is_revoke_signal_detects_event_fields_and_segments() -> None:
