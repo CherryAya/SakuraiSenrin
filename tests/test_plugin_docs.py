@@ -297,6 +297,68 @@ def test_build_readme_docs_filters_features_by_actor_permission() -> None:
     assert "需要权限: 超级管理员" in str(denied_feature_message)
 
 
+def test_build_readme_docs_filters_wordbank_review_features_by_actor_permission(
+) -> None:
+    source = Path("src/plugins/wordbank/docs/README.MD")
+
+    normal_message = build_readme_docs(
+        source=source,
+        name="词库模块",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        ctx=DocsRenderContext(locale="zh-CN", actor_permission=Permission.NORMAL),
+    )
+    admin_message = build_readme_docs(
+        source=source,
+        name="词库模块",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        ctx=DocsRenderContext(
+            locale="zh-CN",
+            actor_permission=Permission.NORMAL | Permission.GROUP_ADMIN,
+        ),
+    )
+    denied_feature_message = build_readme_docs(
+        source=source,
+        name="词库模块",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        ctx=DocsRenderContext(
+            locale="zh-CN",
+            feature_query="approve",
+            actor_permission=Permission.NORMAL,
+        ),
+    )
+
+    assert "待审核词条" not in str(normal_message)
+    assert "通过审核" not in str(normal_message)
+    assert "拒绝审核" not in str(normal_message)
+    assert "待审核词条" in str(admin_message)
+    assert "通过审核" in str(admin_message)
+    assert "拒绝审核" in str(admin_message)
+    assert "无权限查看子功能文档: 通过审核" in str(denied_feature_message)
+    assert "需要权限: 群管理员" in str(denied_feature_message)
+
+
+def test_plugin_docs_readmes_do_not_use_placeholder_commands() -> None:
+    readmes = sorted(Path("src").glob("**/docs/README.MD"))
+
+    placeholder_lines: list[str] = []
+    for readme in readmes:
+        lines = readme.read_text(encoding="utf-8").splitlines()
+        for lineno, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            if not stripped.startswith("- 指令:"):
+                continue
+            if "..." in stripped or "…" in stripped:
+                placeholder_lines.append(f"{readme}:{lineno}: {stripped}")
+
+    assert not placeholder_lines, "\n".join(placeholder_lines)
+
+
 def test_load_representative_demo_bytes_uses_first_available_feature() -> None:
     source = Path("src/plugins/water/docs/README.MD")
     bundle = load_plugin_doc_bundle(
