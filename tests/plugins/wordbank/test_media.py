@@ -10,6 +10,7 @@ from src.plugins.wordbank.database.types import (
 )
 from src.plugins.wordbank.services.media import (
     LocalWordbankMediaStorage,
+    ObjectStorageWordbankMediaStorage,
     R2WordbankMediaStorage,
     WordbankMediaService,
     fingerprint_image,
@@ -91,10 +92,10 @@ async def test_media_ingest_dedupes_md5_and_uses_cache(tmp_path: Path) -> None:
 
 
 class _ObjectStorage:
-    provider = "r2"
     available = True
 
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, provider: str = "r2", fail: bool = False) -> None:
+        self.provider = provider
         self.fail = fail
         self.objects: dict[str, bytes] = {}
 
@@ -110,10 +111,10 @@ class _ObjectStorage:
             raise RuntimeError("upload failed")
         self.objects[key] = data
         return StorageObject(
-            provider="r2",
+            provider=self.provider,
             bucket="bucket",
             key=key,
-            uri=f"r2://bucket/{key}",
+            uri=f"{self.provider}://bucket/{key}",
             public_url=None,
             etag="etag",
             size=len(data),
@@ -150,6 +151,26 @@ async def test_r2_media_storage_saves_and_loads_remote_image(tmp_path: Path) -> 
     loaded = await media_storage.load_bytes(storage_path)
 
     assert storage_path == f"r2://bucket/wordbank/media/{fingerprint.md5}.webp"
+    assert loaded == storage.objects[f"wordbank/media/{fingerprint.md5}.webp"]
+
+
+async def test_object_media_storage_saves_and_loads_github_uri(tmp_path: Path) -> None:
+    storage = _ObjectStorage(provider="github")
+    media_storage = ObjectStorageWordbankMediaStorage(
+        storage,
+        fallback=LocalWordbankMediaStorage(tmp_path),
+    )
+    data = _png((128, 128, 255))
+    fingerprint = fingerprint_image(data)
+
+    storage_path = await media_storage.save_image(
+        data,
+        md5_hex=fingerprint.md5,
+        keep_original=False,
+    )
+    loaded = await media_storage.load_bytes(storage_path)
+
+    assert storage_path == f"github://bucket/wordbank/media/{fingerprint.md5}.webp"
     assert loaded == storage.objects[f"wordbank/media/{fingerprint.md5}.webp"]
 
 

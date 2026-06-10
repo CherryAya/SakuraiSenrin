@@ -67,6 +67,8 @@ async def test_backup_service_runs_restic_and_dispatches_success_event(
     async def _create_subprocess_exec(*args: object, **kwargs: object) -> _Process:
         _ = kwargs
         if args[1] == "backup":
+            staging_dir = Path(str(args[2]))
+            assert (staging_dir / "manifest.json").is_file()
             return _Process(b'{"message_type":"summary","snapshot_id":"snap123"}\n')
         return _Process(b"")
 

@@ -113,7 +113,7 @@ class LocalWordbankMediaStorage:
         return path.read_bytes()
 
 
-class R2WordbankMediaStorage:
+class ObjectStorageWordbankMediaStorage:
     def __init__(
         self,
         object_storage: ObjectStorageClient,
@@ -147,7 +147,7 @@ class R2WordbankMediaStorage:
                 )
             return stored.uri
         except Exception as exc:
-            logger.warning(f"[Wordbank] R2 media save fallback to local: {exc}")
+            logger.warning(f"[Wordbank] remote media save fallback to local: {exc}")
             return await self.fallback.save_image(
                 data,
                 md5_hex=md5_hex,
@@ -155,13 +155,14 @@ class R2WordbankMediaStorage:
             )
 
     async def load_bytes(self, storage_path: str) -> bytes | None:
-        if not storage_path.startswith("r2://"):
+        scheme = f"{self.object_storage.provider}://"
+        if not storage_path.startswith(scheme):
             return await self.fallback.load_bytes(storage_path)
         try:
-            key = storage_path.removeprefix("r2://").split("/", 1)[1]
+            key = storage_path.removeprefix(scheme).split("/", 1)[1]
             return await self.object_storage.get_bytes(key)
         except Exception as exc:
-            logger.warning(f"[Wordbank] R2 media load skipped: {exc}")
+            logger.warning(f"[Wordbank] remote media load skipped: {exc}")
             return None
 
     def _to_webp(self, data: bytes) -> bytes:
@@ -169,6 +170,9 @@ class R2WordbankMediaStorage:
         with Image.open(BytesIO(data)) as image:
             image.save(buffer, format="WEBP", quality=82, method=4)
         return buffer.getvalue()
+
+
+R2WordbankMediaStorage = ObjectStorageWordbankMediaStorage
 
 
 def hamming_distance(left: str, right: str) -> int:

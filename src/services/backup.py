@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import shutil
@@ -102,6 +103,7 @@ class BackupService:
         manifest_dir = self.local_root / "manifests"
         manifest_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = manifest_dir / f"{run_id}.json"
+        staging_manifest_path = staging_dir / "manifest.json"
         manifest = new_backup_manifest(run_id)
 
         try:
@@ -111,10 +113,12 @@ class BackupService:
                     await self.snapshotter.snapshot(source, staging_dir)
                 )
             manifest.write_json(manifest_path)
+            manifest.write_json(staging_manifest_path)
 
             snapshot_id = await self._run_restic_backup(staging_dir)
             manifest.restic_snapshot_id = snapshot_id
             manifest.write_json(manifest_path)
+            manifest.write_json(staging_manifest_path)
 
             await self._run_restic_forget(plan.retention)
             shutil.rmtree(staging_dir, ignore_errors=True)
@@ -262,14 +266,15 @@ class BackupService:
 
 def _parse_restic_snapshot_id(output: str) -> str | None:
     for line in reversed(output.splitlines()):
-        if '"snapshot_id"' not in line:
+        if not line.strip():
             continue
-        marker = '"snapshot_id"'
-        start = line.find(marker)
-        value_start = line.find('"', start + len(marker))
-        value_end = line.find('"', value_start + 1)
-        if value_start >= 0 and value_end > value_start:
-            return line[value_start + 1 : value_end]
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        snapshot_id = payload.get("snapshot_id")
+        if isinstance(snapshot_id, str) and snapshot_id:
+            return snapshot_id
     return None
 
 
