@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from nonebot import require
 
-from src.config import config
 from src.logger import logger
-from src.services.backup import (
-    build_backup_service_from_config,
-    build_default_backup_plan,
-)
 
 
 def install_backup_scheduler() -> None:
+    from src.config import config
+    from src.services.backup import (
+        build_backup_service_from_config,
+        build_default_backup_plan,
+    )
+
     if not config.BACKUP_ENABLED:
         return
 
