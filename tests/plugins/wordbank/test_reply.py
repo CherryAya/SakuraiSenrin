@@ -90,7 +90,7 @@ async def test_reply_history_returns_status_summary() -> None:
     )
 
     assert "词条 #12 状态摘要" in message
-    assert "不再保留旧版审批历史" in message
+    assert "管理员审核通过后才变为 approved" in message
 
 
 async def test_reply_delete_reuses_entry_delete_permissions() -> None:

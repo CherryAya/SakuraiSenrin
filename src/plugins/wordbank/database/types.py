@@ -145,6 +145,7 @@ class WordbankImageRecord:
 @dataclass(slots=True, frozen=True)
 class WordbankSearchItem:
     entry_id: int
+    status: str
     trigger_text: str
     trigger_mode: str
     response_text: str

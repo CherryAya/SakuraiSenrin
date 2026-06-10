@@ -102,6 +102,72 @@ class WordbankEntryOps(BaseOps[WordbankEntry]):
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount > 0
 
+    async def approve_pending(
+        self,
+        entry_id: int,
+        updated_at: int,
+        *,
+        approved_by: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        conditions = self._review_permission_conditions(
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
+        stmt = (
+            update(WordbankEntry)
+            .where(
+                WordbankEntry.id == entry_id,
+                WordbankEntry.status == "pending",
+                WordbankEntry.deleted_at == 0,
+            )
+            .where(*conditions)
+            .values(
+                status="approved",
+                enabled=1,
+                approved_by=approved_by,
+                updated_at=updated_at,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount > 0
+
+    async def reject_pending(
+        self,
+        entry_id: int,
+        updated_at: int,
+        *,
+        reviewed_by: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        conditions = self._review_permission_conditions(
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
+        stmt = (
+            update(WordbankEntry)
+            .where(
+                WordbankEntry.id == entry_id,
+                WordbankEntry.status == "pending",
+                WordbankEntry.deleted_at == 0,
+            )
+            .where(*conditions)
+            .values(
+                status="rejected",
+                enabled=0,
+                approved_by=reviewed_by,
+                updated_at=updated_at,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount > 0
+
     @staticmethod
     def _mutation_permission_conditions(
         *,
@@ -116,6 +182,19 @@ class WordbankEntryOps(BaseOps[WordbankEntry]):
         if can_moderate_group and actor_group_id:
             allowed.append(WordbankEntry.group_id == actor_group_id)
         return (or_(*allowed),)
+
+    @staticmethod
+    def _review_permission_conditions(
+        *,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> tuple:
+        if is_superuser:
+            return ()
+        if can_moderate_group and actor_group_id:
+            return (WordbankEntry.group_id == actor_group_id,)
+        return (WordbankEntry.id == -1,)
 
 
 class WordbankTriggerOps(BaseOps[WordbankTrigger]):

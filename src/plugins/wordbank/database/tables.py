@@ -30,7 +30,7 @@ class WordbankEntry(WordbankMainBase, TimeMixin):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="approved")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     scope: Mapped[str] = mapped_column(String(32), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)

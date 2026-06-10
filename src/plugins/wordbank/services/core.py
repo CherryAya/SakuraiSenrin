@@ -43,6 +43,7 @@ class WordbankAddResult:
     scope: str
     probability: float
     weight: int
+    status: str = "pending"
     response_kind: str = "text"
     response_canonical_image_id: int | None = None
 
@@ -151,9 +152,9 @@ class WordbankService:
             group_id=group_id if is_group else "",
             created_by=user_id,
         )
-        self.mark_dirty()
         return WordbankAddResult(
             entry_id=entry.id,
+            status=entry.status,
             trigger_text=trigger_text,
             response_text=response_text,
             trigger_mode=mode,
@@ -201,9 +202,9 @@ class WordbankService:
             group_id=group_id if is_group else "",
             created_by=user_id,
         )
-        self.mark_dirty()
         return WordbankAddResult(
             entry_id=entry.id,
+            status=entry.status,
             trigger_text=f"[图片:{canonical_image_id}]",
             response_text=response_text,
             trigger_mode="fullmatch",
@@ -255,6 +256,43 @@ class WordbankService:
         if ok:
             self.mark_dirty()
         return ok
+
+    async def approve_entry(
+        self,
+        entry_id: int,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        ok = await self.repository.approve_entry(
+            entry_id,
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
+        if ok:
+            self.mark_dirty()
+        return ok
+
+    async def reject_entry(
+        self,
+        entry_id: int,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        return await self.repository.reject_entry(
+            entry_id,
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
 
     async def request_delete_vote(
         self,
@@ -397,6 +435,25 @@ class WordbankService:
     ) -> list[WordbankSearchItem]:
         return await self.repository.search(keyword, limit=limit, offset=offset)
 
+    async def list_pending_entries(
+        self,
+        *,
+        keyword: str = "",
+        limit: int = 10,
+        offset: int = 0,
+        actor_group_id: str = "",
+        can_moderate_group: bool = False,
+        is_superuser: bool = False,
+    ) -> list[WordbankSearchItem]:
+        return await self.repository.list_pending_entries(
+            keyword=keyword,
+            limit=limit,
+            offset=offset,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
+
     async def match_text(
         self,
         text: str,
@@ -507,6 +564,7 @@ def format_search_items(
                 locale,
                 "wordbank.search.item",
                 entry_id=item.entry_id,
+                status=item.status,
                 trigger_mode=item.trigger_mode,
                 scope=item.scope,
                 trigger_text=item.trigger_text,
@@ -520,11 +578,51 @@ def format_search_items(
     return "\n".join(lines)
 
 
+def format_pending_items(
+    items: Sequence[WordbankSearchItem],
+    *,
+    locale: LocaleCode,
+    page: int = 1,
+    limit: int = 10,
+    has_more: bool = False,
+) -> str:
+    if not items:
+        return tr(locale, "wordbank.approval.pending_empty", page=page)
+    lines = [tr(locale, "wordbank.approval.pending_title", page=page)]
+    for item in items:
+        lines.append(
+            tr(
+                locale,
+                "wordbank.approval.pending_item",
+                entry_id=item.entry_id,
+                trigger_mode=item.trigger_mode,
+                scope=item.scope,
+                trigger_text=item.trigger_text,
+                response_text=item.response_text,
+                created_by=item.created_by,
+            )
+        )
+    if has_more:
+        lines.append(
+            tr(
+                locale,
+                "wordbank.approval.pending_more",
+                next_page=page + 1,
+                limit=limit,
+            )
+        )
+    return "\n".join(lines)
+
+
 def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
+    key = (
+        "wordbank.add.pending" if result.status == "pending" else "wordbank.add.success"
+    )
     return tr(
         locale,
-        "wordbank.add.success",
+        key,
         entry_id=result.entry_id,
+        status=result.status,
         trigger_text=result.trigger_text,
         response_text=format_response_summary(
             result.response_text,

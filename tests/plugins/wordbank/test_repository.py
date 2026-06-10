@@ -28,6 +28,26 @@ async def test_repository_round_trip_and_index_refresh(
         user_id="10001",
         is_group=True,
     )
+    assert result.status == "pending"
+    await service.rebuild_index()
+
+    selected = await service.match_text(
+        "大家晚安啦",
+        context=RuleContext(
+            group_id="20001",
+            user_id="10001",
+            message_type="group",
+        ),
+    )
+
+    assert selected is None
+    assert await service.approve_entry(
+        result.entry_id,
+        actor_user_id="20002",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
     await service.rebuild_index()
 
     selected = await service.match_text(
@@ -141,6 +161,63 @@ async def test_mutation_permissions_for_owner_group_admin_and_superuser(
 
 
 @pytest.mark.asyncio
+async def test_pending_review_permissions_and_rejection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+
+    service = WordbankService(WordbankRepository(), debounce_seconds=0.01)
+    await service.initialize()
+    first = await service.add_text_entry(
+        trigger_text="待审一",
+        response_text="ok",
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    await service.add_text_entry(
+        trigger_text="待审二",
+        response_text="ok",
+        group_id="20002",
+        user_id="10002",
+        is_group=True,
+    )
+
+    assert not await service.approve_entry(
+        first.entry_id,
+        actor_user_id="20002",
+        actor_group_id="20002",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    pending = await service.list_pending_entries(
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    assert [item.entry_id for item in pending] == [first.entry_id]
+
+    assert await service.reject_entry(
+        first.entry_id,
+        actor_user_id="20002",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    assert not await service.list_pending_entries(
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    detail = await service.get_entry_detail(first.entry_id)
+    assert detail is not None
+    assert detail.status == "rejected"
+
+
+@pytest.mark.asyncio
 async def test_delete_vote_reaches_threshold_and_refreshes_index(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -157,6 +234,13 @@ async def test_delete_vote_reaches_threshold_and_refreshes_index(
         group_id="20001",
         user_id="10001",
         is_group=True,
+    )
+    assert await service.approve_entry(
+        result.entry_id,
+        actor_user_id="20002",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
     )
     await service.rebuild_index()
     assert service.index.find_text("投票删除测试")

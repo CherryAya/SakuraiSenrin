@@ -19,6 +19,7 @@ from src.plugins.wordbank.services.core import (
     WordbankDeleteVoteResult,
     WordbankService,
     format_add_result,
+    format_pending_items,
     format_search_items,
 )
 from src.plugins.wordbank.services.errors import WordbankUserError
@@ -35,6 +36,9 @@ DELETE_ALIASES = {"delete", "del", "remove", "删除"}
 RESTORE_ALIASES = {"restore", "恢复"}
 SUPPORT_ALIASES = {"support", "支持", "支持删除"}
 VOTE_ALIASES = {"vote", "投票", "查看投票", "查看投票状态", "查看投票结果"}
+APPROVE_ALIASES = {"approve", "pass", "通过", "审核通过"}
+REJECT_ALIASES = {"reject", "deny", "拒绝", "驳回"}
+PENDING_ALIASES = {"pending", "review", "待审", "待审核", "审核列表"}
 ADD_SEPARATORS = ("=>", "->", "回答", "回复")
 DEFAULT_SEARCH_LIMIT = 10
 MAX_SEARCH_LIMIT = 20
@@ -455,6 +459,10 @@ def format_delete_vote_status(
     )
 
 
+def actor_can_review(actor: MutationActor) -> bool:
+    return actor.is_superuser or actor.can_moderate_group
+
+
 def extract_image_urls(message: Message) -> list[str]:
     urls: list[str] = []
     for segment in message:
@@ -849,6 +857,84 @@ async def handle_search(
     )
 
 
+async def handle_pending_entries(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    text: str,
+    locale: LocaleCode,
+) -> str:
+    actor = build_mutation_actor(event)
+    if not actor_can_review(actor):
+        return tr(locale, "wordbank.approval.permission_denied")
+    parsed = parse_search_args(text)
+    offset = (parsed.page - 1) * parsed.limit
+    items = await service.list_pending_entries(
+        keyword=parsed.keyword,
+        limit=parsed.limit + 1,
+        offset=offset,
+        actor_group_id=actor.group_id,
+        can_moderate_group=actor.can_moderate_group,
+        is_superuser=actor.is_superuser,
+    )
+    has_more = len(items) > parsed.limit
+    return format_pending_items(
+        items[: parsed.limit],
+        locale=locale,
+        page=parsed.page,
+        limit=parsed.limit,
+        has_more=has_more,
+    )
+
+
+async def handle_approve(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    entry_id_text: str,
+    locale: LocaleCode,
+) -> str:
+    if not entry_id_text.isdigit():
+        return tr(locale, "wordbank.error.entry_id_numeric")
+    actor = build_mutation_actor(event)
+    if not actor_can_review(actor):
+        return tr(locale, "wordbank.approval.permission_denied")
+    entry_id = int(entry_id_text)
+    if await service.approve_entry(
+        entry_id,
+        actor_user_id=actor.user_id,
+        actor_group_id=actor.group_id,
+        can_moderate_group=actor.can_moderate_group,
+        is_superuser=actor.is_superuser,
+    ):
+        return tr(locale, "wordbank.approval.approved", entry_id=entry_id)
+    return tr(locale, "wordbank.approval.not_found", entry_id=entry_id)
+
+
+async def handle_reject(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    entry_id_text: str,
+    locale: LocaleCode,
+) -> str:
+    if not entry_id_text.isdigit():
+        return tr(locale, "wordbank.error.entry_id_numeric")
+    actor = build_mutation_actor(event)
+    if not actor_can_review(actor):
+        return tr(locale, "wordbank.approval.permission_denied")
+    entry_id = int(entry_id_text)
+    if await service.reject_entry(
+        entry_id,
+        actor_user_id=actor.user_id,
+        actor_group_id=actor.group_id,
+        can_moderate_group=actor.can_moderate_group,
+        is_superuser=actor.is_superuser,
+    ):
+        return tr(locale, "wordbank.approval.rejected", entry_id=entry_id)
+    return tr(locale, "wordbank.approval.not_found", entry_id=entry_id)
+
+
 async def handle_delete(
     service: WordbankService,
     *,
@@ -965,6 +1051,27 @@ async def dispatch_wordbank_command(
         return await handle_add_text(service, event=event, text=rest, locale=locale)
     if action in SEARCH_ALIASES:
         return await handle_search(service, keyword=rest, locale=locale)
+    if action in PENDING_ALIASES:
+        return await handle_pending_entries(
+            service,
+            event=event,
+            text=rest,
+            locale=locale,
+        )
+    if action in APPROVE_ALIASES:
+        return await handle_approve(
+            service,
+            event=event,
+            entry_id_text=rest,
+            locale=locale,
+        )
+    if action in REJECT_ALIASES:
+        return await handle_reject(
+            service,
+            event=event,
+            entry_id_text=rest,
+            locale=locale,
+        )
     if action in DELETE_ALIASES:
         return await handle_delete(
             service,

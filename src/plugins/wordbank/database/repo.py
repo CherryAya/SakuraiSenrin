@@ -179,7 +179,7 @@ class WordbankRepository:
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
             entry = WordbankEntry(
-                status="approved",
+                status="pending",
                 enabled=1,
                 scope=scope,
                 priority=priority,
@@ -188,7 +188,7 @@ class WordbankRepository:
                 rule=rule,
                 group_id=group_id,
                 created_by=created_by,
-                approved_by=created_by,
+                approved_by="",
                 deleted_at=0,
                 created_at=now,
                 updated_at=now,
@@ -251,7 +251,7 @@ class WordbankRepository:
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
             entry = WordbankEntry(
-                status="approved",
+                status="pending",
                 enabled=1,
                 scope=scope,
                 priority=priority,
@@ -260,7 +260,7 @@ class WordbankRepository:
                 rule=rule,
                 group_id=group_id,
                 created_by=created_by,
-                approved_by=created_by,
+                approved_by="",
                 deleted_at=0,
                 created_at=now,
                 updated_at=now,
@@ -374,6 +374,62 @@ class WordbankRepository:
         return [
             WordbankSearchItem(
                 entry_id=entry.id,
+                status=entry.status,
+                trigger_text=self._format_trigger_text(trigger),
+                trigger_mode=trigger.trigger_mode,
+                response_text=self._format_response_text(response),
+                scope=entry.scope,
+                probability=entry.probability,
+                weight=entry.weight,
+                created_by=entry.created_by,
+                response_kind=response.kind,
+                response_canonical_image_id=response.canonical_image_id,
+            )
+            for entry, trigger, response in rows
+        ]
+
+    async def list_pending_entries(
+        self,
+        *,
+        keyword: str = "",
+        limit: int = 10,
+        offset: int = 0,
+        actor_group_id: str = "",
+        can_moderate_group: bool = False,
+        is_superuser: bool = False,
+    ) -> list[WordbankSearchItem]:
+        keyword = keyword.strip()
+        async with wordbank_main_db.read_session() as session:
+            stmt = (
+                select(WordbankEntry, WordbankTrigger, WordbankResponse)
+                .join(WordbankTrigger, WordbankTrigger.entry_id == WordbankEntry.id)
+                .join(WordbankResponse, WordbankResponse.entry_id == WordbankEntry.id)
+                .where(
+                    WordbankEntry.status == "pending",
+                    WordbankEntry.deleted_at == 0,
+                )
+                .order_by(WordbankEntry.id.asc())
+                .limit(limit)
+                .offset(offset)
+            )
+            if not is_superuser:
+                if not (can_moderate_group and actor_group_id):
+                    return []
+                stmt = stmt.where(WordbankEntry.group_id == actor_group_id)
+            if keyword:
+                pattern = f"%{keyword}%"
+                stmt = stmt.where(
+                    or_(
+                        WordbankTrigger.trigger_text.like(pattern),
+                        WordbankResponse.text.like(pattern),
+                    )
+                )
+            rows = (await session.execute(stmt)).all()
+
+        return [
+            WordbankSearchItem(
+                entry_id=entry.id,
+                status=entry.status,
                 trigger_text=self._format_trigger_text(trigger),
                 trigger_mode=trigger.trigger_mode,
                 response_text=self._format_response_text(response),
@@ -427,6 +483,46 @@ class WordbankRepository:
                 is_superuser=is_superuser,
             )
 
+    async def approve_entry(
+        self,
+        entry_id: int,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        now = get_current_time()
+        async with wordbank_main_db.write_session() as session:
+            return await WordbankEntryOps(session).approve_pending(
+                entry_id,
+                now,
+                approved_by=actor_user_id,
+                actor_group_id=actor_group_id,
+                can_moderate_group=can_moderate_group,
+                is_superuser=is_superuser,
+            )
+
+    async def reject_entry(
+        self,
+        entry_id: int,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        now = get_current_time()
+        async with wordbank_main_db.write_session() as session:
+            return await WordbankEntryOps(session).reject_pending(
+                entry_id,
+                now,
+                reviewed_by=actor_user_id,
+                actor_group_id=actor_group_id,
+                can_moderate_group=can_moderate_group,
+                is_superuser=is_superuser,
+            )
+
     async def request_delete_vote(
         self,
         *,
@@ -440,6 +536,8 @@ class WordbankRepository:
         async with wordbank_main_db.write_session() as session:
             entry = await session.get(WordbankEntry, entry_id)
             if entry is None or entry.deleted_at != 0:
+                return None
+            if entry.status != "approved":
                 return None
             if not self._entry_allows_group_vote(entry, group_id):
                 return None

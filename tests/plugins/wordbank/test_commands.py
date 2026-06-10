@@ -80,6 +80,7 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
         return_value=[
             WordbankSearchItem(
                 entry_id=12,
+                status="approved",
                 trigger_text="晚安",
                 trigger_mode="contains",
                 response_text="做个好梦",
@@ -103,7 +104,8 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
     )
 
     assert message == (
-        "词库搜索结果 (第 1 页):\n#12 [contains/current_group] 晚安 => 做个好梦"
+        "词库搜索结果 (第 1 页):\n"
+        "#12 [approved/contains/current_group] 晚安 => 做个好梦"
     )
     search_mock.assert_awaited_once_with("晚安", limit=11, offset=0)
 
@@ -113,6 +115,7 @@ async def test_dispatch_wordbank_search_supports_page_limit_and_more_hint() -> N
     items = [
         WordbankSearchItem(
             entry_id=index,
+            status="approved",
             trigger_text=f"晚安{index}",
             trigger_mode="contains",
             response_text=f"做个好梦{index}",
@@ -138,12 +141,111 @@ async def test_dispatch_wordbank_search_supports_page_limit_and_more_hint() -> N
 
     assert message == (
         "词库搜索结果 (第 2 页):\n"
-        "#11 [contains/current_group] 晚安11 => 做个好梦11\n"
-        "#12 [contains/current_group] 晚安12 => 做个好梦12\n"
-        "#13 [contains/current_group] 晚安13 => 做个好梦13\n"
+        "#11 [approved/contains/current_group] 晚安11 => 做个好梦11\n"
+        "#12 [approved/contains/current_group] 晚安12 => 做个好梦12\n"
+        "#13 [approved/contains/current_group] 晚安13 => 做个好梦13\n"
         "还有更多结果，可使用 --page 3 --limit 3 查看下一页。"
     )
     search_mock.assert_awaited_once_with("晚安", limit=4, offset=3)
+
+
+async def test_dispatch_pending_lists_reviewable_entries_for_group_admin() -> None:
+    event = build_group_message_event("#wordbank pending 晚安", role="admin")
+    list_pending_entries = AsyncMock(
+        return_value=[
+            WordbankSearchItem(
+                entry_id=12,
+                status="pending",
+                trigger_text="晚安",
+                trigger_mode="contains",
+                response_text="做个好梦",
+                scope="current_group",
+                probability=1.0,
+                weight=3,
+                created_by="10001",
+            )
+        ]
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(list_pending_entries=list_pending_entries),
+    )
+
+    message = await dispatch_wordbank_command(
+        service,
+        event=event,
+        text="pending 晚安",
+        locale="zh-CN",
+    )
+
+    assert message == (
+        "待审核词条 (第 1 页):\n"
+        "#12 [contains/current_group] 晚安 => 做个好梦  提交者: 10001"
+    )
+    list_pending_entries.assert_awaited_once_with(
+        keyword="晚安",
+        limit=11,
+        offset=0,
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+
+
+async def test_dispatch_approval_requires_group_admin_or_superuser() -> None:
+    event = build_group_message_event("#wordbank approve 12", role="member")
+    approve_entry = AsyncMock()
+    service = cast(WordbankService, SimpleNamespace(approve_entry=approve_entry))
+
+    message = await dispatch_wordbank_command(
+        service,
+        event=event,
+        text="approve 12",
+        locale="zh-CN",
+    )
+
+    assert message == "需要当前群管理员/群主或超级用户才能审核词条。"
+    approve_entry.assert_not_awaited()
+
+
+async def test_dispatch_approval_and_rejection_update_pending_entries() -> None:
+    event = build_group_message_event("#wordbank approve 12", role="admin")
+    approve_entry = AsyncMock(return_value=True)
+    reject_entry = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(approve_entry=approve_entry, reject_entry=reject_entry),
+    )
+
+    approved = await dispatch_wordbank_command(
+        service,
+        event=event,
+        text="approve 12",
+        locale="zh-CN",
+    )
+    rejected = await dispatch_wordbank_command(
+        service,
+        event=event,
+        text="reject 13",
+        locale="zh-CN",
+    )
+
+    assert approved == "词条 #12 已通过审核，稍后会参与被动匹配。"
+    assert rejected == "词条 #13 已拒绝，不会参与被动匹配。"
+    approve_entry.assert_awaited_once_with(
+        12,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    reject_entry.assert_awaited_once_with(
+        13,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
 
 
 def test_parse_search_args_rejects_invalid_pagination() -> None:
@@ -339,7 +441,7 @@ async def test_dispatch_add_uses_i18n_add_formatter() -> None:
         locale="zh-CN",
     )
 
-    assert "词条已加入词库" in message
+    assert "词条已提交审核" in message
     assert "ID: 12" in message
     assert "触发: 晚安" in message
 
@@ -576,7 +678,7 @@ async def test_handle_study_shortcut_supports_legacy_one_line_modes() -> None:
         locale="zh-CN",
     )
 
-    assert "词条已加入词库" in message
+    assert "词条已提交审核" in message
     add_text_entry.assert_awaited_once_with(
         trigger_text="晚安",
         response_text="做个好梦",

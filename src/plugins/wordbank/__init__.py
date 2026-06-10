@@ -137,6 +137,24 @@ wordbank_search_command = on_command(
     priority=5,
     block=True,
 )
+wordbank_pending_command = on_command(
+    ("wordbank", "pending"),
+    aliases={"待审核词条"},
+    priority=5,
+    block=True,
+)
+wordbank_approve_command = on_command(
+    ("wordbank", "approve"),
+    aliases={"通过词条", "审核通过词条"},
+    priority=5,
+    block=True,
+)
+wordbank_reject_command = on_command(
+    ("wordbank", "reject"),
+    aliases={"拒绝词条", "驳回词条"},
+    priority=5,
+    block=True,
+)
 wordbank_delete_command = on_command(
     ("wordbank", "delete"),
     aliases={("wordbank", "del"), "删除词条"},
@@ -576,6 +594,33 @@ async def _(
     arg: Message = CommandArg(),
 ) -> None:
     await _handle_wordbank_command_message(matcher, event, arg, forced_action="search")
+
+
+@wordbank_pending_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(matcher, event, arg, forced_action="pending")
+
+
+@wordbank_approve_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(matcher, event, arg, forced_action="approve")
+
+
+@wordbank_reject_command.handle()
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(matcher, event, arg, forced_action="reject")
 
 
 @wordbank_delete_command.handle()
