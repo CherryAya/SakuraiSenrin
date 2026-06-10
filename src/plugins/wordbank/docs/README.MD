@@ -28,6 +28,30 @@
 - 兼容指令: `wordbank.add 触发词 => 响应词`、`添加词条 触发词 => 响应词`
 #### 说明
 默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`wordbank add 触发词 [图片]` 表示文本触发、图片回复；`wordbank add [图片] => 响应词` 表示图片触发、文本回复；`wordbank add 触发词 => 响应词 [图片]` 表示文本触发、图文混排回复。引导模式收到图片后会在后台下载并自动重试，用户可继续配置范围和高级选项；最终仍无法下载或识别时，会提示词条设置失败且不写入词库。图片入库时会计算 MD5、dHash、pHash、尺寸和文件大小，相似图片会归并到同一个 canonical image。添加完成后词条状态为 `pending`，管理员或超级用户审核通过前不会参与被动匹配；系统会向超级用户发送审批私聊并记录提交回执，回复对应消息并 @ 机器人发送 `y` / `approve` / `通过` 可一键通过，发送 `n` / `reject` / `拒绝` 可一键驳回。`study 触发词 => 响应词`、`study 触发词 [图片]` 和 `study [图片] => 响应词` 会走同一套添加逻辑；旧版 `study <a|m> <t|f> 触发词 响应词` 也会转换为新版固定 scope。引导任一步收到 `revoke` / `recall` 会发送取消提示并中止；连续输错 3 次会强制终止对话。
+#### 高级选项说明
+- `--mode contains|fullmatch|prefix`
+  控制文本触发方式。`contains` 只要消息里包含触发词即可，`fullmatch` 要求标准化后的整条消息完全相等，`prefix` 要求消息以触发词开头。
+- `--scope current_group|all_groups|self|private_only`
+  控制词条作用范围。`current_group` 仅当前群，`all_groups` 所有群可触发，`self` 仅词条创建者可触发，`private_only` 仅私聊可触发。引导模式里 scope 单独选择，因此高级选项里不能重复写 `--scope`。
+- `--prob 0.0-1.0`
+  控制命中后的触发概率。`1` 表示必中，`0.5` 表示大约一半概率触发。未显式设置时，普通触发词默认 `1`，短词默认较低概率。
+- `--weight 1-5`
+  控制同优先级候选词条被选中的权重，同时响应列表内部也会按权重选响应。数值越大，命中时越容易被选中。
+- `--role owner|admin|member`
+  限制发送者角色。常见用法是只让群主或管理员触发某些提醒。
+- `--call window:min:max`
+  增加调用次数窗口约束。`window` 是统计窗口秒数，`min` 是最少调用次数，`max` 是最多调用次数。示例 `--call 60:2:5` 表示 60 秒窗口内至少第 2 次才触发，并且超过第 5 次不再触发。
+#### 常用示例命令
+- `#wordbank add 晚安 => 做个好梦`
+- `#wordbank add 早 => 早安呀 --mode fullmatch --prob 0.5`
+- `#wordbank add 进来先看群公告 => 记得先看公告 --mode prefix`
+- `#wordbank add 管理员辛苦啦 => 辛苦辛苦 --role admin`
+- `#wordbank add 只在私聊说 => 收到 --scope private_only`
+- `#wordbank add 大家好 => 大家好呀 --scope all_groups --weight 5`
+- `#wordbank add 连续打卡 => 你今天很活跃 --call 3600:3:10`
+- `#wordbank add event:poke => 别戳啦`
+- `#wordbank add 晒图 [图片]`
+- `#wordbank add [图片] => 这张图我记住了`
 #### 前置条件
 当前用户所在群聊需要通过运行时检查。
 #### 完整流程
@@ -78,6 +102,42 @@ ID: 14
 触发: [图片:7]
 响应: 是这张图喔
 模式: fullmatch
+范围: current_group
+概率: 1
+权重: 3
+管理员通过前不会触发。
+USER: #wordbank add 早 => 早安呀 --mode fullmatch --prob 0.5
+SYSTEM: `--mode fullmatch` 要求整句完全匹配；`--prob 0.5` 表示命中后只有约一半概率回复。
+BOT: 词条已提交审核
+ID: 15
+状态: pending
+触发: 早
+响应: 早安呀
+模式: fullmatch
+范围: current_group
+概率: 0.5
+权重: 3
+管理员通过前不会触发。
+USER: #wordbank add 管理员集合 => 管理员请看这里 --role admin --weight 5
+SYSTEM: `--role admin` 只允许管理员触发；`--weight 5` 表示同优先级下更容易被选中。
+BOT: 词条已提交审核
+ID: 16
+状态: pending
+触发: 管理员集合
+响应: 管理员请看这里
+模式: contains
+范围: current_group
+概率: 1
+权重: 5
+管理员通过前不会触发。
+USER: #wordbank add 连续打卡 => 你今天很活跃 --call 3600:3:10
+SYSTEM: `--call 3600:3:10` 表示 1 小时内至少第 3 次才触发，超过第 10 次不再触发。
+BOT: 词条已提交审核
+ID: 17
+状态: pending
+触发: 连续打卡
+响应: 你今天很活跃
+模式: contains
 范围: current_group
 概率: 1
 权重: 3
@@ -256,6 +316,12 @@ ID 非数字、词条不存在或当前用户没有操作权限时返回明确�
 - `event:poke`: 有人戳一戳机器人。
 - `event:join` / `event:group_increase`: 群成员加入。
 - `event:leave` / `event:group_decrease`: 群成员退出或被移出。
+#### 常用示例命令
+- `#wordbank add event:at => 我在`
+- `#wordbank add event:poke => 别戳啦`
+- `#wordbank add event:join => 欢迎加入`
+- `#wordbank add event:leave => 下次再见`
+- `#wordbank add event:at => 管理员请处理 --role admin`
 #### 前置条件
 词条已启用，且运行时检查允许当前消息继续处理。
 #### 完整流程
