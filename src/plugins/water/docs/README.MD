@@ -13,8 +13,8 @@
 - `ranking` 查看周期榜单: 查询周榜、月榜、季榜、年榜和总榜。
 - `achievement` 查看个人成就: 查询当前已解锁与下一步成就。
 - `season-query` 查看赛季数据: 查询赛季概览、积分、排名与成就视图。
-- `merge-confirm` 处理矩阵合并建议: 对智能建议发送 `#water.merge yes/no`。
-- `admin-maintenance` 超管维护命令: 结算、回档、忽略、状态与赛季管理。
+- `merge-confirm` 处理矩阵合并建议: 群管理员对智能建议发送 `#water.merge yes/no`。
+- `admin-maintenance` 超管维护命令: 超管执行结算、回档、忽略、状态与赛季管理。
 
 ## 子功能详情
 ### `profile` 查看个人画像
@@ -114,11 +114,12 @@ BOT: [发送赛季积分图]
 - 摘要: 对智能建议发送 `#water.merge yes/no`。
 - 别名: merge, 合并建议
 - 指令: `#water.merge yes` / `#water.merge no`
+- 权限: 群管理员
 - Demo: water-merge-confirm.png
 #### 说明
 当系统判断某些群可能属于同一矩阵时，会提示管理员确认。管理员可通过 `yes` 或 `no` 完成一次性选择。
 #### 前置条件
-当前群存在待确认的合并建议。
+当前群存在待确认的合并建议，且执行者是群主、群管理员或超级管理员。
 #### 完整流程
 收到提示后执行一次选择即可。
 ```demo
@@ -132,7 +133,8 @@ BOT: 已记录为“同意合并”啦
 ### `admin-maintenance` 超管维护命令
 - 摘要: 结算、回档、忽略、状态与赛季管理。
 - 别名: water 管理, 超管命令
-- 指令: `#water ...`
+- 指令: `#water help` / `#water settle [YYYYMMDD] [-f|--force]` / `#water pardon <penalty_id>` / `#water ignore <group_id>` / `#water ignored` / `#water state` / `#water season create <season_id> <YYYYMMDD> <YYYYMMDD> <name>` / `#water season publish <season_id>` / `#water season archive <season_id>` / `#water season show <season_id>` / `#water season list [current|published|archived|draft]` / `#water season delete <season_id>`
+- 权限: 超级管理员
 - Demo: water-admin-maintenance.png
 #### 说明
 这组命令仅对超级管理员开放，覆盖 `help`、`settle`、`pardon`、`ignore`、`ignored`、`state`、`season create/publish/archive/show/list/delete`。

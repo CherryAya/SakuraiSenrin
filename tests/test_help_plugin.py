@@ -248,6 +248,7 @@ async def test_resolve_docs_message_requests_plugin_or_feature_view() -> None:
         seen_views.append(ctx.view)
         if ctx.view == "feature":
             assert ctx.feature_query == "ranking"
+            assert ctx.actor_permission == Permission.SUPERUSER
         return Message(MessageSegment.image(b"fake-demo"))
 
     entry = _make_entry(
@@ -262,6 +263,7 @@ async def test_resolve_docs_message_requests_plugin_or_feature_view() -> None:
         entry,
         "zh-CN",
         feature_query="ranking",
+        actor_permission=Permission.SUPERUSER,
     )
 
     assert seen_views == ["plugin", "feature"]

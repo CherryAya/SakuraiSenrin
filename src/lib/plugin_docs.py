@@ -35,6 +35,7 @@ class DocsRenderContext:
     feature_query: str | None = None
     include_demo: bool = True
     view: Literal["text", "index", "plugin", "feature"] = "text"
+    actor_permission: Permission = Permission.NORMAL
 
 
 type DocsResult = Message | Awaitable[Message] | str | Awaitable[str]
@@ -63,6 +64,7 @@ class FeatureDoc:
     summary: str
     aliases: tuple[str, ...]
     trigger: str
+    permission: Permission
     demo_filename: str
     overview: str
     preconditions: str
@@ -171,8 +173,13 @@ def build_readme_docs(
         trigger=trigger,
         permission=permission,
     )
+    actor_permission = ctx.actor_permission if ctx is not None else Permission.NORMAL
     if ctx is not None and ctx.feature_query:
-        match = match_feature(bundle.index, ctx.feature_query)
+        visible_features = _filter_features_by_permission(
+            bundle.index,
+            actor_permission,
+        )
+        match = match_feature(visible_features, ctx.feature_query)
         if match.status == "matched" and match.feature is not None:
             return render_feature_message(
                 bundle,
@@ -180,6 +187,9 @@ def build_readme_docs(
                 locale=locale,
                 include_demo=ctx.include_demo,
             )
+        denied_match = match_feature(bundle.index, ctx.feature_query)
+        if denied_match.status == "matched" and denied_match.feature is not None:
+            return _build_feature_permission_denied_message(denied_match.feature)
         if match.status == "ambiguous":
             return Message(
                 "\n".join(
@@ -202,6 +212,7 @@ def build_readme_docs(
         bundle,
         locale=locale,
         include_demo=include_demo,
+        actor_permission=actor_permission,
     )
 
 
@@ -277,13 +288,15 @@ def render_overview_message(
     *,
     locale: LocaleCode,
     include_demo: bool = False,
+    actor_permission: Permission = Permission.NORMAL,
 ) -> Message:
     lines = [
         f"📖 ===== {bundle.title} =====",
         "",
     ]
-    if bundle.index:
-        for index, feature in enumerate(bundle.index, start=1):
+    visible_features = _filter_features_by_permission(bundle.index, actor_permission)
+    if visible_features:
+        for index, feature in enumerate(visible_features, start=1):
             lines.append(f"{index}. {feature.title}")
             lines.append(f"  {_feature_command_for_display(bundle, feature)}")
             lines.append("")
@@ -332,6 +345,27 @@ def render_feature_message(
     if demo_bytes is None:
         return message
     return message + MessageSegment.image(demo_bytes)
+
+
+def _filter_features_by_permission(
+    features: Sequence[FeatureDoc],
+    actor_permission: Permission,
+) -> tuple[FeatureDoc, ...]:
+    return tuple(
+        feature
+        for feature in features
+        if feature.permission == Permission.NONE
+        or actor_permission.has(feature.permission)
+    )
+
+
+def _build_feature_permission_denied_message(feature: FeatureDoc) -> Message:
+    return Message(
+        (
+            f"无权限查看子功能文档: {feature.title}\n"
+            f"需要权限: {feature.permission.label}"
+        ).strip()
+    )
 
 
 def _feature_command_for_display(
@@ -484,6 +518,23 @@ def _parse_meta_block(block: str) -> dict[str, str]:
     return meta
 
 
+def _parse_permission(value: str) -> Permission:
+    normalized = value.strip()
+    if not normalized:
+        return Permission.NORMAL
+    try:
+        return Permission[normalized]
+    except KeyError:
+        pass
+    for permission in Permission:
+        if normalized == permission.label:
+            return permission
+    try:
+        return Permission(int(normalized))
+    except ValueError:
+        return Permission.NORMAL
+
+
 def _parse_feature_index(block: str) -> dict[str, tuple[str, str]]:
     entries: dict[str, tuple[str, str]] = {}
     for line in block.splitlines():
@@ -527,6 +578,7 @@ def _parse_feature_details(block: str, source_path: Path) -> dict[str, FeatureDo
             summary=meta.get("摘要", "").strip() or title.strip(),
             aliases=_split_csv(meta.get("别名", "")),
             trigger=meta.get("指令", "").strip() or meta.get("触发", "").strip(),
+            permission=_parse_permission(meta.get("权限", "")),
             demo_filename=demo_filename,
             overview=subsections.get("说明", "").strip(),
             preconditions=subsections.get("前置条件", "").strip(),
@@ -565,6 +617,7 @@ def _merge_features(
                     summary=summary,
                     aliases=(),
                     trigger="",
+                    permission=Permission.NORMAL,
                     demo_filename="",
                     overview="",
                     preconditions="",
@@ -581,6 +634,7 @@ def _merge_features(
                     summary=detail.summary or summary,
                     aliases=detail.aliases,
                     trigger=detail.trigger,
+                    permission=detail.permission,
                     demo_filename=detail.demo_filename,
                     overview=detail.overview,
                     preconditions=detail.preconditions,

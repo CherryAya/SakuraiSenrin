@@ -41,6 +41,15 @@ def test_load_plugin_doc_bundle_parses_real_readme() -> None:
     assert ranking.demo_turns[0].speaker == "USER"
     assert ranking.demo_turns[0].text == "#水王 月榜"
 
+    merge = next(feature for feature in bundle.index if feature.slug == "merge-confirm")
+    admin = next(
+        feature for feature in bundle.index if feature.slug == "admin-maintenance"
+    )
+    assert merge.permission == Permission.GROUP_ADMIN
+    assert admin.permission == Permission.SUPERUSER
+    assert "#water ..." not in admin.trigger
+    assert "#water season delete <season_id>" in admin.trigger
+
 
 def test_match_feature_supports_exact_fuzzy_ambiguous_and_not_found(
     tmp_path: Path,
@@ -240,6 +249,52 @@ BOT: 操作完成
     assert "子功能目录" not in str(with_demo)
     assert "反馈群「427842039」" in str(with_demo)
     assert any(segment.type == "image" for segment in with_demo)
+
+
+def test_build_readme_docs_filters_features_by_actor_permission() -> None:
+    source = Path("src/plugins/water/docs/README.MD")
+
+    normal_message = build_readme_docs(
+        source=source,
+        name="吹水记录",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        ctx=DocsRenderContext(locale="zh-CN", actor_permission=Permission.NORMAL),
+    )
+    superuser_message = build_readme_docs(
+        source=source,
+        name="吹水记录",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        ctx=DocsRenderContext(
+            locale="zh-CN",
+            actor_permission=Permission.NORMAL
+            | Permission.GROUP_ADMIN
+            | Permission.GROUP_OWNER
+            | Permission.SUPERUSER,
+        ),
+    )
+    denied_feature_message = build_readme_docs(
+        source=source,
+        name="吹水记录",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        ctx=DocsRenderContext(
+            locale="zh-CN",
+            feature_query="admin-maintenance",
+            actor_permission=Permission.NORMAL,
+        ),
+    )
+
+    assert "处理矩阵合并建议" not in str(normal_message)
+    assert "超管维护命令" not in str(normal_message)
+    assert "处理矩阵合并建议" in str(superuser_message)
+    assert "超管维护命令" in str(superuser_message)
+    assert "无权限查看子功能文档: 超管维护命令" in str(denied_feature_message)
+    assert "需要权限: 超级管理员" in str(denied_feature_message)
 
 
 def test_load_representative_demo_bytes_uses_first_available_feature() -> None:

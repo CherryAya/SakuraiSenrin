@@ -391,6 +391,7 @@ async def _resolve_docs_message(
     locale: LocaleCode,
     *,
     feature_query: str | None = None,
+    actor_permission: Permission = Permission.NORMAL,
 ) -> Message:
     provider = entry.docs["provider"]
     try:
@@ -405,6 +406,7 @@ async def _resolve_docs_message(
                     locale=locale,
                     feature_query=feature_query,
                     view=view,
+                    actor_permission=actor_permission,
                 )
             )
         if inspect.isawaitable(result):
@@ -471,5 +473,6 @@ async def _(
         match_result.entry,
         locale,
         feature_query=feature_query,
+        actor_permission=actor_permission,
     )
     await matcher.finish(docs_message)
