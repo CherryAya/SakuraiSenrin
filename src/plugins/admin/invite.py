@@ -46,6 +46,7 @@ from src.repositories import group_repo, invite_repo
 name = tr("zh-CN", "plugin.admin_invite.name")
 description = tr("zh-CN", "plugin.admin_invite.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "invite" / "README.MD"
+INVITATION_AVATAR_CONCURRENCY = 8
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
@@ -389,12 +390,9 @@ async def generate_invitation_image_bytes(
 
     有股味我也懒得改了你就说他能不能用，能用的代码就是好代码对吧！
     """
+    avatar_limiter = asyncio.Semaphore(INVITATION_AVATAR_CONCURRENCY)
     avatar_tasks = [
-        _fetch_invitation_avatars(
-            group_id=str(item["group_id"]),
-            inviter_id=str(item["inviter_id"]),
-        )
-        for item in invitations_data
+        _fetch_invitation_avatars(item, avatar_limiter) for item in invitations_data
     ]
     fetched_images = await asyncio.gather(*avatar_tasks)
     for item, (group_avatar, user_avatar) in zip(
@@ -408,15 +406,16 @@ async def generate_invitation_image_bytes(
 
 
 async def _fetch_invitation_avatars(
-    group_id: str,
-    inviter_id: str,
+    item: dict[str, Any],
+    limiter: asyncio.Semaphore,
 ) -> tuple[Image.Image, Image.Image]:
     group_avatar_size = 300
     user_avatar_size = 150
-    group_avatar, user_avatar = await asyncio.gather(
-        QQAvatar.fetch_group(group_id, size=group_avatar_size),
-        QQAvatar.fetch_user(inviter_id, size=user_avatar_size),
-    )
+    async with limiter:
+        group_avatar, user_avatar = await asyncio.gather(
+            QQAvatar.fetch_group(str(item["group_id"]), size=group_avatar_size),
+            QQAvatar.fetch_user(str(item["inviter_id"]), size=user_avatar_size),
+        )
     return (
         group_avatar.circle_corner(group_avatar_size * 0.15).image.copy(),
         user_avatar.circle().image.copy(),
