@@ -13,13 +13,13 @@ from nonebot.adapters.onebot.v11.event import (
     NoticeEvent,
 )
 
+from src.lib.interaction import is_revoke_signal
 from src.logger import logger
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.matching import SelectedMatch
 from src.plugins.wordbank.services.media import MediaError, WordbankMediaService
 from src.plugins.wordbank.services.rules import Role, RuleContext
 
-REVOKE_MARKERS = ("revoke", "recall")
 MAX_PASSIVE_IMAGES = 4
 MAX_IMAGE_DOWNLOAD_BYTES = 4 * 1024 * 1024
 
@@ -33,40 +33,6 @@ class PassiveResponse:
     group_id: str
     user_id: str
     message_type: str
-
-
-def _contains_revoke_marker(value: object) -> bool:
-    text = str(value).casefold()
-    return any(marker in text for marker in REVOKE_MARKERS)
-
-
-def is_revoke_signal(event: object) -> bool:
-    event_name = event.__class__.__name__
-    if _contains_revoke_marker(event_name):
-        return True
-
-    for attr in ("post_type", "notice_type", "sub_type", "event_name", "type"):
-        value = getattr(event, attr, "")
-        if value and _contains_revoke_marker(value):
-            return True
-
-    raw_message = getattr(event, "raw_message", "")
-    if raw_message and _contains_revoke_marker(raw_message):
-        return True
-
-    message = getattr(event, "message", None)
-    if message is None:
-        return False
-    for segment in message:
-        if _contains_revoke_marker(getattr(segment, "type", "")):
-            return True
-        data = getattr(segment, "data", {})
-        if isinstance(data, dict) and any(
-            _contains_revoke_marker(key) or _contains_revoke_marker(value)
-            for key, value in data.items()
-        ):
-            return True
-    return False
 
 
 def build_rule_context(event: MessageEvent | NoticeEvent) -> RuleContext:

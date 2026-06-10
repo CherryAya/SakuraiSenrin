@@ -2,7 +2,6 @@
 
 from .commands import (
     IMAGE_ALIASES,
-    abort_if_revoke_signal,
     build_forced_command_text,
     dispatch_wordbank_command,
     extract_image_urls,
@@ -20,7 +19,6 @@ __all__ = [
     "IMAGE_ALIASES",
     "REPLY_COMMAND_ALIASES",
     "PassiveResponse",
-    "abort_if_revoke_signal",
     "build_forced_command_text",
     "dispatch_wordbank_command",
     "extract_image_urls",

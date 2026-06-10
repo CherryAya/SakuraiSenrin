@@ -285,7 +285,8 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert add.demo_turns[0].text == "#wordbank.add"
     assert add.demo_turns[-1].text == "做个好梦"
     assert "revoke" in add.failures
-    assert "直接中止" in add.failures
+    assert "发送取消提示并中止" in add.failures
+    assert "连续输错 3 次" in add.failures
     assert "wordbank.help" in wordbank.summary
     assert "ID: 12" in add.demo_turns[9].text
     assert passive.demo_turns[-1].speaker == "SYSTEM"
@@ -298,7 +299,8 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert shortcut.demo_turns[2].text == "a"
     assert shortcut.demo_turns[-1].text == "做个好梦"
     assert "revoke" in shortcut.failures
-    assert "直接中止" in shortcut.failures
+    assert "发送取消提示并中止" in shortcut.failures
+    assert "连续输错 3 次" in shortcut.failures
     for source, bundle in ((wordbank_source, wordbank), (study_source, study)):
         for feature in bundle.index:
             if not feature.demo_turns:

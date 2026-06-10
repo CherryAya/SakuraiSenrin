@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import shlex
-from typing import Any, Protocol
+from typing import Any
 
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
@@ -13,7 +13,6 @@ from src.config import config
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.plugins.wordbank.handlers.passive import is_revoke_signal
 from src.plugins.wordbank.services.core import (
     WordbankDeleteVoteResult,
     WordbankService,
@@ -67,19 +66,6 @@ class MutationActor:
 class GuidedAdvancedOptions:
     raw_rule: dict[str, Any]
     trigger_mode: str | None
-
-
-class SupportsFinish(Protocol):
-    async def finish(self, message: Any | None = None) -> Any: ...
-
-
-async def abort_if_revoke_signal(
-    event: MessageEvent,
-    matcher: SupportsFinish,
-) -> None:
-    if not is_revoke_signal(event):
-        return
-    await matcher.finish()
 
 
 def _split_command(text: str) -> tuple[str, str]:

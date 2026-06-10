@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11.bot import Bot
 import pytest
 
+from src.lib.interaction import is_revoke_signal
 from src.plugins.wordbank.handlers import passive
 from src.plugins.wordbank.handlers.passive import (
     build_event_triggers,
     fetch_image_bytes,
     handle_passive_message,
     handle_passive_notice,
-    is_revoke_signal,
 )
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService

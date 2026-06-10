@@ -1,7 +1,7 @@
 # 词库模块
 
 ## 概览
-词库模块提供低资源优先的群聊词库能力。`wordbank` 负责完整词库管理、运行时匹配、图片指纹和日志；`study` 只是快捷添加入口。运行时使用内存索引匹配文本、图片和事件触发词，普通文本消息路径不查询数据库；新增、删除、恢复后通过延迟重建刷新索引。检测到 `revoke` / `recall` 相关信号时会直接跳过匹配，不回复也不写日志；`wordbank / 词库 / wordbank.help` 可查看帮助，`wordbank add` / `wordbank.add` / `添加词条` 的引导流程里如果收到撤回信号，会直接中止，不发送取消提示。为兼容旧入口，`wordbank.add`、`wordbank.search`、`wordbank.delete`、`wordbank.restore`、`wordbank.image`、`wordbank.support`、`wordbank.vote` 和常用中文直达命令会自动转入对应新版子命令。
+词库模块提供低资源优先的群聊词库能力。`wordbank` 负责完整词库管理、运行时匹配、图片指纹和日志；`study` 只是快捷添加入口。运行时使用内存索引匹配文本、图片和事件触发词，普通文本消息路径不查询数据库；新增、删除、恢复后通过延迟重建刷新索引。检测到 `revoke` / `recall` 相关信号时会直接跳过匹配，不回复也不写日志；`wordbank / 词库 / wordbank.help` 可查看帮助，`wordbank add` / `wordbank.add` / `添加词条` 的引导流程里如果收到撤回信号，会发送取消提示并中止，连续输错 3 次也会终止。为兼容旧入口，`wordbank.add`、`wordbank.search`、`wordbank.delete`、`wordbank.restore`、`wordbank.image`、`wordbank.support`、`wordbank.vote` 和常用中文直达命令会自动转入对应新版子命令。
 
 ## 权限与触发
 - 触发方式: 指令触发 / 被动触发
@@ -25,7 +25,7 @@
 - 指令: `wordbank add 触发词 => 响应词`
 - 兼容指令: `wordbank.add 触发词 => 响应词`、`添加词条 触发词 => 响应词`
 #### 说明
-默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`study 触发词 => 响应词` 会走同一套添加逻辑；旧版 `study <a|m> <t|f> 触发词 响应词` 也会转换为新版固定 scope。引导任一步收到 `revoke` / `recall` 会直接中止，不发送取消提示。
+默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`study 触发词 => 响应词` 会走同一套添加逻辑；旧版 `study <a|m> <t|f> 触发词 响应词` 也会转换为新版固定 scope。引导任一步收到 `revoke` / `recall` 会发送取消提示并中止；连续输错 3 次会强制终止对话。
 #### 前置条件
 当前用户所在群聊需要通过运行时检查。
 #### 完整流程
@@ -55,7 +55,7 @@ USER: 大家晚安啦
 BOT: 做个好梦
 ```
 #### 失败情况
-触发词或响应词为空、规则字段冲突、概率和权重越界时会返回当前群语言的原因；引导中若检测到 `revoke` / `recall` 会直接中止，不发送取消提示。
+触发词或响应词为空、规则字段冲突、概率和权重越界时会返回当前群语言的原因；引导中若检测到 `revoke` / `recall` 会发送取消提示并中止，连续输错 3 次会强制终止对话。
 
 ### `search` 搜索词条
 - 摘要: 查询词库中的触发词和响应词。

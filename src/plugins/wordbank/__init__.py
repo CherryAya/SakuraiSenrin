@@ -23,6 +23,11 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.interaction import (
+    abort_if_revoke_signal,
+    clear_interaction_errors,
+    reject_or_abort_on_error,
+)
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_readme_docs,
@@ -35,7 +40,6 @@ from .handlers import (
     IMAGE_ALIASES,
     REPLY_COMMAND_ALIASES,
     PassiveResponse,
-    abort_if_revoke_signal,
     build_forced_command_text,
     dispatch_wordbank_command,
     extract_image_urls,
@@ -47,6 +51,7 @@ from .handlers import (
     is_reply,
     localize_command_error,
 )
+from .handlers.commands import parse_guided_advanced_options, parse_guided_scope_choice
 from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError
 
@@ -89,6 +94,7 @@ __plugin_meta__ = create_plugin_metadata(
 )
 
 _wordbank_initialized = False
+GUIDED_MAX_ERRORS = 3
 
 
 async def initialize_wordbank_plugin() -> None:
@@ -217,6 +223,33 @@ async def _handle_wordbank_command_message(
     await matcher.finish(msg)
 
 
+async def _abort_guided_on_revoke(
+    matcher: Matcher,
+    event: MessageEvent,
+    locale: LocaleCode,
+) -> None:
+    await abort_if_revoke_signal(
+        event,
+        matcher,
+        message=tr(locale, "interaction.cancelled"),
+    )
+
+
+async def _reject_guided_error(
+    matcher: Matcher,
+    state: T_State,
+    locale: LocaleCode,
+    message: str,
+) -> None:
+    await reject_or_abort_on_error(
+        matcher,
+        state,
+        message,
+        max_errors=GUIDED_MAX_ERRORS,
+        abort_message=tr(locale, "interaction.too_many_errors"),
+    )
+
+
 async def _start_guided_add(
     matcher: Matcher,
     state: T_State,
@@ -244,7 +277,13 @@ async def _finish_guided_add(
             locale=locale,
         )
     except (RuleError, ValueError) as exc:
-        await matcher.finish(localize_command_error(exc, locale))
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            localize_command_error(exc, locale),
+        )
+        return
     await matcher.finish(msg)
 
 
@@ -255,8 +294,8 @@ async def _(
     state: T_State,
     arg: Message = CommandArg(),
 ) -> None:
-    await abort_if_revoke_signal(event, matcher)
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    await _abort_guided_on_revoke(matcher, event, locale)
     text = arg.extract_plain_text().strip()
     if text:
         first, _, tail = text.partition(" ")
@@ -269,31 +308,78 @@ async def _(
 
 @wordbank_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    await abort_if_revoke_signal(event, matcher)
     locale = state.get("wordbank_locale", "zh-CN")
-    state["wordbank_guided_trigger"] = event.message.extract_plain_text()
+    await _abort_guided_on_revoke(matcher, event, locale)
+    text = event.message.extract_plain_text().strip()
+    if not text:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            tr(locale, "wordbank.error.trigger_empty"),
+        )
+        return
+    clear_interaction_errors(state)
+    state["wordbank_guided_trigger"] = text
     await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
 
 
 @wordbank_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    await abort_if_revoke_signal(event, matcher)
     locale = state.get("wordbank_locale", "zh-CN")
-    state["wordbank_guided_response"] = event.message.extract_plain_text()
+    await _abort_guided_on_revoke(matcher, event, locale)
+    text = event.message.extract_plain_text().strip()
+    if not text:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            tr(locale, "wordbank.error.response_empty"),
+        )
+        return
+    clear_interaction_errors(state)
+    state["wordbank_guided_response"] = text
     await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
 
 
 @wordbank_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    await abort_if_revoke_signal(event, matcher)
     locale = state.get("wordbank_locale", "zh-CN")
-    state["wordbank_guided_scope"] = event.message.extract_plain_text()
+    await _abort_guided_on_revoke(matcher, event, locale)
+    text = event.message.extract_plain_text().strip()
+    try:
+        parse_guided_scope_choice(
+            text,
+            is_group=bool(getattr(event, "group_id", "")),
+        )
+    except RuleError as exc:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            localize_command_error(exc, locale),
+        )
+        return
+    clear_interaction_errors(state)
+    state["wordbank_guided_scope"] = text
     await matcher.pause(tr(locale, "wordbank.guided.add.advanced_prompt"))
 
 
 @wordbank_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    await abort_if_revoke_signal(event, matcher)
+    locale = state.get("wordbank_locale", "zh-CN")
+    await _abort_guided_on_revoke(matcher, event, locale)
+    try:
+        parse_guided_advanced_options(event.message.extract_plain_text())
+    except RuleError as exc:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            localize_command_error(exc, locale),
+        )
+        return
+    clear_interaction_errors(state)
     await _finish_guided_add(matcher, event, state)
 
 
@@ -304,9 +390,9 @@ async def _(
     state: T_State,
     arg: Message = CommandArg(),
 ) -> None:
-    await abort_if_revoke_signal(event, matcher)
     await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    await _abort_guided_on_revoke(matcher, event, locale)
     if not arg.extract_plain_text().strip():
         await _start_guided_add(matcher, state, locale)
         return
@@ -315,31 +401,78 @@ async def _(
 
 @wordbank_add_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    await abort_if_revoke_signal(event, matcher)
     locale = state.get("wordbank_locale", "zh-CN")
-    state["wordbank_guided_trigger"] = event.message.extract_plain_text()
+    await _abort_guided_on_revoke(matcher, event, locale)
+    text = event.message.extract_plain_text().strip()
+    if not text:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            tr(locale, "wordbank.error.trigger_empty"),
+        )
+        return
+    clear_interaction_errors(state)
+    state["wordbank_guided_trigger"] = text
     await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
 
 
 @wordbank_add_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    await abort_if_revoke_signal(event, matcher)
     locale = state.get("wordbank_locale", "zh-CN")
-    state["wordbank_guided_response"] = event.message.extract_plain_text()
+    await _abort_guided_on_revoke(matcher, event, locale)
+    text = event.message.extract_plain_text().strip()
+    if not text:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            tr(locale, "wordbank.error.response_empty"),
+        )
+        return
+    clear_interaction_errors(state)
+    state["wordbank_guided_response"] = text
     await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
 
 
 @wordbank_add_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    await abort_if_revoke_signal(event, matcher)
     locale = state.get("wordbank_locale", "zh-CN")
-    state["wordbank_guided_scope"] = event.message.extract_plain_text()
+    await _abort_guided_on_revoke(matcher, event, locale)
+    text = event.message.extract_plain_text().strip()
+    try:
+        parse_guided_scope_choice(
+            text,
+            is_group=bool(getattr(event, "group_id", "")),
+        )
+    except RuleError as exc:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            localize_command_error(exc, locale),
+        )
+        return
+    clear_interaction_errors(state)
+    state["wordbank_guided_scope"] = text
     await matcher.pause(tr(locale, "wordbank.guided.add.advanced_prompt"))
 
 
 @wordbank_add_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    await abort_if_revoke_signal(event, matcher)
+    locale = state.get("wordbank_locale", "zh-CN")
+    await _abort_guided_on_revoke(matcher, event, locale)
+    try:
+        parse_guided_advanced_options(event.message.extract_plain_text())
+    except RuleError as exc:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            localize_command_error(exc, locale),
+        )
+        return
+    clear_interaction_errors(state)
     await _finish_guided_add(matcher, event, state)
 
 
