@@ -34,9 +34,12 @@ from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.services.core import WordbankAddResult
 from tests.plugins.water.helpers import (
+    build_friend_recall_event,
     build_group_increase_event,
     build_group_message_event,
     build_group_poke_event,
+    build_group_recall_event,
+    build_private_message_event,
 )
 
 wordbank_plugin._wordbank_initialized = True
@@ -103,6 +106,14 @@ def _message_event(
     return build_group_message_event(message, message_id=message_id)
 
 
+def _private_message_event(
+    message: str,
+    *,
+    message_id: int,
+) -> Any:
+    return build_private_message_event(message, message_id=message_id)
+
+
 @pytest.mark.asyncio
 async def test_study_guided_flow_retries_invalid_mode_then_finishes(
     app: App,
@@ -129,7 +140,7 @@ async def test_study_guided_flow_retries_invalid_mode_then_finishes(
         ctx.receive_event(bot, invalid_mode)
         ctx.should_call_send(
             invalid_mode,
-            "触发方式输入错误，请输入 a 或 m",
+            "触发方式输入错误，请输入 a 或 m。a 表示对所有人有效，m 表示仅对自己有效。",
             bot=bot,
         )
         ctx.should_rejected(study_plugin.study_command)
@@ -230,7 +241,8 @@ async def test_study_guided_flow_aborts_after_three_invalid_inputs(
             ctx.receive_event(bot, event)
             ctx.should_call_send(
                 event,
-                "触发方式输入错误，请输入 a 或 m",
+                "触发方式输入错误，请输入 a 或 m。"
+                "a 表示对所有人有效，m 表示仅对自己有效。",
                 bot=bot,
             )
             ctx.should_rejected(study_plugin.study_command)
@@ -268,6 +280,319 @@ async def test_study_guided_flow_cancels_on_revoke_signal(
         ctx.should_finished(study_plugin.study_command)
 
     add_text_entry.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_study_group_recall_of_root_cancels_session(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_text_entry = _patch_wordbank_services(monkeypatch)
+
+    async with app.test_matcher(
+        {
+            0: [],
+            5: [study_plugin.study_command, study_plugin.study_recall_notice],
+        }
+    ) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        first = _message_event("#study", message_id=51)
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            "请选择触发方式：\na. 对所有人有效\nm. 仅对自己有效",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        recall = build_group_recall_event(message_id=51)
+        ctx.receive_event(bot, recall)
+        ctx.should_call_send(recall, "本次操作已被取消。", bot=bot)
+
+    add_text_entry.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_study_friend_recall_of_latest_step_rewinds_current_step(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_text_entry = _patch_wordbank_services(
+        monkeypatch,
+        add_result=_add_result(entry_id=301, scope="private_only"),
+    )
+
+    async with app.test_matcher(
+        {
+            0: [],
+            5: [study_plugin.study_command, study_plugin.study_recall_notice],
+        }
+    ) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        first = _private_message_event("#study", message_id=61)
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            "请选择触发方式：\na. 对所有人有效\nm. 仅对自己有效",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        mode = _private_message_event("a", message_id=62)
+        ctx.receive_event(bot, mode)
+        ctx.should_call_send(
+            mode,
+            (
+                "是否开启群组隔离？\n"
+                "t. 开启，仅当前群聊有效\n"
+                "f. 关闭，按触发方式跨群或私聊生效"
+            ),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        group_block = _private_message_event("f", message_id=63)
+        ctx.receive_event(bot, group_block)
+        ctx.should_call_send(
+            group_block,
+            "请输入触发词，或直接发送图片作为图片触发：",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        recall = build_friend_recall_event(message_id=63)
+        ctx.receive_event(bot, recall)
+        ctx.should_call_send(
+            recall,
+            (
+                "是否开启群组隔离？\n"
+                "t. 开启，仅当前群聊有效\n"
+                "f. 关闭，按触发方式跨群或私聊生效"
+            ),
+            bot=bot,
+        )
+
+        fixed_group_block = _private_message_event("f", message_id=64)
+        ctx.receive_event(bot, fixed_group_block)
+        ctx.should_call_send(
+            fixed_group_block,
+            "请输入触发词，或直接发送图片作为图片触发：",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        trigger = _private_message_event("晚安", message_id=65)
+        ctx.receive_event(bot, trigger)
+        ctx.should_call_send(
+            trigger,
+            "请输入响应词，或发送图片作为图片回复：",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        response = _private_message_event("做个好梦", message_id=66)
+        ctx.receive_event(bot, response)
+        ctx.should_call_send(
+            response,
+            "请输入响应词权重，1-5 之间的数字；直接发送 3 可用默认权重：",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        weight = _private_message_event("3", message_id=67)
+        ctx.receive_event(bot, weight)
+        ctx.should_call_send(
+            weight,
+            Message(
+                "词条已提交审核\n"
+                "ID: 301\n"
+                "状态: pending\n"
+                "触发: 晚安\n"
+                "响应: 做个好梦\n"
+                "模式: contains\n"
+                "范围: private_only\n"
+                "概率: 1\n"
+                "权重: 3\n"
+                "管理员通过前不会触发。"
+            ),
+            bot=bot,
+            result={"message_id": 7003},
+        )
+        ctx.should_finished(study_plugin.study_command)
+
+    add_text_entry.assert_awaited_once_with(
+        trigger_text="晚安",
+        response_text="做个好梦",
+        response_canonical_image_id=None,
+        raw_rule={"scope": "private_only", "weight": 3},
+        group_id="",
+        user_id="10001",
+        is_group=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_study_recall_of_older_step_is_ignored(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_text_entry = _patch_wordbank_services(monkeypatch)
+
+    async with app.test_matcher(
+        {
+            0: [],
+            5: [study_plugin.study_command, study_plugin.study_recall_notice],
+        }
+    ) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        first = _message_event("#study", message_id=71)
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            "请选择触发方式：\na. 对所有人有效\nm. 仅对自己有效",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        mode = _message_event("a", message_id=72)
+        ctx.receive_event(bot, mode)
+        ctx.should_call_send(
+            mode,
+            (
+                "是否开启群组隔离？\n"
+                "t. 开启，仅当前群聊有效\n"
+                "f. 关闭，按触发方式跨群或私聊生效"
+            ),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        group_block = _message_event("t", message_id=73)
+        ctx.receive_event(bot, group_block)
+        ctx.should_call_send(
+            group_block,
+            "请输入触发词，或直接发送图片作为图片触发：",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        trigger = _message_event("晚安", message_id=74)
+        ctx.receive_event(bot, trigger)
+        ctx.should_call_send(
+            trigger,
+            "请输入响应词，或发送图片作为图片回复：",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        recall_old = build_group_recall_event(message_id=72)
+        ctx.receive_event(bot, recall_old)
+
+        response = _message_event("做个好梦", message_id=75)
+        ctx.receive_event(bot, response)
+        ctx.should_call_send(
+            response,
+            "请输入响应词权重，1-5 之间的数字；直接发送 3 可用默认权重：",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+    add_text_entry.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_study_guided_flow_reports_pending_images_before_finish(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_text_entry = _patch_wordbank_services(
+        monkeypatch,
+        add_result=_add_result(entry_id=401),
+    )
+    monkeypatch.setattr(study_plugin, "_study_pending_image_count", lambda state: 2)
+
+    async with app.test_matcher(study_plugin.study_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        first = _message_event("#study", message_id=81)
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            "请选择触发方式：\na. 对所有人有效\nm. 仅对自己有效",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        mode = _message_event("a", message_id=82)
+        ctx.receive_event(bot, mode)
+        ctx.should_call_send(
+            mode,
+            (
+                "是否开启群组隔离？\n"
+                "t. 开启，仅当前群聊有效\n"
+                "f. 关闭，按触发方式跨群或私聊生效"
+            ),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        group_block = _message_event("t", message_id=83)
+        ctx.receive_event(bot, group_block)
+        ctx.should_call_send(
+            group_block,
+            "请输入触发词，或直接发送图片作为图片触发：",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        trigger = _message_event("晚安", message_id=84)
+        ctx.receive_event(bot, trigger)
+        ctx.should_call_send(
+            trigger,
+            "请输入响应词，或发送图片作为图片回复：",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        response = _message_event("做个好梦", message_id=85)
+        ctx.receive_event(bot, response)
+        ctx.should_call_send(
+            response,
+            "请输入响应词权重，1-5 之间的数字；直接发送 3 可用默认权重：",
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        weight = _message_event("3", message_id=86)
+        ctx.receive_event(bot, weight)
+        ctx.should_call_send(
+            weight,
+            "还有 2 张图片正在处理中，请稍等。",
+            bot=bot,
+        )
+        ctx.should_call_send(
+            weight,
+            Message(
+                "词条已提交审核\n"
+                "ID: 401\n"
+                "状态: pending\n"
+                "触发: 晚安\n"
+                "响应: 做个好梦\n"
+                "模式: contains\n"
+                "范围: current_group\n"
+                "概率: 1\n"
+                "权重: 3\n"
+                "管理员通过前不会触发。"
+            ),
+            bot=bot,
+            result={"message_id": 7004},
+        )
+        ctx.should_finished(study_plugin.study_command)
+
+    add_text_entry.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -321,7 +646,10 @@ async def test_wordbank_add_guided_flow_retries_invalid_scope_and_advanced_optio
         ctx.receive_event(bot, invalid_scope)
         ctx.should_call_send(
             invalid_scope,
-            "生效范围选择无效，请输入 1/2/3/4。",
+            (
+                "生效范围选择无效，请输入 1/2/3/4。"
+                "1 当前群（默认），2 所有群，3 仅自己，4 仅私聊。"
+            ),
             bot=bot,
         )
         ctx.should_rejected(wordbank_plugin.wordbank_add_command)

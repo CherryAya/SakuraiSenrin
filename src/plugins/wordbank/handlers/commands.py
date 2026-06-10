@@ -247,7 +247,10 @@ def parse_guided_scope_choice(text: str, *, is_group: bool) -> str:
     if choice in {"4", "private", "private_only", "私聊"}:
         return "private_only"
     raise RuleError(
-        "生效范围选择无效",
+        (
+            "生效范围选择无效，请输入 1/2/3/4。"
+            "1 当前群（默认），2 所有群，3 仅自己，4 仅私聊。"
+        ),
         key="wordbank.error.guided_scope_invalid",
     )
 
@@ -287,7 +290,8 @@ def parse_study_mode_choice(text: str) -> str:
     if choice in {"m", "me", "self", "自己", "仅自己"}:
         return "m"
     raise RuleError(
-        "触发方式输入错误，请输入 a 或 m",
+        "触发方式输入错误，请输入 a 或 m。"
+        "a 表示对所有人有效，m 表示仅对自己有效。",
         key="wordbank.error.study_mode_invalid",
     )
 
@@ -299,7 +303,8 @@ def parse_study_group_block_choice(text: str) -> str:
     if choice in {"f", "false", "no", "n", "关", "关闭", "全群"}:
         return "f"
     raise RuleError(
-        "群组隔离开关输入错误，请输入 t 或 f",
+        "群组隔离开关输入错误，请输入 t 或 f。"
+        "t 表示开启，仅当前群聊有效；f 表示关闭，按触发方式跨群或私聊生效。",
         key="wordbank.error.study_group_block_invalid",
     )
 
@@ -312,12 +317,12 @@ def parse_guided_weight(text: str) -> int:
         weight = int(choice)
     except ValueError as exc:
         raise RuleError(
-            "权重必须是 1 到 5 之间的整数",
+            "权重必须是 1 到 5 之间的整数；直接发送 3 可用默认权重。",
             key="wordbank.error.weight_invalid",
         ) from exc
     if weight < 1 or weight > 5:
         raise RuleError(
-            "权重必须是 1 到 5 之间的整数",
+            "权重必须是 1 到 5 之间的整数；直接发送 3 可用默认权重。",
             key="wordbank.error.weight_invalid",
         )
     return weight

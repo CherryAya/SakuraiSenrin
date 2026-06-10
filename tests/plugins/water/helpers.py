@@ -2,8 +2,10 @@ from dataclasses import dataclass, field
 
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, PrivateMessageEvent
 from nonebot.adapters.onebot.v11.event import (
+    FriendRecallNoticeEvent,
     GroupDecreaseNoticeEvent,
     GroupIncreaseNoticeEvent,
+    GroupRecallNoticeEvent,
     PokeNotifyEvent,
 )
 from nonebot.adapters.onebot.v11.message import MessageSegment
@@ -186,5 +188,47 @@ def build_group_poke_event(
             "user_id": user_id,
             "group_id": group_id,
             "target_id": target_id,
+        }
+    )
+
+
+def build_group_recall_event(
+    *,
+    user_id: int = 10001,
+    group_id: int = 20001,
+    operator_id: int = 10001,
+    message_id: int = 1,
+    self_id: int = 99999,
+    time: int = 1_700_000_000,
+) -> GroupRecallNoticeEvent:
+    return GroupRecallNoticeEvent.model_validate(
+        {
+            "time": time,
+            "self_id": str(self_id),
+            "post_type": "notice",
+            "notice_type": "group_recall",
+            "user_id": user_id,
+            "group_id": group_id,
+            "operator_id": operator_id,
+            "message_id": message_id,
+        }
+    )
+
+
+def build_friend_recall_event(
+    *,
+    user_id: int = 10001,
+    message_id: int = 1,
+    self_id: int = 99999,
+    time: int = 1_700_000_000,
+) -> FriendRecallNoticeEvent:
+    return FriendRecallNoticeEvent.model_validate(
+        {
+            "time": time,
+            "self_id": str(self_id),
+            "post_type": "notice",
+            "notice_type": "friend_recall",
+            "user_id": user_id,
+            "message_id": message_id,
         }
     )

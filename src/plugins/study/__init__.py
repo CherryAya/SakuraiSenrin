@@ -2,15 +2,22 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-18 23:51:56
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-04-04 15:09:52
+LastEditTime: 2026-06-11 19:10:00
 Description: 学习词库-传统版
 """
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
+from nonebot import on_notice
 from nonebot.adapters.onebot.v11.bot import Bot
-from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.adapters.onebot.v11.event import (
+    FriendRecallNoticeEvent,
+    GroupRecallNoticeEvent,
+    MessageEvent,
+    NoticeEvent,
+)
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
@@ -25,6 +32,17 @@ from src.lib.interaction import (
     abort_if_revoke_signal,
     clear_interaction_errors,
     reject_or_abort_on_error,
+)
+from src.lib.interactive_recall import (
+    INTERACTION_ROOT_MESSAGE_ID,
+    INTERACTION_SESSION_KEY,
+    cancel_state_resources,
+    find_recall_session,
+    get_interaction_session_key,
+    is_supported_recall_notice,
+    rebuild_temp_matcher,
+    register_recall_checkpoint,
+    register_root_message,
 )
 from src.lib.plugin_docs import (
     DocsRenderContext,
@@ -80,7 +98,17 @@ study_command = on_command(
     priority=5,
     block=True,
 )
+study_recall_notice = on_notice(priority=5, block=False)
 GUIDED_MAX_ERRORS = 3
+STUDY_STEP_MODE = 1
+STUDY_STEP_GROUP_BLOCK = 2
+STUDY_STEP_TRIGGER = 3
+STUDY_STEP_RESPONSE = 4
+STUDY_STEP_WEIGHT = 5
+STUDY_RECALL_PENDING_KEYS = (
+    "study_trigger_image_pending",
+    "study_response_image_pending",
+)
 
 
 async def _abort_study_on_revoke(
@@ -110,6 +138,59 @@ async def _reject_study_error(
     )
 
 
+def _copy_study_state(
+    state: Mapping[str, Any],
+    *,
+    keep_keys: tuple[str, ...],
+) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {}
+    for key, value in state.items():
+        if key.startswith("__nonebug"):
+            snapshot[key] = value
+    session_key = get_interaction_session_key(state)
+    if session_key is not None:
+        snapshot[INTERACTION_SESSION_KEY] = session_key
+    if "study_locale" in state:
+        snapshot["study_locale"] = state["study_locale"]
+    if INTERACTION_ROOT_MESSAGE_ID in state:
+        snapshot[INTERACTION_ROOT_MESSAGE_ID] = state[INTERACTION_ROOT_MESSAGE_ID]
+    for key in keep_keys:
+        if key in state:
+            snapshot[key] = state[key]
+    clear_interaction_errors(snapshot)
+    return snapshot
+
+
+def _prompt_for_step(locale: LocaleCode, step_index: int) -> str:
+    prompt_by_step = {
+        STUDY_STEP_MODE: tr(locale, "wordbank.guided.study.mode_prompt"),
+        STUDY_STEP_GROUP_BLOCK: tr(locale, "wordbank.guided.study.group_block_prompt"),
+        STUDY_STEP_TRIGGER: tr(locale, "wordbank.guided.study.trigger_prompt"),
+        STUDY_STEP_RESPONSE: tr(locale, "wordbank.guided.study.response_prompt"),
+        STUDY_STEP_WEIGHT: tr(locale, "wordbank.guided.study.weight_prompt"),
+    }
+    return prompt_by_step[step_index]
+
+
+def _register_study_checkpoint(
+    state: T_State,
+    event: MessageEvent,
+    *,
+    step_index: int,
+    locale: LocaleCode,
+    snapshot: Mapping[str, Any],
+    cleanup_keys: tuple[str, ...] = (),
+) -> None:
+    register_recall_checkpoint(
+        state,
+        message_id=getattr(event, "message_id", ""),
+        step_index=step_index,
+        prompt=_prompt_for_step(locale, step_index),
+        state_snapshot=snapshot,
+        cleanup_keys=cleanup_keys,
+    )
+
+
 def _state_image_id(state: T_State, key: str) -> int | None:
     value = state.get(key)
     return int(value) if value is not None else None
@@ -127,6 +208,47 @@ def _state_pending_image(
 
     value = state.get(key)
     return value if isinstance(value, PendingWordbankImage) else None
+
+
+async def _cancel_pending_image_task(
+    state: Mapping[str, Any],
+    key: str,
+) -> None:
+    pending = _state_pending_image(dict(state), key)
+    if pending is None:
+        return
+    if pending.task.done():
+        return
+    pending.task.cancel()
+
+
+async def _cancel_study_resources(
+    state: Mapping[str, Any],
+    cleanup_keys: tuple[str, ...] = STUDY_RECALL_PENDING_KEYS,
+) -> None:
+    await cancel_state_resources(
+        state,
+        cleanup_keys,
+        cleaners={
+            "study_trigger_image_pending": lambda: _cancel_pending_image_task(
+                state,
+                "study_trigger_image_pending",
+            ),
+            "study_response_image_pending": lambda: _cancel_pending_image_task(
+                state,
+                "study_response_image_pending",
+            ),
+        },
+    )
+
+
+def _study_pending_image_count(state: Mapping[str, Any]) -> int:
+    count = 0
+    for key in STUDY_RECALL_PENDING_KEYS:
+        pending = _state_pending_image(dict(state), key)
+        if pending is not None and not pending.task.done():
+            count += 1
+    return count
 
 
 async def _resolve_state_image_id(
@@ -183,6 +305,16 @@ async def _record_study_trigger(
         )
         return
     clear_interaction_errors(state)
+    locale = _study_locale(state)
+    snapshot = _copy_study_state(
+        state,
+        keep_keys=(
+            "study_trig_mode",
+            "study_group_block",
+            "study_trigger_preloaded",
+            "study_response_after_preloaded_trigger",
+        ),
+    )
     if pending_image is not None:
         state["study_trigger"] = ""
         state["study_trigger_image_pending"] = pending_image
@@ -191,6 +323,17 @@ async def _record_study_trigger(
         state["study_trigger"] = text
         state.pop("study_trigger_image_pending", None)
         state.pop("study_trigger_image_id", None)
+    _register_study_checkpoint(
+        state,
+        event,
+        step_index=STUDY_STEP_TRIGGER,
+        locale=locale,
+        snapshot=snapshot,
+        cleanup_keys=(
+            "study_trigger_image_pending",
+            "study_response_image_pending",
+        ),
+    )
     await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
 
 
@@ -215,6 +358,20 @@ async def _record_study_response(
         )
         return
     clear_interaction_errors(state)
+    locale = _study_locale(state)
+    snapshot = _copy_study_state(
+        state,
+        keep_keys=(
+            "study_trig_mode",
+            "study_group_block",
+            "study_trigger",
+            "study_trigger_preloaded",
+            "study_response_after_preloaded_trigger",
+            "study_weight_after_preloaded_trigger",
+            "study_trigger_image_pending",
+            "study_trigger_image_id",
+        ),
+    )
     state["study_response"] = text
     if pending_image is not None:
         state["study_response_image_pending"] = pending_image
@@ -222,6 +379,14 @@ async def _record_study_response(
     else:
         state.pop("study_response_image_pending", None)
         state.pop("study_response_image_id", None)
+    _register_study_checkpoint(
+        state,
+        event,
+        step_index=STUDY_STEP_RESPONSE,
+        locale=locale,
+        snapshot=snapshot,
+        cleanup_keys=("study_response_image_pending",),
+    )
     await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
 
 
@@ -249,6 +414,28 @@ async def _record_study_weight_and_finish(
         )
         return
     clear_interaction_errors(state)
+    _register_study_checkpoint(
+        state,
+        event,
+        step_index=STUDY_STEP_WEIGHT,
+        locale=locale,
+        snapshot=_copy_study_state(
+            state,
+            keep_keys=(
+                "study_trig_mode",
+                "study_group_block",
+                "study_trigger",
+                "study_response",
+                "study_trigger_preloaded",
+                "study_response_after_preloaded_trigger",
+                "study_weight_after_preloaded_trigger",
+                "study_trigger_image_pending",
+                "study_trigger_image_id",
+                "study_response_image_pending",
+                "study_response_image_id",
+            ),
+        ),
+    )
     await _finish_guided_study(bot, matcher, event, state, locale)
 
 
@@ -271,6 +458,15 @@ async def _finish_guided_study(
     from src.plugins.wordbank.services.rules import RuleError
 
     try:
+        pending_count = _study_pending_image_count(state)
+        if pending_count:
+            await matcher.send(
+                tr(
+                    locale,
+                    "wordbank.guided.study.pending_images",
+                    count=pending_count,
+                )
+            )
         trigger_image_id = await _resolve_state_image_id(
             state,
             id_key="study_trigger_image_id",
@@ -351,6 +547,7 @@ async def _start_guided_study_with_trigger_image(
         await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
         return
     clear_interaction_errors(state)
+    register_root_message(state, event)
     state["study_trigger"] = ""
     state["study_trigger_image_pending"] = pending_image
     state.pop("study_trigger_image_id", None)
@@ -393,6 +590,7 @@ async def _(
             return
         await wordbank_service.initialize()
         state["study_locale"] = locale
+        register_root_message(state, event)
         await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
         return
     await wordbank_service.initialize()
@@ -461,6 +659,24 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         return
     clear_interaction_errors(state)
     state["study_trig_mode"] = text
+    mode_keep_keys = ("study_trigger_preloaded",)
+    mode_cleanup_keys = STUDY_RECALL_PENDING_KEYS
+    if _is_truthy_state_flag(state, "study_trigger_preloaded"):
+        mode_keep_keys = (
+            "study_trigger_preloaded",
+            "study_trigger",
+            "study_trigger_image_pending",
+            "study_trigger_image_id",
+        )
+        mode_cleanup_keys = ("study_response_image_pending",)
+    _register_study_checkpoint(
+        state,
+        event,
+        step_index=STUDY_STEP_MODE,
+        locale=locale,
+        snapshot=_copy_study_state(state, keep_keys=mode_keep_keys),
+        cleanup_keys=mode_cleanup_keys,
+    )
     await matcher.pause(tr(locale, "wordbank.guided.study.group_block_prompt"))
 
 
@@ -487,6 +703,28 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         return
     clear_interaction_errors(state)
     state["study_group_block"] = text
+    keep_keys = (
+        "study_trig_mode",
+        "study_trigger_preloaded",
+    )
+    cleanup_keys = STUDY_RECALL_PENDING_KEYS
+    if _is_truthy_state_flag(state, "study_trigger_preloaded"):
+        keep_keys = (
+            "study_trig_mode",
+            "study_trigger_preloaded",
+            "study_trigger",
+            "study_trigger_image_pending",
+            "study_trigger_image_id",
+        )
+        cleanup_keys = ("study_response_image_pending",)
+    _register_study_checkpoint(
+        state,
+        event,
+        step_index=STUDY_STEP_GROUP_BLOCK,
+        locale=locale,
+        snapshot=_copy_study_state(state, keep_keys=keep_keys),
+        cleanup_keys=cleanup_keys,
+    )
     if _is_truthy_state_flag(state, "study_trigger_preloaded"):
         state["study_response_after_preloaded_trigger"] = True
         await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
@@ -520,3 +758,42 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
     await _record_study_weight_and_finish(bot, matcher, event, state, locale)
+
+
+@study_recall_notice.handle()
+async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
+    if not is_supported_recall_notice(event):
+        return
+
+    session = find_recall_session(
+        study_command,
+        cast(GroupRecallNoticeEvent | FriendRecallNoticeEvent, event),
+    )
+    if session is None:
+        return
+
+    locale = "zh-CN"
+    checkpoint = session.checkpoint
+    state = session.matcher_cls._default_state
+    if "study_locale" in state:
+        locale = _study_locale(state)
+
+    await _cancel_study_resources(
+        state,
+        checkpoint.cleanup_keys
+        if checkpoint is not None and not session.is_root_message
+        else STUDY_RECALL_PENDING_KEYS,
+    )
+    session.matcher_cls.destroy()
+
+    if session.is_root_message or checkpoint is None:
+        await matcher.send(tr(locale, "interaction.cancelled"))
+        return
+
+    rebuild_temp_matcher(
+        session.matcher_cls,
+        study_command,
+        step_index=checkpoint.step_index,
+        state=checkpoint.state_snapshot,
+    )
+    await matcher.send(checkpoint.prompt)
