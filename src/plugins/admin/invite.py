@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 import arrow
-import httpx
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
@@ -40,7 +39,8 @@ from src.lib.plugin_docs import (
 )
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set
-from src.lib.utils.common import AvatarFetcher, get_current_time
+from src.lib.utils.common import get_current_time
+from src.lib.utils.img import QQAvatar
 from src.repositories import group_repo, invite_repo
 
 name = tr("zh-CN", "plugin.admin_invite.name")
@@ -389,25 +389,38 @@ async def generate_invitation_image_bytes(
 
     有股味我也懒得改了你就说他能不能用，能用的代码就是好代码对吧！
     """
-    async with httpx.AsyncClient() as client:
-        tasks = []
-        for item in invitations_data:
-            group_url = (
-                f"https://p.qlogo.cn/gh/{item['group_id']}/{item['group_id']}/100"
-            )
-            user_url = f"http://q1.qlogo.cn/g?b=qq&nk={item['inviter_id']}&s=100"
-
-            tasks.append(
-                AvatarFetcher.fetch(client, group_url, size=300, is_user=False)
-            )
-            tasks.append(AvatarFetcher.fetch(client, user_url, size=150, is_user=True))
-        fetched_images = await asyncio.gather(*tasks)
-        for i, item in enumerate(invitations_data):
-            item["group_avatar_img"] = fetched_images[i * 2]
-            item["user_avatar_img"] = fetched_images[i * 2 + 1]
+    avatar_tasks = [
+        _fetch_invitation_avatars(
+            group_id=str(item["group_id"]),
+            inviter_id=str(item["inviter_id"]),
+        )
+        for item in invitations_data
+    ]
+    fetched_images = await asyncio.gather(*avatar_tasks)
+    for item, (group_avatar, user_avatar) in zip(
+        invitations_data, fetched_images, strict=True
+    ):
+        item["group_avatar_img"] = group_avatar
+        item["user_avatar_img"] = user_avatar
 
     renderer = InvitationListRenderer(locale)
     return renderer.render(invitations_data)
+
+
+async def _fetch_invitation_avatars(
+    group_id: str,
+    inviter_id: str,
+) -> tuple[Image.Image, Image.Image]:
+    group_avatar_size = 300
+    user_avatar_size = 150
+    group_avatar, user_avatar = await asyncio.gather(
+        QQAvatar.fetch_group(group_id, size=group_avatar_size),
+        QQAvatar.fetch_user(inviter_id, size=user_avatar_size),
+    )
+    return (
+        group_avatar.circle_corner(group_avatar_size * 0.15).image.copy(),
+        user_avatar.circle().image.copy(),
+    )
 
 
 async def handle_invitation(ctx: InviteContext) -> bool:
