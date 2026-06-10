@@ -297,8 +297,9 @@ def test_build_readme_docs_filters_features_by_actor_permission() -> None:
     assert "需要权限: 超级管理员" in str(denied_feature_message)
 
 
-def test_build_readme_docs_filters_wordbank_review_features_by_actor_permission(
-) -> None:
+def test_build_readme_docs_filters_wordbank_review_features_by_actor_permission() -> (
+    None
+):
     source = Path("src/plugins/wordbank/docs/README.MD")
 
     normal_message = build_readme_docs(
