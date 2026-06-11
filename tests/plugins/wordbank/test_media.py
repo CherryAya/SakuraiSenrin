@@ -1,14 +1,17 @@
 import asyncio
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 from PIL import Image
+import pytest
 
 from src.lib.object_storage import StorageObject
 from src.plugins.wordbank.database.types import (
     WordbankImagePayload,
     WordbankImageRecord,
 )
+from src.plugins.wordbank.services import media as media_module
 from src.plugins.wordbank.services.media import (
     LocalWordbankMediaStorage,
     ObjectStorageWordbankMediaStorage,
@@ -16,6 +19,7 @@ from src.plugins.wordbank.services.media import (
     WordbankMediaService,
     fingerprint_image,
     hamming_distance,
+    prepare_image_bytes,
 )
 
 
@@ -179,7 +183,7 @@ async def test_r2_media_storage_saves_and_loads_remote_image(tmp_path: Path) -> 
     fingerprint = fingerprint_image(data)
 
     storage_path = await media_storage.save_image(
-        data,
+        prepare_image_bytes(data),
         md5_hex=fingerprint.md5,
         keep_original=False,
     )
@@ -199,7 +203,7 @@ async def test_object_media_storage_saves_and_loads_github_uri(tmp_path: Path) -
     fingerprint = fingerprint_image(data)
 
     storage_path = await media_storage.save_image(
-        data,
+        prepare_image_bytes(data),
         md5_hex=fingerprint.md5,
         keep_original=False,
     )
@@ -220,7 +224,7 @@ async def test_r2_media_storage_falls_back_to_local_on_upload_error(
     fingerprint = fingerprint_image(data)
 
     storage_path = await media_storage.save_image(
-        data,
+        prepare_image_bytes(data),
         md5_hex=fingerprint.md5,
         keep_original=False,
     )
@@ -273,6 +277,26 @@ async def test_media_ingest_dedupes_gif_by_md5_before_similarity(
     assert len(repo.images) == 1
 
 
+async def test_media_ingest_short_circuits_on_md5_hit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _ImageRepo()
+    service = WordbankMediaService(repo, media_root=tmp_path)
+    data = _gif([(255, 0, 0), (0, 255, 0)])
+
+    first = await service.ingest_image_bytes(data)
+
+    def _fail_prepare(_data: bytes) -> Any:
+        raise AssertionError("prepare_image_bytes should not run after md5 hit")
+
+    monkeypatch.setattr(media_module, "prepare_image_bytes", _fail_prepare)
+
+    second = await service.ingest_image_bytes(data)
+
+    assert second.id == first.id
+
+
 async def test_r2_media_storage_saves_gif_as_animated_media(tmp_path: Path) -> None:
     storage = _ObjectStorage()
     media_storage = R2WordbankMediaStorage(
@@ -283,7 +307,7 @@ async def test_r2_media_storage_saves_gif_as_animated_media(tmp_path: Path) -> N
     fingerprint = fingerprint_image(data)
 
     storage_path = await media_storage.save_image(
-        data,
+        prepare_image_bytes(data),
         md5_hex=fingerprint.md5,
         keep_original=False,
     )
@@ -296,3 +320,29 @@ async def test_r2_media_storage_saves_gif_as_animated_media(tmp_path: Path) -> N
     assert storage.content_types[key] in {"image/webp", "image/gif"}
     with Image.open(BytesIO(loaded)) as stored_image:
         assert getattr(stored_image, "n_frames", 1) > 1
+
+
+async def test_r2_media_storage_falls_back_to_original_gif_when_webp_encode_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _ObjectStorage()
+    media_storage = R2WordbankMediaStorage(
+        storage,
+        fallback=LocalWordbankMediaStorage(tmp_path),
+    )
+    data = _gif([(255, 0, 255), (0, 255, 255)])
+    prepared = prepare_image_bytes(data)
+
+    monkeypatch.setattr(media_module, "_encode_animated_webp", lambda _image: None)
+
+    storage_path = await media_storage.save_image(
+        prepare_image_bytes(data),
+        md5_hex=prepared.fingerprint.md5,
+        keep_original=False,
+    )
+    key = storage_path.removeprefix("r2://bucket/")
+
+    assert storage_path == f"r2://bucket/wordbank/media/{prepared.fingerprint.md5}.gif"
+    assert storage.objects[key] == data
+    assert storage.content_types[key] == "image/gif"

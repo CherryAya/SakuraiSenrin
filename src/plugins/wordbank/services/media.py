@@ -68,6 +68,7 @@ class StoredMedia:
 
 @dataclass(slots=True, frozen=True)
 class PreparedImage:
+    original_data: bytes
     fingerprint: ImageFingerprint
     stored_media: StoredMedia
 
@@ -93,7 +94,7 @@ class MediaRepository(Protocol):
 class WordbankMediaStorage(Protocol):
     async def save_image(
         self,
-        data: bytes,
+        prepared: PreparedImage,
         *,
         md5_hex: str,
         keep_original: bool,
@@ -108,32 +109,31 @@ class LocalWordbankMediaStorage:
 
     async def save_image(
         self,
-        data: bytes,
+        prepared: PreparedImage,
         *,
         md5_hex: str,
         keep_original: bool,
     ) -> str:
         return await asyncio.to_thread(
             self._save_image,
-            data,
+            prepared,
             md5_hex=md5_hex,
             keep_original=keep_original,
         )
 
     def _save_image(
         self,
-        data: bytes,
+        prepared: PreparedImage,
         *,
         md5_hex: str,
         keep_original: bool,
     ) -> str:
-        prepared = prepare_image_bytes(data)
         self.media_root.mkdir(parents=True, exist_ok=True)
         media_path = self.media_root / f"{md5_hex}{prepared.stored_media.extension}"
         media_path.write_bytes(prepared.stored_media.data)
         if keep_original:
             original_path = self.media_root / f"{md5_hex}.source"
-            original_path.write_bytes(data)
+            original_path.write_bytes(prepared.original_data)
         return str(media_path)
 
     async def load_bytes(self, storage_path: str) -> bytes | None:
@@ -160,12 +160,11 @@ class ObjectStorageWordbankMediaStorage:
 
     async def save_image(
         self,
-        data: bytes,
+        prepared: PreparedImage,
         *,
         md5_hex: str,
         keep_original: bool,
     ) -> str:
-        prepared = await asyncio.to_thread(prepare_image_bytes, data)
         key = f"{self.key_prefix}/{md5_hex}{prepared.stored_media.extension}"
         try:
             stored = await self.object_storage.put_bytes(
@@ -176,14 +175,14 @@ class ObjectStorageWordbankMediaStorage:
             if keep_original:
                 await self.object_storage.put_bytes(
                     f"{self.key_prefix}/{md5_hex}.source",
-                    data,
+                    prepared.original_data,
                     content_type="application/octet-stream",
                 )
             return stored.uri
         except Exception as exc:
             logger.warning(f"[Wordbank] remote media save fallback to local: {exc}")
             return await self.fallback.save_image(
-                data,
+                prepared,
                 md5_hex=md5_hex,
                 keep_original=keep_original,
             )
@@ -209,7 +208,7 @@ def hamming_distance(left: str, right: str) -> int:
 
 def fingerprint_image(data: bytes) -> ImageFingerprint:
     try:
-        return prepare_image_bytes(data).fingerprint
+        return prepare_image_fingerprint(data)
     except UnidentifiedImageError as exc:
         raise MediaError(
             "无法识别图片内容",
@@ -217,11 +216,20 @@ def fingerprint_image(data: bytes) -> ImageFingerprint:
         ) from exc
 
 
+def prepare_image_fingerprint(data: bytes) -> ImageFingerprint:
+    with Image.open(BytesIO(data)) as image:
+        return _build_fingerprint(image, data)
+
+
 def prepare_image_bytes(data: bytes) -> PreparedImage:
     with Image.open(BytesIO(data)) as image:
         fingerprint = _build_fingerprint(image, data)
         stored_media = _build_stored_media(image, data)
-        return PreparedImage(fingerprint=fingerprint, stored_media=stored_media)
+        return PreparedImage(
+            original_data=data,
+            fingerprint=fingerprint,
+            stored_media=stored_media,
+        )
 
 
 def _build_fingerprint(image: Image.Image, data: bytes) -> ImageFingerprint:
@@ -409,12 +417,14 @@ class WordbankMediaService:
         *,
         keep_original: bool = False,
     ) -> WordbankImageRecord:
-        fingerprint = fingerprint_image(data)
-        existing = await self.repository.get_image_by_md5(fingerprint.md5)
+        md5_hex = md5(data).hexdigest()
+        existing = await self.repository.get_image_by_md5(md5_hex)
         if existing is not None:
             self._cache_image(existing)
             return existing
 
+        prepared = prepare_image_bytes(data)
+        fingerprint = prepared.fingerprint
         canonical_id: int | None = None
         for candidate in await self.repository.get_image_candidates(
             fingerprint.dhash[:4],
@@ -428,7 +438,7 @@ class WordbankMediaService:
                 break
 
         storage_path = await self.storage.save_image(
-            data,
+            prepared,
             md5_hex=fingerprint.md5,
             keep_original=keep_original,
         )
