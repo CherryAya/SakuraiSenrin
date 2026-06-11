@@ -202,6 +202,18 @@ class WordbankSearchItem:
 
 
 @dataclass(slots=True, frozen=True)
+class WordbankSearchPage:
+    items: tuple[WordbankSearchItem, ...]
+    total_count: int
+    offset: int
+    limit: int
+
+    @property
+    def has_more(self) -> bool:
+        return self.offset + len(self.items) < self.total_count
+
+
+@dataclass(slots=True, frozen=True)
 class WordbankDeleteVoteRecord:
     id: int
     entry_id: int

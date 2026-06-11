@@ -159,8 +159,16 @@ async def test_search_uses_creator_filter_and_text_fts(
             creator_id="10001",
         )
     )
+    page = await service.search_page(
+        WordbankSearchRequest(
+            keyword="晚安",
+            field="trigger",
+            creator_id="10001",
+        )
+    )
 
     assert [item.entry_id for item in items] == [first.entry_id]
+    assert page.total_count == 1
 
 
 @pytest.mark.asyncio
@@ -217,3 +225,39 @@ async def test_search_accepts_image_scores_for_trigger_and_response(
 
     assert [item.entry_id for item in trigger_items] == [trigger_entry.entry_id]
     assert [item.entry_id for item in response_items] == [response_entry.entry_id]
+
+
+@pytest.mark.asyncio
+async def test_search_page_lists_recent_entries_without_query(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+
+    first = await service.add_message_entry(
+        trigger_shape=shape_from_text("第一条"),
+        response_shape=shape_from_text("A"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    second = await service.add_message_entry(
+        trigger_shape=shape_from_text("第二条"),
+        response_shape=shape_from_text("B"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    for entry_id in (first.entry_id, second.entry_id):
+        await service.approve_entry(
+            entry_id,
+            actor_user_id="10001",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+
+    page = await service.search_page(WordbankSearchRequest())
+
+    assert page.total_count == 2
+    assert [item.entry_id for item in page.items] == [second.entry_id, first.entry_id]

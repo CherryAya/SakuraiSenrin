@@ -16,7 +16,12 @@ from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import (
+    WordbankSearchPage,
     WordbankSearchRequest,
+)
+from src.plugins.wordbank.handlers.search_cards import (
+    SearchCardQuery,
+    render_search_results_card,
 )
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -108,6 +113,13 @@ class GuidedAdvancedOptions:
 class ParsedStudyMediaPrefix:
     source: str
     raw_rule: dict[str, Any]
+
+
+@dataclass(slots=True, frozen=True)
+class GuidedSearchSelection:
+    field: str
+    expects_image: bool = False
+    creator_only: bool = False
 
 
 def _split_command(text: str) -> tuple[str, str]:
@@ -442,6 +454,66 @@ def parse_search_args(text: str) -> ParsedSearch:
         limit=limit,
         field=field,
         creator_id=creator_id,
+    )
+
+
+def parse_guided_search_mode_choice(text: str) -> GuidedSearchSelection:
+    choice = text.strip().casefold()
+    if choice in {"1", "all", "全部", "全量"}:
+        return GuidedSearchSelection(field="all")
+    if choice in {"2", "trigger", "触发", "触发词"}:
+        return GuidedSearchSelection(field="trigger")
+    if choice in {"3", "response", "响应", "响应词"}:
+        return GuidedSearchSelection(field="response")
+    if choice in {"4", "image", "图片"}:
+        return GuidedSearchSelection(field="all", expects_image=True)
+    if choice in {"5", "creator", "author", "创建者"}:
+        return GuidedSearchSelection(field="all", creator_only=True)
+    raise RuleError(
+        "搜索模式输入无效，请输入 1/2/3/4/5。",
+        key="wordbank.error.guided_search_mode_invalid",
+    )
+
+
+def parse_guided_search_image_field_choice(text: str) -> str:
+    choice = text.strip().casefold()
+    if choice in {"1", "all", "全部", "全量"}:
+        return "all"
+    if choice in {"2", "trigger", "触发", "触发词"}:
+        return "trigger"
+    if choice in {"3", "response", "响应", "响应词"}:
+        return "response"
+    raise RuleError(
+        "图片搜索范围输入无效，请输入 1/2/3。",
+        key="wordbank.error.guided_search_image_field_invalid",
+    )
+
+
+def parse_guided_search_creator_filter(text: str) -> str:
+    choice = text.strip()
+    if not choice or choice.casefold() in {
+        "n",
+        "no",
+        "否",
+        "不",
+        "跳过",
+        "none",
+        "无",
+    }:
+        return ""
+    return choice
+
+
+def parse_guided_search_page_choice(text: str) -> int | None:
+    choice = text.strip().casefold()
+    if choice in {"", "exit", "q", "quit", "结束"}:
+        return None
+    if choice.startswith("page "):
+        choice = choice.removeprefix("page ").strip()
+    return _parse_positive_int(
+        choice,
+        fallback="页码必须是大于 0 的整数",
+        key="wordbank.error.search_page_invalid",
     )
 
 
@@ -1011,10 +1083,29 @@ async def handle_search(
     keyword: str,
     image_scores: dict[int, float] | None = None,
     locale: LocaleCode,
-) -> str:
+) -> Message:
     parsed = parse_search_args(keyword)
+    page = await execute_search_page(
+        service,
+        parsed=parsed,
+        image_scores=image_scores,
+    )
+    return render_search_page_message(
+        page,
+        parsed=parsed,
+        locale=locale,
+        has_image=image_scores is not None,
+    )
+
+
+async def execute_search_page(
+    service: WordbankService,
+    *,
+    parsed: ParsedSearch,
+    image_scores: dict[int, float] | None = None,
+) -> WordbankSearchPage:
     offset = (parsed.page - 1) * parsed.limit
-    items = await service.search(
+    return await service.search_page(
         WordbankSearchRequest(
             keyword=parsed.keyword,
             field=parsed.field,
@@ -1022,17 +1113,41 @@ async def handle_search(
             has_image=image_scores is not None,
             image_scores=dict(image_scores or {}),
         ),
-        limit=parsed.limit + 1,
+        limit=parsed.limit,
         offset=offset,
     )
-    has_more = len(items) > parsed.limit
-    return format_search_items(
-        items[: parsed.limit],
-        locale=locale,
-        page=parsed.page,
-        limit=parsed.limit,
-        has_more=has_more,
-    )
+
+
+def render_search_page_message(
+    page: WordbankSearchPage,
+    *,
+    parsed: ParsedSearch,
+    locale: LocaleCode,
+    has_image: bool,
+) -> Message:
+    try:
+        return render_search_results_card(
+            items=page.items,
+            query=SearchCardQuery(
+                keyword=parsed.keyword,
+                field=parsed.field,
+                creator_id=parsed.creator_id,
+                has_image=has_image,
+                page=parsed.page,
+                total_count=page.total_count,
+                limit=parsed.limit,
+            ),
+            locale=locale,
+        )
+    except Exception:
+        text = format_search_items(
+            list(page.items),
+            locale=locale,
+            page=parsed.page,
+            limit=parsed.limit,
+            has_more=page.has_more,
+        )
+        return Message(text)
 
 
 async def handle_pending_entries(
@@ -1222,7 +1337,7 @@ async def dispatch_wordbank_command(
     text: str,
     locale: LocaleCode,
     search_image_scores: dict[int, float] | None = None,
-) -> str:
+) -> str | Message:
     action, rest = _split_command(text)
     if not action or action in {"help", "帮助"}:
         return wordbank_help_text(locale)

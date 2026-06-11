@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11.message import Message
 import pytest
 
-from src.plugins.wordbank.database.types import WordbankSearchItem
+from src.plugins.wordbank.database.types import WordbankSearchItem, WordbankSearchPage
 from src.plugins.wordbank.handlers.commands import (
     build_message_shape_from_message,
     dispatch_wordbank_command,
@@ -61,7 +61,16 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
     event = build_group_message_event("#wordbank search 晚安")
     service = cast(
         WordbankService,
-        SimpleNamespace(search=AsyncMock(return_value=[_search_item()])),
+        SimpleNamespace(
+            search_page=AsyncMock(
+                return_value=WordbankSearchPage(
+                    items=(_search_item(),),
+                    total_count=1,
+                    offset=0,
+                    limit=10,
+                )
+            )
+        ),
     )
 
     message = await dispatch_wordbank_command(
@@ -71,9 +80,9 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
         locale="zh-CN",
     )
 
-    assert "搜索结果" in message
-    assert "晚安12" in message
-    assert "做个好梦12" in message
+    assert isinstance(message, Message)
+    assert len(message) == 1
+    assert message[0].type == "image"
 
 
 @pytest.mark.asyncio

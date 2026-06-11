@@ -162,6 +162,33 @@ class WordbankSearchDocument(WordbankMainBase):
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class WordbankSearchImageMap(WordbankMainBase):
+    __tablename__ = "wordbank_search_image_map"
+    __table_args__ = (
+        UniqueConstraint(
+            "entry_id",
+            "side",
+            "canonical_image_id",
+            name="uq_wordbank_search_image_map_entry_side_image",
+        ),
+        Index(
+            "idx_wordbank_search_image_map_image_side",
+            "canonical_image_id",
+            "side",
+        ),
+        Index(
+            "idx_wordbank_search_image_map_entry_side",
+            "entry_id",
+            "side",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entry_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(16), nullable=False)
+    canonical_image_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class WordbankDeleteVote(WordbankMainBase, TimeMixin):
     __tablename__ = "wordbank_delete_vote"
     __table_args__ = (

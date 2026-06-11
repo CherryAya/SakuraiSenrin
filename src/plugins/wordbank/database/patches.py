@@ -55,6 +55,7 @@ async def _reset_wordbank_message_tables(session: AsyncSession) -> None:
         WordbankResponse,
         WordbankResponseMessage,
         WordbankSearchDocument,
+        WordbankSearchImageMap,
         WordbankTrigger,
     )
 
@@ -66,6 +67,7 @@ async def _reset_wordbank_message_tables(session: AsyncSession) -> None:
         WordbankDeleteVoteSupport.__tablename__,
         WordbankDeleteVote.__tablename__,
         WordbankSearchDocument.__tablename__,
+        WordbankSearchImageMap.__tablename__,
         WordbankResponse.__tablename__,
         WordbankTrigger.__tablename__,
         WordbankEntry.__tablename__,
@@ -79,6 +81,7 @@ async def _reset_wordbank_message_tables(session: AsyncSession) -> None:
         WordbankTrigger.__table__,
         WordbankResponse.__table__,
         WordbankSearchDocument.__table__,
+        WordbankSearchImageMap.__table__,
         WordbankDeleteVote.__table__,
         WordbankDeleteVoteSupport.__table__,
         WordbankResponseMessage.__table__,

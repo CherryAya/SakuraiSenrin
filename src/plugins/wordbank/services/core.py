@@ -20,6 +20,7 @@ from src.plugins.wordbank.database.types import (
     WordbankLogPayload,
     WordbankResponseMessageRecord,
     WordbankSearchItem,
+    WordbankSearchPage,
     WordbankSearchRequest,
 )
 from src.plugins.wordbank.message_model import (
@@ -408,6 +409,15 @@ class WordbankService:
         offset: int = 0,
     ) -> list[WordbankSearchItem]:
         return await self.repository.search(request, limit=limit, offset=offset)
+
+    async def search_page(
+        self,
+        request: WordbankSearchRequest,
+        *,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> WordbankSearchPage:
+        return await self.repository.search_page(request, limit=limit, offset=offset)
 
     async def list_pending_entries(
         self,
