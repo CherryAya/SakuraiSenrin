@@ -15,7 +15,7 @@ import imagehash
 from PIL import Image, ImageSequence, UnidentifiedImageError
 from pybktree import BKTree
 
-from src.lib.object_storage import ObjectStorageClient
+from src.lib.object_storage.types import ObjectStorageClient
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.wordbank.database.types import (

@@ -6,7 +6,33 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
+import sys
+import types
 from typing import TYPE_CHECKING, Any, cast
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+def _ensure_pkg(name: str, path: Path) -> None:
+    if name in sys.modules:
+        return
+    pkg = types.ModuleType(name)
+    pkg.__path__ = [str(path)]  # type: ignore[attr-defined]
+    sys.modules[name] = pkg
+
+
+_ensure_pkg("src.plugins.wordbank", ROOT / "src" / "plugins" / "wordbank")
+_ensure_pkg(
+    "src.plugins.wordbank.services",
+    ROOT / "src" / "plugins" / "wordbank" / "services",
+)
+_ensure_pkg(
+    "src.plugins.wordbank.database",
+    ROOT / "src" / "plugins" / "wordbank" / "database",
+)
+_ensure_pkg("src.lib.object_storage", ROOT / "src" / "lib" / "object_storage")
 
 from src.logger import logger
 from src.plugins.wordbank.database.repo import WordbankRepository
