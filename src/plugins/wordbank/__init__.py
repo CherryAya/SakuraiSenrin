@@ -92,9 +92,7 @@ from .services.rules import RuleError
 name = tr("zh-CN", "plugin.wordbank.name")
 description = tr("zh-CN", "plugin.wordbank.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
-APPROVAL_DOCS_SOURCE = (
-    Path(__file__).parent.parent / "wordbank_approval" / "docs" / "README.MD"
-)
+APPROVAL_DOCS_SOURCE = Path(__file__).parent / "docs" / "approval" / "README.MD"
 
 
 def _build_wordbank_docs_meta() -> list[object]:

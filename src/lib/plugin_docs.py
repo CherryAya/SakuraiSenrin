@@ -834,23 +834,27 @@ def render_demo_png(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes:
 
 
 def collection_demo_filename(source_path: Path) -> str:
+    return f"{doc_asset_prefix(source_path)}-collection.png"
+
+
+def doc_asset_prefix(source_path: Path) -> str:
     src_root = next(
         (parent for parent in source_path.parents if parent.name == "src"), None
     )
     if src_root is None:
-        return f"{source_path.parent.name}-collection.png"
+        return source_path.parent.name
 
     try:
         rel_path = source_path.relative_to(src_root)
     except ValueError:
-        return f"{source_path.parent.name}-collection.png"
+        return source_path.parent.name
 
     parts = rel_path.parts
     namespace = parts[0] if parts else ""
     try:
         docs_index = parts.index("docs")
     except ValueError:
-        return f"{source_path.parent.name}-collection.png"
+        return source_path.parent.name
 
     if namespace == "plugins" and len(parts) > 1:
         name_parts = (parts[1], *parts[docs_index + 1 : -1])
@@ -859,8 +863,9 @@ def collection_demo_filename(source_path: Path) -> str:
     else:
         name_parts = (*parts[docs_index + 1 : -1],)
 
-    stem = "-".join(_slugify_doc_path_part(part) for part in name_parts if part)
-    return f"{stem or source_path.parent.name}-collection.png"
+    return "-".join(_slugify_doc_path_part(part) for part in name_parts if part) or (
+        source_path.parent.name
+    )
 
 
 def _slugify_doc_path_part(value: str) -> str:
@@ -991,9 +996,8 @@ def _parse_feature_details(block: str, source_path: Path) -> dict[str, FeatureDo
         meta = _parse_meta_block("\n".join(meta_lines))
         subsections = _split_sections("\n".join(body_lines[index:]), level=4)
         flow_notes, demo_turns = _parse_flow_section(subsections.get("完整流程", ""))
-        demo_filename = meta.get(
-            "Demo", f"{source_path.parent.parent.name}-{slug}.png"
-        ).strip("`")
+        demo_filename = meta.get("Demo", f"{doc_asset_prefix(source_path)}-{slug}.png")
+        demo_filename = demo_filename.strip("`")
         features[slug] = FeatureDoc(
             slug=slug,
             title=title.strip(),

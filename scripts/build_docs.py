@@ -311,7 +311,7 @@ class DemoCollectionRenderer:
     INLINE_CODE_PAD_Y = 4
     PALETTES: ClassVar[dict[str, tuple[str, str]]] = {
         "study": ("#FFE4B5", "#FFF0CF"),
-        "wordbank_approval": ("#F8D0D2", "#FBE0E3"),
+        "wordbank-approval": ("#F8D0D2", "#FBE0E3"),
         "wordbank": ("#C9DEF3", "#D9EAFB"),
         "default": ("#E8DEF8", "#F0E8FB"),
     }
@@ -1101,7 +1101,9 @@ class DemoCollectionRenderer:
 
     def _palette_for_source(self, source_path: Path) -> tuple[str, str]:
         path_text = source_path.as_posix()
-        for key in ("wordbank_approval", "wordbank", "study"):
+        if "/wordbank/docs/approval/" in path_text:
+            return self.PALETTES["wordbank-approval"]
+        for key in ("wordbank", "study"):
             if key in path_text:
                 return self.PALETTES[key]
         return self.PALETTES["default"]
@@ -1111,7 +1113,7 @@ class DemoCollectionRenderer:
         if lowered.startswith("add") or lowered in {"shortcut", "guided-flow"}:
             return self.PALETTES["study"]
         if "approve" in lowered or "reject" in lowered or "pending" in lowered:
-            return self.PALETTES["wordbank_approval"]
+            return self.PALETTES["wordbank-approval"]
         return self.PALETTES["wordbank"]
 
 

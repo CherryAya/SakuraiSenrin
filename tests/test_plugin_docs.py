@@ -367,7 +367,7 @@ def test_build_readme_docs_filters_features_by_actor_permission() -> None:
 
 def test_build_readme_docs_supports_wordbank_and_approval_docs() -> None:
     wordbank_source = Path("src/plugins/wordbank/docs/README.MD")
-    approval_source = Path("src/plugins/wordbank_approval/docs/README.MD")
+    approval_source = Path("src/plugins/wordbank/docs/approval/README.MD")
 
     normal_wordbank_message = build_readme_docs(
         source=wordbank_source,
@@ -517,7 +517,7 @@ def test_load_representative_demo_bytes_uses_first_available_feature() -> None:
 def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     wordbank_source = Path("src/plugins/wordbank/docs/README.MD")
     study_source = Path("src/plugins/study/docs/README.MD")
-    approval_source = Path("src/plugins/wordbank_approval/docs/README.MD")
+    approval_source = Path("src/plugins/wordbank/docs/approval/README.MD")
     wordbank = load_plugin_doc_bundle(
         source=wordbank_source,
         default_name="词库模块",
@@ -578,9 +578,9 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert "group_recall" in passive.demo_turns[-1].text
     assert reply.demo_filename == "wordbank-reply-shortcut.png"
     assert "词条详情 #12" in reply.demo_turns[3].text
-    assert approve.demo_filename == "wordbank_approval-approve.png"
+    assert approve.demo_filename == "wordbank-approval-approve.png"
     assert "词条 #12 已通过审核" in approve.demo_turns[1].text
-    assert approval_reply.demo_filename == "wordbank_approval-approval-reply.png"
+    assert approval_reply.demo_filename == "wordbank-approval-approval-reply.png"
     assert "[回复审批通知] @机器人 y" in approval_reply.demo_turns[1].text
     assert shortcut.demo_filename == "study-shortcut.png"
     assert shortcut.demo_turns[0].text == "#study 晚安 => 做个好梦"

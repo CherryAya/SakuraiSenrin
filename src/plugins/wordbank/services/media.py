@@ -248,16 +248,16 @@ def _build_fingerprint(image: Image.Image, data: bytes) -> ImageFingerprint:
 def _build_stored_media(image: Image.Image, data: bytes) -> StoredMedia:
     if _is_animated(image):
         animated_webp = _encode_animated_webp(image)
-        if animated_webp is not None:
+        if animated_webp is None:
             return StoredMedia(
-                data=animated_webp,
-                extension=".webp",
-                content_type=WEBP_CONTENT_TYPE,
+                data=data,
+                extension=".gif",
+                content_type=EXTENSION_TO_CONTENT_TYPE[".gif"],
             )
         return StoredMedia(
-            data=data,
-            extension=_detect_extension(image),
-            content_type=_detect_content_type(image),
+            data=animated_webp,
+            extension=".webp",
+            content_type=WEBP_CONTENT_TYPE,
         )
 
     buffer = BytesIO()
