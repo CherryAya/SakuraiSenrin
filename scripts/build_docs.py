@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.plugin_docs import (
+    DemoImageRenderer,
     PluginDocBundle,
     audit_demo_layout,
     collection_demo_filename,
@@ -391,8 +392,24 @@ class DemoCollectionRenderer:
     def _load_thumbnail(self, path: Path) -> Image.Image:
         with Image.open(path) as source:
             image = source.convert("RGB")
+        image = self._crop_demo_conversation(image)
         height = max(1, round(image.height * self.thumb_width / image.width))
         return image.resize((self.thumb_width, height), Image.Resampling.LANCZOS)
+
+    def _crop_demo_conversation(self, image: Image.Image) -> Image.Image:
+        renderer = DemoImageRenderer()
+        panel_top = (
+            renderer.OUTER_MARGIN + renderer.HEADER_HEIGHT + renderer.BODY_TOP_GAP
+        )
+        footer_cut = (
+            renderer.FOOTER_TOP_GAP + renderer.FOOTER_HEIGHT + renderer.OUTER_MARGIN
+        )
+        left = renderer.OUTER_MARGIN + 28
+        top = panel_top
+        right = renderer.WIDTH - renderer.OUTER_MARGIN - 28
+        bottom = max(top + 1, image.height - footer_cut)
+        cropped = image.crop((left, top, right, bottom))
+        return cropped if cropped.width > 0 and cropped.height > 0 else image
 
     def _card_height(self, tile: PreparedCollectionTile) -> int:
         content_width = self.card_width - self.CARD_PADDING * 2

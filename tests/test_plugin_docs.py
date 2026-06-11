@@ -902,6 +902,19 @@ BOT: Alpha 完成
     assert prepared.image.width == 240
 
 
+def test_collection_thumbnail_crops_to_conversation_panel() -> None:
+    source = Path("src/plugins/study/docs/demos/study-shortcut.png")
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=240)
+
+    with Image.open(source) as original:
+        original_size = original.size
+    thumb = renderer._load_thumbnail(source)  # pyright: ignore[reportPrivateUsage]
+
+    full_scaled_height = round(original_size[1] * 240 / original_size[0])
+    assert thumb.width == 240
+    assert thumb.height < full_scaled_height
+
+
 def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
     monkeypatch: Any,
 ) -> None:
