@@ -51,35 +51,38 @@ async def _reset_wordbank_message_tables(session: AsyncSession) -> None:
         WordbankApprovalMessage,
         WordbankDeleteVote,
         WordbankDeleteVoteSupport,
-        WordbankEntry,
-        WordbankResponse,
+        WordbankResponseItem,
         WordbankResponseMessage,
         WordbankSearchDocument,
         WordbankSearchImageMap,
-        WordbankTrigger,
+        WordbankTriggerGroup,
+        WordbankTriggerVariant,
     )
 
     table_names = (
         "wordbank_search_trigger_fts",
         "wordbank_search_response_fts",
+        "wordbank_entry",
+        "wordbank_trigger",
+        "wordbank_response",
         WordbankApprovalMessage.__tablename__,
         WordbankResponseMessage.__tablename__,
         WordbankDeleteVoteSupport.__tablename__,
         WordbankDeleteVote.__tablename__,
         WordbankSearchDocument.__tablename__,
         WordbankSearchImageMap.__tablename__,
-        WordbankResponse.__tablename__,
-        WordbankTrigger.__tablename__,
-        WordbankEntry.__tablename__,
+        WordbankResponseItem.__tablename__,
+        WordbankTriggerVariant.__tablename__,
+        WordbankTriggerGroup.__tablename__,
     )
     for table_name in table_names:
         await session.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
 
     connection = await session.connection()
     for table in (
-        WordbankEntry.__table__,
-        WordbankTrigger.__table__,
-        WordbankResponse.__table__,
+        WordbankTriggerGroup.__table__,
+        WordbankTriggerVariant.__table__,
+        WordbankResponseItem.__table__,
         WordbankSearchDocument.__table__,
         WordbankSearchImageMap.__table__,
         WordbankDeleteVote.__table__,
@@ -100,7 +103,7 @@ def build_wordbank_patch_registry() -> PatchRegistry:
     registry = PatchRegistry()
     registry.register(
         SchemaPatch(
-            patch_id="wordbank:reset_message_tables:v1",
+            patch_id="wordbank:reset_group_tables:v2",
             apply=_reset_wordbank_message_tables,
         )
     )

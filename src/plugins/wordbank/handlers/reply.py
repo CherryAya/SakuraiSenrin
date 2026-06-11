@@ -12,6 +12,7 @@ from src.plugins.wordbank.database.types import (
     WordbankApprovalMessageRecord,
     WordbankEntryDetail,
     WordbankResponseMessageRecord,
+    legacy_entry_detail_from_group,
 )
 from src.plugins.wordbank.services.core import WordbankService
 
@@ -246,6 +247,14 @@ async def _load_entry_detail(
     service: WordbankService,
     response_message: WordbankResponseMessageRecord,
 ) -> WordbankEntryDetail | None:
+    if hasattr(service, "get_group_detail"):
+        detail = await service.get_group_detail(
+            response_message.trigger_group_id,
+            response_item_id=response_message.response_item_id,
+        )
+        if detail is None:
+            return None
+        return legacy_entry_detail_from_group(detail)
     return await service.get_entry_detail(
         response_message.entry_id,
         trigger_id=response_message.trigger_id,

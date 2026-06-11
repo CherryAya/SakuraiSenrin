@@ -118,12 +118,16 @@ class LegacyEntryState:
 class WordbankMigrationReport:
     total_rows: int = 0
     imported_rows: int = 0
+    imported_groups: int = 0
+    imported_response_items: int = 0
     imported_entries: int = 0
     skipped_rows: int = 0
     status_counts: Counter[str] = field(default_factory=Counter)
     skipped_reasons: Counter[str] = field(default_factory=Counter)
     image_counts: Counter[str] = field(default_factory=Counter)
     imported_entry_ids: dict[int, list[int]] = field(default_factory=dict)
+    imported_group_ids: dict[int, int] = field(default_factory=dict)
+    response_count_by_group_id: dict[int, int] = field(default_factory=dict)
     failures: list[str] = field(default_factory=list)
     failure_details: list[dict[str, object]] = field(default_factory=list)
 
@@ -167,16 +171,27 @@ class WordbankMigrationReport:
         return {
             "total_rows": self.total_rows,
             "imported_rows": self.imported_rows,
+            "imported_groups": self.imported_groups,
+            "imported_response_items": self.imported_response_items,
             "imported_entries": self.imported_entries,
             "skipped_rows": self.skipped_rows,
             "status_counts": dict(self.status_counts),
             "skipped_reasons": dict(self.skipped_reasons),
             "image_counts": dict(self.image_counts),
             "imported_entry_ids": self.imported_entry_ids,
+            "imported_group_ids": self.imported_group_ids,
+            "response_distribution": dict(self.response_distribution),
             "failures": list(self.failures),
             "failure_details": list(self.failure_details),
             "failure_categories": self.to_failure_categories_dict(),
         }
+
+    @property
+    def response_distribution(self) -> Counter[int]:
+        distribution: Counter[int] = Counter()
+        for count in self.response_count_by_group_id.values():
+            distribution[count] += 1
+        return distribution
 
     def to_failure_categories_dict(self) -> dict[str, object]:
         categories: dict[str, dict[str, object]] = {}
@@ -523,7 +538,14 @@ async def migrate_legacy_rows(
                     updated_at=updated_at,
                     trigger_mode="fullmatch",
                 )
-                imported_ids.append(entry.id)
+                imported_ids.append(entry.response_item_id)
+                report.imported_group_ids[response_id] = entry.trigger_group_id
+                report.response_count_by_group_id[entry.trigger_group_id] = (
+                    report.response_count_by_group_id.get(entry.trigger_group_id, 0) + 1
+                )
+                if entry.created_group:
+                    report.imported_groups += 1
+                report.imported_response_items += 1
                 report.imported_entries += 1
                 report.status_counts[entry.status] += 1
             report.imported_entry_ids[response_id] = imported_ids

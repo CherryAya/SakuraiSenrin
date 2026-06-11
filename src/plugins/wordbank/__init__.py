@@ -1351,9 +1351,9 @@ async def _record_passive_response_message(
     try:
         await wordbank_service.record_response_message(
             message_id=message_id,
-            entry_id=response.entry_id,
-            trigger_id=response.trigger_id,
-            response_id=response.response_id,
+            trigger_group_id=response.trigger_group_id,
+            trigger_variant_id=response.trigger_variant_id,
+            response_item_id=response.response_item_id,
             group_id=response.group_id,
             user_id=response.user_id,
             message_type=response.message_type,

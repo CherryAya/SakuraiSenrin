@@ -168,7 +168,8 @@ async def send_pending_approval_notice(
                 continue
             await service.record_approval_message(
                 message_id=message_id,
-                entry_id=result.entry_id,
+                trigger_group_id=result.trigger_group_id,
+                response_item_id=result.response_item_id,
                 group_id=group_id,
                 user_id=user_id,
                 source_message_id=source_message_id,
@@ -197,7 +198,8 @@ async def record_submission_approval_message(
     try:
         await service.record_approval_message(
             message_id=message_id,
-            entry_id=result.entry_id,
+            trigger_group_id=result.trigger_group_id,
+            response_item_id=result.response_item_id,
             group_id=str(getattr(event, "group_id", "") or ""),
             user_id=str(event.user_id),
             source_message_id=str(getattr(event, "message_id", "") or ""),

@@ -273,6 +273,8 @@ async def test_migrate_legacy_rows_imports_images_and_statuses(
     entries = await repository.list_enabled_entries()
 
     assert report.imported_rows == 1
+    assert report.imported_groups == 1
+    assert report.imported_response_items == 1
     assert report.imported_entries == 1
     assert report.skipped_rows == 0
     assert len(entries) == 1
@@ -282,7 +284,7 @@ async def test_migrate_legacy_rows_imports_images_and_statuses(
 
 
 @pytest.mark.asyncio
-async def test_migrate_legacy_rows_splits_or_rule_into_multiple_entries(
+async def test_migrate_legacy_rows_merges_same_trigger_or_targets_into_one_group(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -333,13 +335,23 @@ async def test_migrate_legacy_rows_splits_or_rule_into_multiple_entries(
         image_catalog=catalog,
         reset_target=True,
     )
-    entries = await repository.list_enabled_entries()
+    groups = await repository.list_enabled_entries()
+    response_items = await repository.list_group_response_items(
+        report.imported_group_ids[2]
+    )
 
     assert report.imported_rows == 1
+    assert report.imported_groups == 1
+    assert report.imported_response_items == 2
     assert report.imported_entries == 2
     assert report.skipped_rows == 0
-    assert len(entries) == 2
-    assert sorted(entry.scope for entry in entries) == ["all_groups", "current_group"]
+    assert len(groups) == 1
+    assert len(response_items) == 2
+    assert sorted(item.scope for item in response_items) == [
+        "all_groups",
+        "current_group",
+    ]
+    assert report.response_distribution[2] == 1
 
 
 @pytest.mark.asyncio

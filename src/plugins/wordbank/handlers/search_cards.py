@@ -210,8 +210,9 @@ class SearchResultCardRenderer:
         )
 
         meta_text = (
-            f"#{item.entry_id}  "
-            f"[{item.status}/{item.trigger_mode}/{item.scope}]  "
+            f"#组{item.trigger_group_id}  "
+            f"[{item.status}/{item.trigger_mode}]  "
+            f"响应数: {item.response_count}  "
             f"创建者: {item.created_by}"
         )
         draw.text(
@@ -224,7 +225,7 @@ class SearchResultCardRenderer:
         body_y = int(inner_y + badge_height + 18)
         for label, value in (
             ("触发", item.trigger_text),
-            ("响应", item.response_text),
+            ("响应摘要", self._response_preview(item)),
             ("命中", item.matched_by or self._fallback_match_label(query)),
         ):
             body_y = self._draw_labeled_lines(
@@ -315,7 +316,7 @@ class SearchResultCardRenderer:
         total += int(badge_bbox[3] - badge_bbox[1] + 30)
         for label, value in (
             ("触发", item.trigger_text),
-            ("响应", item.response_text),
+            ("响应摘要", self._response_preview(item)),
             ("命中", item.matched_by or "默认"),
         ):
             wrapped = self._wrap_text(f"{label}: {value}", self.item_body_font)
@@ -354,6 +355,16 @@ class SearchResultCardRenderer:
         if query.creator_id:
             return "创建者"
         return "最近词条"
+
+    def _response_preview(self, item: WordbankSearchItem) -> str:
+        summaries = list(item.response_summaries[:3]) or (
+            [item.response_text] if item.response_text else []
+        )
+        preview = " / ".join(summary for summary in summaries if summary)
+        if item.remaining_response_count > 0:
+            suffix = f" 还有 {item.remaining_response_count} 条"
+            preview = f"{preview}{suffix}" if preview else suffix.strip()
+        return preview or "无"
 
     def _wrap_text(self, text: str, font: Any) -> list[str]:
         if not text:

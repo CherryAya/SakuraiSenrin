@@ -17,6 +17,7 @@ from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import (
     WordbankApprovalMessageRecord,
     WordbankEntryDetail,
+    WordbankGroupDetail,
     WordbankLogPayload,
     WordbankResponseMessageRecord,
     WordbankSearchItem,
@@ -37,9 +38,11 @@ from src.plugins.wordbank.services.matching import (
 from src.plugins.wordbank.services.rules import RuleContext, canonicalize_rule
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(slots=True, frozen=True, init=False)
 class WordbankAddResult:
-    entry_id: int
+    trigger_group_id: int
+    trigger_variant_id: int
+    response_item_id: int
     trigger_text: str
     response_text: str
     trigger_mode: str
@@ -47,14 +50,55 @@ class WordbankAddResult:
     probability: float
     weight: int
     status: str = "pending"
+    created_group: bool = False
     trigger_shape: MessageShape | None = None
     response_shape: MessageShape | None = None
+
+    def __init__(
+        self,
+        *,
+        trigger_group_id: int = 0,
+        trigger_variant_id: int = 0,
+        response_item_id: int | None = None,
+        entry_id: int | None = None,
+        trigger_text: str,
+        response_text: str,
+        trigger_mode: str,
+        scope: str,
+        probability: float,
+        weight: int,
+        status: str = "pending",
+        created_group: bool = False,
+        trigger_shape: MessageShape | None = None,
+        response_shape: MessageShape | None = None,
+    ) -> None:
+        response_id = (
+            response_item_id if response_item_id is not None else entry_id or 0
+        )
+        object.__setattr__(self, "trigger_group_id", trigger_group_id)
+        object.__setattr__(self, "trigger_variant_id", trigger_variant_id)
+        object.__setattr__(self, "response_item_id", response_id)
+        object.__setattr__(self, "trigger_text", trigger_text)
+        object.__setattr__(self, "response_text", response_text)
+        object.__setattr__(self, "trigger_mode", trigger_mode)
+        object.__setattr__(self, "scope", scope)
+        object.__setattr__(self, "probability", probability)
+        object.__setattr__(self, "weight", weight)
+        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "created_group", created_group)
+        object.__setattr__(self, "trigger_shape", trigger_shape)
+        object.__setattr__(self, "response_shape", response_shape)
+
+    @property
+    def entry_id(self) -> int:
+        return self.response_item_id
 
 
 @dataclass(slots=True, frozen=True)
 class WordbankDeleteVoteResult:
     vote_id: int
-    entry_id: int
+    trigger_group_id: int
+    response_item_id: int
     status: str
     support_count: int
     threshold: int
@@ -62,6 +106,10 @@ class WordbankDeleteVoteResult:
     already_supported: bool
     passed: bool
     entry_deleted: bool
+
+    @property
+    def entry_id(self) -> int:
+        return self.response_item_id
 
 
 class WordbankService:
@@ -78,6 +126,7 @@ class WordbankService:
         self._index = RuntimeIndex()
         self._initialized = False
         self._rebuild_task: asyncio.Task[None] | None = None
+        self._dirty_group_ids: set[int] = set()
         self._call_history: dict[int, deque[int]] = defaultdict(deque)
 
     @property
@@ -96,14 +145,56 @@ class WordbankService:
         records = await self.repository.list_enabled_entries()
         self._index = RuntimeIndex.build(records)
 
-    def mark_dirty(self) -> None:
+    def mark_dirty(self, trigger_group_id: int | None = None) -> None:
+        if trigger_group_id is None:
+            self._dirty_group_ids.clear()
+        else:
+            self._dirty_group_ids.add(trigger_group_id)
         if self._rebuild_task is not None and not self._rebuild_task.done():
             self._rebuild_task.cancel()
         self._rebuild_task = asyncio.create_task(self._debounced_rebuild())
 
     async def _debounced_rebuild(self) -> None:
         await asyncio.sleep(self.debounce_seconds)
-        await self.rebuild_index()
+        if not self._dirty_group_ids:
+            await self.rebuild_index()
+            return
+        dirty_group_ids = tuple(self._dirty_group_ids)
+        self._dirty_group_ids.clear()
+        for trigger_group_id in dirty_group_ids:
+            await self._refresh_runtime_group(trigger_group_id)
+
+    async def _refresh_runtime_group(self, trigger_group_id: int) -> None:
+        current_group = self._index.groups.pop(trigger_group_id, None)
+        if current_group is not None:
+            for variants in self._index.exact_match.values():
+                variants[:] = [
+                    variant
+                    for variant in variants
+                    if variant.trigger_group_id != trigger_group_id
+                ]
+        record = await self.repository.get_trigger_group_record(
+            trigger_group_id,
+            include_deleted=False,
+            active_only=True,
+        )
+        if (
+            record is None
+            or record.status != "approved"
+            or record.enabled != 1
+            or not record.responses
+        ):
+            empty_keys = [
+                key for key, variants in self._index.exact_match.items() if not variants
+            ]
+            for key in empty_keys:
+                self._index.exact_match.pop(key, None)
+            return
+        refreshed = RuntimeIndex.build([record])
+        if trigger_group_id in refreshed.groups:
+            self._index.groups[trigger_group_id] = refreshed.groups[trigger_group_id]
+        for key, variants in refreshed.exact_match.items():
+            self._index.exact_match.setdefault(key, []).extend(variants)
 
     async def add_message_entry(
         self,
@@ -118,20 +209,18 @@ class WordbankService:
     ) -> WordbankAddResult:
         if trigger_shape.is_empty():
             raise WordbankUserError(
-                "触发词不能为空",
-                key="wordbank.error.trigger_empty",
+                "触发词不能为空", key="wordbank.error.trigger_empty"
             )
         if response_shape.is_empty():
             raise WordbankUserError(
-                "响应词不能为空",
-                key="wordbank.error.response_empty",
+                "响应词不能为空", key="wordbank.error.response_empty"
             )
         rule = canonicalize_rule(
             raw_rule,
             is_group=is_group,
             short_trigger=False,
         )
-        entry = await self.repository.create_message_entry(
+        created = await self.repository.create_or_append_response(
             trigger_shape=trigger_shape,
             response_shape=response_shape,
             trigger_mode=trigger_mode,
@@ -143,9 +232,13 @@ class WordbankService:
             group_id=group_id if is_group else "",
             created_by=user_id,
         )
+        self.mark_dirty(created.trigger_group_id)
         return WordbankAddResult(
-            entry_id=entry.id,
-            status=entry.status,
+            trigger_group_id=created.trigger_group_id,
+            trigger_variant_id=created.trigger_variant_id,
+            response_item_id=created.response_item_id,
+            status=created.status,
+            created_group=created.created_group,
             trigger_text=shape_to_summary_text(trigger_shape),
             response_text=shape_to_summary_text(response_shape),
             trigger_mode=trigger_mode,
@@ -165,6 +258,7 @@ class WordbankService:
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
+        detail = await self.repository.get_entry_detail(entry_id, response_id=entry_id)
         ok = await self.repository.delete_entry(
             entry_id,
             actor_user_id=actor_user_id,
@@ -172,8 +266,8 @@ class WordbankService:
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
         )
-        if ok:
-            self.mark_dirty()
+        if ok and detail is not None:
+            self.mark_dirty(detail.trigger_group_id)
         return ok
 
     async def restore_entry(
@@ -185,6 +279,7 @@ class WordbankService:
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
+        detail = await self.repository.get_entry_detail(entry_id, response_id=entry_id)
         ok = await self.repository.restore_entry(
             entry_id,
             actor_user_id=actor_user_id,
@@ -192,8 +287,8 @@ class WordbankService:
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
         )
-        if ok:
-            self.mark_dirty()
+        if ok and detail is not None:
+            self.mark_dirty(detail.trigger_group_id)
         return ok
 
     async def approve_entry(
@@ -205,6 +300,7 @@ class WordbankService:
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
+        detail = await self.repository.get_entry_detail(entry_id, response_id=entry_id)
         ok = await self.repository.approve_entry(
             entry_id,
             actor_user_id=actor_user_id,
@@ -212,8 +308,8 @@ class WordbankService:
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
         )
-        if ok:
-            self.mark_dirty()
+        if ok and detail is not None:
+            self.mark_dirty(detail.trigger_group_id)
         return ok
 
     async def reject_entry(
@@ -225,13 +321,17 @@ class WordbankService:
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
-        return await self.repository.reject_entry(
+        detail = await self.repository.get_entry_detail(entry_id, response_id=entry_id)
+        ok = await self.repository.reject_entry(
             entry_id,
             actor_user_id=actor_user_id,
             actor_group_id=actor_group_id,
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
         )
+        if ok and detail is not None:
+            self.mark_dirty(detail.trigger_group_id)
+        return ok
 
     async def request_delete_vote(
         self,
@@ -252,10 +352,11 @@ class WordbankService:
         if mutation is None:
             return None
         if mutation.entry_deleted:
-            self.mark_dirty()
+            self.mark_dirty(mutation.vote.trigger_group_id)
         return WordbankDeleteVoteResult(
             vote_id=mutation.vote.id,
-            entry_id=mutation.vote.entry_id,
+            trigger_group_id=mutation.vote.trigger_group_id,
+            response_item_id=mutation.vote.response_item_id,
             status=mutation.vote.status,
             support_count=mutation.vote.support_count,
             threshold=mutation.vote.threshold,
@@ -280,10 +381,11 @@ class WordbankService:
         if mutation is None:
             return None
         if mutation.entry_deleted:
-            self.mark_dirty()
+            self.mark_dirty(mutation.vote.trigger_group_id)
         return WordbankDeleteVoteResult(
             vote_id=mutation.vote.id,
-            entry_id=mutation.vote.entry_id,
+            trigger_group_id=mutation.vote.trigger_group_id,
+            response_item_id=mutation.vote.response_item_id,
             status=mutation.vote.status,
             support_count=mutation.vote.support_count,
             threshold=mutation.vote.threshold,
@@ -304,7 +406,8 @@ class WordbankService:
             return None
         return WordbankDeleteVoteResult(
             vote_id=vote.id,
-            entry_id=vote.entry_id,
+            trigger_group_id=vote.trigger_group_id,
+            response_item_id=vote.response_item_id,
             status=vote.status,
             support_count=vote.support_count,
             threshold=vote.threshold,
@@ -318,9 +421,9 @@ class WordbankService:
         self,
         *,
         message_id: str,
-        entry_id: int,
-        trigger_id: int,
-        response_id: int,
+        trigger_group_id: int,
+        trigger_variant_id: int,
+        response_item_id: int,
         group_id: str,
         user_id: str,
         message_type: str,
@@ -332,9 +435,9 @@ class WordbankService:
         await self.repository.record_response_message(
             {
                 "message_id": message_id,
-                "entry_id": entry_id,
-                "trigger_id": trigger_id,
-                "response_id": response_id,
+                "trigger_group_id": trigger_group_id,
+                "trigger_variant_id": trigger_variant_id,
+                "response_item_id": response_item_id,
                 "group_id": group_id,
                 "user_id": user_id,
                 "message_type": message_type,
@@ -347,7 +450,8 @@ class WordbankService:
         self,
         *,
         message_id: str,
-        entry_id: int,
+        trigger_group_id: int,
+        response_item_id: int,
         group_id: str,
         user_id: str,
         source_message_id: str,
@@ -360,7 +464,8 @@ class WordbankService:
         await self.repository.record_approval_message(
             {
                 "message_id": message_id,
-                "entry_id": entry_id,
+                "trigger_group_id": trigger_group_id,
+                "response_item_id": response_item_id,
                 "group_id": group_id,
                 "user_id": user_id,
                 "source_message_id": source_message_id,
@@ -387,6 +492,17 @@ class WordbankService:
         if not message_id:
             return None
         return await self.repository.get_approval_message(message_id)
+
+    async def get_group_detail(
+        self,
+        trigger_group_id: int,
+        *,
+        response_item_id: int | None = None,
+    ) -> WordbankGroupDetail | None:
+        return await self.repository.get_group_detail(
+            trigger_group_id,
+            response_item_id=response_item_id,
+        )
 
     async def get_entry_detail(
         self,
@@ -470,11 +586,12 @@ class WordbankService:
         if selected is None:
             return None
         now = get_current_time()
-        self._call_history[selected.candidate.entry.id].append(now)
+        self._call_history[selected.response.id].append(now)
         await self.repository.save_log(
             WordbankLogPayload(
-                entry_id=selected.candidate.entry.id,
-                trigger_id=selected.candidate.trigger.id,
+                trigger_group_id=selected.candidate.group.id,
+                trigger_variant_id=selected.candidate.trigger.id,
+                response_item_id=selected.response.id,
                 group_id=context.group_id,
                 user_id=context.user_id,
                 message_type=message_type,
@@ -492,18 +609,18 @@ class WordbankService:
         now = get_current_time()
         counts: dict[int, int] = {}
         for candidate in candidates:
-            entry = candidate.entry
-            call_count = entry.rule.get("call_count")
-            if not isinstance(call_count, dict):
-                continue
-            window = int(call_count.get("window_seconds", 0))
-            if window <= 0:
-                counts[entry.id] = 0
-                continue
-            history = self._call_history[entry.id]
-            while history and now - history[0] > window:
-                history.popleft()
-            counts[entry.id] = len(history)
+            for response in candidate.group.responses:
+                call_count = response.rule.get("call_count")
+                if not isinstance(call_count, dict):
+                    continue
+                window = int(call_count.get("window_seconds", 0))
+                if window <= 0:
+                    counts[response.id] = 0
+                    continue
+                history = self._call_history[response.id]
+                while history and now - history[0] > window:
+                    history.popleft()
+                counts[response.id] = len(history)
         return counts
 
 
@@ -519,16 +636,19 @@ def format_search_items(
         return tr(locale, "wordbank.search.empty", page=page)
     lines = [tr(locale, "wordbank.search.title", page=page)]
     for item in items:
+        response_preview = " / ".join(item.response_summaries[:3]) or item.response_text
+        if item.has_more_responses:
+            response_preview = f"{response_preview} (+{item.remaining_response_count})"
         lines.append(
             tr(
                 locale,
                 "wordbank.search.item",
-                entry_id=item.entry_id,
+                entry_id=item.trigger_group_id,
                 status=item.status,
                 trigger_mode=item.trigger_mode,
                 scope=item.scope,
                 trigger_text=item.trigger_text,
-                response_text=item.response_text,
+                response_text=response_preview,
             )
         )
     if has_more:
@@ -550,11 +670,16 @@ def format_pending_items(
         return tr(locale, "wordbank.approval.pending_empty", page=page)
     lines = [tr(locale, "wordbank.approval.pending_title", page=page)]
     for item in items:
+        response_item_id = (
+            item.response_item_ids[0]
+            if item.response_item_ids
+            else item.trigger_group_id
+        )
         lines.append(
             tr(
                 locale,
                 "wordbank.approval.pending_item",
-                entry_id=item.entry_id,
+                entry_id=response_item_id,
                 trigger_mode=item.trigger_mode,
                 scope=item.scope,
                 trigger_text=item.trigger_text,
@@ -581,7 +706,7 @@ def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
     return tr(
         locale,
         key,
-        entry_id=result.entry_id,
+        entry_id=result.response_item_id,
         status=result.status,
         trigger_text=result.trigger_text,
         response_text=result.response_text,

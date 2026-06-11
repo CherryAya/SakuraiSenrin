@@ -41,18 +41,14 @@ def _selected(
         candidate=MatchCandidate(
             entry=RuntimeEntry(
                 id=12,
-                scope="current_group",
-                priority=1,
-                probability=1.0,
-                weight=1,
-                rule={},
                 group_id="20001",
                 created_by="10001",
+                trigger_mode="strict",
                 responses=(),
             ),
             trigger=RuntimeTrigger(
                 id=21,
-                entry_id=12,
+                trigger_group_id=12,
                 trigger_text="晚安",
                 trigger_mode="strict",
                 message_shape=shape_from_text("晚安"),
@@ -62,10 +58,17 @@ def _selected(
         ),
         response=RuntimeResponse(
             id=22,
+            trigger_group_id=12,
             text=response_text,
             message_shape=response_shape or shape_from_text(response_text),
             exact_md5="response-md5",
+            scope="current_group",
+            priority=1,
+            probability=1.0,
             weight=1,
+            rule={},
+            group_id="20001",
+            created_by="10001",
         ),
     )
 
@@ -81,7 +84,8 @@ def test_build_passive_response_preserves_message_shape() -> None:
         message_type="message",
     )
 
-    assert response.entry_id == 12
+    assert response.trigger_group_id == 12
+    assert response.response_item_id == 22
     assert response.response_shape == shape_from_text("做个好梦")
 
 

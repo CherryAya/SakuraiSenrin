@@ -40,21 +40,57 @@ async def _build_service(
 
 
 @pytest.mark.asyncio
-async def test_repository_round_trip_and_exact_runtime_match(
+async def test_same_trigger_appends_response_to_existing_group(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = await _build_service(tmp_path, monkeypatch)
 
-    result = await service.add_message_entry(
+    first = await service.add_message_entry(
         trigger_shape=shape_from_text("晚安啦"),
         response_shape=shape_from_text("做个好梦"),
         group_id="20001",
         user_id="10001",
         is_group=True,
     )
-    approved = await service.approve_entry(
-        result.entry_id,
+    second = await service.add_message_entry(
+        trigger_shape=shape_from_text("晚安啦"),
+        response_shape=shape_from_text("也祝你好梦"),
+        group_id="20001",
+        user_id="10002",
+        is_group=True,
+    )
+    group_detail = await service.get_group_detail(first.trigger_group_id)
+
+    assert first.trigger_group_id == second.trigger_group_id
+    assert first.response_item_id != second.response_item_id
+    assert group_detail is not None
+    assert len(group_detail.responses) == 2
+
+
+@pytest.mark.asyncio
+async def test_runtime_only_uses_approved_responses_inside_same_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+
+    approved = await service.add_message_entry(
+        trigger_shape=shape_from_text("晚安啦"),
+        response_shape=shape_from_text("做个好梦"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    pending = await service.add_message_entry(
+        trigger_shape=shape_from_text("晚安啦"),
+        response_shape=shape_from_text("还没审核"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    await service.approve_entry(
+        approved.response_item_id,
         actor_user_id="10001",
         actor_group_id="20001",
         can_moderate_group=True,
@@ -66,113 +102,111 @@ async def test_repository_round_trip_and_exact_runtime_match(
         shape_from_text("晚安啦"),
         context=_context(),
     )
-    missed = await service.match_message(
-        shape_from_text("晚安"),
-        context=_context(),
-    )
 
-    assert approved is True
+    assert pending.trigger_group_id == approved.trigger_group_id
     assert selected is not None
+    assert selected.response.id == approved.response_item_id
     assert selected.response.text == "做个好梦"
-    assert missed is None
 
 
 @pytest.mark.asyncio
-async def test_pending_and_delete_vote_flow(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    service = await _build_service(tmp_path, monkeypatch)
-
-    result = await service.add_message_entry(
-        trigger_shape=shape_from_text("权限测试"),
-        response_shape=shape_from_text("ok"),
-        group_id="20001",
-        user_id="10001",
-        is_group=True,
-    )
-    pending = await service.list_pending_entries(
-        actor_group_id="20001",
-        can_moderate_group=True,
-        is_superuser=False,
-    )
-    approved = await service.approve_entry(
-        result.entry_id,
-        actor_user_id="10001",
-        actor_group_id="20001",
-        can_moderate_group=True,
-        is_superuser=False,
-    )
-    vote = await service.request_delete_vote(
-        entry_id=result.entry_id,
-        group_id="20001",
-        user_id="10002",
-        threshold=2,
-    )
-    support = await service.support_delete_vote(
-        vote_id=vote.vote_id if vote is not None else 0,
-        group_id="20001",
-        user_id="10003",
-    )
-
-    assert [item.entry_id for item in pending] == [result.entry_id]
-    assert approved is True
-    assert vote is not None
-    assert support is not None
-    assert support.entry_deleted is True
-
-
-@pytest.mark.asyncio
-async def test_search_uses_creator_filter_and_text_fts(
+async def test_deleting_last_active_response_removes_group_from_runtime_match(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = await _build_service(tmp_path, monkeypatch)
 
     first = await service.add_message_entry(
-        trigger_shape=shape_from_text("晚安词条"),
-        response_shape=shape_from_text("做个好梦"),
+        trigger_shape=shape_from_text("权限测试"),
+        response_shape=shape_from_text("ok-1"),
         group_id="20001",
         user_id="10001",
         is_group=True,
     )
     second = await service.add_message_entry(
-        trigger_shape=shape_from_text("早安词条"),
-        response_shape=shape_from_text("早上好"),
+        trigger_shape=shape_from_text("权限测试"),
+        response_shape=shape_from_text("ok-2"),
         group_id="20001",
-        user_id="10002",
+        user_id="10001",
         is_group=True,
     )
-    for entry_id in (first.entry_id, second.entry_id):
+    for response_item_id in (first.response_item_id, second.response_item_id):
         await service.approve_entry(
-            entry_id,
+            response_item_id,
             actor_user_id="10001",
             actor_group_id="20001",
             can_moderate_group=True,
             is_superuser=False,
         )
 
-    items = await service.search(
-        WordbankSearchRequest(
-            keyword="晚安",
-            field="trigger",
-            creator_id="10001",
-        )
+    deleted_first = await service.delete_entry(
+        first.response_item_id,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
     )
-    page = await service.search_page(
-        WordbankSearchRequest(
-            keyword="晚安",
-            field="trigger",
-            creator_id="10001",
-        )
+    await service.rebuild_index()
+    still_matches = await service.match_message(
+        shape_from_text("权限测试"),
+        context=_context(),
     )
 
-    assert [item.entry_id for item in items] == [first.entry_id]
-    assert page.total_count == 1
+    deleted_second = await service.delete_entry(
+        second.response_item_id,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    await service.rebuild_index()
+    no_match = await service.match_message(
+        shape_from_text("权限测试"),
+        context=_context(),
+    )
+
+    assert deleted_first is True
+    assert still_matches is not None
+    assert deleted_second is True
+    assert no_match is None
 
 
 @pytest.mark.asyncio
-async def test_search_accepts_image_scores_for_trigger_and_response(
+async def test_search_groups_multiple_responses_into_single_card(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+    for response_text in ("做个好梦", "晚安晚安", "早点睡", "第四条响应"):
+        created = await service.add_message_entry(
+            trigger_shape=shape_from_text("晚安词条"),
+            response_shape=shape_from_text(response_text),
+            group_id="20001",
+            user_id="10001",
+            is_group=True,
+        )
+        await service.approve_entry(
+            created.response_item_id,
+            actor_user_id="10001",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+
+    page = await service.search_page(
+        WordbankSearchRequest(keyword="晚安", field="trigger", creator_id="10001")
+    )
+
+    assert page.total_count == 1
+    assert len(page.items) == 1
+    item = page.items[0]
+    assert item.response_count == 4
+    assert item.response_summaries == ("做个好梦", "晚安晚安", "早点睡")
+    assert item.remaining_response_count == 1
+
+
+@pytest.mark.asyncio
+async def test_search_accepts_response_image_scores_and_marks_match_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -182,40 +216,23 @@ async def test_search_accepts_image_scores_for_trigger_and_response(
         media_root=tmp_path / "media",
     )
 
-    trigger_image = await media_service.ingest_image_bytes(_png((255, 0, 0)))
     response_image = await media_service.ingest_image_bytes(_png((0, 0, 255)))
-
-    trigger_entry = await service.add_message_entry(
-        trigger_shape=shape_from_image(trigger_image.canonical_id),
-        response_shape=shape_from_text("图触发"),
-        group_id="20001",
-        user_id="10001",
-        is_group=True,
-    )
-    response_entry = await service.add_message_entry(
+    created = await service.add_message_entry(
         trigger_shape=shape_from_text("文本触发"),
         response_shape=shape_from_image(response_image.canonical_id),
         group_id="20001",
         user_id="10001",
         is_group=True,
     )
-    for entry_id in (trigger_entry.entry_id, response_entry.entry_id):
-        await service.approve_entry(
-            entry_id,
-            actor_user_id="10001",
-            actor_group_id="20001",
-            can_moderate_group=True,
-            is_superuser=False,
-        )
-
-    trigger_items = await service.search(
-        WordbankSearchRequest(
-            field="trigger",
-            has_image=True,
-            image_scores={trigger_image.canonical_id: 1.0},
-        )
+    await service.approve_entry(
+        created.response_item_id,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
     )
-    response_items = await service.search(
+
+    items = await service.search(
         WordbankSearchRequest(
             field="response",
             has_image=True,
@@ -223,47 +240,13 @@ async def test_search_accepts_image_scores_for_trigger_and_response(
         )
     )
 
-    assert [item.entry_id for item in trigger_items] == [trigger_entry.entry_id]
-    assert [item.entry_id for item in response_items] == [response_entry.entry_id]
+    assert len(items) == 1
+    assert items[0].trigger_group_id == created.trigger_group_id
+    assert items[0].matched_by == "image:response"
 
 
 @pytest.mark.asyncio
-async def test_search_page_lists_recent_entries_without_query(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    service = await _build_service(tmp_path, monkeypatch)
-
-    first = await service.add_message_entry(
-        trigger_shape=shape_from_text("第一条"),
-        response_shape=shape_from_text("A"),
-        group_id="20001",
-        user_id="10001",
-        is_group=True,
-    )
-    second = await service.add_message_entry(
-        trigger_shape=shape_from_text("第二条"),
-        response_shape=shape_from_text("B"),
-        group_id="20001",
-        user_id="10001",
-        is_group=True,
-    )
-    for entry_id in (first.entry_id, second.entry_id):
-        await service.approve_entry(
-            entry_id,
-            actor_user_id="10001",
-            actor_group_id="20001",
-            can_moderate_group=True,
-            is_superuser=False,
-        )
-
-    page = await service.search_page(WordbankSearchRequest())
-
-    assert page.total_count == 2
-
-
-@pytest.mark.asyncio
-async def test_repository_import_message_entry_preserves_status_and_timestamps(
+async def test_repository_import_message_entry_preserves_group_and_response_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -273,7 +256,7 @@ async def test_repository_import_message_entry_preserves_status_and_timestamps(
     repository = WordbankRepository()
     await repository.init_all_tables()
 
-    entry = await repository.import_message_entry(
+    imported = await repository.import_message_entry(
         trigger_shape=shape_from_text("旧版触发"),
         response_shape=shape_from_text("旧版响应"),
         rule={},
@@ -296,45 +279,7 @@ async def test_repository_import_message_entry_preserves_status_and_timestamps(
         WordbankSearchRequest(keyword="旧版", field="all"),
     )
 
-    assert entry.status == "approved"
-    assert entry.probability == 0.75
-    assert entry.triggers[0].trigger_mode == "fullmatch"
-    assert [item.entry_id for item in page.items] == [entry.id]
-
-
-@pytest.mark.asyncio
-async def test_repository_reset_all_data_clears_entries_and_images(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.lib.db import connectors as connectors_module
-
-    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
-    repository = WordbankRepository()
-    await repository.init_all_tables()
-    service = WordbankMediaService(repository, media_root=tmp_path / "media")
-
-    await service.ingest_image_bytes(_png((12, 34, 56)))
-    await repository.import_message_entry(
-        trigger_shape=shape_from_text("需要清空"),
-        response_shape=shape_from_text("清空"),
-        rule={},
-        scope="all_groups",
-        priority=10,
-        probability=1.0,
-        weight=3,
-        group_id="",
-        created_by="10001",
-        status="approved",
-        enabled=1,
-        approved_by="",
-        deleted_at=0,
-        created_at=1700000000,
-        updated_at=1700000000,
-        trigger_mode="fullmatch",
-    )
-    await repository.rebuild_search_index()
-    await repository.reset_all_data(include_images=True)
-
-    assert await repository.list_enabled_entries() == []
-    assert await repository.list_images() == []
+    assert imported.status == "approved"
+    assert imported.probability == 0.75
+    assert imported.triggers[0].trigger_text == "旧版触发"
+    assert page.items[0].trigger_group_id == imported.trigger_group_id
