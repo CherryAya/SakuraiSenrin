@@ -191,7 +191,7 @@ def compose(
     *,
     workers: int | None = None,
     columns: int = 2,
-    thumb_width: int = 620,
+    thumb_width: int = 700,
 ) -> int:
     worker_count = workers if workers is not None else default_worker_count()
     total_files, jobs = collect_collection_jobs(
@@ -219,7 +219,7 @@ def build(
     *,
     workers: int | None = None,
     columns: int = 2,
-    thumb_width: int = 620,
+    thumb_width: int = 700,
 ) -> int:
     generated = generate(workers=workers)
     if generated != 0:
@@ -236,12 +236,15 @@ def build(
 
 class DemoCollectionRenderer:
     MIN_WIDTH = 1440
-    MAX_WIDTH = 2380
+    MAX_WIDTH = 2680
     OUTER_MARGIN = 36
     HEADER_PANEL_MIN_HEIGHT = 112
     HEADER_TOP = 50
     HEADER_LEFT = 84
     HEADER_RIGHT_TOP = 74
+    HEADER_BOTTOM_PAD = 26
+    HEADER_SIDE_PAD = 18
+    HEADER_EXTRA_COMPENSATION = 24
     CONTENT_TOP_GAP = 28
     CARD_PADDING = 24
     CARD_RADIUS = 26
@@ -347,7 +350,7 @@ class DemoCollectionRenderer:
                 columns=columns,
                 content_top=0,
             )
-        header_height = self._header_height(summary=summary, title=title)
+        header_height = self._header_height(summary=summary, title=title, width=width)
         content_top = self.OUTER_MARGIN + header_height + self.CONTENT_TOP_GAP
         placements = [
             (tile, x, y + content_top, height) for tile, x, y, height in placements
@@ -472,7 +475,7 @@ class DemoCollectionRenderer:
         if tile_count <= 0:
             return 1
         columns = min(self.columns, tile_count)
-        if columns == 2 and tile_count >= 8:
+        if columns == 2 and tile_count >= 10:
             return min(3, tile_count)
         return columns
 
@@ -491,11 +494,11 @@ class DemoCollectionRenderer:
         tile_count: int,
         width: int,
     ) -> None:
-        panel_left = self.OUTER_MARGIN + 18
+        panel_left = self.OUTER_MARGIN + self.HEADER_SIDE_PAD
         panel_top = self.HEADER_TOP
-        panel_right = width - self.OUTER_MARGIN - 18
-        panel_bottom = (
-            panel_top + self._header_height(summary=summary, title=title) - 14
+        panel_right = width - self.OUTER_MARGIN - self.HEADER_SIDE_PAD
+        panel_bottom = panel_top + self._header_height(
+            summary=summary, title=title, width=width
         )
         panel_fill, _ = self._palette_for_source(source_path)
         draw.rounded_rectangle(
@@ -706,13 +709,21 @@ class DemoCollectionRenderer:
         lines: list[tuple] = []
         current: list = []
         for span in split_inline_text_spans(text):
+            candidate = [*current, (span.text, span.code)]
+            if not current or self._inline_line_width(candidate, font) <= max_width:
+                current = candidate
+                continue
+            if span.code:
+                lines.append(tuple(current))
+                current = [(span.text, span.code)]
+                continue
             for char in span.text:
-                candidate = self._append_inline_char(current, char, code=span.code)
+                candidate = self._append_inline_char(current, char, code=False)
                 if not current or self._inline_line_width(candidate, font) <= max_width:
                     current = candidate
                     continue
                 lines.append(tuple(current))
-                current = [(char, span.code)]
+                current = [(char, False)]
         if current:
             lines.append(tuple(current))
         if len(lines) <= max_lines:
@@ -801,10 +812,11 @@ class DemoCollectionRenderer:
                 fill=fill,
             )
 
-    def _header_height(self, *, summary: str, title: str) -> int:
+    def _header_height(self, *, summary: str, title: str, width: int) -> int:
         right_block_width = 360
-        width = self.MAX_WIDTH - self.OUTER_MARGIN * 2 - 24
-        right_x = width - self.OUTER_MARGIN - 18 - right_block_width - 20
+        right_x = (
+            width - self.OUTER_MARGIN - self.HEADER_SIDE_PAD - right_block_width - 20
+        )
         left_width = right_x - self.HEADER_LEFT - 36
         summary_lines = self._wrap_inline_text(
             summary.strip() or "已按子功能拆分生成合集预览。",
@@ -824,7 +836,7 @@ class DemoCollectionRenderer:
             self.HEADER_PANEL_MIN_HEIGHT,
             max(left_bottom, right_bottom) - self.HEADER_TOP,
         )
-        return panel_height + 28
+        return panel_height + self.HEADER_BOTTOM_PAD + self.HEADER_EXTRA_COMPENSATION
 
     def _inline_line_width(
         self,
@@ -1003,7 +1015,7 @@ def build_parser() -> argparse.ArgumentParser:
     build_parser.add_argument(
         "--thumb-width",
         type=positive_int,
-        default=620,
+        default=700,
         help="thumbnail width for each feature demo (default: %(default)s)",
     )
     compose_parser = subparsers.add_parser(
@@ -1029,7 +1041,7 @@ def build_parser() -> argparse.ArgumentParser:
     compose_parser.add_argument(
         "--thumb-width",
         type=positive_int,
-        default=620,
+        default=700,
         help="thumbnail width for each feature demo (default: %(default)s)",
     )
     generate_parser = subparsers.add_parser(

@@ -418,16 +418,42 @@ def split_inline_text_spans(text: str) -> tuple[InlineTextSpan, ...]:
         return ()
 
     spans: list[InlineTextSpan] = []
-    cursor = 0
-    for match in re.finditer(r"`([^`\n]+)`", text):
-        start, end = match.span()
-        if start > cursor:
-            spans.append(InlineTextSpan(text[cursor:start]))
-        spans.append(InlineTextSpan(match.group(1), code=True))
-        cursor = end
-    if cursor < len(text):
-        spans.append(InlineTextSpan(text[cursor:]))
-    return tuple(spans) if spans else (InlineTextSpan(text),)
+    buffer: list[str] = []
+    in_code = False
+
+    def flush(*, code: bool) -> None:
+        if not buffer:
+            return
+        fragment = "".join(buffer)
+        buffer.clear()
+        if spans and spans[-1].code is code:
+            previous = spans[-1]
+            spans[-1] = InlineTextSpan(previous.text + fragment, code=code)
+            return
+        spans.append(InlineTextSpan(fragment, code=code))
+
+    for char in text:
+        if char != "`":
+            buffer.append(char)
+            continue
+        if in_code:
+            flush(code=True)
+            in_code = False
+            continue
+        flush(code=False)
+        in_code = True
+
+    if in_code:
+        literal = "`" + "".join(buffer)
+        buffer.clear()
+        if spans and not spans[-1].code:
+            previous = spans[-1]
+            spans[-1] = InlineTextSpan(previous.text + literal, code=False)
+        else:
+            spans.append(InlineTextSpan(literal, code=False))
+    else:
+        flush(code=False)
+    return tuple(span for span in spans if span.text)
 
 
 def load_demo_bytes(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes | None:

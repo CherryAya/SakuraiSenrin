@@ -142,6 +142,18 @@ def test_split_inline_text_spans_marks_backtick_segments_as_code() -> None:
     ]
 
 
+def test_split_inline_text_spans_supports_adjacent_short_code_segments() -> None:
+    spans = split_inline_text_spans("直接发送 `y` / `n` 快捷审批")
+
+    assert [(span.text, span.code) for span in spans] == [
+        ("直接发送 ", False),
+        ("y", True),
+        (" / ", False),
+        ("n", True),
+        (" 快捷审批", False),
+    ]
+
+
 def test_demo_image_renderer_fit_inline_spans_keeps_code_spans_without_backticks() -> (
     None
 ):
