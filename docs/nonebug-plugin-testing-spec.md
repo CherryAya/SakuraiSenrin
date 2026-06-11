@@ -98,7 +98,7 @@ API 失败路径必须通过 `exception=` 覆盖，并断言业务代码降级�
 4. 成功路径的返回消息和关键副作用。
 5. `finish/reject/pause/got` 会话控制。
 6. 外部依赖失败时的降级消息。
-7. `extra.docs.provider` 返回 `Message`，help 可自动发现。
+7. `extra.docs` schema 合法，help 可自动发现、构树并渲染。
 
 ### 3.2 被动消息插件
 
@@ -161,7 +161,7 @@ tests/plugins/<plugin_name>/
 3. `test_handlers.py`: 仅测试无入口副作用的薄 handler helper；若涉及 matcher 行为，放入 `test_matchers.py`。
 4. `test_services.py`: service 业务规则和降级路径。
 5. `test_repository_edges.py`: repo/ops 的边界与约束。
-6. `test_plugin_docs.py`: docs provider 和 README 解析。
+6. `test_plugin_docs.py`: docs schema、树关系和 README 解析。
 
 新测试不要继续扩大 `DummyMatcher` 用法。历史测试可保留，但新 matcher 行为应以 NoneBug 为准。
 

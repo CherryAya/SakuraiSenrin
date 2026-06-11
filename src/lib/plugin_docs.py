@@ -74,6 +74,9 @@ class DocsMeta(TypedDict):
     aliases: tuple[str, ...]
 
 
+type DocsMetaValue = DocsMeta | Sequence[DocsMeta]
+
+
 @dataclass(slots=True, frozen=True)
 class DocsDemoTurn:
     speaker: Literal["USER", "BOT", "SYSTEM"]
@@ -232,9 +235,36 @@ def create_docs_meta(
 
 
 def read_docs_meta(metadata: PluginMetadata) -> DocsMeta | None:
+    metas = read_docs_metas(metadata)
+    return metas[0] if metas else None
+
+
+def read_docs_metas(metadata: PluginMetadata) -> tuple[DocsMeta, ...]:
     raw = metadata.extra.get("docs")
-    if not isinstance(raw, dict):
-        return None
+    if isinstance(raw, dict):
+        parsed = _normalize_docs_meta(
+            raw,
+            default_permission=metadata.extra.get("permission", Permission.NORMAL),
+        )
+        return (parsed,) if parsed is not None else ()
+    if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+        metas: list[DocsMeta] = []
+        default_permission = metadata.extra.get("permission", Permission.NORMAL)
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            parsed = _normalize_docs_meta(item, default_permission=default_permission)
+            if parsed is not None:
+                metas.append(parsed)
+        return tuple(metas)
+    return ()
+
+
+def _normalize_docs_meta(
+    raw: dict[str, Any],
+    *,
+    default_permission: Permission | int | str,
+) -> DocsMeta | None:
     source = raw.get("source")
     tree = raw.get("tree")
     visibility = raw.get("visibility")
@@ -251,9 +281,7 @@ def read_docs_meta(metadata: PluginMetadata) -> DocsMeta | None:
     normalized_aliases = tuple(
         alias.strip() for alias in aliases if isinstance(alias, str) and alias.strip()
     )
-    permission = raw.get(
-        "permission", metadata.extra.get("permission", Permission.NORMAL)
-    )
+    permission = raw.get("permission", default_permission)
     return {
         "kind": cast(DocNodeKind, raw.get("kind", "plugin")),
         "source": {

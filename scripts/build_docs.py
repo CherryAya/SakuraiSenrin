@@ -21,8 +21,8 @@ if str(ROOT) not in sys.path:
 from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.plugin_docs import (
-    DocNode,
     DemoImageRenderer,
+    DocNode,
     PluginDocBundle,
     audit_demo_layout,
     build_doc_tree,

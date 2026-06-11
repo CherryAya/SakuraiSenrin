@@ -2,6 +2,12 @@
 
 `scripts/build_docs.py` 用于批量生成、拼接和校验插件文档 demo 资源。它面向开发者，不参与 bot 运行时。
 
+当前项目的帮助系统已经切到“统一文档引擎”模式：
+
+- README 仍然是首要内容载体
+- 但 README 现在只是受控的结构化数据源
+- 节点 slug、父子树关系、demo 资源和 README 内容会一起被校验
+
 脚本当前会扫描：
 
 - `src/plugins/**/docs/README.MD`
@@ -40,7 +46,7 @@ uv run python scripts/build_docs.py validate
 示例：
 
 ```bash
-uv run python scripts/build_docs.py build -j 8 --columns 2 --thumb-width 548
+uv run python scripts/build_docs.py build -j 8 --columns 2 --thumb-width 620
 ```
 
 ### `generate`
@@ -70,7 +76,7 @@ uv run python scripts/build_docs.py generate -j 8
 示例：
 
 ```bash
-uv run python scripts/build_docs.py compose -j 8 --columns 2 --thumb-width 548
+uv run python scripts/build_docs.py compose -j 8 --columns 2 --thumb-width 620
 ```
 
 ### `validate`
@@ -84,6 +90,8 @@ uv run python scripts/build_docs.py compose -j 8 --columns 2 --thumb-width 548
 - 对应 demo PNG 是否存在
 - collection PNG 是否存在
 - demo 布局是否越界或重叠
+- 文档节点 slug 是否唯一
+- 自动推导出的父子树关系是否完整
 
 示例：
 
@@ -122,7 +130,7 @@ uv run python scripts/build_docs.py validate
 
 表示拼接合集图时，每张子图缩略图的目标宽度。
 
-- 默认值：`548`
+- 默认值：`620`
 - 值越大：合集图里每张卡更清晰，但整图更大
 - 值越小：合集图更紧凑，但可读性会下降
 
@@ -138,7 +146,7 @@ uv run python scripts/build_docs.py build -j 8
 
 ```bash
 uv run python scripts/build_docs.py generate -j 1
-uv run python scripts/build_docs.py compose -j 1 --columns 2 --thumb-width 548
+uv run python scripts/build_docs.py compose -j 1 --columns 2 --thumb-width 620
 uv run python scripts/build_docs.py validate
 ```
 

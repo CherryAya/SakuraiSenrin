@@ -92,6 +92,33 @@ from .services.rules import RuleError
 name = tr("zh-CN", "plugin.wordbank.name")
 description = tr("zh-CN", "plugin.wordbank.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+APPROVAL_DOCS_SOURCE = (
+    Path(__file__).parent.parent / "wordbank_approval" / "docs" / "README.MD"
+)
+
+
+def _build_wordbank_docs_meta() -> list[object]:
+    main_docs = create_docs_meta(
+        visible=True,
+        category="fun",
+        order=80,
+        source=DOCS_SOURCE,
+        slug="wordbank",
+        aliases=("词库模块", "wordbank"),
+    )
+    main_docs["permission"] = Permission.NORMAL
+
+    approval_docs = create_docs_meta(
+        visible=False,
+        category="fun",
+        order=180,
+        source=APPROVAL_DOCS_SOURCE,
+        slug="wordbank.approval",
+        parent_slug="wordbank",
+        aliases=("词库审核", "wordbank approval"),
+    )
+    approval_docs["permission"] = Permission.GROUP_ADMIN
+    return [main_docs, approval_docs]
 
 
 __plugin_meta__ = create_plugin_metadata(
@@ -106,14 +133,7 @@ __plugin_meta__ = create_plugin_metadata(
             "name_key": "plugin.wordbank.name",
             "description_key": "plugin.wordbank.description",
         },
-        "docs": create_docs_meta(
-            visible=True,
-            category="fun",
-            order=80,
-            source=DOCS_SOURCE,
-            slug="wordbank",
-            aliases=("词库模块", "wordbank"),
-        ),
+        "docs": _build_wordbank_docs_meta(),
     },
 )
 

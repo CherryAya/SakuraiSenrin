@@ -6,7 +6,7 @@
 
 - [ ] 插件声明 `PluginMetadata`。
 - [ ] `extra.author`、`extra.version`、`extra.trigger`、`extra.permission`、`extra.docs` 完整。
-- [ ] `extra.docs.provider` 返回 `Message` 或 await 后返回 `Message`。
+- [ ] `extra.docs` schema 完整，包含 source/tree/visibility 等核心字段。
 - [ ] 多文件命令插件存在 `docs/README.MD`。
 - [ ] 管理能力使用明确权限或群管理角色检查。
 - [ ] 默认不设置 `no_check`；如设置，已测试绕过运行时检查的必要性。
@@ -70,12 +70,12 @@
 
 ## 7. 文档与 Help
 
-- [ ] docs provider 返回 `Message`。
+- [ ] docs 节点可被 help 自动发现并正确渲染。
 - [ ] help 列表可发现可见插件。
 - [ ] 精确查询返回插件详情。
 - [ ] 模糊查询返回合理命中。
 - [ ] 歧义查询返回候选提示。
-- [ ] provider 抛异常时 help 有明确降级说明。
+- [ ] docs tree 下的节点/功能未命中、歧义命中、权限裁剪行为有测试。
 - [ ] 命令文档覆盖命令、参数、示例、权限说明。
 
 ## 8. Cron/Job

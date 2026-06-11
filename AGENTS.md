@@ -139,19 +139,14 @@ src/plugins/<plugin_name>/
 1. 默认不设置 `no_check`。
 2. 涉及管理能力的命令必须设置明确权限（如 `SUPERUSER` 或群管理角色检查）。
 3. 所有插件必须实现 `extra.docs`，否则视为不合规插件。
-4. 本项目插件层不再维护独立 `usage` 文本，帮助文档统一由 `extra.docs.provider` 提供。
+4. 本项目插件层不再维护独立 `usage` 文本，帮助文档统一由 `extra.docs` schema 描述并由项目级文档引擎渲染。
 
 ### 6.1 文档接口契约（强制）
 
 `extra.docs` 推荐最小结构如下：
 
 ```python
-from collections.abc import Awaitable, Callable
-from nonebot.adapters.onebot.v11 import Message
-
 from src.lib.plugin_meta import create_plugin_metadata
-
-DocsProvider = Callable[..., Message | Awaitable[Message]]
 
 __plugin_meta__ = create_plugin_metadata(
     name=name,
@@ -162,10 +157,24 @@ __plugin_meta__ = create_plugin_metadata(
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
         "docs": {
-            "visible": True,         # 是否展示在 help 列表中
-            "category": "system",    # 帮助分类
-            "order": 100,            # 排序
-            "provider": build_docs,  # 返回 Message 的函数（必填）
+            "kind": "plugin",
+            "source": {
+                "kind": "readme",
+                "readme_path": str(DOCS_SOURCE),
+            },
+            "tree": {
+                "slug": "notice.user",
+                "parent_slug": "notice",
+                "category": "system",
+                "order": 100,
+            },
+            "visibility": {
+                "visible": False,
+                "hidden": False,
+                "internal": False,
+            },
+            "permission": Permission.SUPERUSER,
+            "aliases": ("用户事件处理", "notice.user"),
         },
     },
 )
@@ -173,27 +182,26 @@ __plugin_meta__ = create_plugin_metadata(
 
 字段要求：
 
-1. `provider`：必填，可同步或异步，最终返回 `Message` 对象。
-2. `visible`：必填，控制是否出现在默认 help 列表。
-3. `category`：建议填写，便于帮助系统分组展示。
-4. `order`：建议填写，便于稳定排序。
+1. `kind`：必填，描述节点类型，如 `plugin`、`overview`、`internal`。
+2. `source`：必填，当前至少支持 `readme_path`。
+3. `tree.slug`：必填，要求全仓唯一。
+4. `tree.parent_slug`：子节点必填；顶层节点留空。
+5. `visibility.visible`：必填，控制是否出现在默认 help 列表。
+6. `permission`：建议显式填写；节点默认权限与插件权限一致时也可重复声明。
+7. `aliases`：建议填写，便于 help 精确/模糊命中。
 
-### 6.2 文档内容格式（统一返回 Message）
+### 6.2 文档内容格式（统一由引擎渲染）
 
-插件文档可使用三种内容形态，但输出统一为 `Message`：
-
-1. 静态文本：`Message("...")`
-2. 图文混排：`Message(MessageSegment.text(...) + MessageSegment.image(...))`
-3. 纯图片：`Message(MessageSegment.image(...))`
+README 仍是首要文档内容载体，但它已经从“最终协议”降级为“结构化数据源”。渲染结果统一由项目级文档引擎生成。
 
 约束：
 
-1. `help` 插件只依赖 `extra.docs.provider`，不硬编码插件说明。
-2. 命令插件的 docs 内容必须覆盖命令、参数、示例、权限说明。
-3. 被动插件可简化 docs 内容，但仍必须实现 `provider` 供精确查询。
+1. `help` 插件只依赖 `extra.docs` schema、README 数据源和统一渲染器，不硬编码插件说明。
+2. 命令插件的 README 必须覆盖命令、参数、示例、权限说明。
+3. 被动插件可简化 README 内容，但仍必须提供可被精确查询的节点。
 4. 多文件命令插件必须提供 `docs/README.MD`；单文件插件可将文档内嵌在 `.py`。
-5. `help` 对插件详情查询必须支持精确命中、模糊命中和歧义提示三种结果。
-6. `provider` 抛出异常时，`help` 必须返回明确降级说明，而不是静默失败。
+5. `help` 对节点/功能查询必须支持精确命中、模糊命中和歧义提示三种结果。
+6. 总览节点与子节点关系必须通过 `tree.parent_slug` 显式表达，禁止继续依赖“继续发送 #help xxx”这类隐式跳转文案。
 
 ---
 
@@ -241,7 +249,7 @@ tests/plugins/<plugin_name>/
 3. 幂等路径（重复操作、锁冲突、无待处理状态）。
 4. 外部依赖失败时的降级路径。
 5. 核心成功路径与关键返回文案。
-6. `extra.docs.provider` 返回值与 help 自动发现行为。
+6. `extra.docs` schema、树关系与 help 自动发现行为。
 
 建议：
 
@@ -282,7 +290,7 @@ uv run pytest
    - 变更点
    - 风险点
    - 回归验证命令与结果
-   - 文档接口变更说明（`extra.docs` 字段与输出示例）
+   - 文档接口变更说明（`extra.docs` schema、slug/parent_slug、输出示例）
 4. 严禁顺手修复无关模块导致范围失控，除非明确在 PR 中声明。
 
 ---
@@ -302,7 +310,7 @@ uv run pytest
 一个插件需求“完成”必须同时满足：
 
 1. 代码实现符合本文件分层与权限规则。
-2. 已提供 `extra.docs.provider` 且可被 `help` 自动注册调用。
+2. 已提供 `extra.docs` schema 且可被 `help` 自动发现、构树与渲染。
 3. 若为命令插件，`docs/README.MD` 或同等规范化模块文档已补齐。
 4. 测试覆盖核心行为与边界路径。
 5. 质量门禁通过（有 Python 改动时）。

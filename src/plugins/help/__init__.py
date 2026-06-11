@@ -33,7 +33,7 @@ from src.lib.plugin_docs import (
     load_doc_node,
     match_doc_node,
     match_feature,
-    read_docs_meta,
+    read_docs_metas,
     render_doc_feature,
     render_doc_node_overview,
 )
@@ -142,36 +142,37 @@ def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
         metadata = plugin.metadata
         if metadata is None:
             continue
-        docs = read_docs_meta(metadata)
-        if docs is None:
+        docs_metas = read_docs_metas(metadata)
+        if not docs_metas:
             continue
         display_name = _resolve_metadata_text(metadata, locale, "name") or plugin.name
         summary = _resolve_metadata_text(metadata, locale, "description")
         permission = _read_plugin_permission(metadata)
-        node = load_doc_node(
-            source=docs["source"]["readme_path"],
-            default_name=display_name,
-            default_description=summary,
-            trigger=metadata.extra.get("trigger", TriggerType.COMMAND),
-            permission=permission,
-            docs_meta={
-                **docs,
-                "permission": permission,
-            },
-            module_name=plugin.module_name,
-            plugin_name=plugin.name,
-        )
-        entries.append(
-            DocsEntry(
-                plugin=plugin,
-                metadata=metadata,
-                docs=docs,
-                display_name=display_name,
-                summary=summary,
+        for docs in docs_metas:
+            node = load_doc_node(
+                source=docs["source"]["readme_path"],
+                default_name=display_name,
+                default_description=summary,
+                trigger=metadata.extra.get("trigger", TriggerType.COMMAND),
                 permission=permission,
-                node=node,
+                docs_meta={
+                    **docs,
+                    "permission": docs.get("permission", permission),
+                },
+                module_name=plugin.module_name,
+                plugin_name=plugin.name,
             )
-        )
+            entries.append(
+                DocsEntry(
+                    plugin=plugin,
+                    metadata=metadata,
+                    docs=docs,
+                    display_name=display_name,
+                    summary=summary,
+                    permission=permission,
+                    node=node,
+                )
+            )
 
     return sorted(
         entries,
