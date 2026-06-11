@@ -12,6 +12,7 @@ from src.plugins.wordbank.migration import (
     build_legacy_image_catalog,
     legacy_message_to_shape,
     migrate_legacy_rows,
+    normalize_legacy_rules,
     normalize_legacy_scope,
     normalize_legacy_state,
     parse_legacy_env_file,
@@ -70,6 +71,42 @@ async def test_legacy_message_to_shape_uses_local_image_catalog(
     assert list((tmp_path / "media").glob("*.webp"))
 
 
+@pytest.mark.asyncio
+async def test_legacy_message_to_shape_resolves_trailing_md5_image_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path / "db")
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    source_path = image_root / "D510679C6C463C58A5E62B216467600E.jpg"
+    source_path.write_bytes(_png_bytes((0, 255, 0)))
+
+    catalog = build_legacy_image_catalog(image_root, None)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+    media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+
+    shape = await legacy_message_to_shape(
+        [
+            {
+                "type": "image",
+                "file": (
+                    "000001464e61704361744f6e65426f747c4d736746696c657c327c"
+                    "383133333737363130.D510679C6C463C58A5E62B216467600E.jpg"
+                ),
+            }
+        ],
+        image_catalog=catalog,
+        media_service=media_service,
+    )
+
+    assert [atom.kind for atom in shape.atoms] == ["image"]
+    assert shape.atoms[0].canonical_image_id == 1
+
+
 def test_normalize_legacy_scope_and_state() -> None:
     scope, group_id, rule = normalize_legacy_scope(
         priority=1,
@@ -88,6 +125,54 @@ def test_normalize_legacy_scope_and_state() -> None:
     assert state.status == "approved"
     assert state.enabled == 0
     assert state.deleted_at == 123456
+
+
+def test_normalize_legacy_rules_expands_or_role_and_call_count() -> None:
+    targets = normalize_legacy_rules(
+        priority=3,
+        response_rule_conditions={
+            "$or": [
+                {"group_id": {"$eq": 20001}},
+                {
+                    "$and": [
+                        {"role": {"$eq": "member"}},
+                        {"call_count": {"$range": [6, 10]}},
+                    ]
+                },
+            ]
+        },
+        trigger_config={"lifecycle": 3600},
+    )
+
+    assert len(targets) == 2
+    assert targets[0].scope == "current_group"
+    assert targets[0].group_id == "20001"
+    assert targets[0].rule == {}
+    assert targets[1].scope == "all_groups"
+    assert targets[1].rule == {
+        "roles": "member",
+        "call_count": {
+            "window_seconds": 3600,
+            "min": 6,
+            "max": 10,
+        },
+    }
+
+
+def test_normalize_legacy_rules_prunes_redundant_specific_branch() -> None:
+    targets = normalize_legacy_rules(
+        priority=3,
+        response_rule_conditions={
+            "$or": [
+                {},
+                {"role": {"$eq": "member"}},
+            ]
+        },
+    )
+
+    assert len(targets) == 1
+    assert targets[0].scope == "all_groups"
+    assert targets[0].rule == {}
 
 
 def test_parse_legacy_env_file_supports_assignment_styles(tmp_path: Path) -> None:
@@ -160,8 +245,70 @@ async def test_migrate_legacy_rows_imports_images_and_statuses(
     entries = await repository.list_enabled_entries()
 
     assert report.imported_rows == 1
+    assert report.imported_entries == 1
     assert report.skipped_rows == 0
     assert len(entries) == 1
     assert entries[0].status == "approved"
     assert entries[0].group_id == "20001"
     assert entries[0].triggers[0].trigger_mode == "fullmatch"
+
+
+@pytest.mark.asyncio
+async def test_migrate_legacy_rows_splits_or_rule_into_multiple_entries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path / "db")
+    repository = WordbankRepository()
+    media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    catalog = build_legacy_image_catalog(image_root, None)
+    rows = [
+        {
+            "response_id": 2,
+            "trigger_id": 1,
+            "response_text": json.dumps(
+                [{"type": "text", "text": "你好"}],
+                ensure_ascii=False,
+            ),
+            "response_rule_conditions": json.dumps(
+                {
+                    "$or": [
+                        {"group_id": {"$eq": 20001}},
+                        {"role": {"$eq": "member"}},
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+            "weight": 3,
+            "priority": 3,
+            "created_by": "10001",
+            "created_at": 1700000000,
+            "response_available": True,
+            "trigger_text": json.dumps(
+                [{"type": "text", "text": "测试"}],
+                ensure_ascii=False,
+            ),
+            "trigger_config": json.dumps({"probability": 1.0, "lifecycle": 600}),
+            "extra_info": None,
+            "approval_status": "APPROVED",
+        }
+    ]
+
+    report = await migrate_legacy_rows(
+        rows,
+        repository=repository,
+        media_service=media_service,
+        image_catalog=catalog,
+        reset_target=True,
+    )
+    entries = await repository.list_enabled_entries()
+
+    assert report.imported_rows == 1
+    assert report.imported_entries == 2
+    assert report.skipped_rows == 0
+    assert len(entries) == 2
+    assert sorted(entry.scope for entry in entries) == ["all_groups", "current_group"]

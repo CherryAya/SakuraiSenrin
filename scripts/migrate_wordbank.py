@@ -191,6 +191,7 @@ async def main() -> None:
             {
                 "total_rows": report.total_rows,
                 "imported_rows": report.imported_rows,
+                "imported_entries": report.imported_entries,
                 "skipped_rows": report.skipped_rows,
                 "status_counts": dict(report.status_counts),
                 "report": str(report_path),

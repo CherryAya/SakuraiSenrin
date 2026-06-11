@@ -25,13 +25,16 @@ from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import SCOPE_PRIORITY
 
 _HEX_MD5_RE = re.compile(r"^[0-9a-fA-F]{32}$")
+_HEX_MD5_ANYWHERE_RE = re.compile(r"([0-9a-fA-F]{32})")
 _LEGACY_EVENT_NAMES = {
     "AT_MENTIONED": "event:at",
     "POKE_MENTIONED": "event:poke",
     "GROUP_JOIN": "event:join",
     "GROUP_LEAVE": "event:leave",
 }
-_SUPPORTED_RULE_KEYS = {"group_id", "user_id"}
+_LEGACY_RULE_KEYS = {"group_id", "user_id", "role", "call_count", "$and", "$or"}
+_LEGACY_ROLES = {"owner", "admin", "member"}
+_LEGACY_ALL_TIME_WINDOW_SECONDS = 60 * 60 * 24 * 365 * 50
 
 
 class MigrationError(Exception):
@@ -52,36 +55,52 @@ class LegacyImageCatalog:
     image_root: Path
     files_by_name: dict[str, Path]
     files_by_stem: dict[str, Path]
+    files_by_md5: dict[str, Path]
     saved_as_by_name: dict[str, str]
 
     def resolve(self, file_name: str, *, url: str = "") -> Path | None:
-        candidates = [
+        seen_candidates: set[str] = set()
+        pending_candidates = [
             file_name.strip(),
             Path(file_name).name.strip(),
+            url.strip(),
             Path(url).name.strip(),
         ]
-        for candidate in candidates:
-            if not candidate:
+        md5_candidates: list[str] = []
+
+        while pending_candidates:
+            candidate = pending_candidates.pop(0).strip()
+            if not candidate or candidate in seen_candidates:
                 continue
+            seen_candidates.add(candidate)
+
             normalized = candidate.casefold()
             direct = self.files_by_name.get(normalized)
             if direct is not None:
                 return direct
+
             mapped_name = self.saved_as_by_name.get(normalized)
             if mapped_name:
-                mapped_path = self.files_by_name.get(mapped_name.casefold())
-                if mapped_path is not None:
-                    return mapped_path
+                pending_candidates.extend([mapped_name, Path(mapped_name).name])
+
             stem = Path(candidate).stem.strip()
             if stem:
                 by_stem = self.files_by_stem.get(stem.casefold())
                 if by_stem is not None:
                     return by_stem
-                if _HEX_MD5_RE.fullmatch(stem):
-                    for suffix in (".webp", ".gif", ".png", ".jpg", ".jpeg"):
-                        path = self.image_root / f"{stem.upper()}{suffix}"
-                        if path.is_file():
-                            return path
+                pending_candidates.append(stem)
+
+            for md5_hex in _extract_md5_candidates(candidate):
+                md5_candidates.append(md5_hex)
+
+        for md5_hex in md5_candidates:
+            path = self.files_by_md5.get(md5_hex.casefold())
+            if path is not None:
+                return path
+            for suffix in (".webp", ".gif", ".png", ".jpg", ".jpeg"):
+                candidate = self.image_root / f"{md5_hex.upper()}{suffix}"
+                if candidate.is_file():
+                    return candidate
         return None
 
 
@@ -96,11 +115,12 @@ class LegacyEntryState:
 class WordbankMigrationReport:
     total_rows: int = 0
     imported_rows: int = 0
+    imported_entries: int = 0
     skipped_rows: int = 0
     status_counts: Counter[str] = field(default_factory=Counter)
     skipped_reasons: Counter[str] = field(default_factory=Counter)
     image_counts: Counter[str] = field(default_factory=Counter)
-    imported_entry_ids: dict[int, int] = field(default_factory=dict)
+    imported_entry_ids: dict[int, list[int]] = field(default_factory=dict)
     failures: list[str] = field(default_factory=list)
 
     def add_failure(self, response_id: int, reason: str) -> None:
@@ -112,6 +132,7 @@ class WordbankMigrationReport:
         return {
             "total_rows": self.total_rows,
             "imported_rows": self.imported_rows,
+            "imported_entries": self.imported_entries,
             "skipped_rows": self.skipped_rows,
             "status_counts": dict(self.status_counts),
             "skipped_reasons": dict(self.skipped_reasons),
@@ -119,6 +140,29 @@ class WordbankMigrationReport:
             "imported_entry_ids": self.imported_entry_ids,
             "failures": list(self.failures),
         }
+
+
+@dataclass(slots=True, frozen=True)
+class LegacyImportTarget:
+    scope: str
+    group_id: str
+    role: str = "any"
+    call_count_min: int = 0
+    call_count_max: int = 0
+    call_count_window_seconds: int = 0
+
+    @property
+    def rule(self) -> dict[str, Any]:
+        rule: dict[str, Any] = {}
+        if self.role != "any":
+            rule["roles"] = self.role
+        if self.call_count_window_seconds > 0:
+            rule["call_count"] = {
+                "window_seconds": self.call_count_window_seconds,
+                "min": self.call_count_min,
+                "max": self.call_count_max,
+            }
+        return rule
 
 
 def parse_legacy_env_file(path: Path) -> dict[str, object]:
@@ -169,12 +213,15 @@ def build_legacy_image_catalog(
 ) -> LegacyImageCatalog:
     files_by_name: dict[str, Path] = {}
     files_by_stem: dict[str, Path] = {}
+    files_by_md5: dict[str, Path] = {}
     for path in image_root.iterdir():
         if not path.is_file():
             continue
         files_by_name[path.name.casefold()] = path
         stem = path.stem.casefold()
         files_by_stem.setdefault(stem, path)
+        for md5_hex in _extract_md5_candidates(path.name):
+            files_by_md5.setdefault(md5_hex.casefold(), path)
 
     saved_as_by_name: dict[str, str] = {}
     if mapping_path and mapping_path.is_file():
@@ -195,6 +242,7 @@ def build_legacy_image_catalog(
         image_root=image_root,
         files_by_name=files_by_name,
         files_by_stem=files_by_stem,
+        files_by_md5=files_by_md5,
         saved_as_by_name=saved_as_by_name,
     )
 
@@ -204,29 +252,14 @@ def normalize_legacy_scope(
     priority: int,
     response_rule_conditions: Mapping[str, Any],
 ) -> tuple[str, str, dict[str, Any]]:
-    unknown_keys = set(response_rule_conditions) - _SUPPORTED_RULE_KEYS
-    if unknown_keys:
-        fields = ",".join(sorted(unknown_keys))
-        raise MigrationError(f"unsupported rule keys: {fields}")
-
-    group_id = _extract_legacy_eq(response_rule_conditions.get("group_id"))
-    user_id = _extract_legacy_eq(response_rule_conditions.get("user_id"))
-
-    if priority == 3:
-        if group_id or user_id:
-            raise MigrationError("priority=3 row should not carry scoped conditions")
-        return "all_groups", "", {}
-    if priority == 2:
-        if not group_id or user_id:
-            raise MigrationError("priority=2 row must only carry group_id")
-        return "current_group", group_id, {}
-    if priority == 1:
-        if group_id and user_id:
-            return "self_in_current_group", group_id, {}
-        if user_id and not group_id:
-            return "self", "", {}
-        raise MigrationError("priority=1 row must carry user_id")
-    raise MigrationError(f"unsupported priority: {priority}")
+    targets = normalize_legacy_rules(
+        priority=priority,
+        response_rule_conditions=response_rule_conditions,
+    )
+    if len(targets) != 1:
+        raise MigrationError("legacy rule expands to multiple variants")
+    target = targets[0]
+    return target.scope, target.group_id, target.rule
 
 
 def normalize_legacy_state(
@@ -384,11 +417,12 @@ async def migrate_legacy_rows(
             if response_shape.is_empty():
                 raise MigrationError("empty response shape")
 
-            scope, group_id, rule = normalize_legacy_scope(
+            targets = normalize_legacy_rules(
                 priority=_coerce_int(row["priority"], field="priority"),
                 response_rule_conditions=_coerce_rule_mapping(
                     row.get("response_rule_conditions")
                 ),
+                trigger_config=row.get("trigger_config"),
             )
             state = normalize_legacy_state(
                 approval_status=str(row.get("approval_status", "PENDING")),
@@ -400,31 +434,39 @@ async def migrate_legacy_rows(
                 fallback=migration_time,
             )
             updated_at = max(created_at, state.deleted_at or created_at)
-            entry = await repository.import_message_entry(
-                trigger_shape=trigger_shape,
-                response_shape=response_shape,
-                rule=rule,
-                scope=scope,
-                priority=SCOPE_PRIORITY[scope],
-                probability=normalize_legacy_probability(row.get("trigger_config")),
-                weight=_coerce_int(row.get("weight", 3), field="weight"),
-                group_id=group_id,
-                created_by=str(row.get("created_by") or ""),
-                status=state.status,
-                enabled=state.enabled,
-                approved_by="",
-                deleted_at=state.deleted_at,
-                created_at=created_at,
-                updated_at=updated_at,
-                trigger_mode="fullmatch",
-            )
+            probability = normalize_legacy_probability(row.get("trigger_config"))
+            weight = _coerce_int(row.get("weight", 3), field="weight")
+            created_by = str(row.get("created_by") or "")
+
+            imported_ids: list[int] = []
+            for target in targets:
+                entry = await repository.import_message_entry(
+                    trigger_shape=trigger_shape,
+                    response_shape=response_shape,
+                    rule=target.rule,
+                    scope=target.scope,
+                    priority=SCOPE_PRIORITY[target.scope],
+                    probability=probability,
+                    weight=weight,
+                    group_id=target.group_id,
+                    created_by=created_by,
+                    status=state.status,
+                    enabled=state.enabled,
+                    approved_by="",
+                    deleted_at=state.deleted_at,
+                    created_at=created_at,
+                    updated_at=updated_at,
+                    trigger_mode="fullmatch",
+                )
+                imported_ids.append(entry.id)
+                report.imported_entries += 1
+                report.status_counts[entry.status] += 1
+            report.imported_entry_ids[response_id] = imported_ids
         except Exception as exc:
             report.add_failure(response_id, str(exc))
             continue
 
         report.imported_rows += 1
-        report.status_counts[entry.status] += 1
-        report.imported_entry_ids[response_id] = entry.id
 
     await repository.rebuild_search_index()
     return report
@@ -463,6 +505,363 @@ def _extract_legacy_eq(value: object) -> str:
     return str(raw_value)
 
 
+def normalize_legacy_rules(
+    *,
+    priority: int,
+    response_rule_conditions: Mapping[str, Any],
+    trigger_config: object = None,
+) -> list[LegacyImportTarget]:
+    branches = _expand_legacy_rule_tree(response_rule_conditions)
+    targets = [
+        _normalize_legacy_branch(
+            priority=priority,
+            branch=branch,
+            trigger_config=trigger_config,
+        )
+        for branch in branches
+    ]
+    return _prune_subsumed_targets(targets)
+
+
+def _normalize_legacy_branch(
+    *,
+    priority: int,
+    branch: Mapping[str, object],
+    trigger_config: object,
+) -> LegacyImportTarget:
+    group_id = str(branch.get("group_id") or "")
+    user_id = str(branch.get("user_id") or "")
+
+    if group_id and user_id:
+        scope = "self_in_current_group"
+    elif user_id:
+        scope = "self"
+    elif group_id:
+        scope = "current_group"
+    elif priority == 3:
+        scope = "all_groups"
+    elif priority == 2:
+        scope = "current_group"
+    elif priority == 1:
+        scope = "self"
+    else:
+        raise MigrationError(f"unsupported priority: {priority}")
+
+    if scope == "current_group" and not group_id:
+        raise MigrationError("priority=2 row must carry group_id")
+
+    role = str(branch.get("role") or "any")
+    if role not in {"any", *_LEGACY_ROLES}:
+        raise MigrationError(f"unsupported role value: {role}")
+
+    call_count_min = 0
+    call_count_max = 0
+    call_count_window_seconds = 0
+    raw_call_count = branch.get("call_count")
+    if isinstance(raw_call_count, tuple):
+        call_count_min = int(raw_call_count[0])
+        call_count_max = int(raw_call_count[1])
+        call_count_window_seconds = _resolve_legacy_call_window_seconds(trigger_config)
+
+    return LegacyImportTarget(
+        scope=scope,
+        group_id=group_id,
+        role=role,
+        call_count_min=call_count_min,
+        call_count_max=call_count_max,
+        call_count_window_seconds=call_count_window_seconds,
+    )
+
+
+def _expand_legacy_rule_tree(rule: Mapping[str, Any]) -> list[dict[str, object]]:
+    unknown_keys = set(rule) - _LEGACY_RULE_KEYS
+    if unknown_keys:
+        fields = ",".join(sorted(unknown_keys))
+        raise MigrationError(f"unsupported rule keys: {fields}")
+
+    branches: list[dict[str, object]] = [{}]
+    for key, value in rule.items():
+        field_branches = _expand_legacy_rule_item(key, value)
+        branches = _combine_legacy_branches(branches, field_branches)
+        if not branches:
+            raise MigrationError("legacy rule resolves to no valid branch")
+    return branches
+
+
+def _expand_legacy_rule_item(key: str, value: object) -> list[dict[str, object]]:
+    if key == "$and":
+        items = _coerce_rule_list(value, field="$and")
+        branches: list[dict[str, object]] = [{}]
+        for item in items:
+            expanded = _expand_legacy_rule_tree(item)
+            branches = _combine_legacy_branches(branches, expanded)
+        return branches or [{}]
+    if key == "$or":
+        items = _coerce_rule_list(value, field="$or")
+        branches: list[dict[str, object]] = []
+        for item in items:
+            branches.extend(_expand_legacy_rule_tree(item))
+        return _dedupe_legacy_branches(branches or [{}])
+    if key == "group_id":
+        group_id = _extract_required_legacy_eq(value, field="group_id")
+        return [{"group_id": group_id}] if group_id else [{}]
+    if key == "user_id":
+        user_id = _extract_required_legacy_eq(value, field="user_id")
+        return [{"user_id": user_id}] if user_id else [{}]
+    if key == "role":
+        role = _extract_legacy_role(value)
+        return [{"role": role}] if role != "any" else [{}]
+    if key == "call_count":
+        return [{"call_count": _extract_legacy_call_count_bounds(value)}]
+    raise MigrationError(f"unsupported rule keys: {key}")
+
+
+def _coerce_rule_list(value: object, *, field: str) -> list[Mapping[str, Any]]:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
+        raise MigrationError(f"{field} must be a rule list")
+    items: list[Mapping[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise MigrationError(f"{field} contains a non-mapping rule")
+        items.append(item)
+    return items
+
+
+def _combine_legacy_branches(
+    left: Sequence[Mapping[str, object]],
+    right: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    combined: list[dict[str, object]] = []
+    for left_branch in left:
+        for right_branch in right:
+            merged = _merge_legacy_branches(left_branch, right_branch)
+            if merged is not None:
+                combined.append(merged)
+    return _dedupe_legacy_branches(combined)
+
+
+def _merge_legacy_branches(
+    left: Mapping[str, object],
+    right: Mapping[str, object],
+) -> dict[str, object] | None:
+    merged = dict(left)
+    for key, value in right.items():
+        if key not in merged:
+            merged[key] = value
+            continue
+        resolved = _merge_legacy_field_value(key, merged[key], value)
+        if resolved is None:
+            return None
+        merged[key] = resolved
+    return merged
+
+
+def _merge_legacy_field_value(
+    key: str,
+    left: object,
+    right: object,
+) -> object | None:
+    if key in {"group_id", "user_id", "role"}:
+        return left if left == right else None
+    if key == "call_count":
+        if not isinstance(left, tuple) or not isinstance(right, tuple):
+            raise MigrationError("invalid call_count merge state")
+        left_min, left_max = int(left[0]), int(left[1])
+        right_min, right_max = int(right[0]), int(right[1])
+        merged_min = max(left_min, right_min)
+        merged_max = _intersect_upper_bound(left_max, right_max)
+        if merged_max != 0 and merged_min > merged_max:
+            return None
+        return (merged_min, merged_max)
+    raise MigrationError(f"unsupported rule keys: {key}")
+
+
+def _dedupe_legacy_branches(
+    branches: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    deduped: list[dict[str, object]] = []
+    seen: set[tuple[tuple[str, object], ...]] = set()
+    for branch in branches:
+        key = tuple(sorted(branch.items()))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(dict(branch))
+    return deduped
+
+
+def _extract_required_legacy_eq(value: object, *, field: str) -> str:
+    extracted = _extract_legacy_eq(value)
+    if not extracted:
+        raise MigrationError(f"{field} must use $eq")
+    return extracted
+
+
+def _extract_legacy_role(value: object) -> str:
+    role = _extract_required_legacy_eq(value, field="role").strip().lower()
+    if role not in _LEGACY_ROLES:
+        raise MigrationError(f"unsupported role value: {role}")
+    return role
+
+
+def _extract_legacy_call_count_bounds(value: object) -> tuple[int, int]:
+    if not isinstance(value, Mapping):
+        raise MigrationError("call_count must use comparison operators")
+    minimum = 0
+    maximum = 0
+    upper_bounded = False
+    for operator, raw in value.items():
+        if operator == "$gt":
+            minimum = max(minimum, _coerce_int(raw, field="call_count") + 1)
+        elif operator == "$gte":
+            minimum = max(minimum, _coerce_int(raw, field="call_count"))
+        elif operator == "$lt":
+            upper_bounded = True
+            maximum = _intersect_upper_bound(
+                maximum if upper_bounded else 0,
+                _coerce_int(raw, field="call_count") - 1,
+            )
+        elif operator == "$lte":
+            upper_bounded = True
+            maximum = _intersect_upper_bound(
+                maximum if upper_bounded else 0,
+                _coerce_int(raw, field="call_count"),
+            )
+        elif operator == "$range":
+            if (
+                not isinstance(raw, Sequence)
+                or isinstance(raw, str | bytes | bytearray)
+                or len(raw) != 2
+            ):
+                raise MigrationError("call_count $range must contain two integers")
+            minimum = max(minimum, _coerce_int(raw[0], field="call_count"))
+            upper_bounded = True
+            maximum = _intersect_upper_bound(
+                maximum if upper_bounded else 0,
+                _coerce_int(raw[1], field="call_count"),
+            )
+        else:
+            raise MigrationError(f"unsupported call_count operator: {operator}")
+    if upper_bounded and maximum != 0 and minimum > maximum:
+        raise MigrationError("call_count rule is contradictory")
+    return (minimum, maximum if upper_bounded else 0)
+
+
+def _intersect_upper_bound(left: int, right: int) -> int:
+    if left == 0:
+        return right
+    if right == 0:
+        return left
+    return min(left, right)
+
+
+def _resolve_legacy_call_window_seconds(trigger_config: object) -> int:
+    payload = load_legacy_json(trigger_config)
+    if not isinstance(payload, Mapping):
+        return _LEGACY_ALL_TIME_WINDOW_SECONDS
+    lifecycle = payload.get("lifecycle")
+    if lifecycle in (None, ""):
+        return _LEGACY_ALL_TIME_WINDOW_SECONDS
+    try:
+        seconds = int(float(lifecycle))
+    except (TypeError, ValueError):
+        return _LEGACY_ALL_TIME_WINDOW_SECONDS
+    return seconds if seconds > 0 else _LEGACY_ALL_TIME_WINDOW_SECONDS
+
+
+def _prune_subsumed_targets(
+    targets: Sequence[LegacyImportTarget],
+) -> list[LegacyImportTarget]:
+    unique_targets: list[LegacyImportTarget] = []
+    seen: set[tuple[object, ...]] = set()
+    for target in targets:
+        key = (
+            target.scope,
+            target.group_id,
+            target.role,
+            target.call_count_min,
+            target.call_count_max,
+            target.call_count_window_seconds,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_targets.append(target)
+
+    pruned: list[LegacyImportTarget] = []
+    for candidate in unique_targets:
+        if any(
+            other != candidate and _legacy_target_subsumes(other, candidate)
+            for other in unique_targets
+        ):
+            continue
+        pruned.append(candidate)
+    return pruned
+
+
+def _legacy_target_subsumes(
+    left: LegacyImportTarget,
+    right: LegacyImportTarget,
+) -> bool:
+    return (
+        _legacy_scope_subsumes(left, right)
+        and _legacy_role_subsumes(left.role, right.role)
+        and _legacy_call_count_subsumes(left, right)
+    )
+
+
+def _legacy_scope_subsumes(left: LegacyImportTarget, right: LegacyImportTarget) -> bool:
+    if left.scope == right.scope and left.group_id == right.group_id:
+        return True
+    if left.scope == "all_groups" and right.scope == "current_group":
+        return True
+    if left.scope == "current_group" and right.scope == "self_in_current_group":
+        return left.group_id == right.group_id
+    if left.scope == "self" and right.scope == "self_in_current_group":
+        return True
+    return False
+
+
+def _legacy_role_subsumes(left: str, right: str) -> bool:
+    return left == "any" or left == right
+
+
+def _legacy_call_count_subsumes(
+    left: LegacyImportTarget,
+    right: LegacyImportTarget,
+) -> bool:
+    if left.call_count_window_seconds == 0:
+        return True
+    if right.call_count_window_seconds == 0:
+        return False
+    if left.call_count_window_seconds != right.call_count_window_seconds:
+        return False
+    right_max = right.call_count_max or 10**18
+    left_max = left.call_count_max or 10**18
+    return left.call_count_min <= right.call_count_min and left_max >= right_max
+
+
+def _extract_md5_candidates(value: str) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    raw_values = [value.strip(), Path(value).name.strip(), Path(value).stem.strip()]
+    for raw in raw_values:
+        if not raw:
+            continue
+        for matched in _HEX_MD5_ANYWHERE_RE.findall(raw):
+            normalized = matched.upper()
+            if normalized not in seen:
+                seen.add(normalized)
+                candidates.append(normalized)
+        compact = re.sub(r"[^0-9a-fA-F]", "", raw)
+        if _HEX_MD5_RE.fullmatch(compact):
+            normalized = compact.upper()
+            if normalized not in seen:
+                seen.add(normalized)
+                candidates.append(normalized)
+    return candidates
+
+
 def _shape_from_legacy_extra_info(extra_info: object) -> MessageShape | None:
     if extra_info in (None, ""):
         return None
@@ -478,12 +877,14 @@ def _shape_from_legacy_extra_info(extra_info: object) -> MessageShape | None:
 
 __all__ = [
     "LegacyImageCatalog",
+    "LegacyImportTarget",
     "LegacyPgConfig",
     "WordbankMigrationReport",
     "build_legacy_image_catalog",
     "legacy_message_to_shape",
     "load_legacy_pg_config",
     "migrate_legacy_rows",
+    "normalize_legacy_rules",
     "normalize_legacy_scope",
     "normalize_legacy_state",
     "parse_legacy_env_file",
