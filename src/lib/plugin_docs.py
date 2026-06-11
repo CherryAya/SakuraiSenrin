@@ -58,6 +58,12 @@ class DocsDemoTurn:
 
 
 @dataclass(slots=True, frozen=True)
+class InlineTextSpan:
+    text: str
+    code: bool = False
+
+
+@dataclass(slots=True, frozen=True)
 class FeatureDoc:
     slug: str
     title: str
@@ -403,8 +409,25 @@ def _feature_notice_items(feature: FeatureDoc) -> list[str]:
 
 
 def _normalize_inline_text(value: str) -> str:
-    text = re.sub(r"`([^`]*)`", r"\1", value.strip())
+    text = "".join(span.text for span in split_inline_text_spans(value.strip()))
     return re.sub(r"\s+", " ", text).strip()
+
+
+def split_inline_text_spans(text: str) -> tuple[InlineTextSpan, ...]:
+    if not text:
+        return ()
+
+    spans: list[InlineTextSpan] = []
+    cursor = 0
+    for match in re.finditer(r"`([^`\n]+)`", text):
+        start, end = match.span()
+        if start > cursor:
+            spans.append(InlineTextSpan(text[cursor:start]))
+        spans.append(InlineTextSpan(match.group(1), code=True))
+        cursor = end
+    if cursor < len(text):
+        spans.append(InlineTextSpan(text[cursor:]))
+    return tuple(spans) if spans else (InlineTextSpan(text),)
 
 
 def load_demo_bytes(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes | None:
@@ -807,6 +830,11 @@ class DemoImageRenderer:
     SYSTEM_TEXT = "#67522B"
     SYSTEM_LABEL = "#9B7524"
     FOOTER_BG = "#FBF6F8"
+    INLINE_CODE_BG = "#FFF7FA"
+    INLINE_CODE_TEXT = "#7D3653"
+    INLINE_CODE_RADIUS = 10
+    INLINE_CODE_PAD_X = 8
+    INLINE_CODE_PAD_Y = 4
     FONT_FAMILIES: ClassVar[list[str]] = [MAPLE_FONT_NAME]
 
     def __init__(self) -> None:
@@ -965,12 +993,11 @@ class DemoImageRenderer:
             fill=self.ACCENT_DARK,
         )
         if feature_trigger.strip():
-            self._draw_chip(
+            self._draw_inline_chip(
                 draw,
                 x=self.HEADER_LEFT,
                 y=self.HEADER_TRIGGER_TOP,
-                text=self._fit_text(
-                    draw,
+                text=self._fit_inline_text(
                     f"指令示例: {feature_trigger}",
                     self.meta_font,
                     max_width=760,
@@ -1004,13 +1031,15 @@ class DemoImageRenderer:
 
     def _measure_turn(self, turn: DocsDemoTurn) -> "_TurnSpec":
         if turn.speaker == "SYSTEM":
-            lines = self._wrap_text(
+            lines = self._wrap_inline_text(
                 self._normalize_demo_text(turn.text),
                 max_width=self.SYSTEM_CONTENT_WIDTH,
+                font=self.body_font,
             )
             text_height = self._line_block_height(lines, self.body_font)
             width = (
-                self._max_line_width(lines, self.body_font) + self.BUBBLE_PADDING_X * 2
+                self._max_inline_line_width(lines, self.body_font)
+                + self.BUBBLE_PADDING_X * 2
             )
             return _TurnSpec(
                 turn=turn,
@@ -1020,9 +1049,10 @@ class DemoImageRenderer:
             )
 
         is_user = turn.speaker == "USER"
-        lines = self._wrap_text(
+        lines = self._wrap_inline_text(
             self._normalize_demo_text(turn.text),
             max_width=self.USER_CONTENT_WIDTH if is_user else self.BOT_CONTENT_WIDTH,
+            font=self.body_font,
         )
         text_height = self._line_block_height(lines, self.body_font)
         label_height = self._font_line_height(self.eyebrow_font)
@@ -1033,7 +1063,8 @@ class DemoImageRenderer:
             + self.BUBBLE_PADDING_Y * 2
         )
         bubble_width = (
-            self._max_line_width(lines, self.body_font) + self.BUBBLE_PADDING_X * 2
+            self._max_inline_line_width(lines, self.body_font)
+            + self.BUBBLE_PADDING_X * 2
         )
         min_width = self.USER_MIN_BUBBLE_WIDTH if is_user else self.BOT_MIN_BUBBLE_WIDTH
         return _TurnSpec(
@@ -1305,6 +1336,40 @@ class DemoImageRenderer:
             fill=text_fill,
         )
 
+    def _draw_inline_chip(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        y: int,
+        text: str,
+        fill: str,
+        text_fill: str,
+        font: Any,
+        min_width: int = 0,
+    ) -> None:
+        rect = self._inline_chip_rect(
+            x=x,
+            y=y,
+            text=text,
+            font=font,
+            min_width=min_width,
+        )
+        draw.rounded_rectangle(rect, radius=15, fill=fill)
+        line = split_inline_text_spans(text)
+        line_width = self._inline_line_width(line, font)
+        line_height = self._font_line_height(font)
+        draw_x = rect[0] + (rect[2] - rect[0] - line_width) / 2
+        draw_y = rect[1] + (rect[3] - rect[1] - line_height) / 2
+        self._draw_inline_text_line(
+            draw,
+            x=draw_x,
+            y=draw_y,
+            line=line,
+            font=font,
+            fill=text_fill,
+        )
+
     def audit(
         self,
         *,
@@ -1382,12 +1447,10 @@ class DemoImageRenderer:
         )
         trigger_rect: tuple[int, int, int, int] | None = None
         if feature_trigger.strip():
-            trigger_rect = self._chip_rect(
-                draw,
+            trigger_rect = self._inline_chip_rect(
                 x=self.HEADER_LEFT,
                 y=self.HEADER_TRIGGER_TOP,
-                text=self._fit_text(
-                    draw,
+                text=self._fit_inline_text(
                     f"指令示例: {feature_trigger}",
                     self.meta_font,
                     max_width=760,
@@ -1634,27 +1697,61 @@ class DemoImageRenderer:
                 return candidate
         return ellipsis
 
+    def _fit_inline_text(
+        self,
+        text: str,
+        font: Any,
+        *,
+        max_width: int,
+    ) -> str:
+        if self._inline_text_width(text, font) <= max_width:
+            return text
+
+        ellipsis = "..."
+        current = text
+        while current:
+            current = current[:-1]
+            candidate = current.rstrip() + ellipsis
+            if self._inline_text_width(candidate, font) <= max_width:
+                return candidate
+        return ellipsis
+
     def _normalize_demo_text(self, text: str) -> str:
         return text
 
-    def _wrap_text(self, text: str, *, max_width: int) -> list[str]:
-        lines: list[str] = []
+    def _wrap_inline_text(
+        self,
+        text: str,
+        *,
+        max_width: int,
+        font: Any,
+    ) -> list[tuple[InlineTextSpan, ...]]:
+        lines: list[tuple[InlineTextSpan, ...]] = []
         for paragraph in text.splitlines():
-            current = ""
-            for char in paragraph:
-                candidate = current + char
-                if (
-                    self._text_width(candidate, self.body_font) <= max_width
-                    or not current
-                ):
-                    current = candidate
-                    continue
-                lines.append(current)
-                current = char
-            lines.append(current)
-        return lines or [text]
+            current: list[InlineTextSpan] = []
+            for span in split_inline_text_spans(paragraph):
+                for char in span.text:
+                    candidate = self._append_inline_char(
+                        current,
+                        char,
+                        code=span.code,
+                    )
+                    if (
+                        not current
+                        or self._inline_line_width(candidate, font) <= max_width
+                    ):
+                        current = candidate
+                        continue
+                    lines.append(tuple(current))
+                    current = [InlineTextSpan(char, code=span.code)]
+            lines.append(tuple(current))
+        return lines or [split_inline_text_spans(text)]
 
-    def _line_block_height(self, lines: Iterable[str], font: Any) -> int:
+    def _line_block_height(
+        self,
+        lines: Iterable[tuple[InlineTextSpan, ...]],
+        font: Any,
+    ) -> int:
         count = 0
         for _ in lines:
             count += 1
@@ -1662,10 +1759,14 @@ class DemoImageRenderer:
             return 0
         return count * self._font_line_height(font) - 10
 
-    def _max_line_width(self, lines: Sequence[str], font: Any) -> int:
+    def _max_inline_line_width(
+        self,
+        lines: Sequence[tuple[InlineTextSpan, ...]],
+        font: Any,
+    ) -> int:
         return int(
             max(
-                (self._text_width(line, font) for line in lines),
+                (self._inline_line_width(line, font) for line in lines),
                 default=0,
             )
         )
@@ -1676,20 +1777,73 @@ class DemoImageRenderer:
         *,
         x: int,
         y: int,
-        lines: Sequence[str],
+        lines: Sequence[tuple[InlineTextSpan, ...]],
         font: Any,
         fill: str,
     ) -> None:
         line_height = self._font_line_height(font)
         for index, line in enumerate(lines):
-            self._draw_text(
+            self._draw_inline_text_line(
                 draw,
                 x=x,
                 y=y + index * line_height,
-                text=line,
+                line=line,
                 font=font,
                 fill=fill,
             )
+
+    def _draw_inline_text_line(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: float,
+        y: float,
+        line: Sequence[InlineTextSpan],
+        font: Any,
+        fill: str,
+    ) -> None:
+        cursor_x = x
+        line_height = self._font_line_height(font)
+        for span in line:
+            if not span.text:
+                continue
+            if not span.code:
+                self._draw_text(
+                    draw,
+                    x=cursor_x,
+                    y=y,
+                    text=span.text,
+                    font=font,
+                    fill=fill,
+                )
+                cursor_x += self._text_width(span.text, font)
+                continue
+            text_bbox = self._text_size(span.text, font)
+            text_width = int(text_bbox[2] - text_bbox[0])
+            text_height = int(text_bbox[3] - text_bbox[1])
+            chip_height = max(text_height + self.INLINE_CODE_PAD_Y * 2, 22)
+            chip_y = y + max((line_height - chip_height) / 2, 0)
+            chip_width = text_width + self.INLINE_CODE_PAD_X * 2
+            draw.rounded_rectangle(
+                (
+                    cursor_x,
+                    chip_y,
+                    cursor_x + chip_width,
+                    chip_y + chip_height,
+                ),
+                radius=self.INLINE_CODE_RADIUS,
+                fill=self.INLINE_CODE_BG,
+            )
+            text_y = chip_y + (chip_height - text_height) / 2 - text_bbox[1]
+            self._draw_text(
+                draw,
+                x=cursor_x + self.INLINE_CODE_PAD_X,
+                y=text_y,
+                text=span.text,
+                font=font,
+                fill=self.INLINE_CODE_TEXT,
+            )
+            cursor_x += chip_width
 
     def _font_line_height(self, font: Any) -> int:
         bbox = self._text_size("Ag", font)
@@ -1743,6 +1897,50 @@ class DemoImageRenderer:
     def _text_width(self, text: str, font: Any) -> int:
         return self._text_size(text, font)[2]
 
+    def _inline_text_width(self, text: str, font: Any) -> int:
+        return self._inline_line_width(split_inline_text_spans(text), font)
+
+    def _inline_line_width(
+        self,
+        line: Sequence[InlineTextSpan],
+        font: Any,
+    ) -> int:
+        width = 0
+        for span in line:
+            if not span.text:
+                continue
+            width += self._text_width(span.text, font)
+            if span.code:
+                width += self.INLINE_CODE_PAD_X * 2
+        return width
+
+    def _append_inline_char(
+        self,
+        spans: Sequence[InlineTextSpan],
+        char: str,
+        *,
+        code: bool,
+    ) -> list[InlineTextSpan]:
+        updated = list(spans)
+        if updated and updated[-1].code is code:
+            updated[-1] = InlineTextSpan(updated[-1].text + char, code=code)
+        else:
+            updated.append(InlineTextSpan(char, code=code))
+        return updated
+
+    def _inline_chip_rect(
+        self,
+        *,
+        x: int,
+        y: int,
+        text: str,
+        font: Any,
+        min_width: int = 0,
+    ) -> tuple[int, int, int, int]:
+        width = max(self._inline_text_width(text, font) + 28, min_width)
+        height = max(self._font_line_height(font) + 8, self.CHIP_HEIGHT)
+        return (x, y, x + int(width), y + int(height))
+
     def _font_size(self, font: Any) -> int:
         return int(getattr(font, "size", 16))
 
@@ -1755,6 +1953,6 @@ class DemoImageRenderer:
 @dataclass(slots=True, frozen=True)
 class _TurnSpec:
     turn: DocsDemoTurn
-    lines: list[str]
+    lines: list[tuple[InlineTextSpan, ...]]
     width: int
     height: int

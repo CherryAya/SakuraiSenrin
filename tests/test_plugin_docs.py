@@ -14,6 +14,7 @@ from src.lib.plugin_docs import (
     load_plugin_doc_bundle,
     load_representative_demo_bytes,
     match_feature,
+    split_inline_text_spans,
 )
 
 
@@ -125,6 +126,18 @@ beta
     assert {feature.slug for feature in ambiguous.candidates} == {"alpha", "beta"}
 
     assert not_found.status == "not_found"
+
+
+def test_split_inline_text_spans_marks_backtick_segments_as_code() -> None:
+    spans = split_inline_text_spans("使用 `#study` 或 `#help 词库审核` 查看详情")
+
+    assert [(span.text, span.code) for span in spans] == [
+        ("使用 ", False),
+        ("#study", True),
+        (" 或 ", False),
+        ("#help 词库审核", True),
+        (" 查看详情", False),
+    ]
 
 
 def test_build_readme_docs_renders_feature_text_and_demo_image(tmp_path: Path) -> None:
@@ -788,7 +801,7 @@ BOT: Beta 完成
     collection_path = demos_dir / "sample-collection.png"
     assert collection_path.is_file()
     with Image.open(collection_path) as collection:
-        assert collection.width == 1280
+        assert collection.width == 1440
         assert collection.height > 300
 
 
@@ -805,7 +818,7 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
         *,
         workers: int | None = None,
         columns: int = 2,
-        thumb_width: int = 548,
+        thumb_width: int = 620,
     ) -> int:
         calls.append(
             (
