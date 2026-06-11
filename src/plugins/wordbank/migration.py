@@ -8,10 +8,13 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from io import BytesIO
 import json
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, cast
+
+from PIL import Image, UnidentifiedImageError
 
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.repo import WordbankRepository
@@ -172,6 +175,33 @@ class WordbankMigrationReport:
             "imported_entry_ids": self.imported_entry_ids,
             "failures": list(self.failures),
             "failure_details": list(self.failure_details),
+            "failure_categories": self.to_failure_categories_dict(),
+        }
+
+    def to_failure_categories_dict(self) -> dict[str, object]:
+        categories: dict[str, dict[str, object]] = {}
+        for detail in self.failure_details:
+            reason = str(detail.get("reason") or "")
+            category = _categorize_failure_reason(reason)
+            bucket = categories.setdefault(
+                category,
+                {
+                    "count": 0,
+                    "reasons": {},
+                    "items": [],
+                },
+            )
+            count = cast(int, bucket["count"])
+            bucket["count"] = count + 1
+            reasons = bucket["reasons"]
+            if isinstance(reasons, dict):
+                reasons[reason] = int(reasons.get(reason, 0)) + 1
+            items = bucket["items"]
+            if isinstance(items, list):
+                items.append(detail)
+        return {
+            "total_failed": self.skipped_rows,
+            "categories": categories,
         }
 
 
@@ -391,6 +421,8 @@ async def legacy_message_to_shape(
             if image_path is None:
                 raise MigrationError(f"image file not found: {file_name or url}")
             data = await asyncio.to_thread(image_path.read_bytes)
+            source_name = file_name or url or image_path.name
+            _validate_legacy_image_bytes(data, source=source_name)
             image = await media_service.ingest_image_bytes(data)
             if report is not None:
                 report.image_counts[image_path.suffix.lower()] += 1
@@ -1012,6 +1044,40 @@ def _truncate_text(value: str, *, limit: int) -> str:
     if len(value) <= limit:
         return value
     return f"{value[: limit - 3]}..."
+
+
+def _validate_legacy_image_bytes(data: bytes, *, source: str) -> None:
+    if not data:
+        raise MigrationError(f"image file empty: {source}")
+    try:
+        with Image.open(BytesIO(data)) as image:
+            image.verify()
+    except UnidentifiedImageError as exc:
+        raise MigrationError(f"image file is not a valid image: {source}") from exc
+    except OSError as exc:
+        raise MigrationError(f"image file decode failed: {source}") from exc
+
+
+def _categorize_failure_reason(reason: str) -> str:
+    if reason.startswith("image file empty:"):
+        return "image_file_empty"
+    if reason.startswith("image file is not a valid image:"):
+        return "image_file_invalid"
+    if reason.startswith("image file decode failed:"):
+        return "image_file_decode_failed"
+    if reason.startswith("image file not found:"):
+        return "image_file_missing"
+    if reason.startswith("empty trigger shape"):
+        return "trigger_shape_empty"
+    if reason.startswith("empty response shape"):
+        return "response_shape_empty"
+    if "unsupported rule" in reason or "priority=" in reason:
+        return "rule_invalid"
+    if "invalid trigger probability" in reason:
+        return "trigger_config_invalid"
+    if "approval status" in reason:
+        return "approval_status_invalid"
+    return "other"
 
 
 __all__ = [

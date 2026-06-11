@@ -10,6 +10,7 @@ import pytest
 
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.migration import (
+    WordbankMigrationReport,
     build_legacy_image_catalog,
     legacy_message_to_shape,
     migrate_legacy_rows,
@@ -106,6 +107,32 @@ async def test_legacy_message_to_shape_resolves_trailing_md5_image_name(
 
     assert [atom.kind for atom in shape.atoms] == ["image"]
     assert shape.atoms[0].canonical_image_id == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_message_to_shape_reports_empty_image_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path / "db")
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    source_path = image_root / "EMPTY0000000000000000000000000001.jpg"
+    source_path.write_bytes(b"")
+
+    catalog = build_legacy_image_catalog(image_root, None)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+    media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+
+    with pytest.raises(Exception, match="image file empty"):
+        await legacy_message_to_shape(
+            [{"type": "image", "file": source_path.name}],
+            image_catalog=catalog,
+            media_service=media_service,
+        )
 
 
 def test_normalize_legacy_scope_and_state() -> None:
@@ -390,6 +417,24 @@ def test_normalize_legacy_rules_widens_priority_two_empty_or_branch_to_global() 
     assert targets[0].scope == "all_groups"
     assert targets[0].group_id == ""
     assert targets[0].rule == {}
+
+
+def test_migration_report_groups_failures_by_category() -> None:
+    report = WordbankMigrationReport(
+        skipped_rows=2,
+        failure_details=[
+            {"reason": "image file empty: abc.jpg"},
+            {"reason": "image file not found: def.jpg"},
+        ],
+    )
+
+    categorized = report.to_failure_categories_dict()
+    categories = categorized["categories"]
+
+    assert categorized["total_failed"] == 2
+    assert isinstance(categories, dict)
+    assert categories["image_file_empty"]["count"] == 1
+    assert categories["image_file_missing"]["count"] == 1
 
 
 def _segment_list(value: dict[str, object]) -> list[dict[str, Any]]:

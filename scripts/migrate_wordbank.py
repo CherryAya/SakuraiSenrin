@@ -175,6 +175,7 @@ async def main() -> None:
     )
 
     report_path = Path(args.report)
+    categorized_report_path = _derived_categorized_report_path(report_path)
     await asyncio.to_thread(
         report_path.parent.mkdir,
         parents=True,
@@ -183,6 +184,11 @@ async def main() -> None:
     await asyncio.to_thread(
         report_path.write_text,
         json.dumps(report.to_dict(), ensure_ascii=False, indent=2),
+        "utf-8",
+    )
+    await asyncio.to_thread(
+        categorized_report_path.write_text,
+        json.dumps(report.to_failure_categories_dict(), ensure_ascii=False, indent=2),
         "utf-8",
     )
 
@@ -195,11 +201,18 @@ async def main() -> None:
                 "skipped_rows": report.skipped_rows,
                 "status_counts": dict(report.status_counts),
                 "report": str(report_path),
+                "categorized_report": str(categorized_report_path),
             },
             ensure_ascii=False,
             indent=2,
         )
     )
+
+
+def _derived_categorized_report_path(report_path: Path) -> Path:
+    suffix = report_path.suffix or ".json"
+    stem = report_path.stem if report_path.suffix else report_path.name
+    return report_path.with_name(f"{stem}-by-error{suffix}")
 
 
 if __name__ == "__main__":
