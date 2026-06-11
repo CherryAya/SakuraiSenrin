@@ -46,7 +46,7 @@ from src.lib.interactive_recall import (
 )
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
-from src.plugins.wordbank.message_model import MessageShape
+from src.plugins.wordbank.message_model import MessageShape, shape_from_text
 
 name = tr("zh-CN", "plugin.study.name")
 description = tr("zh-CN", "plugin.study.description")
@@ -177,6 +177,84 @@ def _state_message_shape(state: Mapping[str, Any], key: str) -> MessageShape | N
 
 def _is_truthy_state_flag(state: T_State, key: str) -> bool:
     return bool(state.get(key, False))
+
+
+def _contains_study_pair_separator(text: str) -> bool:
+    return any(sep in text for sep in ("=>", "->", "回答", "回复"))
+
+
+async def _start_guided_study_from_partial_args(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+    text: str,
+    *,
+    has_images: bool,
+) -> bool:
+    import shlex
+
+    from src.plugins.wordbank.handlers.commands import (
+        localize_command_error,
+        parse_study_group_block_choice,
+        parse_study_mode_choice,
+    )
+    from src.plugins.wordbank.services import wordbank_service
+    from src.plugins.wordbank.services.rules import RuleError
+
+    source = text.strip()
+    if not source or _contains_study_pair_separator(source):
+        return False
+    try:
+        tokens = shlex.split(source)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    try:
+        trig_mode = parse_study_mode_choice(tokens[0])
+    except RuleError:
+        return False
+
+    await wordbank_service.initialize()
+    state["study_locale"] = locale
+    clear_interaction_errors(state)
+    register_root_message(state, event)
+    state["study_trig_mode"] = trig_mode
+    state["study_mode_prefilled"] = True
+
+    if len(tokens) == 1:
+        await matcher.pause(tr(locale, "wordbank.guided.study.group_block_prompt"))
+        return True
+
+    try:
+        group_block = parse_study_group_block_choice(tokens[1])
+    except RuleError as exc:
+        await matcher.pause(localize_command_error(exc, locale))
+        return True
+
+    state["study_group_block"] = group_block
+    state["study_group_prefilled"] = True
+
+    if len(tokens) == 2:
+        if has_images:
+            return False
+        await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
+        return True
+
+    trigger_text = tokens[2].strip()
+    if not trigger_text:
+        await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
+        return True
+
+    if len(tokens) == 3 and not has_images:
+        state["study_trigger_shape"] = shape_from_text(trigger_text)
+        state["study_trigger_preloaded"] = True
+        state["study_response_after_preloaded_trigger"] = True
+        await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
+        return True
+
+    return False
 
 
 async def _cancel_study_resources(
@@ -434,8 +512,9 @@ async def _(
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     await _abort_study_on_revoke(matcher, event, locale)
     arg_text = arg.extract_plain_text().strip()
+    has_images = bool(extract_image_urls(arg))
     if not arg_text:
-        if extract_image_urls(arg):
+        if has_images:
             await _start_guided_study_with_trigger_image(
                 matcher,
                 event,
@@ -448,6 +527,15 @@ async def _(
         state["study_locale"] = locale
         register_root_message(state, event)
         await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
+        return
+    if await _start_guided_study_from_partial_args(
+        matcher,
+        event,
+        state,
+        locale,
+        arg_text,
+        has_images=has_images,
+    ):
         return
     await wordbank_service.initialize()
     try:
@@ -487,11 +575,6 @@ async def _(
     await matcher.finish()
 
 
-def _study_locale(state: T_State) -> LocaleCode:
-    locale = state.get("study_locale", "zh-CN")
-    return locale if locale in {"zh-CN", "lzh", "x-meme"} else "zh-CN"
-
-
 @study_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     from src.plugins.wordbank.handlers.commands import (
@@ -502,6 +585,9 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
 
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
+    if _is_truthy_state_flag(state, "study_mode_prefilled"):
+        state.pop("study_mode_prefilled", None)
+        return
     text = event.message.extract_plain_text().strip()
     try:
         parse_study_mode_choice(text)
@@ -543,6 +629,9 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
 
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
+    if _is_truthy_state_flag(state, "study_group_prefilled"):
+        state.pop("study_group_prefilled", None)
+        return
     text = event.message.extract_plain_text().strip()
     try:
         parse_study_group_block_choice(text)
@@ -582,11 +671,19 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
 
 
+def _study_locale(state: T_State) -> LocaleCode:
+    locale = state.get("study_locale", "zh-CN")
+    return locale if locale in {"zh-CN", "lzh", "x-meme"} else "zh-CN"
+
+
 @study_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
+    if _is_truthy_state_flag(state, "study_weight_after_preloaded_trigger"):
+        return
     if _is_truthy_state_flag(state, "study_response_after_preloaded_trigger"):
+        state.pop("study_response_after_preloaded_trigger", None)
         state["study_weight_after_preloaded_trigger"] = True
         await _record_study_response(matcher, event, state, locale)
         return
