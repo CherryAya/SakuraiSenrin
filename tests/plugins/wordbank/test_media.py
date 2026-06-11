@@ -1,3 +1,4 @@
+import asyncio
 from io import BytesIO
 from pathlib import Path
 
@@ -21,6 +22,21 @@ from src.plugins.wordbank.services.media import (
 def _png(color: tuple[int, int, int]) -> bytes:
     buffer = BytesIO()
     Image.new("RGB", (16, 16), color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _gif(colors: list[tuple[int, int, int]]) -> bytes:
+    buffer = BytesIO()
+    frames = [Image.new("RGB", (16, 16), color) for color in colors]
+    first, *rest = frames
+    first.save(
+        buffer,
+        format="GIF",
+        save_all=True,
+        append_images=rest,
+        duration=[80] * len(frames),
+        loop=0,
+    )
     return buffer.getvalue()
 
 
@@ -115,6 +131,7 @@ class _ObjectStorage:
         self.provider = provider
         self.fail = fail
         self.objects: dict[str, bytes] = {}
+        self.content_types: dict[str, str | None] = {}
 
     async def put_bytes(
         self,
@@ -127,6 +144,7 @@ class _ObjectStorage:
         if self.fail:
             raise RuntimeError("upload failed")
         self.objects[key] = data
+        self.content_types[key] = content_type
         return StorageObject(
             provider=self.provider,
             bucket="bucket",
@@ -209,3 +227,72 @@ async def test_r2_media_storage_falls_back_to_local_on_upload_error(
 
     assert storage_path == str(tmp_path / f"{fingerprint.md5}.webp")
     assert (tmp_path / f"{fingerprint.md5}.webp").is_file()
+
+
+def test_fingerprint_uses_representative_gif_frame() -> None:
+    first_frame = _png((255, 0, 0))
+    animated = _gif([(255, 0, 0), (0, 0, 255)])
+
+    still_fingerprint = fingerprint_image(first_frame)
+    animated_fingerprint = fingerprint_image(animated)
+
+    assert animated_fingerprint.md5 != still_fingerprint.md5
+    assert animated_fingerprint.dhash == still_fingerprint.dhash
+    assert animated_fingerprint.phash == still_fingerprint.phash
+    assert animated_fingerprint.width == 16
+    assert animated_fingerprint.height == 16
+
+
+async def test_media_ingest_preserves_animation_bytes_for_gif(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    service = WordbankMediaService(repo, media_root=tmp_path)
+    data = _gif([(255, 0, 0), (0, 255, 0)])
+
+    image = await service.ingest_image_bytes(data)
+    stored_path = Path(image.storage_path)
+    stored_bytes = await asyncio.to_thread(stored_path.read_bytes)
+
+    assert stored_path.suffix in {".webp", ".gif"}
+    with Image.open(BytesIO(stored_bytes)) as stored_image:
+        assert getattr(stored_image, "n_frames", 1) > 1
+
+
+async def test_media_ingest_dedupes_gif_by_md5_before_similarity(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    service = WordbankMediaService(repo, media_root=tmp_path)
+    data = _gif([(255, 0, 0), (0, 255, 0)])
+
+    first = await service.ingest_image_bytes(data)
+    second = await service.ingest_image_bytes(data)
+
+    assert first.id == second.id
+    assert len(repo.images) == 1
+
+
+async def test_r2_media_storage_saves_gif_as_animated_media(tmp_path: Path) -> None:
+    storage = _ObjectStorage()
+    media_storage = R2WordbankMediaStorage(
+        storage,
+        fallback=LocalWordbankMediaStorage(tmp_path),
+    )
+    data = _gif([(0, 0, 255), (255, 255, 0)])
+    fingerprint = fingerprint_image(data)
+
+    storage_path = await media_storage.save_image(
+        data,
+        md5_hex=fingerprint.md5,
+        keep_original=False,
+    )
+    key = storage_path.removeprefix("r2://bucket/")
+    loaded = await media_storage.load_bytes(storage_path)
+
+    assert loaded is not None
+    assert loaded == storage.objects[key]
+    assert Path(key).suffix in {".webp", ".gif"}
+    assert storage.content_types[key] in {"image/webp", "image/gif"}
+    with Image.open(BytesIO(loaded)) as stored_image:
+        assert getattr(stored_image, "n_frames", 1) > 1

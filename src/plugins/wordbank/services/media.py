@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Final, Protocol
 
 import imagehash
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageSequence, UnidentifiedImageError
 from pybktree import BKTree
 
 from src.lib.object_storage import ObjectStorageClient
@@ -27,6 +27,13 @@ from src.plugins.wordbank.services.errors import WordbankUserError
 DEFAULT_MEDIA_ROOT: Final[Path] = Path("./data/wordbank/media")
 IMAGE_HASH_VERSION: Final[int] = 2
 IMAGE_SEARCH_DISTANCE_THRESHOLD: Final[int] = 12
+WEBP_CONTENT_TYPE: Final[str] = "image/webp"
+DEFAULT_MEDIA_EXTENSION: Final[str] = ".bin"
+EXTENSION_TO_CONTENT_TYPE: Final[dict[str, str]] = {
+    ".gif": "image/gif",
+    ".png": "image/png",
+    ".webp": WEBP_CONTENT_TYPE,
+}
 
 
 class MediaError(WordbankUserError):
@@ -50,6 +57,19 @@ class CanonicalImageMatch:
     score: float
     dhash_distance: int
     phash_distance: int | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class StoredMedia:
+    data: bytes
+    extension: str
+    content_type: str
+
+
+@dataclass(slots=True, frozen=True)
+class PreparedImage:
+    fingerprint: ImageFingerprint
+    stored_media: StoredMedia
 
 
 class MediaRepository(Protocol):
@@ -107,14 +127,14 @@ class LocalWordbankMediaStorage:
         md5_hex: str,
         keep_original: bool,
     ) -> str:
+        prepared = prepare_image_bytes(data)
         self.media_root.mkdir(parents=True, exist_ok=True)
-        webp_path = self.media_root / f"{md5_hex}.webp"
-        with Image.open(BytesIO(data)) as image:
-            image.save(webp_path, format="WEBP", quality=82, method=4)
+        media_path = self.media_root / f"{md5_hex}{prepared.stored_media.extension}"
+        media_path.write_bytes(prepared.stored_media.data)
         if keep_original:
             original_path = self.media_root / f"{md5_hex}.source"
             original_path.write_bytes(data)
-        return str(webp_path)
+        return str(media_path)
 
     async def load_bytes(self, storage_path: str) -> bytes | None:
         return await asyncio.to_thread(self._load_bytes, storage_path)
@@ -145,12 +165,13 @@ class ObjectStorageWordbankMediaStorage:
         md5_hex: str,
         keep_original: bool,
     ) -> str:
-        key = f"{self.key_prefix}/{md5_hex}.webp"
+        prepared = await asyncio.to_thread(prepare_image_bytes, data)
+        key = f"{self.key_prefix}/{md5_hex}{prepared.stored_media.extension}"
         try:
             stored = await self.object_storage.put_bytes(
                 key,
-                self._to_webp(data),
-                content_type="image/webp",
+                prepared.stored_media.data,
+                content_type=prepared.stored_media.content_type,
             )
             if keep_original:
                 await self.object_storage.put_bytes(
@@ -178,12 +199,6 @@ class ObjectStorageWordbankMediaStorage:
             logger.warning(f"[Wordbank] remote media load skipped: {exc}")
             return None
 
-    def _to_webp(self, data: bytes) -> bytes:
-        buffer = BytesIO()
-        with Image.open(BytesIO(data)) as image:
-            image.save(buffer, format="WEBP", quality=82, method=4)
-        return buffer.getvalue()
-
 
 R2WordbankMediaStorage = ObjectStorageWordbankMediaStorage
 
@@ -194,22 +209,143 @@ def hamming_distance(left: str, right: str) -> int:
 
 def fingerprint_image(data: bytes) -> ImageFingerprint:
     try:
-        with Image.open(BytesIO(data)) as image:
-            image.load()
-            width, height = image.size
-            return ImageFingerprint(
-                md5=md5(data).hexdigest(),
-                dhash=str(imagehash.dhash(image, hash_size=8)),
-                phash=str(imagehash.phash(image, hash_size=8)),
-                width=width,
-                height=height,
-                file_size=len(data),
-            )
+        return prepare_image_bytes(data).fingerprint
     except UnidentifiedImageError as exc:
         raise MediaError(
             "无法识别图片内容",
             key="wordbank.error.image_unrecognized",
         ) from exc
+
+
+def prepare_image_bytes(data: bytes) -> PreparedImage:
+    with Image.open(BytesIO(data)) as image:
+        fingerprint = _build_fingerprint(image, data)
+        stored_media = _build_stored_media(image, data)
+        return PreparedImage(fingerprint=fingerprint, stored_media=stored_media)
+
+
+def _build_fingerprint(image: Image.Image, data: bytes) -> ImageFingerprint:
+    representative = _extract_representative_frame(image)
+    width, height = representative.size
+    return ImageFingerprint(
+        md5=md5(data).hexdigest(),
+        dhash=str(imagehash.dhash(representative, hash_size=8)),
+        phash=str(imagehash.phash(representative, hash_size=8)),
+        width=width,
+        height=height,
+        file_size=len(data),
+    )
+
+
+def _build_stored_media(image: Image.Image, data: bytes) -> StoredMedia:
+    if _is_animated(image):
+        animated_webp = _encode_animated_webp(image)
+        if animated_webp is not None:
+            return StoredMedia(
+                data=animated_webp,
+                extension=".webp",
+                content_type=WEBP_CONTENT_TYPE,
+            )
+        return StoredMedia(
+            data=data,
+            extension=_detect_extension(image),
+            content_type=_detect_content_type(image),
+        )
+
+    buffer = BytesIO()
+    _normalize_static_image(image).save(
+        buffer,
+        format="WEBP",
+        quality=82,
+        method=4,
+    )
+    return StoredMedia(
+        data=buffer.getvalue(),
+        extension=".webp",
+        content_type=WEBP_CONTENT_TYPE,
+    )
+
+
+def _extract_representative_frame(image: Image.Image) -> Image.Image:
+    if _is_animated(image):
+        image.seek(0)
+    return _normalize_static_image(image)
+
+
+def _normalize_static_image(image: Image.Image) -> Image.Image:
+    if image.mode in {"RGBA", "LA"}:
+        return image.convert("RGBA")
+    if image.mode == "P":
+        if "transparency" in image.info:
+            return image.convert("RGBA")
+        return image.convert("RGB")
+    if image.mode == "RGB":
+        return image.copy()
+    return image.convert("RGB")
+
+
+def _encode_animated_webp(image: Image.Image) -> bytes | None:
+    try:
+        image.seek(0)
+        frames = [
+            _normalize_static_image(frame.copy())
+            for frame in ImageSequence.Iterator(image)
+        ]
+        if not frames:
+            return None
+
+        durations = _collect_frame_durations(image, len(frames))
+        loop = int(image.info.get("loop", 0) or 0)
+        buffer = BytesIO()
+        first, *rest = frames
+        first.save(
+            buffer,
+            format="WEBP",
+            save_all=True,
+            append_images=rest,
+            duration=durations,
+            loop=loop,
+            quality=82,
+            method=4,
+        )
+        return buffer.getvalue()
+    except Exception:
+        return None
+
+
+def _collect_frame_durations(image: Image.Image, frame_count: int) -> list[int]:
+    durations: list[int] = []
+    for frame in ImageSequence.Iterator(image):
+        duration = int(
+            frame.info.get("duration", image.info.get("duration", 100)) or 100
+        )
+        durations.append(max(duration, 1))
+    if len(durations) < frame_count:
+        durations.extend([100] * (frame_count - len(durations)))
+    return durations[:frame_count]
+
+
+def _is_animated(image: Image.Image) -> bool:
+    return bool(
+        getattr(image, "is_animated", False) or getattr(image, "n_frames", 1) > 1
+    )
+
+
+def _detect_extension(image: Image.Image) -> str:
+    format_name = str(getattr(image, "format", "") or "").upper()
+    if format_name == "GIF":
+        return ".gif"
+    if format_name == "PNG":
+        return ".png"
+    if format_name == "WEBP":
+        return ".webp"
+    return DEFAULT_MEDIA_EXTENSION
+
+
+def _detect_content_type(image: Image.Image) -> str:
+    return EXTENSION_TO_CONTENT_TYPE.get(
+        _detect_extension(image), "application/octet-stream"
+    )
 
 
 class WordbankMediaService:
