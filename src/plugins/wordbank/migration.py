@@ -564,6 +564,9 @@ def _normalize_legacy_branch(
 ) -> LegacyImportTarget:
     group_id = str(branch.get("group_id") or "")
     user_id = str(branch.get("user_id") or "")
+    role = str(branch.get("role") or "any")
+    has_call_count = isinstance(branch.get("call_count"), tuple)
+    has_non_scope_constraints = role != "any" or has_call_count
 
     if group_id and user_id:
         scope = "self_in_current_group"
@@ -574,16 +577,16 @@ def _normalize_legacy_branch(
     elif priority == 3:
         scope = "all_groups"
     elif priority == 2:
-        scope = "current_group"
+        # Old data can contain rules like {"$or": [{"group_id": ...}, {}]}.
+        # The empty branch semantically widens the rule to global scope.
+        scope = "all_groups" if not group_id and not user_id else "current_group"
     elif priority == 1:
-        scope = "self"
+        # Priority in the legacy schema was inferred from the whole rule, not each
+        # expanded branch. Branches without user/group restrictions should widen to
+        # the least restrictive compatible scope.
+        scope = "all_groups" if has_non_scope_constraints else "self"
     else:
         raise MigrationError(f"unsupported priority: {priority}")
-
-    if scope == "current_group" and not group_id:
-        raise MigrationError("priority=2 row must carry group_id")
-
-    role = str(branch.get("role") or "any")
     if role not in {"any", *_LEGACY_ROLES}:
         raise MigrationError(f"unsupported role value: {role}")
 

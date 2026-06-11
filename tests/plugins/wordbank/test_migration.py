@@ -375,6 +375,23 @@ async def test_migrate_legacy_rows_reports_failed_trigger_and_response_details(
     assert _segment_list(response_summary)[0]["text"] == "响应"
 
 
+def test_normalize_legacy_rules_widens_priority_two_empty_or_branch_to_global() -> None:
+    targets = normalize_legacy_rules(
+        priority=2,
+        response_rule_conditions={
+            "$or": [
+                {"group_id": {"$eq": 879823693}},
+                {},
+            ]
+        },
+    )
+
+    assert len(targets) == 1
+    assert targets[0].scope == "all_groups"
+    assert targets[0].group_id == ""
+    assert targets[0].rule == {}
+
+
 def _segment_list(value: dict[str, object]) -> list[dict[str, Any]]:
     segments = value.get("segments")
     assert isinstance(segments, list)

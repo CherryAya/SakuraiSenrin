@@ -269,6 +269,24 @@ async def test_media_ingest_preserves_animation_bytes_for_gif(
         assert getattr(stored_image, "n_frames", 1) > 1
 
 
+async def test_media_ingest_detects_gif_by_header_even_when_suffix_is_jpg(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    service = WordbankMediaService(repo, media_root=tmp_path)
+    fake_jpg_path = tmp_path / "fake-animation.jpg"
+    fake_jpg_path.write_bytes(_gif([(255, 0, 0), (0, 255, 0)]))
+
+    image = await service.ingest_image_bytes(fake_jpg_path.read_bytes())
+    stored_path = Path(image.storage_path)
+    stored_bytes = await asyncio.to_thread(stored_path.read_bytes)
+
+    assert stored_path.suffix == ".webp"
+    with Image.open(BytesIO(stored_bytes)) as stored_image:
+        assert str(getattr(stored_image, "format", "")).upper() == "WEBP"
+        assert getattr(stored_image, "n_frames", 1) > 1
+
+
 async def test_media_ingest_dedupes_gif_by_md5_before_similarity(
     tmp_path: Path,
 ) -> None:
