@@ -10,6 +10,7 @@ from io import BytesIO
 import os
 from pathlib import Path
 import sys
+from typing import ClassVar
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -170,6 +171,7 @@ def render_collection_png(job: DemoCollectionJob) -> bytes:
     renderer = DemoCollectionRenderer(columns=job.columns, thumb_width=job.thumb_width)
     return renderer.render(
         title=job.bundle.title,
+        summary=job.bundle.summary,
         source_path=job.bundle.source_path,
         tiles=job.tiles,
     )
@@ -206,11 +208,14 @@ def compose(
 class DemoCollectionRenderer:
     WIDTH = 1280
     OUTER_MARGIN = 40
-    HEADER_HEIGHT = 174
+    HEADER_HEIGHT = 188
+    HEADER_PANEL_HEIGHT = 104
     HEADER_X = 84
-    HEADER_TITLE_Y = 66
-    HEADER_META_Y = 122
-    CONTENT_TOP = 214
+    HEADER_Y = 58
+    HEADER_TITLE_Y = 72
+    HEADER_SUMMARY_Y = 116
+    HEADER_RIGHT_Y = 70
+    CONTENT_TOP = 244
     CARD_PADDING = 18
     CARD_RADIUS = 24
     CARD_TITLE_HEIGHT = 48
@@ -224,19 +229,29 @@ class DemoCollectionRenderer:
     CARD_BORDER = "#EDE5EA"
     TITLE = "#2E2630"
     META = "#8F8190"
+    TITLE_BAND_TEXT = "#3B3538"
     CHIP_BG = "#FFF0F5"
     CHIP_TEXT = "#9A3F62"
+    HELP_TEXT = "#5E565B"
+    PALETTES: ClassVar[dict[str, tuple[str, str]]] = {
+        "study": ("#FFE4B5", "#FFF0CF"),
+        "wordbank_approval": ("#F8D0D2", "#FBE0E3"),
+        "wordbank": ("#C9DEF3", "#D9EAFB"),
+        "default": ("#E8DEF8", "#F0E8FB"),
+    }
 
     def __init__(self, *, columns: int, thumb_width: int) -> None:
         self.columns = max(1, columns)
         self.thumb_width = max(240, thumb_width)
         try:
             self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 40)
+            self.summary_font = ImageFont.truetype(MAPLE_FONT_PATH, 17)
             self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 17)
             self.tile_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)
             self.slug_font = ImageFont.truetype(MAPLE_FONT_PATH, 15)
         except OSError:
             self.title_font = ImageFont.load_default()
+            self.summary_font = ImageFont.load_default()
             self.meta_font = ImageFont.load_default()
             self.tile_font = ImageFont.load_default()
             self.slug_font = ImageFont.load_default()
@@ -249,6 +264,7 @@ class DemoCollectionRenderer:
         self,
         *,
         title: str,
+        summary: str,
         source_path: Path,
         tiles: Sequence[DemoCollectionTile],
     ) -> bytes:
@@ -285,6 +301,7 @@ class DemoCollectionRenderer:
         self._draw_header(
             draw,
             title=title,
+            summary=summary,
             source_path=source_path,
             tile_count=len(prepared),
         )
@@ -327,25 +344,63 @@ class DemoCollectionRenderer:
         draw: ImageDraw.ImageDraw,
         *,
         title: str,
+        summary: str,
         source_path: Path,
         tile_count: int,
     ) -> None:
+        panel_left = self.OUTER_MARGIN + 18
+        panel_top = self.OUTER_MARGIN + 14
+        panel_right = draw.im.size[0] - self.OUTER_MARGIN - 18
+        panel_bottom = panel_top + self.HEADER_PANEL_HEIGHT
+        panel_fill, _ = self._palette_for_source(source_path)
+        draw.rounded_rectangle(
+            (panel_left, panel_top, panel_right, panel_bottom),
+            radius=28,
+            fill=panel_fill,
+        )
+
+        right_block_width = 320
+        right_x = panel_right - right_block_width - 20
+        left_width = right_x - self.HEADER_X - 24
+        summary_lines = self._wrap_text(
+            summary.strip() or "已按子功能拆分生成合集预览。",
+            self.summary_font,
+            left_width,
+            max_lines=2,
+        )
+        help_lines = self._wrap_text(
+            f"使用 #help {title} <子功能> 查看对应说明",
+            self.summary_font,
+            right_block_width,
+            max_lines=2,
+        )
+
         draw.text(
             (self.HEADER_X, self.HEADER_TITLE_Y),
-            f"{title} demo collection",
+            title,
             fill=self.TITLE,
             font=self.title_font,
         )
-        try:
-            source_label = source_path.relative_to(ROOT).as_posix()
-        except ValueError:
-            source_label = source_path.as_posix()
+        for index, line in enumerate(summary_lines):
+            draw.text(
+                (self.HEADER_X, self.HEADER_SUMMARY_Y + index * 20),
+                line,
+                fill=self.META,
+                font=self.summary_font,
+            )
         draw.text(
-            (self.HEADER_X, self.HEADER_META_Y),
-            f"{tile_count} demos · {source_label}",
-            fill=self.META,
+            (right_x, self.HEADER_RIGHT_Y),
+            f"共 {tile_count} 个功能卡片",
+            fill=self.TITLE,
             font=self.meta_font,
         )
+        for index, line in enumerate(help_lines):
+            draw.text(
+                (right_x, self.HEADER_RIGHT_Y + 34 + index * 20),
+                line,
+                fill=self.HELP_TEXT,
+                font=self.summary_font,
+            )
 
     def _draw_tiles(
         self,
@@ -385,13 +440,24 @@ class DemoCollectionRenderer:
             outline=self.CARD_BORDER,
             width=2,
         )
+        _, title_band = self._palette_for_slug(tile.slug)
+        draw.rounded_rectangle(
+            (
+                x + 12,
+                y + 12,
+                x + self.card_width - 12,
+                y + 52,
+            ),
+            radius=18,
+            fill=title_band,
+        )
         title_x = x + self.CARD_PADDING
         title_y = y + self.CARD_PADDING
         max_title_width = self.card_width - self.CARD_PADDING * 2 - 96
         draw.text(
             (title_x, title_y + 2),
             self._ellipsize(tile.title, self.tile_font, max_title_width),
-            fill=self.TITLE,
+            fill=self.TITLE_BAND_TEXT,
             font=self.tile_font,
         )
         chip_text = tile.slug
@@ -446,6 +512,49 @@ class DemoCollectionRenderer:
             font=font,
         )
         return int(bbox[2] - bbox[0])
+
+    def _wrap_text(
+        self,
+        text: str,
+        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+        max_width: int,
+        *,
+        max_lines: int,
+    ) -> list[str]:
+        lines: list[str] = []
+        current = ""
+        for char in text:
+            candidate = current + char
+            if not current or self._text_width(candidate, font) <= max_width:
+                current = candidate
+                continue
+            lines.append(current.rstrip())
+            current = char
+        if current:
+            lines.append(current.rstrip())
+        if len(lines) <= max_lines:
+            return lines
+        clipped = lines[:max_lines]
+        suffix = "..."
+        while clipped[-1] and self._text_width(clipped[-1] + suffix, font) > max_width:
+            clipped[-1] = clipped[-1][:-1]
+        clipped[-1] = clipped[-1].rstrip() + suffix
+        return clipped
+
+    def _palette_for_source(self, source_path: Path) -> tuple[str, str]:
+        path_text = source_path.as_posix()
+        for key in ("wordbank_approval", "wordbank", "study"):
+            if key in path_text:
+                return self.PALETTES[key]
+        return self.PALETTES["default"]
+
+    def _palette_for_slug(self, slug: str) -> tuple[str, str]:
+        lowered = slug.lower()
+        if lowered.startswith("add") or lowered in {"shortcut", "guided-flow"}:
+            return self.PALETTES["study"]
+        if "approve" in lowered or "reject" in lowered or "pending" in lowered:
+            return self.PALETTES["wordbank_approval"]
+        return self.PALETTES["wordbank"]
 
 
 def generate(*, workers: int | None = None) -> int:

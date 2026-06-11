@@ -297,36 +297,35 @@ def test_build_readme_docs_filters_features_by_actor_permission() -> None:
     assert "需要权限: 超级管理员" in str(denied_feature_message)
 
 
-def test_build_readme_docs_filters_wordbank_review_features_by_actor_permission() -> (
-    None
-):
-    source = Path("src/plugins/wordbank/docs/README.MD")
+def test_build_readme_docs_splits_wordbank_normal_and_approval_docs() -> None:
+    wordbank_source = Path("src/plugins/wordbank/docs/README.MD")
+    approval_source = Path("src/plugins/wordbank_approval/docs/README.MD")
 
-    normal_message = build_readme_docs(
-        source=source,
+    normal_wordbank_message = build_readme_docs(
+        source=wordbank_source,
         name="词库模块",
         description="desc",
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
         ctx=DocsRenderContext(locale="zh-CN", actor_permission=Permission.NORMAL),
     )
-    admin_message = build_readme_docs(
-        source=source,
-        name="词库模块",
+    admin_approval_message = build_readme_docs(
+        source=approval_source,
+        name="词库审核",
         description="desc",
         trigger=TriggerType.COMMAND,
-        permission=Permission.NORMAL,
+        permission=Permission.GROUP_ADMIN,
         ctx=DocsRenderContext(
             locale="zh-CN",
             actor_permission=Permission.NORMAL | Permission.GROUP_ADMIN,
         ),
     )
-    denied_feature_message = build_readme_docs(
-        source=source,
-        name="词库模块",
+    denied_approval_feature_message = build_readme_docs(
+        source=approval_source,
+        name="词库审核",
         description="desc",
         trigger=TriggerType.COMMAND,
-        permission=Permission.NORMAL,
+        permission=Permission.GROUP_ADMIN,
         ctx=DocsRenderContext(
             locale="zh-CN",
             feature_query="approve",
@@ -334,14 +333,16 @@ def test_build_readme_docs_filters_wordbank_review_features_by_actor_permission(
         ),
     )
 
-    assert "待审核词条" not in str(normal_message)
-    assert "通过审核" not in str(normal_message)
-    assert "拒绝审核" not in str(normal_message)
-    assert "待审核词条" in str(admin_message)
-    assert "通过审核" in str(admin_message)
-    assert "拒绝审核" in str(admin_message)
-    assert "无权限查看子功能文档: 通过审核" in str(denied_feature_message)
-    assert "需要权限: 群管理员" in str(denied_feature_message)
+    assert "基础添加" in str(normal_wordbank_message)
+    assert "待审核词条" not in str(normal_wordbank_message)
+    assert "通过审核" not in str(normal_wordbank_message)
+    assert "拒绝审核" not in str(normal_wordbank_message)
+    assert "词库审核" in str(admin_approval_message)
+    assert "待审核词条" in str(admin_approval_message)
+    assert "通过审核" in str(admin_approval_message)
+    assert "拒绝审核" in str(admin_approval_message)
+    assert "无权限查看子功能文档: 通过审核" in str(denied_approval_feature_message)
+    assert "需要权限: 群管理员" in str(denied_approval_feature_message)
 
 
 def test_plugin_docs_readmes_do_not_use_placeholder_commands() -> None:
@@ -376,6 +377,7 @@ def test_load_representative_demo_bytes_uses_first_available_feature() -> None:
 def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     wordbank_source = Path("src/plugins/wordbank/docs/README.MD")
     study_source = Path("src/plugins/study/docs/README.MD")
+    approval_source = Path("src/plugins/wordbank_approval/docs/README.MD")
     wordbank = load_plugin_doc_bundle(
         source=wordbank_source,
         default_name="词库模块",
@@ -390,51 +392,69 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
     )
+    approval = load_plugin_doc_bundle(
+        source=approval_source,
+        default_name="词库审核",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.GROUP_ADMIN,
+    )
 
     add = next(feature for feature in wordbank.index if feature.slug == "add")
+    mode = next(feature for feature in wordbank.index if feature.slug == "add-mode")
     passive = next(feature for feature in wordbank.index if feature.slug == "passive")
     reply = next(
         feature for feature in wordbank.index if feature.slug == "reply-shortcut"
     )
+    approve = next(feature for feature in approval.index if feature.slug == "approve")
+    approval_reply = next(
+        feature for feature in approval.index if feature.slug == "approval-reply"
+    )
     shortcut = next(feature for feature in study.index if feature.slug == "shortcut")
+    legacy_args = next(
+        feature for feature in study.index if feature.slug == "legacy-args"
+    )
+    recall_rewind = next(
+        feature for feature in study.index if feature.slug == "recall-rewind"
+    )
 
     assert add.demo_filename == "wordbank-add.png"
-    assert len(add.demo_turns) == 19
+    assert len(add.demo_turns) == 15
     assert add.demo_turns[0].text == "#wordbank.add"
-    assert add.demo_turns[10].speaker == "SYSTEM"
-    assert "新增词条待审核通知" in add.demo_turns[10].text
-    assert add.demo_turns[11].text == "[回复审批通知] @机器人 y"
-    assert add.demo_turns[12].text == "审批已完成：词条 #12 已通过。"
-    assert add.demo_turns[14].text == "做个好梦"
-    assert "#wordbank add 是这张图喔 [图片]" in add.demo_turns[15].text
-    assert "响应: [图片:7]" in add.demo_turns[16].text
-    assert "#wordbank add [图片] => 是这张图喔" in add.demo_turns[17].text
-    assert "触发: [图片:7]" in add.demo_turns[18].text
+    assert "审核文档请查看 #help 词库审核" in add.demo_turns[10].text
+    assert "#wordbank add 是这张图喔 [图片]" in add.demo_turns[11].text
+    assert "响应: [图片:7]" in add.demo_turns[12].text
+    assert "#wordbank add [图片] => 是这张图喔" in add.demo_turns[13].text
+    assert "触发: [图片:7]" in add.demo_turns[14].text
+    assert mode.demo_filename == "wordbank-add-mode.png"
+    assert "fullmatch" in mode.demo_turns[0].text
     assert all(feature.slug != "image" for feature in wordbank.index)
     assert "revoke" in add.failures
     assert "发送取消提示并中止" in add.failures
     assert "连续输错 3 次" in add.failures
-    assert "wordbank.help" in wordbank.summary
+    assert "#help 词库审核" in wordbank.summary
     assert "ID: 12" in add.demo_turns[9].text
     assert passive.demo_turns[-1].speaker == "SYSTEM"
     assert "group_recall" in passive.demo_turns[-1].text
     assert reply.demo_filename == "wordbank-reply-shortcut.png"
     assert "词条详情 #12" in reply.demo_turns[3].text
+    assert approve.demo_filename == "wordbank_approval-approve.png"
+    assert "词条 #12 已通过审核" in approve.demo_turns[1].text
+    assert approval_reply.demo_filename == "wordbank_approval-approval-reply.png"
+    assert "[回复审批通知] @机器人 y" in approval_reply.demo_turns[1].text
     assert shortcut.demo_filename == "study-shortcut.png"
-    assert len(shortcut.demo_turns) == 21
-    assert shortcut.demo_turns[0].text == "#study"
-    assert shortcut.demo_turns[2].text == "a"
-    assert shortcut.demo_turns[12].speaker == "SYSTEM"
-    assert "新增词条待审核通知" in shortcut.demo_turns[12].text
-    assert shortcut.demo_turns[13].text == "[回复审批通知] @机器人 y"
-    assert shortcut.demo_turns[14].text == "审批已完成：词条 #12 已通过。"
-    assert "响应: [图片:7]" in shortcut.demo_turns[18].text
-    assert "#study [图片] => 是这张图喔" in shortcut.demo_turns[19].text
-    assert "触发: [图片:7]" in shortcut.demo_turns[20].text
-    assert "revoke" in shortcut.failures
-    assert "发送取消提示并中止" in shortcut.failures
-    assert "连续输错 3 次" in shortcut.failures
-    for source, bundle in ((wordbank_source, wordbank), (study_source, study)):
+    assert shortcut.demo_turns[0].text == "#study 晚安 => 做个好梦"
+    assert "审核流程请查看 #help 词库审核" in shortcut.demo_turns[2].text
+    assert legacy_args.demo_filename == "study-legacy-args.png"
+    assert "a f 群公告" in legacy_args.demo_turns[0].text
+    assert recall_rewind.demo_filename == "study-recall-rewind.png"
+    assert recall_rewind.demo_turns[-1].speaker == "SYSTEM"
+    assert "不会起作用" in recall_rewind.demo_turns[-1].text
+    for source, bundle in (
+        (wordbank_source, wordbank),
+        (study_source, study),
+        (approval_source, approval),
+    ):
         for feature in bundle.index:
             if not feature.demo_turns:
                 continue
@@ -443,6 +463,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
             assert demo_path.stat().st_size > 0
     assert load_representative_demo_bytes(wordbank) is not None
     assert load_representative_demo_bytes(study) is not None
+    assert load_representative_demo_bytes(approval) is not None
 
 
 def test_load_plugin_doc_bundle_distinguishes_message_newlines_from_turns(

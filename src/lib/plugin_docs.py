@@ -255,23 +255,36 @@ def match_feature(
     if not normalized:
         return FeatureMatchResult(status="not_found")
 
-    exact: list[FeatureDoc] = []
+    exact_primary: list[FeatureDoc] = []
+    exact_alias: list[FeatureDoc] = []
     fuzzy: list[FeatureDoc] = []
     for feature in features:
-        tokens = feature.search_tokens
-        if normalized in tokens:
-            exact.append(feature)
+        slug = feature.slug.lower()
+        title = feature.title.lower()
+        aliases = tuple(alias.lower() for alias in feature.aliases)
+        if normalized == slug or normalized == title:
+            exact_primary.append(feature)
             continue
-        if normalized in feature.slug.lower() or normalized in feature.title.lower():
+        if normalized in aliases:
+            exact_alias.append(feature)
+            continue
+        if normalized in slug or normalized in title:
             fuzzy.append(feature)
             continue
-        if any(normalized in alias.lower() for alias in feature.aliases):
+        if any(normalized in alias for alias in aliases):
             fuzzy.append(feature)
 
-    if len(exact) == 1:
-        return FeatureMatchResult(status="matched", feature=exact[0])
-    if len(exact) > 1:
-        return FeatureMatchResult(status="ambiguous", candidates=tuple(exact))
+    if len(exact_primary) == 1:
+        return FeatureMatchResult(status="matched", feature=exact_primary[0])
+    if len(exact_primary) > 1:
+        return FeatureMatchResult(
+            status="ambiguous",
+            candidates=tuple(exact_primary),
+        )
+    if len(exact_alias) == 1:
+        return FeatureMatchResult(status="matched", feature=exact_alias[0])
+    if len(exact_alias) > 1:
+        return FeatureMatchResult(status="ambiguous", candidates=tuple(exact_alias))
     if len(fuzzy) == 1:
         return FeatureMatchResult(status="matched", feature=fuzzy[0])
     if len(fuzzy) > 1:

@@ -31,6 +31,8 @@ nonebot.load_plugin("src.plugins.study")
 
 from src.plugins import study as study_plugin
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank.database.types import WordbankSearchItem
+from src.plugins.wordbank.handlers import commands as wordbank_commands
 from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.services.core import WordbankAddResult
 from tests.plugins.water.helpers import (
@@ -112,6 +114,30 @@ def _private_message_event(
     message_id: int,
 ) -> Any:
     return build_private_message_event(message, message_id=message_id)
+
+
+def _patch_wordbank_search_services(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    search_items: list[WordbankSearchItem],
+    image_scores: list[tuple[int, float]] | None = None,
+) -> AsyncMock:
+    search = AsyncMock(return_value=search_items)
+    service = SimpleNamespace(
+        initialize=AsyncMock(),
+        search=search,
+    )
+    matches = [
+        SimpleNamespace(canonical_id=canonical_id, score=score)
+        for canonical_id, score in (image_scores or [])
+    ]
+    media_service = SimpleNamespace(
+        rebuild_cache=AsyncMock(),
+        search_similar_images=lambda _data: list(matches),
+    )
+    monkeypatch.setattr(wordbank_plugin, "wordbank_service", service)
+    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    return search
 
 
 @pytest.mark.asyncio
@@ -215,6 +241,102 @@ async def test_study_guided_flow_retries_invalid_mode_then_finishes(
         user_id="10001",
         is_group=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_wordbank_search_command_returns_ranked_text_results(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    search = _patch_wordbank_search_services(
+        monkeypatch,
+        search_items=[
+            WordbankSearchItem(
+                entry_id=12,
+                status="approved",
+                trigger_text="晚安",
+                trigger_mode="contains",
+                trigger_canonical_image_id=None,
+                response_text="做个好梦",
+                scope="current_group",
+                probability=1.0,
+                weight=3,
+                created_by="10001",
+            )
+        ],
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_search_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = _message_event("#搜索词条 晚安", message_id=1001)
+
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            (
+                "词库搜索结果 (第 1 页):\n"
+                "#12 [approved/contains/current_group] 晚安 => 做个好梦"
+            ),
+            bot=bot,
+        )
+
+    assert search.await_args is not None
+    request = search.await_args.args[0]
+    assert request.keyword == "晚安"
+    assert request.field == "all"
+    assert not request.has_image
+
+
+@pytest.mark.asyncio
+async def test_wordbank_search_command_accepts_image_query(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    search = _patch_wordbank_search_services(
+        monkeypatch,
+        search_items=[
+            WordbankSearchItem(
+                entry_id=18,
+                status="approved",
+                trigger_text="[图片:7]",
+                trigger_mode="fullmatch",
+                trigger_canonical_image_id=7,
+                response_text="识图命中",
+                scope="current_group",
+                probability=1.0,
+                weight=3,
+                created_by="10001",
+            )
+        ],
+        image_scores=[(7, 0.95)],
+    )
+    monkeypatch.setattr(
+        wordbank_commands,
+        "fetch_image_bytes_with_retry",
+        AsyncMock(return_value=b"image-bytes"),
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_search_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = _message_event(
+            "#搜索词条 [CQ:image,url=https://example.test/query.png]",
+            message_id=1002,
+        )
+
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            (
+                "词库搜索结果 (第 1 页):\n"
+                "#18 [approved/fullmatch/current_group] [图片:7] => 识图命中"
+            ),
+            bot=bot,
+        )
+
+    assert search.await_args is not None
+    request = search.await_args.args[0]
+    assert request.has_image
+    assert request.image_scores == {7: 0.95}
 
 
 @pytest.mark.asyncio

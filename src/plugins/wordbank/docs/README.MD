@@ -1,57 +1,43 @@
 # 词库模块
 
 ## 概览
-词库模块提供低资源优先的群聊词库能力。`wordbank` 负责完整词库管理、运行时匹配、图片指纹和日志；`study` 只是快捷添加入口，内部仍写入同一套词库服务。运行时使用内存索引匹配文本、图片和事件触发词，普通文本消息路径不查询数据库；新增词条先进入 `pending` 待审状态，管理员审核通过后通过延迟重建加入索引，删除、恢复后也会刷新索引。新增待审词条会私聊超级用户发送审批通知，并记录提交回执消息，管理员可直接回复审批通知或提交回执并 @ 机器人发送 `y` / `n` 一键通过或驳回。检测到 `revoke` / `recall` 相关信号时会直接跳过匹配，不回复也不写日志；`wordbank / 词库 / wordbank.help` 可查看帮助，`wordbank add` / `wordbank.add` / `添加词条` 的引导流程里如果收到撤回信号，会发送取消提示并中止，连续输错 3 次也会终止。图片回复、图文回复和图片触发都统一走 `wordbank add` 的媒体处理逻辑，`study` 直接命令和引导流程也复用同一套解析，不再提供单独的图片子命令。为兼容旧入口，`wordbank.add`、`wordbank.search`、`wordbank.pending`、`wordbank.approve`、`wordbank.reject`、`wordbank.delete`、`wordbank.restore`、`wordbank.support`、`wordbank.vote` 和常用中文直达命令会自动转入对应新版子命令。
+词库模块提供低资源优先的群聊词库能力。`wordbank` 负责完整词库管理、运行时匹配、图片指纹和日志；`study` 只是快捷添加入口，内部仍写入同一套词库服务。运行时使用内存索引匹配文本、图片和事件触发词，普通文本消息路径不查询数据库；新增词条先进入 `pending` 待审状态，审核通过后通过延迟重建加入索引，删除、恢复后也会刷新索引。检测到 `revoke` / `recall` 相关信号时会直接跳过匹配，不回复也不写日志。普通用户常用的添加、搜索、删除、投票、恢复和被动匹配说明都放在这里；管理员审批、待审核列表和回复审批通知快捷操作已拆到单独文档 `#help 词库审核`。
 
 ## 权限与触发
 - 触发方式: 指令触发 / 被动触发
 - 权限: 普通用户
 
 ## 子功能目录
-- `add` 添加词条: 添加文本回复、图片回复或图片触发词条。
+- `add` 基础添加: 最常见的文本、图片和图文混排添加方式。
+- `add-mode` 触发模式选项: `contains` / `fullmatch` / `prefix` 的区别与示例。
+- `add-scope` 生效范围选项: `current_group` / `all_groups` / `self` / `private_only`。
+- `add-prob` 触发概率选项: `--prob` 的作用和常见配置。
+- `add-weight` 权重选项: `--weight` 如何影响候选词条和响应选择。
+- `add-role` 角色限制选项: `--role owner|admin|member`。
+- `add-call` 调用次数窗口选项: `--call window:min:max`。
 - `search` 搜索词条: 按触发词或响应词查询现有词条。
-- `pending` 待审核词条: 管理员查看当前可审核的待审词条。
-- `approve` 通过审核: 管理员通过待审词条，通过后才参与被动匹配。
-- `reject` 拒绝审核: 管理员拒绝待审词条。
 - `delete` 删除词条: 软删除指定词条并刷新索引。
 - `support` 支持删除投票: 普通用户参与当前群词条删除投票。
 - `vote` 查看删除投票: 查看当前群删除投票状态。
 - `restore` 恢复词条: 恢复已删除词条并刷新索引。
-- `reply-shortcut` 回复管理: 回复机器人自动回复后查看详情、状态摘要、删除或恢复词条。
-- `passive` 被动匹配: 文本、图片、@、戳一戳或入退群事件命中词条后自动回复文本或图片，撤回信号直接跳过。
+- `passive` 被动匹配: 文本、图片、@、戳一戳或入退群事件命中词条后自动回复。
+- `reply-shortcut` 回复管理: 回复机器人自动回复后查看详情、摘要、删除或恢复对应词条。
 
 ## 子功能详情
-### `add` 添加词条
-- 摘要: 添加文本或图片相关词条。
+### `add` 基础添加
+- 摘要: 添加文本回复、图片回复、图片触发或图文混排词条。
 - 别名: 添加, 学习, wordbank.add, 添加词条
 - 指令: `wordbank add 触发词 => 响应词`
 - 兼容指令: `wordbank.add 触发词 => 响应词`、`添加词条 触发词 => 响应词`
+- Demo: wordbank-add.png
 #### 说明
-默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。高级选项支持 `--mode`、`--scope`、`--prob`、`--weight`、`--role`、`--call`。`wordbank add 触发词 [图片]` 表示文本触发、图片回复；`wordbank add [图片] => 响应词` 表示图片触发、文本回复；`wordbank add 触发词 => 响应词 [图片]` 表示文本触发、图文混排回复。引导模式收到图片后会在后台下载并自动重试，用户可继续配置范围和高级选项；最终仍无法下载或识别时，会提示词条设置失败且不写入词库。图片入库时会计算 MD5、dHash、pHash、尺寸和文件大小，相似图片会归并到同一个 canonical image。添加完成后词条状态为 `pending`，管理员或超级用户审核通过前不会参与被动匹配；系统会向超级用户发送审批私聊并记录提交回执，回复对应消息并 @ 机器人发送 `y` / `approve` / `通过` 可一键通过，发送 `n` / `reject` / `拒绝` 可一键驳回。`study 触发词 => 响应词`、`study 触发词 [图片]` 和 `study [图片] => 响应词` 会走同一套添加逻辑；旧版 `study <a|m> <t|f> 触发词 响应词` 也会转换为新版固定 scope。引导任一步收到 `revoke` / `recall` 会发送取消提示并中止；连续输错 3 次会强制终止对话。
-#### 高级选项说明
-- `--mode contains|fullmatch|prefix`
-  控制文本触发方式。`contains` 只要消息里包含触发词即可，`fullmatch` 要求标准化后的整条消息完全相等，`prefix` 要求消息以触发词开头。
-- `--scope current_group|all_groups|self|private_only`
-  控制词条作用范围。`current_group` 仅当前群，`all_groups` 所有群可触发，`self` 仅词条创建者可触发，`private_only` 仅私聊可触发。引导模式里 scope 单独选择，因此高级选项里不能重复写 `--scope`。
-- `--prob 0.0-1.0`
-  控制命中后的触发概率。`1` 表示必中，`0.5` 表示大约一半概率触发。未显式设置时，普通触发词默认 `1`，短词默认较低概率。
-- `--weight 1-5`
-  控制同优先级候选词条被选中的权重，同时响应列表内部也会按权重选响应。数值越大，命中时越容易被选中。
-- `--role owner|admin|member`
-  限制发送者角色。常见用法是只让群主或管理员触发某些提醒。
-- `--call window:min:max`
-  增加调用次数窗口约束。`window` 是统计窗口秒数，`min` 是最少调用次数，`max` 是最多调用次数。示例 `--call 60:2:5` 表示 60 秒窗口内至少第 2 次才触发，并且超过第 5 次不再触发。
+默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。`wordbank add 触发词 [图片]` 表示文本触发、图片回复；`wordbank add [图片] => 响应词` 表示图片触发、文本回复；`wordbank add 触发词 => 响应词 [图片]` 表示文本触发、图文混排回复。引导模式收到图片后会在后台下载并自动重试，用户可继续配置范围和高级选项；最终仍无法下载或识别时，会提示词条设置失败且不写入词库。图片入库时会计算 MD5、dHash、pHash、尺寸和文件大小，相似图片会归并到同一个 canonical image。添加完成后词条状态为 `pending`，审核通过前不会参与被动匹配；具体审核流程请查看 `#help 词库审核`。引导任一步收到 `revoke` / `recall` 会发送取消提示并中止，连续输错 3 次会强制终止对话。
 #### 常用示例命令
 - `#wordbank add 晚安 => 做个好梦`
-- `#wordbank add 早 => 早安呀 --mode fullmatch --prob 0.5`
-- `#wordbank add 进来先看群公告 => 记得先看公告 --mode prefix`
-- `#wordbank add 管理员辛苦啦 => 辛苦辛苦 --role admin`
-- `#wordbank add 只在私聊说 => 收到 --scope private_only`
-- `#wordbank add 大家好 => 大家好呀 --scope all_groups --weight 5`
-- `#wordbank add 连续打卡 => 你今天很活跃 --call 3600:3:10`
-- `#wordbank add event:poke => 别戳啦`
-- `#wordbank add 晒图 [图片]`
+- `#wordbank add 晚安 [图片]`
 - `#wordbank add [图片] => 这张图我记住了`
+- `#wordbank add 晚安 => 做个好梦 [图片]`
+- `#wordbank.add`
 #### 前置条件
 当前用户所在群聊需要通过运行时检查。
 #### 完整流程
@@ -79,11 +65,7 @@ ID: 12
 概率: 1
 权重: 3
 管理员通过前不会触发。
-SYSTEM: 超级用户收到新增词条待审核通知。
-USER: [回复审批通知] @机器人 y
-BOT: 审批已完成：词条 #12 已通过。
-USER: 大家晚安啦
-BOT: 做个好梦
+SYSTEM: 审核完成前，这条词条不会参与被动匹配；审核文档请查看 #help 词库审核。
 USER: #wordbank add 是这张图喔 [图片]
 BOT: 词条已提交审核
 ID: 13
@@ -106,53 +88,168 @@ ID: 14
 概率: 1
 权重: 3
 管理员通过前不会触发。
-USER: #wordbank add 早 => 早安呀 --mode fullmatch --prob 0.5
-SYSTEM: `--mode fullmatch` 要求整句完全匹配；`--prob 0.5` 表示命中后只有约一半概率回复。
-BOT: 词条已提交审核
-ID: 15
-状态: pending
-触发: 早
-响应: 早安呀
-模式: fullmatch
-范围: current_group
-概率: 0.5
-权重: 3
-管理员通过前不会触发。
-USER: #wordbank add 管理员集合 => 管理员请看这里 --role admin --weight 5
-SYSTEM: `--role admin` 只允许管理员触发；`--weight 5` 表示同优先级下更容易被选中。
-BOT: 词条已提交审核
-ID: 16
-状态: pending
-触发: 管理员集合
-响应: 管理员请看这里
-模式: contains
-范围: current_group
-概率: 1
-权重: 5
-管理员通过前不会触发。
-USER: #wordbank add 连续打卡 => 你今天很活跃 --call 3600:3:10
-SYSTEM: `--call 3600:3:10` 表示 1 小时内至少第 3 次才触发，超过第 10 次不再触发。
-BOT: 词条已提交审核
-ID: 17
-状态: pending
-触发: 连续打卡
-响应: 你今天很活跃
-模式: contains
-范围: current_group
-概率: 1
-权重: 3
-管理员通过前不会触发。
 ```
 #### 失败情况
 触发词或响应词为空、图片下载失败、图片无法识别、规则字段冲突、概率和权重越界时会返回当前群语言的原因；引导中若检测到 `revoke` / `recall` 会发送取消提示并中止，连续输错 3 次会强制终止对话。
 
-### `search` 搜索词条
-- 摘要: 查询词库中的触发词和响应词。
-- 别名: 查询, 搜索, wordbank.search, 搜索词条
-- 指令: `wordbank search [关键词] [--page 页码] [--limit 每页数量]`
-- 兼容指令: `wordbank.search [关键词]`、`搜索词条 [关键词]`
+### `add-mode` 触发模式选项
+- 摘要: 选择 `contains`、`fullmatch`、`prefix` 触发模式。
+- 别名: mode, 触发模式, 匹配模式
+- 指令: `wordbank add 触发词 => 响应词 --mode contains|fullmatch|prefix`
+- Demo: wordbank-add-mode.png
 #### 说明
-搜索按需查询数据库，默认每页 10 条，最多每页 20 条。分页只读取当前页和一条额外记录判断是否还有下一页，不参与被动消息热路径。
+`contains` 只要消息里包含触发词即可；`fullmatch` 要求标准化后的整条消息完全相等；`prefix` 要求消息以触发词开头。短词默认会偏向 `fullmatch`，避免误触。
+#### 常用示例命令
+- `#wordbank add 晚安 => 做个好梦 --mode contains`
+- `#wordbank add 早 => 早安呀 --mode fullmatch`
+- `#wordbank add 进来先看 => 先看公告 --mode prefix`
+#### 前置条件
+需要在 `wordbank add` 或引导高级选项里设置。
+#### 完整流程
+```demo
+USER: #wordbank add 早 => 早安呀 --mode fullmatch
+SYSTEM: `fullmatch` 要求标准化后的整条消息完全等于“早”时才会命中。
+USER: 早
+BOT: 早安呀
+USER: 早啊
+SYSTEM: 因为不是完整匹配，所以这次不会触发。
+```
+#### 失败情况
+模式拼写错误时会返回“不支持的触发模式”。
+
+### `add-scope` 生效范围选项
+- 摘要: 选择词条在哪些场景和对象上生效。
+- 别名: scope, 范围, 生效范围
+- 指令: `wordbank add 触发词 => 响应词 --scope current_group|all_groups|self|private_only`
+- Demo: wordbank-add-scope.png
+#### 说明
+`current_group` 仅当前群有效，`all_groups` 所有群有效，`self` 仅词条创建者可触发，`private_only` 仅私聊可触发。引导模式里 scope 已单独询问，因此高级选项里不能重复设置 `--scope`。
+#### 常用示例命令
+- `#wordbank add 大家好 => 大家好呀 --scope current_group`
+- `#wordbank add 早上好 => 早安 --scope all_groups`
+- `#wordbank add 个人提醒 => 别忘记喝水 --scope self`
+- `#wordbank add 私聊一下 => 收到 --scope private_only`
+#### 前置条件
+需要明确自己想限制的是群范围、私聊范围还是个人范围。
+#### 完整流程
+```demo
+USER: #wordbank add 私聊一下 => 收到 --scope private_only
+SYSTEM: 这条词条只会在私聊里生效，群聊消息不会命中。
+USER: [私聊机器人] 私聊一下
+BOT: 收到
+USER: [群聊里发送] 私聊一下
+SYSTEM: 因为 scope=private_only，所以群聊不触发。
+```
+#### 失败情况
+scope 拼写错误或同时设置多个 scope 时会返回明确说明。
+
+### `add-prob` 触发概率选项
+- 摘要: 控制命中后实际回复的概率。
+- 别名: prob, 概率, 触发概率
+- 指令: `wordbank add 触发词 => 响应词 --prob 0.0-1.0`
+- Demo: wordbank-add-prob.png
+#### 说明
+`--prob 1` 表示必中，`--prob 0.5` 表示大约一半概率触发。这个设置适合给高频短词降噪。
+#### 常用示例命令
+- `#wordbank add 早 => 早安呀 --prob 0.5`
+- `#wordbank add 哈哈 => 笑死 --prob 0.2`
+- `#wordbank add event:poke => 别戳啦 --prob 1`
+#### 前置条件
+建议只在容易高频误触的词条上使用。
+#### 完整流程
+```demo
+USER: #wordbank add 早 => 早安呀 --prob 0.5
+SYSTEM: 命中后只有约一半概率回复，适合短词降噪。
+USER: 早
+BOT: 早安呀
+USER: 早
+SYSTEM: 这次概率未命中，因此不回复。
+```
+#### 失败情况
+概率超出 0 到 1 范围，或不是数字时会返回明确说明。
+
+### `add-weight` 权重选项
+- 摘要: 控制多条候选命中时被选中的倾向。
+- 别名: weight, 权重
+- 指令: `wordbank add 触发词 => 响应词 --weight 1-5`
+- Demo: wordbank-add-weight.png
+#### 说明
+多个候选词条同时满足条件时，会先比较 scope 优先级，再按词条权重选中；进入某条词条后，如果它有多条响应，响应自身也会按权重选择。
+#### 常用示例命令
+- `#wordbank add 晚安 => 做个好梦 --weight 5`
+- `#wordbank add 晚安 => 晚安晚安 --weight 1`
+- `#wordbank add 管理员集合 => 管理员请看这里 --weight 5`
+#### 前置条件
+适合多条同类词条共存时使用。
+#### 完整流程
+```demo
+USER: #wordbank add 晚安 => 做个好梦 --weight 5
+USER: #wordbank add 晚安 => 晚安晚安 --weight 1
+SYSTEM: 两条词条都命中“晚安”时，权重 5 的那条更容易被选中。
+```
+#### 失败情况
+权重不是 1 到 5 的整数时会返回明确说明。
+
+### `add-role` 角色限制选项
+- 摘要: 限制只有特定群角色才能触发词条。
+- 别名: role, roles, 角色限制
+- 指令: `wordbank add 触发词 => 响应词 --role owner|admin|member`
+- Demo: wordbank-add-role.png
+#### 说明
+常见用法是把某些提醒限定为管理员或群主专用。`member` 表示只允许普通成员触发；不设置则默认不限角色。
+#### 常用示例命令
+- `#wordbank add 管理员集合 => 管理员请看这里 --role admin`
+- `#wordbank add 群主确认 => 已收到 --role owner`
+- `#wordbank add 萌新报道 => 欢迎加入 --role member`
+#### 前置条件
+只在群聊里有实际区分意义。
+#### 完整流程
+```demo
+USER: #wordbank add 管理员集合 => 管理员请看这里 --role admin
+SYSTEM: 只有管理员身份发送这句话时才会命中。
+USER: [普通成员] 管理员集合
+SYSTEM: 因为 role 不满足，所以这次不会触发。
+USER: [群管理员] 管理员集合
+BOT: 管理员请看这里
+```
+#### 失败情况
+角色值不是 `owner`、`admin`、`member` 时会返回明确说明。
+
+### `add-call` 调用次数窗口选项
+- 摘要: 按时间窗口限制触发次数区间。
+- 别名: call, 调用次数窗口
+- 指令: `wordbank add 触发词 => 响应词 --call window:min:max`
+- Demo: wordbank-add-call.png
+#### 说明
+`window` 是统计窗口秒数，`min` 是最少调用次数，`max` 是最多调用次数。示例 `--call 3600:3:10` 表示 1 小时窗口内至少第 3 次才触发，超过第 10 次不再触发。
+#### 常用示例命令
+- `#wordbank add 连续打卡 => 你今天很活跃 --call 3600:3:10`
+- `#wordbank add 又来了 => 欢迎回来 --call 60:2:5`
+- `#wordbank add 高频词 => 稍微歇一会儿 --call 300:5:0`
+#### 前置条件
+适合防止一条高频词条每次都回复。
+#### 完整流程
+```demo
+USER: #wordbank add 连续打卡 => 你今天很活跃 --call 3600:3:10
+SYSTEM: 1 小时内前两次不会触发，从第 3 次开始可能触发，超过第 10 次后又会停止。
+USER: 连续打卡
+SYSTEM: 第 1 次，未达到最小调用次数。
+USER: 连续打卡
+SYSTEM: 第 2 次，未达到最小调用次数。
+USER: 连续打卡
+BOT: 你今天很活跃
+```
+#### 失败情况
+`window:min:max` 结构错误、字段不是整数、窗口小于等于 0，或 `min > max` 时会返回明确说明。
+
+### `search` 搜索词条
+- 摘要: 统一搜索文本、图片或图文混排查询。
+- 别名: 查询, 搜索, wordbank.search, 搜索词条
+- 指令: `wordbank search [关键词] [图片] [--field all|trigger|response] [--creator 账号] [--page 页码] [--limit 每页数量]`
+- 兼容指令: `wordbank.search [关键词]`、`搜索词条 [关键词]`
+- Demo: wordbank-search.png
+#### 说明
+搜索按需查询数据库，默认每页 10 条，最多每页 20 条。默认 `--field all`，同时检索触发词和响应词；`--field trigger` 只看触发词，`--field response` 只看响应词。发送图片时会按视觉相似度检索图片触发词和图片回复，不依赖严格 MD5；文本和图片同时提供时会合并召回并按综合关联度排序。`--creator` 会严格匹配创建者账号，单独使用时可列出该账号创建的词条。分页只读取当前页和一条额外记录判断是否还有下一页，不参与被动消息热路径。
 #### 前置条件
 无。
 #### 完整流程
@@ -161,70 +258,19 @@ USER: #wordbank search 晚安 --page 1 --limit 10
 BOT: 词库搜索结果 (第 1 页):
 #12 [approved/contains/current_group] 晚安 => 做个好梦
 还有更多结果，可使用 --page 2 --limit 10 查看下一页。
+USER: #搜索词条 [图片]
+BOT: 词库搜索结果 (第 1 页):
+#18 [approved/fullmatch/current_group] [图片:7] => 识图命中
 ```
 #### 失败情况
-没有命中时返回空结果说明；页码或每页数量非法时返回当前群语言的原因。
-
-### `pending` 待审核词条
-- 摘要: 管理员查看待审核词条。
-- 别名: 待审, 待审核, review, wordbank.pending, 待审核词条
-- 指令: `wordbank pending [关键词] [--page 页码] [--limit 每页数量]`
-- 权限: 群管理员
-- 兼容指令: `wordbank.pending [关键词]`、`待审核词条 [关键词]`
-#### 说明
-当前群管理员或群主只能查看当前群提交的待审核词条；超级用户可查看全部待审核词条。分页规则与 `search` 一致。
-#### 前置条件
-需要当前群管理员/群主或超级用户权限。
-#### 完整流程
-```demo
-USER: #wordbank pending 晚安
-BOT: 待审核词条 (第 1 页):
-#12 [contains/current_group] 晚安 => 做个好梦  提交者: 10001
-```
-#### 失败情况
-无审核权限时返回权限提示；没有待审核词条时返回空结果说明。
-
-### `approve` 通过审核
-- 摘要: 通过待审核词条。
-- 别名: pass, 通过, 审核通过, wordbank.approve, 通过词条, 审核通过词条
-- 指令: `wordbank approve <id>`
-- 权限: 群管理员
-- 兼容指令: `wordbank.approve <id>`、`通过词条 <id>`、`审核通过词条 <id>`
-#### 说明
-通过后词条状态改为 `approved`，随后通过延迟重建加入运行时索引并开始参与被动匹配。
-#### 前置条件
-需要当前群管理员/群主或超级用户权限；群管理员只能审核当前群提交的词条。
-#### 完整流程
-```demo
-USER: #wordbank approve 12
-BOT: 词条 #12 已通过审核，稍后会参与被动匹配。
-```
-#### 失败情况
-ID 非数字、词条不存在、词条不是待审核状态或当前用户没有审核权限时返回明确说明。
-
-### `reject` 拒绝审核
-- 摘要: 拒绝待审核词条。
-- 别名: deny, 拒绝, 驳回, wordbank.reject, 拒绝词条, 驳回词条
-- 指令: `wordbank reject <id>`
-- 权限: 群管理员
-- 兼容指令: `wordbank.reject <id>`、`拒绝词条 <id>`、`驳回词条 <id>`
-#### 说明
-拒绝后词条状态改为 `rejected`，不会参与被动匹配。
-#### 前置条件
-需要当前群管理员/群主或超级用户权限；群管理员只能审核当前群提交的词条。
-#### 完整流程
-```demo
-USER: #wordbank reject 13
-BOT: 词条 #13 已拒绝，不会参与被动匹配。
-```
-#### 失败情况
-ID 非数字、词条不存在、词条不是待审核状态或当前用户没有审核权限时返回明确说明。
+没有命中时返回空结果说明；页码、每页数量或 `--field` 非法时返回当前群语言的原因。
 
 ### `delete` 删除词条
 - 摘要: 软删除指定词条。
 - 别名: 删除, remove, wordbank.delete, wordbank.del, 删除词条
 - 指令: `wordbank delete <id>`
 - 兼容指令: `wordbank.delete <id>`、`wordbank.del <id>`、`删除词条 <id>`
+- Demo: wordbank-delete.png
 #### 说明
 删除后词条不会参与匹配，数据仍保留以便恢复。创建者、当前群管理员或超级用户可直接删除；普通用户删除当前群可见但不属于自己的已通过词条时，会自动发起删除投票并计入一票。投票达标后词条会被软删除并通过延迟重建移出运行时索引。
 #### 前置条件
@@ -248,6 +294,7 @@ ID 非数字、词条不存在或当前用户没有操作权限时返回明确�
 - 别名: 支持, 支持删除, wordbank.support
 - 指令: `wordbank support <vote_id>`
 - 兼容指令: `wordbank.support <vote_id>`、`支持删除 <vote_id>`
+- Demo: wordbank-support.png
 #### 说明
 同一用户对同一投票只计一票。投票达到默认 3 票后，目标词条会立即软删除并刷新运行时索引。已结束投票不会重复删除词条。
 #### 前置条件
@@ -270,6 +317,7 @@ BOT: 删除投票 #3 已达标，词条 #18 已删除。
 - 别名: 投票, 查看投票状态, 查看投票结果, wordbank.vote
 - 指令: `wordbank vote <vote_id>`
 - 兼容指令: `wordbank.vote <vote_id>`、`查看投票状态 <vote_id>`
+- Demo: wordbank-vote.png
 #### 说明
 用于查询旧版投票删除流程的进度，显示投票 ID、目标词条、状态和支持票数。
 #### 前置条件
@@ -290,6 +338,7 @@ BOT: 删除投票 #3
 - 别名: 恢复, wordbank.restore, 恢复词条
 - 指令: `wordbank restore <id>`
 - 兼容指令: `wordbank.restore <id>`、`恢复词条 <id>`
+- Demo: wordbank-restore.png
 #### 说明
 恢复后通过延迟重建重新加入运行时索引。
 #### 前置条件
@@ -308,6 +357,7 @@ ID 非数字、词条不存在或当前用户没有操作权限时返回明确�
 - 摘要: 普通消息命中词条后自动回复。
 - 别名: 被动, 自动回复
 - 指令: 无
+- Demo: wordbank-passive.png
 #### 说明
 文本先走内存索引匹配，图片只在消息包含图片时下载并比对本地热缓存。响应可以是纯文本，也可以是 `wordbank add` 保存的图片或图文混排。@、戳一戳、入群和退群会被转换成固定事件触发词后复用同一套内存索引与规则判断。检测到事件名、`notice_type`、`sub_type`、消息段类型或原始消息里包含 `revoke` / `recall` 时直接跳过。
 
@@ -330,8 +380,7 @@ USER: 大家晚安啦
 BOT: 做个好梦
 USER: #wordbank add event:poke => 别戳啦
 BOT: 词条已提交审核
-USER: #wordbank approve 20
-BOT: 词条 #20 已通过审核，稍后会参与被动匹配。
+SYSTEM: 审核完成后，这条事件词条才会加入运行时索引。
 USER: [戳一戳机器人]
 BOT: 别戳啦
 SYSTEM: 检测到 group_recall / message_revoke / recall 片段时直接跳过，不回复也不写匹配日志。
@@ -340,12 +389,13 @@ SYSTEM: 检测到 group_recall / message_revoke / recall 片段时直接跳过�
 没有命中、规则不通过、概率未命中、图片下载失败或检测到撤回信号时不回复。
 
 ### `reply-shortcut` 回复管理
-- 摘要: 回复机器人词库自动回复后，用旧式短命令管理对应词条。
-- 别名: info, 详情, history, 审批历史, del, delete, 删除, rst, restore, 恢复
+- 摘要: 回复机器人词库自动回复后，用短命令管理对应词条。
+- 别名: info, 详情, history, 摘要, del, delete, 删除, rst, restore, 恢复
 - 指令: 回复机器人词库自动回复并发送 `info` / `history` / `del` / `rst`
-- 兼容指令: `详情`、`审批历史`、`删除`、`恢复`、`del response`、`delete trigger`、`restore response`
+- 兼容指令: `详情`、`history`、`删除`、`恢复`
+- Demo: wordbank-reply-shortcut.png
 #### 说明
-词库自动回复发送成功后会记录该回复消息 ID 与命中的词条、触发词、响应词的关系。之后回复这条机器人消息并 @ 机器人发送短命令即可管理词条。`info` / `详情` 会查看词条详情；`history` / `审批历史` 在新版模型中返回状态摘要，普通添加先进入 `pending`，管理员审核通过后变为 `approved`；`del` / `delete` / `删除` 复用新版按词条删除权限和投票删除规则；`rst` / `restore` / `恢复` 复用新版恢复权限。
+词库自动回复发送成功后会记录该回复消息 ID 与命中的词条、触发词、响应词的关系。之后回复这条机器人消息并 @ 机器人发送短命令即可管理词条。`info` / `详情` 会查看词条详情；`history` 会查看当前状态摘要；`del` / `delete` / `删除` 复用新版按词条删除权限和投票删除规则；`rst` / `restore` / `恢复` 复用新版恢复权限。审批通知 / 提交回执的 `y` / `n` 快捷处理不在这里，请查看 `#help 词库审核`。
 #### 前置条件
 必须回复一条由词库被动匹配发出的机器人消息；普通用户只能直接操作自己创建的词条，群管理员可操作当前群词条，超级用户可操作任意词条。
 #### 完整流程
