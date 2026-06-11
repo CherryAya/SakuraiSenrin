@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from pathlib import Path
 import sys
 import types
@@ -5,6 +6,7 @@ from types import SimpleNamespace
 
 from nonebug import NONEBOT_INIT_KWARGS
 import pytest
+import pytest_asyncio
 
 # Prevent importing plugin bootstrap modules during test collection.
 # We only test submodules (handlers/services/repo), not NoneBot side effects.
@@ -99,3 +101,26 @@ def _disable_real_plugin_loading(
 ) -> None:
     """Avoid loading unrelated plugins when importing modules under test."""
     monkeypatch.setenv("ENVIRONMENT", "test")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _use_test_db_root(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[Path]:
+    from src.lib.db import connectors as connectors_module
+
+    root = tmp_path_factory.mktemp("db-root")
+    original_root = connectors_module.GLOBAL_DB_ROOT
+    connectors_module.GLOBAL_DB_ROOT = root
+    try:
+        yield root
+    finally:
+        connectors_module.GLOBAL_DB_ROOT = original_root
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def _init_test_databases(_use_test_db_root: Path) -> None:
+    from src.services.db import init_db
+
+    _ = _use_test_db_root
+    await init_db()
