@@ -1,9 +1,11 @@
+import asyncio
 from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
 import pytest
 
+from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import WordbankSearchRequest
 from src.plugins.wordbank.message_model import shape_from_image, shape_from_text
@@ -64,6 +66,8 @@ async def test_same_trigger_appends_response_to_existing_group(
 
     assert first.trigger_group_id == second.trigger_group_id
     assert first.response_item_id != second.response_item_id
+    assert first.created_group is True
+    assert second.created_group is False
     assert group_detail is not None
     assert len(group_detail.responses) == 2
 
@@ -206,6 +210,47 @@ async def test_search_groups_multiple_responses_into_single_card(
 
 
 @pytest.mark.asyncio
+async def test_creator_filter_matches_group_creator_strictly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+
+    first = await service.add_message_entry(
+        trigger_shape=shape_from_text("创建者测试"),
+        response_shape=shape_from_text("A"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    second = await service.add_message_entry(
+        trigger_shape=shape_from_text("另一个触发"),
+        response_shape=shape_from_text("B"),
+        group_id="20001",
+        user_id="10002",
+        is_group=True,
+    )
+    for response_item_id in (first.response_item_id, second.response_item_id):
+        await service.approve_entry(
+            response_item_id,
+            actor_user_id="10001",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+
+    page = await service.search_page(
+        WordbankSearchRequest(
+            keyword="测试",
+            field="trigger",
+            creator_id="10001",
+        )
+    )
+
+    assert [item.trigger_group_id for item in page.items] == [first.trigger_group_id]
+
+
+@pytest.mark.asyncio
 async def test_search_accepts_response_image_scores_and_marks_match_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -243,6 +288,108 @@ async def test_search_accepts_response_image_scores_and_marks_match_source(
     assert len(items) == 1
     assert items[0].trigger_group_id == created.trigger_group_id
     assert items[0].matched_by == "image:response"
+
+
+@pytest.mark.asyncio
+async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+    general = await service.add_message_entry(
+        trigger_shape=shape_from_text("规则测试"),
+        response_shape=shape_from_text("普通响应"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={"roles": "member"},
+    )
+    gated = await service.add_message_entry(
+        trigger_shape=shape_from_text("规则测试"),
+        response_shape=shape_from_text("管理员且调用过"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "roles": "admin",
+            "call_count": {"window_seconds": 60, "min": 1, "max": 9},
+        },
+    )
+    for response_item_id in (general.response_item_id, gated.response_item_id):
+        await service.approve_entry(
+            response_item_id,
+            actor_user_id="10001",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+    await service.rebuild_index()
+
+    member_selected = await service.match_message(
+        shape_from_text("规则测试"),
+        context=RuleContext(
+            group_id="20001",
+            user_id="10001",
+            message_type="group",
+            sender_role="member",
+        ),
+    )
+    service._call_history[gated.response_item_id].append(get_current_time())
+    admin_selected = await service.match_message(
+        shape_from_text("规则测试"),
+        context=RuleContext(
+            group_id="20001",
+            user_id="10002",
+            message_type="group",
+            sender_role="admin",
+        ),
+    )
+
+    assert member_selected is not None
+    assert member_selected.response.id == general.response_item_id
+    assert admin_selected is not None
+    assert admin_selected.response.id == gated.response_item_id
+
+
+@pytest.mark.asyncio
+async def test_runtime_incremental_refresh_only_touches_dirty_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+    first = await service.add_message_entry(
+        trigger_shape=shape_from_text("增量一"),
+        response_shape=shape_from_text("A"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    second = await service.add_message_entry(
+        trigger_shape=shape_from_text("增量二"),
+        response_shape=shape_from_text("B"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    called: list[int] = []
+    service._dirty_group_ids.clear()
+
+    async def _spy_refresh(trigger_group_id: int) -> None:
+        called.append(trigger_group_id)
+
+    monkeypatch.setattr(service, "_refresh_runtime_group", _spy_refresh)
+
+    await service.approve_entry(
+        first.response_item_id,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    await asyncio.sleep(0.05)
+
+    assert called == [first.trigger_group_id]
+    assert second.trigger_group_id not in called
 
 
 @pytest.mark.asyncio
