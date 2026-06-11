@@ -260,4 +260,81 @@ async def test_search_page_lists_recent_entries_without_query(
     page = await service.search_page(WordbankSearchRequest())
 
     assert page.total_count == 2
-    assert [item.entry_id for item in page.items] == [second.entry_id, first.entry_id]
+
+
+@pytest.mark.asyncio
+async def test_repository_import_message_entry_preserves_status_and_timestamps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+
+    entry = await repository.import_message_entry(
+        trigger_shape=shape_from_text("旧版触发"),
+        response_shape=shape_from_text("旧版响应"),
+        rule={},
+        scope="all_groups",
+        priority=10,
+        probability=0.75,
+        weight=4,
+        group_id="",
+        created_by="10001",
+        status="approved",
+        enabled=1,
+        approved_by="",
+        deleted_at=0,
+        created_at=1700000000,
+        updated_at=1700001234,
+        trigger_mode="fullmatch",
+    )
+    await repository.rebuild_search_index()
+    page = await repository.search_page(
+        WordbankSearchRequest(keyword="旧版", field="all"),
+    )
+
+    assert entry.status == "approved"
+    assert entry.probability == 0.75
+    assert entry.triggers[0].trigger_mode == "fullmatch"
+    assert [item.entry_id for item in page.items] == [entry.id]
+
+
+@pytest.mark.asyncio
+async def test_repository_reset_all_data_clears_entries_and_images(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+    service = WordbankMediaService(repository, media_root=tmp_path / "media")
+
+    await service.ingest_image_bytes(_png((12, 34, 56)))
+    await repository.import_message_entry(
+        trigger_shape=shape_from_text("需要清空"),
+        response_shape=shape_from_text("清空"),
+        rule={},
+        scope="all_groups",
+        priority=10,
+        probability=1.0,
+        weight=3,
+        group_id="",
+        created_by="10001",
+        status="approved",
+        enabled=1,
+        approved_by="",
+        deleted_at=0,
+        created_at=1700000000,
+        updated_at=1700000000,
+        trigger_mode="fullmatch",
+    )
+    await repository.rebuild_search_index()
+    await repository.reset_all_data(include_images=True)
+
+    assert await repository.list_enabled_entries() == []
+    assert await repository.list_images() == []

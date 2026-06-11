@@ -249,10 +249,10 @@ def _build_stored_media(image: Image.Image, data: bytes) -> StoredMedia:
     if _is_animated(image):
         animated_webp = _encode_animated_webp(image)
         if animated_webp is None:
-            return StoredMedia(
-                data=data,
-                extension=".gif",
-                content_type=EXTENSION_TO_CONTENT_TYPE[".gif"],
+            raise MediaError(
+                "无法转码为 animated webp",
+                key="wordbank.error.image_prepare_failed",
+                reason="无法转码为 animated webp",
             )
         return StoredMedia(
             data=animated_webp,

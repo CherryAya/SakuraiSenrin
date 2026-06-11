@@ -14,6 +14,7 @@ from src.plugins.wordbank.database.types import (
 from src.plugins.wordbank.services import media as media_module
 from src.plugins.wordbank.services.media import (
     LocalWordbankMediaStorage,
+    MediaError,
     ObjectStorageWordbankMediaStorage,
     R2WordbankMediaStorage,
     WordbankMediaService,
@@ -258,7 +259,7 @@ async def test_media_ingest_preserves_animation_bytes_for_gif(
     stored_path = Path(image.storage_path)
     stored_bytes = await asyncio.to_thread(stored_path.read_bytes)
 
-    assert stored_path.suffix in {".webp", ".gif"}
+    assert stored_path.suffix == ".webp"
     with Image.open(BytesIO(stored_bytes)) as stored_image:
         assert getattr(stored_image, "n_frames", 1) > 1
 
@@ -316,33 +317,18 @@ async def test_r2_media_storage_saves_gif_as_animated_media(tmp_path: Path) -> N
 
     assert loaded is not None
     assert loaded == storage.objects[key]
-    assert Path(key).suffix in {".webp", ".gif"}
-    assert storage.content_types[key] in {"image/webp", "image/gif"}
+    assert Path(key).suffix == ".webp"
+    assert storage.content_types[key] == "image/webp"
     with Image.open(BytesIO(loaded)) as stored_image:
         assert getattr(stored_image, "n_frames", 1) > 1
 
 
-async def test_r2_media_storage_falls_back_to_original_gif_when_webp_encode_fails(
-    tmp_path: Path,
+def test_prepare_image_bytes_rejects_gif_when_animated_webp_encode_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    storage = _ObjectStorage()
-    media_storage = R2WordbankMediaStorage(
-        storage,
-        fallback=LocalWordbankMediaStorage(tmp_path),
-    )
     data = _gif([(255, 0, 255), (0, 255, 255)])
-    prepared = prepare_image_bytes(data)
 
     monkeypatch.setattr(media_module, "_encode_animated_webp", lambda _image: None)
 
-    storage_path = await media_storage.save_image(
-        prepare_image_bytes(data),
-        md5_hex=prepared.fingerprint.md5,
-        keep_original=False,
-    )
-    key = storage_path.removeprefix("r2://bucket/")
-
-    assert storage_path == f"r2://bucket/wordbank/media/{prepared.fingerprint.md5}.gif"
-    assert storage.objects[key] == data
-    assert storage.content_types[key] == "image/gif"
+    with pytest.raises(MediaError, match="animated webp"):
+        prepare_image_bytes(data)

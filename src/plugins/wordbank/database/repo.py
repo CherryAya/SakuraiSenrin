@@ -32,6 +32,7 @@ from .ops import (
 from .tables import (
     WordbankApprovalMessage,
     WordbankDeleteVote,
+    WordbankDeleteVoteSupport,
     WordbankEntry,
     WordbankImage,
     WordbankLog,
@@ -394,6 +395,112 @@ class WordbankRepository:
                 triggers=(self._to_trigger_record(trigger),),
                 responses=(self._to_response_record(response),),
             )
+
+    async def import_message_entry(
+        self,
+        *,
+        trigger_shape: MessageShape,
+        response_shape: MessageShape,
+        rule: dict,
+        scope: str,
+        priority: int,
+        probability: float,
+        weight: int,
+        group_id: str,
+        created_by: str,
+        status: str,
+        enabled: int,
+        approved_by: str,
+        deleted_at: int,
+        created_at: int,
+        updated_at: int,
+        trigger_mode: str = "fullmatch",
+    ) -> WordbankEntryRecord:
+        trigger_fingerprint = fingerprint_shape(trigger_shape)
+        response_fingerprint = fingerprint_shape(response_shape)
+        async with wordbank_main_db.write_session() as session:
+            entry = WordbankEntry(
+                status=status,
+                enabled=enabled,
+                scope=scope,
+                priority=priority,
+                probability=probability,
+                weight=weight,
+                rule=rule,
+                group_id=group_id,
+                created_by=created_by,
+                approved_by=approved_by,
+                deleted_at=deleted_at,
+                created_at=created_at,
+                updated_at=updated_at,
+            )
+            session.add(entry)
+            await session.flush()
+
+            trigger = WordbankTrigger(
+                entry_id=entry.id,
+                trigger_text=trigger_fingerprint.summary_text,
+                message_json=shape_to_payload(trigger_shape),
+                exact_md5=trigger_fingerprint.exact_md5,
+                structure_key=trigger_fingerprint.structure_key,
+                search_text=trigger_fingerprint.search_text,
+                search_tokens=trigger_fingerprint.search_tokens,
+                image_keys=trigger_fingerprint.image_keys,
+                trigger_mode=trigger_mode,
+                created_at=created_at,
+                updated_at=updated_at,
+            )
+            response = WordbankResponse(
+                entry_id=entry.id,
+                text=response_fingerprint.summary_text,
+                message_json=shape_to_payload(response_shape),
+                exact_md5=response_fingerprint.exact_md5,
+                structure_key=response_fingerprint.structure_key,
+                search_text=response_fingerprint.search_text,
+                search_tokens=response_fingerprint.search_tokens,
+                image_keys=response_fingerprint.image_keys,
+                weight=weight,
+                created_at=created_at,
+                updated_at=updated_at,
+            )
+            session.add_all([trigger, response])
+            await session.flush()
+
+            return WordbankEntryRecord(
+                id=entry.id,
+                status=entry.status,
+                enabled=entry.enabled,
+                scope=entry.scope,
+                priority=entry.priority,
+                probability=entry.probability,
+                weight=entry.weight,
+                rule=dict(entry.rule or {}),
+                group_id=entry.group_id,
+                created_by=entry.created_by,
+                deleted_at=entry.deleted_at,
+                triggers=(self._to_trigger_record(trigger),),
+                responses=(self._to_response_record(response),),
+            )
+
+    async def reset_all_data(
+        self,
+        *,
+        include_images: bool = True,
+    ) -> None:
+        async with wordbank_main_db.write_session() as session:
+            await session.execute(delete(WordbankApprovalMessage))
+            await session.execute(delete(WordbankResponseMessage))
+            await session.execute(delete(WordbankDeleteVoteSupport))
+            await session.execute(delete(WordbankDeleteVote))
+            await session.execute(delete(WordbankSearchImageMap))
+            await session.execute(delete(WordbankSearchDocument))
+            await session.execute(text("DELETE FROM wordbank_search_trigger_fts"))
+            await session.execute(text("DELETE FROM wordbank_search_response_fts"))
+            await session.execute(delete(WordbankResponse))
+            await session.execute(delete(WordbankTrigger))
+            await session.execute(delete(WordbankEntry))
+            if include_images:
+                await session.execute(delete(WordbankImage))
 
     async def list_enabled_entries(self) -> list[WordbankEntryRecord]:
         async with wordbank_main_db.read_session() as session:
