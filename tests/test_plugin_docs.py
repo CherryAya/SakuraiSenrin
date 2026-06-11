@@ -8,7 +8,9 @@ import scripts.build_docs as plugin_docs_script
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.plugin_docs import (
+    DemoImageRenderer,
     DocsRenderContext,
+    InlineTextSpan,
     audit_demo_layout,
     build_readme_docs,
     load_plugin_doc_bundle,
@@ -138,6 +140,24 @@ def test_split_inline_text_spans_marks_backtick_segments_as_code() -> None:
         ("#help 词库审核", True),
         (" 查看详情", False),
     ]
+
+
+def test_demo_image_renderer_fit_inline_spans_keeps_code_spans_without_backticks() -> (
+    None
+):
+    renderer = DemoImageRenderer()
+
+    fitted = renderer._fit_inline_spans(  # pyright: ignore[reportPrivateUsage]
+        (
+            InlineTextSpan("指令示例: ", code=False),
+            InlineTextSpan("#help 词库审核", code=True),
+        ),
+        renderer.meta_font,  # pyright: ignore[reportPrivateUsage]
+        120,
+    )
+
+    assert "".join(span.text for span in fitted).endswith("...")
+    assert all("`" not in span.text for span in fitted)
 
 
 def test_build_readme_docs_renders_feature_text_and_demo_image(tmp_path: Path) -> None:

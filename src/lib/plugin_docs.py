@@ -997,11 +997,8 @@ class DemoImageRenderer:
                 draw,
                 x=self.HEADER_LEFT,
                 y=self.HEADER_TRIGGER_TOP,
-                text=self._fit_inline_text(
-                    f"指令示例: {feature_trigger}",
-                    self.meta_font,
-                    max_width=760,
-                ),
+                text=f"指令示例: {feature_trigger}",
+                max_width=760,
                 fill="#FFF7FA",
                 text_fill=self.MUTED,
                 font=self.meta_font,
@@ -1343,20 +1340,21 @@ class DemoImageRenderer:
         x: int,
         y: int,
         text: str,
+        max_width: int,
         fill: str,
         text_fill: str,
         font: Any,
         min_width: int = 0,
     ) -> None:
+        line = self._fit_inline_spans(split_inline_text_spans(text), font, max_width)
         rect = self._inline_chip_rect(
             x=x,
             y=y,
-            text=text,
+            line=line,
             font=font,
             min_width=min_width,
         )
         draw.rounded_rectangle(rect, radius=15, fill=fill)
-        line = split_inline_text_spans(text)
         line_width = self._inline_line_width(line, font)
         line_height = self._font_line_height(font)
         draw_x = rect[0] + (rect[2] - rect[0] - line_width) / 2
@@ -1450,10 +1448,10 @@ class DemoImageRenderer:
             trigger_rect = self._inline_chip_rect(
                 x=self.HEADER_LEFT,
                 y=self.HEADER_TRIGGER_TOP,
-                text=self._fit_inline_text(
-                    f"指令示例: {feature_trigger}",
+                line=self._fit_inline_spans(
+                    split_inline_text_spans(f"指令示例: {feature_trigger}"),
                     self.meta_font,
-                    max_width=760,
+                    760,
                 ),
                 font=self.meta_font,
                 min_width=300,
@@ -1697,25 +1695,6 @@ class DemoImageRenderer:
                 return candidate
         return ellipsis
 
-    def _fit_inline_text(
-        self,
-        text: str,
-        font: Any,
-        *,
-        max_width: int,
-    ) -> str:
-        if self._inline_text_width(text, font) <= max_width:
-            return text
-
-        ellipsis = "..."
-        current = text
-        while current:
-            current = current[:-1]
-            candidate = current.rstrip() + ellipsis
-            if self._inline_text_width(candidate, font) <= max_width:
-                return candidate
-        return ellipsis
-
     def _normalize_demo_text(self, text: str) -> str:
         return text
 
@@ -1897,9 +1876,6 @@ class DemoImageRenderer:
     def _text_width(self, text: str, font: Any) -> int:
         return self._text_size(text, font)[2]
 
-    def _inline_text_width(self, text: str, font: Any) -> int:
-        return self._inline_line_width(split_inline_text_spans(text), font)
-
     def _inline_line_width(
         self,
         line: Sequence[InlineTextSpan],
@@ -1933,13 +1909,37 @@ class DemoImageRenderer:
         *,
         x: int,
         y: int,
-        text: str,
+        line: Sequence[InlineTextSpan],
         font: Any,
         min_width: int = 0,
     ) -> tuple[int, int, int, int]:
-        width = max(self._inline_text_width(text, font) + 28, min_width)
+        width = max(self._inline_line_width(line, font) + 28, min_width)
         height = max(self._font_line_height(font) + 8, self.CHIP_HEIGHT)
         return (x, y, x + int(width), y + int(height))
+
+    def _fit_inline_spans(
+        self,
+        spans: Sequence[InlineTextSpan],
+        font: Any,
+        max_width: int,
+    ) -> tuple[InlineTextSpan, ...]:
+        if self._inline_line_width(spans, font) <= max_width:
+            return tuple(spans)
+
+        ellipsis = InlineTextSpan("...", code=False)
+        current: list[InlineTextSpan] = list(spans)
+        while current:
+            last = current[-1]
+            if len(last.text) > 1:
+                current[-1] = InlineTextSpan(last.text[:-1], code=last.code)
+                if not current[-1].text:
+                    current.pop()
+            else:
+                current.pop()
+            candidate = [*current, ellipsis]
+            if self._inline_line_width(candidate, font) <= max_width:
+                return tuple(candidate)
+        return (ellipsis,)
 
     def _font_size(self, font: Any) -> int:
         return int(getattr(font, "size", 16))
