@@ -118,6 +118,23 @@ class WordbankApprovalMessagePayload(TypedDict):
     updated_at: int
 
 
+class WordbankViewMessagePayload(TypedDict):
+    message_id: str
+    context_type: str
+    trigger_group_id: int
+    current_page: int
+    keyword: str
+    field: str
+    creator_id: str
+    has_image: int
+    group_ids_json: str
+    group_id: str
+    user_id: str
+    message_type: str
+    created_at: int
+    updated_at: int
+
+
 @dataclass(slots=True, frozen=True)
 class WordbankTriggerVariantRecord:
     id: int
@@ -238,6 +255,8 @@ class WordbankSearchItem:
     score: float = 0.0
     matched_by: str = ""
     response_item_ids: tuple[int, ...] = dataclass_field(default_factory=tuple)
+    trigger_preview_image_id: int | None = None
+    response_preview_image_id: int | None = None
 
     @property
     def has_more_responses(self) -> bool:
@@ -320,6 +339,7 @@ class WordbankResponseItemDetail:
     approved_by: str
     deleted_at: int
     response_text: str
+    response_shape: MessageShape
 
 
 @dataclass(slots=True, frozen=True)
@@ -331,6 +351,7 @@ class WordbankGroupDetail:
     created_by: str
     deleted_at: int
     trigger_text: str
+    trigger_shape: MessageShape
     trigger_variant_id: int
     responses: tuple[WordbankResponseItemDetail, ...]
     selected_response_item_id: int | None = None
@@ -345,3 +366,19 @@ class WordbankGroupDetail:
             if response.response_item_id == self.selected_response_item_id:
                 return response
         return self.responses[0]
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankViewMessageRecord:
+    message_id: str
+    context_type: str
+    trigger_group_id: int
+    current_page: int
+    keyword: str
+    field: str
+    creator_id: str
+    has_image: bool
+    group_ids: tuple[int, ...]
+    group_id: str
+    user_id: str
+    message_type: str

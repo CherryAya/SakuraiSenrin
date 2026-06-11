@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
 import math
@@ -23,6 +24,9 @@ CARD_ITEM_PADDING = 26
 CARD_SUMMARY_GAP = 14
 CARD_LINE_GAP = 10
 CARD_MAX_TEXT_WIDTH = CARD_WIDTH - CARD_PADDING_X * 2 - CARD_ITEM_PADDING * 2
+CARD_PREVIEW_HEIGHT = 180
+CARD_PREVIEW_GAP = 14
+CARD_PREVIEW_RADIUS = 20
 
 
 @dataclass(slots=True, frozen=True)
@@ -52,12 +56,17 @@ class SearchResultCardRenderer:
     ACCENT_SOFT = "#FFE8F0"
     BORDER = "#F2D7E2"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        preview_bytes: Mapping[int, bytes | None] | None = None,
+    ) -> None:
         self.title_font = self._load_font(38)
         self.summary_font = self._load_font(22)
         self.item_title_font = self._load_font(24)
         self.item_body_font = self._load_font(22)
         self.item_meta_font = self._load_font(20)
+        self.preview_bytes = dict(preview_bytes or {})
 
     def render(
         self,
@@ -79,7 +88,7 @@ class SearchResultCardRenderer:
 
         if items:
             for index, item in enumerate(items, start=1):
-                cursor_y = self._draw_item(draw, item, query, index, cursor_y)
+                cursor_y = self._draw_item(image, draw, item, query, index, cursor_y)
                 cursor_y += CARD_ITEM_GAP
         else:
             cursor_y = self._draw_empty_state(draw, query, cursor_y)
@@ -165,6 +174,7 @@ class SearchResultCardRenderer:
 
     def _draw_item(
         self,
+        image: Image.Image,
         draw: ImageDraw.ImageDraw,
         item: WordbankSearchItem,
         query: SearchCardQuery,
@@ -223,6 +233,7 @@ class SearchResultCardRenderer:
         )
 
         body_y = int(inner_y + badge_height + 18)
+        body_y = self._draw_previews(image, draw, item, inner_x, body_y)
         for label, value in (
             ("触发", item.trigger_text),
             ("响应摘要", self._response_preview(item)),
@@ -314,6 +325,8 @@ class SearchResultCardRenderer:
             font=self.item_title_font,
         )
         total += int(badge_bbox[3] - badge_bbox[1] + 30)
+        if self._preview_specs(item):
+            total += CARD_PREVIEW_HEIGHT + CARD_PREVIEW_GAP
         for label, value in (
             ("触发", item.trigger_text),
             ("响应摘要", self._response_preview(item)),
@@ -323,6 +336,78 @@ class SearchResultCardRenderer:
             total += len(wrapped) * self._line_height(self.item_body_font)
             total += CARD_LINE_GAP
         return int(total)
+
+    def _draw_previews(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        item: WordbankSearchItem,
+        x: int,
+        y: int,
+    ) -> int:
+        specs = self._preview_specs(item)
+        if not specs:
+            return y
+        count = len(specs)
+        box_gap = 18
+        total_width = CARD_MAX_TEXT_WIDTH
+        box_width = total_width if count == 1 else int((total_width - box_gap) / 2)
+        current_x = x
+        for label, image_id in specs:
+            box = (
+                current_x,
+                y,
+                current_x + box_width,
+                y + CARD_PREVIEW_HEIGHT,
+            )
+            draw.rounded_rectangle(
+                box,
+                radius=CARD_PREVIEW_RADIUS,
+                fill=self.ACCENT_SOFT,
+                outline=self.BORDER,
+                width=2,
+            )
+            image_bytes = self.preview_bytes.get(image_id)
+            if image_bytes:
+                preview = self._fit_preview_image(
+                    image_bytes,
+                    box_width,
+                    CARD_PREVIEW_HEIGHT,
+                )
+                if preview is not None:
+                    preview_x = current_x + int((box_width - preview.width) / 2)
+                    preview_y = y + int((CARD_PREVIEW_HEIGHT - preview.height) / 2)
+                    image.paste(preview, (preview_x, preview_y))
+            draw.text(
+                (current_x + 12, y + 10),
+                label,
+                font=self.item_meta_font,
+                fill=self.ACCENT,
+            )
+            current_x += box_width + box_gap
+        return y + CARD_PREVIEW_HEIGHT + CARD_PREVIEW_GAP
+
+    def _preview_specs(self, item: WordbankSearchItem) -> list[tuple[str, int]]:
+        specs: list[tuple[str, int]] = []
+        if item.trigger_preview_image_id is not None:
+            specs.append(("触发图", item.trigger_preview_image_id))
+        if item.response_preview_image_id is not None:
+            specs.append(("响应图", item.response_preview_image_id))
+        return specs[:2]
+
+    def _fit_preview_image(
+        self,
+        image_bytes: bytes,
+        max_width: int,
+        max_height: int,
+    ) -> Image.Image | None:
+        try:
+            with Image.open(BytesIO(image_bytes)) as image:
+                prepared = image.convert("RGB")
+                prepared.thumbnail((max_width - 16, max_height - 16))
+                return prepared.copy()
+        except Exception:
+            return None
 
     def _draw_labeled_lines(
         self,
@@ -424,12 +509,28 @@ class SearchResultCardRenderer:
             return ImageFont.load_default()
 
 
+def render_search_results_card_bytes(
+    *,
+    items: tuple[WordbankSearchItem, ...],
+    query: SearchCardQuery,
+    locale: LocaleCode,
+    preview_bytes: Mapping[int, bytes | None] | None = None,
+) -> bytes:
+    renderer = SearchResultCardRenderer(preview_bytes=preview_bytes)
+    return renderer.render(items=items, query=query, locale=locale)
+
+
 def render_search_results_card(
     *,
     items: tuple[WordbankSearchItem, ...],
     query: SearchCardQuery,
     locale: LocaleCode,
+    preview_bytes: Mapping[int, bytes | None] | None = None,
 ) -> Message:
-    renderer = SearchResultCardRenderer()
-    image_bytes = renderer.render(items=items, query=query, locale=locale)
+    image_bytes = render_search_results_card_bytes(
+        items=items,
+        query=query,
+        locale=locale,
+        preview_bytes=preview_bytes,
+    )
     return Message(MessageSegment.image(image_bytes))

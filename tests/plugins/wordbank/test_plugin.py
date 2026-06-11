@@ -18,8 +18,9 @@ nonebot.init(
     command_sep={"."},
 )
 
-sys.modules.pop("src.plugins.wordbank", None)
-nonebot.load_plugin("src.plugins.wordbank")
+if nonebot.get_plugin("wordbank") is None:
+    sys.modules.pop("src.plugins.wordbank", None)
+    nonebot.load_plugin("src.plugins.wordbank")
 
 from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank.handlers.passive import PassiveResponse

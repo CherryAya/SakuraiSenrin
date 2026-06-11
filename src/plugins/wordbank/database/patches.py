@@ -46,6 +46,18 @@ async def _add_wordbank_image_hash_version(session: AsyncSession) -> None:
     )
 
 
+async def _create_wordbank_view_message_table(session: AsyncSession) -> None:
+    from .tables import WordbankViewMessage
+
+    connection = await session.connection()
+    await connection.run_sync(
+        lambda sync_conn: cast(Any, WordbankViewMessage.__table__).create(
+            sync_conn,
+            checkfirst=True,
+        )
+    )
+
+
 async def _reset_wordbank_message_tables(session: AsyncSession) -> None:
     from .tables import (
         WordbankApprovalMessage,
@@ -117,6 +129,12 @@ def build_wordbank_patch_registry() -> PatchRegistry:
         SchemaPatch(
             patch_id="wordbank:add_image_hash_version:v1",
             apply=_add_wordbank_image_hash_version,
+        )
+    )
+    registry.register(
+        SchemaPatch(
+            patch_id="wordbank:create_view_message_table:v1",
+            apply=_create_wordbank_view_message_table,
         )
     )
     return registry

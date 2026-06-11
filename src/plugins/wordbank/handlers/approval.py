@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 
@@ -12,7 +12,6 @@ from src.config import config
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.logger import logger
-from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
@@ -20,6 +19,8 @@ from src.plugins.wordbank.services.core import (
     format_response_summary,
 )
 from src.plugins.wordbank.services.media import WordbankMediaService
+
+from .rendering import render_shape_message
 
 APPROVAL_APPROVE_ALIASES = {"y", "approve", "通过", "同意", "批准"}
 APPROVAL_REJECT_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
@@ -89,9 +90,11 @@ async def _append_response_image(
     response_shape = result.response_shape
     if response_shape is None or response_shape.is_empty():
         return Message(text)
+    if all(atom.kind == "text" for atom in response_shape.atoms):
+        return Message(text)
     summary = format_response_summary(result.response_text, shape=response_shape)
     return Message(_strip_response_summary(text, summary)) + (
-        await _build_shape_message(response_shape, media_service)
+        await render_shape_message(response_shape, media_service)
     )
 
 
@@ -101,25 +104,6 @@ def _strip_response_summary(text: str, summary: str) -> str:
     if f" {summary}" in text:
         return text.replace(f" {summary}", "")
     return text.replace(summary, "消息回复如下")
-
-
-async def _build_shape_message(
-    shape: MessageShape,
-    media_service: WordbankMediaService,
-) -> Message:
-    message = Message()
-    for atom in shape.atoms:
-        if atom.kind == "text" and atom.text:
-            message += MessageSegment.text(atom.text)
-        elif atom.kind == "at" and atom.target_id:
-            message += MessageSegment.at(atom.target_id)
-        elif atom.kind == "image" and atom.canonical_image_id is not None:
-            image_bytes = await media_service.load_canonical_storage_bytes(
-                atom.canonical_image_id
-            )
-            if image_bytes is not None:
-                message += MessageSegment.image(image_bytes)
-    return message
 
 
 def _strip_response_image_placeholder(text: str, canonical_id: int) -> str:

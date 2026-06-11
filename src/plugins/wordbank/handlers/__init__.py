@@ -9,7 +9,9 @@ from .approval import (
     send_pending_approval_notice,
 )
 from .commands import (
+    GROUP_ALIASES,
     build_forced_command_text,
+    build_group_detail_message,
     build_message_shape_from_message,
     dispatch_wordbank_command,
     extract_image_urls,
@@ -25,6 +27,7 @@ from .commands import (
     handle_study_with_media,
     handle_study_with_media_result,
     localize_command_error,
+    parse_group_view_args,
     wordbank_help_text,
 )
 from .passive import PassiveResponse, handle_passive_message, handle_passive_notice
@@ -35,15 +38,19 @@ from .reply import (
     handle_approval_reply_result,
     handle_reply_command,
     is_reply,
+    parse_view_reply_for_group_detail,
+    parse_view_reply_for_search_result,
 )
 
 __all__ = [
     "APPROVAL_REPLY_ALIASES",
+    "GROUP_ALIASES",
     "REPLY_COMMAND_ALIASES",
     "ApprovalReplyOutcome",
     "PassiveResponse",
     "build_add_result_message",
     "build_forced_command_text",
+    "build_group_detail_message",
     "build_message_shape_from_message",
     "build_pending_approval_notice_message",
     "dispatch_wordbank_command",
@@ -67,6 +74,9 @@ __all__ = [
     "handle_study_with_media_result",
     "is_reply",
     "localize_command_error",
+    "parse_group_view_args",
+    "parse_view_reply_for_group_detail",
+    "parse_view_reply_for_search_result",
     "record_submission_approval_message",
     "send_pending_approval_notice",
     "wordbank_help_text",

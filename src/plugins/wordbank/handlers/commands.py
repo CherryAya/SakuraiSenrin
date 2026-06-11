@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
+import math
 import shlex
 from typing import Any
 
@@ -16,13 +17,11 @@ from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import (
+    WordbankGroupDetail,
     WordbankSearchPage,
     WordbankSearchRequest,
 )
-from src.plugins.wordbank.handlers.search_cards import (
-    SearchCardQuery,
-    render_search_results_card,
-)
+from src.plugins.wordbank.handlers.search_cards import SearchCardQuery
 from src.plugins.wordbank.message_model import (
     MessageShape,
     combine_shapes,
@@ -46,8 +45,15 @@ from src.plugins.wordbank.services.rules import (
     parse_legacy_study_text,
 )
 
+from .rendering import (
+    GROUP_PAGE_SIZE,
+    render_group_detail_page_message,
+    render_search_results_card_message,
+)
+
 ADD_ALIASES = {"add", "添加", "学习"}
 SEARCH_ALIASES = {"search", "find", "查询", "搜索"}
+GROUP_ALIASES = {"group", "grp", "展开"}
 DELETE_ALIASES = {"delete", "del", "remove", "删除"}
 RESTORE_ALIASES = {"restore", "恢复"}
 SUPPORT_ALIASES = {"support", "支持", "支持删除"}
@@ -92,6 +98,12 @@ class ParsedSearch:
     limit: int
     field: str
     creator_id: str
+
+
+@dataclass(slots=True, frozen=True)
+class ParsedGroupView:
+    trigger_group_id: int
+    page: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -448,6 +460,64 @@ def parse_search_args(text: str) -> ParsedSearch:
         field=field,
         creator_id=creator_id,
     )
+
+
+def parse_group_view_args(text: str) -> ParsedGroupView:
+    try:
+        tokens = shlex.split(text)
+    except ValueError as exc:
+        raise RuleError(
+            f"参数解析失败: {exc}",
+            key="wordbank.error.parse_flags",
+            reason=str(exc),
+        ) from exc
+
+    positional: list[str] = []
+    page = 1
+    idx = 0
+    while idx < len(tokens):
+        token = tokens[idx]
+        if token in {"--page", "-p"}:
+            idx += 1
+            if idx >= len(tokens):
+                raise RuleError(
+                    "--page 需要提供页码",
+                    key="wordbank.error.flag_missing",
+                    flag="--page",
+                    expected="页码",
+                )
+            page = _parse_positive_int(
+                tokens[idx],
+                fallback="页码必须是大于 0 的整数",
+                key="wordbank.error.group_page_invalid",
+            )
+        else:
+            positional.append(token)
+        idx += 1
+
+    if not positional:
+        raise RuleError(
+            "trigger group id 必须是大于 0 的整数",
+            key="wordbank.error.group_id_numeric",
+        )
+
+    trigger_group_id = _parse_positive_int(
+        positional[0],
+        fallback="trigger group id 必须是大于 0 的整数",
+        key="wordbank.error.group_id_numeric",
+    )
+    if len(positional) >= 2:
+        page = _parse_positive_int(
+            positional[1],
+            fallback="页码必须是大于 0 的整数",
+            key="wordbank.error.group_page_invalid",
+        )
+    if len(positional) > 2:
+        raise RuleError(
+            "group 查看格式: wordbank group <group_id> [--page 页码]",
+            key="wordbank.reply.group_command_invalid",
+        )
+    return ParsedGroupView(trigger_group_id=trigger_group_id, page=page)
 
 
 def parse_guided_search_mode_choice(text: str) -> GuidedSearchSelection:
@@ -1065,6 +1135,7 @@ async def handle_search(
     keyword: str,
     image_scores: dict[int, float] | None = None,
     locale: LocaleCode,
+    media_service: WordbankMediaService,
 ) -> Message:
     parsed = parse_search_args(keyword)
     page = await execute_search_page(
@@ -1072,11 +1143,12 @@ async def handle_search(
         parsed=parsed,
         image_scores=image_scores,
     )
-    return render_search_page_message(
+    return await render_search_page_message(
         page,
         parsed=parsed,
         locale=locale,
         has_image=image_scores is not None,
+        media_service=media_service,
     )
 
 
@@ -1100,15 +1172,16 @@ async def execute_search_page(
     )
 
 
-def render_search_page_message(
+async def render_search_page_message(
     page: WordbankSearchPage,
     *,
     parsed: ParsedSearch,
     locale: LocaleCode,
     has_image: bool,
+    media_service: WordbankMediaService,
 ) -> Message:
     try:
-        return render_search_results_card(
+        return await render_search_results_card_message(
             items=page.items,
             query=SearchCardQuery(
                 keyword=parsed.keyword,
@@ -1120,6 +1193,7 @@ def render_search_page_message(
                 limit=parsed.limit,
             ),
             locale=locale,
+            media_service=media_service,
         )
     except Exception:
         text = format_search_items(
@@ -1130,6 +1204,37 @@ def render_search_page_message(
             has_more=page.has_more,
         )
         return Message(text)
+
+
+async def build_group_detail_message(
+    service: WordbankService,
+    *,
+    trigger_group_id: int,
+    page: int,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> tuple[Message, WordbankGroupDetail, int]:
+    detail = await service.get_group_detail(trigger_group_id)
+    if detail is None:
+        raise RuleError(
+            f"未找到 trigger group #{trigger_group_id}",
+            key="wordbank.group.not_found",
+            group_id=trigger_group_id,
+        )
+    total_pages = max(1, math.ceil(len(detail.responses) / max(GROUP_PAGE_SIZE, 1)))
+    if page > total_pages:
+        raise RuleError(
+            "页码超出范围",
+            key="wordbank.error.group_page_invalid",
+            total_pages=total_pages,
+        )
+    message, total_pages = await render_group_detail_page_message(
+        detail=detail,
+        page=page,
+        locale=locale,
+        media_service=media_service,
+    )
+    return message, detail, total_pages
 
 
 async def handle_pending_entries(
@@ -1319,6 +1424,7 @@ async def dispatch_wordbank_command(
     text: str,
     locale: LocaleCode,
     search_image_scores: dict[int, float] | None = None,
+    media_service: WordbankMediaService | None = None,
 ) -> str | Message:
     action, rest = _split_command(text)
     if not action or action in {"help", "帮助"}:
@@ -1326,11 +1432,16 @@ async def dispatch_wordbank_command(
     if action in ADD_ALIASES:
         return await handle_add_text(service, event=event, text=rest, locale=locale)
     if action in SEARCH_ALIASES:
+        if media_service is None:
+            raise RuntimeError(
+                "wordbank media service is required for search rendering"
+            )
         return await handle_search(
             service,
             keyword=rest,
             image_scores=search_image_scores,
             locale=locale,
+            media_service=media_service,
         )
     if action in PENDING_ALIASES:
         return await handle_pending_entries(

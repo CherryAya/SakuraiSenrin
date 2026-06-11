@@ -66,6 +66,38 @@ async def test_build_add_result_message_rebuilds_shape_with_image() -> None:
     load_canonical_storage_bytes.assert_awaited_once_with(7)
 
 
+@pytest.mark.asyncio
+async def test_build_add_result_message_keeps_plain_text_response() -> None:
+    load_canonical_storage_bytes = AsyncMock()
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    result = _result(
+        response_text="做个好梦",
+        response_shape=shape_from_text("做个好梦"),
+    )
+
+    message = await build_add_result_message(
+        result,
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    assert str(message) == (
+        "词条已提交审核\n"
+        "ID: 12\n"
+        "状态: pending\n"
+        "触发: 晚安\n"
+        "响应: 做个好梦\n"
+        "范围: current_group\n"
+        "概率: 1\n"
+        "权重: 3\n"
+        "管理员通过前不会触发。"
+    )
+    load_canonical_storage_bytes.assert_not_awaited()
+
+
 def test_format_pending_approval_notice_uses_shape_summary() -> None:
     result = _result(
         response_text="原始文本",

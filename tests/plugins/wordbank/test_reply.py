@@ -13,7 +13,10 @@ from src.plugins.wordbank.database.types import (
 from src.plugins.wordbank.handlers.reply import (
     handle_approval_reply_result,
     handle_reply_command,
+    parse_view_reply_for_group_detail,
+    parse_view_reply_for_search_result,
 )
+from src.plugins.wordbank.message_model import shape_from_text
 from src.plugins.wordbank.services.core import WordbankService
 from tests.plugins.water.helpers import build_group_message_event
 
@@ -57,6 +60,7 @@ def _group_detail() -> WordbankGroupDetail:
         created_by="10001",
         deleted_at=0,
         trigger_text="晚安",
+        trigger_shape=shape_from_text("晚安"),
         trigger_variant_id=120,
         responses=(
             WordbankResponseItemDetail(
@@ -72,6 +76,7 @@ def _group_detail() -> WordbankGroupDetail:
                 approved_by="10002",
                 deleted_at=0,
                 response_text="做个好梦",
+                response_shape=shape_from_text("做个好梦"),
             ),
         ),
         selected_response_item_id=300,
@@ -188,3 +193,30 @@ async def test_approval_reply_approves_response_item() -> None:
     assert outcome.message == "审批已完成：词条 #300 已通过。"
     assert outcome.completed
     approve_response_item.assert_awaited_once()
+
+
+def test_parse_view_reply_for_search_result_requires_group_from_current_page() -> None:
+    parsed = parse_view_reply_for_search_result(
+        "详情 271 2",
+        available_group_ids=(271, 300),
+    )
+
+    assert parsed.trigger_group_id == 271
+    assert parsed.page == 2
+
+
+def test_parse_view_reply_for_group_detail_supports_navigation_aliases() -> None:
+    next_page = parse_view_reply_for_group_detail(
+        "下一页",
+        trigger_group_id=271,
+        current_page=2,
+    )
+    page_jump = parse_view_reply_for_group_detail(
+        "第5页",
+        trigger_group_id=271,
+        current_page=2,
+    )
+
+    assert next_page.trigger_group_id == 271
+    assert next_page.page == 3
+    assert page_jump.page == 5

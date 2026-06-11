@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+import re
 
 from nonebot.adapters.onebot.v11.event import MessageEvent
 
@@ -14,6 +16,7 @@ from src.plugins.wordbank.database.types import (
     WordbankResponseMessageRecord,
 )
 from src.plugins.wordbank.services.core import WordbankService
+from src.plugins.wordbank.services.rules import RuleError
 
 from .approval import APPROVAL_APPROVE_ALIASES, APPROVAL_REJECT_ALIASES
 from .commands import (
@@ -21,6 +24,7 @@ from .commands import (
     build_mutation_actor,
     handle_delete,
     handle_restore,
+    parse_group_view_args,
 )
 
 INFO_ALIASES = {"info", "详情"}
@@ -50,6 +54,10 @@ RESTORE_ALIASES = {
 REPLY_COMMAND_ALIASES = (
     INFO_ALIASES | HISTORY_ALIASES | DELETE_ALIASES | RESTORE_ALIASES
 )
+VIEW_DETAIL_ALIASES = {"详情", "group", "展开"}
+VIEW_NEXT_ALIASES = {"下一页", "next"}
+VIEW_PREV_ALIASES = {"上一页", "prev"}
+_PAGE_ONLY_RE = re.compile(r"^(?:第\s*)?(\d+)(?:\s*页)?$", re.IGNORECASE)
 
 
 @dataclass(slots=True, frozen=True)
@@ -58,6 +66,12 @@ class ApprovalReplyOutcome:
     approval_message: WordbankApprovalMessageRecord | None = None
     completed: bool = False
     action: str = ""
+
+
+@dataclass(slots=True, frozen=True)
+class ParsedViewReplyCommand:
+    trigger_group_id: int
+    page: int
 
 
 async def is_reply(event: MessageEvent) -> bool:
@@ -240,6 +254,94 @@ async def handle_approval_reply_result(
 
 def normalize_reply_command(text: str) -> str:
     return " ".join(text.casefold().strip().split())
+
+
+def parse_view_reply_for_search_result(
+    text: str,
+    *,
+    available_group_ids: Sequence[int],
+) -> ParsedViewReplyCommand:
+    parsed = _parse_explicit_group_view_command(text)
+    assert parsed is not None
+    if parsed.trigger_group_id not in set(available_group_ids):
+        raise RuleError(
+            "该搜索结果页里没有这个 trigger group id",
+            key="wordbank.reply.group_not_in_search_page",
+            group_id=parsed.trigger_group_id,
+        )
+    return parsed
+
+
+def parse_view_reply_for_group_detail(
+    text: str,
+    *,
+    trigger_group_id: int,
+    current_page: int,
+) -> ParsedViewReplyCommand:
+    normalized = normalize_reply_command(text)
+    if normalized in VIEW_NEXT_ALIASES:
+        return ParsedViewReplyCommand(
+            trigger_group_id=trigger_group_id,
+            page=current_page + 1,
+        )
+    if normalized in VIEW_PREV_ALIASES:
+        return ParsedViewReplyCommand(
+            trigger_group_id=trigger_group_id,
+            page=max(1, current_page - 1),
+        )
+    page_match = _PAGE_ONLY_RE.fullmatch(text.strip())
+    if page_match is not None:
+        return ParsedViewReplyCommand(
+            trigger_group_id=trigger_group_id,
+            page=int(page_match.group(1)),
+        )
+    if normalized.startswith("page "):
+        page_value = normalized.removeprefix("page ").strip()
+        if not page_value.isdigit():
+            raise RuleError(
+                "回复搜索结果请输入 详情 <group_id>；"
+                "回复组详情请输入 下一页 / 上一页 / 第N页",
+                key="wordbank.reply.group_command_invalid",
+            )
+        return ParsedViewReplyCommand(
+            trigger_group_id=trigger_group_id,
+            page=int(page_value),
+        )
+    parsed = _parse_explicit_group_view_command(text, required=False)
+    if parsed is not None:
+        return parsed
+    raise RuleError(
+        "回复搜索结果请输入 详情 <group_id>；回复组详情请输入 下一页 / 上一页 / 第N页",
+        key="wordbank.reply.group_command_invalid",
+    )
+
+
+def _parse_explicit_group_view_command(
+    text: str,
+    *,
+    required: bool = True,
+) -> ParsedViewReplyCommand | None:
+    source = text.strip()
+    if not source:
+        raise RuleError(
+            "回复搜索结果请输入 详情 <group_id>；"
+            "回复组详情请输入 下一页 / 上一页 / 第N页",
+            key="wordbank.reply.group_command_invalid",
+        )
+    action, _, rest = source.partition(" ")
+    if action.casefold() not in {alias.casefold() for alias in VIEW_DETAIL_ALIASES}:
+        if required:
+            raise RuleError(
+                "回复搜索结果请输入 详情 <group_id>；"
+                "回复组详情请输入 下一页 / 上一页 / 第N页",
+                key="wordbank.reply.group_command_invalid",
+            )
+        return None
+    parsed = parse_group_view_args(rest.strip())
+    return ParsedViewReplyCommand(
+        trigger_group_id=parsed.trigger_group_id,
+        page=parsed.page,
+    )
 
 
 async def _load_group_detail(

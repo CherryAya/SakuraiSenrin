@@ -6,7 +6,7 @@ LastEditTime: 2026-04-04 15:09:39
 Description: 插件入口
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,6 +15,7 @@ from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
     FriendRecallNoticeEvent,
+    GroupMessageEvent,
     GroupRecallNoticeEvent,
     MessageEvent,
     NoticeEvent,
@@ -53,10 +54,12 @@ from src.logger import logger
 from .database.types import WordbankApprovalMessageRecord
 from .handlers import (
     APPROVAL_REPLY_ALIASES,
+    GROUP_ALIASES,
     REPLY_COMMAND_ALIASES,
     PassiveResponse,
     build_add_result_message,
     build_forced_command_text,
+    build_group_detail_message,
     build_message_shape_from_message,
     dispatch_wordbank_command,
     extract_image_urls,
@@ -70,6 +73,9 @@ from .handlers import (
     handle_reply_command,
     is_reply,
     localize_command_error,
+    parse_group_view_args,
+    parse_view_reply_for_group_detail,
+    parse_view_reply_for_search_result,
     record_submission_approval_message,
     send_pending_approval_notice,
 )
@@ -82,8 +88,10 @@ from .handlers.commands import (
     parse_guided_search_image_field_choice,
     parse_guided_search_mode_choice,
     parse_guided_search_page_choice,
+    parse_search_args,
     render_search_page_message,
 )
+from .handlers.rendering import render_shape_message
 from .message_model import MessageShape
 from .services import wordbank_media_service, wordbank_service
 from .services.core import WordbankAddResult
@@ -177,6 +185,26 @@ async def is_wordbank_approval_reply(event: MessageEvent) -> bool:
     return await wordbank_service.get_approval_message(str(message_id)) is not None
 
 
+async def is_wordbank_response_reply(event: MessageEvent) -> bool:
+    if event.reply is None:
+        return False
+    message_id = getattr(event.reply, "message_id", None)
+    if message_id is None:
+        return False
+    await initialize_wordbank_plugin()
+    return await wordbank_service.get_response_message(str(message_id)) is not None
+
+
+async def is_wordbank_view_reply(event: MessageEvent) -> bool:
+    if event.reply is None:
+        return False
+    message_id = getattr(event.reply, "message_id", None)
+    if message_id is None:
+        return False
+    await initialize_wordbank_plugin()
+    return await wordbank_service.get_view_message(str(message_id)) is not None
+
+
 wordbank_command = on_command(
     "wordbank",
     aliases={"词库", "wordbank.help"},
@@ -243,7 +271,7 @@ wordbank_vote_command = on_command(
 wordbank_reply_command = on_fullmatch(
     tuple(REPLY_COMMAND_ALIASES),
     ignorecase=True,
-    rule=to_me() & is_reply,
+    rule=to_me() & is_reply & is_wordbank_response_reply,
     priority=5,
     block=True,
 )
@@ -252,6 +280,11 @@ wordbank_approval_reply_command = on_fullmatch(
     ignorecase=True,
     rule=to_me() & is_reply & is_wordbank_approval_reply,
     priority=5,
+    block=True,
+)
+wordbank_view_reply_command = on_message(
+    rule=to_me() & is_reply & is_wordbank_view_reply,
+    priority=6,
     block=True,
 )
 wordbank_passive = on_message(priority=95, block=False)
@@ -361,6 +394,30 @@ async def _handle_wordbank_command_message(
         except (RuleError, ValueError) as exc:
             await matcher.finish(localize_command_error(exc, locale))
             return
+        try:
+            await _send_search_result_view(
+                matcher,
+                event,
+                locale,
+                keyword=text.partition(" ")[2] if " " in text else "",
+                image_scores=search_image_scores,
+            )
+        except (RuleError, ValueError) as exc:
+            await matcher.finish(localize_command_error(exc, locale))
+        return
+    elif action in GROUP_ALIASES:
+        try:
+            parsed_group = parse_group_view_args(text.partition(" ")[2])
+            await _send_group_detail_view(
+                matcher,
+                event,
+                locale,
+                trigger_group_id=parsed_group.trigger_group_id,
+                page=parsed_group.page,
+            )
+        except (RuleError, ValueError) as exc:
+            await matcher.finish(localize_command_error(exc, locale))
+        return
 
     try:
         msg = await dispatch_wordbank_command(
@@ -369,6 +426,7 @@ async def _handle_wordbank_command_message(
             text=text,
             locale=locale,
             search_image_scores=search_image_scores,
+            media_service=wordbank_media_service,
         )
     except (RuleError, ValueError) as exc:
         await matcher.finish(localize_command_error(exc, locale))
@@ -692,6 +750,7 @@ async def _start_guided_search_with_image(
 async def _finish_guided_search(
     matcher: Matcher,
     state: T_State,
+    event: MessageEvent,
     locale: LocaleCode,
     *,
     page_number: int,
@@ -706,11 +765,12 @@ async def _finish_guided_search(
             else None
         ),
     )
-    message = render_search_page_message(
+    message = await render_search_page_message(
         page,
         parsed=parsed,
         locale=locale,
         has_image=bool(state.get("wordbank_guided_search_has_image")),
+        media_service=wordbank_media_service,
     )
     total_pages = max(1, (page.total_count + parsed.limit - 1) // parsed.limit)
     if page.total_count > 0 and page_number > total_pages:
@@ -722,10 +782,25 @@ async def _finish_guided_search(
         )
         return
     if total_pages <= 1:
-        await matcher.finish(message)
+        send_result = await matcher.send(message)
+        await _record_search_result_view_message(
+            send_result=send_result,
+            event=event,
+            parsed=parsed,
+            page=page,
+            has_image=bool(state.get("wordbank_guided_search_has_image")),
+        )
+        await matcher.finish()
         return
     state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_PAGE
-    await matcher.send(message)
+    send_result = await matcher.send(message)
+    await _record_search_result_view_message(
+        send_result=send_result,
+        event=event,
+        parsed=parsed,
+        page=page,
+        has_image=bool(state.get("wordbank_guided_search_has_image")),
+    )
     await matcher.pause(
         tr(
             locale,
@@ -1148,6 +1223,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     await _finish_guided_search(
         matcher,
         state,
+        event,
         locale,
         page_number=1,
     )
@@ -1178,6 +1254,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     await _finish_guided_search(
         matcher,
         state,
+        event,
         locale,
         page_number=page_number,
     )
@@ -1331,6 +1408,52 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
     await matcher.finish(outcome.message)
 
 
+@wordbank_view_reply_command.handle()
+async def _(matcher: Matcher, event: MessageEvent) -> None:
+    await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    reply = event.reply
+    if reply is None:
+        await matcher.finish(tr(locale, "wordbank.reply.target_missing"))
+        return
+    reply_message_id = getattr(reply, "message_id", None)
+    if reply_message_id is None:
+        await matcher.finish(tr(locale, "wordbank.reply.target_missing"))
+        return
+    view_message = await wordbank_service.get_view_message(str(reply_message_id))
+    if view_message is None:
+        await matcher.finish(
+            tr(
+                locale,
+                "wordbank.reply.view_target_not_found",
+                message_id=reply_message_id,
+            )
+        )
+        return
+
+    try:
+        if view_message.context_type == "search_result":
+            parsed = parse_view_reply_for_search_result(
+                event.message.extract_plain_text(),
+                available_group_ids=view_message.group_ids,
+            )
+        else:
+            parsed = parse_view_reply_for_group_detail(
+                event.message.extract_plain_text(),
+                trigger_group_id=view_message.trigger_group_id,
+                current_page=view_message.current_page,
+            )
+        await _send_group_detail_view(
+            matcher,
+            event,
+            locale,
+            trigger_group_id=parsed.trigger_group_id,
+            page=parsed.page,
+        )
+    except (RuleError, ValueError) as exc:
+        await matcher.finish(localize_command_error(exc, locale))
+
+
 def _extract_sent_message_id(result: Any) -> str | None:
     if isinstance(result, dict):
         value = result.get("message_id")
@@ -1362,23 +1485,169 @@ async def _record_passive_response_message(
         logger.warning(f"[Wordbank] response message record skipped: {exc}")
 
 
+def _event_message_type(event: MessageEvent) -> str:
+    return "group" if isinstance(event, GroupMessageEvent) else "private"
+
+
+async def _record_search_result_view_message(
+    *,
+    send_result: Any,
+    event: MessageEvent,
+    parsed: ParsedSearch,
+    page: Any,
+    has_image: bool,
+) -> None:
+    await _record_view_message(
+        send_result=send_result,
+        event=event,
+        context_type="search_result",
+        trigger_group_id=0,
+        current_page=parsed.page,
+        keyword=parsed.keyword,
+        field=parsed.field,
+        creator_id=parsed.creator_id,
+        has_image=has_image,
+        group_ids=[item.trigger_group_id for item in page.items],
+    )
+
+
+async def _record_group_detail_view_message(
+    *,
+    send_result: Any,
+    event: MessageEvent,
+    trigger_group_id: int,
+    page: int,
+    has_image: bool,
+) -> None:
+    await _record_view_message(
+        send_result=send_result,
+        event=event,
+        context_type="group_detail",
+        trigger_group_id=trigger_group_id,
+        current_page=page,
+        keyword="",
+        field="",
+        creator_id="",
+        has_image=has_image,
+        group_ids=[trigger_group_id],
+    )
+
+
+async def _record_view_message(
+    *,
+    send_result: Any,
+    event: MessageEvent,
+    context_type: str,
+    trigger_group_id: int,
+    current_page: int,
+    keyword: str,
+    field: str,
+    creator_id: str,
+    has_image: bool,
+    group_ids: Sequence[int],
+) -> None:
+    message_id = _extract_sent_message_id(send_result)
+    if message_id is None:
+        return
+    try:
+        await wordbank_service.record_view_message(
+            message_id=message_id,
+            context_type=context_type,
+            trigger_group_id=trigger_group_id,
+            current_page=current_page,
+            keyword=keyword,
+            field=field,
+            creator_id=creator_id,
+            has_image=has_image,
+            group_ids=group_ids,
+            group_id=str(getattr(event, "group_id", "") or ""),
+            user_id=str(event.user_id),
+            message_type=_event_message_type(event),
+        )
+    except Exception as exc:
+        logger.warning(f"[Wordbank] view message record skipped: {exc}")
+
+
+def _group_detail_has_image(detail: Any) -> bool:
+    if any(atom.kind == "image" for atom in detail.trigger_shape.atoms):
+        return True
+    return any(
+        atom.kind == "image"
+        for response in detail.responses
+        for atom in response.response_shape.atoms
+    )
+
+
+async def _send_search_result_view(
+    matcher: Matcher,
+    event: MessageEvent,
+    locale: LocaleCode,
+    *,
+    keyword: str,
+    image_scores: dict[int, float] | None = None,
+) -> None:
+    parsed = parse_search_args(keyword)
+    page = await execute_search_page(
+        wordbank_service,
+        parsed=parsed,
+        image_scores=image_scores,
+    )
+    message = await render_search_page_message(
+        page,
+        parsed=parsed,
+        locale=locale,
+        has_image=image_scores is not None,
+        media_service=wordbank_media_service,
+    )
+    send_result = await matcher.send(message)
+    await _record_search_result_view_message(
+        send_result=send_result,
+        event=event,
+        parsed=parsed,
+        page=page,
+        has_image=image_scores is not None,
+    )
+    await matcher.finish()
+
+
+async def _send_group_detail_view(
+    matcher: Matcher,
+    event: MessageEvent,
+    locale: LocaleCode,
+    *,
+    trigger_group_id: int,
+    page: int,
+) -> None:
+    message, detail, _ = await build_group_detail_message(
+        wordbank_service,
+        trigger_group_id=trigger_group_id,
+        page=page,
+        locale=locale,
+        media_service=wordbank_media_service,
+    )
+    send_result = await matcher.send(message)
+    await _record_group_detail_view_message(
+        send_result=send_result,
+        event=event,
+        trigger_group_id=trigger_group_id,
+        page=page,
+        has_image=_group_detail_has_image(detail),
+    )
+    await matcher.finish()
+
+
 async def _build_passive_message(response: PassiveResponse) -> Message | str:
     if response.response_shape is None or response.response_shape.is_empty():
         return response.text
-
-    message = Message()
-    for atom in response.response_shape.atoms:
-        if atom.kind == "text" and atom.text:
-            message += MessageSegment.text(atom.text)
-        elif atom.kind == "at" and atom.target_id:
-            message += MessageSegment.at(atom.target_id)
-        elif atom.kind == "image" and atom.canonical_image_id is not None:
-            image_bytes = await wordbank_media_service.load_canonical_storage_bytes(
-                atom.canonical_image_id
-            )
-            if image_bytes is None:
-                return tr("zh-CN", "wordbank.error.image_storage_missing")
-            message += MessageSegment.image(image_bytes)
+    message = await render_shape_message(
+        response.response_shape,
+        wordbank_media_service,
+    )
+    if any(
+        segment.type == "text" and "[图片:" in str(segment.data.get("text", ""))
+        for segment in message
+    ):
+        return tr("zh-CN", "wordbank.error.image_storage_missing")
     return message
 
 

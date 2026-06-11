@@ -37,6 +37,7 @@ from .tables import (
     WordbankSearchImageMap,
     WordbankTriggerGroup,
     WordbankTriggerVariant,
+    WordbankViewMessage,
 )
 from .types import (
     WordbankApprovalMessagePayload,
@@ -57,6 +58,8 @@ from .types import (
     WordbankSearchRequest,
     WordbankTriggerGroupRecord,
     WordbankTriggerVariantRecord,
+    WordbankViewMessagePayload,
+    WordbankViewMessageRecord,
 )
 from .writers import wordbank_log_writer
 
@@ -117,6 +120,11 @@ def _merge_image_keys(image_keys_values: Sequence[str]) -> str:
     if not merged:
         return ""
     return "|" + "|".join(str(image_id) for image_id in merged) + "|"
+
+
+def _first_image_id(image_keys: str) -> int | None:
+    parsed = _parse_image_keys(image_keys)
+    return parsed[0] if parsed else None
 
 
 def _group_status_from_responses(
@@ -308,6 +316,31 @@ class WordbankRepository:
         )
 
     @staticmethod
+    def _to_view_message_record(
+        row: WordbankViewMessage,
+    ) -> WordbankViewMessageRecord:
+        raw_group_ids = json.loads(row.group_ids_json or "[]")
+        group_ids = tuple(
+            int(item)
+            for item in raw_group_ids
+            if isinstance(item, int) or (isinstance(item, str) and item.isdigit())
+        )
+        return WordbankViewMessageRecord(
+            message_id=row.message_id,
+            context_type=row.context_type,
+            trigger_group_id=row.trigger_group_id,
+            current_page=row.current_page,
+            keyword=row.keyword,
+            field=row.field,
+            creator_id=row.creator_id,
+            has_image=bool(row.has_image),
+            group_ids=group_ids,
+            group_id=row.group_id,
+            user_id=row.user_id,
+            message_type=row.message_type,
+        )
+
+    @staticmethod
     def _search_item_from_document(
         document: WordbankSearchDocument,
         *,
@@ -331,6 +364,8 @@ class WordbankRepository:
             created_by=document.created_by,
             score=score,
             matched_by=matched_by,
+            trigger_preview_image_id=_first_image_id(document.trigger_image_keys),
+            response_preview_image_id=_first_image_id(document.response_image_keys),
         )
 
     @staticmethod
@@ -378,6 +413,7 @@ class WordbankRepository:
                 approved_by=response.approved_by,
                 deleted_at=response.deleted_at,
                 response_text=response.text,
+                response_shape=shape_from_payload(response.message_json),
             )
             for response in bundle.responses
         )
@@ -389,6 +425,7 @@ class WordbankRepository:
             created_by=bundle.group.created_by,
             deleted_at=bundle.group.deleted_at,
             trigger_text=variant.trigger_text,
+            trigger_shape=shape_from_payload(variant.message_json),
             trigger_variant_id=variant.id,
             responses=responses,
             selected_response_item_id=response_item_id,
@@ -1315,6 +1352,31 @@ class WordbankRepository:
             )
             await session.execute(stmt)
 
+    async def record_view_message(
+        self,
+        payload: WordbankViewMessagePayload,
+    ) -> None:
+        async with wordbank_main_db.write_session() as session:
+            stmt = sqlite_insert(WordbankViewMessage).values(payload)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[WordbankViewMessage.message_id],
+                set_={
+                    "context_type": stmt.excluded.context_type,
+                    "trigger_group_id": stmt.excluded.trigger_group_id,
+                    "current_page": stmt.excluded.current_page,
+                    "keyword": stmt.excluded.keyword,
+                    "field": stmt.excluded.field,
+                    "creator_id": stmt.excluded.creator_id,
+                    "has_image": stmt.excluded.has_image,
+                    "group_ids_json": stmt.excluded.group_ids_json,
+                    "group_id": stmt.excluded.group_id,
+                    "user_id": stmt.excluded.user_id,
+                    "message_type": stmt.excluded.message_type,
+                    "updated_at": stmt.excluded.updated_at,
+                },
+            )
+            await session.execute(stmt)
+
     async def get_response_message(
         self,
         message_id: str,
@@ -1342,6 +1404,20 @@ class WordbankRepository:
                 )
             ).scalar_one_or_none()
         return self._to_approval_message_record(row) if row else None
+
+    async def get_view_message(
+        self,
+        message_id: str,
+    ) -> WordbankViewMessageRecord | None:
+        async with wordbank_main_db.read_session() as session:
+            row = (
+                await session.execute(
+                    select(WordbankViewMessage).where(
+                        WordbankViewMessage.message_id == message_id
+                    )
+                )
+            ).scalar_one_or_none()
+        return self._to_view_message_record(row) if row else None
 
     async def get_group_detail(
         self,

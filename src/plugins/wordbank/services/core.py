@@ -6,6 +6,7 @@ import asyncio
 from collections import defaultdict, deque
 from collections.abc import Sequence
 from dataclasses import dataclass
+import json
 import random
 from typing import Any
 
@@ -23,6 +24,7 @@ from src.plugins.wordbank.database.types import (
     WordbankSearchItem,
     WordbankSearchPage,
     WordbankSearchRequest,
+    WordbankViewMessageRecord,
 )
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -445,6 +447,54 @@ class WordbankService:
         if not message_id:
             return None
         return await self.repository.get_approval_message(message_id)
+
+    async def record_view_message(
+        self,
+        *,
+        message_id: str,
+        context_type: str,
+        trigger_group_id: int,
+        current_page: int,
+        keyword: str,
+        field: str,
+        creator_id: str,
+        has_image: bool,
+        group_ids: Sequence[int],
+        group_id: str,
+        user_id: str,
+        message_type: str,
+    ) -> None:
+        message_id = message_id.strip()
+        if not message_id:
+            return
+        now = get_current_time()
+        await self.repository.record_view_message(
+            {
+                "message_id": message_id,
+                "context_type": context_type,
+                "trigger_group_id": trigger_group_id,
+                "current_page": current_page,
+                "keyword": keyword,
+                "field": field,
+                "creator_id": creator_id,
+                "has_image": 1 if has_image else 0,
+                "group_ids_json": json.dumps(list(group_ids), ensure_ascii=False),
+                "group_id": group_id,
+                "user_id": user_id,
+                "message_type": message_type,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
+    async def get_view_message(
+        self,
+        message_id: str,
+    ) -> WordbankViewMessageRecord | None:
+        message_id = message_id.strip()
+        if not message_id:
+            return None
+        return await self.repository.get_view_message(message_id)
 
     async def get_group_detail(
         self,

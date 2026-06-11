@@ -8,7 +8,11 @@ import pytest
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import WordbankSearchRequest
-from src.plugins.wordbank.message_model import shape_from_image, shape_from_text
+from src.plugins.wordbank.message_model import (
+    combine_shapes,
+    shape_from_image,
+    shape_from_text,
+)
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import RuleContext
@@ -291,6 +295,49 @@ async def test_search_accepts_response_image_scores_and_marks_match_source(
 
 
 @pytest.mark.asyncio
+async def test_search_items_expose_trigger_and_response_preview_image_ids(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+    media_service = WordbankMediaService(
+        service.repository,
+        media_root=tmp_path / "media",
+    )
+
+    trigger_image = await media_service.ingest_image_bytes(_png((255, 0, 0)))
+    response_image = await media_service.ingest_image_bytes(_png((0, 255, 0)))
+    created = await service.add_message_entry(
+        trigger_shape=combine_shapes(
+            shape_from_text("预览触发"),
+            shape_from_image(trigger_image.canonical_id),
+        ),
+        response_shape=combine_shapes(
+            shape_from_text("预览响应"),
+            shape_from_image(response_image.canonical_id),
+        ),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    await service.approve_response_item(
+        created.response_item_id,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+
+    page = await service.search_page(
+        WordbankSearchRequest(keyword="预览", field="all"),
+    )
+
+    assert len(page.items) == 1
+    assert page.items[0].trigger_preview_image_id == trigger_image.canonical_id
+    assert page.items[0].response_preview_image_id == response_image.canonical_id
+
+
+@pytest.mark.asyncio
 async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -349,6 +396,36 @@ async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
     assert member_selected.response.id == general.response_item_id
     assert admin_selected is not None
     assert admin_selected.response.id == gated.response_item_id
+
+
+@pytest.mark.asyncio
+async def test_record_view_message_roundtrip(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+
+    await service.record_view_message(
+        message_id="90001",
+        context_type="search_result",
+        trigger_group_id=0,
+        current_page=2,
+        keyword="jrlp",
+        field="all",
+        creator_id="10001",
+        has_image=True,
+        group_ids=(271, 300),
+        group_id="20001",
+        user_id="10001",
+        message_type="group",
+    )
+    record = await service.get_view_message("90001")
+
+    assert record is not None
+    assert record.context_type == "search_result"
+    assert record.current_page == 2
+    assert record.group_ids == (271, 300)
+    assert record.has_image is True
 
 
 @pytest.mark.asyncio

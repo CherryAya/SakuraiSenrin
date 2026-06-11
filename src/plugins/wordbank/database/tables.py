@@ -289,6 +289,33 @@ class WordbankApprovalMessage(WordbankMainBase, TimeMixin):
     message_type: Mapped[str] = mapped_column(String(16), nullable=False, default="")
 
 
+class WordbankViewMessage(WordbankMainBase, TimeMixin):
+    __tablename__ = "wordbank_view_message"
+    __table_args__ = (
+        UniqueConstraint("message_id", name="uq_wordbank_view_message_id"),
+        Index(
+            "idx_wordbank_view_message_context",
+            "context_type",
+            "trigger_group_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    message_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    context_type: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    trigger_group_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    current_page: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    keyword: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    field: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    creator_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    has_image: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    group_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    group_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    message_type: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+
+
 class WordbankLog(WordbankLogBase):
     __tablename__ = "wordbank_log"
     __table_args__ = (

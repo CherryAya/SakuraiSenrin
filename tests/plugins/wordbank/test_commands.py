@@ -7,6 +7,7 @@ import pytest
 
 from src.plugins.wordbank.database.types import WordbankSearchItem, WordbankSearchPage
 from src.plugins.wordbank.handlers.commands import (
+    build_group_detail_message,
     build_message_shape_from_message,
     dispatch_wordbank_command,
     handle_add_text_result,
@@ -14,10 +15,14 @@ from src.plugins.wordbank.handlers.commands import (
     handle_guided_add_shape_result,
     handle_guided_study_shape_result,
     handle_study_media_with_rule_result,
+    parse_group_view_args,
 )
 from src.plugins.wordbank.message_model import (
     MessageShape,
+    combine_shapes,
+    shape_from_image,
     shape_from_message,
+    shape_from_text,
     shape_to_summary_text,
 )
 from src.plugins.wordbank.services.core import WordbankAddResult, WordbankService
@@ -80,11 +85,84 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
         event=event,
         text="search 晚安",
         locale="zh-CN",
+        media_service=cast(
+            WordbankMediaService,
+            SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=None)),
+        ),
     )
 
     assert isinstance(message, Message)
     assert len(message) == 1
     assert message[0].type == "image"
+
+
+def test_parse_group_view_args_supports_page_flag_and_positional_page() -> None:
+    parsed = parse_group_view_args("271 --page 3")
+    assert parsed.trigger_group_id == 271
+    assert parsed.page == 3
+
+    positional = parse_group_view_args("271 2")
+    assert positional.trigger_group_id == 271
+    assert positional.page == 2
+
+
+@pytest.mark.asyncio
+async def test_build_group_detail_message_renders_requested_page() -> None:
+    responses = tuple(
+        SimpleNamespace(
+            response_item_id=index,
+            status="approved",
+            enabled=1,
+            scope="current_group",
+            probability=1.0,
+            weight=3,
+            rule={},
+            group_id="20001",
+            created_by="10001",
+            approved_by="10002",
+            deleted_at=0,
+            response_text=f"响应{index}",
+            response_shape=shape_from_text(f"响应{index}"),
+        )
+        for index in range(1, 13)
+    )
+    detail = SimpleNamespace(
+        trigger_group_id=271,
+        status="approved",
+        enabled=1,
+        group_id="20001",
+        created_by="10001",
+        deleted_at=0,
+        trigger_text="jrlp",
+        trigger_shape=combine_shapes(shape_from_text("jrlp"), shape_from_image(7)),
+        trigger_variant_id=12,
+        responses=responses,
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(get_group_detail=AsyncMock(return_value=detail)),
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            load_canonical_storage_bytes=AsyncMock(side_effect=[b"trigger-image"])
+        ),
+    )
+
+    message, returned_detail, total_pages = await build_group_detail_message(
+        service,
+        trigger_group_id=271,
+        page=2,
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    assert total_pages == 2
+    assert returned_detail is detail
+    assert "Trigger Group #271" in str(message)
+    assert "响应 #11" in str(message)
+    assert "响应 #12" in str(message)
+    assert "响应 #10" not in str(message)
 
 
 @pytest.mark.asyncio
