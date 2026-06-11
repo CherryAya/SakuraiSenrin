@@ -45,7 +45,7 @@ def format_pending_approval_notice(
     return tr(
         locale,
         "wordbank.approval.notice",
-        entry_id=result.entry_id,
+        entry_id=result.response_item_id,
         trigger_text=result.trigger_text,
         response_text=format_response_summary(
             result.response_text,

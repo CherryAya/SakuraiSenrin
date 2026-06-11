@@ -280,7 +280,7 @@ async def test_migrate_legacy_rows_imports_images_and_statuses(
     assert len(entries) == 1
     assert entries[0].status == "approved"
     assert entries[0].group_id == "20001"
-    assert entries[0].triggers[0].trigger_mode == "fullmatch"
+    assert entries[0].trigger_variants[0].trigger_mode == "fullmatch"
 
 
 @pytest.mark.asyncio

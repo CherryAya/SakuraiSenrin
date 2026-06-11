@@ -57,9 +57,9 @@ async def test_build_passive_message_rebuilds_text_and_image_segments(
     monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
     response = PassiveResponse(
         text="fallback",
-        entry_id=12,
-        trigger_id=21,
-        response_id=22,
+        trigger_group_id=12,
+        trigger_variant_id=21,
+        response_item_id=22,
         group_id="20001",
         user_id="10001",
         message_type="message",

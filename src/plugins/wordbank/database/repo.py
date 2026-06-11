@@ -44,7 +44,6 @@ from .types import (
     WordbankCreatedResponse,
     WordbankDeleteVoteMutation,
     WordbankDeleteVoteRecord,
-    WordbankEntryDetail,
     WordbankGroupDetail,
     WordbankImagePayload,
     WordbankImageRecord,
@@ -58,7 +57,6 @@ from .types import (
     WordbankSearchRequest,
     WordbankTriggerGroupRecord,
     WordbankTriggerVariantRecord,
-    legacy_entry_detail_from_group,
 )
 from .writers import wordbank_log_writer
 
@@ -880,6 +878,20 @@ class WordbankRepository:
             self._to_response_item_record(response) for response in bundle.responses
         ]
 
+    async def get_response_item_record(
+        self,
+        response_item_id: int,
+        *,
+        include_deleted: bool = False,
+    ) -> WordbankResponseItemRecord | None:
+        async with wordbank_main_db.read_session() as session:
+            response = await session.get(WordbankResponseItem, response_item_id)
+        if response is None:
+            return None
+        if not include_deleted and response.deleted_at != 0:
+            return None
+        return self._to_response_item_record(response)
+
     async def get_trigger_group_record(
         self,
         trigger_group_id: int,
@@ -1073,23 +1085,6 @@ class WordbankRepository:
             for group, variant, response in rows
         ]
 
-    async def delete_entry(
-        self,
-        entry_id: int,
-        *,
-        actor_user_id: str,
-        actor_group_id: str,
-        can_moderate_group: bool,
-        is_superuser: bool,
-    ) -> bool:
-        return await self.delete_response_item(
-            entry_id,
-            actor_user_id=actor_user_id,
-            actor_group_id=actor_group_id,
-            can_moderate_group=can_moderate_group,
-            is_superuser=is_superuser,
-        )
-
     async def delete_response_item(
         self,
         response_item_id: int,
@@ -1120,23 +1115,6 @@ class WordbankRepository:
             await self._refresh_group_in_session(session, response.trigger_group_id)
             return True
 
-    async def restore_entry(
-        self,
-        entry_id: int,
-        *,
-        actor_user_id: str,
-        actor_group_id: str,
-        can_moderate_group: bool,
-        is_superuser: bool,
-    ) -> bool:
-        return await self.restore_response_item(
-            entry_id,
-            actor_user_id=actor_user_id,
-            actor_group_id=actor_group_id,
-            can_moderate_group=can_moderate_group,
-            is_superuser=is_superuser,
-        )
-
     async def restore_response_item(
         self,
         response_item_id: int,
@@ -1166,23 +1144,6 @@ class WordbankRepository:
             await session.flush()
             await self._refresh_group_in_session(session, response.trigger_group_id)
             return True
-
-    async def approve_entry(
-        self,
-        entry_id: int,
-        *,
-        actor_user_id: str,
-        actor_group_id: str,
-        can_moderate_group: bool,
-        is_superuser: bool,
-    ) -> bool:
-        return await self.approve_response_item(
-            entry_id,
-            actor_user_id=actor_user_id,
-            actor_group_id=actor_group_id,
-            can_moderate_group=can_moderate_group,
-            is_superuser=is_superuser,
-        )
 
     async def approve_response_item(
         self,
@@ -1217,23 +1178,6 @@ class WordbankRepository:
             await session.flush()
             await self._refresh_group_in_session(session, response.trigger_group_id)
             return True
-
-    async def reject_entry(
-        self,
-        entry_id: int,
-        *,
-        actor_user_id: str,
-        actor_group_id: str,
-        can_moderate_group: bool,
-        is_superuser: bool,
-    ) -> bool:
-        return await self.reject_response_item(
-            entry_id,
-            actor_user_id=actor_user_id,
-            actor_group_id=actor_group_id,
-            can_moderate_group=can_moderate_group,
-            is_superuser=is_superuser,
-        )
 
     async def reject_response_item(
         self,
@@ -1272,13 +1216,12 @@ class WordbankRepository:
     async def request_delete_vote(
         self,
         *,
-        entry_id: int,
+        response_item_id: int,
         group_id: str,
         user_id: str,
         threshold: int,
         reason: str = "",
     ) -> WordbankDeleteVoteMutation | None:
-        response_item_id = entry_id
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
             response = await session.get(WordbankResponseItem, response_item_id)
@@ -1456,36 +1399,6 @@ class WordbankRepository:
         if bundle is None or not bundle.variants:
             return None
         return self._group_detail_from_bundle(bundle, response_item_id=response_item_id)
-
-    async def get_entry_detail(
-        self,
-        entry_id: int,
-        *,
-        trigger_id: int | None = None,
-        response_id: int | None = None,
-    ) -> WordbankEntryDetail | None:
-        response_item_id = response_id or entry_id
-        async with wordbank_main_db.read_session() as session:
-            response = await session.get(WordbankResponseItem, response_item_id)
-            if response is None:
-                return None
-            bundle = await self._load_group_bundle_in_session(
-                session,
-                response.trigger_group_id,
-                include_deleted=True,
-            )
-        if bundle is None:
-            return None
-        if (
-            trigger_id is not None
-            and bundle.variants
-            and bundle.variants[0].id != trigger_id
-        ):
-            return None
-        detail = self._group_detail_from_bundle(
-            bundle, response_item_id=response_item_id
-        )
-        return legacy_entry_detail_from_group(detail)
 
     async def get_image_by_md5(self, md5: str) -> WordbankImageRecord | None:
         async with wordbank_main_db.read_session() as session:
@@ -2015,7 +1928,7 @@ class WordbankRepository:
                 created=created,
                 already_supported=True,
                 passed=vote.status == "passed",
-                entry_deleted=False,
+                response_item_deleted=False,
             )
         already_supported = (
             await session.execute(
@@ -2037,16 +1950,16 @@ class WordbankRepository:
             await session.flush()
             support_count += 1
         passed = support_count >= vote.threshold
-        entry_deleted = False
+        response_item_deleted = False
         if passed:
             if response_item.deleted_at == 0:
                 response_item.deleted_at = now
                 response_item.updated_at = now
-                entry_deleted = True
-            vote.status = "passed" if entry_deleted else "closed"
+                response_item_deleted = True
+            vote.status = "passed" if response_item_deleted else "closed"
             vote.updated_at = now
             await session.flush()
-            if entry_deleted:
+            if response_item_deleted:
                 await self._refresh_group_in_session(
                     session, response_item.trigger_group_id
                 )
@@ -2055,5 +1968,5 @@ class WordbankRepository:
             created=created,
             already_supported=already_supported,
             passed=passed,
-            entry_deleted=entry_deleted,
+            response_item_deleted=response_item_deleted,
         )

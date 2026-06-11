@@ -39,8 +39,10 @@ def _selected(
 ) -> SelectedMatch:
     return SelectedMatch(
         candidate=MatchCandidate(
-            entry=RuntimeEntry(
+            group=RuntimeEntry(
                 id=12,
+                status="approved",
+                enabled=1,
                 group_id="20001",
                 created_by="10001",
                 trigger_mode="strict",
@@ -62,6 +64,8 @@ def _selected(
             text=response_text,
             message_shape=response_shape or shape_from_text(response_text),
             exact_md5="response-md5",
+            status="approved",
+            enabled=1,
             scope="current_group",
             priority=1,
             probability=1.0,

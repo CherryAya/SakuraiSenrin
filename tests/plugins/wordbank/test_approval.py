@@ -26,7 +26,9 @@ def _result(
     response_shape: MessageShape | None = None,
 ) -> WordbankAddResult:
     return WordbankAddResult(
-        entry_id=12,
+        trigger_group_id=10,
+        trigger_variant_id=11,
+        response_item_id=12,
         trigger_text="晚安",
         response_text=response_text,
         trigger_mode="strict",

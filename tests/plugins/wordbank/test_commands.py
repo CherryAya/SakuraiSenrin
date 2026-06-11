@@ -27,12 +27,16 @@ from tests.plugins.water.helpers import build_group_message_event
 
 def _add_result(
     *,
-    entry_id: int = 12,
+    trigger_group_id: int = 34,
+    trigger_variant_id: int = 35,
+    response_item_id: int = 12,
     trigger_text: str = "晚安",
     response_text: str = "做个好梦",
 ) -> WordbankAddResult:
     return WordbankAddResult(
-        entry_id=entry_id,
+        trigger_group_id=trigger_group_id,
+        trigger_variant_id=trigger_variant_id,
+        response_item_id=response_item_id,
         trigger_text=trigger_text,
         response_text=response_text,
         trigger_mode="strict",
@@ -42,13 +46,13 @@ def _add_result(
     )
 
 
-def _search_item(*, entry_id: int = 12) -> WordbankSearchItem:
+def _search_item(*, trigger_group_id: int = 12) -> WordbankSearchItem:
     return WordbankSearchItem(
-        entry_id=entry_id,
+        trigger_group_id=trigger_group_id,
         status="approved",
-        trigger_text=f"晚安{entry_id}",
+        trigger_text=f"晚安{trigger_group_id}",
         trigger_mode="strict",
-        response_text=f"做个好梦{entry_id}",
+        response_text=f"做个好梦{trigger_group_id}",
         scope="current_group",
         probability=1.0,
         weight=3,
@@ -102,7 +106,7 @@ async def test_handle_add_text_result_calls_add_message_entry_with_text_shapes()
         text="晚安 => 做个好梦",
     )
 
-    assert result.entry_id == 12
+    assert result.response_item_id == 12
     assert add_message_entry.await_args is not None
     kwargs = add_message_entry.await_args.kwargs
     assert isinstance(kwargs["trigger_shape"], MessageShape)

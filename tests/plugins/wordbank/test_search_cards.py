@@ -7,13 +7,17 @@ from src.plugins.wordbank.handlers.search_cards import (
 )
 
 
-def _item(entry_id: int, *, matched_by: str = "text:trigger") -> WordbankSearchItem:
+def _item(
+    trigger_group_id: int,
+    *,
+    matched_by: str = "text:trigger",
+) -> WordbankSearchItem:
     return WordbankSearchItem(
-        entry_id=entry_id,
+        trigger_group_id=trigger_group_id,
         status="approved",
-        trigger_text=f"触发{entry_id}",
+        trigger_text=f"触发{trigger_group_id}",
         trigger_mode="contains",
-        response_text=f"响应{entry_id}",
+        response_text=f"响应{trigger_group_id}",
         scope="current_group",
         probability=1.0,
         weight=3,

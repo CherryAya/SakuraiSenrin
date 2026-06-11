@@ -16,9 +16,9 @@ from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import (
     WordbankApprovalMessageRecord,
-    WordbankEntryDetail,
     WordbankGroupDetail,
     WordbankLogPayload,
+    WordbankResponseItemRecord,
     WordbankResponseMessageRecord,
     WordbankSearchItem,
     WordbankSearchPage,
@@ -38,7 +38,7 @@ from src.plugins.wordbank.services.matching import (
 from src.plugins.wordbank.services.rules import RuleContext, canonicalize_rule
 
 
-@dataclass(slots=True, frozen=True, init=False)
+@dataclass(slots=True, frozen=True)
 class WordbankAddResult:
     trigger_group_id: int
     trigger_variant_id: int
@@ -54,45 +54,6 @@ class WordbankAddResult:
     trigger_shape: MessageShape | None = None
     response_shape: MessageShape | None = None
 
-    def __init__(
-        self,
-        *,
-        trigger_group_id: int = 0,
-        trigger_variant_id: int = 0,
-        response_item_id: int | None = None,
-        entry_id: int | None = None,
-        trigger_text: str,
-        response_text: str,
-        trigger_mode: str,
-        scope: str,
-        probability: float,
-        weight: int,
-        status: str = "pending",
-        created_group: bool = False,
-        trigger_shape: MessageShape | None = None,
-        response_shape: MessageShape | None = None,
-    ) -> None:
-        response_id = (
-            response_item_id if response_item_id is not None else entry_id or 0
-        )
-        object.__setattr__(self, "trigger_group_id", trigger_group_id)
-        object.__setattr__(self, "trigger_variant_id", trigger_variant_id)
-        object.__setattr__(self, "response_item_id", response_id)
-        object.__setattr__(self, "trigger_text", trigger_text)
-        object.__setattr__(self, "response_text", response_text)
-        object.__setattr__(self, "trigger_mode", trigger_mode)
-        object.__setattr__(self, "scope", scope)
-        object.__setattr__(self, "probability", probability)
-        object.__setattr__(self, "weight", weight)
-        object.__setattr__(self, "status", status)
-        object.__setattr__(self, "created_group", created_group)
-        object.__setattr__(self, "trigger_shape", trigger_shape)
-        object.__setattr__(self, "response_shape", response_shape)
-
-    @property
-    def entry_id(self) -> int:
-        return self.response_item_id
-
 
 @dataclass(slots=True, frozen=True)
 class WordbankDeleteVoteResult:
@@ -105,11 +66,7 @@ class WordbankDeleteVoteResult:
     created: bool
     already_supported: bool
     passed: bool
-    entry_deleted: bool
-
-    @property
-    def entry_id(self) -> int:
-        return self.response_item_id
+    response_item_deleted: bool
 
 
 class WordbankService:
@@ -249,101 +206,101 @@ class WordbankService:
             response_shape=response_shape,
         )
 
-    async def delete_entry(
+    async def delete_response_item(
         self,
-        entry_id: int,
+        response_item_id: int,
         *,
         actor_user_id: str,
         actor_group_id: str,
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
-        detail = await self.repository.get_entry_detail(entry_id, response_id=entry_id)
-        ok = await self.repository.delete_entry(
-            entry_id,
+        response_item = await self._get_response_item_for_mutation(response_item_id)
+        ok = await self.repository.delete_response_item(
+            response_item_id,
             actor_user_id=actor_user_id,
             actor_group_id=actor_group_id,
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
         )
-        if ok and detail is not None:
-            self.mark_dirty(detail.trigger_group_id)
+        if ok and response_item is not None:
+            self.mark_dirty(response_item.trigger_group_id)
         return ok
 
-    async def restore_entry(
+    async def restore_response_item(
         self,
-        entry_id: int,
+        response_item_id: int,
         *,
         actor_user_id: str,
         actor_group_id: str,
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
-        detail = await self.repository.get_entry_detail(entry_id, response_id=entry_id)
-        ok = await self.repository.restore_entry(
-            entry_id,
+        response_item = await self._get_response_item_for_mutation(response_item_id)
+        ok = await self.repository.restore_response_item(
+            response_item_id,
             actor_user_id=actor_user_id,
             actor_group_id=actor_group_id,
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
         )
-        if ok and detail is not None:
-            self.mark_dirty(detail.trigger_group_id)
+        if ok and response_item is not None:
+            self.mark_dirty(response_item.trigger_group_id)
         return ok
 
-    async def approve_entry(
+    async def approve_response_item(
         self,
-        entry_id: int,
+        response_item_id: int,
         *,
         actor_user_id: str,
         actor_group_id: str,
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
-        detail = await self.repository.get_entry_detail(entry_id, response_id=entry_id)
-        ok = await self.repository.approve_entry(
-            entry_id,
+        response_item = await self._get_response_item_for_mutation(response_item_id)
+        ok = await self.repository.approve_response_item(
+            response_item_id,
             actor_user_id=actor_user_id,
             actor_group_id=actor_group_id,
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
         )
-        if ok and detail is not None:
-            self.mark_dirty(detail.trigger_group_id)
+        if ok and response_item is not None:
+            self.mark_dirty(response_item.trigger_group_id)
         return ok
 
-    async def reject_entry(
+    async def reject_response_item(
         self,
-        entry_id: int,
+        response_item_id: int,
         *,
         actor_user_id: str,
         actor_group_id: str,
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
-        detail = await self.repository.get_entry_detail(entry_id, response_id=entry_id)
-        ok = await self.repository.reject_entry(
-            entry_id,
+        response_item = await self._get_response_item_for_mutation(response_item_id)
+        ok = await self.repository.reject_response_item(
+            response_item_id,
             actor_user_id=actor_user_id,
             actor_group_id=actor_group_id,
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
         )
-        if ok and detail is not None:
-            self.mark_dirty(detail.trigger_group_id)
+        if ok and response_item is not None:
+            self.mark_dirty(response_item.trigger_group_id)
         return ok
 
     async def request_delete_vote(
         self,
         *,
-        entry_id: int,
+        response_item_id: int,
         group_id: str,
         user_id: str,
         threshold: int = 3,
         reason: str = "",
     ) -> WordbankDeleteVoteResult | None:
         mutation = await self.repository.request_delete_vote(
-            entry_id=entry_id,
+            response_item_id=response_item_id,
             group_id=group_id,
             user_id=user_id,
             threshold=threshold,
@@ -351,7 +308,7 @@ class WordbankService:
         )
         if mutation is None:
             return None
-        if mutation.entry_deleted:
+        if mutation.response_item_deleted:
             self.mark_dirty(mutation.vote.trigger_group_id)
         return WordbankDeleteVoteResult(
             vote_id=mutation.vote.id,
@@ -363,7 +320,7 @@ class WordbankService:
             created=mutation.created,
             already_supported=mutation.already_supported,
             passed=mutation.passed,
-            entry_deleted=mutation.entry_deleted,
+            response_item_deleted=mutation.response_item_deleted,
         )
 
     async def support_delete_vote(
@@ -380,7 +337,7 @@ class WordbankService:
         )
         if mutation is None:
             return None
-        if mutation.entry_deleted:
+        if mutation.response_item_deleted:
             self.mark_dirty(mutation.vote.trigger_group_id)
         return WordbankDeleteVoteResult(
             vote_id=mutation.vote.id,
@@ -392,7 +349,7 @@ class WordbankService:
             created=mutation.created,
             already_supported=mutation.already_supported,
             passed=mutation.passed,
-            entry_deleted=mutation.entry_deleted,
+            response_item_deleted=mutation.response_item_deleted,
         )
 
     async def get_delete_vote(
@@ -414,7 +371,7 @@ class WordbankService:
             created=False,
             already_supported=False,
             passed=vote.status == "passed",
-            entry_deleted=False,
+            response_item_deleted=False,
         )
 
     async def record_response_message(
@@ -502,19 +459,6 @@ class WordbankService:
         return await self.repository.get_group_detail(
             trigger_group_id,
             response_item_id=response_item_id,
-        )
-
-    async def get_entry_detail(
-        self,
-        entry_id: int,
-        *,
-        trigger_id: int | None = None,
-        response_id: int | None = None,
-    ) -> WordbankEntryDetail | None:
-        return await self.repository.get_entry_detail(
-            entry_id,
-            trigger_id=trigger_id,
-            response_id=response_id,
         )
 
     async def search(
@@ -622,6 +566,15 @@ class WordbankService:
                     history.popleft()
                 counts[response.id] = len(history)
         return counts
+
+    async def _get_response_item_for_mutation(
+        self,
+        response_item_id: int,
+    ) -> WordbankResponseItemRecord | None:
+        return await self.repository.get_response_item_record(
+            response_item_id,
+            include_deleted=True,
+        )
 
 
 def format_search_items(

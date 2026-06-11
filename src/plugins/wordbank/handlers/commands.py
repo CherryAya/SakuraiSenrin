@@ -536,12 +536,12 @@ def format_delete_vote_result(
     *,
     locale: LocaleCode,
 ) -> str:
-    if result.entry_deleted:
+    if result.response_item_deleted:
         return tr(
             locale,
             "wordbank.vote.passed",
             vote_id=result.vote_id,
-            entry_id=result.entry_id,
+            entry_id=result.response_item_id,
             support_count=result.support_count,
             threshold=result.threshold,
         )
@@ -550,7 +550,7 @@ def format_delete_vote_result(
             locale,
             "wordbank.vote.closed",
             vote_id=result.vote_id,
-            entry_id=result.entry_id,
+            entry_id=result.response_item_id,
             status=result.status,
             support_count=result.support_count,
             threshold=result.threshold,
@@ -560,7 +560,7 @@ def format_delete_vote_result(
             locale,
             "wordbank.vote.already_supported",
             vote_id=result.vote_id,
-            entry_id=result.entry_id,
+            entry_id=result.response_item_id,
             support_count=result.support_count,
             threshold=result.threshold,
         )
@@ -569,7 +569,7 @@ def format_delete_vote_result(
             locale,
             "wordbank.vote.created",
             vote_id=result.vote_id,
-            entry_id=result.entry_id,
+            entry_id=result.response_item_id,
             support_count=result.support_count,
             threshold=result.threshold,
         )
@@ -577,7 +577,7 @@ def format_delete_vote_result(
         locale,
         "wordbank.vote.supported",
         vote_id=result.vote_id,
-        entry_id=result.entry_id,
+        entry_id=result.response_item_id,
         support_count=result.support_count,
         threshold=result.threshold,
     )
@@ -592,7 +592,7 @@ def format_delete_vote_status(
         locale,
         "wordbank.vote.status",
         vote_id=result.vote_id,
-        entry_id=result.entry_id,
+        entry_id=result.response_item_id,
         status=result.status,
         support_count=result.support_count,
         threshold=result.threshold,
@@ -1184,73 +1184,73 @@ async def handle_approve(
     service: WordbankService,
     *,
     event: MessageEvent,
-    entry_id_text: str,
+    response_item_id_text: str,
     locale: LocaleCode,
 ) -> str:
-    if not entry_id_text.isdigit():
+    if not response_item_id_text.isdigit():
         return tr(locale, "wordbank.error.entry_id_numeric")
     actor = build_mutation_actor(event)
     if not actor_can_review(actor):
         return tr(locale, "wordbank.approval.permission_denied")
-    entry_id = int(entry_id_text)
-    if await service.approve_entry(
-        entry_id,
+    response_item_id = int(response_item_id_text)
+    if await service.approve_response_item(
+        response_item_id,
         actor_user_id=actor.user_id,
         actor_group_id=actor.group_id,
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return tr(locale, "wordbank.approval.approved", entry_id=entry_id)
-    return tr(locale, "wordbank.approval.not_found", entry_id=entry_id)
+        return tr(locale, "wordbank.approval.approved", entry_id=response_item_id)
+    return tr(locale, "wordbank.approval.not_found", entry_id=response_item_id)
 
 
 async def handle_reject(
     service: WordbankService,
     *,
     event: MessageEvent,
-    entry_id_text: str,
+    response_item_id_text: str,
     locale: LocaleCode,
 ) -> str:
-    if not entry_id_text.isdigit():
+    if not response_item_id_text.isdigit():
         return tr(locale, "wordbank.error.entry_id_numeric")
     actor = build_mutation_actor(event)
     if not actor_can_review(actor):
         return tr(locale, "wordbank.approval.permission_denied")
-    entry_id = int(entry_id_text)
-    if await service.reject_entry(
-        entry_id,
+    response_item_id = int(response_item_id_text)
+    if await service.reject_response_item(
+        response_item_id,
         actor_user_id=actor.user_id,
         actor_group_id=actor.group_id,
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return tr(locale, "wordbank.approval.rejected", entry_id=entry_id)
-    return tr(locale, "wordbank.approval.not_found", entry_id=entry_id)
+        return tr(locale, "wordbank.approval.rejected", entry_id=response_item_id)
+    return tr(locale, "wordbank.approval.not_found", entry_id=response_item_id)
 
 
 async def handle_delete(
     service: WordbankService,
     *,
     event: MessageEvent,
-    entry_id_text: str,
+    response_item_id_text: str,
     locale: LocaleCode,
 ) -> str:
-    if not entry_id_text.isdigit():
+    if not response_item_id_text.isdigit():
         return tr(locale, "wordbank.error.entry_id_numeric")
-    entry_id = int(entry_id_text)
+    response_item_id = int(response_item_id_text)
     actor = build_mutation_actor(event)
-    if await service.delete_entry(
-        entry_id,
+    if await service.delete_response_item(
+        response_item_id,
         actor_user_id=actor.user_id,
         actor_group_id=actor.group_id,
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return tr(locale, "wordbank.delete.success", entry_id=entry_id)
+        return tr(locale, "wordbank.delete.success", entry_id=response_item_id)
 
     if actor.group_id:
         vote_result = await service.request_delete_vote(
-            entry_id=entry_id,
+            response_item_id=response_item_id,
             group_id=actor.group_id,
             user_id=actor.user_id,
             threshold=DEFAULT_DELETE_VOTE_THRESHOLD,
@@ -1258,7 +1258,7 @@ async def handle_delete(
         if vote_result is not None:
             return format_delete_vote_result(vote_result, locale=locale)
 
-    return tr(locale, "wordbank.delete.not_found", entry_id=entry_id)
+    return tr(locale, "wordbank.delete.not_found", entry_id=response_item_id)
 
 
 async def handle_support_delete_vote(
@@ -1308,22 +1308,22 @@ async def handle_restore(
     service: WordbankService,
     *,
     event: MessageEvent,
-    entry_id_text: str,
+    response_item_id_text: str,
     locale: LocaleCode,
 ) -> str:
-    if not entry_id_text.isdigit():
+    if not response_item_id_text.isdigit():
         return tr(locale, "wordbank.error.entry_id_numeric")
-    entry_id = int(entry_id_text)
+    response_item_id = int(response_item_id_text)
     actor = build_mutation_actor(event)
-    if await service.restore_entry(
-        entry_id,
+    if await service.restore_response_item(
+        response_item_id,
         actor_user_id=actor.user_id,
         actor_group_id=actor.group_id,
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return tr(locale, "wordbank.restore.success", entry_id=entry_id)
-    return tr(locale, "wordbank.restore.not_found", entry_id=entry_id)
+        return tr(locale, "wordbank.restore.success", entry_id=response_item_id)
+    return tr(locale, "wordbank.restore.not_found", entry_id=response_item_id)
 
 
 def wordbank_help_text(locale: LocaleCode = "zh-CN") -> str:
@@ -1361,21 +1361,21 @@ async def dispatch_wordbank_command(
         return await handle_approve(
             service,
             event=event,
-            entry_id_text=rest,
+            response_item_id_text=rest,
             locale=locale,
         )
     if action in REJECT_ALIASES:
         return await handle_reject(
             service,
             event=event,
-            entry_id_text=rest,
+            response_item_id_text=rest,
             locale=locale,
         )
     if action in DELETE_ALIASES:
         return await handle_delete(
             service,
             event=event,
-            entry_id_text=rest,
+            response_item_id_text=rest,
             locale=locale,
         )
     if action in SUPPORT_ALIASES:
@@ -1396,7 +1396,7 @@ async def dispatch_wordbank_command(
         return await handle_restore(
             service,
             event=event,
-            entry_id_text=rest,
+            response_item_id_text=rest,
             locale=locale,
         )
     return tr(

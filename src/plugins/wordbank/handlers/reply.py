@@ -1,4 +1,4 @@
-"""Reply-style wordbank management compatibility handlers."""
+"""Reply-style wordbank management handlers."""
 
 from __future__ import annotations
 
@@ -10,9 +10,8 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import (
     WordbankApprovalMessageRecord,
-    WordbankEntryDetail,
+    WordbankGroupDetail,
     WordbankResponseMessageRecord,
-    legacy_entry_detail_from_group,
 )
 from src.plugins.wordbank.services.core import WordbankService
 
@@ -92,22 +91,22 @@ async def handle_reply_command(
 
     action = normalize_reply_command(text)
     if action in INFO_ALIASES:
-        detail = await _load_entry_detail(service, response_message)
+        detail = await _load_group_detail(service, response_message)
         if detail is None:
             return tr(
                 locale,
                 "wordbank.reply.entry_not_found",
-                entry_id=response_message.entry_id,
+                entry_id=response_message.response_item_id,
             )
         return format_entry_detail(detail, response_message, locale=locale)
 
     if action in HISTORY_ALIASES:
-        detail = await _load_entry_detail(service, response_message)
+        detail = await _load_group_detail(service, response_message)
         if detail is None:
             return tr(
                 locale,
                 "wordbank.reply.entry_not_found",
-                entry_id=response_message.entry_id,
+                entry_id=response_message.response_item_id,
             )
         return format_entry_history(detail, locale=locale)
 
@@ -115,7 +114,7 @@ async def handle_reply_command(
         return await handle_delete(
             service,
             event=event,
-            entry_id_text=str(response_message.entry_id),
+            response_item_id_text=str(response_message.response_item_id),
             locale=locale,
         )
 
@@ -123,7 +122,7 @@ async def handle_reply_command(
         return await handle_restore(
             service,
             event=event,
-            entry_id_text=str(response_message.entry_id),
+            response_item_id_text=str(response_message.response_item_id),
             locale=locale,
         )
 
@@ -176,8 +175,8 @@ async def handle_approval_reply_result(
 
     action = normalize_reply_command(text)
     if action in APPROVAL_APPROVE_ALIASES:
-        ok = await service.approve_entry(
-            approval_message.entry_id,
+        ok = await service.approve_response_item(
+            approval_message.response_item_id,
             actor_user_id=actor.user_id,
             actor_group_id=actor.group_id,
             can_moderate_group=actor.can_moderate_group,
@@ -188,7 +187,7 @@ async def handle_approval_reply_result(
                 tr(
                     locale,
                     "wordbank.approval.reply_approved",
-                    entry_id=approval_message.entry_id,
+                    entry_id=approval_message.response_item_id,
                 ),
                 approval_message=approval_message,
                 completed=True,
@@ -198,15 +197,15 @@ async def handle_approval_reply_result(
             tr(
                 locale,
                 "wordbank.approval.not_found",
-                entry_id=approval_message.entry_id,
+                entry_id=approval_message.response_item_id,
             ),
             approval_message=approval_message,
             action="approve",
         )
 
     if action in APPROVAL_REJECT_ALIASES:
-        ok = await service.reject_entry(
-            approval_message.entry_id,
+        ok = await service.reject_response_item(
+            approval_message.response_item_id,
             actor_user_id=actor.user_id,
             actor_group_id=actor.group_id,
             can_moderate_group=actor.can_moderate_group,
@@ -217,7 +216,7 @@ async def handle_approval_reply_result(
                 tr(
                     locale,
                     "wordbank.approval.reply_rejected",
-                    entry_id=approval_message.entry_id,
+                    entry_id=approval_message.response_item_id,
                 ),
                 approval_message=approval_message,
                 completed=True,
@@ -227,7 +226,7 @@ async def handle_approval_reply_result(
             tr(
                 locale,
                 "wordbank.approval.not_found",
-                entry_id=approval_message.entry_id,
+                entry_id=approval_message.response_item_id,
             ),
             approval_message=approval_message,
             action="reject",
@@ -243,66 +242,61 @@ def normalize_reply_command(text: str) -> str:
     return " ".join(text.casefold().strip().split())
 
 
-async def _load_entry_detail(
+async def _load_group_detail(
     service: WordbankService,
     response_message: WordbankResponseMessageRecord,
-) -> WordbankEntryDetail | None:
-    if hasattr(service, "get_group_detail"):
-        detail = await service.get_group_detail(
-            response_message.trigger_group_id,
-            response_item_id=response_message.response_item_id,
-        )
-        if detail is None:
-            return None
-        return legacy_entry_detail_from_group(detail)
-    return await service.get_entry_detail(
-        response_message.entry_id,
-        trigger_id=response_message.trigger_id,
-        response_id=response_message.response_id,
+) -> WordbankGroupDetail | None:
+    return await service.get_group_detail(
+        response_message.trigger_group_id,
+        response_item_id=response_message.response_item_id,
     )
 
 
 def format_entry_detail(
-    detail: WordbankEntryDetail,
+    detail: WordbankGroupDetail,
     response_message: WordbankResponseMessageRecord,
     *,
     locale: LocaleCode,
 ) -> str:
+    selected = detail.selected_response
+    assert selected is not None
     return tr(
         locale,
         "wordbank.reply.info",
-        entry_id=detail.entry_id,
-        status=detail.status,
-        enabled=_format_enabled(detail.enabled),
-        deleted_at=_format_deleted_at(detail.deleted_at),
-        scope=detail.scope,
-        group_id=detail.group_id or "-",
-        created_by=detail.created_by,
+        entry_id=selected.response_item_id,
+        status=selected.status,
+        enabled=_format_enabled(selected.enabled),
+        deleted_at=_format_deleted_at(selected.deleted_at),
+        scope=selected.scope,
+        group_id=selected.group_id or "-",
+        created_by=selected.created_by,
         trigger_text=detail.trigger_text,
         trigger_mode=detail.trigger_mode,
-        response_text=detail.response_text,
-        probability=f"{detail.probability:g}",
-        weight=detail.weight,
+        response_text=selected.response_text,
+        probability=f"{selected.probability:g}",
+        weight=selected.weight,
         message_id=response_message.message_id,
         message_type=response_message.message_type,
     )
 
 
 def format_entry_history(
-    detail: WordbankEntryDetail,
+    detail: WordbankGroupDetail,
     *,
     locale: LocaleCode,
 ) -> str:
+    selected = detail.selected_response
+    assert selected is not None
     return tr(
         locale,
         "wordbank.reply.history",
-        entry_id=detail.entry_id,
-        status=detail.status,
-        enabled=_format_enabled(detail.enabled),
-        deleted_at=_format_deleted_at(detail.deleted_at),
-        scope=detail.scope,
-        probability=f"{detail.probability:g}",
-        weight=detail.weight,
+        entry_id=selected.response_item_id,
+        status=selected.status,
+        enabled=_format_enabled(selected.enabled),
+        deleted_at=_format_deleted_at(selected.deleted_at),
+        scope=selected.scope,
+        probability=f"{selected.probability:g}",
+        weight=selected.weight,
     )
 
 

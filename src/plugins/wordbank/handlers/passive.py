@@ -29,7 +29,7 @@ MAX_PASSIVE_IMAGES = 4
 MAX_IMAGE_DOWNLOAD_BYTES = 4 * 1024 * 1024
 
 
-@dataclass(slots=True, frozen=True, init=False)
+@dataclass(slots=True, frozen=True)
 class PassiveResponse:
     text: str
     trigger_group_id: int
@@ -39,56 +39,6 @@ class PassiveResponse:
     user_id: str
     message_type: str
     response_shape: MessageShape | None = None
-
-    def __init__(
-        self,
-        *,
-        text: str,
-        trigger_group_id: int | None = None,
-        trigger_variant_id: int | None = None,
-        response_item_id: int | None = None,
-        entry_id: int | None = None,
-        trigger_id: int | None = None,
-        response_id: int | None = None,
-        group_id: str,
-        user_id: str,
-        message_type: str,
-        response_shape: MessageShape | None = None,
-    ) -> None:
-        object.__setattr__(self, "text", text)
-        object.__setattr__(
-            self,
-            "trigger_group_id",
-            trigger_group_id if trigger_group_id is not None else entry_id or 0,
-        )
-        object.__setattr__(
-            self,
-            "trigger_variant_id",
-            trigger_variant_id if trigger_variant_id is not None else trigger_id or 0,
-        )
-        object.__setattr__(
-            self,
-            "response_item_id",
-            response_item_id
-            if response_item_id is not None
-            else response_id or entry_id or 0,
-        )
-        object.__setattr__(self, "group_id", group_id)
-        object.__setattr__(self, "user_id", user_id)
-        object.__setattr__(self, "message_type", message_type)
-        object.__setattr__(self, "response_shape", response_shape)
-
-    @property
-    def entry_id(self) -> int:
-        return self.response_item_id
-
-    @property
-    def trigger_id(self) -> int:
-        return self.trigger_variant_id
-
-    @property
-    def response_id(self) -> int:
-        return self.response_item_id
 
 
 def build_rule_context(event: MessageEvent | NoticeEvent) -> RuleContext:

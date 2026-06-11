@@ -125,14 +125,14 @@ async def test_reply_history_returns_status_summary() -> None:
 
 
 async def test_reply_delete_and_restore_use_response_item_id() -> None:
-    delete_entry = AsyncMock(return_value=True)
-    restore_entry = AsyncMock(return_value=True)
+    delete_response_item = AsyncMock(return_value=True)
+    restore_response_item = AsyncMock(return_value=True)
     service = cast(
         WordbankService,
         SimpleNamespace(
             get_response_message=AsyncMock(return_value=_response_message()),
-            delete_entry=delete_entry,
-            restore_entry=restore_entry,
+            delete_response_item=delete_response_item,
+            restore_response_item=restore_response_item,
             request_delete_vote=AsyncMock(),
         ),
     )
@@ -152,14 +152,14 @@ async def test_reply_delete_and_restore_use_response_item_id() -> None:
 
     assert deleted == "词条 #300 已删除。"
     assert restored == "词条 #300 已恢复。"
-    delete_entry.assert_awaited_once_with(
+    delete_response_item.assert_awaited_once_with(
         300,
         actor_user_id="10001",
         actor_group_id="20001",
         can_moderate_group=True,
         is_superuser=False,
     )
-    restore_entry.assert_awaited_once_with(
+    restore_response_item.assert_awaited_once_with(
         300,
         actor_user_id="10001",
         actor_group_id="20001",
@@ -170,12 +170,12 @@ async def test_reply_delete_and_restore_use_response_item_id() -> None:
 
 async def test_approval_reply_approves_response_item() -> None:
     get_approval_message = AsyncMock(return_value=_approval_message())
-    approve_entry = AsyncMock(return_value=True)
+    approve_response_item = AsyncMock(return_value=True)
     service = cast(
         WordbankService,
         SimpleNamespace(
             get_approval_message=get_approval_message,
-            approve_entry=approve_entry,
+            approve_response_item=approve_response_item,
         ),
     )
 
@@ -188,4 +188,4 @@ async def test_approval_reply_approves_response_item() -> None:
 
     assert outcome.message == "审批已完成：词条 #300 已通过。"
     assert outcome.completed
-    approve_entry.assert_awaited_once()
+    approve_response_item.assert_awaited_once()

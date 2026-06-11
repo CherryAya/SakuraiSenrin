@@ -93,7 +93,7 @@ async def test_runtime_only_uses_approved_responses_inside_same_group(
         user_id="10001",
         is_group=True,
     )
-    await service.approve_entry(
+    await service.approve_response_item(
         approved.response_item_id,
         actor_user_id="10001",
         actor_group_id="20001",
@@ -135,7 +135,7 @@ async def test_deleting_last_active_response_removes_group_from_runtime_match(
         is_group=True,
     )
     for response_item_id in (first.response_item_id, second.response_item_id):
-        await service.approve_entry(
+        await service.approve_response_item(
             response_item_id,
             actor_user_id="10001",
             actor_group_id="20001",
@@ -143,7 +143,7 @@ async def test_deleting_last_active_response_removes_group_from_runtime_match(
             is_superuser=False,
         )
 
-    deleted_first = await service.delete_entry(
+    deleted_first = await service.delete_response_item(
         first.response_item_id,
         actor_user_id="10001",
         actor_group_id="20001",
@@ -156,7 +156,7 @@ async def test_deleting_last_active_response_removes_group_from_runtime_match(
         context=_context(),
     )
 
-    deleted_second = await service.delete_entry(
+    deleted_second = await service.delete_response_item(
         second.response_item_id,
         actor_user_id="10001",
         actor_group_id="20001",
@@ -189,7 +189,7 @@ async def test_search_groups_multiple_responses_into_single_card(
             user_id="10001",
             is_group=True,
         )
-        await service.approve_entry(
+        await service.approve_response_item(
             created.response_item_id,
             actor_user_id="10001",
             actor_group_id="20001",
@@ -231,7 +231,7 @@ async def test_creator_filter_matches_group_creator_strictly(
         is_group=True,
     )
     for response_item_id in (first.response_item_id, second.response_item_id):
-        await service.approve_entry(
+        await service.approve_response_item(
             response_item_id,
             actor_user_id="10001",
             actor_group_id="20001",
@@ -269,7 +269,7 @@ async def test_search_accepts_response_image_scores_and_marks_match_source(
         user_id="10001",
         is_group=True,
     )
-    await service.approve_entry(
+    await service.approve_response_item(
         created.response_item_id,
         actor_user_id="10001",
         actor_group_id="20001",
@@ -316,7 +316,7 @@ async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
         },
     )
     for response_item_id in (general.response_item_id, gated.response_item_id):
-        await service.approve_entry(
+        await service.approve_response_item(
             response_item_id,
             actor_user_id="10001",
             actor_group_id="20001",
@@ -379,7 +379,7 @@ async def test_runtime_incremental_refresh_only_touches_dirty_group(
 
     monkeypatch.setattr(service, "_refresh_runtime_group", _spy_refresh)
 
-    await service.approve_entry(
+    await service.approve_response_item(
         first.response_item_id,
         actor_user_id="10001",
         actor_group_id="20001",
@@ -428,5 +428,5 @@ async def test_repository_import_message_entry_preserves_group_and_response_stat
 
     assert imported.status == "approved"
     assert imported.probability == 0.75
-    assert imported.triggers[0].trigger_text == "旧版触发"
+    assert imported.trigger_group.trigger_variants[0].trigger_text == "旧版触发"
     assert page.items[0].trigger_group_id == imported.trigger_group_id
