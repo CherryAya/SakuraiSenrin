@@ -8,7 +8,7 @@ Description: 学习词库-传统版
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from nonebot import on_notice
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -50,9 +50,7 @@ from src.lib.plugin_docs import (
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
-
-if TYPE_CHECKING:
-    from src.plugins.wordbank.handlers import PendingWordbankImage
+from src.plugins.wordbank.message_model import MessageShape
 
 name = tr("zh-CN", "plugin.study.name")
 description = tr("zh-CN", "plugin.study.description")
@@ -105,10 +103,7 @@ STUDY_STEP_GROUP_BLOCK = 2
 STUDY_STEP_TRIGGER = 3
 STUDY_STEP_RESPONSE = 4
 STUDY_STEP_WEIGHT = 5
-STUDY_RECALL_PENDING_KEYS = (
-    "study_trigger_image_pending",
-    "study_response_image_pending",
-)
+STUDY_RECALL_PENDING_KEYS: tuple[str, ...] = ()
 
 
 async def _abort_study_on_revoke(
@@ -191,35 +186,13 @@ def _register_study_checkpoint(
     )
 
 
-def _state_image_id(state: T_State, key: str) -> int | None:
+def _state_message_shape(state: Mapping[str, Any], key: str) -> MessageShape | None:
     value = state.get(key)
-    return int(value) if value is not None else None
+    return value if isinstance(value, MessageShape) else None
 
 
 def _is_truthy_state_flag(state: T_State, key: str) -> bool:
     return bool(state.get(key, False))
-
-
-def _state_pending_image(
-    state: T_State,
-    key: str,
-) -> "PendingWordbankImage | None":
-    from src.plugins.wordbank.handlers import PendingWordbankImage
-
-    value = state.get(key)
-    return value if isinstance(value, PendingWordbankImage) else None
-
-
-async def _cancel_pending_image_task(
-    state: Mapping[str, Any],
-    key: str,
-) -> None:
-    pending = _state_pending_image(dict(state), key)
-    if pending is None:
-        return
-    if pending.task.done():
-        return
-    pending.task.cancel()
 
 
 async def _cancel_study_resources(
@@ -229,59 +202,8 @@ async def _cancel_study_resources(
     await cancel_state_resources(
         state,
         cleanup_keys,
-        cleaners={
-            "study_trigger_image_pending": lambda: _cancel_pending_image_task(
-                state,
-                "study_trigger_image_pending",
-            ),
-            "study_response_image_pending": lambda: _cancel_pending_image_task(
-                state,
-                "study_response_image_pending",
-            ),
-        },
+        cleaners={},
     )
-
-
-def _study_pending_image_count(state: Mapping[str, Any]) -> int:
-    count = 0
-    for key in STUDY_RECALL_PENDING_KEYS:
-        pending = _state_pending_image(dict(state), key)
-        if pending is not None and not pending.task.done():
-            count += 1
-    return count
-
-
-async def _resolve_state_image_id(
-    state: T_State,
-    *,
-    id_key: str,
-    pending_key: str,
-) -> int | None:
-    from src.plugins.wordbank.handlers import resolve_pending_image
-
-    image_id = _state_image_id(state, id_key)
-    if image_id is not None:
-        return image_id
-
-    pending = _state_pending_image(state, pending_key)
-    if pending is None:
-        return None
-
-    image = await resolve_pending_image(pending)
-    state[id_key] = image.canonical_id
-    state.pop(pending_key, None)
-    return image.canonical_id
-
-
-def _start_study_image_task(
-    message: Message,
-) -> "PendingWordbankImage | None":
-    from src.plugins.wordbank.handlers import (
-        start_ingest_first_image_from_message,
-    )
-    from src.plugins.wordbank.services import wordbank_media_service
-
-    return start_ingest_first_image_from_message(wordbank_media_service, message)
 
 
 async def _record_study_trigger(
@@ -290,13 +212,14 @@ async def _record_study_trigger(
     state: T_State,
     locale: LocaleCode,
 ) -> None:
-    from src.plugins.wordbank.handlers import extract_image_urls
+    from src.plugins.wordbank.handlers import build_message_shape_from_message
+    from src.plugins.wordbank.services import wordbank_media_service
 
-    text = event.message.extract_plain_text().strip()
-    pending_image = _start_study_image_task(event.message)
-    if pending_image is None and extract_image_urls(event.message):
-        return
-    if pending_image is None and not text:
+    shape = await build_message_shape_from_message(
+        wordbank_media_service,
+        event.message,
+    )
+    if shape.is_empty():
         await _reject_study_error(
             matcher,
             state,
@@ -315,24 +238,13 @@ async def _record_study_trigger(
             "study_response_after_preloaded_trigger",
         ),
     )
-    if pending_image is not None:
-        state["study_trigger"] = ""
-        state["study_trigger_image_pending"] = pending_image
-        state.pop("study_trigger_image_id", None)
-    else:
-        state["study_trigger"] = text
-        state.pop("study_trigger_image_pending", None)
-        state.pop("study_trigger_image_id", None)
+    state["study_trigger_shape"] = shape
     _register_study_checkpoint(
         state,
         event,
         step_index=STUDY_STEP_TRIGGER,
         locale=locale,
         snapshot=snapshot,
-        cleanup_keys=(
-            "study_trigger_image_pending",
-            "study_response_image_pending",
-        ),
     )
     await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
 
@@ -343,13 +255,14 @@ async def _record_study_response(
     state: T_State,
     locale: LocaleCode,
 ) -> None:
-    from src.plugins.wordbank.handlers import extract_image_urls
+    from src.plugins.wordbank.handlers import build_message_shape_from_message
+    from src.plugins.wordbank.services import wordbank_media_service
 
-    text = event.message.extract_plain_text().strip()
-    pending_image = _start_study_image_task(event.message)
-    if pending_image is None and extract_image_urls(event.message):
-        return
-    if pending_image is None and not text:
+    shape = await build_message_shape_from_message(
+        wordbank_media_service,
+        event.message,
+    )
+    if shape.is_empty():
         await _reject_study_error(
             matcher,
             state,
@@ -364,28 +277,19 @@ async def _record_study_response(
         keep_keys=(
             "study_trig_mode",
             "study_group_block",
-            "study_trigger",
+            "study_trigger_shape",
             "study_trigger_preloaded",
             "study_response_after_preloaded_trigger",
             "study_weight_after_preloaded_trigger",
-            "study_trigger_image_pending",
-            "study_trigger_image_id",
         ),
     )
-    state["study_response"] = text
-    if pending_image is not None:
-        state["study_response_image_pending"] = pending_image
-        state.pop("study_response_image_id", None)
-    else:
-        state.pop("study_response_image_pending", None)
-        state.pop("study_response_image_id", None)
+    state["study_response_shape"] = shape
     _register_study_checkpoint(
         state,
         event,
         step_index=STUDY_STEP_RESPONSE,
         locale=locale,
         snapshot=snapshot,
-        cleanup_keys=("study_response_image_pending",),
     )
     await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
 
@@ -424,15 +328,11 @@ async def _record_study_weight_and_finish(
             keep_keys=(
                 "study_trig_mode",
                 "study_group_block",
-                "study_trigger",
-                "study_response",
+                "study_trigger_shape",
+                "study_response_shape",
                 "study_trigger_preloaded",
                 "study_response_after_preloaded_trigger",
                 "study_weight_after_preloaded_trigger",
-                "study_trigger_image_pending",
-                "study_trigger_image_id",
-                "study_response_image_pending",
-                "study_response_image_id",
             ),
         ),
     )
@@ -448,8 +348,7 @@ async def _finish_guided_study(
 ) -> None:
     from src.plugins.wordbank.handlers import (
         build_add_result_message,
-        handle_guided_study_image_trigger_result,
-        handle_guided_study_shortcut_result,
+        handle_guided_study_shape_result,
         record_submission_approval_message,
         send_pending_approval_notice,
     )
@@ -458,47 +357,21 @@ async def _finish_guided_study(
     from src.plugins.wordbank.services.rules import RuleError
 
     try:
-        pending_count = _study_pending_image_count(state)
-        if pending_count:
-            await matcher.send(
-                tr(
-                    locale,
-                    "wordbank.guided.study.pending_images",
-                    count=pending_count,
-                )
-            )
-        trigger_image_id = await _resolve_state_image_id(
-            state,
-            id_key="study_trigger_image_id",
-            pending_key="study_trigger_image_pending",
+        trigger_shape = _state_message_shape(state, "study_trigger_shape")
+        response_shape = _state_message_shape(state, "study_response_shape")
+        if trigger_shape is None or trigger_shape.is_empty():
+            raise RuleError("触发词不能为空", key="wordbank.error.trigger_empty")
+        if response_shape is None or response_shape.is_empty():
+            raise RuleError("响应词不能为空", key="wordbank.error.response_empty")
+        result = await handle_guided_study_shape_result(
+            wordbank_service,
+            event=event,
+            trig_mode_text=str(state.get("study_trig_mode", "")),
+            group_block_text=str(state.get("study_group_block", "")),
+            trigger_shape=trigger_shape,
+            response_shape=response_shape,
+            weight_text=event.message.extract_plain_text(),
         )
-        response_image_id = await _resolve_state_image_id(
-            state,
-            id_key="study_response_image_id",
-            pending_key="study_response_image_pending",
-        )
-        if trigger_image_id is not None:
-            result = await handle_guided_study_image_trigger_result(
-                wordbank_service,
-                event=event,
-                trig_mode_text=str(state.get("study_trig_mode", "")),
-                group_block_text=str(state.get("study_group_block", "")),
-                trigger_canonical_image_id=trigger_image_id,
-                response_text=str(state.get("study_response", "")),
-                response_canonical_image_id=response_image_id,
-                weight_text=event.message.extract_plain_text(),
-            )
-        else:
-            result = await handle_guided_study_shortcut_result(
-                wordbank_service,
-                event=event,
-                trig_mode_text=str(state.get("study_trig_mode", "")),
-                group_block_text=str(state.get("study_group_block", "")),
-                trigger_text=str(state.get("study_trigger", "")),
-                response_text=str(state.get("study_response", "")),
-                response_canonical_image_id=response_image_id,
-                weight_text=event.message.extract_plain_text(),
-            )
     except (RuleError, ValueError) as exc:
         await _reject_study_error(
             matcher,
@@ -538,19 +411,18 @@ async def _start_guided_study_with_trigger_image(
     locale: LocaleCode,
     arg: Message,
 ) -> None:
-    from src.plugins.wordbank.services import wordbank_service
+    from src.plugins.wordbank.handlers import build_message_shape_from_message
+    from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
 
     await wordbank_service.initialize()
     state["study_locale"] = locale
-    pending_image = _start_study_image_task(arg)
-    if pending_image is None:
+    shape = await build_message_shape_from_message(wordbank_media_service, arg)
+    if shape.is_empty():
         await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
         return
     clear_interaction_errors(state)
     register_root_message(state, event)
-    state["study_trigger"] = ""
-    state["study_trigger_image_pending"] = pending_image
-    state.pop("study_trigger_image_id", None)
+    state["study_trigger_shape"] = shape
     state["study_trigger_preloaded"] = True
     await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
 
@@ -664,11 +536,8 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     if _is_truthy_state_flag(state, "study_trigger_preloaded"):
         mode_keep_keys = (
             "study_trigger_preloaded",
-            "study_trigger",
-            "study_trigger_image_pending",
-            "study_trigger_image_id",
+            "study_trigger_shape",
         )
-        mode_cleanup_keys = ("study_response_image_pending",)
     _register_study_checkpoint(
         state,
         event,
@@ -712,11 +581,8 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         keep_keys = (
             "study_trig_mode",
             "study_trigger_preloaded",
-            "study_trigger",
-            "study_trigger_image_pending",
-            "study_trigger_image_id",
+            "study_trigger_shape",
         )
-        cleanup_keys = ("study_response_image_pending",)
     _register_study_checkpoint(
         state,
         event,

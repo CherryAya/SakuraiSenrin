@@ -46,9 +46,7 @@ async def test_build_add_result_message_rebuilds_shape_with_image() -> None:
     load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
     media_service = cast(
         WordbankMediaService,
-        SimpleNamespace(
-            load_canonical_storage_bytes=load_canonical_storage_bytes
-        ),
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
     )
     result = _result(
         response_text="做个好梦 [图片:7]",

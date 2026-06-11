@@ -59,28 +59,26 @@ from .handlers import (
     APPROVAL_REPLY_ALIASES,
     REPLY_COMMAND_ALIASES,
     PassiveResponse,
-    PendingWordbankImage,
     build_add_result_message,
     build_forced_command_text,
+    build_message_shape_from_message,
     dispatch_wordbank_command,
     extract_image_urls,
     fetch_first_image_bytes_from_message,
     handle_add_text_result,
     handle_add_with_media_result,
     handle_approval_reply_result,
-    handle_guided_add_image_trigger_result,
-    handle_guided_add_text_result,
+    handle_guided_add_shape_result,
     handle_passive_message,
     handle_passive_notice,
     handle_reply_command,
     is_reply,
     localize_command_error,
     record_submission_approval_message,
-    resolve_pending_image,
     send_pending_approval_notice,
-    start_ingest_first_image_from_message,
 )
 from .handlers.commands import parse_guided_advanced_options, parse_guided_scope_choice
+from .message_model import MessageShape
 from .services import wordbank_media_service, wordbank_service
 from .services.core import WordbankAddResult
 from .services.rules import RuleError
@@ -129,10 +127,7 @@ WORDBANK_GUIDED_STEP_TRIGGER = 1
 WORDBANK_GUIDED_STEP_RESPONSE = 2
 WORDBANK_GUIDED_STEP_SCOPE = 3
 WORDBANK_GUIDED_STEP_ADVANCED = 4
-WORDBANK_GUIDED_RECALL_PENDING_KEYS = (
-    "wordbank_guided_trigger_image_pending",
-    "wordbank_guided_response_image_pending",
-)
+WORDBANK_GUIDED_RECALL_PENDING_KEYS: tuple[str, ...] = ()
 
 
 async def initialize_wordbank_plugin() -> None:
@@ -361,41 +356,9 @@ async def _handle_wordbank_command_message(
     await matcher.finish(msg)
 
 
-def _state_image_id(state: T_State, key: str) -> int | None:
+def _state_message_shape(state: Mapping[str, Any], key: str) -> MessageShape | None:
     value = state.get(key)
-    return int(value) if value is not None else None
-
-
-def _state_pending_image(state: T_State, key: str) -> PendingWordbankImage | None:
-    value = state.get(key)
-    return value if isinstance(value, PendingWordbankImage) else None
-
-
-async def _resolve_state_image_id(
-    state: T_State,
-    *,
-    id_key: str,
-    pending_key: str,
-) -> int | None:
-    image_id = _state_image_id(state, id_key)
-    if image_id is not None:
-        return image_id
-
-    pending = _state_pending_image(state, pending_key)
-    if pending is None:
-        return None
-
-    image = await resolve_pending_image(pending)
-    state[id_key] = image.canonical_id
-    state.pop(pending_key, None)
-    return image.canonical_id
-
-
-def _start_guided_image_task(event: MessageEvent) -> PendingWordbankImage | None:
-    return start_ingest_first_image_from_message(
-        wordbank_media_service,
-        event.message,
-    )
+    return value if isinstance(value, MessageShape) else None
 
 
 async def _record_guided_trigger(
@@ -404,9 +367,11 @@ async def _record_guided_trigger(
     state: T_State,
     locale: LocaleCode,
 ) -> None:
-    text = event.message.extract_plain_text().strip()
-    pending_image = _start_guided_image_task(event)
-    if pending_image is None and not text:
+    shape = await build_message_shape_from_message(
+        wordbank_media_service,
+        event.message,
+    )
+    if shape.is_empty():
         await _reject_guided_error(
             matcher,
             state,
@@ -417,21 +382,13 @@ async def _record_guided_trigger(
     clear_interaction_errors(state)
     locale = _wordbank_guided_locale(state)
     snapshot = _copy_guided_state(state, keep_keys=())
-    if pending_image is not None:
-        state["wordbank_guided_trigger"] = ""
-        state["wordbank_guided_trigger_image_pending"] = pending_image
-        state.pop("wordbank_guided_trigger_image_id", None)
-    else:
-        state["wordbank_guided_trigger"] = text
-        state.pop("wordbank_guided_trigger_image_pending", None)
-        state.pop("wordbank_guided_trigger_image_id", None)
+    state["wordbank_guided_trigger_shape"] = shape
     _register_guided_checkpoint(
         state,
         event,
         step_index=WORDBANK_GUIDED_STEP_TRIGGER,
         locale=locale,
         snapshot=snapshot,
-        cleanup_keys=WORDBANK_GUIDED_RECALL_PENDING_KEYS,
     )
     await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
 
@@ -442,9 +399,11 @@ async def _record_guided_response(
     state: T_State,
     locale: LocaleCode,
 ) -> None:
-    text = event.message.extract_plain_text().strip()
-    pending_image = _start_guided_image_task(event)
-    if pending_image is None and not text:
+    shape = await build_message_shape_from_message(
+        wordbank_media_service,
+        event.message,
+    )
+    if shape.is_empty():
         await _reject_guided_error(
             matcher,
             state,
@@ -456,26 +415,15 @@ async def _record_guided_response(
     locale = _wordbank_guided_locale(state)
     snapshot = _copy_guided_state(
         state,
-        keep_keys=(
-            "wordbank_guided_trigger",
-            "wordbank_guided_trigger_image_pending",
-            "wordbank_guided_trigger_image_id",
-        ),
+        keep_keys=("wordbank_guided_trigger_shape",),
     )
-    state["wordbank_guided_response"] = text
-    if pending_image is not None:
-        state["wordbank_guided_response_image_pending"] = pending_image
-        state.pop("wordbank_guided_response_image_id", None)
-    else:
-        state.pop("wordbank_guided_response_image_pending", None)
-        state.pop("wordbank_guided_response_image_id", None)
+    state["wordbank_guided_response_shape"] = shape
     _register_guided_checkpoint(
         state,
         event,
         step_index=WORDBANK_GUIDED_STEP_RESPONSE,
         locale=locale,
         snapshot=snapshot,
-        cleanup_keys=("wordbank_guided_response_image_pending",),
     )
     await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
 
@@ -485,18 +433,17 @@ async def _start_guided_add_with_trigger_image(
     event: MessageEvent,
     state: T_State,
     locale: LocaleCode,
+    arg: Message,
 ) -> None:
     await initialize_wordbank_plugin()
     state["wordbank_locale"] = locale
-    pending_image = _start_guided_image_task(event)
-    if pending_image is None:
+    shape = await build_message_shape_from_message(wordbank_media_service, arg)
+    if shape.is_empty():
         await _start_guided_add(matcher, event, state, locale)
         return
     clear_interaction_errors(state)
     register_root_message(state, event)
-    state["wordbank_guided_trigger"] = ""
-    state["wordbank_guided_trigger_image_pending"] = pending_image
-    state.pop("wordbank_guided_trigger_image_id", None)
+    state["wordbank_guided_trigger_shape"] = shape
     await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
 
 
@@ -590,16 +537,6 @@ def _register_guided_checkpoint(
     )
 
 
-async def _cancel_pending_guided_image_task(
-    state: Mapping[str, Any],
-    key: str,
-) -> None:
-    pending = _state_pending_image(dict(state), key)
-    if pending is None or pending.task.done():
-        return
-    pending.task.cancel()
-
-
 async def _cancel_guided_resources(
     state: Mapping[str, Any],
     cleanup_keys: tuple[str, ...] = WORDBANK_GUIDED_RECALL_PENDING_KEYS,
@@ -607,30 +544,8 @@ async def _cancel_guided_resources(
     await cancel_state_resources(
         state,
         cleanup_keys,
-        cleaners={
-            "wordbank_guided_trigger_image_pending": (
-                lambda: _cancel_pending_guided_image_task(
-                    state,
-                    "wordbank_guided_trigger_image_pending",
-                )
-            ),
-            "wordbank_guided_response_image_pending": (
-                lambda: _cancel_pending_guided_image_task(
-                    state,
-                    "wordbank_guided_response_image_pending",
-                )
-            ),
-        },
+        cleaners={},
     )
-
-
-def _wordbank_guided_pending_image_count(state: Mapping[str, Any]) -> int:
-    count = 0
-    for key in WORDBANK_GUIDED_RECALL_PENDING_KEYS:
-        pending = _state_pending_image(dict(state), key)
-        if pending is not None and not pending.task.done():
-            count += 1
-    return count
 
 
 async def _start_guided_add(
@@ -653,45 +568,20 @@ async def _finish_guided_add(
 ) -> None:
     locale = _wordbank_guided_locale(state)
     try:
-        pending_count = _wordbank_guided_pending_image_count(state)
-        if pending_count:
-            await matcher.send(
-                tr(
-                    locale,
-                    "wordbank.guided.add.pending_images",
-                    count=pending_count,
-                )
-            )
-        trigger_image_id = await _resolve_state_image_id(
-            state,
-            id_key="wordbank_guided_trigger_image_id",
-            pending_key="wordbank_guided_trigger_image_pending",
+        trigger_shape = _state_message_shape(state, "wordbank_guided_trigger_shape")
+        response_shape = _state_message_shape(state, "wordbank_guided_response_shape")
+        if trigger_shape is None or trigger_shape.is_empty():
+            raise RuleError("触发词不能为空", key="wordbank.error.trigger_empty")
+        if response_shape is None or response_shape.is_empty():
+            raise RuleError("响应词不能为空", key="wordbank.error.response_empty")
+        result = await handle_guided_add_shape_result(
+            wordbank_service,
+            event=event,
+            trigger_shape=trigger_shape,
+            response_shape=response_shape,
+            scope_text=str(state.get("wordbank_guided_scope", "")),
+            advanced_text=event.message.extract_plain_text(),
         )
-        response_image_id = await _resolve_state_image_id(
-            state,
-            id_key="wordbank_guided_response_image_id",
-            pending_key="wordbank_guided_response_image_pending",
-        )
-        if trigger_image_id is not None:
-            result = await handle_guided_add_image_trigger_result(
-                wordbank_service,
-                event=event,
-                trigger_canonical_image_id=trigger_image_id,
-                response_text=str(state.get("wordbank_guided_response", "")),
-                response_canonical_image_id=response_image_id,
-                scope_text=str(state.get("wordbank_guided_scope", "")),
-                advanced_text=event.message.extract_plain_text(),
-            )
-        else:
-            result = await handle_guided_add_text_result(
-                wordbank_service,
-                event=event,
-                trigger_text=str(state.get("wordbank_guided_trigger", "")),
-                response_text=str(state.get("wordbank_guided_response", "")),
-                response_canonical_image_id=response_image_id,
-                scope_text=str(state.get("wordbank_guided_scope", "")),
-                advanced_text=event.message.extract_plain_text(),
-            )
     except (RuleError, ValueError) as exc:
         await _reject_guided_error(
             matcher,
@@ -723,6 +613,7 @@ async def _(
                     event,
                     state,
                     locale,
+                    arg,
                 )
             else:
                 await _start_guided_add(matcher, event, state, locale)
@@ -773,12 +664,8 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         snapshot=_copy_guided_state(
             state,
             keep_keys=(
-                "wordbank_guided_trigger",
-                "wordbank_guided_response",
-                "wordbank_guided_trigger_image_pending",
-                "wordbank_guided_trigger_image_id",
-                "wordbank_guided_response_image_pending",
-                "wordbank_guided_response_image_id",
+                "wordbank_guided_trigger_shape",
+                "wordbank_guided_response_shape",
             ),
         ),
     )
@@ -810,13 +697,9 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
         snapshot=_copy_guided_state(
             state,
             keep_keys=(
-                "wordbank_guided_trigger",
-                "wordbank_guided_response",
+                "wordbank_guided_trigger_shape",
+                "wordbank_guided_response_shape",
                 "wordbank_guided_scope",
-                "wordbank_guided_trigger_image_pending",
-                "wordbank_guided_trigger_image_id",
-                "wordbank_guided_response_image_pending",
-                "wordbank_guided_response_image_id",
             ),
         ),
     )
@@ -838,7 +721,13 @@ async def _(
         await _start_guided_add(matcher, event, state, locale)
         return
     if not arg.extract_plain_text().strip() and extract_image_urls(arg):
-        await _start_guided_add_with_trigger_image(matcher, event, state, locale)
+        await _start_guided_add_with_trigger_image(
+            matcher,
+            event,
+            state,
+            locale,
+            arg,
+        )
         return
     await _handle_wordbank_command_message(
         bot,
@@ -891,12 +780,8 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         snapshot=_copy_guided_state(
             state,
             keep_keys=(
-                "wordbank_guided_trigger",
-                "wordbank_guided_response",
-                "wordbank_guided_trigger_image_pending",
-                "wordbank_guided_trigger_image_id",
-                "wordbank_guided_response_image_pending",
-                "wordbank_guided_response_image_id",
+                "wordbank_guided_trigger_shape",
+                "wordbank_guided_response_shape",
             ),
         ),
     )
@@ -928,13 +813,9 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
         snapshot=_copy_guided_state(
             state,
             keep_keys=(
-                "wordbank_guided_trigger",
-                "wordbank_guided_response",
+                "wordbank_guided_trigger_shape",
+                "wordbank_guided_response_shape",
                 "wordbank_guided_scope",
-                "wordbank_guided_trigger_image_pending",
-                "wordbank_guided_trigger_image_id",
-                "wordbank_guided_response_image_pending",
-                "wordbank_guided_response_image_id",
             ),
         ),
     )
