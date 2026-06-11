@@ -28,11 +28,7 @@ from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
 from src.lib.i18n.runtime import format_duration, resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.plugin_docs import (
-    DocsRenderContext,
-    build_readme_docs,
-    create_docs_meta,
-)
+from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
 from src.lib.utils.common import get_current_time, time_to_timedelta
@@ -68,11 +64,13 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.admin_user.description",
         },
         "docs": create_docs_meta(
-            build_docs,
             visible=True,
             category="admin",
             order=120,
             source=DOCS_SOURCE,
+            slug="admin.user",
+            parent_slug="admin",
+            aliases=("用户管理模块", "用户管理", "admin.user"),
         ),
     },
 )

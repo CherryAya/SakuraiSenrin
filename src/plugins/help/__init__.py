@@ -2,13 +2,11 @@
 Author: SakuraiCora<1479559098@qq.com>
 Date: 2026-02-19 00:22:09
 LastEditors: SakuraiCora<1479559098@qq.com>
-LastEditTime: 2026-04-04 15:06:18
+LastEditTime: 2026-06-12 01:10:00
 Description: 帮助插件
 """
 
-from collections.abc import Awaitable
 from dataclasses import dataclass
-import inspect
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -26,14 +24,18 @@ from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import (
+    DocNode,
     DocsMeta,
-    DocsProvider,
-    DocsRenderContext,
-    build_readme_docs,
+    build_doc_tree,
+    can_view_node,
     create_docs_meta,
     load_demo_bytes,
-    load_plugin_doc_bundle,
+    load_doc_node,
+    match_doc_node,
     match_feature,
+    read_docs_meta,
+    render_doc_feature,
+    render_doc_node_overview,
 )
 from src.lib.plugin_meta import create_plugin_metadata
 
@@ -50,6 +52,7 @@ class DocsEntry:
     display_name: str
     summary: str
     permission: Permission
+    node: DocNode
 
 
 @dataclass(slots=True)
@@ -57,17 +60,6 @@ class MatchResult:
     status: Literal["matched", "not_found", "ambiguous"]
     entry: DocsEntry | None = None
     candidates: list[DocsEntry] | None = None
-
-
-def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    return build_readme_docs(
-        source=DOCS_SOURCE,
-        name=name,
-        description=description,
-        trigger=TriggerType.COMMAND,
-        permission=Permission.NORMAL,
-        ctx=ctx,
-    )
 
 
 __plugin_meta__ = create_plugin_metadata(
@@ -83,11 +75,12 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.help.description",
         },
         "docs": create_docs_meta(
-            build_docs,
             visible=True,
             category="core",
             order=10,
             source=DOCS_SOURCE,
+            slug="help",
+            aliases=("帮助文档", "帮助中心"),
         ),
     },
 )
@@ -110,31 +103,6 @@ def _normalize_text(value: object) -> str:
     return str(value).strip()
 
 
-def _to_message(raw: object) -> Message:
-    if isinstance(raw, Message):
-        return raw
-    return Message(_normalize_text(raw))
-
-
-def _read_docs_meta(metadata: PluginMetadata) -> DocsMeta | None:
-    docs = metadata.extra.get("docs")
-    if not isinstance(docs, dict):
-        return None
-
-    provider = docs.get("provider")
-    if not callable(provider):
-        return None
-
-    return {
-        "provider": cast(DocsProvider, provider),
-        "visible": bool(docs.get("visible", True)),
-        "category": _normalize_text(docs.get("category", "general")) or "general",
-        "order": int(docs.get("order", 100)),
-        "source": _normalize_text(docs.get("source", "")),
-        "hidden": bool(docs.get("hidden", False)),
-    }
-
-
 def _resolve_metadata_text(
     metadata: PluginMetadata,
     locale: LocaleCode,
@@ -151,42 +119,6 @@ def _resolve_metadata_text(
     return _normalize_text(raw_value)
 
 
-def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
-    entries: list[DocsEntry] = []
-
-    for plugin in nonebot.get_loaded_plugins():
-        if not _is_project_plugin(plugin):
-            continue
-        metadata = plugin.metadata
-        if metadata is None:
-            continue
-        docs = _read_docs_meta(metadata)
-        if docs is None:
-            continue
-
-        display_name = _resolve_metadata_text(metadata, locale, "name") or plugin.name
-        summary = _resolve_metadata_text(metadata, locale, "description")
-        entries.append(
-            DocsEntry(
-                plugin=plugin,
-                metadata=metadata,
-                docs=docs,
-                display_name=display_name,
-                summary=summary,
-                permission=_read_plugin_permission(metadata),
-            )
-        )
-
-    return sorted(
-        entries,
-        key=lambda e: (
-            e.docs["category"],
-            e.docs["order"],
-            e.display_name.lower(),
-        ),
-    )
-
-
 def _read_plugin_permission(metadata: PluginMetadata) -> Permission:
     raw_permission = metadata.extra.get("permission", Permission.NORMAL)
     if isinstance(raw_permission, Permission):
@@ -200,6 +132,55 @@ def _read_plugin_permission(metadata: PluginMetadata) -> Permission:
         return Permission(raw_permission)
     except (TypeError, ValueError):
         return Permission.NORMAL
+
+
+def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
+    entries: list[DocsEntry] = []
+    for plugin in nonebot.get_loaded_plugins():
+        if not _is_project_plugin(plugin):
+            continue
+        metadata = plugin.metadata
+        if metadata is None:
+            continue
+        docs = read_docs_meta(metadata)
+        if docs is None:
+            continue
+        display_name = _resolve_metadata_text(metadata, locale, "name") or plugin.name
+        summary = _resolve_metadata_text(metadata, locale, "description")
+        permission = _read_plugin_permission(metadata)
+        node = load_doc_node(
+            source=docs["source"]["readme_path"],
+            default_name=display_name,
+            default_description=summary,
+            trigger=metadata.extra.get("trigger", TriggerType.COMMAND),
+            permission=permission,
+            docs_meta={
+                **docs,
+                "permission": permission,
+            },
+            module_name=plugin.module_name,
+            plugin_name=plugin.name,
+        )
+        entries.append(
+            DocsEntry(
+                plugin=plugin,
+                metadata=metadata,
+                docs=docs,
+                display_name=display_name,
+                summary=summary,
+                permission=permission,
+                node=node,
+            )
+        )
+
+    return sorted(
+        entries,
+        key=lambda entry: (
+            entry.node.category,
+            entry.node.order,
+            entry.display_name.lower(),
+        ),
+    )
 
 
 async def _resolve_actor_permission(bot: Bot, event: MessageEvent) -> Permission:
@@ -220,9 +201,7 @@ async def _resolve_actor_permission(bot: Bot, event: MessageEvent) -> Permission
 
 
 def _can_view_entry(entry: DocsEntry, actor_permission: Permission) -> bool:
-    if entry.permission == Permission.NONE:
-        return True
-    return actor_permission.has(entry.permission)
+    return can_view_node(entry.node, actor_permission)
 
 
 def _filter_authorized_entries(
@@ -232,60 +211,11 @@ def _filter_authorized_entries(
     return [entry for entry in entries if _can_view_entry(entry, actor_permission)]
 
 
-def _build_index_message(entries: list[DocsEntry], locale: LocaleCode) -> Message:
-    lines = [
-        "📖 ===== 帮助文档 =====",
-        "",
-        "命令前缀: #help / #帮助",
-        "",
-        "帮助信息",
-        "  示例: #help <插件名 / 别名>",
-        "",
-        "⚠️ 注意事项:",
-        "1. 请确保输入的插件名称存在。",
-        "2. 如需进一步支持，请联系管理员，或加入反馈群「427842039」💬。",
-    ]
-
-    visible_entries = [entry for entry in entries if entry.docs["visible"]]
-    if not visible_entries:
-        lines.append("")
-        lines.append(tr(locale, "help.index.empty"))
-        return Message("\n".join(lines))
-
-    lines.extend(["", "🔧 当前可用插件如下:", ""])
-    for index, entry in enumerate(visible_entries, start=1):
-        lines.append(f"{index}. {entry.display_name}")
-        lines.append(f"  #help {entry.display_name}")
-
-    message = Message("\n".join(lines).strip())
-    demo_message = _load_help_index_demo()
-    if not demo_message:
-        return message
-    return message + demo_message
-
-
-def _load_help_index_demo() -> Message:
-    bundle = load_plugin_doc_bundle(
-        source=DOCS_SOURCE,
-        default_name=name,
-        default_description=description,
-        trigger=TriggerType.COMMAND,
-        permission=Permission.NORMAL,
-    )
-    match = match_feature(bundle.index, "index")
-    if match.status != "matched" or match.feature is None:
-        return Message()
-    demo_bytes = load_demo_bytes(bundle, match.feature)
-    if demo_bytes is None:
-        return Message()
-    return Message(MessageSegment.image(demo_bytes))
-
-
 def _unique_entries(entries: list[DocsEntry]) -> list[DocsEntry]:
     seen: set[str] = set()
     unique: list[DocsEntry] = []
     for entry in entries:
-        key = entry.plugin.module_name
+        key = entry.node.slug
         if key in seen:
             continue
         seen.add(key)
@@ -294,48 +224,24 @@ def _unique_entries(entries: list[DocsEntry]) -> list[DocsEntry]:
 
 
 def _match_entry(entries: list[DocsEntry], query: str) -> MatchResult:
-    q = query.strip().lower()
-    if not q:
-        return MatchResult(status="not_found")
-
-    exact: list[DocsEntry] = []
-    fuzzy: list[DocsEntry] = []
-
-    for entry in entries:
-        candidates = {
-            entry.display_name.lower(),
-            entry.plugin.name.lower(),
-            entry.plugin.module_name.lower(),
-            entry.plugin.module_name.split(".")[-1].lower(),
-        }
-        if q in candidates:
-            exact.append(entry)
-            continue
-        if q in entry.display_name.lower() or q in entry.plugin.name.lower():
-            fuzzy.append(entry)
-
-    if len(exact) == 1:
-        return MatchResult(status="matched", entry=exact[0])
-    if len(exact) > 1:
-        return MatchResult(status="ambiguous", candidates=_unique_entries(exact))
-    if len(fuzzy) == 1:
-        return MatchResult(status="matched", entry=fuzzy[0])
-    if len(fuzzy) > 1:
-        return MatchResult(status="ambiguous", candidates=_unique_entries(fuzzy))
+    result = match_doc_node([entry.node for entry in entries], query)
+    if result.status == "matched" and result.node is not None:
+        for entry in entries:
+            if entry.node.slug == result.node.slug:
+                return MatchResult(status="matched", entry=entry)
+    if result.status == "ambiguous":
+        candidates = [
+            entry
+            for entry in entries
+            if any(entry.node.slug == node.slug for node in result.candidates)
+        ]
+        return MatchResult(status="ambiguous", candidates=_unique_entries(candidates))
     return MatchResult(status="not_found")
 
 
 def _is_exact_entry_match(entry: DocsEntry, query: str) -> bool:
     q = query.strip().lower()
-    if not q:
-        return False
-    candidates = {
-        entry.display_name.lower(),
-        entry.plugin.name.lower(),
-        entry.plugin.module_name.lower(),
-        entry.plugin.module_name.split(".")[-1].lower(),
-    }
-    return q in candidates
+    return q in entry.node.search_tokens if q else False
 
 
 def _match_exact_entry(entries: list[DocsEntry], query: str) -> MatchResult:
@@ -347,18 +253,62 @@ def _match_exact_entry(entries: list[DocsEntry], query: str) -> MatchResult:
     return MatchResult(status="not_found")
 
 
-def _build_fallback_docs(
-    entry: DocsEntry,
+def _build_index_message(
+    entries: list[DocsEntry],
     locale: LocaleCode,
-    reason: str,
+    actor_permission: Permission = Permission.NORMAL,
 ) -> Message:
-    return Message(
-        (
-            f"===== {entry.display_name} =====\n"
-            f"{entry.summary or tr(locale, 'docs.default.no_description')}\n\n"
-            f"{tr(locale, 'help.fallback.reason', reason=reason)}"
-        ).strip()
+    tree = build_doc_tree([entry.node for entry in entries])
+    roots = [
+        node
+        for node in tree.roots()
+        if node.visible and can_view_node(node, actor_permission) and not node.hidden
+    ]
+    lines = [
+        "📖 ===== 帮助文档 =====",
+        "",
+        "命令前缀: #help / #帮助",
+        "",
+        "帮助信息",
+        "  示例: #help <节点名>",
+        "  示例: #help <节点名> <子功能名>",
+        "",
+        "⚠️ 注意事项:",
+        "1. 请确保输入的插件名称或节点名称存在。",
+        "2. 如需进一步支持，请联系管理员，或加入反馈群「427842039」💬。",
+    ]
+
+    if not roots:
+        lines.extend(["", tr(locale, "help.index.empty")])
+        return Message("\n".join(lines))
+
+    lines.extend(["", "🔧 当前可用模块如下:", ""])
+    for index, node in enumerate(roots, start=1):
+        lines.append(f"{index}. {node.title}")
+        lines.append(f"  #help {node.title}")
+
+    message = Message("\n".join(lines).strip())
+    demo_message = _load_help_index_demo()
+    if not demo_message:
+        return message
+    return message + demo_message
+
+
+def _load_help_index_demo() -> Message:
+    node = load_doc_node(
+        source=DOCS_SOURCE,
+        default_name=name,
+        default_description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
     )
+    match = match_feature(node.features, "index")
+    if match.status != "matched" or match.feature is None:
+        return Message()
+    demo_bytes = load_demo_bytes(node.bundle, match.feature)
+    if demo_bytes is None:
+        return Message()
+    return Message(MessageSegment.image(demo_bytes))
 
 
 def _build_ambiguous_message(
@@ -373,7 +323,7 @@ def _build_ambiguous_message(
         tr(locale, "help.query.ambiguous.candidates"),
     ]
     for entry in candidates:
-        lines.append(f"- {entry.display_name} ({entry.plugin.module_name})")
+        lines.append(f"- {entry.display_name} ({entry.node.slug})")
     return Message("\n".join(lines))
 
 
@@ -386,37 +336,6 @@ def _build_permission_denied_message(entry: DocsEntry) -> Message:
     )
 
 
-async def _resolve_docs_message(
-    entry: DocsEntry,
-    locale: LocaleCode,
-    *,
-    feature_query: str | None = None,
-    actor_permission: Permission = Permission.NORMAL,
-) -> Message:
-    provider = entry.docs["provider"]
-    try:
-        if len(inspect.signature(provider).parameters) == 0:
-            result = provider()
-        else:
-            view: Literal["plugin", "feature"] = (
-                "feature" if feature_query else "plugin"
-            )
-            result = provider(
-                DocsRenderContext(
-                    locale=locale,
-                    feature_query=feature_query,
-                    view=view,
-                    actor_permission=actor_permission,
-                )
-            )
-        if inspect.isawaitable(result):
-            awaited = cast(Awaitable[object], result)
-            result = await awaited
-        return _to_message(result)
-    except Exception as e:
-        return _build_fallback_docs(entry, locale, f"{type(e).__name__}: {e}")
-
-
 def _split_query(query: str) -> tuple[str, str | None]:
     normalized = query.strip()
     if not normalized:
@@ -425,6 +344,74 @@ def _split_query(query: str) -> tuple[str, str | None]:
         return normalized, None
     plugin_query, feature_query = normalized.split(maxsplit=1)
     return plugin_query.strip(), feature_query.strip() or None
+
+
+async def _resolve_docs_message(
+    entry: DocsEntry,
+    locale: LocaleCode,
+    *,
+    feature_query: str | None = None,
+    actor_permission: Permission = Permission.NORMAL,
+    all_entries: list[DocsEntry] | None = None,
+) -> Message:
+    tree = build_doc_tree([item.node for item in (all_entries or [entry])])
+    children = tree.children_of(entry.node.slug)
+    if feature_query:
+        visible_features = tuple(
+            feature
+            for feature in entry.node.features
+            if feature.permission == Permission.NONE
+            or actor_permission.has(feature.permission)
+        )
+        match = match_feature(visible_features, feature_query)
+        if match.status == "matched" and match.feature is not None:
+            return render_doc_feature(
+                entry.node,
+                match.feature,
+                locale=locale,
+                include_demo=True,
+            )
+        child_match = match_doc_node(children, feature_query)
+        if child_match.status == "matched" and child_match.node is not None:
+            child_entry = next(
+                (
+                    item
+                    for item in (all_entries or [])
+                    if item.node.slug == child_match.node.slug
+                ),
+                None,
+            )
+            if child_entry is not None:
+                return render_doc_node_overview(
+                    child_entry.node,
+                    locale=locale,
+                    include_demo=True,
+                    actor_permission=actor_permission,
+                    children=tree.children_of(child_entry.node.slug),
+                )
+        if match.status == "ambiguous":
+            return Message(
+                "\n".join(
+                    [
+                        f"子功能查询存在歧义: {feature_query}",
+                        "请使用更精确的子功能名。",
+                        "",
+                        *(
+                            f"- {feature.title} ({feature.slug})"
+                            for feature in match.candidates
+                        ),
+                    ]
+                ).strip()
+            )
+        return Message(tr(locale, "help.query.not_found", query=feature_query))
+
+    return render_doc_node_overview(
+        entry.node,
+        locale=locale,
+        include_demo=True,
+        actor_permission=actor_permission,
+        children=children,
+    )
 
 
 @help_matcher.handle()
@@ -440,7 +427,9 @@ async def _(
     authorized_entries = _filter_authorized_entries(entries, actor_permission)
     query = arg.extract_plain_text().strip()
     if not query:
-        await matcher.finish(_build_index_message(authorized_entries, locale))
+        await matcher.finish(
+            _build_index_message(authorized_entries, locale, actor_permission)
+        )
 
     match_result = _match_entry(authorized_entries, query)
     feature_query: str | None = None
@@ -460,6 +449,7 @@ async def _(
         ):
             await matcher.finish(_build_permission_denied_message(denied_match.entry))
         await matcher.finish(Message(tr(locale, "help.query.not_found", query=query)))
+
     if match_result.status == "ambiguous":
         await matcher.finish(
             _build_ambiguous_message(query, match_result.candidates or [], locale)
@@ -474,5 +464,6 @@ async def _(
         locale,
         feature_query=feature_query,
         actor_permission=actor_permission,
+        all_entries=entries,
     )
     await matcher.finish(docs_message)

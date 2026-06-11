@@ -45,11 +45,13 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.admin_i18n.description",
         },
         "docs": create_docs_meta(
-            build_docs,
             visible=True,
             category="admin",
             order=125,
             source=DOCS_SOURCE,
+            slug="admin.i18n",
+            parent_slug="admin",
+            aliases=("语言管理模块", "语言管理", "admin.i18n"),
         ),
     },
 )

@@ -12,7 +12,10 @@ from src.lib.plugin_docs import (
     DocsRenderContext,
     InlineTextSpan,
     audit_demo_layout,
+    build_doc_tree,
     build_readme_docs,
+    create_docs_meta,
+    load_doc_node,
     load_plugin_doc_bundle,
     load_representative_demo_bytes,
     match_feature,
@@ -359,11 +362,10 @@ def test_build_readme_docs_filters_features_by_actor_permission() -> None:
     assert "超管维护命令" not in str(normal_message)
     assert "处理矩阵合并建议" in str(superuser_message)
     assert "超管维护命令" in str(superuser_message)
-    assert "无权限查看子功能文档: 超管维护命令" in str(denied_feature_message)
-    assert "需要权限: 超级管理员" in str(denied_feature_message)
+    assert "未找到子功能文档: admin-maintenance" in str(denied_feature_message)
 
 
-def test_build_readme_docs_splits_wordbank_normal_and_approval_docs() -> None:
+def test_build_readme_docs_supports_wordbank_and_approval_docs() -> None:
     wordbank_source = Path("src/plugins/wordbank/docs/README.MD")
     approval_source = Path("src/plugins/wordbank_approval/docs/README.MD")
 
@@ -407,8 +409,80 @@ def test_build_readme_docs_splits_wordbank_normal_and_approval_docs() -> None:
     assert "待审核词条" in str(admin_approval_message)
     assert "通过审核" in str(admin_approval_message)
     assert "拒绝审核" in str(admin_approval_message)
-    assert "无权限查看子功能文档: 通过审核" in str(denied_approval_feature_message)
-    assert "需要权限: 群管理员" in str(denied_approval_feature_message)
+    assert "未找到子功能文档: approve" in str(denied_approval_feature_message)
+
+
+def test_build_doc_tree_supports_admin_and_notice_hierarchy() -> None:
+    admin_meta = create_docs_meta(
+        visible=False,
+        category="admin",
+        order=10,
+        source="src/plugins/admin/docs/README.MD",
+        slug="admin",
+        kind="overview",
+    )
+    group_meta = create_docs_meta(
+        visible=True,
+        category="admin",
+        order=110,
+        source="src/plugins/admin/docs/group/README.MD",
+        slug="admin.group",
+        parent_slug="admin",
+    )
+    notice_meta = create_docs_meta(
+        visible=False,
+        category="system",
+        order=10,
+        source="src/plugins/notice/docs/README.MD",
+        slug="notice",
+        kind="overview",
+    )
+    invite_meta = create_docs_meta(
+        visible=False,
+        category="system",
+        order=130,
+        source="src/plugins/notice/docs/invite/README.MD",
+        slug="notice.invite",
+        parent_slug="notice",
+    )
+
+    admin = load_doc_node(
+        source=admin_meta["source"]["readme_path"],
+        default_name="管理模块总览",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        docs_meta=admin_meta,
+    )
+    group = load_doc_node(
+        source=group_meta["source"]["readme_path"],
+        default_name="群组管理模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        docs_meta=group_meta,
+    )
+    notice = load_doc_node(
+        source=notice_meta["source"]["readme_path"],
+        default_name="通知模块总览",
+        default_description="desc",
+        trigger=TriggerType.PASSIVE,
+        permission=Permission.SUPERUSER,
+        docs_meta=notice_meta,
+    )
+    invite = load_doc_node(
+        source=invite_meta["source"]["readme_path"],
+        default_name="群组邀请处理",
+        default_description="desc",
+        trigger=TriggerType.PASSIVE,
+        permission=Permission.SUPERUSER,
+        docs_meta=invite_meta,
+    )
+
+    tree = build_doc_tree([admin, group, notice, invite])
+
+    assert [node.slug for node in tree.children_of("admin")] == ["admin.group"]
+    assert [node.slug for node in tree.children_of("notice")] == ["notice.invite"]
 
 
 def test_plugin_docs_readmes_do_not_use_placeholder_commands() -> None:
@@ -981,8 +1055,7 @@ def test_collection_wraps_long_code_command_spans_without_overflow() -> None:
         for line in lines
     )
     assert all(
-        not line[0][0].startswith(("|", "/", "_", " --", " => "))
-        for line in lines[1:]
+        not line[0][0].startswith(("|", "/", "_", " --", " => ")) for line in lines[1:]
     )
 
 
@@ -1004,8 +1077,7 @@ def test_collection_wraps_long_scope_code_command_spans_without_overflow() -> No
         for line in lines
     )
     assert all(
-        not line[0][0].startswith(("|", "/", "_", " --", " => "))
-        for line in lines[1:]
+        not line[0][0].startswith(("|", "/", "_", " --", " => ")) for line in lines[1:]
     )
 
 

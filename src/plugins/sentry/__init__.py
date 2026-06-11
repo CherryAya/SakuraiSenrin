@@ -12,7 +12,6 @@ from typing import cast
 
 from nonebot import get_bot
 from nonebot.adapters.onebot.v11 import Bot
-from nonebot.adapters.onebot.v11.message import Message
 import sentry_sdk
 from sentry_sdk.types import Event, Hint
 
@@ -20,28 +19,13 @@ from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import send_private_i18n, tr
-from src.lib.plugin_docs import (
-    DocsRenderContext,
-    build_readme_docs,
-    create_docs_meta,
-)
+from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 
 name = tr("zh-CN", "plugin.sentry.name")
 description = tr("zh-CN", "plugin.sentry.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
-
-
-def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    return build_readme_docs(
-        source=DOCS_SOURCE,
-        name=name,
-        description=description,
-        trigger=TriggerType.PASSIVE,
-        permission=Permission.SUPERUSER,
-        ctx=ctx,
-    )
 
 
 __plugin_meta__ = create_plugin_metadata(
@@ -57,7 +41,6 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.sentry.description",
         },
         "docs": create_docs_meta(
-            build_docs,
             visible=False,
             category="system",
             order=30,

@@ -46,11 +46,7 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
-from src.lib.plugin_docs import (
-    DocsRenderContext,
-    build_readme_docs,
-    create_docs_meta,
-)
+from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 
@@ -98,17 +94,6 @@ description = tr("zh-CN", "plugin.wordbank.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
-def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    return build_readme_docs(
-        source=DOCS_SOURCE,
-        name=name,
-        description=description,
-        trigger=TriggerType.COMMAND,
-        permission=Permission.NORMAL,
-        ctx=ctx,
-    )
-
-
 __plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
@@ -122,11 +107,12 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.wordbank.description",
         },
         "docs": create_docs_meta(
-            build_docs,
             visible=True,
             category="fun",
             order=80,
             source=DOCS_SOURCE,
+            slug="wordbank",
+            aliases=("词库模块", "wordbank"),
         ),
     },
 )

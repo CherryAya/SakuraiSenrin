@@ -32,11 +32,7 @@ from src.database.core.consts import GroupStatus, InvitationStatus, Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.plugin_docs import (
-    DocsRenderContext,
-    build_readme_docs,
-    create_docs_meta,
-)
+from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils.common import get_current_time
@@ -74,11 +70,13 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.admin_invite.description",
         },
         "docs": create_docs_meta(
-            build_docs,
             visible=True,
             category="admin",
             order=130,
             source=DOCS_SOURCE,
+            slug="admin.invite",
+            parent_slug="admin",
+            aliases=("邀请管理模块", "邀请管理", "admin.invite"),
         ),
     },
 )

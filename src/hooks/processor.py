@@ -12,7 +12,6 @@ from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
     Event,
 )
-from nonebot.adapters.onebot.v11.message import Message
 from nonebot.exception import IgnoredException
 from nonebot.matcher import Matcher
 from nonebot.message import run_preprocessor
@@ -21,11 +20,7 @@ from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import GLOBAL_GROUP_FLAG, TriggerType
 from src.lib.i18n.runtime import tr
-from src.lib.plugin_docs import (
-    DocsRenderContext,
-    build_readme_docs,
-    create_docs_meta,
-)
+from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, is_set
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
@@ -41,17 +36,6 @@ description = tr("zh-CN", "plugin.hook_processor.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "processor" / "README.MD"
 
 
-def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    return build_readme_docs(
-        source=DOCS_SOURCE,
-        name=name,
-        description=description,
-        trigger=TriggerType.PASSIVE,
-        permission=Permission.SUPERUSER,
-        ctx=ctx,
-    )
-
-
 __plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
@@ -65,11 +49,12 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.hook_processor.description",
         },
         "docs": create_docs_meta(
-            build_docs,
             visible=False,
             category="internal",
             order=10,
             source=DOCS_SOURCE,
+            slug="hook.processor",
+            kind="internal",
         ),
     },
 )

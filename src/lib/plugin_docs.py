@@ -1,9 +1,11 @@
-"""Plugin docs metadata, README parsing, and demo rendering helpers."""
+"""Project-wide plugin docs engine, README parser, and demo rendering helpers."""
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from io import BytesIO
 from math import ceil
 from pathlib import Path
@@ -11,6 +13,7 @@ import re
 from typing import Any, ClassVar, Literal, TypedDict, cast
 
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.plugin import PluginMetadata
 from PIL import Image, ImageDraw, ImageFont
 from pil_utils import BuildImage
 from pil_utils.text2image import Text2Image
@@ -27,6 +30,12 @@ DEMO_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 DEMO_AVATAR_PATH = DEMO_ASSETS_DIR / "senrin-demo-avatar.png"
 DEMO_STANDEE_PATH = DEMO_ASSETS_DIR / "senrin-demo-standee.png"
 SUPPORT_NOTE = "如需进一步支持，请联系管理员，或加入反馈群「427842039」💬。"
+DEFAULT_HELP_CATEGORY = "general"
+
+type DocsResult = Message | Awaitable[Message] | str | Awaitable[str]
+type DocsProvider = Callable[..., DocsResult]
+type DocNodeKind = Literal["plugin", "overview", "internal"]
+type DocRenderView = Literal["text", "index", "plugin", "feature"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -34,21 +43,35 @@ class DocsRenderContext:
     locale: LocaleCode
     feature_query: str | None = None
     include_demo: bool = True
-    view: Literal["text", "index", "plugin", "feature"] = "text"
+    view: DocRenderView = "text"
     actor_permission: Permission = Permission.NORMAL
 
 
-type DocsResult = Message | Awaitable[Message] | str | Awaitable[str]
-type DocsProvider = Callable[..., DocsResult]
+class DocSourceMeta(TypedDict):
+    kind: Literal["readme"]
+    readme_path: str
+
+
+class DocTreeMeta(TypedDict):
+    slug: str
+    parent_slug: str | None
+    category: str
+    order: int
+
+
+class DocVisibilityMeta(TypedDict):
+    visible: bool
+    hidden: bool
+    internal: bool
 
 
 class DocsMeta(TypedDict):
-    visible: bool
-    category: str
-    order: int
-    provider: DocsProvider
-    source: str
-    hidden: bool
+    kind: DocNodeKind
+    source: DocSourceMeta
+    tree: DocTreeMeta
+    visibility: DocVisibilityMeta
+    permission: Permission | int | str
+    aliases: tuple[str, ...]
 
 
 @dataclass(slots=True, frozen=True)
@@ -107,24 +130,154 @@ class FeatureMatchResult:
     candidates: tuple[FeatureDoc, ...] = ()
 
 
+@dataclass(slots=True, frozen=True)
+class DocNode:
+    kind: DocNodeKind
+    slug: str
+    parent_slug: str | None
+    category: str
+    order: int
+    visible: bool
+    hidden: bool
+    internal: bool
+    permission: Permission
+    title: str
+    summary: str
+    description: str
+    aliases: tuple[str, ...]
+    source_path: Path
+    bundle: PluginDocBundle
+    module_name: str = ""
+    plugin_name: str = ""
+
+    @property
+    def features(self) -> tuple[FeatureDoc, ...]:
+        return self.bundle.index
+
+    @property
+    def search_tokens(self) -> set[str]:
+        tokens = {
+            self.slug.lower(),
+            self.title.lower(),
+            *(alias.lower() for alias in self.aliases),
+        }
+        leaf = self.slug.split(".")[-1].strip()
+        if leaf:
+            tokens.add(leaf.lower())
+        if self.plugin_name:
+            tokens.add(self.plugin_name.lower())
+        if self.module_name:
+            module = self.module_name.lower()
+            tokens.add(module)
+            tokens.add(module.split(".")[-1])
+        return {token for token in tokens if token}
+
+
+@dataclass(slots=True, frozen=True)
+class DocTree:
+    nodes: tuple[DocNode, ...]
+    children_by_slug: dict[str, tuple[DocNode, ...]]
+
+    def children_of(self, slug: str) -> tuple[DocNode, ...]:
+        return self.children_by_slug.get(slug, ())
+
+    def roots(self) -> tuple[DocNode, ...]:
+        return tuple(node for node in self.nodes if node.parent_slug is None)
+
+
+@dataclass(slots=True, frozen=True)
+class NodeMatchResult:
+    status: Literal["matched", "not_found", "ambiguous"]
+    node: DocNode | None = None
+    candidates: tuple[DocNode, ...] = ()
+
+
 def create_docs_meta(
-    provider: DocsProvider,
+    provider: DocsProvider | None = None,
     *,
     visible: bool,
     category: str,
     order: int,
     source: str | Path | None = None,
     hidden: bool = False,
+    slug: str | None = None,
+    parent_slug: str | None = None,
+    kind: DocNodeKind = "plugin",
+    internal: bool = False,
+    aliases: Sequence[str] = (),
 ) -> DocsMeta:
-    docs: DocsMeta = {
-        "visible": visible,
-        "category": category,
-        "order": order,
-        "provider": provider,
-        "source": str(source) if source is not None else "",
-        "hidden": hidden,
+    del provider
+    source_path = Path(source).resolve() if source is not None else Path()
+    derived_slug, derived_parent = _derive_tree_identity_from_source(source_path)
+    return {
+        "kind": kind,
+        "source": {
+            "kind": "readme",
+            "readme_path": str(source_path),
+        },
+        "tree": {
+            "slug": slug or derived_slug,
+            "parent_slug": parent_slug if parent_slug is not None else derived_parent,
+            "category": category or DEFAULT_HELP_CATEGORY,
+            "order": order,
+        },
+        "visibility": {
+            "visible": visible,
+            "hidden": hidden,
+            "internal": internal,
+        },
+        "permission": Permission.NORMAL,
+        "aliases": tuple(alias.strip() for alias in aliases if alias.strip()),
     }
-    return docs
+
+
+def read_docs_meta(metadata: PluginMetadata) -> DocsMeta | None:
+    raw = metadata.extra.get("docs")
+    if not isinstance(raw, dict):
+        return None
+    source = raw.get("source")
+    tree = raw.get("tree")
+    visibility = raw.get("visibility")
+    if not isinstance(source, dict) or not isinstance(tree, dict):
+        return None
+    if not isinstance(visibility, dict):
+        return None
+    readme_path = str(source.get("readme_path", "")).strip()
+    slug = str(tree.get("slug", "")).strip()
+    category = str(tree.get("category", DEFAULT_HELP_CATEGORY)).strip()
+    if not readme_path or not slug:
+        return None
+    aliases = raw.get("aliases", ())
+    normalized_aliases = tuple(
+        alias.strip() for alias in aliases if isinstance(alias, str) and alias.strip()
+    )
+    permission = raw.get(
+        "permission", metadata.extra.get("permission", Permission.NORMAL)
+    )
+    return {
+        "kind": cast(DocNodeKind, raw.get("kind", "plugin")),
+        "source": {
+            "kind": "readme",
+            "readme_path": readme_path,
+        },
+        "tree": {
+            "slug": slug,
+            "parent_slug": (
+                str(tree["parent_slug"]).strip()
+                if tree.get("parent_slug") is not None
+                else None
+            ),
+            "category": category or DEFAULT_HELP_CATEGORY,
+            "order": int(tree.get("order", 100)),
+        },
+        "visibility": {
+            "visible": bool(visibility.get("visible", True)),
+            "hidden": bool(visibility.get("hidden", False)),
+            "internal": bool(visibility.get("internal", False)),
+        },
+        "permission": permission,
+        "aliases": normalized_aliases,
+    }
 
 
 def build_static_docs(
@@ -172,30 +325,26 @@ def build_readme_docs(
     ctx: DocsRenderContext | None = None,
 ) -> Message:
     locale = ctx.locale if ctx is not None else "zh-CN"
-    bundle = load_plugin_doc_bundle(
+    actor_permission = ctx.actor_permission if ctx is not None else Permission.NORMAL
+    node = load_doc_node(
         source=source,
         default_name=name,
         default_description=description,
         trigger=trigger,
         permission=permission,
     )
-    actor_permission = ctx.actor_permission if ctx is not None else Permission.NORMAL
     if ctx is not None and ctx.feature_query:
-        visible_features = _filter_features_by_permission(
-            bundle.index,
-            actor_permission,
+        visible_features = filter_features_by_permission(
+            node.features, actor_permission
         )
         match = match_feature(visible_features, ctx.feature_query)
         if match.status == "matched" and match.feature is not None:
-            return render_feature_message(
-                bundle,
+            return render_doc_feature(
+                node,
                 match.feature,
                 locale=locale,
                 include_demo=ctx.include_demo,
             )
-        denied_match = match_feature(bundle.index, ctx.feature_query)
-        if denied_match.status == "matched" and denied_match.feature is not None:
-            return _build_feature_permission_denied_message(denied_match.feature)
         if match.status == "ambiguous":
             return Message(
                 "\n".join(
@@ -214,11 +363,205 @@ def build_readme_docs(
     include_demo = (
         ctx.include_demo if ctx is not None and ctx.view == "plugin" else False
     )
-    return render_overview_message(
-        bundle,
+    return render_doc_node_overview(
+        node,
         locale=locale,
         include_demo=include_demo,
         actor_permission=actor_permission,
+    )
+
+
+def build_doc_tree(nodes: Sequence[DocNode]) -> DocTree:
+    ordered = tuple(
+        sorted(
+            nodes,
+            key=lambda node: (
+                node.category,
+                node.parent_slug or "",
+                node.order,
+                node.title.lower(),
+            ),
+        )
+    )
+    child_map: defaultdict[str, list[DocNode]] = defaultdict(list)
+    for node in ordered:
+        if node.parent_slug is not None:
+            child_map[node.parent_slug].append(node)
+    normalized = {
+        slug: tuple(
+            sorted(children, key=lambda child: (child.order, child.title.lower()))
+        )
+        for slug, children in child_map.items()
+    }
+    return DocTree(nodes=ordered, children_by_slug=normalized)
+
+
+def match_doc_node(nodes: Sequence[DocNode], query: str) -> NodeMatchResult:
+    normalized = query.strip().lower()
+    if not normalized:
+        return NodeMatchResult(status="not_found")
+
+    exact: list[DocNode] = []
+    fuzzy: list[DocNode] = []
+    for node in nodes:
+        tokens = node.search_tokens
+        if normalized in tokens:
+            exact.append(node)
+            continue
+        if any(normalized in token for token in tokens):
+            fuzzy.append(node)
+    if len(exact) == 1:
+        return NodeMatchResult(status="matched", node=exact[0])
+    if len(exact) > 1:
+        return NodeMatchResult(status="ambiguous", candidates=_unique_nodes(exact))
+    if len(fuzzy) == 1:
+        return NodeMatchResult(status="matched", node=fuzzy[0])
+    if len(fuzzy) > 1:
+        return NodeMatchResult(status="ambiguous", candidates=_unique_nodes(fuzzy))
+    return NodeMatchResult(status="not_found")
+
+
+def load_doc_node(
+    *,
+    source: str | Path,
+    default_name: str,
+    default_description: str,
+    trigger: TriggerType,
+    permission: Permission,
+    docs_meta: DocsMeta | None = None,
+    module_name: str = "",
+    plugin_name: str = "",
+) -> DocNode:
+    source_path = Path(source).resolve()
+    meta = docs_meta or create_docs_meta(
+        visible=True,
+        category=DEFAULT_HELP_CATEGORY,
+        order=100,
+        source=source_path,
+    )
+    bundle = load_plugin_doc_bundle(
+        source=source_path,
+        default_name=default_name,
+        default_description=default_description,
+        trigger=trigger,
+        permission=permission,
+    )
+    slug = meta["tree"]["slug"]
+    return DocNode(
+        kind=meta["kind"],
+        slug=slug,
+        parent_slug=meta["tree"]["parent_slug"],
+        category=meta["tree"]["category"],
+        order=meta["tree"]["order"],
+        visible=meta["visibility"]["visible"],
+        hidden=meta["visibility"]["hidden"],
+        internal=meta["visibility"]["internal"],
+        permission=_coerce_permission(meta["permission"] or permission),
+        title=bundle.title or default_name,
+        summary=bundle.summary or default_description,
+        description=default_description,
+        aliases=meta["aliases"],
+        source_path=source_path,
+        bundle=bundle,
+        module_name=module_name,
+        plugin_name=plugin_name,
+    )
+
+
+def render_doc_node_overview(
+    node: DocNode,
+    *,
+    locale: LocaleCode,
+    include_demo: bool = False,
+    actor_permission: Permission = Permission.NORMAL,
+    children: Sequence[DocNode] = (),
+) -> Message:
+    del locale
+    lines = [f"📖 ===== {node.title} =====", ""]
+    if node.summary:
+        lines.extend([node.summary, ""])
+
+    visible_children = tuple(
+        child for child in children if can_view_node(child, actor_permission)
+    )
+    visible_features = filter_features_by_permission(node.features, actor_permission)
+
+    if visible_children:
+        lines.append("子节点:")
+        for index, child in enumerate(visible_children, start=1):
+            lines.append(f"{index}. {child.title}")
+            lines.append(f"  #help {child.title}")
+        lines.append("")
+    elif visible_features:
+        for index, feature in enumerate(visible_features, start=1):
+            lines.append(f"{index}. {feature.title}")
+            lines.append(
+                f"  {_feature_command_for_display(node.bundle, feature, node.title)}"
+            )
+            lines.append("")
+    else:
+        lines.extend(["暂无可用功能。", ""])
+
+    lines.extend(
+        [
+            "⚠️ 注意事项:",
+            "1. 请确认指令参数填写完整。",
+            f"2. {SUPPORT_NOTE}",
+        ]
+    )
+    message = Message("\n".join(lines).strip())
+    if not include_demo:
+        return message
+    demo_bytes = load_representative_demo_bytes(node.bundle)
+    if demo_bytes is None:
+        return message
+    return message + MessageSegment.image(demo_bytes)
+
+
+def render_doc_feature(
+    node: DocNode,
+    feature: FeatureDoc,
+    *,
+    locale: LocaleCode,
+    include_demo: bool = True,
+) -> Message:
+    del locale
+    lines = [
+        f"📖 ===== {node.title} / {feature.title} =====",
+        "",
+        f"功能名: {feature.title}",
+        "",
+        "指令:",
+        f"  {_feature_command_for_display(node.bundle, feature, node.title)}",
+        "",
+        "⚠️ 注意事项:",
+    ]
+    for index, note in enumerate(_feature_notice_items(feature), start=1):
+        lines.append(f"{index}. {note}")
+    message = Message("\n".join(lines).strip())
+    if not include_demo:
+        return message
+    demo_bytes = load_demo_bytes(node.bundle, feature)
+    if demo_bytes is None:
+        return message
+    return message + MessageSegment.image(demo_bytes)
+
+
+def can_view_node(node: DocNode, actor_permission: Permission) -> bool:
+    if node.permission == Permission.NONE:
+        return True
+    return actor_permission.has(node.permission)
+
+
+def filter_features_by_permission(
+    features: Sequence[FeatureDoc],
+    actor_permission: Permission,
+) -> tuple[FeatureDoc, ...]:
+    return tuple(
+        feature
+        for feature in features
+        if feature.permission == Permission.NONE
+        or actor_permission.has(feature.permission)
     )
 
 
@@ -231,6 +574,23 @@ def load_plugin_doc_bundle(
     permission: Permission,
 ) -> PluginDocBundle:
     source_path = Path(source).resolve()
+    return _load_plugin_doc_bundle_cached(
+        source_path,
+        default_name,
+        default_description,
+        trigger,
+        permission,
+    )
+
+
+@lru_cache(maxsize=256)
+def _load_plugin_doc_bundle_cached(
+    source_path: Path,
+    default_name: str,
+    default_description: str,
+    trigger: TriggerType,
+    permission: Permission,
+) -> PluginDocBundle:
     raw_text = source_path.read_text(encoding="utf-8")
     title = _extract_title(raw_text) or default_name
     sections = _split_sections(raw_text, level=2)
@@ -283,10 +643,7 @@ def match_feature(
     if len(exact_primary) == 1:
         return FeatureMatchResult(status="matched", feature=exact_primary[0])
     if len(exact_primary) > 1:
-        return FeatureMatchResult(
-            status="ambiguous",
-            candidates=tuple(exact_primary),
-        )
+        return FeatureMatchResult(status="ambiguous", candidates=tuple(exact_primary))
     if len(exact_alias) == 1:
         return FeatureMatchResult(status="matched", feature=exact_alias[0])
     if len(exact_alias) > 1:
@@ -295,117 +652,66 @@ def match_feature(
         return FeatureMatchResult(status="matched", feature=fuzzy[0])
     if len(fuzzy) > 1:
         unique = {feature.slug: feature for feature in fuzzy}
-        return FeatureMatchResult(
-            status="ambiguous",
-            candidates=tuple(unique.values()),
-        )
+        return FeatureMatchResult(status="ambiguous", candidates=tuple(unique.values()))
     return FeatureMatchResult(status="not_found")
 
 
-def render_overview_message(
-    bundle: PluginDocBundle,
-    *,
-    locale: LocaleCode,
-    include_demo: bool = False,
-    actor_permission: Permission = Permission.NORMAL,
-) -> Message:
-    lines = [
-        f"📖 ===== {bundle.title} =====",
-        "",
-    ]
-    visible_features = _filter_features_by_permission(bundle.index, actor_permission)
-    if visible_features:
-        for index, feature in enumerate(visible_features, start=1):
-            lines.append(f"{index}. {feature.title}")
-            lines.append(f"  {_feature_command_for_display(bundle, feature)}")
-            lines.append("")
-    else:
-        lines.append("暂无可用功能。")
-        lines.append("")
-    lines.extend(
-        [
-            "⚠️ 注意事项:",
-            "1. 请确认指令参数填写完整。",
-            f"2. {SUPPORT_NOTE}",
-        ]
+def _unique_nodes(nodes: Sequence[DocNode]) -> tuple[DocNode, ...]:
+    unique: dict[str, DocNode] = {}
+    for node in nodes:
+        unique.setdefault(node.slug, node)
+    return tuple(unique.values())
+
+
+def _coerce_permission(value: Permission | int | str) -> Permission:
+    if isinstance(value, Permission):
+        return value
+    if isinstance(value, str):
+        try:
+            return Permission[value]
+        except KeyError:
+            for permission in Permission:
+                if permission.label == value:
+                    return permission
+            return Permission.NORMAL
+    try:
+        return Permission(value)
+    except (TypeError, ValueError):
+        return Permission.NORMAL
+
+
+def _derive_tree_identity_from_source(source_path: Path) -> tuple[str, str | None]:
+    if not source_path:
+        return "", None
+    src_root = next(
+        (parent for parent in source_path.parents if parent.name == "src"), None
     )
-    message = Message("\n".join(line for line in lines if line is not None).strip())
-    if not include_demo:
-        return message
-    demo_bytes = load_representative_demo_bytes(bundle)
-    if demo_bytes is None:
-        return message
-    return message + MessageSegment.image(demo_bytes)
+    if src_root is None:
+        return source_path.stem.lower(), None
+    try:
+        rel_path = source_path.relative_to(src_root)
+    except ValueError:
+        return source_path.stem.lower(), None
 
-
-def render_feature_message(
-    bundle: PluginDocBundle,
-    feature: FeatureDoc,
-    *,
-    locale: LocaleCode,
-    include_demo: bool = True,
-) -> Message:
-    lines = [
-        f"📖 ===== {bundle.title} / {feature.title} =====",
-        "",
-        f"功能名: {feature.title}",
-        "",
-        "指令:",
-        f"  {_feature_command_for_display(bundle, feature)}",
-        "",
-        "⚠️ 注意事项:",
-    ]
-    for index, note in enumerate(_feature_notice_items(feature), start=1):
-        lines.append(f"{index}. {note}")
-    message = Message("\n".join(lines).strip())
-    if not include_demo:
-        return message
-    demo_bytes = load_demo_bytes(bundle, feature)
-    if demo_bytes is None:
-        return message
-    return message + MessageSegment.image(demo_bytes)
-
-
-def _filter_features_by_permission(
-    features: Sequence[FeatureDoc],
-    actor_permission: Permission,
-) -> tuple[FeatureDoc, ...]:
-    return tuple(
-        feature
-        for feature in features
-        if feature.permission == Permission.NONE
-        or actor_permission.has(feature.permission)
-    )
-
-
-def _build_feature_permission_denied_message(feature: FeatureDoc) -> Message:
-    return Message(
-        (
-            f"无权限查看子功能文档: {feature.title}\n"
-            f"需要权限: {feature.permission.label}"
-        ).strip()
-    )
-
-
-def _feature_command_for_display(
-    bundle: PluginDocBundle,
-    feature: FeatureDoc,
-) -> str:
-    command = _normalize_inline_text(feature.trigger)
-    if command:
-        return command
-    return f"#help {bundle.title} {feature.slug}"
-
-
-def _feature_notice_items(feature: FeatureDoc) -> list[str]:
-    notes: list[str] = []
-    preconditions = _normalize_inline_text(feature.preconditions)
-    if preconditions and preconditions != "无":
-        notes.append(preconditions)
-    else:
-        notes.append("请确认指令参数填写完整。")
-    notes.append(SUPPORT_NOTE)
-    return notes
+    parts = rel_path.parts
+    if not parts:
+        return source_path.stem.lower(), None
+    namespace = parts[0]
+    if namespace == "plugins" and len(parts) >= 4:
+        plugin_name = parts[1]
+        if parts[2] != "docs":
+            return plugin_name, None
+        tail = parts[3:-1]
+        if not tail:
+            return plugin_name, None
+        slug = ".".join((plugin_name, *tail))
+        return slug, plugin_name
+    if namespace == "hooks":
+        tail = parts[2:-1] if len(parts) >= 3 and parts[1] == "docs" else parts[1:-1]
+        if not tail:
+            tail = (parts[-2],) if len(parts) >= 2 else ("hook",)
+        return ".".join(("hook", *tail)), None
+    return source_path.stem.lower(), None
 
 
 def _normalize_inline_text(value: str) -> str:
@@ -501,8 +807,7 @@ def render_demo_png(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes:
 
 def collection_demo_filename(source_path: Path) -> str:
     src_root = next(
-        (parent for parent in source_path.parents if parent.name == "src"),
-        None,
+        (parent for parent in source_path.parents if parent.name == "src"), None
     )
     if src_root is None:
         return f"{source_path.parent.name}-collection.png"
@@ -544,6 +849,28 @@ def audit_demo_layout(bundle: PluginDocBundle, feature: FeatureDoc) -> tuple[str
         plugin_author=bundle.author,
         turns=feature.demo_turns,
     )
+
+
+def _feature_command_for_display(
+    bundle: PluginDocBundle,
+    feature: FeatureDoc,
+    node_title: str,
+) -> str:
+    command = _normalize_inline_text(feature.trigger)
+    if command:
+        return command
+    return f"#help {node_title} {feature.slug}"
+
+
+def _feature_notice_items(feature: FeatureDoc) -> list[str]:
+    notes: list[str] = []
+    preconditions = _normalize_inline_text(feature.preconditions)
+    if preconditions and preconditions != "无":
+        notes.append(preconditions)
+    else:
+        notes.append("请确认指令参数填写完整。")
+    notes.append(SUPPORT_NOTE)
+    return notes
 
 
 def _extract_title(text: str) -> str:
@@ -637,8 +964,7 @@ def _parse_feature_details(block: str, source_path: Path) -> dict[str, FeatureDo
         subsections = _split_sections("\n".join(body_lines[index:]), level=4)
         flow_notes, demo_turns = _parse_flow_section(subsections.get("完整流程", ""))
         demo_filename = meta.get(
-            "Demo",
-            f"{source_path.parent.parent.name}-{slug}.png",
+            "Demo", f"{source_path.parent.parent.name}-{slug}.png"
         ).strip("`")
         features[slug] = FeatureDoc(
             slug=slug,
@@ -742,8 +1068,7 @@ def _parse_flow_section(block: str) -> tuple[str, tuple[DocsDemoTurn, ...]]:
             if demo_turns:
                 previous = demo_turns[-1]
                 demo_turns[-1] = DocsDemoTurn(
-                    previous.speaker,
-                    f"{previous.text}\n{stripped}",
+                    previous.speaker, f"{previous.text}\n{stripped}"
                 )
     return cleaned.strip(), tuple(demo_turns)
 
@@ -766,8 +1091,7 @@ def _resolve_doc_signature(source_path: Path) -> tuple[str, str]:
 
 def _resolve_doc_owner_module_path(source_path: Path) -> Path | None:
     src_root = next(
-        (parent for parent in source_path.parents if parent.name == "src"),
-        None,
+        (parent for parent in source_path.parents if parent.name == "src"), None
     )
     if src_root is None:
         return None

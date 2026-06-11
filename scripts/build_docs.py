@@ -21,10 +21,14 @@ if str(ROOT) not in sys.path:
 from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.plugin_docs import (
+    DocNode,
     DemoImageRenderer,
     PluginDocBundle,
     audit_demo_layout,
+    build_doc_tree,
     collection_demo_filename,
+    create_docs_meta,
+    load_doc_node,
     load_plugin_doc_bundle,
     render_demo_png,
     split_inline_text_spans,
@@ -1133,6 +1137,8 @@ def generate(*, workers: int | None = None) -> int:
 
 def validate() -> int:
     errors: list[str] = []
+    nodes: list[DocNode] = []
+    slugs_seen: dict[str, Path] = {}
     for path in iter_readmes():
         try:
             bundle = load_bundle(path)
@@ -1141,6 +1147,30 @@ def validate() -> int:
                 f"{path.relative_to(ROOT)}: parse failed: {type(exc).__name__}: {exc}"
             )
             continue
+
+        docs_meta = create_docs_meta(
+            visible=True,
+            category="general",
+            order=100,
+            source=path,
+        )
+        node = load_doc_node(
+            source=path,
+            default_name=bundle.title,
+            default_description=bundle.description,
+            trigger=TriggerType.COMMAND,
+            permission=Permission.NORMAL,
+            docs_meta=docs_meta,
+        )
+        nodes.append(node)
+        prior = slugs_seen.get(node.slug)
+        if prior is not None:
+            errors.append(
+                f"{path.relative_to(ROOT)}: duplicate doc slug {node.slug} "
+                f"(first seen in {prior.relative_to(ROOT)})"
+            )
+        else:
+            slugs_seen[node.slug] = path
 
         if not bundle.summary.strip():
             errors.append(f"{path.relative_to(ROOT)}: missing 概览 section content")
@@ -1186,6 +1216,16 @@ def validate() -> int:
                 errors.append(
                     f"{path.relative_to(ROOT)}: missing collection demo file "
                     f"{collection_path.name}"
+                )
+
+    if not errors:
+        tree = build_doc_tree(nodes)
+        known_slugs = {node.slug for node in tree.nodes}
+        for node in tree.nodes:
+            if node.parent_slug is not None and node.parent_slug not in known_slugs:
+                errors.append(
+                    f"{node.source_path.relative_to(ROOT)}: missing parent node "
+                    f"{node.parent_slug} for slug {node.slug}"
                 )
 
     if errors:

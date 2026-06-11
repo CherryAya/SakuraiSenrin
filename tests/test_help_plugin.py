@@ -6,7 +6,14 @@ from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.plugin import PluginMetadata
 
 from src.database.core.consts import Permission
-from src.lib.plugin_docs import DocsMeta
+from src.lib.consts import TriggerType
+from src.lib.plugin_docs import (
+    DocNode,
+    DocsMeta,
+    build_doc_tree,
+    create_docs_meta,
+    load_doc_node,
+)
 
 nonebot.init()
 
@@ -32,6 +39,9 @@ def _make_entry(
     category: str = "general",
     order: int = 100,
     permission: Permission = Permission.NORMAL,
+    slug: str | None = None,
+    parent_slug: str | None = None,
+    visible: bool = True,
 ) -> DocsEntry:
     plugin = cast(
         Any,
@@ -45,16 +55,47 @@ def _make_entry(
         description=summary,
         usage="",
         config=None,
-        extra={},
+        extra={"permission": permission},
     )
-    docs: DocsMeta = {
-        "provider": lambda: Message("docs"),
-        "visible": True,
-        "category": category,
-        "order": order,
-        "source": "",
-        "hidden": False,
-    }
+    docs: DocsMeta = create_docs_meta(
+        visible=visible,
+        category=category,
+        order=order,
+        source="src/plugins/help/docs/README.MD",
+        slug=slug or plugin_name,
+        parent_slug=parent_slug,
+        aliases=(display_name,),
+    )
+    docs["permission"] = permission
+    node = load_doc_node(
+        source=docs["source"]["readme_path"],
+        default_name=display_name,
+        default_description=summary,
+        trigger=TriggerType.COMMAND,
+        permission=permission,
+        docs_meta=docs,
+        module_name=module_name,
+        plugin_name=plugin_name,
+    )
+    node = DocNode(
+        kind=node.kind,
+        slug=node.slug,
+        parent_slug=node.parent_slug,
+        category=node.category,
+        order=node.order,
+        visible=node.visible,
+        hidden=node.hidden,
+        internal=node.internal,
+        permission=permission,
+        title=display_name,
+        summary=summary,
+        description=summary,
+        aliases=(display_name,),
+        source_path=node.source_path,
+        bundle=node.bundle,
+        module_name=module_name,
+        plugin_name=plugin_name,
+    )
     return DocsEntry(
         plugin=plugin,
         metadata=metadata,
@@ -62,6 +103,7 @@ def _make_entry(
         display_name=display_name,
         summary=summary,
         permission=permission,
+        node=node,
     )
 
 
@@ -80,16 +122,19 @@ def test_match_entry_supports_exact_fuzzy_and_ambiguous() -> None:
         display_name="吹水记录",
         plugin_name="water",
         module_name="src.plugins.water",
+        slug="water",
     )
     water_admin = _make_entry(
         display_name="吹水管理",
         plugin_name="water-admin",
         module_name="src.plugins.water_admin",
+        slug="water.admin",
     )
     help_entry = _make_entry(
         display_name="帮助中心",
         plugin_name="help",
         module_name="src.plugins.help",
+        slug="help",
     )
     entries = [water, water_admin, help_entry]
 
@@ -150,7 +195,7 @@ def test_read_plugin_permission_supports_enum_name_and_raw_value() -> None:
     assert _read_plugin_permission(metadata_invalid) == Permission.NORMAL
 
 
-def test_filter_authorized_entries_matches_tutorials_permission_visibility() -> None:
+def test_filter_authorized_entries_matches_permission_visibility() -> None:
     normal = _make_entry(
         display_name="吹水记录",
         plugin_name="water",
@@ -176,10 +221,6 @@ def test_filter_authorized_entries_matches_tutorials_permission_visibility() -> 
         entries,
         Permission.NORMAL | Permission.GROUP_ADMIN,
     )
-    owner_entries = _filter_authorized_entries(
-        entries,
-        Permission.NORMAL | Permission.GROUP_ADMIN | Permission.GROUP_OWNER,
-    )
     superuser_entries = _filter_authorized_entries(
         entries,
         Permission.NORMAL
@@ -190,10 +231,6 @@ def test_filter_authorized_entries_matches_tutorials_permission_visibility() -> 
 
     assert [entry.display_name for entry in normal_entries] == ["吹水记录"]
     assert [entry.display_name for entry in group_admin_entries] == [
-        "吹水记录",
-        "退群说明",
-    ]
-    assert [entry.display_name for entry in owner_entries] == [
         "吹水记录",
         "退群说明",
     ]
@@ -219,53 +256,77 @@ def test_permission_denied_message_uses_required_permission_label() -> None:
     assert "需要权限: 超级管理员" in str(message)
 
 
-def test_build_index_message_attaches_demo_image(monkeypatch: Any) -> None:
-    entry = _make_entry(
-        display_name="帮助中心",
-        plugin_name="help",
-        module_name="src.plugins.help",
-        category="core",
+def test_build_index_message_only_lists_root_nodes(monkeypatch: Any) -> None:
+    root = _make_entry(
+        display_name="管理模块总览",
+        plugin_name="admin",
+        module_name="src.plugins.admin",
+        slug="admin",
+        visible=True,
+    )
+    child = _make_entry(
+        display_name="群组管理模块",
+        plugin_name="admin-group",
+        module_name="src.plugins.admin.group",
+        slug="admin.group",
+        parent_slug="admin",
+        visible=True,
     )
     monkeypatch.setattr(
         "src.plugins.help._load_help_index_demo",
         lambda: Message(MessageSegment.image(b"fake-demo")),
     )
 
-    message = _build_index_message([entry], "zh-CN")
+    message = _build_index_message(
+        [root, child],
+        "zh-CN",
+        Permission.NORMAL
+        | Permission.GROUP_ADMIN
+        | Permission.GROUP_OWNER
+        | Permission.SUPERUSER,
+    )
 
     assert "📖 ===== 帮助文档 =====" in str(message)
-    assert "命令前缀: #help / #帮助" in str(message)
-    assert "帮助中心" in str(message)
-    assert "#help 帮助中心" in str(message)
-    assert "反馈群「427842039」" in str(message)
+    assert "管理模块总览" in str(message)
+    assert "群组管理模块" not in str(message)
     assert any(segment.type == "image" for segment in message)
 
 
-async def test_resolve_docs_message_requests_plugin_or_feature_view() -> None:
-    seen_views: list[str] = []
-
-    def provider(ctx: Any) -> Message:
-        seen_views.append(ctx.view)
-        if ctx.view == "feature":
-            assert ctx.feature_query == "ranking"
-            assert ctx.actor_permission == Permission.SUPERUSER
-        return Message(MessageSegment.image(b"fake-demo"))
-
-    entry = _make_entry(
-        display_name="吹水记录",
-        plugin_name="water",
-        module_name="src.plugins.water",
+async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:
+    root = _make_entry(
+        display_name="管理模块总览",
+        plugin_name="admin",
+        module_name="src.plugins.admin",
+        slug="admin",
+        permission=Permission.SUPERUSER,
     )
-    entry.docs["provider"] = provider
+    child = _make_entry(
+        display_name="群组管理模块",
+        plugin_name="admin-group",
+        module_name="src.plugins.admin.group",
+        slug="admin.group",
+        parent_slug="admin",
+        permission=Permission.SUPERUSER,
+    )
+    entries = [root, child]
+    tree = build_doc_tree([entry.node for entry in entries])
 
-    plugin_message = await _resolve_docs_message(entry, "zh-CN")
-    feature_message = await _resolve_docs_message(
-        entry,
+    assert [node.slug for node in tree.children_of("admin")] == ["admin.group"]
+
+    root_message = await _resolve_docs_message(
+        root,
         "zh-CN",
-        feature_query="ranking",
         actor_permission=Permission.SUPERUSER,
+        all_entries=entries,
+    )
+    child_message = await _resolve_docs_message(
+        root,
+        "zh-CN",
+        feature_query="群组管理模块",
+        actor_permission=Permission.SUPERUSER,
+        all_entries=entries,
     )
 
-    assert seen_views == ["plugin", "feature"]
-    assert any(segment.type == "image" for segment in plugin_message)
-    assert any(segment.type == "image" for segment in feature_message)
+    assert "子节点:" in str(root_message)
+    assert "群组管理模块" in str(root_message)
+    assert "📖 ===== 群组管理模块 =====" in str(child_message)

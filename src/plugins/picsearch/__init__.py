@@ -16,11 +16,7 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import resolve_locale
-from src.lib.plugin_docs import (
-    DocsRenderContext,
-    build_readme_docs,
-    create_docs_meta,
-)
+from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 
 from .handlers import (
@@ -56,11 +52,12 @@ __plugin_meta__ = create_plugin_metadata(
         "trigger": TriggerType.COMMAND,
         "permission": Permission.NORMAL,
         "docs": create_docs_meta(
-            build_docs,
             visible=True,
             category="fun",
             order=120,
             source=DOCS_SOURCE,
+            slug="picsearch",
+            aliases=("图片搜索",),
         ),
     },
 )
