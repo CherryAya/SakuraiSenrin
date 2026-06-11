@@ -28,9 +28,12 @@ DEFAULT_MEDIA_ROOT: Final[Path] = Path("./data/wordbank/media")
 IMAGE_HASH_VERSION: Final[int] = 2
 IMAGE_SEARCH_DISTANCE_THRESHOLD: Final[int] = 12
 WEBP_CONTENT_TYPE: Final[str] = "image/webp"
+WEBP_MAX_DIMENSION: Final[int] = 16383
 DEFAULT_MEDIA_EXTENSION: Final[str] = ".bin"
 EXTENSION_TO_CONTENT_TYPE: Final[dict[str, str]] = {
     ".gif": "image/gif",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
     ".png": "image/png",
     ".webp": WEBP_CONTENT_TYPE,
 }
@@ -248,30 +251,42 @@ def _build_fingerprint(image: Image.Image, data: bytes) -> ImageFingerprint:
 def _build_stored_media(image: Image.Image, data: bytes) -> StoredMedia:
     if _is_animated(image):
         animated_webp = _encode_animated_webp(image)
-        if animated_webp is None:
-            raise MediaError(
-                "无法转码为 animated webp",
-                key="wordbank.error.image_prepare_failed",
-                reason="无法转码为 animated webp",
+        if animated_webp is not None:
+            return StoredMedia(
+                data=animated_webp,
+                extension=".webp",
+                content_type=WEBP_CONTENT_TYPE,
             )
+        resized_webp = _encode_animated_webp(
+            image,
+            resize_to_limit=True,
+        )
+        if resized_webp is not None:
+            return StoredMedia(
+                data=resized_webp,
+                extension=".webp",
+                content_type=WEBP_CONTENT_TYPE,
+            )
+        return _fallback_original_media(image, data)
+
+    normalized = _normalize_static_image(image)
+    static_webp = _encode_static_webp(normalized)
+    if static_webp is not None:
         return StoredMedia(
-            data=animated_webp,
+            data=static_webp,
             extension=".webp",
             content_type=WEBP_CONTENT_TYPE,
         )
-
-    buffer = BytesIO()
-    _normalize_static_image(image).save(
-        buffer,
-        format="WEBP",
-        quality=82,
-        method=4,
-    )
-    return StoredMedia(
-        data=buffer.getvalue(),
-        extension=".webp",
-        content_type=WEBP_CONTENT_TYPE,
-    )
+    resized = _resize_image_to_webp_limit(normalized)
+    if resized is not normalized:
+        resized_webp = _encode_static_webp(resized)
+        if resized_webp is not None:
+            return StoredMedia(
+                data=resized_webp,
+                extension=".webp",
+                content_type=WEBP_CONTENT_TYPE,
+            )
+    return _fallback_original_media(image, data)
 
 
 def _extract_representative_frame(image: Image.Image) -> Image.Image:
@@ -292,7 +307,25 @@ def _normalize_static_image(image: Image.Image) -> Image.Image:
     return image.convert("RGB")
 
 
-def _encode_animated_webp(image: Image.Image) -> bytes | None:
+def _encode_static_webp(image: Image.Image) -> bytes | None:
+    try:
+        buffer = BytesIO()
+        image.save(
+            buffer,
+            format="WEBP",
+            quality=82,
+            method=4,
+        )
+        return buffer.getvalue()
+    except Exception:
+        return None
+
+
+def _encode_animated_webp(
+    image: Image.Image,
+    *,
+    resize_to_limit: bool = False,
+) -> bytes | None:
     try:
         image.seek(0)
         frames = [
@@ -301,6 +334,8 @@ def _encode_animated_webp(image: Image.Image) -> bytes | None:
         ]
         if not frames:
             return None
+        if resize_to_limit:
+            frames = [_resize_image_to_webp_limit(frame) for frame in frames]
 
         durations = _collect_frame_durations(image, len(frames))
         loop = int(image.info.get("loop", 0) or 0)
@@ -339,10 +374,37 @@ def _is_animated(image: Image.Image) -> bool:
     )
 
 
+def _resize_image_to_webp_limit(image: Image.Image) -> Image.Image:
+    width, height = image.size
+    longest_edge = max(width, height)
+    if longest_edge <= WEBP_MAX_DIMENSION:
+        return image
+    scale = WEBP_MAX_DIMENSION / float(longest_edge)
+    resized_width = max(1, int(width * scale))
+    resized_height = max(1, int(height * scale))
+    return image.resize((resized_width, resized_height), Image.Resampling.LANCZOS)
+
+
+def _fallback_original_media(image: Image.Image, data: bytes) -> StoredMedia:
+    extension = _detect_extension(image)
+    content_type = _detect_content_type(image)
+    logger.warning(
+        "[Wordbank] webp encode failed, fallback to original media format: "
+        f"{extension or DEFAULT_MEDIA_EXTENSION}"
+    )
+    return StoredMedia(
+        data=data,
+        extension=extension,
+        content_type=content_type,
+    )
+
+
 def _detect_extension(image: Image.Image) -> str:
     format_name = str(getattr(image, "format", "") or "").upper()
     if format_name == "GIF":
         return ".gif"
+    if format_name == "JPEG":
+        return ".jpg"
     if format_name == "PNG":
         return ".png"
     if format_name == "WEBP":

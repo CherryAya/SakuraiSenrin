@@ -14,7 +14,6 @@ from src.plugins.wordbank.database.types import (
 from src.plugins.wordbank.services import media as media_module
 from src.plugins.wordbank.services.media import (
     LocalWordbankMediaStorage,
-    MediaError,
     ObjectStorageWordbankMediaStorage,
     R2WordbankMediaStorage,
     WordbankMediaService,
@@ -27,6 +26,12 @@ from src.plugins.wordbank.services.media import (
 def _png(color: tuple[int, int, int]) -> bytes:
     buffer = BytesIO()
     Image.new("RGB", (16, 16), color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _jpeg(color: tuple[int, int, int]) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (16, 16), color).save(buffer, format="JPEG")
     return buffer.getvalue()
 
 
@@ -323,12 +328,33 @@ async def test_r2_media_storage_saves_gif_as_animated_media(tmp_path: Path) -> N
         assert getattr(stored_image, "n_frames", 1) > 1
 
 
-def test_prepare_image_bytes_rejects_gif_when_animated_webp_encode_fails(
+def test_prepare_image_bytes_falls_back_to_original_gif_when_webp_encode_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     data = _gif([(255, 0, 255), (0, 255, 255)])
 
-    monkeypatch.setattr(media_module, "_encode_animated_webp", lambda _image: None)
+    monkeypatch.setattr(
+        media_module,
+        "_encode_animated_webp",
+        lambda _image, resize_to_limit=False: None,
+    )
 
-    with pytest.raises(MediaError, match="animated webp"):
-        prepare_image_bytes(data)
+    prepared = prepare_image_bytes(data)
+
+    assert prepared.stored_media.extension == ".gif"
+    assert prepared.stored_media.content_type == "image/gif"
+    assert prepared.stored_media.data == data
+
+
+def test_prepare_image_bytes_falls_back_to_original_jpeg_when_static_webp_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = _jpeg((12, 34, 56))
+
+    monkeypatch.setattr(media_module, "_encode_static_webp", lambda _image: None)
+
+    prepared = prepare_image_bytes(data)
+
+    assert prepared.stored_media.extension == ".jpg"
+    assert prepared.stored_media.content_type == "image/jpeg"
+    assert prepared.stored_media.data == data

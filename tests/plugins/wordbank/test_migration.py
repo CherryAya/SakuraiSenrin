@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 import json
 from pathlib import Path
+from typing import Any
 
 from PIL import Image
 import pytest
@@ -312,3 +313,73 @@ async def test_migrate_legacy_rows_splits_or_rule_into_multiple_entries(
     assert report.skipped_rows == 0
     assert len(entries) == 2
     assert sorted(entry.scope for entry in entries) == ["all_groups", "current_group"]
+
+
+@pytest.mark.asyncio
+async def test_migrate_legacy_rows_reports_failed_trigger_and_response_details(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path / "db")
+    repository = WordbankRepository()
+    media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    catalog = build_legacy_image_catalog(image_root, None)
+    rows = [
+        {
+            "response_id": 3,
+            "trigger_id": 2,
+            "response_text": json.dumps(
+                [{"type": "text", "text": "响应"}],
+                ensure_ascii=False,
+            ),
+            "response_rule_conditions": json.dumps({"group_id": {"$eq": 20001}}),
+            "weight": 3,
+            "priority": 2,
+            "created_by": "10001",
+            "created_at": 1700000000,
+            "response_available": True,
+            "trigger_text": json.dumps(
+                [{"type": "image", "file": "missing-file.jpg"}],
+                ensure_ascii=False,
+            ),
+            "trigger_config": json.dumps({"probability": 1.0}),
+            "extra_info": None,
+            "approval_status": "APPROVED",
+        }
+    ]
+
+    report = await migrate_legacy_rows(
+        rows,
+        repository=repository,
+        media_service=media_service,
+        image_catalog=catalog,
+        reset_target=True,
+    )
+    detail = report.failure_details[0]
+    trigger_summary = detail["trigger"]
+    response_summary = detail["response"]
+
+    assert report.imported_rows == 0
+    assert report.skipped_rows == 1
+    assert detail["response_id"] == 3
+    assert detail["trigger_id"] == 2
+    assert detail["reason"] == "image file not found: missing-file.jpg"
+    assert isinstance(trigger_summary, dict)
+    assert isinstance(response_summary, dict)
+    assert trigger_summary["kind"] == "message"
+    assert _segment_list(trigger_summary)[0]["type"] == "image"
+    assert _segment_list(response_summary)[0]["text"] == "响应"
+
+
+def _segment_list(value: dict[str, object]) -> list[dict[str, Any]]:
+    segments = value.get("segments")
+    assert isinstance(segments, list)
+    normalized: list[dict[str, Any]] = []
+    for item in segments:
+        assert isinstance(item, dict)
+        normalized.append(item)
+    return normalized

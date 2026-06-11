@@ -122,11 +122,43 @@ class WordbankMigrationReport:
     image_counts: Counter[str] = field(default_factory=Counter)
     imported_entry_ids: dict[int, list[int]] = field(default_factory=dict)
     failures: list[str] = field(default_factory=list)
+    failure_details: list[dict[str, object]] = field(default_factory=list)
 
-    def add_failure(self, response_id: int, reason: str) -> None:
+    def add_failure(
+        self,
+        response_id: int,
+        reason: str,
+        *,
+        row: Mapping[str, object] | None = None,
+    ) -> None:
         self.skipped_rows += 1
         self.skipped_reasons[reason] += 1
         self.failures.append(f"{response_id}: {reason}")
+        if row is not None:
+            self.failure_details.append(
+                {
+                    "response_id": response_id,
+                    "trigger_id": _safe_report_int(row.get("trigger_id")),
+                    "reason": reason,
+                    "approval_status": str(row.get("approval_status") or ""),
+                    "priority": _safe_report_int(row.get("priority")),
+                    "weight": _safe_report_int(row.get("weight")),
+                    "created_by": str(row.get("created_by") or ""),
+                    "created_at": _safe_report_timestamp(row.get("created_at")),
+                    "trigger": _summarize_legacy_message_payload(
+                        row.get("trigger_text"),
+                        extra_info=row.get("extra_info"),
+                    ),
+                    "response": _summarize_legacy_message_payload(
+                        row.get("response_text")
+                    ),
+                    "response_rule_conditions": _safe_jsonish(
+                        row.get("response_rule_conditions")
+                    ),
+                    "trigger_config": _safe_jsonish(row.get("trigger_config")),
+                    "extra_info": _safe_jsonish(row.get("extra_info")),
+                }
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -139,6 +171,7 @@ class WordbankMigrationReport:
             "image_counts": dict(self.image_counts),
             "imported_entry_ids": self.imported_entry_ids,
             "failures": list(self.failures),
+            "failure_details": list(self.failure_details),
         }
 
 
@@ -463,7 +496,7 @@ async def migrate_legacy_rows(
                 report.status_counts[entry.status] += 1
             report.imported_entry_ids[response_id] = imported_ids
         except Exception as exc:
-            report.add_failure(response_id, str(exc))
+            report.add_failure(response_id, str(exc), row=row)
             continue
 
         report.imported_rows += 1
@@ -873,6 +906,109 @@ def _shape_from_legacy_extra_info(extra_info: object) -> MessageShape | None:
     if not event_name:
         raise MigrationError(f"unsupported legacy event action: {action}")
     return shape_from_event(event_name)
+
+
+def _safe_jsonish(value: object) -> object:
+    try:
+        return load_legacy_json(value)
+    except Exception:
+        return value
+
+
+def _safe_report_int(value: object) -> int | None:
+    try:
+        return _coerce_int(value, field="report")
+    except Exception:
+        return None
+
+
+def _safe_report_timestamp(value: object) -> int | None:
+    try:
+        return normalize_legacy_timestamp(value, fallback=0)
+    except Exception:
+        return None
+
+
+def _summarize_legacy_message_payload(
+    payload: object,
+    *,
+    extra_info: object = None,
+) -> dict[str, object]:
+    if extra_info not in (None, ""):
+        return {
+            "kind": "event",
+            "extra_info": _safe_jsonish(extra_info),
+        }
+
+    loaded = _safe_jsonish(payload)
+    if not isinstance(loaded, list):
+        return {
+            "kind": "raw",
+            "value": loaded,
+        }
+
+    summary_segments: list[dict[str, object]] = []
+    text_preview_parts: list[str] = []
+    for segment in loaded[:12]:
+        if not isinstance(segment, Mapping):
+            summary_segments.append({"type": "unknown", "value": str(segment)})
+            continue
+        segment_type = str(segment.get("type") or "")
+        if segment_type == "text":
+            text_value = str(segment.get("text") or "")
+            if text_value:
+                text_preview_parts.append(text_value)
+            summary_segments.append(
+                {
+                    "type": "text",
+                    "text": _truncate_text(text_value, limit=80),
+                }
+            )
+            continue
+        if segment_type == "image":
+            summary_segments.append(
+                {
+                    "type": "image",
+                    "file": str(segment.get("file") or ""),
+                    "url": str(segment.get("url") or ""),
+                }
+            )
+            continue
+        if segment_type == "at":
+            summary_segments.append(
+                {
+                    "type": "at",
+                    "qq": str(segment.get("qq") or ""),
+                }
+            )
+            continue
+        if segment_type == "face":
+            summary_segments.append(
+                {
+                    "type": "face",
+                    "id": str(segment.get("id") or ""),
+                }
+            )
+            continue
+        summary_segments.append(
+            {
+                "type": segment_type or "unknown",
+                "data": dict(segment),
+            }
+        )
+
+    return {
+        "kind": "message",
+        "segment_count": len(loaded),
+        "text_preview": _truncate_text("".join(text_preview_parts), limit=120),
+        "segments": summary_segments,
+    }
+
+
+def _truncate_text(value: str, *, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[: limit - 3]}..."
 
 
 __all__ = [
