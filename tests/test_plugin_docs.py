@@ -4,7 +4,7 @@ from typing import Any
 from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image
 
-import scripts.plugin_docs as plugin_docs_script
+import scripts.build_docs as plugin_docs_script
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.plugin_docs import (
@@ -790,6 +790,49 @@ BOT: Beta 完成
     with Image.open(collection_path) as collection:
         assert collection.width == 1280
         assert collection.height > 300
+
+
+def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
+    monkeypatch: Any,
+) -> None:
+    calls: list[tuple[str, dict[str, int | None]]] = []
+
+    def fake_generate(*, workers: int | None = None) -> int:
+        calls.append(("generate", {"workers": workers}))
+        return 0
+
+    def fake_compose(
+        *,
+        workers: int | None = None,
+        columns: int = 2,
+        thumb_width: int = 548,
+    ) -> int:
+        calls.append(
+            (
+                "compose",
+                {
+                    "workers": workers,
+                    "columns": columns,
+                    "thumb_width": thumb_width,
+                },
+            )
+        )
+        return 0
+
+    def fake_validate() -> int:
+        calls.append(("validate", {}))
+        return 0
+
+    monkeypatch.setattr(plugin_docs_script, "generate", fake_generate)
+    monkeypatch.setattr(plugin_docs_script, "compose", fake_compose)
+    monkeypatch.setattr(plugin_docs_script, "validate", fake_validate)
+
+    assert plugin_docs_script.build(workers=3, columns=4, thumb_width=360) == 0
+    assert calls == [
+        ("generate", {"workers": 3}),
+        ("compose", {"workers": 3, "columns": 4, "thumb_width": 360}),
+        ("validate", {}),
+    ]
 
 
 def test_audit_demo_layout_accepts_all_project_readmes() -> None:
