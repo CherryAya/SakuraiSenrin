@@ -22,18 +22,18 @@ from src.plugins.wordbank.database.types import (
     WordbankSearchItem,
     WordbankSearchRequest,
 )
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    fingerprint_shape,
+    shape_to_summary_text,
+)
 from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.services.matching import (
     MatchCandidate,
     RuntimeIndex,
     SelectedMatch,
-    normalize_text,
 )
-from src.plugins.wordbank.services.rules import (
-    RuleContext,
-    canonicalize_rule,
-    normalize_trigger_mode,
-)
+from src.plugins.wordbank.services.rules import RuleContext, canonicalize_rule
 
 
 @dataclass(slots=True, frozen=True)
@@ -46,8 +46,8 @@ class WordbankAddResult:
     probability: float
     weight: int
     status: str = "pending"
-    response_kind: str = "text"
-    response_canonical_image_id: int | None = None
+    trigger_shape: MessageShape | None = None
+    response_shape: MessageShape | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -104,99 +104,36 @@ class WordbankService:
         await asyncio.sleep(self.debounce_seconds)
         await self.rebuild_index()
 
-    async def add_text_entry(
+    async def add_message_entry(
         self,
         *,
-        trigger_text: str,
-        response_text: str,
-        response_canonical_image_id: int | None = None,
+        trigger_shape: MessageShape,
+        response_shape: MessageShape,
         group_id: str,
         user_id: str,
         is_group: bool,
         raw_rule: dict[str, Any] | None = None,
-        trigger_mode: str | None = None,
+        trigger_mode: str = "strict",
     ) -> WordbankAddResult:
-        trigger_text = trigger_text.strip()
-        response_text = response_text.strip()
-        if not trigger_text:
+        if trigger_shape.is_empty():
             raise WordbankUserError(
                 "触发词不能为空",
                 key="wordbank.error.trigger_empty",
             )
-        if not response_text and response_canonical_image_id is None:
+        if response_shape.is_empty():
             raise WordbankUserError(
                 "响应词不能为空",
                 key="wordbank.error.response_empty",
             )
-
-        normalized = normalize_text(trigger_text)
-        short_trigger = len(normalized.replace(" ", "")) <= 2
-        event_trigger = normalized.startswith("event:")
-        mode = normalize_trigger_mode(
-            trigger_mode,
-            short_trigger=short_trigger or event_trigger,
-        )
-        rule = canonicalize_rule(
-            raw_rule,
-            is_group=is_group,
-            short_trigger=short_trigger,
-        )
-        entry = await self.repository.create_text_entry(
-            trigger_text=trigger_text,
-            normalized_text=normalized,
-            response_text=response_text,
-            response_canonical_image_id=response_canonical_image_id,
-            trigger_mode=mode,
-            rule=dict(rule.rule),
-            scope=rule.scope,
-            priority=rule.priority,
-            probability=rule.probability,
-            weight=rule.weight,
-            group_id=group_id if is_group else "",
-            created_by=user_id,
-        )
-        return WordbankAddResult(
-            entry_id=entry.id,
-            status=entry.status,
-            trigger_text=trigger_text,
-            response_text=response_text,
-            trigger_mode=mode,
-            scope=rule.scope,
-            probability=rule.probability,
-            weight=rule.weight,
-            response_kind=(
-                "image" if response_canonical_image_id is not None else "text"
-            ),
-            response_canonical_image_id=response_canonical_image_id,
-        )
-
-    async def add_image_entry(
-        self,
-        *,
-        canonical_image_id: int,
-        response_text: str,
-        response_canonical_image_id: int | None = None,
-        group_id: str,
-        user_id: str,
-        is_group: bool,
-        raw_rule: dict[str, Any] | None = None,
-    ) -> WordbankAddResult:
-        response_text = response_text.strip()
-        if not response_text and response_canonical_image_id is None:
-            raise WordbankUserError(
-                "响应词不能为空",
-                key="wordbank.error.response_empty",
-            )
-
         rule = canonicalize_rule(
             raw_rule,
             is_group=is_group,
             short_trigger=False,
         )
-        entry = await self.repository.create_image_entry(
-            canonical_image_id=canonical_image_id,
-            response_text=response_text,
-            response_canonical_image_id=response_canonical_image_id,
+        entry = await self.repository.create_message_entry(
+            trigger_shape=trigger_shape,
+            response_shape=response_shape,
+            trigger_mode=trigger_mode,
             rule=dict(rule.rule),
             scope=rule.scope,
             priority=rule.priority,
@@ -208,16 +145,14 @@ class WordbankService:
         return WordbankAddResult(
             entry_id=entry.id,
             status=entry.status,
-            trigger_text=f"[图片:{canonical_image_id}]",
-            response_text=response_text,
-            trigger_mode="fullmatch",
+            trigger_text=shape_to_summary_text(trigger_shape),
+            response_text=shape_to_summary_text(response_shape),
+            trigger_mode=trigger_mode,
             scope=rule.scope,
             probability=rule.probability,
             weight=rule.weight,
-            response_kind=(
-                "image" if response_canonical_image_id is not None else "text"
-            ),
-            response_canonical_image_id=response_canonical_image_id,
+            trigger_shape=trigger_shape,
+            response_shape=response_shape,
         )
 
     async def delete_entry(
@@ -493,43 +428,19 @@ class WordbankService:
             is_superuser=is_superuser,
         )
 
-    async def match_text(
+    async def match_message(
         self,
-        text: str,
+        shape: MessageShape,
         *,
         context: RuleContext,
+        message_type: str = "message",
     ) -> SelectedMatch | None:
-        candidates = self._index.find_text(text)
+        fingerprint = fingerprint_shape(shape)
+        candidates = self._index.find_message(fingerprint)
         return await self._select_and_log(
             candidates,
             context=context,
-            message_type="text",
-        )
-
-    async def match_images(
-        self,
-        canonical_image_ids: Sequence[int],
-        *,
-        context: RuleContext,
-    ) -> SelectedMatch | None:
-        candidates = self._index.find_images(canonical_image_ids)
-        return await self._select_and_log(
-            candidates,
-            context=context,
-            message_type="image",
-        )
-
-    async def match_event(
-        self,
-        event_triggers: Sequence[str],
-        *,
-        context: RuleContext,
-    ) -> SelectedMatch | None:
-        candidates = self._index.find_texts(event_triggers)
-        return await self._select_and_log(
-            candidates,
-            context=context,
-            message_type="event",
+            message_type=message_type,
         )
 
     async def _select_and_log(
@@ -663,11 +574,7 @@ def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
         entry_id=result.entry_id,
         status=result.status,
         trigger_text=result.trigger_text,
-        response_text=format_response_summary(
-            result.response_text,
-            kind=result.response_kind,
-            canonical_image_id=result.response_canonical_image_id,
-        ),
+        response_text=result.response_text,
         trigger_mode=result.trigger_mode,
         scope=result.scope,
         probability=f"{result.probability:g}",
@@ -678,10 +585,8 @@ def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
 def format_response_summary(
     text: str,
     *,
-    kind: str,
-    canonical_image_id: int | None,
+    shape: MessageShape | None = None,
 ) -> str:
-    if kind != "image":
+    if shape is None:
         return text
-    image_text = f"[图片:{canonical_image_id}]"
-    return f"{text} {image_text}".strip()
+    return shape_to_summary_text(shape)

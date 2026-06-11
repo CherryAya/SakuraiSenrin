@@ -47,21 +47,27 @@ class WordbankTrigger(WordbankMainBase, TimeMixin):
     __tablename__ = "wordbank_trigger"
     __table_args__ = (
         Index(
-            "idx_wordbank_trigger_text",
-            "kind",
-            "trigger_mode",
-            "normalized_text",
+            "idx_wordbank_trigger_exact_md5",
+            "exact_md5",
         ),
-        Index("idx_wordbank_trigger_image", "kind", "canonical_image_id"),
+        Index(
+            "idx_wordbank_trigger_structure",
+            "structure_key",
+            "trigger_mode",
+        ),
+        Index("idx_wordbank_trigger_image_keys", "image_keys"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     entry_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="text")
     trigger_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    normalized_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    message_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    exact_md5: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    structure_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    search_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    search_tokens: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    image_keys: Mapped[str] = mapped_column(Text, nullable=False, default="")
     trigger_mode: Mapped[str] = mapped_column(String(16), nullable=False)
-    canonical_image_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class WordbankResponse(WordbankMainBase, TimeMixin):
@@ -70,9 +76,13 @@ class WordbankResponse(WordbankMainBase, TimeMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     entry_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="text")
     text: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    canonical_image_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    message_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    exact_md5: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    structure_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    search_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    search_tokens: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    image_keys: Mapped[str] = mapped_column(Text, nullable=False, default="")
     weight: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -109,12 +119,12 @@ class WordbankSearchDocument(WordbankMainBase):
             "status",
         ),
         Index(
-            "idx_wordbank_search_document_trigger_image",
-            "trigger_canonical_image_id",
+            "idx_wordbank_search_document_trigger_md5",
+            "trigger_exact_md5",
         ),
         Index(
-            "idx_wordbank_search_document_response_image",
-            "response_canonical_image_id",
+            "idx_wordbank_search_document_response_md5",
+            "response_exact_md5",
         ),
     )
 
@@ -128,20 +138,25 @@ class WordbankSearchDocument(WordbankMainBase):
     weight: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     trigger_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
     trigger_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    trigger_canonical_image_id: Mapped[int | None] = mapped_column(
-        Integer,
-        nullable=True,
-    )
-    response_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    response_kind: Mapped[str] = mapped_column(
-        String(16),
+    trigger_exact_md5: Mapped[str] = mapped_column(
+        String(32),
         nullable=False,
-        default="text",
+        default="",
     )
-    response_canonical_image_id: Mapped[int | None] = mapped_column(
-        Integer,
-        nullable=True,
+    trigger_structure_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    trigger_image_keys: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    response_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    response_exact_md5: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="",
     )
+    response_structure_key: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="",
+    )
+    response_image_keys: Mapped[str] = mapped_column(Text, nullable=False, default="")
     trigger_tokens: Mapped[str] = mapped_column(Text, nullable=False, default="")
     response_tokens: Mapped[str] = mapped_column(Text, nullable=False, default="")
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)

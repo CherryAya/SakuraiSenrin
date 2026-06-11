@@ -1137,22 +1137,22 @@ async def _record_passive_response_message(
 
 
 async def _build_passive_message(response: PassiveResponse) -> Message | str:
-    if (
-        response.response_kind != "image"
-        or response.response_canonical_image_id is None
-    ):
+    if response.response_shape is None or response.response_shape.is_empty():
         return response.text
 
-    image_bytes = await wordbank_media_service.load_canonical_storage_bytes(
-        response.response_canonical_image_id
-    )
-    if image_bytes is None:
-        return tr("zh-CN", "wordbank.error.image_storage_missing")
-
     message = Message()
-    if response.text:
-        message += MessageSegment.text(response.text)
-    message += MessageSegment.image(image_bytes)
+    for atom in response.response_shape.atoms:
+        if atom.kind == "text" and atom.text:
+            message += MessageSegment.text(atom.text)
+        elif atom.kind == "at" and atom.target_id:
+            message += MessageSegment.at(atom.target_id)
+        elif atom.kind == "image" and atom.canonical_image_id is not None:
+            image_bytes = await wordbank_media_service.load_canonical_storage_bytes(
+                atom.canonical_image_id
+            )
+            if image_bytes is None:
+                return tr("zh-CN", "wordbank.error.image_storage_missing")
+            message += MessageSegment.image(image_bytes)
     return message
 
 

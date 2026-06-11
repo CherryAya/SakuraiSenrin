@@ -15,6 +15,11 @@ from nonebot.adapters.onebot.v11.event import (
 
 from src.lib.interaction import is_revoke_signal
 from src.logger import logger
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    shape_from_event,
+    shape_from_message,
+)
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.matching import SelectedMatch
 from src.plugins.wordbank.services.media import MediaError, WordbankMediaService
@@ -33,8 +38,7 @@ class PassiveResponse:
     group_id: str
     user_id: str
     message_type: str
-    response_kind: str = "text"
-    response_canonical_image_id: int | None = None
+    response_shape: MessageShape | None = None
 
 
 def build_rule_context(event: MessageEvent | NoticeEvent) -> RuleContext:
@@ -81,12 +85,7 @@ def build_passive_response(
         group_id=context.group_id,
         user_id=context.user_id,
         message_type=message_type,
-        response_kind=str(getattr(selected.response, "kind", "text") or "text"),
-        response_canonical_image_id=getattr(
-            selected.response,
-            "canonical_image_id",
-            None,
-        ),
+        response_shape=selected.response.message_shape,
     )
 
 
@@ -146,8 +145,8 @@ async def fetch_image_bytes(
 async def resolve_message_image_ids(
     media_service: WordbankMediaService,
     urls: Sequence[str],
-) -> list[int]:
-    canonical_ids: list[int] = []
+) -> dict[int, int]:
+    canonical_ids: dict[int, int] = {}
     for url in urls[:MAX_PASSIVE_IMAGES]:
         data = await fetch_image_bytes(url)
         if data is None:
@@ -158,7 +157,7 @@ async def resolve_message_image_ids(
             logger.warning(f"[Wordbank] image match skipped: {exc}")
             continue
         if canonical_id is not None:
-            canonical_ids.append(canonical_id)
+            canonical_ids[len(canonical_ids)] = canonical_id
     return canonical_ids
 
 
@@ -175,36 +174,37 @@ async def handle_passive_message(
         return None
 
     context = build_rule_context(event)
-    text = event.message.extract_plain_text()
-    if text.strip():
-        selected = await service.match_text(text, context=context)
+    image_urls = extract_image_urls(event)
+    image_ids = await resolve_message_image_ids(media_service, image_urls)
+    message_shape = shape_from_message(event.message, image_ids=image_ids)
+    if not message_shape.is_empty():
+        selected = await service.match_message(
+            message_shape,
+            context=context,
+            message_type="message",
+        )
         if selected is not None:
             return build_passive_response(
                 selected,
                 context=context,
-                message_type="text",
+                message_type="message",
             )
 
     event_triggers = build_event_triggers(event, bot)
     if event_triggers:
-        selected = await service.match_event(event_triggers, context=context)
-        if selected is not None:
-            return build_passive_response(
-                selected,
+        for event_trigger in event_triggers:
+            selected = await service.match_message(
+                shape_from_event(event_trigger),
                 context=context,
                 message_type="event",
             )
-
-    image_urls = extract_image_urls(event)
-    if not image_urls:
-        return None
-    image_ids = await resolve_message_image_ids(media_service, image_urls)
-    if not image_ids:
-        return None
-    selected = await service.match_images(image_ids, context=context)
-    if selected is None:
-        return None
-    return build_passive_response(selected, context=context, message_type="image")
+            if selected is not None:
+                return build_passive_response(
+                    selected,
+                    context=context,
+                    message_type="event",
+                )
+    return None
 
 
 async def handle_passive_notice(
@@ -220,7 +220,16 @@ async def handle_passive_notice(
         return None
 
     context = build_rule_context(event)
-    selected = await service.match_event(event_triggers, context=context)
-    if selected is None:
-        return None
-    return build_passive_response(selected, context=context, message_type="event")
+    for event_trigger in event_triggers:
+        selected = await service.match_message(
+            shape_from_event(event_trigger),
+            context=context,
+            message_type="event",
+        )
+        if selected is not None:
+            return build_passive_response(
+                selected,
+                context=context,
+                message_type="event",
+            )
+    return None

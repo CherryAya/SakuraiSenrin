@@ -1,8 +1,13 @@
 """Wordbank database payload and record types."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from typing import NotRequired, TypedDict
+from typing import TYPE_CHECKING, NotRequired, TypedDict
+
+if TYPE_CHECKING:
+    from src.plugins.wordbank.message_model import MessageShape
 
 
 class WordbankEntryPayload(TypedDict):
@@ -23,20 +28,27 @@ class WordbankEntryPayload(TypedDict):
 
 class WordbankTriggerPayload(TypedDict):
     entry_id: int
-    kind: str
     trigger_text: str
-    normalized_text: str
+    message_json: str
+    exact_md5: str
+    structure_key: str
+    search_text: str
+    search_tokens: str
+    image_keys: str
     trigger_mode: str
-    canonical_image_id: int | None
     created_at: int
     updated_at: int
 
 
 class WordbankResponsePayload(TypedDict):
     entry_id: int
-    kind: str
     text: str
-    canonical_image_id: int | None
+    message_json: str
+    exact_md5: str
+    structure_key: str
+    search_text: str
+    search_tokens: str
+    image_keys: str
     weight: int
     created_at: int
     updated_at: int
@@ -104,20 +116,27 @@ class WordbankApprovalMessagePayload(TypedDict):
 class WordbankTriggerRecord:
     id: int
     entry_id: int
-    kind: str
     trigger_text: str
-    normalized_text: str
+    message_shape: MessageShape
+    exact_md5: str
+    structure_key: str
+    search_text: str
+    search_tokens: str
+    image_keys: str
     trigger_mode: str
-    canonical_image_id: int | None
 
 
 @dataclass(slots=True, frozen=True)
 class WordbankResponseRecord:
     id: int
     entry_id: int
-    kind: str
     text: str
-    canonical_image_id: int | None
+    message_shape: MessageShape
+    exact_md5: str
+    structure_key: str
+    search_text: str
+    search_tokens: str
+    image_keys: str
     weight: int
 
 
@@ -173,14 +192,11 @@ class WordbankSearchItem:
     status: str
     trigger_text: str
     trigger_mode: str
-    trigger_canonical_image_id: int | None
     response_text: str
     scope: str
     probability: float
     weight: int
     created_by: str
-    response_kind: str = "text"
-    response_canonical_image_id: int | None = None
     score: float = 0.0
     matched_by: str = ""
 
@@ -243,5 +259,3 @@ class WordbankEntryDetail:
     trigger_text: str
     trigger_mode: str
     response_text: str
-    response_kind: str = "text"
-    response_canonical_image_id: int | None = None

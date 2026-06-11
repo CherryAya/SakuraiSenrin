@@ -10,6 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.consts import WritePolicy
 from src.lib.utils.common import get_current_time
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    fingerprint_shape,
+    shape_from_payload,
+    shape_to_payload,
+)
 
 from .instances import wordbank_log_db, wordbank_main_db
 from .ops import (
@@ -108,11 +114,14 @@ class WordbankRepository:
         return WordbankTriggerRecord(
             id=row.id,
             entry_id=row.entry_id,
-            kind=row.kind,
             trigger_text=row.trigger_text,
-            normalized_text=row.normalized_text,
+            message_shape=shape_from_payload(row.message_json),
+            exact_md5=row.exact_md5,
+            structure_key=row.structure_key,
+            search_text=row.search_text,
+            search_tokens=row.search_tokens,
+            image_keys=row.image_keys,
             trigger_mode=row.trigger_mode,
-            canonical_image_id=row.canonical_image_id,
         )
 
     @staticmethod
@@ -120,9 +129,13 @@ class WordbankRepository:
         return WordbankResponseRecord(
             id=row.id,
             entry_id=row.entry_id,
-            kind=row.kind,
             text=row.text,
-            canonical_image_id=row.canonical_image_id,
+            message_shape=shape_from_payload(row.message_json),
+            exact_md5=row.exact_md5,
+            structure_key=row.structure_key,
+            search_text=row.search_text,
+            search_tokens=row.search_tokens,
+            image_keys=row.image_keys,
             weight=row.weight,
         )
 
@@ -203,25 +216,18 @@ class WordbankRepository:
             group_id=entry.group_id,
             created_by=entry.created_by,
             deleted_at=entry.deleted_at,
-            trigger_text=WordbankRepository._format_trigger_text(trigger),
+            trigger_text=trigger.trigger_text,
             trigger_mode=trigger.trigger_mode,
-            response_text=WordbankRepository._format_response_text(response),
-            response_kind=response.kind,
-            response_canonical_image_id=response.canonical_image_id,
+            response_text=response.text,
         )
 
     @staticmethod
     def _format_trigger_text(trigger: WordbankTrigger) -> str:
-        if trigger.kind == "image":
-            return f"[图片:{trigger.canonical_image_id}]"
         return trigger.trigger_text
 
     @staticmethod
     def _format_response_text(response: WordbankResponse) -> str:
-        if response.kind != "image":
-            return response.text
-        image_text = f"[图片:{response.canonical_image_id}]"
-        return f"{response.text} {image_text}".strip()
+        return response.text
 
     @classmethod
     def _document_payload(
@@ -239,18 +245,17 @@ class WordbankRepository:
             "deleted_at": entry.deleted_at,
             "probability": entry.probability,
             "weight": entry.weight,
-            "trigger_text": cls._format_trigger_text(trigger),
+            "trigger_text": trigger.trigger_text,
             "trigger_mode": trigger.trigger_mode,
-            "trigger_canonical_image_id": trigger.canonical_image_id,
-            "response_text": cls._format_response_text(response),
-            "response_kind": response.kind,
-            "response_canonical_image_id": response.canonical_image_id,
-            "trigger_tokens": (
-                _build_ngram_tokens(trigger.trigger_text)
-                if trigger.kind == "text"
-                else ""
-            ),
-            "response_tokens": _build_ngram_tokens(response.text),
+            "trigger_exact_md5": trigger.exact_md5,
+            "trigger_structure_key": trigger.structure_key,
+            "trigger_image_keys": trigger.image_keys,
+            "response_text": response.text,
+            "response_exact_md5": response.exact_md5,
+            "response_structure_key": response.structure_key,
+            "response_image_keys": response.image_keys,
+            "trigger_tokens": trigger.search_tokens,
+            "response_tokens": response.search_tokens,
             "updated_at": entry.updated_at,
         }
 
@@ -266,26 +271,20 @@ class WordbankRepository:
             status=document.status,
             trigger_text=document.trigger_text,
             trigger_mode=document.trigger_mode,
-            trigger_canonical_image_id=document.trigger_canonical_image_id,
             response_text=document.response_text,
             scope=document.scope,
             probability=document.probability,
             weight=document.weight,
             created_by=document.created_by,
-            response_kind=document.response_kind,
-            response_canonical_image_id=document.response_canonical_image_id,
             score=score,
             matched_by=matched_by,
         )
 
-    async def create_text_entry(
+    async def create_message_entry(
         self,
         *,
-        trigger_text: str,
-        normalized_text: str,
-        response_text: str,
-        response_canonical_image_id: int | None = None,
-        trigger_mode: str,
+        trigger_shape: MessageShape,
+        response_shape: MessageShape,
         rule: dict,
         scope: str,
         priority: int,
@@ -293,8 +292,11 @@ class WordbankRepository:
         weight: int,
         group_id: str,
         created_by: str,
+        trigger_mode: str = "strict",
     ) -> WordbankEntryRecord:
         now = get_current_time()
+        trigger_fingerprint = fingerprint_shape(trigger_shape)
+        response_fingerprint = fingerprint_shape(response_shape)
         async with wordbank_main_db.write_session() as session:
             entry = WordbankEntry(
                 status="pending",
@@ -316,92 +318,26 @@ class WordbankRepository:
 
             trigger = WordbankTrigger(
                 entry_id=entry.id,
-                kind="text",
-                trigger_text=trigger_text,
-                normalized_text=normalized_text,
+                trigger_text=trigger_fingerprint.summary_text,
+                message_json=shape_to_payload(trigger_shape),
+                exact_md5=trigger_fingerprint.exact_md5,
+                structure_key=trigger_fingerprint.structure_key,
+                search_text=trigger_fingerprint.search_text,
+                search_tokens=trigger_fingerprint.search_tokens,
+                image_keys=trigger_fingerprint.image_keys,
                 trigger_mode=trigger_mode,
-                canonical_image_id=None,
                 created_at=now,
                 updated_at=now,
             )
             response = WordbankResponse(
                 entry_id=entry.id,
-                kind="image" if response_canonical_image_id is not None else "text",
-                text=response_text,
-                canonical_image_id=response_canonical_image_id,
-                weight=weight,
-                created_at=now,
-                updated_at=now,
-            )
-            session.add_all([trigger, response])
-            await session.flush()
-            await self._refresh_search_document_in_session(session, entry.id)
-
-            return WordbankEntryRecord(
-                id=entry.id,
-                status=entry.status,
-                enabled=entry.enabled,
-                scope=entry.scope,
-                priority=entry.priority,
-                probability=entry.probability,
-                weight=entry.weight,
-                rule=dict(entry.rule or {}),
-                group_id=entry.group_id,
-                created_by=entry.created_by,
-                deleted_at=entry.deleted_at,
-                triggers=(self._to_trigger_record(trigger),),
-                responses=(self._to_response_record(response),),
-            )
-
-    async def create_image_entry(
-        self,
-        *,
-        canonical_image_id: int,
-        response_text: str,
-        response_canonical_image_id: int | None = None,
-        rule: dict,
-        scope: str,
-        priority: int,
-        probability: float,
-        weight: int,
-        group_id: str,
-        created_by: str,
-    ) -> WordbankEntryRecord:
-        now = get_current_time()
-        async with wordbank_main_db.write_session() as session:
-            entry = WordbankEntry(
-                status="pending",
-                enabled=1,
-                scope=scope,
-                priority=priority,
-                probability=probability,
-                weight=weight,
-                rule=rule,
-                group_id=group_id,
-                created_by=created_by,
-                approved_by="",
-                deleted_at=0,
-                created_at=now,
-                updated_at=now,
-            )
-            session.add(entry)
-            await session.flush()
-
-            trigger = WordbankTrigger(
-                entry_id=entry.id,
-                kind="image",
-                trigger_text="",
-                normalized_text="",
-                trigger_mode="fullmatch",
-                canonical_image_id=canonical_image_id,
-                created_at=now,
-                updated_at=now,
-            )
-            response = WordbankResponse(
-                entry_id=entry.id,
-                kind="image" if response_canonical_image_id is not None else "text",
-                text=response_text,
-                canonical_image_id=response_canonical_image_id,
+                text=response_fingerprint.summary_text,
+                message_json=shape_to_payload(response_shape),
+                exact_md5=response_fingerprint.exact_md5,
+                structure_key=response_fingerprint.structure_key,
+                search_text=response_fingerprint.search_text,
+                search_tokens=response_fingerprint.search_tokens,
+                image_keys=response_fingerprint.image_keys,
                 weight=weight,
                 created_at=now,
                 updated_at=now,
@@ -654,14 +590,11 @@ class WordbankRepository:
                 status=entry.status,
                 trigger_text=self._format_trigger_text(trigger),
                 trigger_mode=trigger.trigger_mode,
-                trigger_canonical_image_id=trigger.canonical_image_id,
                 response_text=self._format_response_text(response),
                 scope=entry.scope,
                 probability=entry.probability,
                 weight=entry.weight,
                 created_by=entry.created_by,
-                response_kind=response.kind,
-                response_canonical_image_id=response.canonical_image_id,
             )
             for entry, trigger, response in rows
         ]
@@ -1071,23 +1004,23 @@ class WordbankRepository:
         if creator_id:
             stmt = stmt.where(WordbankSearchDocument.created_by == creator_id)
         canonical_ids = tuple(image_scores)
+        trigger_patterns = [
+            WordbankSearchDocument.trigger_image_keys.like(f"%|{canonical_id}|%")
+            for canonical_id in canonical_ids
+        ]
+        response_patterns = [
+            WordbankSearchDocument.response_image_keys.like(f"%|{canonical_id}|%")
+            for canonical_id in canonical_ids
+        ]
         if field == "trigger":
-            stmt = stmt.where(
-                WordbankSearchDocument.trigger_canonical_image_id.in_(canonical_ids)
-            )
+            stmt = stmt.where(or_(*trigger_patterns))
         elif field == "response":
-            stmt = stmt.where(
-                WordbankSearchDocument.response_canonical_image_id.in_(canonical_ids)
-            )
+            stmt = stmt.where(or_(*response_patterns))
         else:
             stmt = stmt.where(
                 or_(
-                    WordbankSearchDocument.trigger_canonical_image_id.in_(
-                        canonical_ids
-                    ),
-                    WordbankSearchDocument.response_canonical_image_id.in_(
-                        canonical_ids
-                    ),
+                    *trigger_patterns,
+                    *response_patterns,
                 )
             )
         documents = (await session.execute(stmt)).scalars().all()
@@ -1095,14 +1028,17 @@ class WordbankRepository:
         sources: dict[int, str] = {}
         for document in documents:
             matched: list[tuple[float, str]] = []
-            trigger_score = image_scores.get(document.trigger_canonical_image_id or -1)
-            response_score = image_scores.get(
-                document.response_canonical_image_id or -1
-            )
-            if trigger_score is not None and field in {"all", "trigger"}:
-                matched.append((trigger_score, "image:trigger"))
-            if response_score is not None and field in {"all", "response"}:
-                matched.append((response_score, "image:response"))
+            for canonical_id, score in image_scores.items():
+                if (
+                    field in {"all", "trigger"}
+                    and f"|{canonical_id}|" in document.trigger_image_keys
+                ):
+                    matched.append((score, "image:trigger"))
+                if (
+                    field in {"all", "response"}
+                    and f"|{canonical_id}|" in document.response_image_keys
+                ):
+                    matched.append((score, "image:response"))
             if not matched:
                 continue
             score, source = max(matched, key=lambda item: item[0])

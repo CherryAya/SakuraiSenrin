@@ -12,6 +12,7 @@ from src.config import config
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.logger import logger
+from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
@@ -48,8 +49,7 @@ def format_pending_approval_notice(
         trigger_text=result.trigger_text,
         response_text=format_response_summary(
             result.response_text,
-            kind=result.response_kind,
-            canonical_image_id=result.response_canonical_image_id,
+            shape=result.response_shape,
         ),
         trigger_mode=result.trigger_mode,
         scope=result.scope,
@@ -87,17 +87,40 @@ async def _append_response_image(
     text: str,
     media_service: WordbankMediaService,
 ) -> Message:
-    canonical_id = result.response_canonical_image_id
-    if result.response_kind != "image" or canonical_id is None:
+    response_shape = result.response_shape
+    if response_shape is None or response_shape.is_empty():
         return Message(text)
-
-    image_bytes = await media_service.load_canonical_storage_bytes(canonical_id)
-    if image_bytes is None:
-        return Message(text)
-
-    return Message(_strip_response_image_placeholder(text, canonical_id)) + (
-        MessageSegment.image(image_bytes)
+    summary = format_response_summary(result.response_text, shape=response_shape)
+    return Message(_strip_response_summary(text, summary)) + (
+        await _build_shape_message(response_shape, media_service)
     )
+
+
+def _strip_response_summary(text: str, summary: str) -> str:
+    if f"响应: {summary}" in text:
+        return text.replace(f"响应: {summary}", "响应: 消息回复如下")
+    if f" {summary}" in text:
+        return text.replace(f" {summary}", "")
+    return text.replace(summary, "消息回复如下")
+
+
+async def _build_shape_message(
+    shape: MessageShape,
+    media_service: WordbankMediaService,
+) -> Message:
+    message = Message()
+    for atom in shape.atoms:
+        if atom.kind == "text" and atom.text:
+            message += MessageSegment.text(atom.text)
+        elif atom.kind == "at" and atom.target_id:
+            message += MessageSegment.at(atom.target_id)
+        elif atom.kind == "image" and atom.canonical_image_id is not None:
+            image_bytes = await media_service.load_canonical_storage_bytes(
+                atom.canonical_image_id
+            )
+            if image_bytes is not None:
+                message += MessageSegment.image(image_bytes)
+    return message
 
 
 def _strip_response_image_placeholder(text: str, canonical_id: int) -> str:
