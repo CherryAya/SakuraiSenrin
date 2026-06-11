@@ -576,8 +576,14 @@ def _parse_meta_block(block: str) -> dict[str, str]:
         if ":" not in payload:
             continue
         key, value = payload.split(":", 1)
-        meta[key.strip()] = value.strip().strip("`")
+        meta[key.strip()] = _strip_wrapping_backticks(value.strip())
     return meta
+
+
+def _strip_wrapping_backticks(value: str) -> str:
+    if len(value) >= 2 and value.startswith("`") and value.endswith("`"):
+        return value[1:-1].strip()
+    return value
 
 
 def _parse_permission(value: str) -> Permission:

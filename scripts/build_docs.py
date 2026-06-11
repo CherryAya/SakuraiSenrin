@@ -295,6 +295,8 @@ class DemoCollectionRenderer:
     CARD_COMMAND_CODE_BG = "#FFFFFF"
     CARD_COMMAND_CODE_TEXT = "#8B2D57"
     CARD_COMMAND_CODE_BORDER = "#F0C8D7"
+    CARD_SLUG_MIN_WIDTH = 68
+    CARD_SLUG_MAX_WIDTH = 240
     INDEX_BG = "#F7E5EE"
     INDEX_TEXT = "#9A3F62"
     INLINE_CODE_BG = "#FFF7FA"
@@ -438,18 +440,8 @@ class DemoCollectionRenderer:
 
     def _card_height(self, tile: PreparedCollectionTile) -> int:
         content_width = self.card_width - self.CARD_PADDING * 2
-        command_lines = self._wrap_inline_text(
-            tile.trigger.strip() or f"#help {tile.slug}",
-            self.tile_body_font,
-            content_width,
-            max_lines=3,
-        )
-        summary_lines = self._wrap_inline_text(
-            tile.summary.strip() or "查看该子功能的用途、常见用法和关键边界。",
-            self.tile_meta_font,
-            content_width,
-            max_lines=3,
-        )
+        command_lines = self._tile_command_lines(tile, content_width)
+        summary_lines = self._tile_summary_lines(tile, content_width)
         command_height = len(command_lines) * self._line_height(self.tile_body_font, 8)
         summary_height = len(summary_lines) * self._line_height(self.tile_meta_font, 6)
         return (
@@ -625,17 +617,22 @@ class DemoCollectionRenderer:
 
         index_text = f"{tile.index:02d}"
         title_text = f"{index_text}  {tile.title}"
-        title_width_limit = content_width - 128
+        slug_text = tile.slug
+        slug_width = min(
+            self.CARD_SLUG_MAX_WIDTH,
+            max(
+                self.CARD_SLUG_MIN_WIDTH,
+                self._text_width(slug_text, self.slug_font) + 26,
+            ),
+        )
+        slug_x = x + self.card_width - self.CARD_PADDING - slug_width
+        title_width_limit = max(180, slug_x - title_x - 18)
         draw.text(
             (title_x, title_y + 7),
             self._ellipsize(title_text, self.tile_index_font, title_width_limit),
             fill=self.TITLE_BAND_TEXT,
             font=self.tile_index_font,
         )
-
-        slug_text = tile.slug
-        slug_width = min(150, self._text_width(slug_text, self.slug_font) + 26)
-        slug_x = x + self.card_width - self.CARD_PADDING - slug_width
         draw.rounded_rectangle(
             (slug_x, title_y, slug_x + slug_width, title_y + 30),
             radius=14,
@@ -652,12 +649,7 @@ class DemoCollectionRenderer:
         demo_y = y + self.CARD_PADDING + self.CARD_BAND_HEIGHT + self.CARD_DEMO_TOP_GAP
         image.paste(tile.image, (demo_x, demo_y))
 
-        command_lines = self._wrap_inline_text(
-            tile.trigger.strip() or f"#help {tile.slug}",
-            self.tile_body_font,
-            content_width,
-            max_lines=3,
-        )
+        command_lines = self._tile_command_lines(tile, content_width)
         command_top = demo_y + tile.image.height + self.CARD_DEMO_BOTTOM_GAP
         self._draw_info_block(
             draw,
@@ -673,12 +665,7 @@ class DemoCollectionRenderer:
         command_height = (
             len(command_lines) * self._line_height(self.tile_body_font, 8) + 22
         )
-        summary_lines = self._wrap_inline_text(
-            tile.summary.strip() or "查看该子功能的用途、常见用法和关键边界。",
-            self.tile_meta_font,
-            content_width,
-            max_lines=3,
-        )
+        summary_lines = self._tile_summary_lines(tile, content_width)
         summary_top = command_top + command_height + 18
         for index, line in enumerate(summary_lines):
             self._draw_inline_line(
@@ -723,29 +710,30 @@ class DemoCollectionRenderer:
         font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
         max_width: int,
         *,
-        max_lines: int,
+        max_lines: int | None,
     ) -> list[tuple]:
         lines: list[tuple] = []
         current: list = []
         for span in split_inline_text_spans(text):
-            candidate = [*current, (span.text, span.code)]
-            if not current or self._inline_line_width(candidate, font) <= max_width:
-                current = candidate
-                continue
             if span.code:
-                lines.append(tuple(current))
-                current = [(span.text, span.code)]
+                current, flushed = self._append_code_span_wrapped(
+                    current,
+                    span.text,
+                    font,
+                    max_width,
+                )
+                lines.extend(flushed)
                 continue
-            for char in span.text:
-                candidate = self._append_inline_char(current, char, code=False)
-                if not current or self._inline_line_width(candidate, font) <= max_width:
-                    current = candidate
-                    continue
-                lines.append(tuple(current))
-                current = [(char, False)]
+            current, flushed = self._append_plain_span_wrapped(
+                current,
+                span.text,
+                font,
+                max_width,
+            )
+            lines.extend(flushed)
         if current:
             lines.append(tuple(current))
-        if len(lines) <= max_lines:
+        if max_lines is None or len(lines) <= max_lines:
             return lines
         clipped = lines[:max_lines]
         suffix = "..."
@@ -760,6 +748,147 @@ class DemoCollectionRenderer:
             clipped[-1] = clipped[-1][:-1]
         clipped[-1] = (*clipped[-1], (suffix, False))
         return clipped
+
+    def _tile_command_lines(
+        self,
+        tile: PreparedCollectionTile,
+        content_width: int,
+    ) -> list[tuple]:
+        return self._wrap_inline_text(
+            tile.trigger.strip() or f"#help {tile.slug}",
+            self.tile_body_font,
+            content_width,
+            max_lines=None,
+        )
+
+    def _tile_summary_lines(
+        self,
+        tile: PreparedCollectionTile,
+        content_width: int,
+    ) -> list[tuple]:
+        return self._wrap_inline_text(
+            tile.summary.strip() or "查看该子功能的用途、常见用法和关键边界。",
+            self.tile_meta_font,
+            content_width,
+            max_lines=None,
+        )
+
+    def _append_plain_span_wrapped(
+        self,
+        current: list[tuple[str, bool]],
+        text: str,
+        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+        max_width: int,
+    ) -> tuple[list[tuple[str, bool]], list[tuple]]:
+        flushed: list[tuple] = []
+        segments = self._split_wrappable_segments(text)
+        for segment in segments:
+            candidate = [*current, (segment, False)]
+            if not current or self._inline_line_width(candidate, font) <= max_width:
+                current = candidate
+                continue
+            if current:
+                flushed.append(tuple(current))
+            current = []
+            if self._inline_line_width([(segment, False)], font) <= max_width:
+                current = [(segment, False)]
+                continue
+            for char in segment:
+                candidate = self._append_inline_char(current, char, code=False)
+                if not current or self._inline_line_width(candidate, font) <= max_width:
+                    current = candidate
+                    continue
+                flushed.append(tuple(current))
+                current = [(char, False)]
+        return current, flushed
+
+    def _append_code_span_wrapped(
+        self,
+        current: list[tuple[str, bool]],
+        text: str,
+        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+        max_width: int,
+    ) -> tuple[list[tuple[str, bool]], list[tuple]]:
+        flushed: list[tuple] = []
+        candidate = [*current, (text, True)]
+        if self._inline_line_width(candidate, font) <= max_width:
+            return candidate, flushed
+        if self._inline_line_width([(text, True)], font) <= max_width:
+            if current:
+                flushed.append(tuple(current))
+            return [(text, True)], flushed
+        segments = self._split_wrappable_segments(text)
+        for segment in segments:
+            candidate = [*current, (segment, True)]
+            if not current or self._inline_line_width(candidate, font) <= max_width:
+                current = candidate
+                continue
+            if current:
+                flushed.append(tuple(current))
+            current = []
+            if self._inline_line_width([(segment, True)], font) <= max_width:
+                current = [(segment, True)]
+                continue
+            for piece in self._split_oversized_code_segment(segment, font, max_width):
+                if (
+                    current
+                    and self._inline_line_width(
+                        [*current, (piece, True)],
+                        font,
+                    )
+                    > max_width
+                ):
+                    flushed.append(tuple(current))
+                    current = []
+                current.append((piece, True))
+        return current, flushed
+
+    def _split_wrappable_segments(self, text: str) -> tuple[str, ...]:
+        separators = (" => ", " --", "|", "/", "_", " ")
+        segments: list[str] = []
+        buffer = text
+        while buffer:
+            matched = False
+            for separator in separators:
+                if separator in buffer:
+                    head, tail = buffer.split(separator, 1)
+                    if head:
+                        segments.append(head + separator)
+                    else:
+                        segments.append(separator)
+                    buffer = tail
+                    matched = True
+                    break
+            if not matched:
+                segments.append(buffer)
+                break
+        return tuple(segment for segment in segments if segment)
+
+    def _split_oversized_code_segment(
+        self,
+        text: str,
+        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+        max_width: int,
+    ) -> tuple[str, ...]:
+        chunks: list[str] = []
+        current = ""
+        for char in text:
+            candidate = current + char
+            if (
+                current
+                and self._inline_line_width(
+                    [(candidate, True)],
+                    font,
+                )
+                > max_width
+            ):
+                chunks.append(current)
+                current = char
+                continue
+            current = candidate
+        if current:
+            chunks.append(current)
+        return tuple(chunks)
 
     def _draw_inline_line(
         self,

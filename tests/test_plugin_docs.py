@@ -154,6 +154,27 @@ def test_split_inline_text_spans_supports_adjacent_short_code_segments() -> None
     ]
 
 
+def test_load_plugin_doc_bundle_preserves_inline_backticks_in_meta_value() -> None:
+    source = Path("src/plugins/wordbank/docs/README.MD")
+
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    reply_shortcut = next(
+        feature for feature in bundle.index if feature.slug == "reply-shortcut"
+    )
+
+    assert (
+        reply_shortcut.trigger
+        == "回复机器人词库自动回复并发送 `info` / `history` / `del` / `rst`"
+    )
+
+
 def test_demo_image_renderer_fit_inline_spans_keeps_code_spans_without_backticks() -> (
     None
 ):
@@ -943,6 +964,56 @@ def test_collection_renderer_keeps_requested_two_column_layout() -> None:
     renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=860)
 
     assert renderer._effective_columns(14) == 2  # pyright: ignore[reportPrivateUsage]
+
+
+def test_collection_wraps_long_code_command_spans_without_overflow() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=860)
+
+    lines = renderer._wrap_inline_text(  # pyright: ignore[reportPrivateUsage]
+        "`wordbank add 触发词 => 响应词 --mode contains|fullmatch|prefix`",
+        renderer.tile_body_font,  # pyright: ignore[reportPrivateUsage]
+        320,
+        max_lines=None,
+    )
+
+    assert all(
+        renderer._inline_line_width(line, renderer.tile_body_font) <= 320  # pyright: ignore[reportPrivateUsage]
+        for line in lines
+    )
+    assert all(
+        not line[0][0].startswith(("|", "/", "_", " --", " => "))
+        for line in lines[1:]
+    )
+
+
+def test_collection_wraps_long_scope_code_command_spans_without_overflow() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=860)
+
+    lines = renderer._wrap_inline_text(  # pyright: ignore[reportPrivateUsage]
+        (
+            "`wordbank add 触发词 => 响应词 --scope "
+            "current_group|all_groups|self|private_only`"
+        ),
+        renderer.tile_body_font,  # pyright: ignore[reportPrivateUsage]
+        320,
+        max_lines=None,
+    )
+
+    assert all(
+        renderer._inline_line_width(line, renderer.tile_body_font) <= 320  # pyright: ignore[reportPrivateUsage]
+        for line in lines
+    )
+    assert all(
+        not line[0][0].startswith(("|", "/", "_", " --", " => "))
+        for line in lines[1:]
+    )
+
+
+def test_collection_slug_chip_allows_wider_display_before_ellipsis() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=860)
+
+    assert renderer.CARD_SLUG_MIN_WIDTH == 68
+    assert renderer.CARD_SLUG_MAX_WIDTH == 240
 
 
 def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
