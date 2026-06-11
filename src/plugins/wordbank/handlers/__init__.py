@@ -9,7 +9,6 @@ from .approval import (
     send_pending_approval_notice,
 )
 from .commands import (
-    PendingWordbankImage,
     build_forced_command_text,
     build_message_shape_from_message,
     dispatch_wordbank_command,
@@ -25,10 +24,7 @@ from .commands import (
     handle_study_shortcut_result,
     handle_study_with_media,
     handle_study_with_media_result,
-    ingest_first_image_from_message,
     localize_command_error,
-    resolve_pending_image,
-    start_ingest_first_image_from_message,
     wordbank_help_text,
 )
 from .passive import PassiveResponse, handle_passive_message, handle_passive_notice
@@ -46,7 +42,6 @@ __all__ = [
     "REPLY_COMMAND_ALIASES",
     "ApprovalReplyOutcome",
     "PassiveResponse",
-    "PendingWordbankImage",
     "build_add_result_message",
     "build_forced_command_text",
     "build_message_shape_from_message",
@@ -70,12 +65,9 @@ __all__ = [
     "handle_study_shortcut_result",
     "handle_study_with_media",
     "handle_study_with_media_result",
-    "ingest_first_image_from_message",
     "is_reply",
     "localize_command_error",
     "record_submission_approval_message",
-    "resolve_pending_image",
     "send_pending_approval_notice",
-    "start_ingest_first_image_from_message",
     "wordbank_help_text",
 ]
