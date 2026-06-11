@@ -210,7 +210,7 @@ def compose(
     *,
     workers: int | None = None,
     columns: int = 2,
-    thumb_width: int = 700,
+    thumb_width: int = 860,
 ) -> int:
     worker_count = workers if workers is not None else default_worker_count()
     total_files, jobs = collect_collection_jobs(
@@ -238,7 +238,7 @@ def build(
     *,
     workers: int | None = None,
     columns: int = 2,
-    thumb_width: int = 700,
+    thumb_width: int = 860,
 ) -> int:
     generated = generate(workers=workers)
     if generated != 0:
@@ -254,8 +254,8 @@ def build(
 
 
 class DemoCollectionRenderer:
-    MIN_WIDTH = 1440
-    MAX_WIDTH = 2680
+    MIN_WIDTH = 1920
+    MAX_WIDTH = 2400
     OUTER_MARGIN = 36
     HEADER_PANEL_MIN_HEIGHT = 112
     HEADER_TOP = 50
@@ -264,7 +264,7 @@ class DemoCollectionRenderer:
     HEADER_BOTTOM_PAD = 26
     HEADER_SIDE_PAD = 18
     HEADER_EXTRA_COMPENSATION = 10
-    HEADER_RIGHT_BLOCK_WIDTH = 360
+    HEADER_RIGHT_BLOCK_WIDTH = 440
     HEADER_RIGHT_GAP = 20
     HEADER_LEFT_GAP = 36
     CONTENT_TOP_GAP = 28
@@ -516,10 +516,7 @@ class DemoCollectionRenderer:
     def _effective_columns(self, tile_count: int) -> int:
         if tile_count <= 0:
             return 1
-        columns = min(self.columns, tile_count)
-        if columns == 2 and tile_count >= 10:
-            return min(3, tile_count)
-        return columns
+        return min(self.columns, tile_count)
 
     def _should_use_grid_layout(self, tile_count: int, columns: int) -> bool:
         if columns <= 1:
@@ -866,7 +863,7 @@ class DemoCollectionRenderer:
         panel_width = panel_right - panel_left
         right_block_width = min(
             self.HEADER_RIGHT_BLOCK_WIDTH,
-            max(280, panel_width // 4),
+            max(340, panel_width // 4),
         )
         left_x = panel_left + 44
         right_x = panel_right - right_block_width - self.HEADER_RIGHT_GAP

@@ -833,7 +833,7 @@ BOT: Beta 完成
     collection_path = demos_dir / "sample-collection.png"
     assert collection_path.is_file()
     with Image.open(collection_path) as collection:
-        assert collection.width == 1440
+        assert collection.width == 1920
         assert collection.height > 300
 
 
@@ -923,7 +923,7 @@ def test_collection_command_block_uses_distinct_code_chip_palette() -> None:
 
 
 def test_collection_header_layout_stays_within_reasonable_height() -> None:
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=700)
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=860)
 
     layout = renderer._measure_header_layout(  # pyright: ignore[reportPrivateUsage]
         title="学习模块",
@@ -937,6 +937,12 @@ def test_collection_header_layout_stays_within_reasonable_height() -> None:
 
     assert layout.panel_height < 340
     assert layout.right_x + layout.right_width <= layout.panel_right - 8
+
+
+def test_collection_renderer_keeps_requested_two_column_layout() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=860)
+
+    assert renderer._effective_columns(14) == 2  # pyright: ignore[reportPrivateUsage]
 
 
 def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
