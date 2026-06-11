@@ -44,7 +44,6 @@ class RuntimeTriggerVariant:
     id: int
     trigger_group_id: int
     trigger_text: str
-    trigger_mode: str
     message_shape: MessageShape
     exact_md5: str
     structure_key: str
@@ -57,7 +56,6 @@ class RuntimeTriggerGroup:
     enabled: int
     group_id: str
     created_by: str
-    trigger_mode: str
     responses: tuple[RuntimeResponseItem, ...]
 
 
@@ -98,13 +96,10 @@ class RuntimeIndex:
                 enabled=record.enabled,
                 group_id=record.group_id,
                 created_by=record.created_by,
-                trigger_mode=record.trigger_mode,
                 responses=responses,
             )
             for trigger_record in record.trigger_variants:
-                trigger = _to_runtime_trigger(
-                    trigger_record, trigger_mode=record.trigger_mode
-                )
+                trigger = _to_runtime_trigger(trigger_record)
                 exact_match[trigger.exact_md5].append(trigger)
         return cls(groups=groups, exact_match=dict(exact_match))
 
@@ -182,14 +177,11 @@ def _to_runtime_response(
 
 def _to_runtime_trigger(
     record: WordbankTriggerVariantRecord,
-    *,
-    trigger_mode: str,
 ) -> RuntimeTriggerVariant:
     return RuntimeTriggerVariant(
         id=record.id,
         trigger_group_id=record.trigger_group_id,
         trigger_text=record.trigger_text,
-        trigger_mode=trigger_mode,
         message_shape=record.message_shape,
         exact_md5=record.exact_md5,
         structure_key=record.structure_key,

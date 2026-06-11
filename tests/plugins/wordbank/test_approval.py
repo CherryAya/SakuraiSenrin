@@ -31,7 +31,6 @@ def _result(
         response_item_id=12,
         trigger_text="晚安",
         response_text=response_text,
-        trigger_mode="strict",
         scope="current_group",
         probability=1.0,
         weight=3,

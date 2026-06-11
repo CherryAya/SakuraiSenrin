@@ -536,7 +536,6 @@ async def migrate_legacy_rows(
                     deleted_at=state.deleted_at,
                     created_at=created_at,
                     updated_at=updated_at,
-                    trigger_mode="fullmatch",
                 )
                 imported_ids.append(entry.response_item_id)
                 report.imported_group_ids[response_id] = entry.trigger_group_id

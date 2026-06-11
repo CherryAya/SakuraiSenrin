@@ -82,7 +82,6 @@ SEARCH_FIELD_ALIASES = {
 class ParsedTextAdd:
     trigger_text: str
     response_text: str
-    trigger_mode: str | None
     raw_rule: dict[str, Any]
 
 
@@ -106,7 +105,6 @@ class MutationActor:
 @dataclass(slots=True, frozen=True)
 class GuidedAdvancedOptions:
     raw_rule: dict[str, Any]
-    trigger_mode: str | None
 
 
 @dataclass(slots=True, frozen=True)
@@ -135,7 +133,7 @@ def build_forced_command_text(action: str | None, raw_text: str) -> str:
     return f"{action} {raw_text}".strip() if action else raw_text
 
 
-def _parse_flags(text: str) -> tuple[str, dict[str, Any], str | None]:
+def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
     try:
         tokens = shlex.split(text)
     except ValueError as exc:
@@ -146,20 +144,15 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any], str | None]:
         ) from exc
     remaining: list[str] = []
     raw_rule: dict[str, Any] = {}
-    trigger_mode: str | None = None
     idx = 0
     while idx < len(tokens):
         token = tokens[idx]
         if token in {"--mode", "-m"}:
-            idx += 1
-            if idx >= len(tokens):
-                raise RuleError(
-                    "--mode 需要提供触发模式",
-                    key="wordbank.error.flag_missing",
-                    flag="--mode",
-                    expected="触发模式",
-                )
-            trigger_mode = tokens[idx]
+            raise RuleError(
+                "当前词库只支持严格匹配，不再支持 --mode",
+                key="wordbank.error.guided_advanced_unknown",
+                options=token,
+            )
         elif token in {"--scope", "-s"}:
             idx += 1
             if idx >= len(tokens):
@@ -223,7 +216,7 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any], str | None]:
         else:
             remaining.append(token)
         idx += 1
-    return " ".join(remaining), raw_rule, trigger_mode
+    return " ".join(remaining), raw_rule
 
 
 def _parse_positive_int(
@@ -243,7 +236,7 @@ def _parse_positive_int(
 
 
 def parse_text_add_args(text: str) -> ParsedTextAdd:
-    source, raw_rule, trigger_mode = _parse_flags(text)
+    source, raw_rule = _parse_flags(text)
     pair = split_add_pair(source)
     if pair is not None:
         trigger, response = pair
@@ -252,7 +245,7 @@ def parse_text_add_args(text: str) -> ParsedTextAdd:
                 "添加词条需要同时包含触发词和响应词",
                 key="wordbank.error.add_pair_required",
             )
-        return ParsedTextAdd(trigger, response, trigger_mode, raw_rule)
+        return ParsedTextAdd(trigger, response, raw_rule)
     raise RuleError(
         "添加格式: wordbank add 触发词 => 响应词；图片回复: wordbank add 触发词 [图片]",
         key="wordbank.error.add_format",
@@ -298,8 +291,8 @@ def parse_guided_advanced_options(text: str) -> GuidedAdvancedOptions:
         "无",
         "跳过",
     }:
-        return GuidedAdvancedOptions(raw_rule={}, trigger_mode=None)
-    source, raw_rule, trigger_mode = _parse_flags(choice)
+        return GuidedAdvancedOptions(raw_rule={})
+    source, raw_rule = _parse_flags(choice)
     if source.strip():
         raise RuleError(
             f"无法识别高级选项: {source.strip()}",
@@ -311,7 +304,7 @@ def parse_guided_advanced_options(text: str) -> GuidedAdvancedOptions:
             "引导模式中生效范围已经单独选择，请不要在高级选项里重复设置 --scope",
             key="wordbank.error.guided_scope_in_advanced",
         )
-    return GuidedAdvancedOptions(raw_rule=raw_rule, trigger_mode=trigger_mode)
+    return GuidedAdvancedOptions(raw_rule=raw_rule)
 
 
 def parse_study_mode_choice(text: str) -> str:
@@ -721,7 +714,6 @@ async def handle_add_text_result(
     return await service.add_message_entry(
         trigger_shape=_shape_from_text_value(parsed.trigger_text),
         response_shape=_shape_from_response_parts(parsed.response_text),
-        trigger_mode="strict",
         raw_rule=parsed.raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),
@@ -759,7 +751,7 @@ async def handle_add_with_media_result(
     if image_bytes is None:
         return await handle_add_text_result(service, event=event, text=text)
 
-    source, raw_rule, _trigger_mode = _parse_flags(text)
+    source, raw_rule = _parse_flags(text)
     pair = split_add_pair(source)
     is_group = isinstance(event, GroupMessageEvent)
     group_id = str(getattr(event, "group_id", ""))
@@ -776,7 +768,6 @@ async def handle_add_with_media_result(
         return await service.add_message_entry(
             trigger_shape=_shape_from_text_value(trigger_text),
             response_shape=shape_from_image(image.canonical_id),
-            trigger_mode="strict",
             raw_rule=raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -792,7 +783,6 @@ async def handle_add_with_media_result(
                 response_text,
                 image_id=image.canonical_id,
             ),
-            trigger_mode="strict",
             raw_rule=raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -804,7 +794,6 @@ async def handle_add_with_media_result(
         return await service.add_message_entry(
             trigger_shape=shape_from_image(image.canonical_id),
             response_shape=_shape_from_response_parts(response_text),
-            trigger_mode="strict",
             raw_rule=raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -833,7 +822,6 @@ async def handle_guided_add_shape_result(
     return await service.add_message_entry(
         trigger_shape=trigger_shape,
         response_shape=response_shape,
-        trigger_mode="strict",
         raw_rule=raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),
@@ -863,7 +851,6 @@ async def handle_study_shortcut_result(
     return await service.add_message_entry(
         trigger_shape=_shape_from_text_value(trigger),
         response_shape=_shape_from_response_parts(response),
-        trigger_mode="strict",
         raw_rule=raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),
@@ -992,7 +979,6 @@ async def handle_study_media_with_rule_result(
         return await service.add_message_entry(
             trigger_shape=shape_from_image(trigger_image.canonical_id),
             response_shape=shape_from_image(response_image.canonical_id),
-            trigger_mode="strict",
             raw_rule=raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -1004,7 +990,6 @@ async def handle_study_media_with_rule_result(
         return await service.add_message_entry(
             trigger_shape=_shape_from_text_value(source),
             response_shape=shape_from_image(response_image.canonical_id),
-            trigger_mode="strict",
             raw_rule=raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -1020,7 +1005,6 @@ async def handle_study_media_with_rule_result(
                 response_text,
                 image_id=response_image.canonical_id,
             ),
-            trigger_mode="strict",
             raw_rule=raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -1038,7 +1022,6 @@ async def handle_study_media_with_rule_result(
             response_text,
             image_id=response_image_id,
         ),
-        trigger_mode="strict",
         raw_rule=raw_rule,
         group_id=group_id,
         user_id=user_id,
@@ -1069,7 +1052,6 @@ async def handle_guided_study_shape_result(
     return await service.add_message_entry(
         trigger_shape=trigger_shape,
         response_shape=response_shape,
-        trigger_mode="strict",
         raw_rule=raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),

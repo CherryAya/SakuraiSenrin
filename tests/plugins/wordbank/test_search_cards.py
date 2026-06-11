@@ -16,7 +16,6 @@ def _item(
         trigger_group_id=trigger_group_id,
         status="approved",
         trigger_text=f"触发{trigger_group_id}",
-        trigger_mode="contains",
         response_text=f"响应{trigger_group_id}",
         scope="current_group",
         probability=1.0,

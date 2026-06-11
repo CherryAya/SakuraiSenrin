@@ -211,7 +211,7 @@ class SearchResultCardRenderer:
 
         meta_text = (
             f"#组{item.trigger_group_id}  "
-            f"[{item.status}/{item.trigger_mode}]  "
+            f"[{item.status}]  "
             f"响应数: {item.response_count}  "
             f"创建者: {item.created_by}"
         )

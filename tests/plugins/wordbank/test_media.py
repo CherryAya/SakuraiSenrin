@@ -321,6 +321,49 @@ async def test_media_ingest_short_circuits_on_md5_hit(
     assert second.id == first.id
 
 
+async def test_resolve_canonical_id_short_circuits_on_name_hint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _ImageRepo()
+    service = WordbankMediaService(repo, media_root=tmp_path)
+    data = _png((10, 20, 30))
+
+    first = await service.ingest_image_bytes(data)
+
+    def _fail_fingerprint(_data: bytes) -> Any:
+        raise AssertionError("fingerprint_image should not run after md5 hint hit")
+
+    monkeypatch.setattr(media_module, "fingerprint_image", _fail_fingerprint)
+
+    resolved = service.resolve_canonical_id(
+        b"not-an-image",
+        name_hints=[f"https://example.test/path/{first.md5.upper()}.PNG?download=1"],
+    )
+
+    assert resolved == first.canonical_id
+
+
+async def test_resolve_canonical_id_short_circuits_on_raw_bytes_md5(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _ImageRepo()
+    service = WordbankMediaService(repo, media_root=tmp_path)
+    data = _gif([(255, 0, 0), (0, 255, 0)])
+
+    first = await service.ingest_image_bytes(data)
+
+    def _fail_fingerprint(_data: bytes) -> Any:
+        raise AssertionError("fingerprint_image should not run after raw md5 hit")
+
+    monkeypatch.setattr(media_module, "fingerprint_image", _fail_fingerprint)
+
+    resolved = service.resolve_canonical_id(data)
+
+    assert resolved == first.canonical_id
+
+
 async def test_r2_media_storage_saves_gif_as_animated_media(tmp_path: Path) -> None:
     storage = _ObjectStorage()
     media_storage = R2WordbankMediaStorage(

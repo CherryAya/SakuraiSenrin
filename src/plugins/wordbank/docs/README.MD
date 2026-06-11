@@ -9,7 +9,6 @@
 
 ## 子功能目录
 - `add` 基础添加: 最常见的文本、图片和图文混排添加方式。
-- `add-mode` 触发模式选项: `contains` / `fullmatch` / `prefix` 的区别与示例。
 - `add-scope` 生效范围选项: `current_group` / `all_groups` / `self` / `private_only`。
 - `add-prob` 触发概率选项: `--prob` 的作用和常见配置。
 - `add-weight` 权重选项: `--weight` 如何影响候选词条和响应选择。
@@ -31,7 +30,7 @@
 - 兼容指令: `wordbank.add 触发词 => 响应词`、`添加词条 触发词 => 响应词`
 - Demo: wordbank-add.png
 #### 说明
-默认触发模式为 `contains`，短词默认转为 `fullmatch` 并使用较低概率。`wordbank add 触发词 [图片]` 表示文本触发、图片回复；`wordbank add [图片] => 响应词` 表示图片触发、文本回复；`wordbank add 触发词 => 响应词 [图片]` 表示文本触发、图文混排回复。引导模式收到图片后会在后台下载并自动重试，用户可继续配置范围和高级选项；最终仍无法下载或识别时，会提示词条设置失败且不写入词库。图片入库时会先用原始字节的 `MD5` 做精确去重，未命中时再计算 `dHash`、`pHash`、尺寸和文件大小；静态图按原图取特征，GIF 等动图按代表帧取特征做近似归并。动图会优先保存为 animated WebP，转码失败时回退为原始格式，因此响应图片会尽量保留动画效果。添加完成后词条状态为 `pending`，审核通过前不会参与被动匹配；具体审核流程请查看 `#help 词库审核`。引导任一步收到 `revoke` / `recall` 会发送取消提示并中止，连续输错 3 次会强制终止对话。
+文本和图文触发统一使用严格匹配。`wordbank add 触发词 [图片]` 表示文本触发、图片回复；`wordbank add [图片] => 响应词` 表示图片触发、文本回复；`wordbank add 触发词 => 响应词 [图片]` 表示文本触发、图文混排回复。引导模式收到图片后会在后台下载并自动重试，用户可继续配置范围和高级选项；最终仍无法下载或识别时，会提示词条设置失败且不写入词库。图片入库时会先用原始字节的 `MD5` 做精确去重；运行时图片触发会先尝试文件名、URL 或原始字节中的 `MD5` 精确命中，未命中时再计算 `dHash`、`pHash`、尺寸和文件大小；静态图按原图取特征，GIF 等动图按代表帧取特征做近似归并。动图会优先保存为 animated WebP，转码失败时回退为原始格式，因此响应图片会尽量保留动画效果。添加完成后词条状态为 `pending`，审核通过前不会参与被动匹配；具体审核流程请查看 `#help 词库审核`。引导任一步收到 `revoke` / `recall` 会发送取消提示并中止，连续输错 3 次会强制终止对话。
 #### 常用示例命令
 - `#wordbank add 晚安 => 做个好梦`
 - `#wordbank add 晚安 [图片]`
@@ -53,14 +52,13 @@ BOT: 请选择生效范围：
 3. 仅自己
 4. 仅私聊
 USER: 1
-BOT: 是否需要高级选项？发送 n 跳过；需要请直接输入参数，例如 --mode fullmatch --prob 0.5 --weight 3 --role admin --call 60:0:3
+BOT: 是否需要高级选项？发送 n 跳过；需要请直接输入参数，例如 --prob 0.5 --weight 3 --role admin --call 60:0:3
 USER: n
 BOT: 词条已提交审核
 ID: 12
 状态: pending
 触发: 晚安
 响应: 做个好梦
-模式: contains
 范围: current_group
 概率: 1
 权重: 3
@@ -72,7 +70,6 @@ ID: 13
 状态: pending
 触发: 是这张图喔
 响应: [图片:7]
-模式: contains
 范围: current_group
 概率: 1
 权重: 3
@@ -83,7 +80,6 @@ ID: 14
 状态: pending
 触发: [图片:7]
 响应: 是这张图喔
-模式: fullmatch
 范围: current_group
 概率: 1
 权重: 3
@@ -92,30 +88,14 @@ ID: 14
 #### 失败情况
 触发词或响应词为空、图片下载失败、图片无法识别、规则字段冲突、概率和权重越界时会返回当前群语言的原因；引导中若检测到 `revoke` / `recall` 会发送取消提示并中止，连续输错 3 次会强制终止对话。
 
-### `add-mode` 触发模式选项
-- 摘要: 选择 `contains`、`fullmatch`、`prefix` 触发模式。
-- 别名: mode, 触发模式, 匹配模式
-- 指令: `wordbank add 触发词 => 响应词 --mode contains|fullmatch|prefix`
-- Demo: wordbank-add-mode.png
+### 严格匹配说明
+- 摘要: 当前词库的文本与图文触发统一使用严格匹配。
 #### 说明
-`contains` 只要消息里包含触发词即可；`fullmatch` 要求标准化后的整条消息完全相等；`prefix` 要求消息以触发词开头。短词默认会偏向 `fullmatch`，避免误触。
-#### 常用示例命令
-- `#wordbank add 晚安 => 做个好梦 --mode contains`
-- `#wordbank add 早 => 早安呀 --mode fullmatch`
-- `#wordbank add 进来先看 => 先看公告 --mode prefix`
-#### 前置条件
-需要在 `wordbank add` 或引导高级选项里设置。
-#### 完整流程
-```demo
-USER: #wordbank add 早 => 早安呀 --mode fullmatch
-SYSTEM: `fullmatch` 要求标准化后的整条消息完全等于“早”时才会命中。
-USER: 早
-BOT: 早安呀
-USER: 早啊
-SYSTEM: 因为不是完整匹配，所以这次不会触发。
-```
-#### 失败情况
-模式拼写错误时会返回“不支持的触发模式”。
+触发消息会先被标准化为固定 `MessageShape`，再按精确指纹命中同一 trigger group。也就是说，文本内容、`@`、图片位置和图文顺序都属于匹配条件的一部分；图片部分会先尝试 `MD5` 精确命中，未命中时再回退到相似图匹配。
+#### 常用示例
+- `#wordbank add 晚安 => 做个好梦`
+- `#wordbank add [图片] => 是这张图`
+- `#wordbank add [CQ:at,qq=10001]早安 => 收到`
 
 ### `add-scope` 生效范围选项
 - 摘要: 选择词条在哪些场景和对象上生效。
@@ -269,7 +249,7 @@ USER: 10001
 BOT: [词库搜索结果卡片]
 USER: #搜索词条 [图片]
 BOT: 词库搜索结果 (第 1 页):
-#18 [approved/fullmatch/current_group] [图片:7] => 识图命中
+#18 [approved/current_group] [图片:7] => 识图命中
 ```
 #### 失败情况
 没有命中时返回空结果说明；页码、每页数量或 `--field` 非法时返回当前群语言的原因。
@@ -414,7 +394,7 @@ BOT: 做个好梦
 USER: [回复上条机器人消息] @机器人 详情
 BOT: 词条详情 #12
 状态: approved
-触发: [contains] 晚安
+触发: 晚安
 响应: 做个好梦
 USER: [回复上条机器人消息] @机器人 删除
 BOT: 词条 #12 已删除。

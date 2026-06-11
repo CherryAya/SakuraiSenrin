@@ -271,7 +271,6 @@ def format_entry_detail(
         group_id=selected.group_id or "-",
         created_by=selected.created_by,
         trigger_text=detail.trigger_text,
-        trigger_mode=detail.trigger_mode,
         response_text=selected.response_text,
         probability=f"{selected.probability:g}",
         weight=selected.weight,

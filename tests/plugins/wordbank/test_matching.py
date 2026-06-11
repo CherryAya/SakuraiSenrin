@@ -35,7 +35,6 @@ def _entry(
         group_id="",
         created_by="10001",
         deleted_at=0,
-        trigger_mode="strict",
         trigger_variants=(
             WordbankTriggerVariantRecord(
                 id=trigger_group_id * 10 + 1,
@@ -47,7 +46,6 @@ def _entry(
                 search_text=shape_to_search_text(trigger_shape),
                 search_tokens=trigger_fp.search_tokens,
                 image_keys=trigger_fp.image_keys,
-                trigger_mode="strict",
             ),
         ),
         responses=(

@@ -103,7 +103,7 @@ def build_wordbank_patch_registry() -> PatchRegistry:
     registry = PatchRegistry()
     registry.register(
         SchemaPatch(
-            patch_id="wordbank:reset_group_tables:v2",
+            patch_id="wordbank:reset_group_tables:v3",
             apply=_reset_wordbank_message_tables,
         )
     )

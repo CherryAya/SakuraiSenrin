@@ -184,8 +184,6 @@ class WordbankRepository:
     @staticmethod
     def _to_trigger_variant_record(
         row: WordbankTriggerVariant,
-        *,
-        trigger_mode: str = "strict",
     ) -> WordbankTriggerVariantRecord:
         return WordbankTriggerVariantRecord(
             id=row.id,
@@ -197,7 +195,6 @@ class WordbankRepository:
             search_text=row.search_text,
             search_tokens=row.search_tokens,
             image_keys=row.image_keys,
-            trigger_mode=trigger_mode,
         )
 
     @staticmethod
@@ -241,10 +238,8 @@ class WordbankRepository:
             group_id=group.group_id,
             created_by=group.created_by,
             deleted_at=group.deleted_at,
-            trigger_mode=group.trigger_mode,
             trigger_variants=tuple(
-                cls._to_trigger_variant_record(item, trigger_mode=group.trigger_mode)
-                for item in variants
+                cls._to_trigger_variant_record(item) for item in variants
             ),
             responses=tuple(cls._to_response_item_record(item) for item in responses),
         )
@@ -325,7 +320,6 @@ class WordbankRepository:
             trigger_group_id=document.trigger_group_id,
             status=document.status,
             trigger_text=document.trigger_text,
-            trigger_mode=document.trigger_mode,
             response_text=document.response_text,
             response_summaries=response_summaries
             or ((document.response_text,) if document.response_text else ()),
@@ -349,7 +343,6 @@ class WordbankRepository:
             trigger_group_id=group.id,
             status=response.status,
             trigger_text=variant.trigger_text,
-            trigger_mode=group.trigger_mode,
             response_text=response.text,
             response_summaries=(response.text,),
             response_count=1,
@@ -396,7 +389,6 @@ class WordbankRepository:
             created_by=bundle.group.created_by,
             deleted_at=bundle.group.deleted_at,
             trigger_text=variant.trigger_text,
-            trigger_mode=bundle.group.trigger_mode,
             trigger_variant_id=variant.id,
             responses=responses,
             selected_response_item_id=response_item_id,
@@ -436,7 +428,6 @@ class WordbankRepository:
             "probability": representative.probability,
             "weight": representative.weight,
             "trigger_text": variant.trigger_text,
-            "trigger_mode": bundle.group.trigger_mode,
             "trigger_exact_md5": variant.exact_md5,
             "trigger_structure_key": variant.structure_key,
             "trigger_image_keys": variant.image_keys,
@@ -492,7 +483,6 @@ class WordbankRepository:
         weight: int,
         group_id: str,
         created_by: str,
-        trigger_mode: str = "strict",
         status: str = "pending",
         enabled: int = 1,
         approved_by: str = "",
@@ -517,7 +507,6 @@ class WordbankRepository:
                 trigger_search_text=trigger_fingerprint.search_text,
                 trigger_search_tokens=trigger_fingerprint.search_tokens,
                 trigger_image_keys=trigger_fingerprint.image_keys,
-                trigger_mode=trigger_mode,
                 group_id=group_id,
                 created_by=created_by,
                 created_at=created_at,
@@ -571,33 +560,6 @@ class WordbankRepository:
                 response_item=self._to_response_item_record(response_item),
             )
 
-    async def create_message_entry(
-        self,
-        *,
-        trigger_shape: MessageShape,
-        response_shape: MessageShape,
-        rule: dict,
-        scope: str,
-        priority: int,
-        probability: float,
-        weight: int,
-        group_id: str,
-        created_by: str,
-        trigger_mode: str = "strict",
-    ) -> WordbankCreatedResponse:
-        return await self.create_or_append_response(
-            trigger_shape=trigger_shape,
-            response_shape=response_shape,
-            rule=rule,
-            scope=scope,
-            priority=priority,
-            probability=probability,
-            weight=weight,
-            group_id=group_id,
-            created_by=created_by,
-            trigger_mode=trigger_mode,
-        )
-
     async def import_message_entry(
         self,
         *,
@@ -616,7 +578,6 @@ class WordbankRepository:
         deleted_at: int,
         created_at: int,
         updated_at: int,
-        trigger_mode: str = "fullmatch",
     ) -> WordbankCreatedResponse:
         return await self.create_or_append_response(
             trigger_shape=trigger_shape,
@@ -628,7 +589,6 @@ class WordbankRepository:
             weight=weight,
             group_id=group_id,
             created_by=created_by,
-            trigger_mode=trigger_mode,
             status=status,
             enabled=enabled,
             approved_by=approved_by,
@@ -836,7 +796,6 @@ class WordbankRepository:
         self,
         shape: MessageShape,
         *,
-        trigger_mode: str = "strict",
         include_deleted: bool = False,
     ) -> WordbankTriggerGroupRecord | None:
         fingerprint = fingerprint_shape(shape)
@@ -846,7 +805,6 @@ class WordbankRepository:
                 session,
                 exact_md5=fingerprint.exact_md5,
                 message_json=payload,
-                trigger_mode=trigger_mode,
                 include_deleted=include_deleted,
             )
             if group is None:
@@ -1599,7 +1557,6 @@ class WordbankRepository:
         trigger_search_text: str,
         trigger_search_tokens: str,
         trigger_image_keys: str,
-        trigger_mode: str,
         group_id: str,
         created_by: str,
         created_at: int,
@@ -1609,7 +1566,6 @@ class WordbankRepository:
             session,
             exact_md5=trigger_exact_md5,
             message_json=trigger_payload,
-            trigger_mode=trigger_mode,
             include_deleted=True,
         )
         if group is not None:
@@ -1629,7 +1585,6 @@ class WordbankRepository:
             group_id=group_id,
             created_by=created_by,
             deleted_at=0,
-            trigger_mode=trigger_mode,
             created_at=created_at,
             updated_at=updated_at,
         )
@@ -1657,7 +1612,6 @@ class WordbankRepository:
         *,
         exact_md5: str,
         message_json: str,
-        trigger_mode: str,
         include_deleted: bool,
     ) -> WordbankTriggerGroup | None:
         stmt = (
@@ -1669,7 +1623,6 @@ class WordbankRepository:
             .where(
                 WordbankTriggerVariant.exact_md5 == exact_md5,
                 WordbankTriggerVariant.message_json == message_json,
-                WordbankTriggerGroup.trigger_mode == trigger_mode,
             )
             .order_by(WordbankTriggerGroup.id.asc())
             .limit(1)

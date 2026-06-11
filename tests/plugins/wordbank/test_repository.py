@@ -302,7 +302,7 @@ async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
         group_id="20001",
         user_id="10001",
         is_group=True,
-        raw_rule={"roles": "member"},
+        raw_rule={"scope": "self", "roles": "member"},
     )
     gated = await service.add_message_entry(
         trigger_shape=shape_from_text("规则测试"),
@@ -419,7 +419,6 @@ async def test_repository_import_message_entry_preserves_group_and_response_stat
         deleted_at=0,
         created_at=1700000000,
         updated_at=1700001234,
-        trigger_mode="fullmatch",
     )
     await repository.rebuild_search_index()
     page = await repository.search_page(

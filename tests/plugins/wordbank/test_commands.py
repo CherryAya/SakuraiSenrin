@@ -39,7 +39,6 @@ def _add_result(
         response_item_id=response_item_id,
         trigger_text=trigger_text,
         response_text=response_text,
-        trigger_mode="strict",
         scope="current_group",
         probability=1.0,
         weight=3,
@@ -51,7 +50,6 @@ def _search_item(*, trigger_group_id: int = 12) -> WordbankSearchItem:
         trigger_group_id=trigger_group_id,
         status="approved",
         trigger_text=f"晚安{trigger_group_id}",
-        trigger_mode="strict",
         response_text=f"做个好梦{trigger_group_id}",
         scope="current_group",
         probability=1.0,
@@ -113,7 +111,6 @@ async def test_handle_add_text_result_calls_add_message_entry_with_text_shapes()
     assert isinstance(kwargs["response_shape"], MessageShape)
     assert shape_to_summary_text(kwargs["trigger_shape"]) == "晚安"
     assert shape_to_summary_text(kwargs["response_shape"]) == "做个好梦"
-    assert kwargs["trigger_mode"] == "strict"
 
 
 @pytest.mark.asyncio
@@ -199,7 +196,6 @@ async def test_handle_guided_add_shape_result_uses_scope_and_strict_mode() -> No
     assert add_message_entry.await_args is not None
     kwargs = add_message_entry.await_args.kwargs
     assert kwargs["raw_rule"]["scope"] == "current_group"
-    assert kwargs["trigger_mode"] == "strict"
 
 
 @pytest.mark.asyncio

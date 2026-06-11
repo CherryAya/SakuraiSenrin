@@ -27,11 +27,6 @@ class WordbankTriggerGroup(WordbankMainBase, TimeMixin):
     __table_args__ = (
         Index("idx_wordbank_trigger_group_status", "status", "enabled", "deleted_at"),
         Index("idx_wordbank_trigger_group_scope", "group_id", "created_by"),
-        Index(
-            "idx_wordbank_trigger_group_mode",
-            "trigger_mode",
-            "created_at",
-        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -40,7 +35,6 @@ class WordbankTriggerGroup(WordbankMainBase, TimeMixin):
     group_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     created_by: Mapped[str] = mapped_column(String(64), nullable=False)
     deleted_at: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    trigger_mode: Mapped[str] = mapped_column(String(16), nullable=False)
 
 
 class WordbankTriggerVariant(WordbankMainBase, TimeMixin):
@@ -166,7 +160,6 @@ class WordbankSearchDocument(WordbankMainBase):
     probability: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     weight: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     trigger_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    trigger_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     trigger_exact_md5: Mapped[str] = mapped_column(
         String(32),
         nullable=False,

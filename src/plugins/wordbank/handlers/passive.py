@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -41,6 +43,12 @@ class PassiveResponse:
     response_shape: MessageShape | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class PassiveImageRef:
+    url: str
+    name_hints: tuple[str, ...] = ()
+
+
 def build_rule_context(event: MessageEvent | NoticeEvent) -> RuleContext:
     role: Role = "member"
     sender = getattr(event, "sender", None)
@@ -60,15 +68,27 @@ def build_rule_context(event: MessageEvent | NoticeEvent) -> RuleContext:
     )
 
 
-def extract_image_urls(event: MessageEvent) -> list[str]:
-    urls: list[str] = []
+def extract_image_refs(event: MessageEvent) -> list[PassiveImageRef]:
+    refs: list[PassiveImageRef] = []
     for segment in event.message:
         if segment.type != "image":
             continue
         url = str(segment.data.get("url") or "").strip()
-        if url:
-            urls.append(url)
-    return urls
+        if not url:
+            continue
+        name_hints: list[str] = [url]
+        file_value = str(segment.data.get("file") or "").strip()
+        if file_value:
+            name_hints.append(file_value)
+        url_name = Path(urlparse(url).path).name.strip()
+        if url_name:
+            name_hints.append(url_name)
+        refs.append(PassiveImageRef(url=url, name_hints=tuple(name_hints)))
+    return refs
+
+
+def extract_image_urls(event: MessageEvent) -> list[str]:
+    return [item.url for item in extract_image_refs(event)]
 
 
 def build_passive_response(
@@ -144,15 +164,24 @@ async def fetch_image_bytes(
 
 async def resolve_message_image_ids(
     media_service: WordbankMediaService,
-    urls: Sequence[str],
+    image_refs: Sequence[PassiveImageRef],
 ) -> dict[int, int]:
     canonical_ids: dict[int, int] = {}
-    for url in urls[:MAX_PASSIVE_IMAGES]:
-        data = await fetch_image_bytes(url)
+    for image_ref in image_refs[:MAX_PASSIVE_IMAGES]:
+        hinted_canonical_id = media_service.resolve_canonical_id_from_hints(
+            image_ref.name_hints,
+        )
+        if hinted_canonical_id is not None:
+            canonical_ids[len(canonical_ids)] = hinted_canonical_id
+            continue
+        data = await fetch_image_bytes(image_ref.url)
         if data is None:
             continue
         try:
-            canonical_id = media_service.resolve_canonical_id(data)
+            canonical_id = media_service.resolve_canonical_id(
+                data,
+                name_hints=image_ref.name_hints,
+            )
         except MediaError as exc:
             logger.warning(f"[Wordbank] image match skipped: {exc}")
             continue
@@ -174,8 +203,8 @@ async def handle_passive_message(
         return None
 
     context = build_rule_context(event)
-    image_urls = extract_image_urls(event)
-    image_ids = await resolve_message_image_ids(media_service, image_urls)
+    image_refs = extract_image_refs(event)
+    image_ids = await resolve_message_image_ids(media_service, image_refs)
     message_shape = shape_from_message(event.message, image_ids=image_ids)
     if not message_shape.is_empty():
         selected = await service.match_message(

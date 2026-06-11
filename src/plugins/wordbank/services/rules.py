@@ -17,7 +17,6 @@ Scope = Literal[
     "self_in_current_group",
 ]
 Role = Literal["any", "owner", "admin", "member"]
-TriggerMode = Literal["contains", "fullmatch", "prefix"]
 
 VALID_SCOPES: set[str] = {
     "current_group",
@@ -27,7 +26,12 @@ VALID_SCOPES: set[str] = {
     "self_in_current_group",
 }
 VALID_ROLES: set[str] = {"any", "owner", "admin", "member"}
-VALID_TRIGGER_MODES: set[str] = {"contains", "fullmatch", "prefix"}
+ROLE_LEVELS: dict[Role, int] = {
+    "any": 0,
+    "member": 1,
+    "admin": 2,
+    "owner": 3,
+}
 
 SCOPE_PRIORITY: dict[str, int] = {
     "all_groups": 10,
@@ -251,19 +255,6 @@ def canonicalize_rule(
     )
 
 
-def normalize_trigger_mode(value: str | None, *, short_trigger: bool) -> TriggerMode:
-    if value is None or not value.strip():
-        return "fullmatch" if short_trigger else "contains"
-    mode = value.strip().lower()
-    if mode not in VALID_TRIGGER_MODES:
-        raise _rule_error(
-            f"不支持的触发模式: {mode}",
-            "wordbank.error.trigger_mode_unsupported",
-            mode=mode,
-        )
-    return cast(TriggerMode, mode)
-
-
 def rule_allows(
     *,
     scope: str,
@@ -296,7 +287,15 @@ def rule_allows(
         return False
 
     role = str(rule.get("roles", "any"))
-    if role != "any" and context.sender_role != role:
+    sender_role = context.sender_role
+    if (
+        role != "any"
+        and role in VALID_ROLES
+        and sender_role in VALID_ROLES
+        and ROLE_LEVELS[cast(Role, sender_role)] < ROLE_LEVELS[cast(Role, role)]
+    ):
+        return False
+    if role != "any" and (role not in VALID_ROLES or sender_role not in VALID_ROLES):
         return False
 
     call_count = rule.get("call_count")

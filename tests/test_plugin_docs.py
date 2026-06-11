@@ -541,7 +541,6 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     )
 
     add = next(feature for feature in wordbank.index if feature.slug == "add")
-    mode = next(feature for feature in wordbank.index if feature.slug == "add-mode")
     passive = next(feature for feature in wordbank.index if feature.slug == "passive")
     reply = next(
         feature for feature in wordbank.index if feature.slug == "reply-shortcut"
@@ -566,8 +565,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert "响应: [图片:7]" in add.demo_turns[12].text
     assert "#wordbank add [图片] => 是这张图喔" in add.demo_turns[13].text
     assert "触发: [图片:7]" in add.demo_turns[14].text
-    assert mode.demo_filename == "wordbank-add-mode.png"
-    assert "fullmatch" in mode.demo_turns[0].text
+    assert all(feature.slug != "add-mode" for feature in wordbank.index)
     assert all(feature.slug != "image" for feature in wordbank.index)
     assert "revoke" in add.failures
     assert "发送取消提示并中止" in add.failures

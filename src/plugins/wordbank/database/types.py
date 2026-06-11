@@ -16,7 +16,6 @@ class WordbankTriggerGroupPayload(TypedDict):
     group_id: str
     created_by: str
     deleted_at: int
-    trigger_mode: str
     created_at: int
     updated_at: int
 
@@ -130,7 +129,6 @@ class WordbankTriggerVariantRecord:
     search_text: str
     search_tokens: str
     image_keys: str
-    trigger_mode: str = "strict"
 
 
 @dataclass(slots=True, frozen=True)
@@ -165,7 +163,6 @@ class WordbankTriggerGroupRecord:
     group_id: str
     created_by: str
     deleted_at: int
-    trigger_mode: str
     trigger_variants: tuple[WordbankTriggerVariantRecord, ...] = dataclass_field(
         default_factory=tuple
     )
@@ -230,7 +227,6 @@ class WordbankSearchItem:
     trigger_group_id: int
     status: str
     trigger_text: str
-    trigger_mode: str
     response_text: str
     response_summaries: tuple[str, ...] = dataclass_field(default_factory=tuple)
     response_count: int = 1
@@ -335,7 +331,6 @@ class WordbankGroupDetail:
     created_by: str
     deleted_at: int
     trigger_text: str
-    trigger_mode: str
     trigger_variant_id: int
     responses: tuple[WordbankResponseItemDetail, ...]
     selected_response_item_id: int | None = None

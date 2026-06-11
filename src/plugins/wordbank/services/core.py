@@ -45,7 +45,6 @@ class WordbankAddResult:
     response_item_id: int
     trigger_text: str
     response_text: str
-    trigger_mode: str
     scope: str
     probability: float
     weight: int
@@ -162,7 +161,6 @@ class WordbankService:
         user_id: str,
         is_group: bool,
         raw_rule: dict[str, Any] | None = None,
-        trigger_mode: str = "strict",
     ) -> WordbankAddResult:
         if trigger_shape.is_empty():
             raise WordbankUserError(
@@ -180,7 +178,6 @@ class WordbankService:
         created = await self.repository.create_or_append_response(
             trigger_shape=trigger_shape,
             response_shape=response_shape,
-            trigger_mode=trigger_mode,
             rule=dict(rule.rule),
             scope=rule.scope,
             priority=rule.priority,
@@ -198,7 +195,6 @@ class WordbankService:
             created_group=created.created_group,
             trigger_text=shape_to_summary_text(trigger_shape),
             response_text=shape_to_summary_text(response_shape),
-            trigger_mode=trigger_mode,
             scope=rule.scope,
             probability=rule.probability,
             weight=rule.weight,
@@ -598,7 +594,6 @@ def format_search_items(
                 "wordbank.search.item",
                 entry_id=item.trigger_group_id,
                 status=item.status,
-                trigger_mode=item.trigger_mode,
                 scope=item.scope,
                 trigger_text=item.trigger_text,
                 response_text=response_preview,
@@ -633,7 +628,6 @@ def format_pending_items(
                 locale,
                 "wordbank.approval.pending_item",
                 entry_id=response_item_id,
-                trigger_mode=item.trigger_mode,
                 scope=item.scope,
                 trigger_text=item.trigger_text,
                 response_text=item.response_text,
@@ -663,7 +657,6 @@ def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
         status=result.status,
         trigger_text=result.trigger_text,
         response_text=result.response_text,
-        trigger_mode=result.trigger_mode,
         scope=result.scope,
         probability=f"{result.probability:g}",
         weight=result.weight,

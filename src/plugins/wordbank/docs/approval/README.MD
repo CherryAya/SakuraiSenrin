@@ -31,10 +31,10 @@
 ```demo
 USER: #wordbank pending 晚安
 BOT: 待审核词条 (第 1 页):
-#12 [contains/current_group] 晚安 => 做个好梦  提交者: 10001
+#12 [current_group] 晚安 => 做个好梦  提交者: 10001
 USER: #wordbank pending --page 2 --limit 10
 BOT: 待审核词条 (第 2 页):
-#26 [fullmatch/all_groups] 早 => 早安呀  提交者: 10002
+#26 [all_groups] 早 => 早安呀  提交者: 10002
 ```
 #### 失败情况
 无审核权限时返回权限提示；没有待审核词条时返回空结果说明。

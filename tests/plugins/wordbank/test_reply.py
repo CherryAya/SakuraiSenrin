@@ -57,7 +57,6 @@ def _group_detail() -> WordbankGroupDetail:
         created_by="10001",
         deleted_at=0,
         trigger_text="晚安",
-        trigger_mode="contains",
         trigger_variant_id=120,
         responses=(
             WordbankResponseItemDetail(
@@ -98,7 +97,7 @@ async def test_reply_info_formats_selected_response_item_detail() -> None:
     )
 
     assert "词条详情 #300" in message
-    assert "触发: [contains] 晚安" in message
+    assert "触发: 晚安" in message
     assert "响应: 做个好梦" in message
     get_response_message.assert_awaited_once_with("90001")
     get_group_detail.assert_awaited_once_with(12, response_item_id=300)

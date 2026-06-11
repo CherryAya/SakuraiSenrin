@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from nonebot.adapters.onebot.v11 import Bot
 import pytest
@@ -45,14 +45,12 @@ def _selected(
                 enabled=1,
                 group_id="20001",
                 created_by="10001",
-                trigger_mode="strict",
                 responses=(),
             ),
             trigger=RuntimeTrigger(
                 id=21,
                 trigger_group_id=12,
                 trigger_text="晚安",
-                trigger_mode="strict",
                 message_shape=shape_from_text("晚安"),
                 exact_md5="md5",
                 structure_key="text",
@@ -104,7 +102,10 @@ async def test_handle_passive_message_falls_back_to_at_event() -> None:
     )
     media_service = cast(
         WordbankMediaService,
-        SimpleNamespace(resolve_canonical_id=lambda _data: None),
+        SimpleNamespace(
+            resolve_canonical_id_from_hints=lambda _hints: None,
+            resolve_canonical_id=lambda _data, **_kwargs: None,
+        ),
     )
 
     response = await handle_passive_message(
@@ -119,6 +120,55 @@ async def test_handle_passive_message_falls_back_to_at_event() -> None:
     assert match_message.await_count == 2
     second_shape = match_message.await_args_list[1].args[0]
     assert second_shape == shape_from_event("event:at")
+
+
+@pytest.mark.asyncio
+async def test_handle_passive_message_uses_image_name_hints_before_download() -> None:
+    from src.plugins.wordbank.handlers import passive as passive_module
+
+    bot = cast(Bot, SimpleNamespace(self_id="99999"))
+    event = build_group_message_event(
+        "[CQ:image,file=ABCDEF1234567890ABCDEF1234567890.PNG,url=https://example.test/static/abcdef1234567890abcdef1234567890.png?download=1]"
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(match_message=AsyncMock(return_value=None)),
+    )
+    resolve_canonical_id_from_hints = Mock(return_value=7)
+    resolve_canonical_id = Mock(return_value=None)
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            resolve_canonical_id_from_hints=resolve_canonical_id_from_hints,
+            resolve_canonical_id=resolve_canonical_id,
+        ),
+    )
+    monkeypatch = pytest.MonkeyPatch()
+    fetch_image_bytes = AsyncMock(return_value=b"image-bytes")
+    monkeypatch.setattr(
+        passive_module,
+        "fetch_image_bytes",
+        fetch_image_bytes,
+    )
+
+    try:
+        await handle_passive_message(
+            bot,
+            event,
+            service,
+            media_service,
+        )
+    finally:
+        monkeypatch.undo()
+
+    assert resolve_canonical_id_from_hints.call_count == 1
+    assert resolve_canonical_id_from_hints.call_args.args[0] == (
+        "https://example.test/static/abcdef1234567890abcdef1234567890.png?download=1",
+        "ABCDEF1234567890ABCDEF1234567890.PNG",
+        "abcdef1234567890abcdef1234567890.png",
+    )
+    assert fetch_image_bytes.await_count == 0
+    assert resolve_canonical_id.call_count == 0
 
 
 @pytest.mark.asyncio

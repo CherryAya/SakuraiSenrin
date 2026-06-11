@@ -5,7 +5,6 @@ from src.plugins.wordbank.services.rules import (
     RuleError,
     build_legacy_study_shortcut_rule,
     canonicalize_rule,
-    normalize_trigger_mode,
     parse_legacy_study_text,
     rule_allows,
 )
@@ -19,7 +18,6 @@ def test_canonicalize_defaults_and_short_trigger_probability() -> None:
     assert rule.priority == 30
     assert rule.probability == 0.5
     assert rule.weight == 3
-    assert normalize_trigger_mode(None, short_trigger=True) == "fullmatch"
 
 
 def test_canonicalize_rejects_conflicting_scope_and_bad_weight() -> None:
@@ -68,6 +66,36 @@ def test_rule_allows_scope_role_and_call_count() -> None:
         entry_created_by="10001",
         rule={"roles": "admin"},
         context=context,
+    )
+
+
+def test_rule_allows_role_hierarchy() -> None:
+    owner_context = RuleContext(
+        group_id="20001",
+        user_id="10001",
+        message_type="group",
+        sender_role="owner",
+    )
+    admin_context = RuleContext(
+        group_id="20001",
+        user_id="10001",
+        message_type="group",
+        sender_role="admin",
+    )
+
+    assert rule_allows(
+        scope="current_group",
+        entry_group_id="20001",
+        entry_created_by="10001",
+        rule={"roles": "admin"},
+        context=owner_context,
+    )
+    assert not rule_allows(
+        scope="current_group",
+        entry_group_id="20001",
+        entry_created_by="10001",
+        rule={"roles": "owner"},
+        context=admin_context,
     )
 
 

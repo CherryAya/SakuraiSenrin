@@ -51,7 +51,6 @@ def format_pending_approval_notice(
             result.response_text,
             shape=result.response_shape,
         ),
-        trigger_mode=result.trigger_mode,
         scope=result.scope,
         probability=f"{result.probability:g}",
         weight=result.weight,

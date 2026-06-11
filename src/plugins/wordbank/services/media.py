@@ -9,7 +9,9 @@ from dataclasses import dataclass
 from hashlib import md5
 from io import BytesIO
 from pathlib import Path
+import re
 from typing import Final, Protocol
+from urllib.parse import urlparse
 
 import imagehash
 from PIL import Image, ImageSequence, UnidentifiedImageError
@@ -37,6 +39,8 @@ EXTENSION_TO_CONTENT_TYPE: Final[dict[str, str]] = {
     ".png": "image/png",
     ".webp": WEBP_CONTENT_TYPE,
 }
+_HEX_MD5_RE = re.compile(r"^[0-9a-fA-F]{32}$")
+_HEX_MD5_ANYWHERE_RE = re.compile(r"(?<![0-9a-fA-F])([0-9a-fA-F]{32})(?![0-9a-fA-F])")
 
 
 class MediaError(WordbankUserError):
@@ -541,12 +545,22 @@ class WordbankMediaService:
             elif not known_dhash:
                 self._dhash_tree.add(image.dhash)
 
-    def resolve_canonical_id(self, data: bytes) -> int | None:
-        fingerprint = fingerprint_image(data)
-        existing = self._by_md5.get(fingerprint.md5)
+    def resolve_canonical_id(
+        self,
+        data: bytes,
+        *,
+        name_hints: Sequence[str] = (),
+    ) -> int | None:
+        hinted = self.resolve_canonical_id_from_hints(name_hints)
+        if hinted is not None:
+            return hinted
+
+        raw_md5 = md5(data).hexdigest()
+        existing = self._by_md5.get(raw_md5)
         if existing is not None:
             return existing.canonical_id
 
+        fingerprint = fingerprint_image(data)
         for candidate in self._by_dhash_prefix.get(fingerprint.dhash[:4], [])[
             : self.candidate_limit
         ]:
@@ -623,6 +637,13 @@ class WordbankMediaService:
         )
         return matches[:limit]
 
+    def resolve_canonical_id_from_hints(self, hints: Sequence[str]) -> int | None:
+        for md5_candidate in _iter_md5_candidates(hints):
+            existing = self._by_md5.get(md5_candidate)
+            if existing is not None:
+                return existing.canonical_id
+        return None
+
     async def load_storage_bytes(self, image: WordbankImageRecord) -> bytes | None:
         return await self.storage.load_bytes(image.storage_path)
 
@@ -634,3 +655,48 @@ class WordbankMediaService:
         if image is None:
             return None
         return await self.load_storage_bytes(image)
+
+
+def _iter_md5_candidates(values: Sequence[str]) -> tuple[str, ...]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for candidate in _extract_md5_candidates(value):
+            normalized = candidate.lower()
+            if normalized not in seen:
+                seen.add(normalized)
+                candidates.append(normalized)
+    return tuple(candidates)
+
+
+def _extract_md5_candidates(value: str) -> tuple[str, ...]:
+    raw_value = value.strip()
+    if not raw_value:
+        return ()
+
+    parsed = urlparse(raw_value)
+    path_value = parsed.path if parsed.scheme or parsed.netloc else raw_value
+    path = Path(path_value)
+    raw_values = (
+        raw_value,
+        path_value,
+        path.name.strip(),
+        path.stem.strip(),
+    )
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        if not raw:
+            continue
+        for matched in _HEX_MD5_ANYWHERE_RE.findall(raw):
+            normalized = matched.lower()
+            if normalized not in seen:
+                seen.add(normalized)
+                candidates.append(normalized)
+        compact = re.sub(r"[^0-9a-fA-F]", "", raw)
+        if _HEX_MD5_RE.fullmatch(compact):
+            normalized = compact.lower()
+            if normalized not in seen:
+                seen.add(normalized)
+                candidates.append(normalized)
+    return tuple(candidates)
