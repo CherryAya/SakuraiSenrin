@@ -72,6 +72,24 @@ class PreparedCollectionTile:
     image: Image.Image
 
 
+@dataclass(slots=True, frozen=True)
+class HeaderLayout:
+    panel_left: int
+    panel_top: int
+    panel_right: int
+    panel_height: int
+    left_x: int
+    right_x: int
+    left_width: int
+    right_width: int
+    title_y: int
+    summary_y: int
+    right_y: int
+    help_y: int
+    summary_lines: tuple[tuple, ...]
+    help_lines: tuple[tuple, ...]
+
+
 def iter_readmes() -> list[Path]:
     readmes: list[Path] = []
     for root in DOCS_ROOTS:
@@ -245,7 +263,10 @@ class DemoCollectionRenderer:
     HEADER_RIGHT_TOP = 74
     HEADER_BOTTOM_PAD = 26
     HEADER_SIDE_PAD = 18
-    HEADER_EXTRA_COMPENSATION = 24
+    HEADER_EXTRA_COMPENSATION = 10
+    HEADER_RIGHT_BLOCK_WIDTH = 360
+    HEADER_RIGHT_GAP = 20
+    HEADER_LEFT_GAP = 36
     CONTENT_TOP_GAP = 28
     CARD_PADDING = 24
     CARD_RADIUS = 26
@@ -271,10 +292,14 @@ class DemoCollectionRenderer:
     CARD_LABEL = "#A07C90"
     CARD_COMMAND_BG = "#FFF7FA"
     CARD_COMMAND_TEXT = "#7D3653"
+    CARD_COMMAND_CODE_BG = "#FFFFFF"
+    CARD_COMMAND_CODE_TEXT = "#8B2D57"
+    CARD_COMMAND_CODE_BORDER = "#F0C8D7"
     INDEX_BG = "#F7E5EE"
     INDEX_TEXT = "#9A3F62"
     INLINE_CODE_BG = "#FFF7FA"
     INLINE_CODE_TEXT = "#7D3653"
+    INLINE_CODE_BORDER = None
     INLINE_CODE_RADIUS = 9
     INLINE_CODE_PAD_X = 7
     INLINE_CODE_PAD_Y = 4
@@ -511,12 +536,11 @@ class DemoCollectionRenderer:
         tile_count: int,
         width: int,
     ) -> None:
-        panel_left = self.OUTER_MARGIN + self.HEADER_SIDE_PAD
-        panel_top = self.HEADER_TOP
-        panel_right = width - self.OUTER_MARGIN - self.HEADER_SIDE_PAD
-        panel_bottom = panel_top + self._header_height(
-            summary=summary, title=title, width=width
-        )
+        layout = self._measure_header_layout(summary=summary, title=title, width=width)
+        panel_left = layout.panel_left
+        panel_top = layout.panel_top
+        panel_right = layout.panel_right
+        panel_bottom = panel_top + layout.panel_height
         panel_fill, _ = self._palette_for_source(source_path)
         draw.rounded_rectangle(
             (panel_left, panel_top, panel_right, panel_bottom),
@@ -524,51 +548,32 @@ class DemoCollectionRenderer:
             fill=panel_fill,
         )
 
-        right_block_width = 360
-        right_x = panel_right - right_block_width - 20
-        left_width = right_x - self.HEADER_LEFT - 36
-        summary_lines = self._wrap_inline_text(
-            summary.strip() or "已按子功能拆分生成合集预览。",
-            self.summary_font,
-            left_width,
-            max_lines=6,
-        )
-        help_lines = self._wrap_inline_text(
-            f"使用 #help {title} <子功能> 查看对应说明",
-            self.summary_font,
-            right_block_width,
-            max_lines=4,
-        )
-        title_y = panel_top + 24
-        summary_y = title_y + 48
-        right_y = panel_top + 28
-
         draw.text(
-            (self.HEADER_LEFT, title_y),
+            (layout.left_x, layout.title_y),
             title,
             fill=self.TITLE,
             font=self.title_font,
         )
-        for index, line in enumerate(summary_lines):
+        for index, line in enumerate(layout.summary_lines):
             self._draw_inline_line(
                 draw,
-                x=self.HEADER_LEFT,
-                y=summary_y + index * 22,
+                x=layout.left_x,
+                y=layout.summary_y + index * self._line_height(self.summary_font, 4),
                 line=line,
                 font=self.summary_font,
                 fill=self.META,
             )
         draw.text(
-            (right_x, right_y),
+            (layout.right_x, layout.right_y),
             f"共 {tile_count} 个功能卡片",
             fill=self.TITLE,
             font=self.meta_font,
         )
-        for index, line in enumerate(help_lines):
+        for index, line in enumerate(layout.help_lines):
             self._draw_inline_line(
                 draw,
-                x=right_x,
-                y=right_y + 34 + index * 20,
+                x=layout.right_x,
+                y=layout.help_y + index * self._line_height(self.summary_font, 4),
                 line=line,
                 font=self.summary_font,
                 fill=self.HELP_TEXT,
@@ -768,9 +773,17 @@ class DemoCollectionRenderer:
         line: tuple,
         font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
         fill: str,
+        code_background: str | None = None,
+        code_fill: str | None = None,
+        code_outline: str | None = None,
     ) -> None:
         cursor_x = x
         line_height = self._text_height(font)
+        chip_background = code_background or self.INLINE_CODE_BG
+        chip_fill = code_fill or self.INLINE_CODE_TEXT
+        chip_outline = (
+            code_outline if code_outline is not None else self.INLINE_CODE_BORDER
+        )
         for text, code in line:
             if not text:
                 continue
@@ -790,12 +803,13 @@ class DemoCollectionRenderer:
                     chip_y + chip_height,
                 ),
                 radius=self.INLINE_CODE_RADIUS,
-                fill=self.INLINE_CODE_BG,
+                fill=chip_background,
+                outline=chip_outline,
             )
             draw.text(
                 (cursor_x + self.INLINE_CODE_PAD_X, y),
                 text,
-                fill=self.INLINE_CODE_TEXT,
+                fill=chip_fill,
                 font=font,
             )
             cursor_x += chip_width
@@ -827,14 +841,36 @@ class DemoCollectionRenderer:
                 line=line,
                 font=font,
                 fill=fill,
+                code_background=self.CARD_COMMAND_CODE_BG,
+                code_fill=self.CARD_COMMAND_CODE_TEXT,
+                code_outline=self.CARD_COMMAND_CODE_BORDER,
             )
 
     def _header_height(self, *, summary: str, title: str, width: int) -> int:
-        right_block_width = 360
-        right_x = (
-            width - self.OUTER_MARGIN - self.HEADER_SIDE_PAD - right_block_width - 20
+        return self._measure_header_layout(
+            summary=summary,
+            title=title,
+            width=width,
+        ).panel_height
+
+    def _measure_header_layout(
+        self,
+        *,
+        summary: str,
+        title: str,
+        width: int,
+    ) -> HeaderLayout:
+        panel_left = self.OUTER_MARGIN + self.HEADER_SIDE_PAD
+        panel_top = self.HEADER_TOP
+        panel_right = width - self.OUTER_MARGIN - self.HEADER_SIDE_PAD
+        panel_width = panel_right - panel_left
+        right_block_width = min(
+            self.HEADER_RIGHT_BLOCK_WIDTH,
+            max(280, panel_width // 4),
         )
-        left_width = right_x - self.HEADER_LEFT - 36
+        left_x = panel_left + 44
+        right_x = panel_right - right_block_width - self.HEADER_RIGHT_GAP
+        left_width = max(260, right_x - left_x - self.HEADER_LEFT_GAP)
         summary_lines = self._wrap_inline_text(
             summary.strip() or "已按子功能拆分生成合集预览。",
             self.summary_font,
@@ -847,13 +883,44 @@ class DemoCollectionRenderer:
             right_block_width,
             max_lines=4,
         )
-        left_bottom = self.HEADER_TOP + 24 + 48 + len(summary_lines) * 22 + 12
-        right_bottom = self.HEADER_TOP + 28 + 34 + len(help_lines) * 20 + 20
+        title_y = panel_top + 24
+        summary_y = title_y + 48
+        right_y = panel_top + 28
+        help_y = right_y + 34
+        summary_step = self._line_height(self.summary_font, 4)
+        help_step = self._line_height(self.summary_font, 4)
+        summary_bottom = summary_y + len(summary_lines) * summary_step
+        help_bottom = help_y + len(help_lines) * help_step
+        title_bottom = title_y + self._text_height(self.title_font)
+        meta_bottom = right_y + self._text_height(self.meta_font)
         panel_height = max(
             self.HEADER_PANEL_MIN_HEIGHT,
-            max(left_bottom, right_bottom) - self.HEADER_TOP,
+            max(
+                title_bottom,
+                meta_bottom,
+                summary_bottom,
+                help_bottom,
+            )
+            - panel_top
+            + self.HEADER_BOTTOM_PAD
+            + self.HEADER_EXTRA_COMPENSATION,
         )
-        return panel_height + self.HEADER_BOTTOM_PAD + self.HEADER_EXTRA_COMPENSATION
+        return HeaderLayout(
+            panel_left=panel_left,
+            panel_top=panel_top,
+            panel_right=panel_right,
+            panel_height=panel_height,
+            left_x=left_x,
+            right_x=right_x,
+            left_width=left_width,
+            right_width=right_block_width,
+            title_y=title_y,
+            summary_y=summary_y,
+            right_y=right_y,
+            help_y=help_y,
+            summary_lines=tuple(summary_lines),
+            help_lines=tuple(help_lines),
+        )
 
     def _inline_line_width(
         self,

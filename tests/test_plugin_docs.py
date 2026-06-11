@@ -915,6 +915,30 @@ def test_collection_thumbnail_crops_to_conversation_panel() -> None:
     assert thumb.height < full_scaled_height
 
 
+def test_collection_command_block_uses_distinct_code_chip_palette() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=240)
+
+    assert renderer.CARD_COMMAND_CODE_BG != renderer.CARD_COMMAND_BG
+    assert renderer.CARD_COMMAND_CODE_BORDER is not None
+
+
+def test_collection_header_layout_stays_within_reasonable_height() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=700)
+
+    layout = renderer._measure_header_layout(  # pyright: ignore[reportPrivateUsage]
+        title="学习模块",
+        summary=(
+            "学习模块保留传统 `study` / `学习` 快捷入口，用于把常用词条提交到 "
+            "`wordbank`。查询、审核、删除、投票删除、恢复、回复式词条管理和"
+            "被动匹配都由 `wordbank` 负责。"
+        ),
+        width=1978,
+    )
+
+    assert layout.panel_height < 340
+    assert layout.right_x + layout.right_width <= layout.panel_right - 8
+
+
 def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
     monkeypatch: Any,
 ) -> None:
