@@ -68,6 +68,7 @@ class PreparedCollectionTile:
     slug: str
     summary: str
     trigger: str
+    image: Image.Image
 
 
 def iter_readmes() -> list[Path]:
@@ -237,16 +238,16 @@ class DemoCollectionRenderer:
     MIN_WIDTH = 1440
     MAX_WIDTH = 2380
     OUTER_MARGIN = 36
-    HEADER_HEIGHT = 192
-    HEADER_PANEL_HEIGHT = 112
+    HEADER_PANEL_MIN_HEIGHT = 112
+    HEADER_TOP = 50
     HEADER_LEFT = 84
-    HEADER_TITLE_Y = 74
-    HEADER_SUMMARY_Y = 122
-    HEADER_RIGHT_Y = 74
-    CONTENT_TOP = 252
+    HEADER_RIGHT_TOP = 74
+    CONTENT_TOP_GAP = 28
     CARD_PADDING = 24
     CARD_RADIUS = 26
-    CARD_HEADER_HEIGHT = 170
+    CARD_BAND_HEIGHT = 64
+    CARD_DEMO_TOP_GAP = 18
+    CARD_DEMO_BOTTOM_GAP = 20
     CARD_GAP_X = 28
     CARD_GAP_Y = 30
     BOTTOM_MARGIN = 42
@@ -290,6 +291,7 @@ class DemoCollectionRenderer:
             self.tile_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
             self.tile_meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 18)
             self.tile_body_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)
+            self.tile_index_font = ImageFont.truetype(MAPLE_FONT_PATH, 21)
             self.slug_font = ImageFont.truetype(MAPLE_FONT_PATH, 17)
         except OSError:
             self.title_font = ImageFont.load_default()
@@ -298,6 +300,7 @@ class DemoCollectionRenderer:
             self.tile_font = ImageFont.load_default()
             self.tile_meta_font = ImageFont.load_default()
             self.tile_body_font = ImageFont.load_default()
+            self.tile_index_font = ImageFont.load_default()
             self.slug_font = ImageFont.load_default()
 
     @property
@@ -320,6 +323,7 @@ class DemoCollectionRenderer:
                 slug=tile.slug,
                 summary=tile.summary,
                 trigger=tile.trigger,
+                image=self._load_thumbnail(tile.source),
             )
             for tile in tiles
         )
@@ -334,16 +338,21 @@ class DemoCollectionRenderer:
                 prepared,
                 content_x=content_x,
                 columns=columns,
+                content_top=0,
             )
         else:
             placements, content_height = self._masonry_layout(
                 prepared,
                 content_x=content_x,
                 columns=columns,
+                content_top=0,
             )
-        height = (
-            self.CONTENT_TOP + content_height + self.BOTTOM_MARGIN + self.OUTER_MARGIN
-        )
+        header_height = self._header_height(summary=summary, title=title)
+        content_top = self.OUTER_MARGIN + header_height + self.CONTENT_TOP_GAP
+        placements = [
+            (tile, x, y + content_top, height) for tile, x, y, height in placements
+        ]
+        height = content_top + content_height + self.BOTTOM_MARGIN + self.OUTER_MARGIN
         image = Image.new("RGB", (width, height), self.PAGE_BG)
         draw = ImageDraw.Draw(image)
         draw.rounded_rectangle(
@@ -364,8 +373,10 @@ class DemoCollectionRenderer:
             summary=summary,
             source_path=source_path,
             tile_count=len(prepared),
+            width=width,
         )
         self._draw_tiles(
+            image,
             draw,
             placements=placements,
         )
@@ -373,6 +384,12 @@ class DemoCollectionRenderer:
         buffer = BytesIO()
         image.save(buffer, format="PNG", optimize=True)
         return buffer.getvalue()
+
+    def _load_thumbnail(self, path: Path) -> Image.Image:
+        with Image.open(path) as source:
+            image = source.convert("RGB")
+        height = max(1, round(image.height * self.thumb_width / image.width))
+        return image.resize((self.thumb_width, height), Image.Resampling.LANCZOS)
 
     def _card_height(self, tile: PreparedCollectionTile) -> int:
         content_width = self.card_width - self.CARD_PADDING * 2
@@ -386,16 +403,19 @@ class DemoCollectionRenderer:
             tile.summary.strip() or "查看该子功能的用途、常见用法和关键边界。",
             self.tile_meta_font,
             content_width,
-            max_lines=4,
+            max_lines=3,
         )
         command_height = len(command_lines) * self._line_height(self.tile_body_font, 8)
         summary_height = len(summary_lines) * self._line_height(self.tile_meta_font, 6)
         return (
             self.CARD_PADDING
-            + self.CARD_HEADER_HEIGHT
+            + self.CARD_BAND_HEIGHT
+            + self.CARD_DEMO_TOP_GAP
+            + tile.image.height
+            + self.CARD_DEMO_BOTTOM_GAP
             + command_height
             + summary_height
-            + 72
+            + 94
         )
 
     def _masonry_layout(
@@ -404,8 +424,9 @@ class DemoCollectionRenderer:
         *,
         content_x: int,
         columns: int,
+        content_top: int,
     ) -> tuple[list[tuple[PreparedCollectionTile, int, int, int]], int]:
-        column_bottoms = [self.CONTENT_TOP for _ in range(columns)]
+        column_bottoms = [content_top for _ in range(columns)]
         placements: list[tuple[PreparedCollectionTile, int, int, int]] = []
         for index, tile in enumerate(tiles):
             _ = index
@@ -415,9 +436,7 @@ class DemoCollectionRenderer:
             y = column_bottoms[column]
             placements.append((tile, x, y, height))
             column_bottoms[column] = y + height + self.CARD_GAP_Y
-        content_height = (
-            max(column_bottoms, default=self.CONTENT_TOP) - self.CONTENT_TOP
-        )
+        content_height = max(column_bottoms, default=content_top) - content_top
         content_height = max(0, content_height - self.CARD_GAP_Y)
         return placements, content_height
 
@@ -427,9 +446,10 @@ class DemoCollectionRenderer:
         *,
         content_x: int,
         columns: int,
+        content_top: int,
     ) -> tuple[list[tuple[PreparedCollectionTile, int, int, int]], int]:
         placements: list[tuple[PreparedCollectionTile, int, int, int]] = []
-        y = self.CONTENT_TOP
+        y = content_top
         for start in range(0, len(tiles), columns):
             row = list(tiles[start : start + columns])
             row_heights = [self._card_height(tile) for tile in row]
@@ -445,7 +465,7 @@ class DemoCollectionRenderer:
                 x = row_x + index * (self.card_width + self.CARD_GAP_X)
                 placements.append((tile, x, y, self._card_height(tile)))
             y += row_height + self.CARD_GAP_Y
-        content_height = max(0, y - self.CONTENT_TOP - self.CARD_GAP_Y)
+        content_height = max(0, y - content_top - self.CARD_GAP_Y)
         return placements, content_height
 
     def _effective_columns(self, tile_count: int) -> int:
@@ -469,11 +489,14 @@ class DemoCollectionRenderer:
         summary: str,
         source_path: Path,
         tile_count: int,
+        width: int,
     ) -> None:
         panel_left = self.OUTER_MARGIN + 18
-        panel_top = self.OUTER_MARGIN + 14
-        panel_right = draw.im.size[0] - self.OUTER_MARGIN - 18
-        panel_bottom = panel_top + self.HEADER_PANEL_HEIGHT
+        panel_top = self.HEADER_TOP
+        panel_right = width - self.OUTER_MARGIN - 18
+        panel_bottom = (
+            panel_top + self._header_height(summary=summary, title=title) - 14
+        )
         panel_fill, _ = self._palette_for_source(source_path)
         draw.rounded_rectangle(
             (panel_left, panel_top, panel_right, panel_bottom),
@@ -488,17 +511,20 @@ class DemoCollectionRenderer:
             summary.strip() or "已按子功能拆分生成合集预览。",
             self.summary_font,
             left_width,
-            max_lines=3,
+            max_lines=6,
         )
         help_lines = self._wrap_inline_text(
             f"使用 #help {title} <子功能> 查看对应说明",
             self.summary_font,
             right_block_width,
-            max_lines=2,
+            max_lines=4,
         )
+        title_y = panel_top + 24
+        summary_y = title_y + 48
+        right_y = panel_top + 28
 
         draw.text(
-            (self.HEADER_LEFT, self.HEADER_TITLE_Y),
+            (self.HEADER_LEFT, title_y),
             title,
             fill=self.TITLE,
             font=self.title_font,
@@ -507,13 +533,13 @@ class DemoCollectionRenderer:
             self._draw_inline_line(
                 draw,
                 x=self.HEADER_LEFT,
-                y=self.HEADER_SUMMARY_Y + index * 22,
+                y=summary_y + index * 22,
                 line=line,
                 font=self.summary_font,
                 fill=self.META,
             )
         draw.text(
-            (right_x, self.HEADER_RIGHT_Y),
+            (right_x, right_y),
             f"共 {tile_count} 个功能卡片",
             fill=self.TITLE,
             font=self.meta_font,
@@ -522,7 +548,7 @@ class DemoCollectionRenderer:
             self._draw_inline_line(
                 draw,
                 x=right_x,
-                y=self.HEADER_RIGHT_Y + 34 + index * 20,
+                y=right_y + 34 + index * 20,
                 line=line,
                 font=self.summary_font,
                 fill=self.HELP_TEXT,
@@ -530,15 +556,17 @@ class DemoCollectionRenderer:
 
     def _draw_tiles(
         self,
+        image: Image.Image,
         draw: ImageDraw.ImageDraw,
         *,
         placements: Sequence[tuple[PreparedCollectionTile, int, int, int]],
     ) -> None:
         for tile, x, y, height in placements:
-            self._draw_tile(draw, tile=tile, x=x, y=y, height=height)
+            self._draw_tile(image, draw, tile=tile, x=x, y=y, height=height)
 
     def _draw_tile(
         self,
+        image: Image.Image,
         draw: ImageDraw.ImageDraw,
         *,
         tile: PreparedCollectionTile,
@@ -564,7 +592,7 @@ class DemoCollectionRenderer:
                 x + 12,
                 y + 12,
                 x + self.card_width - 12,
-                y + 76,
+                y + 12 + self.CARD_BAND_HEIGHT,
             ),
             radius=18,
             fill=title_band,
@@ -574,17 +602,13 @@ class DemoCollectionRenderer:
         content_width = self.card_width - self.CARD_PADDING * 2
 
         index_text = f"{tile.index:02d}"
-        index_width = max(42, self._text_width(index_text, self.slug_font) + 20)
-        draw.rounded_rectangle(
-            (title_x, title_y, title_x + index_width, title_y + 30),
-            radius=14,
-            fill=self.INDEX_BG,
-        )
+        title_text = f"{index_text}  {tile.title}"
+        title_width_limit = content_width - 128
         draw.text(
-            (title_x + 10, title_y + 5),
-            index_text,
-            fill=self.INDEX_TEXT,
-            font=self.slug_font,
+            (title_x, title_y + 7),
+            self._ellipsize(title_text, self.tile_index_font, title_width_limit),
+            fill=self.TITLE_BAND_TEXT,
+            font=self.tile_index_font,
         )
 
         slug_text = tile.slug
@@ -602,30 +626,9 @@ class DemoCollectionRenderer:
             font=self.slug_font,
         )
 
-        title_lines = self._wrap_inline_text(
-            tile.title,
-            self.tile_font,
-            content_width,
-            max_lines=2,
-        )
-        title_top = title_y + 42
-        for index, line in enumerate(title_lines):
-            self._draw_inline_line(
-                draw,
-                x=title_x,
-                y=title_top + index * 28,
-                line=line,
-                font=self.tile_font,
-                fill=self.TITLE_BAND_TEXT,
-            )
-
-        info_top = y + self.CARD_PADDING + self.CARD_HEADER_HEIGHT
-        draw.text(
-            (title_x, info_top),
-            "子命令",
-            fill=self.CARD_LABEL,
-            font=self.tile_meta_font,
-        )
+        demo_x = x + self.CARD_PADDING
+        demo_y = y + self.CARD_PADDING + self.CARD_BAND_HEIGHT + self.CARD_DEMO_TOP_GAP
+        image.paste(tile.image, (demo_x, demo_y))
 
         command_lines = self._wrap_inline_text(
             tile.trigger.strip() or f"#help {tile.slug}",
@@ -633,7 +636,7 @@ class DemoCollectionRenderer:
             content_width,
             max_lines=3,
         )
-        command_top = info_top + 28
+        command_top = demo_y + tile.image.height + self.CARD_DEMO_BOTTOM_GAP
         self._draw_info_block(
             draw,
             x=title_x,
@@ -648,20 +651,13 @@ class DemoCollectionRenderer:
         command_height = (
             len(command_lines) * self._line_height(self.tile_body_font, 8) + 22
         )
-        summary_label_top = command_top + command_height + 18
-        draw.text(
-            (title_x, summary_label_top),
-            "用途 / 怎么用",
-            fill=self.CARD_LABEL,
-            font=self.tile_meta_font,
-        )
         summary_lines = self._wrap_inline_text(
             tile.summary.strip() or "查看该子功能的用途、常见用法和关键边界。",
             self.tile_meta_font,
             content_width,
-            max_lines=4,
+            max_lines=3,
         )
-        summary_top = summary_label_top + 28
+        summary_top = command_top + command_height + 18
         for index, line in enumerate(summary_lines):
             self._draw_inline_line(
                 draw,
@@ -804,6 +800,31 @@ class DemoCollectionRenderer:
                 font=font,
                 fill=fill,
             )
+
+    def _header_height(self, *, summary: str, title: str) -> int:
+        right_block_width = 360
+        width = self.MAX_WIDTH - self.OUTER_MARGIN * 2 - 24
+        right_x = width - self.OUTER_MARGIN - 18 - right_block_width - 20
+        left_width = right_x - self.HEADER_LEFT - 36
+        summary_lines = self._wrap_inline_text(
+            summary.strip() or "已按子功能拆分生成合集预览。",
+            self.summary_font,
+            left_width,
+            max_lines=6,
+        )
+        help_lines = self._wrap_inline_text(
+            f"使用 #help {title} <子功能> 查看对应说明",
+            self.summary_font,
+            right_block_width,
+            max_lines=4,
+        )
+        left_bottom = self.HEADER_TOP + 24 + 48 + len(summary_lines) * 22 + 12
+        right_bottom = self.HEADER_TOP + 28 + 34 + len(help_lines) * 20 + 20
+        panel_height = max(
+            self.HEADER_PANEL_MIN_HEIGHT,
+            max(left_bottom, right_bottom) - self.HEADER_TOP,
+        )
+        return panel_height + 28
 
     def _inline_line_width(
         self,

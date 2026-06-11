@@ -825,6 +825,71 @@ BOT: Beta 完成
         assert collection.height > 300
 
 
+def test_collection_tile_keeps_demo_preview_and_metadata(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    docs_root = tmp_path / "src" / "plugins" / "sample" / "docs"
+    demos_dir = docs_root / "demos"
+    demos_dir.mkdir(parents=True)
+    (docs_root / "README.MD").write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试合集卡片结构。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一条说明。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一条说明。
+- 指令: `#alpha run`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha run
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    Image.new("RGB", (320, 240), "#FFF0F5").save(demos_dir / "sample-alpha.png")
+
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+
+    _, jobs = plugin_docs_script.collect_collection_jobs(columns=2, thumb_width=240)
+    tile = jobs[0].tiles[0]
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=240)
+    prepared = plugin_docs_script.PreparedCollectionTile(
+        index=tile.index,
+        title=tile.title,
+        slug=tile.slug,
+        summary=tile.summary,
+        trigger=tile.trigger,
+        image=renderer._load_thumbnail(tile.source),  # pyright: ignore[reportPrivateUsage]
+    )
+
+    assert prepared.index == 1
+    assert prepared.trigger == "#alpha run"
+    assert prepared.image.width == 240
+
+
 def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
     monkeypatch: Any,
 ) -> None:
