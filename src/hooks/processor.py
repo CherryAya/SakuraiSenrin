@@ -24,6 +24,7 @@ from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, is_set
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
+from src.services.runtime_policy import get_group_block_reason
 from src.services.sync import (
     sync_group_runtime,
     sync_member_runtime,
@@ -138,8 +139,8 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
         if not group:
             raise IgnoredException("未命中群缓存，默认阻止")
 
-        if group.status.is_unauthorized:
-            raise IgnoredException("群聊未授权")
+        if reason := get_group_block_reason(group.status):
+            raise IgnoredException(reason)
 
         if group.is_all_shut:
             raise IgnoredException("群聊被全员禁言")

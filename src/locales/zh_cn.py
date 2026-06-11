@@ -264,6 +264,7 @@ CATALOG: Final[dict[str, str]] = {
     "admin.invite.reject.none": "当前没有需要拒绝的待处理邀请哦。",
     "admin.invite.ignore.none": "当前没有需要忽略的待处理邀请哦。",
     "admin.invite.record.not_found": "未找到对应的邀请记录。",
+    "admin.invite.need_unban_first": "该群当前处于封禁状态，请先解封再同意邀请。",
     "admin.invite.action.approve": "同意",
     "admin.invite.action.reject": "拒绝",
     "admin.invite.args_error.detail": "参数格式不正确，请检查指令用法。",

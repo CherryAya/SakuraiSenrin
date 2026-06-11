@@ -28,7 +28,7 @@ from nonebot.plugin import CommandGroup, on_fullmatch
 from nonebot.rule import ArgumentParser, to_me
 from PIL import Image, ImageDraw, ImageFont
 
-from src.database.core.consts import GroupStatus, InvitationStatus, Permission
+from src.database.core.consts import InvitationStatus, Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
@@ -38,6 +38,7 @@ from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
 from src.repositories import group_repo, invite_repo
+from src.services.runtime_policy import resolve_invitation_transition
 
 name = tr("zh-CN", "plugin.admin_invite.name")
 description = tr("zh-CN", "plugin.admin_invite.description")
@@ -459,6 +460,16 @@ async def handle_invitation(ctx: InviteContext) -> bool:
             )
         return False
 
+    try:
+        invitation_status, group_status = resolve_invitation_transition(
+            approve=ctx.approve,
+            group_status=invitation.group.status,
+        )
+    except ValueError:
+        if not ctx.silent:
+            await ctx.matcher.send(tr(ctx.locale, "admin.invite.need_unban_first"))
+        return False
+
     if flag := invitation.flag:
         await ctx.bot.set_group_add_request(
             flag=flag,
@@ -468,14 +479,11 @@ async def handle_invitation(ctx: InviteContext) -> bool:
     elif not ctx.approve:
         await ctx.bot.set_group_leave(group_id=int(invitation.group_id))
 
-    if ctx.approve:
-        action = tr(ctx.locale, "admin.invite.action.approve")
-        invitation_status = InvitationStatus.APPROVED
-        group_status = GroupStatus.AUTHORIZED
-    else:
-        action = tr(ctx.locale, "admin.invite.action.reject")
-        invitation_status = InvitationStatus.REJECTED
-        group_status = GroupStatus.UNAUTHORIZED
+    action = (
+        tr(ctx.locale, "admin.invite.action.approve")
+        if ctx.approve
+        else tr(ctx.locale, "admin.invite.action.reject")
+    )
 
     await invite_repo.update_status(
         invitation_id=invitation.id,
