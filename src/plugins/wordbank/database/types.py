@@ -1,6 +1,7 @@
 """Wordbank database payload and record types."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import NotRequired, TypedDict
 
 
@@ -49,6 +50,7 @@ class WordbankImagePayload(TypedDict):
     width: int
     height: int
     file_size: int
+    hash_version: int
     storage_path: str
     created_at: int
     updated_at: int
@@ -132,8 +134,10 @@ class WordbankEntryRecord:
     group_id: str
     created_by: str
     deleted_at: int
-    triggers: tuple[WordbankTriggerRecord, ...] = field(default_factory=tuple)
-    responses: tuple[WordbankResponseRecord, ...] = field(default_factory=tuple)
+    triggers: tuple[WordbankTriggerRecord, ...] = dataclass_field(default_factory=tuple)
+    responses: tuple[WordbankResponseRecord, ...] = dataclass_field(
+        default_factory=tuple
+    )
 
 
 @dataclass(slots=True, frozen=True)
@@ -146,6 +150,7 @@ class WordbankImageRecord:
     width: int
     height: int
     file_size: int
+    hash_version: int
     storage_path: str
 
     @property
@@ -154,11 +159,21 @@ class WordbankImageRecord:
 
 
 @dataclass(slots=True, frozen=True)
+class WordbankSearchRequest:
+    keyword: str = ""
+    field: str = "all"
+    creator_id: str = ""
+    has_image: bool = False
+    image_scores: dict[int, float] = dataclass_field(default_factory=dict)
+
+
+@dataclass(slots=True, frozen=True)
 class WordbankSearchItem:
     entry_id: int
     status: str
     trigger_text: str
     trigger_mode: str
+    trigger_canonical_image_id: int | None
     response_text: str
     scope: str
     probability: float
@@ -166,6 +181,8 @@ class WordbankSearchItem:
     created_by: str
     response_kind: str = "text"
     response_canonical_image_id: int | None = None
+    score: float = 0.0
+    matched_by: str = ""
 
 
 @dataclass(slots=True, frozen=True)

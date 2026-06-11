@@ -20,6 +20,7 @@ from src.plugins.wordbank.database.types import (
     WordbankLogPayload,
     WordbankResponseMessageRecord,
     WordbankSearchItem,
+    WordbankSearchRequest,
 )
 from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.services.matching import (
@@ -86,6 +87,7 @@ class WordbankService:
         if self._initialized:
             return
         await self.repository.init_all_tables()
+        await self.repository.ensure_search_index()
         await self.rebuild_index()
         self._initialized = True
 
@@ -465,12 +467,12 @@ class WordbankService:
 
     async def search(
         self,
-        keyword: str,
+        request: WordbankSearchRequest,
         *,
         limit: int = 10,
         offset: int = 0,
     ) -> list[WordbankSearchItem]:
-        return await self.repository.search(keyword, limit=limit, offset=offset)
+        return await self.repository.search(request, limit=limit, offset=offset)
 
     async def list_pending_entries(
         self,

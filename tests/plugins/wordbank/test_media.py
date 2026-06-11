@@ -61,6 +61,7 @@ class _ImageRepo:
             width=payload["width"],
             height=payload["height"],
             file_size=payload["file_size"],
+            hash_version=payload["hash_version"],
             storage_path=payload["storage_path"],
         )
         self.images.append(image)
@@ -89,6 +90,22 @@ async def test_media_ingest_dedupes_md5_and_uses_cache(tmp_path: Path) -> None:
     assert len(repo.images) == 1
     assert service.resolve_canonical_id(data) == first.canonical_id
     assert (tmp_path / f"{first.md5}.webp").is_file()
+
+
+async def test_media_search_similar_images_returns_ranked_matches(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    service = WordbankMediaService(repo, media_root=tmp_path)
+    source = _png((64, 128, 255))
+
+    first = await service.ingest_image_bytes(source)
+    await service.rebuild_cache()
+    matches = service.search_similar_images(source)
+
+    assert matches
+    assert matches[0].canonical_id == first.canonical_id
+    assert matches[0].score == 1.0
 
 
 class _ObjectStorage:

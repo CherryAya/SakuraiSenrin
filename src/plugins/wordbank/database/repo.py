@@ -1,8 +1,12 @@
 """Wordbank repository."""
 
 from collections import defaultdict
+import re
+import unicodedata
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.consts import WritePolicy
 from src.lib.utils.common import get_current_time
@@ -29,6 +33,7 @@ from .tables import (
     WordbankMainBase,
     WordbankResponse,
     WordbankResponseMessage,
+    WordbankSearchDocument,
     WordbankTrigger,
 )
 from .types import (
@@ -45,9 +50,49 @@ from .types import (
     WordbankResponseMessageRecord,
     WordbankResponseRecord,
     WordbankSearchItem,
+    WordbankSearchRequest,
     WordbankTriggerRecord,
 )
 from .writers import wordbank_log_writer
+
+_SPACE_RE = re.compile(r"\s+")
+_MAX_GRAM_SIZE = 3
+_SEARCH_RESULT_CANDIDATE_MULTIPLIER = 6
+_SEARCH_RESULT_MIN_CANDIDATES = 64
+
+
+def _normalize_search_text(text_value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text_value).strip()
+    normalized = _SPACE_RE.sub(" ", normalized)
+    return normalized.casefold()
+
+
+def _condensed_search_text(text_value: str) -> str:
+    return _normalize_search_text(text_value).replace(" ", "")
+
+
+def _build_ngram_tokens(text_value: str) -> str:
+    condensed = _condensed_search_text(text_value)
+    if not condensed:
+        return ""
+    tokens: list[str] = []
+    for gram_size in range(1, min(_MAX_GRAM_SIZE, len(condensed)) + 1):
+        for index in range(0, len(condensed) - gram_size + 1):
+            tokens.append(condensed[index : index + gram_size])
+    deduped = list(dict.fromkeys(tokens))
+    return " ".join(deduped)
+
+
+def _build_fts_query(text_value: str) -> str:
+    condensed = _condensed_search_text(text_value)
+    if not condensed:
+        return ""
+    gram_size = min(_MAX_GRAM_SIZE, len(condensed))
+    tokens = [
+        condensed[index : index + gram_size]
+        for index in range(0, len(condensed) - gram_size + 1)
+    ]
+    return " AND ".join(f'"{token}"' for token in dict.fromkeys(tokens))
 
 
 class WordbankRepository:
@@ -92,6 +137,7 @@ class WordbankRepository:
             width=image.width,
             height=image.height,
             file_size=image.file_size,
+            hash_version=image.hash_version,
             storage_path=image.storage_path,
         )
 
@@ -177,6 +223,61 @@ class WordbankRepository:
         image_text = f"[图片:{response.canonical_image_id}]"
         return f"{response.text} {image_text}".strip()
 
+    @classmethod
+    def _document_payload(
+        cls,
+        entry: WordbankEntry,
+        trigger: WordbankTrigger,
+        response: WordbankResponse,
+    ) -> dict[str, object]:
+        return {
+            "entry_id": entry.id,
+            "status": entry.status,
+            "scope": entry.scope,
+            "group_id": entry.group_id,
+            "created_by": entry.created_by,
+            "deleted_at": entry.deleted_at,
+            "probability": entry.probability,
+            "weight": entry.weight,
+            "trigger_text": cls._format_trigger_text(trigger),
+            "trigger_mode": trigger.trigger_mode,
+            "trigger_canonical_image_id": trigger.canonical_image_id,
+            "response_text": cls._format_response_text(response),
+            "response_kind": response.kind,
+            "response_canonical_image_id": response.canonical_image_id,
+            "trigger_tokens": (
+                _build_ngram_tokens(trigger.trigger_text)
+                if trigger.kind == "text"
+                else ""
+            ),
+            "response_tokens": _build_ngram_tokens(response.text),
+            "updated_at": entry.updated_at,
+        }
+
+    @staticmethod
+    def _to_search_item(
+        document: WordbankSearchDocument,
+        *,
+        score: float = 0.0,
+        matched_by: str = "",
+    ) -> WordbankSearchItem:
+        return WordbankSearchItem(
+            entry_id=document.entry_id,
+            status=document.status,
+            trigger_text=document.trigger_text,
+            trigger_mode=document.trigger_mode,
+            trigger_canonical_image_id=document.trigger_canonical_image_id,
+            response_text=document.response_text,
+            scope=document.scope,
+            probability=document.probability,
+            weight=document.weight,
+            created_by=document.created_by,
+            response_kind=document.response_kind,
+            response_canonical_image_id=document.response_canonical_image_id,
+            score=score,
+            matched_by=matched_by,
+        )
+
     async def create_text_entry(
         self,
         *,
@@ -234,6 +335,7 @@ class WordbankRepository:
             )
             session.add_all([trigger, response])
             await session.flush()
+            await self._refresh_search_document_in_session(session, entry.id)
 
             return WordbankEntryRecord(
                 id=entry.id,
@@ -306,6 +408,7 @@ class WordbankRepository:
             )
             session.add_all([trigger, response])
             await session.flush()
+            await self._refresh_search_document_in_session(session, entry.id)
 
             return WordbankEntryRecord(
                 id=entry.id,
@@ -360,49 +463,151 @@ class WordbankRepository:
             for entry in entries
         ]
 
+    async def ensure_search_index(self) -> None:
+        async with wordbank_main_db.read_session() as session:
+            entry_count = await session.scalar(
+                select(func.count()).select_from(WordbankEntry)
+            )
+            doc_count = await session.scalar(
+                select(func.count()).select_from(WordbankSearchDocument)
+            )
+            trigger_fts_count = await session.scalar(
+                text("SELECT COUNT(*) FROM wordbank_search_trigger_fts")
+            )
+            response_fts_count = await session.scalar(
+                text("SELECT COUNT(*) FROM wordbank_search_response_fts")
+            )
+        if (
+            int(entry_count or 0) != int(doc_count or 0)
+            or int(entry_count or 0) != int(trigger_fts_count or 0)
+            or int(entry_count or 0) != int(response_fts_count or 0)
+        ):
+            await self.rebuild_search_index()
+
+    async def rebuild_search_index(self) -> None:
+        async with wordbank_main_db.read_session() as session:
+            rows = (
+                await session.execute(
+                    select(WordbankEntry, WordbankTrigger, WordbankResponse)
+                    .join(
+                        WordbankTrigger,
+                        WordbankTrigger.entry_id == WordbankEntry.id,
+                    )
+                    .join(
+                        WordbankResponse,
+                        WordbankResponse.entry_id == WordbankEntry.id,
+                    )
+                    .order_by(WordbankEntry.id.asc())
+                )
+            ).all()
+
+        documents = [
+            self._document_payload(entry, trigger, response)
+            for entry, trigger, response in rows
+        ]
+        async with wordbank_main_db.write_session() as session:
+            await session.execute(delete(WordbankSearchDocument))
+            await session.execute(text("DELETE FROM wordbank_search_trigger_fts"))
+            await session.execute(text("DELETE FROM wordbank_search_response_fts"))
+            if documents:
+                await session.execute(
+                    sqlite_insert(WordbankSearchDocument),
+                    documents,
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO wordbank_search_trigger_fts(rowid, tokens)
+                        VALUES (:entry_id, :trigger_tokens)
+                        """
+                    ),
+                    documents,
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO wordbank_search_response_fts(rowid, tokens)
+                        VALUES (:entry_id, :response_tokens)
+                        """
+                    ),
+                    documents,
+                )
+
     async def search(
         self,
-        keyword: str,
+        request: WordbankSearchRequest,
         *,
         limit: int = 10,
         offset: int = 0,
     ) -> list[WordbankSearchItem]:
-        keyword = keyword.strip()
         async with wordbank_main_db.read_session() as session:
-            stmt = (
-                select(WordbankEntry, WordbankTrigger, WordbankResponse)
-                .join(WordbankTrigger, WordbankTrigger.entry_id == WordbankEntry.id)
-                .join(WordbankResponse, WordbankResponse.entry_id == WordbankEntry.id)
-                .where(WordbankEntry.deleted_at == 0)
-                .order_by(WordbankEntry.id.desc())
-                .limit(limit)
-                .offset(offset)
+            candidate_limit = max(
+                _SEARCH_RESULT_MIN_CANDIDATES,
+                (offset + limit) * _SEARCH_RESULT_CANDIDATE_MULTIPLIER,
             )
-            if keyword:
-                pattern = f"%{keyword}%"
-                stmt = stmt.where(
-                    or_(
-                        WordbankTrigger.trigger_text.like(pattern),
-                        WordbankResponse.text.like(pattern),
-                    )
-                )
-            rows = (await session.execute(stmt)).all()
+            text_scores, text_sources = await self._search_text_scores(
+                session,
+                request.keyword,
+                field=request.field,
+                limit=candidate_limit,
+            )
+            image_scores, image_sources = await self._search_image_scores(
+                session,
+                request.image_scores,
+                field=request.field,
+                creator_id=request.creator_id,
+            )
 
-        return [
-            WordbankSearchItem(
-                entry_id=entry.id,
-                status=entry.status,
-                trigger_text=self._format_trigger_text(trigger),
-                trigger_mode=trigger.trigger_mode,
-                response_text=self._format_response_text(response),
-                scope=entry.scope,
-                probability=entry.probability,
-                weight=entry.weight,
-                created_by=entry.created_by,
-                response_kind=response.kind,
-                response_canonical_image_id=response.canonical_image_id,
+            candidate_ids = set(text_scores) | set(image_scores)
+            if not candidate_ids:
+                stmt = (
+                    select(WordbankSearchDocument)
+                    .where(WordbankSearchDocument.deleted_at == 0)
+                    .order_by(WordbankSearchDocument.entry_id.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+                if request.creator_id:
+                    stmt = stmt.where(
+                        WordbankSearchDocument.created_by == request.creator_id
+                    )
+                documents = (await session.execute(stmt)).scalars().all()
+                if request.keyword or request.image_scores or request.has_image:
+                    return []
+                return [self._to_search_item(document) for document in documents]
+
+            stmt = select(WordbankSearchDocument).where(
+                WordbankSearchDocument.entry_id.in_(candidate_ids),
+                WordbankSearchDocument.deleted_at == 0,
             )
-            for entry, trigger, response in rows
+            if request.creator_id:
+                stmt = stmt.where(
+                    WordbankSearchDocument.created_by == request.creator_id
+                )
+            documents = (await session.execute(stmt)).scalars().all()
+
+        ranked: list[tuple[float, int, str, WordbankSearchDocument]] = []
+        for document in documents:
+            text_score = text_scores.get(document.entry_id, 0.0)
+            image_score = image_scores.get(document.entry_id, 0.0)
+            final_score = max(text_score, image_score)
+            if text_score and image_score:
+                final_score = min(1.0, final_score + 0.2 * min(text_score, image_score))
+            matched_by = ",".join(
+                part
+                for part in {
+                    text_sources.get(document.entry_id, ""),
+                    image_sources.get(document.entry_id, ""),
+                }
+                if part
+            )
+            ranked.append((final_score, document.entry_id, matched_by, document))
+
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        paged = ranked[offset : offset + limit]
+        return [
+            self._to_search_item(document, score=score, matched_by=matched_by)
+            for score, _, matched_by, document in paged
         ]
 
     async def list_pending_entries(
@@ -449,6 +654,7 @@ class WordbankRepository:
                 status=entry.status,
                 trigger_text=self._format_trigger_text(trigger),
                 trigger_mode=trigger.trigger_mode,
+                trigger_canonical_image_id=trigger.canonical_image_id,
                 response_text=self._format_response_text(response),
                 scope=entry.scope,
                 probability=entry.probability,
@@ -471,7 +677,7 @@ class WordbankRepository:
     ) -> bool:
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
-            return await WordbankEntryOps(session).mark_deleted(
+            ok = await WordbankEntryOps(session).mark_deleted(
                 entry_id,
                 now,
                 actor_user_id=actor_user_id,
@@ -479,6 +685,9 @@ class WordbankRepository:
                 can_moderate_group=can_moderate_group,
                 is_superuser=is_superuser,
             )
+            if ok:
+                await self._refresh_search_document_in_session(session, entry_id)
+            return ok
 
     async def restore_entry(
         self,
@@ -491,7 +700,7 @@ class WordbankRepository:
     ) -> bool:
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
-            return await WordbankEntryOps(session).restore(
+            ok = await WordbankEntryOps(session).restore(
                 entry_id,
                 now,
                 actor_user_id=actor_user_id,
@@ -499,6 +708,9 @@ class WordbankRepository:
                 can_moderate_group=can_moderate_group,
                 is_superuser=is_superuser,
             )
+            if ok:
+                await self._refresh_search_document_in_session(session, entry_id)
+            return ok
 
     async def approve_entry(
         self,
@@ -511,7 +723,7 @@ class WordbankRepository:
     ) -> bool:
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
-            return await WordbankEntryOps(session).approve_pending(
+            ok = await WordbankEntryOps(session).approve_pending(
                 entry_id,
                 now,
                 approved_by=actor_user_id,
@@ -519,6 +731,9 @@ class WordbankRepository:
                 can_moderate_group=can_moderate_group,
                 is_superuser=is_superuser,
             )
+            if ok:
+                await self._refresh_search_document_in_session(session, entry_id)
+            return ok
 
     async def reject_entry(
         self,
@@ -531,7 +746,7 @@ class WordbankRepository:
     ) -> bool:
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
-            return await WordbankEntryOps(session).reject_pending(
+            ok = await WordbankEntryOps(session).reject_pending(
                 entry_id,
                 now,
                 reviewed_by=actor_user_id,
@@ -539,6 +754,9 @@ class WordbankRepository:
                 can_moderate_group=can_moderate_group,
                 is_superuser=is_superuser,
             )
+            if ok:
+                await self._refresh_search_document_in_session(session, entry_id)
+            return ok
 
     async def request_delete_vote(
         self,
@@ -729,6 +947,11 @@ class WordbankRepository:
             vote.status = "passed" if entry_deleted else "closed"
             vote.updated_at = now
             await vote_ops.update_status(vote.id, vote.status, now)
+            if entry_deleted:
+                await self._refresh_search_document_in_session(
+                    vote_ops.session,
+                    entry_id,
+                )
 
         return WordbankDeleteVoteMutation(
             vote=self._to_delete_vote_record(vote, support_count=support_count),
@@ -792,3 +1015,167 @@ class WordbankRepository:
 
     async def warm_up(self) -> None:
         await self.list_enabled_entries()
+
+    async def _search_text_scores(
+        self,
+        session: AsyncSession,
+        keyword: str,
+        *,
+        field: str,
+        limit: int,
+    ) -> tuple[dict[int, float], dict[int, str]]:
+        query = _build_fts_query(keyword)
+        if not query:
+            return {}, {}
+        scores: dict[int, float] = {}
+        sources: dict[int, str] = {}
+        if field == "trigger":
+            tables = ["trigger"]
+        elif field == "response":
+            tables = ["response"]
+        else:
+            tables = ["trigger", "response"]
+        for table_name in tables:
+            sql = text(
+                f"""
+                SELECT rowid AS entry_id
+                FROM wordbank_search_{table_name}_fts
+                WHERE wordbank_search_{table_name}_fts MATCH :query
+                ORDER BY bm25(wordbank_search_{table_name}_fts)
+                LIMIT :limit
+                """
+            )
+            rows = (await session.execute(sql, {"query": query, "limit": limit})).all()
+            total = len(rows)
+            for index, row in enumerate(rows):
+                entry_id = int(row.entry_id)
+                score = (total - index) / max(total, 1)
+                if score > scores.get(entry_id, 0.0):
+                    scores[entry_id] = score
+                    sources[entry_id] = f"text:{table_name}"
+        return scores, sources
+
+    async def _search_image_scores(
+        self,
+        session: AsyncSession,
+        image_scores: dict[int, float],
+        *,
+        field: str,
+        creator_id: str,
+    ) -> tuple[dict[int, float], dict[int, str]]:
+        if not image_scores:
+            return {}, {}
+        stmt = select(WordbankSearchDocument).where(
+            WordbankSearchDocument.deleted_at == 0,
+        )
+        if creator_id:
+            stmt = stmt.where(WordbankSearchDocument.created_by == creator_id)
+        canonical_ids = tuple(image_scores)
+        if field == "trigger":
+            stmt = stmt.where(
+                WordbankSearchDocument.trigger_canonical_image_id.in_(canonical_ids)
+            )
+        elif field == "response":
+            stmt = stmt.where(
+                WordbankSearchDocument.response_canonical_image_id.in_(canonical_ids)
+            )
+        else:
+            stmt = stmt.where(
+                or_(
+                    WordbankSearchDocument.trigger_canonical_image_id.in_(
+                        canonical_ids
+                    ),
+                    WordbankSearchDocument.response_canonical_image_id.in_(
+                        canonical_ids
+                    ),
+                )
+            )
+        documents = (await session.execute(stmt)).scalars().all()
+        scores: dict[int, float] = {}
+        sources: dict[int, str] = {}
+        for document in documents:
+            matched: list[tuple[float, str]] = []
+            trigger_score = image_scores.get(document.trigger_canonical_image_id or -1)
+            response_score = image_scores.get(
+                document.response_canonical_image_id or -1
+            )
+            if trigger_score is not None and field in {"all", "trigger"}:
+                matched.append((trigger_score, "image:trigger"))
+            if response_score is not None and field in {"all", "response"}:
+                matched.append((response_score, "image:response"))
+            if not matched:
+                continue
+            score, source = max(matched, key=lambda item: item[0])
+            scores[document.entry_id] = score
+            sources[document.entry_id] = source
+        return scores, sources
+
+    async def _refresh_search_document_in_session(
+        self,
+        session: AsyncSession,
+        entry_id: int,
+    ) -> None:
+        row = (
+            await session.execute(
+                select(WordbankEntry, WordbankTrigger, WordbankResponse)
+                .join(WordbankTrigger, WordbankTrigger.entry_id == WordbankEntry.id)
+                .join(WordbankResponse, WordbankResponse.entry_id == WordbankEntry.id)
+                .where(WordbankEntry.id == entry_id)
+                .order_by(WordbankTrigger.id.asc(), WordbankResponse.id.asc())
+                .limit(1)
+            )
+        ).first()
+        if row is None:
+            await session.execute(
+                delete(WordbankSearchDocument).where(
+                    WordbankSearchDocument.entry_id == entry_id
+                )
+            )
+            await session.execute(
+                text("DELETE FROM wordbank_search_trigger_fts WHERE rowid = :entry_id"),
+                {"entry_id": entry_id},
+            )
+            await session.execute(
+                text(
+                    "DELETE FROM wordbank_search_response_fts WHERE rowid = :entry_id"
+                ),
+                {"entry_id": entry_id},
+            )
+            return
+
+        entry, trigger, response = row
+        payload = self._document_payload(entry, trigger, response)
+        await session.execute(
+            sqlite_insert(WordbankSearchDocument)
+            .values(**payload)
+            .on_conflict_do_update(
+                index_elements=[WordbankSearchDocument.entry_id],
+                set_=payload,
+            )
+        )
+        await session.execute(
+            text("DELETE FROM wordbank_search_trigger_fts WHERE rowid = :entry_id"),
+            {"entry_id": entry_id},
+        )
+        await session.execute(
+            text("DELETE FROM wordbank_search_response_fts WHERE rowid = :entry_id"),
+            {"entry_id": entry_id},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO wordbank_search_trigger_fts(rowid, tokens)
+                VALUES (:entry_id, :trigger_tokens)
+                """
+            ),
+            payload,
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO wordbank_search_response_fts(rowid, tokens)
+                VALUES (:entry_id, :response_tokens)
+                """
+            ),
+            payload,
+        )

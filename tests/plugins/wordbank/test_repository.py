@@ -1,11 +1,21 @@
+from io import BytesIO
 from pathlib import Path
 
+from PIL import Image
 import pytest
 
 from src.plugins.wordbank.database import instances
 from src.plugins.wordbank.database.repo import WordbankRepository
+from src.plugins.wordbank.database.types import WordbankSearchRequest
 from src.plugins.wordbank.services.core import WordbankService
+from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import RuleContext
+
+
+def _png(color: tuple[int, int, int]) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (16, 16), color).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 @pytest.mark.asyncio
@@ -298,3 +308,75 @@ async def test_delete_vote_reaches_threshold_and_refreshes_index(
 
     await service.rebuild_index()
     assert service.index.find_text("投票删除测试") == []
+
+
+@pytest.mark.asyncio
+async def test_search_uses_fts_creator_filter_and_image_scores(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+
+    repo = WordbankRepository()
+    service = WordbankService(repo, debounce_seconds=0.01)
+    media_service = WordbankMediaService(repo, media_root=tmp_path / "media")
+    await service.initialize()
+
+    text_entry = await service.add_text_entry(
+        trigger_text="晚安词条",
+        response_text="做个好梦",
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    trigger_image = await media_service.ingest_image_bytes(_png((32, 64, 255)))
+    image_entry = await service.add_image_entry(
+        canonical_image_id=trigger_image.canonical_id,
+        response_text="图片触发回复",
+        group_id="20001",
+        user_id="10002",
+        is_group=True,
+    )
+    await service.approve_entry(
+        text_entry.entry_id,
+        actor_user_id="1",
+        actor_group_id="",
+        can_moderate_group=False,
+        is_superuser=True,
+    )
+    await service.approve_entry(
+        image_entry.entry_id,
+        actor_user_id="1",
+        actor_group_id="",
+        can_moderate_group=False,
+        is_superuser=True,
+    )
+
+    text_results = await service.search(
+        WordbankSearchRequest(keyword="晚安", field="all"),
+        limit=5,
+        offset=0,
+    )
+    assert text_results
+    assert text_results[0].entry_id == text_entry.entry_id
+
+    creator_results = await service.search(
+        WordbankSearchRequest(creator_id="10002"),
+        limit=5,
+        offset=0,
+    )
+    assert [item.entry_id for item in creator_results] == [image_entry.entry_id]
+
+    image_results = await service.search(
+        WordbankSearchRequest(
+            field="trigger",
+            has_image=True,
+            image_scores={trigger_image.canonical_id: 1.0},
+        ),
+        limit=5,
+        offset=0,
+    )
+    assert image_results
+    assert image_results[0].entry_id == image_entry.entry_id

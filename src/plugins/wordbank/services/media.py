@@ -11,7 +11,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import Final, Protocol
 
+import imagehash
 from PIL import Image, UnidentifiedImageError
+from pybktree import BKTree
 
 from src.lib.object_storage import ObjectStorageClient
 from src.lib.utils.common import get_current_time
@@ -23,6 +25,8 @@ from src.plugins.wordbank.database.types import (
 from src.plugins.wordbank.services.errors import WordbankUserError
 
 DEFAULT_MEDIA_ROOT: Final[Path] = Path("./data/wordbank/media")
+IMAGE_HASH_VERSION: Final[int] = 2
+IMAGE_SEARCH_DISTANCE_THRESHOLD: Final[int] = 12
 
 
 class MediaError(WordbankUserError):
@@ -37,6 +41,15 @@ class ImageFingerprint:
     width: int
     height: int
     file_size: int
+    hash_version: int = IMAGE_HASH_VERSION
+
+
+@dataclass(slots=True, frozen=True)
+class CanonicalImageMatch:
+    canonical_id: int
+    score: float
+    dhash_distance: int
+    phash_distance: int | None = None
 
 
 class MediaRepository(Protocol):
@@ -179,32 +192,6 @@ def hamming_distance(left: str, right: str) -> int:
     return (int(left or "0", 16) ^ int(right or "0", 16)).bit_count()
 
 
-def _hash_bits_to_hex(bits: list[bool]) -> str:
-    value = 0
-    for bit in bits:
-        value = (value << 1) | int(bit)
-    width = max(1, (len(bits) + 3) // 4)
-    return f"{value:0{width}x}"
-
-
-def _dhash(image: Image.Image, hash_size: int = 8) -> str:
-    gray = image.convert("L").resize((hash_size + 1, hash_size))
-    pixels = list(gray.getdata())
-    bits: list[bool] = []
-    for row in range(hash_size):
-        row_start = row * (hash_size + 1)
-        for col in range(hash_size):
-            bits.append(pixels[row_start + col] > pixels[row_start + col + 1])
-    return _hash_bits_to_hex(bits)
-
-
-def _average_hash(image: Image.Image, hash_size: int = 8) -> str:
-    gray = image.convert("L").resize((hash_size, hash_size))
-    pixels = list(gray.getdata())
-    avg = sum(pixels) / len(pixels)
-    return _hash_bits_to_hex([pixel >= avg for pixel in pixels])
-
-
 def fingerprint_image(data: bytes) -> ImageFingerprint:
     try:
         with Image.open(BytesIO(data)) as image:
@@ -212,8 +199,8 @@ def fingerprint_image(data: bytes) -> ImageFingerprint:
             width, height = image.size
             return ImageFingerprint(
                 md5=md5(data).hexdigest(),
-                dhash=_dhash(image),
-                phash=_average_hash(image),
+                dhash=str(imagehash.dhash(image, hash_size=8)),
+                phash=str(imagehash.phash(image, hash_size=8)),
                 width=width,
                 height=height,
                 file_size=len(data),
@@ -243,6 +230,9 @@ class WordbankMediaService:
         self._by_md5: dict[str, WordbankImageRecord] = {}
         self._by_dhash_prefix: dict[str, list[WordbankImageRecord]] = {}
         self._by_canonical_id: dict[int, WordbankImageRecord] = {}
+        self._canonical_ids_by_dhash: dict[str, tuple[int, ...]] = {}
+        self._canonical_hash_image: dict[int, WordbankImageRecord] = {}
+        self._dhash_tree: BKTree | None = None
 
     async def rebuild_cache(self) -> None:
         images = await self.repository.list_images()
@@ -252,13 +242,30 @@ class WordbankMediaService:
         by_prefix: dict[str, list[WordbankImageRecord]] = defaultdict(list)
         by_md5: dict[str, WordbankImageRecord] = {}
         by_canonical_id: dict[int, WordbankImageRecord] = {}
+        canonical_hash_image: dict[int, WordbankImageRecord] = {}
+        canonical_ids_by_dhash: dict[str, set[int]] = defaultdict(set)
         for image in images:
             by_md5[image.md5] = image
             by_prefix[image.dhash[:4]].append(image)
             by_canonical_id.setdefault(image.canonical_id, image)
+            current = canonical_hash_image.get(image.canonical_id)
+            if current is None or image.hash_version > current.hash_version:
+                canonical_hash_image[image.canonical_id] = image
+        for canonical_id, image in canonical_hash_image.items():
+            canonical_ids_by_dhash[image.dhash].add(canonical_id)
         self._by_md5 = by_md5
         self._by_dhash_prefix = dict(by_prefix)
         self._by_canonical_id = by_canonical_id
+        self._canonical_hash_image = canonical_hash_image
+        self._canonical_ids_by_dhash = {
+            dhash: tuple(sorted(canonical_ids))
+            for dhash, canonical_ids in canonical_ids_by_dhash.items()
+        }
+        self._dhash_tree = (
+            BKTree(hamming_distance, self._canonical_ids_by_dhash.keys())
+            if self._canonical_ids_by_dhash
+            else None
+        )
 
     async def ingest_image_bytes(
         self,
@@ -299,6 +306,7 @@ class WordbankMediaService:
                 "width": fingerprint.width,
                 "height": fingerprint.height,
                 "file_size": fingerprint.file_size,
+                "hash_version": fingerprint.hash_version,
                 "storage_path": storage_path,
                 "created_at": now,
                 "updated_at": now,
@@ -313,6 +321,17 @@ class WordbankMediaService:
         if all(item.id != image.id for item in bucket):
             bucket.append(image)
         self._by_canonical_id.setdefault(image.canonical_id, image)
+        current = self._canonical_hash_image.get(image.canonical_id)
+        if current is None or image.hash_version > current.hash_version:
+            self._canonical_hash_image[image.canonical_id] = image
+            known_dhash = image.dhash in self._canonical_ids_by_dhash
+            canonical_ids = set(self._canonical_ids_by_dhash.get(image.dhash, ()))
+            canonical_ids.add(image.canonical_id)
+            self._canonical_ids_by_dhash[image.dhash] = tuple(sorted(canonical_ids))
+            if self._dhash_tree is None:
+                self._dhash_tree = BKTree(hamming_distance, [image.dhash])
+            elif not known_dhash:
+                self._dhash_tree.add(image.dhash)
 
     def resolve_canonical_id(self, data: bytes) -> int | None:
         fingerprint = fingerprint_image(data)
@@ -329,6 +348,72 @@ class WordbankMediaService:
             ):
                 return candidate.canonical_id
         return None
+
+    def search_similar_images(
+        self,
+        data: bytes,
+        *,
+        limit: int = 32,
+        distance_threshold: int = IMAGE_SEARCH_DISTANCE_THRESHOLD,
+    ) -> list[CanonicalImageMatch]:
+        fingerprint = fingerprint_image(data)
+        existing = self._by_md5.get(fingerprint.md5)
+        if existing is not None:
+            return [
+                CanonicalImageMatch(
+                    canonical_id=existing.canonical_id,
+                    score=1.0,
+                    dhash_distance=0,
+                    phash_distance=0,
+                )
+            ]
+        if self._dhash_tree is None:
+            return []
+
+        matches: list[CanonicalImageMatch] = []
+        for dhash_distance, matched_dhash in self._dhash_tree.find(
+            fingerprint.dhash,
+            distance_threshold,
+        ):
+            for canonical_id in self._canonical_ids_by_dhash.get(matched_dhash, ()):
+                image = self._canonical_hash_image.get(canonical_id)
+                if image is None:
+                    continue
+                score = max(
+                    0.0,
+                    1.0 - (dhash_distance / max(distance_threshold, 1)),
+                )
+                phash_distance: int | None = None
+                if image.hash_version >= IMAGE_HASH_VERSION:
+                    phash_distance = hamming_distance(fingerprint.phash, image.phash)
+                    score = min(
+                        1.0,
+                        score
+                        + max(
+                            0.0,
+                            1.0 - (phash_distance / max(distance_threshold * 2, 1)),
+                        )
+                        * 0.25,
+                    )
+                matches.append(
+                    CanonicalImageMatch(
+                        canonical_id=canonical_id,
+                        score=score,
+                        dhash_distance=dhash_distance,
+                        phash_distance=phash_distance,
+                    )
+                )
+
+        matches.sort(
+            key=lambda item: (
+                item.score,
+                -(item.phash_distance or 0),
+                -item.dhash_distance,
+                -item.canonical_id,
+            ),
+            reverse=True,
+        )
+        return matches[:limit]
 
     async def load_storage_bytes(self, image: WordbankImageRecord) -> bytes | None:
         return await self.storage.load_bytes(image.storage_path)

@@ -95,7 +95,56 @@ class WordbankImage(WordbankMainBase, TimeMixin):
     width: Mapped[int] = mapped_column(Integer, nullable=False)
     height: Mapped[int] = mapped_column(Integer, nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    hash_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     storage_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class WordbankSearchDocument(WordbankMainBase):
+    __tablename__ = "wordbank_search_document"
+    __table_args__ = (
+        Index(
+            "idx_wordbank_search_document_status",
+            "deleted_at",
+            "created_by",
+            "status",
+        ),
+        Index(
+            "idx_wordbank_search_document_trigger_image",
+            "trigger_canonical_image_id",
+        ),
+        Index(
+            "idx_wordbank_search_document_response_image",
+            "response_canonical_image_id",
+        ),
+    )
+
+    entry_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    group_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    deleted_at: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    probability: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    weight: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    trigger_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    trigger_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    trigger_canonical_image_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    response_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    response_kind: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="text",
+    )
+    response_canonical_image_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    trigger_tokens: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    response_tokens: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class WordbankDeleteVote(WordbankMainBase, TimeMixin):

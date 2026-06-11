@@ -15,7 +15,10 @@ from src.config import config
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.plugins.wordbank.database.types import WordbankImageRecord
+from src.plugins.wordbank.database.types import (
+    WordbankImageRecord,
+    WordbankSearchRequest,
+)
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankDeleteVoteResult,
@@ -48,6 +51,20 @@ DEFAULT_DELETE_VOTE_THRESHOLD = 3
 IMAGE_DOWNLOAD_RETRY_ATTEMPTS = 3
 IMAGE_DOWNLOAD_RETRY_DELAY_SECONDS = 0.8
 IMAGE_PREPARE_TIMEOUT_SECONDS = 12.0
+SEARCH_FIELD_ALIASES = {
+    "all": "all",
+    "a": "all",
+    "全部": "all",
+    "全量": "all",
+    "trigger": "trigger",
+    "t": "trigger",
+    "触发": "trigger",
+    "触发词": "trigger",
+    "response": "response",
+    "r": "response",
+    "响应": "response",
+    "响应词": "response",
+}
 
 
 @dataclass(slots=True, frozen=True)
@@ -63,6 +80,8 @@ class ParsedSearch:
     keyword: str
     page: int
     limit: int
+    field: str
+    creator_id: str
 
 
 @dataclass(slots=True, frozen=True)
@@ -340,6 +359,8 @@ def parse_search_args(text: str) -> ParsedSearch:
     keyword_parts: list[str] = []
     page = 1
     limit = DEFAULT_SEARCH_LIMIT
+    field = "all"
+    creator_id = ""
     idx = 0
     while idx < len(tokens):
         token = tokens[idx]
@@ -378,6 +399,39 @@ def parse_search_args(text: str) -> ParsedSearch:
                     key="wordbank.error.search_limit_invalid",
                     max_limit=MAX_SEARCH_LIMIT,
                 )
+        elif token in {"--field", "-f"}:
+            idx += 1
+            if idx >= len(tokens):
+                raise RuleError(
+                    "--field 需要提供搜索范围",
+                    key="wordbank.error.flag_missing",
+                    flag="--field",
+                    expected="搜索范围",
+                )
+            normalized_field = SEARCH_FIELD_ALIASES.get(tokens[idx].casefold())
+            if normalized_field is None:
+                raise RuleError(
+                    "--field 仅支持 all、trigger、response",
+                    key="wordbank.error.search_field_invalid",
+                )
+            field = normalized_field
+        elif token in {"--creator", "-c"}:
+            idx += 1
+            if idx >= len(tokens):
+                raise RuleError(
+                    "--creator 需要提供创建者账号",
+                    key="wordbank.error.flag_missing",
+                    flag="--creator",
+                    expected="创建者账号",
+                )
+            creator_id = tokens[idx].strip()
+            if not creator_id:
+                raise RuleError(
+                    "--creator 需要提供创建者账号",
+                    key="wordbank.error.flag_missing",
+                    flag="--creator",
+                    expected="创建者账号",
+                )
         else:
             keyword_parts.append(token)
         idx += 1
@@ -386,6 +440,8 @@ def parse_search_args(text: str) -> ParsedSearch:
         keyword=" ".join(keyword_parts).strip(),
         page=page,
         limit=limit,
+        field=field,
+        creator_id=creator_id,
     )
 
 
@@ -1126,12 +1182,19 @@ async def handle_search(
     service: WordbankService,
     *,
     keyword: str,
+    image_scores: dict[int, float] | None = None,
     locale: LocaleCode,
 ) -> str:
     parsed = parse_search_args(keyword)
     offset = (parsed.page - 1) * parsed.limit
     items = await service.search(
-        parsed.keyword,
+        WordbankSearchRequest(
+            keyword=parsed.keyword,
+            field=parsed.field,
+            creator_id=parsed.creator_id,
+            has_image=image_scores is not None,
+            image_scores=dict(image_scores or {}),
+        ),
         limit=parsed.limit + 1,
         offset=offset,
     )
@@ -1331,6 +1394,7 @@ async def dispatch_wordbank_command(
     event: MessageEvent,
     text: str,
     locale: LocaleCode,
+    search_image_scores: dict[int, float] | None = None,
 ) -> str:
     action, rest = _split_command(text)
     if not action or action in {"help", "帮助"}:
@@ -1338,7 +1402,12 @@ async def dispatch_wordbank_command(
     if action in ADD_ALIASES:
         return await handle_add_text(service, event=event, text=rest, locale=locale)
     if action in SEARCH_ALIASES:
-        return await handle_search(service, keyword=rest, locale=locale)
+        return await handle_search(
+            service,
+            keyword=rest,
+            image_scores=search_image_scores,
+            locale=locale,
+        )
     if action in PENDING_ALIASES:
         return await handle_pending_entries(
             service,

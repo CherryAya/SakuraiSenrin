@@ -312,6 +312,7 @@ async def _handle_wordbank_command_message(
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     text = build_forced_command_text(forced_action, arg.extract_plain_text())
     action = text.split(maxsplit=1)[0].lower() if text else ""
+    search_image_scores: dict[int, float] | None = None
     if action in {"add", "添加", "学习"}:
         _, _, rest = text.partition(" ")
         try:
@@ -334,6 +335,17 @@ async def _handle_wordbank_command_message(
             await matcher.finish(localize_command_error(exc, locale))
             return
         await _finish_add_result(matcher, bot, event, result, locale)
+    elif action in {"search", "find", "查询", "搜索"}:
+        try:
+            data = await fetch_first_image_bytes_from_message(arg)
+            if data is not None:
+                search_image_scores = {
+                    match.canonical_id: match.score
+                    for match in wordbank_media_service.search_similar_images(data)
+                }
+        except (RuleError, ValueError) as exc:
+            await matcher.finish(localize_command_error(exc, locale))
+            return
 
     try:
         msg = await dispatch_wordbank_command(
@@ -341,6 +353,7 @@ async def _handle_wordbank_command_message(
             event=event,
             text=text,
             locale=locale,
+            search_image_scores=search_image_scores,
         )
     except (RuleError, ValueError) as exc:
         await matcher.finish(localize_command_error(exc, locale))

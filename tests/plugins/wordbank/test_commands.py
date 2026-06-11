@@ -7,7 +7,10 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11.message import Message
 import pytest
 
-from src.plugins.wordbank.database.types import WordbankSearchItem
+from src.plugins.wordbank.database.types import (
+    WordbankSearchItem,
+    WordbankSearchRequest,
+)
 from src.plugins.wordbank.handlers import commands
 from src.plugins.wordbank.handlers.commands import (
     build_forced_command_text,
@@ -84,6 +87,7 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
                 status="approved",
                 trigger_text="晚安",
                 trigger_mode="contains",
+                trigger_canonical_image_id=None,
                 response_text="做个好梦",
                 scope="current_group",
                 probability=1.0,
@@ -108,7 +112,11 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
         "词库搜索结果 (第 1 页):\n"
         "#12 [approved/contains/current_group] 晚安 => 做个好梦"
     )
-    search_mock.assert_awaited_once_with("晚安", limit=11, offset=0)
+    search_mock.assert_awaited_once_with(
+        WordbankSearchRequest(keyword="晚安", field="all", creator_id=""),
+        limit=11,
+        offset=0,
+    )
 
 
 async def test_dispatch_wordbank_search_supports_page_limit_and_more_hint() -> None:
@@ -119,6 +127,7 @@ async def test_dispatch_wordbank_search_supports_page_limit_and_more_hint() -> N
             status="approved",
             trigger_text=f"晚安{index}",
             trigger_mode="contains",
+            trigger_canonical_image_id=None,
             response_text=f"做个好梦{index}",
             scope="current_group",
             probability=1.0,
@@ -147,7 +156,11 @@ async def test_dispatch_wordbank_search_supports_page_limit_and_more_hint() -> N
         "#13 [approved/contains/current_group] 晚安13 => 做个好梦13\n"
         "还有更多结果，可使用 --page 3 --limit 3 查看下一页。"
     )
-    search_mock.assert_awaited_once_with("晚安", limit=4, offset=3)
+    search_mock.assert_awaited_once_with(
+        WordbankSearchRequest(keyword="晚安", field="all", creator_id=""),
+        limit=4,
+        offset=3,
+    )
 
 
 async def test_dispatch_pending_lists_reviewable_entries_for_group_admin() -> None:
@@ -159,6 +172,7 @@ async def test_dispatch_pending_lists_reviewable_entries_for_group_admin() -> No
                 status="pending",
                 trigger_text="晚安",
                 trigger_mode="contains",
+                trigger_canonical_image_id=None,
                 response_text="做个好梦",
                 scope="current_group",
                 probability=1.0,
@@ -255,6 +269,8 @@ def test_parse_search_args_rejects_invalid_pagination() -> None:
     assert parsed.keyword == "晚安"
     assert parsed.page == 2
     assert parsed.limit == 5
+    assert parsed.field == "all"
+    assert parsed.creator_id == ""
 
     with pytest.raises(RuleError) as page_error:
         parse_search_args("晚安 --page 0")
@@ -264,6 +280,14 @@ def test_parse_search_args_rejects_invalid_pagination() -> None:
         parse_search_args("晚安 --limit 21")
     assert limit_error.value.key == "wordbank.error.search_limit_invalid"
     assert limit_error.value.params == {"max_limit": 20}
+
+
+def test_parse_search_args_supports_field_and_creator() -> None:
+    parsed = parse_search_args("晚安 --field response --creator 10001")
+
+    assert parsed.keyword == "晚安"
+    assert parsed.field == "response"
+    assert parsed.creator_id == "10001"
 
 
 async def test_handle_delete_localizes_result() -> None:
