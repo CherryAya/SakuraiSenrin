@@ -32,6 +32,11 @@ job = scheduler.get_job("water_message_archive")
 assert job is not None
 assert job.trigger.fields[5].expressions[0].first == 0
 assert job.trigger.fields[6].expressions[0].first == 25
+
+summary_job = scheduler.get_job("water_summary_archive")
+assert summary_job is not None
+assert summary_job.trigger.fields[5].expressions[0].first == 0
+assert summary_job.trigger.fields[6].expressions[0].first == 35
 """
     result = subprocess.run(
         [sys.executable, "-c", script],

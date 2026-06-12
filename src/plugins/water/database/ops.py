@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from math import floor, sqrt
-from typing import cast
+from typing import ClassVar, cast
 
 import arrow
 from sqlalchemy import CursorResult, and_, delete, func, or_, select, update
@@ -16,6 +16,7 @@ from src.lib.utils.common import split_list
 
 from .tables import (
     WaterActivitySeason,
+    WaterArchivedDailySummary,
     WaterDailySummary,
     WaterGlobalLevel,
     WaterGroupMatrixMap,
@@ -37,6 +38,7 @@ from .types import (
     WaterPenaltyPayload,
     WaterSettlementJobPayload,
     WaterSummaryPayload,
+    WaterSummaryRecord,
     WaterUserExpPayload,
 )
 
@@ -228,34 +230,39 @@ class WaterMessageOps(BaseOps[WaterHourlyCounter]):
         return cast(CursorResult, result).rowcount
 
 
-class WaterSummaryOps(BaseOps[WaterDailySummary]):
-    @staticmethod
-    def _hourly_sum_columns() -> list:
-        return [
-            func.coalesce(
-                func.sum(
-                    func.coalesce(
-                        func.json_extract(
-                            WaterDailySummary.hourly_counts, f"$[{hour}]"
-                        ),
-                        0,
-                    )
-                ),
-                0,
-            ).label(f"hour_{hour}")
-            for hour in range(24)
-        ]
+class _WaterSummaryOpsBase[T: WaterDailySummary | WaterArchivedDailySummary](
+    BaseOps[T]
+):
+    model: ClassVar[type[WaterDailySummary] | type[WaterArchivedDailySummary]]
+
+    def _get_model_class(self) -> type[T]:
+        return cast(type[T], self.model)
+
+    def _serialize_summary_row(
+        self,
+        row: WaterDailySummary | WaterArchivedDailySummary,
+    ) -> WaterSummaryRecord:
+        return WaterSummaryRecord(
+            group_id=str(row.group_id),
+            user_id=str(row.user_id),
+            record_date=int(row.record_date),
+            msg_count=int(row.msg_count),
+            active_hours=int(row.active_hours),
+            hourly_counts=list(row.hourly_counts or [0] * 24)[:24],
+            created_at=int(row.created_at),
+            updated_at=int(row.updated_at),
+        )
 
     async def bulk_upsert_summary(self, summary_data: list[WaterSummaryPayload]) -> int:
         if not summary_data:
             return 0
 
-        stmt = sqlite_insert(WaterDailySummary).values(summary_data)
+        stmt = sqlite_insert(self.model).values(summary_data)
         stmt = stmt.on_conflict_do_update(
             index_elements=[
-                WaterDailySummary.group_id,
-                WaterDailySummary.user_id,
-                WaterDailySummary.record_date,
+                self.model.group_id,
+                self.model.user_id,
+                self.model.record_date,
             ],
             set_={
                 "msg_count": stmt.excluded.msg_count,
@@ -273,12 +280,12 @@ class WaterSummaryOps(BaseOps[WaterDailySummary]):
         record_date: int,
     ) -> dict[str, int]:
         stmt = (
-            select(WaterDailySummary.user_id)
+            select(self.model.user_id)
             .where(
-                WaterDailySummary.group_id == group_id,
-                WaterDailySummary.record_date == record_date,
+                self.model.group_id == group_id,
+                self.model.record_date == record_date,
             )
-            .order_by(WaterDailySummary.msg_count.desc())
+            .order_by(self.model.msg_count.desc())
         )
         result = await self.session.execute(stmt)
         return {user_id: rank for rank, user_id in enumerate(result.scalars(), 1)}
@@ -289,21 +296,21 @@ class WaterSummaryOps(BaseOps[WaterDailySummary]):
         group_ids: list[str],
         start_date: int,
         end_date: int,
-    ) -> Sequence[WaterDailySummary]:
+    ) -> list[WaterSummaryRecord]:
         if not group_ids:
             return []
         stmt = (
-            select(WaterDailySummary)
+            select(self.model)
             .where(
-                WaterDailySummary.user_id == user_id,
-                WaterDailySummary.group_id.in_(group_ids),
-                WaterDailySummary.record_date >= start_date,
-                WaterDailySummary.record_date <= end_date,
+                self.model.user_id == user_id,
+                self.model.group_id.in_(group_ids),
+                self.model.record_date >= start_date,
+                self.model.record_date <= end_date,
             )
-            .order_by(WaterDailySummary.record_date.asc())
+            .order_by(self.model.record_date.asc())
         )
         result = await self.session.execute(stmt)
-        return result.scalars().all()
+        return [self._serialize_summary_row(row) for row in result.scalars().all()]
 
     async def get_user_summary_rows_by_date(
         self,
@@ -311,12 +318,12 @@ class WaterSummaryOps(BaseOps[WaterDailySummary]):
         record_date: int,
     ) -> Sequence[Row[tuple[str, int, int]]]:
         stmt = select(
-            WaterDailySummary.group_id,
-            WaterDailySummary.msg_count,
-            WaterDailySummary.active_hours,
+            self.model.group_id,
+            self.model.msg_count,
+            self.model.active_hours,
         ).where(
-            WaterDailySummary.user_id == user_id,
-            WaterDailySummary.record_date == record_date,
+            self.model.user_id == user_id,
+            self.model.record_date == record_date,
         )
         result = await self.session.execute(stmt)
         return result.all()
@@ -328,26 +335,24 @@ class WaterSummaryOps(BaseOps[WaterDailySummary]):
         *,
         group_ids: list[str] | None = None,
         user_id: str | None = None,
-    ) -> Sequence[WaterDailySummary]:
-        stmt = select(WaterDailySummary).where(
-            WaterDailySummary.record_date >= start_date,
-            WaterDailySummary.record_date <= end_date,
+    ) -> list[WaterSummaryRecord]:
+        stmt = select(self.model).where(
+            self.model.record_date >= start_date,
+            self.model.record_date <= end_date,
         )
         if group_ids is not None:
             if not group_ids:
                 return []
-            stmt = stmt.where(WaterDailySummary.group_id.in_(group_ids))
+            stmt = stmt.where(self.model.group_id.in_(group_ids))
         if user_id is not None:
-            stmt = stmt.where(WaterDailySummary.user_id == user_id)
-        result = await self.session.execute(
-            stmt.order_by(WaterDailySummary.record_date.asc())
-        )
-        return result.scalars().all()
+            stmt = stmt.where(self.model.user_id == user_id)
+        result = await self.session.execute(stmt.order_by(self.model.record_date.asc()))
+        return [self._serialize_summary_row(row) for row in result.scalars().all()]
 
     async def get_group_user_rank(self, group_id: str, user_id: str) -> int | None:
-        own_stmt = select(func.sum(WaterDailySummary.msg_count)).where(
-            WaterDailySummary.group_id == group_id,
-            WaterDailySummary.user_id == user_id,
+        own_stmt = select(func.sum(self.model.msg_count)).where(
+            self.model.group_id == group_id,
+            self.model.user_id == user_id,
         )
         own_result = await self.session.execute(own_stmt)
         own_total = int(own_result.scalar() or 0)
@@ -356,11 +361,11 @@ class WaterSummaryOps(BaseOps[WaterDailySummary]):
 
         grouped = (
             select(
-                WaterDailySummary.user_id.label("user_id"),
-                func.sum(WaterDailySummary.msg_count).label("total"),
+                self.model.user_id.label("user_id"),
+                func.sum(self.model.msg_count).label("total"),
             )
-            .where(WaterDailySummary.group_id == group_id)
-            .group_by(WaterDailySummary.user_id)
+            .where(self.model.group_id == group_id)
+            .group_by(self.model.user_id)
             .subquery()
         )
         rank_stmt = (
@@ -382,18 +387,18 @@ class WaterSummaryOps(BaseOps[WaterDailySummary]):
         group_id: str,
     ) -> Sequence[Row[tuple[str, int, int]]]:
         stmt = select(
-            WaterDailySummary.user_id,
-            WaterDailySummary.msg_count,
-            WaterDailySummary.active_hours,
+            self.model.user_id,
+            self.model.msg_count,
+            self.model.active_hours,
         ).where(
-            WaterDailySummary.group_id == group_id,
+            self.model.group_id == group_id,
         )
         result = await self.session.execute(stmt)
         return result.all()
 
     async def get_group_activity_rank(self, group_id: str) -> int | None:
-        own_stmt = select(func.sum(WaterDailySummary.msg_count)).where(
-            WaterDailySummary.group_id == group_id
+        own_stmt = select(func.sum(self.model.msg_count)).where(
+            self.model.group_id == group_id
         )
         own_result = await self.session.execute(own_stmt)
         own_total = int(own_result.scalar() or 0)
@@ -402,10 +407,10 @@ class WaterSummaryOps(BaseOps[WaterDailySummary]):
 
         grouped = (
             select(
-                WaterDailySummary.group_id.label("group_id"),
-                func.sum(WaterDailySummary.msg_count).label("total"),
+                self.model.group_id.label("group_id"),
+                func.sum(self.model.msg_count).label("total"),
             )
-            .group_by(WaterDailySummary.group_id)
+            .group_by(self.model.group_id)
             .subquery()
         )
         rank_stmt = (
@@ -425,85 +430,25 @@ class WaterSummaryOps(BaseOps[WaterDailySummary]):
         higher_count = int(rank_result.scalar() or 0)
         return higher_count + 1
 
-    async def get_global_period_top_users(
+    async def get_global_period_summary_rows(
         self,
         start_date: int,
         end_date: int,
-        limit: int = 10,
-    ) -> Sequence[Row]:
-        total_expr = func.sum(WaterDailySummary.msg_count)
-        active_days_expr = func.count()
-        active_hours_expr = func.sum(WaterDailySummary.active_hours)
-        stmt = (
-            select(
-                WaterDailySummary.user_id,
-                total_expr.label("total_msg_count"),
-                active_days_expr.label("active_days"),
-                active_hours_expr.label("active_hours"),
-                *self._hourly_sum_columns(),
-            )
-            .where(
-                WaterDailySummary.record_date >= start_date,
-                WaterDailySummary.record_date <= end_date,
-            )
-            .group_by(WaterDailySummary.user_id)
-            .having(total_expr > 0)
-            .order_by(
-                total_expr.desc(),
-                active_days_expr.desc(),
-                active_hours_expr.desc(),
-                WaterDailySummary.user_id.asc(),
-            )
-            .limit(limit)
+    ) -> list[WaterSummaryRecord]:
+        stmt = select(self.model).where(
+            self.model.record_date >= start_date,
+            self.model.record_date <= end_date,
         )
         result = await self.session.execute(stmt)
-        return result.all()
+        return [self._serialize_summary_row(row) for row in result.scalars().all()]
 
-    async def get_global_period_ranks(
-        self,
-        start_date: int,
-        end_date: int,
-    ) -> dict[str, int]:
-        total_expr = func.sum(WaterDailySummary.msg_count)
-        active_days_expr = func.count()
-        active_hours_expr = func.sum(WaterDailySummary.active_hours)
-        stmt = (
-            select(WaterDailySummary.user_id)
-            .where(
-                WaterDailySummary.record_date >= start_date,
-                WaterDailySummary.record_date <= end_date,
-            )
-            .group_by(WaterDailySummary.user_id)
-            .having(total_expr > 0)
-            .order_by(
-                total_expr.desc(),
-                active_days_expr.desc(),
-                active_hours_expr.desc(),
-                WaterDailySummary.user_id.asc(),
-            )
-        )
-        result = await self.session.execute(stmt)
-        return {user_id: rank for rank, user_id in enumerate(result.scalars(), 1)}
 
-    async def get_global_period_overview(
-        self,
-        start_date: int,
-        end_date: int,
-    ) -> Row | None:
-        stmt = select(
-            func.coalesce(func.sum(WaterDailySummary.msg_count), 0).label(
-                "total_msg_count"
-            ),
-            func.count(func.distinct(WaterDailySummary.user_id)).label(
-                "active_user_count"
-            ),
-            *self._hourly_sum_columns(),
-        ).where(
-            WaterDailySummary.record_date >= start_date,
-            WaterDailySummary.record_date <= end_date,
-        )
-        result = await self.session.execute(stmt)
-        return result.one_or_none()
+class WaterSummaryOps(_WaterSummaryOpsBase[WaterDailySummary]):
+    model = WaterDailySummary
+
+
+class WaterArchivedSummaryOps(_WaterSummaryOpsBase[WaterArchivedDailySummary]):
+    model = WaterArchivedDailySummary
 
 
 class WaterGroupMatrixMapOps(BaseOps[WaterGroupMatrixMap]):

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.plugins.water.database.repo import WaterRepository
+from src.plugins.water.database.types import WaterSummaryRecord
 
 
 class _DummySessionCtx:
@@ -356,35 +357,55 @@ async def test_get_global_period_leaderboard_builds_trends(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = WaterRepository()
-
-    from src.plugins.water.database import repo as repo_module
-
-    class FakeSummaryOps:
-        def __init__(self, session: object) -> None:
-            _ = session
-
-        async def get_global_period_top_users(
-            self,
-            start_date: int,
-            end_date: int,
-            limit: int = 10,
-        ) -> list[tuple]:
-            _ = (start_date, end_date, limit)
-            return [
-                ("10001", 20, 4, 9, *([1] * 24)),
-                ("10002", 16, 3, 7, *([0, 1] * 12)),
-            ]
-
-        async def get_global_period_ranks(
-            self,
-            start_date: int,
-            end_date: int,
-        ) -> dict[str, int]:
-            _ = (start_date, end_date)
-            return {"10001": 3, "10002": 1}
-
-    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
-    monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
+    get_window_mock = AsyncMock(
+        side_effect=[
+            [
+                WaterSummaryRecord(
+                    group_id="20001",
+                    user_id="10001",
+                    record_date=20260510,
+                    msg_count=20,
+                    active_hours=9,
+                    hourly_counts=[1] * 24,
+                    created_at=1,
+                    updated_at=2,
+                ),
+                WaterSummaryRecord(
+                    group_id="20002",
+                    user_id="10002",
+                    record_date=20260511,
+                    msg_count=16,
+                    active_hours=7,
+                    hourly_counts=[0, 1] * 12,
+                    created_at=1,
+                    updated_at=2,
+                ),
+            ],
+            [
+                WaterSummaryRecord(
+                    group_id="20001",
+                    user_id="10002",
+                    record_date=20260410,
+                    msg_count=25,
+                    active_hours=8,
+                    hourly_counts=[1] * 24,
+                    created_at=1,
+                    updated_at=2,
+                ),
+                WaterSummaryRecord(
+                    group_id="20002",
+                    user_id="10001",
+                    record_date=20260411,
+                    msg_count=10,
+                    active_hours=5,
+                    hourly_counts=[1] * 24,
+                    created_at=1,
+                    updated_at=2,
+                ),
+            ],
+        ]
+    )
+    monkeypatch.setattr(repo, "get_summaries_in_window", get_window_mock)
 
     rows = await repo.get_global_period_leaderboard(
         20260501,
@@ -394,7 +415,7 @@ async def test_get_global_period_leaderboard_builds_trends(
     )
 
     assert len(rows) == 2
-    assert rows[0].trend == 2
+    assert rows[0].trend == 1
     assert rows[0].hourly_counts == [1] * 24
     assert rows[1].trend == -1
 
@@ -404,28 +425,35 @@ async def test_get_global_period_overview_reads_previous_total(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = WaterRepository()
-
-    from src.plugins.water.database import repo as repo_module
-
-    class FakeSummaryOps:
-        call_count = 0
-
-        def __init__(self, session: object) -> None:
-            _ = session
-
-        async def get_global_period_overview(
-            self,
-            start_date: int,
-            end_date: int,
-        ) -> tuple:
-            _ = (start_date, end_date)
-            FakeSummaryOps.call_count += 1
-            if FakeSummaryOps.call_count == 1:
-                return (120, 18, *([2] * 24))
-            return (90, 16, *([1] * 24))
-
-    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
-    monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
+    get_window_mock = AsyncMock(
+        side_effect=[
+            [
+                WaterSummaryRecord(
+                    group_id="20001",
+                    user_id="10001",
+                    record_date=20260510,
+                    msg_count=120,
+                    active_hours=18,
+                    hourly_counts=[2] * 24,
+                    created_at=1,
+                    updated_at=2,
+                )
+            ],
+            [
+                WaterSummaryRecord(
+                    group_id="20002",
+                    user_id="10002",
+                    record_date=20260410,
+                    msg_count=90,
+                    active_hours=16,
+                    hourly_counts=[1] * 24,
+                    created_at=1,
+                    updated_at=2,
+                )
+            ],
+        ]
+    )
+    monkeypatch.setattr(repo, "get_summaries_in_window", get_window_mock)
 
     overview = await repo.get_global_period_overview(
         20260501,
@@ -435,7 +463,7 @@ async def test_get_global_period_overview_reads_previous_total(
     )
 
     assert overview.total_msg_count == 120
-    assert overview.active_user_count == 18
+    assert overview.active_user_count == 1
     assert overview.previous_total_msg_count == 90
     assert overview.delta_total_msg_count == 30
     assert overview.hourly_counts == [2] * 24
@@ -510,7 +538,17 @@ async def test_get_user_recent_summaries_uses_matrix_lookup(
 
     from src.plugins.water.database import repo as repo_module
 
-    summary_mock = AsyncMock(return_value=["ok"])
+    summary_row = WaterSummaryRecord(
+        group_id="20001",
+        user_id="10001",
+        record_date=20260301,
+        msg_count=6,
+        active_hours=3,
+        hourly_counts=[1] * 24,
+        created_at=1,
+        updated_at=2,
+    )
+    summary_mock = AsyncMock(return_value=[summary_row])
 
     class FakeMapOps:
         def __init__(self, session: object) -> None:
@@ -530,12 +568,13 @@ async def test_get_user_recent_summaries_uses_matrix_lookup(
             group_ids: list[str],
             start_date: int,
             end_date: int,
-        ) -> list[str]:
+        ) -> list[WaterSummaryRecord]:
             return await summary_mock(user_id, group_ids, start_date, end_date)
 
     monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
     monkeypatch.setattr(repo_module, "WaterGroupMatrixMapOps", FakeMapOps)
     monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
+    monkeypatch.setattr(repo, "_hot_summary_start_date", lambda today_ts=None: 20260301)
 
     result = await repo.get_user_recent_summaries(
         user_id="10001",
@@ -544,13 +583,166 @@ async def test_get_user_recent_summaries_uses_matrix_lookup(
         end_date=20260303,
     )
 
-    assert result == ["ok"]
+    assert result == [summary_row]
     summary_mock.assert_awaited_once_with(
         "10001",
         ["20001", "20002"],
         20260301,
         20260303,
     )
+
+
+@pytest.mark.asyncio
+async def test_get_user_recent_summaries_merges_hot_and_archived(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    archived_rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260101,
+            msg_count=3,
+            active_hours=2,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        )
+    ]
+    hot_rows = [
+        WaterSummaryRecord(
+            group_id="20002",
+            user_id="10001",
+            record_date=20260310,
+            msg_count=5,
+            active_hours=4,
+            hourly_counts=[2] * 24,
+            created_at=3,
+            updated_at=4,
+        )
+    ]
+
+    class FakeMapOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_groups_by_matrix(self, matrix_id: str) -> list[str]:
+            assert matrix_id == "mtx_1234"
+            return ["20001", "20002"]
+
+    class FakeSummaryOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_user_recent_summaries(
+            self,
+            user_id: str,
+            group_ids: list[str],
+            start_date: int,
+            end_date: int,
+        ) -> list[WaterSummaryRecord]:
+            assert user_id == "10001"
+            assert group_ids == ["20001", "20002"]
+            assert start_date == 20260301
+            assert end_date == 20260331
+            return hot_rows
+
+    archived_mock = AsyncMock(return_value=archived_rows)
+    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
+    monkeypatch.setattr(repo_module, "WaterGroupMatrixMapOps", FakeMapOps)
+    monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
+    monkeypatch.setattr(repo, "_hot_summary_start_date", lambda today_ts=None: 20260301)
+    monkeypatch.setattr(repo, "_fetch_archived_summaries_in_window", archived_mock)
+
+    result = await repo.get_user_recent_summaries(
+        user_id="10001",
+        matrix_id="mtx_1234",
+        start_date=20260101,
+        end_date=20260331,
+    )
+
+    archived_mock.assert_awaited_once_with(
+        start_date=20260101,
+        end_date=20260228,
+        group_ids=["20001", "20002"],
+        user_id="10001",
+    )
+    assert [item.record_date for item in result] == [20260101, 20260310]
+
+
+@pytest.mark.asyncio
+async def test_get_summaries_in_window_merges_hot_and_archived(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    hot_rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260305,
+            msg_count=7,
+            active_hours=3,
+            hourly_counts=[3] * 24,
+            created_at=1,
+            updated_at=2,
+        )
+    ]
+    archived_rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10002",
+            record_date=20260220,
+            msg_count=4,
+            active_hours=2,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        )
+    ]
+
+    class FakeSummaryOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_summaries_in_window(
+            self,
+            start_date: int,
+            end_date: int,
+            *,
+            group_ids: list[str] | None = None,
+            user_id: str | None = None,
+        ) -> list[WaterSummaryRecord]:
+            assert start_date == 20260301
+            assert end_date == 20260331
+            assert group_ids == ["20001"]
+            assert user_id is None
+            return hot_rows
+
+    archived_mock = AsyncMock(return_value=archived_rows)
+    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
+    monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
+    monkeypatch.setattr(repo, "_hot_summary_start_date", lambda today_ts=None: 20260301)
+    monkeypatch.setattr(repo, "_fetch_archived_summaries_in_window", archived_mock)
+
+    result = await repo.get_summaries_in_window(
+        20260201,
+        20260331,
+        group_ids=["20001"],
+    )
+
+    archived_mock.assert_awaited_once_with(
+        start_date=20260201,
+        end_date=20260228,
+        group_ids=["20001"],
+        user_id=None,
+    )
+    assert [item.record_date for item in result] == [20260220, 20260305]
 
 
 @pytest.mark.asyncio
@@ -691,6 +883,63 @@ async def test_archive_message_shards_delegates_to_counter_store(
     await repo.archive_message_shards()
 
     archive_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_archive_summary_shards_delegates_to_counter_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    archive_mock = AsyncMock()
+    monkeypatch.setattr(repo_module.water_summary, "run_archiver_task", archive_mock)
+
+    await repo.archive_summary_shards()
+
+    archive_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_prune_hot_summaries_deletes_before_hot_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    deleted_filters: list[Any] = []
+
+    class FakeSession:
+        async def execute(self, stmt: Any) -> Any:
+            deleted_filters.append(stmt)
+            return SimpleNamespace(rowcount=7)
+
+    class _FakeSessionCtx:
+        async def __aenter__(self) -> FakeSession:
+            return FakeSession()
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: TracebackType | None,
+        ) -> bool:
+            _ = (exc_type, exc, tb)
+            return False
+
+    monkeypatch.setattr(
+        repo_module.water_core_db,
+        "session",
+        lambda **kwargs: _FakeSessionCtx(),
+    )
+    monkeypatch.setattr(repo, "_hot_summary_start_date", lambda today_ts=None: 20260301)
+
+    pruned = await repo.prune_hot_summaries()
+
+    assert pruned == 7
+    assert len(deleted_filters) == 1
 
 
 @pytest.mark.asyncio

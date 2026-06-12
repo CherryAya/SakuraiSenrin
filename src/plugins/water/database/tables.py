@@ -1,9 +1,11 @@
-"""Water 数据表定义 (v2.1)."""
+"""Water 数据表定义 (v2.2)."""
 
 from sqlalchemy import JSON, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.lib.db.orm import TimeMixin
+
+from .hourly_counts import HourlyCountsType
 
 
 class WaterMessageBase(DeclarativeBase):
@@ -12,6 +14,10 @@ class WaterMessageBase(DeclarativeBase):
 
 class WaterCoreBase(DeclarativeBase):
     """水王核心资产主库表基类。"""
+
+
+class WaterSummaryBase(DeclarativeBase):
+    """水王日汇总分片表基类。"""
 
 
 class WaterHourlyCounter(WaterMessageBase):
@@ -43,7 +49,21 @@ class WaterHourlyCounter(WaterMessageBase):
     msg_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
-class WaterDailySummary(WaterCoreBase, TimeMixin):
+class WaterDailySummaryMixin(TimeMixin):
+    group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    record_date: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    msg_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    hourly_counts: Mapped[list[int]] = mapped_column(
+        HourlyCountsType(),
+        nullable=False,
+        default=list,
+    )
+
+
+class WaterDailySummary(WaterCoreBase, WaterDailySummaryMixin):
     __tablename__ = "water_daily_summary"
     __table_args__ = (
         Index(
@@ -58,13 +78,21 @@ class WaterDailySummary(WaterCoreBase, TimeMixin):
         ),
     )
 
-    group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    record_date: Mapped[int] = mapped_column(Integer, primary_key=True)
 
-    msg_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    active_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    hourly_counts: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+class WaterArchivedDailySummary(WaterSummaryBase, WaterDailySummaryMixin):
+    __tablename__ = "water_daily_summary"
+    __table_args__ = (
+        Index(
+            "idx_water_summary_group_date",
+            "group_id",
+            "record_date",
+        ),
+        Index(
+            "idx_water_summary_user_date",
+            "user_id",
+            "record_date",
+        ),
+    )
 
 
 class WaterGroupMatrixMap(WaterCoreBase, TimeMixin):

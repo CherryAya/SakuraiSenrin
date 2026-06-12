@@ -8,7 +8,10 @@ Description: db 实例
 
 from src.lib.db.connectors import CounterStore, StateStore
 
-from .patches import build_water_patch_registry
+from .patches import (
+    build_water_message_patch_registry,
+    build_water_summary_patch_registry,
+)
 
 water_message = CounterStore(
     namespace="water_db",
@@ -16,7 +19,15 @@ water_message = CounterStore(
     fmt="%Y_%m",
     active_window_months=2,
 )
-water_message.patch_registry = build_water_patch_registry()
+water_message.patch_registry = build_water_message_patch_registry()
+
+water_summary = CounterStore(
+    namespace="water_db",
+    prefix="summary",
+    fmt="%Y_%m",
+    active_window_months=4,
+)
+water_summary.patch_registry = build_water_summary_patch_registry()
 
 water_core_db = StateStore(
     namespace="water_db",

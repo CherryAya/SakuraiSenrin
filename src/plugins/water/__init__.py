@@ -194,6 +194,24 @@ async def _water_message_archive_job() -> None:
         logger.exception(f"[Water] cron archive failed: {e}")
 
 
+@scheduler.scheduled_job(
+    "cron",
+    hour=0,
+    minute=35,
+    id="water_summary_archive",
+    coalesce=True,
+    misfire_grace_time=300,
+    max_instances=1,
+)
+async def _water_summary_archive_job() -> None:
+    try:
+        await water_repo.archive_summary_shards()
+        pruned = await water_repo.prune_hot_summaries()
+        logger.success(f"[Water] cron summary archive done: pruned={pruned}")
+    except Exception as e:
+        logger.exception(f"[Water] cron summary archive failed: {e}")
+
+
 @water_recorder.handle()
 async def _(bot: Bot, event: GroupMessageEvent) -> None:
     await handle_water_record(bot, event)

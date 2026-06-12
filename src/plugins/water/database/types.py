@@ -6,7 +6,20 @@ LastEditTime: 2026-03-03 17:17:50
 Description: types
 """
 
+from dataclasses import dataclass
 from typing import TypedDict
+
+
+@dataclass(frozen=True, slots=True)
+class WaterSummaryRecord:
+    group_id: str
+    user_id: str
+    record_date: int
+    msg_count: int
+    active_hours: int
+    hourly_counts: list[int]
+    created_at: int
+    updated_at: int
 
 
 class WaterMessagePayload(TypedDict):
