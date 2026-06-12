@@ -224,7 +224,7 @@ README 仍是首要文档内容载体，但它已经从“最终协议”降级�
 2. 需要留痕的权限、封禁、状态变更必须落审计日志（`log_db`）。
 3. 名称/名片等用户可感知文本变化，按现有能力写入 `snapshot_db`。
 4. 新插件若引入独立数据库：
-   - 明确 `StaticDB` 与 `ShardedDB` 选择理由。
+   - 明确 `StateStore`、`EventStore`、`CounterStore` 等 sharedDB v2 存储模型的选择理由。
    - 提供初始化入口与 `init_all_tables()`。
    - 提供最小可测 repo 接口，避免业务层直接依赖 ops。
 

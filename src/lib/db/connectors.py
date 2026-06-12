@@ -561,32 +561,25 @@ class SegmentStore(BaseDB):
 
 
 @dataclass
-class StaticDB(StateStore):
-    """兼容别名：v2 下由 StateStore 承载。"""
-
-
-@dataclass
-class ShardedDB(SegmentStore):
-    """兼容别名：v2 下由 SegmentStore 承载。"""
-
-
-@dataclass
 class CounterStore(SegmentStore):
-    """计数型存储，当前复用 SegmentStore 实现。"""
+    """计数型分段存储。"""
 
 
 @dataclass
 class EventStore(SegmentStore):
-    """事件型存储，当前复用 SegmentStore 实现。"""
+    """事件型分段存储。"""
 
 
 __all__ = [
     "ArchiveCodec",
+    "BaseDB",
     "ColdPolicy",
     "CounterStore",
     "EventStore",
+    "SegmentConfig",
+    "SegmentManifest",
+    "SegmentManifestEntry",
     "SegmentState",
-    "ShardedDB",
+    "SegmentStore",
     "StateStore",
-    "StaticDB",
 ]
