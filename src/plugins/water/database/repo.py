@@ -5,16 +5,19 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from math import floor, sqrt
+import os
 from secrets import token_hex
 import sqlite3
 import unicodedata
 
 import arrow
+from sqlalchemy import delete
 from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.consts import WritePolicy
 from src.lib.db.connectors import ColdPolicy
+from src.lib.db.manager import db_manager
 from src.lib.utils.common import get_current_time, split_list
 
 from .instances import water_core_db, water_message
@@ -33,8 +36,15 @@ from .tables import (
     WaterActivitySeason,
     WaterCoreBase,
     WaterDailySummary,
+    WaterGlobalLevel,
+    WaterGroupMatrixMap,
+    WaterMatrixLevel,
+    WaterMatrixMergeState,
+    WaterMatrixTotalLevel,
     WaterMessageBase,
     WaterPenaltyLog,
+    WaterSettlementJob,
+    WaterUserAchievement,
 )
 from .types import (
     WaterAchievementPayload,
@@ -482,6 +492,65 @@ class WaterRepository:
 
         async with water_core_db.session(commit=True) as session:
             await WaterSummaryOps(session).bulk_upsert_summary(summaries)
+
+    async def import_message_batch(
+        self,
+        messages: list[WaterMessagePayload],
+    ) -> int:
+        if not messages:
+            return 0
+
+        routed: dict[str, list[WaterMessagePayload]] = defaultdict(list)
+        for item in messages:
+            route_ctx = (
+                arrow.get(int(item["created_at"])).to("Asia/Shanghai").floor("month")
+            )
+            routed[route_ctx.format("YYYY_MM")].append(item)
+
+        inserted = 0
+        for route_key, chunk in routed.items():
+            route_ctx = arrow.get(route_key, "YYYY_MM").datetime
+            async with water_message.write_session(time_ctx=route_ctx) as session:
+                inserted += await WaterMessageOps(session).bulk_insert_water_message(
+                    chunk
+                )
+        return inserted
+
+    async def reset_runtime_data(self, *, preserve_seasons: bool = True) -> None:
+        async with water_core_db.session(commit=True) as session:
+            tables: list[type[WaterCoreBase]] = [
+                WaterDailySummary,
+                WaterPenaltyLog,
+                WaterSettlementJob,
+                WaterMatrixMergeState,
+            ]
+            if not preserve_seasons:
+                tables.append(WaterActivitySeason)
+
+            for model in tables:
+                await session.execute(delete(model))
+
+            for model in (
+                WaterGroupMatrixMap,
+                WaterMatrixLevel,
+                WaterGlobalLevel,
+                WaterMatrixTotalLevel,
+                WaterUserAchievement,
+            ):
+                await session.execute(delete(model))
+
+        for file_path in water_message.base_dir.glob(f"{water_message.prefix}_*"):
+            if file_path.suffix not in {".db", ".7z"}:
+                continue
+            full_path = str(file_path)
+            await db_manager.dispose(full_path)
+            if await asyncio.to_thread(os.path.exists, full_path):
+                await asyncio.to_thread(os.remove, full_path)
+
+        self._group_matrix_cache.clear()
+        self._group_matrix_locks.clear()
+        self._merge_state_locks.clear()
+        water_message._initialized_shards.clear()
 
     async def get_today_leaderboard(
         self, group_id: str, limit: int = 20
