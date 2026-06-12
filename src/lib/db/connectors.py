@@ -310,6 +310,12 @@ class SegmentStore(BaseDB):
         with source.open("rb") as src, destination.open("wb") as dst:
             cctx.copy_stream(src, dst)
 
+    def _cleanup_sqlite_sidecars(self, db_path: Path) -> None:
+        for suffix in ("-wal", "-shm"):
+            sidecar = Path(f"{db_path}{suffix}")
+            if sidecar.exists():
+                sidecar.unlink()
+
     def _decompress_file(self, source: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         dctx = zstd.ZstdDecompressor()
@@ -357,6 +363,7 @@ class SegmentStore(BaseDB):
             if await asyncio.to_thread(db_path.exists):
                 await db_manager.dispose(str(db_path))
                 await asyncio.to_thread(os.remove, db_path)
+                await asyncio.to_thread(self._cleanup_sqlite_sidecars, db_path)
             entry.state = SegmentState.COLD
             entry.updated_at = now_ts
             current_bytes -= entry.size_bytes
@@ -515,6 +522,7 @@ class SegmentStore(BaseDB):
                 await asyncio.to_thread(self._compress_file, safe_db, safe_archive)
                 await db_manager.dispose(str(safe_db))
                 await asyncio.to_thread(os.remove, safe_db)
+                await asyncio.to_thread(self._cleanup_sqlite_sidecars, safe_db)
                 await self._touch_segment(file_key, state=SegmentState.COLD)
                 logger.success(f"归档完成，已释放原始磁盘占用: {safe_db.name}")
         await self._ensure_budget()

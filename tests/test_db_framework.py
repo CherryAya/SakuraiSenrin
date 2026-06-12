@@ -214,6 +214,10 @@ async def test_event_store_archives_to_zstd_and_hydrates_with_manifest(
     april = arrow.get("2026-04-08").datetime
     async with db.write_session(time_ctx=april) as session:
         session.add(_ShardModel(value="cold"))
+    online_wal = tmp_path / "framework_archive" / "events_2026_04.db-wal"
+    online_shm = tmp_path / "framework_archive" / "events_2026_04.db-shm"
+    assert online_wal.exists()
+    assert online_shm.exists()
 
     monkeypatch.setattr(
         connectors_module,
@@ -227,6 +231,8 @@ async def test_event_store_archives_to_zstd_and_hydrates_with_manifest(
     manifest_path = tmp_path / "framework_archive" / "events_manifest.json"
     assert archived_path.is_file()
     assert not online_path.exists()
+    assert not online_wal.exists()
+    assert not online_shm.exists()
     assert manifest_path.is_file()
     assert '"state": "cold"' in manifest_path.read_text(encoding="utf-8")
 
@@ -246,4 +252,6 @@ async def test_event_store_archives_to_zstd_and_hydrates_with_manifest(
     )
     await db._ensure_budget()
     assert not online_path.exists()
+    assert not online_wal.exists()
+    assert not online_shm.exists()
     assert '"state": "cold"' in manifest_path.read_text(encoding="utf-8")
