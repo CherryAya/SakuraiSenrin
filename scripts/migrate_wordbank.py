@@ -214,6 +214,7 @@ async def main() -> None:
                 "imported_entries": report.imported_entries,
                 "skipped_rows": report.skipped_rows,
                 "imported_log_rows": report.imported_log_rows,
+                "imported_trigger_log_rows": report.imported_trigger_log_rows,
                 "imported_approval_ref_rows": report.imported_approval_ref_rows,
                 "image_resolution_counts": dict(report.image_resolution_counts),
                 "status_counts": dict(report.status_counts),

@@ -169,6 +169,11 @@ class WordbankMigrationReport:
     skipped_log_rows: int = 0
     log_failures: list[str] = field(default_factory=list)
     log_failure_details: list[dict[str, object]] = field(default_factory=list)
+    total_trigger_log_rows: int = 0
+    imported_trigger_log_rows: int = 0
+    skipped_trigger_log_rows: int = 0
+    trigger_log_failures: list[str] = field(default_factory=list)
+    trigger_log_failure_details: list[dict[str, object]] = field(default_factory=list)
     total_approval_ref_rows: int = 0
     imported_approval_ref_rows: int = 0
     skipped_approval_ref_rows: int = 0
@@ -261,6 +266,28 @@ class WordbankMigrationReport:
                 }
             )
 
+    def add_trigger_log_failure(
+        self,
+        log_id: int | None,
+        reason: str,
+        *,
+        row: Mapping[str, object] | None = None,
+    ) -> None:
+        self.skipped_trigger_log_rows += 1
+        log_label = str(log_id) if log_id is not None else "unknown"
+        self.trigger_log_failures.append(f"{log_label}: {reason}")
+        if row is not None:
+            self.trigger_log_failure_details.append(
+                {
+                    "log_id": log_id,
+                    "trigger_id": _safe_report_int(row.get("trigger_id")),
+                    "reason": reason,
+                    "message_id": str(row.get("message_id") or ""),
+                    "user_id": str(row.get("user_id") or ""),
+                    "call_time": _safe_report_timestamp(row.get("call_time")),
+                }
+            )
+
     def to_dict(self) -> dict[str, object]:
         return {
             "total_rows": self.total_rows,
@@ -284,6 +311,11 @@ class WordbankMigrationReport:
             "skipped_log_rows": self.skipped_log_rows,
             "log_failures": list(self.log_failures),
             "log_failure_details": list(self.log_failure_details),
+            "total_trigger_log_rows": self.total_trigger_log_rows,
+            "imported_trigger_log_rows": self.imported_trigger_log_rows,
+            "skipped_trigger_log_rows": self.skipped_trigger_log_rows,
+            "trigger_log_failures": list(self.trigger_log_failures),
+            "trigger_log_failure_details": list(self.trigger_log_failure_details),
             "total_approval_ref_rows": self.total_approval_ref_rows,
             "imported_approval_ref_rows": self.imported_approval_ref_rows,
             "skipped_approval_ref_rows": self.skipped_approval_ref_rows,
@@ -469,6 +501,25 @@ async def fetch_legacy_response_log_rows(
         JOIN trigger AS t
             ON t.trigger_id = r.trigger_id
         ORDER BY rl.log_id ASC
+        """,
+    )
+
+
+async def fetch_legacy_trigger_log_rows(
+    config: LegacyPgConfig,
+) -> list[dict[str, object]]:
+    return await asyncio.to_thread(
+        _fetch_legacy_rows_sync,
+        config,
+        sql="""
+        SELECT
+            log_id,
+            message_id,
+            trigger_id,
+            user_id,
+            call_time
+        FROM trigger_log
+        ORDER BY log_id ASC
         """,
     )
 
@@ -750,6 +801,7 @@ async def migrate_legacy_rows(
     media_service: WordbankMediaService,
     image_catalog: LegacyImageCatalog,
     response_log_rows: Sequence[Mapping[str, object]] = (),
+    trigger_log_rows: Sequence[Mapping[str, object]] = (),
     addition_log_rows: Sequence[Mapping[str, object]] = (),
     message_approval_rows: Sequence[Mapping[str, object]] = (),
     reset_target: bool = True,
@@ -764,6 +816,7 @@ async def migrate_legacy_rows(
     report = WordbankMigrationReport(total_rows=len(rows))
     migration_time = get_current_time()
     imported_log_targets: dict[int, LegacyImportedLogTarget] = {}
+    imported_trigger_targets: dict[int, LegacyImportedLogTarget] = {}
     _emit_progress(
         progress,
         phase="entries",
@@ -855,6 +908,12 @@ async def migrate_legacy_rows(
             report.imported_entry_ids[response_id] = imported_ids
             if primary_log_target is not None:
                 imported_log_targets[response_id] = primary_log_target
+                trigger_id = _optional_coerce_int(
+                    row.get("trigger_id"),
+                    field="trigger_id",
+                )
+                if trigger_id is not None:
+                    imported_trigger_targets.setdefault(trigger_id, primary_log_target)
         except Exception as exc:
             report.add_failure(response_id, str(exc), row=row)
         else:
@@ -873,10 +932,22 @@ async def migrate_legacy_rows(
         )
 
     if response_log_rows:
-        await migrate_legacy_response_logs(
+        imported_message_ids = await migrate_legacy_response_logs(
             response_log_rows,
             repository=repository,
             imported_targets=imported_log_targets,
+            report=report,
+            progress=progress,
+            progress_every=progress_every,
+        )
+    else:
+        imported_message_ids = set()
+    if trigger_log_rows:
+        await migrate_legacy_trigger_logs(
+            trigger_log_rows,
+            repository=repository,
+            imported_targets=imported_trigger_targets,
+            imported_message_ids=imported_message_ids,
             report=report,
             progress=progress,
             progress_every=progress_every,
@@ -918,7 +989,8 @@ async def migrate_legacy_response_logs(
     report: WordbankMigrationReport | None = None,
     progress: LegacyMigrationProgressCallback | None = None,
     progress_every: int = 100,
-) -> None:
+) -> set[str]:
+    imported_message_ids: set[str] = set()
     if report is not None:
         report.total_log_rows += len(rows)
     _emit_progress(
@@ -955,6 +1027,9 @@ async def migrate_legacy_response_logs(
                 },
                 policy=WritePolicy.IMMEDIATE,
             )
+            message_id = str(row.get("message_id") or "").strip()
+            if message_id:
+                imported_message_ids.add(message_id)
             if report is not None:
                 report.imported_log_rows += 1
         except Exception as exc:
@@ -969,6 +1044,80 @@ async def migrate_legacy_response_logs(
             detail={
                 "imported_log_rows": report.imported_log_rows if report else 0,
                 "skipped_log_rows": report.skipped_log_rows if report else 0,
+                "last_log_id": log_id or 0,
+            },
+        )
+    await repository.drain_logs()
+    return imported_message_ids
+
+
+async def migrate_legacy_trigger_logs(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    repository: WordbankRepository,
+    imported_targets: Mapping[int, LegacyImportedLogTarget],
+    imported_message_ids: set[str],
+    report: WordbankMigrationReport | None = None,
+    progress: LegacyMigrationProgressCallback | None = None,
+    progress_every: int = 100,
+) -> None:
+    if report is not None:
+        report.total_trigger_log_rows += len(rows)
+    _emit_progress(
+        progress,
+        phase="trigger_logs",
+        current=0,
+        total=len(rows),
+        detail={},
+    )
+    for index, row in enumerate(rows, start=1):
+        log_id = _optional_coerce_int(row.get("log_id"), field="log_id")
+        message_id = str(row.get("message_id") or "").strip()
+        try:
+            if message_id and message_id in imported_message_ids:
+                continue
+            trigger_id = _coerce_int(row["trigger_id"], field="trigger_id")
+            imported_target = imported_targets.get(trigger_id)
+            if imported_target is None:
+                raise MigrationError(
+                    f"missing imported trigger mapping for trigger_id={trigger_id}"
+                )
+            created_at = normalize_legacy_timestamp(
+                row.get("call_time"),
+                fallback=get_current_time(),
+            )
+            await repository.save_log(
+                {
+                    "trigger_group_id": imported_target.trigger_group_id,
+                    "trigger_variant_id": imported_target.trigger_variant_id,
+                    "response_item_id": imported_target.response_item_id,
+                    "group_id": "",
+                    "user_id": str(row.get("user_id") or ""),
+                    "message_type": "unknown",
+                    "created_at": created_at,
+                },
+                policy=WritePolicy.IMMEDIATE,
+            )
+            if message_id:
+                imported_message_ids.add(message_id)
+            if report is not None:
+                report.imported_trigger_log_rows += 1
+        except Exception as exc:
+            if report is not None:
+                report.add_trigger_log_failure(log_id, str(exc), row=row)
+        _emit_progress_if_needed(
+            progress,
+            phase="trigger_logs",
+            current=index,
+            total=len(rows),
+            every=progress_every,
+            detail={
+                "imported_trigger_log_rows": (
+                    report.imported_trigger_log_rows if report else 0
+                ),
+                "skipped_trigger_log_rows": (
+                    report.skipped_trigger_log_rows if report else 0
+                ),
                 "last_log_id": log_id or 0,
             },
         )
@@ -1116,10 +1265,12 @@ async def migrate_legacy_wordbank(
     resolved_pg_config = pg_config or load_legacy_pg_config(old_repo_root)
     rows = await fetch_legacy_response_rows(resolved_pg_config)
     response_log_rows: Sequence[Mapping[str, object]] = ()
+    trigger_log_rows: Sequence[Mapping[str, object]] = ()
     addition_log_rows: Sequence[Mapping[str, object]] = ()
     message_approval_rows: Sequence[Mapping[str, object]] = ()
     if import_logs:
         response_log_rows = await fetch_legacy_response_log_rows(resolved_pg_config)
+        trigger_log_rows = await fetch_legacy_trigger_log_rows(resolved_pg_config)
         addition_log_rows = await fetch_legacy_addition_log_rows(resolved_pg_config)
         message_approval_rows = await fetch_legacy_message_approval_rows(
             resolved_pg_config
@@ -1139,6 +1290,7 @@ async def migrate_legacy_wordbank(
             resolved_mapping_path,
         ),
         response_log_rows=response_log_rows,
+        trigger_log_rows=trigger_log_rows,
         addition_log_rows=addition_log_rows,
         message_approval_rows=message_approval_rows,
         reset_target=reset_target,
@@ -1738,11 +1890,13 @@ __all__ = [
     "fetch_legacy_message_approval_rows",
     "fetch_legacy_response_log_rows",
     "fetch_legacy_response_rows",
+    "fetch_legacy_trigger_log_rows",
     "legacy_message_to_shape",
     "load_legacy_pg_config",
     "migrate_legacy_approval_message_refs",
     "migrate_legacy_response_logs",
     "migrate_legacy_rows",
+    "migrate_legacy_trigger_logs",
     "migrate_legacy_wordbank",
     "normalize_legacy_rules",
     "normalize_legacy_scope",
