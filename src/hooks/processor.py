@@ -109,6 +109,15 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
     if is_user_event:
         user_id = str(_user_id)
 
+    if getattr(config, "DEBUG", False):
+        allowed_users = getattr(config, "DEV_TEST_USERS", set())
+        allowed_groups = getattr(config, "DEV_TEST_GROUPS", set())
+        if is_user_event and user_id in allowed_users:
+            return
+        if is_group_event and group_id in allowed_groups:
+            return
+        raise IgnoredException("DEBUG 模式仅响应 DEV_TEST_GROUPS / DEV_TEST_USERS")
+
     user = await user_repo.get_user(user_id) if is_user_event else None
     group = await group_repo.get_group(group_id) if is_group_event else None
 

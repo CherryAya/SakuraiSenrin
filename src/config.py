@@ -14,6 +14,10 @@ class GlobalConfig(BaseModel):
     SUPERUSERS: set[str]
     IGNORED_USERS: set[str]
     MAIN_GROUP_ID: str
+    DEBUG: bool = False
+    DEV_TEST_GROUPS: set[str] = set()
+    DEV_TEST_USERS: set[str] = set()
+    DEBUG_SQL_ECHO: bool = False
 
     HTTP_PROXY: str | None = None
 

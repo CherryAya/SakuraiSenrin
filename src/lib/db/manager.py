@@ -9,9 +9,9 @@ Description: db 管理器
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-import os
 from typing import Any
 
+import nonebot
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -43,6 +43,13 @@ class DatabaseManager:
         cursor.execute(f"PRAGMA mmap_size={256 * 1024 * 1024}")
         cursor.close()
 
+    @staticmethod
+    def _resolve_sql_echo() -> bool:
+        try:
+            return bool(getattr(nonebot.get_driver().config, "debug_sql_echo", False))
+        except ValueError:
+            return False
+
     async def _ensure_engine(self, url: str) -> None:
         if url in self._session_factories:
             return
@@ -51,7 +58,7 @@ class DatabaseManager:
             if url in self._session_factories:
                 return
 
-            echo = os.getenv("DB_ECHO", "0") == "1"
+            echo = self._resolve_sql_echo()
             engine = create_async_engine(url, echo=echo)
             event.listen(engine.sync_engine, "connect", self._init_sqlite_pragma)
 

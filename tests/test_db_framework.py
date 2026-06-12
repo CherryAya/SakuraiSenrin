@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import arrow
+import nonebot
 import pytest
 from sqlalchemy import Integer, String, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -275,3 +276,37 @@ async def test_event_store_archives_to_zstd_and_hydrates_with_manifest(
     assert not online_wal.exists()
     assert not online_shm.exists()
     assert '"state": "cold"' in manifest_path.read_text(encoding="utf-8")
+
+
+def test_database_manager_uses_debug_sql_echo_from_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db.manager import DatabaseManager
+
+    manager = DatabaseManager()
+    monkeypatch.setattr(
+        nonebot,
+        "get_driver",
+        lambda: type(
+            "_Driver",
+            (),
+            {"config": type("_Config", (), {"debug_sql_echo": True})()},
+        )(),
+    )
+
+    assert manager._resolve_sql_echo() is True
+
+
+def test_database_manager_sql_echo_falls_back_when_nonebot_uninitialized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db.manager import DatabaseManager
+
+    manager = DatabaseManager()
+
+    def _raise() -> object:
+        raise ValueError("NoneBot has not been initialized.")
+
+    monkeypatch.setattr(nonebot, "get_driver", _raise)
+
+    assert manager._resolve_sql_echo() is False
