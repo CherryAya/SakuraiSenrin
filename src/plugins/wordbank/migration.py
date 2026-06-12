@@ -44,6 +44,9 @@ _LEGACY_EVENT_NAMES = {
 _LEGACY_RULE_KEYS = {"group_id", "user_id", "role", "call_count", "$and", "$or"}
 _LEGACY_ROLES = {"owner", "admin", "member"}
 _LEGACY_ALL_TIME_WINDOW_SECONDS = 60 * 60 * 24 * 365 * 50
+_LEGACY_IMAGE_REPO_NAME = "SakuraiSenrinPic"
+_LEGACY_IMAGE_DIR_NAME = "recovered_files"
+_LEGACY_IMAGE_MAPPING_NAME = "file_mapping.json"
 
 
 class MigrationError(Exception):
@@ -68,6 +71,15 @@ class LegacyImageCatalog:
     saved_as_by_name: dict[str, str]
 
     def resolve(self, file_name: str, *, url: str = "") -> Path | None:
+        path, _ = self.resolve_with_source(file_name, url=url)
+        return path
+
+    def resolve_with_source(
+        self,
+        file_name: str,
+        *,
+        url: str = "",
+    ) -> tuple[Path | None, str]:
         seen_candidates: set[str] = set()
         pending_candidates = [
             file_name.strip(),
@@ -83,20 +95,23 @@ class LegacyImageCatalog:
                 continue
             seen_candidates.add(candidate)
 
+            mapped_name = self.saved_as_by_name.get(candidate.casefold())
+            if mapped_name:
+                for mapped_candidate in (mapped_name, Path(mapped_name).name):
+                    direct = self.files_by_name.get(mapped_candidate.casefold())
+                    if direct is not None:
+                        return direct, "mapping"
+
             normalized = candidate.casefold()
             direct = self.files_by_name.get(normalized)
             if direct is not None:
-                return direct
-
-            mapped_name = self.saved_as_by_name.get(normalized)
-            if mapped_name:
-                pending_candidates.extend([mapped_name, Path(mapped_name).name])
+                return direct, "direct_name"
 
             stem = Path(candidate).stem.strip()
             if stem:
                 by_stem = self.files_by_stem.get(stem.casefold())
                 if by_stem is not None:
-                    return by_stem
+                    return by_stem, "stem"
                 pending_candidates.append(stem)
 
             for md5_hex in _extract_md5_candidates(candidate):
@@ -105,12 +120,12 @@ class LegacyImageCatalog:
         for md5_hex in md5_candidates:
             path = self.files_by_md5.get(md5_hex.casefold())
             if path is not None:
-                return path
+                return path, "md5_index"
             for suffix in (".webp", ".gif", ".png", ".jpg", ".jpeg"):
                 candidate = self.image_root / f"{md5_hex.upper()}{suffix}"
                 if candidate.is_file():
-                    return candidate
-        return None
+                    return candidate, "md5_scan"
+        return None, "missing"
 
 
 @dataclass(slots=True, frozen=True)
@@ -139,6 +154,7 @@ class WordbankMigrationReport:
     status_counts: Counter[str] = field(default_factory=Counter)
     skipped_reasons: Counter[str] = field(default_factory=Counter)
     image_counts: Counter[str] = field(default_factory=Counter)
+    image_resolution_counts: Counter[str] = field(default_factory=Counter)
     imported_entry_ids: dict[int, list[int]] = field(default_factory=dict)
     imported_group_ids: dict[int, int] = field(default_factory=dict)
     response_count_by_group_id: dict[int, int] = field(default_factory=dict)
@@ -252,6 +268,7 @@ class WordbankMigrationReport:
             "status_counts": dict(self.status_counts),
             "skipped_reasons": dict(self.skipped_reasons),
             "image_counts": dict(self.image_counts),
+            "image_resolution_counts": dict(self.image_resolution_counts),
             "imported_entry_ids": self.imported_entry_ids,
             "imported_group_ids": self.imported_group_ids,
             "response_distribution": dict(self.response_distribution),
@@ -500,6 +517,8 @@ def build_legacy_image_catalog(
     image_root: Path,
     mapping_path: Path | None,
 ) -> LegacyImageCatalog:
+    if not image_root.is_dir():
+        raise FileNotFoundError(f"legacy image root not found: {image_root}")
     files_by_name: dict[str, Path] = {}
     files_by_stem: dict[str, Path] = {}
     files_by_md5: dict[str, Path] = {}
@@ -517,15 +536,13 @@ def build_legacy_image_catalog(
         raw_mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
         if isinstance(raw_mapping, dict):
             for key, value in raw_mapping.items():
-                if not isinstance(value, Mapping):
-                    continue
-                saved_as = value.get("saved_as")
-                if not isinstance(saved_as, str) or not saved_as.strip():
+                saved_as = _extract_legacy_saved_as(value)
+                if not saved_as:
                     continue
                 for candidate in {str(key), Path(str(key)).name}:
                     normalized = candidate.strip().casefold()
                     if normalized:
-                        saved_as_by_name[normalized] = saved_as.strip()
+                        saved_as_by_name[normalized] = saved_as
 
     return LegacyImageCatalog(
         image_root=image_root,
@@ -664,6 +681,24 @@ def _legacy_addition_message_type(add_source: Mapping[str, object]) -> str:
     return "group" if str(add_source.get("group_id") or "").strip() else "private"
 
 
+def _extract_legacy_saved_as(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Mapping):
+        saved_as = value.get("saved_as")
+        if isinstance(saved_as, str):
+            return saved_as.strip()
+    return ""
+
+
+def _default_legacy_image_root(old_repo_root: Path) -> Path:
+    return old_repo_root.parent / _LEGACY_IMAGE_REPO_NAME / _LEGACY_IMAGE_DIR_NAME
+
+
+def _default_legacy_image_mapping_path(old_repo_root: Path) -> Path:
+    return old_repo_root.parent / _LEGACY_IMAGE_REPO_NAME / _LEGACY_IMAGE_MAPPING_NAME
+
+
 async def legacy_message_to_shape(
     payload: object,
     *,
@@ -693,7 +728,10 @@ async def legacy_message_to_shape(
         if segment_type == "image":
             file_name = str(item.get("file", "") or "").strip()
             url = str(item.get("url", "") or "").strip()
-            image_path = image_catalog.resolve(file_name, url=url)
+            image_path, resolution_source = image_catalog.resolve_with_source(
+                file_name,
+                url=url,
+            )
             if image_path is None:
                 raise MigrationError(f"image file not found: {file_name or url}")
             data = await asyncio.to_thread(image_path.read_bytes)
@@ -702,6 +740,7 @@ async def legacy_message_to_shape(
             image = await media_service.ingest_image_bytes(data)
             if report is not None:
                 report.image_counts[image_path.suffix.lower()] += 1
+                report.image_resolution_counts[resolution_source] += 1
             atoms.append(
                 MessageAtom(kind="image", canonical_image_id=image.canonical_id)
             )
@@ -1009,7 +1048,7 @@ async def migrate_legacy_wordbank(
     *,
     repository: WordbankRepository,
     media_service: WordbankMediaService,
-    image_root: Path,
+    image_root: Path | None = None,
     mapping_path: Path | None = None,
     reset_target: bool = True,
     import_logs: bool = True,
@@ -1023,12 +1062,20 @@ async def migrate_legacy_wordbank(
         response_log_rows = await fetch_legacy_response_log_rows(pg_config)
         addition_log_rows = await fetch_legacy_addition_log_rows(pg_config)
         message_approval_rows = await fetch_legacy_message_approval_rows(pg_config)
-    image_catalog = build_legacy_image_catalog(image_root, mapping_path)
+    resolved_image_root = image_root or _default_legacy_image_root(old_repo_root)
+    resolved_mapping_path = (
+        mapping_path
+        if mapping_path is not None
+        else _default_legacy_image_mapping_path(old_repo_root)
+    )
     return await migrate_legacy_rows(
         rows,
         repository=repository,
         media_service=media_service,
-        image_catalog=image_catalog,
+        image_catalog=build_legacy_image_catalog(
+            resolved_image_root,
+            resolved_mapping_path,
+        ),
         response_log_rows=response_log_rows,
         addition_log_rows=addition_log_rows,
         message_approval_rows=message_approval_rows,

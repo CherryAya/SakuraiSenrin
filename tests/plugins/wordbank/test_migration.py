@@ -80,6 +80,52 @@ async def test_legacy_message_to_shape_uses_local_image_catalog(
 
 
 @pytest.mark.asyncio
+async def test_legacy_message_to_shape_prefers_file_mapping_saved_as(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path / "db")
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    mapped_path = image_root / "REALMD5000000000000000000000000001.gif"
+    mapped_path.write_bytes(_png_bytes((1, 2, 3)))
+    misleading_path = image_root / "legacy-name.jpg"
+    misleading_path.write_bytes(_png_bytes((0, 0, 255)))
+
+    mapping_path = tmp_path / "mapping.json"
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "img/legacy-name.jpg": {
+                    "saved_as": mapped_path.name,
+                    "md5": "REALMD5000000000000000000000000001",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    catalog = build_legacy_image_catalog(image_root, mapping_path)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+    media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+    report = WordbankMigrationReport()
+
+    shape = await legacy_message_to_shape(
+        [{"type": "image", "file": "img/legacy-name.jpg"}],
+        image_catalog=catalog,
+        media_service=media_service,
+        report=report,
+    )
+
+    assert [atom.kind for atom in shape.atoms] == ["image"]
+    assert shape.atoms[0].canonical_image_id == 1
+    assert report.image_resolution_counts["mapping"] == 1
+
+
+@pytest.mark.asyncio
 async def test_legacy_message_to_shape_resolves_trailing_md5_image_name(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -96,6 +142,7 @@ async def test_legacy_message_to_shape_resolves_trailing_md5_image_name(
     repository = WordbankRepository()
     await repository.init_all_tables()
     media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+    report = WordbankMigrationReport()
 
     shape = await legacy_message_to_shape(
         [
@@ -109,10 +156,12 @@ async def test_legacy_message_to_shape_resolves_trailing_md5_image_name(
         ],
         image_catalog=catalog,
         media_service=media_service,
+        report=report,
     )
 
     assert [atom.kind for atom in shape.atoms] == ["image"]
     assert shape.atoms[0].canonical_image_id == 1
+    assert report.image_resolution_counts["md5_index"] == 1
 
 
 @pytest.mark.asyncio
@@ -616,6 +665,81 @@ async def test_migrate_legacy_wordbank_wrapper_imports_response_logs(
     )
     assert approval_ref is not None
     assert approval_ref.source_message_id == "source-msg-21"
+
+
+@pytest.mark.asyncio
+async def test_migrate_legacy_wordbank_defaults_to_recovered_files_and_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path / "db")
+    repository = WordbankRepository()
+    media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+    old_repo_root = tmp_path / "sakuraisenrin-old"
+    old_repo_root.mkdir()
+    pic_root = tmp_path / "SakuraiSenrinPic"
+    recovered_root = pic_root / "recovered_files"
+    recovered_root.mkdir(parents=True)
+    mapping_path = pic_root / "file_mapping.json"
+    mapping_path.write_text("{}", encoding="utf-8")
+    expected_catalog = build_legacy_image_catalog(recovered_root, mapping_path)
+    config = migration_module.LegacyPgConfig(
+        host="127.0.0.1",
+        port=5432,
+        user="tester",
+        password="secret",
+    )
+    captured: dict[str, Path] = {}
+
+    async def fake_fetch_rows(
+        incoming_config: migration_module.LegacyPgConfig,
+    ) -> list[dict[str, object]]:
+        assert incoming_config == config
+        return []
+
+    def fake_load_legacy_pg_config(
+        path: Path,
+    ) -> migration_module.LegacyPgConfig:
+        assert path == old_repo_root
+        return config
+
+    def fake_build_legacy_image_catalog(
+        image_root: Path,
+        maybe_mapping_path: Path | None,
+    ) -> migration_module.LegacyImageCatalog:
+        captured["image_root"] = image_root
+        assert maybe_mapping_path is not None
+        captured["mapping_path"] = maybe_mapping_path
+        return expected_catalog
+
+    monkeypatch.setattr(
+        migration_module,
+        "load_legacy_pg_config",
+        fake_load_legacy_pg_config,
+    )
+    monkeypatch.setattr(
+        migration_module,
+        "fetch_legacy_response_rows",
+        fake_fetch_rows,
+    )
+    monkeypatch.setattr(
+        migration_module,
+        "build_legacy_image_catalog",
+        fake_build_legacy_image_catalog,
+    )
+
+    report = await migrate_legacy_wordbank(
+        old_repo_root,
+        repository=repository,
+        media_service=media_service,
+        import_logs=False,
+    )
+
+    assert report.imported_rows == 0
+    assert captured["image_root"] == recovered_root
+    assert captured["mapping_path"] == mapping_path
 
 
 @pytest.mark.asyncio
