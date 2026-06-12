@@ -19,7 +19,7 @@
 ### `ban` 封禁群组
 - 摘要: 把群标记为封禁状态。
 - 别名: 封禁, 拉黑
-- 指令: `#admin group ban <gid>`
+- 指令: `#admin.group ban <gid>`
 - Demo: admin-group-ban.png
 #### 说明
 `ban` 会把群状态改为 `BANNED`，后续运行时检查会阻止该群继续使用机器人。
@@ -28,7 +28,7 @@
 #### 完整流程
 传入一个或多个群号即可批量处理。
 ```demo
-USER: #admin group ban 114514
+USER: #admin.group ban 114514
 BOT: [114514|测试群] 已封禁
 ```
 #### 失败情况
@@ -37,7 +37,7 @@ BOT: [114514|测试群] 已封禁
 ### `unban` 解封群组
 - 摘要: 解除封禁并回到未授权状态。
 - 别名: 解封, 加白
-- 指令: `#admin group unban <gid>`
+- 指令: `#admin.group unban <gid>`
 - Demo: admin-group-unban.png
 #### 说明
 `unban` 会解除封禁，并把群状态改回 `UNAUTHORIZED`，后续仍需显式授权。
@@ -46,7 +46,7 @@ BOT: [114514|测试群] 已封禁
 #### 完整流程
 先解封，再根据需要执行授权。
 ```demo
-USER: #admin group unban 114514
+USER: #admin.group unban 114514
 BOT: [114514|测试群] 已解封，状态变更为未授权
 ```
 #### 失败情况
@@ -55,7 +55,7 @@ BOT: [114514|测试群] 已解封，状态变更为未授权
 ### `auth` 授权群组
 - 摘要: 允许机器人在群内工作。
 - 别名: 授权
-- 指令: `#admin group auth <gid>`
+- 指令: `#admin.group auth <gid>`
 - Demo: admin-group-auth.png
 #### 说明
 `auth` 会把群状态改为 `AUTHORIZED`，运行时检查链会允许该群继续使用机器人。
@@ -64,7 +64,7 @@ BOT: [114514|测试群] 已解封，状态变更为未授权
 #### 完整流程
 对新入库但未授权的群执行即可。
 ```demo
-USER: #admin group auth 114514
+USER: #admin.group auth 114514
 BOT: [114514|测试群] 授权成功
 ```
 #### 失败情况
@@ -73,7 +73,7 @@ BOT: [114514|测试群] 授权成功
 ### `unauth` 取消授权
 - 摘要: 把群改回未授权状态。
 - 别名: 取消授权
-- 指令: `#admin group unauth <gid>`
+- 指令: `#admin.group unauth <gid>`
 - Demo: admin-group-unauth.png
 #### 说明
 `unauth` 用于暂停机器人在某个群工作，但不把它加入封禁名单。
@@ -82,7 +82,7 @@ BOT: [114514|测试群] 授权成功
 #### 完整流程
 执行后群会回到未授权状态。
 ```demo
-USER: #admin group unauth 114514
+USER: #admin.group unauth 114514
 BOT: [114514|测试群] 已取消授权
 ```
 #### 失败情况
@@ -91,7 +91,7 @@ BOT: [114514|测试群] 已取消授权
 ### `status` 查询状态
 - 摘要: 查看当前群状态。
 - 别名: 状态
-- 指令: `#admin group status <gid>`
+- 指令: `#admin.group status <gid>`
 - Demo: admin-group-status.png
 #### 说明
 `status` 只读，不会修改数据库。
@@ -100,7 +100,7 @@ BOT: [114514|测试群] 已取消授权
 #### 完整流程
 输入群号即可查看状态。
 ```demo
-USER: #admin group status 114514
+USER: #admin.group status 114514
 BOT: [114514|测试群] 当前状态: 已授权
 ```
 #### 失败情况
@@ -109,7 +109,7 @@ BOT: [114514|测试群] 当前状态: 已授权
 ### `leave` 主动退群
 - 摘要: 更新状态后尝试让机器人退群。
 - 别名: 退群
-- 指令: `#admin group leave <gid>`
+- 指令: `#admin.group leave <gid>`
 - Demo: admin-group-leave.png
 #### 说明
 `leave` 会先把群状态写成 `LEFT`，再调用 OneBot API 请求机器人退出群聊。
@@ -118,7 +118,7 @@ BOT: [114514|测试群] 当前状态: 已授权
 #### 完整流程
 执行后会同步更新数据库状态。
 ```demo
-USER: #admin group leave 114514
+USER: #admin.group leave 114514
 BOT: [114514|测试群] 已退群
 ```
 #### 失败情况

@@ -19,7 +19,7 @@
 ### `list` 查看邀请列表
 - 摘要: 以图片形式展示当前待处理邀请。
 - 别名: show, ls, 列表
-- 指令: `#admin invite list`
+- 指令: `#admin.invite list`
 - Demo: admin-invite-list.png
 #### 说明
 `list` 会把当前待处理邀请渲染成列表图，适合在私聊里快速浏览。
@@ -28,7 +28,7 @@
 #### 完整流程
 不带额外参数即可查看。
 ```demo
-USER: #admin invite list
+USER: #admin.invite list
 BOT: [发送一张待处理邀请列表图片]
 ```
 #### 失败情况
@@ -37,7 +37,7 @@ BOT: [发送一张待处理邀请列表图片]
 ### `approve` 同意邀请
 - 摘要: 按群号或 flag 同意单个邀请。
 - 别名: 同意
-- 指令: `#admin invite approve -g <gid>` / `#admin invite approve -f <flag>`
+- 指令: `#admin.invite approve -g <gid>` / `#admin.invite approve -f <flag>`
 - Demo: admin-invite-approve.png
 #### 说明
 `approve` 会定位对应邀请并调用 OneBot 审批接口，同步更新记录状态。
@@ -46,7 +46,7 @@ BOT: [发送一张待处理邀请列表图片]
 #### 完整流程
 通常先用 `list` 看列表，再执行批准。
 ```demo
-USER: #admin invite approve -g 114514
+USER: #admin.invite approve -g 114514
 BOT: 已同意群聊邀请 17
 群号：114514
 ```
@@ -56,7 +56,7 @@ BOT: 已同意群聊邀请 17
 ### `reject` 拒绝邀请
 - 摘要: 按群号、flag 或全部拒绝邀请。
 - 别名: 拒绝
-- 指令: `#admin invite reject -g <gid>` / `#admin invite reject -f <flag>` / `#admin invite reject --all`
+- 指令: `#admin.invite reject -g <gid>` / `#admin.invite reject -f <flag>` / `#admin.invite reject --all`
 - Demo: admin-invite-reject.png
 #### 说明
 `reject` 可用于单条拒绝，也可通过 `--all` 批量清理全部待处理邀请。
@@ -65,7 +65,7 @@ BOT: 已同意群聊邀请 17
 #### 完整流程
 可先查看列表再决定单条或批量处理。
 ```demo
-USER: #admin invite reject --all
+USER: #admin.invite reject --all
 BOT: ========== 批量拒绝 ==========
 统计: 共拒绝了 3 个待处理邀请。
 ```
@@ -75,7 +75,7 @@ BOT: ========== 批量拒绝 ==========
 ### `ignore` 忽略邀请
 - 摘要: 按群号、flag 或全部忽略邀请。
 - 别名: 忽略
-- 指令: `#admin invite ignore -g <gid>` / `#admin invite ignore -f <flag>` / `#admin invite ignore --all`
+- 指令: `#admin.invite ignore -g <gid>` / `#admin.invite ignore -f <flag>` / `#admin.invite ignore --all`
 - Demo: admin-invite-ignore.png
 #### 说明
 `ignore` 会把邀请标记为已忽略，不执行同意或拒绝动作。
@@ -84,7 +84,7 @@ BOT: ========== 批量拒绝 ==========
 #### 完整流程
 适合临时不处理但又不想一直堆积的邀请。
 ```demo
-USER: #admin invite ignore -g 114514
+USER: #admin.invite ignore -g 114514
 BOT: ======= 操作成功: 已忽略 =======
 群号：114514
 ```
@@ -113,7 +113,7 @@ BOT: 已同意群聊邀请 18
 ### `log` 查看日志
 - 摘要: 查询已处理邀请记录。
 - 别名: 日志
-- 指令: `#admin invite log [-g <gid>]`
+- 指令: `#admin.invite log [-g <gid>]`
 - Demo: admin-invite-log.png
 #### 说明
 `log` 用于查看最近处理过的邀请记录，可按群号过滤。
@@ -122,7 +122,7 @@ BOT: 已同意群聊邀请 18
 #### 完整流程
 按需传入群号即可。
 ```demo
-USER: #admin invite log -g 114514
+USER: #admin.invite log -g 114514
 BOT: 已处理邀请日志...
 ```
 #### 失败情况

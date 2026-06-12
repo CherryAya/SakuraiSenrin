@@ -18,7 +18,7 @@
 ### `show` 查看当前语言
 - 摘要: 查看全局默认语言和目标群的生效语言。
 - 别名: 查看
-- 指令: `#admin i18n show [gid]`
+- 指令: `#admin.i18n show [gid]`
 - Demo: admin-i18n-show.png
 #### 说明
 `show` 会展示全局默认语言、群级覆盖以及最终生效结果。
@@ -27,7 +27,7 @@
 #### 完整流程
 先查看当前状态，再决定是否修改。
 ```demo
-USER: #admin i18n show 114514
+USER: #admin.i18n show 114514
 BOT: ===== i18n 状态 =====
 全局默认: zh-CN
 生效语言: lzh
@@ -38,7 +38,7 @@ BOT: ===== i18n 状态 =====
 ### `default` 设置全局默认语言
 - 摘要: 修改项目默认语言。
 - 别名: 默认语言
-- 指令: `#admin i18n default <locale>`
+- 指令: `#admin.i18n default <locale>`
 - Demo: admin-i18n-default.png
 #### 说明
 该操作会更新全局默认语言，影响没有群级覆盖的场景。
@@ -47,7 +47,7 @@ BOT: ===== i18n 状态 =====
 #### 完整流程
 指定一个合法语言代码即可。
 ```demo
-USER: #admin i18n default x-meme
+USER: #admin.i18n default x-meme
 BOT: 已更新全局默认语言: x-meme
 ```
 #### 失败情况
@@ -56,7 +56,7 @@ BOT: 已更新全局默认语言: x-meme
 ### `set` 设置群级覆盖
 - 摘要: 为某个群单独指定语言。
 - 别名: 设定
-- 指令: `#admin i18n set <locale> [gid]`
+- 指令: `#admin.i18n set <locale> [gid]`
 - Demo: admin-i18n-set.png
 #### 说明
 群级覆盖优先级高于全局默认语言。
@@ -65,7 +65,7 @@ BOT: 已更新全局默认语言: x-meme
 #### 完整流程
 指定语言后再指定群号，或在群里直接执行。
 ```demo
-USER: #admin i18n set lzh 114514
+USER: #admin.i18n set lzh 114514
 BOT: 已更新群 114514 的语言覆盖: lzh
 ```
 #### 失败情况
@@ -74,7 +74,7 @@ BOT: 已更新群 114514 的语言覆盖: lzh
 ### `clear` 清除群级覆盖
 - 摘要: 移除指定群的语言覆盖。
 - 别名: 清除
-- 指令: `#admin i18n clear [gid]`
+- 指令: `#admin.i18n clear [gid]`
 - Demo: admin-i18n-clear.png
 #### 说明
 清除后该群会重新继承全局默认语言。
@@ -83,7 +83,7 @@ BOT: 已更新群 114514 的语言覆盖: lzh
 #### 完整流程
 在群内可不传群号，私聊里建议显式传入。
 ```demo
-USER: #admin i18n clear 114514
+USER: #admin.i18n clear 114514
 BOT: 已清除群 114514 的语言覆盖。
 ```
 #### 失败情况
@@ -92,7 +92,7 @@ BOT: 已清除群 114514 的语言覆盖。
 ### `list` 列出覆盖
 - 摘要: 查看所有群级语言覆盖记录。
 - 别名: 列表
-- 指令: `#admin i18n list`
+- 指令: `#admin.i18n list`
 - Demo: admin-i18n-list.png
 #### 说明
 用于全局排查目前有哪些群配置了特殊语言。
@@ -101,7 +101,7 @@ BOT: 已清除群 114514 的语言覆盖。
 #### 完整流程
 直接执行即可。
 ```demo
-USER: #admin i18n list
+USER: #admin.i18n list
 BOT: ===== 群级语言覆盖 =====
 - 114514: lzh
 ```
