@@ -6,16 +6,18 @@ import ast
 import asyncio
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from io import BytesIO
 import json
 from pathlib import Path
 import re
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from PIL import Image, UnidentifiedImageError
 
+from src.database.consts import WritePolicy
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.message_model import (
@@ -23,9 +25,13 @@ from src.plugins.wordbank.message_model import (
     MessageShape,
     normalize_text,
     shape_from_event,
+    shape_to_search_text,
 )
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import SCOPE_PRIORITY
+
+if TYPE_CHECKING:
+    from psycopg2.extensions import connection as PsycopgConnection
 
 _HEX_MD5_RE = re.compile(r"^[0-9a-fA-F]{32}$")
 _HEX_MD5_ANYWHERE_RE = re.compile(r"([0-9a-fA-F]{32})")
@@ -114,6 +120,14 @@ class LegacyEntryState:
     deleted_at: int
 
 
+@dataclass(slots=True, frozen=True)
+class LegacyImportedLogTarget:
+    trigger_group_id: int
+    trigger_variant_id: int
+    response_item_id: int
+    matched_text: str
+
+
 @dataclass(slots=True)
 class WordbankMigrationReport:
     total_rows: int = 0
@@ -130,6 +144,11 @@ class WordbankMigrationReport:
     response_count_by_group_id: dict[int, int] = field(default_factory=dict)
     failures: list[str] = field(default_factory=list)
     failure_details: list[dict[str, object]] = field(default_factory=list)
+    total_log_rows: int = 0
+    imported_log_rows: int = 0
+    skipped_log_rows: int = 0
+    log_failures: list[str] = field(default_factory=list)
+    log_failure_details: list[dict[str, object]] = field(default_factory=list)
 
     def add_failure(
         self,
@@ -167,6 +186,29 @@ class WordbankMigrationReport:
                 }
             )
 
+    def add_log_failure(
+        self,
+        log_id: int | None,
+        reason: str,
+        *,
+        row: Mapping[str, object] | None = None,
+    ) -> None:
+        self.skipped_log_rows += 1
+        log_label = str(log_id) if log_id is not None else "unknown"
+        self.log_failures.append(f"{log_label}: {reason}")
+        if row is not None:
+            self.log_failure_details.append(
+                {
+                    "log_id": log_id,
+                    "response_id": _safe_report_int(row.get("response_id")),
+                    "trigger_id": _safe_report_int(row.get("trigger_id")),
+                    "reason": reason,
+                    "message_id": str(row.get("message_id") or ""),
+                    "user_id": str(row.get("user_id") or ""),
+                    "call_time": _safe_report_timestamp(row.get("call_time")),
+                }
+            )
+
     def to_dict(self) -> dict[str, object]:
         return {
             "total_rows": self.total_rows,
@@ -184,6 +226,11 @@ class WordbankMigrationReport:
             "failures": list(self.failures),
             "failure_details": list(self.failure_details),
             "failure_categories": self.to_failure_categories_dict(),
+            "total_log_rows": self.total_log_rows,
+            "imported_log_rows": self.imported_log_rows,
+            "skipped_log_rows": self.skipped_log_rows,
+            "log_failures": list(self.log_failures),
+            "log_failure_details": list(self.log_failure_details),
         }
 
     @property
@@ -282,6 +329,89 @@ def load_legacy_pg_config(old_repo_root: Path) -> LegacyPgConfig:
         port=_coerce_int(values["pg_port"], field="pg_port"),
         user=str(values["pg_username"]),
         password=str(values["pg_password"]),
+    )
+
+
+def _connect_legacy_postgres(config: LegacyPgConfig) -> PsycopgConnection:
+    import psycopg2
+
+    return psycopg2.connect(
+        host=config.host,
+        port=config.port,
+        user=config.user,
+        password=config.password,
+        dbname=config.database,
+    )
+
+
+def _fetch_legacy_rows_sync(
+    config: LegacyPgConfig,
+    *,
+    sql: str,
+) -> list[dict[str, object]]:
+    from psycopg2.extras import RealDictCursor
+
+    with closing(_connect_legacy_postgres(config)) as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def fetch_legacy_response_rows(
+    config: LegacyPgConfig,
+) -> list[dict[str, object]]:
+    return await asyncio.to_thread(
+        _fetch_legacy_rows_sync,
+        config,
+        sql="""
+        SELECT
+            r.response_id,
+            r.trigger_id,
+            r.response_text,
+            r.response_rule_conditions,
+            r.weight,
+            r.priority,
+            r.created_by,
+            r.created_at,
+            r.availability AS response_available,
+            t.trigger_text,
+            t.trigger_config,
+            t.extra_info,
+            COALESCE(a.current_status::text, 'PENDING') AS approval_status
+        FROM response AS r
+        JOIN trigger AS t
+            ON t.trigger_id = r.trigger_id
+        LEFT JOIN approval AS a
+            ON a.response_id = r.response_id
+        ORDER BY r.response_id ASC
+        """,
+    )
+
+
+async def fetch_legacy_response_log_rows(
+    config: LegacyPgConfig,
+) -> list[dict[str, object]]:
+    return await asyncio.to_thread(
+        _fetch_legacy_rows_sync,
+        config,
+        sql="""
+        SELECT
+            rl.log_id,
+            rl.message_id,
+            rl.response_id,
+            rl.user_id,
+            rl.call_time,
+            r.trigger_id,
+            t.trigger_text,
+            t.extra_info
+        FROM response_log AS rl
+        JOIN response AS r
+            ON r.response_id = rl.response_id
+        JOIN trigger AS t
+            ON t.trigger_id = r.trigger_id
+        ORDER BY rl.log_id ASC
+        """,
     )
 
 
@@ -403,6 +533,43 @@ def normalize_legacy_timestamp(value: object, *, fallback: int) -> int:
     return fallback
 
 
+def _legacy_log_matched_text(
+    row: Mapping[str, object],
+    trigger_shape: MessageShape,
+) -> str:
+    explicit = str(row.get("matched_text") or "").strip()
+    if explicit:
+        return explicit
+    return normalize_text(shape_to_search_text(trigger_shape))
+
+
+def _normalize_legacy_log_matched_text(
+    row: Mapping[str, object],
+    *,
+    fallback: str,
+) -> str:
+    explicit = str(row.get("matched_text") or "").strip()
+    if explicit:
+        return normalize_text(explicit)
+    return normalize_text(fallback)
+
+
+def _normalize_legacy_log_message_type(
+    row: Mapping[str, object],
+    *,
+    group_id: str,
+) -> str:
+    explicit = str(row.get("message_type") or "").strip().lower()
+    if explicit in {"group", "private"}:
+        return explicit
+    if explicit:
+        return explicit[:16]
+    is_group = row.get("is_group")
+    if isinstance(is_group, bool):
+        return "group" if is_group else "private"
+    return "group" if group_id else "unknown"
+
+
 async def legacy_message_to_shape(
     payload: object,
     *,
@@ -466,15 +633,17 @@ async def migrate_legacy_rows(
     repository: WordbankRepository,
     media_service: WordbankMediaService,
     image_catalog: LegacyImageCatalog,
+    response_log_rows: Sequence[Mapping[str, object]] = (),
     reset_target: bool = True,
 ) -> WordbankMigrationReport:
     await repository.init_all_tables()
     if reset_target:
-        await repository.reset_all_data(include_images=True)
+        await repository.reset_all_data(include_images=True, include_logs=True)
     await media_service.rebuild_cache()
 
     report = WordbankMigrationReport(total_rows=len(rows))
     migration_time = get_current_time()
+    imported_log_targets: dict[int, LegacyImportedLogTarget] = {}
 
     for row in rows:
         response_id = _coerce_int(row["response_id"], field="response_id")
@@ -517,8 +686,10 @@ async def migrate_legacy_rows(
             probability = normalize_legacy_probability(row.get("trigger_config"))
             weight = _coerce_int(row.get("weight", 3), field="weight")
             created_by = str(row.get("created_by") or "")
+            matched_text = _legacy_log_matched_text(row, trigger_shape)
 
             imported_ids: list[int] = []
+            primary_log_target: LegacyImportedLogTarget | None = None
             for target in targets:
                 entry = await repository.import_message_entry(
                     trigger_shape=trigger_shape,
@@ -538,6 +709,16 @@ async def migrate_legacy_rows(
                     updated_at=updated_at,
                 )
                 imported_ids.append(entry.response_item_id)
+                if primary_log_target is None:
+                    trigger_variants = entry.trigger_group.trigger_variants
+                    if not trigger_variants:
+                        raise MigrationError("imported trigger group has no variants")
+                    primary_log_target = LegacyImportedLogTarget(
+                        trigger_group_id=entry.trigger_group_id,
+                        trigger_variant_id=trigger_variants[0].id,
+                        response_item_id=entry.response_item_id,
+                        matched_text=matched_text,
+                    )
                 report.imported_group_ids[response_id] = entry.trigger_group_id
                 report.response_count_by_group_id[entry.trigger_group_id] = (
                     report.response_count_by_group_id.get(entry.trigger_group_id, 0) + 1
@@ -548,14 +729,100 @@ async def migrate_legacy_rows(
                 report.imported_entries += 1
                 report.status_counts[entry.status] += 1
             report.imported_entry_ids[response_id] = imported_ids
+            if primary_log_target is not None:
+                imported_log_targets[response_id] = primary_log_target
         except Exception as exc:
             report.add_failure(response_id, str(exc), row=row)
             continue
 
         report.imported_rows += 1
 
+    if response_log_rows:
+        await migrate_legacy_response_logs(
+            response_log_rows,
+            repository=repository,
+            imported_targets=imported_log_targets,
+            report=report,
+        )
+
     await repository.rebuild_search_index()
     return report
+
+
+async def migrate_legacy_response_logs(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    repository: WordbankRepository,
+    imported_targets: Mapping[int, LegacyImportedLogTarget],
+    report: WordbankMigrationReport | None = None,
+) -> None:
+    if report is not None:
+        report.total_log_rows += len(rows)
+    for row in rows:
+        log_id = _optional_coerce_int(row.get("log_id"), field="log_id")
+        try:
+            response_id = _coerce_int(row["response_id"], field="response_id")
+            imported_target = imported_targets.get(response_id)
+            if imported_target is None:
+                raise MigrationError(
+                    f"missing imported response mapping for response_id={response_id}"
+                )
+            created_at = normalize_legacy_timestamp(
+                row.get("call_time"),
+                fallback=get_current_time(),
+            )
+            group_id = str(row.get("group_id") or "").strip()
+            message_type = _normalize_legacy_log_message_type(row, group_id=group_id)
+            matched_text = _normalize_legacy_log_matched_text(
+                row,
+                fallback=imported_target.matched_text,
+            )
+            await repository.save_log(
+                {
+                    "trigger_group_id": imported_target.trigger_group_id,
+                    "trigger_variant_id": imported_target.trigger_variant_id,
+                    "response_item_id": imported_target.response_item_id,
+                    "group_id": group_id,
+                    "user_id": str(row.get("user_id") or ""),
+                    "message_type": message_type,
+                    "matched_text": matched_text,
+                    "created_at": created_at,
+                },
+                policy=WritePolicy.IMMEDIATE,
+            )
+            if report is not None:
+                report.imported_log_rows += 1
+        except Exception as exc:
+            if report is not None:
+                report.add_log_failure(log_id, str(exc), row=row)
+            continue
+    await repository.drain_logs()
+
+
+async def migrate_legacy_wordbank(
+    old_repo_root: Path,
+    *,
+    repository: WordbankRepository,
+    media_service: WordbankMediaService,
+    image_root: Path,
+    mapping_path: Path | None = None,
+    reset_target: bool = True,
+    import_logs: bool = True,
+) -> WordbankMigrationReport:
+    pg_config = load_legacy_pg_config(old_repo_root)
+    rows = await fetch_legacy_response_rows(pg_config)
+    response_log_rows = (
+        await fetch_legacy_response_log_rows(pg_config) if import_logs else ()
+    )
+    image_catalog = build_legacy_image_catalog(image_root, mapping_path)
+    return await migrate_legacy_rows(
+        rows,
+        repository=repository,
+        media_service=media_service,
+        image_catalog=image_catalog,
+        response_log_rows=response_log_rows,
+        reset_target=reset_target,
+    )
 
 
 def _coerce_rule_mapping(value: object) -> Mapping[str, Any]:
@@ -580,6 +847,12 @@ def _coerce_int(value: object, *, field: str) -> int:
             except ValueError as exc:
                 raise MigrationError(f"invalid integer for {field}: {value}") from exc
     raise MigrationError(f"invalid integer for {field}: {value!r}")
+
+
+def _optional_coerce_int(value: object, *, field: str) -> int | None:
+    if value in (None, ""):
+        return None
+    return _coerce_int(value, field=field)
 
 
 def _extract_legacy_eq(value: object) -> str:
@@ -1107,9 +1380,13 @@ __all__ = [
     "LegacyPgConfig",
     "WordbankMigrationReport",
     "build_legacy_image_catalog",
+    "fetch_legacy_response_log_rows",
+    "fetch_legacy_response_rows",
     "legacy_message_to_shape",
     "load_legacy_pg_config",
+    "migrate_legacy_response_logs",
     "migrate_legacy_rows",
+    "migrate_legacy_wordbank",
     "normalize_legacy_rules",
     "normalize_legacy_scope",
     "normalize_legacy_state",

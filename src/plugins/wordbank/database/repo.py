@@ -681,6 +681,7 @@ class WordbankRepository:
         self,
         *,
         include_images: bool = True,
+        include_logs: bool = False,
     ) -> None:
         route_rows = await self.list_message_ref_routes()
         for shard_key in {route.shard_key for route in route_rows}:
@@ -690,6 +691,14 @@ class WordbankRepository:
                 await session.execute(delete(WordbankMessageRef))
         async with wordbank_message_route_db.write_session() as session:
             await session.execute(delete(WordbankMessageRoute))
+        if include_logs:
+            for source in wordbank_log_db.iter_backup_sources():
+                if source.shard_key is None:
+                    continue
+                async with wordbank_log_db.write_session(
+                    time_ctx=_message_ref_time_ctx(source.shard_key)
+                ) as session:
+                    await session.execute(delete(WordbankLog))
         async with wordbank_main_db.write_session() as session:
             await session.execute(delete(WordbankDeleteVoteSupport))
             await session.execute(delete(WordbankDeleteVote))
@@ -1572,7 +1581,9 @@ class WordbankRepository:
         if policy == WritePolicy.BUFFERED:
             await wordbank_log_writer.add(payload)
             return
-        async with wordbank_log_db.write_session() as session:
+        async with wordbank_log_db.write_session(
+            time_ctx=datetime.fromtimestamp(payload["created_at"], UTC)
+        ) as session:
             session.add(WordbankLog(**payload))
 
     async def drain_logs(self) -> None:
