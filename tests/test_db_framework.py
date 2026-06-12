@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import os
 
 import arrow
 import pytest
@@ -231,7 +230,10 @@ async def test_sharded_db_archives_to_zstd_and_hydrates_with_manifest(
     assert manifest_path.is_file()
     assert '"state": "cold"' in manifest_path.read_text(encoding="utf-8")
 
-    async with db.read_session(time_ctx=april, cold_policy=ColdPolicy.HYDRATE) as session:
+    async with db.read_session(
+        time_ctx=april,
+        cold_policy=ColdPolicy.HYDRATE,
+    ) as session:
         total = await session.execute(select(func.count(_ShardModel.id)))
     assert int(total.scalar() or 0) == 1
     assert online_path.is_file()
