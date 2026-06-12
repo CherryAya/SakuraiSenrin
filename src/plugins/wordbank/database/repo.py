@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -1585,6 +1585,61 @@ class WordbankRepository:
             time_ctx=datetime.fromtimestamp(payload["created_at"], UTC)
         ) as session:
             session.add(WordbankLog(**payload))
+
+    async def count_response_calls_in_windows(
+        self,
+        response_windows: dict[int, int],
+        *,
+        now_ts: int | None = None,
+    ) -> dict[int, int]:
+        if not response_windows:
+            return {}
+        normalized_windows = {
+            int(response_id): max(int(window_seconds), 0)
+            for response_id, window_seconds in response_windows.items()
+            if int(window_seconds) > 0
+        }
+        if not normalized_windows:
+            return {}
+        now_ts = get_current_time() if now_ts is None else now_ts
+        max_window = max(normalized_windows.values())
+        start_time = datetime.fromtimestamp(now_ts - max_window, UTC)
+        end_time = datetime.fromtimestamp(now_ts, UTC)
+        response_ids = tuple(normalized_windows)
+
+        async def _query_shard(session: AsyncSession) -> list[tuple[int, int]]:
+            rows = (
+                await session.execute(
+                    select(WordbankLog.response_item_id, WordbankLog.created_at).where(
+                        WordbankLog.response_item_id.in_(response_ids),
+                        WordbankLog.created_at >= now_ts - max_window,
+                        WordbankLog.created_at <= now_ts,
+                    )
+                )
+            ).all()
+            return [
+                (int(response_id), int(created_at)) for response_id, created_at in rows
+            ]
+
+        shard_results = await wordbank_log_db.map_reduce(
+            start_time,
+            end_time,
+            _query_shard,
+            cold_policy=wordbank_log_db.cold_policy,
+        )
+        counts: Counter[int] = Counter()
+        for rows in shard_results:
+            for response_item_id, created_at in rows:
+                window_seconds = normalized_windows.get(response_item_id, 0)
+                if window_seconds <= 0:
+                    continue
+                if created_at < now_ts - window_seconds:
+                    continue
+                counts[response_item_id] += 1
+        return {
+            response_item_id: counts.get(response_item_id, 0)
+            for response_item_id in normalized_windows
+        }
 
     async def drain_logs(self) -> None:
         await wordbank_log_writer.drain()

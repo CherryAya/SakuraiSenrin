@@ -332,5 +332,4 @@ class WordbankLog(WordbankLogBase):
     message_type: Mapped[str] = mapped_column(
         String(16), nullable=False, default="text"
     )
-    matched_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)

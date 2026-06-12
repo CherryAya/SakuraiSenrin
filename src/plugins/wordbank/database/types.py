@@ -78,7 +78,6 @@ class WordbankLogPayload(TypedDict):
     group_id: str
     user_id: str
     message_type: str
-    matched_text: str
     created_at: int
 
 

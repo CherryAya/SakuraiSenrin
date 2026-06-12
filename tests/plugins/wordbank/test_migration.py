@@ -415,7 +415,6 @@ async def test_migrate_legacy_rows_imports_response_logs_into_current_log_schema
     assert logs[0].group_id == "20001"
     assert logs[0].user_id == "10086"
     assert logs[0].message_type == "group"
-    assert logs[0].matched_text == "晚安"
 
 
 @pytest.mark.asyncio
@@ -553,7 +552,6 @@ async def test_migrate_legacy_wordbank_wrapper_imports_response_logs(
             "call_time": call_time,
             "group_id": "20002",
             "message_type": "group",
-            "matched_text": "晚安安",
         }
     ]
     addition_log_rows = [
@@ -659,7 +657,6 @@ async def test_migrate_legacy_wordbank_wrapper_imports_response_logs(
     assert len(logs) == 1
     assert logs[0].group_id == "20002"
     assert logs[0].user_id == "10010"
-    assert logs[0].matched_text == "晚安安"
     approval_ref = await repository.get_message_ref(
         "approval-msg-21",
         expected_kind="approval",

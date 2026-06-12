@@ -1,12 +1,16 @@
 import asyncio
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
+import arrow
 from PIL import Image
 import pytest
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 
+from src.database.consts import WritePolicy
 from src.lib.db.connectors import ColdPolicy
+from src.lib.db.schema import AppliedSchemaPatch
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.instances import (
     wordbank_log_db,
@@ -15,6 +19,7 @@ from src.plugins.wordbank.database.instances import (
     wordbank_message_route_db,
 )
 from src.plugins.wordbank.database.repo import WordbankRepository
+from src.plugins.wordbank.database.tables import WordbankLogBase
 from src.plugins.wordbank.database.types import WordbankSearchRequest
 from src.plugins.wordbank.message_model import (
     combine_shapes,
@@ -366,6 +371,7 @@ async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
         user_id="10001",
         is_group=True,
         raw_rule={
+            "scope": "current_group",
             "roles": "admin",
             "call_count": {"window_seconds": 60, "min": 1, "max": 9},
         },
@@ -389,8 +395,23 @@ async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
             sender_role="member",
         ),
     )
-    service._call_history[gated.response_item_id].append(get_current_time())
-    admin_selected = await service.match_message(
+    await service.repository.save_log(
+        {
+            "trigger_group_id": gated.trigger_group_id,
+            "trigger_variant_id": gated.trigger_variant_id,
+            "response_item_id": gated.response_item_id,
+            "group_id": "20001",
+            "user_id": "10002",
+            "message_type": "group",
+            "created_at": get_current_time(),
+        },
+        policy=WritePolicy.IMMEDIATE,
+    )
+    counts = await service.repository.count_response_calls_in_windows(
+        {gated.response_item_id: 60}
+    )
+    second_service = await _build_service(tmp_path, monkeypatch)
+    admin_selected = await second_service.match_message(
         shape_from_text("规则测试"),
         context=RuleContext(
             group_id="20001",
@@ -402,8 +423,142 @@ async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
 
     assert member_selected is not None
     assert member_selected.response.id == general.response_item_id
+    assert counts[gated.response_item_id] >= 1
     assert admin_selected is not None
     assert admin_selected.response.id == gated.response_item_id
+
+
+@pytest.mark.asyncio
+async def test_call_count_persists_across_service_restart(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_service = await _build_service(tmp_path, monkeypatch)
+    general = await first_service.add_message_entry(
+        trigger_shape=shape_from_text("重启计数"),
+        response_shape=shape_from_text("普通响应"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={"scope": "self", "roles": "member"},
+    )
+    gated = await first_service.add_message_entry(
+        trigger_shape=shape_from_text("重启计数"),
+        response_shape=shape_from_text("需要已有调用"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "current_group",
+            "roles": "admin",
+            "call_count": {"window_seconds": 60, "min": 1, "max": 9},
+        },
+    )
+    for response_item_id in (general.response_item_id, gated.response_item_id):
+        await first_service.approve_response_item(
+            response_item_id,
+            actor_user_id="10001",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+    await first_service.rebuild_index()
+    await first_service.repository.save_log(
+        {
+            "trigger_group_id": gated.trigger_group_id,
+            "trigger_variant_id": gated.trigger_variant_id,
+            "response_item_id": gated.response_item_id,
+            "group_id": "20001",
+            "user_id": "10002",
+            "message_type": "group",
+            "created_at": get_current_time(),
+        },
+        policy=WritePolicy.IMMEDIATE,
+    )
+
+    second_service = await _build_service(tmp_path, monkeypatch)
+    selected = await second_service.match_message(
+        shape_from_text("重启计数"),
+        context=RuleContext(
+            group_id="20001",
+            user_id="10003",
+            message_type="group",
+            sender_role="admin",
+        ),
+    )
+
+    assert selected is not None
+    assert selected.response.id == gated.response_item_id
+
+
+@pytest.mark.asyncio
+async def test_count_response_calls_in_windows_counts_across_hot_and_cold_shards(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-12 12:00:00").int_timestamp,
+    )
+
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+    await repository.save_log(
+        {
+            "trigger_group_id": 1,
+            "trigger_variant_id": 10,
+            "response_item_id": 100,
+            "group_id": "20001",
+            "user_id": "10001",
+            "message_type": "group",
+            "created_at": arrow.get("2026-04-15 08:00:00").int_timestamp,
+        },
+        policy=WritePolicy.IMMEDIATE,
+    )
+    await repository.save_log(
+        {
+            "trigger_group_id": 1,
+            "trigger_variant_id": 10,
+            "response_item_id": 100,
+            "group_id": "20001",
+            "user_id": "10002",
+            "message_type": "group",
+            "created_at": arrow.get("2026-05-20 08:00:00").int_timestamp,
+        },
+        policy=WritePolicy.IMMEDIATE,
+    )
+    await repository.save_log(
+        {
+            "trigger_group_id": 2,
+            "trigger_variant_id": 20,
+            "response_item_id": 200,
+            "group_id": "20001",
+            "user_id": "10003",
+            "message_type": "group",
+            "created_at": arrow.get("2026-06-10 08:00:00").int_timestamp,
+        },
+        policy=WritePolicy.IMMEDIATE,
+    )
+
+    await wordbank_log_db.run_archiver_task()
+    results = await repository.count_response_calls_in_windows(
+        {
+            100: 60 * 60 * 24 * 90,
+            200: 60 * 60 * 24 * 30,
+        },
+        now_ts=arrow.get("2026-06-12 12:00:00").int_timestamp,
+    )
+
+    manifest_text = (
+        tmp_path / "wordbank_db" / "wordbank_logs_manifest.json"
+    ).read_text(encoding="utf-8")
+    assert results == {100: 2, 200: 1}
+    assert '"state": "cold"' in manifest_text
+    assert '"state": "warm"' in manifest_text
 
 
 @pytest.mark.asyncio
@@ -574,6 +729,7 @@ async def test_init_all_tables_creates_fts_and_clears_wordbank_patch_chain(
 
     assert service.repository is not None
     assert wordbank_main_db.patch_registry.patches == []
+    assert len(wordbank_log_db.patch_registry.patches) == 1
     assert wordbank_message_route_db.patch_registry.patches == []
     assert wordbank_message_ref_db.patch_registry.patches == []
     assert "wordbank_search_trigger_fts" in main_objects
@@ -583,6 +739,73 @@ async def test_init_all_tables_creates_fts_and_clears_wordbank_patch_chain(
     assert "wordbank_view_message" not in main_objects
     assert route_objects == {"wordbank_message_route"}
     assert ref_objects == {"wordbank_message_ref"}
+
+
+@pytest.mark.asyncio
+async def test_wordbank_log_patch_drops_matched_text_from_legacy_shard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    shard_path = tmp_path / "wordbank_db" / "wordbank_logs_2026_06.db"
+    shard_path.parent.mkdir(parents=True, exist_ok=True)
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{shard_path}")
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE wordbank_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trigger_group_id INTEGER NOT NULL,
+                    trigger_variant_id INTEGER NOT NULL,
+                    response_item_id INTEGER NOT NULL,
+                    group_id VARCHAR(64) NOT NULL DEFAULT '',
+                    user_id VARCHAR(64) NOT NULL DEFAULT '',
+                    message_type VARCHAR(16) NOT NULL DEFAULT 'text',
+                    matched_text TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO wordbank_log (
+                    trigger_group_id,
+                    trigger_variant_id,
+                    response_item_id,
+                    group_id,
+                    user_id,
+                    message_type,
+                    matched_text,
+                    created_at
+                ) VALUES (1, 2, 3, '20001', '10001', 'group', '旧字段', 1718150400)
+                """
+            )
+        )
+    await engine.dispose()
+
+    await wordbank_log_db.init_schema(WordbankLogBase)
+
+    async with wordbank_log_db.read_session(
+        time_ctx=datetime(2026, 6, 12),
+    ) as session:
+        columns = await session.execute(text("PRAGMA table_info(wordbank_log)"))
+        count_result = await session.execute(
+            select(func.count()).select_from(AppliedSchemaPatch)
+        )
+        row_count = await session.execute(text("SELECT COUNT(*) FROM wordbank_log"))
+
+    column_names = {str(row[1]) for row in columns.all()}
+    assert "matched_text" not in column_names
+    assert int(count_result.scalar() or 0) == 1
+    assert int(row_count.scalar() or 0) == 1
 
 
 @pytest.mark.asyncio

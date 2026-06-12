@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict, deque
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -35,6 +34,7 @@ from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.services.matching import (
     MatchCandidate,
     RuntimeIndex,
+    RuntimeResponseItem,
     SelectedMatch,
 )
 from src.plugins.wordbank.services.rules import RuleContext, canonicalize_rule
@@ -70,6 +70,13 @@ class WordbankDeleteVoteResult:
     response_item_deleted: bool
 
 
+@dataclass(slots=True)
+class _CallCountCacheEntry:
+    count: int
+    expires_at: int
+    counted_until: int
+
+
 class WordbankService:
     def __init__(
         self,
@@ -77,15 +84,17 @@ class WordbankService:
         *,
         debounce_seconds: float = 1.0,
         rng: random.Random | None = None,
+        call_count_cache_ttl_seconds: int = 3,
     ) -> None:
         self.repository = repository
         self.debounce_seconds = debounce_seconds
         self.rng = rng or random.Random()
+        self.call_count_cache_ttl_seconds = max(int(call_count_cache_ttl_seconds), 0)
         self._index = RuntimeIndex()
         self._initialized = False
         self._rebuild_task: asyncio.Task[None] | None = None
         self._dirty_group_ids: set[int] = set()
-        self._call_history: dict[int, deque[int]] = defaultdict(deque)
+        self._call_count_cache: dict[tuple[int, int], _CallCountCacheEntry] = {}
 
     @property
     def index(self) -> RuntimeIndex:
@@ -505,7 +514,8 @@ class WordbankService:
         context: RuleContext,
         message_type: str,
     ) -> SelectedMatch | None:
-        call_counts = self._current_call_counts(candidates)
+        now = get_current_time()
+        call_counts = await self._current_call_counts(candidates, now_ts=now)
         selected = self._index.select(
             candidates,
             context=context,
@@ -514,8 +524,6 @@ class WordbankService:
         )
         if selected is None:
             return None
-        now = get_current_time()
-        self._call_history[selected.response.id].append(now)
         await self.repository.save_log(
             WordbankLogPayload(
                 trigger_group_id=selected.candidate.group.id,
@@ -524,21 +532,26 @@ class WordbankService:
                 group_id=context.group_id,
                 user_id=context.user_id,
                 message_type=message_type,
-                matched_text=selected.candidate.matched_text,
                 created_at=now,
             ),
-            policy=WritePolicy.BUFFERED,
+            policy=WritePolicy.IMMEDIATE,
         )
+        self._increment_call_count_cache(selected.response, now_ts=now)
         return selected
 
-    def _current_call_counts(
+    async def _current_call_counts(
         self,
         candidates: Sequence[MatchCandidate],
+        *,
+        now_ts: int,
     ) -> dict[int, int]:
-        now = get_current_time()
+        self._prune_call_count_cache(now_ts)
         counts: dict[int, int] = {}
+        missing_windows: dict[int, int] = {}
         for candidate in candidates:
             for response in candidate.group.responses:
+                if response.id in counts:
+                    continue
                 call_count = response.rule.get("call_count")
                 if not isinstance(call_count, dict):
                     continue
@@ -546,11 +559,58 @@ class WordbankService:
                 if window <= 0:
                     counts[response.id] = 0
                     continue
-                history = self._call_history[response.id]
-                while history and now - history[0] > window:
-                    history.popleft()
-                counts[response.id] = len(history)
+                cache_key = (response.id, window)
+                cached = self._call_count_cache.get(cache_key)
+                if cached is not None and cached.expires_at >= now_ts:
+                    counts[response.id] = cached.count
+                    continue
+                missing_windows[response.id] = window
+        if missing_windows:
+            fresh_counts = await self.repository.count_response_calls_in_windows(
+                missing_windows,
+                now_ts=now_ts,
+            )
+            expires_at = now_ts + self.call_count_cache_ttl_seconds
+            for response_id, window in missing_windows.items():
+                count = fresh_counts.get(response_id, 0)
+                counts[response_id] = count
+                self._call_count_cache[(response_id, window)] = _CallCountCacheEntry(
+                    count=count,
+                    expires_at=expires_at,
+                    counted_until=now_ts,
+                )
         return counts
+
+    def _prune_call_count_cache(self, now_ts: int) -> None:
+        expired_keys = [
+            cache_key
+            for cache_key, entry in self._call_count_cache.items()
+            if entry.expires_at < now_ts
+        ]
+        for cache_key in expired_keys:
+            self._call_count_cache.pop(cache_key, None)
+
+    def _increment_call_count_cache(
+        self,
+        response: RuntimeResponseItem,
+        *,
+        now_ts: int,
+    ) -> None:
+        call_count = response.rule.get("call_count")
+        if not isinstance(call_count, dict):
+            return
+        window = int(call_count.get("window_seconds", 0))
+        if window <= 0:
+            return
+        cache_key = (response.id, window)
+        cached = self._call_count_cache.get(cache_key)
+        if cached is None or cached.expires_at < now_ts:
+            return
+        self._call_count_cache[cache_key] = _CallCountCacheEntry(
+            count=cached.count + 1,
+            expires_at=cached.expires_at,
+            counted_until=max(cached.counted_until, now_ts),
+        )
 
     async def _get_response_item_for_mutation(
         self,

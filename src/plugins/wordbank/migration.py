@@ -25,7 +25,6 @@ from src.plugins.wordbank.message_model import (
     MessageShape,
     normalize_text,
     shape_from_event,
-    shape_to_search_text,
 )
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import SCOPE_PRIORITY
@@ -140,7 +139,6 @@ class LegacyImportedLogTarget:
     trigger_group_id: int
     trigger_variant_id: int
     response_item_id: int
-    matched_text: str
 
 
 LegacyMigrationProgressCallback = Callable[
@@ -637,27 +635,6 @@ def normalize_legacy_timestamp(value: object, *, fallback: int) -> int:
     return fallback
 
 
-def _legacy_log_matched_text(
-    row: Mapping[str, object],
-    trigger_shape: MessageShape,
-) -> str:
-    explicit = str(row.get("matched_text") or "").strip()
-    if explicit:
-        return explicit
-    return normalize_text(shape_to_search_text(trigger_shape))
-
-
-def _normalize_legacy_log_matched_text(
-    row: Mapping[str, object],
-    *,
-    fallback: str,
-) -> str:
-    explicit = str(row.get("matched_text") or "").strip()
-    if explicit:
-        return normalize_text(explicit)
-    return normalize_text(fallback)
-
-
 def _normalize_legacy_log_message_type(
     row: Mapping[str, object],
     *,
@@ -836,8 +813,6 @@ async def migrate_legacy_rows(
             probability = normalize_legacy_probability(row.get("trigger_config"))
             weight = _coerce_int(row.get("weight", 3), field="weight")
             created_by = str(row.get("created_by") or "")
-            matched_text = _legacy_log_matched_text(row, trigger_shape)
-
             imported_ids: list[int] = []
             primary_log_target: LegacyImportedLogTarget | None = None
             for target in targets:
@@ -867,7 +842,6 @@ async def migrate_legacy_rows(
                         trigger_group_id=entry.trigger_group_id,
                         trigger_variant_id=trigger_variants[0].id,
                         response_item_id=entry.response_item_id,
-                        matched_text=matched_text,
                     )
                 report.imported_group_ids[response_id] = entry.trigger_group_id
                 report.response_count_by_group_id[entry.trigger_group_id] = (
@@ -969,10 +943,6 @@ async def migrate_legacy_response_logs(
             )
             group_id = str(row.get("group_id") or "").strip()
             message_type = _normalize_legacy_log_message_type(row, group_id=group_id)
-            matched_text = _normalize_legacy_log_matched_text(
-                row,
-                fallback=imported_target.matched_text,
-            )
             await repository.save_log(
                 {
                     "trigger_group_id": imported_target.trigger_group_id,
@@ -981,7 +951,6 @@ async def migrate_legacy_response_logs(
                     "group_id": group_id,
                     "user_id": str(row.get("user_id") or ""),
                     "message_type": message_type,
-                    "matched_text": matched_text,
                     "created_at": created_at,
                 },
                 policy=WritePolicy.IMMEDIATE,
