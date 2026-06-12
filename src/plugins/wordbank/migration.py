@@ -1050,18 +1050,21 @@ async def migrate_legacy_wordbank(
     media_service: WordbankMediaService,
     image_root: Path | None = None,
     mapping_path: Path | None = None,
+    pg_config: LegacyPgConfig | None = None,
     reset_target: bool = True,
     import_logs: bool = True,
 ) -> WordbankMigrationReport:
-    pg_config = load_legacy_pg_config(old_repo_root)
-    rows = await fetch_legacy_response_rows(pg_config)
+    resolved_pg_config = pg_config or load_legacy_pg_config(old_repo_root)
+    rows = await fetch_legacy_response_rows(resolved_pg_config)
     response_log_rows: Sequence[Mapping[str, object]] = ()
     addition_log_rows: Sequence[Mapping[str, object]] = ()
     message_approval_rows: Sequence[Mapping[str, object]] = ()
     if import_logs:
-        response_log_rows = await fetch_legacy_response_log_rows(pg_config)
-        addition_log_rows = await fetch_legacy_addition_log_rows(pg_config)
-        message_approval_rows = await fetch_legacy_message_approval_rows(pg_config)
+        response_log_rows = await fetch_legacy_response_log_rows(resolved_pg_config)
+        addition_log_rows = await fetch_legacy_addition_log_rows(resolved_pg_config)
+        message_approval_rows = await fetch_legacy_message_approval_rows(
+            resolved_pg_config
+        )
     resolved_image_root = image_root or _default_legacy_image_root(old_repo_root)
     resolved_mapping_path = (
         mapping_path

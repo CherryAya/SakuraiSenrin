@@ -743,6 +743,56 @@ async def test_migrate_legacy_wordbank_defaults_to_recovered_files_and_mapping(
 
 
 @pytest.mark.asyncio
+async def test_migrate_legacy_wordbank_uses_explicit_pg_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path / "db")
+    repository = WordbankRepository()
+    media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+    old_repo_root = tmp_path / "sakuraisenrin-old"
+    old_repo_root.mkdir()
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    mapping_path = tmp_path / "mapping.json"
+    mapping_path.write_text("{}", encoding="utf-8")
+    config = migration_module.LegacyPgConfig(
+        host="127.0.0.2",
+        port=15432,
+        user="override",
+        password="secret",
+    )
+    captured: dict[str, migration_module.LegacyPgConfig] = {}
+
+    async def fake_fetch_rows(
+        incoming_config: migration_module.LegacyPgConfig,
+    ) -> list[dict[str, object]]:
+        captured["config"] = incoming_config
+        return []
+
+    monkeypatch.setattr(
+        migration_module,
+        "fetch_legacy_response_rows",
+        fake_fetch_rows,
+    )
+
+    report = await migrate_legacy_wordbank(
+        old_repo_root,
+        repository=repository,
+        media_service=media_service,
+        image_root=image_root,
+        mapping_path=mapping_path,
+        pg_config=config,
+        import_logs=False,
+    )
+
+    assert report.imported_rows == 0
+    assert captured["config"] == config
+
+
+@pytest.mark.asyncio
 async def test_migrate_legacy_rows_merges_same_trigger_or_targets_into_one_group(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
