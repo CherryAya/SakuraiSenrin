@@ -26,6 +26,7 @@ if nonebot.get_plugin("admin") is None:
 SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 
 from src.database.core.consts import Permission as CorePermission
+from src.lib.i18n.runtime import tr
 from src.plugins.admin.backup import admin_backup
 from src.plugins.admin.group import admin_group
 from src.plugins.admin.i18n import admin_i18n
@@ -53,11 +54,11 @@ class _User:
 
 
 @pytest.mark.asyncio
-async def test_admin_group_space_form_hits_matcher(
+async def test_admin_group_dot_form_hits_matcher(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    event = build_group_message_event("#admin group status 20001", user_id=SUPERUSER_ID)
+    event = build_group_message_event("#admin.group status 20001", user_id=SUPERUSER_ID)
 
     from src.plugins.admin import group as group_plugin
 
@@ -84,11 +85,11 @@ async def test_admin_group_space_form_hits_matcher(
 
 
 @pytest.mark.asyncio
-async def test_admin_group_dot_form_hits_matcher(
+async def test_admin_group_chinese_alias_hits_matcher(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    event = build_group_message_event("#admin.group status 20001", user_id=SUPERUSER_ID)
+    event = build_group_message_event("#群组管理 状态 20001", user_id=SUPERUSER_ID)
 
     from src.plugins.admin import group as group_plugin
 
@@ -145,12 +146,13 @@ async def test_admin_i18n_chinese_alias_hits_matcher(
 
 
 @pytest.mark.asyncio
-async def test_admin_user_space_form_hits_matcher(
+async def test_admin_user_dot_form_hits_matcher(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     event = build_private_message_event(
-        "#admin user status 12345", user_id=SUPERUSER_ID
+        "#admin.user status 12345",
+        user_id=SUPERUSER_ID,
     )
 
     from src.plugins.admin import user as user_plugin
@@ -227,7 +229,7 @@ async def test_admin_backup_chinese_alias_hits_matcher(
         ctx.receive_event(bot, event)
         ctx.should_call_send(
             event,
-            "远端备份仓库可用，但当前还没有快照。",
+            tr("zh-CN", "admin.backup.check.empty"),
             bot=bot,
         )
         ctx.should_finished(admin_backup)

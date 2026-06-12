@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 import arrow
-from nonebot import on_command
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
@@ -25,7 +24,7 @@ from nonebot.exception import ParserExit
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
-from nonebot.plugin import on_fullmatch
+from nonebot.plugin import CommandGroup, on_fullmatch
 from nonebot.rule import ArgumentParser, to_me
 from PIL import Image, ImageDraw, ImageFont
 
@@ -38,10 +37,6 @@ from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
-from src.plugins.admin.command_compat import (
-    build_admin_subcommand_rule,
-    extract_admin_subcommand_argv,
-)
 from src.repositories import group_repo, invite_repo
 from src.services.runtime_policy import resolve_invitation_transition
 
@@ -119,10 +114,10 @@ log_parser = subparsers.add_parser("log", aliases=["日志"], help="查看邀请
 log_parser.add_argument("-g", "--gid", type=str, help="群组 ID")
 # fmt: on
 
-admin_invite = on_command(
-    "admin",
-    aliases={("admin", "invite"), "邀请管理"},
-    rule=build_admin_subcommand_rule("invite", aliases=("邀请管理",)),
+admin_command_group = CommandGroup("admin")
+admin_invite = admin_command_group.command(
+    "invite",
+    aliases={"邀请管理"},
     permission=SUPERUSER,
     priority=5,
     block=False,
@@ -671,10 +666,7 @@ async def _(
     arg: Message = CommandArg(),
 ) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-    argv = extract_admin_subcommand_argv(
-        arg,
-        subcommand="invite",
-    )
+    argv = arg.extract_plain_text().strip().split()
     if not argv:
         await admin_invite.finish(build_docs(DocsRenderContext(locale=locale)))
     try:

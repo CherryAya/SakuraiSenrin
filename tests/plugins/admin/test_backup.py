@@ -62,7 +62,7 @@ async def test_admin_backup_check_returns_latest_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     event = build_private_message_event(
-        "#admin backup check",
+        "#admin.backup check",
         user_id=SUPERUSER_ID,
     )
 
@@ -125,7 +125,7 @@ async def test_admin_backup_snapshots_rejects_invalid_limit(
     app: App,
 ) -> None:
     event = build_private_message_event(
-        "#admin backup snapshots 0",
+        "#admin.backup snapshots 0",
         user_id=SUPERUSER_ID,
     )
 
@@ -144,7 +144,7 @@ async def test_admin_backup_run_returns_backup_result(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    event = build_private_message_event("#admin backup run", user_id=SUPERUSER_ID)
+    event = build_private_message_event("#admin.backup run", user_id=SUPERUSER_ID)
 
     class _Manifest:
         def __init__(self) -> None:

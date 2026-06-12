@@ -10,7 +10,6 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from nonebot import on_command
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
@@ -18,6 +17,7 @@ from nonebot.exception import ActionFailed
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
+from nonebot.plugin import CommandGroup
 
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.cache.field import GroupCacheItem
@@ -26,10 +26,6 @@ from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
-from src.plugins.admin.command_compat import (
-    build_admin_subcommand_rule,
-    extract_admin_subcommand_args,
-)
 from src.repositories import group_repo
 from src.services.info import resolve_group_name
 
@@ -73,10 +69,10 @@ __plugin_meta__ = create_plugin_metadata(
     },
 )
 
-admin_group = on_command(
-    "admin",
-    aliases={("admin", "group"), "群组管理"},
-    rule=build_admin_subcommand_rule("group", aliases=("群组管理",)),
+admin_command_group = CommandGroup("admin")
+admin_group = admin_command_group.command(
+    "group",
+    aliases={"群组管理"},
     permission=SUPERUSER,
     priority=5,
     block=False,
@@ -149,10 +145,7 @@ async def _(
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     docs_message = build_docs(DocsRenderContext(locale=locale))
     docs_text = str(docs_message)
-    args = extract_admin_subcommand_args(
-        arg,
-        subcommand="group",
-    )
+    args = arg.extract_plain_text().strip().split()
     if not args:
         await matcher.finish(docs_message)
 

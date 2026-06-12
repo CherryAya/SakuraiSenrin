@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nonebot import on_command
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.exception import FinishedException
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
+from nonebot.plugin import CommandGroup
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
@@ -16,10 +16,6 @@ from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
-from src.plugins.admin.command_compat import (
-    build_admin_subcommand_rule,
-    extract_admin_subcommand_args,
-)
 from src.services.backup import (
     BackupResult,
     ResticSnapshotInfo,
@@ -67,10 +63,10 @@ __plugin_meta__ = create_plugin_metadata(
     },
 )
 
-admin_backup = on_command(
-    "admin",
-    aliases={("admin", "backup"), "备份管理"},
-    rule=build_admin_subcommand_rule("backup", aliases=("备份管理",)),
+admin_command_group = CommandGroup("admin")
+admin_backup = admin_command_group.command(
+    "backup",
+    aliases={"备份管理"},
     permission=SUPERUSER,
     priority=5,
     block=False,
@@ -136,7 +132,7 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     docs = build_docs(DocsRenderContext(locale=locale))
     docs_text = str(docs)
-    args = extract_admin_subcommand_args(arg, subcommand="backup")
+    args = arg.extract_plain_text().strip().split()
     if not args:
         await matcher.finish(docs)
 

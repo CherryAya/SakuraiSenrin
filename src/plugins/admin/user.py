@@ -13,7 +13,6 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from nonebot import on_command
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
@@ -21,6 +20,7 @@ from nonebot.exception import ParserExit
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
+from nonebot.plugin import CommandGroup
 from nonebot.rule import ArgumentParser
 
 from src.database.core.consts import Permission
@@ -32,10 +32,6 @@ from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_doc
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
 from src.lib.utils.common import get_current_time, time_to_timedelta
-from src.plugins.admin.command_compat import (
-    build_admin_subcommand_rule,
-    extract_admin_subcommand_argv,
-)
 from src.repositories import blacklist_repo, group_repo, user_repo
 from src.services.info import resolve_user_name
 
@@ -98,10 +94,10 @@ status_parser = subparsers.add_parser("status", aliases=["状态"], help="查询
 status_parser.add_argument("uids", nargs="+", help="目标用户 ID 列表")
 # fmt: on
 
-admin_user = on_command(
-    "admin",
-    aliases={("admin", "user"), "用户管理"},
-    rule=build_admin_subcommand_rule("user", aliases=("用户管理",)),
+admin_command_group = CommandGroup("admin")
+admin_user = admin_command_group.command(
+    "user",
+    aliases={"用户管理"},
     permission=SUPERUSER,
     priority=5,
     block=False,
@@ -179,10 +175,7 @@ async def _(
     arg: Message = CommandArg(),
 ) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-    argv = extract_admin_subcommand_argv(
-        arg,
-        subcommand="user",
-    )
+    argv = arg.extract_plain_text().strip().split()
     if not argv:
         await matcher.finish(build_docs(DocsRenderContext(locale=locale)))
     try:
