@@ -48,7 +48,7 @@ async def _migrate_water_summary_hourly_counts_to_blob(session: AsyncSession) ->
     if not rows:
         return
 
-    from .hourly_counts import encode_hourly_counts
+    from .hourly_counts import decode_hourly_counts, encode_hourly_counts
 
     for group_id, user_id, record_date, hourly_counts in rows:
         await session.execute(
@@ -65,7 +65,9 @@ async def _migrate_water_summary_hourly_counts_to_blob(session: AsyncSession) ->
                 "group_id": group_id,
                 "user_id": user_id,
                 "record_date": record_date,
-                "hourly_counts": encode_hourly_counts(hourly_counts),
+                "hourly_counts": encode_hourly_counts(
+                    decode_hourly_counts(hourly_counts)
+                ),
             },
         )
 
@@ -96,3 +98,7 @@ def build_water_summary_patch_registry() -> PatchRegistry:
         )
     )
     return registry
+
+
+def build_water_core_patch_registry() -> PatchRegistry:
+    return build_water_summary_patch_registry()
