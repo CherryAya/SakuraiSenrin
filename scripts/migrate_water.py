@@ -97,11 +97,12 @@ async def main() -> None:
             raise ValueError("--from-date cannot be greater than --to-date")
 
     from src.plugins.water.migration import (
+        LegacyWaterMigrationProgressPayload,
         migrate_legacy_water_from_pg,
         write_report,
     )
 
-    def _progress(stage: str, payload: dict[str, int]) -> None:
+    def _progress(stage: str, payload: LegacyWaterMigrationProgressPayload) -> None:
         if stage == "import_batch":
             logger.info(
                 "[water-migration] "
@@ -109,7 +110,10 @@ async def main() -> None:
                 f"rows={payload['batch_rows']} "
                 f"source_rows={payload['source_rows']} "
                 f"counter_rows={payload['imported_counter_rows']} "
-                f"range={payload['batch_start_date']}-{payload['batch_end_date']}"
+                f"range={payload['batch_start_date']}-{payload['batch_end_date']} "
+                f"elapsed={payload['elapsed_seconds']:.2f}s "
+                f"source_rps={payload['source_rows_per_second']:.2f} "
+                f"counter_rps={payload['counter_rows_per_second']:.2f}"
             )
             return
         if stage == "rebuild_complete":

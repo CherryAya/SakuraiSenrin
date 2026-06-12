@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict, deque
+from collections import defaultdict
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
+from queue import Full, Queue
+import threading
+import time
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
@@ -53,7 +56,17 @@ class WaterMigrationReport:
         return asdict(self)
 
 
-LegacyWaterMigrationProgressCallback = Callable[[str, dict[str, int]], None]
+LegacyWaterMigrationProgressPayload = dict[str, int | float]
+LegacyWaterMigrationProgressCallback = Callable[
+    [str, LegacyWaterMigrationProgressPayload], None
+]
+
+_BATCH_STREAM_END = object()
+
+
+@dataclass(slots=True, frozen=True)
+class _BatchStreamFailure:
+    error: BaseException
 
 
 def normalize_legacy_timestamp(value: object) -> int:
@@ -209,27 +222,52 @@ async def iter_legacy_water_row_batches_prefetched(
     fetch_size: int = 50_000,
     prefetch_batches: int = 2,
 ) -> AsyncIterator[list[LegacyWaterRow]]:
-    iterator = iter_legacy_water_row_batches(
-        config,
-        from_date=from_date,
-        to_date=to_date,
-        fetch_size=fetch_size,
-    )
     prefetch = max(1, prefetch_batches)
-    pending: deque[asyncio.Task[list[LegacyWaterRow] | None]] = deque()
+    stop_event = threading.Event()
+    batch_queue: Queue[object] = Queue(maxsize=prefetch)
 
-    async def _next_batch() -> list[LegacyWaterRow] | None:
-        return await asyncio.to_thread(next, iterator, None)
+    def _put(item: object) -> None:
+        while not stop_event.is_set():
+            try:
+                batch_queue.put(item, timeout=0.1)
+            except Full:
+                continue
+            return
 
-    for _ in range(prefetch):
-        pending.append(asyncio.create_task(_next_batch()))
+    def _producer() -> None:
+        try:
+            for rows in iter_legacy_water_row_batches(
+                config,
+                from_date=from_date,
+                to_date=to_date,
+                fetch_size=fetch_size,
+            ):
+                if stop_event.is_set():
+                    break
+                _put(rows)
+        except BaseException as exc:
+            _put(_BatchStreamFailure(exc))
+        finally:
+            _put(_BATCH_STREAM_END)
 
-    while pending:
-        rows = await pending.popleft()
-        if rows is None:
-            continue
-        pending.append(asyncio.create_task(_next_batch()))
-        yield rows
+    producer = threading.Thread(
+        target=_producer,
+        name="water-migration-pg-reader",
+        daemon=True,
+    )
+    producer.start()
+
+    try:
+        while True:
+            item = await asyncio.to_thread(batch_queue.get)
+            if item is _BATCH_STREAM_END:
+                break
+            if isinstance(item, _BatchStreamFailure):
+                raise item.error
+            yield cast(list[LegacyWaterRow], item)
+    finally:
+        stop_event.set()
+        await asyncio.to_thread(producer.join, 1.0)
 
 
 async def reset_current_water_runtime(*, preserve_seasons: bool = True) -> None:
@@ -382,6 +420,7 @@ async def migrate_legacy_water_from_pg(
         reset_target=reset_target,
         started_at=get_current_time(),
     )
+    started_at = time.monotonic()
 
     await water_repo.init_all_tables()
     if reset_target:
@@ -417,6 +456,7 @@ async def migrate_legacy_water_from_pg(
         start_ts = batch_min_ts if start_ts is None else min(start_ts, batch_min_ts)
         end_ts = batch_max_ts if end_ts is None else max(end_ts, batch_max_ts)
         if progress is not None:
+            elapsed_seconds = max(time.monotonic() - started_at, 0.001)
             progress(
                 "import_batch",
                 {
@@ -429,6 +469,15 @@ async def migrate_legacy_water_from_pg(
                     ),
                     "batch_end_date": int(
                         arrow.get(batch_max_ts).to("Asia/Shanghai").format("YYYYMMDD")
+                    ),
+                    "elapsed_seconds": round(elapsed_seconds, 2),
+                    "source_rows_per_second": round(
+                        report.source_rows / elapsed_seconds,
+                        2,
+                    ),
+                    "counter_rows_per_second": round(
+                        report.imported_counter_rows / elapsed_seconds,
+                        2,
                     ),
                 },
             )
