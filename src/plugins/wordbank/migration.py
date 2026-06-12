@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import asyncio
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
@@ -141,6 +141,12 @@ class LegacyImportedLogTarget:
     trigger_variant_id: int
     response_item_id: int
     matched_text: str
+
+
+LegacyMigrationProgressCallback = Callable[
+    [str, int, int, Mapping[str, object]],
+    None,
+]
 
 
 @dataclass(slots=True)
@@ -770,6 +776,8 @@ async def migrate_legacy_rows(
     addition_log_rows: Sequence[Mapping[str, object]] = (),
     message_approval_rows: Sequence[Mapping[str, object]] = (),
     reset_target: bool = True,
+    progress: LegacyMigrationProgressCallback | None = None,
+    progress_every: int = 100,
 ) -> WordbankMigrationReport:
     await repository.init_all_tables()
     if reset_target:
@@ -779,8 +787,15 @@ async def migrate_legacy_rows(
     report = WordbankMigrationReport(total_rows=len(rows))
     migration_time = get_current_time()
     imported_log_targets: dict[int, LegacyImportedLogTarget] = {}
+    _emit_progress(
+        progress,
+        phase="entries",
+        current=0,
+        total=len(rows),
+        detail={"reset_target": reset_target},
+    )
 
-    for row in rows:
+    for index, row in enumerate(rows, start=1):
         response_id = _coerce_int(row["response_id"], field="response_id")
         try:
             trigger_shape = await legacy_message_to_shape(
@@ -868,9 +883,20 @@ async def migrate_legacy_rows(
                 imported_log_targets[response_id] = primary_log_target
         except Exception as exc:
             report.add_failure(response_id, str(exc), row=row)
-            continue
-
-        report.imported_rows += 1
+        else:
+            report.imported_rows += 1
+        _emit_progress_if_needed(
+            progress,
+            phase="entries",
+            current=index,
+            total=len(rows),
+            every=progress_every,
+            detail={
+                "imported_rows": report.imported_rows,
+                "skipped_rows": report.skipped_rows,
+                "last_response_id": response_id,
+            },
+        )
 
     if response_log_rows:
         await migrate_legacy_response_logs(
@@ -878,6 +904,8 @@ async def migrate_legacy_rows(
             repository=repository,
             imported_targets=imported_log_targets,
             report=report,
+            progress=progress,
+            progress_every=progress_every,
         )
     if message_approval_rows:
         await migrate_legacy_approval_message_refs(
@@ -886,9 +914,25 @@ async def migrate_legacy_rows(
             imported_targets=imported_log_targets,
             addition_log_rows=addition_log_rows,
             report=report,
+            progress=progress,
+            progress_every=progress_every,
         )
 
+    _emit_progress(
+        progress,
+        phase="search_index",
+        current=0,
+        total=1,
+        detail={},
+    )
     await repository.rebuild_search_index()
+    _emit_progress(
+        progress,
+        phase="search_index",
+        current=1,
+        total=1,
+        detail={},
+    )
     return report
 
 
@@ -898,10 +942,19 @@ async def migrate_legacy_response_logs(
     repository: WordbankRepository,
     imported_targets: Mapping[int, LegacyImportedLogTarget],
     report: WordbankMigrationReport | None = None,
+    progress: LegacyMigrationProgressCallback | None = None,
+    progress_every: int = 100,
 ) -> None:
     if report is not None:
         report.total_log_rows += len(rows)
-    for row in rows:
+    _emit_progress(
+        progress,
+        phase="response_logs",
+        current=0,
+        total=len(rows),
+        detail={},
+    )
+    for index, row in enumerate(rows, start=1):
         log_id = _optional_coerce_int(row.get("log_id"), field="log_id")
         try:
             response_id = _coerce_int(row["response_id"], field="response_id")
@@ -938,7 +991,18 @@ async def migrate_legacy_response_logs(
         except Exception as exc:
             if report is not None:
                 report.add_log_failure(log_id, str(exc), row=row)
-            continue
+        _emit_progress_if_needed(
+            progress,
+            phase="response_logs",
+            current=index,
+            total=len(rows),
+            every=progress_every,
+            detail={
+                "imported_log_rows": report.imported_log_rows if report else 0,
+                "skipped_log_rows": report.skipped_log_rows if report else 0,
+                "last_log_id": log_id or 0,
+            },
+        )
     await repository.drain_logs()
 
 
@@ -949,6 +1013,8 @@ async def migrate_legacy_approval_message_refs(
     imported_targets: Mapping[int, LegacyImportedLogTarget],
     addition_log_rows: Sequence[Mapping[str, object]] = (),
     report: WordbankMigrationReport | None = None,
+    progress: LegacyMigrationProgressCallback | None = None,
+    progress_every: int = 100,
 ) -> None:
     addition_by_approval_id: dict[int, Mapping[str, object]] = {}
     addition_by_response_id: dict[int, Mapping[str, object]] = {}
@@ -968,8 +1034,15 @@ async def migrate_legacy_approval_message_refs(
 
     if report is not None:
         report.total_approval_ref_rows += len(rows)
+    _emit_progress(
+        progress,
+        phase="approval_refs",
+        current=0,
+        total=len(rows),
+        detail={},
+    )
 
-    for row in rows:
+    for index, row in enumerate(rows, start=1):
         message_id = str(row.get("message_id") or "").strip()
         try:
             if not message_id:
@@ -1040,7 +1113,22 @@ async def migrate_legacy_approval_message_refs(
         except Exception as exc:
             if report is not None:
                 report.add_approval_ref_failure(message_id, str(exc), row=row)
-            continue
+        _emit_progress_if_needed(
+            progress,
+            phase="approval_refs",
+            current=index,
+            total=len(rows),
+            every=progress_every,
+            detail={
+                "imported_approval_ref_rows": (
+                    report.imported_approval_ref_rows if report else 0
+                ),
+                "skipped_approval_ref_rows": (
+                    report.skipped_approval_ref_rows if report else 0
+                ),
+                "last_message_id": message_id,
+            },
+        )
 
 
 async def migrate_legacy_wordbank(
@@ -1053,6 +1141,8 @@ async def migrate_legacy_wordbank(
     pg_config: LegacyPgConfig | None = None,
     reset_target: bool = True,
     import_logs: bool = True,
+    progress: LegacyMigrationProgressCallback | None = None,
+    progress_every: int = 100,
 ) -> WordbankMigrationReport:
     resolved_pg_config = pg_config or load_legacy_pg_config(old_repo_root)
     rows = await fetch_legacy_response_rows(resolved_pg_config)
@@ -1083,7 +1173,41 @@ async def migrate_legacy_wordbank(
         addition_log_rows=addition_log_rows,
         message_approval_rows=message_approval_rows,
         reset_target=reset_target,
+        progress=progress,
+        progress_every=progress_every,
     )
+
+
+def _emit_progress(
+    callback: LegacyMigrationProgressCallback | None,
+    *,
+    phase: str,
+    current: int,
+    total: int,
+    detail: Mapping[str, object],
+) -> None:
+    if callback is None:
+        return
+    callback(phase, current, total, detail)
+
+
+def _emit_progress_if_needed(
+    callback: LegacyMigrationProgressCallback | None,
+    *,
+    phase: str,
+    current: int,
+    total: int,
+    every: int,
+    detail: Mapping[str, object],
+) -> None:
+    if callback is None:
+        return
+    if total <= 0:
+        callback(phase, current, total, detail)
+        return
+    step = max(1, every)
+    if current == 1 or current == total or current % step == 0:
+        callback(phase, current, total, detail)
 
 
 def _coerce_rule_mapping(value: object) -> Mapping[str, Any]:

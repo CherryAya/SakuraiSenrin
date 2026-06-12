@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Mapping
 import json
 from pathlib import Path
 import sys
@@ -36,6 +37,7 @@ _ensure_pkg("src.lib.object_storage", ROOT / "src" / "lib" / "object_storage")
 from src.logger import logger
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.migration import (
+    LegacyMigrationProgressCallback,
     LegacyPgConfig,
     load_legacy_pg_config,
     migrate_legacy_wordbank,
@@ -88,6 +90,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="skip importing legacy response/approval logs",
     )
+    parser.add_argument(
+        "--progress-step",
+        type=int,
+        default=100,
+        help="log progress every N rows for each migration phase",
+    )
     return parser.parse_args()
 
 
@@ -111,9 +119,63 @@ def resolve_script_paths(
     return old_repo_root, image_root, mapping_path
 
 
+def build_progress_logger(
+    step: int,
+) -> LegacyMigrationProgressCallback:
+    effective_step = max(1, step)
+
+    def _callback(
+        phase: str,
+        current: int,
+        total: int,
+        detail: Mapping[str, object],
+    ) -> None:
+        if phase == "search_index":
+            if current == 0:
+                logger.info("[wordbank-migration] rebuilding search index...")
+            else:
+                logger.info("[wordbank-migration] search index rebuilt")
+            return
+
+        label_map = {
+            "entries": "entries",
+            "response_logs": "response_logs",
+            "approval_refs": "approval_refs",
+        }
+        label = label_map.get(phase, phase)
+        suffix = ""
+        if detail:
+            suffix = " " + json.dumps(detail, ensure_ascii=False, sort_keys=True)
+        if total <= 0:
+            logger.info(f"[wordbank-migration] {label}: 0/0{suffix}")
+            return
+        if current in {0, 1, total} or current % effective_step == 0:
+            logger.info(f"[wordbank-migration] {label}: {current}/{total}{suffix}")
+
+    return _callback
+
+
 async def main() -> None:
     args = parse_args()
     old_repo_root, image_root, mapping_path = resolve_script_paths(args)
+    progress = build_progress_logger(args.progress_step)
+
+    logger.info(
+        "[wordbank-migration] starting "
+        + json.dumps(
+            {
+                "old_repo": str(old_repo_root),
+                "image_root": str(image_root) if image_root is not None else "default",
+                "mapping_file": (
+                    str(mapping_path) if mapping_path is not None else "default"
+                ),
+                "reset_target": not args.no_reset_target,
+                "import_logs": not args.no_import_logs,
+                "progress_step": max(1, args.progress_step),
+            },
+            ensure_ascii=False,
+        )
+    )
 
     repository = WordbankRepository()
     media_service = WordbankMediaService(repository)
@@ -126,6 +188,8 @@ async def main() -> None:
         pg_config=build_pg_config(args),
         reset_target=not args.no_reset_target,
         import_logs=not args.no_import_logs,
+        progress=progress,
+        progress_every=args.progress_step,
     )
 
     report_path = Path(args.report)

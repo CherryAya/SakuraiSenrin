@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from io import BytesIO
 import json
@@ -790,6 +791,70 @@ async def test_migrate_legacy_wordbank_uses_explicit_pg_config(
 
     assert report.imported_rows == 0
     assert captured["config"] == config
+
+
+@pytest.mark.asyncio
+async def test_migrate_legacy_rows_emits_progress_events(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path / "db")
+    repository = WordbankRepository()
+    media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    catalog = build_legacy_image_catalog(image_root, None)
+    rows = [
+        {
+            "response_id": 31,
+            "trigger_id": 19,
+            "response_text": json.dumps(
+                [{"type": "text", "text": "好耶"}],
+                ensure_ascii=False,
+            ),
+            "response_rule_conditions": json.dumps({"group_id": {"$eq": 20001}}),
+            "weight": 3,
+            "priority": 2,
+            "created_by": "10001",
+            "created_at": 1700000000,
+            "response_available": True,
+            "trigger_text": json.dumps(
+                [{"type": "text", "text": "测试进度"}],
+                ensure_ascii=False,
+            ),
+            "trigger_config": json.dumps({"probability": 1.0}),
+            "extra_info": None,
+            "approval_status": "APPROVED",
+        }
+    ]
+    events: list[tuple[str, int, int, dict[str, object]]] = []
+
+    def progress(
+        phase: str,
+        current: int,
+        total: int,
+        detail: Mapping[str, object],
+    ) -> None:
+        events.append((phase, current, total, dict(detail)))
+
+    report = await migrate_legacy_rows(
+        rows,
+        repository=repository,
+        media_service=media_service,
+        image_catalog=catalog,
+        reset_target=True,
+        progress=progress,
+        progress_every=1,
+    )
+
+    assert report.imported_rows == 1
+    assert ("entries", 0, 1, {"reset_target": True}) in events
+    assert any(phase == "entries" and current == 1 for phase, current, _, _ in events)
+    assert any(
+        phase == "search_index" and current == 1 for phase, current, _, _ in events
+    )
 
 
 @pytest.mark.asyncio
