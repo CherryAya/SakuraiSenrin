@@ -5,75 +5,81 @@ import pytest
 
 from src.plugins.water.database.repo import WaterActivitySeasonRecord
 from src.plugins.water.services.query_router import WaterQueryRouter
+from src.plugins.water.services.rank_types import WaterRankQuerySpec
 from src.plugins.water.services.season import SeasonLookupAmbiguous
 
 
-@pytest.mark.asyncio
-async def test_parse_default_and_season_variants() -> None:
+def test_parse_rank_menu_and_any_order_rank_spec() -> None:
     router = WaterQueryRouter()
 
-    default_spec = router.parse("")
-    assert default_spec.view == "rank"
-    assert default_spec.scope_type == "absolute"
-    assert default_spec.scope_value == "day"
-    assert default_spec.mode == "simple"
+    menu_spec = router.parse("")
+    assert menu_spec.view == "menu"
+    assert menu_spec.scope_type == "rank"
 
-    season_spec = router.parse("赛季")
-    assert season_spec.scope_type == "activity"
-    assert season_spec.scope_value == "当前"
-    assert season_spec.view == "overview"
+    rank_spec = router.parse("月榜 本群 用户榜")
+    assert rank_spec.rank_spec == WaterRankQuerySpec(
+        subject="user",
+        scope="group",
+        period="month",
+    )
 
-    detail_spec = router.parse("赛季 春日特别季 群聊 排名")
-    assert detail_spec.subject == "group"
-    assert detail_spec.view == "rank"
+
+def test_parse_rank_errors() -> None:
+    router = WaterQueryRouter()
+
+    missing = router.parse("用户榜 月榜")
+    assert missing.rank_spec is None
+    assert missing.errors[0] == "missing_dimensions"
+
+    invalid = router.parse("群聊榜 本群 月榜")
+    assert invalid.rank_spec == WaterRankQuerySpec(
+        subject="group",
+        scope="group",
+        period="month",
+    )
+    assert invalid.errors == ("invalid_combo",)
+
+    legacy = router.parse("月榜")
+    assert legacy.errors == ("legacy_rank",)
 
 
 @pytest.mark.asyncio
-async def test_execute_default_queries_group_day_rank(
+async def test_execute_rank_menu_and_invalid_combo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     router = WaterQueryRouter()
 
-    from src.plugins.water.services import query_router as router_module
-
-    monkeypatch.setattr(
-        router_module.absolute_rank_service,
-        "build_group_day_rank",
-        AsyncMock(return_value=Message("DAY_RANK")),
-    )
-
-    message = await router.execute(
+    menu_message = await router.execute(
         spec=router.parse(""),
         user_id="10001",
         group_id="20001",
         locale="zh-CN",
     )
+    assert "主体 + 范围 + 时间" in str(menu_message)
 
-    assert str(message) == "DAY_RANK"
-
-
-@pytest.mark.asyncio
-async def test_execute_total_rank_queries_total_lines(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    router = WaterQueryRouter()
-
-    from src.plugins.water.services import query_router as router_module
-
-    monkeypatch.setattr(
-        router_module.absolute_rank_service,
-        "build_total_rank",
-        AsyncMock(return_value=Message("TOTAL_RANK")),
-    )
-
-    message = await router.execute(
-        spec=router.parse("总榜"),
+    invalid_message = await router.execute(
+        spec=router.parse("群聊榜 本群 月榜"),
         user_id="10001",
         group_id="20001",
         locale="zh-CN",
     )
+    assert "这个主体和范围组合不成立" in str(invalid_message)
+    assert "#水王 群聊榜 本矩阵 月榜" in str(invalid_message)
 
-    assert str(message) == "TOTAL_RANK"
+    from src.plugins.water.services import query_router as router_module
+
+    monkeypatch.setattr(
+        router_module.water_rank_query_service,
+        "build_rank_message",
+        AsyncMock(return_value=Message("RANK_OK")),
+    )
+    rank_message = await router.execute(
+        spec=router.parse("用户榜 本群 日榜"),
+        user_id="10001",
+        group_id="20001",
+        locale="zh-CN",
+    )
+    assert str(rank_message) == "RANK_OK"
 
 
 @pytest.mark.asyncio

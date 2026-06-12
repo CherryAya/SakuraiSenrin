@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.plugins.water.img import build_water_rank_image
 from src.plugins.water.services.rank import PeriodType, water_rank_service
-
-AbsoluteScope = Literal["day", "month", "season", "year", "total"]
+from src.plugins.water.services.rank_query import water_rank_query_service
 
 
 class AbsoluteRankService:
@@ -20,10 +16,13 @@ class AbsoluteRankService:
         group_id: str,
         locale: LocaleCode,
     ) -> Message:
-        res = await build_water_rank_image(group_id, locale)
-        if res:
-            return Message(MessageSegment.image(res))
-        return Message(tr(locale, "water.rank.absolute.none"))
+        return await water_rank_query_service.build_rank_message(
+            subject="user",
+            scope="group",
+            period="day",
+            group_id=group_id,
+            locale=locale,
+        )
 
     async def build_period_rank(
         self,

@@ -421,6 +421,123 @@ async def test_get_global_period_leaderboard_builds_trends(
 
 
 @pytest.mark.asyncio
+async def test_get_natural_period_leaderboard_supports_group_and_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+    rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260510,
+            msg_count=20,
+            active_hours=9,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20002",
+            user_id="10002",
+            record_date=20260511,
+            msg_count=16,
+            active_hours=7,
+            hourly_counts=[0, 1] * 12,
+            created_at=1,
+            updated_at=2,
+        ),
+    ]
+    previous_rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10002",
+            record_date=20260509,
+            msg_count=25,
+            active_hours=8,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        )
+    ]
+    monkeypatch.setattr(
+        repo,
+        "_resolve_rank_scope_summaries",
+        AsyncMock(side_effect=[rows, previous_rows, rows, previous_rows]),
+    )
+    monkeypatch.setattr(
+        repo,
+        "get_or_create_group_matrix_ids",
+        AsyncMock(return_value={"20001": "mtx_1", "20002": "mtx_1"}),
+    )
+
+    group_rank = await repo.get_natural_period_leaderboard(
+        subject="group",
+        scope="global",
+        group_id="20001",
+        start_date=20260501,
+        end_date=20260523,
+        previous_start_date=20260401,
+        previous_end_date=20260423,
+    )
+    matrix_rank = await repo.get_natural_period_leaderboard(
+        subject="matrix",
+        scope="global",
+        group_id="20001",
+        start_date=20260501,
+        end_date=20260523,
+        previous_start_date=20260401,
+        previous_end_date=20260423,
+    )
+
+    assert [item.entity_id for item in group_rank] == ["20001", "20002"]
+    assert matrix_rank[0].entity_id == "mtx_1"
+    assert matrix_rank[0].group_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_first_summary_record_date_uses_scope_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+    monkeypatch.setattr(
+        repo,
+        "_resolve_rank_scope_summaries",
+        AsyncMock(
+            return_value=[
+                WaterSummaryRecord(
+                    group_id="20001",
+                    user_id="10001",
+                    record_date=20260301,
+                    msg_count=10,
+                    active_hours=4,
+                    hourly_counts=[0] * 24,
+                    created_at=1,
+                    updated_at=1,
+                ),
+                WaterSummaryRecord(
+                    group_id="20002",
+                    user_id="10002",
+                    record_date=20260305,
+                    msg_count=12,
+                    active_hours=5,
+                    hourly_counts=[0] * 24,
+                    created_at=1,
+                    updated_at=1,
+                ),
+            ]
+        ),
+    )
+
+    first_date = await repo.get_first_summary_record_date(
+        subject="user",
+        scope="matrix",
+        group_id="20001",
+    )
+
+    assert first_date == 20260301
+
+
+@pytest.mark.asyncio
 async def test_get_today_leaderboard_flushes_realtime_buffer_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

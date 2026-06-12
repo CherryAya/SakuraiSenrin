@@ -21,7 +21,6 @@ from .merge import (
 )
 from .passive import handle_group_increase_notice, handle_water_record
 from .query import handle_my_water_profile, handle_water_query
-from .rank import handle_period_rank
 
 __all__ = [
     "WaterAdminContext",
@@ -36,7 +35,6 @@ __all__ = [
     "handle_my_achievements",
     "handle_my_water_profile",
     "handle_pardon",
-    "handle_period_rank",
     "handle_season",
     "handle_settle",
     "handle_state",

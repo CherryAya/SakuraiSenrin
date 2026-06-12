@@ -41,7 +41,6 @@ from .handlers import (
     handle_my_achievements,
     handle_my_water_profile,
     handle_pardon,
-    handle_period_rank,
     handle_season,
     handle_settle,
     handle_state,
@@ -130,10 +129,6 @@ water_query = on_command(
     block=True,
 )
 water_profile = on_command("我有多水", priority=5, block=True)
-water_week_rank = on_command("水王周榜", priority=5, block=True)
-water_month_rank = on_command("水王月榜", priority=5, block=True)
-water_season_rank = on_command("水王季榜", priority=5, block=True)
-water_year_rank = on_command("水王年榜", priority=5, block=True)
 water_achievement = on_command(
     "我的水王成就",
     aliases={"水王成就"},
@@ -248,30 +243,6 @@ async def _(matcher: Matcher, event: MessageEvent) -> None:
         await matcher.finish(tr(locale, "water.common.group_only"))
     await matcher.send(tr(locale, "water.common.working"))
     await handle_my_water_profile(matcher, event, locale)
-
-
-@water_week_rank.handle()
-async def _(matcher: Matcher, event: MessageEvent) -> None:
-    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-    await handle_period_rank(matcher, "week", locale)
-
-
-@water_month_rank.handle()
-async def _(matcher: Matcher, event: MessageEvent) -> None:
-    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-    await handle_period_rank(matcher, "month", locale)
-
-
-@water_season_rank.handle()
-async def _(matcher: Matcher, event: MessageEvent) -> None:
-    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-    await handle_period_rank(matcher, "season", locale)
-
-
-@water_year_rank.handle()
-async def _(matcher: Matcher, event: MessageEvent) -> None:
-    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-    await handle_period_rank(matcher, "year", locale)
 
 
 @water_achievement.handle()

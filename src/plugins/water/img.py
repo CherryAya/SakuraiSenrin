@@ -60,9 +60,10 @@ class WaterProfileCardData:
 
 
 @dataclass(frozen=True)
-class WaterPeriodRankUserItem:
-    user_id: str
-    username: str
+class WaterRankCardItem:
+    entity_id: str
+    display_name: str
+    secondary_label: str
     avatar: BuildImage | None
     msg_count: int
     active_days: int
@@ -70,24 +71,47 @@ class WaterPeriodRankUserItem:
     hourly_counts: list[int]
     current_rank: int
     trend: int | None
+    group_count: int = 0
+
+    @property
+    def user_id(self) -> str:
+        return self.entity_id
+
+    @property
+    def username(self) -> str:
+        return self.display_name
 
 
 @dataclass(frozen=True)
 class WaterPeriodRankCardData:
-    period: Literal["week", "month", "season", "year"]
+    period: Literal["week", "month", "season", "year", "total"]
     title: str
     badge: str
     range_text: str
     compare_text: str
     generated_at: int
     total_msg_count: int
-    active_user_count: int
+    active_entity_count: int
     hourly_counts: list[int]
     peak_hour: int
     previous_total_msg_count: int
-    top_users: list[WaterPeriodRankUserItem]
+    top_items: list[WaterRankCardItem]
     champion_gap: int
     champion_share: float
+    entity_label: str = "上榜对象"
+    champion_summary_label: str = "总消息 {msg_count} 条 · 活跃 {active_days} 天"
+    board_title: str = "TOP 10 排行"
+    board_summary_label: str = "{msg_count} 条 · {active_days} 天 · 日均 {avg_daily}"
+    board_active_hours_label: str = "活跃时段覆盖 {active_hours} 小时"
+    overview_title: str = "全榜活跃画像"
+
+    @property
+    def active_user_count(self) -> int:
+        return self.active_entity_count
+
+    @property
+    def top_users(self) -> list[WaterRankCardItem]:
+        return self.top_items
 
 
 class WaterRankRenderer:
@@ -1104,7 +1128,7 @@ async def build_water_period_rank_image(
             ),
             (
                 tr(locale, "water.image.period.stats.active_user_count"),
-                str(data.active_user_count),
+                str(data.active_entity_count),
                 blue,
                 "#F0F6FF",
             ),
@@ -1149,7 +1173,7 @@ async def build_water_period_rank_image(
             )
 
         y += hero_h + gap
-        champion = data.top_users[0]
+        champion = data.top_items[0]
         card.draw_rounded_rectangle(
             (pad, y, width - pad, y + champion_h),
             radius=int(20 * scale),
@@ -1201,7 +1225,7 @@ async def build_water_period_rank_image(
                 width - pad - int(18 * scale),
                 y + int(68 * scale),
             ),
-            champion.username,
+            champion.display_name,
             max_fontsize=int(24 * scale),
             min_fontsize=int(15 * scale),
             fill=deep,
@@ -1215,11 +1239,12 @@ async def build_water_period_rank_image(
                 width - pad - int(18 * scale),
                 y + int(92 * scale),
             ),
-            tr(
-                locale,
-                "water.image.period.champion.summary",
+            data.champion_summary_label.format(
                 msg_count=champion.msg_count,
                 active_days=champion.active_days,
+                active_hours=champion.active_hours,
+                secondary_label=champion.secondary_label,
+                group_count=champion.group_count,
             ),
             max_fontsize=int(12 * scale),
             min_fontsize=int(9 * scale),
@@ -1296,7 +1321,7 @@ async def build_water_period_rank_image(
                 width - pad,
                 y + board_header_h,
             ),
-            tr(locale, "water.image.period.board.title"),
+            data.board_title,
             max_fontsize=int(18 * scale),
             min_fontsize=int(12 * scale),
             fill=deep,
@@ -1310,7 +1335,7 @@ async def build_water_period_rank_image(
             2: ("#EEE8FF", "#8D7AD8", "#FFFFFF"),
             3: ("#E8F8F3", "#57A89A", "#FFFFFF"),
         }
-        for item in data.top_users:
+        for item in data.top_items:
             bg, badge_fill, badge_fg = rank_themes.get(
                 item.current_rank,
                 ("#FFF9FB", "#F4D8E5", accent),
@@ -1370,7 +1395,7 @@ async def build_water_period_rank_image(
                     width - pad - int(300 * scale),
                     row_y + int(34 * scale),
                 ),
-                item.username,
+                item.display_name,
                 max_fontsize=int(16 * scale),
                 min_fontsize=int(10 * scale),
                 fill=deep,
@@ -1385,12 +1410,13 @@ async def build_water_period_rank_image(
                     width - pad - int(300 * scale),
                     row_y + int(58 * scale),
                 ),
-                tr(
-                    locale,
-                    "water.image.period.board.summary",
+                data.board_summary_label.format(
                     msg_count=item.msg_count,
                     active_days=item.active_days,
+                    active_hours=item.active_hours,
                     avg_daily=f"{avg_daily:.1f}",
+                    secondary_label=item.secondary_label,
+                    group_count=item.group_count,
                 ),
                 max_fontsize=int(11 * scale),
                 min_fontsize=int(8 * scale),
@@ -1405,10 +1431,10 @@ async def build_water_period_rank_image(
                     width - pad - int(300 * scale),
                     row_y + int(74 * scale),
                 ),
-                tr(
-                    locale,
-                    "water.image.period.board.active_hours",
+                data.board_active_hours_label.format(
                     active_hours=item.active_hours,
+                    secondary_label=item.secondary_label,
+                    group_count=item.group_count,
                 ),
                 max_fontsize=int(10 * scale),
                 min_fontsize=int(8 * scale),
@@ -1416,6 +1442,21 @@ async def build_water_period_rank_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
+            if item.secondary_label:
+                card.draw_text(
+                    (
+                        text_x,
+                        row_y + int(2 * scale),
+                        width - pad - int(300 * scale),
+                        row_y + int(16 * scale),
+                    ),
+                    item.secondary_label,
+                    max_fontsize=int(9 * scale),
+                    min_fontsize=int(7 * scale),
+                    fill=hint,
+                    halign="left",
+                    font_families=[SYS_FONT_NAME],
+                )
 
             spark_x = width - pad - int(230 * scale)
             _draw_user_distribution(
@@ -1488,7 +1529,7 @@ async def build_water_period_rank_image(
                 width - pad,
                 y + int(30 * scale),
             ),
-            tr(locale, "water.image.period.overview.title"),
+            data.overview_title,
             max_fontsize=int(18 * scale),
             min_fontsize=int(12 * scale),
             fill=deep,

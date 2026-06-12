@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
@@ -16,13 +16,36 @@ from src.plugins.water.img import (
 )
 from src.plugins.water.renderers import render_season_list
 from src.plugins.water.services.profile import profile_service
-from src.plugins.water.services.rank_absolute import absolute_rank_service
+from src.plugins.water.services.rank_query import water_rank_query_service
 from src.plugins.water.services.rank_season import season_rank_service
+from src.plugins.water.services.rank_types import (
+    LEGACY_RANK_TOKENS,
+    PERIOD_LABELS,
+    PERIOD_TOKENS,
+    SCOPE_LABELS,
+    SCOPE_TOKENS,
+    SUBJECT_LABELS,
+    SUBJECT_TOKENS,
+    WaterRankPeriod,
+    WaterRankQuerySpec,
+    WaterRankScope,
+    WaterRankSubject,
+    is_valid_rank_combo,
+    suggest_scope_for_subject,
+)
 from src.plugins.water.services.season import SeasonLookupAmbiguous, season_service
 
 WaterSubject = Literal["personal", "group", "matrix"]
-WaterScopeType = Literal["absolute", "activity", "history"]
-WaterView = Literal["overview", "score", "rank", "achievement", "profile", "ops"]
+WaterScopeType = Literal["activity", "history", "rank"]
+WaterView = Literal[
+    "overview",
+    "score",
+    "rank",
+    "achievement",
+    "profile",
+    "ops",
+    "menu",
+]
 WaterMode = Literal["simple", "full"]
 
 
@@ -33,6 +56,8 @@ class WaterQuerySpec:
     scope_value: str
     view: WaterView
     mode: WaterMode
+    rank_spec: WaterRankQuerySpec | None = None
+    errors: tuple[str, ...] = ()
 
 
 class WaterQueryRouter:
@@ -41,11 +66,21 @@ class WaterQueryRouter:
         tokens = text.split()
         if not tokens:
             return WaterQuerySpec(
-                subject="group",
-                scope_type="absolute",
-                scope_value="day",
-                view="rank",
+                subject="personal",
+                scope_type="rank",
+                scope_value="menu",
+                view="menu",
                 mode="simple",
+            )
+
+        if self._looks_like_legacy_rank(tokens):
+            return WaterQuerySpec(
+                subject="personal",
+                scope_type="rank",
+                scope_value="legacy",
+                view="menu",
+                mode="simple",
+                errors=("legacy_rank",),
             )
 
         if tokens[0] == "赛季":
@@ -68,27 +103,86 @@ class WaterQueryRouter:
                 view="achievement",
                 mode="simple",
             )
-        scope_map = {
-            "日榜": "day",
-            "月榜": "month",
-            "季榜": "season",
-            "年榜": "year",
-            "总榜": "total",
-        }
-        if joined in scope_map:
+
+        rank_spec, errors = self._parse_rank_spec(tokens)
+        if rank_spec is not None:
             return WaterQuerySpec(
-                subject="group" if joined != "总榜" else "personal",
-                scope_type="absolute",
-                scope_value=scope_map[joined],
+                subject="personal",
+                scope_type="rank",
+                scope_value=rank_spec.period,
                 view="rank",
                 mode="simple",
+                rank_spec=rank_spec,
+                errors=errors,
             )
+
         return WaterQuerySpec(
             subject="personal",
-            scope_type="history",
-            scope_value="all",
-            view="profile",
+            scope_type="rank",
+            scope_value="invalid",
+            view="menu",
             mode="simple",
+            errors=errors or ("invalid_rank",),
+        )
+
+    def _parse_rank_spec(
+        self,
+        tokens: list[str],
+    ) -> tuple[WaterRankQuerySpec | None, tuple[str, ...]]:
+        subject: WaterRankSubject | None = None
+        scope: WaterRankScope | None = None
+        period: WaterRankPeriod | None = None
+        unknown_tokens: list[str] = []
+
+        for token in tokens:
+            if token in SUBJECT_TOKENS:
+                if subject is not None and subject != SUBJECT_TOKENS[token]:
+                    return None, ("duplicate_subject",)
+                subject = SUBJECT_TOKENS[token]
+                continue
+            if token in SCOPE_TOKENS:
+                if scope is not None and scope != SCOPE_TOKENS[token]:
+                    return None, ("duplicate_scope",)
+                scope = SCOPE_TOKENS[token]
+                continue
+            if token in PERIOD_TOKENS:
+                if period is not None and period != PERIOD_TOKENS[token]:
+                    return None, ("duplicate_period",)
+                period = PERIOD_TOKENS[token]
+                continue
+            unknown_tokens.append(token)
+
+        if unknown_tokens:
+            return None, ("unknown_tokens", *unknown_tokens)
+
+        missing: list[str] = []
+        if subject is None:
+            missing.append("subject")
+        if scope is None:
+            missing.append("scope")
+        if period is None:
+            missing.append("period")
+        if missing:
+            return None, ("missing_dimensions", *missing)
+
+        subject = cast(WaterRankSubject, subject)
+        scope = cast(WaterRankScope, scope)
+        period = cast(WaterRankPeriod, period)
+
+        if not is_valid_rank_combo(subject, scope):
+            return (
+                WaterRankQuerySpec(subject=subject, scope=scope, period=period),
+                ("invalid_combo",),
+            )
+        return (
+            WaterRankQuerySpec(subject=subject, scope=scope, period=period),
+            (),
+        )
+
+    @staticmethod
+    def _looks_like_legacy_rank(tokens: list[str]) -> bool:
+        return any(token in LEGACY_RANK_TOKENS for token in tokens) and not any(
+            token in SUBJECT_TOKENS or token in SCOPE_TOKENS for token in tokens
         )
 
     def _parse_season(self, tokens: list[str]) -> WaterQuerySpec:
@@ -176,16 +270,24 @@ class WaterQueryRouter:
                 locale=locale,
                 mode=spec.mode,
             )
-        if spec.scope_value == "day":
-            return await absolute_rank_service.build_group_day_rank(group_id, locale)
-        if spec.scope_value == "month":
-            return await absolute_rank_service.build_period_rank("month", locale)
-        if spec.scope_value == "season":
-            return await absolute_rank_service.build_period_rank("season", locale)
-        if spec.scope_value == "year":
-            return await absolute_rank_service.build_period_rank("year", locale)
-        if spec.scope_value == "total":
-            return await absolute_rank_service.build_total_rank(locale)
+        if spec.scope_type == "rank":
+            if spec.rank_spec is None:
+                return Message(self.build_rank_menu(locale, errors=spec.errors))
+            if spec.errors:
+                return Message(
+                    self.build_rank_menu(
+                        locale,
+                        spec.rank_spec,
+                        spec.errors,
+                    )
+                )
+            return await water_rank_query_service.build_rank_message(
+                subject=spec.rank_spec.subject,
+                scope=spec.rank_spec.scope,
+                period=spec.rank_spec.period,
+                group_id=group_id,
+                locale=locale,
+            )
         return Message(tr(locale, "water.query.unsupported"))
 
     async def build_profile_message(
@@ -280,6 +382,63 @@ class WaterQueryRouter:
                 )
             )
         return Message("\n\n".join(messages))
+
+    def build_rank_menu(
+        self,
+        locale: LocaleCode,
+        spec: WaterRankQuerySpec | None = None,
+        errors: tuple[str, ...] = (),
+    ) -> str:
+        lines = [
+            "榜单现在按 主体 + 范围 + 时间 查询。",
+            "标准格式: #水王 <主体> <范围> <时间>",
+            "示例:",
+            "#水王 用户榜 本群 月榜",
+            "#水王 群聊榜 本矩阵 周榜",
+            "#水王 矩阵榜 全局 总榜",
+            "",
+            "合法组合:",
+            "用户榜: 本群 / 本矩阵 / 全局 + 日/周/月/季/年/总榜",
+            "群聊榜: 本矩阵 / 全局 + 日/周/月/季/年/总榜",
+            "矩阵榜: 全局 + 日/周/月/季/年/总榜",
+        ]
+        if errors:
+            lines.insert(0, self._build_rank_error_text(spec, errors))
+            lines.insert(1, "")
+        return "\n".join(lines)
+
+    def _build_rank_error_text(
+        self,
+        spec: WaterRankQuerySpec | None,
+        errors: tuple[str, ...],
+    ) -> str:
+        head = errors[0]
+        if head == "legacy_rank":
+            return "旧写法已经停用，请改成三维写法，例如: #水王 用户榜 本群 周榜"
+        if head == "missing_dimensions":
+            missing_labels = {
+                "subject": "主体",
+                "scope": "范围",
+                "period": "时间",
+            }
+            missing = "、".join(missing_labels[item] for item in errors[1:])
+            return f"缺少 {missing}，请补全为 #水王 <主体> <范围> <时间>。"
+        if head == "unknown_tokens":
+            return f"有未识别的关键词: {' '.join(errors[1:])}。"
+        if head == "duplicate_subject":
+            return "主体只能填一个。"
+        if head == "duplicate_scope":
+            return "范围只能填一个。"
+        if head == "duplicate_period":
+            return "时间只能填一个。"
+        if head == "invalid_combo" and spec is not None:
+            suggested_scope = suggest_scope_for_subject(spec.subject)
+            suggestion = (
+                f"#水王 {SUBJECT_LABELS[spec.subject]} "
+                f"{SCOPE_LABELS[suggested_scope]} {PERIOD_LABELS[spec.period]}"
+            )
+            return f"这个主体和范围组合不成立。推荐改成 {suggestion}"
+        return "这个查询姿势暂时不支持，请按标准格式重试。"
 
     @staticmethod
     async def _matrix_id(group_id: str) -> str:

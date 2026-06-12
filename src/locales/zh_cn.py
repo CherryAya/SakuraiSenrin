@@ -215,7 +215,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.error.rule_unknown": "规则包含不支持字段: {fields}",
     "plugin.water.name": "吹水记录",
     "plugin.water.description": "群聊活跃记录、画像、榜单与活动赛季。",
-    "plugin.water.docs": "1. 水王\n   个人画像（简版）\n2. 水王 完整\n   个人画像（完整版）\n3. 水王 日榜 / 月榜 / 季榜 / 年榜 / 总榜\n4. 水王 成就\n   个人成就\n5. 水王 赛季\n   当前活动赛季概览\n6. 水王 赛季 当前\n   当前活动赛季概览\n7. 水王 赛季 列表\n   已发布赛季\n8. 水王 赛季 当前列表\n   当前生效赛季\n9. 水王 赛季 <season_id|名称> [个人|群聊|矩阵] [概览|积分|排名|成就]\n10. #water season create <season_id> <start> <end> <name...>\n11. #water season publish <season_id>\n12. #water season archive <season_id>\n13. #water season show <season_id>\n14. #water season list [current|published|archived]\n15. #water season delete <season_id>",
+    "plugin.water.docs": "1. 水王\n   榜单菜单与三维查询说明\n2. 水王 <主体> <范围> <时间>\n   自然榜单（主体: 用户榜/群聊榜/矩阵榜；范围: 本群/本矩阵/全局；时间: 日榜/周榜/月榜/季榜/年榜/总榜）\n3. 水王 成就\n   个人成就\n4. 我有多水\n   个人画像（简版）\n5. 我有多水 完整\n   个人画像（完整版）\n6. 水王 赛季\n   当前活动赛季概览\n7. 水王 赛季 当前\n   当前活动赛季概览\n8. 水王 赛季 列表\n   已发布赛季\n9. 水王 赛季 当前列表\n   当前生效赛季\n10. 水王 赛季 <season_id|名称> [个人|群聊|矩阵] [概览|积分|排名|成就]\n11. #water season create <season_id> <start> <end> <name...>\n12. #water season publish <season_id>\n13. #water season archive <season_id>\n14. #water season show <season_id>\n15. #water season list [current|published|archived]\n16. #water season delete <season_id>",
     "sentry.alert": "Sentry 异常告警\n\n{error_message}",
     "admin.i18n.locale.invalid": "不支持的语言: {locale}\n可用值: {choices}",
     "admin.i18n.locale.alias.invalid": "不支持的语言别名: {locale}",
