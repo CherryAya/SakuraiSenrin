@@ -72,3 +72,31 @@ async def test_build_passive_message_rebuilds_text_and_image_segments(
     assert isinstance(message, Message)
     assert [segment.type for segment in message] == ["text", "image"]
     media_service.load_canonical_storage_bytes.assert_awaited_once_with(7)
+
+
+@pytest.mark.asyncio
+async def test_build_passive_message_keeps_text_when_image_storage_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    media_service = SimpleNamespace(
+        load_canonical_storage_bytes=AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    response = PassiveResponse(
+        text="fallback",
+        trigger_group_id=12,
+        trigger_variant_id=21,
+        response_item_id=22,
+        group_id="20001",
+        user_id="10001",
+        message_type="message",
+        response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
+    )
+
+    message = await wordbank_plugin._build_passive_message(response)
+
+    assert isinstance(message, Message)
+    assert [segment.type for segment in message] == ["text", "text"]
+    assert message[0].data["text"] == "做个好梦"
+    assert message[1].data["text"] == "[图片:7]"
+    media_service.load_canonical_storage_bytes.assert_awaited_once_with(7)

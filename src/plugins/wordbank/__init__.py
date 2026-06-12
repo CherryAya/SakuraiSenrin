@@ -1662,16 +1662,10 @@ async def _send_group_detail_view(
 async def _build_passive_message(response: PassiveResponse) -> Message | str:
     if response.response_shape is None or response.response_shape.is_empty():
         return response.text
-    message = await render_shape_message(
+    return await render_shape_message(
         response.response_shape,
         wordbank_media_service,
     )
-    if any(
-        segment.type == "text" and "[图片:" in str(segment.data.get("text", ""))
-        for segment in message
-    ):
-        return tr("zh-CN", "wordbank.error.image_storage_missing")
-    return message
 
 
 @wordbank_passive.handle()
