@@ -6,8 +6,10 @@ from PIL import Image
 import pytest
 from sqlalchemy import text
 
+from src.lib.db.connectors import ColdPolicy
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.instances import (
+    wordbank_log_db,
     wordbank_main_db,
     wordbank_message_ref_db,
     wordbank_message_route_db,
@@ -622,6 +624,33 @@ async def test_runtime_incremental_refresh_only_touches_dirty_group(
 
     assert called == [first.trigger_group_id]
     assert second.trigger_group_id not in called
+
+
+def test_wordbank_event_stores_use_hydrate_cold_policy() -> None:
+    assert wordbank_log_db.cold_policy == ColdPolicy.HYDRATE
+    assert wordbank_message_ref_db.cold_policy == ColdPolicy.HYDRATE
+
+
+@pytest.mark.asyncio
+async def test_archive_event_shards_runs_for_log_and_message_ref(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+    calls: list[str] = []
+
+    async def _archive_logs() -> None:
+        calls.append("log")
+
+    async def _archive_refs() -> None:
+        calls.append("ref")
+
+    monkeypatch.setattr(wordbank_log_db, "run_archiver_task", _archive_logs)
+    monkeypatch.setattr(wordbank_message_ref_db, "run_archiver_task", _archive_refs)
+
+    await service.repository.archive_event_shards()
+
+    assert calls == ["log", "ref"]
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ wordbank_log_db = EventStore(
     prefix="wordbank_logs",
     fmt="%Y_%m",
     active_window_months=2,
+    cold_policy=ColdPolicy.HYDRATE,
 )
 
 wordbank_message_route_db = StateStore(

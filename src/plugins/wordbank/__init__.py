@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 
-from nonebot import get_driver, on_message, on_notice
+from nonebot import get_driver, on_message, on_notice, require
 from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
@@ -97,6 +97,9 @@ from .services import wordbank_media_service, wordbank_service
 from .services.core import WordbankAddResult
 from .services.rules import RuleError
 
+require("nonebot_plugin_apscheduler")
+from nonebot_plugin_apscheduler import scheduler
+
 name = tr("zh-CN", "plugin.wordbank.name")
 description = tr("zh-CN", "plugin.wordbank.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
@@ -173,6 +176,23 @@ driver = get_driver()
 @driver.on_startup
 async def _initialize_wordbank_plugin() -> None:
     await initialize_wordbank_plugin()
+
+
+@scheduler.scheduled_job(
+    "cron",
+    hour=0,
+    minute=30,
+    id="wordbank_event_archive",
+    coalesce=True,
+    misfire_grace_time=300,
+    max_instances=1,
+)
+async def _wordbank_event_archive_job() -> None:
+    try:
+        await wordbank_service.repository.archive_event_shards()
+        logger.success("[Wordbank] cron archive done")
+    except Exception as e:
+        logger.exception(f"[Wordbank] cron archive failed: {e}")
 
 
 async def is_wordbank_approval_reply(event: MessageEvent) -> bool:

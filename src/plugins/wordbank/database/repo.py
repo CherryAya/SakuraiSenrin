@@ -1592,6 +1592,10 @@ class WordbankRepository:
     async def warm_up(self) -> None:
         await self.list_enabled_entries()
 
+    async def archive_event_shards(self) -> None:
+        await wordbank_log_db.run_archiver_task()
+        await wordbank_message_ref_db.run_archiver_task()
+
     def _rank_search_document(
         self,
         document: WordbankSearchDocument,
