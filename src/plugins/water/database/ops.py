@@ -9,6 +9,7 @@ from sqlalchemy import CursorResult, and_, delete, func, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import text
 
 from src.lib.db.ops import BaseOps
 from src.lib.utils.common import split_list
@@ -39,25 +40,56 @@ from .types import (
     WaterUserExpPayload,
 )
 
+_DEFAULT_SQLITE_MAX_VARIABLE_NUMBER = 999
+_WATER_MESSAGE_INSERT_MARGIN = 16
+_WATER_MESSAGE_BIND_PARAMS = len(WaterMessagePayload.__annotations__)
+_sqlite_max_variable_number: int | None = None
+
 
 class WaterMessageOps(BaseOps[WaterHourlyCounter]):
+    async def _resolve_message_insert_chunk_size(self) -> int:
+        global _sqlite_max_variable_number
+
+        if _sqlite_max_variable_number is None:
+            max_variables = _DEFAULT_SQLITE_MAX_VARIABLE_NUMBER
+            result = await self.session.execute(text("PRAGMA compile_options"))
+            for option in result.scalars():
+                if not option.startswith("MAX_VARIABLE_NUMBER="):
+                    continue
+                _, _, raw_value = option.partition("=")
+                max_variables = int(raw_value)
+                break
+            _sqlite_max_variable_number = max_variables
+
+        return max(
+            1,
+            (_sqlite_max_variable_number - _WATER_MESSAGE_INSERT_MARGIN)
+            // _WATER_MESSAGE_BIND_PARAMS,
+        )
+
     async def bulk_insert_water_message(self, data: list[WaterMessagePayload]) -> int:
         if not data:
             return 0
-        stmt = sqlite_insert(WaterHourlyCounter).values(data)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[
-                WaterHourlyCounter.record_date,
-                WaterHourlyCounter.hour,
-                WaterHourlyCounter.group_id,
-                WaterHourlyCounter.user_id,
-            ],
-            set_={
-                "msg_count": WaterHourlyCounter.msg_count + stmt.excluded.msg_count,
-            },
-        )
-        result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        chunk_size = await self._resolve_message_insert_chunk_size()
+        inserted = 0
+        for chunk in split_list(data, chunk_size):
+            stmt = sqlite_insert(WaterHourlyCounter).values(chunk)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[
+                    WaterHourlyCounter.record_date,
+                    WaterHourlyCounter.hour,
+                    WaterHourlyCounter.group_id,
+                    WaterHourlyCounter.user_id,
+                ],
+                set_={
+                    "msg_count": (
+                        WaterHourlyCounter.msg_count + stmt.excluded.msg_count
+                    ),
+                },
+            )
+            result = await self.session.execute(stmt)
+            inserted += cast(CursorResult, result).rowcount
+        return inserted
 
     async def get_top_users(
         self,

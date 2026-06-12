@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 
 from src.database.system_migration import LegacyPgConfig
 from src.plugins.water import migration as migration_module
+from src.plugins.water.database import ops as water_ops_module
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.instances import water_core_db, water_message
 from src.plugins.water.database.tables import (
@@ -231,6 +232,36 @@ async def test_import_legacy_water_rows_aggregates_same_hour_records() -> None:
         ).all()
 
     assert counts == [(8, 2), (9, 1)]
+
+
+@pytest.mark.asyncio
+async def test_import_legacy_water_rows_splits_large_sqlite_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(water_ops_module, "_sqlite_max_variable_number", 50)
+    rows = build_legacy_water_rows(
+        [
+            {
+                "id": index,
+                "user_id": f"{10000 + index}",
+                "group_id": "20001",
+                "created_at": datetime(2026, 1, 15, index % 24, 0, 0),
+            }
+            for index in range(1, 31)
+        ]
+    )
+
+    inserted = await import_legacy_water_rows(rows, chunk_size=100)
+
+    assert inserted == 30
+    async with water_message.read_session(
+        time_ctx=arrow.get("2026-01-15", "YYYY-MM-DD").datetime
+    ) as session:
+        stored_count = await session.scalar(
+            select(func.count()).select_from(WaterHourlyCounter)
+        )
+
+    assert int(stored_count or 0) == 30
 
 
 @pytest.mark.asyncio
