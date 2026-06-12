@@ -24,6 +24,7 @@ if nonebot.get_plugin("wordbank") is None:
 
 from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank.handlers.passive import PassiveResponse
+from src.plugins.wordbank.handlers.rendering import MISSING_IMAGE_PLACEHOLDER
 from src.plugins.wordbank.message_model import (
     combine_shapes,
     shape_from_image,
@@ -98,5 +99,5 @@ async def test_build_passive_message_keeps_text_when_image_storage_is_missing(
     assert isinstance(message, Message)
     assert [segment.type for segment in message] == ["text", "text"]
     assert message[0].data["text"] == "做个好梦"
-    assert message[1].data["text"] == "[图片:7]"
+    assert message[1].data["text"] == MISSING_IMAGE_PLACEHOLDER
     media_service.load_canonical_storage_bytes.assert_awaited_once_with(7)

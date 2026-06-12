@@ -17,6 +17,7 @@ from src.plugins.wordbank.services.media import WordbankMediaService
 from .search_cards import SearchCardQuery, render_search_results_card_bytes
 
 GROUP_PAGE_SIZE = 10
+MISSING_IMAGE_PLACEHOLDER = "[图片加载失败]"
 
 
 async def render_shape_message(
@@ -33,7 +34,7 @@ async def render_shape_message(
         elif atom.kind == "image" and atom.canonical_image_id is not None:
             image_bytes = image_bytes_by_id.get(atom.canonical_image_id)
             if image_bytes is None:
-                message += MessageSegment.text(f"[图片:{atom.canonical_image_id}]")
+                message += MessageSegment.text(MISSING_IMAGE_PLACEHOLDER)
                 continue
             message += MessageSegment.image(image_bytes)
     return message
