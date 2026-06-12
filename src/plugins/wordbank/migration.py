@@ -149,6 +149,11 @@ class WordbankMigrationReport:
     skipped_log_rows: int = 0
     log_failures: list[str] = field(default_factory=list)
     log_failure_details: list[dict[str, object]] = field(default_factory=list)
+    total_approval_ref_rows: int = 0
+    imported_approval_ref_rows: int = 0
+    skipped_approval_ref_rows: int = 0
+    approval_ref_failures: list[str] = field(default_factory=list)
+    approval_ref_failure_details: list[dict[str, object]] = field(default_factory=list)
 
     def add_failure(
         self,
@@ -209,6 +214,33 @@ class WordbankMigrationReport:
                 }
             )
 
+    def add_approval_ref_failure(
+        self,
+        message_id: str,
+        reason: str,
+        *,
+        row: Mapping[str, object] | None = None,
+    ) -> None:
+        self.skipped_approval_ref_rows += 1
+        self.approval_ref_failures.append(f"{message_id or 'unknown'}: {reason}")
+        if row is not None:
+            self.approval_ref_failure_details.append(
+                {
+                    "message_id": message_id,
+                    "approval_id": _safe_report_int(row.get("approval_id")),
+                    "response_id": _safe_report_int(row.get("response_id")),
+                    "reason": reason,
+                    "source_message_id": str(row.get("source_message_id") or ""),
+                    "group_id": str(row.get("group_id") or ""),
+                    "user_id": str(row.get("user_id") or ""),
+                    "created_at": _safe_report_timestamp(
+                        row.get("created_at")
+                        or row.get("approval_created_at")
+                        or row.get("add_time")
+                    ),
+                }
+            )
+
     def to_dict(self) -> dict[str, object]:
         return {
             "total_rows": self.total_rows,
@@ -231,6 +263,11 @@ class WordbankMigrationReport:
             "skipped_log_rows": self.skipped_log_rows,
             "log_failures": list(self.log_failures),
             "log_failure_details": list(self.log_failure_details),
+            "total_approval_ref_rows": self.total_approval_ref_rows,
+            "imported_approval_ref_rows": self.imported_approval_ref_rows,
+            "skipped_approval_ref_rows": self.skipped_approval_ref_rows,
+            "approval_ref_failures": list(self.approval_ref_failures),
+            "approval_ref_failure_details": list(self.approval_ref_failure_details),
         }
 
     @property
@@ -415,6 +452,50 @@ async def fetch_legacy_response_log_rows(
     )
 
 
+async def fetch_legacy_addition_log_rows(
+    config: LegacyPgConfig,
+) -> list[dict[str, object]]:
+    return await asyncio.to_thread(
+        _fetch_legacy_rows_sync,
+        config,
+        sql="""
+        SELECT
+            log_id,
+            trigger_id,
+            response_id,
+            user_id,
+            add_time,
+            add_source,
+            created_message_id,
+            approval_id
+        FROM addition_log
+        ORDER BY log_id ASC
+        """,
+    )
+
+
+async def fetch_legacy_message_approval_rows(
+    config: LegacyPgConfig,
+) -> list[dict[str, object]]:
+    return await asyncio.to_thread(
+        _fetch_legacy_rows_sync,
+        config,
+        sql="""
+        SELECT
+            ma.id,
+            ma.message_id,
+            ma.approval_id,
+            a.response_id,
+            a.user_id AS approval_user_id,
+            a.created_at AS approval_created_at
+        FROM message_approval AS ma
+        JOIN approval AS a
+            ON a.approval_id = ma.approval_id
+        ORDER BY ma.id ASC
+        """,
+    )
+
+
 def build_legacy_image_catalog(
     image_root: Path,
     mapping_path: Path | None,
@@ -570,6 +651,19 @@ def _normalize_legacy_log_message_type(
     return "group" if group_id else "unknown"
 
 
+def _message_ref_shard_key(timestamp: int) -> str:
+    return datetime.fromtimestamp(timestamp, UTC).strftime("%Y_%m")
+
+
+def _normalize_legacy_add_source(value: object) -> dict[str, object]:
+    payload = load_legacy_json(value)
+    return dict(payload) if isinstance(payload, Mapping) else {}
+
+
+def _legacy_addition_message_type(add_source: Mapping[str, object]) -> str:
+    return "group" if str(add_source.get("group_id") or "").strip() else "private"
+
+
 async def legacy_message_to_shape(
     payload: object,
     *,
@@ -634,6 +728,8 @@ async def migrate_legacy_rows(
     media_service: WordbankMediaService,
     image_catalog: LegacyImageCatalog,
     response_log_rows: Sequence[Mapping[str, object]] = (),
+    addition_log_rows: Sequence[Mapping[str, object]] = (),
+    message_approval_rows: Sequence[Mapping[str, object]] = (),
     reset_target: bool = True,
 ) -> WordbankMigrationReport:
     await repository.init_all_tables()
@@ -744,6 +840,14 @@ async def migrate_legacy_rows(
             imported_targets=imported_log_targets,
             report=report,
         )
+    if message_approval_rows:
+        await migrate_legacy_approval_message_refs(
+            message_approval_rows,
+            repository=repository,
+            imported_targets=imported_log_targets,
+            addition_log_rows=addition_log_rows,
+            report=report,
+        )
 
     await repository.rebuild_search_index()
     return report
@@ -799,6 +903,107 @@ async def migrate_legacy_response_logs(
     await repository.drain_logs()
 
 
+async def migrate_legacy_approval_message_refs(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    repository: WordbankRepository,
+    imported_targets: Mapping[int, LegacyImportedLogTarget],
+    addition_log_rows: Sequence[Mapping[str, object]] = (),
+    report: WordbankMigrationReport | None = None,
+) -> None:
+    addition_by_approval_id: dict[int, Mapping[str, object]] = {}
+    addition_by_response_id: dict[int, Mapping[str, object]] = {}
+    for addition_row in addition_log_rows:
+        approval_id = _optional_coerce_int(
+            addition_row.get("approval_id"),
+            field="approval_id",
+        )
+        response_id = _optional_coerce_int(
+            addition_row.get("response_id"),
+            field="response_id",
+        )
+        if approval_id is not None:
+            addition_by_approval_id.setdefault(approval_id, addition_row)
+        if response_id is not None:
+            addition_by_response_id.setdefault(response_id, addition_row)
+
+    if report is not None:
+        report.total_approval_ref_rows += len(rows)
+
+    for row in rows:
+        message_id = str(row.get("message_id") or "").strip()
+        try:
+            if not message_id:
+                raise MigrationError("approval message_id is empty")
+            response_id = _coerce_int(row["response_id"], field="response_id")
+            imported_target = imported_targets.get(response_id)
+            if imported_target is None:
+                raise MigrationError(
+                    f"missing imported response mapping for response_id={response_id}"
+                )
+            approval_id = _optional_coerce_int(
+                row.get("approval_id"),
+                field="approval_id",
+            )
+            addition_row = (
+                addition_by_approval_id.get(approval_id)
+                if approval_id is not None
+                else None
+            ) or addition_by_response_id.get(response_id)
+            add_source = _normalize_legacy_add_source(
+                addition_row.get("add_source") if addition_row is not None else None
+            )
+            created_at = normalize_legacy_timestamp(
+                row.get("approval_created_at")
+                or (addition_row.get("add_time") if addition_row is not None else None),
+                fallback=get_current_time(),
+            )
+            user_id = str(
+                add_source.get("user_id")
+                or (
+                    addition_row.get("user_id")
+                    if addition_row is not None
+                    else row.get("approval_user_id")
+                )
+                or ""
+            ).strip()
+            group_id = str(add_source.get("group_id") or "").strip()
+            source_message_id = str(
+                addition_row.get("created_message_id")
+                if addition_row is not None
+                else ""
+            ).strip()
+            await repository.record_message_ref(
+                {
+                    "message_id": message_id,
+                    "ref_kind": "approval",
+                    "shard_key": _message_ref_shard_key(created_at),
+                    "trigger_group_id": imported_target.trigger_group_id,
+                    "trigger_variant_id": imported_target.trigger_variant_id,
+                    "response_item_id": imported_target.response_item_id,
+                    "group_id": group_id,
+                    "user_id": user_id,
+                    "message_type": _legacy_addition_message_type(add_source),
+                    "source_message_id": source_message_id,
+                    "context_type": "",
+                    "current_page": 1,
+                    "keyword": "",
+                    "field": "",
+                    "creator_id": "",
+                    "has_image": 0,
+                    "group_ids_json": "[]",
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                }
+            )
+            if report is not None:
+                report.imported_approval_ref_rows += 1
+        except Exception as exc:
+            if report is not None:
+                report.add_approval_ref_failure(message_id, str(exc), row=row)
+            continue
+
+
 async def migrate_legacy_wordbank(
     old_repo_root: Path,
     *,
@@ -811,9 +1016,13 @@ async def migrate_legacy_wordbank(
 ) -> WordbankMigrationReport:
     pg_config = load_legacy_pg_config(old_repo_root)
     rows = await fetch_legacy_response_rows(pg_config)
-    response_log_rows = (
-        await fetch_legacy_response_log_rows(pg_config) if import_logs else ()
-    )
+    response_log_rows: Sequence[Mapping[str, object]] = ()
+    addition_log_rows: Sequence[Mapping[str, object]] = ()
+    message_approval_rows: Sequence[Mapping[str, object]] = ()
+    if import_logs:
+        response_log_rows = await fetch_legacy_response_log_rows(pg_config)
+        addition_log_rows = await fetch_legacy_addition_log_rows(pg_config)
+        message_approval_rows = await fetch_legacy_message_approval_rows(pg_config)
     image_catalog = build_legacy_image_catalog(image_root, mapping_path)
     return await migrate_legacy_rows(
         rows,
@@ -821,6 +1030,8 @@ async def migrate_legacy_wordbank(
         media_service=media_service,
         image_catalog=image_catalog,
         response_log_rows=response_log_rows,
+        addition_log_rows=addition_log_rows,
+        message_approval_rows=message_approval_rows,
         reset_target=reset_target,
     )
 
@@ -1380,10 +1591,13 @@ __all__ = [
     "LegacyPgConfig",
     "WordbankMigrationReport",
     "build_legacy_image_catalog",
+    "fetch_legacy_addition_log_rows",
+    "fetch_legacy_message_approval_rows",
     "fetch_legacy_response_log_rows",
     "fetch_legacy_response_rows",
     "legacy_message_to_shape",
     "load_legacy_pg_config",
+    "migrate_legacy_approval_message_refs",
     "migrate_legacy_response_logs",
     "migrate_legacy_rows",
     "migrate_legacy_wordbank",

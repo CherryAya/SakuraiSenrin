@@ -369,6 +369,88 @@ async def test_migrate_legacy_rows_imports_response_logs_into_current_log_schema
 
 
 @pytest.mark.asyncio
+async def test_migrate_legacy_rows_imports_approval_message_refs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path / "db")
+    repository = WordbankRepository()
+    media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    catalog = build_legacy_image_catalog(image_root, None)
+    rows = [
+        {
+            "response_id": 12,
+            "trigger_id": 9,
+            "response_text": json.dumps(
+                [{"type": "text", "text": "晚点见"}],
+                ensure_ascii=False,
+            ),
+            "response_rule_conditions": json.dumps({"group_id": {"$eq": 20003}}),
+            "weight": 3,
+            "priority": 2,
+            "created_by": "10003",
+            "created_at": 1700000200,
+            "response_available": False,
+            "trigger_text": json.dumps(
+                [{"type": "text", "text": "等会"}],
+                ensure_ascii=False,
+            ),
+            "trigger_config": json.dumps({"probability": 1.0}),
+            "extra_info": None,
+            "approval_status": "PENDING",
+        }
+    ]
+    addition_log_rows = [
+        {
+            "log_id": 7,
+            "response_id": 12,
+            "user_id": "10003",
+            "add_time": datetime(2024, 1, 4, 9, 0, tzinfo=UTC),
+            "add_source": {"group_id": "20003", "user_id": "10003"},
+            "created_message_id": "source-msg-77",
+            "approval_id": None,
+        }
+    ]
+    message_approval_rows = [
+        {
+            "id": 13,
+            "message_id": "approval-msg-12",
+            "approval_id": 88,
+            "response_id": 12,
+            "approval_user_id": "10003",
+            "approval_created_at": datetime(2024, 1, 4, 9, 1, tzinfo=UTC),
+        }
+    ]
+
+    report = await migrate_legacy_rows(
+        rows,
+        repository=repository,
+        media_service=media_service,
+        image_catalog=catalog,
+        addition_log_rows=addition_log_rows,
+        message_approval_rows=message_approval_rows,
+        reset_target=True,
+    )
+    approval_ref = await repository.get_message_ref(
+        "approval-msg-12",
+        expected_kind="approval",
+    )
+
+    assert report.imported_rows == 1
+    assert report.imported_approval_ref_rows == 1
+    assert report.skipped_approval_ref_rows == 0
+    assert approval_ref is not None
+    assert approval_ref.group_id == "20003"
+    assert approval_ref.user_id == "10003"
+    assert approval_ref.source_message_id == "source-msg-77"
+    assert approval_ref.message_type == "group"
+
+
+@pytest.mark.asyncio
 async def test_migrate_legacy_wordbank_wrapper_imports_response_logs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -424,6 +506,27 @@ async def test_migrate_legacy_wordbank_wrapper_imports_response_logs(
             "matched_text": "晚安安",
         }
     ]
+    addition_log_rows = [
+        {
+            "log_id": 8,
+            "response_id": 21,
+            "user_id": "10002",
+            "add_time": call_time,
+            "add_source": {"group_id": "20002", "user_id": "10002"},
+            "created_message_id": "source-msg-21",
+            "approval_id": None,
+        }
+    ]
+    message_approval_rows = [
+        {
+            "id": 4,
+            "message_id": "approval-msg-21",
+            "approval_id": 301,
+            "response_id": 21,
+            "approval_user_id": "10002",
+            "approval_created_at": call_time,
+        }
+    ]
 
     async def fake_fetch_rows(
         incoming_config: migration_module.LegacyPgConfig,
@@ -436,6 +539,18 @@ async def test_migrate_legacy_wordbank_wrapper_imports_response_logs(
     ) -> list[dict[str, object]]:
         assert incoming_config == config
         return response_log_rows
+
+    async def fake_fetch_addition_logs(
+        incoming_config: migration_module.LegacyPgConfig,
+    ) -> list[dict[str, object]]:
+        assert incoming_config == config
+        return addition_log_rows
+
+    async def fake_fetch_message_approvals(
+        incoming_config: migration_module.LegacyPgConfig,
+    ) -> list[dict[str, object]]:
+        assert incoming_config == config
+        return message_approval_rows
 
     def fake_load_legacy_pg_config(
         path: Path,
@@ -458,6 +573,16 @@ async def test_migrate_legacy_wordbank_wrapper_imports_response_logs(
         "fetch_legacy_response_log_rows",
         fake_fetch_logs,
     )
+    monkeypatch.setattr(
+        migration_module,
+        "fetch_legacy_addition_log_rows",
+        fake_fetch_addition_logs,
+    )
+    monkeypatch.setattr(
+        migration_module,
+        "fetch_legacy_message_approval_rows",
+        fake_fetch_message_approvals,
+    )
 
     report = await migrate_legacy_wordbank(
         old_repo_root,
@@ -479,11 +604,18 @@ async def test_migrate_legacy_wordbank_wrapper_imports_response_logs(
 
     assert report.imported_rows == 1
     assert report.imported_log_rows == 1
+    assert report.imported_approval_ref_rows == 1
     assert report.skipped_log_rows == 0
     assert len(logs) == 1
     assert logs[0].group_id == "20002"
     assert logs[0].user_id == "10010"
     assert logs[0].matched_text == "晚安安"
+    approval_ref = await repository.get_message_ref(
+        "approval-msg-21",
+        expected_kind="approval",
+    )
+    assert approval_ref is not None
+    assert approval_ref.source_message_id == "source-msg-21"
 
 
 @pytest.mark.asyncio
