@@ -266,12 +266,13 @@ class ShardedDB(BaseDB):
     async def _initialize_shard_schema(self, shard_key: str) -> None:
         if self._schema_base is None:
             return
-        if shard_key in self._initialized_shards:
+        db_path, _ = self._get_file_paths(shard_key)
+        shard_marker = str(db_path.resolve())
+        if shard_marker in self._initialized_shards:
             return
-        async with self._get_lock(f"schema:{shard_key}"):
-            if shard_key in self._initialized_shards:
+        async with self._get_lock(f"schema:{shard_marker}"):
+            if shard_marker in self._initialized_shards:
                 return
-            db_path, _ = self._get_file_paths(shard_key)
             async with db_manager.open(str(db_path), commit=True) as session:
                 engine = session.bind
                 assert isinstance(engine, AsyncEngine)
@@ -279,7 +280,7 @@ class ShardedDB(BaseDB):
                     await conn.run_sync(self._schema_base.metadata.create_all)
                     await conn.run_sync(PatchBase.metadata.create_all)
                 await self.patch_registry.apply_all(session, get_current_time())
-            self._initialized_shards.add(shard_key)
+            self._initialized_shards.add(shard_marker)
 
     async def _ensure_shard_online(
         self,

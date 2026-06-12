@@ -22,6 +22,14 @@ class WordbankLogBase(DeclarativeBase):
     """Wordbank sharded log database base."""
 
 
+class WordbankMessageRouteBase(DeclarativeBase):
+    """Wordbank message route database base."""
+
+
+class WordbankMessageRefBase(DeclarativeBase):
+    """Wordbank sharded message ref database base."""
+
+
 class WordbankTriggerGroup(WordbankMainBase, TimeMixin):
     __tablename__ = "wordbank_trigger_group"
     __table_args__ = (
@@ -243,58 +251,37 @@ class WordbankDeleteVoteSupport(WordbankMainBase, TimeMixin):
     user_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
-class WordbankResponseMessage(WordbankMainBase, TimeMixin):
-    __tablename__ = "wordbank_response_message"
+class WordbankMessageRoute(WordbankMessageRouteBase, TimeMixin):
+    __tablename__ = "wordbank_message_route"
     __table_args__ = (
-        UniqueConstraint("message_id", name="uq_wordbank_response_message_id"),
+        UniqueConstraint("message_id", name="uq_wordbank_message_route_id"),
         Index(
-            "idx_wordbank_response_message_response",
-            "response_item_id",
+            "idx_wordbank_message_route_kind_shard",
+            "ref_kind",
+            "shard_key",
             "created_at",
         ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     message_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    trigger_group_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    trigger_variant_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    response_item_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    group_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    user_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    message_type: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    ref_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    shard_key: Mapped[str] = mapped_column(String(16), nullable=False)
 
 
-class WordbankApprovalMessage(WordbankMainBase, TimeMixin):
-    __tablename__ = "wordbank_approval_message"
+class WordbankMessageRef(WordbankMessageRefBase, TimeMixin):
+    __tablename__ = "wordbank_message_ref"
     __table_args__ = (
-        UniqueConstraint("message_id", name="uq_wordbank_approval_message_id"),
+        UniqueConstraint("message_id", name="uq_wordbank_message_ref_id"),
         Index(
-            "idx_wordbank_approval_message_response",
+            "idx_wordbank_message_ref_response",
+            "ref_kind",
             "response_item_id",
             "created_at",
         ),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    message_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    trigger_group_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    response_item_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    group_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    user_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    source_message_id: Mapped[str] = mapped_column(
-        String(64),
-        nullable=False,
-        default="",
-    )
-    message_type: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-
-
-class WordbankViewMessage(WordbankMainBase, TimeMixin):
-    __tablename__ = "wordbank_view_message"
-    __table_args__ = (
-        UniqueConstraint("message_id", name="uq_wordbank_view_message_id"),
         Index(
-            "idx_wordbank_view_message_context",
+            "idx_wordbank_message_ref_context",
+            "ref_kind",
             "context_type",
             "trigger_group_id",
             "created_at",
@@ -303,17 +290,26 @@ class WordbankViewMessage(WordbankMainBase, TimeMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     message_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    context_type: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    ref_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    shard_key: Mapped[str] = mapped_column(String(16), nullable=False)
     trigger_group_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    trigger_variant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    response_item_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    group_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    message_type: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    source_message_id: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="",
+    )
+    context_type: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     current_page: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     keyword: Mapped[str] = mapped_column(Text, nullable=False, default="")
     field: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     creator_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     has_image: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     group_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
-    group_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    user_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    message_type: Mapped[str] = mapped_column(String(16), nullable=False, default="")
 
 
 class WordbankLog(WordbankLogBase):

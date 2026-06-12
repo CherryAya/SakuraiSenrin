@@ -6,6 +6,7 @@ import asyncio
 from collections import defaultdict, deque
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 import json
 import random
 from typing import Any
@@ -16,15 +17,14 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import (
-    WordbankApprovalMessageRecord,
     WordbankGroupDetail,
     WordbankLogPayload,
+    WordbankMessageRefKind,
+    WordbankMessageRefRecord,
     WordbankResponseItemRecord,
-    WordbankResponseMessageRecord,
     WordbankSearchItem,
     WordbankSearchPage,
     WordbankSearchRequest,
-    WordbankViewMessageRecord,
 )
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -372,129 +372,68 @@ class WordbankService:
             response_item_deleted=False,
         )
 
-    async def record_response_message(
+    async def record_message_ref(
         self,
         *,
+        ref_kind: WordbankMessageRefKind,
         message_id: str,
         trigger_group_id: int,
-        trigger_variant_id: int,
-        response_item_id: int,
         group_id: str,
         user_id: str,
         message_type: str,
+        trigger_variant_id: int = 0,
+        response_item_id: int = 0,
+        source_message_id: str = "",
+        context_type: str = "",
+        current_page: int = 1,
+        keyword: str = "",
+        field: str = "",
+        creator_id: str = "",
+        has_image: bool = False,
+        group_ids: Sequence[int] = (),
     ) -> None:
         message_id = message_id.strip()
         if not message_id:
             return
         now = get_current_time()
-        await self.repository.record_response_message(
+        shard_key = datetime.fromtimestamp(now, UTC).strftime("%Y_%m")
+        await self.repository.record_message_ref(
             {
+                "ref_kind": ref_kind,
                 "message_id": message_id,
+                "shard_key": shard_key,
                 "trigger_group_id": trigger_group_id,
                 "trigger_variant_id": trigger_variant_id,
                 "response_item_id": response_item_id,
                 "group_id": group_id,
                 "user_id": user_id,
                 "message_type": message_type,
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-
-    async def record_approval_message(
-        self,
-        *,
-        message_id: str,
-        trigger_group_id: int,
-        response_item_id: int,
-        group_id: str,
-        user_id: str,
-        source_message_id: str,
-        message_type: str,
-    ) -> None:
-        message_id = message_id.strip()
-        if not message_id:
-            return
-        now = get_current_time()
-        await self.repository.record_approval_message(
-            {
-                "message_id": message_id,
-                "trigger_group_id": trigger_group_id,
-                "response_item_id": response_item_id,
-                "group_id": group_id,
-                "user_id": user_id,
                 "source_message_id": source_message_id,
-                "message_type": message_type,
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-
-    async def get_response_message(
-        self,
-        message_id: str,
-    ) -> WordbankResponseMessageRecord | None:
-        message_id = message_id.strip()
-        if not message_id:
-            return None
-        return await self.repository.get_response_message(message_id)
-
-    async def get_approval_message(
-        self,
-        message_id: str,
-    ) -> WordbankApprovalMessageRecord | None:
-        message_id = message_id.strip()
-        if not message_id:
-            return None
-        return await self.repository.get_approval_message(message_id)
-
-    async def record_view_message(
-        self,
-        *,
-        message_id: str,
-        context_type: str,
-        trigger_group_id: int,
-        current_page: int,
-        keyword: str,
-        field: str,
-        creator_id: str,
-        has_image: bool,
-        group_ids: Sequence[int],
-        group_id: str,
-        user_id: str,
-        message_type: str,
-    ) -> None:
-        message_id = message_id.strip()
-        if not message_id:
-            return
-        now = get_current_time()
-        await self.repository.record_view_message(
-            {
-                "message_id": message_id,
                 "context_type": context_type,
-                "trigger_group_id": trigger_group_id,
                 "current_page": current_page,
                 "keyword": keyword,
                 "field": field,
                 "creator_id": creator_id,
                 "has_image": 1 if has_image else 0,
                 "group_ids_json": json.dumps(list(group_ids), ensure_ascii=False),
-                "group_id": group_id,
-                "user_id": user_id,
-                "message_type": message_type,
                 "created_at": now,
                 "updated_at": now,
             }
         )
 
-    async def get_view_message(
+    async def get_message_ref(
         self,
         message_id: str,
-    ) -> WordbankViewMessageRecord | None:
+        *,
+        expected_kind: WordbankMessageRefKind | None = None,
+    ) -> WordbankMessageRefRecord | None:
         message_id = message_id.strip()
         if not message_id:
             return None
-        return await self.repository.get_view_message(message_id)
+        return await self.repository.get_message_ref(
+            message_id,
+            expected_kind=expected_kind,
+        )
 
     async def get_group_detail(
         self,

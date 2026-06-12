@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from typing import TYPE_CHECKING, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
 if TYPE_CHECKING:
     from src.plugins.wordbank.message_model import MessageShape
@@ -94,43 +94,35 @@ class WordbankDeleteVotePayload(TypedDict):
     updated_at: int
 
 
-class WordbankResponseMessagePayload(TypedDict):
+WordbankMessageRefKind = Literal["response", "approval", "view"]
+
+
+class WordbankMessageRoutePayload(TypedDict):
     message_id: str
+    ref_kind: WordbankMessageRefKind
+    shard_key: str
+    created_at: int
+    updated_at: int
+
+
+class WordbankMessageRefPayload(TypedDict):
+    message_id: str
+    ref_kind: WordbankMessageRefKind
+    shard_key: str
     trigger_group_id: int
     trigger_variant_id: int
     response_item_id: int
     group_id: str
     user_id: str
     message_type: str
-    created_at: int
-    updated_at: int
-
-
-class WordbankApprovalMessagePayload(TypedDict):
-    message_id: str
-    trigger_group_id: int
-    response_item_id: int
-    group_id: str
-    user_id: str
     source_message_id: str
-    message_type: str
-    created_at: int
-    updated_at: int
-
-
-class WordbankViewMessagePayload(TypedDict):
-    message_id: str
     context_type: str
-    trigger_group_id: int
     current_page: int
     keyword: str
     field: str
     creator_id: str
     has_image: int
     group_ids_json: str
-    group_id: str
-    user_id: str
-    message_type: str
     created_at: int
     updated_at: int
 
@@ -304,25 +296,10 @@ class WordbankDeleteVoteMutation:
 
 
 @dataclass(slots=True, frozen=True)
-class WordbankResponseMessageRecord:
+class WordbankMessageRouteRecord:
     message_id: str
-    trigger_group_id: int
-    trigger_variant_id: int
-    response_item_id: int
-    group_id: str
-    user_id: str
-    message_type: str
-
-
-@dataclass(slots=True, frozen=True)
-class WordbankApprovalMessageRecord:
-    message_id: str
-    trigger_group_id: int
-    response_item_id: int
-    group_id: str
-    user_id: str
-    source_message_id: str
-    message_type: str
+    ref_kind: WordbankMessageRefKind
+    shard_key: str
 
 
 @dataclass(slots=True, frozen=True)
@@ -369,16 +346,21 @@ class WordbankGroupDetail:
 
 
 @dataclass(slots=True, frozen=True)
-class WordbankViewMessageRecord:
+class WordbankMessageRefRecord:
     message_id: str
-    context_type: str
+    ref_kind: WordbankMessageRefKind
+    shard_key: str
     trigger_group_id: int
+    trigger_variant_id: int
+    response_item_id: int
+    group_id: str
+    user_id: str
+    message_type: str
+    source_message_id: str
+    context_type: str
     current_page: int
     keyword: str
     field: str
     creator_id: str
     has_image: bool
     group_ids: tuple[int, ...]
-    group_id: str
-    user_id: str
-    message_type: str

@@ -5,8 +5,10 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 import json
 import re
+from typing import cast
 import unicodedata
 
 from sqlalchemy import delete, exists, func, or_, select, text
@@ -22,26 +24,30 @@ from src.plugins.wordbank.message_model import (
     shape_to_payload,
 )
 
-from .instances import wordbank_log_db, wordbank_main_db
+from .instances import (
+    wordbank_log_db,
+    wordbank_main_db,
+    wordbank_message_ref_db,
+    wordbank_message_route_db,
+)
 from .tables import (
-    WordbankApprovalMessage,
     WordbankDeleteVote,
     WordbankDeleteVoteSupport,
     WordbankImage,
     WordbankLog,
     WordbankLogBase,
     WordbankMainBase,
+    WordbankMessageRef,
+    WordbankMessageRefBase,
+    WordbankMessageRoute,
+    WordbankMessageRouteBase,
     WordbankResponseItem,
-    WordbankResponseMessage,
     WordbankSearchDocument,
     WordbankSearchImageMap,
     WordbankTriggerGroup,
     WordbankTriggerVariant,
-    WordbankViewMessage,
 )
 from .types import (
-    WordbankApprovalMessagePayload,
-    WordbankApprovalMessageRecord,
     WordbankCreatedResponse,
     WordbankDeleteVoteMutation,
     WordbankDeleteVoteRecord,
@@ -49,17 +55,18 @@ from .types import (
     WordbankImagePayload,
     WordbankImageRecord,
     WordbankLogPayload,
+    WordbankMessageRefKind,
+    WordbankMessageRefPayload,
+    WordbankMessageRefRecord,
+    WordbankMessageRoutePayload,
+    WordbankMessageRouteRecord,
     WordbankResponseItemDetail,
     WordbankResponseItemRecord,
-    WordbankResponseMessagePayload,
-    WordbankResponseMessageRecord,
     WordbankSearchItem,
     WordbankSearchPage,
     WordbankSearchRequest,
     WordbankTriggerGroupRecord,
     WordbankTriggerVariantRecord,
-    WordbankViewMessagePayload,
-    WordbankViewMessageRecord,
 )
 from .writers import wordbank_log_writer
 
@@ -68,6 +75,7 @@ _MAX_GRAM_SIZE = 3
 _SEARCH_RESULT_CANDIDATE_MULTIPLIER = 6
 _SEARCH_RESULT_MIN_CANDIDATES = 64
 _SEARCH_PREVIEW_LIMIT = 3
+_MESSAGE_REF_SHARD_FMT = "%Y_%m"
 
 
 @dataclass(slots=True)
@@ -125,6 +133,23 @@ def _merge_image_keys(image_keys_values: Sequence[str]) -> str:
 def _first_image_id(image_keys: str) -> int | None:
     parsed = _parse_image_keys(image_keys)
     return parsed[0] if parsed else None
+
+
+def _message_ref_shard_key_from_timestamp(timestamp: int) -> str:
+    return datetime.fromtimestamp(timestamp, UTC).strftime(_MESSAGE_REF_SHARD_FMT)
+
+
+def _message_ref_time_ctx(shard_key: str) -> datetime:
+    return datetime.strptime(shard_key, _MESSAGE_REF_SHARD_FMT).replace(tzinfo=UTC)
+
+
+def _decode_group_ids(group_ids_json: str) -> tuple[int, ...]:
+    raw_group_ids = json.loads(group_ids_json or "[]")
+    return tuple(
+        int(item)
+        for item in raw_group_ids
+        if isinstance(item, int) or (isinstance(item, str) and item.isdigit())
+    )
 
 
 def _group_status_from_responses(
@@ -188,6 +213,43 @@ class WordbankRepository:
     async def init_all_tables(cls) -> None:
         await wordbank_main_db.init(WordbankMainBase)
         await wordbank_log_db.init(WordbankLogBase)
+        await wordbank_message_route_db.init(WordbankMessageRouteBase)
+        await wordbank_message_ref_db.init(WordbankMessageRefBase)
+        await cls._drop_legacy_main_tables()
+        await cls._ensure_main_fts_tables()
+
+    @staticmethod
+    async def _ensure_main_fts_tables() -> None:
+        async with wordbank_main_db.write_session() as session:
+            await session.execute(
+                text(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS wordbank_search_trigger_fts
+                    USING fts5(tokens)
+                    """
+                )
+            )
+            await session.execute(
+                text(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS wordbank_search_response_fts
+                    USING fts5(tokens)
+                    """
+                )
+            )
+
+    @staticmethod
+    async def _drop_legacy_main_tables() -> None:
+        async with wordbank_main_db.write_session() as session:
+            for table_name in (
+                "wordbank_response_message",
+                "wordbank_approval_message",
+                "wordbank_view_message",
+                "wordbank_entry",
+                "wordbank_trigger",
+                "wordbank_response",
+            ):
+                await session.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
 
     @staticmethod
     def _to_trigger_variant_record(
@@ -288,56 +350,37 @@ class WordbankRepository:
         )
 
     @staticmethod
-    def _to_response_message_record(
-        row: WordbankResponseMessage,
-    ) -> WordbankResponseMessageRecord:
-        return WordbankResponseMessageRecord(
+    def _to_message_route_record(
+        row: WordbankMessageRoute,
+    ) -> WordbankMessageRouteRecord:
+        return WordbankMessageRouteRecord(
             message_id=row.message_id,
+            ref_kind=cast(WordbankMessageRefKind, row.ref_kind),
+            shard_key=row.shard_key,
+        )
+
+    @staticmethod
+    def _to_message_ref_record(
+        row: WordbankMessageRef,
+    ) -> WordbankMessageRefRecord:
+        return WordbankMessageRefRecord(
+            message_id=row.message_id,
+            ref_kind=cast(WordbankMessageRefKind, row.ref_kind),
+            shard_key=row.shard_key,
             trigger_group_id=row.trigger_group_id,
             trigger_variant_id=row.trigger_variant_id,
             response_item_id=row.response_item_id,
             group_id=row.group_id,
             user_id=row.user_id,
             message_type=row.message_type,
-        )
-
-    @staticmethod
-    def _to_approval_message_record(
-        row: WordbankApprovalMessage,
-    ) -> WordbankApprovalMessageRecord:
-        return WordbankApprovalMessageRecord(
-            message_id=row.message_id,
-            trigger_group_id=row.trigger_group_id,
-            response_item_id=row.response_item_id,
-            group_id=row.group_id,
-            user_id=row.user_id,
             source_message_id=row.source_message_id,
-            message_type=row.message_type,
-        )
-
-    @staticmethod
-    def _to_view_message_record(
-        row: WordbankViewMessage,
-    ) -> WordbankViewMessageRecord:
-        raw_group_ids = json.loads(row.group_ids_json or "[]")
-        group_ids = tuple(
-            int(item)
-            for item in raw_group_ids
-            if isinstance(item, int) or (isinstance(item, str) and item.isdigit())
-        )
-        return WordbankViewMessageRecord(
-            message_id=row.message_id,
             context_type=row.context_type,
-            trigger_group_id=row.trigger_group_id,
             current_page=row.current_page,
             keyword=row.keyword,
             field=row.field,
             creator_id=row.creator_id,
             has_image=bool(row.has_image),
-            group_ids=group_ids,
-            group_id=row.group_id,
-            user_id=row.user_id,
-            message_type=row.message_type,
+            group_ids=_decode_group_ids(row.group_ids_json),
         )
 
     @staticmethod
@@ -639,9 +682,15 @@ class WordbankRepository:
         *,
         include_images: bool = True,
     ) -> None:
+        route_rows = await self.list_message_ref_routes()
+        for shard_key in {route.shard_key for route in route_rows}:
+            async with wordbank_message_ref_db.write_session(
+                time_ctx=_message_ref_time_ctx(shard_key)
+            ) as session:
+                await session.execute(delete(WordbankMessageRef))
+        async with wordbank_message_route_db.write_session() as session:
+            await session.execute(delete(WordbankMessageRoute))
         async with wordbank_main_db.write_session() as session:
-            await session.execute(delete(WordbankApprovalMessage))
-            await session.execute(delete(WordbankResponseMessage))
             await session.execute(delete(WordbankDeleteVoteSupport))
             await session.execute(delete(WordbankDeleteVote))
             await session.execute(delete(WordbankSearchImageMap))
@@ -695,6 +744,7 @@ class WordbankRepository:
         ]
 
     async def ensure_search_index(self) -> None:
+        await self._ensure_main_fts_tables()
         async with wordbank_main_db.read_session() as session:
             expected_stmt = (
                 select(func.count())
@@ -760,6 +810,7 @@ class WordbankRepository:
             await self.rebuild_search_index()
 
     async def rebuild_search_index(self) -> None:
+        await self._ensure_main_fts_tables()
         async with wordbank_main_db.read_session() as session:
             group_rows = (
                 (
@@ -1312,112 +1363,142 @@ class WordbankRepository:
             )
         return self._to_delete_vote_record(vote, support_count=support_count)
 
-    async def record_response_message(
+    async def _upsert_message_route(
         self,
-        payload: WordbankResponseMessagePayload,
+        payload: WordbankMessageRoutePayload,
     ) -> None:
-        async with wordbank_main_db.write_session() as session:
-            stmt = sqlite_insert(WordbankResponseMessage).values(payload)
+        async with wordbank_message_route_db.write_session() as session:
+            stmt = sqlite_insert(WordbankMessageRoute).values(payload)
             stmt = stmt.on_conflict_do_update(
-                index_elements=[WordbankResponseMessage.message_id],
+                index_elements=[WordbankMessageRoute.message_id],
                 set_={
+                    "ref_kind": stmt.excluded.ref_kind,
+                    "shard_key": stmt.excluded.shard_key,
+                    "updated_at": stmt.excluded.updated_at,
+                },
+            )
+            await session.execute(stmt)
+
+    async def _delete_message_ref_from_shard(
+        self,
+        *,
+        message_id: str,
+        shard_key: str,
+    ) -> None:
+        async with wordbank_message_ref_db.write_session(
+            time_ctx=_message_ref_time_ctx(shard_key)
+        ) as session:
+            await session.execute(
+                delete(WordbankMessageRef).where(
+                    WordbankMessageRef.message_id == message_id
+                )
+            )
+
+    async def record_message_ref(
+        self,
+        payload: WordbankMessageRefPayload,
+    ) -> None:
+        previous_route = await self.get_message_ref_route(payload["message_id"])
+        async with wordbank_message_ref_db.write_session(
+            time_ctx=_message_ref_time_ctx(payload["shard_key"])
+        ) as session:
+            stmt = sqlite_insert(WordbankMessageRef).values(payload)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[WordbankMessageRef.message_id],
+                set_={
+                    "ref_kind": stmt.excluded.ref_kind,
+                    "shard_key": stmt.excluded.shard_key,
                     "trigger_group_id": stmt.excluded.trigger_group_id,
                     "trigger_variant_id": stmt.excluded.trigger_variant_id,
                     "response_item_id": stmt.excluded.response_item_id,
                     "group_id": stmt.excluded.group_id,
                     "user_id": stmt.excluded.user_id,
                     "message_type": stmt.excluded.message_type,
-                    "updated_at": stmt.excluded.updated_at,
-                },
-            )
-            await session.execute(stmt)
-
-    async def record_approval_message(
-        self,
-        payload: WordbankApprovalMessagePayload,
-    ) -> None:
-        async with wordbank_main_db.write_session() as session:
-            stmt = sqlite_insert(WordbankApprovalMessage).values(payload)
-            stmt = stmt.on_conflict_do_update(
-                index_elements=[WordbankApprovalMessage.message_id],
-                set_={
-                    "trigger_group_id": stmt.excluded.trigger_group_id,
-                    "response_item_id": stmt.excluded.response_item_id,
-                    "group_id": stmt.excluded.group_id,
-                    "user_id": stmt.excluded.user_id,
                     "source_message_id": stmt.excluded.source_message_id,
-                    "message_type": stmt.excluded.message_type,
-                    "updated_at": stmt.excluded.updated_at,
-                },
-            )
-            await session.execute(stmt)
-
-    async def record_view_message(
-        self,
-        payload: WordbankViewMessagePayload,
-    ) -> None:
-        async with wordbank_main_db.write_session() as session:
-            stmt = sqlite_insert(WordbankViewMessage).values(payload)
-            stmt = stmt.on_conflict_do_update(
-                index_elements=[WordbankViewMessage.message_id],
-                set_={
                     "context_type": stmt.excluded.context_type,
-                    "trigger_group_id": stmt.excluded.trigger_group_id,
                     "current_page": stmt.excluded.current_page,
                     "keyword": stmt.excluded.keyword,
                     "field": stmt.excluded.field,
                     "creator_id": stmt.excluded.creator_id,
                     "has_image": stmt.excluded.has_image,
                     "group_ids_json": stmt.excluded.group_ids_json,
-                    "group_id": stmt.excluded.group_id,
-                    "user_id": stmt.excluded.user_id,
-                    "message_type": stmt.excluded.message_type,
                     "updated_at": stmt.excluded.updated_at,
                 },
             )
             await session.execute(stmt)
+        if (
+            previous_route is not None
+            and previous_route.shard_key != payload["shard_key"]
+        ):
+            await self._delete_message_ref_from_shard(
+                message_id=payload["message_id"],
+                shard_key=previous_route.shard_key,
+            )
+        await self._upsert_message_route(
+            {
+                "message_id": payload["message_id"],
+                "ref_kind": payload["ref_kind"],
+                "shard_key": payload["shard_key"],
+                "created_at": payload["created_at"],
+                "updated_at": payload["updated_at"],
+            }
+        )
 
-    async def get_response_message(
+    async def get_message_ref_route(
         self,
         message_id: str,
-    ) -> WordbankResponseMessageRecord | None:
-        async with wordbank_main_db.read_session() as session:
+    ) -> WordbankMessageRouteRecord | None:
+        async with wordbank_message_route_db.read_session() as session:
             row = (
                 await session.execute(
-                    select(WordbankResponseMessage).where(
-                        WordbankResponseMessage.message_id == message_id
+                    select(WordbankMessageRoute).where(
+                        WordbankMessageRoute.message_id == message_id
                     )
                 )
             ).scalar_one_or_none()
-        return self._to_response_message_record(row) if row else None
+        return self._to_message_route_record(row) if row else None
 
-    async def get_approval_message(
+    async def list_message_ref_routes(self) -> list[WordbankMessageRouteRecord]:
+        async with wordbank_message_route_db.read_session() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(WordbankMessageRoute).order_by(
+                            WordbankMessageRoute.id.asc()
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return [self._to_message_route_record(row) for row in rows]
+
+    async def get_message_ref(
         self,
         message_id: str,
-    ) -> WordbankApprovalMessageRecord | None:
-        async with wordbank_main_db.read_session() as session:
+        *,
+        expected_kind: WordbankMessageRefKind | None = None,
+    ) -> WordbankMessageRefRecord | None:
+        route = await self.get_message_ref_route(message_id)
+        if route is None:
+            return None
+        if expected_kind is not None and route.ref_kind != expected_kind:
+            return None
+        async with wordbank_message_ref_db.read_session(
+            time_ctx=_message_ref_time_ctx(route.shard_key)
+        ) as session:
             row = (
                 await session.execute(
-                    select(WordbankApprovalMessage).where(
-                        WordbankApprovalMessage.message_id == message_id
+                    select(WordbankMessageRef).where(
+                        WordbankMessageRef.message_id == message_id
                     )
                 )
             ).scalar_one_or_none()
-        return self._to_approval_message_record(row) if row else None
-
-    async def get_view_message(
-        self,
-        message_id: str,
-    ) -> WordbankViewMessageRecord | None:
-        async with wordbank_main_db.read_session() as session:
-            row = (
-                await session.execute(
-                    select(WordbankViewMessage).where(
-                        WordbankViewMessage.message_id == message_id
-                    )
-                )
-            ).scalar_one_or_none()
-        return self._to_view_message_record(row) if row else None
+        if row is None:
+            return None
+        if expected_kind is not None and row.ref_kind != expected_kind:
+            return None
+        return self._to_message_ref_record(row)
 
     async def get_group_detail(
         self,

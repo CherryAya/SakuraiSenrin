@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 import sys
 import types
@@ -101,6 +101,14 @@ def _disable_real_plugin_loading(
 ) -> None:
     """Avoid loading unrelated plugins when importing modules under test."""
     monkeypatch.setenv("ENVIRONMENT", "test")
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _dispose_test_db_engines() -> AsyncIterator[None]:
+    from src.lib.db.manager import db_manager
+
+    yield
+    await db_manager.dispose_all()
 
 
 @pytest.fixture(scope="session", autouse=True)

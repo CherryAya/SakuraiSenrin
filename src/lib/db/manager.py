@@ -74,6 +74,15 @@ class DatabaseManager:
                 await engine.dispose()
                 logger.debug(f"释放 connection: {full_path}")
 
+    async def dispose_all(self) -> None:
+        async with self._lock:
+            engines = list(self._engines.items())
+            self._engines.clear()
+            self._session_factories.clear()
+        for url, engine in engines:
+            await engine.dispose()
+            logger.debug(f"释放 connection: {url}")
+
     @asynccontextmanager
     async def open(
         self,

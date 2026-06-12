@@ -11,9 +11,8 @@ from nonebot.adapters.onebot.v11.event import MessageEvent
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import (
-    WordbankApprovalMessageRecord,
     WordbankGroupDetail,
-    WordbankResponseMessageRecord,
+    WordbankMessageRefRecord,
 )
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.rules import RuleError
@@ -63,7 +62,7 @@ _PAGE_ONLY_RE = re.compile(r"^(?:第\s*)?(\d+)(?:\s*页)?$", re.IGNORECASE)
 @dataclass(slots=True, frozen=True)
 class ApprovalReplyOutcome:
     message: str
-    approval_message: WordbankApprovalMessageRecord | None = None
+    approval_message: WordbankMessageRefRecord | None = None
     completed: bool = False
     action: str = ""
 
@@ -99,7 +98,10 @@ async def handle_reply_command(
     if message_id is None:
         return tr(locale, "wordbank.reply.target_missing")
 
-    response_message = await service.get_response_message(message_id)
+    response_message = await service.get_message_ref(
+        message_id,
+        expected_kind="response",
+    )
     if response_message is None:
         return tr(locale, "wordbank.reply.target_not_found", message_id=message_id)
 
@@ -170,7 +172,10 @@ async def handle_approval_reply_result(
     if message_id is None:
         return ApprovalReplyOutcome(tr(locale, "wordbank.reply.target_missing"))
 
-    approval_message = await service.get_approval_message(message_id)
+    approval_message = await service.get_message_ref(
+        message_id,
+        expected_kind="approval",
+    )
     if approval_message is None:
         return ApprovalReplyOutcome(
             tr(
@@ -346,7 +351,7 @@ def _parse_explicit_group_view_command(
 
 async def _load_group_detail(
     service: WordbankService,
-    response_message: WordbankResponseMessageRecord,
+    response_message: WordbankMessageRefRecord,
 ) -> WordbankGroupDetail | None:
     return await service.get_group_detail(
         response_message.trigger_group_id,
@@ -356,7 +361,7 @@ async def _load_group_detail(
 
 def format_entry_detail(
     detail: WordbankGroupDetail,
-    response_message: WordbankResponseMessageRecord,
+    response_message: WordbankMessageRefRecord,
     *,
     locale: LocaleCode,
 ) -> str:

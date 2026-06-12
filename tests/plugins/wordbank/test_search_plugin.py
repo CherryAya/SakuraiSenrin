@@ -27,8 +27,8 @@ if nonebot.get_plugin("wordbank") is None:
 from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank import wordbank_search_command
 from src.plugins.wordbank.database.types import (
+    WordbankMessageRefRecord,
     WordbankSearchPage,
-    WordbankViewMessageRecord,
 )
 from tests.plugins.water.helpers import attach_reply_message, build_group_message_event
 
@@ -172,12 +172,16 @@ async def test_view_reply_matcher_routes_search_result_reply_to_group_detail(
     )
     monkeypatch.setattr(
         wordbank_plugin.wordbank_service,
-        "get_view_message",
+        "get_message_ref",
         AsyncMock(
-            return_value=WordbankViewMessageRecord(
+            return_value=WordbankMessageRefRecord(
                 message_id="90001",
+                ref_kind="view",
+                shard_key="2026_06",
                 context_type="search_result",
                 trigger_group_id=0,
+                trigger_variant_id=0,
+                response_item_id=0,
                 current_page=1,
                 keyword="jrlp",
                 field="all",
@@ -187,6 +191,7 @@ async def test_view_reply_matcher_routes_search_result_reply_to_group_detail(
                 group_id="20001",
                 user_id="10001",
                 message_type="group",
+                source_message_id="",
             )
         ),
     )

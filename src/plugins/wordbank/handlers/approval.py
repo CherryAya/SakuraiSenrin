@@ -149,7 +149,8 @@ async def send_pending_approval_notice(
             message_id = extract_sent_message_id(send_result)
             if message_id is None:
                 continue
-            await service.record_approval_message(
+            await service.record_message_ref(
+                ref_kind="approval",
                 message_id=message_id,
                 trigger_group_id=result.trigger_group_id,
                 response_item_id=result.response_item_id,
@@ -179,7 +180,8 @@ async def record_submission_approval_message(
         return
 
     try:
-        await service.record_approval_message(
+        await service.record_message_ref(
+            ref_kind="approval",
             message_id=message_id,
             trigger_group_id=result.trigger_group_id,
             response_item_id=result.response_item_id,

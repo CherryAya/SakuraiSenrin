@@ -5,10 +5,9 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent
 
 from src.plugins.wordbank.database.types import (
-    WordbankApprovalMessageRecord,
     WordbankGroupDetail,
+    WordbankMessageRefRecord,
     WordbankResponseItemDetail,
-    WordbankResponseMessageRecord,
 )
 from src.plugins.wordbank.handlers.reply import (
     handle_approval_reply_result,
@@ -27,27 +26,47 @@ def _event_with_reply(message: str = "详情") -> GroupMessageEvent:
     return event
 
 
-def _response_message() -> WordbankResponseMessageRecord:
-    return WordbankResponseMessageRecord(
+def _response_message() -> WordbankMessageRefRecord:
+    return WordbankMessageRefRecord(
         message_id="90001",
+        ref_kind="response",
+        shard_key="2026_06",
         trigger_group_id=12,
         trigger_variant_id=120,
         response_item_id=300,
         group_id="20001",
         user_id="10001",
         message_type="text",
+        source_message_id="",
+        context_type="",
+        current_page=1,
+        keyword="",
+        field="",
+        creator_id="",
+        has_image=False,
+        group_ids=(),
     )
 
 
-def _approval_message() -> WordbankApprovalMessageRecord:
-    return WordbankApprovalMessageRecord(
+def _approval_message() -> WordbankMessageRefRecord:
+    return WordbankMessageRefRecord(
         message_id="90001",
+        ref_kind="approval",
+        shard_key="2026_06",
         trigger_group_id=12,
+        trigger_variant_id=0,
         response_item_id=300,
         group_id="20001",
         user_id="10001",
         source_message_id="1",
         message_type="approval",
+        context_type="",
+        current_page=1,
+        keyword="",
+        field="",
+        creator_id="",
+        has_image=False,
+        group_ids=(),
     )
 
 
@@ -84,12 +103,12 @@ def _group_detail() -> WordbankGroupDetail:
 
 
 async def test_reply_info_formats_selected_response_item_detail() -> None:
-    get_response_message = AsyncMock(return_value=_response_message())
+    get_message_ref = AsyncMock(return_value=_response_message())
     get_group_detail = AsyncMock(return_value=_group_detail())
     service = cast(
         WordbankService,
         SimpleNamespace(
-            get_response_message=get_response_message,
+            get_message_ref=get_message_ref,
             get_group_detail=get_group_detail,
         ),
     )
@@ -104,7 +123,7 @@ async def test_reply_info_formats_selected_response_item_detail() -> None:
     assert "词条详情 #300" in message
     assert "触发: 晚安" in message
     assert "响应: 做个好梦" in message
-    get_response_message.assert_awaited_once_with("90001")
+    get_message_ref.assert_awaited_once_with("90001", expected_kind="response")
     get_group_detail.assert_awaited_once_with(12, response_item_id=300)
 
 
@@ -112,7 +131,7 @@ async def test_reply_history_returns_status_summary() -> None:
     service = cast(
         WordbankService,
         SimpleNamespace(
-            get_response_message=AsyncMock(return_value=_response_message()),
+            get_message_ref=AsyncMock(return_value=_response_message()),
             get_group_detail=AsyncMock(return_value=_group_detail()),
         ),
     )
@@ -134,7 +153,7 @@ async def test_reply_delete_and_restore_use_response_item_id() -> None:
     service = cast(
         WordbankService,
         SimpleNamespace(
-            get_response_message=AsyncMock(return_value=_response_message()),
+            get_message_ref=AsyncMock(return_value=_response_message()),
             delete_response_item=delete_response_item,
             restore_response_item=restore_response_item,
             request_delete_vote=AsyncMock(),
@@ -173,12 +192,12 @@ async def test_reply_delete_and_restore_use_response_item_id() -> None:
 
 
 async def test_approval_reply_approves_response_item() -> None:
-    get_approval_message = AsyncMock(return_value=_approval_message())
+    get_message_ref = AsyncMock(return_value=_approval_message())
     approve_response_item = AsyncMock(return_value=True)
     service = cast(
         WordbankService,
         SimpleNamespace(
-            get_approval_message=get_approval_message,
+            get_message_ref=get_message_ref,
             approve_response_item=approve_response_item,
         ),
     )

@@ -4,8 +4,14 @@ from pathlib import Path
 
 from PIL import Image
 import pytest
+from sqlalchemy import text
 
 from src.lib.utils.common import get_current_time
+from src.plugins.wordbank.database.instances import (
+    wordbank_main_db,
+    wordbank_message_ref_db,
+    wordbank_message_route_db,
+)
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import WordbankSearchRequest
 from src.plugins.wordbank.message_model import (
@@ -399,13 +405,14 @@ async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
 
 
 @pytest.mark.asyncio
-async def test_record_view_message_roundtrip(
+async def test_record_message_ref_roundtrip_writes_route_and_shard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = await _build_service(tmp_path, monkeypatch)
 
-    await service.record_view_message(
+    await service.record_message_ref(
+        ref_kind="view",
         message_id="90001",
         context_type="search_result",
         trigger_group_id=0,
@@ -419,13 +426,161 @@ async def test_record_view_message_roundtrip(
         user_id="10001",
         message_type="group",
     )
-    record = await service.get_view_message("90001")
+    route = await service.repository.get_message_ref_route("90001")
+    record = await service.get_message_ref("90001", expected_kind="view")
 
+    assert route is not None
+    assert route.ref_kind == "view"
     assert record is not None
+    assert record.shard_key == route.shard_key
     assert record.context_type == "search_result"
     assert record.current_page == 2
     assert record.group_ids == (271, 300)
     assert record.has_image is True
+
+
+@pytest.mark.asyncio
+async def test_record_message_ref_upsert_reuses_message_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+
+    await service.record_message_ref(
+        ref_kind="response",
+        message_id="90002",
+        trigger_group_id=12,
+        trigger_variant_id=120,
+        response_item_id=300,
+        group_id="20001",
+        user_id="10001",
+        message_type="group",
+    )
+    await service.record_message_ref(
+        ref_kind="response",
+        message_id="90002",
+        trigger_group_id=12,
+        trigger_variant_id=121,
+        response_item_id=301,
+        group_id="20002",
+        user_id="10002",
+        message_type="private",
+    )
+
+    route = await service.repository.get_message_ref_route("90002")
+    record = await service.get_message_ref("90002", expected_kind="response")
+
+    assert route is not None
+    assert route.ref_kind == "response"
+    assert record is not None
+    assert record.shard_key == route.shard_key
+    assert record.trigger_variant_id == 121
+    assert record.response_item_id == 301
+    assert record.group_id == "20002"
+    assert record.user_id == "10002"
+    assert record.message_type == "private"
+
+
+@pytest.mark.asyncio
+async def test_record_message_ref_roundtrip_supports_approval_kind(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+
+    await service.record_message_ref(
+        ref_kind="approval",
+        message_id="90003",
+        trigger_group_id=88,
+        response_item_id=501,
+        group_id="20001",
+        user_id="10001",
+        source_message_id="777",
+        message_type="approval",
+    )
+
+    route = await service.repository.get_message_ref_route("90003")
+    record = await service.get_message_ref("90003", expected_kind="approval")
+
+    assert route is not None
+    assert route.ref_kind == "approval"
+    assert record is not None
+    assert record.shard_key == route.shard_key
+    assert record.source_message_id == "777"
+    assert record.response_item_id == 501
+    assert record.message_type == "approval"
+
+
+@pytest.mark.asyncio
+async def test_init_all_tables_creates_fts_and_clears_wordbank_patch_chain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+
+    async with wordbank_main_db.read_session() as session:
+        main_objects = {
+            row[0]
+            for row in (
+                await session.execute(
+                    text(
+                        """
+                        SELECT name
+                        FROM sqlite_master
+                        WHERE name IN (
+                            'wordbank_search_trigger_fts',
+                            'wordbank_search_response_fts',
+                            'wordbank_response_message',
+                            'wordbank_approval_message',
+                            'wordbank_view_message'
+                        )
+                        """
+                    )
+                )
+            ).all()
+        }
+    async with wordbank_message_route_db.read_session() as session:
+        route_objects = {
+            row[0]
+            for row in (
+                await session.execute(
+                    text(
+                        """
+                        SELECT name
+                        FROM sqlite_master
+                        WHERE name = 'wordbank_message_route'
+                        """
+                    )
+                )
+            ).all()
+        }
+    async with wordbank_message_ref_db.read_session() as session:
+        ref_objects = {
+            row[0]
+            for row in (
+                await session.execute(
+                    text(
+                        """
+                        SELECT name
+                        FROM sqlite_master
+                        WHERE name = 'wordbank_message_ref'
+                        """
+                    )
+                )
+            ).all()
+        }
+
+    assert service.repository is not None
+    assert wordbank_main_db.patch_registry.patches == []
+    assert wordbank_message_route_db.patch_registry.patches == []
+    assert wordbank_message_ref_db.patch_registry.patches == []
+    assert "wordbank_search_trigger_fts" in main_objects
+    assert "wordbank_search_response_fts" in main_objects
+    assert "wordbank_response_message" not in main_objects
+    assert "wordbank_approval_message" not in main_objects
+    assert "wordbank_view_message" not in main_objects
+    assert route_objects == {"wordbank_message_route"}
+    assert ref_objects == {"wordbank_message_ref"}
 
 
 @pytest.mark.asyncio

@@ -51,7 +51,7 @@ from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 
-from .database.types import WordbankApprovalMessageRecord
+from .database.types import WordbankMessageRefRecord
 from .handlers import (
     APPROVAL_REPLY_ALIASES,
     GROUP_ALIASES,
@@ -182,7 +182,13 @@ async def is_wordbank_approval_reply(event: MessageEvent) -> bool:
     if message_id is None:
         return False
     await initialize_wordbank_plugin()
-    return await wordbank_service.get_approval_message(str(message_id)) is not None
+    return (
+        await wordbank_service.get_message_ref(
+            str(message_id),
+            expected_kind="approval",
+        )
+        is not None
+    )
 
 
 async def is_wordbank_response_reply(event: MessageEvent) -> bool:
@@ -192,7 +198,13 @@ async def is_wordbank_response_reply(event: MessageEvent) -> bool:
     if message_id is None:
         return False
     await initialize_wordbank_plugin()
-    return await wordbank_service.get_response_message(str(message_id)) is not None
+    return (
+        await wordbank_service.get_message_ref(
+            str(message_id),
+            expected_kind="response",
+        )
+        is not None
+    )
 
 
 async def is_wordbank_view_reply(event: MessageEvent) -> bool:
@@ -202,7 +214,13 @@ async def is_wordbank_view_reply(event: MessageEvent) -> bool:
     if message_id is None:
         return False
     await initialize_wordbank_plugin()
-    return await wordbank_service.get_view_message(str(message_id)) is not None
+    return (
+        await wordbank_service.get_message_ref(
+            str(message_id),
+            expected_kind="view",
+        )
+        is not None
+    )
 
 
 wordbank_command = on_command(
@@ -324,7 +342,7 @@ async def _finish_add_result(
 
 async def _notify_approval_source(
     bot: Bot,
-    approval_message: WordbankApprovalMessageRecord,
+    approval_message: WordbankMessageRefRecord,
     message: str,
 ) -> None:
     source = Message()
@@ -1420,7 +1438,10 @@ async def _(matcher: Matcher, event: MessageEvent) -> None:
     if reply_message_id is None:
         await matcher.finish(tr(locale, "wordbank.reply.target_missing"))
         return
-    view_message = await wordbank_service.get_view_message(str(reply_message_id))
+    view_message = await wordbank_service.get_message_ref(
+        str(reply_message_id),
+        expected_kind="view",
+    )
     if view_message is None:
         await matcher.finish(
             tr(
@@ -1472,7 +1493,8 @@ async def _record_passive_response_message(
     if message_id is None:
         return
     try:
-        await wordbank_service.record_response_message(
+        await wordbank_service.record_message_ref(
+            ref_kind="response",
             message_id=message_id,
             trigger_group_id=response.trigger_group_id,
             trigger_variant_id=response.trigger_variant_id,
@@ -1550,7 +1572,8 @@ async def _record_view_message(
     if message_id is None:
         return
     try:
-        await wordbank_service.record_view_message(
+        await wordbank_service.record_message_ref(
+            ref_kind="view",
             message_id=message_id,
             context_type=context_type,
             trigger_group_id=trigger_group_id,

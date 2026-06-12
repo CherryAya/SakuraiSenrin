@@ -11,20 +11,20 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from src.lib.db.ops import BaseOps
 
 from .tables import (
-    WordbankApprovalMessage,
     WordbankDeleteVote,
     WordbankDeleteVoteSupport,
     WordbankLog,
+    WordbankMessageRef,
+    WordbankMessageRoute,
     WordbankResponseItem,
-    WordbankResponseMessage,
     WordbankTriggerGroup,
     WordbankTriggerVariant,
 )
 from .types import (
-    WordbankApprovalMessagePayload,
     WordbankDeleteVotePayload,
     WordbankLogPayload,
-    WordbankResponseMessagePayload,
+    WordbankMessageRefPayload,
+    WordbankMessageRoutePayload,
 )
 
 
@@ -184,52 +184,58 @@ class WordbankDeleteVoteSupportOps(BaseOps[WordbankDeleteVoteSupport]):
         return support
 
 
-class WordbankResponseMessageOps(BaseOps[WordbankResponseMessage]):
-    async def upsert_response_message(
+class WordbankMessageRouteOps(BaseOps[WordbankMessageRoute]):
+    async def upsert_message_route(
         self,
-        payload: WordbankResponseMessagePayload,
+        payload: WordbankMessageRoutePayload,
     ) -> int:
-        stmt = sqlite_insert(WordbankResponseMessage).values(payload)
+        stmt = sqlite_insert(WordbankMessageRoute).values(payload)
         stmt = stmt.on_conflict_do_update(
-            index_elements=[WordbankResponseMessage.message_id],
+            index_elements=[WordbankMessageRoute.message_id],
             set_={
+                "ref_kind": stmt.excluded.ref_kind,
+                "shard_key": stmt.excluded.shard_key,
+                "updated_at": stmt.excluded.updated_at,
+            },
+        )
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
+
+    async def get_by_message_id(
+        self,
+        message_id: str,
+    ) -> WordbankMessageRoute | None:
+        stmt = select(WordbankMessageRoute).where(
+            WordbankMessageRoute.message_id == message_id
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+
+class WordbankMessageRefOps(BaseOps[WordbankMessageRef]):
+    async def upsert_message_ref(
+        self,
+        payload: WordbankMessageRefPayload,
+    ) -> int:
+        stmt = sqlite_insert(WordbankMessageRef).values(payload)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[WordbankMessageRef.message_id],
+            set_={
+                "ref_kind": stmt.excluded.ref_kind,
+                "shard_key": stmt.excluded.shard_key,
                 "trigger_group_id": stmt.excluded.trigger_group_id,
                 "trigger_variant_id": stmt.excluded.trigger_variant_id,
                 "response_item_id": stmt.excluded.response_item_id,
                 "group_id": stmt.excluded.group_id,
                 "user_id": stmt.excluded.user_id,
                 "message_type": stmt.excluded.message_type,
-                "updated_at": stmt.excluded.updated_at,
-            },
-        )
-        result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
-
-    async def get_by_message_id(
-        self,
-        message_id: str,
-    ) -> WordbankResponseMessage | None:
-        stmt = select(WordbankResponseMessage).where(
-            WordbankResponseMessage.message_id == message_id
-        )
-        return (await self.session.execute(stmt)).scalar_one_or_none()
-
-
-class WordbankApprovalMessageOps(BaseOps[WordbankApprovalMessage]):
-    async def upsert_approval_message(
-        self,
-        payload: WordbankApprovalMessagePayload,
-    ) -> int:
-        stmt = sqlite_insert(WordbankApprovalMessage).values(payload)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[WordbankApprovalMessage.message_id],
-            set_={
-                "trigger_group_id": stmt.excluded.trigger_group_id,
-                "response_item_id": stmt.excluded.response_item_id,
-                "group_id": stmt.excluded.group_id,
-                "user_id": stmt.excluded.user_id,
                 "source_message_id": stmt.excluded.source_message_id,
-                "message_type": stmt.excluded.message_type,
+                "context_type": stmt.excluded.context_type,
+                "current_page": stmt.excluded.current_page,
+                "keyword": stmt.excluded.keyword,
+                "field": stmt.excluded.field,
+                "creator_id": stmt.excluded.creator_id,
+                "has_image": stmt.excluded.has_image,
+                "group_ids_json": stmt.excluded.group_ids_json,
                 "updated_at": stmt.excluded.updated_at,
             },
         )
@@ -239,9 +245,9 @@ class WordbankApprovalMessageOps(BaseOps[WordbankApprovalMessage]):
     async def get_by_message_id(
         self,
         message_id: str,
-    ) -> WordbankApprovalMessage | None:
-        stmt = select(WordbankApprovalMessage).where(
-            WordbankApprovalMessage.message_id == message_id
+    ) -> WordbankMessageRef | None:
+        stmt = select(WordbankMessageRef).where(
+            WordbankMessageRef.message_id == message_id
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
