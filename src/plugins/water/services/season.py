@@ -46,7 +46,7 @@ class SeasonService:
         return water_repo.normalize_season_name(name)
 
     def today_record_date(self) -> int:
-        return int(arrow.get(get_current_time()).format("YYYYMMDD"))
+        return int(arrow.get(get_current_time()).to("Asia/Shanghai").format("YYYYMMDD"))
 
     async def create(self, data: SeasonCreateInput) -> WaterActivitySeasonRecord:
         existing = await water_repo.get_activity_season(data.season_id)

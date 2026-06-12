@@ -752,7 +752,7 @@ class WaterRepository:
     ) -> list[RankItem]:
         await water_writer.flush_now()
 
-        now = arrow.get(get_current_time())
+        now = arrow.get(get_current_time()).to("Asia/Shanghai")
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
         yesterday_int = int(now.shift(days=-1).format("YYYYMMDD"))
@@ -794,7 +794,7 @@ class WaterRepository:
     async def get_today_group_rank(self, group_id: str) -> int:
         await water_writer.flush_now()
 
-        now = arrow.get(get_current_time())
+        now = arrow.get(get_current_time()).to("Asia/Shanghai")
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 
@@ -813,7 +813,7 @@ class WaterRepository:
 
         await water_writer.flush_now()
 
-        now = arrow.get(get_current_time())
+        now = arrow.get(get_current_time()).to("Asia/Shanghai")
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 

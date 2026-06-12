@@ -42,7 +42,12 @@ class WaterSettlementService:
         3. 消息分片文件生命周期由独立归档任务处理。
         """
         if target_date is None:
-            target = arrow.get(get_current_time()).shift(days=-1).floor("day")
+            target = (
+                arrow.get(get_current_time())
+                .to("Asia/Shanghai")
+                .shift(days=-1)
+                .floor("day")
+            )
         else:
             target = target_date.floor("day")
         record_date = int(target.format("YYYYMMDD"))

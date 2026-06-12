@@ -206,7 +206,12 @@ class WaterRankService:
         if last_success > 0:
             anchor = arrow.get(str(last_success), "YYYYMMDD").floor("day")
         else:
-            anchor = arrow.get(get_current_time()).shift(days=-1).floor("day")
+            anchor = (
+                arrow.get(get_current_time())
+                .to("Asia/Shanghai")
+                .shift(days=-1)
+                .floor("day")
+            )
 
         current_start = self._floor_period(anchor, period)
         day_count = max(1, (anchor.date() - current_start.date()).days + 1)
