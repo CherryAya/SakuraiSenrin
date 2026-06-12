@@ -10,6 +10,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import func, select
 
+from src.database.system_migration import LegacyPgConfig
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.instances import water_core_db, water_message
 from src.plugins.water.database.tables import (
@@ -23,6 +24,7 @@ from src.plugins.water.migration import (
     build_legacy_water_rows,
     import_legacy_water_rows,
     migrate_legacy_water,
+    migrate_legacy_water_from_pg,
     normalize_legacy_timestamp,
     rebuild_water_runtime_from_messages,
     reset_current_water_runtime,
@@ -354,3 +356,95 @@ async def test_migrate_legacy_water_reports_aggregated_counter_rows() -> None:
     assert report.source_rows == 2
     assert report.imported_messages == 2
     assert report.imported_counter_rows == 1
+
+
+@pytest.mark.asyncio
+async def test_migrate_legacy_water_from_pg_streams_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows_batch_1 = build_legacy_water_rows(
+        [
+            {
+                "id": 1,
+                "user_id": "10001",
+                "group_id": "20001",
+                "created_at": datetime(2026, 6, 10, 8, 0, 0),
+            },
+            {
+                "id": 2,
+                "user_id": "10001",
+                "group_id": "20001",
+                "created_at": datetime(2026, 6, 10, 8, 5, 0),
+            },
+        ]
+    )
+    rows_batch_2 = build_legacy_water_rows(
+        [
+            {
+                "id": 3,
+                "user_id": "10002",
+                "group_id": "20002",
+                "created_at": datetime(2026, 6, 11, 9, 0, 0),
+            }
+        ]
+    )
+
+    from src.plugins.water import migration as migration_module
+
+    monkeypatch.setattr(
+        migration_module,
+        "iter_legacy_water_row_batches",
+        lambda *args, **kwargs: iter([rows_batch_1, rows_batch_2]),
+    )
+
+    imported_batches: list[list[LegacyWaterRow]] = []
+
+    async def _fake_import(
+        rows: list[LegacyWaterRow],
+        *,
+        chunk_size: int = 1000,
+    ) -> int:
+        imported_batches.append(rows)
+        _ = chunk_size
+        return 1
+
+    async def _fake_rebuild(
+        *,
+        start_date: int | None,
+        end_date: int | None,
+    ) -> tuple[int, int, int, list[dict[str, object]]]:
+        assert start_date == 20260610
+        assert end_date == 20260611
+        return (2, 3, 4, [])
+
+    monkeypatch.setattr(migration_module, "import_legacy_water_rows", _fake_import)
+    monkeypatch.setattr(
+        migration_module,
+        "rebuild_water_runtime_from_messages",
+        _fake_rebuild,
+    )
+
+    report = await migrate_legacy_water_from_pg(
+        LegacyPgConfig(
+            host="127.0.0.1",
+            port=5432,
+            user="legacy",
+            password="secret",
+            database="senrin_water",
+        ),
+        reset_target=True,
+        chunk_size=500,
+        fetch_size=10_000,
+    )
+
+    assert len(imported_batches) == 2
+    assert report.source_rows == 3
+    assert report.imported_messages == 3
+    assert report.imported_counter_rows == 2
+    assert report.imported_date_range == {
+        "start_date": 20260610,
+        "end_date": 20260611,
+    }
+    assert report.settled_days == 2
+    assert report.generated_summaries == 3
+    assert report.generated_achievements == 4

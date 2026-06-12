@@ -60,8 +60,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--chunk-size",
         type=int,
-        default=2000,
-        help="message batch size for importing water_message",
+        default=10_000,
+        help="counter upsert batch size for importing water_hourly_counter",
+    )
+    parser.add_argument(
+        "--fetch-size",
+        type=int,
+        default=50_000,
+        help="legacy PostgreSQL fetchmany size for streaming import",
     )
     return parser.parse_args()
 
@@ -85,22 +91,17 @@ async def main() -> None:
             raise ValueError("--from-date cannot be greater than --to-date")
 
     from src.plugins.water.migration import (
-        build_legacy_water_rows,
-        fetch_legacy_water_rows,
-        migrate_legacy_water,
+        migrate_legacy_water_from_pg,
         write_report,
     )
 
-    raw_rows = await fetch_legacy_water_rows(
+    report = await migrate_legacy_water_from_pg(
         build_pg_config(args),
-        from_date=args.from_date,
-        to_date=args.to_date,
-    )
-    rows = build_legacy_water_rows(raw_rows)
-    report = await migrate_legacy_water(
-        rows,
         reset_target=not args.no_reset_target,
         chunk_size=args.chunk_size,
+        from_date=args.from_date,
+        to_date=args.to_date,
+        fetch_size=args.fetch_size,
     )
 
     report_path = Path(args.report)
@@ -110,6 +111,7 @@ async def main() -> None:
         f"report={report_path} "
         f"source_rows={report.source_rows} "
         f"imported_messages={report.imported_messages} "
+        f"imported_counter_rows={report.imported_counter_rows} "
         f"settled_days={report.settled_days} "
         f"failed_days={len(report.failed_days)}"
     )

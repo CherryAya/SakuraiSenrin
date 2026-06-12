@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
@@ -126,6 +126,49 @@ def _fetch_legacy_rows_sync(
     return [dict(cast(Any, row)) for row in rows]
 
 
+def _iter_legacy_row_batches_sync(
+    config: LegacyPgConfig,
+    *,
+    from_date: int | None = None,
+    to_date: int | None = None,
+    fetch_size: int = 50_000,
+) -> Iterator[list[LegacyWaterRow]]:
+    from psycopg2.extras import RealDictCursor
+
+    sql = """
+        SELECT
+            id,
+            user_id,
+            group_id,
+            created_at
+        FROM water_info
+    """
+    conditions: list[str] = []
+    params: list[object] = []
+    if from_date is not None:
+        conditions.append("created_at >= %s")
+        params.append(datetime.strptime(str(from_date), "%Y%m%d"))
+    if to_date is not None:
+        conditions.append("created_at < %s")
+        params.append(datetime.strptime(str(to_date), "%Y%m%d") + timedelta(days=1))
+    if conditions:
+        sql += "\nWHERE " + " AND ".join(conditions)
+    sql += "\nORDER BY id ASC"
+
+    with closing(_connect_legacy_postgres(config)) as conn:
+        with conn.cursor(
+            name="water_migration_cursor",
+            cursor_factory=RealDictCursor,
+        ) as cursor:
+            cursor.itersize = max(1, fetch_size)
+            cursor.execute(sql, params)
+            while True:
+                rows = cursor.fetchmany(fetch_size)
+                if not rows:
+                    break
+                yield build_legacy_water_rows([dict(cast(Any, row)) for row in rows])
+
+
 async def fetch_legacy_water_rows(
     config: LegacyPgConfig,
     *,
@@ -137,6 +180,21 @@ async def fetch_legacy_water_rows(
         config,
         from_date=from_date,
         to_date=to_date,
+    )
+
+
+def iter_legacy_water_row_batches(
+    config: LegacyPgConfig,
+    *,
+    from_date: int | None = None,
+    to_date: int | None = None,
+    fetch_size: int = 50_000,
+) -> Iterator[list[LegacyWaterRow]]:
+    return _iter_legacy_row_batches_sync(
+        config,
+        from_date=from_date,
+        to_date=to_date,
+        fetch_size=fetch_size,
     )
 
 
@@ -274,6 +332,74 @@ async def migrate_legacy_water(
     return report
 
 
+async def migrate_legacy_water_from_pg(
+    config: LegacyPgConfig,
+    *,
+    reset_target: bool = True,
+    preserve_seasons: bool = True,
+    chunk_size: int = 1000,
+    from_date: int | None = None,
+    to_date: int | None = None,
+    fetch_size: int = 50_000,
+) -> WaterMigrationReport:
+    report = WaterMigrationReport(
+        reset_target=reset_target,
+        started_at=get_current_time(),
+    )
+
+    await water_repo.init_all_tables()
+    if reset_target:
+        await reset_current_water_runtime(preserve_seasons=preserve_seasons)
+        await water_repo.init_all_tables()
+
+    report.preserved_seasons = len(await water_repo.list_activity_seasons())
+
+    start_ts: int | None = None
+    end_ts: int | None = None
+    batch_count = 0
+
+    for batch in iter_legacy_water_row_batches(
+        config,
+        from_date=from_date,
+        to_date=to_date,
+        fetch_size=fetch_size,
+    ):
+        if not batch:
+            continue
+        batch_count += 1
+        report.source_rows += len(batch)
+        report.imported_messages += len(batch)
+        report.imported_counter_rows += await import_legacy_water_rows(
+            batch,
+            chunk_size=chunk_size,
+        )
+
+        batch_min_ts = min(row.created_at for row in batch)
+        batch_max_ts = max(row.created_at for row in batch)
+        start_ts = batch_min_ts if start_ts is None else min(start_ts, batch_min_ts)
+        end_ts = batch_max_ts if end_ts is None else max(end_ts, batch_max_ts)
+
+    if report.source_rows > 0 and start_ts is not None and end_ts is not None:
+        start_date = int(arrow.get(start_ts).to("Asia/Shanghai").format("YYYYMMDD"))
+        end_date = int(arrow.get(end_ts).to("Asia/Shanghai").format("YYYYMMDD"))
+        report.imported_date_range = {
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        (
+            report.settled_days,
+            report.generated_summaries,
+            report.generated_achievements,
+            report.failed_days,
+        ) = await rebuild_water_runtime_from_messages(
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    report.finished_at = get_current_time()
+    return report
+
+
 def write_report(path: Path, report: WaterMigrationReport) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -303,7 +429,9 @@ __all__ = [
     "build_legacy_water_rows",
     "fetch_legacy_water_rows",
     "import_legacy_water_rows",
+    "iter_legacy_water_row_batches",
     "migrate_legacy_water",
+    "migrate_legacy_water_from_pg",
     "normalize_legacy_timestamp",
     "rebuild_water_runtime_from_messages",
     "reset_current_water_runtime",

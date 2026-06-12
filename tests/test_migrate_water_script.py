@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -23,7 +22,8 @@ def test_migrate_water_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> N
     assert args.old_repo == "../sakuraisenrin-old"
     assert args.pg_database == "senrin_water"
     assert args.report == "./data/db/water-migration-report.json"
-    assert args.chunk_size == 2000
+    assert args.chunk_size == 10_000
+    assert args.fetch_size == 50_000
     assert args.no_reset_target is False
 
 
@@ -84,16 +84,8 @@ async def test_migrate_water_main_fetches_imports_and_writes_report(
         from_date=20260610,
         to_date=20260612,
         chunk_size=500,
+        fetch_size=20_000,
     )
-    raw_rows = [
-        {
-            "id": 1,
-            "user_id": "10001",
-            "group_id": "20001",
-            "created_at": datetime(2026, 6, 11, 8, 0, 0),
-        }
-    ]
-    built_rows = ["row"]
     report = WaterMigrationReport(
         source_rows=1,
         imported_messages=1,
@@ -116,51 +108,40 @@ async def test_migrate_water_main_fetches_imports_and_writes_report(
         ),
     )
 
-    async def _fake_fetch(
+    async def _fake_migrate_from_pg(
         config: LegacyPgConfig,
         *,
-        from_date: int | None = None,
-        to_date: int | None = None,
-    ) -> list[dict[str, object]]:
-        captured["fetch"] = {
-            "config": config,
-            "from_date": from_date,
-            "to_date": to_date,
-        }
-        return raw_rows
-
-    async def _fake_migrate(
-        rows: list[object],
-        *,
+        preserve_seasons: bool = True,
         reset_target: bool = True,
         chunk_size: int = 1000,
+        from_date: int | None = None,
+        to_date: int | None = None,
+        fetch_size: int = 50_000,
     ) -> WaterMigrationReport:
-        captured["migrate"] = {
-            "rows": rows,
+        captured["migrate_from_pg"] = {
+            "config": config,
+            "preserve_seasons": preserve_seasons,
             "reset_target": reset_target,
             "chunk_size": chunk_size,
+            "from_date": from_date,
+            "to_date": to_date,
+            "fetch_size": fetch_size,
         }
         return report
 
     def _fake_write_report(path: Path, incoming_report: WaterMigrationReport) -> None:
         captured["report"] = {"path": path, "report": incoming_report}
 
-    monkeypatch.setattr(water_migration_module, "fetch_legacy_water_rows", _fake_fetch)
     monkeypatch.setattr(
         water_migration_module,
-        "build_legacy_water_rows",
-        lambda rows: built_rows if rows == raw_rows else [],
-    )
-    monkeypatch.setattr(
-        water_migration_module,
-        "migrate_legacy_water",
-        _fake_migrate,
+        "migrate_legacy_water_from_pg",
+        _fake_migrate_from_pg,
     )
     monkeypatch.setattr(water_migration_module, "write_report", _fake_write_report)
 
     await migrate_water_script.main()
 
-    assert captured["fetch"] == {
+    assert captured["migrate_from_pg"] == {
         "config": LegacyPgConfig(
             host="127.0.0.1",
             port=5432,
@@ -168,12 +149,11 @@ async def test_migrate_water_main_fetches_imports_and_writes_report(
             password="secret",
             database="senrin_water",
         ),
-        "from_date": 20260610,
-        "to_date": 20260612,
-    }
-    assert captured["migrate"] == {
-        "rows": built_rows,
+        "preserve_seasons": True,
         "reset_target": True,
         "chunk_size": 500,
+        "from_date": 20260610,
+        "to_date": 20260612,
+        "fetch_size": 20_000,
     }
     assert captured["report"] == {"path": report_path, "report": report}
