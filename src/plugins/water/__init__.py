@@ -39,6 +39,7 @@ from .handlers import (
     handle_merge_no,
     handle_merge_yes,
     handle_my_achievements,
+    handle_my_water_profile,
     handle_pardon,
     handle_period_rank,
     handle_season,
@@ -124,10 +125,11 @@ async def _initialize_water_plugin() -> None:
 
 water_query = on_command(
     "水王",
-    aliases={"水王排行榜", "我有多水"},
+    aliases={"水王排行榜"},
     priority=5,
     block=True,
 )
+water_profile = on_command("我有多水", priority=5, block=True)
 water_week_rank = on_command("水王周榜", priority=5, block=True)
 water_month_rank = on_command("水王月榜", priority=5, block=True)
 water_season_rank = on_command("水王季榜", priority=5, block=True)
@@ -233,6 +235,19 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
         await matcher.finish(tr(locale, "water.common.group_only"))
     await matcher.send(tr(locale, "water.common.working"))
     await handle_water_query(matcher, event, arg, locale)
+
+
+@water_profile.handle(
+    parameterless=[
+        water_query_cooldown(30),
+    ]
+)
+async def _(matcher: Matcher, event: MessageEvent) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    if not isinstance(event, GroupMessageEvent):
+        await matcher.finish(tr(locale, "water.common.group_only"))
+    await matcher.send(tr(locale, "water.common.working"))
+    await handle_my_water_profile(matcher, event, locale)
 
 
 @water_week_rank.handle()

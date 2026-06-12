@@ -27,6 +27,7 @@ from src.plugins.water.handlers.passive import (
     handle_group_increase_notice,
     handle_water_record,
 )
+from src.plugins.water.handlers.query import handle_my_water_profile
 from src.plugins.water.services.season import SeasonServiceError
 from src.plugins.water.services.settlement import SettlementResult
 from tests.plugins.water.helpers import (
@@ -219,6 +220,29 @@ async def test_handle_ignore_param_validation_and_success(
 
     assert matcher.finished is not None
     assert "状态: 成功" in matcher.finished
+
+
+@pytest.mark.asyncio
+async def test_handle_my_water_profile_uses_profile_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.handlers import query as query_module
+
+    matcher = DummyMatcher()
+    event = build_group_message_event("我有多水")
+
+    profile_mock = AsyncMock(return_value="PROFILE")
+    monkeypatch.setattr(
+        query_module.water_query_router,
+        "build_profile_message",
+        profile_mock,
+    )
+
+    with pytest.raises(MatcherFinished):
+        await handle_my_water_profile(cast(Any, matcher), event, "zh-CN")
+
+    profile_mock.assert_awaited_once()
+    assert matcher.finished == "PROFILE"
 
 
 @pytest.mark.asyncio

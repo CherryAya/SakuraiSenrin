@@ -41,10 +41,10 @@ class WaterQueryRouter:
         tokens = text.split()
         if not tokens:
             return WaterQuerySpec(
-                subject="personal",
-                scope_type="history",
-                scope_value="all",
-                view="profile",
+                subject="group",
+                scope_type="absolute",
+                scope_value="day",
+                view="rank",
                 mode="simple",
             )
 
@@ -170,21 +170,12 @@ class WaterQueryRouter:
             )
             return Message(text)
         if spec.view == "profile":
-            profile_data = await profile_service.build_profile_data(
+            return await self.build_profile_message(
                 user_id=user_id,
                 group_id=group_id,
+                locale=locale,
+                mode=spec.mode,
             )
-            if profile_data is None:
-                return Message(tr(locale, "water.query.profile_not_enough"))
-            if spec.mode == "full":
-                card = await build_my_water_image(profile_data, locale)
-            else:
-                card = await build_my_water_simple_image(profile_data, locale)
-                if not card:
-                    card = await build_my_water_image(profile_data, locale)
-            if card:
-                return Message(MessageSegment.image(card))
-            return Message(await build_my_water_fallback_text(profile_data, locale))
         if spec.scope_value == "day":
             return await absolute_rank_service.build_group_day_rank(group_id, locale)
         if spec.scope_value == "month":
@@ -196,6 +187,32 @@ class WaterQueryRouter:
         if spec.scope_value == "total":
             return await absolute_rank_service.build_total_rank(locale)
         return Message(tr(locale, "water.query.unsupported"))
+
+    async def build_profile_message(
+        self,
+        *,
+        user_id: str,
+        group_id: str,
+        locale: LocaleCode,
+        mode: WaterMode = "simple",
+        include_group_history_ranks: bool = False,
+    ) -> Message:
+        profile_data = await profile_service.build_profile_data(
+            user_id=user_id,
+            group_id=group_id,
+            include_group_history_ranks=include_group_history_ranks,
+        )
+        if profile_data is None:
+            return Message(tr(locale, "water.query.profile_not_enough"))
+        if mode == "full":
+            card = await build_my_water_image(profile_data, locale)
+        else:
+            card = await build_my_water_simple_image(profile_data, locale)
+            if not card:
+                card = await build_my_water_image(profile_data, locale)
+        if card:
+            return Message(MessageSegment.image(card))
+        return Message(await build_my_water_fallback_text(profile_data, locale))
 
     async def _execute_activity(
         self,

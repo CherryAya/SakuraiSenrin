@@ -24,3 +24,17 @@ async def handle_water_query(
         locale=locale,
     )
     await matcher.finish(message)
+
+
+async def handle_my_water_profile(
+    matcher: Matcher,
+    event: GroupMessageEvent,
+    locale: LocaleCode,
+) -> None:
+    message = await water_query_router.build_profile_message(
+        user_id=str(event.user_id),
+        group_id=str(event.group_id),
+        locale=locale,
+        mode="full",
+    )
+    await matcher.finish(message)

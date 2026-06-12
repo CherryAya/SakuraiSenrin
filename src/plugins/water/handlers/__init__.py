@@ -20,7 +20,7 @@ from .merge import (
     is_group_admin_event,
 )
 from .passive import handle_group_increase_notice, handle_water_record
-from .query import handle_water_query
+from .query import handle_my_water_profile, handle_water_query
 from .rank import handle_period_rank
 
 __all__ = [
@@ -34,6 +34,7 @@ __all__ = [
     "handle_merge_no",
     "handle_merge_yes",
     "handle_my_achievements",
+    "handle_my_water_profile",
     "handle_pardon",
     "handle_period_rank",
     "handle_season",

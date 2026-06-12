@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock
 
+from nonebot.adapters.onebot.v11 import Message
 import pytest
 
 from src.plugins.water.database.repo import WaterActivitySeasonRecord
@@ -12,7 +13,9 @@ async def test_parse_default_and_season_variants() -> None:
     router = WaterQueryRouter()
 
     default_spec = router.parse("")
-    assert default_spec.view == "profile"
+    assert default_spec.view == "rank"
+    assert default_spec.scope_type == "absolute"
+    assert default_spec.scope_value == "day"
     assert default_spec.mode == "simple"
 
     season_spec = router.parse("赛季")
@@ -23,6 +26,58 @@ async def test_parse_default_and_season_variants() -> None:
     detail_spec = router.parse("赛季 春日特别季 群聊 排名")
     assert detail_spec.subject == "group"
     assert detail_spec.view == "rank"
+
+
+@pytest.mark.asyncio
+async def test_execute_default_queries_group_day_rank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    router = WaterQueryRouter()
+
+    from src.plugins.water.services import query_router as router_module
+
+    monkeypatch.setattr(
+        router_module.absolute_rank_service,
+        "build_group_day_rank",
+        AsyncMock(return_value=Message("DAY_RANK")),
+    )
+
+    message = await router.execute(
+        spec=router.parse(""),
+        user_id="10001",
+        group_id="20001",
+        locale="zh-CN",
+    )
+
+    assert str(message) == "DAY_RANK"
+
+
+@pytest.mark.asyncio
+async def test_build_profile_message_skips_history_ranks_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    router = WaterQueryRouter()
+
+    from src.plugins.water.services import query_router as router_module
+
+    build_profile_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        router_module.profile_service,
+        "build_profile_data",
+        build_profile_mock,
+    )
+
+    _ = await router.build_profile_message(
+        user_id="10001",
+        group_id="20001",
+        locale="zh-CN",
+        mode="full",
+    )
+
+    build_profile_mock.assert_awaited_once()
+    await_args = build_profile_mock.await_args
+    assert await_args is not None
+    assert await_args.kwargs["include_group_history_ranks"] is False
 
 
 @pytest.mark.asyncio

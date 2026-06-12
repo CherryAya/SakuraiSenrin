@@ -15,6 +15,7 @@ class WaterProfileService:
         *,
         user_id: str,
         group_id: str,
+        include_group_history_ranks: bool = False,
     ) -> WaterProfileCardData | None:
         matrix_id = await water_repo.get_or_create_group_matrix_id(group_id)
         matrix_group_ids = await water_repo.get_groups_by_matrix_id(matrix_id)
@@ -44,19 +45,22 @@ class WaterProfileService:
             return None
         (
             global_rank,
-            group_user_rank,
             matrix_user_rank,
             matrix_rank,
-            group_activity_rank,
             achievement_items,
         ) = await asyncio.gather(
             water_repo.get_user_global_rank(user_id),
-            water_repo.get_group_user_rank(group_id, user_id),
             water_repo.get_user_matrix_rank(user_id, matrix_id),
             water_repo.get_matrix_rank(matrix_id),
-            water_repo.get_group_activity_rank(group_id),
             water_repo.get_user_achievement_items(user_id),
         )
+        group_user_rank: int | None = None
+        group_activity_rank: int | None = None
+        if include_group_history_ranks:
+            group_user_rank, group_activity_rank = await asyncio.gather(
+                water_repo.get_group_user_rank(group_id, user_id),
+                water_repo.get_group_activity_rank(group_id),
+            )
         return WaterProfileCardData(
             user_id=user_id,
             group_id=group_id,
