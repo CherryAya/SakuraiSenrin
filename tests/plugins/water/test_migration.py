@@ -423,6 +423,7 @@ async def test_migrate_legacy_water_from_pg_streams_batches(
         "rebuild_water_runtime_from_messages",
         _fake_rebuild,
     )
+    progress_events: list[tuple[str, dict[str, int]]] = []
 
     report = await migrate_legacy_water_from_pg(
         LegacyPgConfig(
@@ -435,9 +436,15 @@ async def test_migrate_legacy_water_from_pg_streams_batches(
         reset_target=True,
         chunk_size=500,
         fetch_size=10_000,
+        progress=lambda stage, payload: progress_events.append((stage, payload)),
     )
 
     assert len(imported_batches) == 2
+    assert progress_events[0][0] == "import_batch"
+    assert progress_events[0][1]["batch_index"] == 1
+    assert progress_events[1][0] == "import_batch"
+    assert progress_events[1][1]["batch_index"] == 2
+    assert progress_events[2][0] == "rebuild_complete"
     assert report.source_rows == 3
     assert report.imported_messages == 3
     assert report.imported_counter_rows == 2

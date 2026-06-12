@@ -24,6 +24,7 @@ def test_migrate_water_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> N
     assert args.report == "./data/db/water-migration-report.json"
     assert args.chunk_size == 10_000
     assert args.fetch_size == 50_000
+    assert args.prefetch_batches == 2
     assert args.no_reset_target is False
 
 
@@ -85,6 +86,7 @@ async def test_migrate_water_main_fetches_imports_and_writes_report(
         to_date=20260612,
         chunk_size=500,
         fetch_size=20_000,
+        prefetch_batches=3,
     )
     report = WaterMigrationReport(
         source_rows=1,
@@ -117,6 +119,8 @@ async def test_migrate_water_main_fetches_imports_and_writes_report(
         from_date: int | None = None,
         to_date: int | None = None,
         fetch_size: int = 50_000,
+        prefetch_batches: int = 2,
+        progress: object | None = None,
     ) -> WaterMigrationReport:
         captured["migrate_from_pg"] = {
             "config": config,
@@ -126,6 +130,8 @@ async def test_migrate_water_main_fetches_imports_and_writes_report(
             "from_date": from_date,
             "to_date": to_date,
             "fetch_size": fetch_size,
+            "prefetch_batches": prefetch_batches,
+            "has_progress": progress is not None,
         }
         return report
 
@@ -155,5 +161,7 @@ async def test_migrate_water_main_fetches_imports_and_writes_report(
         "from_date": 20260610,
         "to_date": 20260612,
         "fetch_size": 20_000,
+        "prefetch_batches": 3,
+        "has_progress": True,
     }
     assert captured["report"] == {"path": report_path, "report": report}

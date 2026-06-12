@@ -69,6 +69,12 @@ def parse_args() -> argparse.Namespace:
         default=50_000,
         help="legacy PostgreSQL fetchmany size for streaming import",
     )
+    parser.add_argument(
+        "--prefetch-batches",
+        type=int,
+        default=2,
+        help="number of prefetched legacy PG batches to overlap reading and importing",
+    )
     return parser.parse_args()
 
 
@@ -95,6 +101,27 @@ async def main() -> None:
         write_report,
     )
 
+    def _progress(stage: str, payload: dict[str, int]) -> None:
+        if stage == "import_batch":
+            logger.info(
+                "[water-migration] "
+                f"batch={payload['batch_index']} "
+                f"rows={payload['batch_rows']} "
+                f"source_rows={payload['source_rows']} "
+                f"counter_rows={payload['imported_counter_rows']} "
+                f"range={payload['batch_start_date']}-{payload['batch_end_date']}"
+            )
+            return
+        if stage == "rebuild_complete":
+            logger.info(
+                "[water-migration] "
+                f"rebuild={payload['start_date']}-{payload['end_date']} "
+                f"settled_days={payload['settled_days']} "
+                f"summaries={payload['generated_summaries']} "
+                f"achievements={payload['generated_achievements']} "
+                f"failed_days={payload['failed_days']}"
+            )
+
     report = await migrate_legacy_water_from_pg(
         build_pg_config(args),
         reset_target=not args.no_reset_target,
@@ -102,6 +129,8 @@ async def main() -> None:
         from_date=args.from_date,
         to_date=args.to_date,
         fetch_size=args.fetch_size,
+        prefetch_batches=args.prefetch_batches,
+        progress=_progress,
     )
 
     report_path = Path(args.report)

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
-from collections.abc import Iterator, Mapping, Sequence
+from collections import defaultdict, deque
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
@@ -51,6 +51,9 @@ class WaterMigrationReport:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+LegacyWaterMigrationProgressCallback = Callable[[str, dict[str, int]], None]
 
 
 def normalize_legacy_timestamp(value: object) -> int:
@@ -198,6 +201,37 @@ def iter_legacy_water_row_batches(
     )
 
 
+async def iter_legacy_water_row_batches_prefetched(
+    config: LegacyPgConfig,
+    *,
+    from_date: int | None = None,
+    to_date: int | None = None,
+    fetch_size: int = 50_000,
+    prefetch_batches: int = 2,
+) -> AsyncIterator[list[LegacyWaterRow]]:
+    iterator = iter_legacy_water_row_batches(
+        config,
+        from_date=from_date,
+        to_date=to_date,
+        fetch_size=fetch_size,
+    )
+    prefetch = max(1, prefetch_batches)
+    pending: deque[asyncio.Task[list[LegacyWaterRow] | None]] = deque()
+
+    async def _next_batch() -> list[LegacyWaterRow] | None:
+        return await asyncio.to_thread(next, iterator, None)
+
+    for _ in range(prefetch):
+        pending.append(asyncio.create_task(_next_batch()))
+
+    while pending:
+        rows = await pending.popleft()
+        if rows is None:
+            continue
+        pending.append(asyncio.create_task(_next_batch()))
+        yield rows
+
+
 async def reset_current_water_runtime(*, preserve_seasons: bool = True) -> None:
     await water_repo.reset_runtime_data(preserve_seasons=preserve_seasons)
 
@@ -341,6 +375,8 @@ async def migrate_legacy_water_from_pg(
     from_date: int | None = None,
     to_date: int | None = None,
     fetch_size: int = 50_000,
+    prefetch_batches: int = 2,
+    progress: LegacyWaterMigrationProgressCallback | None = None,
 ) -> WaterMigrationReport:
     report = WaterMigrationReport(
         reset_target=reset_target,
@@ -358,26 +394,44 @@ async def migrate_legacy_water_from_pg(
     end_ts: int | None = None
     batch_count = 0
 
-    for batch in iter_legacy_water_row_batches(
+    async for batch in iter_legacy_water_row_batches_prefetched(
         config,
         from_date=from_date,
         to_date=to_date,
         fetch_size=fetch_size,
+        prefetch_batches=prefetch_batches,
     ):
         if not batch:
             continue
         batch_count += 1
         report.source_rows += len(batch)
         report.imported_messages += len(batch)
-        report.imported_counter_rows += await import_legacy_water_rows(
+        imported_counter_rows = await import_legacy_water_rows(
             batch,
             chunk_size=chunk_size,
         )
+        report.imported_counter_rows += imported_counter_rows
 
         batch_min_ts = min(row.created_at for row in batch)
         batch_max_ts = max(row.created_at for row in batch)
         start_ts = batch_min_ts if start_ts is None else min(start_ts, batch_min_ts)
         end_ts = batch_max_ts if end_ts is None else max(end_ts, batch_max_ts)
+        if progress is not None:
+            progress(
+                "import_batch",
+                {
+                    "batch_index": batch_count,
+                    "batch_rows": len(batch),
+                    "source_rows": report.source_rows,
+                    "imported_counter_rows": report.imported_counter_rows,
+                    "batch_start_date": int(
+                        arrow.get(batch_min_ts).to("Asia/Shanghai").format("YYYYMMDD")
+                    ),
+                    "batch_end_date": int(
+                        arrow.get(batch_max_ts).to("Asia/Shanghai").format("YYYYMMDD")
+                    ),
+                },
+            )
 
     if report.source_rows > 0 and start_ts is not None and end_ts is not None:
         start_date = int(arrow.get(start_ts).to("Asia/Shanghai").format("YYYYMMDD"))
@@ -395,6 +449,18 @@ async def migrate_legacy_water_from_pg(
             start_date=start_date,
             end_date=end_date,
         )
+        if progress is not None:
+            progress(
+                "rebuild_complete",
+                {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "settled_days": report.settled_days,
+                    "generated_summaries": report.generated_summaries,
+                    "generated_achievements": report.generated_achievements,
+                    "failed_days": len(report.failed_days),
+                },
+            )
 
     report.finished_at = get_current_time()
     return report
@@ -430,6 +496,7 @@ __all__ = [
     "fetch_legacy_water_rows",
     "import_legacy_water_rows",
     "iter_legacy_water_row_batches",
+    "iter_legacy_water_row_batches_prefetched",
     "migrate_legacy_water",
     "migrate_legacy_water_from_pg",
     "normalize_legacy_timestamp",
