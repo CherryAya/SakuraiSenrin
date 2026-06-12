@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from contextlib import closing
 from dataclasses import asdict, dataclass, field
@@ -35,6 +36,7 @@ class LegacyWaterRow:
 class WaterMigrationReport:
     source_rows: int = 0
     imported_messages: int = 0
+    imported_counter_rows: int = 0
     imported_date_range: dict[str, int | None] = field(
         default_factory=lambda: {"start_date": None, "end_date": None}
     )
@@ -147,19 +149,33 @@ async def import_legacy_water_rows(
     *,
     chunk_size: int = 1000,
 ) -> int:
+    aggregated: dict[tuple[int, int, str, str], WaterMessagePayload] = {}
+    counts: dict[tuple[int, int, str, str], int] = defaultdict(int)
+    for row in rows:
+        dt = arrow.get(row.created_at).to("Asia/Shanghai")
+        key = (
+            int(dt.format("YYYYMMDD")),
+            int(dt.format("H")),
+            row.group_id,
+            row.user_id,
+        )
+        counts[key] += 1
+
+    payloads: list[WaterMessagePayload] = []
+    for (record_date, hour, group_id, user_id), msg_count in counts.items():
+        payload = aggregated.get((record_date, hour, group_id, user_id))
+        if payload is None:
+            payload = WaterMessagePayload(
+                group_id=group_id,
+                user_id=user_id,
+                record_date=record_date,
+                hour=hour,
+                msg_count=msg_count,
+            )
+            aggregated[(record_date, hour, group_id, user_id)] = payload
+            payloads.append(payload)
+
     inserted = 0
-    payloads: list[WaterMessagePayload] = [
-        {
-            "group_id": row.group_id,
-            "user_id": row.user_id,
-            "record_date": int(
-                arrow.get(row.created_at).to("Asia/Shanghai").format("YYYYMMDD")
-            ),
-            "hour": int(arrow.get(row.created_at).to("Asia/Shanghai").format("H")),
-            "msg_count": 1,
-        }
-        for row in rows
-    ]
     for chunk in split_list(payloads, chunk_size):
         inserted += await water_repo.import_message_batch(chunk)
     return inserted
@@ -231,7 +247,8 @@ async def migrate_legacy_water(
     report.preserved_seasons = len(await water_repo.list_activity_seasons())
 
     if rows:
-        report.imported_messages = await import_legacy_water_rows(
+        report.imported_messages = len(rows)
+        report.imported_counter_rows = await import_legacy_water_rows(
             rows,
             chunk_size=chunk_size,
         )

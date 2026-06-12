@@ -675,3 +675,28 @@ async def test_pardon_penalty_restores_matrix_global_and_total(
     assert upsert_total_mock.await_args.args[0][0]["delta_exp"] == 370
     assert upsert_global_mock.await_args.args[0][0]["delta_exp"] == 235
     revoke_mock.assert_awaited_once_with(7, 1_700_000_000)
+
+
+@pytest.mark.asyncio
+async def test_archive_message_shards_delegates_to_counter_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    archive_mock = AsyncMock()
+    monkeypatch.setattr(repo_module.water_message, "run_archiver_task", archive_mock)
+
+    await repo.archive_message_shards()
+
+    archive_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_prune_old_messages_is_noop_in_file_lifecycle_model() -> None:
+    repo = WaterRepository()
+
+    pruned = await repo.prune_old_messages(1_700_000_000)
+
+    assert pruned == 0

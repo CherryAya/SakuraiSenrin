@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from math import floor, sqrt
 import os
 from secrets import token_hex
-import sqlite3
 import unicodedata
 
 import arrow
@@ -51,6 +50,7 @@ from .types import (
     WaterActivitySeasonPayload,
     WaterMatrixExpPayload,
     WaterMessagePayload,
+    WaterMessageWritePayload,
     WaterPenaltyPayload,
     WaterSummaryPayload,
     WaterUserExpPayload,
@@ -157,6 +157,13 @@ class WaterMessageContext:
             "record_date": int(dt.format("YYYYMMDD")),
             "hour": int(dt.format("H")),
             "msg_count": 1,
+        }
+
+    def to_write_payload(self) -> WaterMessageWritePayload:
+        payload = self.to_payload()
+        return {
+            **payload,
+            "created_at": self.created_at,
         }
 
 
@@ -462,7 +469,7 @@ class WaterRepository:
         self._group_matrix_cache[group_id] = matrix_id
 
     async def _save_buffered(self, ctx: WaterMessageContext) -> None:
-        await water_writer.add(ctx.to_payload())
+        await water_writer.add(ctx.to_write_payload())
 
     async def _save_immediate(self, ctx: WaterMessageContext) -> None:
         dt = arrow.get(ctx.created_at).to("Asia/Shanghai").datetime
@@ -825,6 +832,7 @@ class WaterRepository:
         chunk_pause_seconds: float = 0.1,
         prune_after_settlement: bool = True,
     ) -> None:
+        _ = prune_after_settlement
         if not aggregates:
             return
 
@@ -974,40 +982,12 @@ class WaterRepository:
                 for chunk in split_list(penalty_logs, chunk_size):
                     await penalty_ops.insert_penalty_logs(chunk)
 
-        if prune_after_settlement:
-            # 按规范执行裁剪钩子，保留最近 3 天流水。
-            prune_before_ts = target_date.shift(days=-2).floor("day").int_timestamp
-            await self.prune_old_messages(prune_before_ts)
-
     async def prune_old_messages(self, before_ts: int) -> int:
-        before = arrow.get(before_ts).floor("month")
-        now = arrow.get(get_current_time()).floor("month")
-        total = 0
-        cursor = before
-        while cursor <= now:
-            shard_key = cursor.datetime.strftime(water_message.fmt)
-            db_path, _ = water_message._get_file_paths(shard_key)
-            if not db_path.exists():
-                cursor = cursor.shift(months=1)
-                continue
-            conn = sqlite3.connect(db_path)
-            try:
-                row = conn.execute(
-                    """
-                    SELECT COUNT(*)
-                    FROM sqlite_master
-                    WHERE type = 'table' AND name = 'water_hourly_counter'
-                    """
-                ).fetchone()
-            finally:
-                conn.close()
-            if row is None or int(row[0] or 0) <= 0:
-                cursor = cursor.shift(months=1)
-                continue
-            async with water_message.write_session(time_ctx=cursor.datetime) as session:
-                total += await WaterMessageOps(session).prune_before(before_ts)
-            cursor = cursor.shift(months=1)
-        return total
+        _ = before_ts
+        return 0
+
+    async def archive_message_shards(self) -> None:
+        await water_message.run_archiver_task()
 
     async def unlock_achievements(self, payloads: list[WaterAchievementPayload]) -> int:
         if not payloads:

@@ -187,6 +187,48 @@ async def test_import_legacy_water_rows_routes_multiple_months() -> None:
 
 
 @pytest.mark.asyncio
+async def test_import_legacy_water_rows_aggregates_same_hour_records() -> None:
+    rows = build_legacy_water_rows(
+        [
+            {
+                "id": 1,
+                "user_id": "10001",
+                "group_id": "20001",
+                "created_at": datetime(2026, 1, 15, 8, 1, 0),
+            },
+            {
+                "id": 2,
+                "user_id": "10001",
+                "group_id": "20001",
+                "created_at": datetime(2026, 1, 15, 8, 30, 0),
+            },
+            {
+                "id": 3,
+                "user_id": "10001",
+                "group_id": "20001",
+                "created_at": datetime(2026, 1, 15, 9, 0, 0),
+            },
+        ]
+    )
+
+    inserted = await import_legacy_water_rows(rows, chunk_size=10)
+
+    assert inserted == 2
+    async with water_message.read_session(
+        time_ctx=arrow.get("2026-01-15", "YYYY-MM-DD").datetime
+    ) as session:
+        counts = (
+            await session.execute(
+                select(WaterHourlyCounter.hour, WaterHourlyCounter.msg_count).order_by(
+                    WaterHourlyCounter.hour.asc()
+                )
+            )
+        ).all()
+
+    assert counts == [(8, 2), (9, 1)]
+
+
+@pytest.mark.asyncio
 async def test_rebuild_water_runtime_from_messages_collects_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -274,6 +316,7 @@ async def test_migrate_legacy_water_imports_and_rebuilds_runtime() -> None:
 
     assert report.source_rows == 3
     assert report.imported_messages == 3
+    assert report.imported_counter_rows == 3
     assert report.imported_date_range == {
         "start_date": 20260611,
         "end_date": 20260611,
@@ -285,3 +328,29 @@ async def test_migrate_legacy_water_imports_and_rebuilds_runtime() -> None:
     assert report.failed_days == []
     assert int(summary_count or 0) == 2
     assert int(achievement_count or 0) >= 2
+
+
+@pytest.mark.asyncio
+async def test_migrate_legacy_water_reports_aggregated_counter_rows() -> None:
+    rows = build_legacy_water_rows(
+        [
+            {
+                "id": 1,
+                "user_id": "10001",
+                "group_id": "20001",
+                "created_at": datetime(2026, 6, 11, 8, 0, 0),
+            },
+            {
+                "id": 2,
+                "user_id": "10001",
+                "group_id": "20001",
+                "created_at": datetime(2026, 6, 11, 8, 10, 0),
+            },
+        ]
+    )
+
+    report = await migrate_legacy_water(rows, reset_target=True, chunk_size=10)
+
+    assert report.source_rows == 2
+    assert report.imported_messages == 2
+    assert report.imported_counter_rows == 1

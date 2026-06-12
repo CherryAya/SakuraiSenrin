@@ -17,6 +17,10 @@ class WaterMessagePayload(TypedDict):
     msg_count: int
 
 
+class WaterMessageWritePayload(WaterMessagePayload):
+    created_at: int
+
+
 class WaterSummaryPayload(TypedDict):
     created_at: int
     updated_at: int

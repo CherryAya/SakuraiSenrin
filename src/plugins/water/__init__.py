@@ -177,6 +177,23 @@ async def _water_daily_settlement_job() -> None:
         logger.exception(f"[Water] cron settlement failed: {e}")
 
 
+@scheduler.scheduled_job(
+    "cron",
+    hour=0,
+    minute=25,
+    id="water_message_archive",
+    coalesce=True,
+    misfire_grace_time=300,
+    max_instances=1,
+)
+async def _water_message_archive_job() -> None:
+    try:
+        await water_repo.archive_message_shards()
+        logger.success("[Water] cron archive done")
+    except Exception as e:
+        logger.exception(f"[Water] cron archive failed: {e}")
+
+
 @water_recorder.handle()
 async def _(bot: Bot, event: GroupMessageEvent) -> None:
     await handle_water_record(bot, event)

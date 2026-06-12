@@ -39,7 +39,7 @@ class WaterSettlementService:
         每日结算总入口，满足三道防线:
         1. 幂等锁 (water_settlement_job)。
         2. 分块落盘 + 单会话事务。
-        3. 结尾流水裁剪钩子。
+        3. 消息分片文件生命周期由独立归档任务处理。
         """
         if target_date is None:
             target = arrow.get(get_current_time()).shift(days=-1).floor("day")
