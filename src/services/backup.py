@@ -64,6 +64,17 @@ class BackupResult:
     restic_snapshot_id: str | None
 
 
+@dataclass(slots=True, frozen=True)
+class ResticSnapshotInfo:
+    id: str
+    short_id: str | None
+    time: str | None
+    hostname: str | None
+    paths: tuple[str, ...]
+    total_files_processed: int | None
+    total_bytes_processed: int | None
+
+
 class BackupService:
     def __init__(
         self,
@@ -242,6 +253,25 @@ class BackupService:
             )
             raise RuntimeError(f"restic restore failed: {message.strip()}")
 
+    async def list_snapshots(self) -> list[ResticSnapshotInfo]:
+        self._validate_restic_config()
+        process = await asyncio.create_subprocess_exec(
+            "restic",
+            "snapshots",
+            "--json",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=self._restic_env(),
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode != 0:
+            message = stderr.decode("utf-8", errors="ignore") or stdout.decode(
+                "utf-8",
+                errors="ignore",
+            )
+            raise RuntimeError(f"restic snapshots failed: {message.strip()}")
+        return _parse_restic_snapshots(stdout.decode("utf-8", errors="ignore"))
+
     def _validate_restic_config(self) -> None:
         if shutil.which("restic") is None and self.restic.require_restic:
             raise RuntimeError("restic command is not installed")
@@ -278,6 +308,51 @@ def _parse_restic_snapshot_id(output: str) -> str | None:
         if isinstance(snapshot_id, str) and snapshot_id:
             return snapshot_id
     return None
+
+
+def _parse_restic_snapshots(output: str) -> list[ResticSnapshotInfo]:
+    if not output.strip():
+        return []
+    payload = json.loads(output)
+    if not isinstance(payload, list):
+        raise RuntimeError("restic snapshots output is not a JSON array")
+
+    snapshots: list[ResticSnapshotInfo] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        snapshot_id = item.get("id")
+        if not isinstance(snapshot_id, str) or not snapshot_id:
+            continue
+        paths = item.get("paths")
+        summary = item.get("summary")
+        total_files_processed = None
+        total_bytes_processed = None
+        if isinstance(summary, dict):
+            files_value = summary.get("total_files_processed")
+            bytes_value = summary.get("total_bytes_processed")
+            if isinstance(files_value, int):
+                total_files_processed = files_value
+            if isinstance(bytes_value, int):
+                total_bytes_processed = bytes_value
+        snapshots.append(
+            ResticSnapshotInfo(
+                id=snapshot_id,
+                short_id=item.get("short_id")
+                if isinstance(item.get("short_id"), str)
+                else None,
+                time=item.get("time") if isinstance(item.get("time"), str) else None,
+                hostname=item.get("hostname")
+                if isinstance(item.get("hostname"), str)
+                else None,
+                paths=tuple(path for path in paths if isinstance(path, str))
+                if isinstance(paths, list)
+                else (),
+                total_files_processed=total_files_processed,
+                total_bytes_processed=total_bytes_processed,
+            )
+        )
+    return snapshots
 
 
 def collect_default_backup_databases() -> tuple[BaseDB, ...]:

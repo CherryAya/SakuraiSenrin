@@ -18,6 +18,7 @@ from src.services.backup import (
     BackupRetention,
     BackupService,
     ResticConfig,
+    ResticSnapshotInfo,
     build_default_backup_plan,
     collect_default_backup_databases,
 )
@@ -115,6 +116,59 @@ async def test_backup_service_runs_restic_and_dispatches_success_event(
     assert len(result.manifest.files) == 1
     assert events
     assert events[-1].__class__.__name__ == "BackupSucceeded"
+
+
+async def test_backup_service_lists_remote_snapshots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Process:
+        returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return (
+                b'[{"id":"snap-1","short_id":"snap-1","time":"2026-06-12T21:35:21+08:00","hostname":"host-a","paths":["/tmp/staging"],"summary":{"total_files_processed":75,"total_bytes_processed":1234}}]',
+                b"",
+            )
+
+    async def _create_subprocess_exec(*args: object, **kwargs: object) -> _Process:
+        _ = kwargs
+        assert args == ("restic", "snapshots", "--json")
+        return _Process()
+
+    monkeypatch.setattr(
+        backup_module.shutil,
+        "which",
+        lambda command: f"/bin/{command}",
+    )
+    monkeypatch.setattr(
+        backup_module.asyncio,
+        "create_subprocess_exec",
+        _create_subprocess_exec,
+    )
+
+    service = BackupService(
+        databases=[],
+        local_root=tmp_path / "backup",
+        restic=ResticConfig(
+            repository="s3:https://example.test/bucket",
+            password="secret",
+        ),
+    )
+
+    snapshots = await service.list_snapshots()
+
+    assert snapshots == [
+        ResticSnapshotInfo(
+            id="snap-1",
+            short_id="snap-1",
+            time="2026-06-12T21:35:21+08:00",
+            hostname="host-a",
+            paths=("/tmp/staging",),
+            total_files_processed=75,
+            total_bytes_processed=1234,
+        )
+    ]
 
 
 async def test_backup_service_skips_disabled_plan(
