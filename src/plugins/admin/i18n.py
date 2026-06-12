@@ -2,18 +2,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from nonebot import on_command
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
-from nonebot.plugin import CommandGroup
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import LOCALE_NAMES, normalize_locale, resolve_locale, tr
 from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
+from src.plugins.admin.command_compat import (
+    build_admin_subcommand_rule,
+    extract_admin_subcommand_args,
+)
 from src.repositories import i18n_repo
 
 name = tr("zh-CN", "plugin.admin_i18n.name")
@@ -37,7 +41,7 @@ __plugin_meta__ = create_plugin_metadata(
     description=description,
     extra={
         "author": "SakuraiCora",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
         "i18n": {
@@ -56,13 +60,14 @@ __plugin_meta__ = create_plugin_metadata(
     },
 )
 
-admin_command_group = CommandGroup(
-    cmd="admin",
+admin_i18n = on_command(
+    "admin",
+    aliases={("admin", "i18n"), "语言管理"},
+    rule=build_admin_subcommand_rule("i18n", aliases=("语言管理",)),
     permission=SUPERUSER,
     priority=5,
     block=False,
 )
-admin_i18n = admin_command_group.command("i18n", aliases={"语言管理"})
 
 
 def _choices_text() -> str:
@@ -80,7 +85,10 @@ def _resolve_group_id(event: MessageEvent, raw_group_id: str | None) -> str | No
 @admin_i18n.handle()
 async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-    args = arg.extract_plain_text().strip().split()
+    args = extract_admin_subcommand_args(
+        arg,
+        subcommand="i18n",
+    )
     if not args:
         await matcher.finish(build_docs(DocsRenderContext(locale=locale)))
 

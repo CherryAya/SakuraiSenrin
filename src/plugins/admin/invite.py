@@ -17,14 +17,15 @@ from pathlib import Path
 from typing import Any
 
 import arrow
+from nonebot import on_command
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.exception import ParserExit
 from nonebot.matcher import Matcher
-from nonebot.params import ShellCommandArgs
+from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
-from nonebot.plugin import CommandGroup, on_fullmatch
+from nonebot.plugin import on_fullmatch
 from nonebot.rule import ArgumentParser, to_me
 from PIL import Image, ImageDraw, ImageFont
 
@@ -37,6 +38,10 @@ from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
+from src.plugins.admin.command_compat import (
+    build_admin_subcommand_rule,
+    extract_admin_subcommand_argv,
+)
 from src.repositories import group_repo, invite_repo
 from src.services.runtime_policy import resolve_invitation_transition
 
@@ -62,7 +67,7 @@ __plugin_meta__ = create_plugin_metadata(
     description=description,
     extra={
         "author": "SakuraiCora",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
         "no_check": True,
@@ -114,11 +119,13 @@ log_parser = subparsers.add_parser("log", aliases=["日志"], help="查看邀请
 log_parser.add_argument("-g", "--gid", type=str, help="群组 ID")
 # fmt: on
 
-admin_command_group = CommandGroup("admin")
-admin_invite = admin_command_group.shell_command(
-    cmd="invite",
-    aliases={"邀请管理"},
-    parser=invite_parser,
+admin_invite = on_command(
+    "admin",
+    aliases={("admin", "invite"), "邀请管理"},
+    rule=build_admin_subcommand_rule("invite", aliases=("邀请管理",)),
+    permission=SUPERUSER,
+    priority=5,
+    block=False,
 )
 
 approve_matcher = on_fullmatch(
@@ -661,9 +668,19 @@ async def _(
     bot: Bot,
     event: MessageEvent,
     matcher: Matcher,
-    args: Namespace | ParserExit = ShellCommandArgs(),
+    arg: Message = CommandArg(),
 ) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    argv = extract_admin_subcommand_argv(
+        arg,
+        subcommand="invite",
+    )
+    if not argv:
+        await admin_invite.finish(build_docs(DocsRenderContext(locale=locale)))
+    try:
+        args: Namespace | ParserExit = invite_parser.parse_args(argv)
+    except ParserExit as exc:
+        args = exc
     if isinstance(args, ParserExit):
         if args.status == 0:
             await admin_invite.finish(build_docs(DocsRenderContext(locale=locale)))
