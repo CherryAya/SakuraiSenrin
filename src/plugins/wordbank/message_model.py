@@ -43,8 +43,8 @@ class MessageFingerprint:
     image_keys: str
 
 
-def shape_from_text(text: str) -> MessageShape:
-    normalized = normalize_text(text)
+def shape_from_text(text: str, *, preserve_blank_text: bool = False) -> MessageShape:
+    normalized = normalize_message_text(text, preserve_blank_text=preserve_blank_text)
     return MessageShape(
         atoms=((MessageAtom(kind="text", text=normalized),) if normalized else ())
     )
@@ -73,13 +73,17 @@ def shape_from_message(
     *,
     image_ids: dict[int, int] | None = None,
     event_names: tuple[str, ...] = (),
+    preserve_blank_text: bool = False,
 ) -> MessageShape:
     image_ids = image_ids or {}
     atoms: list[MessageAtom] = []
     image_index = 0
     for segment in message:
         if segment.type == "text":
-            normalized = normalize_text(str(segment.data.get("text", "")))
+            normalized = normalize_message_text(
+                str(segment.data.get("text", "")),
+                preserve_blank_text=preserve_blank_text,
+            )
             if normalized:
                 atoms.append(MessageAtom(kind="text", text=normalized))
         elif segment.type == "image":
@@ -154,7 +158,7 @@ def shape_to_summary_text(shape: MessageShape) -> str:
             parts.append(f"[@:{atom.target_id}]")
         elif atom.kind == "event" and atom.event_name:
             parts.append(f"[事件:{atom.event_name}]")
-    return " ".join(part for part in parts if part).strip()
+    return _join_shape_text_parts(parts)
 
 
 def shape_to_search_text(shape: MessageShape) -> str:
@@ -166,7 +170,7 @@ def shape_to_search_text(shape: MessageShape) -> str:
             texts.append(f"at {atom.target_id}")
         elif atom.kind == "event" and atom.event_name:
             texts.append(atom.event_name)
-    return " ".join(texts).strip()
+    return _join_shape_text_parts(texts)
 
 
 def shape_to_message(shape: MessageShape) -> Message:
@@ -218,3 +222,28 @@ def normalize_text(text: str, *, casefold: bool = True) -> str:
     normalized = unicodedata.normalize("NFKC", text).strip()
     normalized = _SPACE_RE.sub(" ", normalized)
     return normalized.casefold() if casefold else normalized
+
+
+def normalize_message_text(
+    text: str,
+    *,
+    casefold: bool = True,
+    preserve_blank_text: bool = False,
+) -> str:
+    normalized = unicodedata.normalize("NFKC", text)
+    collapsed = _SPACE_RE.sub(" ", normalized)
+    if collapsed == "":
+        return ""
+    if preserve_blank_text and collapsed.strip() == "":
+        return " "
+    return normalize_text(collapsed, casefold=casefold)
+
+
+def _join_shape_text_parts(parts: list[str]) -> str:
+    joined = " ".join(part for part in parts if part)
+    if not joined:
+        return ""
+    stripped = joined.strip()
+    if stripped:
+        return stripped
+    return " "

@@ -312,6 +312,23 @@ async def test_build_message_shape_from_message_preserves_mixed_segments(
 
 
 @pytest.mark.asyncio
+async def test_build_message_shape_from_message_preserves_single_space_text() -> None:
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            ingest_image_bytes=AsyncMock(),
+        ),
+    )
+
+    shape = await build_message_shape_from_message(
+        media_service,
+        Message(" "),
+    )
+
+    assert shape.is_empty()
+
+
+@pytest.mark.asyncio
 async def test_handle_guided_add_shape_result_accepts_message_shapes() -> None:
     add_message_entry = AsyncMock(return_value=_add_result())
     service = cast(

@@ -123,6 +123,36 @@ async def test_handle_passive_message_falls_back_to_at_event() -> None:
 
 
 @pytest.mark.asyncio
+async def test_handle_passive_message_preserves_single_space_trigger() -> None:
+    bot = cast(Bot, SimpleNamespace(self_id="99999"))
+    event = build_group_message_event(" ")
+    match_message = AsyncMock(return_value=_selected(response_text="空格触发"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(match_message=match_message),
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            resolve_canonical_id_from_hints=lambda _hints: None,
+            resolve_canonical_id=lambda _data, **_kwargs: None,
+        ),
+    )
+
+    response = await handle_passive_message(
+        bot,
+        event,
+        service,
+        media_service,
+    )
+
+    assert response is not None
+    assert response.text == "空格触发"
+    first_shape = match_message.await_args_list[0].args[0]
+    assert first_shape == shape_from_text(" ", preserve_blank_text=True)
+
+
+@pytest.mark.asyncio
 async def test_handle_passive_message_uses_image_name_hints_before_download() -> None:
     from src.plugins.wordbank.handlers import passive as passive_module
 

@@ -23,8 +23,10 @@ from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.message_model import (
     MessageAtom,
     MessageShape,
+    normalize_message_text,
     normalize_text,
     shape_from_event,
+    shape_from_text,
 )
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import SCOPE_PRIORITY
@@ -755,7 +757,10 @@ async def legacy_message_to_shape(
             continue
         segment_type = str(item.get("type", "") or "").strip().lower()
         if segment_type == "text":
-            text_value = normalize_text(str(item.get("text", "") or ""))
+            text_value = normalize_message_text(
+                str(item.get("text", "") or ""),
+                preserve_blank_text=True,
+            )
             if text_value:
                 atoms.append(MessageAtom(kind="text", text=text_value))
             continue
@@ -842,7 +847,7 @@ async def migrate_legacy_rows(
                 report=report,
             )
             if trigger_shape.is_empty():
-                raise MigrationError("empty trigger shape")
+                trigger_shape = shape_from_text(" ", preserve_blank_text=True)
             if response_shape.is_empty():
                 raise MigrationError("empty response shape")
 

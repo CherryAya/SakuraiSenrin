@@ -205,7 +205,11 @@ async def handle_passive_message(
     context = build_rule_context(event)
     image_refs = extract_image_refs(event)
     image_ids = await resolve_message_image_ids(media_service, image_refs)
-    message_shape = shape_from_message(event.message, image_ids=image_ids)
+    message_shape = shape_from_message(
+        event.message,
+        image_ids=image_ids,
+        preserve_blank_text=True,
+    )
     if not message_shape.is_empty():
         selected = await service.match_message(
             message_shape,

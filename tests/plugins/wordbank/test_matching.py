@@ -20,11 +20,15 @@ def _entry(
     trigger_group_id: int,
     trigger_text: str,
     response_text: str,
+    preserve_blank_trigger: bool = False,
     priority: int = 1,
     weight: int = 1,
     probability: float = 1.0,
 ) -> WordbankTriggerGroupRecord:
-    trigger_shape = shape_from_text(trigger_text)
+    trigger_shape = shape_from_text(
+        trigger_text,
+        preserve_blank_text=preserve_blank_trigger,
+    )
     response_shape = shape_from_text(response_text)
     trigger_fp = fingerprint_shape(trigger_shape)
     response_fp = fingerprint_shape(response_shape)
@@ -145,3 +149,26 @@ def test_runtime_index_applies_probability_after_rule_filter() -> None:
     )
 
     assert selected is None
+
+
+def test_runtime_index_matches_single_space_trigger() -> None:
+    index = RuntimeIndex.build(
+        [
+            _entry(
+                trigger_group_id=3,
+                trigger_text=" ",
+                response_text="空格命中",
+                preserve_blank_trigger=True,
+            )
+        ]
+    )
+
+    exact = index.find_message(
+        fingerprint_shape(shape_from_text(" ", preserve_blank_text=True))
+    )
+    miss = index.find_message(fingerprint_shape(shape_from_text("")))
+
+    assert len(exact) == 1
+    assert exact[0].group.id == 3
+    assert exact[0].matched_text == " "
+    assert miss == []
