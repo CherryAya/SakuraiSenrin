@@ -150,10 +150,13 @@ class WaterMessageContext:
     created_at: int
 
     def to_payload(self) -> WaterMessagePayload:
+        dt = arrow.get(self.created_at).to("Asia/Shanghai")
         return {
             "group_id": self.group_id,
             "user_id": self.user_id,
-            "created_at": self.created_at,
+            "record_date": int(dt.format("YYYYMMDD")),
+            "hour": int(dt.format("H")),
+            "msg_count": 1,
         }
 
 
@@ -462,7 +465,7 @@ class WaterRepository:
         await water_writer.add(ctx.to_payload())
 
     async def _save_immediate(self, ctx: WaterMessageContext) -> None:
-        dt = arrow.get(ctx.created_at).datetime
+        dt = arrow.get(ctx.created_at).to("Asia/Shanghai").datetime
         time_ctx = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         async with water_message.write_session(time_ctx=time_ctx) as session:
@@ -503,7 +506,9 @@ class WaterRepository:
         routed: dict[str, list[WaterMessagePayload]] = defaultdict(list)
         for item in messages:
             route_ctx = (
-                arrow.get(int(item["created_at"])).to("Asia/Shanghai").floor("month")
+                arrow.get(str(item["record_date"]), "YYYYMMDD")
+                .to("Asia/Shanghai")
+                .floor("month")
             )
             routed[route_ctx.format("YYYY_MM")].append(item)
 
@@ -540,17 +545,20 @@ class WaterRepository:
                 await session.execute(delete(model))
 
         for file_path in water_message.base_dir.glob(f"{water_message.prefix}_*"):
-            if file_path.suffix not in {".db", ".7z"}:
+            if "".join(file_path.suffixes) not in {".db", ".db.zst"}:
                 continue
             full_path = str(file_path)
             await db_manager.dispose(full_path)
             if await asyncio.to_thread(os.path.exists, full_path):
                 await asyncio.to_thread(os.remove, full_path)
+        if await asyncio.to_thread(water_message.manifest_path.exists):
+            await asyncio.to_thread(os.remove, water_message.manifest_path)
 
         self._group_matrix_cache.clear()
         self._group_matrix_locks.clear()
         self._merge_state_locks.clear()
         water_message._initialized_shards.clear()
+        water_message._manifest = None
 
     async def get_today_leaderboard(
         self, group_id: str, limit: int = 20
@@ -624,9 +632,8 @@ class WaterRepository:
             )
 
         user_hourly: dict[str, list[int]] = defaultdict(lambda: [0] * 24)
-        for uid, ts in raw_timestamps:
-            hour = arrow.get(ts).to("local").hour
-            user_hourly[uid][hour] += 1
+        for uid, hour, msg_count in raw_timestamps:
+            user_hourly[uid][int(hour)] += int(msg_count)
         return dict(user_hourly)
 
     @staticmethod
@@ -989,7 +996,7 @@ class WaterRepository:
                     """
                     SELECT COUNT(*)
                     FROM sqlite_master
-                    WHERE type = 'table' AND name = 'water_message'
+                    WHERE type = 'table' AND name = 'water_hourly_counter'
                     """
                 ).fetchone()
             finally:

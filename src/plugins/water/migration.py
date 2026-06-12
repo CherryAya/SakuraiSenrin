@@ -152,7 +152,11 @@ async def import_legacy_water_rows(
         {
             "group_id": row.group_id,
             "user_id": row.user_id,
-            "created_at": row.created_at,
+            "record_date": int(
+                arrow.get(row.created_at).to("Asia/Shanghai").format("YYYYMMDD")
+            ),
+            "hour": int(arrow.get(row.created_at).to("Asia/Shanghai").format("H")),
+            "msg_count": 1,
         }
         for row in rows
     ]

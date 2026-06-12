@@ -21,6 +21,7 @@ dependencies = [
     "picimagesearch>=3.12.11",
     "imagehash>=4.3.2",
     "pybktree>=1.1",
+    "zstandard>=0.25.0",
 ]
 
 

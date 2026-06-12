@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 import arrow
 import pytest
@@ -184,3 +185,63 @@ async def test_sharded_db_deny_and_skip_cold_shard(
     )
 
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_sharded_db_archives_to_zstd_and_hydrates_with_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+
+    db = ShardedDB(
+        namespace="framework_archive",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+        cold_policy=ColdPolicy.HYDRATE,
+        warm_ttl_seconds=1,
+        warm_budget_mb=1,
+    )
+    await db.init_schema(_ShardBase)
+
+    april = arrow.get("2026-04-08").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_ShardModel(value="cold"))
+
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+    await db.run_archiver_task()
+
+    archived_path = tmp_path / "framework_archive" / "events_2026_04.db.zst"
+    online_path = tmp_path / "framework_archive" / "events_2026_04.db"
+    manifest_path = tmp_path / "framework_archive" / "events_manifest.json"
+    assert archived_path.is_file()
+    assert not online_path.exists()
+    assert manifest_path.is_file()
+    assert '"state": "cold"' in manifest_path.read_text(encoding="utf-8")
+
+    async with db.read_session(time_ctx=april, cold_policy=ColdPolicy.HYDRATE) as session:
+        total = await session.execute(select(func.count(_ShardModel.id)))
+    assert int(total.scalar() or 0) == 1
+    assert online_path.is_file()
+    assert '"state": "warm"' in manifest_path.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-10 12:00:00").int_timestamp,
+    )
+    await db._ensure_budget()
+    assert not online_path.exists()
+    assert '"state": "cold"' in manifest_path.read_text(encoding="utf-8")

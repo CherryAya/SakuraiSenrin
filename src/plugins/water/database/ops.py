@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from math import floor, sqrt
 from typing import cast
 
+import arrow
 from sqlalchemy import CursorResult, and_, delete, func, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine.row import Row
@@ -17,10 +18,10 @@ from .tables import (
     WaterDailySummary,
     WaterGlobalLevel,
     WaterGroupMatrixMap,
+    WaterHourlyCounter,
     WaterMatrixLevel,
     WaterMatrixMergeState,
     WaterMatrixTotalLevel,
-    WaterMessage,
     WaterPenaltyLog,
     WaterSettlementJob,
     WaterUserAchievement,
@@ -39,11 +40,22 @@ from .types import (
 )
 
 
-class WaterMessageOps(BaseOps[WaterMessage]):
+class WaterMessageOps(BaseOps[WaterHourlyCounter]):
     async def bulk_insert_water_message(self, data: list[WaterMessagePayload]) -> int:
         if not data:
             return 0
-        stmt = sqlite_insert(WaterMessage).values(data)
+        stmt = sqlite_insert(WaterHourlyCounter).values(data)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[
+                WaterHourlyCounter.record_date,
+                WaterHourlyCounter.hour,
+                WaterHourlyCounter.group_id,
+                WaterHourlyCounter.user_id,
+            ],
+            set_={
+                "msg_count": WaterHourlyCounter.msg_count + stmt.excluded.msg_count,
+            },
+        )
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount
 
@@ -54,15 +66,21 @@ class WaterMessageOps(BaseOps[WaterMessage]):
         end_ts: int,
         limit: int = 20,
     ) -> Sequence[Row[tuple[str, int]]]:
+        _ = end_ts
+        record_date = int(
+            arrow.get(start_ts).to("Asia/Shanghai").floor("day").format("YYYYMMDD")
+        )
         stmt = (
-            select(WaterMessage.user_id, func.count(WaterMessage.id).label("count"))
-            .where(
-                WaterMessage.group_id == group_id,
-                WaterMessage.created_at >= start_ts,
-                WaterMessage.created_at <= end_ts,
+            select(
+                WaterHourlyCounter.user_id,
+                func.sum(WaterHourlyCounter.msg_count).label("count"),
             )
-            .group_by(WaterMessage.user_id)
-            .order_by(func.count(WaterMessage.id).desc())
+            .where(
+                WaterHourlyCounter.group_id == group_id,
+                WaterHourlyCounter.record_date == record_date,
+            )
+            .group_by(WaterHourlyCounter.user_id)
+            .order_by(func.sum(WaterHourlyCounter.msg_count).desc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)
@@ -71,14 +89,17 @@ class WaterMessageOps(BaseOps[WaterMessage]):
     async def get_today_group_rank(
         self, group_id: str, start_ts: int, end_ts: int
     ) -> int:
+        _ = end_ts
+        record_date = int(
+            arrow.get(start_ts).to("Asia/Shanghai").floor("day").format("YYYYMMDD")
+        )
         stmt = (
-            select(WaterMessage.group_id)
+            select(WaterHourlyCounter.group_id)
             .where(
-                WaterMessage.created_at >= start_ts,
-                WaterMessage.created_at <= end_ts,
+                WaterHourlyCounter.record_date == record_date,
             )
-            .group_by(WaterMessage.group_id)
-            .order_by(func.count(WaterMessage.created_at).desc())
+            .group_by(WaterHourlyCounter.group_id)
+            .order_by(func.sum(WaterHourlyCounter.msg_count).desc())
         )
         result = await self.session.execute(stmt)
         groups = result.scalars().all()
@@ -86,12 +107,19 @@ class WaterMessageOps(BaseOps[WaterMessage]):
 
     async def get_users_timestamps(
         self, group_id: str, user_ids: list[str], start_ts: int, end_ts: int
-    ) -> Sequence[Row[tuple[str, int]]]:
-        stmt = select(WaterMessage.user_id, WaterMessage.created_at).where(
-            WaterMessage.group_id == group_id,
-            WaterMessage.user_id.in_(user_ids),
-            WaterMessage.created_at >= start_ts,
-            WaterMessage.created_at <= end_ts,
+    ) -> Sequence[Row[tuple[str, int, int]]]:
+        _ = end_ts
+        record_date = int(
+            arrow.get(start_ts).to("Asia/Shanghai").floor("day").format("YYYYMMDD")
+        )
+        stmt = select(
+            WaterHourlyCounter.user_id,
+            WaterHourlyCounter.hour,
+            WaterHourlyCounter.msg_count,
+        ).where(
+            WaterHourlyCounter.group_id == group_id,
+            WaterHourlyCounter.user_id.in_(user_ids),
+            WaterHourlyCounter.record_date == record_date,
         )
         result = await self.session.execute(stmt)
         return result.all()
@@ -101,24 +129,24 @@ class WaterMessageOps(BaseOps[WaterMessage]):
         start_ts: int,
         end_ts: int,
     ) -> Sequence[Row[tuple[str, str, int, int]]]:
-        """聚合日流水 -> (group_id, user_id, msg_count, active_hours)."""
-        hour_expr = func.strftime(
-            "%H", WaterMessage.created_at, "unixepoch", "localtime"
+        """聚合日计数 -> (group_id, user_id, msg_count, active_hours)."""
+        _ = end_ts
+        record_date = int(
+            arrow.get(start_ts).to("Asia/Shanghai").floor("day").format("YYYYMMDD")
         )
         stmt = (
             select(
-                WaterMessage.group_id,
-                WaterMessage.user_id,
-                func.count(WaterMessage.id).label("msg_count"),
-                func.count(func.distinct(hour_expr)).label("active_hours"),
+                WaterHourlyCounter.group_id,
+                WaterHourlyCounter.user_id,
+                func.sum(WaterHourlyCounter.msg_count).label("msg_count"),
+                func.count(WaterHourlyCounter.hour).label("active_hours"),
             )
             .where(
-                WaterMessage.created_at >= start_ts,
-                WaterMessage.created_at <= end_ts,
+                WaterHourlyCounter.record_date == record_date,
             )
             .group_by(
-                WaterMessage.group_id,
-                WaterMessage.user_id,
+                WaterHourlyCounter.group_id,
+                WaterHourlyCounter.user_id,
             )
         )
         result = await self.session.execute(stmt)
@@ -129,25 +157,25 @@ class WaterMessageOps(BaseOps[WaterMessage]):
         start_ts: int,
         end_ts: int,
     ) -> Sequence[tuple[str, str, int, int]]:
-        """聚合日流水 -> (group_id, user_id, hour, count)."""
-        hour_expr = func.strftime(
-            "%H", WaterMessage.created_at, "unixepoch", "localtime"
+        """聚合日计数 -> (group_id, user_id, hour, count)."""
+        _ = end_ts
+        record_date = int(
+            arrow.get(start_ts).to("Asia/Shanghai").floor("day").format("YYYYMMDD")
         )
         stmt = (
             select(
-                WaterMessage.group_id,
-                WaterMessage.user_id,
-                hour_expr.label("hour"),
-                func.count(WaterMessage.id).label("msg_count"),
+                WaterHourlyCounter.group_id,
+                WaterHourlyCounter.user_id,
+                WaterHourlyCounter.hour.label("hour"),
+                WaterHourlyCounter.msg_count.label("msg_count"),
             )
             .where(
-                WaterMessage.created_at >= start_ts,
-                WaterMessage.created_at <= end_ts,
+                WaterHourlyCounter.record_date == record_date,
             )
             .group_by(
-                WaterMessage.group_id,
-                WaterMessage.user_id,
-                hour_expr,
+                WaterHourlyCounter.group_id,
+                WaterHourlyCounter.user_id,
+                WaterHourlyCounter.hour,
             )
         )
         result = await self.session.execute(stmt)
@@ -158,7 +186,12 @@ class WaterMessageOps(BaseOps[WaterMessage]):
         ]
 
     async def prune_before(self, before_ts: int) -> int:
-        stmt = delete(WaterMessage).where(WaterMessage.created_at < before_ts)
+        before_date = int(
+            arrow.get(before_ts).to("Asia/Shanghai").floor("day").format("YYYYMMDD")
+        )
+        stmt = delete(WaterHourlyCounter).where(
+            WaterHourlyCounter.record_date < before_date
+        )
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount
 

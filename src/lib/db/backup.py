@@ -24,7 +24,9 @@ class BackupSource:
 
     @property
     def manifest_name(self) -> str:
-        suffix = "7z" if self.is_archive else "db"
+        suffix = "".join(self.path.suffixes).lstrip(".") or (
+            "db" if not self.is_archive else "bin"
+        )
         if self.shard_key:
             return f"{self.namespace}-{self.kind}-{self.shard_key}.{suffix}"
         return f"{self.namespace}-{self.kind}.{suffix}"

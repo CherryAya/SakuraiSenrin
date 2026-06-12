@@ -1,4 +1,4 @@
-"""Water 数据表定义 (v2.0)."""
+"""Water 数据表定义 (v2.1)."""
 
 from sqlalchemy import JSON, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -7,28 +7,40 @@ from src.lib.db.orm import TimeMixin
 
 
 class WaterMessageBase(DeclarativeBase):
-    """水王流水分库表基类。"""
+    """水王计数分库表基类。"""
 
 
 class WaterCoreBase(DeclarativeBase):
     """水王核心资产主库表基类。"""
 
 
-class WaterMessage(WaterMessageBase):
-    __tablename__ = "water_message"
+class WaterHourlyCounter(WaterMessageBase):
+    __tablename__ = "water_hourly_counter"
     __table_args__ = (
         Index(
-            "idx_water_message_group_user_time",
+            "idx_water_hourly_counter_group_date_hour",
+            "group_id",
+            "record_date",
+            "hour",
+        ),
+        Index(
+            "idx_water_hourly_counter_user_date",
+            "user_id",
+            "record_date",
+        ),
+        Index(
+            "idx_water_hourly_counter_group_user_date",
             "group_id",
             "user_id",
-            "created_at",
+            "record_date",
         ),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    group_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    record_date: Mapped[int] = mapped_column(Integer, primary_key=True)
+    hour: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    msg_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class WaterDailySummary(WaterCoreBase, TimeMixin):

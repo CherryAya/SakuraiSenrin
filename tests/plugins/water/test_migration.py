@@ -15,7 +15,7 @@ from src.plugins.water.database.instances import water_core_db, water_message
 from src.plugins.water.database.tables import (
     WaterActivitySeason,
     WaterDailySummary,
-    WaterMessage,
+    WaterHourlyCounter,
     WaterUserAchievement,
 )
 from src.plugins.water.migration import (
@@ -114,7 +114,9 @@ async def test_reset_current_water_runtime_preserves_activity_seasons() -> None:
             {
                 "group_id": "20001",
                 "user_id": "10001",
-                "created_at": now_ts,
+                "record_date": 20260611,
+                "hour": 12,
+                "msg_count": 1,
             }
         ]
     )
@@ -166,11 +168,19 @@ async def test_import_legacy_water_rows_routes_multiple_months() -> None:
     async with water_message.read_session(
         time_ctx=arrow.get("2026-01-15", "YYYY-MM-DD").datetime
     ) as session:
-        jan_count = await session.scalar(select(func.count()).select_from(WaterMessage))
+        jan_count = await session.scalar(
+            select(func.sum(WaterHourlyCounter.msg_count)).select_from(
+                WaterHourlyCounter
+            )
+        )
     async with water_message.read_session(
         time_ctx=arrow.get("2026-02-01", "YYYY-MM-DD").datetime
     ) as session:
-        feb_count = await session.scalar(select(func.count()).select_from(WaterMessage))
+        feb_count = await session.scalar(
+            select(func.sum(WaterHourlyCounter.msg_count)).select_from(
+                WaterHourlyCounter
+            )
+        )
 
     assert int(jan_count or 0) == 1
     assert int(feb_count or 0) == 1

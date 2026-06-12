@@ -10,10 +10,11 @@ from typing import TypedDict
 
 
 class WaterMessagePayload(TypedDict):
-    created_at: int
-
     group_id: str
     user_id: str
+    record_date: int
+    hour: int
+    msg_count: int
 
 
 class WaterSummaryPayload(TypedDict):

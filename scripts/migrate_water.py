@@ -6,6 +6,7 @@ import argparse
 import asyncio
 from pathlib import Path
 import sys
+from typing import TYPE_CHECKING
 
 import nonebot
 
@@ -15,12 +16,9 @@ if str(ROOT) not in sys.path:
 
 from src.database.system_migration import LegacyPgConfig, load_legacy_pg_config
 from src.logger import logger
-from src.plugins.water.migration import (
-    build_legacy_water_rows,
-    fetch_legacy_water_rows,
-    migrate_legacy_water,
-    write_report,
-)
+
+if TYPE_CHECKING:
+    pass
 
 
 def parse_args() -> argparse.Namespace:
@@ -85,6 +83,13 @@ async def main() -> None:
     if args.from_date is not None and args.to_date is not None:
         if args.from_date > args.to_date:
             raise ValueError("--from-date cannot be greater than --to-date")
+
+    from src.plugins.water.migration import (
+        build_legacy_water_rows,
+        fetch_legacy_water_rows,
+        migrate_legacy_water,
+        write_report,
+    )
 
     raw_rows = await fetch_legacy_water_rows(
         build_pg_config(args),
