@@ -53,6 +53,25 @@ class WaterGroupMatrixMapPayload(TypedDict):
     updated_at: int
 
 
+class WaterGroupUserTotalPayload(TypedDict):
+    group_id: str
+    user_id: str
+    msg_count: int
+    active_days: int
+    active_hours: int
+    created_at: int
+    updated_at: int
+
+
+class WaterGroupTotalPayload(TypedDict):
+    group_id: str
+    msg_count: int
+    active_days: int
+    active_hours: int
+    created_at: int
+    updated_at: int
+
+
 class WaterUserExpPayload(TypedDict):
     user_id: str
     matrix_id: str

@@ -101,4 +101,30 @@ def build_water_summary_patch_registry() -> PatchRegistry:
 
 
 def build_water_core_patch_registry() -> PatchRegistry:
-    return build_water_summary_patch_registry()
+    registry = build_water_summary_patch_registry()
+    registry.register(
+        SchemaPatch(
+            patch_id="water_group_stats:create_indexes:v4",
+            apply=_add_water_group_stats_indexes,
+        )
+    )
+    return registry
+
+
+async def _add_water_group_stats_indexes(session: AsyncSession) -> None:
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_water_group_total_msg
+            ON water_group_total (msg_count)
+            """
+        )
+    )
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_water_group_user_total_group_msg
+            ON water_group_user_total (group_id, msg_count)
+            """
+        )
+    )

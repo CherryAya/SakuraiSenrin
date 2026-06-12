@@ -949,3 +949,55 @@ async def test_prune_old_messages_is_noop_in_file_lifecycle_model() -> None:
     pruned = await repo.prune_old_messages(1_700_000_000)
 
     assert pruned == 0
+
+
+@pytest.mark.asyncio
+async def test_get_group_user_rank_uses_group_stats_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    stats_mock = AsyncMock(return_value=3)
+
+    class FakeGroupStatsOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_group_user_rank(self, group_id: str, user_id: str) -> int | None:
+            return await stats_mock(group_id, user_id)
+
+    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
+    monkeypatch.setattr(repo_module, "WaterGroupStatsOps", FakeGroupStatsOps)
+
+    rank = await repo.get_group_user_rank("20001", "10001")
+
+    assert rank == 3
+    stats_mock.assert_awaited_once_with("20001", "10001")
+
+
+@pytest.mark.asyncio
+async def test_get_group_activity_rank_uses_group_stats_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    stats_mock = AsyncMock(return_value=7)
+
+    class FakeGroupStatsOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_group_activity_rank(self, group_id: str) -> int | None:
+            return await stats_mock(group_id)
+
+    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
+    monkeypatch.setattr(repo_module, "WaterGroupStatsOps", FakeGroupStatsOps)
+
+    rank = await repo.get_group_activity_rank("20001")
+
+    assert rank == 7
+    stats_mock.assert_awaited_once_with("20001")

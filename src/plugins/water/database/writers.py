@@ -61,7 +61,4 @@ water_writer = BatchWriter[WaterMessageWritePayload](
     flush_callback=_flush_water_logs,
     batch_size=100,
     flush_interval=3.0,
-    dedupe_key=lambda item: (
-        f"{item['record_date']}:{item['hour']}:{item['group_id']}:{item['user_id']}"
-    ),
 )

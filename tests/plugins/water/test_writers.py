@@ -6,7 +6,7 @@ from typing import cast
 import pytest
 
 from src.plugins.water.database import writers as writers_module
-from src.plugins.water.database.writers import _flush_water_logs
+from src.plugins.water.database.writers import _flush_water_logs, water_writer
 
 
 @pytest.mark.asyncio
@@ -80,3 +80,7 @@ async def test_flush_water_logs_groups_by_month_route(
             },
         ]
     ]
+
+
+def test_water_writer_does_not_use_dedupe_key() -> None:
+    assert water_writer.config.dedupe_key is None

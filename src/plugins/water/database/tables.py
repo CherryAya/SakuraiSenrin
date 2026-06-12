@@ -134,6 +134,30 @@ class WaterMatrixTotalLevel(WaterCoreBase, TimeMixin):
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
+class WaterGroupUserTotal(WaterCoreBase, TimeMixin):
+    __tablename__ = "water_group_user_total"
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id", name="uq_water_group_user_total"),
+        Index("idx_water_group_user_total_group_msg", "group_id", "msg_count"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    msg_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class WaterGroupTotal(WaterCoreBase, TimeMixin):
+    __tablename__ = "water_group_total"
+
+    group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    msg_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class WaterPenaltyLog(WaterCoreBase, TimeMixin):
     __tablename__ = "water_penalty_log"
 

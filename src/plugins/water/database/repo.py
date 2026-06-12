@@ -25,6 +25,7 @@ from .ops import (
     WaterActivitySeasonOps,
     WaterArchivedSummaryOps,
     WaterGroupMatrixMapOps,
+    WaterGroupStatsOps,
     WaterLevelOps,
     WaterMatrixMergeStateOps,
     WaterMessageOps,
@@ -38,6 +39,8 @@ from .tables import (
     WaterDailySummary,
     WaterGlobalLevel,
     WaterGroupMatrixMap,
+    WaterGroupTotal,
+    WaterGroupUserTotal,
     WaterMatrixLevel,
     WaterMatrixMergeState,
     WaterMatrixTotalLevel,
@@ -50,6 +53,8 @@ from .tables import (
 from .types import (
     WaterAchievementPayload,
     WaterActivitySeasonPayload,
+    WaterGroupTotalPayload,
+    WaterGroupUserTotalPayload,
     WaterMatrixExpPayload,
     WaterMessagePayload,
     WaterMessageWritePayload,
@@ -706,6 +711,8 @@ class WaterRepository:
 
             for model in (
                 WaterGroupMatrixMap,
+                WaterGroupUserTotal,
+                WaterGroupTotal,
                 WaterMatrixLevel,
                 WaterGlobalLevel,
                 WaterMatrixTotalLevel,
@@ -1037,6 +1044,8 @@ class WaterRepository:
         record_date = int(target_date.format("YYYYMMDD"))
 
         summary_payloads: list[WaterSummaryPayload] = []
+        group_user_gain: dict[tuple[str, str], tuple[int, int, int]] = {}
+        group_gain: dict[str, tuple[int, int, int]] = {}
         matrix_user_gain: dict[tuple[str, str], int] = defaultdict(int)
         matrix_gain: dict[str, int] = defaultdict(int)
         user_matrix_gain: dict[str, list[tuple[str, int]]] = defaultdict(list)
@@ -1054,6 +1063,17 @@ class WaterRepository:
                     "created_at": now_ts,
                     "updated_at": now_ts,
                 }
+            )
+            group_user_gain[(row.group_id, row.user_id)] = (
+                row.msg_count,
+                1,
+                row.active_hours,
+            )
+            current_group = group_gain.get(row.group_id, (0, 0, 0))
+            group_gain[row.group_id] = (
+                current_group[0] + row.msg_count,
+                current_group[1] + 1,
+                current_group[2] + row.active_hours,
             )
 
             delta = calc_personal_delta_exp(row.msg_count, row.active_hours)
@@ -1090,16 +1110,59 @@ class WaterRepository:
             )
 
         async with water_core_db.session(commit=True) as session:
+            group_stats_ops = WaterGroupStatsOps(session)
             level_ops = WaterLevelOps(session)
             penalty_ops = WaterPenaltyOps(session)
 
+            group_user_keys = list(group_user_gain.keys())
+            group_ids = list(group_gain.keys())
             matrix_keys = list(matrix_user_gain.keys())
             matrix_ids = list(matrix_gain.keys())
             user_ids = list(user_global_gain.keys())
 
+            old_group_user = await group_stats_ops.get_group_user_totals(
+                group_user_keys
+            )
+            old_group_total = await group_stats_ops.get_group_totals(group_ids)
             old_matrix = await level_ops.get_matrix_levels(matrix_keys)
             old_matrix_total = await level_ops.get_matrix_totals(matrix_ids)
             old_global = await level_ops.get_global_levels(user_ids)
+
+            group_user_payloads: list[WaterGroupUserTotalPayload] = []
+            for group_id, user_id in group_user_keys:
+                msg_count, active_days, active_hours = group_user_gain[
+                    (group_id, user_id)
+                ]
+                old_msg, old_days, old_hours = old_group_user.get(
+                    (group_id, user_id),
+                    (0, 0, 0),
+                )
+                group_user_payloads.append(
+                    {
+                        "group_id": group_id,
+                        "user_id": user_id,
+                        "msg_count": old_msg + msg_count,
+                        "active_days": old_days + active_days,
+                        "active_hours": old_hours + active_hours,
+                        "created_at": now_ts,
+                        "updated_at": now_ts,
+                    }
+                )
+
+            group_total_payloads: list[WaterGroupTotalPayload] = []
+            for group_id in group_ids:
+                msg_count, active_days, active_hours = group_gain[group_id]
+                old_msg, old_days, old_hours = old_group_total.get(group_id, (0, 0, 0))
+                group_total_payloads.append(
+                    {
+                        "group_id": group_id,
+                        "msg_count": old_msg + msg_count,
+                        "active_days": old_days + active_days,
+                        "active_hours": old_hours + active_hours,
+                        "created_at": now_ts,
+                        "updated_at": now_ts,
+                    }
+                )
 
             matrix_payloads: list[WaterUserExpPayload] = []
             for matrix_id, user_id in matrix_keys:
@@ -1156,6 +1219,16 @@ class WaterRepository:
 
             for chunk in split_list(matrix_payloads, chunk_size):
                 await level_ops.upsert_matrix_levels(chunk)
+                if chunk_pause_seconds > 0:
+                    await asyncio.sleep(chunk_pause_seconds)
+
+            for chunk in split_list(group_user_payloads, chunk_size):
+                await group_stats_ops.upsert_group_user_totals(chunk)
+                if chunk_pause_seconds > 0:
+                    await asyncio.sleep(chunk_pause_seconds)
+
+            for chunk in split_list(group_total_payloads, chunk_size):
+                await group_stats_ops.upsert_group_totals(chunk)
                 if chunk_pause_seconds > 0:
                     await asyncio.sleep(chunk_pause_seconds)
 
@@ -1371,36 +1444,15 @@ class WaterRepository:
             return await WaterLevelOps(session).get_user_matrix_rank(matrix_id, user_id)
 
     async def get_group_user_rank(self, group_id: str, user_id: str) -> int | None:
-        rows = await self.get_summaries_in_window(
-            19000101,
-            99991231,
-            group_ids=[group_id],
-        )
-        totals: dict[str, int] = defaultdict(int)
-        for row in rows:
-            totals[row.user_id] += int(row.msg_count)
-        own_total = totals.get(user_id, 0)
-        if own_total <= 0:
-            return None
-        ordered = sorted(totals.items(), key=lambda item: (-item[1], item[0]))
-        for rank, (candidate_user_id, _msg_count) in enumerate(ordered, 1):
-            if candidate_user_id == user_id:
-                return rank
-        return None
+        async with water_core_db.session(commit=False) as session:
+            return await WaterGroupStatsOps(session).get_group_user_rank(
+                group_id,
+                user_id,
+            )
 
     async def get_group_activity_rank(self, group_id: str) -> int | None:
-        rows = await self.get_summaries_in_window(19000101, 99991231)
-        totals: dict[str, int] = defaultdict(int)
-        for row in rows:
-            totals[row.group_id] += int(row.msg_count)
-        own_total = totals.get(group_id, 0)
-        if own_total <= 0:
-            return None
-        ordered = sorted(totals.items(), key=lambda item: (-item[1], item[0]))
-        for rank, (candidate_group_id, _msg_count) in enumerate(ordered, 1):
-            if candidate_group_id == group_id:
-                return rank
-        return None
+        async with water_core_db.session(commit=False) as session:
+            return await WaterGroupStatsOps(session).get_group_activity_rank(group_id)
 
     async def archive_summary_shards(self) -> None:
         await water_summary.run_archiver_task()

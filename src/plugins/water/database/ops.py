@@ -20,6 +20,8 @@ from .tables import (
     WaterDailySummary,
     WaterGlobalLevel,
     WaterGroupMatrixMap,
+    WaterGroupTotal,
+    WaterGroupUserTotal,
     WaterHourlyCounter,
     WaterMatrixLevel,
     WaterMatrixMergeState,
@@ -32,6 +34,8 @@ from .types import (
     WaterAchievementPayload,
     WaterActivitySeasonPayload,
     WaterGroupMatrixMapPayload,
+    WaterGroupTotalPayload,
+    WaterGroupUserTotalPayload,
     WaterMatrixExpPayload,
     WaterMatrixMergeStatePayload,
     WaterMessagePayload,
@@ -500,6 +504,172 @@ class WaterGroupMatrixMapOps(BaseOps[WaterGroupMatrixMap]):
         )
         result = await self.session.execute(stmt)
         return [str(group_id) for group_id in result.scalars().all()]
+
+
+class WaterGroupStatsOps:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_group_user_total(
+        self,
+        group_id: str,
+        user_id: str,
+    ) -> tuple[int, int, int] | None:
+        stmt = select(
+            WaterGroupUserTotal.msg_count,
+            WaterGroupUserTotal.active_days,
+            WaterGroupUserTotal.active_hours,
+        ).where(
+            WaterGroupUserTotal.group_id == group_id,
+            WaterGroupUserTotal.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        row = result.first()
+        if row is None:
+            return None
+        return (int(row[0]), int(row[1]), int(row[2]))
+
+    async def get_group_total(self, group_id: str) -> tuple[int, int, int] | None:
+        stmt = select(
+            WaterGroupTotal.msg_count,
+            WaterGroupTotal.active_days,
+            WaterGroupTotal.active_hours,
+        ).where(WaterGroupTotal.group_id == group_id)
+        result = await self.session.execute(stmt)
+        row = result.first()
+        if row is None:
+            return None
+        return (int(row[0]), int(row[1]), int(row[2]))
+
+    async def get_group_user_rank(self, group_id: str, user_id: str) -> int | None:
+        own = await self.get_group_user_total(group_id, user_id)
+        if own is None or own[0] <= 0:
+            return None
+        own_msg_count = own[0]
+        rank_stmt = select(func.count(WaterGroupUserTotal.id)).where(
+            WaterGroupUserTotal.group_id == group_id,
+            or_(
+                WaterGroupUserTotal.msg_count > own_msg_count,
+                and_(
+                    WaterGroupUserTotal.msg_count == own_msg_count,
+                    WaterGroupUserTotal.user_id < user_id,
+                ),
+            ),
+        )
+        rank_result = await self.session.execute(rank_stmt)
+        higher_count = int(rank_result.scalar() or 0)
+        return higher_count + 1
+
+    async def get_group_activity_rank(self, group_id: str) -> int | None:
+        own = await self.get_group_total(group_id)
+        if own is None or own[0] <= 0:
+            return None
+        own_msg_count = own[0]
+        rank_stmt = select(func.count(WaterGroupTotal.group_id)).where(
+            or_(
+                WaterGroupTotal.msg_count > own_msg_count,
+                and_(
+                    WaterGroupTotal.msg_count == own_msg_count,
+                    WaterGroupTotal.group_id < group_id,
+                ),
+            )
+        )
+        rank_result = await self.session.execute(rank_stmt)
+        higher_count = int(rank_result.scalar() or 0)
+        return higher_count + 1
+
+    async def get_group_user_totals(
+        self,
+        keys: list[tuple[str, str]],
+    ) -> dict[tuple[str, str], tuple[int, int, int]]:
+        if not keys:
+            return {}
+        rows: dict[tuple[str, str], tuple[int, int, int]] = {}
+        for chunk in split_list(keys, 400):
+            conditions = [
+                (WaterGroupUserTotal.group_id == group_id)
+                & (WaterGroupUserTotal.user_id == user_id)
+                for group_id, user_id in chunk
+            ]
+            stmt = select(
+                WaterGroupUserTotal.group_id,
+                WaterGroupUserTotal.user_id,
+                WaterGroupUserTotal.msg_count,
+                WaterGroupUserTotal.active_days,
+                WaterGroupUserTotal.active_hours,
+            ).where(or_(*conditions))
+            result = await self.session.execute(stmt)
+            rows.update(
+                {
+                    (group_id, user_id): (msg_count, active_days, active_hours)
+                    for (
+                        group_id,
+                        user_id,
+                        msg_count,
+                        active_days,
+                        active_hours,
+                    ) in result.all()
+                }
+            )
+        return rows
+
+    async def get_group_totals(
+        self,
+        group_ids: list[str],
+    ) -> dict[str, tuple[int, int, int]]:
+        if not group_ids:
+            return {}
+        rows: dict[str, tuple[int, int, int]] = {}
+        for chunk in split_list(group_ids, 400):
+            stmt = select(
+                WaterGroupTotal.group_id,
+                WaterGroupTotal.msg_count,
+                WaterGroupTotal.active_days,
+                WaterGroupTotal.active_hours,
+            ).where(WaterGroupTotal.group_id.in_(chunk))
+            result = await self.session.execute(stmt)
+            rows.update(
+                {
+                    group_id: (msg_count, active_days, active_hours)
+                    for group_id, msg_count, active_days, active_hours in result.all()
+                }
+            )
+        return rows
+
+    async def upsert_group_user_totals(
+        self,
+        data: list[WaterGroupUserTotalPayload],
+    ) -> int:
+        if not data:
+            return 0
+        stmt = sqlite_insert(WaterGroupUserTotal).values(data)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[WaterGroupUserTotal.group_id, WaterGroupUserTotal.user_id],
+            set_={
+                "msg_count": stmt.excluded.msg_count,
+                "active_days": stmt.excluded.active_days,
+                "active_hours": stmt.excluded.active_hours,
+                "updated_at": stmt.excluded.updated_at,
+            },
+        )
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
+
+    async def upsert_group_totals(self, data: list[WaterGroupTotalPayload]) -> int:
+        if not data:
+            return 0
+        stmt = sqlite_insert(WaterGroupTotal).values(data)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[WaterGroupTotal.group_id],
+            set_={
+                "msg_count": stmt.excluded.msg_count,
+                "active_days": stmt.excluded.active_days,
+                "active_hours": stmt.excluded.active_hours,
+                "updated_at": stmt.excluded.updated_at,
+            },
+        )
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
 
 
 class WaterLevelOps:
