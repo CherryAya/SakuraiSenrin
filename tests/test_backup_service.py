@@ -10,6 +10,11 @@ import pytest
 from sqlalchemy import Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from src.lib.backup import (
+    ensure_backup_database_registrations_loaded,
+    get_registered_backup_databases,
+)
+from src.lib.backup.registry import reset_backup_database_registry_for_test
 from src.lib.db.backup import BackupSource, SQLiteSnapshotter
 from src.lib.db.connectors import BaseDB, ColdPolicy, EventStore
 from src.services import backup as backup_module
@@ -20,7 +25,6 @@ from src.services.backup import (
     ResticConfig,
     ResticSnapshotInfo,
     build_default_backup_plan,
-    collect_default_backup_databases,
 )
 
 
@@ -262,7 +266,12 @@ def test_default_backup_plan_reads_cron_config(monkeypatch: pytest.MonkeyPatch) 
     assert plan.cron_minute == 35
 
 
-def test_collect_default_backup_databases_includes_extended_plugin_dbs() -> None:
+def test_backup_registration_loader_discovers_core_and_plugin_databases() -> None:
+    reset_backup_database_registry_for_test()
+
+    ensure_backup_database_registrations_loaded()
+
+    from src.database.instances import core_db, log_db, snapshot_db
     from src.plugins.water.database.instances import (
         water_core_db,
         water_message,
@@ -275,8 +284,10 @@ def test_collect_default_backup_databases_includes_extended_plugin_dbs() -> None
         wordbank_message_route_db,
     )
 
-    databases = collect_default_backup_databases()
+    databases = get_registered_backup_databases()
 
+    assert len(databases) >= 10
+    assert databases[:3] == (core_db, log_db, snapshot_db)
     assert water_core_db in databases
     assert water_message in databases
     assert water_summary in databases
@@ -284,3 +295,29 @@ def test_collect_default_backup_databases_includes_extended_plugin_dbs() -> None
     assert wordbank_log_db in databases
     assert wordbank_message_route_db in databases
     assert wordbank_message_ref_db in databases
+
+
+def test_backup_registration_loader_is_idempotent() -> None:
+    reset_backup_database_registry_for_test()
+
+    ensure_backup_database_registrations_loaded()
+    first = get_registered_backup_databases()
+
+    ensure_backup_database_registrations_loaded()
+    second = get_registered_backup_databases()
+
+    assert second == first
+    assert len({id(db) for db in second}) == len(second)
+
+
+def test_build_backup_service_from_config_uses_registered_databases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_backup_database_registry_for_test()
+    monkeypatch.setattr(backup_module.config, "BACKUP_LOCAL_ROOT", "./data/test-backup")
+
+    service = backup_module.build_backup_service_from_config()
+    databases = service.databases
+
+    assert len(databases) >= 10
+    assert databases == get_registered_backup_databases()

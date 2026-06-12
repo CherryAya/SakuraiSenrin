@@ -18,6 +18,8 @@ from src.lib.backup import (
     BackupStarted,
     BackupSucceeded,
     dispatch_backup_event,
+    ensure_backup_database_registrations_loaded,
+    get_registered_backup_databases,
 )
 from src.lib.db.backup import (
     BackupManifest,
@@ -355,46 +357,6 @@ def _parse_restic_snapshots(output: str) -> list[ResticSnapshotInfo]:
     return snapshots
 
 
-def collect_default_backup_databases() -> tuple[BaseDB, ...]:
-    databases: list[BaseDB] = []
-
-    from src.database.instances import core_db, log_db, snapshot_db
-
-    databases.extend([core_db, log_db, snapshot_db])
-
-    try:
-        from src.plugins.water.database.instances import (
-            water_core_db,
-            water_message,
-            water_summary,
-        )
-
-        databases.extend([water_core_db, water_message, water_summary])
-    except Exception as exc:
-        logger.debug(f"[Backup] water db instances unavailable: {exc}")
-
-    try:
-        from src.plugins.wordbank.database.instances import (
-            wordbank_log_db,
-            wordbank_main_db,
-            wordbank_message_ref_db,
-            wordbank_message_route_db,
-        )
-
-        databases.extend(
-            [
-                wordbank_main_db,
-                wordbank_log_db,
-                wordbank_message_route_db,
-                wordbank_message_ref_db,
-            ]
-        )
-    except Exception as exc:
-        logger.debug(f"[Backup] wordbank db instances unavailable: {exc}")
-
-    return tuple(databases)
-
-
 def build_default_backup_plan() -> BackupPlan:
     return BackupPlan(
         id="default",
@@ -411,8 +373,9 @@ def build_default_backup_plan() -> BackupPlan:
 
 
 def build_backup_service_from_config() -> BackupService:
+    ensure_backup_database_registrations_loaded()
     return BackupService(
-        databases=collect_default_backup_databases(),
+        databases=get_registered_backup_databases(),
         local_root=Path(config.BACKUP_LOCAL_ROOT),
         restic=ResticConfig(
             repository=config.BACKUP_RESTIC_REPOSITORY,

@@ -6,6 +6,7 @@ LastEditTime: 2026-03-03 17:34:20
 Description: db 实例
 """
 
+from src.lib.backup import register_backup_database
 from src.lib.db.connectors import CounterStore, StateStore
 
 from .patches import (
@@ -21,6 +22,7 @@ water_message = CounterStore(
     active_window_months=2,
 )
 water_message.patch_registry = build_water_message_patch_registry()
+register_backup_database(water_message)
 
 water_summary = CounterStore(
     namespace="water_db",
@@ -29,9 +31,11 @@ water_summary = CounterStore(
     active_window_months=4,
 )
 water_summary.patch_registry = build_water_summary_patch_registry()
+register_backup_database(water_summary)
 
 water_core_db = StateStore(
     namespace="water_db",
     filename="core.db",
 )
 water_core_db.patch_registry = build_water_core_patch_registry()
+register_backup_database(water_core_db)
