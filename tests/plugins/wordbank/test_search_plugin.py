@@ -205,3 +205,65 @@ async def test_view_reply_matcher_routes_search_result_reply_to_group_detail(
 
     assert isinstance(wordbank_plugin._send_group_detail_view, AsyncMock)
     wordbank_plugin._send_group_detail_view.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_view_reply_matcher_routes_group_detail_reply_to_next_page(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "initialize_wordbank_plugin",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+    send_group_detail_view = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "_send_group_detail_view",
+        send_group_detail_view,
+    )
+    monkeypatch.setattr(
+        wordbank_plugin.wordbank_service,
+        "get_message_ref",
+        AsyncMock(
+            return_value=WordbankMessageRefRecord(
+                message_id="90002",
+                ref_kind="view",
+                shard_key="2026_06",
+                context_type="group_detail",
+                trigger_group_id=271,
+                trigger_variant_id=0,
+                response_item_id=0,
+                current_page=2,
+                keyword="",
+                field="",
+                creator_id="",
+                has_image=False,
+                group_ids=(271,),
+                group_id="20001",
+                user_id="10001",
+                message_type="group",
+                source_message_id="",
+            )
+        ),
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_view_reply_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("[CQ:at,qq=99999] 下一页")
+        event.to_me = True
+        attach_reply_message(event, message_id=90002)
+        ctx.receive_event(bot, event)
+
+    send_group_detail_view.assert_awaited_once()
+    await_args = send_group_detail_view.await_args
+    assert await_args is not None
+    kwargs = await_args.kwargs
+    assert kwargs["trigger_group_id"] == 271
+    assert kwargs["page"] == 3

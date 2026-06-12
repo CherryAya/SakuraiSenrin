@@ -214,6 +214,29 @@ async def test_approval_reply_approves_response_item() -> None:
     approve_response_item.assert_awaited_once()
 
 
+async def test_approval_reply_rejects_response_item() -> None:
+    get_message_ref = AsyncMock(return_value=_approval_message())
+    reject_response_item = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=get_message_ref,
+            reject_response_item=reject_response_item,
+        ),
+    )
+
+    outcome = await handle_approval_reply_result(
+        service,
+        event=_event_with_reply("n"),
+        text="n",
+        locale="zh-CN",
+    )
+
+    assert outcome.message == "审批已完成：词条 #300 已拒绝。"
+    assert outcome.completed
+    reject_response_item.assert_awaited_once()
+
+
 def test_parse_view_reply_for_search_result_requires_group_from_current_page() -> None:
     parsed = parse_view_reply_for_search_result(
         "详情 271 2",
