@@ -22,6 +22,8 @@ from src.plugins.water.img import (
 from src.repositories import user_repo
 
 PeriodType = Literal["week", "month", "season", "year"]
+TOTAL_RANK_START_DATE = 19000101
+TOTAL_RANK_END_DATE = 99991231
 
 
 @dataclass(frozen=True)
@@ -172,7 +174,10 @@ class WaterRankService:
         locale: LocaleCode,
         limit: int = 10,
     ) -> list[str]:
-        rows = await water_repo.get_user_season_rankings(0, 99991231)
+        rows = await water_repo.get_user_season_rankings(
+            TOTAL_RANK_START_DATE,
+            TOTAL_RANK_END_DATE,
+        )
         if not rows:
             return [
                 tr(locale, "water.rank.total.title"),

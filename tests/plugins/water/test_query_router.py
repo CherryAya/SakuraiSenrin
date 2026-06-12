@@ -53,6 +53,30 @@ async def test_execute_default_queries_group_day_rank(
 
 
 @pytest.mark.asyncio
+async def test_execute_total_rank_queries_total_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    router = WaterQueryRouter()
+
+    from src.plugins.water.services import query_router as router_module
+
+    monkeypatch.setattr(
+        router_module.absolute_rank_service,
+        "build_total_rank",
+        AsyncMock(return_value=Message("TOTAL_RANK")),
+    )
+
+    message = await router.execute(
+        spec=router.parse("总榜"),
+        user_id="10001",
+        group_id="20001",
+        locale="zh-CN",
+    )
+
+    assert str(message) == "TOTAL_RANK"
+
+
+@pytest.mark.asyncio
 async def test_build_profile_message_skips_history_ranks_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

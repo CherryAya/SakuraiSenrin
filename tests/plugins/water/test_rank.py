@@ -11,7 +11,11 @@ from src.plugins.water.img import (
     WaterPeriodRankUserItem,
     build_water_period_rank_image,
 )
-from src.plugins.water.services.rank import WaterRankService
+from src.plugins.water.services.rank import (
+    TOTAL_RANK_END_DATE,
+    TOTAL_RANK_START_DATE,
+    WaterRankService,
+)
 from tests.plugins.water.helpers import DummyMatcher, MatcherFinished
 
 
@@ -182,3 +186,31 @@ async def test_build_water_period_rank_image_smoke() -> None:
 
     assert img is not None
     assert img.startswith(b"\x89PNG")
+
+
+@pytest.mark.asyncio
+async def test_build_total_rank_lines_uses_valid_date_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import rank as rank_service_module
+
+    service = WaterRankService()
+    captured: dict[str, tuple[int, int]] = {}
+
+    async def _fake_rankings(
+        start_date: int,
+        end_date: int,
+    ) -> list[Any]:
+        captured["window"] = (start_date, end_date)
+        return []
+
+    monkeypatch.setattr(
+        rank_service_module.water_repo,
+        "get_user_season_rankings",
+        _fake_rankings,
+    )
+
+    lines = await service.build_total_rank_lines("zh-CN")
+
+    assert captured["window"] == (TOTAL_RANK_START_DATE, TOTAL_RANK_END_DATE)
+    assert lines == ["===== 水王总榜 =====", "暂无全历史数据。"]
