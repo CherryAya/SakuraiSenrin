@@ -9,3 +9,4 @@
 ## 运维文档
 
 - [数据库备份](./backup.md)
+- [数据库使用规范](./database-usage.md)
