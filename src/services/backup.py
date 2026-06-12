@@ -288,9 +288,13 @@ def collect_default_backup_databases() -> tuple[BaseDB, ...]:
     databases.extend([core_db, log_db, snapshot_db])
 
     try:
-        from src.plugins.water.database.instances import water_core_db, water_message
+        from src.plugins.water.database.instances import (
+            water_core_db,
+            water_message,
+            water_summary,
+        )
 
-        databases.extend([water_core_db, water_message])
+        databases.extend([water_core_db, water_message, water_summary])
     except Exception as exc:
         logger.debug(f"[Backup] water db instances unavailable: {exc}")
 
@@ -298,9 +302,18 @@ def collect_default_backup_databases() -> tuple[BaseDB, ...]:
         from src.plugins.wordbank.database.instances import (
             wordbank_log_db,
             wordbank_main_db,
+            wordbank_message_ref_db,
+            wordbank_message_route_db,
         )
 
-        databases.extend([wordbank_main_db, wordbank_log_db])
+        databases.extend(
+            [
+                wordbank_main_db,
+                wordbank_log_db,
+                wordbank_message_route_db,
+                wordbank_message_ref_db,
+            ]
+        )
     except Exception as exc:
         logger.debug(f"[Backup] wordbank db instances unavailable: {exc}")
 

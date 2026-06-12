@@ -19,6 +19,7 @@ from src.services.backup import (
     BackupService,
     ResticConfig,
     build_default_backup_plan,
+    collect_default_backup_databases,
 )
 
 
@@ -205,3 +206,27 @@ def test_default_backup_plan_reads_cron_config(monkeypatch: pytest.MonkeyPatch) 
     assert plan.enabled is True
     assert plan.cron_hour == 4
     assert plan.cron_minute == 35
+
+
+def test_collect_default_backup_databases_includes_extended_plugin_dbs() -> None:
+    from src.plugins.water.database.instances import (
+        water_core_db,
+        water_message,
+        water_summary,
+    )
+    from src.plugins.wordbank.database.instances import (
+        wordbank_log_db,
+        wordbank_main_db,
+        wordbank_message_ref_db,
+        wordbank_message_route_db,
+    )
+
+    databases = collect_default_backup_databases()
+
+    assert water_core_db in databases
+    assert water_message in databases
+    assert water_summary in databases
+    assert wordbank_main_db in databases
+    assert wordbank_log_db in databases
+    assert wordbank_message_route_db in databases
+    assert wordbank_message_ref_db in databases
