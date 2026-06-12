@@ -6,6 +6,8 @@ LastEditTime: 2026-03-01 02:49:04
 Description: water db writers
 """
 
+import arrow
+
 from src.lib.db.batch import BatchWriter, execute_batch_write
 
 from .instances import water_message
@@ -17,10 +19,12 @@ async def _flush_water_logs(batch: list[WaterMessageWritePayload]) -> None:
     if not batch:
         return
 
-    grouped_payloads: dict[int, list[WaterMessagePayload]] = {}
+    grouped_payloads: dict[str, list[WaterMessagePayload]] = {}
     for item in batch:
-        created_at = int(item["created_at"])
-        grouped_payloads.setdefault(created_at, []).append(
+        route_key = (
+            arrow.get(int(item["created_at"])).to("Asia/Shanghai").floor("month")
+        ).format("YYYY_MM")
+        grouped_payloads.setdefault(route_key, []).append(
             {
                 "group_id": item["group_id"],
                 "user_id": item["user_id"],
@@ -36,8 +40,13 @@ async def _flush_water_logs(batch: list[WaterMessageWritePayload]) -> None:
     ) -> None:
         if not grouped_batch:
             return
-        created_at = int(grouped_batch[0]["created_at"])
-        await ops.bulk_insert_water_message(grouped_payloads.get(created_at, []))
+        route_key = (
+            arrow.get(int(grouped_batch[0]["created_at"]))
+            .to("Asia/Shanghai")
+            .floor("month")
+            .format("YYYY_MM")
+        )
+        await ops.bulk_insert_water_message(grouped_payloads.get(route_key, []))
 
     await execute_batch_write(
         batch=batch,
