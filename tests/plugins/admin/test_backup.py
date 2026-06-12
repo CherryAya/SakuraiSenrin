@@ -27,6 +27,7 @@ if nonebot.get_plugin("help") is None:
 
 SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 
+from src.lib.i18n.runtime import tr
 from src.lib.plugin_docs import DocsRenderContext
 from src.plugins.admin.backup import admin_backup, build_docs
 from src.plugins.help import help_matcher
@@ -93,21 +94,28 @@ async def test_admin_backup_check_returns_latest_snapshot(
         "build_backup_service_from_config",
         lambda: _Service(),
     )
+    expected = "\n".join(
+        [
+            tr("zh-CN", "admin.backup.check.ok", count=2),
+            tr("zh-CN", "admin.backup.check.latest"),
+            tr("zh-CN", "admin.backup.snapshot.id", snapshot_id="snap-1"),
+            tr(
+                "zh-CN",
+                "admin.backup.snapshot.time",
+                time="2026-06-12T21:35:21+08:00",
+            ),
+            tr("zh-CN", "admin.backup.snapshot.hostname", hostname="host-a"),
+            tr("zh-CN", "admin.backup.snapshot.files", count=75),
+            tr("zh-CN", "admin.backup.snapshot.bytes", count=1234),
+        ]
+    )
 
     async with app.test_matcher(admin_backup) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
         ctx.should_call_send(
             event,
-            (
-                "远端备份仓库可用，共 2 个快照。\n"
-                "最新快照：\n"
-                "- 快照: snap-1\n"
-                "  时间: 2026-06-12T21:35:21+08:00\n"
-                "  主机: host-a\n"
-                "  文件数: 75\n"
-                "  字节数: 1234"
-            ),
+            expected,
             bot=bot,
         )
 
@@ -124,7 +132,11 @@ async def test_admin_backup_snapshots_rejects_invalid_limit(
     async with app.test_matcher(admin_backup) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, "快照数量必须是大于 0 的整数。", bot=bot)
+        ctx.should_call_send(
+            event,
+            tr("zh-CN", "admin.backup.limit.invalid"),
+            bot=bot,
+        )
 
 
 @pytest.mark.asyncio
@@ -158,20 +170,27 @@ async def test_admin_backup_run_returns_backup_result(
         lambda: _Service(),
     )
     monkeypatch.setattr(backup_plugin, "build_default_backup_plan", lambda: object())
+    expected = "\n".join(
+        [
+            tr("zh-CN", "admin.backup.run.completed"),
+            tr("zh-CN", "admin.backup.run.run_id", run_id="backup-1"),
+            tr(
+                "zh-CN",
+                "admin.backup.run.manifest",
+                path="data/backup/manifests/backup-1.json",
+            ),
+            tr("zh-CN", "admin.backup.run.snapshot", snapshot_id="snap-1"),
+            tr("zh-CN", "admin.backup.run.files", count=2),
+            tr("zh-CN", "admin.backup.run.bytes", count=2048),
+        ]
+    )
 
     async with app.test_matcher(admin_backup) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
         ctx.should_call_send(
             event,
-            (
-                "备份已完成。\n"
-                "run_id: backup-1\n"
-                "manifest: data/backup/manifests/backup-1.json\n"
-                "snapshot: snap-1\n"
-                "files: 2\n"
-                "bytes: 2048"
-            ),
+            expected,
             bot=bot,
         )
 
