@@ -37,10 +37,16 @@ _ensure_pkg("src.lib.object_storage", ROOT / "src" / "lib" / "object_storage")
 from src.logger import logger
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.migration import (
+    LegacyImageCatalog,
     LegacyMigrationProgressCallback,
     LegacyPgConfig,
+    MigrationError,
+    WordbankMigrationReport,
+    extract_failure_details_from_categorized_report,
     load_legacy_pg_config,
+    migrate_legacy_rows,
     migrate_legacy_wordbank,
+    rebuild_legacy_rows_from_failure_details,
 )
 from src.plugins.wordbank.services.media import WordbankMediaService
 
@@ -95,6 +101,29 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=100,
         help="log progress every N rows for each migration phase",
+    )
+    parser.add_argument(
+        "--append-from-report",
+        help=(
+            "append import from an existing migration report JSON; "
+            "does not read legacy PostgreSQL"
+        ),
+    )
+    parser.add_argument(
+        "--append-from-error-report",
+        help=(
+            "append import from a categorized error report JSON; "
+            "defaults to categories selected by --error-category"
+        ),
+    )
+    parser.add_argument(
+        "--error-category",
+        action="append",
+        dest="error_categories",
+        help=(
+            "error category to append from categorized report; "
+            "repeatable, defaults to trigger_shape_empty"
+        ),
     )
     return parser.parse_args()
 
@@ -159,6 +188,7 @@ async def main() -> None:
     args = parse_args()
     old_repo_root, image_root, mapping_path = resolve_script_paths(args)
     progress = build_progress_logger(args.progress_step)
+    append_mode = bool(args.append_from_report or args.append_from_error_report)
 
     logger.info(
         "[wordbank-migration] starting "
@@ -172,6 +202,9 @@ async def main() -> None:
                 "reset_target": not args.no_reset_target,
                 "import_logs": not args.no_import_logs,
                 "progress_step": max(1, args.progress_step),
+                "append_from_report": args.append_from_report or "",
+                "append_from_error_report": args.append_from_error_report or "",
+                "error_categories": args.error_categories or ["trigger_shape_empty"],
             },
             ensure_ascii=False,
         )
@@ -179,18 +212,28 @@ async def main() -> None:
 
     repository = WordbankRepository()
     media_service = WordbankMediaService(repository)
-    report = await migrate_legacy_wordbank(
-        old_repo_root,
-        repository=repository,
-        media_service=media_service,
-        image_root=image_root,
-        mapping_path=mapping_path,
-        pg_config=build_pg_config(args),
-        reset_target=not args.no_reset_target,
-        import_logs=not args.no_import_logs,
-        progress=progress,
-        progress_every=args.progress_step,
-    )
+    if append_mode:
+        report = await _append_from_report(
+            args,
+            repository=repository,
+            media_service=media_service,
+            image_root=image_root,
+            mapping_path=mapping_path,
+            progress=progress,
+        )
+    else:
+        report = await migrate_legacy_wordbank(
+            old_repo_root,
+            repository=repository,
+            media_service=media_service,
+            image_root=image_root,
+            mapping_path=mapping_path,
+            pg_config=build_pg_config(args),
+            reset_target=not args.no_reset_target,
+            import_logs=not args.no_import_logs,
+            progress=progress,
+            progress_every=args.progress_step,
+        )
 
     report_path = Path(args.report)
     categorized_report_path = _derived_categorized_report_path(report_path)
@@ -231,6 +274,97 @@ def _derived_categorized_report_path(report_path: Path) -> Path:
     suffix = report_path.suffix or ".json"
     stem = report_path.stem if report_path.suffix else report_path.name
     return report_path.with_name(f"{stem}-by-error{suffix}")
+
+
+async def _append_from_report(
+    args: argparse.Namespace,
+    *,
+    repository: WordbankRepository,
+    media_service: WordbankMediaService,
+    image_root: Path | None,
+    mapping_path: Path | None,
+    progress: LegacyMigrationProgressCallback,
+) -> WordbankMigrationReport:
+    if args.append_from_report and args.append_from_error_report:
+        raise MigrationError(
+            "cannot use --append-from-report and --append-from-error-report together"
+        )
+    if args.no_import_logs:
+        logger.warning(
+            "[wordbank-migration] append mode ignores legacy log import flags "
+            "and only replays failed entry rows"
+        )
+
+    resolved_image_root = image_root or _default_append_image_root(args)
+    resolved_mapping_path = (
+        mapping_path if mapping_path is not None else _default_append_mapping_path(args)
+    )
+    payload_path = await asyncio.to_thread(
+        Path(args.append_from_error_report or args.append_from_report or "").resolve
+    )
+    payload = json.loads(
+        await asyncio.to_thread(payload_path.read_text, encoding="utf-8")
+    )
+    if not isinstance(payload, Mapping):
+        raise MigrationError("append report payload must be a JSON object")
+
+    if args.append_from_error_report:
+        categories = args.error_categories or ["trigger_shape_empty"]
+        details = extract_failure_details_from_categorized_report(
+            payload,
+            categories=categories,
+        )
+    else:
+        raw_details = payload.get("failure_details")
+        if not isinstance(raw_details, list):
+            raise MigrationError("report missing failure_details")
+        details = [dict(item) for item in raw_details if isinstance(item, Mapping)]
+
+    rows = rebuild_legacy_rows_from_failure_details(details)
+    image_catalog = _build_append_image_catalog(
+        resolved_image_root,
+        resolved_mapping_path,
+    )
+    logger.info(
+        "[wordbank-migration] append replay "
+        + json.dumps(
+            {
+                "report": str(payload_path),
+                "selected_failures": len(details),
+                "replay_rows": len(rows),
+                "reset_target": False,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return await migrate_legacy_rows(
+        rows,
+        repository=repository,
+        media_service=media_service,
+        image_catalog=image_catalog,
+        reset_target=False,
+        progress=progress,
+        progress_every=args.progress_step,
+    )
+
+
+def _default_append_image_root(args: argparse.Namespace) -> Path:
+    old_repo_root = Path(args.old_repo).resolve()
+    return old_repo_root.parent / "SakuraiSenrinPic" / "recovered_files"
+
+
+def _default_append_mapping_path(args: argparse.Namespace) -> Path:
+    old_repo_root = Path(args.old_repo).resolve()
+    return old_repo_root.parent / "SakuraiSenrinPic" / "file_mapping.json"
+
+
+def _build_append_image_catalog(
+    image_root: Path,
+    mapping_path: Path | None,
+) -> LegacyImageCatalog:
+    from src.plugins.wordbank.migration import build_legacy_image_catalog
+
+    return build_legacy_image_catalog(image_root, mapping_path)
 
 
 if __name__ == "__main__":

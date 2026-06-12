@@ -1,0 +1,100 @@
+{
+  "total_rows": 13,
+  "imported_rows": 13,
+  "imported_groups": 1,
+  "imported_response_items": 13,
+  "imported_entries": 13,
+  "skipped_rows": 0,
+  "status_counts": {
+    "rejected": 6,
+    "pending": 3,
+    "approved": 4
+  },
+  "skipped_reasons": {},
+  "image_counts": {
+    ".jpg": 7
+  },
+  "image_resolution_counts": {
+    "mapping": 7
+  },
+  "imported_entry_ids": {
+    "7133": [
+      10046
+    ],
+    "7433": [
+      10047
+    ],
+    "7816": [
+      10048
+    ],
+    "8317": [
+      10049
+    ],
+    "8465": [
+      10050
+    ],
+    "8638": [
+      10051
+    ],
+    "8647": [
+      10052
+    ],
+    "8652": [
+      10053
+    ],
+    "8800": [
+      10054
+    ],
+    "8801": [
+      10055
+    ],
+    "9143": [
+      10056
+    ],
+    "9498": [
+      10057
+    ],
+    "9607": [
+      10058
+    ]
+  },
+  "imported_group_ids": {
+    "7133": 6595,
+    "7433": 6595,
+    "7816": 6595,
+    "8317": 6595,
+    "8465": 6595,
+    "8638": 6595,
+    "8647": 6595,
+    "8652": 6595,
+    "8800": 6595,
+    "8801": 6595,
+    "9143": 6595,
+    "9498": 6595,
+    "9607": 6595
+  },
+  "response_distribution": {
+    "13": 1
+  },
+  "failures": [],
+  "failure_details": [],
+  "failure_categories": {
+    "total_failed": 0,
+    "categories": {}
+  },
+  "total_log_rows": 0,
+  "imported_log_rows": 0,
+  "skipped_log_rows": 0,
+  "log_failures": [],
+  "log_failure_details": [],
+  "total_trigger_log_rows": 0,
+  "imported_trigger_log_rows": 0,
+  "skipped_trigger_log_rows": 0,
+  "trigger_log_failures": [],
+  "trigger_log_failure_details": [],
+  "total_approval_ref_rows": 0,
+  "imported_approval_ref_rows": 0,
+  "skipped_approval_ref_rows": 0,
+  "approval_ref_failures": [],
+  "approval_ref_failure_details": []
+}

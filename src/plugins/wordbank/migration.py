@@ -1769,6 +1769,98 @@ def _safe_report_timestamp(value: object) -> int | None:
         return None
 
 
+def infer_report_response_available(approval_status: object) -> bool:
+    normalized = str(approval_status or "").strip().upper()
+    return normalized == "APPROVED"
+
+
+def rebuild_legacy_row_from_failure_detail(
+    detail: Mapping[str, object],
+) -> dict[str, object]:
+    trigger_summary = detail.get("trigger")
+    response_summary = detail.get("response")
+    trigger_kind = (
+        str(trigger_summary.get("kind") or "")
+        if isinstance(trigger_summary, Mapping)
+        else ""
+    )
+    response_kind = (
+        str(response_summary.get("kind") or "")
+        if isinstance(response_summary, Mapping)
+        else ""
+    )
+
+    trigger_segments = (
+        trigger_summary.get("segments", [])
+        if isinstance(trigger_summary, Mapping) and trigger_kind == "message"
+        else []
+    )
+    response_segments = (
+        response_summary.get("segments", [])
+        if isinstance(response_summary, Mapping) and response_kind == "message"
+        else []
+    )
+    extra_info: object = None
+    if isinstance(trigger_summary, Mapping) and trigger_kind == "event":
+        extra_info = trigger_summary.get("extra_info")
+
+    return {
+        "response_id": _coerce_int(detail.get("response_id"), field="response_id"),
+        "trigger_id": _coerce_int(detail.get("trigger_id"), field="trigger_id"),
+        "response_text": json.dumps(response_segments, ensure_ascii=False),
+        "response_rule_conditions": detail.get("response_rule_conditions") or {},
+        "weight": _coerce_int(detail.get("weight", 3), field="weight"),
+        "priority": _coerce_int(detail.get("priority", 3), field="priority"),
+        "created_by": str(detail.get("created_by") or ""),
+        "created_at": normalize_legacy_timestamp(
+            detail.get("created_at"),
+            fallback=get_current_time(),
+        ),
+        "response_available": infer_report_response_available(
+            detail.get("approval_status")
+        ),
+        "trigger_text": json.dumps(trigger_segments, ensure_ascii=False),
+        "trigger_config": detail.get("trigger_config") or {},
+        "extra_info": extra_info,
+        "approval_status": str(detail.get("approval_status") or "PENDING"),
+    }
+
+
+def rebuild_legacy_rows_from_failure_details(
+    details: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    return [rebuild_legacy_row_from_failure_detail(detail) for detail in details]
+
+
+def extract_failure_details_from_categorized_report(
+    payload: Mapping[str, object],
+    *,
+    categories: Sequence[str] | None = None,
+) -> list[dict[str, object]]:
+    raw_categories = payload.get("categories")
+    if not isinstance(raw_categories, Mapping):
+        raise MigrationError("categorized report missing categories")
+
+    selected_categories = list(categories or ())
+    if not selected_categories or selected_categories == ["all"]:
+        selected_categories = list(raw_categories.keys())
+
+    details: list[dict[str, object]] = []
+    for category in selected_categories:
+        bucket = raw_categories.get(category)
+        if not isinstance(bucket, Mapping):
+            continue
+        items = bucket.get("items")
+        if not isinstance(items, Sequence) or isinstance(
+            items, (str, bytes, bytearray)
+        ):
+            continue
+        for item in items:
+            if isinstance(item, Mapping):
+                details.append(dict(item))
+    return details
+
+
 def _summarize_legacy_message_payload(
     payload: object,
     *,
@@ -1891,11 +1983,13 @@ __all__ = [
     "LegacyPgConfig",
     "WordbankMigrationReport",
     "build_legacy_image_catalog",
+    "extract_failure_details_from_categorized_report",
     "fetch_legacy_addition_log_rows",
     "fetch_legacy_message_approval_rows",
     "fetch_legacy_response_log_rows",
     "fetch_legacy_response_rows",
     "fetch_legacy_trigger_log_rows",
+    "infer_report_response_available",
     "legacy_message_to_shape",
     "load_legacy_pg_config",
     "migrate_legacy_approval_message_refs",
@@ -1907,4 +2001,6 @@ __all__ = [
     "normalize_legacy_scope",
     "normalize_legacy_state",
     "parse_legacy_env_file",
+    "rebuild_legacy_row_from_failure_detail",
+    "rebuild_legacy_rows_from_failure_details",
 ]
