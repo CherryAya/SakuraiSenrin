@@ -80,6 +80,7 @@ class BatchWriter[T]:
         self._buffer: list[T] = []
         self._idle_event = asyncio.Event()
         self._idle_event.set()
+        self._flush_lock = asyncio.Lock()
         self._is_flushing = False
         self._last_error: Exception | None = None
 
@@ -139,6 +140,34 @@ class BatchWriter[T]:
                 return
             await self._idle_event.wait()
 
+    async def flush_now(self) -> None:
+        self._ensure_worker_running()
+        self._mark_busy()
+
+        while True:
+            while True:
+                try:
+                    item = self.queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                self._buffer.append(item)
+                self.queue.task_done()
+
+            if self._is_flushing:
+                await self._idle_event.wait()
+                continue
+
+            if self._buffer:
+                await self._flush_buffer()
+
+            self._mark_idle_if_needed()
+            if self.queue.empty() and not self._buffer and not self._is_flushing:
+                if self._last_error is not None:
+                    err = self._last_error
+                    self._last_error = None
+                    raise err
+                return
+
     async def close(self) -> None:
         self._closed = True
         if self._task is not None:
@@ -181,54 +210,55 @@ class BatchWriter[T]:
             self._mark_idle_if_needed()
 
     async def _flush_buffer(self) -> FlushResult[T]:
-        if not self._buffer:
-            return FlushResult(flushed=0, attempts=0, batch=())
+        async with self._flush_lock:
+            if not self._buffer:
+                return FlushResult(flushed=0, attempts=0, batch=())
 
-        batch = self._normalize_batch(self._buffer)
-        self._buffer = []
-        self._is_flushing = True
-        last_error: Exception | None = None
+            batch = self._normalize_batch(self._buffer)
+            self._buffer = []
+            self._is_flushing = True
+            last_error: Exception | None = None
 
-        try:
-            for attempts in range(1, self.config.max_retries + 1):
-                try:
-                    await self.flush_callback(list(batch))
-                    return FlushResult(
-                        flushed=len(batch),
-                        attempts=attempts,
-                        batch=tuple(batch),
-                    )
-                except Exception as e:
-                    last_error = e
-                    logger.error(
-                        f"BatchWriter {self.worker_name} flush attempt "
-                        f"{attempts} failed: {e}"
-                    )
-                    if attempts < self.config.max_retries:
-                        await asyncio.sleep(self.config.retry_backoff * attempts)
+            try:
+                for attempts in range(1, self.config.max_retries + 1):
+                    try:
+                        await self.flush_callback(list(batch))
+                        return FlushResult(
+                            flushed=len(batch),
+                            attempts=attempts,
+                            batch=tuple(batch),
+                        )
+                    except Exception as e:
+                        last_error = e
+                        logger.error(
+                            f"BatchWriter {self.worker_name} flush attempt "
+                            f"{attempts} failed: {e}"
+                        )
+                        if attempts < self.config.max_retries:
+                            await asyncio.sleep(self.config.retry_backoff * attempts)
 
-            assert last_error is not None
-            dead_letter = DeadLetterRecord(
-                worker_name=self.worker_name,
-                batch=tuple(batch),
-                error=repr(last_error),
-                failed_at=get_current_time(),
-                attempts=self.config.max_retries,
-            )
-            self._dead_letters.append(dead_letter)
-            logger.error(
-                f"BatchWriter {self.worker_name} moved batch to dead letter "
-                f"after {self.config.max_retries} attempts: {last_error}"
-            )
-            self._last_error = last_error
-            return FlushResult(
-                flushed=0,
-                attempts=self.config.max_retries,
-                batch=tuple(batch),
-            )
-        finally:
-            self._is_flushing = False
-            self._mark_idle_if_needed()
+                assert last_error is not None
+                dead_letter = DeadLetterRecord(
+                    worker_name=self.worker_name,
+                    batch=tuple(batch),
+                    error=repr(last_error),
+                    failed_at=get_current_time(),
+                    attempts=self.config.max_retries,
+                )
+                self._dead_letters.append(dead_letter)
+                logger.error(
+                    f"BatchWriter {self.worker_name} moved batch to dead letter "
+                    f"after {self.config.max_retries} attempts: {last_error}"
+                )
+                self._last_error = last_error
+                return FlushResult(
+                    flushed=0,
+                    attempts=self.config.max_retries,
+                    batch=tuple(batch),
+                )
+            finally:
+                self._is_flushing = False
+                self._mark_idle_if_needed()
 
 
 async def execute_batch_write[PayloadT: Mapping[str, Any], OpsT: BaseOps[Any]](

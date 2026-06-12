@@ -128,6 +128,26 @@ async def test_batch_writer_dead_letter_on_exhausted_retries() -> None:
 
 
 @pytest.mark.asyncio
+async def test_batch_writer_flush_now_flushes_without_waiting_interval() -> None:
+    flushed: list[list[int]] = []
+
+    async def _flush(batch: list[int]) -> None:
+        flushed.append(batch)
+
+    writer = BatchWriter[int](
+        flush_callback=_flush,
+        batch_size=10,
+        flush_interval=60,
+    )
+
+    await writer.add_all([1, 2, 3])
+    await writer.flush_now()
+    await writer.close()
+
+    assert flushed == [[1, 2, 3]]
+
+
+@pytest.mark.asyncio
 async def test_event_store_read_session_creates_active_shard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -37,6 +37,11 @@ summary_job = scheduler.get_job("water_summary_archive")
 assert summary_job is not None
 assert summary_job.trigger.fields[5].expressions[0].first == 0
 assert summary_job.trigger.fields[6].expressions[0].first == 35
+
+import src.plugins.water as water_module
+
+assert water_module.water_recorder.priority < water_module.water_query.priority
+assert water_module.water_recorder.block is False
 """
     result = subprocess.run(
         [sys.executable, "-c", script],

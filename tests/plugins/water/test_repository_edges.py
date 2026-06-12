@@ -421,6 +421,58 @@ async def test_get_global_period_leaderboard_builds_trends(
 
 
 @pytest.mark.asyncio
+async def test_get_today_leaderboard_flushes_realtime_buffer_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    flush_mock = AsyncMock()
+
+    class FakeMessageOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_top_users(
+            self,
+            group_id: str,
+            start_ts: int,
+            end_ts: int,
+            limit: int,
+        ) -> list[tuple[str, int]]:
+            _ = (group_id, start_ts, end_ts, limit)
+            return [("10001", 5)]
+
+    class FakeSummaryOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_ranks_by_date(
+            self,
+            group_id: str,
+            record_date: int,
+        ) -> dict[str, int]:
+            _ = (group_id, record_date)
+            return {"10001": 2}
+
+    monkeypatch.setattr(repo_module, "get_current_time", lambda: 1_781_913_600)
+    monkeypatch.setattr(repo_module.water_writer, "flush_now", flush_mock)
+    monkeypatch.setattr(repo_module.water_message, "read_session", _fake_session)
+    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
+    monkeypatch.setattr(repo_module, "WaterMessageOps", FakeMessageOps)
+    monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
+
+    rows = await repo.get_today_leaderboard("20001", limit=10)
+
+    flush_mock.assert_awaited_once()
+    assert len(rows) == 1
+    assert rows[0].user_id == "10001"
+    assert rows[0].msg_count == 5
+    assert rows[0].trend == 1
+
+
+@pytest.mark.asyncio
 async def test_get_global_period_overview_reads_previous_total(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

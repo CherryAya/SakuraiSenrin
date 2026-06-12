@@ -750,6 +750,8 @@ class WaterRepository:
     async def get_today_leaderboard(
         self, group_id: str, limit: int = 20
     ) -> list[RankItem]:
+        await water_writer.flush_now()
+
         now = arrow.get(get_current_time())
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
@@ -790,6 +792,8 @@ class WaterRepository:
         ]
 
     async def get_today_group_rank(self, group_id: str) -> int:
+        await water_writer.flush_now()
+
         now = arrow.get(get_current_time())
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
@@ -806,6 +810,8 @@ class WaterRepository:
     ) -> dict[str, list[int]]:
         if not user_ids:
             return {}
+
+        await water_writer.flush_now()
 
         now = arrow.get(get_current_time())
         start_ts = now.floor("day").int_timestamp

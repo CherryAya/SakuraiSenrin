@@ -148,7 +148,7 @@ water_admin = on_command(
     block=True,
 )
 water_merge = on_command("water.merge", aliases={"water合并"}, priority=5, block=True)
-water_recorder = on_message(priority=99, block=False)
+water_recorder = on_message(priority=4, block=False)
 
 
 @scheduler.scheduled_job(
