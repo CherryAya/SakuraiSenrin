@@ -114,6 +114,19 @@ class WaterPeriodRankCardData:
         return self.top_items
 
 
+@dataclass(frozen=True)
+class WaterDayRankCardData:
+    title: str
+    scope_label: str
+    subject_label: str
+    leader_name: str
+    leader_rank_label: str
+    generated_at: int
+    top_items: list[WaterRankCardItem]
+    summary_label: str
+    footer_label: str
+
+
 class WaterRankRenderer:
     def __init__(self) -> None:
         self.BG_COLOR = "#FFF4F7"
@@ -354,6 +367,11 @@ class WaterRankRenderer:
         group_rank: int,
         users_data: dict[str, dict[str, Any]],
         locale: LocaleCode,
+        *,
+        header_title: str | None = None,
+        summary_text: str | None = None,
+        footer_text: str | None = None,
+        scope_label: str | None = None,
     ) -> bytes:
         item_h, item_spacing = int(110 * self.SCALE), int(20 * self.SCALE)
         header_height = int(300 * self.SCALE)
@@ -375,7 +393,7 @@ class WaterRankRenderer:
                 self.RENDER_WIDTH - self.PADDING,
                 y + int(50 * self.SCALE),
             ),
-            tr(locale, "water.image.day_rank.header"),
+            header_title or tr(locale, "water.image.day_rank.header"),
             max_fontsize=int(40 * self.SCALE),
             fill=self.HEADER_TEXT,
             halign="center",
@@ -411,7 +429,8 @@ class WaterRankRenderer:
                 self.RENDER_WIDTH - self.PADDING - int(16 * self.SCALE),
                 group_card_top + group_card_h - int(6 * self.SCALE),
             ),
-            tr(
+            scope_label
+            or tr(
                 locale,
                 "water.image.day_rank.current_group",
                 group_name=safe_group_name,
@@ -424,7 +443,7 @@ class WaterRankRenderer:
         )
         y += group_card_h + int(10 * self.SCALE)
 
-        info_text = tr(
+        info_text = summary_text or tr(
             locale,
             "water.image.day_rank.summary",
             username=users_data[today_king]["username"],
@@ -493,7 +512,7 @@ class WaterRankRenderer:
         msg_y = time_footer_y + int(50 * self.SCALE)
         main_img.draw_text(
             (0, msg_y, self.RENDER_WIDTH, msg_y + int(30 * self.SCALE)),
-            tr(locale, "water.image.day_rank.footer"),
+            footer_text or tr(locale, "water.image.day_rank.footer"),
             max_fontsize=int(18 * self.SCALE),
             fill=self.HIGHLIGHT_COLOR,
             halign="center",
@@ -565,6 +584,52 @@ async def build_water_rank_image(
         locale=locale,
     )
     return img_bytes
+
+
+async def build_water_day_rank_image(
+    data: WaterDayRankCardData,
+    locale: LocaleCode,
+) -> bytes | None:
+    if not data.top_items:
+        return None
+
+    users_data: dict[str, dict[str, Any]] = {}
+    for item in data.top_items:
+        avatar_img = item.avatar or _build_avatar_fallback(
+            128,
+            item.display_name[:1] or "?",
+            "#FFDDE9",
+            "#D84E7A",
+        )
+        users_data[item.entity_id] = {
+            "user_id": item.entity_id,
+            "username": item.display_name,
+            "secondary_label": item.secondary_label,
+            "count": item.msg_count,
+            "hourly_data": item.hourly_counts,
+            "avatar_img": avatar_img,
+            "trend": item.trend,
+        }
+
+    renderer = WaterRankRenderer()
+    header_avatar = data.top_items[0].avatar or _build_avatar_fallback(
+        96,
+        data.subject_label[:1] or "?",
+        "#FFE3ED",
+        "#7A2F4A",
+    )
+    return await renderer.render_async(
+        group_name=data.scope_label,
+        group_avatar=header_avatar,
+        today_king=data.top_items[0].entity_id,
+        group_rank=1,
+        users_data=users_data,
+        locale=locale,
+        header_title=data.title,
+        summary_text=data.summary_label,
+        footer_text=data.footer_label,
+        scope_label=data.scope_label,
+    )
 
 
 def _format_rank(rank: int | None, locale: LocaleCode = "zh-CN") -> str:

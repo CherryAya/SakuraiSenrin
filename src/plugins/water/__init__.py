@@ -50,6 +50,7 @@ from .handlers import (
     water_help_message,
 )
 from .services.matrix_suggestion import matrix_suggestion_service
+from .services.query_router import water_query_router
 from .services.settlement import water_settlement_service
 
 require("nonebot_plugin_apscheduler")
@@ -228,7 +229,9 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
         await matcher.finish(tr(locale, "water.common.group_only"))
-    await matcher.send(tr(locale, "water.common.working"))
+    spec = water_query_router.parse(arg.extract_plain_text())
+    if water_query_router.should_send_working(spec):
+        await matcher.send(tr(locale, "water.common.working"))
     await handle_water_query(matcher, event, arg, locale)
 
 

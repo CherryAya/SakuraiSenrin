@@ -24,6 +24,14 @@ def test_parse_rank_menu_and_any_order_rank_spec() -> None:
     )
 
 
+def test_rank_menu_does_not_send_working() -> None:
+    router = WaterQueryRouter()
+
+    assert router.should_send_working(router.parse("")) is False
+    assert router.should_send_working(router.parse("月榜")) is False
+    assert router.should_send_working(router.parse("用户榜 本群 日榜")) is True
+
+
 def test_parse_rank_errors() -> None:
     router = WaterQueryRouter()
 

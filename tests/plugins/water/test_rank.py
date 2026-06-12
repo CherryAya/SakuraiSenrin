@@ -251,8 +251,14 @@ async def test_rank_query_service_routes_day_and_non_day(
 
     monkeypatch.setattr(
         query_module,
-        "build_water_period_rank_image",
+        "build_water_day_rank_image",
         AsyncMock(return_value=b"fake-image"),
+    )
+    period_image_mock = AsyncMock(return_value=b"period-image")
+    monkeypatch.setattr(
+        query_module,
+        "build_water_period_rank_image",
+        period_image_mock,
     )
     monkeypatch.setattr(
         query_module.water_repo,
@@ -317,6 +323,7 @@ async def test_rank_query_service_routes_day_and_non_day(
         locale="zh-CN",
     )
     assert "CQ:image" in str(day_message)
+    period_image_mock.assert_not_awaited()
 
     monkeypatch.setattr(
         query_module.water_rank_service,

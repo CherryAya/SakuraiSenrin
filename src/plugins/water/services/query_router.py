@@ -61,6 +61,16 @@ class WaterQuerySpec:
 
 
 class WaterQueryRouter:
+    @staticmethod
+    def should_send_working(spec: WaterQuerySpec) -> bool:
+        if spec.scope_type == "activity":
+            return True
+        if spec.view in {"achievement", "profile"}:
+            return True
+        if spec.scope_type == "rank":
+            return spec.rank_spec is not None and not spec.errors
+        return False
+
     def parse(self, raw_text: str) -> WaterQuerySpec:
         text = raw_text.strip()
         tokens = text.split()
