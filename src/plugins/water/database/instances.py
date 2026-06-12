@@ -6,11 +6,11 @@ LastEditTime: 2026-03-03 17:34:20
 Description: db 实例
 """
 
-from src.lib.db.connectors import ShardedDB, StaticDB
+from src.lib.db.connectors import CounterStore, StateStore
 
 from .patches import build_water_patch_registry
 
-water_message = ShardedDB(
+water_message = CounterStore(
     namespace="water_db",
     prefix="logs",
     fmt="%Y_%m",
@@ -18,7 +18,7 @@ water_message = ShardedDB(
 )
 water_message.patch_registry = build_water_patch_registry()
 
-water_core_db = StaticDB(
+water_core_db = StateStore(
     namespace="water_db",
     filename="core.db",
 )

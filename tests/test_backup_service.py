@@ -5,10 +5,13 @@ from pathlib import Path
 import sqlite3
 from typing import cast
 
+import arrow
 import pytest
+from sqlalchemy import Integer, String
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.lib.db.backup import BackupSource, SQLiteSnapshotter
-from src.lib.db.connectors import BaseDB
+from src.lib.db.connectors import BaseDB, ColdPolicy, EventStore
 from src.services import backup as backup_module
 from src.services.backup import (
     BackupPlan,
@@ -134,6 +137,62 @@ async def test_backup_service_skips_disabled_plan(
 
     assert result is None
     assert events[-1].__class__.__name__ == "BackupSkipped"
+
+
+@pytest.mark.asyncio
+async def test_backup_service_collects_segment_archives_and_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
+    )
+
+    class _EventBase(DeclarativeBase):
+        pass
+
+    class _EventModel(_EventBase):
+        __tablename__ = "sample_event"
+
+        id: Mapped[int] = mapped_column(
+            Integer,
+            primary_key=True,
+            autoincrement=True,
+        )
+        value: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    db = EventStore(
+        namespace="backup_archive",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+        cold_policy=ColdPolicy.HYDRATE,
+    )
+    await db.init_schema(_EventBase)
+
+    april = arrow.get("2026-04-08").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_EventModel(value="cold"))
+
+    await db.run_archiver_task()
+
+    service = BackupService(
+        databases=[db],
+        local_root=tmp_path / "backup",
+        restic=ResticConfig(repository=None, password=None, require_restic=False),
+    )
+    sources = service._collect_sources(include_archives=True)
+
+    assert len(sources) == 3
+    assert sum(source.is_archive for source in sources) == 2
+    assert any(source.path.name == "events_2026_06.db" for source in sources)
+    assert any(source.path.name == "events_2026_04.db.zst" for source in sources)
+    assert any(source.path.name == "events_manifest.json" for source in sources)
 
 
 def test_default_backup_plan_reads_cron_config(monkeypatch: pytest.MonkeyPatch) -> None:

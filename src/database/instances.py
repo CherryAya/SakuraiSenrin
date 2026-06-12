@@ -6,7 +6,7 @@ LastEditTime: 2026-02-26 20:18:32
 Description: db 实例
 """
 
-from src.lib.db.connectors import ShardedDB, StaticDB
+from src.lib.db.connectors import EventStore, StateStore
 
 from .patches import (
     build_core_patch_registry,
@@ -14,13 +14,13 @@ from .patches import (
     build_snapshot_patch_registry,
 )
 
-core_db = StaticDB(
+core_db = StateStore(
     namespace="core_db",
     filename="core.db",
 )
 core_db.patch_registry = build_core_patch_registry()
 
-log_db = ShardedDB(
+log_db = EventStore(
     namespace="log_db",
     prefix="log",
     fmt="%Y%m",
@@ -28,7 +28,7 @@ log_db = ShardedDB(
 )
 log_db.patch_registry = build_log_patch_registry()
 
-snapshot_db = ShardedDB(
+snapshot_db = EventStore(
     namespace="snapshot_db",
     prefix="snapshot",
     fmt="%Y%m",

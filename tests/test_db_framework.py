@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.lib.db.batch import BatchWriter
-from src.lib.db.connectors import ColdPolicy, ShardedDB, StaticDB
+from src.lib.db.connectors import ColdPolicy, EventStore, StateStore
 from src.lib.db.schema import SchemaPatch
 
 
@@ -36,7 +36,7 @@ class _ShardModel(_ShardBase):
 
 
 @pytest.mark.asyncio
-async def test_static_db_patch_registry_is_idempotent(
+async def test_state_store_patch_registry_is_idempotent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -44,7 +44,7 @@ async def test_static_db_patch_registry_is_idempotent(
 
     monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
 
-    db = StaticDB(namespace="framework_patch", filename="main.db")
+    db = StateStore(namespace="framework_patch", filename="main.db")
     applied = {"count": 0}
 
     async def _patch(session: AsyncSession) -> None:
@@ -128,7 +128,7 @@ async def test_batch_writer_dead_letter_on_exhausted_retries() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sharded_db_read_session_creates_active_shard(
+async def test_event_store_read_session_creates_active_shard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -141,7 +141,7 @@ async def test_sharded_db_read_session_creates_active_shard(
         lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
     )
 
-    db = ShardedDB(namespace="framework_shard", prefix="events", fmt="%Y_%m")
+    db = EventStore(namespace="framework_shard", prefix="events", fmt="%Y_%m")
     await db.init_schema(_ShardBase)
 
     async with db.write_session(time_ctx=arrow.get("2026-06-08").datetime) as session:
@@ -154,7 +154,7 @@ async def test_sharded_db_read_session_creates_active_shard(
 
 
 @pytest.mark.asyncio
-async def test_sharded_db_deny_and_skip_cold_shard(
+async def test_event_store_deny_and_skip_cold_shard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -167,7 +167,7 @@ async def test_sharded_db_deny_and_skip_cold_shard(
         lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
     )
 
-    db = ShardedDB(namespace="framework_cold", prefix="events", fmt="%Y_%m")
+    db = EventStore(namespace="framework_cold", prefix="events", fmt="%Y_%m")
     db_dir = tmp_path / "framework_cold"
     db_dir.mkdir(parents=True, exist_ok=True)
     (db_dir / "events_2026_04.7z").write_bytes(b"fake archive")
@@ -187,7 +187,7 @@ async def test_sharded_db_deny_and_skip_cold_shard(
 
 
 @pytest.mark.asyncio
-async def test_sharded_db_archives_to_zstd_and_hydrates_with_manifest(
+async def test_event_store_archives_to_zstd_and_hydrates_with_manifest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -200,7 +200,7 @@ async def test_sharded_db_archives_to_zstd_and_hydrates_with_manifest(
         lambda: arrow.get("2026-06-08 12:00:00").int_timestamp,
     )
 
-    db = ShardedDB(
+    db = EventStore(
         namespace="framework_archive",
         prefix="events",
         fmt="%Y_%m",

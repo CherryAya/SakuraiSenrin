@@ -22,7 +22,7 @@ from src.lib.utils.common import get_current_time
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from .connectors import ShardedDB
+    from .connectors import SegmentStore
     from .ops import BaseOps
 
 
@@ -233,7 +233,7 @@ class BatchWriter[T]:
 
 async def execute_batch_write[PayloadT: Mapping[str, Any], OpsT: BaseOps[Any]](
     batch: Sequence[PayloadT],
-    db_instance: ShardedDB,
+    db_instance: SegmentStore,
     ops_class: type[OpsT],
     method: Callable[[OpsT, list[PayloadT]], Awaitable[Any]],
     time_field: str,
