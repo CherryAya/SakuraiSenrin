@@ -2,6 +2,9 @@
 
 Use this checklist after regenerating plugin demo PNG files.
 
+For standalone PIL-rendered plugin images, also follow
+[`PIL Rendering Style Guide`](./pil-rendering-style-guide.md).
+
 ## Automated Checks
 
 - Run `uv run python scripts/build_docs.py generate -j 8` to regenerate demo PNG files; use `-j 1` for serial rendering when debugging.

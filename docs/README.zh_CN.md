@@ -10,3 +10,4 @@
 
 - [数据库备份](./backup.md)
 - [数据库使用规范](./database-usage.md)
+- [PIL 绘图规范](./pil-rendering-style-guide.md)
