@@ -19,10 +19,8 @@ from src.plugins.water.services.profile import profile_service
 from src.plugins.water.services.rank_query import water_rank_query_service
 from src.plugins.water.services.rank_season import season_rank_service
 from src.plugins.water.services.rank_types import (
-    LEGACY_RANK_TOKENS,
     PERIOD_LABELS,
     PERIOD_TOKENS,
-    RESTRICTED_RANK_PERIODS,
     SCOPE_LABELS,
     SCOPE_TOKENS,
     SUBJECT_LABELS,
@@ -99,16 +97,6 @@ class WaterQueryRouter:
                 scope_value="menu",
                 view="menu",
                 mode="simple",
-            )
-
-        if self._looks_like_legacy_rank(tokens):
-            return WaterQuerySpec(
-                subject="personal",
-                scope_type="rank",
-                scope_value="legacy",
-                view="menu",
-                mode="simple",
-                errors=("legacy_rank",),
             )
 
         if tokens[0] == "赛季":
@@ -298,22 +286,13 @@ class WaterQueryRouter:
         locale: LocaleCode,
         *,
         is_superuser: bool,
-        restricted: WaterRankPeriod | None = None,
     ) -> str:
-        prompt_key = (
-            "water.query.rank.error.restricted_period"
-            if restricted is not None
-            else "water.query.rank.guided.period_invalid"
-        )
         return "\n".join(
             [
                 tr(
                     locale,
-                    prompt_key,
+                    "water.query.rank.guided.period_invalid",
                     choices=self._period_choices_text(is_superuser=is_superuser),
-                    periods=" / ".join(
-                        PERIOD_LABELS[item] for item in RESTRICTED_RANK_PERIODS
-                    ),
                 ),
                 self.build_guided_footer(locale),
             ]
@@ -379,12 +358,6 @@ class WaterQueryRouter:
         return (
             WaterRankQuerySpec(subject=subject, scope=scope, period=period),
             (),
-        )
-
-    @staticmethod
-    def _looks_like_legacy_rank(tokens: list[str]) -> bool:
-        return any(token in LEGACY_RANK_TOKENS for token in tokens) and not any(
-            token in SUBJECT_TOKENS or token in SCOPE_TOKENS for token in tokens
         )
 
     def _parse_season(self, tokens: list[str]) -> WaterQuerySpec:
@@ -490,7 +463,7 @@ class WaterQueryRouter:
                     self.build_rank_menu(
                         locale,
                         spec.rank_spec,
-                        ("restricted_period",),
+                        ("invalid_period",),
                         is_superuser=is_superuser,
                     )
                 )
@@ -645,12 +618,6 @@ class WaterQueryRouter:
         errors: tuple[str, ...],
     ) -> str:
         head = errors[0]
-        if head == "legacy_rank":
-            return tr(
-                locale,
-                "water.query.rank.error.legacy",
-                example="#水王 用户榜 本群 周榜",
-            )
         if head == "missing_dimensions":
             missing_labels = {
                 "subject": "主体",
@@ -684,12 +651,12 @@ class WaterQueryRouter:
                 locale,
                 "water.query.rank.error.duplicate_period",
             )
-        if head == "restricted_period":
+        if head == "invalid_period":
             return tr(
                 locale,
-                "water.query.rank.error.restricted_period_menu",
-                periods=" / ".join(
-                    PERIOD_LABELS[item] for item in RESTRICTED_RANK_PERIODS
+                "water.query.rank.error.invalid_period_menu",
+                periods=self._period_choices_text(is_superuser=False).replace(
+                    " / ", "/"
                 ),
             )
         if head == "invalid_combo" and spec is not None:

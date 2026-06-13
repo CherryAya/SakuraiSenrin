@@ -72,6 +72,7 @@ def test_parse_rank_errors() -> None:
     missing = router.parse("用户榜 月榜")
     assert missing.rank_spec is None
     assert missing.errors[0] == "missing_dimensions"
+    assert missing.errors[1:] == ("scope",)
 
     invalid = router.parse("群聊榜 本群 月榜")
     assert invalid.rank_spec == WaterRankQuerySpec(
@@ -81,8 +82,9 @@ def test_parse_rank_errors() -> None:
     )
     assert invalid.errors == ("invalid_combo",)
 
-    legacy = router.parse("月榜")
-    assert legacy.errors == ("legacy_rank",)
+    period_only = router.parse("月榜")
+    assert period_only.rank_spec is None
+    assert period_only.errors == ("missing_dimensions", "subject", "scope")
 
 
 @pytest.mark.asyncio
@@ -146,7 +148,8 @@ async def test_execute_rank_restricted_period_requires_superuser(
         locale="zh-CN",
         is_superuser=False,
     )
-    assert "年榜 / 总榜 仅超管可用" in str(normal_message)
+    assert "时间不合法" in str(normal_message)
+    assert "超管可用" not in str(normal_message)
     assert "#水王 矩阵榜 全局 季榜" in str(normal_message)
 
     superuser_message = await router.execute(

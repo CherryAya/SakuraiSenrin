@@ -52,8 +52,6 @@ PERIOD_TOKENS: dict[str, WaterRankPeriod] = {
     "总榜": "total",
 }
 
-LEGACY_RANK_TOKENS: tuple[str, ...] = tuple(PERIOD_TOKENS.keys())
-
 VALID_SCOPES_BY_SUBJECT: dict[WaterRankSubject, tuple[WaterRankScope, ...]] = {
     "user": ("group", "matrix", "global"),
     "group": ("matrix", "global"),

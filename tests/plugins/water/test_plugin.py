@@ -194,7 +194,7 @@ async def test_water_query_direct_restricted_period_requires_superuser(
     expected_menu = water_plugin.water_query_router.build_rank_menu(
         "zh-CN",
         WaterRankQuerySpec(subject="user", scope="group", period="year"),
-        ("restricted_period",),
+        ("invalid_period",),
         is_superuser=False,
     )
 
@@ -255,7 +255,7 @@ async def test_water_query_guided_restricted_period_retries_for_normal_user(
         ctx.receive_event(bot, fourth)
         ctx.should_call_send(
             fourth,
-            "年榜 / 总榜 仅超管可用，请发送：日榜 / 周榜 / 月榜 / 季榜\n"
+            "时间输入无效，请发送：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )

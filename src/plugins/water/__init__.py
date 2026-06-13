@@ -557,7 +557,6 @@ async def _water_query_period_step(
             water_query_router.build_period_retry_prompt(
                 locale,
                 is_superuser=is_superuser,
-                restricted=period,
             ),
         )
         return
