@@ -115,12 +115,18 @@ def build_event_triggers(
     bot: Bot,
 ) -> tuple[str, ...]:
     if isinstance(event, MessageEvent):
-        for segment in event.message:
-            if segment.type != "at":
+        for message in (
+            getattr(event, "message", None),
+            getattr(event, "original_message", None),
+        ):
+            if message is None:
                 continue
-            target = str(segment.data.get("qq", ""))
-            if target == str(bot.self_id):
-                return ("event:at", "event:mention")
+            for segment in message:
+                if segment.type != "at":
+                    continue
+                target = str(segment.data.get("qq", ""))
+                if target == str(bot.self_id):
+                    return ("event:at", "event:mention")
         return ()
 
     notice_type = str(getattr(event, "notice_type", ""))

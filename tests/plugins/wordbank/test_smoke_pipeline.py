@@ -39,7 +39,10 @@ from src.plugins.wordbank.message_model import (
     shape_from_text,
 )
 from src.plugins.wordbank.services import wordbank_service
-from src.plugins.wordbank.services.rules import RuleContext
+from src.plugins.wordbank.services.rules import (
+    MAX_CALL_COUNT_WINDOW_SECONDS,
+    RuleContext,
+)
 from tests.plugins.water.helpers import build_group_message_event
 
 
@@ -280,6 +283,72 @@ async def test_passive_event_at_pipeline_hits_real_event_trigger(app: App) -> No
 
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, Message("收到艾特"), bot=bot)
+
+
+@pytest.mark.asyncio
+async def test_passive_event_at_pipeline_uses_original_message_after_strip(
+    app: App,
+) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_event("event:at"),
+        response_text="收到剥离艾特",
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("", message_id=1)
+        event.message = Message("")
+        event.original_message = Message("[CQ:at,qq=99999] ")
+        event.raw_message = "[CQ:at,qq=99999] "
+        event.to_me = True
+
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, Message("收到剥离艾特"), bot=bot)
+
+
+@pytest.mark.asyncio
+async def test_passive_invalid_call_count_window_does_not_break_matching(
+    app: App,
+) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_text("?"),
+        response_text="正常兜底",
+        raw_rule={"scope": "current_group", "priority": 1},
+    )
+    await wordbank_service.repository.create_or_append_response(
+        trigger_shape=shape_from_text("?"),
+        response_shape=shape_from_text("脏规则响应"),
+        rule={
+            "roles": "member",
+            "call_count": {
+                "window_seconds": MAX_CALL_COUNT_WINDOW_SECONDS + 1,
+                "min": 3,
+                "max": 0,
+            },
+        },
+        scope="current_group",
+        priority=9,
+        probability=1.0,
+        weight=3,
+        group_id="20001",
+        created_by="10001",
+        status="approved",
+        enabled=1,
+        approved_by="10002",
+    )
+    await _cancel_pending_rebuild()
+    wordbank_service._call_count_cache.clear()
+    await wordbank_service.rebuild_index()
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("?", message_id=1)
+
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, Message("正常兜底"), bot=bot)
 
 
 @pytest.mark.asyncio

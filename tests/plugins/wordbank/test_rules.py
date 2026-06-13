@@ -1,6 +1,7 @@
 import pytest
 
 from src.plugins.wordbank.services.rules import (
+    MAX_CALL_COUNT_WINDOW_SECONDS,
     RuleContext,
     RuleError,
     build_legacy_study_shortcut_rule,
@@ -67,6 +68,35 @@ def test_rule_allows_scope_role_and_call_count() -> None:
         rule={"roles": "admin"},
         context=context,
     )
+    assert not rule_allows(
+        scope="self_in_current_group",
+        entry_group_id="20001",
+        entry_created_by="10001",
+        rule={
+            "roles": "admin",
+            "call_count": {
+                "window_seconds": MAX_CALL_COUNT_WINDOW_SECONDS + 1,
+                "min": 0,
+            },
+        },
+        context=context,
+        current_call_count=99,
+    )
+
+
+def test_canonicalize_rejects_too_large_call_window() -> None:
+    with pytest.raises(RuleError, match="24 个月"):
+        canonicalize_rule(
+            {
+                "call_count": {
+                    "window_seconds": MAX_CALL_COUNT_WINDOW_SECONDS + 1,
+                    "min": 0,
+                    "max": 0,
+                }
+            },
+            is_group=True,
+            short_trigger=False,
+        )
 
 
 def test_rule_allows_role_hierarchy() -> None:

@@ -38,7 +38,11 @@ from src.plugins.wordbank.services.matching import (
     RuntimeResponseItem,
     SelectedMatch,
 )
-from src.plugins.wordbank.services.rules import RuleContext, canonicalize_rule
+from src.plugins.wordbank.services.rules import (
+    MAX_CALL_COUNT_WINDOW_SECONDS,
+    RuleContext,
+    canonicalize_rule,
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -716,6 +720,7 @@ class WordbankService:
         counts: dict[int, int] = {}
         missing_windows: dict[int, int] = {}
         cache_hits = 0
+        skipped_invalid_windows = 0
         for candidate in candidates:
             for response in candidate.group.responses:
                 if response.id in counts:
@@ -726,6 +731,9 @@ class WordbankService:
                 window = int(call_count.get("window_seconds", 0))
                 if window <= 0:
                     counts[response.id] = 0
+                    continue
+                if window > MAX_CALL_COUNT_WINDOW_SECONDS:
+                    skipped_invalid_windows += 1
                     continue
                 cache_key = (response.id, window)
                 cached = self._call_count_cache.get(cache_key)
@@ -755,6 +763,7 @@ class WordbankService:
             cached=len(counts) - len(missing_windows),
             cache_hits=cache_hits,
             queried=len(missing_windows),
+            skipped_invalid_windows=skipped_invalid_windows,
         )
         return counts
 
