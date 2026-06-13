@@ -268,6 +268,7 @@ async def test_backup_service_streams_restic_output_in_real_time(
 ) -> None:
     source = tmp_path / "source.db"
     _create_sqlite(source)
+    stdout_writes: list[str] = []
     info_logs: list[str] = []
     warning_logs: list[str] = []
 
@@ -319,6 +320,11 @@ async def test_backup_service_streams_restic_output_in_real_time(
                         b'"files_done":5,"total_files":10,'
                         b'"bytes_done":512,"total_bytes":1024}\n'
                     ),
+                    (
+                        b'{"message_type":"status","percent_done":0.5,'
+                        b'"files_done":5,"total_files":10,'
+                        b'"bytes_done":512,"total_bytes":1024}\n'
+                    ),
                     b'{"message_type":"summary","snapshot_id":"snap123"}\n',
                 ],
                 stderr_lines=[],
@@ -338,8 +344,21 @@ async def test_backup_service_streams_restic_output_in_real_time(
         "create_subprocess_exec",
         _create_subprocess_exec,
     )
+
+    class _Stdout:
+        def isatty(self) -> bool:
+            return True
+
+        def write(self, text: str) -> int:
+            stdout_writes.append(text)
+            return len(text)
+
+        def flush(self) -> None:
+            return None
+
     monkeypatch.setattr(backup_module.logger, "info", info_logs.append)
     monkeypatch.setattr(backup_module.logger, "warning", warning_logs.append)
+    monkeypatch.setattr(backup_module.sys, "stdout", _Stdout())
 
     service = BackupService(
         databases=cast(Sequence[BaseDB], [_DB()]),
@@ -361,7 +380,11 @@ async def test_backup_service_streams_restic_output_in_real_time(
 
     assert result is not None
     assert result.restic_snapshot_id == "snap123"
-    assert any("progress=50.0%" in message for message in info_logs)
+    assert sum("progress=50.0%" in chunk for chunk in stdout_writes) == 1
+    assert any(
+        chunk.startswith("\r\033[2K[Backup] restic status")
+        for chunk in stdout_writes
+    )
     assert any("snapshot=snap123" in message for message in info_logs)
     assert warning_logs == ["[Backup] pruning old snapshots"]
 

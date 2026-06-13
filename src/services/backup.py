@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 import uuid
 
 from src.config import config
@@ -350,14 +351,24 @@ class BackupService:
 
         assert process.stdout is not None
         assert process.stderr is not None
+        renderer = _TerminalProgressRenderer()
         stdout_task = asyncio.create_task(
-            self._read_restic_stream(process.stdout, is_error=False)
+            self._read_restic_stream(
+                process.stdout,
+                is_error=False,
+                renderer=renderer,
+            )
         )
         stderr_task = asyncio.create_task(
-            self._read_restic_stream(process.stderr, is_error=True)
+            self._read_restic_stream(
+                process.stderr,
+                is_error=True,
+                renderer=renderer,
+            )
         )
         returncode = await process.wait()
         stdout, stderr = await asyncio.gather(stdout_task, stderr_task)
+        renderer.finish()
         return stdout, stderr, returncode
 
     async def _read_restic_stream(
@@ -365,6 +376,7 @@ class BackupService:
         stream: asyncio.StreamReader,
         *,
         is_error: bool,
+        renderer: "_TerminalProgressRenderer | None" = None,
     ) -> str:
         chunks: list[str] = []
         while True:
@@ -373,9 +385,14 @@ class BackupService:
                 break
             text = line.decode("utf-8", errors="ignore")
             chunks.append(text)
-            rendered = _format_restic_output_line(text)
+            event_kind, rendered = _parse_restic_output_event(text)
             if not rendered:
                 continue
+            if event_kind == "status" and renderer is not None and not is_error:
+                renderer.show_status(f"[Backup] {rendered}")
+                continue
+            if renderer is not None:
+                renderer.before_log_line()
             if is_error:
                 logger.warning(f"[Backup] {rendered}")
             else:
@@ -406,16 +423,43 @@ def _is_missing_restic_repository_message(message: str) -> bool:
     )
 
 
-def _format_restic_output_line(raw_line: str) -> str:
+class _TerminalProgressRenderer:
+    def __init__(self) -> None:
+        self._enabled = bool(getattr(sys.stdout, "isatty", lambda: False)())
+        self._active = False
+        self._last_status = ""
+
+    def show_status(self, message: str) -> None:
+        if message == self._last_status:
+            return
+        self._last_status = message
+        if not self._enabled:
+            return
+        sys.stdout.write(f"\r\033[2K{message}")
+        sys.stdout.flush()
+        self._active = True
+
+    def before_log_line(self) -> None:
+        if not self._enabled or not self._active:
+            return
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        self._active = False
+
+    def finish(self) -> None:
+        self.before_log_line()
+
+
+def _parse_restic_output_event(raw_line: str) -> tuple[str, str]:
     line = raw_line.strip()
     if not line:
-        return ""
+        return "empty", ""
     try:
         payload = json.loads(line)
     except json.JSONDecodeError:
-        return line
+        return "text", line
     if not isinstance(payload, dict):
-        return line
+        return "text", line
 
     message_type = payload.get("message_type")
     if message_type == "status":
@@ -438,7 +482,7 @@ def _format_restic_output_line(raw_line: str) -> str:
             current = current_files[0]
             if isinstance(current, str) and current:
                 parts.append(f"current={current}")
-        return " ".join(parts)
+        return "status", " ".join(parts)
 
     if message_type == "summary":
         parts = ["restic summary"]
@@ -451,14 +495,14 @@ def _format_restic_output_line(raw_line: str) -> str:
         bytes_total = payload.get("total_bytes_processed")
         if isinstance(bytes_total, int):
             parts.append(f"bytes={_format_bytes(bytes_total)}")
-        return " ".join(parts)
+        return "summary", " ".join(parts)
 
     if message_type == "error":
         error = payload.get("error")
         if isinstance(error, str) and error:
-            return f"restic error: {error}"
+            return "error", f"restic error: {error}"
 
-    return line
+    return "text", line
 
 
 def _format_bytes(size: int) -> str:
