@@ -544,6 +544,44 @@ async def test_media_ingest_persists_remote_storage_path_for_new_images(
     assert await asyncio.to_thread(Path(repo.images[0].local_cache_path).is_file)
 
 
+async def test_media_ingest_marks_failed_when_expected_remote_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    service = WordbankMediaService(
+        repo,
+        media_root=tmp_path / "legacy",
+        remote_storage=None,
+        legacy_storage=LocalWordbankMediaStorage(tmp_path / "legacy"),
+        cache_storage=LocalLruCacheWordbankMediaStorage(tmp_path / "cache"),
+        remote_provider="r2",
+    )
+
+    image = await service.ingest_image_bytes(_png((9, 9, 9)))
+
+    assert image.remote_sync_status == "failed"
+    assert image.remote_storage_path == ""
+    assert await asyncio.to_thread(Path(image.storage_path).is_file)
+
+
+async def test_media_ingest_raises_when_remote_required_but_provider_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    service = WordbankMediaService(
+        repo,
+        media_root=tmp_path / "legacy",
+        remote_storage=None,
+        legacy_storage=LocalWordbankMediaStorage(tmp_path / "legacy"),
+        cache_storage=LocalLruCacheWordbankMediaStorage(tmp_path / "cache"),
+        remote_provider="github",
+        remote_required=True,
+    )
+
+    with pytest.raises(media_module.MediaError):
+        await service.ingest_image_bytes(_png((11, 11, 11)))
+
+
 async def test_media_load_prefers_local_lru_cache(tmp_path: Path) -> None:
     repo = _ImageRepo()
     storage = _ObjectStorage()
@@ -780,3 +818,51 @@ async def test_media_falls_back_to_legacy_local_storage_path_when_remote_unavail
     loaded = await service.load_canonical_storage_bytes(1)
 
     assert loaded == legacy_bytes
+    assert repo.images[0].remote_sync_status == "failed"
+
+
+async def test_media_syncs_legacy_local_image_to_remote_and_keeps_it_readable(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    storage = _ObjectStorage()
+    legacy_root = tmp_path / "legacy"
+    legacy_root.mkdir()
+    legacy_path = legacy_root / "legacy.webp"
+    legacy_bytes = _png((123, 45, 67))
+    legacy_path.write_bytes(legacy_bytes)
+    service = WordbankMediaService(
+        repo,
+        media_root=legacy_root,
+        remote_storage=ObjectStorageWordbankMediaStorage(storage),
+        legacy_storage=LocalWordbankMediaStorage(legacy_root),
+        cache_storage=LocalLruCacheWordbankMediaStorage(tmp_path / "cache"),
+        remote_provider="r2",
+    )
+    await repo.create_image(
+        {
+            "md5": "7" * 32,
+            "dhash": "6" * 16,
+            "phash": "6" * 16,
+            "width": 16,
+            "height": 16,
+            "file_size": len(legacy_bytes),
+            "hash_version": 2,
+            "storage_path": str(legacy_path),
+            "remote_storage_path": "",
+            "remote_sync_status": "pending",
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
+    await service.rebuild_cache()
+
+    updated = await service.sync_image_to_remote(repo.images[0], verify_remote=True)
+    assert updated is not None
+    assert updated.remote_sync_status == "synced"
+    assert updated.remote_storage_path == f"r2://bucket/wordbank/media/{'7' * 32}.webp"
+
+    legacy_path.unlink()
+    reloaded = await service.load_canonical_storage_bytes(1)
+
+    assert reloaded == legacy_bytes

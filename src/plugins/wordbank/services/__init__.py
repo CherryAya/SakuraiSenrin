@@ -38,6 +38,7 @@ def _build_wordbank_media_service() -> WordbankMediaService:
         legacy_storage=local_storage,
         cache_storage=cache_storage,
         remote_required=config.WORDBANK_MEDIA_REMOTE_REQUIRED,
+        remote_provider=provider,
         prewarm_local_cache=config.WORDBANK_MEDIA_CACHE_ENABLED,
     )
 

@@ -702,6 +702,7 @@ class WordbankMediaService:
         cache_storage: LocalLruCacheWordbankMediaStorage | None = None,
         cache_enabled: bool = True,
         remote_required: bool = False,
+        remote_provider: str = "local",
         prewarm_local_cache: bool = True,
         similarity_threshold: int = 8,
         candidate_limit: int = 128,
@@ -730,6 +731,7 @@ class WordbankMediaService:
             enabled=cache_enabled,
         )
         self.remote_required = remote_required
+        self.remote_provider = remote_provider.strip().lower()
         self.prewarm_local_cache = prewarm_local_cache
         self.similarity_threshold = similarity_threshold
         self.candidate_limit = candidate_limit
@@ -807,13 +809,12 @@ class WordbankMediaService:
 
         now = get_current_time()
         remote_storage_path = ""
-        remote_sync_status = (
-            REMOTE_SYNC_PENDING if self.remote_storage is None else REMOTE_SYNC_FAILED
-        )
+        remote_sync_status = REMOTE_SYNC_PENDING
         remote_synced_at = 0
         remote_etag = ""
         remote_object_size = 0
         storage_path = ""
+        remote_expected = self._remote_expected()
 
         if self.remote_storage is not None:
             try:
@@ -835,6 +836,14 @@ class WordbankMediaService:
                         key="wordbank.error.image_storage_missing",
                     ) from exc
                 logger.warning(f"[Wordbank] remote media save fallback to local: {exc}")
+                remote_sync_status = REMOTE_SYNC_FAILED
+        elif remote_expected:
+            if self.remote_required:
+                raise MediaError(
+                    "图片远端存储未配置",
+                    key="wordbank.error.image_storage_missing",
+                )
+            remote_sync_status = REMOTE_SYNC_FAILED
 
         if not storage_path:
             storage_path = await self.legacy_storage.save_image(
@@ -1089,6 +1098,7 @@ class WordbankMediaService:
             return None
         remote_bytes = await self.remote_storage.load_bytes(image.remote_storage_path)
         if remote_bytes is None:
+            await self._mark_remote_sync_failed(image)
             return None
         await self._touch_last_access(image.id)
         updated_image = self._by_id.get(image.id, image)
@@ -1259,14 +1269,7 @@ class WordbankMediaService:
 
         source_bytes = await self._load_source_bytes_for_remote_sync(image)
         if source_bytes is None:
-            updated = await self.repository.update_image_remote_sync(
-                image.id,
-                remote_storage_path=image.remote_storage_path,
-                remote_sync_status=REMOTE_SYNC_FAILED,
-                remote_synced_at=image.remote_synced_at,
-                remote_etag=image.remote_etag,
-                remote_object_size=image.remote_object_size,
-            )
+            updated = await self._mark_remote_sync_failed(image)
             if updated is not None:
                 self._cache_image(updated)
             return updated
@@ -1286,14 +1289,7 @@ class WordbankMediaService:
                 raise RuntimeError("remote object verification failed")
         except Exception as exc:
             logger.warning(f"[Wordbank] remote media sync failed: {exc}")
-            updated = await self.repository.update_image_remote_sync(
-                image.id,
-                remote_storage_path=image.remote_storage_path,
-                remote_sync_status=REMOTE_SYNC_FAILED,
-                remote_synced_at=image.remote_synced_at,
-                remote_etag=image.remote_etag,
-                remote_object_size=image.remote_object_size,
-            )
+            updated = await self._mark_remote_sync_failed(image)
             if updated is not None:
                 self._cache_image(updated)
             return updated
@@ -1382,6 +1378,25 @@ class WordbankMediaService:
         if self.remote_storage is not None and image.remote_storage_path:
             return await self.remote_storage.load_bytes(image.remote_storage_path)
         return None
+
+    def _remote_expected(self) -> bool:
+        return self.remote_provider in {"github", "r2"}
+
+    async def _mark_remote_sync_failed(
+        self,
+        image: WordbankImageRecord,
+    ) -> WordbankImageRecord | None:
+        updated = await self.repository.update_image_remote_sync(
+            image.id,
+            remote_storage_path=image.remote_storage_path,
+            remote_sync_status=REMOTE_SYNC_FAILED,
+            remote_synced_at=image.remote_synced_at,
+            remote_etag=image.remote_etag,
+            remote_object_size=image.remote_object_size,
+        )
+        if updated is not None:
+            self._cache_image(updated)
+        return updated
 
 
 def _iter_md5_candidates(values: Sequence[str]) -> tuple[str, ...]:
