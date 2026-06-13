@@ -122,6 +122,146 @@ async def test_backup_service_runs_restic_and_dispatches_success_event(
     assert events[-1].__class__.__name__ == "BackupSucceeded"
 
 
+async def test_backup_service_auto_inits_missing_restic_repository(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.db"
+    _create_sqlite(source)
+    called: list[tuple[object, ...]] = []
+
+    class _DB:
+        def iter_backup_sources(self) -> list[BackupSource]:
+            return [BackupSource(namespace="core_db", kind="core", path=source)]
+
+    class _Process:
+        def __init__(
+            self,
+            *,
+            stdout: bytes = b"",
+            stderr: bytes = b"",
+            returncode: int = 0,
+        ) -> None:
+            self._stdout = stdout
+            self._stderr = stderr
+            self.returncode = returncode
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return self._stdout, self._stderr
+
+    async def _create_subprocess_exec(*args: object, **kwargs: object) -> _Process:
+        _ = kwargs
+        called.append(args)
+        if args[1:3] == ("snapshots", "--json"):
+            return _Process(
+                stderr=(
+                    b'{"message_type":"exit_error","code":10,"message":"Fatal: '
+                    b'repository does not exist: unable to open config file"}\n'
+                ),
+                returncode=10,
+            )
+        if args[1] == "init":
+            return _Process(stdout=b"created restic repository\n")
+        if args[1] == "backup":
+            return _Process(
+                stdout=b'{"message_type":"summary","snapshot_id":"snap123"}\n'
+            )
+        return _Process()
+
+    monkeypatch.setattr(
+        backup_module.shutil,
+        "which",
+        lambda command: f"/bin/{command}",
+    )
+    monkeypatch.setattr(
+        backup_module.asyncio,
+        "create_subprocess_exec",
+        _create_subprocess_exec,
+    )
+
+    service = BackupService(
+        databases=cast(Sequence[BaseDB], [_DB()]),
+        local_root=tmp_path / "backup",
+        restic=ResticConfig(
+            repository="s3:https://example.test/bucket",
+            password="secret",
+        ),
+    )
+
+    result = await service.run(
+        BackupPlan(
+            id="test",
+            enabled=True,
+            retention=BackupRetention(keep_daily=1, keep_weekly=1, keep_monthly=1),
+        )
+    )
+
+    assert result is not None
+    assert result.restic_snapshot_id == "snap123"
+    assert [args[1] for args in called] == ["snapshots", "init", "backup", "forget"]
+
+
+async def test_backup_service_does_not_auto_init_non_repository_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.db"
+    _create_sqlite(source)
+
+    class _DB:
+        def iter_backup_sources(self) -> list[BackupSource]:
+            return [BackupSource(namespace="core_db", kind="core", path=source)]
+
+    class _Process:
+        def __init__(
+            self,
+            *,
+            stdout: bytes = b"",
+            stderr: bytes = b"",
+            returncode: int = 0,
+        ) -> None:
+            self._stdout = stdout
+            self._stderr = stderr
+            self.returncode = returncode
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return self._stdout, self._stderr
+
+    async def _create_subprocess_exec(*args: object, **kwargs: object) -> _Process:
+        _ = kwargs
+        assert args[1:3] == ("snapshots", "--json")
+        return _Process(stderr=b"Fatal: wrong password or no key found\n", returncode=1)
+
+    monkeypatch.setattr(
+        backup_module.shutil,
+        "which",
+        lambda command: f"/bin/{command}",
+    )
+    monkeypatch.setattr(
+        backup_module.asyncio,
+        "create_subprocess_exec",
+        _create_subprocess_exec,
+    )
+
+    service = BackupService(
+        databases=cast(Sequence[BaseDB], [_DB()]),
+        local_root=tmp_path / "backup",
+        restic=ResticConfig(
+            repository="s3:https://example.test/bucket",
+            password="secret",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="restic repository check failed"):
+        await service.run(
+            BackupPlan(
+                id="test",
+                enabled=True,
+                retention=BackupRetention(keep_daily=1, keep_weekly=1, keep_monthly=1),
+            )
+        )
+
+
 async def test_backup_service_streams_restic_output_in_real_time(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -152,15 +292,25 @@ async def test_backup_service_streams_restic_output_in_real_time(
             stderr_lines: list[bytes],
             returncode: int = 0,
         ) -> None:
-            self.stdout = _Reader(stdout_lines)
-            self.stderr = _Reader(stderr_lines)
+            self._stdout_lines = list(stdout_lines)
+            self._stderr_lines = list(stderr_lines)
+            self.stdout = _Reader(list(stdout_lines))
+            self.stderr = _Reader(list(stderr_lines))
             self.returncode = returncode
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return b"".join(self._stdout_lines), b"".join(self._stderr_lines)
 
         async def wait(self) -> int:
             return self.returncode
 
     async def _create_subprocess_exec(*args: object, **kwargs: object) -> _Process:
         _ = kwargs
+        if args[1:3] == ("snapshots", "--json"):
+            return _Process(
+                stdout_lines=[b"[]"],
+                stderr_lines=[],
+            )
         if args[1] == "backup":
             return _Process(
                 stdout_lines=[

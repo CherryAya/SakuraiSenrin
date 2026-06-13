@@ -115,6 +115,8 @@ class BackupService:
             BackupStarted(run_id=run_id, plan_id=plan.id, started_at=started_at)
         )
 
+        await self._ensure_restic_repository(stream_output=stream_output)
+
         staging_dir = self.local_root / "staging" / run_id
         manifest_dir = self.local_root / "manifests"
         manifest_dir.mkdir(parents=True, exist_ok=True)
@@ -231,6 +233,31 @@ class BackupService:
         if returncode != 0:
             message = stderr or stdout
             raise RuntimeError(f"restic forget failed: {message.strip()}")
+
+    async def _ensure_restic_repository(self, *, stream_output: bool = False) -> None:
+        self._validate_restic_config()
+        stdout, stderr, returncode = await self._run_restic_process(
+            "restic",
+            "snapshots",
+            "--json",
+        )
+        if returncode == 0:
+            return
+
+        message = stderr or stdout
+        if not _is_missing_restic_repository_message(message):
+            raise RuntimeError(f"restic repository check failed: {message.strip()}")
+
+        logger.warning("[Backup] restic repository missing, initializing it now")
+        init_stdout, init_stderr, init_returncode = await self._run_restic_process(
+            "restic",
+            "init",
+            stream_output=stream_output,
+        )
+        if init_returncode != 0:
+            init_message = init_stderr or init_stdout
+            raise RuntimeError(f"restic init failed: {init_message.strip()}")
+        logger.info("[Backup] restic repository initialized")
 
     async def restore(
         self,
@@ -368,6 +395,15 @@ def _parse_restic_snapshot_id(output: str) -> str | None:
         if isinstance(snapshot_id, str) and snapshot_id:
             return snapshot_id
     return None
+
+
+def _is_missing_restic_repository_message(message: str) -> bool:
+    normalized = message.casefold()
+    return (
+        "repository does not exist" in normalized
+        or "unable to open config file" in normalized
+        or "is there a repository at the following location?" in normalized
+    )
 
 
 def _format_restic_output_line(raw_line: str) -> str:
