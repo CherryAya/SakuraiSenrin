@@ -45,7 +45,25 @@ def test_rank_guided_prompts_follow_locale_catalog() -> None:
     assert "請擇榜單主體" in intro
     assert "revoke / recall" in intro
     assert "合法之組" in menu
+    assert "季榜" in menu
+    assert "#水王 矩阵榜 全局 总榜" not in menu
     assert "你刚刚选的是" in summary
+
+
+def test_rank_period_visibility_depends_on_role() -> None:
+    router = WaterQueryRouter()
+
+    normal_menu = router.build_rank_menu("zh-CN")
+    superuser_menu = router.build_rank_menu("zh-CN", is_superuser=True)
+    normal_prompt = router.build_period_prompt_for_role("zh-CN", is_superuser=False)
+    superuser_prompt = router.build_period_prompt_for_role("zh-CN", is_superuser=True)
+
+    assert "#水王 矩阵榜 全局 季榜" in normal_menu
+    assert "#水王 矩阵榜 全局 总榜" in superuser_menu
+    assert "日榜/周榜/月榜/季榜" in normal_menu
+    assert "日榜/周榜/月榜/季榜/年榜/总榜" in superuser_menu
+    assert "请选择时间：日榜 / 周榜 / 月榜 / 季榜" in normal_prompt
+    assert "请选择时间：日榜 / 周榜 / 月榜 / 季榜 / 年榜 / 总榜" in superuser_prompt
 
 
 def test_parse_rank_errors() -> None:
@@ -104,6 +122,48 @@ async def test_execute_rank_menu_and_invalid_combo(
         locale="zh-CN",
     )
     assert str(rank_message) == "RANK_OK"
+
+
+@pytest.mark.asyncio
+async def test_execute_rank_restricted_period_requires_superuser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    router = WaterQueryRouter()
+
+    from src.plugins.water.services import query_router as router_module
+
+    build_rank_mock = AsyncMock(return_value=Message("SHOULD_NOT_RUN"))
+    monkeypatch.setattr(
+        router_module.water_rank_query_service,
+        "build_rank_message",
+        build_rank_mock,
+    )
+
+    normal_message = await router.execute(
+        spec=router.parse("用户榜 本群 年榜"),
+        user_id="10001",
+        group_id="20001",
+        locale="zh-CN",
+        is_superuser=False,
+    )
+    assert "年榜 / 总榜 仅超管可用" in str(normal_message)
+    assert "#水王 矩阵榜 全局 季榜" in str(normal_message)
+
+    superuser_message = await router.execute(
+        spec=router.parse("用户榜 本群 年榜"),
+        user_id="1",
+        group_id="20001",
+        locale="zh-CN",
+        is_superuser=True,
+    )
+    assert str(superuser_message) == "SHOULD_NOT_RUN"
+    build_rank_mock.assert_awaited_once_with(
+        subject="user",
+        scope="group",
+        period="year",
+        group_id="20001",
+        locale="zh-CN",
+    )
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from math import floor, sqrt
+from time import perf_counter
 from typing import Any, Literal
 
 import arrow
@@ -590,6 +591,7 @@ async def build_water_day_rank_image(
     data: WaterDayRankCardData,
     locale: LocaleCode,
 ) -> bytes | None:
+    started = perf_counter()
     if not data.top_items:
         return None
 
@@ -618,7 +620,7 @@ async def build_water_day_rank_image(
         "#FFE3ED",
         "#7A2F4A",
     )
-    return await renderer.render_async(
+    image = await renderer.render_async(
         group_name=data.scope_label,
         group_avatar=header_avatar,
         today_king=data.top_items[0].entity_id,
@@ -630,6 +632,14 @@ async def build_water_day_rank_image(
         footer_text=data.footer_label,
         scope_label=data.scope_label,
     )
+    logger.debug(
+        "[Water][RankRender] type=day title={} items={} elapsed_ms={:.2f} bytes={}",
+        data.title,
+        len(data.top_items),
+        (perf_counter() - started) * 1000,
+        len(image),
+    )
+    return image
 
 
 def _format_rank(rank: int | None, locale: LocaleCode = "zh-CN") -> str:
@@ -1050,6 +1060,7 @@ async def build_water_period_rank_image(
     data: WaterPeriodRankCardData,
     locale: LocaleCode,
 ) -> bytes | None:
+    started = perf_counter()
     try:
         scale = 2.0
         width = int(760 * scale)
@@ -1668,7 +1679,17 @@ async def build_water_period_rank_image(
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
-        return (await asyncio.to_thread(card.save, "PNG")).getvalue()
+        image = (await asyncio.to_thread(card.save, "PNG")).getvalue()
+        logger.debug(
+            "[Water][RankRender] type=period period={} title={} items={} "
+            "elapsed_ms={:.2f} bytes={}",
+            data.period,
+            data.title,
+            len(data.top_items),
+            (perf_counter() - started) * 1000,
+            len(image),
+        )
+        return image
     except Exception as e:
         logger.exception(f"[Water] build period rank image failed: {e}")
         return None

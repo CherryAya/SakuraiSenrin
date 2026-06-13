@@ -24,6 +24,7 @@ sys.modules.pop("src.plugins.water", None)
 nonebot.load_plugin("src.plugins.water")
 
 from src.plugins import water as water_plugin
+from src.plugins.water.services.rank_types import WaterRankQuerySpec
 from tests.plugins.water.helpers import build_group_message_event
 
 
@@ -69,7 +70,7 @@ async def test_water_query_guides_empty_command_step_by_step(
         ctx.receive_event(bot, third)
         ctx.should_call_send(
             third,
-            "请选择时间：日榜 / 周榜 / 月榜 / 季榜 / 年榜 / 总榜\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -172,6 +173,157 @@ async def test_water_query_direct_rank_still_runs_without_guided_flow(
         subject="user",
         scope="group",
         period="day",
+        group_id="20001",
+        locale="zh-CN",
+    )
+
+
+@pytest.mark.asyncio
+async def test_water_query_direct_restricted_period_requires_superuser(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin._water_query_cooldowns.clear()
+    monkeypatch.setattr(
+        water_plugin.water_rank_query_service,
+        "build_rank_message",
+        AsyncMock(return_value=Message("SHOULD_NOT_RUN")),
+    )
+
+    event = build_group_message_event("#水王 用户榜 本群 年榜", message_id=1)
+    expected_menu = water_plugin.water_query_router.build_rank_menu(
+        "zh-CN",
+        WaterRankQuerySpec(subject="user", scope="group", period="year"),
+        ("restricted_period",),
+        is_superuser=False,
+    )
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, Message(expected_menu), bot=bot)
+        ctx.should_finished()
+
+
+@pytest.mark.asyncio
+async def test_water_query_guided_restricted_period_retries_for_normal_user(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin._water_query_cooldowns.clear()
+    monkeypatch.setattr(
+        water_plugin.water_rank_query_service,
+        "build_rank_message",
+        AsyncMock(return_value=Message("SHOULD_NOT_RUN")),
+    )
+
+    first = build_group_message_event("#水王", message_id=1)
+    second = build_group_message_event("用户榜", message_id=2)
+    third = build_group_message_event("本群", message_id=3)
+    fourth = build_group_message_event("年榜", message_id=4)
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            "请选择榜单主体：用户榜 / 群聊榜 / 矩阵榜\n"
+            "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
+            bot=bot,
+        )
+        ctx.should_rejected()
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(
+            second,
+            "请选择范围：本群 / 本矩阵 / 全局\n"
+            "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
+            bot=bot,
+        )
+        ctx.should_rejected()
+
+        ctx.receive_event(bot, third)
+        ctx.should_call_send(
+            third,
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
+            "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
+            bot=bot,
+        )
+        ctx.should_rejected()
+
+        ctx.receive_event(bot, fourth)
+        ctx.should_call_send(
+            fourth,
+            "年榜 / 总榜 仅超管可用，请发送：日榜 / 周榜 / 月榜 / 季榜\n"
+            "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
+            bot=bot,
+        )
+        ctx.should_rejected()
+
+
+@pytest.mark.asyncio
+async def test_water_query_superuser_can_use_restricted_periods(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin._water_query_cooldowns.clear()
+    build_rank_message = AsyncMock(return_value=Message("SUPERUSER_OK"))
+    monkeypatch.setattr(
+        water_plugin.water_rank_query_service,
+        "build_rank_message",
+        build_rank_message,
+    )
+
+    first = build_group_message_event("#水王", user_id=1, message_id=1)
+    second = build_group_message_event("用户榜", user_id=1, message_id=2)
+    third = build_group_message_event("本群", user_id=1, message_id=3)
+    fourth = build_group_message_event("总榜", user_id=1, message_id=4)
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            "请选择榜单主体：用户榜 / 群聊榜 / 矩阵榜\n"
+            "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
+            bot=bot,
+        )
+        ctx.should_rejected()
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(
+            second,
+            "请选择范围：本群 / 本矩阵 / 全局\n"
+            "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
+            bot=bot,
+        )
+        ctx.should_rejected()
+
+        ctx.receive_event(bot, third)
+        ctx.should_call_send(
+            third,
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜 / 年榜 / 总榜\n"
+            "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
+            bot=bot,
+        )
+        ctx.should_rejected()
+
+        ctx.receive_event(bot, fourth)
+        ctx.should_call_send(
+            fourth,
+            "已选择：用户榜 / 本群 / 总榜",
+            bot=bot,
+        )
+        ctx.should_call_send(fourth, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_send(fourth, Message("SUPERUSER_OK"), bot=bot)
+        ctx.should_finished()
+
+    build_rank_message.assert_awaited_once_with(
+        subject="user",
+        scope="group",
+        period="total",
         group_id="20001",
         locale="zh-CN",
     )

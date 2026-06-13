@@ -15,6 +15,8 @@ async def handle_water_query(
     event: GroupMessageEvent,
     arg: Message,
     locale: LocaleCode,
+    *,
+    is_superuser: bool = False,
 ) -> None:
     spec = water_query_router.parse(arg.extract_plain_text())
     message = await water_query_router.execute(
@@ -22,6 +24,7 @@ async def handle_water_query(
         user_id=str(event.user_id),
         group_id=str(event.group_id),
         locale=locale,
+        is_superuser=is_superuser,
     )
     await matcher.finish(message)
 

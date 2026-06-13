@@ -22,6 +22,7 @@ from src.plugins.water.services.rank_types import (
     LEGACY_RANK_TOKENS,
     PERIOD_LABELS,
     PERIOD_TOKENS,
+    RESTRICTED_RANK_PERIODS,
     SCOPE_LABELS,
     SCOPE_TOKENS,
     SUBJECT_LABELS,
@@ -30,8 +31,10 @@ from src.plugins.water.services.rank_types import (
     WaterRankQuerySpec,
     WaterRankScope,
     WaterRankSubject,
+    is_rank_period_allowed,
     is_valid_rank_combo,
     suggest_scope_for_subject,
+    visible_rank_periods,
 )
 from src.plugins.water.services.season import SeasonLookupAmbiguous, season_service
 
@@ -70,10 +73,10 @@ class WaterQueryRouter:
         )
 
     @staticmethod
-    def _period_choices_text() -> str:
+    def _period_choices_text(*, is_superuser: bool) -> str:
         return " / ".join(
             PERIOD_LABELS[period]
-            for period in ("day", "week", "month", "season", "year", "total")
+            for period in visible_rank_periods(is_superuser=is_superuser)
         )
 
     @staticmethod
@@ -193,7 +196,24 @@ class WaterQueryRouter:
                 tr(
                     locale,
                     "water.query.rank.guided.period_prompt",
-                    choices=self._period_choices_text(),
+                    choices=self._period_choices_text(is_superuser=False),
+                ),
+                self.build_guided_footer(locale),
+            ]
+        )
+
+    def build_period_prompt_for_role(
+        self,
+        locale: LocaleCode,
+        *,
+        is_superuser: bool,
+    ) -> str:
+        return "\n".join(
+            [
+                tr(
+                    locale,
+                    "water.query.rank.guided.period_prompt",
+                    choices=self._period_choices_text(is_superuser=is_superuser),
                 ),
                 self.build_guided_footer(locale),
             ]
@@ -273,17 +293,39 @@ class WaterQueryRouter:
         lines.append(self.build_scope_prompt(locale, subject))
         return "\n".join(lines)
 
-    def build_period_retry_prompt(self, locale: LocaleCode) -> str:
+    def build_period_retry_prompt(
+        self,
+        locale: LocaleCode,
+        *,
+        is_superuser: bool,
+        restricted: WaterRankPeriod | None = None,
+    ) -> str:
+        prompt_key = (
+            "water.query.rank.error.restricted_period"
+            if restricted is not None
+            else "water.query.rank.guided.period_invalid"
+        )
         return "\n".join(
             [
                 tr(
                     locale,
-                    "water.query.rank.guided.period_invalid",
-                    choices=self._period_choices_text(),
+                    prompt_key,
+                    choices=self._period_choices_text(is_superuser=is_superuser),
+                    periods=" / ".join(
+                        PERIOD_LABELS[item] for item in RESTRICTED_RANK_PERIODS
+                    ),
                 ),
                 self.build_guided_footer(locale),
             ]
         )
+
+    @staticmethod
+    def is_rank_period_allowed(
+        period: WaterRankPeriod,
+        *,
+        is_superuser: bool,
+    ) -> bool:
+        return is_rank_period_allowed(period, is_superuser=is_superuser)
 
     def _parse_rank_spec(
         self,
@@ -405,6 +447,7 @@ class WaterQueryRouter:
         user_id: str,
         group_id: str,
         locale: LocaleCode,
+        is_superuser: bool = False,
     ) -> Message:
         if spec.scope_type == "activity":
             return await self._execute_activity(
@@ -432,13 +475,32 @@ class WaterQueryRouter:
             )
         if spec.scope_type == "rank":
             if spec.rank_spec is None:
-                return Message(self.build_rank_menu(locale, errors=spec.errors))
+                return Message(
+                    self.build_rank_menu(
+                        locale,
+                        errors=spec.errors,
+                        is_superuser=is_superuser,
+                    )
+                )
+            if not self.is_rank_period_allowed(
+                spec.rank_spec.period,
+                is_superuser=is_superuser,
+            ):
+                return Message(
+                    self.build_rank_menu(
+                        locale,
+                        spec.rank_spec,
+                        ("restricted_period",),
+                        is_superuser=is_superuser,
+                    )
+                )
             if spec.errors:
                 return Message(
                     self.build_rank_menu(
                         locale,
                         spec.rank_spec,
                         spec.errors,
+                        is_superuser=is_superuser,
                     )
                 )
             return await water_rank_query_service.build_rank_message(
@@ -548,19 +610,28 @@ class WaterQueryRouter:
         locale: LocaleCode,
         spec: WaterRankQuerySpec | None = None,
         errors: tuple[str, ...] = (),
+        *,
+        is_superuser: bool = False,
     ) -> str:
+        period_text = self._period_choices_text(is_superuser=is_superuser).replace(
+            " / ", "/"
+        )
         lines = [
             tr(locale, "water.query.rank.menu.intro"),
             tr(locale, "water.query.rank.menu.format"),
             tr(locale, "water.query.rank.menu.examples"),
             tr(locale, "water.query.rank.menu.example.user"),
             tr(locale, "water.query.rank.menu.example.group"),
-            tr(locale, "water.query.rank.menu.example.matrix"),
+            tr(
+                locale,
+                "water.query.rank.menu.example.matrix",
+                period=PERIOD_LABELS["total" if is_superuser else "season"],
+            ),
             "",
             tr(locale, "water.query.rank.menu.legal"),
-            tr(locale, "water.query.rank.menu.legal.user"),
-            tr(locale, "water.query.rank.menu.legal.group"),
-            tr(locale, "water.query.rank.menu.legal.matrix"),
+            tr(locale, "water.query.rank.menu.legal.user", periods=period_text),
+            tr(locale, "water.query.rank.menu.legal.group", periods=period_text),
+            tr(locale, "water.query.rank.menu.legal.matrix", periods=period_text),
         ]
         if errors:
             lines.insert(0, self._build_rank_error_text(locale, spec, errors))
@@ -612,6 +683,14 @@ class WaterQueryRouter:
             return tr(
                 locale,
                 "water.query.rank.error.duplicate_period",
+            )
+        if head == "restricted_period":
+            return tr(
+                locale,
+                "water.query.rank.error.restricted_period_menu",
+                periods=" / ".join(
+                    PERIOD_LABELS[item] for item in RESTRICTED_RANK_PERIODS
+                ),
             )
         if head == "invalid_combo" and spec is not None:
             suggested_scope = suggest_scope_for_subject(spec.subject)

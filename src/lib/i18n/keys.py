@@ -397,6 +397,8 @@ MessageKey = Literal[
     "water.query.rank.error.invalid_combo",
     "water.query.rank.error.legacy",
     "water.query.rank.error.missing_dimensions",
+    "water.query.rank.error.restricted_period",
+    "water.query.rank.error.restricted_period_menu",
     "water.query.rank.error.unknown_tokens",
     "water.query.rank.guided.footer",
     "water.query.rank.guided.intro",
@@ -515,7 +517,6 @@ MessageKey = Literal[
     "wordbank.error.rule_unknown",
     "wordbank.error.scope_single",
     "wordbank.error.scope_unsupported",
-    "wordbank.error.search_field_invalid",
     "wordbank.error.search_limit_invalid",
     "wordbank.error.search_page_invalid",
     "wordbank.error.single_constraint",
@@ -572,7 +573,7 @@ MessageKey = Literal[
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 ]
 
 ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
@@ -970,6 +971,8 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "water.query.rank.error.invalid_combo",
     "water.query.rank.error.legacy",
     "water.query.rank.error.missing_dimensions",
+    "water.query.rank.error.restricted_period",
+    "water.query.rank.error.restricted_period_menu",
     "water.query.rank.error.unknown_tokens",
     "water.query.rank.guided.footer",
     "water.query.rank.guided.intro",
@@ -1088,7 +1091,6 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.error.rule_unknown",
     "wordbank.error.scope_single",
     "wordbank.error.scope_unsupported",
-    "wordbank.error.search_field_invalid",
     "wordbank.error.search_limit_invalid",
     "wordbank.error.search_page_invalid",
     "wordbank.error.single_constraint",
@@ -1145,5 +1147,5 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 )

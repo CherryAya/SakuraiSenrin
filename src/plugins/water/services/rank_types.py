@@ -8,6 +8,7 @@ from typing import Literal
 WaterRankSubject = Literal["user", "group", "matrix"]
 WaterRankScope = Literal["group", "matrix", "global"]
 WaterRankPeriod = Literal["day", "week", "month", "season", "year", "total"]
+VisibleWaterRankPeriod = Literal["day", "week", "month", "season", "year", "total"]
 
 SUBJECT_LABELS: dict[WaterRankSubject, str] = {
     "user": "用户榜",
@@ -59,6 +60,22 @@ VALID_SCOPES_BY_SUBJECT: dict[WaterRankSubject, tuple[WaterRankScope, ...]] = {
     "matrix": ("global",),
 }
 
+RESTRICTED_RANK_PERIODS: tuple[WaterRankPeriod, ...] = ("year", "total")
+DEFAULT_VISIBLE_RANK_PERIODS: tuple[WaterRankPeriod, ...] = (
+    "day",
+    "week",
+    "month",
+    "season",
+)
+SUPERUSER_VISIBLE_RANK_PERIODS: tuple[WaterRankPeriod, ...] = (
+    "day",
+    "week",
+    "month",
+    "season",
+    "year",
+    "total",
+)
+
 
 @dataclass(frozen=True)
 class WaterRankQuerySpec:
@@ -92,3 +109,13 @@ def suggest_scope_for_subject(subject: WaterRankSubject) -> WaterRankScope:
     if subject == "matrix":
         return "global"
     return "group"
+
+
+def visible_rank_periods(*, is_superuser: bool) -> tuple[WaterRankPeriod, ...]:
+    return (
+        SUPERUSER_VISIBLE_RANK_PERIODS if is_superuser else DEFAULT_VISIBLE_RANK_PERIODS
+    )
+
+
+def is_rank_period_allowed(period: WaterRankPeriod, *, is_superuser: bool) -> bool:
+    return is_superuser or period not in RESTRICTED_RANK_PERIODS

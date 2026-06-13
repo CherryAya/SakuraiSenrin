@@ -1,13 +1,19 @@
+from time import perf_counter
 from typing import Any
 from unittest.mock import AsyncMock
 
 from pil_utils import BuildImage
 import pytest
 
-from src.plugins.water.database.repo import NaturalRankItem
+from src.plugins.water.database.repo import NaturalRankItem, NaturalRankOverview
 from src.plugins.water.img import WaterPeriodRankCardData, WaterRankCardItem
 from src.plugins.water.services.rank import WaterRankService
 from src.plugins.water.services.rank_query import water_rank_query_service
+from src.plugins.water.services.rank_types import (
+    WaterRankPeriod,
+    WaterRankScope,
+    WaterRankSubject,
+)
 
 
 @pytest.mark.asyncio
@@ -391,3 +397,218 @@ async def test_build_water_period_rank_image_smoke() -> None:
 
     assert img is not None
     assert img.startswith(b"\x89PNG")
+
+
+def _build_fake_natural_items(
+    subject: str,
+    *,
+    count: int = 3,
+) -> list[NaturalRankItem]:
+    items: list[NaturalRankItem] = []
+    for idx in range(count):
+        entity_id = (
+            f"{10001 + idx}"
+            if subject == "user"
+            else f"{20001 + idx}"
+            if subject == "group"
+            else f"mtx_{idx + 1:02d}"
+        )
+        items.append(
+            NaturalRankItem(
+                entity_id=entity_id,
+                msg_count=180 - idx * 25,
+                active_days=max(1, 12 - idx),
+                active_hours=max(1, 36 - idx * 3),
+                hourly_counts=[((hour + idx) % 6) + 1 for hour in range(24)],
+                current_rank=idx + 1,
+                trend=1 - idx,
+                group_count=idx + 2 if subject == "matrix" else 0,
+            )
+        )
+    return items
+
+
+def _build_fake_overview(items: list[NaturalRankItem]) -> NaturalRankOverview:
+    return NaturalRankOverview(
+        total_msg_count=sum(item.msg_count for item in items),
+        active_entity_count=len(items),
+        hourly_counts=[
+            sum(item.hourly_counts[hour] for item in items) for hour in range(24)
+        ],
+        previous_total_msg_count=max(0, sum(item.msg_count for item in items) - 60),
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_rank_message_renders_all_legal_combinations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import rank as rank_service_module
+    from src.plugins.water.services import rank_query as query_module
+
+    avatar = BuildImage.new("RGBA", (96, 96), "#F6B7D2")
+    legal_scopes: dict[WaterRankSubject, tuple[WaterRankScope, ...]] = {
+        "user": ("group", "matrix", "global"),
+        "group": ("matrix", "global"),
+        "matrix": ("global",),
+    }
+    periods: tuple[WaterRankPeriod, ...] = (
+        "day",
+        "week",
+        "month",
+        "season",
+        "year",
+        "total",
+    )
+
+    async def _fake_day_leaderboard(
+        *,
+        subject: str,
+        scope: str,
+        group_id: str,
+        limit: int = 10,
+    ) -> list[NaturalRankItem]:
+        _ = (scope, group_id, limit)
+        return _build_fake_natural_items(subject)
+
+    async def _fake_day_overview(
+        *,
+        subject: str,
+        scope: str,
+        group_id: str,
+    ) -> NaturalRankOverview:
+        _ = (scope, group_id)
+        return _build_fake_overview(_build_fake_natural_items(subject))
+
+    async def _fake_period_leaderboard(
+        *,
+        subject: str,
+        scope: str,
+        group_id: str,
+        start_date: int,
+        end_date: int,
+        previous_start_date: int,
+        previous_end_date: int,
+        limit: int = 10,
+    ) -> list[NaturalRankItem]:
+        _ = (
+            scope,
+            group_id,
+            start_date,
+            end_date,
+            previous_start_date,
+            previous_end_date,
+            limit,
+        )
+        return _build_fake_natural_items(subject)
+
+    async def _fake_period_overview(
+        *,
+        subject: str,
+        scope: str,
+        group_id: str,
+        start_date: int,
+        end_date: int,
+        previous_start_date: int,
+        previous_end_date: int,
+    ) -> NaturalRankOverview:
+        _ = (
+            scope,
+            group_id,
+            start_date,
+            end_date,
+            previous_start_date,
+            previous_end_date,
+        )
+        return _build_fake_overview(_build_fake_natural_items(subject))
+
+    async def _fake_display_name(subject: str, entity_id: str, locale: str) -> str:
+        _ = locale
+        if subject == "user":
+            return f"用户 {entity_id}"
+        if subject == "group":
+            return f"群聊 {entity_id}"
+        return f"矩阵 {entity_id}"
+
+    async def _fake_secondary_label(
+        subject: str,
+        entity_id: str,
+        group_count: int,
+        locale: str,
+    ) -> str:
+        _ = locale
+        if subject == "user":
+            return f"用户 {entity_id}"
+        if subject == "group":
+            return f"群号 {entity_id}"
+        return f"矩阵 {entity_id} · {group_count} 群"
+
+    async def _fake_avatar(subject: str, entity_id: str) -> BuildImage:
+        _ = (subject, entity_id)
+        return avatar
+
+    monkeypatch.setattr(
+        query_module.water_repo,
+        "get_natural_day_leaderboard",
+        _fake_day_leaderboard,
+    )
+    monkeypatch.setattr(
+        query_module.water_repo,
+        "get_natural_day_overview",
+        _fake_day_overview,
+    )
+    monkeypatch.setattr(
+        rank_service_module.water_repo,
+        "get_settlement_state",
+        AsyncMock(return_value={"last_success_record_date": 20260523}),
+    )
+    monkeypatch.setattr(
+        rank_service_module.water_repo,
+        "get_first_summary_record_date",
+        AsyncMock(return_value=20260101),
+    )
+    monkeypatch.setattr(
+        rank_service_module.water_repo,
+        "get_natural_period_leaderboard",
+        _fake_period_leaderboard,
+    )
+    monkeypatch.setattr(
+        rank_service_module.water_repo,
+        "get_natural_period_overview",
+        _fake_period_overview,
+    )
+    monkeypatch.setattr(
+        query_module.water_rank_service,
+        "_resolve_display_name",
+        _fake_display_name,
+    )
+    monkeypatch.setattr(
+        query_module.water_rank_service,
+        "_resolve_secondary_label",
+        _fake_secondary_label,
+    )
+    monkeypatch.setattr(
+        query_module.water_rank_service,
+        "_resolve_avatar",
+        _fake_avatar,
+    )
+
+    timings: list[tuple[str, str, str, float]] = []
+    for subject, scopes in legal_scopes.items():
+        for scope in scopes:
+            for period in periods:
+                started = perf_counter()
+                message = await water_rank_query_service.build_rank_message(
+                    subject=subject,
+                    scope=scope,
+                    period=period,
+                    group_id="20001",
+                    locale="zh-CN",
+                )
+                timings.append(
+                    (subject, scope, period, (perf_counter() - started) * 1000)
+                )
+                assert "CQ:image" in str(message), (subject, scope, period)
+
+    assert max(elapsed_ms for *_rest, elapsed_ms in timings) >= 0
+    assert len(timings) == 36

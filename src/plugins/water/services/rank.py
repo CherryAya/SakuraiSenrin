@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from time import perf_counter
 from typing import ClassVar, Literal, cast
 
 import arrow
@@ -13,6 +14,7 @@ from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
+from src.logger import logger
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo import NaturalRankItem
 from src.plugins.water.img import (
@@ -115,6 +117,9 @@ class WaterRankService:
         locale: LocaleCode,
         limit: int = 10,
     ) -> WaterPeriodRankCardData | None:
+        combo = f"{subject}/{scope}/{period}"
+        total_started = perf_counter()
+        window_started = perf_counter()
         window = await self._resolve_period_window(
             subject=subject,
             scope=scope,
@@ -122,6 +127,8 @@ class WaterRankService:
             group_id=group_id,
             locale=locale,
         )
+        window_elapsed = (perf_counter() - window_started) * 1000
+        query_started = perf_counter()
         top_items, overview = await asyncio.gather(
             water_repo.get_natural_period_leaderboard(
                 subject=subject,
@@ -143,10 +150,22 @@ class WaterRankService:
                 previous_end_date=window.previous_end_date,
             ),
         )
+        query_elapsed = (perf_counter() - query_started) * 1000
         if not top_items or overview.total_msg_count <= 0:
+            logger.debug(
+                "[Water][RankData] combo={} window_ms={:.2f} query_ms={:.2f} "
+                "empty=1 start={} end={}",
+                combo,
+                window_elapsed,
+                query_elapsed,
+                window.start_date,
+                window.end_date,
+            )
             return None
 
+        hydrate_started = perf_counter()
         view_items = await self._build_view_items(subject, top_items, locale)
+        hydrate_elapsed = (perf_counter() - hydrate_started) * 1000
         champion = view_items[0]
         runner_up_count = view_items[1].msg_count if len(view_items) > 1 else 0
         display_meta = self._build_display_meta(subject, scope)
@@ -157,7 +176,7 @@ class WaterRankService:
         title = (
             f"{SUBJECT_LABELS[subject]} · {SCOPE_LABELS[scope]}{PERIOD_LABELS[period]}"
         )
-        return WaterPeriodRankCardData(
+        card_data = WaterPeriodRankCardData(
             period=normalized_period,
             title=title,
             badge=window.badge,
@@ -183,6 +202,18 @@ class WaterRankService:
             board_active_hours_label=display_meta["board_active_hours_label"],
             overview_title=display_meta["overview_title"],
         )
+        logger.debug(
+            "[Water][RankData] combo={} window_ms={:.2f} query_ms={:.2f} "
+            "hydrate_ms={:.2f} total_ms={:.2f} rows={} active={}",
+            combo,
+            window_elapsed,
+            query_elapsed,
+            hydrate_elapsed,
+            (perf_counter() - total_started) * 1000,
+            len(top_items),
+            overview.active_entity_count,
+        )
+        return card_data
 
     async def build_total_rank_lines(
         self,
@@ -309,6 +340,7 @@ class WaterRankService:
         items: list[NaturalRankItem],
         locale: LocaleCode,
     ) -> list[WaterRankCardItem]:
+        started = perf_counter()
         names, secondary_labels, avatars = await asyncio.gather(
             asyncio.gather(
                 *(
@@ -353,6 +385,12 @@ class WaterRankService:
                     group_count=item.group_count,
                 )
             )
+        logger.debug(
+            "[Water][RankHydrate] subject={} items={} elapsed_ms={:.2f}",
+            subject,
+            len(items),
+            (perf_counter() - started) * 1000,
+        )
         return view_items
 
     def _build_display_meta(

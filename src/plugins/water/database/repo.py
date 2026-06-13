@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from math import floor, sqrt
 import os
 from secrets import token_hex
+from time import perf_counter
 import unicodedata
 
 import arrow
@@ -18,6 +19,7 @@ from src.database.consts import WritePolicy
 from src.lib.db.connectors import ColdPolicy
 from src.lib.db.manager import db_manager
 from src.lib.utils.common import get_current_time, split_list
+from src.logger import logger
 from src.plugins.water.services.rank_types import WaterRankScope, WaterRankSubject
 
 from .instances import water_core_db, water_message, water_summary
@@ -1295,24 +1297,58 @@ class WaterRepository:
         start_date: int,
         end_date: int,
     ) -> list[WaterSummaryRecord]:
+        started = perf_counter()
         _ = subject
         if scope == "global":
-            return await self.get_summaries_in_window(start_date, end_date)
+            rows = await self.get_summaries_in_window(start_date, end_date)
+            logger.debug(
+                "[Water][RankRepo] scope=global subject={} start={} end={} rows={} "
+                "elapsed_ms={:.2f}",
+                subject,
+                start_date,
+                end_date,
+                len(rows),
+                (perf_counter() - started) * 1000,
+            )
+            return rows
         if scope == "group":
-            return await self.get_summaries_in_window(
+            rows = await self.get_summaries_in_window(
                 start_date,
                 end_date,
                 group_ids=[group_id],
             )
+            logger.debug(
+                "[Water][RankRepo] scope=group subject={} group_id={} start={} "
+                "end={} rows={} elapsed_ms={:.2f}",
+                subject,
+                group_id,
+                start_date,
+                end_date,
+                len(rows),
+                (perf_counter() - started) * 1000,
+            )
+            return rows
         matrix_id = await self.get_or_create_group_matrix_id(group_id)
         matrix_group_ids = await self.get_groups_by_matrix_id(matrix_id)
         if not matrix_group_ids:
             matrix_group_ids = [group_id]
-        return await self.get_summaries_in_window(
+        rows = await self.get_summaries_in_window(
             start_date,
             end_date,
             group_ids=matrix_group_ids,
         )
+        logger.debug(
+            "[Water][RankRepo] scope=matrix subject={} matrix_id={} groups={} "
+            "start={} end={} rows={} elapsed_ms={:.2f}",
+            subject,
+            matrix_id,
+            len(matrix_group_ids),
+            start_date,
+            end_date,
+            len(rows),
+            (perf_counter() - started) * 1000,
+        )
+        return rows
 
     async def _collect_realtime_daily_rows(
         self,
@@ -1321,6 +1357,7 @@ class WaterRepository:
         group_id: str,
         record_date: int,
     ) -> list[WaterSummaryRecord]:
+        started = perf_counter()
         now = arrow.get(str(record_date), "YYYYMMDD").to("Asia/Shanghai")
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
@@ -1387,7 +1424,7 @@ class WaterRepository:
                     count
                 )
 
-        return [
+        rows = [
             WaterSummaryRecord(
                 group_id=row_group_id,
                 user_id=user_id,
@@ -1403,6 +1440,17 @@ class WaterRepository:
                 active_hours,
             ) in merged_stats.items()
         ]
+        logger.debug(
+            "[Water][RankRepo] realtime scope={} group_id={} record_date={} rows={} "
+            "merged_hourly_keys={} elapsed_ms={:.2f}",
+            scope,
+            group_id,
+            record_date,
+            len(rows),
+            len(merged_hourly),
+            (perf_counter() - started) * 1000,
+        )
+        return rows
 
     async def _resolve_previous_day_rows(
         self,

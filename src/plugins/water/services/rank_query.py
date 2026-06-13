@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from time import perf_counter
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.logger import logger
 from src.plugins.water.database import water_repo
 from src.plugins.water.img import (
     WaterDayRankCardData,
@@ -37,9 +39,12 @@ class WaterRankQueryService:
         locale: LocaleCode,
         limit: int = 10,
     ) -> Message:
+        combo = f"{subject}/{scope}/{period}"
+        total_started = perf_counter()
         if not is_valid_rank_combo(subject, scope):
             return Message(tr(locale, "water.query.unsupported"))
         if period == "day":
+            data_started = perf_counter()
             data = await self._build_day_rank_data(
                 subject=subject,
                 scope=scope,
@@ -47,13 +52,39 @@ class WaterRankQueryService:
                 locale=locale,
                 limit=limit,
             )
+            data_elapsed = (perf_counter() - data_started) * 1000
             if data is None:
+                logger.debug(
+                    "[Water][RankQuery] combo={} stage=day_data empty=1 "
+                    "elapsed_ms={:.2f}",
+                    combo,
+                    data_elapsed,
+                )
                 return Message(tr(locale, "water.rank.empty"))
+            render_started = perf_counter()
             image = await build_water_day_rank_image(data, locale)
+            render_elapsed = (perf_counter() - render_started) * 1000
             if image is None:
+                logger.debug(
+                    "[Water][RankQuery] combo={} stage=day_render empty=1 "
+                    "elapsed_ms={:.2f}",
+                    combo,
+                    render_elapsed,
+                )
                 return Message(tr(locale, "water.rank.empty"))
+            total_elapsed = (perf_counter() - total_started) * 1000
+            logger.debug(
+                "[Water][RankQuery] combo={} type=day data_ms={:.2f} "
+                "render_ms={:.2f} total_ms={:.2f} bytes={}",
+                combo,
+                data_elapsed,
+                render_elapsed,
+                total_elapsed,
+                len(image),
+            )
             return Message(MessageSegment.image(image))
         else:
+            data_started = perf_counter()
             data = await water_rank_service.build_natural_period_rank_data(
                 subject=subject,
                 scope=scope,
@@ -62,11 +93,36 @@ class WaterRankQueryService:
                 locale=locale,
                 limit=limit,
             )
+            data_elapsed = (perf_counter() - data_started) * 1000
             if data is None:
+                logger.debug(
+                    "[Water][RankQuery] combo={} stage=period_data empty=1 "
+                    "elapsed_ms={:.2f}",
+                    combo,
+                    data_elapsed,
+                )
                 return Message(tr(locale, "water.rank.empty"))
+            render_started = perf_counter()
             image = await build_water_period_rank_image(data, locale)
+            render_elapsed = (perf_counter() - render_started) * 1000
             if image is None:
+                logger.debug(
+                    "[Water][RankQuery] combo={} stage=period_render empty=1 "
+                    "elapsed_ms={:.2f}",
+                    combo,
+                    render_elapsed,
+                )
                 return Message(tr(locale, "water.rank.empty"))
+            total_elapsed = (perf_counter() - total_started) * 1000
+            logger.debug(
+                "[Water][RankQuery] combo={} type=period data_ms={:.2f} "
+                "render_ms={:.2f} total_ms={:.2f} bytes={}",
+                combo,
+                data_elapsed,
+                render_elapsed,
+                total_elapsed,
+                len(image),
+            )
             return Message(MessageSegment.image(image))
 
     async def _build_day_rank_data(
