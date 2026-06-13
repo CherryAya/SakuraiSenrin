@@ -4,7 +4,7 @@ from nonebot.adapters.onebot.v11 import Message
 import pytest
 
 from src.plugins.water.database.repo import WaterActivitySeasonRecord
-from src.plugins.water.services.query_router import WaterQueryRouter
+from src.plugins.water.services.query_router import WaterQueryRouter, WaterQuerySpec
 from src.plugins.water.services.rank_types import WaterRankQuerySpec
 from src.plugins.water.services.season import SeasonLookupAmbiguous
 
@@ -22,6 +22,14 @@ def test_parse_rank_menu_and_any_order_rank_spec() -> None:
         scope="group",
         period="month",
     )
+
+    shortcut_spec, shortcut_errors = router.parse_shortcut_command("#今日水王")
+    assert shortcut_spec == WaterRankQuerySpec(
+        subject="user",
+        scope="group",
+        period="day",
+    )
+    assert shortcut_errors == ()
 
 
 def test_rank_menu_does_not_send_working() -> None:
@@ -45,6 +53,8 @@ def test_rank_guided_prompts_follow_locale_catalog() -> None:
     assert "請擇榜單主體" in intro
     assert "revoke / recall" in intro
     assert "合法之組" in menu
+    assert "捷徑入口" in menu
+    assert "#今日水王" in menu
     assert "季榜" in menu
     assert "#水王 矩阵榜 全局 总榜" not in menu
     assert "你刚刚选的是" in summary
@@ -86,6 +96,12 @@ def test_parse_rank_errors() -> None:
     assert period_only.rank_spec is None
     assert period_only.errors == ("missing_dimensions", "subject", "scope")
 
+    shortcut_with_args = router.parse_shortcut_command("#今日水王 多余参数")
+    assert shortcut_with_args == (
+        WaterRankQuerySpec(subject="user", scope="group", period="day"),
+        ("shortcut_with_args", "今日水王"),
+    )
+
 
 @pytest.mark.asyncio
 async def test_execute_rank_menu_and_invalid_combo(
@@ -124,6 +140,23 @@ async def test_execute_rank_menu_and_invalid_combo(
         locale="zh-CN",
     )
     assert str(rank_message) == "RANK_OK"
+
+    shortcut_error_message = await router.execute(
+        spec=WaterQuerySpec(
+            subject="personal",
+            scope_type="rank",
+            scope_value="day",
+            view="rank",
+            mode="simple",
+            rank_spec=WaterRankQuerySpec(subject="user", scope="group", period="day"),
+            errors=("shortcut_with_args", "今日水王"),
+        ),
+        user_id="10001",
+        group_id="20001",
+        locale="zh-CN",
+    )
+    assert "快捷入口不需要额外参数" in str(shortcut_error_message)
+    assert "#今日水王" in str(shortcut_error_message)
 
 
 @pytest.mark.asyncio

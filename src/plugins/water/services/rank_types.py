@@ -76,6 +76,26 @@ SUPERUSER_VISIBLE_RANK_PERIODS: tuple[WaterRankPeriod, ...] = (
 
 
 @dataclass(frozen=True)
+class WaterRankShortcut:
+    aliases: tuple[str, ...]
+    subject: WaterRankSubject
+    scope: WaterRankScope
+    period: WaterRankPeriod
+
+    @property
+    def primary_alias(self) -> str:
+        return self.aliases[0]
+
+    @property
+    def query_spec(self) -> "WaterRankQuerySpec":
+        return WaterRankQuerySpec(
+            subject=self.subject,
+            scope=self.scope,
+            period=self.period,
+        )
+
+
+@dataclass(frozen=True)
 class WaterRankQuerySpec:
     subject: WaterRankSubject
     scope: WaterRankScope
@@ -95,6 +115,32 @@ class WaterRankQuerySpec:
             f"#水王 {SUBJECT_LABELS[self.subject]} "
             f"{SCOPE_LABELS[self.scope]} {PERIOD_LABELS[self.period]}"
         )
+
+
+RANK_SHORTCUTS: tuple[WaterRankShortcut, ...] = (
+    WaterRankShortcut(("今日水王",), "user", "group", "day"),
+    WaterRankShortcut(("本周水王",), "user", "group", "week"),
+    WaterRankShortcut(("本月水王",), "user", "group", "month"),
+    WaterRankShortcut(("本季水王",), "user", "group", "season"),
+    WaterRankShortcut(("今日群榜", "今日群聊榜"), "group", "global", "day"),
+    WaterRankShortcut(("本周群榜", "本周群聊榜"), "group", "global", "week"),
+    WaterRankShortcut(("本月群榜", "本月群聊榜"), "group", "global", "month"),
+    WaterRankShortcut(("本季群榜", "本季群聊榜"), "group", "global", "season"),
+    WaterRankShortcut(("今日矩阵榜",), "matrix", "global", "day"),
+    WaterRankShortcut(("本周矩阵榜",), "matrix", "global", "week"),
+    WaterRankShortcut(("本月矩阵榜",), "matrix", "global", "month"),
+    WaterRankShortcut(("本季矩阵榜",), "matrix", "global", "season"),
+)
+
+RANK_SHORTCUT_ALIAS_MAP: dict[str, WaterRankShortcut] = {
+    alias: shortcut for shortcut in RANK_SHORTCUTS for alias in shortcut.aliases
+}
+
+RANK_SHORTCUT_ALIASES: frozenset[str] = frozenset(RANK_SHORTCUT_ALIAS_MAP)
+
+
+def get_rank_shortcut(alias: str) -> WaterRankShortcut | None:
+    return RANK_SHORTCUT_ALIAS_MAP.get(alias.strip())
 
 
 def is_valid_rank_combo(subject: WaterRankSubject, scope: WaterRankScope) -> bool:

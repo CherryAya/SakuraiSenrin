@@ -179,6 +179,69 @@ async def test_water_query_direct_rank_still_runs_without_guided_flow(
 
 
 @pytest.mark.asyncio
+async def test_water_query_shortcut_alias_runs_direct_rank(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin._water_query_cooldowns.clear()
+    build_rank_message = AsyncMock(return_value=Message("SHORTCUT_OK"))
+    monkeypatch.setattr(
+        water_plugin.water_rank_query_service,
+        "build_rank_message",
+        build_rank_message,
+    )
+
+    event = build_group_message_event("#今日水王", message_id=1)
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_send(event, Message("SHORTCUT_OK"), bot=bot)
+        ctx.should_finished()
+
+    build_rank_message.assert_awaited_once_with(
+        subject="user",
+        scope="group",
+        period="day",
+        group_id="20001",
+        locale="zh-CN",
+    )
+
+
+@pytest.mark.asyncio
+async def test_water_query_shortcut_alias_with_args_shows_menu_error(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin._water_query_cooldowns.clear()
+    monkeypatch.setattr(
+        water_plugin.water_rank_query_service,
+        "build_rank_message",
+        AsyncMock(return_value=Message("SHOULD_NOT_RUN")),
+    )
+
+    event = build_group_message_event("#今日水王 多余参数", message_id=1)
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            Message(
+                water_plugin.water_query_router.build_rank_menu(
+                    "zh-CN",
+                    WaterRankQuerySpec(subject="user", scope="group", period="day"),
+                    ("shortcut_with_args", "今日水王"),
+                    is_superuser=False,
+                )
+            ),
+            bot=bot,
+        )
+        ctx.should_finished()
+
+
+@pytest.mark.asyncio
 async def test_water_query_direct_restricted_period_requires_superuser(
     app: App,
     monkeypatch: pytest.MonkeyPatch,

@@ -72,9 +72,9 @@ from .handlers import (
     water_help_message,
 )
 from .services.matrix_suggestion import matrix_suggestion_service
-from .services.query_router import water_query_router
+from .services.query_router import WaterQuerySpec, water_query_router
 from .services.rank_query import water_rank_query_service
-from .services.rank_types import WaterRankQuerySpec
+from .services.rank_types import RANK_SHORTCUT_ALIASES, WaterRankQuerySpec
 from .services.settlement import water_settlement_service
 
 require("nonebot_plugin_apscheduler")
@@ -236,7 +236,7 @@ async def _initialize_water_plugin() -> None:
 
 water_query = on_command(
     "水王",
-    aliases={"水王排行榜"},
+    aliases={"水王排行榜", *RANK_SHORTCUT_ALIASES},
     priority=5,
     block=True,
 )
@@ -378,7 +378,20 @@ async def _(
     if not isinstance(event, GroupMessageEvent):
         await matcher.finish(tr(locale, "water.common.group_only"))
     text = arg.extract_plain_text().strip()
-    if not text:
+    shortcut_rank_spec, shortcut_errors = water_query_router.parse_shortcut_command(
+        getattr(event, "raw_message", "")
+    )
+    if shortcut_rank_spec is not None:
+        spec = WaterQuerySpec(
+            subject="personal",
+            scope_type="rank",
+            scope_value=shortcut_rank_spec.period,
+            view="rank",
+            mode="simple",
+            rank_spec=shortcut_rank_spec,
+            errors=shortcut_errors,
+        )
+    elif not text:
         clear_interaction_errors(state)
         state["water_rank_locale"] = locale
         state["water_rank_is_superuser"] = is_superuser
@@ -387,7 +400,8 @@ async def _(
             locale
         )
         return
-    spec = water_query_router.parse(text)
+    else:
+        spec = water_query_router.parse(text)
     if water_query_router.should_send_working(spec) and (
         spec.rank_spec is None
         or water_query_router.is_rank_period_allowed(
@@ -402,6 +416,7 @@ async def _(
         arg,
         locale,
         is_superuser=is_superuser,
+        spec=spec,
     )
 
 

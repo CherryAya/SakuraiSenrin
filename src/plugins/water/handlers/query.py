@@ -7,7 +7,7 @@ from nonebot.adapters.onebot.v11.event import GroupMessageEvent
 from nonebot.matcher import Matcher
 
 from src.lib.i18n.types import LocaleCode
-from src.plugins.water.services.query_router import water_query_router
+from src.plugins.water.services.query_router import WaterQuerySpec, water_query_router
 
 
 async def handle_water_query(
@@ -17,10 +17,11 @@ async def handle_water_query(
     locale: LocaleCode,
     *,
     is_superuser: bool = False,
+    spec: WaterQuerySpec | None = None,
 ) -> None:
-    spec = water_query_router.parse(arg.extract_plain_text())
+    resolved_spec = spec or water_query_router.parse(arg.extract_plain_text())
     message = await water_query_router.execute(
-        spec=spec,
+        spec=resolved_spec,
         user_id=str(event.user_id),
         group_id=str(event.group_id),
         locale=locale,

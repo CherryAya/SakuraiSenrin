@@ -21,6 +21,7 @@ from src.plugins.water.services.rank_season import season_rank_service
 from src.plugins.water.services.rank_types import (
     PERIOD_LABELS,
     PERIOD_TOKENS,
+    RANK_SHORTCUTS,
     SCOPE_LABELS,
     SCOPE_TOKENS,
     SUBJECT_LABELS,
@@ -29,6 +30,7 @@ from src.plugins.water.services.rank_types import (
     WaterRankQuerySpec,
     WaterRankScope,
     WaterRankSubject,
+    get_rank_shortcut,
     is_rank_period_allowed,
     is_valid_rank_combo,
     suggest_scope_for_subject,
@@ -63,6 +65,7 @@ class WaterQuerySpec:
 
 class WaterQueryRouter:
     _CANCEL_TOKENS: tuple[str, ...] = ("取消", "退出", "算了", "q", "quit", "exit")
+    _COMMAND_PREFIXES: tuple[str, ...] = ("#", "/", "＃", "井")
 
     @staticmethod
     def _subject_choices_text() -> str:
@@ -235,6 +238,26 @@ class WaterQueryRouter:
     @staticmethod
     def parse_period_choice(raw_text: str) -> WaterRankPeriod | None:
         return PERIOD_TOKENS.get(raw_text.strip())
+
+    @classmethod
+    def parse_shortcut_command(
+        cls,
+        raw_text: str,
+    ) -> tuple[WaterRankQuerySpec | None, tuple[str, ...]]:
+        text = raw_text.strip()
+        if not text:
+            return None, ()
+        if text.startswith(cls._COMMAND_PREFIXES):
+            text = text[1:].strip()
+        if not text:
+            return None, ()
+        tokens = text.split()
+        shortcut = get_rank_shortcut(tokens[0])
+        if shortcut is None:
+            return None, ()
+        if len(tokens) > 1:
+            return shortcut.query_spec, ("shortcut_with_args", shortcut.primary_alias)
+        return shortcut.query_spec, ()
 
     @staticmethod
     def valid_scopes_for_subject(
@@ -601,6 +624,9 @@ class WaterQueryRouter:
                 period=PERIOD_LABELS["total" if is_superuser else "season"],
             ),
             "",
+            tr(locale, "water.query.rank.menu.shortcuts"),
+            *self._build_shortcut_lines(),
+            "",
             tr(locale, "water.query.rank.menu.legal"),
             tr(locale, "water.query.rank.menu.legal.user", periods=period_text),
             tr(locale, "water.query.rank.menu.legal.group", periods=period_text),
@@ -651,6 +677,13 @@ class WaterQueryRouter:
                 locale,
                 "water.query.rank.error.duplicate_period",
             )
+        if head == "shortcut_with_args":
+            alias = errors[1] if len(errors) > 1 else ""
+            return tr(
+                locale,
+                "water.query.rank.error.shortcut_with_args",
+                command=f"#{alias}" if alias else "#今日水王",
+            )
         if head == "invalid_period":
             return tr(
                 locale,
@@ -671,6 +704,14 @@ class WaterQueryRouter:
                 suggestion=suggestion,
             )
         return tr(locale, "water.query.rank.error.invalid")
+
+    @staticmethod
+    def _build_shortcut_lines() -> list[str]:
+        return [
+            f"{' / '.join(f'#{alias}' for alias in shortcut.aliases)} -> "
+            f"{shortcut.query_spec.normalized_command}"
+            for shortcut in RANK_SHORTCUTS
+        ]
 
     @staticmethod
     async def _matrix_id(group_id: str) -> str:
