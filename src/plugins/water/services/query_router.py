@@ -61,6 +61,8 @@ class WaterQuerySpec:
 
 
 class WaterQueryRouter:
+    _CANCEL_TOKENS: tuple[str, ...] = ("取消", "退出", "算了", "q", "quit", "exit")
+
     @staticmethod
     def should_send_working(spec: WaterQuerySpec) -> bool:
         if spec.scope_type == "activity":
@@ -133,6 +135,117 @@ class WaterQueryRouter:
             view="menu",
             mode="simple",
             errors=errors or ("invalid_rank",),
+        )
+
+    @classmethod
+    def is_guided_cancel(cls, raw_text: str) -> bool:
+        return raw_text.strip().casefold() in {
+            token.casefold() for token in cls._CANCEL_TOKENS
+        }
+
+    @staticmethod
+    def build_guided_intro(locale: LocaleCode) -> str:
+        _ = locale
+        return "\n".join(
+            [
+                "水王榜单现在按 主体 + 范围 + 时间 查询。",
+                "接下来我会带你一步步选完三维条件。",
+                "第一步，请选择主体：用户榜 / 群聊榜 / 矩阵榜",
+                "发送“取消”可退出本次查询。",
+            ]
+        )
+
+    @staticmethod
+    def build_scope_prompt(
+        locale: LocaleCode,
+        subject: WaterRankSubject,
+    ) -> str:
+        _ = locale
+        labels = " / ".join(
+            SCOPE_LABELS[scope]
+            for scope in water_query_router.valid_scopes_for_subject(subject)
+        )
+        return f"第二步，请选择范围：{labels}"
+
+    @staticmethod
+    def build_period_prompt(locale: LocaleCode) -> str:
+        _ = locale
+        return "第三步，请选择时间：日榜 / 周榜 / 月榜 / 季榜 / 年榜 / 总榜"
+
+    @staticmethod
+    def build_guided_cancel_message(locale: LocaleCode) -> str:
+        _ = locale
+        return "已取消本次水王查询。"
+
+    @staticmethod
+    def build_guided_summary(
+        locale: LocaleCode,
+        spec: WaterRankQuerySpec,
+    ) -> str:
+        _ = locale
+        return (
+            "已选择："
+            f"{SUBJECT_LABELS[spec.subject]} / "
+            f"{SCOPE_LABELS[spec.scope]} / "
+            f"{PERIOD_LABELS[spec.period]}"
+        )
+
+    @staticmethod
+    def parse_subject_choice(raw_text: str) -> WaterRankSubject | None:
+        return SUBJECT_TOKENS.get(raw_text.strip())
+
+    @staticmethod
+    def parse_scope_choice(raw_text: str) -> WaterRankScope | None:
+        return SCOPE_TOKENS.get(raw_text.strip())
+
+    @staticmethod
+    def parse_period_choice(raw_text: str) -> WaterRankPeriod | None:
+        return PERIOD_TOKENS.get(raw_text.strip())
+
+    @staticmethod
+    def valid_scopes_for_subject(
+        subject: WaterRankSubject,
+    ) -> tuple[WaterRankScope, ...]:
+        from src.plugins.water.services.rank_types import VALID_SCOPES_BY_SUBJECT
+
+        return VALID_SCOPES_BY_SUBJECT[subject]
+
+    def build_subject_retry_prompt(self, locale: LocaleCode) -> str:
+        return "\n".join(
+            [
+                "主体输入不对，请从这三个里选一个：用户榜 / 群聊榜 / 矩阵榜",
+                self.build_rank_menu(locale),
+            ]
+        )
+
+    def build_scope_retry_prompt(
+        self,
+        locale: LocaleCode,
+        subject: WaterRankSubject,
+        scope: WaterRankScope | None = None,
+    ) -> str:
+        lines = []
+        if scope is not None and not is_valid_rank_combo(subject, scope):
+            suggested_scope = suggest_scope_for_subject(subject)
+            suggestion = (
+                f"#水王 {SUBJECT_LABELS[subject]} "
+                f"{SCOPE_LABELS[suggested_scope]} <时间>"
+            )
+            lines.append(f"这个主体和范围组合不成立。推荐改成 {suggestion}")
+        else:
+            lines.append("范围输入不对，请按当前主体选择合法范围。")
+        lines.append(self.build_scope_prompt(locale, subject))
+        return "\n".join(lines)
+
+    def build_period_retry_prompt(self, locale: LocaleCode) -> str:
+        return "\n".join(
+            [
+                (
+                    "时间输入不对，请从这些里选一个："
+                    "日榜 / 周榜 / 月榜 / 季榜 / 年榜 / 总榜"
+                ),
+                self.build_period_prompt(locale),
+            ]
         )
 
     def _parse_rank_spec(

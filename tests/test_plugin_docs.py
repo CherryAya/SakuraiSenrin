@@ -44,7 +44,7 @@ def test_load_plugin_doc_bundle_parses_real_readme() -> None:
     ranking = next(feature for feature in bundle.index if feature.slug == "ranking")
     assert profile.trigger == "#我有多水"
     assert ranking.title == "查看周期榜单"
-    assert "月榜" in ranking.aliases
+    assert "榜单" in ranking.aliases
     assert ranking.demo_filename == "water-ranking.png"
     assert ranking.demo_turns[0].speaker == "USER"
     assert ranking.demo_turns[0].text == "#水王"
