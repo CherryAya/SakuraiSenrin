@@ -4,6 +4,7 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from heapq import nsmallest
 from math import floor, sqrt
 import os
 from secrets import token_hex
@@ -134,6 +135,12 @@ class NaturalRankOverview:
         if not any(self.hourly_counts):
             return 0
         return max(range(24), key=lambda hour: self.hourly_counts[hour])
+
+
+@dataclass(frozen=True)
+class NaturalPeriodRankSnapshot:
+    leaderboard: list[NaturalRankItem]
+    overview: NaturalRankOverview
 
 
 @dataclass(frozen=True)
@@ -454,6 +461,13 @@ class WaterRepository:
             for idx, count in enumerate(source):
                 hourly[idx] += int(count)
         return hourly
+
+    @staticmethod
+    def _natural_rank_sort_key(
+        item: tuple[str, int, int, int, list[int], int] | tuple[str, int, int, int],
+    ) -> tuple[int, int, int, str]:
+        entity_id, msg_count, active_days, active_hours, *_rest = item
+        return (-msg_count, -active_days, -active_hours, entity_id)
 
     @staticmethod
     def _build_user_season_rank(
@@ -1023,6 +1037,31 @@ class WaterRepository:
         previous_end_date: int,
         limit: int = 10,
     ) -> list[NaturalRankItem]:
+        snapshot = await self.get_natural_period_snapshot(
+            subject=subject,
+            scope=scope,
+            group_id=group_id,
+            start_date=start_date,
+            end_date=end_date,
+            previous_start_date=previous_start_date,
+            previous_end_date=previous_end_date,
+            limit=limit,
+        )
+        return snapshot.leaderboard
+
+    async def get_natural_period_snapshot(
+        self,
+        *,
+        subject: WaterRankSubject,
+        scope: WaterRankScope,
+        group_id: str,
+        start_date: int,
+        end_date: int,
+        previous_start_date: int,
+        previous_end_date: int,
+        limit: int = 10,
+    ) -> NaturalPeriodRankSnapshot:
+        started = perf_counter()
         current_rows, previous_rows = await asyncio.gather(
             self._resolve_rank_scope_summaries(
                 subject=subject,
@@ -1039,13 +1078,41 @@ class WaterRepository:
                 end_date=previous_end_date,
             ),
         )
+        snapshot = await self._build_natural_period_snapshot_from_rows(
+            subject=subject,
+            current_rows=current_rows,
+            previous_rows=previous_rows,
+            limit=limit,
+        )
+        logger.debug(
+            "[Water][RankRepo] scope={} subject={} current_rows={} previous_rows={} "
+            "top={} active={} elapsed_ms={:.2f}",
+            scope,
+            subject,
+            len(current_rows),
+            len(previous_rows),
+            len(snapshot.leaderboard),
+            snapshot.overview.active_entity_count,
+            (perf_counter() - started) * 1000,
+        )
+        return snapshot
+
+    async def _build_natural_period_snapshot_from_rows(
+        self,
+        *,
+        subject: WaterRankSubject,
+        current_rows: Sequence[WaterSummaryRecord],
+        previous_rows: Sequence[WaterSummaryRecord],
+        limit: int,
+    ) -> NaturalPeriodRankSnapshot:
         current_aggregates = await self._build_rank_entity_aggregates(
             subject, current_rows
         )
         previous_aggregates = await self._build_rank_entity_aggregates(
             subject, previous_rows
         )
-        ordered_current = sorted(
+        ordered_current = nsmallest(
+            limit,
             (
                 (
                     entity_id,
@@ -1063,8 +1130,8 @@ class WaterRepository:
                     group_count,
                 ) in current_aggregates.items()
             ),
-            key=lambda item: (-item[1], -item[2], -item[3], item[0]),
-        )[:limit]
+            key=self._natural_rank_sort_key,
+        )
         ordered_previous = sorted(
             (
                 (entity_id, msg_count, active_days, active_hours)
@@ -1076,13 +1143,13 @@ class WaterRepository:
                     _group_count,
                 ) in previous_aggregates.items()
             ),
-            key=lambda item: (-item[1], -item[2], -item[3], item[0]),
+            key=self._natural_rank_sort_key,
         )
         previous_ranks = {
             entity_id: rank
             for rank, (entity_id, *_rest) in enumerate(ordered_previous, 1)
         }
-        return [
+        leaderboard = [
             NaturalRankItem(
                 entity_id=entity_id,
                 msg_count=msg_count,
@@ -1106,6 +1173,16 @@ class WaterRepository:
                 group_count,
             ) in enumerate(ordered_current, 1)
         ]
+        overview = NaturalRankOverview(
+            total_msg_count=sum(int(row.msg_count) for row in current_rows),
+            active_entity_count=len(current_aggregates),
+            hourly_counts=self._sum_hourly(current_rows),
+            previous_total_msg_count=sum(int(row.msg_count) for row in previous_rows),
+        )
+        return NaturalPeriodRankSnapshot(
+            leaderboard=leaderboard,
+            overview=overview,
+        )
 
     async def get_natural_period_overview(
         self,
@@ -1118,33 +1195,16 @@ class WaterRepository:
         previous_start_date: int,
         previous_end_date: int,
     ) -> NaturalRankOverview:
-        current_rows, previous_rows = await asyncio.gather(
-            self._resolve_rank_scope_summaries(
-                subject=subject,
-                scope=scope,
-                group_id=group_id,
-                start_date=start_date,
-                end_date=end_date,
-            ),
-            self._resolve_rank_scope_summaries(
-                subject=subject,
-                scope=scope,
-                group_id=group_id,
-                start_date=previous_start_date,
-                end_date=previous_end_date,
-            ),
+        snapshot = await self.get_natural_period_snapshot(
+            subject=subject,
+            scope=scope,
+            group_id=group_id,
+            start_date=start_date,
+            end_date=end_date,
+            previous_start_date=previous_start_date,
+            previous_end_date=previous_end_date,
         )
-        current_aggregates = await self._build_rank_entity_aggregates(
-            subject, current_rows
-        )
-        current_hourly = self._sum_hourly(current_rows)
-        previous_total = sum(int(row.msg_count) for row in previous_rows)
-        return NaturalRankOverview(
-            total_msg_count=sum(int(row.msg_count) for row in current_rows),
-            active_entity_count=len(current_aggregates),
-            hourly_counts=current_hourly,
-            previous_total_msg_count=previous_total,
-        )
+        return snapshot.overview
 
     async def get_natural_day_leaderboard(
         self,

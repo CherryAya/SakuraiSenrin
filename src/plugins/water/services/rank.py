@@ -129,28 +129,19 @@ class WaterRankService:
         )
         window_elapsed = (perf_counter() - window_started) * 1000
         query_started = perf_counter()
-        top_items, overview = await asyncio.gather(
-            water_repo.get_natural_period_leaderboard(
-                subject=subject,
-                scope=scope,
-                group_id=group_id,
-                start_date=window.start_date,
-                end_date=window.end_date,
-                previous_start_date=window.previous_start_date,
-                previous_end_date=window.previous_end_date,
-                limit=limit,
-            ),
-            water_repo.get_natural_period_overview(
-                subject=subject,
-                scope=scope,
-                group_id=group_id,
-                start_date=window.start_date,
-                end_date=window.end_date,
-                previous_start_date=window.previous_start_date,
-                previous_end_date=window.previous_end_date,
-            ),
+        snapshot = await water_repo.get_natural_period_snapshot(
+            subject=subject,
+            scope=scope,
+            group_id=group_id,
+            start_date=window.start_date,
+            end_date=window.end_date,
+            previous_start_date=window.previous_start_date,
+            previous_end_date=window.previous_end_date,
+            limit=limit,
         )
         query_elapsed = (perf_counter() - query_started) * 1000
+        top_items = snapshot.leaderboard
+        overview = snapshot.overview
         if not top_items or overview.total_msg_count <= 0:
             logger.debug(
                 "[Water][RankData] combo={} window_ms={:.2f} query_ms={:.2f} "

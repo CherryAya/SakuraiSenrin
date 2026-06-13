@@ -1,3 +1,4 @@
+import asyncio
 from time import perf_counter
 from typing import Any
 from unittest.mock import AsyncMock
@@ -5,7 +6,11 @@ from unittest.mock import AsyncMock
 from pil_utils import BuildImage
 import pytest
 
-from src.plugins.water.database.repo import NaturalRankItem, NaturalRankOverview
+from src.plugins.water.database.repo import (
+    NaturalPeriodRankSnapshot,
+    NaturalRankItem,
+    NaturalRankOverview,
+)
 from src.plugins.water.img import WaterPeriodRankCardData, WaterRankCardItem
 from src.plugins.water.services.rank import WaterRankService
 from src.plugins.water.services.rank_query import water_rank_query_service
@@ -56,6 +61,9 @@ async def test_build_natural_period_rank_data_uses_settled_anchor(
             )
         ]
 
+    async def _fake_period_snapshot(**kwargs: Any) -> NaturalPeriodRankSnapshot:
+        return await _fake_snapshot(kwargs, _fake_leaderboard)
+
     monkeypatch.setattr(
         rank_service_module.water_repo,
         "get_settlement_state",
@@ -63,25 +71,8 @@ async def test_build_natural_period_rank_data_uses_settled_anchor(
     )
     monkeypatch.setattr(
         rank_service_module.water_repo,
-        "get_natural_period_leaderboard",
-        _fake_leaderboard,
-    )
-    monkeypatch.setattr(
-        rank_service_module.water_repo,
-        "get_natural_period_overview",
-        AsyncMock(
-            return_value=type(
-                "Overview",
-                (),
-                {
-                    "total_msg_count": 240,
-                    "active_entity_count": 36,
-                    "hourly_counts": [5] * 24,
-                    "peak_hour": 0,
-                    "previous_total_msg_count": 180,
-                },
-            )()
-        ),
+        "get_natural_period_snapshot",
+        AsyncMock(side_effect=_fake_period_snapshot),
     )
     monkeypatch.setattr(
         rank_service_module.user_repo,
@@ -109,6 +100,37 @@ async def test_build_natural_period_rank_data_uses_settled_anchor(
     assert captured["range"] == (20260518, 20260523, 20260512, 20260517, 10)
     assert data.top_items[0].display_name == "Alice"
     assert data.champion_gap == 88
+
+
+def _build_snapshot(
+    items: list[NaturalRankItem],
+    *,
+    total_msg_count: int,
+    active_entity_count: int,
+    previous_total_msg_count: int,
+) -> NaturalPeriodRankSnapshot:
+    return NaturalPeriodRankSnapshot(
+        leaderboard=items,
+        overview=NaturalRankOverview(
+            total_msg_count=total_msg_count,
+            active_entity_count=active_entity_count,
+            hourly_counts=[5] * 24,
+            previous_total_msg_count=previous_total_msg_count,
+        ),
+    )
+
+
+async def _fake_snapshot(
+    kwargs: dict[str, Any],
+    builder: Any,
+) -> NaturalPeriodRankSnapshot:
+    items = await builder(**kwargs)
+    return _build_snapshot(
+        items,
+        total_msg_count=240,
+        active_entity_count=36,
+        previous_total_msg_count=180,
+    )
 
 
 @pytest.mark.asyncio
@@ -140,6 +162,9 @@ async def test_build_natural_total_rank_data_uses_first_record_window(
             )
         ]
 
+    async def _fake_period_snapshot(**kwargs: Any) -> NaturalPeriodRankSnapshot:
+        return await _fake_total_snapshot(kwargs, _fake_leaderboard)
+
     monkeypatch.setattr(
         rank_service_module.water_repo,
         "get_settlement_state",
@@ -152,25 +177,8 @@ async def test_build_natural_total_rank_data_uses_first_record_window(
     )
     monkeypatch.setattr(
         rank_service_module.water_repo,
-        "get_natural_period_leaderboard",
-        _fake_leaderboard,
-    )
-    monkeypatch.setattr(
-        rank_service_module.water_repo,
-        "get_natural_period_overview",
-        AsyncMock(
-            return_value=type(
-                "Overview",
-                (),
-                {
-                    "total_msg_count": 500,
-                    "active_entity_count": 8,
-                    "hourly_counts": [2] * 24,
-                    "peak_hour": 0,
-                    "previous_total_msg_count": 300,
-                },
-            )()
-        ),
+        "get_natural_period_snapshot",
+        AsyncMock(side_effect=_fake_period_snapshot),
     )
     monkeypatch.setattr(
         service,
@@ -200,6 +208,37 @@ async def test_build_natural_total_rank_data_uses_first_record_window(
     assert captured["window"] == (20260401, 20260523, 20260207, 20260331)
     assert data.title == "矩阵榜 · 全局总榜"
     assert data.board_title == "TOP 10 矩阵榜"
+
+
+async def _fake_total_snapshot(
+    kwargs: dict[str, Any],
+    builder: Any,
+) -> NaturalPeriodRankSnapshot:
+    items = await builder(**kwargs)
+    return NaturalPeriodRankSnapshot(
+        leaderboard=items,
+        overview=NaturalRankOverview(
+            total_msg_count=500,
+            active_entity_count=8,
+            hourly_counts=[2] * 24,
+            previous_total_msg_count=300,
+        ),
+    )
+
+
+async def _fake_snapshot_from_builders(
+    kwargs: dict[str, Any],
+    leaderboard_builder: Any,
+    overview_builder: Any,
+) -> NaturalPeriodRankSnapshot:
+    leaderboard, overview = await asyncio.gather(
+        leaderboard_builder(**kwargs),
+        overview_builder(**kwargs),
+    )
+    return NaturalPeriodRankSnapshot(
+        leaderboard=leaderboard,
+        overview=overview,
+    )
 
 
 @pytest.mark.asyncio
@@ -511,6 +550,7 @@ async def test_build_rank_message_renders_all_legal_combinations(
         end_date: int,
         previous_start_date: int,
         previous_end_date: int,
+        limit: int = 10,
     ) -> NaturalRankOverview:
         _ = (
             scope,
@@ -519,6 +559,7 @@ async def test_build_rank_message_renders_all_legal_combinations(
             end_date,
             previous_start_date,
             previous_end_date,
+            limit,
         )
         return _build_fake_overview(_build_fake_natural_items(subject))
 
@@ -547,6 +588,13 @@ async def test_build_rank_message_renders_all_legal_combinations(
         _ = (subject, entity_id)
         return avatar
 
+    async def _fake_period_snapshot(**kwargs: Any) -> NaturalPeriodRankSnapshot:
+        return await _fake_snapshot_from_builders(
+            kwargs,
+            _fake_period_leaderboard,
+            _fake_period_overview,
+        )
+
     monkeypatch.setattr(
         query_module.water_repo,
         "get_natural_day_leaderboard",
@@ -569,13 +617,8 @@ async def test_build_rank_message_renders_all_legal_combinations(
     )
     monkeypatch.setattr(
         rank_service_module.water_repo,
-        "get_natural_period_leaderboard",
-        _fake_period_leaderboard,
-    )
-    monkeypatch.setattr(
-        rank_service_module.water_repo,
-        "get_natural_period_overview",
-        _fake_period_overview,
+        "get_natural_period_snapshot",
+        AsyncMock(side_effect=_fake_period_snapshot),
     )
     monkeypatch.setattr(
         query_module.water_rank_service,
