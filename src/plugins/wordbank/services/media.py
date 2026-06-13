@@ -24,6 +24,7 @@ from src.plugins.wordbank.database.types import (
     WordbankImagePayload,
     WordbankImageRecord,
 )
+from src.plugins.wordbank.debug import log_perf, perf_start
 from src.plugins.wordbank.services.errors import WordbankUserError
 
 DEFAULT_MEDIA_ROOT: Final[Path] = Path("./data/wordbank/media")
@@ -759,8 +760,16 @@ class WordbankMediaService:
         self._cache_maintenance_lock = asyncio.Lock()
 
     async def rebuild_cache(self) -> None:
+        start = perf_start()
         images = await self.repository.list_images()
         self.load_cache(images)
+        log_perf(
+            "media.rebuild_cache.done",
+            start=start,
+            images=len(images),
+            canonical_ids=len(self._by_canonical_id),
+            dhash_nodes=len(self._canonical_ids_by_dhash),
+        )
 
     def load_cache(self, images: Sequence[WordbankImageRecord]) -> None:
         by_id: dict[int, WordbankImageRecord] = {}
@@ -800,19 +809,32 @@ class WordbankMediaService:
         *,
         keep_original: bool = False,
     ) -> WordbankImageRecord:
+        start = perf_start()
         md5_hex = md5(data).hexdigest()
         existing = await self.repository.get_image_by_md5(md5_hex)
         if existing is not None:
             self._cache_image(existing)
+            log_perf(
+                "media.ingest_image_bytes.cache_hit",
+                start=start,
+                md5=md5_hex,
+                canonical_id=existing.canonical_id,
+                image_id=existing.id,
+            )
             return existing
 
+        prepare_start = perf_start()
         prepared = prepare_image_bytes(data)
+        prepare_ms = perf_start() - prepare_start
         fingerprint = prepared.fingerprint
         canonical_id: int | None = None
-        for candidate in await self.repository.get_image_candidates(
+        candidate_lookup_start = perf_start()
+        candidates = await self.repository.get_image_candidates(
             fingerprint.dhash[:4],
             limit=self.candidate_limit,
-        ):
+        )
+        candidate_lookup_ms = perf_start() - candidate_lookup_start
+        for candidate in candidates:
             if (
                 hamming_distance(fingerprint.dhash, candidate.dhash)
                 <= self.similarity_threshold
@@ -831,6 +853,7 @@ class WordbankMediaService:
 
         if self.remote_storage is not None:
             try:
+                remote_save_start = perf_start()
                 stored = await self.remote_storage.save_prepared_image(
                     prepared,
                     md5_hex=fingerprint.md5,
@@ -842,6 +865,14 @@ class WordbankMediaService:
                 remote_etag = stored.etag or ""
                 remote_object_size = stored.size
                 storage_path = stored.uri
+                remote_save_ms = (perf_start() - remote_save_start) * 1000
+                log_perf(
+                    "media.ingest_image_bytes.remote_saved",
+                    md5=fingerprint.md5,
+                    canonical_id=canonical_id or "new",
+                    remote_save_ms=f"{remote_save_ms:.2f}",
+                    remote_size=stored.size,
+                )
             except Exception as exc:
                 if self.remote_required:
                     raise MediaError(
@@ -859,12 +890,19 @@ class WordbankMediaService:
             remote_sync_status = REMOTE_SYNC_FAILED
 
         if not storage_path:
+            legacy_save_start = perf_start()
             storage_path = await self.legacy_storage.save_image(
                 prepared,
                 md5_hex=fingerprint.md5,
                 keep_original=keep_original,
             )
+            log_perf(
+                "media.ingest_image_bytes.local_saved",
+                md5=fingerprint.md5,
+                legacy_save_ms=f"{(perf_start() - legacy_save_start) * 1000:.2f}",
+            )
 
+        create_start = perf_start()
         image = await self.repository.create_image(
             {
                 "canonical_image_id": canonical_id,
@@ -889,6 +927,7 @@ class WordbankMediaService:
                 "updated_at": now,
             }
         )
+        create_ms = (perf_start() - create_start) * 1000
         self._cache_image(image)
         if (
             self.prewarm_local_cache
@@ -901,6 +940,19 @@ class WordbankMediaService:
                 prepared.stored_media.data,
                 mark_as_hit=False,
             )
+        log_perf(
+            "media.ingest_image_bytes.done",
+            start=start,
+            md5=fingerprint.md5,
+            canonical_id=image.canonical_id,
+            image_id=image.id,
+            keep_original=keep_original,
+            candidate_count=len(candidates),
+            prepare_ms=f"{prepare_ms * 1000:.2f}",
+            candidate_lookup_ms=f"{candidate_lookup_ms * 1000:.2f}",
+            create_ms=f"{create_ms:.2f}",
+            storage="remote" if remote_storage_path else "local",
+        )
         return image
 
     def _cache_image(self, image: WordbankImageRecord) -> None:
@@ -980,9 +1032,17 @@ class WordbankMediaService:
         limit: int = 32,
         distance_threshold: int = IMAGE_SEARCH_DISTANCE_THRESHOLD,
     ) -> list[CanonicalImageMatch]:
+        start = perf_start()
         fingerprint = fingerprint_image(data)
         existing = self._by_md5.get(fingerprint.md5)
         if existing is not None:
+            log_perf(
+                "media.search_similar_images.exact_hit",
+                start=start,
+                canonical_id=existing.canonical_id,
+                limit=limit,
+                distance_threshold=distance_threshold,
+            )
             return [
                 CanonicalImageMatch(
                     canonical_id=existing.canonical_id,
@@ -992,6 +1052,12 @@ class WordbankMediaService:
                 )
             ]
         if self._dhash_tree is None:
+            log_perf(
+                "media.search_similar_images.empty_cache",
+                start=start,
+                limit=limit,
+                distance_threshold=distance_threshold,
+            )
             return []
 
         matches: list[CanonicalImageMatch] = []
@@ -1037,7 +1103,16 @@ class WordbankMediaService:
             ),
             reverse=True,
         )
-        return matches[:limit]
+        limited = matches[:limit]
+        log_perf(
+            "media.search_similar_images.done",
+            start=start,
+            limit=limit,
+            distance_threshold=distance_threshold,
+            candidates=len(matches),
+            returned=len(limited),
+        )
+        return limited
 
     def resolve_canonical_id_from_hints(self, hints: Sequence[str]) -> int | None:
         for md5_candidate in _iter_md5_candidates(hints):
@@ -1058,25 +1133,61 @@ class WordbankMediaService:
         self,
         canonical_image_id: int,
     ) -> bytes | None:
+        start = perf_start()
         image = self._by_canonical_id.get(canonical_image_id)
         if image is None:
+            log_perf(
+                "media.load_canonical_storage_bytes.miss",
+                start=start,
+                canonical_image_id=canonical_image_id,
+                reason="unknown_canonical_id",
+            )
             return None
 
         cached = await self._load_from_local_cache(image)
         if cached is not None:
+            log_perf(
+                "media.load_canonical_storage_bytes.hit",
+                start=start,
+                canonical_image_id=canonical_image_id,
+                source="local_cache",
+                bytes=len(cached),
+            )
             return cached
 
         async with self._get_remote_load_lock(canonical_image_id):
             refreshed = self._by_canonical_id.get(canonical_image_id, image)
             cached = await self._load_from_local_cache(refreshed)
             if cached is not None:
+                log_perf(
+                    "media.load_canonical_storage_bytes.hit",
+                    start=start,
+                    canonical_image_id=canonical_image_id,
+                    source="local_cache_after_lock",
+                    bytes=len(cached),
+                )
                 return cached
 
             remote_bytes = await self._load_from_remote_storage(refreshed)
             if remote_bytes is not None:
+                log_perf(
+                    "media.load_canonical_storage_bytes.hit",
+                    start=start,
+                    canonical_image_id=canonical_image_id,
+                    source="remote_storage",
+                    bytes=len(remote_bytes),
+                )
                 return remote_bytes
 
-            return await self._load_from_legacy_storage(refreshed)
+            legacy_bytes = await self._load_from_legacy_storage(refreshed)
+            log_perf(
+                "media.load_canonical_storage_bytes.hit",
+                start=start,
+                canonical_image_id=canonical_image_id,
+                source="legacy_storage" if legacy_bytes is not None else "miss",
+                bytes=len(legacy_bytes) if legacy_bytes is not None else 0,
+            )
+            return legacy_bytes
 
     async def _load_from_local_cache(self, image: WordbankImageRecord) -> bytes | None:
         if not image.local_cache_path:

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.consts import WritePolicy
 from src.lib.utils.common import get_current_time
+from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.plugins.wordbank.message_model import (
     MessageShape,
     fingerprint_shape,
@@ -764,6 +765,7 @@ class WordbankRepository:
         ]
 
     async def ensure_search_index(self) -> None:
+        start = perf_start()
         await self._ensure_main_fts_tables()
         async with wordbank_main_db.read_session() as session:
             expected_stmt = (
@@ -827,9 +829,31 @@ class WordbankRepository:
             or group_count != response_fts_count
             or expected_image_count != image_entry_count
         ):
+            log_perf(
+                "repo.ensure_search_index.rebuild_needed",
+                start=start,
+                group_count=group_count,
+                doc_count=doc_count,
+                trigger_fts_count=trigger_fts_count,
+                response_fts_count=response_fts_count,
+                expected_image_count=expected_image_count,
+                image_entry_count=image_entry_count,
+            )
             await self.rebuild_search_index()
+            return
+        log_perf(
+            "repo.ensure_search_index.ok",
+            start=start,
+            group_count=group_count,
+            doc_count=doc_count,
+            trigger_fts_count=trigger_fts_count,
+            response_fts_count=response_fts_count,
+            expected_image_count=expected_image_count,
+            image_entry_count=image_entry_count,
+        )
 
     async def rebuild_search_index(self) -> None:
+        start = perf_start()
         await self._ensure_main_fts_tables()
         async with wordbank_main_db.read_session() as session:
             group_rows = (
@@ -899,6 +923,15 @@ class WordbankRepository:
                 await session.execute(
                     sqlite_insert(WordbankSearchImageMap), image_map_rows
                 )
+        log_perf(
+            "repo.rebuild_search_index.done",
+            start=start,
+            groups=len(group_rows),
+            variants=len(variant_rows),
+            responses=len(response_rows),
+            documents=len(documents),
+            image_map_rows=len(image_map_rows),
+        )
 
     async def find_trigger_group_by_shape(
         self,
@@ -997,26 +1030,44 @@ class WordbankRepository:
         limit: int = 10,
         offset: int = 0,
     ) -> WordbankSearchPage:
+        start = perf_start()
         async with wordbank_main_db.read_session() as session:
             candidate_limit = max(
                 _SEARCH_RESULT_MIN_CANDIDATES,
                 (offset + limit) * _SEARCH_RESULT_CANDIDATE_MULTIPLIER,
             )
+            text_start = perf_start()
             text_scores, text_sources = await self._search_text_scores(
                 session,
                 request.keyword,
                 field=request.field,
                 limit=candidate_limit,
             )
+            text_ms = elapsed_ms(text_start)
+            image_start = perf_start()
             image_scores, image_sources = await self._search_image_scores(
                 session,
                 request.image_scores,
                 field=request.field,
                 creator_id=request.creator_id,
             )
+            image_ms = elapsed_ms(image_start)
             candidate_ids = set(text_scores) | set(image_scores)
             if not candidate_ids:
                 if request.keyword or request.image_scores or request.has_image:
+                    log_perf(
+                        "repo.search_page.empty_candidates",
+                        start=start,
+                        keyword=request.keyword or "-",
+                        field=request.field,
+                        creator_id=request.creator_id or "-",
+                        has_image=request.has_image,
+                        candidate_limit=candidate_limit,
+                        text_candidates=len(text_scores),
+                        image_candidates=len(image_scores),
+                        text_ms=f"{text_ms:.2f}",
+                        image_ms=f"{image_ms:.2f}",
+                    )
                     return WordbankSearchPage(
                         items=(), total_count=0, offset=offset, limit=limit
                     )
@@ -1043,6 +1094,19 @@ class WordbankRepository:
                     stmt = stmt.where(creator_filter)
                 documents = (await session.execute(stmt)).scalars().all()
                 total_count = int(await session.scalar(count_stmt) or 0)
+                log_perf(
+                    "repo.search_page.list_recent",
+                    start=start,
+                    field=request.field,
+                    creator_id=request.creator_id or "-",
+                    candidate_limit=candidate_limit,
+                    text_candidates=len(text_scores),
+                    image_candidates=len(image_scores),
+                    text_ms=f"{text_ms:.2f}",
+                    image_ms=f"{image_ms:.2f}",
+                    documents=len(documents),
+                    total_count=total_count,
+                )
                 return WordbankSearchPage(
                     items=tuple(
                         self._search_item_from_document(document)
@@ -1089,7 +1153,7 @@ class WordbankRepository:
         )
         total_count = len(ranked)
         paged = ranked[offset : offset + limit]
-        return WordbankSearchPage(
+        page = WordbankSearchPage(
             items=tuple(
                 self._search_item_from_document(
                     document, score=score, matched_by=matched_by
@@ -1100,6 +1164,24 @@ class WordbankRepository:
             offset=offset,
             limit=limit,
         )
+        log_perf(
+            "repo.search_page.ranked",
+            start=start,
+            keyword=request.keyword or "-",
+            field=request.field,
+            creator_id=request.creator_id or "-",
+            has_image=request.has_image,
+            candidate_limit=candidate_limit,
+            text_candidates=len(text_scores),
+            image_candidates=len(image_scores),
+            documents=len(documents),
+            ranked=len(ranked),
+            returned=len(page.items),
+            total_count=total_count,
+            text_ms=f"{text_ms:.2f}",
+            image_ms=f"{image_ms:.2f}",
+        )
+        return page
 
     async def list_pending_entries(
         self,
@@ -1811,8 +1893,16 @@ class WordbankRepository:
         field: str,
         limit: int,
     ) -> tuple[dict[int, float], dict[int, set[str]]]:
+        start = perf_start()
         query = _build_fts_query(keyword)
         if not query:
+            log_perf(
+                "repo.search_text_scores.skipped",
+                start=start,
+                field=field,
+                limit=limit,
+                reason="empty_query",
+            )
             return {}, {}
         scores: dict[int, float] = {}
         sources: dict[int, set[str]] = defaultdict(set)
@@ -1841,6 +1931,15 @@ class WordbankRepository:
                 if score > scores.get(trigger_group_id, 0.0):
                     scores[trigger_group_id] = score
                 sources[trigger_group_id].add(f"text:{table_name}")
+        log_perf(
+            "repo.search_text_scores.done",
+            start=start,
+            field=field,
+            limit=limit,
+            tables=",".join(tables),
+            query_len=len(query),
+            matched_groups=len(scores),
+        )
         return scores, sources
 
     async def _search_image_scores(
@@ -1851,7 +1950,15 @@ class WordbankRepository:
         field: str,
         creator_id: str,
     ) -> tuple[dict[int, float], dict[int, set[str]]]:
+        start = perf_start()
         if not image_scores:
+            log_perf(
+                "repo.search_image_scores.skipped",
+                start=start,
+                field=field,
+                creator_id=creator_id or "-",
+                reason="empty_image_scores",
+            )
             return {}, {}
         stmt = (
             select(
@@ -1884,6 +1991,15 @@ class WordbankRepository:
             if score > scores.get(trigger_group_id, 0.0):
                 scores[trigger_group_id] = score
             sources[trigger_group_id].add(f"image:{row.side}")
+        log_perf(
+            "repo.search_image_scores.done",
+            start=start,
+            field=field,
+            creator_id=creator_id or "-",
+            input_scores=len(image_scores),
+            matched_groups=len(scores),
+            rows=len(rows),
+        )
         return scores, sources
 
     async def _find_or_create_group_in_session(

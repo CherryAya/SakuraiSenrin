@@ -51,6 +51,7 @@ from src.lib.interactive_recall import (
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
+from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 
 from .database.types import WordbankMessageRefRecord
 from .handlers import (
@@ -165,10 +166,22 @@ WORDBANK_GUIDED_RECALL_PENDING_KEYS: tuple[str, ...] = ()
 async def initialize_wordbank_plugin() -> None:
     global _wordbank_initialized
     if _wordbank_initialized:
+        log_perf("plugin.initialize.cached", initialized=True)
         return
+    start = perf_start()
+    service_start = perf_start()
     await wordbank_service.initialize()
+    service_ms = elapsed_ms(service_start)
+    media_start = perf_start()
     await wordbank_media_service.rebuild_cache()
+    media_ms = elapsed_ms(media_start)
     _wordbank_initialized = True
+    log_perf(
+        "plugin.initialize.done",
+        start=start,
+        service_initialize_ms=f"{service_ms:.2f}",
+        media_rebuild_ms=f"{media_ms:.2f}",
+    )
 
 
 driver = get_driver()
@@ -1700,31 +1713,71 @@ async def _send_group_detail_view(
 
 
 async def _build_passive_message(response: PassiveResponse) -> Message | str:
+    start = perf_start()
     if response.response_shape is None or response.response_shape.is_empty():
+        log_perf(
+            "plugin.build_passive_message.text_only",
+            start=start,
+            response_item_id=response.response_item_id,
+        )
         return response.text
-    return await render_shape_message(
+    message = await render_shape_message(
         response.response_shape,
         wordbank_media_service,
     )
+    log_perf(
+        "plugin.build_passive_message.rendered_shape",
+        start=start,
+        response_item_id=response.response_item_id,
+        atoms=len(response.response_shape.atoms),
+        segments=len(list(message)),
+    )
+    return message
 
 
 @wordbank_passive.handle()
 async def _(bot: Bot, event: MessageEvent) -> None:
+    start = perf_start()
     await initialize_wordbank_plugin()
     try:
+        handle_start = perf_start()
         response = await handle_passive_message(
             bot,
             event,
             wordbank_service,
             wordbank_media_service,
         )
+        handle_ms = elapsed_ms(handle_start)
     except Exception as exc:
         logger.warning(f"[Wordbank] passive match skipped: {exc}")
         return
     if response:
+        build_start = perf_start()
         message = await _build_passive_message(response)
+        build_ms = elapsed_ms(build_start)
+        send_start = perf_start()
         send_result = await wordbank_passive.send(message)
+        send_ms = elapsed_ms(send_start)
+        record_start = perf_start()
         await _record_passive_response_message(response, send_result)
+        record_ms = elapsed_ms(record_start)
+        log_perf(
+            "plugin.passive.handle.sent",
+            start=start,
+            message_type=response.message_type,
+            trigger_group_id=response.trigger_group_id,
+            response_item_id=response.response_item_id,
+            handle_ms=f"{handle_ms:.2f}",
+            build_ms=f"{build_ms:.2f}",
+            send_ms=f"{send_ms:.2f}",
+            record_ms=f"{record_ms:.2f}",
+        )
+        return
+    log_perf(
+        "plugin.passive.handle.no_match",
+        start=start,
+        handle_ms=f"{handle_ms:.2f}",
+    )
 
 
 @wordbank_notice.handle()
@@ -1760,12 +1813,39 @@ async def _(bot: Bot, event: NoticeEvent) -> None:
             await wordbank_notice.send(checkpoint.prompt)
             return
 
+    start = perf_start()
     await initialize_wordbank_plugin()
     try:
+        handle_start = perf_start()
         response = await handle_passive_notice(bot, event, wordbank_service)
+        handle_ms = elapsed_ms(handle_start)
     except Exception as exc:
         logger.warning(f"[Wordbank] passive notice skipped: {exc}")
         return
     if response:
-        send_result = await wordbank_notice.send(await _build_passive_message(response))
+        build_start = perf_start()
+        message = await _build_passive_message(response)
+        build_ms = elapsed_ms(build_start)
+        send_start = perf_start()
+        send_result = await wordbank_notice.send(message)
+        send_ms = elapsed_ms(send_start)
+        record_start = perf_start()
         await _record_passive_response_message(response, send_result)
+        record_ms = elapsed_ms(record_start)
+        log_perf(
+            "plugin.notice.handle.sent",
+            start=start,
+            message_type=response.message_type,
+            trigger_group_id=response.trigger_group_id,
+            response_item_id=response.response_item_id,
+            handle_ms=f"{handle_ms:.2f}",
+            build_ms=f"{build_ms:.2f}",
+            send_ms=f"{send_ms:.2f}",
+            record_ms=f"{record_ms:.2f}",
+        )
+        return
+    log_perf(
+        "plugin.notice.handle.no_match",
+        start=start,
+        handle_ms=f"{handle_ms:.2f}",
+    )

@@ -17,6 +17,7 @@ from nonebot.adapters.onebot.v11.event import (
 
 from src.lib.interaction import is_revoke_signal
 from src.logger import logger
+from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.plugins.wordbank.message_model import (
     MessageShape,
     shape_from_event,
@@ -140,13 +141,24 @@ async def fetch_image_bytes(
     url: str,
     *,
     max_bytes: int = MAX_IMAGE_DOWNLOAD_BYTES,
+    client: httpx.AsyncClient | None = None,
 ) -> bytes | None:
+    start = perf_start()
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            async with client.stream("GET", url) as response:
+        owned_client = client is None
+        active_client = client or httpx.AsyncClient(timeout=5.0)
+        try:
+            async with active_client.stream("GET", url) as response:
                 response.raise_for_status()
                 content_length = response.headers.get("content-length")
                 if content_length and int(content_length) > max_bytes:
+                    log_perf(
+                        "passive.fetch_image_bytes.too_large",
+                        start=start,
+                        url=url,
+                        content_length=content_length,
+                        max_bytes=max_bytes,
+                    )
                     return None
 
                 chunks: list[bytes] = []
@@ -154,10 +166,34 @@ async def fetch_image_bytes(
                 async for chunk in response.aiter_bytes():
                     total += len(chunk)
                     if total > max_bytes:
+                        log_perf(
+                            "passive.fetch_image_bytes.truncated",
+                            start=start,
+                            url=url,
+                            downloaded_bytes=total,
+                            max_bytes=max_bytes,
+                        )
                         return None
                     chunks.append(chunk)
-                return b"".join(chunks)
+                data = b"".join(chunks)
+                log_perf(
+                    "passive.fetch_image_bytes.done",
+                    start=start,
+                    url=url,
+                    bytes=len(data),
+                    reused_client=not owned_client,
+                )
+                return data
+        finally:
+            if owned_client:
+                await active_client.aclose()
     except Exception as exc:
+        log_perf(
+            "passive.fetch_image_bytes.failed",
+            start=start,
+            url=url,
+            error=type(exc).__name__,
+        )
         logger.warning(f"[Wordbank] image fetch skipped: {exc}")
         return None
 
@@ -166,27 +202,51 @@ async def resolve_message_image_ids(
     media_service: WordbankMediaService,
     image_refs: Sequence[PassiveImageRef],
 ) -> dict[int, int]:
+    start = perf_start()
     canonical_ids: dict[int, int] = {}
-    for image_ref in image_refs[:MAX_PASSIVE_IMAGES]:
-        hinted_canonical_id = media_service.resolve_canonical_id_from_hints(
-            image_ref.name_hints,
-        )
-        if hinted_canonical_id is not None:
-            canonical_ids[len(canonical_ids)] = hinted_canonical_id
-            continue
-        data = await fetch_image_bytes(image_ref.url)
-        if data is None:
-            continue
-        try:
-            canonical_id = media_service.resolve_canonical_id(
-                data,
-                name_hints=image_ref.name_hints,
+    hint_hits = 0
+    download_attempts = 0
+    resolve_hits = 0
+    active_refs = tuple(image_refs[:MAX_PASSIVE_IMAGES])
+    shared_client: httpx.AsyncClient | None = None
+    try:
+        for image_ref in active_refs:
+            hinted_canonical_id = media_service.resolve_canonical_id_from_hints(
+                image_ref.name_hints,
             )
-        except MediaError as exc:
-            logger.warning(f"[Wordbank] image match skipped: {exc}")
-            continue
-        if canonical_id is not None:
-            canonical_ids[len(canonical_ids)] = canonical_id
+            if hinted_canonical_id is not None:
+                hint_hits += 1
+                canonical_ids[len(canonical_ids)] = hinted_canonical_id
+                continue
+            if shared_client is None:
+                shared_client = httpx.AsyncClient(timeout=5.0)
+            download_attempts += 1
+            data = await fetch_image_bytes(image_ref.url, client=shared_client)
+            if data is None:
+                continue
+            try:
+                canonical_id = media_service.resolve_canonical_id(
+                    data,
+                    name_hints=image_ref.name_hints,
+                )
+            except MediaError as exc:
+                logger.warning(f"[Wordbank] image match skipped: {exc}")
+                continue
+            if canonical_id is not None:
+                resolve_hits += 1
+                canonical_ids[len(canonical_ids)] = canonical_id
+    finally:
+        if shared_client is not None:
+            await shared_client.aclose()
+    log_perf(
+        "passive.resolve_message_image_ids",
+        start=start,
+        refs=len(active_refs),
+        resolved=len(canonical_ids),
+        hint_hits=hint_hits,
+        download_attempts=download_attempts,
+        resolve_hits=resolve_hits,
+    )
     return canonical_ids
 
 
@@ -196,27 +256,57 @@ async def handle_passive_message(
     service: WordbankService,
     media_service: WordbankMediaService,
 ) -> PassiveResponse | None:
+    start = perf_start()
     if is_revoke_signal(event):
+        log_perf(
+            "passive.handle_message.skipped",
+            start=start,
+            reason="revoke_signal",
+        )
         return None
 
     if str(event.user_id) == str(bot.self_id):
+        log_perf(
+            "passive.handle_message.skipped",
+            start=start,
+            reason="self_message",
+        )
         return None
 
     context = build_rule_context(event)
     image_refs = extract_image_refs(event)
+    resolve_start = perf_start()
     image_ids = await resolve_message_image_ids(media_service, image_refs)
+    resolve_elapsed = elapsed_ms(resolve_start)
     message_shape = shape_from_message(
         event.message,
         image_ids=image_ids,
         preserve_blank_text=True,
     )
+    selected: SelectedMatch | None = None
+    message_match_elapsed = 0.0
     if not message_shape.is_empty():
+        match_start = perf_start()
         selected = await service.match_message(
             message_shape,
             context=context,
             message_type="message",
         )
+        message_match_elapsed = elapsed_ms(match_start)
         if selected is not None:
+            log_perf(
+                "passive.handle_message.matched",
+                start=start,
+                group_id=context.group_id or "-",
+                user_id=context.user_id,
+                image_refs=len(image_refs),
+                resolved_images=len(image_ids),
+                shape_atoms=len(message_shape.atoms),
+                match_stage="message",
+                message_match_ms=f"{message_match_elapsed:.2f}",
+                image_resolve_ms=f"{resolve_elapsed:.2f}",
+                response_item_id=selected.response.id,
+            )
             return build_passive_response(
                 selected,
                 context=context,
@@ -224,19 +314,49 @@ async def handle_passive_message(
             )
 
     event_triggers = build_event_triggers(event, bot)
+    event_match_count = 0
     if event_triggers:
         for event_trigger in event_triggers:
+            event_match_count += 1
+            match_start = perf_start()
             selected = await service.match_message(
                 shape_from_event(event_trigger),
                 context=context,
                 message_type="event",
             )
+            event_match_elapsed = elapsed_ms(match_start)
             if selected is not None:
+                log_perf(
+                    "passive.handle_message.matched",
+                    start=start,
+                    group_id=context.group_id or "-",
+                    user_id=context.user_id,
+                    image_refs=len(image_refs),
+                    resolved_images=len(image_ids),
+                    shape_atoms=len(message_shape.atoms),
+                    match_stage=event_trigger,
+                    message_match_ms=f"{message_match_elapsed:.2f}",
+                    event_match_ms=f"{event_match_elapsed:.2f}",
+                    image_resolve_ms=f"{resolve_elapsed:.2f}",
+                    response_item_id=selected.response.id,
+                )
                 return build_passive_response(
                     selected,
                     context=context,
                     message_type="event",
                 )
+    log_perf(
+        "passive.handle_message.miss",
+        start=start,
+        group_id=context.group_id or "-",
+        user_id=context.user_id,
+        image_refs=len(image_refs),
+        resolved_images=len(image_ids),
+        shape_atoms=len(message_shape.atoms),
+        message_match_ms=f"{message_match_elapsed:.2f}",
+        image_resolve_ms=f"{resolve_elapsed:.2f}",
+        event_triggers=event_match_count,
+    )
     return None
 
 
@@ -245,24 +365,53 @@ async def handle_passive_notice(
     event: NoticeEvent,
     service: WordbankService,
 ) -> PassiveResponse | None:
+    start = perf_start()
     if is_revoke_signal(event):
+        log_perf(
+            "passive.handle_notice.skipped",
+            start=start,
+            reason="revoke_signal",
+        )
         return None
 
     event_triggers = build_event_triggers(event, bot)
     if not event_triggers:
+        log_perf(
+            "passive.handle_notice.skipped",
+            start=start,
+            reason="no_event_trigger",
+        )
         return None
 
     context = build_rule_context(event)
     for event_trigger in event_triggers:
+        match_start = perf_start()
         selected = await service.match_message(
             shape_from_event(event_trigger),
             context=context,
             message_type="event",
         )
+        match_elapsed = elapsed_ms(match_start)
         if selected is not None:
+            log_perf(
+                "passive.handle_notice.matched",
+                start=start,
+                group_id=context.group_id or "-",
+                user_id=context.user_id,
+                event_trigger=event_trigger,
+                event_match_ms=f"{match_elapsed:.2f}",
+                response_item_id=selected.response.id,
+            )
             return build_passive_response(
                 selected,
                 context=context,
                 message_type="event",
             )
+    log_perf(
+        "passive.handle_notice.miss",
+        start=start,
+        group_id=context.group_id or "-",
+        user_id=context.user_id,
+        event_triggers=len(event_triggers),
+    )
     return None

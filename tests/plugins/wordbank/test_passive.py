@@ -6,10 +6,12 @@ from nonebot.adapters.onebot.v11 import Bot
 import pytest
 
 from src.plugins.wordbank.handlers.passive import (
+    PassiveImageRef,
     build_passive_response,
     build_rule_context,
     handle_passive_message,
     handle_passive_notice,
+    resolve_message_image_ids,
 )
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -199,6 +201,52 @@ async def test_handle_passive_message_uses_image_name_hints_before_download() ->
     )
     assert fetch_image_bytes.await_count == 0
     assert resolve_canonical_id.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_resolve_message_image_ids_reuses_shared_http_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.wordbank.handlers import passive as passive_module
+
+    created_clients: list[object] = []
+
+    class _FakeAsyncClient:
+        def __init__(self, *, timeout: float) -> None:
+            self.timeout = timeout
+            self.closed = False
+            created_clients.append(self)
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    fetch_image_bytes = AsyncMock(side_effect=[b"first", b"second"])
+    resolve_canonical_id = Mock(side_effect=[7, 8])
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            resolve_canonical_id_from_hints=Mock(return_value=None),
+            resolve_canonical_id=resolve_canonical_id,
+        ),
+    )
+    monkeypatch.setattr(passive_module.httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setattr(passive_module, "fetch_image_bytes", fetch_image_bytes)
+
+    result = await resolve_message_image_ids(
+        media_service,
+        (
+            PassiveImageRef(url="https://example.test/1.png"),
+            PassiveImageRef(url="https://example.test/2.png"),
+        ),
+    )
+
+    assert result == {0: 7, 1: 8}
+    assert len(created_clients) == 1
+    shared_client = created_clients[0]
+    assert fetch_image_bytes.await_count == 2
+    assert fetch_image_bytes.await_args_list[0].kwargs["client"] is shared_client
+    assert fetch_image_bytes.await_args_list[1].kwargs["client"] is shared_client
+    assert getattr(shared_client, "closed") is True
 
 
 @pytest.mark.asyncio

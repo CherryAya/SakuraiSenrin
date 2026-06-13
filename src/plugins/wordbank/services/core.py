@@ -25,6 +25,7 @@ from src.plugins.wordbank.database.types import (
     WordbankSearchPage,
     WordbankSearchRequest,
 )
+from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.plugins.wordbank.message_model import (
     MessageShape,
     fingerprint_shape,
@@ -102,15 +103,48 @@ class WordbankService:
 
     async def initialize(self) -> None:
         if self._initialized:
+            log_perf("service.initialize.cached", initialized=True)
             return
+        start = perf_start()
+        init_tables_start = perf_start()
         await self.repository.init_all_tables()
+        init_tables_ms = elapsed_ms(init_tables_start)
+        search_index_start = perf_start()
         await self.repository.ensure_search_index()
+        search_index_ms = elapsed_ms(search_index_start)
+        rebuild_start = perf_start()
         await self.rebuild_index()
+        rebuild_ms = elapsed_ms(rebuild_start)
         self._initialized = True
+        log_perf(
+            "service.initialize.done",
+            start=start,
+            init_tables_ms=f"{init_tables_ms:.2f}",
+            ensure_search_index_ms=f"{search_index_ms:.2f}",
+            rebuild_index_ms=f"{rebuild_ms:.2f}",
+            runtime_groups=len(self._index.groups),
+            exact_buckets=len(self._index.exact_match),
+        )
 
     async def rebuild_index(self) -> None:
+        start = perf_start()
         records = await self.repository.list_enabled_entries()
         self._index = RuntimeIndex.build(records)
+        response_count = sum(
+            len(group.responses) for group in self._index.groups.values()
+        )
+        trigger_count = sum(
+            len(variants) for variants in self._index.exact_match.values()
+        )
+        log_perf(
+            "service.rebuild_index.done",
+            start=start,
+            source_records=len(records),
+            runtime_groups=len(self._index.groups),
+            runtime_responses=response_count,
+            runtime_triggers=trigger_count,
+            exact_buckets=len(self._index.exact_match),
+        )
 
     def mark_dirty(self, trigger_group_id: int | None = None) -> None:
         if trigger_group_id is None:
@@ -119,19 +153,41 @@ class WordbankService:
             self._dirty_group_ids.add(trigger_group_id)
         if self._rebuild_task is not None and not self._rebuild_task.done():
             self._rebuild_task.cancel()
+            log_perf(
+                "service.mark_dirty.cancel_rebuild_task",
+                trigger_group_id=trigger_group_id or "all",
+            )
         self._rebuild_task = asyncio.create_task(self._debounced_rebuild())
+        log_perf(
+            "service.mark_dirty.scheduled",
+            trigger_group_id=trigger_group_id or "all",
+            pending_groups=len(self._dirty_group_ids),
+        )
 
     async def _debounced_rebuild(self) -> None:
+        start = perf_start()
         await asyncio.sleep(self.debounce_seconds)
         if not self._dirty_group_ids:
             await self.rebuild_index()
+            log_perf(
+                "service.debounced_rebuild.full",
+                start=start,
+                debounce_seconds=self.debounce_seconds,
+            )
             return
         dirty_group_ids = tuple(self._dirty_group_ids)
         self._dirty_group_ids.clear()
         for trigger_group_id in dirty_group_ids:
             await self._refresh_runtime_group(trigger_group_id)
+        log_perf(
+            "service.debounced_rebuild.partial",
+            start=start,
+            debounce_seconds=self.debounce_seconds,
+            refreshed_groups=len(dirty_group_ids),
+        )
 
     async def _refresh_runtime_group(self, trigger_group_id: int) -> None:
+        start = perf_start()
         current_group = self._index.groups.pop(trigger_group_id, None)
         if current_group is not None:
             for variants in self._index.exact_match.values():
@@ -156,12 +212,30 @@ class WordbankService:
             ]
             for key in empty_keys:
                 self._index.exact_match.pop(key, None)
+            log_perf(
+                "service.refresh_runtime_group.removed",
+                start=start,
+                trigger_group_id=trigger_group_id,
+                had_runtime_group=current_group is not None,
+            )
             return
         refreshed = RuntimeIndex.build([record])
         if trigger_group_id in refreshed.groups:
             self._index.groups[trigger_group_id] = refreshed.groups[trigger_group_id]
         for key, variants in refreshed.exact_match.items():
             self._index.exact_match.setdefault(key, []).extend(variants)
+        refreshed_group = refreshed.groups.get(trigger_group_id)
+        log_perf(
+            "service.refresh_runtime_group.updated",
+            start=start,
+            trigger_group_id=trigger_group_id,
+            response_count=(
+                len(refreshed_group.responses) if refreshed_group is not None else 0
+            ),
+            trigger_variants=sum(
+                len(variants) for variants in refreshed.exact_match.values()
+            ),
+        )
 
     async def add_message_entry(
         self,
@@ -173,6 +247,7 @@ class WordbankService:
         is_group: bool,
         raw_rule: dict[str, Any] | None = None,
     ) -> WordbankAddResult:
+        start = perf_start()
         if trigger_shape.is_empty():
             raise WordbankUserError(
                 "触发词不能为空", key="wordbank.error.trigger_empty"
@@ -198,6 +273,19 @@ class WordbankService:
             created_by=user_id,
         )
         self.mark_dirty(created.trigger_group_id)
+        log_perf(
+            "service.add_message_entry.done",
+            start=start,
+            trigger_group_id=created.trigger_group_id,
+            response_item_id=created.response_item_id,
+            status=created.status,
+            scope=rule.scope,
+            probability=f"{rule.probability:g}",
+            weight=rule.weight,
+            trigger_atoms=len(trigger_shape.atoms),
+            response_atoms=len(response_shape.atoms),
+            is_group=is_group,
+        )
         return WordbankAddResult(
             trigger_group_id=created.trigger_group_id,
             trigger_variant_id=created.trigger_variant_id,
@@ -406,6 +494,7 @@ class WordbankService:
             return
         now = get_current_time()
         shard_key = datetime.fromtimestamp(now, UTC).strftime("%Y_%m")
+        start = perf_start()
         await self.repository.record_message_ref(
             {
                 "ref_kind": ref_kind,
@@ -428,6 +517,16 @@ class WordbankService:
                 "created_at": now,
                 "updated_at": now,
             }
+        )
+        log_perf(
+            "service.record_message_ref.done",
+            start=start,
+            ref_kind=ref_kind,
+            message_id=message_id,
+            shard_key=shard_key,
+            trigger_group_id=trigger_group_id,
+            response_item_id=response_item_id,
+            message_type=message_type,
         )
 
     async def get_message_ref(
@@ -462,7 +561,20 @@ class WordbankService:
         limit: int = 10,
         offset: int = 0,
     ) -> list[WordbankSearchItem]:
-        return await self.repository.search(request, limit=limit, offset=offset)
+        start = perf_start()
+        items = await self.repository.search(request, limit=limit, offset=offset)
+        log_perf(
+            "service.search.done",
+            start=start,
+            keyword=request.keyword or "-",
+            field=request.field,
+            creator_id=request.creator_id or "-",
+            has_image=request.has_image,
+            limit=limit,
+            offset=offset,
+            items=len(items),
+        )
+        return items
 
     async def search_page(
         self,
@@ -471,7 +583,21 @@ class WordbankService:
         limit: int = 10,
         offset: int = 0,
     ) -> WordbankSearchPage:
-        return await self.repository.search_page(request, limit=limit, offset=offset)
+        start = perf_start()
+        page = await self.repository.search_page(request, limit=limit, offset=offset)
+        log_perf(
+            "service.search_page.done",
+            start=start,
+            keyword=request.keyword or "-",
+            field=request.field,
+            creator_id=request.creator_id or "-",
+            has_image=request.has_image,
+            limit=limit,
+            offset=offset,
+            items=len(page.items),
+            total_count=page.total_count,
+        )
+        return page
 
     async def list_pending_entries(
         self,
@@ -499,13 +625,25 @@ class WordbankService:
         context: RuleContext,
         message_type: str = "message",
     ) -> SelectedMatch | None:
+        start = perf_start()
         fingerprint = fingerprint_shape(shape)
         candidates = self._index.find_message(fingerprint)
-        return await self._select_and_log(
+        selected = await self._select_and_log(
             candidates,
             context=context,
             message_type=message_type,
         )
+        log_perf(
+            "service.match_message.done",
+            start=start,
+            message_type=message_type,
+            group_id=context.group_id or "-",
+            user_id=context.user_id,
+            shape_atoms=len(shape.atoms),
+            candidate_groups=len(candidates),
+            selected_response_id=selected.response.id if selected is not None else "-",
+        )
+        return selected
 
     async def _select_and_log(
         self,
@@ -515,15 +653,30 @@ class WordbankService:
         message_type: str,
     ) -> SelectedMatch | None:
         now = get_current_time()
+        start = perf_start()
+        call_count_start = perf_start()
         call_counts = await self._current_call_counts(candidates, now_ts=now)
+        call_count_ms = elapsed_ms(call_count_start)
+        select_start = perf_start()
         selected = self._index.select(
             candidates,
             context=context,
             call_counts=call_counts,
             rng=self.rng,
         )
+        select_ms = elapsed_ms(select_start)
         if selected is None:
+            log_perf(
+                "service.select_and_log.miss",
+                start=start,
+                message_type=message_type,
+                candidate_groups=len(candidates),
+                call_count_windows=len(call_counts),
+                call_count_ms=f"{call_count_ms:.2f}",
+                select_ms=f"{select_ms:.2f}",
+            )
             return None
+        save_log_start = perf_start()
         await self.repository.save_log(
             WordbankLogPayload(
                 trigger_group_id=selected.candidate.group.id,
@@ -536,7 +689,20 @@ class WordbankService:
             ),
             policy=WritePolicy.IMMEDIATE,
         )
+        save_log_ms = elapsed_ms(save_log_start)
         self._increment_call_count_cache(selected.response, now_ts=now)
+        log_perf(
+            "service.select_and_log.hit",
+            start=start,
+            message_type=message_type,
+            candidate_groups=len(candidates),
+            call_count_windows=len(call_counts),
+            call_count_ms=f"{call_count_ms:.2f}",
+            select_ms=f"{select_ms:.2f}",
+            save_log_ms=f"{save_log_ms:.2f}",
+            trigger_group_id=selected.candidate.group.id,
+            response_item_id=selected.response.id,
+        )
         return selected
 
     async def _current_call_counts(
@@ -545,9 +711,11 @@ class WordbankService:
         *,
         now_ts: int,
     ) -> dict[int, int]:
+        start = perf_start()
         self._prune_call_count_cache(now_ts)
         counts: dict[int, int] = {}
         missing_windows: dict[int, int] = {}
+        cache_hits = 0
         for candidate in candidates:
             for response in candidate.group.responses:
                 if response.id in counts:
@@ -563,6 +731,7 @@ class WordbankService:
                 cached = self._call_count_cache.get(cache_key)
                 if cached is not None and cached.expires_at >= now_ts:
                     counts[response.id] = cached.count
+                    cache_hits += 1
                     continue
                 missing_windows[response.id] = window
         if missing_windows:
@@ -579,6 +748,14 @@ class WordbankService:
                     expires_at=expires_at,
                     counted_until=now_ts,
                 )
+        log_perf(
+            "service.current_call_counts.done",
+            start=start,
+            candidates=len(candidates),
+            cached=len(counts) - len(missing_windows),
+            cache_hits=cache_hits,
+            queried=len(missing_windows),
+        )
         return counts
 
     def _prune_call_count_cache(self, now_ts: int) -> None:
@@ -589,6 +766,12 @@ class WordbankService:
         ]
         for cache_key in expired_keys:
             self._call_count_cache.pop(cache_key, None)
+        if expired_keys:
+            log_perf(
+                "service.prune_call_count_cache.done",
+                expired=len(expired_keys),
+                remaining=len(self._call_count_cache),
+            )
 
     def _increment_call_count_cache(
         self,
