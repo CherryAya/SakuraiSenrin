@@ -46,8 +46,18 @@ async def test_run_backup_main_executes_force_flow(
         restic_snapshot_id = "snap-1"
 
     class _Service:
-        async def run(self, plan: object, *, force: bool = False) -> object:
-            captured["run"] = {"plan": plan, "force": force}
+        async def run(
+            self,
+            plan: object,
+            *,
+            force: bool = False,
+            stream_output: bool = False,
+        ) -> object:
+            captured["run"] = {
+                "plan": plan,
+                "force": force,
+                "stream_output": stream_output,
+            }
             return _Result()
 
     monkeypatch.setattr(run_backup_script.nonebot, "init", lambda: None)
@@ -78,7 +88,11 @@ async def test_run_backup_main_executes_force_flow(
 
     await run_backup_script.main()
 
-    assert captured["run"] == {"plan": "plan-object", "force": True}
+    assert captured["run"] == {
+        "plan": "plan-object",
+        "force": True,
+        "stream_output": True,
+    }
     assert "backup completed: backup-1" in str(captured["success"])
     assert any("manifest:" in str(item) for item in captured["info"])
     assert any("restic snapshot:" in str(item) for item in captured["info"])

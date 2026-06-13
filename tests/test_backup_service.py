@@ -122,6 +122,100 @@ async def test_backup_service_runs_restic_and_dispatches_success_event(
     assert events[-1].__class__.__name__ == "BackupSucceeded"
 
 
+async def test_backup_service_streams_restic_output_in_real_time(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.db"
+    _create_sqlite(source)
+    info_logs: list[str] = []
+    warning_logs: list[str] = []
+
+    class _DB:
+        def iter_backup_sources(self) -> list[BackupSource]:
+            return [BackupSource(namespace="core_db", kind="core", path=source)]
+
+    class _Reader:
+        def __init__(self, lines: list[bytes]) -> None:
+            self._lines = list(lines)
+
+        async def readline(self) -> bytes:
+            if not self._lines:
+                return b""
+            return self._lines.pop(0)
+
+    class _Process:
+        def __init__(
+            self,
+            *,
+            stdout_lines: list[bytes],
+            stderr_lines: list[bytes],
+            returncode: int = 0,
+        ) -> None:
+            self.stdout = _Reader(stdout_lines)
+            self.stderr = _Reader(stderr_lines)
+            self.returncode = returncode
+
+        async def wait(self) -> int:
+            return self.returncode
+
+    async def _create_subprocess_exec(*args: object, **kwargs: object) -> _Process:
+        _ = kwargs
+        if args[1] == "backup":
+            return _Process(
+                stdout_lines=[
+                    (
+                        b'{"message_type":"status","percent_done":0.5,'
+                        b'"files_done":5,"total_files":10,'
+                        b'"bytes_done":512,"total_bytes":1024}\n'
+                    ),
+                    b'{"message_type":"summary","snapshot_id":"snap123"}\n',
+                ],
+                stderr_lines=[],
+            )
+        return _Process(
+            stdout_lines=[],
+            stderr_lines=[b"pruning old snapshots\n"],
+        )
+
+    monkeypatch.setattr(
+        backup_module.shutil,
+        "which",
+        lambda command: f"/bin/{command}",
+    )
+    monkeypatch.setattr(
+        backup_module.asyncio,
+        "create_subprocess_exec",
+        _create_subprocess_exec,
+    )
+    monkeypatch.setattr(backup_module.logger, "info", info_logs.append)
+    monkeypatch.setattr(backup_module.logger, "warning", warning_logs.append)
+
+    service = BackupService(
+        databases=cast(Sequence[BaseDB], [_DB()]),
+        local_root=tmp_path / "backup",
+        restic=ResticConfig(
+            repository="s3:https://example.test/bucket",
+            password="secret",
+        ),
+    )
+
+    result = await service.run(
+        BackupPlan(
+            id="test",
+            enabled=True,
+            retention=BackupRetention(keep_daily=1, keep_weekly=1, keep_monthly=1),
+        ),
+        stream_output=True,
+    )
+
+    assert result is not None
+    assert result.restic_snapshot_id == "snap123"
+    assert any("progress=50.0%" in message for message in info_logs)
+    assert any("snapshot=snap123" in message for message in info_logs)
+    assert warning_logs == ["[Backup] pruning old snapshots"]
+
+
 async def test_backup_service_lists_remote_snapshots(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -96,6 +96,7 @@ class BackupService:
         plan: BackupPlan,
         *,
         force: bool = False,
+        stream_output: bool = False,
     ) -> BackupResult | None:
         run_id = self._new_run_id(plan.id)
         started_at = get_current_time()
@@ -130,12 +131,18 @@ class BackupService:
             manifest.write_json(manifest_path)
             manifest.write_json(staging_manifest_path)
 
-            snapshot_id = await self._run_restic_backup(staging_dir)
+            snapshot_id = await self._run_restic_backup(
+                staging_dir,
+                stream_output=stream_output,
+            )
             manifest.restic_snapshot_id = snapshot_id
             manifest.write_json(manifest_path)
             manifest.write_json(staging_manifest_path)
 
-            await self._run_restic_forget(plan.retention)
+            await self._run_restic_forget(
+                plan.retention,
+                stream_output=stream_output,
+            )
             shutil.rmtree(staging_dir, ignore_errors=True)
 
             finished_at = get_current_time()
@@ -184,30 +191,32 @@ class BackupService:
                 sources.append(source)
         return sources
 
-    async def _run_restic_backup(self, staging_dir: Path) -> str | None:
+    async def _run_restic_backup(
+        self,
+        staging_dir: Path,
+        *,
+        stream_output: bool = False,
+    ) -> str | None:
         self._validate_restic_config()
-        env = self._restic_env()
-        process = await asyncio.create_subprocess_exec(
+        stdout, stderr, returncode = await self._run_restic_process(
             "restic",
             "backup",
             str(staging_dir),
             "--json",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
+            stream_output=stream_output,
         )
-        stdout, stderr = await process.communicate()
-        if process.returncode != 0:
-            message = stderr.decode("utf-8", errors="ignore") or stdout.decode(
-                "utf-8",
-                errors="ignore",
-            )
+        if returncode != 0:
+            message = stderr or stdout
             raise RuntimeError(f"restic backup failed: {message.strip()}")
-        return _parse_restic_snapshot_id(stdout.decode("utf-8", errors="ignore"))
+        return _parse_restic_snapshot_id(stdout)
 
-    async def _run_restic_forget(self, retention: BackupRetention) -> None:
-        env = self._restic_env()
-        process = await asyncio.create_subprocess_exec(
+    async def _run_restic_forget(
+        self,
+        retention: BackupRetention,
+        *,
+        stream_output: bool = False,
+    ) -> None:
+        stdout, stderr, returncode = await self._run_restic_process(
             "restic",
             "forget",
             "--prune",
@@ -217,16 +226,10 @@ class BackupService:
             str(retention.keep_weekly),
             "--keep-monthly",
             str(retention.keep_monthly),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
+            stream_output=stream_output,
         )
-        stdout, stderr = await process.communicate()
-        if process.returncode != 0:
-            message = stderr.decode("utf-8", errors="ignore") or stdout.decode(
-                "utf-8",
-                errors="ignore",
-            )
+        if returncode != 0:
+            message = stderr or stdout
             raise RuntimeError(f"restic forget failed: {message.strip()}")
 
     async def restore(
@@ -297,6 +300,61 @@ class BackupService:
     def _new_run_id(self, plan_id: str) -> str:
         return f"{plan_id}-{get_current_time()}-{uuid.uuid4().hex[:8]}"
 
+    async def _run_restic_process(
+        self,
+        *args: str,
+        stream_output: bool = False,
+    ) -> tuple[str, str, int]:
+        process = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=self._restic_env(),
+        )
+        if not stream_output:
+            stdout, stderr = await process.communicate()
+            returncode = process.returncode
+            assert returncode is not None
+            return (
+                stdout.decode("utf-8", errors="ignore"),
+                stderr.decode("utf-8", errors="ignore"),
+                returncode,
+            )
+
+        assert process.stdout is not None
+        assert process.stderr is not None
+        stdout_task = asyncio.create_task(
+            self._read_restic_stream(process.stdout, is_error=False)
+        )
+        stderr_task = asyncio.create_task(
+            self._read_restic_stream(process.stderr, is_error=True)
+        )
+        returncode = await process.wait()
+        stdout, stderr = await asyncio.gather(stdout_task, stderr_task)
+        return stdout, stderr, returncode
+
+    async def _read_restic_stream(
+        self,
+        stream: asyncio.StreamReader,
+        *,
+        is_error: bool,
+    ) -> str:
+        chunks: list[str] = []
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            text = line.decode("utf-8", errors="ignore")
+            chunks.append(text)
+            rendered = _format_restic_output_line(text)
+            if not rendered:
+                continue
+            if is_error:
+                logger.warning(f"[Backup] {rendered}")
+            else:
+                logger.info(f"[Backup] {rendered}")
+        return "".join(chunks)
+
 
 def _parse_restic_snapshot_id(output: str) -> str | None:
     for line in reversed(output.splitlines()):
@@ -310,6 +368,72 @@ def _parse_restic_snapshot_id(output: str) -> str | None:
         if isinstance(snapshot_id, str) and snapshot_id:
             return snapshot_id
     return None
+
+
+def _format_restic_output_line(raw_line: str) -> str:
+    line = raw_line.strip()
+    if not line:
+        return ""
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        return line
+    if not isinstance(payload, dict):
+        return line
+
+    message_type = payload.get("message_type")
+    if message_type == "status":
+        parts = ["restic status"]
+        percent_done = payload.get("percent_done")
+        if isinstance(percent_done, (int, float)):
+            parts.append(f"progress={percent_done * 100:.1f}%")
+        files_done = payload.get("files_done")
+        total_files = payload.get("total_files")
+        if isinstance(files_done, int) and isinstance(total_files, int):
+            parts.append(f"files={files_done}/{total_files}")
+        bytes_done = payload.get("bytes_done")
+        total_bytes = payload.get("total_bytes")
+        if isinstance(bytes_done, int) and isinstance(total_bytes, int):
+            parts.append(
+                f"bytes={_format_bytes(bytes_done)}/{_format_bytes(total_bytes)}"
+            )
+        current_files = payload.get("current_files")
+        if isinstance(current_files, list) and current_files:
+            current = current_files[0]
+            if isinstance(current, str) and current:
+                parts.append(f"current={current}")
+        return " ".join(parts)
+
+    if message_type == "summary":
+        parts = ["restic summary"]
+        snapshot_id = payload.get("snapshot_id")
+        if isinstance(snapshot_id, str) and snapshot_id:
+            parts.append(f"snapshot={snapshot_id}")
+        files_total = payload.get("total_files_processed")
+        if isinstance(files_total, int):
+            parts.append(f"files={files_total}")
+        bytes_total = payload.get("total_bytes_processed")
+        if isinstance(bytes_total, int):
+            parts.append(f"bytes={_format_bytes(bytes_total)}")
+        return " ".join(parts)
+
+    if message_type == "error":
+        error = payload.get("error")
+        if isinstance(error, str) and error:
+            return f"restic error: {error}"
+
+    return line
+
+
+def _format_bytes(size: int) -> str:
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            if unit == "B":
+                return f"{int(value)}{unit}"
+            return f"{value:.1f}{unit}"
+        value /= 1024
+    return f"{size}B"
 
 
 def _parse_restic_snapshots(output: str) -> list[ResticSnapshotInfo]:

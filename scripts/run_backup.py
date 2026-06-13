@@ -33,7 +33,7 @@ async def main() -> None:
 
     service = build_backup_service_from_config()
     plan = build_default_backup_plan()
-    result = await service.run(plan, force=args.force)
+    result = await service.run(plan, force=args.force, stream_output=True)
     if result is None:
         logger.info("backup skipped")
         return
