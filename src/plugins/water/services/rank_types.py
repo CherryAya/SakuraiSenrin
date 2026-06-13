@@ -31,6 +31,15 @@ PERIOD_LABELS: dict[WaterRankPeriod, str] = {
     "total": "总榜",
 }
 
+SHORTCUT_PERIOD_PREFIXES: dict[WaterRankPeriod, str] = {
+    "day": "今日",
+    "week": "本周",
+    "month": "本月",
+    "season": "本季",
+    "year": "本年",
+    "total": "总",
+}
+
 SUBJECT_TOKENS: dict[str, WaterRankSubject] = {
     "用户榜": "user",
     "群聊榜": "group",
@@ -117,20 +126,37 @@ class WaterRankQuerySpec:
         )
 
 
-RANK_SHORTCUTS: tuple[WaterRankShortcut, ...] = (
-    WaterRankShortcut(("今日水王",), "user", "group", "day"),
-    WaterRankShortcut(("本周水王",), "user", "group", "week"),
-    WaterRankShortcut(("本月水王",), "user", "group", "month"),
-    WaterRankShortcut(("本季水王",), "user", "group", "season"),
-    WaterRankShortcut(("今日群榜", "今日群聊榜"), "group", "global", "day"),
-    WaterRankShortcut(("本周群榜", "本周群聊榜"), "group", "global", "week"),
-    WaterRankShortcut(("本月群榜", "本月群聊榜"), "group", "global", "month"),
-    WaterRankShortcut(("本季群榜", "本季群聊榜"), "group", "global", "season"),
-    WaterRankShortcut(("今日矩阵榜",), "matrix", "global", "day"),
-    WaterRankShortcut(("本周矩阵榜",), "matrix", "global", "week"),
-    WaterRankShortcut(("本月矩阵榜",), "matrix", "global", "month"),
-    WaterRankShortcut(("本季矩阵榜",), "matrix", "global", "season"),
-)
+def _build_rank_shortcuts() -> tuple[WaterRankShortcut, ...]:
+    visible_periods: tuple[WaterRankPeriod, ...] = DEFAULT_VISIBLE_RANK_PERIODS
+    shortcuts: list[WaterRankShortcut] = []
+
+    for period in visible_periods:
+        prefix = SHORTCUT_PERIOD_PREFIXES[period]
+        shortcuts.extend(
+            (
+                WaterRankShortcut((f"{prefix}水王",), "user", "group", period),
+                WaterRankShortcut((f"{prefix}矩阵水王",), "user", "matrix", period),
+                WaterRankShortcut((f"{prefix}全局水王",), "user", "global", period),
+                WaterRankShortcut(
+                    (f"{prefix}矩阵群榜", f"{prefix}矩阵群聊榜"),
+                    "group",
+                    "matrix",
+                    period,
+                ),
+                WaterRankShortcut(
+                    (f"{prefix}群榜", f"{prefix}群聊榜"),
+                    "group",
+                    "global",
+                    period,
+                ),
+                WaterRankShortcut((f"{prefix}矩阵榜",), "matrix", "global", period),
+            )
+        )
+
+    return tuple(shortcuts)
+
+
+RANK_SHORTCUTS: tuple[WaterRankShortcut, ...] = _build_rank_shortcuts()
 
 RANK_SHORTCUT_ALIAS_MAP: dict[str, WaterRankShortcut] = {
     alias: shortcut for shortcut in RANK_SHORTCUTS for alias in shortcut.aliases

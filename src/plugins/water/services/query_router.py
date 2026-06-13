@@ -707,10 +707,20 @@ class WaterQueryRouter:
 
     @staticmethod
     def _build_shortcut_lines() -> list[str]:
+        grouped: dict[tuple[WaterRankSubject, WaterRankScope], list[str]] = {}
+        for shortcut in RANK_SHORTCUTS:
+            key = (shortcut.subject, shortcut.scope)
+            grouped.setdefault(key, []).append(
+                " / ".join(f"#{alias}" for alias in shortcut.aliases)
+            )
         return [
-            f"{' / '.join(f'#{alias}' for alias in shortcut.aliases)} -> "
-            f"{shortcut.query_spec.normalized_command}"
-            for shortcut in RANK_SHORTCUTS
+            (
+                f"{SUBJECT_LABELS[subject]} / {SCOPE_LABELS[scope]}: "
+                f"{' ; '.join(grouped[(subject, scope)])}"
+            )
+            for subject in ("user", "group", "matrix")
+            for scope in ("group", "matrix", "global")
+            if (subject, scope) in grouped
         ]
 
     @staticmethod

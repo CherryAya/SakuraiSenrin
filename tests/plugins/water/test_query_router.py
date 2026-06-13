@@ -5,7 +5,7 @@ import pytest
 
 from src.plugins.water.database.repo import WaterActivitySeasonRecord
 from src.plugins.water.services.query_router import WaterQueryRouter, WaterQuerySpec
-from src.plugins.water.services.rank_types import WaterRankQuerySpec
+from src.plugins.water.services.rank_types import RANK_SHORTCUTS, WaterRankQuerySpec
 from src.plugins.water.services.season import SeasonLookupAmbiguous
 
 
@@ -31,6 +31,36 @@ def test_parse_rank_menu_and_any_order_rank_spec() -> None:
     )
     assert shortcut_errors == ()
 
+    matrix_user_shortcut, matrix_user_errors = router.parse_shortcut_command(
+        "#今日矩阵水王"
+    )
+    assert matrix_user_shortcut == WaterRankQuerySpec(
+        subject="user",
+        scope="matrix",
+        period="day",
+    )
+    assert matrix_user_errors == ()
+
+    global_user_shortcut, global_user_errors = router.parse_shortcut_command(
+        "#本月全局水王"
+    )
+    assert global_user_shortcut == WaterRankQuerySpec(
+        subject="user",
+        scope="global",
+        period="month",
+    )
+    assert global_user_errors == ()
+
+    matrix_group_shortcut, matrix_group_errors = router.parse_shortcut_command(
+        "#本周矩阵群聊榜"
+    )
+    assert matrix_group_shortcut == WaterRankQuerySpec(
+        subject="group",
+        scope="matrix",
+        period="week",
+    )
+    assert matrix_group_errors == ()
+
 
 def test_rank_menu_does_not_send_working() -> None:
     router = WaterQueryRouter()
@@ -55,6 +85,9 @@ def test_rank_guided_prompts_follow_locale_catalog() -> None:
     assert "合法之組" in menu
     assert "捷徑入口" in menu
     assert "#今日水王" in menu
+    assert "#今日矩阵水王" in menu
+    assert "#今日全局水王" in menu
+    assert "#今日矩阵群榜 / #今日矩阵群聊榜" in menu
     assert "季榜" in menu
     assert "#水王 矩阵榜 全局 总榜" not in menu
     assert "你刚刚选的是" in summary
@@ -101,6 +134,37 @@ def test_parse_rank_errors() -> None:
         WaterRankQuerySpec(subject="user", scope="group", period="day"),
         ("shortcut_with_args", "今日水王"),
     )
+
+
+def test_rank_shortcuts_cover_all_visible_legal_combinations() -> None:
+    covered = {(item.subject, item.scope, item.period) for item in RANK_SHORTCUTS}
+
+    assert covered == {
+        ("user", "group", "day"),
+        ("user", "group", "week"),
+        ("user", "group", "month"),
+        ("user", "group", "season"),
+        ("user", "matrix", "day"),
+        ("user", "matrix", "week"),
+        ("user", "matrix", "month"),
+        ("user", "matrix", "season"),
+        ("user", "global", "day"),
+        ("user", "global", "week"),
+        ("user", "global", "month"),
+        ("user", "global", "season"),
+        ("group", "matrix", "day"),
+        ("group", "matrix", "week"),
+        ("group", "matrix", "month"),
+        ("group", "matrix", "season"),
+        ("group", "global", "day"),
+        ("group", "global", "week"),
+        ("group", "global", "month"),
+        ("group", "global", "season"),
+        ("matrix", "global", "day"),
+        ("matrix", "global", "week"),
+        ("matrix", "global", "month"),
+        ("matrix", "global", "season"),
+    }
 
 
 @pytest.mark.asyncio
