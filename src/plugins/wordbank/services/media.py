@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import md5
 from io import BytesIO
@@ -219,6 +219,16 @@ class ObjectStorageWordbankMediaStorage:
     def _build_key(self, md5_hex: str, extension: str) -> str:
         return f"{self.key_prefix}/{md5_hex}{extension}"
 
+    def build_key(self, md5_hex: str, extension: str) -> str:
+        return self._build_key(md5_hex, extension)
+
+    def build_uri(self, md5_hex: str, extension: str) -> str:
+        key = self._build_key(md5_hex, extension)
+        bucket = self.bucket.strip("/")
+        if bucket:
+            return f"{self.object_storage.provider}://{bucket}/{key}"
+        return f"{self.object_storage.provider}://{key}"
+
     def _key_from_uri(self, storage_path: str) -> str | None:
         if not storage_path.startswith(f"{self.object_storage.provider}://"):
             return None
@@ -310,6 +320,9 @@ class ObjectStorageWordbankMediaStorage:
             return await self.object_storage.exists(key)
         except Exception:
             return False
+
+    async def list_objects(self) -> list[StorageObject]:
+        return await self.object_storage.list_objects(f"{self.key_prefix}/")
 
 
 R2WordbankMediaStorage = ObjectStorageWordbankMediaStorage
@@ -1311,6 +1324,64 @@ class WordbankMediaService:
         if updated is not None:
             self._cache_image(updated)
         return updated
+
+    async def list_remote_objects_by_key(self) -> dict[str, StorageObject]:
+        if self.remote_storage is None:
+            return {}
+        objects = await self.remote_storage.list_objects()
+        return {item.key: item for item in objects}
+
+    def build_expected_remote_key(self, image: WordbankImageRecord) -> str | None:
+        if self.remote_storage is None:
+            return None
+        extension = _extension_from_storage_path(
+            image.remote_storage_path or image.storage_path
+        )
+        return self.remote_storage.build_key(image.md5, extension)
+
+    async def mark_image_remote_synced(
+        self,
+        image: WordbankImageRecord,
+        remote_object: StorageObject,
+        *,
+        synced_at: int | None = None,
+    ) -> WordbankImageRecord | None:
+        storage_path = (
+            image.storage_path
+            if image.storage_path and not _is_remote_uri(image.storage_path)
+            else remote_object.uri
+        )
+        updated = await self.repository.update_image_remote_sync(
+            image.id,
+            remote_storage_path=remote_object.uri,
+            remote_sync_status=REMOTE_SYNC_SYNCED,
+            remote_synced_at=synced_at or get_current_time(),
+            remote_etag=remote_object.etag or "",
+            remote_object_size=remote_object.size,
+            storage_path=storage_path,
+        )
+        if updated is not None:
+            self._cache_image(updated)
+        return updated
+
+    async def reconcile_image_with_remote_inventory(
+        self,
+        image: WordbankImageRecord,
+        remote_objects_by_key: Mapping[str, StorageObject],
+        *,
+        synced_at: int | None = None,
+    ) -> WordbankImageRecord | None:
+        expected_key = self.build_expected_remote_key(image)
+        if not expected_key:
+            return None
+        remote_object = remote_objects_by_key.get(expected_key)
+        if remote_object is None:
+            return None
+        return await self.mark_image_remote_synced(
+            image,
+            remote_object,
+            synced_at=synced_at,
+        )
 
     async def retry_remote_sync(
         self,

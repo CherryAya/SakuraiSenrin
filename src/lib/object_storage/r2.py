@@ -134,6 +134,54 @@ class R2ObjectStorageClient:
                 return False
         return True
 
+    async def list_objects(self, prefix: str) -> list[StorageObject]:
+        _, _, bucket, _ = self._require_config()
+        normalized_prefix = prefix.strip("/")
+        continuation_token: str | None = None
+        objects: list[StorageObject] = []
+        async with self._client_context() as client:
+            while True:
+                params: dict[str, Any] = {
+                    "Bucket": bucket,
+                    "Prefix": normalized_prefix,
+                    "MaxKeys": 1000,
+                }
+                if continuation_token:
+                    params["ContinuationToken"] = continuation_token
+                response = await client.list_objects_v2(**params)
+                for item in response.get("Contents", []) or []:
+                    key = item.get("Key")
+                    if not isinstance(key, str) or not key:
+                        continue
+                    size = item.get("Size")
+                    etag = item.get("ETag")
+                    objects.append(
+                        StorageObject(
+                            provider=self.provider,
+                            bucket=bucket,
+                            key=key,
+                            uri=self._uri(key),
+                            public_url=self._public_url(key),
+                            etag=(
+                                str(etag).strip('"')
+                                if isinstance(etag, str) and etag
+                                else None
+                            ),
+                            size=int(size) if isinstance(size, int) else 0,
+                        )
+                    )
+                if not response.get("IsTruncated"):
+                    break
+                next_token = response.get("NextContinuationToken")
+                continuation_token = (
+                    str(next_token)
+                    if isinstance(next_token, str) and next_token
+                    else None
+                )
+                if continuation_token is None:
+                    break
+        return objects
+
     async def presign_get_url(self, key: str, *, expires_in: int = 3600) -> str:
         _, _, bucket, _ = self._require_config()
         async with self._client_context() as client:

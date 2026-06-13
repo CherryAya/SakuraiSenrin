@@ -242,6 +242,7 @@ class _ObjectStorage:
 
     def __init__(self, *, provider: str = "r2", fail: bool = False) -> None:
         self.provider = provider
+        self.bucket = "bucket"
         self.fail = fail
         self.objects: dict[str, bytes] = {}
         self.content_types: dict[str, str | None] = {}
@@ -276,6 +277,22 @@ class _ObjectStorage:
 
     async def exists(self, key: str) -> bool:
         return key in self.objects
+
+    async def list_objects(self, prefix: str) -> list[StorageObject]:
+        normalized_prefix = prefix.strip("/")
+        return [
+            StorageObject(
+                provider=self.provider,
+                bucket=self.bucket,
+                key=key,
+                uri=f"{self.provider}://{self.bucket}/{key}",
+                public_url=None,
+                etag="etag",
+                size=len(data),
+            )
+            for key, data in self.objects.items()
+            if key.startswith(normalized_prefix)
+        ]
 
     async def presign_get_url(self, key: str, *, expires_in: int = 3600) -> str:
         _ = expires_in

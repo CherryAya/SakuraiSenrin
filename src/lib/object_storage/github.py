@@ -157,6 +157,55 @@ class GitHubObjectStorageClient:
     async def exists(self, key: str) -> bool:
         return await self._get_metadata(key) is not None
 
+    async def list_objects(self, prefix: str) -> list[StorageObject]:
+        _, _, branch = self._require_config()
+        normalized_prefix = prefix.strip("/")
+        async with self._client() as client:
+            response = await client.get(
+                self._contents_url(normalized_prefix),
+                params={"ref": branch},
+            )
+        if response.status_code == 404:
+            return []
+        if response.is_error:
+            raise ObjectStorageError(
+                f"GitHub contents list failed: {response.status_code}"
+            )
+        payload = response.json()
+        if not isinstance(payload, list):
+            raise ObjectStorageError("GitHub contents list response is not an array")
+
+        objects: list[StorageObject] = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "file":
+                continue
+            path = item.get("path")
+            if not isinstance(path, str) or not path.startswith(
+                f"{normalized_prefix}/"
+            ):
+                continue
+            sha = item.get("sha")
+            size = item.get("size")
+            download_url = item.get("download_url")
+            objects.append(
+                StorageObject(
+                    provider=self.provider,
+                    bucket=self.bucket,
+                    key=path,
+                    uri=self._uri(path),
+                    public_url=(
+                        str(download_url)
+                        if isinstance(download_url, str) and download_url
+                        else self._raw_url(path)
+                    ),
+                    etag=str(sha) if isinstance(sha, str) and sha else None,
+                    size=int(size) if isinstance(size, int) else 0,
+                )
+            )
+        return objects
+
     async def presign_get_url(self, key: str, *, expires_in: int = 3600) -> str:
         _ = expires_in
         return self._raw_url(key)

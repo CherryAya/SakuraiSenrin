@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.lib.object_storage.types import StorageObject
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 
@@ -111,6 +112,8 @@ async def maintain_wordbank_media(
 ) -> dict[str, Any]:
     _load_wordbank_components()
     report_rows: list[dict[str, Any]] = []
+    remote_inventory: dict[str, StorageObject] = {}
+    use_remote_inventory = False
     scanned = 0
     synced = 0
     failed = 0
@@ -121,6 +124,23 @@ async def maintain_wordbank_media(
     batch_size = max(batch_size, 1)
     concurrency = max(concurrency, 1)
     semaphore = asyncio.Semaphore(concurrency)
+
+    if (
+        verify_remote
+        and getattr(wordbank_media_service, "remote_storage", None) is not None
+    ):
+        try:
+            remote_inventory = await wordbank_media_service.list_remote_objects_by_key()
+            use_remote_inventory = True
+            logger.info(
+                f"[Wordbank] loaded remote inventory "
+                f"with {len(remote_inventory)} objects"
+            )
+        except Exception as exc:
+            logger.warning(
+                f"[Wordbank] remote inventory listing failed, "
+                f"fallback to per-object verification: {exc}"
+            )
 
     async def process_image(image: Any) -> tuple[dict[str, Any], str]:
         row_report: dict[str, Any] = {
@@ -146,9 +166,27 @@ async def maintain_wordbank_media(
                 )
                 return row_report, "inspect"
 
+            if use_remote_inventory:
+                inventory_synced = (
+                    await wordbank_media_service.reconcile_image_with_remote_inventory(
+                        working_image,
+                        remote_inventory,
+                    )
+                )
+                if inventory_synced is not None:
+                    row_report["action"] = "verify"
+                    row_report["remote_sync_status_after"] = (
+                        inventory_synced.remote_sync_status
+                    )
+                    row_report["remote_storage_path_after"] = (
+                        inventory_synced.remote_storage_path
+                    )
+                    row_report["remote_synced_at"] = inventory_synced.remote_synced_at
+                    return row_report, "synced"
+
             updated = await wordbank_media_service.sync_image_to_remote(
                 working_image,
-                verify_remote=verify_remote,
+                verify_remote=verify_remote and not use_remote_inventory,
             )
             if updated is None:
                 row_report["action"] = "skipped"

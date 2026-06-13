@@ -46,6 +46,9 @@ def _install_fake_components(monkeypatch: pytest.MonkeyPatch) -> None:
         "wordbank_media_service",
         SimpleNamespace(
             rebuild_cache_metadata=None,
+            list_remote_objects_by_key=None,
+            reconcile_image_with_remote_inventory=None,
+            remote_storage=None,
             sync_image_to_remote=None,
         ),
         raising=False,
@@ -93,6 +96,16 @@ async def test_maintenance_script_uploads_all_unsynced_wordbank_images(
         maintain_script.wordbank_media_service,
         "rebuild_cache_metadata",
         AsyncMock(side_effect=lambda image: image),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "list_remote_objects_by_key",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "reconcile_image_with_remote_inventory",
+        AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
         maintain_script.wordbank_media_service,
@@ -153,6 +166,16 @@ async def test_maintenance_script_marks_failed_uploads_without_aborting_batch(
     )
     monkeypatch.setattr(
         maintain_script.wordbank_media_service,
+        "list_remote_objects_by_key",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "reconcile_image_with_remote_inventory",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
         "sync_image_to_remote",
         AsyncMock(
             side_effect=lambda image, verify_remote: _image_record(
@@ -203,6 +226,16 @@ async def test_maintenance_script_dry_run_skips_sync(
     )
     monkeypatch.setattr(
         maintain_script.wordbank_media_service,
+        "list_remote_objects_by_key",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "reconcile_image_with_remote_inventory",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
         "sync_image_to_remote",
         AsyncMock(),
     )
@@ -250,6 +283,16 @@ async def test_maintenance_script_paginates_until_total_limit(
     )
     monkeypatch.setattr(
         maintain_script.wordbank_media_service,
+        "list_remote_objects_by_key",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "reconcile_image_with_remote_inventory",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
         "sync_image_to_remote",
         AsyncMock(
             side_effect=lambda image, verify_remote: _image_record(
@@ -279,4 +322,87 @@ async def test_maintenance_script_paginates_until_total_limit(
             call(limit=2, id_start=11, only_unsynced=True),
             call(limit=1, id_start=13, only_unsynced=True),
         ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_maintenance_script_verify_remote_uses_inventory_diff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_components(monkeypatch)
+    rows_by_call = [[_image_record(21), _image_record(22)], []]
+
+    async def list_rows(**_: object) -> list[WordbankImageRecord]:
+        return rows_by_call.pop(0)
+
+    monkeypatch.setattr(
+        maintain_script.wordbank_repo,
+        "list_images_for_remote_sync",
+        AsyncMock(side_effect=list_rows),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "remote_storage",
+        object(),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "rebuild_cache_metadata",
+        AsyncMock(side_effect=lambda image: image),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "list_remote_objects_by_key",
+        AsyncMock(
+            return_value={
+                "wordbank/media/00000000000000000000000000000015.webp": object()
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "reconcile_image_with_remote_inventory",
+        AsyncMock(
+            side_effect=lambda image, remote_inventory: (
+                _image_record(
+                    21,
+                    status="synced",
+                    remote_storage_path="r2://bucket/wordbank/media/00000000000000000000000000000015.webp",
+                )
+                if image.id == 21
+                else None
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "sync_image_to_remote",
+        AsyncMock(
+            side_effect=lambda image, verify_remote: _image_record(
+                image.id,
+                status="synced",
+                remote_storage_path=f"r2://bucket/wordbank/media/{image.md5}.webp",
+            )
+        ),
+    )
+
+    report = await maintain_script.maintain_wordbank_media(
+        dry_run=False,
+        limit=0,
+        batch_size=10,
+        concurrency=2,
+        id_start=21,
+        only_unsynced=True,
+        verify_remote=True,
+        rebuild_cache_metadata=False,
+    )
+
+    assert report["scanned"] == 2
+    assert report["synced"] == 2
+    assert report["rows"][0]["action"] == "verify"
+    assert report["rows"][1]["action"] == "sync"
+    maintain_script.wordbank_media_service.list_remote_objects_by_key.assert_awaited_once()
+    maintain_script.wordbank_media_service.sync_image_to_remote.assert_awaited_once_with(
+        _image_record(22),
+        verify_remote=False,
     )
