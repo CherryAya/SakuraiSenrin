@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from time import perf_counter
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
@@ -134,19 +133,14 @@ class WaterRankQueryService:
         locale: LocaleCode,
         limit: int,
     ) -> WaterDayRankCardData | None:
-        top_items, overview = await asyncio.gather(
-            water_repo.get_natural_day_leaderboard(
-                subject=subject,
-                scope=scope,
-                group_id=group_id,
-                limit=limit,
-            ),
-            water_repo.get_natural_day_overview(
-                subject=subject,
-                scope=scope,
-                group_id=group_id,
-            ),
+        snapshot = await water_repo.get_natural_day_snapshot(
+            subject=subject,
+            scope=scope,
+            group_id=group_id,
+            limit=limit,
         )
+        top_items = snapshot.leaderboard
+        overview = snapshot.overview
         if not top_items or overview.total_msg_count <= 0:
             return None
         view_items = await water_rank_service._build_view_items(

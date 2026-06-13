@@ -495,6 +495,97 @@ async def test_get_natural_period_leaderboard_supports_group_and_matrix(
 
 
 @pytest.mark.asyncio
+async def test_get_natural_day_snapshot_reuses_single_fetch_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    current_rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260614,
+            msg_count=20,
+            active_hours=9,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10002",
+            record_date=20260614,
+            msg_count=18,
+            active_hours=7,
+            hourly_counts=[0, 1] * 12,
+            created_at=1,
+            updated_at=2,
+        ),
+    ]
+    previous_rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10003",
+            record_date=20260613,
+            msg_count=25,
+            active_hours=8,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260613,
+            msg_count=19,
+            active_hours=6,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10002",
+            record_date=20260613,
+            msg_count=18,
+            active_hours=5,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+    ]
+
+    monkeypatch.setattr(repo_module, "get_current_time", lambda: 1_781_913_600)
+    monkeypatch.setattr(repo_module.water_writer, "flush_now", AsyncMock())
+    monkeypatch.setattr(
+        repo,
+        "_collect_realtime_daily_rows",
+        AsyncMock(return_value=current_rows),
+    )
+    monkeypatch.setattr(
+        repo,
+        "_resolve_previous_day_rows",
+        AsyncMock(return_value=previous_rows),
+    )
+
+    snapshot = await repo.get_natural_day_snapshot(
+        subject="user",
+        scope="group",
+        group_id="20001",
+        limit=2,
+    )
+
+    assert [item.entity_id for item in snapshot.leaderboard] == ["10001", "10002"]
+    assert snapshot.leaderboard[0].trend == 1
+    assert snapshot.leaderboard[1].trend == 1
+    assert snapshot.overview.total_msg_count == 38
+    assert snapshot.overview.active_entity_count == 2
+    assert snapshot.overview.previous_total_msg_count == 62
+
+
+@pytest.mark.asyncio
 async def test_get_first_summary_record_date_uses_scope_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

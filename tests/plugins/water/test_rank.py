@@ -307,36 +307,27 @@ async def test_rank_query_service_routes_day_and_non_day(
     )
     monkeypatch.setattr(
         query_module.water_repo,
-        "get_natural_day_leaderboard",
+        "get_natural_day_snapshot",
         AsyncMock(
-            return_value=[
-                NaturalRankItem(
-                    entity_id="10001",
-                    msg_count=12,
-                    active_days=1,
-                    active_hours=4,
+            return_value=NaturalPeriodRankSnapshot(
+                leaderboard=[
+                    NaturalRankItem(
+                        entity_id="10001",
+                        msg_count=12,
+                        active_days=1,
+                        active_hours=4,
+                        hourly_counts=[1] * 24,
+                        current_rank=1,
+                        trend=1,
+                    )
+                ],
+                overview=NaturalRankOverview(
+                    total_msg_count=20,
+                    active_entity_count=3,
                     hourly_counts=[1] * 24,
-                    current_rank=1,
-                    trend=1,
-                )
-            ]
-        ),
-    )
-    monkeypatch.setattr(
-        query_module.water_repo,
-        "get_natural_day_overview",
-        AsyncMock(
-            return_value=type(
-                "Overview",
-                (),
-                {
-                    "total_msg_count": 20,
-                    "active_entity_count": 3,
-                    "hourly_counts": [1] * 24,
-                    "peak_hour": 0,
-                    "previous_total_msg_count": 10,
-                },
-            )()
+                    previous_total_msg_count=10,
+                ),
+            )
         ),
     )
     monkeypatch.setattr(
@@ -515,8 +506,9 @@ async def test_build_rank_message_renders_all_legal_combinations(
         subject: str,
         scope: str,
         group_id: str,
+        limit: int = 10,
     ) -> NaturalRankOverview:
-        _ = (scope, group_id)
+        _ = (scope, group_id, limit)
         return _build_fake_overview(_build_fake_natural_items(subject))
 
     async def _fake_period_leaderboard(
@@ -588,6 +580,13 @@ async def test_build_rank_message_renders_all_legal_combinations(
         _ = (subject, entity_id)
         return avatar
 
+    async def _fake_day_snapshot(**kwargs: Any) -> NaturalPeriodRankSnapshot:
+        return await _fake_snapshot_from_builders(
+            kwargs,
+            _fake_day_leaderboard,
+            _fake_day_overview,
+        )
+
     async def _fake_period_snapshot(**kwargs: Any) -> NaturalPeriodRankSnapshot:
         return await _fake_snapshot_from_builders(
             kwargs,
@@ -597,13 +596,8 @@ async def test_build_rank_message_renders_all_legal_combinations(
 
     monkeypatch.setattr(
         query_module.water_repo,
-        "get_natural_day_leaderboard",
-        _fake_day_leaderboard,
-    )
-    monkeypatch.setattr(
-        query_module.water_repo,
-        "get_natural_day_overview",
-        _fake_day_overview,
+        "get_natural_day_snapshot",
+        AsyncMock(side_effect=_fake_day_snapshot),
     )
     monkeypatch.setattr(
         rank_service_module.water_repo,
