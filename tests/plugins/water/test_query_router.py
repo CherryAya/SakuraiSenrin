@@ -32,6 +32,21 @@ def test_rank_menu_does_not_send_working() -> None:
     assert router.should_send_working(router.parse("用户榜 本群 日榜")) is True
 
 
+def test_rank_guided_prompts_follow_locale_catalog() -> None:
+    router = WaterQueryRouter()
+
+    intro = router.build_guided_intro("lzh")
+    menu = router.build_rank_menu("lzh")
+    summary = router.build_guided_summary(
+        "x-meme",
+        WaterRankQuerySpec(subject="user", scope="group", period="month"),
+    )
+
+    assert "榜單今依" in intro
+    assert "合法之組" in menu
+    assert "你刚刚选的是" in summary
+
+
 def test_parse_rank_errors() -> None:
     router = WaterQueryRouter()
 

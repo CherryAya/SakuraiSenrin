@@ -64,6 +64,19 @@ class WaterQueryRouter:
     _CANCEL_TOKENS: tuple[str, ...] = ("取消", "退出", "算了", "q", "quit", "exit")
 
     @staticmethod
+    def _subject_choices_text() -> str:
+        return " / ".join(
+            SUBJECT_LABELS[subject] for subject in ("user", "group", "matrix")
+        )
+
+    @staticmethod
+    def _period_choices_text() -> str:
+        return " / ".join(
+            PERIOD_LABELS[period]
+            for period in ("day", "week", "month", "season", "year", "total")
+        )
+
+    @staticmethod
     def should_send_working(spec: WaterQuerySpec) -> bool:
         if spec.scope_type == "activity":
             return True
@@ -143,51 +156,45 @@ class WaterQueryRouter:
             token.casefold() for token in cls._CANCEL_TOKENS
         }
 
-    @staticmethod
-    def build_guided_intro(locale: LocaleCode) -> str:
-        _ = locale
-        return "\n".join(
-            [
-                "水王榜单现在按 主体 + 范围 + 时间 查询。",
-                "接下来我会带你一步步选完三维条件。",
-                "第一步，请选择主体：用户榜 / 群聊榜 / 矩阵榜",
-                "发送“取消”可退出本次查询。",
-            ]
+    def build_guided_intro(self, locale: LocaleCode) -> str:
+        return tr(
+            locale,
+            "water.query.rank.guided.intro",
+            choices=self._subject_choices_text(),
         )
 
-    @staticmethod
     def build_scope_prompt(
+        self,
         locale: LocaleCode,
         subject: WaterRankSubject,
     ) -> str:
-        _ = locale
         labels = " / ".join(
-            SCOPE_LABELS[scope]
-            for scope in water_query_router.valid_scopes_for_subject(subject)
+            SCOPE_LABELS[scope] for scope in self.valid_scopes_for_subject(subject)
         )
-        return f"第二步，请选择范围：{labels}"
+        return tr(locale, "water.query.rank.guided.scope_prompt", choices=labels)
 
-    @staticmethod
-    def build_period_prompt(locale: LocaleCode) -> str:
-        _ = locale
-        return "第三步，请选择时间：日榜 / 周榜 / 月榜 / 季榜 / 年榜 / 总榜"
+    def build_period_prompt(self, locale: LocaleCode) -> str:
+        return tr(
+            locale,
+            "water.query.rank.guided.period_prompt",
+            choices=self._period_choices_text(),
+        )
 
     @staticmethod
     def build_guided_cancel_message(locale: LocaleCode) -> str:
-        _ = locale
-        return "已取消本次水王查询。"
+        return tr(locale, "interaction.cancelled")
 
     @staticmethod
     def build_guided_summary(
         locale: LocaleCode,
         spec: WaterRankQuerySpec,
     ) -> str:
-        _ = locale
-        return (
-            "已选择："
-            f"{SUBJECT_LABELS[spec.subject]} / "
-            f"{SCOPE_LABELS[spec.scope]} / "
-            f"{PERIOD_LABELS[spec.period]}"
+        return tr(
+            locale,
+            "water.query.rank.guided.summary",
+            subject=SUBJECT_LABELS[spec.subject],
+            scope=SCOPE_LABELS[spec.scope],
+            period=PERIOD_LABELS[spec.period],
         )
 
     @staticmethod
@@ -213,7 +220,11 @@ class WaterQueryRouter:
     def build_subject_retry_prompt(self, locale: LocaleCode) -> str:
         return "\n".join(
             [
-                "主体输入不对，请从这三个里选一个：用户榜 / 群聊榜 / 矩阵榜",
+                tr(
+                    locale,
+                    "water.query.rank.guided.subject_invalid",
+                    choices=self._subject_choices_text(),
+                ),
                 self.build_rank_menu(locale),
             ]
         )
@@ -231,18 +242,25 @@ class WaterQueryRouter:
                 f"#水王 {SUBJECT_LABELS[subject]} "
                 f"{SCOPE_LABELS[suggested_scope]} <时间>"
             )
-            lines.append(f"这个主体和范围组合不成立。推荐改成 {suggestion}")
+            lines.append(
+                tr(
+                    locale,
+                    "water.query.rank.error.invalid_combo",
+                    suggestion=suggestion,
+                )
+            )
         else:
-            lines.append("范围输入不对，请按当前主体选择合法范围。")
+            lines.append(tr(locale, "water.query.rank.guided.scope_invalid"))
         lines.append(self.build_scope_prompt(locale, subject))
         return "\n".join(lines)
 
     def build_period_retry_prompt(self, locale: LocaleCode) -> str:
         return "\n".join(
             [
-                (
-                    "时间输入不对，请从这些里选一个："
-                    "日榜 / 周榜 / 月榜 / 季榜 / 年榜 / 总榜"
+                tr(
+                    locale,
+                    "water.query.rank.guided.period_invalid",
+                    choices=self._period_choices_text(),
                 ),
                 self.build_period_prompt(locale),
             ]
@@ -513,31 +531,36 @@ class WaterQueryRouter:
         errors: tuple[str, ...] = (),
     ) -> str:
         lines = [
-            "榜单现在按 主体 + 范围 + 时间 查询。",
-            "标准格式: #水王 <主体> <范围> <时间>",
-            "示例:",
-            "#水王 用户榜 本群 月榜",
-            "#水王 群聊榜 本矩阵 周榜",
-            "#水王 矩阵榜 全局 总榜",
+            tr(locale, "water.query.rank.menu.intro"),
+            tr(locale, "water.query.rank.menu.format"),
+            tr(locale, "water.query.rank.menu.examples"),
+            tr(locale, "water.query.rank.menu.example.user"),
+            tr(locale, "water.query.rank.menu.example.group"),
+            tr(locale, "water.query.rank.menu.example.matrix"),
             "",
-            "合法组合:",
-            "用户榜: 本群 / 本矩阵 / 全局 + 日/周/月/季/年/总榜",
-            "群聊榜: 本矩阵 / 全局 + 日/周/月/季/年/总榜",
-            "矩阵榜: 全局 + 日/周/月/季/年/总榜",
+            tr(locale, "water.query.rank.menu.legal"),
+            tr(locale, "water.query.rank.menu.legal.user"),
+            tr(locale, "water.query.rank.menu.legal.group"),
+            tr(locale, "water.query.rank.menu.legal.matrix"),
         ]
         if errors:
-            lines.insert(0, self._build_rank_error_text(spec, errors))
+            lines.insert(0, self._build_rank_error_text(locale, spec, errors))
             lines.insert(1, "")
         return "\n".join(lines)
 
     def _build_rank_error_text(
         self,
+        locale: LocaleCode,
         spec: WaterRankQuerySpec | None,
         errors: tuple[str, ...],
     ) -> str:
         head = errors[0]
         if head == "legacy_rank":
-            return "旧写法已经停用，请改成三维写法，例如: #水王 用户榜 本群 周榜"
+            return tr(
+                locale,
+                "water.query.rank.error.legacy",
+                example="#水王 用户榜 本群 周榜",
+            )
         if head == "missing_dimensions":
             missing_labels = {
                 "subject": "主体",
@@ -545,23 +568,44 @@ class WaterQueryRouter:
                 "period": "时间",
             }
             missing = "、".join(missing_labels[item] for item in errors[1:])
-            return f"缺少 {missing}，请补全为 #水王 <主体> <范围> <时间>。"
+            return tr(
+                locale,
+                "water.query.rank.error.missing_dimensions",
+                dimensions=missing,
+            )
         if head == "unknown_tokens":
-            return f"有未识别的关键词: {' '.join(errors[1:])}。"
+            return tr(
+                locale,
+                "water.query.rank.error.unknown_tokens",
+                tokens=" ".join(errors[1:]),
+            )
         if head == "duplicate_subject":
-            return "主体只能填一个。"
+            return tr(
+                locale,
+                "water.query.rank.error.duplicate_subject",
+            )
         if head == "duplicate_scope":
-            return "范围只能填一个。"
+            return tr(
+                locale,
+                "water.query.rank.error.duplicate_scope",
+            )
         if head == "duplicate_period":
-            return "时间只能填一个。"
+            return tr(
+                locale,
+                "water.query.rank.error.duplicate_period",
+            )
         if head == "invalid_combo" and spec is not None:
             suggested_scope = suggest_scope_for_subject(spec.subject)
             suggestion = (
                 f"#水王 {SUBJECT_LABELS[spec.subject]} "
                 f"{SCOPE_LABELS[suggested_scope]} {PERIOD_LABELS[spec.period]}"
             )
-            return f"这个主体和范围组合不成立。推荐改成 {suggestion}"
-        return "这个查询姿势暂时不支持，请按标准格式重试。"
+            return tr(
+                locale,
+                "water.query.rank.error.invalid_combo",
+                suggestion=suggestion,
+            )
+        return tr(locale, "water.query.rank.error.invalid")
 
     @staticmethod
     async def _matrix_id(group_id: str) -> str:

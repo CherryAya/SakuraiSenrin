@@ -140,7 +140,7 @@ async def test_water_query_guided_scope_retry_and_cancel(
         ctx.should_rejected()
 
         ctx.receive_event(bot, fourth)
-        ctx.should_call_send(fourth, "已取消本次水王查询。", bot=bot)
+        ctx.should_call_send(fourth, "本次操作已被取消。", bot=bot)
         ctx.should_finished()
 
 
@@ -173,3 +173,31 @@ async def test_water_query_direct_rank_still_runs_without_guided_flow(
         group_id="20001",
         locale="zh-CN",
     )
+
+
+@pytest.mark.asyncio
+async def test_water_query_guided_intro_uses_resolved_locale(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin._water_query_cooldowns.clear()
+    monkeypatch.setattr(
+        water_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="lzh"),
+    )
+
+    event = build_group_message_event("#水王", message_id=1)
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            "水王榜單今依 主體 + 範圍 + 時間 而查。\n"
+            "今將引君逐步擇定三維條件。\n"
+            "第一步，請擇主體：用户榜 / 群聊榜 / 矩阵榜\n"
+            "若欲止之，發“取消”即可。",
+            bot=bot,
+        )
+        ctx.should_rejected()
