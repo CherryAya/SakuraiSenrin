@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from io import BytesIO
 import os
 from pathlib import Path
+import re
 import sys
-from typing import ClassVar
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 
 from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
+from src.lib.demo_theme import BASE_THEME, PALETTE_ACCENTS
 from src.lib.plugin_docs import (
     DemoImageRenderer,
     DocNode,
@@ -260,7 +261,7 @@ def build(
 class DemoCollectionRenderer:
     MIN_WIDTH = 1920
     MAX_WIDTH = 2400
-    OUTER_MARGIN = 36
+    OUTER_MARGIN = 40  # 统一为 40px
     HEADER_PANEL_MIN_HEIGHT = 112
     HEADER_TOP = 50
     HEADER_LEFT = 84
@@ -280,54 +281,26 @@ class DemoCollectionRenderer:
     CARD_GAP_X = 28
     CARD_GAP_Y = 30
     BOTTOM_MARGIN = 42
-    PAGE_BG = "#FAFAF8"
-    SHELL_BG = "#FFFFFF"
-    SHELL_BORDER = "#EFE9ED"
-    CARD_BG = "#FFFFFF"
-    CARD_BORDER = "#EDE5EA"
-    TITLE = "#2E2630"
-    META = "#8F8190"
-    TITLE_BAND_TEXT = "#3B3538"
-    CHIP_BG = "#FFF0F5"
-    CHIP_TEXT = "#9A3F62"
-    HELP_TEXT = "#5E565B"
-    CARD_SHADOW = "#F4EDF1"
-    CARD_TEXT = "#5C525A"
-    CARD_LABEL = "#A07C90"
-    CARD_COMMAND_BG = "#FFF7FA"
-    CARD_COMMAND_TEXT = "#7D3653"
-    CARD_COMMAND_CODE_BG = "#FFFFFF"
-    CARD_COMMAND_CODE_TEXT = "#8B2D57"
-    CARD_COMMAND_CODE_BORDER = "#F0C8D7"
     CARD_SLUG_MIN_WIDTH = 68
     CARD_SLUG_MAX_WIDTH = 240
-    INDEX_BG = "#F7E5EE"
-    INDEX_TEXT = "#9A3F62"
-    INLINE_CODE_BG = "#FFF7FA"
-    INLINE_CODE_TEXT = "#7D3653"
-    INLINE_CODE_BORDER = None
-    INLINE_CODE_RADIUS = 9
-    INLINE_CODE_PAD_X = 7
-    INLINE_CODE_PAD_Y = 4
-    PALETTES: ClassVar[dict[str, tuple[str, str]]] = {
-        "study": ("#FFE4B5", "#FFF0CF"),
-        "wordbank-approval": ("#F8D0D2", "#FBE0E3"),
-        "wordbank": ("#C9DEF3", "#D9EAFB"),
-        "default": ("#E8DEF8", "#F0E8FB"),
-    }
+    CARD_COMMAND_BG = BASE_THEME.muted_light
+    CARD_COMMAND_CODE_BG = BASE_THEME.inline_code_bg
+    CARD_COMMAND_CODE_BORDER = BASE_THEME.line
 
     def __init__(self, *, columns: int, thumb_width: int) -> None:
+        self.theme = BASE_THEME
         self.columns = max(1, columns)
         self.thumb_width = max(240, thumb_width)
         try:
-            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 44)
-            self.summary_font = ImageFont.truetype(MAPLE_FONT_PATH, 19)
-            self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)
-            self.tile_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
-            self.tile_meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 18)
-            self.tile_body_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)
-            self.tile_index_font = ImageFont.truetype(MAPLE_FONT_PATH, 21)
-            self.slug_font = ImageFont.truetype(MAPLE_FONT_PATH, 17)
+            # 移动端优化：增大字体
+            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 58)  # 44 → 58
+            self.summary_font = ImageFont.truetype(MAPLE_FONT_PATH, 25)  # 19 → 25
+            self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 26)  # 20 → 26
+            self.tile_font = ImageFont.truetype(MAPLE_FONT_PATH, 32)  # 24 → 32
+            self.tile_meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)  # 18 → 24
+            self.tile_body_font = ImageFont.truetype(MAPLE_FONT_PATH, 26)  # 20 → 26
+            self.tile_index_font = ImageFont.truetype(MAPLE_FONT_PATH, 28)  # 21 → 28
+            self.slug_font = ImageFont.truetype(MAPLE_FONT_PATH, 23)  # 17 → 23
         except OSError:
             self.title_font = ImageFont.load_default()
             self.summary_font = ImageFont.load_default()
@@ -388,7 +361,7 @@ class DemoCollectionRenderer:
             (tile, x, y + content_top, height) for tile, x, y, height in placements
         ]
         height = content_top + content_height + self.BOTTOM_MARGIN + self.OUTER_MARGIN
-        image = Image.new("RGB", (width, height), self.PAGE_BG)
+        image = Image.new("RGB", (width, height), self.theme.page_bg)
         draw = ImageDraw.Draw(image)
         draw.rounded_rectangle(
             (
@@ -397,9 +370,9 @@ class DemoCollectionRenderer:
                 width - self.OUTER_MARGIN,
                 height - self.OUTER_MARGIN,
             ),
-            radius=32,
-            fill=self.SHELL_BG,
-            outline=self.SHELL_BORDER,
+            radius=self.theme.shell_radius,
+            fill=self.theme.shell_bg,
+            outline=self.theme.shell_border,
             width=2,
         )
         self._draw_header(
@@ -544,7 +517,7 @@ class DemoCollectionRenderer:
         draw.text(
             (layout.left_x, layout.title_y),
             title,
-            fill=self.TITLE,
+            fill=self.theme.deep,
             font=self.title_font,
         )
         for index, line in enumerate(layout.summary_lines):
@@ -554,12 +527,12 @@ class DemoCollectionRenderer:
                 y=layout.summary_y + index * self._line_height(self.summary_font, 4),
                 line=line,
                 font=self.summary_font,
-                fill=self.META,
+                fill=self.theme.hint,
             )
         draw.text(
             (layout.right_x, layout.right_y),
             f"共 {tile_count} 个功能卡片",
-            fill=self.TITLE,
+            fill=self.theme.deep,
             font=self.meta_font,
         )
         for index, line in enumerate(layout.help_lines):
@@ -569,7 +542,7 @@ class DemoCollectionRenderer:
                 y=layout.help_y + index * self._line_height(self.summary_font, 4),
                 line=line,
                 font=self.summary_font,
-                fill=self.HELP_TEXT,
+                fill=self.theme.hint,
             )
 
     def _draw_tiles(
@@ -595,13 +568,13 @@ class DemoCollectionRenderer:
         draw.rounded_rectangle(
             (x + 4, y + 6, x + self.card_width + 4, y + height + 6),
             radius=self.CARD_RADIUS,
-            fill=self.CARD_SHADOW,
+            fill=self.theme.panel_soft_bg,
         )
         draw.rounded_rectangle(
             (x, y, x + self.card_width, y + height),
             radius=self.CARD_RADIUS,
-            fill=self.CARD_BG,
-            outline=self.CARD_BORDER,
+            fill=self.theme.panel_bg,
+            outline=self.theme.line,
             width=2,
         )
         _, title_band = self._palette_for_slug(tile.slug)
@@ -634,18 +607,18 @@ class DemoCollectionRenderer:
         draw.text(
             (title_x, title_y + 7),
             self._ellipsize(title_text, self.tile_index_font, title_width_limit),
-            fill=self.TITLE_BAND_TEXT,
+            fill=self.theme.deep,
             font=self.tile_index_font,
         )
         draw.rounded_rectangle(
             (slug_x, title_y, slug_x + slug_width, title_y + 30),
             radius=14,
-            fill=self.CHIP_BG,
+            fill=self.theme.muted_light,
         )
         draw.text(
             (slug_x + 13, title_y + 5),
             self._ellipsize(slug_text, self.slug_font, slug_width - 26),
-            fill=self.CHIP_TEXT,
+            fill=self.theme.strong,
             font=self.slug_font,
         )
 
@@ -662,8 +635,8 @@ class DemoCollectionRenderer:
             width=content_width,
             lines=command_lines,
             font=self.tile_body_font,
-            fill=self.CARD_COMMAND_TEXT,
-            background=self.CARD_COMMAND_BG,
+            fill=self.theme.inline_code_text,
+            background=self.theme.inline_code_bg,
         )
 
         command_height = (
@@ -678,7 +651,7 @@ class DemoCollectionRenderer:
                 y=summary_top + index * self._line_height(self.tile_meta_font, 6),
                 line=line,
                 font=self.tile_meta_font,
-                fill=self.CARD_TEXT,
+                fill=self.theme.hint,
             )
 
     def _ellipsize(
@@ -737,6 +710,7 @@ class DemoCollectionRenderer:
             lines.extend(flushed)
         if current:
             lines.append(tuple(current))
+        lines = self._normalize_wrapped_lines(lines)
         if max_lines is None or len(lines) <= max_lines:
             return lines
         clipped = lines[:max_lines]
@@ -752,6 +726,29 @@ class DemoCollectionRenderer:
             clipped[-1] = clipped[-1][:-1]
         clipped[-1] = (*clipped[-1], (suffix, False))
         return clipped
+
+    def _normalize_wrapped_lines(self, lines: list[tuple]) -> list[tuple]:
+        separators = (" => ", " --", "|", "/", "_")
+        normalized = [list(line) for line in lines]
+        for index in range(1, len(normalized)):
+            line = normalized[index]
+            if not line:
+                continue
+            text, code = line[0]
+            prefix = next((item for item in separators if text.startswith(item)), "")
+            if not prefix:
+                continue
+            normalized[index - 1] = self._append_inline_char(
+                normalized[index - 1],
+                prefix,
+                code=code,
+            )
+            remaining = text[len(prefix) :]
+            if remaining:
+                line[0] = (remaining, code)
+            else:
+                line.pop(0)
+        return [tuple(line) for line in normalized if line]
 
     def _tile_command_lines(
         self,
@@ -788,7 +785,7 @@ class DemoCollectionRenderer:
         segments = self._split_wrappable_segments(text)
         for segment in segments:
             candidate = [*current, (segment, False)]
-            if not current or self._inline_line_width(candidate, font) <= max_width:
+            if self._inline_line_width(candidate, font) <= max_width:
                 current = candidate
                 continue
             if current:
@@ -824,7 +821,7 @@ class DemoCollectionRenderer:
         segments = self._split_wrappable_segments(text)
         for segment in segments:
             candidate = [*current, (segment, True)]
-            if not current or self._inline_line_width(candidate, font) <= max_width:
+            if self._inline_line_width(candidate, font) <= max_width:
                 current = candidate
                 continue
             if current:
@@ -858,6 +855,8 @@ class DemoCollectionRenderer:
                     head, tail = buffer.split(separator, 1)
                     if head:
                         segments.append(head + separator)
+                    elif segments:
+                        segments[-1] += separator
                     else:
                         segments.append(separator)
                     buffer = tail
@@ -876,23 +875,42 @@ class DemoCollectionRenderer:
     ) -> tuple[str, ...]:
         chunks: list[str] = []
         current = ""
-        for char in text:
-            candidate = current + char
+        for segment in self._split_code_units(text):
+            candidate = current + segment
             if (
                 current
-                and self._inline_line_width(
-                    [(candidate, True)],
-                    font,
-                )
-                > max_width
+                and self._inline_line_width([(candidate, True)], font) > max_width
             ):
                 chunks.append(current)
-                current = char
+                current = ""
+            if self._inline_line_width([(segment, True)], font) <= max_width:
+                current += segment
                 continue
-            current = candidate
+            for char in segment:
+                candidate = current + char
+                if (
+                    current
+                    and self._inline_line_width([(candidate, True)], font) > max_width
+                ):
+                    chunks.append(current)
+                    current = char
+                    continue
+                current = candidate
         if current:
             chunks.append(current)
         return tuple(chunks)
+
+    def _split_code_units(self, text: str) -> tuple[str, ...]:
+        parts = re.split(r"( => | --|\||/|_| )", text)
+        segments: list[str] = []
+        for part in parts:
+            if not part:
+                continue
+            if part in {" => ", " --", "|", "/", "_", " "} and segments:
+                segments[-1] += part
+                continue
+            segments.append(part)
+        return tuple(segments)
 
     def _draw_inline_line(
         self,
@@ -909,11 +927,9 @@ class DemoCollectionRenderer:
     ) -> None:
         cursor_x = x
         line_height = self._text_height(font)
-        chip_background = code_background or self.INLINE_CODE_BG
-        chip_fill = code_fill or self.INLINE_CODE_TEXT
-        chip_outline = (
-            code_outline if code_outline is not None else self.INLINE_CODE_BORDER
-        )
+        chip_background = code_background or self.theme.inline_code_bg
+        chip_fill = code_fill or self.theme.inline_code_text
+        chip_outline = code_outline if code_outline is not None else None
         for text, code in line:
             if not text:
                 continue
@@ -922,9 +938,9 @@ class DemoCollectionRenderer:
                 cursor_x += self._text_width(text, font)
                 continue
             text_width = self._text_width(text, font)
-            chip_height = line_height + self.INLINE_CODE_PAD_Y * 2 - 2
+            chip_height = line_height + self.theme.inline_code_pad_y * 2 - 2
             chip_y = y - 1
-            chip_width = text_width + self.INLINE_CODE_PAD_X * 2
+            chip_width = text_width + self.theme.inline_code_pad_x * 2
             draw.rounded_rectangle(
                 (
                     cursor_x,
@@ -932,12 +948,12 @@ class DemoCollectionRenderer:
                     cursor_x + chip_width,
                     chip_y + chip_height,
                 ),
-                radius=self.INLINE_CODE_RADIUS,
+                radius=self.theme.inline_code_radius,
                 fill=chip_background,
                 outline=chip_outline,
             )
             draw.text(
-                (cursor_x + self.INLINE_CODE_PAD_X, y),
+                (cursor_x + self.theme.inline_code_pad_x, y),
                 text,
                 fill=chip_fill,
                 font=font,
@@ -971,9 +987,9 @@ class DemoCollectionRenderer:
                 line=line,
                 font=font,
                 fill=fill,
-                code_background=self.CARD_COMMAND_CODE_BG,
-                code_fill=self.CARD_COMMAND_CODE_TEXT,
-                code_outline=self.CARD_COMMAND_CODE_BORDER,
+                code_background="#FFFFFF",
+                code_fill=self.theme.strong,
+                code_outline=self.theme.accent,
             )
 
     def _header_height(self, *, summary: str, title: str, width: int) -> int:
@@ -1063,7 +1079,7 @@ class DemoCollectionRenderer:
                 continue
             width += self._text_width(text, font)
             if code:
-                width += self.INLINE_CODE_PAD_X * 2
+                width += self.theme.inline_code_pad_x * 2
         return width
 
     def _append_inline_char(
@@ -1102,19 +1118,19 @@ class DemoCollectionRenderer:
     def _palette_for_source(self, source_path: Path) -> tuple[str, str]:
         path_text = source_path.as_posix()
         if "/wordbank/docs/approval/" in path_text:
-            return self.PALETTES["wordbank-approval"]
+            return PALETTE_ACCENTS["wordbank-approval"]
         for key in ("wordbank", "study"):
             if key in path_text:
-                return self.PALETTES[key]
-        return self.PALETTES["default"]
+                return PALETTE_ACCENTS[key]
+        return PALETTE_ACCENTS["default"]
 
     def _palette_for_slug(self, slug: str) -> tuple[str, str]:
         lowered = slug.lower()
         if lowered.startswith("add") or lowered in {"shortcut", "guided-flow"}:
-            return self.PALETTES["study"]
+            return PALETTE_ACCENTS["study"]
         if "approve" in lowered or "reject" in lowered or "pending" in lowered:
-            return self.PALETTES["wordbank-approval"]
-        return self.PALETTES["wordbank"]
+            return PALETTE_ACCENTS["wordbank-approval"]
+        return PALETTE_ACCENTS["wordbank"]
 
 
 def generate(*, workers: int | None = None) -> int:

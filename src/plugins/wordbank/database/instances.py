@@ -3,12 +3,16 @@
 from src.lib.backup import register_backup_database
 from src.lib.db.connectors import ColdPolicy, EventStore, StateStore
 
-from .patches import build_wordbank_log_patch_registry
+from .patches import (
+    build_wordbank_log_patch_registry,
+    build_wordbank_main_patch_registry,
+)
 
 wordbank_main_db = StateStore(
     namespace="wordbank_db",
     filename="wordbank_main.db",
 )
+wordbank_main_db.patch_registry = build_wordbank_main_patch_registry()
 register_backup_database(wordbank_main_db)
 
 wordbank_log_db = EventStore(

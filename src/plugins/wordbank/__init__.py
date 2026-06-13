@@ -27,6 +27,7 @@ from nonebot.plugin import on_command, on_fullmatch
 from nonebot.rule import to_me
 from nonebot.typing import T_State
 
+from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
@@ -193,6 +194,25 @@ async def _wordbank_event_archive_job() -> None:
         logger.success("[Wordbank] cron archive done")
     except Exception as e:
         logger.exception(f"[Wordbank] cron archive failed: {e}")
+
+
+@scheduler.scheduled_job(
+    "cron",
+    hour=1,
+    minute=15,
+    id="wordbank_media_maintenance",
+    coalesce=True,
+    misfire_grace_time=300,
+    max_instances=1,
+)
+async def _wordbank_media_maintenance_job() -> None:
+    try:
+        report = await wordbank_media_service.run_scheduled_maintenance(
+            batch_size=config.WORDBANK_MEDIA_MIGRATION_BATCH_SIZE
+        )
+        logger.success(f"[Wordbank] media maintenance done: {report}")
+    except Exception as e:
+        logger.exception(f"[Wordbank] media maintenance failed: {e}")
 
 
 async def is_wordbank_approval_reply(event: MessageEvent) -> bool:

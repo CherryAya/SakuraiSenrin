@@ -728,7 +728,7 @@ async def test_init_all_tables_creates_fts_and_clears_wordbank_patch_chain(
         }
 
     assert service.repository is not None
-    assert wordbank_main_db.patch_registry.patches == []
+    assert len(wordbank_main_db.patch_registry.patches) == 1
     assert len(wordbank_log_db.patch_registry.patches) == 1
     assert wordbank_message_route_db.patch_registry.patches == []
     assert wordbank_message_ref_db.patch_registry.patches == []

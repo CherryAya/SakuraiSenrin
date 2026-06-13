@@ -327,6 +327,17 @@ class WordbankRepository:
             file_size=image.file_size,
             hash_version=image.hash_version,
             storage_path=image.storage_path,
+            remote_storage_path=image.remote_storage_path,
+            local_cache_path=image.local_cache_path,
+            cache_file_size=image.cache_file_size,
+            last_accessed_at=image.last_accessed_at,
+            cache_last_hit_at=image.cache_last_hit_at,
+            remote_sync_status=image.remote_sync_status,
+            remote_synced_at=image.remote_synced_at,
+            remote_etag=image.remote_etag,
+            remote_object_size=image.remote_object_size,
+            created_at=image.created_at,
+            updated_at=image.updated_at,
         )
 
     @staticmethod
@@ -1533,6 +1544,15 @@ class WordbankRepository:
             ).scalar_one_or_none()
         return self._to_image_record(row) if row else None
 
+    async def get_image_by_id(self, image_id: int) -> WordbankImageRecord | None:
+        async with wordbank_main_db.read_session() as session:
+            row = (
+                await session.execute(
+                    select(WordbankImage).where(WordbankImage.id == image_id)
+                )
+            ).scalar_one_or_none()
+        return self._to_image_record(row) if row else None
+
     async def get_image_candidates(
         self,
         dhash_prefix: str,
@@ -1570,6 +1590,99 @@ class WordbankRepository:
     async def list_images(self) -> list[WordbankImageRecord]:
         async with wordbank_main_db.read_session() as session:
             rows = (await session.execute(select(WordbankImage))).scalars().all()
+        return [self._to_image_record(row) for row in rows]
+
+    async def update_image_remote_sync(
+        self,
+        image_id: int,
+        *,
+        remote_storage_path: str,
+        remote_sync_status: str,
+        remote_synced_at: int,
+        remote_etag: str = "",
+        remote_object_size: int = 0,
+        storage_path: str | None = None,
+        updated_at: int | None = None,
+    ) -> WordbankImageRecord | None:
+        async with wordbank_main_db.write_session() as session:
+            image = await session.get(WordbankImage, image_id)
+            if image is None:
+                return None
+            image.remote_storage_path = remote_storage_path
+            image.remote_sync_status = remote_sync_status
+            image.remote_synced_at = remote_synced_at
+            image.remote_etag = remote_etag
+            image.remote_object_size = remote_object_size
+            if storage_path is not None:
+                image.storage_path = storage_path
+            image.updated_at = updated_at or get_current_time()
+            await session.flush()
+            return self._to_image_record(image)
+
+    async def update_image_cache_metadata(
+        self,
+        image_id: int,
+        *,
+        local_cache_path: str,
+        cache_file_size: int,
+        last_accessed_at: int | None = None,
+        cache_last_hit_at: int | None = None,
+        updated_at: int | None = None,
+    ) -> WordbankImageRecord | None:
+        async with wordbank_main_db.write_session() as session:
+            image = await session.get(WordbankImage, image_id)
+            if image is None:
+                return None
+            image.local_cache_path = local_cache_path
+            image.cache_file_size = cache_file_size
+            if last_accessed_at is not None:
+                image.last_accessed_at = last_accessed_at
+            if cache_last_hit_at is not None:
+                image.cache_last_hit_at = cache_last_hit_at
+            image.updated_at = updated_at or get_current_time()
+            await session.flush()
+            return self._to_image_record(image)
+
+    async def list_cached_images(self) -> list[WordbankImageRecord]:
+        async with wordbank_main_db.read_session() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(WordbankImage).where(
+                            WordbankImage.local_cache_path != ""
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return [self._to_image_record(row) for row in rows]
+
+    async def list_images_for_remote_sync(
+        self,
+        *,
+        limit: int = 200,
+        id_start: int = 0,
+        only_unsynced: bool = True,
+    ) -> list[WordbankImageRecord]:
+        async with wordbank_main_db.read_session() as session:
+            stmt = select(WordbankImage).where(WordbankImage.id >= id_start)
+            if only_unsynced:
+                stmt = stmt.where(
+                    or_(
+                        WordbankImage.remote_storage_path == "",
+                        WordbankImage.remote_sync_status != "synced",
+                    )
+                )
+            rows = (
+                (
+                    await session.execute(
+                        stmt.order_by(WordbankImage.id.asc()).limit(limit)
+                    )
+                )
+                .scalars()
+                .all()
+            )
         return [self._to_image_record(row) for row in rows]
 
     async def save_log(

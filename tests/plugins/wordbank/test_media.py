@@ -1,7 +1,9 @@
 import asyncio
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 from PIL import Image
 import pytest
@@ -13,6 +15,7 @@ from src.plugins.wordbank.database.types import (
 )
 from src.plugins.wordbank.services import media as media_module
 from src.plugins.wordbank.services.media import (
+    LocalLruCacheWordbankMediaStorage,
     LocalWordbankMediaStorage,
     ObjectStorageWordbankMediaStorage,
     R2WordbankMediaStorage,
@@ -57,6 +60,12 @@ class _ImageRepo:
     async def list_images(self) -> list[WordbankImageRecord]:
         return list(self.images)
 
+    async def get_image_by_id(self, image_id: int) -> WordbankImageRecord | None:
+        for image in self.images:
+            if image.id == image_id:
+                return image
+        return None
+
     async def get_image_by_md5(self, md5: str) -> WordbankImageRecord | None:
         for image in self.images:
             if image.md5 == md5:
@@ -89,9 +98,103 @@ class _ImageRepo:
             file_size=payload["file_size"],
             hash_version=payload["hash_version"],
             storage_path=payload["storage_path"],
+            remote_storage_path=payload.get("remote_storage_path", ""),
+            local_cache_path=payload.get("local_cache_path", ""),
+            cache_file_size=payload.get("cache_file_size", 0),
+            last_accessed_at=payload.get("last_accessed_at", 0),
+            cache_last_hit_at=payload.get("cache_last_hit_at", 0),
+            remote_sync_status=payload.get("remote_sync_status", "pending"),
+            remote_synced_at=payload.get("remote_synced_at", 0),
+            remote_etag=payload.get("remote_etag", ""),
+            remote_object_size=payload.get("remote_object_size", 0),
+            created_at=payload["created_at"],
+            updated_at=payload["updated_at"],
         )
         self.images.append(image)
         return image
+
+    async def update_image_remote_sync(
+        self,
+        image_id: int,
+        *,
+        remote_storage_path: str,
+        remote_sync_status: str,
+        remote_synced_at: int,
+        remote_etag: str = "",
+        remote_object_size: int = 0,
+        storage_path: str | None = None,
+        updated_at: int | None = None,
+    ) -> WordbankImageRecord | None:
+        for index, image in enumerate(self.images):
+            if image.id != image_id:
+                continue
+            updated = replace(
+                image,
+                remote_storage_path=remote_storage_path,
+                remote_sync_status=remote_sync_status,
+                remote_synced_at=remote_synced_at,
+                remote_etag=remote_etag,
+                remote_object_size=remote_object_size,
+                storage_path=(
+                    storage_path if storage_path is not None else image.storage_path
+                ),
+                updated_at=updated_at or image.updated_at,
+            )
+            self.images[index] = updated
+            return updated
+        return None
+
+    async def update_image_cache_metadata(
+        self,
+        image_id: int,
+        *,
+        local_cache_path: str,
+        cache_file_size: int,
+        last_accessed_at: int | None = None,
+        cache_last_hit_at: int | None = None,
+        updated_at: int | None = None,
+    ) -> WordbankImageRecord | None:
+        for index, image in enumerate(self.images):
+            if image.id != image_id:
+                continue
+            updated = replace(
+                image,
+                local_cache_path=local_cache_path,
+                cache_file_size=cache_file_size,
+                last_accessed_at=(
+                    image.last_accessed_at
+                    if last_accessed_at is None
+                    else last_accessed_at
+                ),
+                cache_last_hit_at=(
+                    image.cache_last_hit_at
+                    if cache_last_hit_at is None
+                    else cache_last_hit_at
+                ),
+                updated_at=updated_at or image.updated_at,
+            )
+            self.images[index] = updated
+            return updated
+        return None
+
+    async def list_cached_images(self) -> list[WordbankImageRecord]:
+        return [image for image in self.images if image.local_cache_path]
+
+    async def list_images_for_remote_sync(
+        self,
+        *,
+        limit: int = 200,
+        id_start: int = 0,
+        only_unsynced: bool = True,
+    ) -> list[WordbankImageRecord]:
+        images = [image for image in self.images if image.id >= id_start]
+        if only_unsynced:
+            images = [
+                image
+                for image in images
+                if not image.remote_storage_path or image.remote_sync_status != "synced"
+            ]
+        return images[:limit]
 
 
 def test_fingerprint_and_hamming_distance() -> None:
@@ -419,3 +522,261 @@ def test_prepare_image_bytes_falls_back_to_original_jpeg_when_static_webp_fails(
     assert prepared.stored_media.extension == ".jpg"
     assert prepared.stored_media.content_type == "image/jpeg"
     assert prepared.stored_media.data == data
+
+
+async def test_media_ingest_persists_remote_storage_path_for_new_images(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    storage = _ObjectStorage()
+    service = WordbankMediaService(
+        repo,
+        media_root=tmp_path / "legacy",
+        remote_storage=ObjectStorageWordbankMediaStorage(storage),
+        cache_storage=LocalLruCacheWordbankMediaStorage(tmp_path / "cache"),
+    )
+
+    image = await service.ingest_image_bytes(_png((1, 2, 3)))
+
+    assert image.remote_storage_path == f"r2://bucket/wordbank/media/{image.md5}.webp"
+    assert image.remote_sync_status == "synced"
+    assert image.storage_path == image.remote_storage_path
+    assert await asyncio.to_thread(Path(repo.images[0].local_cache_path).is_file)
+
+
+async def test_media_load_prefers_local_lru_cache(tmp_path: Path) -> None:
+    repo = _ImageRepo()
+    storage = _ObjectStorage()
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    cached_bytes = _png((4, 5, 6))
+    cache_path = cache_root / "cached.png"
+    cache_path.write_bytes(cached_bytes)
+    service = WordbankMediaService(
+        repo,
+        media_root=tmp_path / "legacy",
+        remote_storage=ObjectStorageWordbankMediaStorage(storage),
+        cache_storage=LocalLruCacheWordbankMediaStorage(cache_root),
+    )
+    await repo.create_image(
+        {
+            "md5": "1" * 32,
+            "dhash": "0" * 16,
+            "phash": "0" * 16,
+            "width": 16,
+            "height": 16,
+            "file_size": len(cached_bytes),
+            "hash_version": 2,
+            "storage_path": "r2://bucket/wordbank/media/test.png",
+            "remote_storage_path": "r2://bucket/wordbank/media/test.png",
+            "local_cache_path": str(cache_path),
+            "cache_file_size": len(cached_bytes),
+            "remote_sync_status": "synced",
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
+    await service.rebuild_cache()
+    storage.get_bytes = AsyncMock(side_effect=AssertionError("remote should not run"))
+
+    loaded = await service.load_canonical_storage_bytes(1)
+
+    assert loaded == cached_bytes
+    assert repo.images[0].cache_last_hit_at > 0
+
+
+async def test_media_load_remote_miss_backfills_local_cache_and_updates_access_time(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    storage = _ObjectStorage()
+    data = _png((7, 8, 9))
+    storage.objects["wordbank/media/test.png"] = data
+    service = WordbankMediaService(
+        repo,
+        media_root=tmp_path / "legacy",
+        remote_storage=ObjectStorageWordbankMediaStorage(storage),
+        cache_storage=LocalLruCacheWordbankMediaStorage(tmp_path / "cache"),
+    )
+    await repo.create_image(
+        {
+            "md5": "2" * 32,
+            "dhash": "1" * 16,
+            "phash": "1" * 16,
+            "width": 16,
+            "height": 16,
+            "file_size": len(data),
+            "hash_version": 2,
+            "storage_path": "r2://bucket/wordbank/media/test.png",
+            "remote_storage_path": "r2://bucket/wordbank/media/test.png",
+            "remote_sync_status": "synced",
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
+    await service.rebuild_cache()
+
+    loaded = await service.load_canonical_storage_bytes(1)
+
+    assert loaded == data
+    assert repo.images[0].local_cache_path
+    assert await asyncio.to_thread(Path(repo.images[0].local_cache_path).is_file)
+    assert repo.images[0].last_accessed_at > 0
+
+
+async def test_media_cache_evicts_least_recently_used_when_size_exceeded(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    storage = _ObjectStorage()
+    first_bytes = _png((10, 20, 30))
+    second_bytes = _png((40, 50, 60))
+    storage.objects["wordbank/media/first.png"] = first_bytes
+    storage.objects["wordbank/media/second.png"] = second_bytes
+    cache_storage = LocalLruCacheWordbankMediaStorage(
+        tmp_path / "cache",
+        max_bytes=len(first_bytes) + 8,
+        trim_to_bytes=len(first_bytes),
+        max_files=10,
+    )
+    service = WordbankMediaService(
+        repo,
+        media_root=tmp_path / "legacy",
+        remote_storage=ObjectStorageWordbankMediaStorage(storage),
+        cache_storage=cache_storage,
+    )
+    await repo.create_image(
+        {
+            "md5": "3" * 32,
+            "dhash": "2" * 16,
+            "phash": "2" * 16,
+            "width": 16,
+            "height": 16,
+            "file_size": len(first_bytes),
+            "hash_version": 2,
+            "storage_path": "r2://bucket/wordbank/media/first.png",
+            "remote_storage_path": "r2://bucket/wordbank/media/first.png",
+            "remote_sync_status": "synced",
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
+    await repo.create_image(
+        {
+            "md5": "4" * 32,
+            "dhash": "3" * 16,
+            "phash": "3" * 16,
+            "width": 16,
+            "height": 16,
+            "file_size": len(second_bytes),
+            "hash_version": 2,
+            "storage_path": "r2://bucket/wordbank/media/second.png",
+            "remote_storage_path": "r2://bucket/wordbank/media/second.png",
+            "remote_sync_status": "synced",
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
+    await service.rebuild_cache()
+
+    assert await service.load_canonical_storage_bytes(1) == first_bytes
+    assert await service.load_canonical_storage_bytes(2) == second_bytes
+
+    assert repo.images[0].local_cache_path == ""
+    assert repo.images[1].local_cache_path != ""
+    first_cache_exists = await asyncio.to_thread(
+        Path(tmp_path / "cache" / f"{'3' * 32}.png").exists
+    )
+    assert not first_cache_exists
+
+
+async def test_media_cache_singleflight_prevents_duplicate_remote_download(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    data = _png((70, 80, 90))
+
+    class _SlowObjectStorage(_ObjectStorage):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+            self.objects["wordbank/media/test.png"] = data
+
+        async def get_bytes(self, key: str) -> bytes:
+            self.calls += 1
+            await asyncio.sleep(0.05)
+            return await super().get_bytes(key)
+
+    storage = _SlowObjectStorage()
+    service = WordbankMediaService(
+        repo,
+        media_root=tmp_path / "legacy",
+        remote_storage=ObjectStorageWordbankMediaStorage(storage),
+        cache_storage=LocalLruCacheWordbankMediaStorage(tmp_path / "cache"),
+    )
+    await repo.create_image(
+        {
+            "md5": "5" * 32,
+            "dhash": "4" * 16,
+            "phash": "4" * 16,
+            "width": 16,
+            "height": 16,
+            "file_size": len(data),
+            "hash_version": 2,
+            "storage_path": "r2://bucket/wordbank/media/test.png",
+            "remote_storage_path": "r2://bucket/wordbank/media/test.png",
+            "remote_sync_status": "synced",
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
+    await service.rebuild_cache()
+
+    first, second = await asyncio.gather(
+        service.load_canonical_storage_bytes(1),
+        service.load_canonical_storage_bytes(1),
+    )
+
+    assert first == data
+    assert second == data
+    assert storage.calls == 1
+
+
+async def test_media_falls_back_to_legacy_local_storage_path_when_remote_unavailable(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    storage = _ObjectStorage()
+    storage.get_bytes = AsyncMock(return_value=None)
+    legacy_root = tmp_path / "legacy"
+    legacy_root.mkdir()
+    legacy_path = legacy_root / "legacy.png"
+    legacy_bytes = _png((100, 110, 120))
+    legacy_path.write_bytes(legacy_bytes)
+    service = WordbankMediaService(
+        repo,
+        media_root=legacy_root,
+        remote_storage=ObjectStorageWordbankMediaStorage(storage),
+        cache_storage=LocalLruCacheWordbankMediaStorage(tmp_path / "cache"),
+    )
+    await repo.create_image(
+        {
+            "md5": "6" * 32,
+            "dhash": "5" * 16,
+            "phash": "5" * 16,
+            "width": 16,
+            "height": 16,
+            "file_size": len(legacy_bytes),
+            "hash_version": 2,
+            "storage_path": str(legacy_path),
+            "remote_storage_path": "r2://bucket/wordbank/media/missing.png",
+            "remote_sync_status": "failed",
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
+    await service.rebuild_cache()
+
+    loaded = await service.load_canonical_storage_bytes(1)
+
+    assert loaded == legacy_bytes

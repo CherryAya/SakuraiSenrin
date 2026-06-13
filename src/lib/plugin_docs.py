@@ -20,6 +20,7 @@ from pil_utils.text2image import Text2Image
 
 from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
+from src.lib.demo_theme import BASE_THEME
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -540,7 +541,10 @@ def render_doc_node_overview(
     message = Message("\n".join(lines).strip())
     if not include_demo:
         return message
-    demo_bytes = load_representative_demo_bytes(node.bundle)
+    demo_bytes = load_representative_demo_bytes(
+        bundle=node.bundle,
+        actor_permission=actor_permission,
+    )
     if demo_bytes is None:
         return message
     return message + MessageSegment.image(demo_bytes)
@@ -576,9 +580,7 @@ def render_doc_feature(
 
 
 def can_view_node(node: DocNode, actor_permission: Permission) -> bool:
-    if node.permission == Permission.NONE:
-        return True
-    return actor_permission.has(node.permission)
+    return _permission_allows(actor_permission, node.permission)
 
 
 def filter_features_by_permission(
@@ -588,9 +590,28 @@ def filter_features_by_permission(
     return tuple(
         feature
         for feature in features
-        if feature.permission == Permission.NONE
-        or actor_permission.has(feature.permission)
+        if _permission_allows(actor_permission, feature.permission)
     )
+
+
+def _permission_allows(
+    actor_permission: Permission,
+    required_permission: Permission,
+) -> bool:
+    if required_permission == Permission.NONE:
+        return True
+    permission_levels = {
+        Permission.NONE: 0,
+        Permission.NORMAL: 1,
+        Permission.GROUP_ADMIN: 2,
+        Permission.GROUP_OWNER: 3,
+        Permission.SUPERUSER: 4,
+    }
+    actor_level = permission_levels.get(actor_permission, 0)
+    required_level = permission_levels.get(required_permission, 0)
+    if actor_level and required_level:
+        return actor_level >= required_level
+    return actor_permission.has(required_permission)
 
 
 def load_plugin_doc_bundle(
@@ -811,11 +832,17 @@ def load_collection_demo_bytes(bundle: PluginDocBundle) -> bytes | None:
     return None
 
 
-def load_representative_demo_bytes(bundle: PluginDocBundle) -> bytes | None:
+def load_representative_demo_bytes(
+    bundle: PluginDocBundle,
+    actor_permission: Permission = Permission.NORMAL,
+) -> bytes | None:
+    """加载代表性 demo 图片，优先使用集合图片，否则使用第一个有权限的功能 demo"""
     collection_demo = load_collection_demo_bytes(bundle)
     if collection_demo is not None:
         return collection_demo
-    for feature in bundle.index:
+    # 按权限过滤功能，只加载用户有权限查看的 demo
+    visible_features = filter_features_by_permission(bundle.index, actor_permission)
+    for feature in visible_features:
         demo_bytes = load_demo_bytes(bundle, feature)
         if demo_bytes is not None:
             return demo_bytes
@@ -1198,41 +1225,18 @@ class DemoImageRenderer:
     SYSTEM_MIN_BUBBLE_WIDTH = 480
     CHIP_HEIGHT = 38
     FOOTER_RIGHT_TEXT = "help docs"
-
-    PAGE_BG = "#FAFAF8"
-    SHELL_BG = "#FFFFFF"
-    SHELL_BORDER = "#EFE9ED"
-    PANEL_BG = "#FFFFFF"
-    PANEL_BORDER = "#F0E8EE"
-    ACCENT = "#E987A5"
-    ACCENT_DARK = "#9A3F62"
-    INDIGO = "#4F6FAE"
-    INDIGO_SOFT = "#EAF0FF"
-    INDIGO_TEXT = "#2F4A7C"
-    DEEP = "#2E2630"
-    MUTED = "#8F8190"
-    MUTED_LIGHT = "#F7F3F5"
-    USER_BUBBLE = "#FFF0F5"
-    BOT_BUBBLE = "#EEF4FF"
-    SYSTEM_BUBBLE = "#FFF7DF"
-    SYSTEM_TEXT = "#67522B"
-    SYSTEM_LABEL = "#9B7524"
-    FOOTER_BG = "#FBF6F8"
-    INLINE_CODE_BG = "#FFF7FA"
-    INLINE_CODE_TEXT = "#7D3653"
-    INLINE_CODE_RADIUS = 10
-    INLINE_CODE_PAD_X = 8
-    INLINE_CODE_PAD_Y = 4
     FONT_FAMILIES: ClassVar[list[str]] = [MAPLE_FONT_NAME]
 
     def __init__(self) -> None:
+        self.theme = BASE_THEME
         try:
-            self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 16)
-            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 42)
-            self.feature_font = ImageFont.truetype(MAPLE_FONT_PATH, 26)
-            self.body_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
-            self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 16)
-            self.footer_font = ImageFont.truetype(MAPLE_FONT_PATH, 15)
+            # 移动端优化：增大字体以便手机聊天查看
+            self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 22)  # 16 → 22
+            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 56)  # 42 → 56
+            self.feature_font = ImageFont.truetype(MAPLE_FONT_PATH, 34)  # 26 → 34
+            self.body_font = ImageFont.truetype(MAPLE_FONT_PATH, 32)  # 24 → 32
+            self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 22)  # 16 → 22
+            self.footer_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)  # 15 → 20
         except OSError:
             self.eyebrow_font = ImageFont.load_default()
             self.title_font = ImageFont.load_default()
@@ -1264,7 +1268,7 @@ class DemoImageRenderer:
         panel_bottom = body_top + conversation_height + self.BODY_PADDING_Y
         footer_top = panel_bottom + self.FOOTER_TOP_GAP
         height = footer_top + self.FOOTER_HEIGHT + self.OUTER_MARGIN
-        image = Image.new("RGB", (self.WIDTH, height), self.PAGE_BG)
+        image = Image.new("RGB", (self.WIDTH, height), self.theme.page_bg)
         self._paint_background(image)
         draw = ImageDraw.Draw(image)
         draw.rounded_rectangle(
@@ -1274,9 +1278,9 @@ class DemoImageRenderer:
                 self.WIDTH - self.OUTER_MARGIN,
                 height - self.OUTER_MARGIN,
             ),
-            radius=self.SHELL_RADIUS,
-            fill=self.SHELL_BG,
-            outline=self.SHELL_BORDER,
+            radius=self.theme.shell_radius,
+            fill=self.theme.shell_bg,
+            outline=self.theme.shell_border,
             width=2,
         )
         self._draw_header(
@@ -1313,8 +1317,8 @@ class DemoImageRenderer:
     def _paint_background(self, image: Image.Image) -> None:
         draw = ImageDraw.Draw(image)
         width, height = image.size
-        draw.rectangle((0, 0, width, height), fill=self.PAGE_BG)
-        draw.rectangle((0, 0, width, 10), fill=self.ACCENT)
+        draw.rectangle((0, 0, width, height), fill=self.theme.page_bg)
+        draw.rectangle((0, 0, width, 10), fill=self.theme.accent)
         draw.rounded_rectangle((74, 66, 112, height - 76), radius=19, fill="#FFF4F7")
         draw.rounded_rectangle(
             (width - 142, 126, width - 86, height - 124),
@@ -1332,14 +1336,14 @@ class DemoImageRenderer:
         feature_trigger: str,
         turn_count: int,
     ) -> None:
-        draw.rounded_rectangle((96, 94, 106, 190), radius=5, fill=self.ACCENT)
+        draw.rounded_rectangle((96, 94, 106, 190), radius=5, fill=self.theme.accent)
         self._draw_chip(
             draw,
             x=self.HEADER_LEFT,
             y=self.HEADER_CHIP_TOP,
             text="PLUGIN DEMO",
-            fill=self.MUTED_LIGHT,
-            text_fill=self.ACCENT_DARK,
+            fill=self.theme.muted_light,
+            text_fill=self.theme.strong,
             font=self.eyebrow_font,
         )
         self._draw_chip(
@@ -1347,8 +1351,8 @@ class DemoImageRenderer:
             x=self.HEADER_STEPS_X,
             y=self.HEADER_CHIP_TOP,
             text=f"{turn_count} STEP{'S' if turn_count != 1 else ''}",
-            fill=self.INDIGO_SOFT,
-            text_fill=self.INDIGO_TEXT,
+            fill=self.theme.indigo_soft,
+            text_fill=self.theme.indigo_text,
             font=self.eyebrow_font,
             min_width=154,
         )
@@ -1364,7 +1368,7 @@ class DemoImageRenderer:
             y=self.HEADER_TITLE_TOP,
             text=title_text,
             font=self.title_font,
-            fill=self.DEEP,
+            fill=self.theme.deep,
         )
         feature_text = self._fit_text(
             draw,
@@ -1378,7 +1382,7 @@ class DemoImageRenderer:
             y=self.HEADER_FEATURE_TOP,
             text=feature_text,
             font=self.feature_font,
-            fill=self.ACCENT_DARK,
+            fill=self.theme.strong,
         )
         if feature_trigger.strip():
             self._draw_inline_chip(
@@ -1387,8 +1391,8 @@ class DemoImageRenderer:
                 y=self.HEADER_TRIGGER_TOP,
                 text=f"指令示例: {feature_trigger}",
                 max_width=760,
-                fill="#FFF7FA",
-                text_fill=self.MUTED,
+                fill=self.theme.inline_code_bg,
+                text_fill=self.theme.hint,
                 font=self.meta_font,
                 min_width=300,
             )
@@ -1408,9 +1412,9 @@ class DemoImageRenderer:
                 self.WIDTH - self.OUTER_MARGIN - 28,
                 bottom,
             ),
-            radius=28,
-            fill=self.PANEL_BG,
-            outline=self.PANEL_BORDER,
+            radius=self.theme.panel_radius,
+            fill=self.theme.panel_bg,
+            outline=self.theme.line,
             width=2,
         )
 
@@ -1477,7 +1481,7 @@ class DemoImageRenderer:
             draw.rounded_rectangle(
                 (left, top, right, top + spec.height),
                 radius=20,
-                fill=self.SYSTEM_BUBBLE,
+                fill=self.theme.system_bubble,
             )
             self._draw_multiline_text(
                 draw,
@@ -1485,7 +1489,7 @@ class DemoImageRenderer:
                 y=top + self.BUBBLE_PADDING_Y + 8,
                 lines=spec.lines,
                 font=self.body_font,
-                fill=self.SYSTEM_TEXT,
+                fill=self.theme.system_text,
             )
             label = "SYSTEM"
             label_box = self._text_size(label, self.eyebrow_font)
@@ -1495,7 +1499,7 @@ class DemoImageRenderer:
                 y=top + 12 - label_box[1],
                 text=label,
                 font=self.eyebrow_font,
-                fill=self.SYSTEM_LABEL,
+                fill=self.theme.system_label,
             )
             return
 
@@ -1515,10 +1519,10 @@ class DemoImageRenderer:
             else avatar_x + self.AVATAR_SIZE + 18
         )
         bubble_y = top + max((self.AVATAR_SIZE - spec.height) // 2, 0)
-        fill = self.USER_BUBBLE if is_user else self.BOT_BUBBLE
-        text_fill = self.DEEP if is_user else self.INDIGO_TEXT
+        fill = self.theme.user_bubble if is_user else self.theme.bot_bubble
+        text_fill = self.theme.deep if is_user else self.theme.indigo_text
         label = "你" if is_user else "凛"
-        avatar_fill = self.ACCENT if is_user else self.INDIGO
+        avatar_fill = self.theme.accent if is_user else self.theme.indigo
 
         if is_user:
             self._draw_avatar(draw, x=avatar_x, y=top, label=label, fill=avatar_fill)
@@ -1530,7 +1534,7 @@ class DemoImageRenderer:
             fill=fill,
         )
         speaker = "USER" if is_user else "BOT"
-        label_fill = self.ACCENT_DARK if is_user else self.INDIGO
+        label_fill = self.theme.strong if is_user else self.theme.indigo
         label_box = self._text_size(speaker, self.eyebrow_font)
         self._draw_text(
             draw,
@@ -1585,7 +1589,7 @@ class DemoImageRenderer:
         y: int,
     ) -> None:
         if self.senrin_avatar is None:
-            self._draw_avatar(draw, x=x, y=y, label="凛", fill=self.INDIGO)
+            self._draw_avatar(draw, x=x, y=y, label="凛", fill=self.theme.indigo)
             return
         avatar = self.senrin_avatar
         mask = Image.new("L", avatar.size, 0)
@@ -1605,7 +1609,7 @@ class DemoImageRenderer:
         draw: ImageDraw.ImageDraw,
     ) -> None:
         if self.senrin_standee is None:
-            self._draw_avatar(draw, x=1088, y=128, label="凛", fill=self.INDIGO)
+            self._draw_avatar(draw, x=1088, y=128, label="凛", fill=self.theme.indigo)
             return
         image.paste(
             self.senrin_standee,
@@ -1653,7 +1657,7 @@ class DemoImageRenderer:
                 top + self.FOOTER_HEIGHT,
             ),
             radius=18,
-            fill=self.FOOTER_BG,
+            fill=self.theme.footer_bg,
         )
         footer_rect = (
             self.OUTER_MARGIN + 28,
@@ -1684,7 +1688,7 @@ class DemoImageRenderer:
             footer_rect,
             left_text,
             font=self.footer_font,
-            fill=self.MUTED,
+            fill=self.theme.hint,
             align="left",
             padding_x=self.FOOTER_SIDE_PADDING,
         )
@@ -1693,7 +1697,7 @@ class DemoImageRenderer:
             right_rect,
             right_text,
             font=self.footer_font,
-            fill=self.MUTED,
+            fill=self.theme.hint,
             align="right",
         )
 
@@ -1712,7 +1716,7 @@ class DemoImageRenderer:
         rect = self._chip_rect(
             draw, x=x, y=y, text=text, font=font, min_width=min_width
         )
-        draw.rounded_rectangle(rect, radius=15, fill=fill)
+        draw.rounded_rectangle(rect, radius=self.theme.chip_radius, fill=fill)
         self._draw_text_centered(
             draw,
             rect,
@@ -1742,7 +1746,7 @@ class DemoImageRenderer:
             font=font,
             min_width=min_width,
         )
-        draw.rounded_rectangle(rect, radius=15, fill=fill)
+        draw.rounded_rectangle(rect, radius=self.theme.chip_radius, fill=fill)
         line_width = self._inline_line_width(line, font)
         line_height = self._font_line_height(font)
         draw_x = rect[0] + (rect[2] - rect[0] - line_width) / 2
@@ -2188,9 +2192,9 @@ class DemoImageRenderer:
             text_bbox = self._text_size(span.text, font)
             text_width = int(text_bbox[2] - text_bbox[0])
             text_height = int(text_bbox[3] - text_bbox[1])
-            chip_height = max(text_height + self.INLINE_CODE_PAD_Y * 2, 22)
+            chip_height = max(text_height + self.theme.inline_code_pad_y * 2, 22)
             chip_y = y + max((line_height - chip_height) / 2, 0)
-            chip_width = text_width + self.INLINE_CODE_PAD_X * 2
+            chip_width = text_width + self.theme.inline_code_pad_x * 2
             draw.rounded_rectangle(
                 (
                     cursor_x,
@@ -2198,17 +2202,17 @@ class DemoImageRenderer:
                     cursor_x + chip_width,
                     chip_y + chip_height,
                 ),
-                radius=self.INLINE_CODE_RADIUS,
-                fill=self.INLINE_CODE_BG,
+                radius=self.theme.inline_code_radius,
+                fill=self.theme.inline_code_bg,
             )
             text_y = chip_y + (chip_height - text_height) / 2 - text_bbox[1]
             self._draw_text(
                 draw,
-                x=cursor_x + self.INLINE_CODE_PAD_X,
+                x=cursor_x + self.theme.inline_code_pad_x,
                 y=text_y,
                 text=span.text,
                 font=font,
-                fill=self.INLINE_CODE_TEXT,
+                fill=self.theme.inline_code_text,
             )
             cursor_x += chip_width
 
@@ -2275,7 +2279,7 @@ class DemoImageRenderer:
                 continue
             width += self._text_width(span.text, font)
             if span.code:
-                width += self.INLINE_CODE_PAD_X * 2
+                width += self.theme.inline_code_pad_x * 2
         return width
 
     def _append_inline_char(

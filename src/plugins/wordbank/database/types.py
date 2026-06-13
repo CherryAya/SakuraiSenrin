@@ -67,6 +67,15 @@ class WordbankImagePayload(TypedDict):
     file_size: int
     hash_version: int
     storage_path: str
+    remote_storage_path: NotRequired[str]
+    local_cache_path: NotRequired[str]
+    cache_file_size: NotRequired[int]
+    last_accessed_at: NotRequired[int]
+    cache_last_hit_at: NotRequired[int]
+    remote_sync_status: NotRequired[str]
+    remote_synced_at: NotRequired[int]
+    remote_etag: NotRequired[str]
+    remote_object_size: NotRequired[int]
     created_at: int
     updated_at: int
 
@@ -215,6 +224,17 @@ class WordbankImageRecord:
     file_size: int
     hash_version: int
     storage_path: str
+    remote_storage_path: str = ""
+    local_cache_path: str = ""
+    cache_file_size: int = 0
+    last_accessed_at: int = 0
+    cache_last_hit_at: int = 0
+    remote_sync_status: str = "pending"
+    remote_synced_at: int = 0
+    remote_etag: str = ""
+    remote_object_size: int = 0
+    created_at: int = 0
+    updated_at: int = 0
 
     @property
     def canonical_id(self) -> int:

@@ -6,6 +6,81 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.lib.db.schema import PatchRegistry, SchemaPatch
 
 
+async def _patch_wordbank_image_media_columns(session: AsyncSession) -> None:
+    columns = await session.execute(text("PRAGMA table_info(wordbank_image)"))
+    column_names = {str(row[1]) for row in columns.all()}
+    if not column_names:
+        return
+
+    column_defs = {
+        "remote_storage_path": "TEXT NOT NULL DEFAULT ''",
+        "local_cache_path": "TEXT NOT NULL DEFAULT ''",
+        "cache_file_size": "INTEGER NOT NULL DEFAULT 0",
+        "last_accessed_at": "INTEGER NOT NULL DEFAULT 0",
+        "cache_last_hit_at": "INTEGER NOT NULL DEFAULT 0",
+        "remote_sync_status": "VARCHAR(16) NOT NULL DEFAULT 'pending'",
+        "remote_synced_at": "INTEGER NOT NULL DEFAULT 0",
+        "remote_etag": "TEXT NOT NULL DEFAULT ''",
+        "remote_object_size": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for column_name, column_def in column_defs.items():
+        if column_name in column_names:
+            continue
+        await session.execute(
+            text(f"ALTER TABLE wordbank_image ADD COLUMN {column_name} {column_def}")
+        )
+
+    await session.execute(
+        text(
+            """
+            UPDATE wordbank_image
+            SET
+                remote_storage_path = CASE
+                    WHEN remote_storage_path != '' THEN remote_storage_path
+                    WHEN storage_path LIKE 'r2://%' OR storage_path LIKE 'github://%'
+                    THEN storage_path
+                    ELSE ''
+                END,
+                remote_sync_status = CASE
+                    WHEN remote_storage_path != '' THEN remote_sync_status
+                    WHEN storage_path LIKE 'r2://%' OR storage_path LIKE 'github://%'
+                    THEN 'synced'
+                    WHEN storage_path != '' THEN 'pending'
+                    ELSE remote_sync_status
+                END,
+                remote_synced_at = CASE
+                    WHEN remote_synced_at > 0 THEN remote_synced_at
+                    WHEN storage_path LIKE 'r2://%' OR storage_path LIKE 'github://%'
+                    THEN updated_at
+                    ELSE remote_synced_at
+                END,
+                remote_object_size = CASE
+                    WHEN remote_object_size > 0 THEN remote_object_size
+                    WHEN storage_path LIKE 'r2://%' OR storage_path LIKE 'github://%'
+                    THEN file_size
+                    ELSE remote_object_size
+                END
+            """
+        )
+    )
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_wordbank_image_remote_sync
+            ON wordbank_image (remote_sync_status, id)
+            """
+        )
+    )
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_wordbank_image_cache_lru
+            ON wordbank_image (cache_last_hit_at, last_accessed_at, updated_at)
+            """
+        )
+    )
+
+
 async def _drop_wordbank_log_matched_text(session: AsyncSession) -> None:
     columns = await session.execute(text("PRAGMA table_info(wordbank_log)"))
     column_names = {str(row[1]) for row in columns.all()}
@@ -71,6 +146,17 @@ async def _drop_wordbank_log_matched_text(session: AsyncSession) -> None:
             """
         )
     )
+
+
+def build_wordbank_main_patch_registry() -> PatchRegistry:
+    registry = PatchRegistry()
+    registry.register(
+        SchemaPatch(
+            patch_id="wordbank_main:image_media_columns:v1",
+            apply=_patch_wordbank_image_media_columns,
+        )
+    )
+    return registry
 
 
 def build_wordbank_log_patch_registry() -> PatchRegistry:

@@ -80,3 +80,42 @@ assert job.trigger.fields[6].expressions[0].first == 30
     output = f"{result.stdout}\n{result.stderr}"
 
     assert result.returncode == 0, output
+
+
+def test_wordbank_plugin_registers_media_maintenance_scheduler_job() -> None:
+    script = """
+import nonebot
+
+nonebot.init(
+    SUPERUSERS={"1"},
+    IGNORED_USERS=set(),
+    MAIN_GROUP_ID="10001",
+    GITHUB_TOKEN="test-token",
+    GITHUB_REPO="owner/repo",
+    GITHUB_BRANCH="main",
+    WORDBANK_MEDIA_PROVIDER="local",
+    command_start={"#", "＃", "井"},
+    command_sep={"."},
+)
+
+nonebot.require("nonebot_plugin_apscheduler")
+from nonebot_plugin_apscheduler import scheduler
+
+plugin = nonebot.load_plugin("src.plugins.wordbank")
+assert plugin is not None
+
+job = scheduler.get_job("wordbank_media_maintenance")
+assert job is not None
+assert job.trigger.fields[5].expressions[0].first == 1
+assert job.trigger.fields[6].expressions[0].first == 15
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = f"{result.stdout}\n{result.stderr}"
+
+    assert result.returncode == 0, output

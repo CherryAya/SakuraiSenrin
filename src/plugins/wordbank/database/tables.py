@@ -129,6 +129,13 @@ class WordbankImage(WordbankMainBase, TimeMixin):
         Index("idx_wordbank_image_dhash", "dhash"),
         Index("idx_wordbank_image_phash", "phash"),
         Index("idx_wordbank_image_canonical", "canonical_image_id"),
+        Index("idx_wordbank_image_remote_sync", "remote_sync_status", "id"),
+        Index(
+            "idx_wordbank_image_cache_lru",
+            "cache_last_hit_at",
+            "last_accessed_at",
+            "updated_at",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -141,6 +148,19 @@ class WordbankImage(WordbankMainBase, TimeMixin):
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     hash_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     storage_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    remote_storage_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    local_cache_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    cache_file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_accessed_at: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cache_last_hit_at: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    remote_sync_status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="pending",
+    )
+    remote_synced_at: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    remote_etag: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    remote_object_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class WordbankSearchDocument(WordbankMainBase):

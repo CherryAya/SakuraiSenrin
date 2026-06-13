@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from io import BytesIO
 import json
 from pathlib import Path
+import sqlite3
 from typing import Any
 
 from PIL import Image
@@ -562,9 +563,7 @@ async def test_rebuilt_failure_rows_append_into_existing_wordbank(
     )
     entries = await repository.list_enabled_entries()
     trigger_texts = sorted(
-        variant.trigger_text
-        for entry in entries
-        for variant in entry.trigger_variants
+        variant.trigger_text for entry in entries for variant in entry.trigger_variants
     )
 
     assert report.imported_rows == 1
@@ -1478,6 +1477,119 @@ def test_migration_report_groups_failures_by_category() -> None:
     assert isinstance(categories, dict)
     assert categories["image_file_empty"]["count"] == 1
     assert categories["image_file_missing"]["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_wordbank_image_schema_patch_adds_remote_media_fields_with_defaults(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path / "db")
+    db_dir = tmp_path / "db" / "wordbank_db"
+    db_dir.mkdir(parents=True, exist_ok=True)
+    db_path = db_dir / "wordbank_main.db"
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE wordbank_image (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_image_id INTEGER,
+                md5 VARCHAR(32) NOT NULL,
+                dhash VARCHAR(16) NOT NULL,
+                phash VARCHAR(16) NOT NULL,
+                width INTEGER NOT NULL,
+                height INTEGER NOT NULL,
+                file_size INTEGER NOT NULL,
+                hash_version INTEGER NOT NULL DEFAULT 1,
+                storage_path TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO wordbank_image (
+                canonical_image_id,
+                md5,
+                dhash,
+                phash,
+                width,
+                height,
+                file_size,
+                hash_version,
+                storage_path,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                "a" * 32,
+                "0" * 16,
+                "1" * 16,
+                16,
+                16,
+                123,
+                2,
+                "/tmp/legacy.png",
+                1,
+                10,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO wordbank_image (
+                canonical_image_id,
+                md5,
+                dhash,
+                phash,
+                width,
+                height,
+                file_size,
+                hash_version,
+                storage_path,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                2,
+                "b" * 32,
+                "2" * 16,
+                "3" * 16,
+                16,
+                16,
+                456,
+                2,
+                "r2://bucket/wordbank/media/existing.webp",
+                2,
+                20,
+            ),
+        )
+        conn.commit()
+
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+    images = await repository.list_images()
+    images_by_md5 = {image.md5: image for image in images}
+
+    local_image = images_by_md5["a" * 32]
+    remote_image = images_by_md5["b" * 32]
+
+    assert local_image.remote_storage_path == ""
+    assert local_image.remote_sync_status == "pending"
+    assert local_image.local_cache_path == ""
+    assert local_image.cache_file_size == 0
+    assert (
+        remote_image.remote_storage_path == "r2://bucket/wordbank/media/existing.webp"
+    )
+    assert remote_image.remote_sync_status == "synced"
+    assert remote_image.remote_synced_at == 20
+    assert remote_image.remote_object_size == 456
 
 
 def _segment_list(value: dict[str, object]) -> list[dict[str, Any]]:
