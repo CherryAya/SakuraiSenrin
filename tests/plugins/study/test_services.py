@@ -20,8 +20,9 @@ nonebot.init(
     command_sep={"."},
 )
 
-sys.modules.pop("src.plugins.study", None)
-nonebot.load_plugin("src.plugins.study")
+if nonebot.get_plugin("study") is None:
+    sys.modules.pop("src.plugins.study", None)
+    nonebot.load_plugin("src.plugins.study")
 
 from src.plugins import study as study_plugin
 from src.plugins.wordbank.services import wordbank_service
