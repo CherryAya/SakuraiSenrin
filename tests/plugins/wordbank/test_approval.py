@@ -7,6 +7,7 @@ import pytest
 
 from src.plugins.wordbank.handlers.approval import (
     build_add_result_message,
+    build_pending_approval_notice_message,
     format_pending_approval_notice,
 )
 from src.plugins.wordbank.message_model import (
@@ -61,8 +62,11 @@ async def test_build_add_result_message_rebuilds_shape_with_image() -> None:
     )
 
     segments = list(message)
-    assert any(segment.type == "text" for segment in segments)
+    text_values = [str(segment) for segment in segments if segment.type == "text"]
+    assert text_values[0].endswith("触发: 晚安\n响应:\n")
+    assert text_values[-1].startswith("\n范围: current_group\n概率: 1\n权重: 3\n")
     assert any(segment.type == "image" for segment in segments)
+    assert "消息回复如下" not in str(message)
     load_canonical_storage_bytes.assert_awaited_once_with(7)
 
 
@@ -112,3 +116,33 @@ def test_format_pending_approval_notice_uses_shape_summary() -> None:
 
     assert "做个好梦 [图片:7]" in notice
     assert "原始文本" not in notice
+
+
+@pytest.mark.asyncio
+async def test_build_pending_approval_notice_message_embeds_image_response() -> None:
+    load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    result = _result(
+        response_text="[图片:7]",
+        response_shape=shape_from_image(7),
+    )
+
+    message = await build_pending_approval_notice_message(
+        result,
+        event=_event(),
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    segments = list(message)
+    text_values = [str(segment) for segment in segments if segment.type == "text"]
+    assert text_values[0].endswith("触发: 晚安\n响应:\n")
+    assert text_values[-1].startswith(
+        "\n范围: current_group\n概率: 1\n权重: 3\n提交者: 10001\n来源群: 20001"
+    )
+    assert any(segment.type == "image" for segment in segments)
+    assert "消息回复如下" not in str(message)
+    load_canonical_storage_bytes.assert_awaited_once_with(7)

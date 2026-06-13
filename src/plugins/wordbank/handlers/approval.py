@@ -93,26 +93,28 @@ async def _append_response_image(
     if all(atom.kind == "text" for atom in response_shape.atoms):
         return Message(text)
     summary = format_response_summary(result.response_text, shape=response_shape)
-    return Message(_strip_response_summary(text, summary)) + (
-        await render_shape_message(response_shape, media_service)
+    return _embed_response_shape(
+        text=text,
+        summary=summary,
+        rendered_response=await render_shape_message(response_shape, media_service),
     )
 
 
-def _strip_response_summary(text: str, summary: str) -> str:
-    if f"响应: {summary}" in text:
-        return text.replace(f"响应: {summary}", "响应: 消息回复如下")
-    if f" {summary}" in text:
-        return text.replace(f" {summary}", "")
-    return text.replace(summary, "消息回复如下")
+def _embed_response_shape(
+    *,
+    text: str,
+    summary: str,
+    rendered_response: Message,
+) -> Message:
+    marker = f"响应: {summary}"
+    if marker not in text:
+        return Message(text) + rendered_response
 
-
-def _strip_response_image_placeholder(text: str, canonical_id: int) -> str:
-    marker = f"[图片:{canonical_id}]"
-    if f"响应: {marker}" in text:
-        return text.replace(f"响应: {marker}", "响应: 图片回复如下")
-    if f" {marker}" in text:
-        return text.replace(f" {marker}", "")
-    return text.replace(marker, "图片回复如下")
+    prefix, _, suffix = text.partition(marker)
+    message = Message(prefix + "响应:\n")
+    message += rendered_response
+    message += Message(suffix)
+    return message
 
 
 async def send_pending_approval_notice(
