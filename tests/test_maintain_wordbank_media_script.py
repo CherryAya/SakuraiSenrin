@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 
@@ -61,7 +61,9 @@ def test_maintain_wordbank_media_parse_args_defaults(
     args = maintain_script.parse_args()
 
     assert args.dry_run is False
-    assert args.limit == 200
+    assert args.limit == 0
+    assert args.batch_size == maintain_script.DEFAULT_BATCH_SIZE
+    assert args.concurrency == maintain_script.DEFAULT_CONCURRENCY
     assert args.id_start == 0
     assert args.only_unsynced is False
     assert args.verify_remote is False
@@ -74,11 +76,18 @@ async def test_maintenance_script_uploads_all_unsynced_wordbank_images(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_fake_components(monkeypatch)
-    rows = [_image_record(1), _image_record(2, status="failed")]
+    rows_by_call = [
+        [_image_record(1), _image_record(2, status="failed")],
+        [],
+    ]
+
+    async def list_rows(**_: object) -> list[WordbankImageRecord]:
+        return rows_by_call.pop(0)
+
     monkeypatch.setattr(
         maintain_script.wordbank_repo,
         "list_images_for_remote_sync",
-        AsyncMock(return_value=rows),
+        AsyncMock(side_effect=list_rows),
     )
     monkeypatch.setattr(
         maintain_script.wordbank_media_service,
@@ -89,24 +98,19 @@ async def test_maintenance_script_uploads_all_unsynced_wordbank_images(
         maintain_script.wordbank_media_service,
         "sync_image_to_remote",
         AsyncMock(
-            side_effect=[
-                _image_record(
-                    1,
-                    status="synced",
-                    remote_storage_path="r2://bucket/wordbank/media/1.webp",
-                ),
-                _image_record(
-                    2,
-                    status="synced",
-                    remote_storage_path="r2://bucket/wordbank/media/2.webp",
-                ),
-            ]
+            side_effect=lambda image, verify_remote: _image_record(
+                image.id,
+                status="synced",
+                remote_storage_path=f"r2://bucket/wordbank/media/{image.id}.webp",
+            )
         ),
     )
 
     report = await maintain_script.maintain_wordbank_media(
         dry_run=False,
         limit=100,
+        batch_size=2,
+        concurrency=2,
         id_start=0,
         only_unsynced=True,
         verify_remote=True,
@@ -116,10 +120,13 @@ async def test_maintenance_script_uploads_all_unsynced_wordbank_images(
     assert report["scanned"] == 2
     assert report["synced"] == 2
     assert report["failed"] == 0
-    maintain_script.wordbank_repo.list_images_for_remote_sync.assert_awaited_once_with(
-        limit=100,
-        id_start=0,
-        only_unsynced=True,
+    assert report["skipped"] == 0
+    assert (
+        maintain_script.wordbank_repo.list_images_for_remote_sync.await_args_list
+        == [
+            call(limit=2, id_start=0, only_unsynced=True),
+            call(limit=2, id_start=3, only_unsynced=True),
+        ]
     )
     assert maintain_script.wordbank_media_service.sync_image_to_remote.await_count == 2
 
@@ -129,11 +136,15 @@ async def test_maintenance_script_marks_failed_uploads_without_aborting_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_fake_components(monkeypatch)
-    rows = [_image_record(1), _image_record(2)]
+    rows_by_call = [[_image_record(1), _image_record(2)], []]
+
+    async def list_rows(**_: object) -> list[WordbankImageRecord]:
+        return rows_by_call.pop(0)
+
     monkeypatch.setattr(
         maintain_script.wordbank_repo,
         "list_images_for_remote_sync",
-        AsyncMock(return_value=rows),
+        AsyncMock(side_effect=list_rows),
     )
     monkeypatch.setattr(
         maintain_script.wordbank_media_service,
@@ -144,24 +155,21 @@ async def test_maintenance_script_marks_failed_uploads_without_aborting_batch(
         maintain_script.wordbank_media_service,
         "sync_image_to_remote",
         AsyncMock(
-            side_effect=[
-                _image_record(
-                    1,
-                    status="failed",
-                    remote_storage_path="",
+            side_effect=lambda image, verify_remote: _image_record(
+                image.id,
+                status="failed" if image.id == 1 else "synced",
+                remote_storage_path=(
+                    "" if image.id == 1 else "r2://bucket/wordbank/media/2.webp"
                 ),
-                _image_record(
-                    2,
-                    status="synced",
-                    remote_storage_path="r2://bucket/wordbank/media/2.webp",
-                ),
-            ]
+            )
         ),
     )
 
     report = await maintain_script.maintain_wordbank_media(
         dry_run=False,
         limit=50,
+        batch_size=10,
+        concurrency=4,
         id_start=10,
         only_unsynced=True,
         verify_remote=False,
@@ -171,9 +179,11 @@ async def test_maintenance_script_marks_failed_uploads_without_aborting_batch(
     assert report["scanned"] == 2
     assert report["synced"] == 1
     assert report["failed"] == 1
+    assert report["skipped"] == 0
     assert len(report["rows"]) == 2
-    assert report["rows"][0]["remote_sync_status_after"] == "failed"
-    assert report["rows"][1]["remote_sync_status_after"] == "synced"
+    by_id = {row["id"]: row for row in report["rows"]}
+    assert by_id[1]["remote_sync_status_after"] == "failed"
+    assert by_id[2]["remote_sync_status_after"] == "synced"
 
 
 @pytest.mark.asyncio
@@ -184,7 +194,7 @@ async def test_maintenance_script_dry_run_skips_sync(
     monkeypatch.setattr(
         maintain_script.wordbank_repo,
         "list_images_for_remote_sync",
-        AsyncMock(return_value=[_image_record(3)]),
+        AsyncMock(side_effect=[[_image_record(3)], []]),
     )
     monkeypatch.setattr(
         maintain_script.wordbank_media_service,
@@ -200,6 +210,8 @@ async def test_maintenance_script_dry_run_skips_sync(
     report = await maintain_script.maintain_wordbank_media(
         dry_run=True,
         limit=1,
+        batch_size=1,
+        concurrency=1,
         id_start=0,
         only_unsynced=False,
         verify_remote=False,
@@ -207,4 +219,64 @@ async def test_maintenance_script_dry_run_skips_sync(
     )
 
     assert report["rows"][0]["action"] == "inspect"
+    assert report["skipped"] == 0
     maintain_script.wordbank_media_service.sync_image_to_remote.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_maintenance_script_paginates_until_total_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_components(monkeypatch)
+    rows_by_call = [
+        [_image_record(11), _image_record(12)],
+        [_image_record(13)],
+    ]
+
+    async def list_rows(**_: object) -> list[WordbankImageRecord]:
+        if rows_by_call:
+            return rows_by_call.pop(0)
+        return []
+
+    monkeypatch.setattr(
+        maintain_script.wordbank_repo,
+        "list_images_for_remote_sync",
+        AsyncMock(side_effect=list_rows),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "rebuild_cache_metadata",
+        AsyncMock(side_effect=lambda image: image),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "sync_image_to_remote",
+        AsyncMock(
+            side_effect=lambda image, verify_remote: _image_record(
+                image.id,
+                status="synced",
+                remote_storage_path=f"r2://bucket/wordbank/media/{image.id}.webp",
+            )
+        ),
+    )
+
+    report = await maintain_script.maintain_wordbank_media(
+        dry_run=False,
+        limit=3,
+        batch_size=2,
+        concurrency=2,
+        id_start=11,
+        only_unsynced=True,
+        verify_remote=False,
+        rebuild_cache_metadata=False,
+    )
+
+    assert report["scanned"] == 3
+    assert report["synced"] == 3
+    assert (
+        maintain_script.wordbank_repo.list_images_for_remote_sync.await_args_list
+        == [
+            call(limit=2, id_start=11, only_unsynced=True),
+            call(limit=1, id_start=13, only_unsynced=True),
+        ]
+    )

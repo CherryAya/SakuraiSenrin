@@ -20,6 +20,8 @@ from src.logger import logger
 
 wordbank_repo: Any = None
 wordbank_media_service: Any = None
+DEFAULT_BATCH_SIZE = 200
+DEFAULT_CONCURRENCY = 8
 
 
 def _load_wordbank_components() -> None:
@@ -47,8 +49,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--limit",
         type=int,
-        default=200,
-        help="maximum number of records to inspect",
+        default=0,
+        help="maximum total records to inspect, 0 means no limit",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help="how many candidate rows to fetch per database page",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=DEFAULT_CONCURRENCY,
+        help="maximum number of concurrent remote sync tasks per batch",
     )
     parser.add_argument(
         "--id-start",
@@ -88,22 +102,27 @@ async def maintain_wordbank_media(
     *,
     dry_run: bool,
     limit: int,
+    batch_size: int,
+    concurrency: int,
     id_start: int,
     only_unsynced: bool,
     verify_remote: bool,
     rebuild_cache_metadata: bool,
 ) -> dict[str, Any]:
     _load_wordbank_components()
-    rows = await wordbank_repo.list_images_for_remote_sync(
-        limit=limit,
-        id_start=id_start,
-        only_unsynced=only_unsynced,
-    )
     report_rows: list[dict[str, Any]] = []
+    scanned = 0
     synced = 0
     failed = 0
+    skipped = 0
+    cursor = id_start
+    page = 0
+    total_limit = max(limit, 0)
+    batch_size = max(batch_size, 1)
+    concurrency = max(concurrency, 1)
+    semaphore = asyncio.Semaphore(concurrency)
 
-    for image in rows:
+    async def process_image(image: Any) -> tuple[dict[str, Any], str]:
         row_report: dict[str, Any] = {
             "id": image.id,
             "canonical_image_id": image.canonical_id,
@@ -111,48 +130,85 @@ async def maintain_wordbank_media(
             "remote_sync_status_before": image.remote_sync_status,
             "remote_storage_path_before": image.remote_storage_path,
         }
-        working_image = image
-        if rebuild_cache_metadata:
-            working_image = await wordbank_media_service.rebuild_cache_metadata(
-                working_image
+        async with semaphore:
+            working_image = image
+            if rebuild_cache_metadata:
+                working_image = await wordbank_media_service.rebuild_cache_metadata(
+                    working_image
+                )
+            if dry_run:
+                row_report["action"] = "inspect"
+                row_report["remote_sync_status_after"] = (
+                    working_image.remote_sync_status
+                )
+                row_report["remote_storage_path_after"] = (
+                    working_image.remote_storage_path
+                )
+                return row_report, "inspect"
+
+            updated = await wordbank_media_service.sync_image_to_remote(
+                working_image,
+                verify_remote=verify_remote,
             )
-        if dry_run:
-            row_report["action"] = "inspect"
-            row_report["remote_sync_status_after"] = working_image.remote_sync_status
-            row_report["remote_storage_path_after"] = working_image.remote_storage_path
-            report_rows.append(row_report)
-            continue
+            if updated is None:
+                row_report["action"] = "skipped"
+                return row_report, "skipped"
 
-        updated = await wordbank_media_service.sync_image_to_remote(
-            working_image,
-            verify_remote=verify_remote,
+            row_report["action"] = "sync"
+            row_report["remote_sync_status_after"] = updated.remote_sync_status
+            row_report["remote_storage_path_after"] = updated.remote_storage_path
+            row_report["remote_synced_at"] = updated.remote_synced_at
+            if updated.remote_sync_status == "synced":
+                return row_report, "synced"
+            return row_report, "failed"
+
+    while True:
+        remaining = total_limit - scanned if total_limit > 0 else batch_size
+        if total_limit > 0 and remaining <= 0:
+            break
+        fetch_limit = min(batch_size, remaining) if total_limit > 0 else batch_size
+        rows = await wordbank_repo.list_images_for_remote_sync(
+            limit=fetch_limit,
+            id_start=cursor,
+            only_unsynced=only_unsynced,
         )
-        if updated is None:
-            row_report["action"] = "skipped"
+        if not rows:
+            break
+        page += 1
+        logger.info(
+            f"[Wordbank] media maintenance page {page} "
+            f"fetched {len(rows)} rows from id >= {cursor}"
+        )
+        results = await asyncio.gather(*(process_image(image) for image in rows))
+        for row_report, status in results:
+            scanned += 1
             report_rows.append(row_report)
-            continue
-
-        row_report["action"] = "sync"
-        row_report["remote_sync_status_after"] = updated.remote_sync_status
-        row_report["remote_storage_path_after"] = updated.remote_storage_path
-        row_report["remote_synced_at"] = updated.remote_synced_at
-        if updated.remote_sync_status == "synced":
-            synced += 1
-        else:
-            failed += 1
-        report_rows.append(row_report)
+            if status == "synced":
+                synced += 1
+            elif status == "failed":
+                failed += 1
+            elif status == "skipped":
+                skipped += 1
+        logger.info(
+            f"[Wordbank] media maintenance progress page={page} processed={scanned} "
+            f"synced={synced} failed={failed} skipped={skipped}"
+        )
+        cursor = rows[-1].id + 1
 
     return {
         "generated_at": get_current_time(),
         "dry_run": dry_run,
         "limit": limit,
+        "batch_size": batch_size,
+        "concurrency": concurrency,
         "id_start": id_start,
         "only_unsynced": only_unsynced,
         "verify_remote": verify_remote,
         "rebuild_cache_metadata": rebuild_cache_metadata,
-        "scanned": len(rows),
+        "scanned": scanned,
         "synced": synced,
         "failed": failed,
+        "skipped": skipped,
         "rows": report_rows,
     }
 
@@ -165,6 +221,8 @@ async def main() -> None:
     report = await maintain_wordbank_media(
         dry_run=args.dry_run,
         limit=args.limit,
+        batch_size=args.batch_size,
+        concurrency=args.concurrency,
         id_start=args.id_start,
         only_unsynced=args.only_unsynced,
         verify_remote=args.verify_remote,
