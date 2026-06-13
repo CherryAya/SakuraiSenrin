@@ -15,7 +15,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.lib.object_storage.types import StorageObject
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 
@@ -112,7 +111,7 @@ async def maintain_wordbank_media(
 ) -> dict[str, Any]:
     _load_wordbank_components()
     report_rows: list[dict[str, Any]] = []
-    remote_inventory: dict[str, StorageObject] = {}
+    remote_inventory: dict[str, Any] = {}
     use_remote_inventory = False
     scanned = 0
     synced = 0
