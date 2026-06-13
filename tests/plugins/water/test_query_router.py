@@ -42,7 +42,8 @@ def test_rank_guided_prompts_follow_locale_catalog() -> None:
         WaterRankQuerySpec(subject="user", scope="group", period="month"),
     )
 
-    assert "榜單今依" in intro
+    assert "請擇榜單主體" in intro
+    assert "revoke / recall" in intro
     assert "合法之組" in menu
     assert "你刚刚选的是" in summary
 

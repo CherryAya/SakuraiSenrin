@@ -5,14 +5,17 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from time import monotonic
-from typing import Any
+from typing import Any, cast
 
 from nonebot import get_driver, on_message, on_notice, require
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
+    FriendRecallNoticeEvent,
     GroupIncreaseNoticeEvent,
     GroupMessageEvent,
+    GroupRecallNoticeEvent,
     MessageEvent,
+    NoticeEvent,
 )
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.internal.adapter import MessageTemplate
@@ -21,10 +24,27 @@ from nonebot.params import Arg, CommandArg, Depends
 from nonebot.permission import SUPERUSER
 from nonebot.plugin import on_command
 from nonebot.rule import is_type
+from nonebot.typing import T_State
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.i18n.types import LocaleCode
+from src.lib.interaction import (
+    abort_if_revoke_signal,
+    clear_interaction_errors,
+    reject_or_abort_on_error,
+)
+from src.lib.interactive_recall import (
+    INTERACTION_ROOT_MESSAGE_ID,
+    INTERACTION_SESSION_KEY,
+    find_recall_session,
+    get_interaction_session_key,
+    is_supported_recall_notice,
+    rebuild_temp_matcher,
+    register_recall_checkpoint,
+    register_root_message,
+)
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -87,6 +107,10 @@ __plugin_meta__ = create_plugin_metadata(
 
 _water_plugin_initialized = False
 _water_query_cooldowns: dict[str, float] = {}
+GUIDED_MAX_ERRORS = 3
+WATER_STEP_SUBJECT = 1
+WATER_STEP_SCOPE = 2
+WATER_STEP_PERIOD = 3
 
 
 def water_query_cooldown(cooldown: float = 30) -> Any:
@@ -108,6 +132,78 @@ def water_query_cooldown(cooldown: float = 30) -> Any:
         _water_query_cooldowns[user_id] = now + cooldown
 
     return Depends(dependency)
+
+
+async def _abort_water_on_revoke(
+    matcher: Matcher,
+    event: MessageEvent,
+    locale: LocaleCode,
+) -> None:
+    await abort_if_revoke_signal(
+        event,
+        matcher,
+        message=tr(locale, "interaction.cancelled"),
+    )
+
+
+async def _reject_water_error(
+    matcher: Matcher,
+    state: T_State,
+    locale: LocaleCode,
+    message: str,
+) -> None:
+    await reject_or_abort_on_error(
+        matcher,
+        state,
+        message,
+        max_errors=GUIDED_MAX_ERRORS,
+        abort_message=tr(locale, "interaction.too_many_errors"),
+    )
+
+
+def _copy_water_state(
+    state: T_State,
+    *,
+    keep_keys: tuple[str, ...],
+) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {}
+    for key, value in state.items():
+        if key.startswith("__nonebug"):
+            snapshot[key] = value
+    session_key = get_interaction_session_key(state)
+    if session_key is not None:
+        snapshot[INTERACTION_SESSION_KEY] = session_key
+    if "water_rank_locale" in state:
+        snapshot["water_rank_locale"] = state["water_rank_locale"]
+    if INTERACTION_ROOT_MESSAGE_ID in state:
+        snapshot[INTERACTION_ROOT_MESSAGE_ID] = state[INTERACTION_ROOT_MESSAGE_ID]
+    for key in keep_keys:
+        if key in state:
+            snapshot[key] = state[key]
+    clear_interaction_errors(snapshot)
+    return snapshot
+
+
+def _water_rank_locale(state: T_State) -> LocaleCode:
+    locale = state.get("water_rank_locale", "zh-CN")
+    return locale if locale in {"zh-CN", "lzh", "x-meme"} else "zh-CN"
+
+
+def _register_water_checkpoint(
+    state: T_State,
+    event: MessageEvent,
+    *,
+    step_index: int,
+    prompt: str,
+    snapshot: dict[str, Any],
+) -> None:
+    register_recall_checkpoint(
+        state,
+        message_id=getattr(event, "message_id", ""),
+        step_index=step_index,
+        prompt=prompt,
+        state_snapshot=snapshot,
+    )
 
 
 async def initialize_water_plugin() -> None:
@@ -150,6 +246,7 @@ water_admin = on_command(
 )
 water_merge = on_command("water.merge", aliases={"water合并"}, priority=5, block=True)
 water_recorder = on_message(priority=4, block=False)
+water_notice = on_notice(priority=5, block=False)
 
 
 @scheduler.scheduled_job(
@@ -225,19 +322,57 @@ async def _(bot: Bot, event: GroupIncreaseNoticeEvent) -> None:
     await handle_group_increase_notice(bot, event)
 
 
+@water_notice.handle()
+async def _(matcher: Matcher, event: NoticeEvent) -> None:
+    if not is_supported_recall_notice(event):
+        return
+
+    session = find_recall_session(
+        water_query,
+        cast(GroupRecallNoticeEvent | FriendRecallNoticeEvent, event),
+    )
+    if session is None:
+        return
+
+    state = session.matcher_cls._default_state
+    locale = _water_rank_locale(state)
+    checkpoint = session.checkpoint
+    session.matcher_cls.destroy()
+
+    if session.is_root_message or checkpoint is None:
+        await matcher.send(tr(locale, "interaction.cancelled"))
+        return
+
+    rebuild_temp_matcher(
+        session.matcher_cls,
+        water_query,
+        step_index=checkpoint.step_index,
+        state=checkpoint.state_snapshot,
+    )
+    await matcher.send(checkpoint.prompt)
+
+
 @water_query.handle(
     parameterless=[
         water_query_cooldown(30),
     ]
 )
-async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) -> None:
+async def _(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    arg: Message = CommandArg(),
+) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
         await matcher.finish(tr(locale, "water.common.group_only"))
     text = arg.extract_plain_text().strip()
     if not text:
-        matcher.state["water_rank_subject_prompt"] = (
-            water_query_router.build_guided_intro(locale)
+        clear_interaction_errors(state)
+        state["water_rank_locale"] = locale
+        register_root_message(state, event)
+        state["water_rank_subject_prompt"] = water_query_router.build_guided_intro(
+            locale
         )
         return
     spec = water_query_router.parse(text)
@@ -253,18 +388,40 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
 async def _water_query_subject_step(
     matcher: Matcher,
     event: GroupMessageEvent,
+    state: T_State,
     subject_arg: Message = Arg("water_rank_subject"),
 ) -> None:
-    locale = await resolve_locale(str(event.group_id))
+    locale = _water_rank_locale(state)
+    await _abort_water_on_revoke(matcher, event, locale)
     text = subject_arg.extract_plain_text().strip()
     if water_query_router.is_guided_cancel(text):
         await matcher.finish(water_query_router.build_guided_cancel_message(locale))
     subject = water_query_router.parse_subject_choice(text)
     if subject is None:
-        await matcher.reject(water_query_router.build_subject_retry_prompt(locale))
-    matcher.state["water_rank_scope_prompt"] = water_query_router.build_scope_prompt(
-        locale,
-        subject,
+        await _reject_water_error(
+            matcher,
+            state,
+            locale,
+            water_query_router.build_subject_retry_prompt(locale),
+        )
+        return
+    clear_interaction_errors(state)
+    state["water_rank_subject_value"] = subject
+    state["water_rank_scope_prompt"] = water_query_router.build_scope_prompt(
+        locale, subject
+    )
+    _register_water_checkpoint(
+        state,
+        event,
+        step_index=WATER_STEP_SCOPE,
+        prompt=str(state["water_rank_scope_prompt"]),
+        snapshot=_copy_water_state(
+            state,
+            keep_keys=(
+                "water_rank_subject_value",
+                "water_rank_scope_prompt",
+            ),
+        ),
     )
 
 
@@ -275,12 +432,13 @@ async def _water_query_subject_step(
 async def _water_query_scope_step(
     matcher: Matcher,
     event: GroupMessageEvent,
-    subject_arg: Message = Arg("water_rank_subject"),
+    state: T_State,
     scope_arg: Message = Arg("water_rank_scope"),
 ) -> None:
-    locale = await resolve_locale(str(event.group_id))
-    subject_text = subject_arg.extract_plain_text().strip()
-    subject = water_query_router.parse_subject_choice(subject_text)
+    locale = _water_rank_locale(state)
+    await _abort_water_on_revoke(matcher, event, locale)
+    subject_value = state.get("water_rank_subject_value")
+    subject = subject_value if subject_value in {"user", "group", "matrix"} else None
     if subject is None:
         await matcher.finish(water_query_router.build_rank_menu(locale))
     text = scope_arg.extract_plain_text().strip()
@@ -288,15 +446,37 @@ async def _water_query_scope_step(
         await matcher.finish(water_query_router.build_guided_cancel_message(locale))
     scope = water_query_router.parse_scope_choice(text)
     if scope is None:
-        await matcher.reject(
-            water_query_router.build_scope_retry_prompt(locale, subject)
+        await _reject_water_error(
+            matcher,
+            state,
+            locale,
+            water_query_router.build_scope_retry_prompt(locale, subject),
         )
+        return
     if scope not in water_query_router.valid_scopes_for_subject(subject):
-        await matcher.reject(
-            water_query_router.build_scope_retry_prompt(locale, subject, scope)
+        await _reject_water_error(
+            matcher,
+            state,
+            locale,
+            water_query_router.build_scope_retry_prompt(locale, subject, scope),
         )
-    matcher.state["water_rank_period_prompt"] = water_query_router.build_period_prompt(
-        locale
+        return
+    clear_interaction_errors(state)
+    state["water_rank_scope_value"] = scope
+    state["water_rank_period_prompt"] = water_query_router.build_period_prompt(locale)
+    _register_water_checkpoint(
+        state,
+        event,
+        step_index=WATER_STEP_PERIOD,
+        prompt=str(state["water_rank_period_prompt"]),
+        snapshot=_copy_water_state(
+            state,
+            keep_keys=(
+                "water_rank_subject_value",
+                "water_rank_scope_value",
+                "water_rank_period_prompt",
+            ),
+        ),
     )
 
 
@@ -307,17 +487,15 @@ async def _water_query_scope_step(
 async def _water_query_period_step(
     matcher: Matcher,
     event: GroupMessageEvent,
-    subject_arg: Message = Arg("water_rank_subject"),
-    scope_arg: Message = Arg("water_rank_scope"),
+    state: T_State,
     period_arg: Message = Arg("water_rank_period"),
 ) -> None:
-    locale = await resolve_locale(str(event.group_id))
-    subject = water_query_router.parse_subject_choice(
-        subject_arg.extract_plain_text().strip()
-    )
-    scope = water_query_router.parse_scope_choice(
-        scope_arg.extract_plain_text().strip()
-    )
+    locale = _water_rank_locale(state)
+    await _abort_water_on_revoke(matcher, event, locale)
+    subject_value = state.get("water_rank_subject_value")
+    subject = subject_value if subject_value in {"user", "group", "matrix"} else None
+    scope_value = state.get("water_rank_scope_value")
+    scope = scope_value if scope_value in {"group", "matrix", "global"} else None
     if subject is None or scope is None:
         await matcher.finish(water_query_router.build_rank_menu(locale))
     text = period_arg.extract_plain_text().strip()
@@ -325,7 +503,14 @@ async def _water_query_period_step(
         await matcher.finish(water_query_router.build_guided_cancel_message(locale))
     period = water_query_router.parse_period_choice(text)
     if period is None:
-        await matcher.reject(water_query_router.build_period_retry_prompt(locale))
+        await _reject_water_error(
+            matcher,
+            state,
+            locale,
+            water_query_router.build_period_retry_prompt(locale),
+        )
+        return
+    clear_interaction_errors(state)
     rank_spec = WaterRankQuerySpec(subject=subject, scope=scope, period=period)
     await matcher.send(water_query_router.build_guided_summary(locale, rank_spec))
     await matcher.send(tr(locale, "water.common.working"))

@@ -398,12 +398,14 @@ MessageKey = Literal[
     "water.query.rank.error.legacy",
     "water.query.rank.error.missing_dimensions",
     "water.query.rank.error.unknown_tokens",
+    "water.query.rank.guided.footer",
     "water.query.rank.guided.intro",
     "water.query.rank.guided.period_invalid",
     "water.query.rank.guided.period_prompt",
     "water.query.rank.guided.scope_invalid",
     "water.query.rank.guided.scope_prompt",
     "water.query.rank.guided.subject_invalid",
+    "water.query.rank.guided.subject_prompt",
     "water.query.rank.guided.summary",
     "water.query.rank.menu.example.group",
     "water.query.rank.menu.example.matrix",
@@ -569,7 +571,7 @@ MessageKey = Literal[
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 ]
 
 ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
@@ -968,12 +970,14 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "water.query.rank.error.legacy",
     "water.query.rank.error.missing_dimensions",
     "water.query.rank.error.unknown_tokens",
+    "water.query.rank.guided.footer",
     "water.query.rank.guided.intro",
     "water.query.rank.guided.period_invalid",
     "water.query.rank.guided.period_prompt",
     "water.query.rank.guided.scope_invalid",
     "water.query.rank.guided.scope_prompt",
     "water.query.rank.guided.subject_invalid",
+    "water.query.rank.guided.subject_prompt",
     "water.query.rank.guided.summary",
     "water.query.rank.menu.example.group",
     "water.query.rank.menu.example.matrix",
@@ -1139,5 +1143,5 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 )

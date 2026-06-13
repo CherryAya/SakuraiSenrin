@@ -156,11 +156,20 @@ class WaterQueryRouter:
             token.casefold() for token in cls._CANCEL_TOKENS
         }
 
+    @staticmethod
+    def build_guided_footer(locale: LocaleCode) -> str:
+        return tr(locale, "water.query.rank.guided.footer")
+
     def build_guided_intro(self, locale: LocaleCode) -> str:
-        return tr(
-            locale,
-            "water.query.rank.guided.intro",
-            choices=self._subject_choices_text(),
+        return "\n".join(
+            [
+                tr(
+                    locale,
+                    "water.query.rank.guided.subject_prompt",
+                    choices=self._subject_choices_text(),
+                ),
+                self.build_guided_footer(locale),
+            ]
         )
 
     def build_scope_prompt(
@@ -171,13 +180,23 @@ class WaterQueryRouter:
         labels = " / ".join(
             SCOPE_LABELS[scope] for scope in self.valid_scopes_for_subject(subject)
         )
-        return tr(locale, "water.query.rank.guided.scope_prompt", choices=labels)
+        return "\n".join(
+            [
+                tr(locale, "water.query.rank.guided.scope_prompt", choices=labels),
+                self.build_guided_footer(locale),
+            ]
+        )
 
     def build_period_prompt(self, locale: LocaleCode) -> str:
-        return tr(
-            locale,
-            "water.query.rank.guided.period_prompt",
-            choices=self._period_choices_text(),
+        return "\n".join(
+            [
+                tr(
+                    locale,
+                    "water.query.rank.guided.period_prompt",
+                    choices=self._period_choices_text(),
+                ),
+                self.build_guided_footer(locale),
+            ]
         )
 
     @staticmethod
@@ -225,7 +244,7 @@ class WaterQueryRouter:
                     "water.query.rank.guided.subject_invalid",
                     choices=self._subject_choices_text(),
                 ),
-                self.build_rank_menu(locale),
+                self.build_guided_footer(locale),
             ]
         )
 
@@ -262,7 +281,7 @@ class WaterQueryRouter:
                     "water.query.rank.guided.period_invalid",
                     choices=self._period_choices_text(),
                 ),
-                self.build_period_prompt(locale),
+                self.build_guided_footer(locale),
             ]
         )
 
