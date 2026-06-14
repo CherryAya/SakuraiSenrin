@@ -35,6 +35,7 @@ from src.logger import logger
 from src.plugins.wordbank.services.rules import MAX_CALL_COUNT_WINDOW_SECONDS
 
 DEFAULT_REPORT = "./data/db/wordbank-rule-audit-report.json"
+DEFAULT_MIGRATION_CALL_WINDOW_SECONDS = 60 * 60 * 24 * 90
 
 
 def default_db_path() -> Path:
@@ -145,7 +146,15 @@ def _build_suggested_rule(
     if not any(issue.startswith("call_count_") for issue in issues):
         return None
     suggested = dict(rule)
-    suggested.pop("call_count", None)
+    call_count = suggested.get("call_count")
+    if not isinstance(call_count, dict):
+        suggested.pop("call_count", None)
+        return suggested
+    suggested["call_count"] = {
+        "window_seconds": DEFAULT_MIGRATION_CALL_WINDOW_SECONDS,
+        "min": max(int(call_count.get("min", 0)), 0),
+        "max": max(int(call_count.get("max", 0)), 0),
+    }
     return suggested
 
 

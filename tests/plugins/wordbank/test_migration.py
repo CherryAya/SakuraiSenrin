@@ -248,6 +248,27 @@ def test_normalize_legacy_rules_expands_or_role_and_call_count() -> None:
     }
 
 
+def test_resolve_legacy_call_window_seconds_defaults_and_clamps() -> None:
+    assert (
+        migration_module._resolve_legacy_call_window_seconds(None) == 60 * 60 * 24 * 90
+    )
+    assert migration_module._resolve_legacy_call_window_seconds({}) == 60 * 60 * 24 * 90
+    assert (
+        migration_module._resolve_legacy_call_window_seconds({"lifecycle": ""})
+        == 60 * 60 * 24 * 90
+    )
+    assert (
+        migration_module._resolve_legacy_call_window_seconds({"lifecycle": 3600})
+        == 3600
+    )
+    assert (
+        migration_module._resolve_legacy_call_window_seconds(
+            {"lifecycle": 60 * 60 * 24 * 365}
+        )
+        == 60 * 60 * 24 * 90
+    )
+
+
 def test_normalize_legacy_rules_prunes_redundant_specific_branch() -> None:
     targets = normalize_legacy_rules(
         priority=3,

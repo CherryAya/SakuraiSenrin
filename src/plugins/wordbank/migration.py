@@ -44,7 +44,8 @@ _LEGACY_EVENT_NAMES = {
 }
 _LEGACY_RULE_KEYS = {"group_id", "user_id", "role", "call_count", "$and", "$or"}
 _LEGACY_ROLES = {"owner", "admin", "member"}
-_LEGACY_ALL_TIME_WINDOW_SECONDS = 60 * 60 * 24 * 365 * 50
+_LEGACY_DEFAULT_CALL_WINDOW_SECONDS = 60 * 60 * 24 * 90
+_LEGACY_MAX_CALL_WINDOW_SECONDS = _LEGACY_DEFAULT_CALL_WINDOW_SECONDS
 _LEGACY_IMAGE_REPO_NAME = "SakuraiSenrinPic"
 _LEGACY_IMAGE_DIR_NAME = "recovered_files"
 _LEGACY_IMAGE_MAPPING_NAME = "file_mapping.json"
@@ -1631,15 +1632,17 @@ def _intersect_upper_bound(left: int, right: int) -> int:
 def _resolve_legacy_call_window_seconds(trigger_config: object) -> int:
     payload = load_legacy_json(trigger_config)
     if not isinstance(payload, Mapping):
-        return _LEGACY_ALL_TIME_WINDOW_SECONDS
+        return _LEGACY_DEFAULT_CALL_WINDOW_SECONDS
     lifecycle = payload.get("lifecycle")
     if lifecycle in (None, ""):
-        return _LEGACY_ALL_TIME_WINDOW_SECONDS
+        return _LEGACY_DEFAULT_CALL_WINDOW_SECONDS
     try:
         seconds = int(float(lifecycle))
     except (TypeError, ValueError):
-        return _LEGACY_ALL_TIME_WINDOW_SECONDS
-    return seconds if seconds > 0 else _LEGACY_ALL_TIME_WINDOW_SECONDS
+        return _LEGACY_DEFAULT_CALL_WINDOW_SECONDS
+    if seconds <= 0:
+        return _LEGACY_DEFAULT_CALL_WINDOW_SECONDS
+    return min(seconds, _LEGACY_MAX_CALL_WINDOW_SECONDS)
 
 
 def _prune_subsumed_targets(

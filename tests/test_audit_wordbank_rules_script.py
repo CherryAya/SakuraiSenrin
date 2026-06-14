@@ -99,11 +99,18 @@ def test_audit_wordbank_rules_reports_oversized_call_count(tmp_path: Path) -> No
     assert row["response_id"] == 9914
     assert row["issues"] == ["call_count_window_too_large"]
     assert row["trigger_texts"] == "?"
-    assert row["suggested_rule"] == {"roles": "member"}
+    assert row["suggested_rule"] == {
+        "roles": "member",
+        "call_count": {
+            "window_seconds": audit_script.DEFAULT_MIGRATION_CALL_WINDOW_SECONDS,
+            "min": 3,
+            "max": 0,
+        },
+    }
     assert "UPDATE wordbank_response_item" in row["suggested_update_sql"]
 
 
-def test_apply_suggested_fixes_removes_invalid_call_count(tmp_path: Path) -> None:
+def test_apply_suggested_fixes_clamps_invalid_call_count(tmp_path: Path) -> None:
     db_path = tmp_path / "wordbank_main.db"
     _init_db(db_path)
     with sqlite3.connect(db_path) as connection:
@@ -148,4 +155,11 @@ def test_apply_suggested_fixes_removes_invalid_call_count(tmp_path: Path) -> Non
         stored_rule = connection.execute(
             "SELECT rule FROM wordbank_response_item WHERE id = 1"
         ).fetchone()[0]
-    assert json.loads(stored_rule) == {"roles": "admin"}
+    assert json.loads(stored_rule) == {
+        "roles": "admin",
+        "call_count": {
+            "window_seconds": audit_script.DEFAULT_MIGRATION_CALL_WINDOW_SECONDS,
+            "min": 1,
+            "max": 0,
+        },
+    }
