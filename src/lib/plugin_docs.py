@@ -6,8 +6,10 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
+from importlib import import_module
 from io import BytesIO
 from math import ceil
+import os
 from pathlib import Path
 import re
 from typing import Any, ClassVar, Literal, TypedDict, cast
@@ -20,7 +22,6 @@ from PIL import Image, ImageDraw, ImageFont
 from pil_utils import BuildImage
 from pil_utils.text2image import Text2Image
 
-from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
 from src.lib.demo_theme import BASE_THEME
@@ -206,15 +207,27 @@ class NodeMatchResult:
 
 
 def _support_note(locale: LocaleCode) -> str:
+    main_group_id = _resolve_main_group_id()
     return (
         tr(
             locale,
             "help.index.notice.item2",
-            main_group_id=config.MAIN_GROUP_ID,
+            main_group_id=main_group_id,
         )
         .removeprefix("2. ")
         .strip()
     )
+
+
+def _resolve_main_group_id() -> str:
+    env_main_group_id = os.getenv("MAIN_GROUP_ID", "").strip()
+    try:
+        config_module = import_module("src.config")
+    except Exception:
+        return env_main_group_id or "未配置"
+    runtime_config = getattr(config_module, "config", None)
+    config_main_group_id = str(getattr(runtime_config, "MAIN_GROUP_ID", "")).strip()
+    return config_main_group_id or env_main_group_id or "未配置"
 
 
 def create_docs_meta(

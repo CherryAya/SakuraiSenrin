@@ -9,6 +9,7 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.demo_theme import BASE_THEME, PALETTE_ACCENTS
 from src.lib.i18n.runtime import tr
+import src.lib.plugin_docs as plugin_docs_module
 from src.lib.plugin_docs import (
     DemoImageRenderer,
     DocsRenderContext,
@@ -160,6 +161,22 @@ def test_split_inline_text_spans_supports_adjacent_short_code_segments() -> None
         ("n", True),
         (" 快捷审批", False),
     ]
+
+
+def test_support_note_falls_back_to_env_when_runtime_config_is_unavailable(
+    monkeypatch: Any,
+) -> None:
+    def _raise_config_import(name: str) -> Any:
+        if name == "src.config":
+            raise ValueError("NoneBot has not been initialized.")
+        raise AssertionError(f"unexpected import: {name}")
+
+    monkeypatch.setenv("MAIN_GROUP_ID", "20002")
+    monkeypatch.setattr(plugin_docs_module, "import_module", _raise_config_import)
+
+    assert plugin_docs_module._support_note("zh-CN") == (
+        "如需进一步支持，请联系管理员，或加入反馈群「20002」💬。"
+    )
 
 
 def test_load_plugin_doc_bundle_preserves_inline_backticks_in_meta_value() -> None:
