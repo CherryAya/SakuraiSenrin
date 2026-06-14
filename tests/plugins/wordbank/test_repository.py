@@ -407,8 +407,8 @@ async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
         },
         policy=WritePolicy.IMMEDIATE,
     )
-    counts = await service.repository.count_response_calls_in_windows(
-        {gated.response_item_id: 60}
+    counts = await service.repository.count_trigger_group_calls_in_windows(
+        {gated.trigger_group_id: 60}
     )
     second_service = await _build_service(tmp_path, monkeypatch)
     admin_selected = await second_service.match_message(
@@ -423,7 +423,7 @@ async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
 
     assert member_selected is not None
     assert member_selected.response.id == general.response_item_id
-    assert counts[gated.response_item_id] >= 1
+    assert counts[gated.trigger_group_id] >= 1
     assert admin_selected is not None
     assert admin_selected.response.id == gated.response_item_id
 
@@ -492,7 +492,79 @@ async def test_call_count_persists_across_service_restart(
 
 
 @pytest.mark.asyncio
-async def test_count_response_calls_in_windows_counts_across_hot_and_cold_shards(
+async def test_call_count_is_shared_across_responses_in_same_trigger_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+    first_stage = await service.add_message_entry(
+        trigger_shape=shape_from_text("共享计数"),
+        response_shape=shape_from_text("前置阶段"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "current_group",
+            "priority": 5,
+            "call_count": {"window_seconds": 60, "min": 0, "max": 5},
+        },
+    )
+    second_stage = await service.add_message_entry(
+        trigger_shape=shape_from_text("共享计数"),
+        response_shape=shape_from_text("后置阶段"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "current_group",
+            "priority": 9,
+            "call_count": {"window_seconds": 60, "min": 6, "max": 10},
+        },
+    )
+    for response_item_id in (
+        first_stage.response_item_id,
+        second_stage.response_item_id,
+    ):
+        await service.approve_response_item(
+            response_item_id,
+            actor_user_id="10001",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+    await service.rebuild_index()
+
+    for _ in range(6):
+        await service.repository.save_log(
+            {
+                "trigger_group_id": first_stage.trigger_group_id,
+                "trigger_variant_id": first_stage.trigger_variant_id,
+                "response_item_id": first_stage.response_item_id,
+                "group_id": "20001",
+                "user_id": "10002",
+                "message_type": "event",
+                "created_at": get_current_time(),
+            },
+            policy=WritePolicy.IMMEDIATE,
+        )
+
+    second_service = await _build_service(tmp_path, monkeypatch)
+    selected = await second_service.match_message(
+        shape_from_text("共享计数"),
+        context=RuleContext(
+            group_id="20001",
+            user_id="10003",
+            message_type="group",
+            sender_role="member",
+        ),
+    )
+
+    assert selected is not None
+    assert selected.response.id == second_stage.response_item_id
+
+
+@pytest.mark.asyncio
+async def test_count_trigger_group_calls_in_windows_counts_across_hot_and_cold_shards(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -545,10 +617,10 @@ async def test_count_response_calls_in_windows_counts_across_hot_and_cold_shards
     )
 
     await wordbank_log_db.run_archiver_task()
-    results = await repository.count_response_calls_in_windows(
+    results = await repository.count_trigger_group_calls_in_windows(
         {
-            100: 60 * 60 * 24 * 90,
-            200: 60 * 60 * 24 * 30,
+            1: 60 * 60 * 24 * 90,
+            2: 60 * 60 * 24 * 30,
         },
         now_ts=arrow.get("2026-06-12 12:00:00").int_timestamp,
     )
@@ -556,7 +628,7 @@ async def test_count_response_calls_in_windows_counts_across_hot_and_cold_shards
     manifest_text = (
         tmp_path / "wordbank_db" / "wordbank_logs_manifest.json"
     ).read_text(encoding="utf-8")
-    assert results == {100: 2, 200: 1}
+    assert results == {1: 2, 2: 1}
     assert '"state": "cold"' in manifest_text
     assert '"state": "warm"' in manifest_text
 

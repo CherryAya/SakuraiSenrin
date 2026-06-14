@@ -135,7 +135,7 @@ class RuntimeIndex:
                     entry_created_by=response.created_by,
                     rule=response.rule,
                     context=context,
-                    current_call_count=call_counts.get(response.id, 0),
+                    current_call_count=call_counts.get(response.trigger_group_id, 0),
                 ):
                     continue
                 if response.probability < 1.0 and rng.random() > response.probability:

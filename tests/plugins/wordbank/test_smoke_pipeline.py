@@ -484,3 +484,68 @@ async def test_passive_rule_priority_and_call_count_pipeline(app: App) -> None:
 
         ctx.receive_event(bot, first_limited)
         ctx.should_call_send(first_limited, Message("普通回退"), bot=bot)
+
+
+@pytest.mark.asyncio
+async def test_passive_event_at_call_count_is_shared_by_trigger_group(app: App) -> None:
+    await _reset_wordbank_runtime()
+    first_stage = await wordbank_service.add_message_entry(
+        trigger_shape=shape_from_event("event:at"),
+        response_shape=shape_from_text("第一阶段"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "current_group",
+            "priority": 5,
+            "call_count": {"window_seconds": 3600, "min": 0, "max": 5},
+        },
+    )
+    second_stage = await wordbank_service.add_message_entry(
+        trigger_shape=shape_from_event("event:at"),
+        response_shape=shape_from_text("第二阶段"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "current_group",
+            "priority": 9,
+            "call_count": {"window_seconds": 3600, "min": 6, "max": 10},
+        },
+    )
+    for response_item_id in (
+        first_stage.response_item_id,
+        second_stage.response_item_id,
+    ):
+        ok = await wordbank_service.approve_response_item(
+            response_item_id,
+            actor_user_id="10002",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+        assert ok is True
+    await _cancel_pending_rebuild()
+    await wordbank_service.rebuild_index()
+
+    for _ in range(6):
+        await wordbank_service.repository.save_log(
+            {
+                "trigger_group_id": first_stage.trigger_group_id,
+                "trigger_variant_id": first_stage.trigger_variant_id,
+                "response_item_id": first_stage.response_item_id,
+                "group_id": "20001",
+                "user_id": "10003",
+                "message_type": "event",
+                "created_at": get_current_time(),
+            },
+            policy=WritePolicy.IMMEDIATE,
+        )
+    wordbank_service._call_count_cache.clear()
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("[CQ:at,qq=99999]", message_id=1)
+
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, Message("第二阶段"), bot=bot)

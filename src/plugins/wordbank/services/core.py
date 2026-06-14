@@ -725,38 +725,47 @@ class WordbankService:
         skipped_invalid_windows = 0
         for candidate in candidates:
             for response in candidate.group.responses:
-                if response.id in counts:
-                    continue
                 call_count = response.rule.get("call_count")
                 if not isinstance(call_count, dict):
                     continue
                 window = int(call_count.get("window_seconds", 0))
+                trigger_group_id = response.trigger_group_id
+                existing_count = counts.get(trigger_group_id)
                 if window <= 0:
-                    counts[response.id] = 0
+                    counts[trigger_group_id] = (
+                        existing_count if existing_count is not None else 0
+                    )
                     continue
                 if window > MAX_CALL_COUNT_WINDOW_SECONDS:
                     skipped_invalid_windows += 1
                     continue
-                cache_key = (response.id, window)
+                cache_key = (trigger_group_id, window)
                 cached = self._call_count_cache.get(cache_key)
                 if cached is not None and cached.expires_at >= now_ts:
-                    counts[response.id] = cached.count
+                    if existing_count is None or cached.count > existing_count:
+                        counts[trigger_group_id] = cached.count
                     cache_hits += 1
                     continue
-                missing_windows[response.id] = window
+                current_window = missing_windows.get(trigger_group_id)
+                if current_window is None or window > current_window:
+                    missing_windows[trigger_group_id] = window
         if missing_windows:
-            fresh_counts = await self.repository.count_response_calls_in_windows(
+            fresh_counts = await self.repository.count_trigger_group_calls_in_windows(
                 missing_windows,
                 now_ts=now_ts,
             )
             expires_at = now_ts + self.call_count_cache_ttl_seconds
-            for response_id, window in missing_windows.items():
-                count = fresh_counts.get(response_id, 0)
-                counts[response_id] = count
-                self._call_count_cache[(response_id, window)] = _CallCountCacheEntry(
-                    count=count,
-                    expires_at=expires_at,
-                    counted_until=now_ts,
+            for trigger_group_id, window in missing_windows.items():
+                count = fresh_counts.get(trigger_group_id, 0)
+                existing_count = counts.get(trigger_group_id)
+                if existing_count is None or count > existing_count:
+                    counts[trigger_group_id] = count
+                self._call_count_cache[(trigger_group_id, window)] = (
+                    _CallCountCacheEntry(
+                        count=count,
+                        expires_at=expires_at,
+                        counted_until=now_ts,
+                    )
                 )
         log_perf(
             "service.current_call_counts.done",
@@ -796,7 +805,7 @@ class WordbankService:
         window = int(call_count.get("window_seconds", 0))
         if window <= 0:
             return
-        cache_key = (response.id, window)
+        cache_key = (response.trigger_group_id, window)
         cached = self._call_count_cache.get(cache_key)
         if cached is None or cached.expires_at < now_ts:
             return

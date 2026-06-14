@@ -1780,17 +1780,17 @@ class WordbankRepository:
         ) as session:
             session.add(WordbankLog(**payload))
 
-    async def count_response_calls_in_windows(
+    async def count_trigger_group_calls_in_windows(
         self,
-        response_windows: dict[int, int],
+        trigger_group_windows: dict[int, int],
         *,
         now_ts: int | None = None,
     ) -> dict[int, int]:
-        if not response_windows:
+        if not trigger_group_windows:
             return {}
         normalized_windows = {
-            int(response_id): max(int(window_seconds), 0)
-            for response_id, window_seconds in response_windows.items()
+            int(trigger_group_id): max(int(window_seconds), 0)
+            for trigger_group_id, window_seconds in trigger_group_windows.items()
             if int(window_seconds) > 0
         }
         if not normalized_windows:
@@ -1799,20 +1799,21 @@ class WordbankRepository:
         max_window = max(normalized_windows.values())
         start_time = datetime.fromtimestamp(now_ts - max_window, UTC)
         end_time = datetime.fromtimestamp(now_ts, UTC)
-        response_ids = tuple(normalized_windows)
+        trigger_group_ids = tuple(normalized_windows)
 
         async def _query_shard(session: AsyncSession) -> list[tuple[int, int]]:
             rows = (
                 await session.execute(
-                    select(WordbankLog.response_item_id, WordbankLog.created_at).where(
-                        WordbankLog.response_item_id.in_(response_ids),
+                    select(WordbankLog.trigger_group_id, WordbankLog.created_at).where(
+                        WordbankLog.trigger_group_id.in_(trigger_group_ids),
                         WordbankLog.created_at >= now_ts - max_window,
                         WordbankLog.created_at <= now_ts,
                     )
                 )
             ).all()
             return [
-                (int(response_id), int(created_at)) for response_id, created_at in rows
+                (int(trigger_group_id), int(created_at))
+                for trigger_group_id, created_at in rows
             ]
 
         shard_results = await wordbank_log_db.map_reduce(
@@ -1823,16 +1824,16 @@ class WordbankRepository:
         )
         counts: Counter[int] = Counter()
         for rows in shard_results:
-            for response_item_id, created_at in rows:
-                window_seconds = normalized_windows.get(response_item_id, 0)
+            for trigger_group_id, created_at in rows:
+                window_seconds = normalized_windows.get(trigger_group_id, 0)
                 if window_seconds <= 0:
                     continue
                 if created_at < now_ts - window_seconds:
                     continue
-                counts[response_item_id] += 1
+                counts[trigger_group_id] += 1
         return {
-            response_item_id: counts.get(response_item_id, 0)
-            for response_item_id in normalized_windows
+            trigger_group_id: counts.get(trigger_group_id, 0)
+            for trigger_group_id in normalized_windows
         }
 
     async def drain_logs(self) -> None:
