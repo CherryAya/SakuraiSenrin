@@ -326,21 +326,6 @@ wordbank_restore_command = on_command(
     priority=5,
     block=True,
 )
-wordbank_support_command = on_command(
-    ("wordbank", "support"),
-    aliases={"支持删除"},
-    priority=5,
-    block=True,
-)
-wordbank_vote_command = on_command(
-    ("wordbank", "vote"),
-    aliases={
-        "查看投票状态",
-        "查看投票结果",
-    },
-    priority=5,
-    block=True,
-)
 wordbank_reply_command = on_fullmatch(
     tuple(REPLY_COMMAND_ALIASES),
     ignorecase=True,
@@ -1427,38 +1412,6 @@ async def _(
         event,
         arg,
         forced_action="restore",
-    )
-
-
-@wordbank_support_command.handle()
-async def _(
-    bot: Bot,
-    matcher: Matcher,
-    event: MessageEvent,
-    arg: Message = CommandArg(),
-) -> None:
-    await _handle_wordbank_command_message(
-        bot,
-        matcher,
-        event,
-        arg,
-        forced_action="support",
-    )
-
-
-@wordbank_vote_command.handle()
-async def _(
-    bot: Bot,
-    matcher: Matcher,
-    event: MessageEvent,
-    arg: Message = CommandArg(),
-) -> None:
-    await _handle_wordbank_command_message(
-        bot,
-        matcher,
-        event,
-        arg,
-        forced_action="vote",
     )
 
 

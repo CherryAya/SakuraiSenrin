@@ -98,6 +98,25 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
     assert message[0].type == "image"
 
 
+@pytest.mark.asyncio
+async def test_dispatch_wordbank_command_rejects_disabled_vote_subcommand() -> None:
+    event = build_group_message_event("#wordbank support 3")
+    service = cast(WordbankService, SimpleNamespace())
+
+    message = await dispatch_wordbank_command(
+        service,
+        event=event,
+        text="support 3",
+        locale="zh-CN",
+        media_service=cast(
+            WordbankMediaService,
+            SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=None)),
+        ),
+    )
+
+    assert "未知词库子命令: support" in str(message)
+
+
 def test_parse_group_view_args_supports_page_flag_and_positional_page() -> None:
     parsed = parse_group_view_args("271 --page 3")
     assert parsed.trigger_group_id == 271
@@ -316,30 +335,11 @@ async def test_handle_add_with_media_result_builds_image_trigger_shape() -> None
 
 
 @pytest.mark.asyncio
-async def test_handle_delete_falls_back_to_vote_when_non_creator_cannot_delete() -> (
-    None
-):
+async def test_handle_delete_rejects_non_creator_without_vote() -> None:
     delete_response_item = AsyncMock(return_value=False)
-    request_delete_vote = AsyncMock(
-        return_value=SimpleNamespace(
-            vote_id=3,
-            trigger_group_id=12,
-            response_item_id=18,
-            status="open",
-            support_count=1,
-            threshold=3,
-            created=True,
-            already_supported=False,
-            passed=False,
-            response_item_deleted=False,
-        )
-    )
     service = cast(
         WordbankService,
-        SimpleNamespace(
-            delete_response_item=delete_response_item,
-            request_delete_vote=request_delete_vote,
-        ),
+        SimpleNamespace(delete_response_item=delete_response_item),
     )
     event = build_group_message_event("#wordbank del 18", role="admin", user_id=10002)
 
@@ -350,20 +350,13 @@ async def test_handle_delete_falls_back_to_vote_when_non_creator_cannot_delete()
         locale="zh-CN",
     )
 
-    assert "你没有直接删除词条 #18 的权限" in message
-    assert "删除投票 #3" in message
+    assert message == "未找到可删除的词条 #18，或你没有操作权限。"
     delete_response_item.assert_awaited_once_with(
         18,
         actor_user_id="10002",
         actor_group_id="20001",
         can_moderate_group=True,
         is_superuser=False,
-    )
-    request_delete_vote.assert_awaited_once_with(
-        response_item_id=18,
-        group_id="20001",
-        user_id="10002",
-        threshold=3,
     )
 
 

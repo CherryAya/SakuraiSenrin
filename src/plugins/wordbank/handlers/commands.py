@@ -31,7 +31,6 @@ from src.plugins.wordbank.message_model import (
 )
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
-    WordbankDeleteVoteResult,
     WordbankService,
     format_add_result,
     format_pending_items,
@@ -64,15 +63,12 @@ SEARCH_ALIASES = {"search", "find", "查询", "搜索"}
 GROUP_ALIASES = {"group", "grp", "展开"}
 DELETE_ALIASES = {"delete", "del", "remove", "删除"}
 RESTORE_ALIASES = {"restore", "恢复"}
-SUPPORT_ALIASES = {"support", "支持", "支持删除"}
-VOTE_ALIASES = {"vote", "投票", "查看投票", "查看投票状态", "查看投票结果"}
 APPROVE_ALIASES = {"approve", "pass", "通过", "审核通过"}
 REJECT_ALIASES = {"reject", "deny", "拒绝", "驳回"}
 PENDING_ALIASES = {"pending", "review", "待审", "待审核", "审核列表"}
 ADD_SEPARATORS = ("=>", "->", "回答", "回复")
 DEFAULT_SEARCH_LIMIT = 10
 MAX_SEARCH_LIMIT = 20
-DEFAULT_DELETE_VOTE_THRESHOLD = 3
 IMAGE_DOWNLOAD_RETRY_ATTEMPTS = 3
 IMAGE_DOWNLOAD_RETRY_DELAY_SECONDS = 0.8
 GUIDED_MESSAGE_IMAGE_LIMIT = 4
@@ -678,74 +674,6 @@ def build_mutation_actor(event: MessageEvent) -> MutationActor:
         can_moderate_group=isinstance(event, GroupMessageEvent)
         and role in {"owner", "admin"},
         is_superuser=user_id in config.SUPERUSERS,
-    )
-
-
-def format_delete_vote_result(
-    result: WordbankDeleteVoteResult,
-    *,
-    locale: LocaleCode,
-) -> str:
-    if result.response_item_deleted:
-        return tr(
-            locale,
-            "wordbank.vote.passed",
-            vote_id=result.vote_id,
-            entry_id=result.response_item_id,
-            support_count=result.support_count,
-            threshold=result.threshold,
-        )
-    if result.status != "open":
-        return tr(
-            locale,
-            "wordbank.vote.closed",
-            vote_id=result.vote_id,
-            entry_id=result.response_item_id,
-            status=result.status,
-            support_count=result.support_count,
-            threshold=result.threshold,
-        )
-    if result.already_supported:
-        return tr(
-            locale,
-            "wordbank.vote.already_supported",
-            vote_id=result.vote_id,
-            entry_id=result.response_item_id,
-            support_count=result.support_count,
-            threshold=result.threshold,
-        )
-    if result.created:
-        return tr(
-            locale,
-            "wordbank.vote.created",
-            vote_id=result.vote_id,
-            entry_id=result.response_item_id,
-            support_count=result.support_count,
-            threshold=result.threshold,
-        )
-    return tr(
-        locale,
-        "wordbank.vote.supported",
-        vote_id=result.vote_id,
-        entry_id=result.response_item_id,
-        support_count=result.support_count,
-        threshold=result.threshold,
-    )
-
-
-def format_delete_vote_status(
-    result: WordbankDeleteVoteResult,
-    *,
-    locale: LocaleCode,
-) -> str:
-    return tr(
-        locale,
-        "wordbank.vote.status",
-        vote_id=result.vote_id,
-        entry_id=result.response_item_id,
-        status=result.status,
-        support_count=result.support_count,
-        threshold=result.threshold,
     )
 
 
@@ -1426,60 +1354,7 @@ async def handle_delete(
     ):
         return tr(locale, "wordbank.delete.success", entry_id=response_item_id)
 
-    if actor.group_id:
-        vote_result = await service.request_delete_vote(
-            response_item_id=response_item_id,
-            group_id=actor.group_id,
-            user_id=actor.user_id,
-            threshold=DEFAULT_DELETE_VOTE_THRESHOLD,
-        )
-        if vote_result is not None:
-            return format_delete_vote_result(vote_result, locale=locale)
-
     return tr(locale, "wordbank.delete.not_found", entry_id=response_item_id)
-
-
-async def handle_support_delete_vote(
-    service: WordbankService,
-    *,
-    event: MessageEvent,
-    vote_id_text: str,
-    locale: LocaleCode,
-) -> str:
-    if not vote_id_text.isdigit():
-        return tr(locale, "wordbank.error.vote_id_numeric")
-    actor = build_mutation_actor(event)
-    if not actor.group_id:
-        return tr(locale, "wordbank.vote.not_found", vote_id=int(vote_id_text))
-    result = await service.support_delete_vote(
-        vote_id=int(vote_id_text),
-        group_id=actor.group_id,
-        user_id=actor.user_id,
-    )
-    if result is None:
-        return tr(locale, "wordbank.vote.not_found", vote_id=int(vote_id_text))
-    return format_delete_vote_result(result, locale=locale)
-
-
-async def handle_delete_vote_status(
-    service: WordbankService,
-    *,
-    event: MessageEvent,
-    vote_id_text: str,
-    locale: LocaleCode,
-) -> str:
-    if not vote_id_text.isdigit():
-        return tr(locale, "wordbank.error.vote_id_numeric")
-    actor = build_mutation_actor(event)
-    if not actor.group_id:
-        return tr(locale, "wordbank.vote.not_found", vote_id=int(vote_id_text))
-    result = await service.get_delete_vote(
-        int(vote_id_text),
-        group_id=actor.group_id,
-    )
-    if result is None:
-        return tr(locale, "wordbank.vote.not_found", vote_id=int(vote_id_text))
-    return format_delete_vote_status(result, locale=locale)
 
 
 async def handle_restore(
@@ -1560,20 +1435,6 @@ async def dispatch_wordbank_command(
             service,
             event=event,
             response_item_id_text=rest,
-            locale=locale,
-        )
-    if action in SUPPORT_ALIASES:
-        return await handle_support_delete_vote(
-            service,
-            event=event,
-            vote_id_text=rest,
-            locale=locale,
-        )
-    if action in VOTE_ALIASES:
-        return await handle_delete_vote_status(
-            service,
-            event=event,
-            vote_id_text=rest,
             locale=locale,
         )
     if action in RESTORE_ALIASES:

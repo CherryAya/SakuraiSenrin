@@ -156,7 +156,6 @@ async def test_reply_delete_and_restore_use_response_item_id() -> None:
             get_message_ref=AsyncMock(return_value=_response_message()),
             delete_response_item=delete_response_item,
             restore_response_item=restore_response_item,
-            request_delete_vote=AsyncMock(),
         ),
     )
 
