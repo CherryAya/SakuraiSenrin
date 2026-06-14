@@ -192,6 +192,27 @@ async def test_handle_add_text_result_calls_add_message_entry_with_text_shapes()
 
 
 @pytest.mark.asyncio
+async def test_handle_add_text_result_preserves_response_whitespace_verbatim() -> None:
+    add_message_entry = AsyncMock(return_value=_add_result())
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add 晚安 => 第一行")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="晚安=>第一行\n第二行  第三列",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"].atoms[0].text == "晚安"
+    assert kwargs["response_shape"].atoms[0].text == "第一行\n第二行  第三列"
+
+
+@pytest.mark.asyncio
 async def test_handle_add_with_media_result_builds_image_response_shape() -> None:
     add_message_entry = AsyncMock(return_value=_add_result(response_text="[图片:7]"))
     service = cast(
@@ -326,6 +347,23 @@ async def test_build_message_shape_from_message_preserves_single_space_text() ->
     )
 
     assert shape.is_empty()
+
+
+@pytest.mark.asyncio
+async def test_build_message_shape_from_message_preserves_user_text_verbatim() -> None:
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            ingest_image_bytes=AsyncMock(),
+        ),
+    )
+
+    shape = await build_message_shape_from_message(
+        media_service,
+        Message("第一行\n第二行  第三列"),
+    )
+
+    assert shape.atoms[0].text == "第一行\n第二行  第三列"
 
 
 @pytest.mark.asyncio

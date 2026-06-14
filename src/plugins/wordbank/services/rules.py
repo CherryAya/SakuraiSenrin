@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import shlex
 from typing import Any, Literal, TypedDict, cast
 
 from src.lib.i18n.keys import MessageKey
 from src.plugins.wordbank.services.errors import WordbankUserError
+from src.plugins.wordbank.text_parsing import rest_after_token, tokenize_shell_like
 
 Scope = Literal[
     "current_group",
@@ -386,8 +386,8 @@ def parse_legacy_study_text(
     for sep in ("=>", "->", "回答", "回复"):
         if sep in source:
             trigger, response = source.split(sep, 1)
-            trigger = trigger.strip()
-            response = response.strip()
+            trigger = trigger.rstrip()
+            response = response.lstrip()
             if not trigger or not response:
                 raise _rule_error(
                     _default_i18n_text("wordbank.error.study_pair_required"),
@@ -395,7 +395,7 @@ def parse_legacy_study_text(
                 )
             return trigger, response, {}
     try:
-        tokens = shlex.split(source)
+        tokens = tokenize_shell_like(source)
     except ValueError as exc:
         raise _rule_error(
             _default_i18n_text("wordbank.error.study_format"),
@@ -403,11 +403,11 @@ def parse_legacy_study_text(
         ) from exc
     if (
         len(tokens) >= 4
-        and tokens[0].casefold() in {"a", "m"}
-        and tokens[1].casefold() in {"t", "f"}
+        and tokens[0].value.casefold() in {"a", "m"}
+        and tokens[1].value.casefold() in {"t", "f"}
     ):
-        trigger = tokens[2].strip()
-        response = " ".join(tokens[3:]).strip()
+        trigger = tokens[2].value
+        response = rest_after_token(source, tokens[2])
         if not trigger or not response:
             raise _rule_error(
                 _default_i18n_text("wordbank.error.study_pair_required"),
@@ -417,19 +417,19 @@ def parse_legacy_study_text(
             trigger,
             response,
             _legacy_study_shortcut_rule(
-                tokens[0].casefold(),
-                tokens[1].casefold(),
+                tokens[0].value.casefold(),
+                tokens[1].value.casefold(),
                 is_group=is_group,
             ),
         )
-    if tokens and tokens[0].casefold() in {"a", "m"}:
+    if tokens and tokens[0].value.casefold() in {"a", "m"}:
         raise _rule_error(
             _default_i18n_text("wordbank.error.study_format"),
             "wordbank.error.study_format",
         )
     parts = source.split(maxsplit=1)
     if len(parts) == 2:
-        return parts[0].strip(), parts[1].strip(), {}
+        return parts[0], parts[1], {}
     raise _rule_error(
         _default_i18n_text("wordbank.error.study_format"),
         "wordbank.error.study_format",

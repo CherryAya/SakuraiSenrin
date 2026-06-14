@@ -193,8 +193,6 @@ async def _start_guided_study_from_partial_args(
     *,
     has_images: bool,
 ) -> bool:
-    import shlex
-
     from src.plugins.wordbank.handlers.commands import (
         localize_command_error,
         parse_study_group_block_choice,
@@ -202,18 +200,19 @@ async def _start_guided_study_from_partial_args(
     )
     from src.plugins.wordbank.services import wordbank_service
     from src.plugins.wordbank.services.rules import RuleError
+    from src.plugins.wordbank.text_parsing import tokenize_shell_like
 
     source = text.strip()
     if not source or _contains_study_pair_separator(source):
         return False
     try:
-        tokens = shlex.split(source)
+        tokens = tokenize_shell_like(source)
     except ValueError:
         return False
     if not tokens:
         return False
     try:
-        trig_mode = parse_study_mode_choice(tokens[0])
+        trig_mode = parse_study_mode_choice(tokens[0].value)
     except RuleError:
         return False
 
@@ -229,7 +228,7 @@ async def _start_guided_study_from_partial_args(
         return True
 
     try:
-        group_block = parse_study_group_block_choice(tokens[1])
+        group_block = parse_study_group_block_choice(tokens[1].value)
     except RuleError as exc:
         await matcher.pause(localize_command_error(exc, locale))
         return True
@@ -243,7 +242,7 @@ async def _start_guided_study_from_partial_args(
         await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
         return True
 
-    trigger_text = tokens[2].strip()
+    trigger_text = tokens[2].value
     if not trigger_text:
         await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
         return True
