@@ -22,6 +22,14 @@ backup/
 !src/lib/backup/
 !src/lib/backup/*.py
 
-data/font/.fonts_installed.lock
-data/db/*
+data/*
 !data/db/.gitkeep
+!data/font/.gitkeep
+!data/image/.gitkeep
+
+# docs policy
+docs/operations/
+docs/development/
+!docs/user/
+!docs/user/**
+!docs/README.md

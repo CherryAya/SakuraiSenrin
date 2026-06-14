@@ -539,9 +539,9 @@ async def _(
         return
     await wordbank_service.initialize()
     try:
-        image_items = await fetch_image_bytes_from_message(arg, limit=2)
-        if image_items:
+        if has_images:
             await matcher.send(tr(locale, "wordbank.add.processing_with_media"))
+        image_items = await fetch_image_bytes_from_message(arg, limit=2)
         result = await handle_study_with_media_result(
             wordbank_service,
             wordbank_media_service,

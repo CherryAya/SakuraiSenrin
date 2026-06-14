@@ -242,6 +242,11 @@ async def test_study_direct_media_submission_sends_processing_hint_before_result
     )
     monkeypatch.setattr(
         wordbank_handlers,
+        "extract_image_urls",
+        lambda _message: ["https://example.test/image.png"],
+    )
+    monkeypatch.setattr(
+        wordbank_handlers,
         "fetch_image_bytes_from_message",
         AsyncMock(return_value=[b"image-bytes"]),
     )

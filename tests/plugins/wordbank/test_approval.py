@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 from nonebot.adapters.onebot.v11.event import MessageEvent
@@ -9,6 +9,7 @@ from src.plugins.wordbank.handlers.approval import (
     build_add_result_message,
     build_pending_approval_notice_message,
     format_pending_approval_notice,
+    send_pending_approval_notice,
 )
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -146,3 +147,42 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
     assert any(segment.type == "image" for segment in segments)
     assert "消息回复如下" not in str(message)
     load_canonical_storage_bytes.assert_awaited_once_with(7)
+
+
+@pytest.mark.asyncio
+async def test_send_pending_approval_notice_sends_all_superusers_concurrently() -> None:
+    calls: list[int] = []
+
+    class _Bot:
+        async def send_private_msg(
+            self, *, user_id: int, message: object
+        ) -> dict[str, int]:
+            calls.append(user_id)
+            return {"message_id": user_id}
+
+    record_message_ref = AsyncMock(return_value=None)
+    service = cast(
+        Any,
+        SimpleNamespace(record_message_ref=record_message_ref),
+    )
+    result = _result(response_shape=shape_from_text("做个好梦"))
+    bot = cast(Any, _Bot())
+
+    from src.plugins.wordbank.handlers import approval as approval_module
+
+    original_superusers = approval_module.config.SUPERUSERS
+    approval_module.config.SUPERUSERS = {"1", "2"}
+    try:
+        await send_pending_approval_notice(
+            bot,
+            service,
+            event=_event(),
+            result=result,
+            locale="zh-CN",
+            media_service=None,
+        )
+    finally:
+        approval_module.config.SUPERUSERS = original_superusers
+
+    assert sorted(calls) == [1, 2]
+    assert record_message_ref.await_count == 2

@@ -144,29 +144,54 @@ async def send_pending_approval_notice(
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")
     user_id = str(event.user_id)
-    for superuser_id in config.SUPERUSERS:
-        try:
-            send_result = await bot.send_private_msg(
-                user_id=int(superuser_id),
+    await asyncio.gather(
+        *(
+            _send_single_pending_approval_notice(
+                bot,
+                service,
+                superuser_id=superuser_id,
                 message=message,
-            )
-            message_id = extract_sent_message_id(send_result)
-            if message_id is None:
-                continue
-            await service.record_message_ref(
-                ref_kind="approval",
-                message_id=message_id,
-                trigger_group_id=result.trigger_group_id,
-                response_item_id=result.response_item_id,
+                result=result,
                 group_id=group_id,
                 user_id=user_id,
                 source_message_id=source_message_id,
-                message_type="approval",
             )
-        except Exception as exc:
-            logger.warning(
-                f"[Wordbank] approval notice skipped for {superuser_id}: {exc}"
-            )
+            for superuser_id in config.SUPERUSERS
+        )
+    )
+
+
+async def _send_single_pending_approval_notice(
+    bot: Bot,
+    service: WordbankService,
+    *,
+    superuser_id: str,
+    message: Message,
+    result: WordbankAddResult,
+    group_id: str,
+    user_id: str,
+    source_message_id: str,
+) -> None:
+    try:
+        send_result = await bot.send_private_msg(
+            user_id=int(superuser_id),
+            message=message,
+        )
+        message_id = extract_sent_message_id(send_result)
+        if message_id is None:
+            return
+        await service.record_message_ref(
+            ref_kind="approval",
+            message_id=message_id,
+            trigger_group_id=result.trigger_group_id,
+            response_item_id=result.response_item_id,
+            group_id=group_id,
+            user_id=user_id,
+            source_message_id=source_message_id,
+            message_type="approval",
+        )
+    except Exception as exc:
+        logger.warning(f"[Wordbank] approval notice skipped for {superuser_id}: {exc}")
 
 
 def schedule_pending_approval_notice(

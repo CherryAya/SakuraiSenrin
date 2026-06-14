@@ -442,9 +442,10 @@ async def _handle_wordbank_command_message(
     if action in {"add", "添加", "学习"}:
         _, _, rest = text.partition(" ")
         try:
-            data = await fetch_first_image_bytes_from_message(arg)
-            if data is not None and _should_send_media_processing_notice(image_count=1):
+            has_images = bool(extract_image_urls(arg))
+            if has_images and _should_send_media_processing_notice(image_count=1):
                 await matcher.send(tr(locale, "wordbank.add.processing_with_media"))
+            data = await fetch_first_image_bytes_from_message(arg)
             if data is not None:
                 result = await handle_add_with_media_result(
                     wordbank_service,
