@@ -132,7 +132,7 @@ async def test_run_daily_group_report_push_renders_parallel_and_sends_serially(
 
 
 @pytest.mark.asyncio
-async def test_build_card_data_keeps_report_templates_unformatted(
+async def test_build_card_data_keeps_group_report_core_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.plugins.water.services import report as report_module
@@ -161,6 +161,11 @@ async def test_build_card_data_keeps_report_templates_unformatted(
                 )
             ]
         ),
+    )
+    monkeypatch.setattr(
+        report_module.water_report_service,
+        "_build_group_rank_snapshot",
+        AsyncMock(return_value=None),
     )
     snapshot = WaterGroupReportSnapshot(
         group_id="20001",
@@ -191,9 +196,11 @@ async def test_build_card_data_keeps_report_templates_unformatted(
         "zh-CN",
     )
 
-    assert "{msg_count}" in data.champion_summary_label
-    assert "{msg_count}" in data.board_summary_label
-    assert "{active_hours}" in data.board_active_hours_label
+    assert data.title == "测试群 · 今日群报告"
+    assert data.badge == "测试群"
+    assert data.total_msg_count == 42
+    assert data.active_user_count == 1
+    assert data.top_items[0].display_name == "Alice"
 
 
 @pytest.mark.asyncio
@@ -295,16 +302,14 @@ async def test_build_card_data_includes_group_rank_block(
         "zh-CN",
     )
 
-    assert data.report_tile_title == "本群当日瓷砖图"
-    assert data.report_group_rank_title == "群聊当日排名"
-    assert data.report_group_rank_summary == "本群当前排名 #3 / 12 · 较昨日 +1"
-    assert data.report_group_rank_items is not None
-    assert [item.display_name for item in data.report_group_rank_items] == [
+    assert data.group_rank_title == "群聊当日排名"
+    assert data.group_rank_summary == "本群当前排名 #3 / 12 · 较昨日 +1"
+    assert [item.display_name for item in data.group_rank_items] == [
         "测试群",
         "隔壁群",
     ]
-    assert data.report_group_rank_has_hidden_before is True
-    assert data.report_group_rank_has_hidden_after is True
+    assert data.group_rank_has_hidden_before is True
+    assert data.group_rank_has_hidden_after is True
 
 
 def test_build_group_rank_summary_uses_new_when_no_previous_rank() -> None:
@@ -326,3 +331,71 @@ def test_build_group_rank_summary_uses_new_when_no_previous_rank() -> None:
 
 def test_build_group_rank_summary_returns_empty_without_snapshot() -> None:
     assert water_report_service._build_group_rank_summary(None, "zh-CN") == ""
+
+
+def test_try_acquire_today_report_cooldown_skips_in_debug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import report as report_module
+
+    water_report_service.clear_today_report_cooldowns()
+    monkeypatch.setattr(report_module.config, "DEBUG", True)
+
+    first = water_report_service.try_acquire_today_report_cooldown("20001")
+    second = water_report_service.try_acquire_today_report_cooldown("20001")
+
+    assert first == (True, 0)
+    assert second == (True, 0)
+
+
+@pytest.mark.asyncio
+async def test_build_group_rank_snapshot_uses_global_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import report as report_module
+
+    snapshot = WaterGroupReportSnapshot(
+        group_id="20001",
+        record_date=20260613,
+        total_msg_count=42,
+        active_user_count=1,
+        active_hours=6,
+        hourly_counts=[0] * 24,
+        previous_total_msg_count=21,
+        previous_active_user_count=1,
+        previous_active_hours=4,
+        previous_hourly_counts=[0] * 24,
+        leaderboard=[],
+    )
+    rank_snapshot = WaterGroupDailyRankSnapshot(
+        focus_group_id="20001",
+        record_date=20260613,
+        total_groups=99,
+        focus_rank=8,
+        focus_trend=2,
+        leaderboard=[],
+        has_hidden_before=True,
+        has_hidden_after=True,
+    )
+    get_rank_mock = AsyncMock(return_value=rank_snapshot)
+    group_ids_mock = AsyncMock(return_value=["20001", "20002"])
+
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "get_group_daily_rank_snapshot",
+        get_rank_mock,
+    )
+    monkeypatch.setattr(
+        report_module.group_repo,
+        "get_working_group_ids",
+        group_ids_mock,
+    )
+
+    result = await water_report_service._build_group_rank_snapshot(snapshot)
+
+    assert result == rank_snapshot
+    get_rank_mock.assert_awaited_once_with(
+        group_id="20001",
+        record_date=20260613,
+    )
+    group_ids_mock.assert_not_awaited()

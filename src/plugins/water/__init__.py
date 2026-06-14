@@ -121,6 +121,8 @@ def water_query_cooldown(
     skip_today_report: bool = False,
 ) -> Any:
     async def dependency(matcher: Matcher, event: MessageEvent) -> None:
+        if config.DEBUG:
+            return
         if matcher.get_target():
             return
         if skip_today_report:
