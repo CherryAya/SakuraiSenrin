@@ -114,6 +114,7 @@ async def _append_response_image(
             media_service,
             locale=locale,
         ),
+        locale=locale,
     )
 
 
@@ -122,13 +123,15 @@ def _embed_response_shape(
     text: str,
     summary: str,
     rendered_response: Message,
+    locale: LocaleCode = "zh-CN",
 ) -> Message:
-    marker = f"响应: {summary}"
+    response_label = tr(locale, "wordbank.approval.response_label")
+    marker = f"{response_label} {summary}"
     if marker not in text:
         return Message(text) + rendered_response
 
     prefix, _, suffix = text.partition(marker)
-    message = Message(prefix + "响应:\n")
+    message = Message(prefix + f"{response_label}\n")
     message += rendered_response
     message += Message(suffix)
     return message

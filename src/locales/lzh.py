@@ -29,6 +29,7 @@ CATALOG: Final[dict[str, str]] = {
     "docs.feature.name": "功能名: {name}",
     "docs.feature.commands": "指令:",
     "docs.feature.not_found": "未得子功能文檔: {query}",
+    "wordbank.approval.response_label": "響應:",
     "help.index.hint": "發 #help <插件名> 以觀詳文。",
     "help.index.header": "📖 ===== 幫助文檔 =====",
     "help.index.prefix": "命令前綴: #help / #幫助",

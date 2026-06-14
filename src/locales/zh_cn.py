@@ -176,6 +176,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.approval.pending_title": "待审核词条 (第 {page} 页):",
     "wordbank.approval.pending_item": "#{entry_id} [{scope}] {trigger_text} => {response_text}  提交者: {created_by}",
     "wordbank.approval.pending_more": "还有更多待审核词条，可使用 --page {next_page} --limit {limit} 查看下一页。",
+    "wordbank.approval.response_label": "响应:",
     "wordbank.reply.target_missing": "请回复一条词库自动回复后再使用该快捷命令。",
     "wordbank.reply.target_not_found": "未找到消息 {message_id} 对应的词条记录。",
     "wordbank.reply.view_target_not_found": "未找到消息 {message_id} 对应的词库搜索/详情视图。",
