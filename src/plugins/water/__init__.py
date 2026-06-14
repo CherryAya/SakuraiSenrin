@@ -115,10 +115,30 @@ WATER_STEP_SCOPE = 2
 WATER_STEP_PERIOD = 3
 
 
-def water_query_cooldown(cooldown: float = 30) -> Any:
+def water_query_cooldown(
+    cooldown: float = 30,
+    *,
+    skip_today_report: bool = False,
+) -> Any:
     async def dependency(matcher: Matcher, event: MessageEvent) -> None:
         if matcher.get_target():
             return
+        if skip_today_report:
+            raw_message = getattr(event, "raw_message", "").strip()
+            text = raw_message
+            if text.startswith(("#", "/", "＃", "井")):
+                text = text[1:].strip()
+            if text.startswith("水王"):
+                text = text.removeprefix("水王").strip()
+            if "".join(text.split()) in {
+                "今日报告",
+                "今日報告",
+                "水王日报",
+                "水王日報",
+                "日报",
+                "日報",
+            }:
+                return
         try:
             user_id = event.get_user_id()
         except Exception:
@@ -393,7 +413,7 @@ async def _(matcher: Matcher, event: NoticeEvent) -> None:
 
 @water_query.handle(
     parameterless=[
-        water_query_cooldown(30),
+        water_query_cooldown(30, skip_today_report=True),
     ]
 )
 async def _(

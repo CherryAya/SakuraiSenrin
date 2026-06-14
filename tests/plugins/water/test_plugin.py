@@ -616,3 +616,45 @@ async def test_water_today_report_group_shared_cooldown(
             bot=bot,
         )
         ctx.should_finished()
+
+
+@pytest.mark.asyncio
+async def test_water_today_report_skips_user_query_cooldown(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin._water_query_cooldowns.clear()
+    water_plugin.water_report_service.clear_today_report_cooldowns()
+    build_rank_message = AsyncMock(return_value=Message("RANK_OK"))
+    build_report_message = AsyncMock(return_value=Message("REPORT_OK"))
+    monkeypatch.setattr(
+        water_plugin.water_rank_query_service,
+        "build_rank_message",
+        build_rank_message,
+    )
+    monkeypatch.setattr(
+        water_plugin.water_report_service,
+        "build_group_report_message",
+        build_report_message,
+    )
+
+    first = build_group_message_event(
+        "#水王 用户榜 本群 日榜",
+        role="admin",
+        message_id=1,
+    )
+    second = build_group_message_event("#水王 今日报告", role="admin", message_id=2)
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(first, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_send(first, Message("RANK_OK"), bot=bot)
+        ctx.should_finished()
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(second, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_send(second, Message("REPORT_OK"), bot=bot)
+        ctx.should_finished()

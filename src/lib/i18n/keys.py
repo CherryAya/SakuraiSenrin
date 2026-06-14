@@ -588,7 +588,7 @@ MessageKey = Literal[
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 ]
 
 ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
@@ -1177,5 +1177,5 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 )

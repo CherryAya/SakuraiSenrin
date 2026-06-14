@@ -284,6 +284,8 @@ class WaterReportService:
             locale,
             "water.report.compare",
             prev_date=record_day.shift(days=-1).format("YYYY.MM.DD"),
+            msg_delta=self._format_delta(snapshot.delta_total_msg_count),
+            user_delta=self._format_delta(snapshot.delta_active_user_count),
         )
         return WaterPeriodRankCardData(
             period="total",
@@ -366,6 +368,12 @@ class WaterReportService:
         if isinstance(avatar, BaseException):
             return None
         return avatar if isinstance(avatar, BuildImage) else None
+
+    @staticmethod
+    def _format_delta(value: int) -> str:
+        if value > 0:
+            return f"+{value}"
+        return str(value)
 
 
 def now_ts_or_current(now_ts: int | None) -> int:
