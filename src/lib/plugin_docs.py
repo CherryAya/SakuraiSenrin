@@ -12,6 +12,8 @@ from pathlib import Path
 import re
 from typing import Any, ClassVar, Literal, TypedDict, cast
 
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.plugin import PluginMetadata
 from PIL import Image, ImageDraw, ImageFont
@@ -88,6 +90,13 @@ class DocsDemoTurn:
 class InlineTextSpan:
     text: str
     code: bool = False
+
+
+@dataclass(slots=True, frozen=True)
+class MarkdownSection:
+    title: str
+    heading: Token
+    tokens: tuple[Token, ...]
 
 
 @dataclass(slots=True, frozen=True)
@@ -641,18 +650,29 @@ def _load_plugin_doc_bundle_cached(
     permission: Permission,
 ) -> PluginDocBundle:
     raw_text = source_path.read_text(encoding="utf-8")
-    title = _extract_title(raw_text) or default_name
-    sections = _split_sections(raw_text, level=2)
-    summary = sections.get("概览", "").strip() or default_description
-    meta = _parse_meta_block(sections.get("权限与触发", ""))
-    feature_index = _parse_feature_index(sections.get("子功能目录", ""))
-    details = _parse_feature_details(sections.get("子功能详情", ""), source_path)
+    tokens = tuple(_markdown_parser().parse(raw_text))
+    sections = {
+        section.title: section
+        for section in _extract_heading_sections(tokens, tag="h2")
+    }
+    title = _extract_title(tokens) or default_name
+    summary = _render_markdown_blocks(
+        sections.get("概览", _EMPTY_SECTION).tokens
+    ).strip()
+    meta = _parse_meta_block_tokens(sections.get("权限与触发", _EMPTY_SECTION).tokens)
+    feature_index = _parse_feature_index_tokens(
+        sections.get("子功能目录", _EMPTY_SECTION).tokens
+    )
+    details = _parse_feature_details_tokens(
+        sections.get("子功能详情", _EMPTY_SECTION).tokens,
+        source_path,
+    )
     features = _merge_features(feature_index, details)
     author, version = _resolve_doc_signature(source_path)
     return PluginDocBundle(
         title=title,
         description=default_description,
-        summary=summary,
+        summary=summary or default_description,
         trigger=meta.get("触发方式", trigger.label),
         permission=meta.get("权限", permission.label),
         author=author,
@@ -763,6 +783,19 @@ def _derive_tree_identity_from_source(source_path: Path) -> tuple[str, str | Non
     return source_path.stem.lower(), None
 
 
+@lru_cache(maxsize=1)
+def _markdown_parser() -> MarkdownIt:
+    return MarkdownIt(
+        "commonmark",
+        {
+            "html": False,
+            "linkify": False,
+            "typographer": False,
+            "breaks": False,
+        },
+    )
+
+
 def _normalize_inline_text(value: str) -> str:
     text = "".join(span.text for span in split_inline_text_spans(value.strip()))
     return re.sub(r"\s+", " ", text).strip()
@@ -773,42 +806,41 @@ def split_inline_text_spans(text: str) -> tuple[InlineTextSpan, ...]:
         return ()
 
     spans: list[InlineTextSpan] = []
-    buffer: list[str] = []
-    in_code = False
-
-    def flush(*, code: bool) -> None:
-        if not buffer:
-            return
-        fragment = "".join(buffer)
-        buffer.clear()
-        if spans and spans[-1].code is code:
-            previous = spans[-1]
-            spans[-1] = InlineTextSpan(previous.text + fragment, code=code)
-            return
-        spans.append(InlineTextSpan(fragment, code=code))
-
-    for char in text:
-        if char != "`":
-            buffer.append(char)
+    for token in _parse_inline_tokens(text):
+        if token.type == "text":
+            _append_inline_text_span(spans, token.content, code=False)
             continue
-        if in_code:
-            flush(code=True)
-            in_code = False
+        if token.type == "code_inline":
+            _append_inline_text_span(spans, token.content, code=True)
             continue
-        flush(code=False)
-        in_code = True
-
-    if in_code:
-        literal = "`" + "".join(buffer)
-        buffer.clear()
-        if spans and not spans[-1].code:
-            previous = spans[-1]
-            spans[-1] = InlineTextSpan(previous.text + literal, code=False)
-        else:
-            spans.append(InlineTextSpan(literal, code=False))
-    else:
-        flush(code=False)
+        if token.type in {"softbreak", "hardbreak"}:
+            _append_inline_text_span(spans, "\n", code=False)
+            continue
+        if token.type == "image":
+            _append_inline_text_span(spans, token.content, code=False)
     return tuple(span for span in spans if span.text)
+
+
+def _parse_inline_tokens(text: str) -> tuple[Token, ...]:
+    tokens = _markdown_parser().parseInline(text)
+    if not tokens:
+        return ()
+    return tuple(tokens[0].children or ())
+
+
+def _append_inline_text_span(
+    spans: list[InlineTextSpan],
+    text: str,
+    *,
+    code: bool,
+) -> None:
+    if not text:
+        return
+    if spans and spans[-1].code is code:
+        previous = spans[-1]
+        spans[-1] = InlineTextSpan(previous.text + text, code=code)
+        return
+    spans.append(InlineTextSpan(text, code=code))
 
 
 def load_demo_bytes(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes | None:
@@ -933,43 +965,141 @@ def _feature_notice_items(feature: FeatureDoc) -> list[str]:
     return notes
 
 
-def _extract_title(text: str) -> str:
-    match = re.search(r"^#\s+(.+?)\s*$", text, re.MULTILINE)
-    return match.group(1).strip() if match else ""
+_EMPTY_HEADING = Token("inline", "", 0)
+_EMPTY_SECTION = MarkdownSection(title="", heading=_EMPTY_HEADING, tokens=())
 
 
-def _split_sections(text: str, *, level: int) -> dict[str, str]:
-    pattern = re.compile(rf"^{'#' * level}\s+(.+?)\s*$", re.MULTILINE)
-    matches = list(pattern.finditer(text))
-    sections: dict[str, str] = {}
-    for index, match in enumerate(matches):
-        title = _normalize_heading(match.group(1))
-        start = match.end()
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        sections[title] = text[start:end].strip()
-    return sections
+def _extract_title(tokens: Sequence[Token]) -> str:
+    for index, token in enumerate(tokens):
+        if (
+            token.type == "heading_open"
+            and token.tag == "h1"
+            and index + 1 < len(tokens)
+        ):
+            return _normalize_heading(
+                _render_inline_markdown(tokens[index + 1].children or ())
+            )
+    return ""
+
+
+def _extract_heading_sections(
+    tokens: Sequence[Token],
+    *,
+    tag: str,
+) -> tuple[MarkdownSection, ...]:
+    sections: list[MarkdownSection] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token.type != "heading_open" or token.tag != tag or index + 1 >= len(tokens):
+            index += 1
+            continue
+        heading = tokens[index + 1]
+        body_start = min(index + 3, len(tokens))
+        body_end = body_start
+        while body_end < len(tokens):
+            next_token = tokens[body_end]
+            if next_token.type == "heading_open" and next_token.tag == tag:
+                break
+            body_end += 1
+        sections.append(
+            MarkdownSection(
+                title=_normalize_heading(
+                    _render_inline_markdown(heading.children or ())
+                ),
+                heading=heading,
+                tokens=tuple(tokens[body_start:body_end]),
+            )
+        )
+        index = body_end
+    return tuple(sections)
 
 
 def _normalize_heading(raw: str) -> str:
     return raw.strip().strip("`")
 
 
-def _parse_meta_block(block: str) -> dict[str, str]:
+def _render_inline_markdown(tokens: Sequence[Token]) -> str:
+    fragments: list[str] = []
+    for token in tokens:
+        if token.type == "inline":
+            fragments.append(_render_inline_markdown(token.children or ()))
+            continue
+        if token.type == "text":
+            fragments.append(token.content)
+            continue
+        if token.type == "code_inline":
+            fragments.append(f"`{token.content}`")
+            continue
+        if token.type in {"softbreak", "hardbreak"}:
+            fragments.append("\n")
+            continue
+        if token.type == "image":
+            fragments.append(token.content)
+    return "".join(fragments)
+
+
+def _render_markdown_blocks(tokens: Sequence[Token]) -> str:
+    blocks: list[str] = []
+    for token in tokens:
+        if token.type == "inline":
+            text = _render_inline_markdown(token.children or ()).strip()
+            if text:
+                blocks.append(text)
+            continue
+        if token.type != "fence":
+            continue
+        info = token.info.strip()
+        opening = f"```{info}" if info else "```"
+        content = token.content.rstrip("\n")
+        blocks.append(f"{opening}\n{content}\n```".strip())
+    return "\n".join(blocks).strip()
+
+
+def _extract_list_item_tokens(tokens: Sequence[Token]) -> tuple[tuple[Token, ...], ...]:
+    items: list[tuple[Token, ...]] = []
+    index = 0
+    while index < len(tokens):
+        if tokens[index].type != "list_item_open":
+            index += 1
+            continue
+        depth = 1
+        cursor = index + 1
+        while cursor < len(tokens) and depth > 0:
+            if tokens[cursor].type == "list_item_open":
+                depth += 1
+            elif tokens[cursor].type == "list_item_close":
+                depth -= 1
+            cursor += 1
+        items.append(tuple(tokens[index + 1 : max(index + 1, cursor - 1)]))
+        index = cursor
+    return tuple(items)
+
+
+def _parse_meta_block_tokens(tokens: Sequence[Token]) -> dict[str, str]:
     meta: dict[str, str] = {}
-    for line in block.splitlines():
-        if not line.startswith("- "):
+    for item_tokens in _extract_list_item_tokens(tokens):
+        payload = _render_markdown_blocks(item_tokens).replace("\n", " ").strip()
+        key, value = _split_key_value(payload)
+        if not key:
             continue
-        payload = line[2:].strip()
-        if ":" not in payload:
-            continue
-        key, value = payload.split(":", 1)
-        meta[key.strip()] = _strip_wrapping_backticks(value.strip())
+        meta[key] = _strip_wrapping_backticks(value)
     return meta
 
 
+def _split_key_value(value: str) -> tuple[str, str]:
+    for separator in (":", "："):
+        if separator not in value:
+            continue
+        key, payload = value.split(separator, 1)
+        return key.strip(), payload.strip()
+    return "", ""
+
+
 def _strip_wrapping_backticks(value: str) -> str:
-    if len(value) >= 2 and value.startswith("`") and value.endswith("`"):
-        return value[1:-1].strip()
+    inline_tokens = _parse_inline_tokens(value)
+    if len(inline_tokens) == 1 and inline_tokens[0].type == "code_inline":
+        return inline_tokens[0].content.strip()
     return value
 
 
@@ -990,39 +1120,43 @@ def _parse_permission(value: str) -> Permission:
         return Permission.NORMAL
 
 
-def _parse_feature_index(block: str) -> dict[str, tuple[str, str]]:
+def _parse_feature_index_tokens(tokens: Sequence[Token]) -> dict[str, tuple[str, str]]:
     entries: dict[str, tuple[str, str]] = {}
-    for line in block.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("- "):
+    for item_tokens in _extract_list_item_tokens(tokens):
+        inline = next((token for token in item_tokens if token.type == "inline"), None)
+        if inline is None:
             continue
-        match = re.match(r"-\s+`([^`]+)`\s+([^:]+):\s*(.+)$", stripped)
-        if not match:
+        children = tuple(inline.children or ())
+        if not children or children[0].type != "code_inline":
             continue
-        slug, title, summary = match.groups()
-        entries[slug.strip()] = (title.strip(), summary.strip())
+        slug = children[0].content.strip()
+        title, summary = _split_key_value(_render_inline_markdown(children[1:]).strip())
+        if not slug or not title:
+            continue
+        entries[slug] = (title, summary)
     return entries
 
 
-def _parse_feature_details(block: str, source_path: Path) -> dict[str, FeatureDoc]:
+def _parse_feature_details_tokens(
+    tokens: Sequence[Token],
+    source_path: Path,
+) -> dict[str, FeatureDoc]:
     features: dict[str, FeatureDoc] = {}
-    for raw_heading, body in _split_sections(block, level=3).items():
-        slug, title = _parse_feature_heading(raw_heading)
+    for section in _extract_heading_sections(tokens, tag="h3"):
+        slug, title = _parse_feature_heading(section.heading)
         if not slug or not title:
             continue
-        meta_lines: list[str] = []
-        body_lines = body.splitlines()
-        index = 0
-        while index < len(body_lines):
-            line = body_lines[index].strip()
-            if line.startswith("#### "):
-                break
-            if line.startswith("- "):
-                meta_lines.append(line)
-            index += 1
-        meta = _parse_meta_block("\n".join(meta_lines))
-        subsections = _split_sections("\n".join(body_lines[index:]), level=4)
-        flow_notes, demo_turns = _parse_flow_section(subsections.get("完整流程", ""))
+        meta_tokens, body_tokens = _split_tokens_before_heading(
+            section.tokens, tag="h4"
+        )
+        meta = _parse_meta_block_tokens(meta_tokens)
+        subsections = {
+            subsection.title: subsection.tokens
+            for subsection in _extract_heading_sections(body_tokens, tag="h4")
+        }
+        flow_notes, demo_turns = _parse_flow_section_tokens(
+            subsections.get("完整流程", ())
+        )
         demo_filename = meta.get("Demo", f"{doc_asset_prefix(source_path)}-{slug}.png")
         demo_filename = demo_filename.strip("`")
         features[slug] = FeatureDoc(
@@ -1033,25 +1167,83 @@ def _parse_feature_details(block: str, source_path: Path) -> dict[str, FeatureDo
             trigger=meta.get("指令", "").strip() or meta.get("触发", "").strip(),
             permission=_parse_permission(meta.get("权限", "")),
             demo_filename=demo_filename,
-            overview=subsections.get("说明", "").strip(),
-            preconditions=subsections.get("前置条件", "").strip(),
+            overview=_render_markdown_blocks(subsections.get("说明", ())).strip(),
+            preconditions=_render_markdown_blocks(
+                subsections.get("前置条件", ())
+            ).strip(),
             flow_notes=flow_notes.strip(),
-            failures=subsections.get("失败情况", "").strip(),
+            failures=_render_markdown_blocks(subsections.get("失败情况", ())).strip(),
             demo_turns=demo_turns,
         )
     return features
 
 
-def _parse_feature_heading(raw_heading: str) -> tuple[str, str]:
-    heading = raw_heading.strip()
-    match = re.match(r"`([^`]+)`\s+(.+)$", heading)
-    if match:
-        slug, title = match.groups()
-        return slug.strip(), title.strip()
-    parts = heading.split(maxsplit=1)
+def _split_tokens_before_heading(
+    tokens: Sequence[Token],
+    *,
+    tag: str,
+) -> tuple[tuple[Token, ...], tuple[Token, ...]]:
+    for index, token in enumerate(tokens):
+        if token.type == "heading_open" and token.tag == tag:
+            return tuple(tokens[:index]), tuple(tokens[index:])
+    return tuple(tokens), ()
+
+
+def _parse_feature_heading(heading: Token) -> tuple[str, str]:
+    children = tuple(heading.children or ())
+    if children and children[0].type == "code_inline":
+        slug = children[0].content.strip()
+        title = _render_inline_markdown(children[1:]).strip()
+        if slug and title:
+            return slug, title
+    rendered = _normalize_heading(_render_inline_markdown(children))
+    parts = rendered.split(maxsplit=1)
     if len(parts) != 2:
         return "", ""
     return parts[0].strip("`").strip(), parts[1].strip()
+
+
+def _parse_flow_section_tokens(
+    tokens: Sequence[Token],
+) -> tuple[str, tuple[DocsDemoTurn, ...]]:
+    demo_turns: list[DocsDemoTurn] = []
+    cleaned: list[str] = []
+    for token in tokens:
+        if token.type == "fence" and token.info.strip() == "demo":
+            demo_turns.extend(_parse_demo_turns(token.content))
+            continue
+        if token.type != "inline":
+            continue
+        text = _render_inline_markdown(token.children or ()).strip()
+        if text:
+            cleaned.append(text)
+    return "\n".join(cleaned).strip(), tuple(demo_turns)
+
+
+def _parse_demo_turns(content: str) -> list[DocsDemoTurn]:
+    demo_turns: list[DocsDemoTurn] = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if ":" in stripped:
+            speaker, text = stripped.split(":", 1)
+            normalized = speaker.strip().upper()
+            if normalized in {"USER", "BOT", "SYSTEM"}:
+                demo_turns.append(
+                    DocsDemoTurn(
+                        cast(Literal["USER", "BOT", "SYSTEM"], normalized),
+                        text.strip(),
+                    )
+                )
+                continue
+        if demo_turns:
+            previous = demo_turns[-1]
+            demo_turns[-1] = DocsDemoTurn(
+                previous.speaker,
+                f"{previous.text}\n{stripped}",
+            )
+    return demo_turns
 
 
 def _merge_features(
@@ -1101,35 +1293,6 @@ def _merge_features(
         if slug not in seen:
             ordered.append(feature)
     return tuple(ordered)
-
-
-def _parse_flow_section(block: str) -> tuple[str, tuple[DocsDemoTurn, ...]]:
-    demo_turns: list[DocsDemoTurn] = []
-    cleaned = block
-    fence_match = re.search(r"```demo\s*(.*?)```", block, re.DOTALL)
-    if fence_match:
-        cleaned = (block[: fence_match.start()] + block[fence_match.end() :]).strip()
-        for line in fence_match.group(1).splitlines():
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if ":" in stripped:
-                speaker, text = stripped.split(":", 1)
-                normalized = speaker.strip().upper()
-                if normalized in {"USER", "BOT", "SYSTEM"}:
-                    demo_turns.append(
-                        DocsDemoTurn(
-                            cast(Literal["USER", "BOT", "SYSTEM"], normalized),
-                            text.strip(),
-                        )
-                    )
-                    continue
-            if demo_turns:
-                previous = demo_turns[-1]
-                demo_turns[-1] = DocsDemoTurn(
-                    previous.speaker, f"{previous.text}\n{stripped}"
-                )
-    return cleaned.strip(), tuple(demo_turns)
 
 
 def _split_csv(value: str) -> tuple[str, ...]:
