@@ -968,22 +968,46 @@ def _format_feature_command_lines(
 
     lines: list[str] = []
     shortcut_groups: list[str] = []
+    shortcut_sections: list[str] = []
     in_shortcut_section = False
     for section in sections:
         if match := re.match(r"快捷入口[:：]\s*(.+)", section):
             shortcut_groups.append(match.group(1).strip())
             in_shortcut_section = True
             continue
+        if match := re.match(r"快捷入口分组[:：]\s*(.+)", section):
+            shortcut_sections.append(match.group(1).strip())
+            in_shortcut_section = False
+            continue
+        if shortcut_sections:
+            shortcut_sections.append(section)
+            continue
         if in_shortcut_section:
             shortcut_groups.append(section)
             continue
         lines.append(f"  {section}")
+
+    if shortcut_sections:
+        lines.append("  快捷入口:")
+        lines.extend(_format_shortcut_section_lines(shortcut_sections))
 
     if shortcut_groups:
         lines.append("  快捷入口:")
         lines.extend(f"    {group}" for group in shortcut_groups)
 
     return lines or [f"  {command}"]
+
+
+def _format_shortcut_section_lines(sections: Sequence[str]) -> list[str]:
+    lines: list[str] = []
+    for section in sections:
+        if ":" not in section:
+            lines.append(f"    {section}")
+            continue
+        title, commands = section.split(":", 1)
+        lines.append(f"    {title.strip()}:")
+        lines.append(f"      {commands.strip()}")
+    return lines
 
 
 def _feature_notice_items(feature: FeatureDoc) -> list[str]:

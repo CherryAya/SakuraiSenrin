@@ -264,7 +264,7 @@ def test_permission_denied_message_uses_required_permission_label() -> None:
         permission=Permission.SUPERUSER,
     )
 
-    message = _build_permission_denied_message(entry)
+    message = _build_permission_denied_message(entry, "zh-CN")
 
     assert "无权限查看插件文档: 好友管理模块" in str(message)
     assert "需要权限: 超级管理员" in str(message)
@@ -300,9 +300,10 @@ def test_build_index_message_only_lists_root_nodes(monkeypatch: Any) -> None:
         | Permission.SUPERUSER,
     )
 
-    assert "📖 ===== 帮助文档 =====" in str(message)
-    assert "管理模块总览" in str(message)
-    assert "群组管理模块" not in str(message)
+    rendered = str(message)
+    assert "管理模块总览" in rendered
+    assert "#help 管理模块总览" in rendered
+    assert "群组管理模块" not in rendered
     assert any(segment.type == "image" for segment in message)
 
 
@@ -366,7 +367,13 @@ async def test_help_matcher_formats_water_overview_shortcuts(app: App) -> None:
         assert "3. 查看周期榜单" in rendered
         assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
         assert "  快捷入口:" in rendered
-        assert "    #今日矩阵群榜 / #今日矩阵群聊榜" in rendered
+        assert "    用户榜 / 本群:" in rendered
+        assert "      #今日水王 / #本周水王 / #本月水王 / #本季水王" in rendered
+        assert "    群聊榜 / 本矩阵:" in rendered
+        assert (
+            "      #今日矩阵群榜 / #本周矩阵群榜 / #本月矩阵群榜 / #本季矩阵群榜"
+            in rendered
+        )
 
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, expected, bot=bot)
