@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 import math
-from typing import Any
+from typing import Any, cast
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
+from src.plugins.wordbank.debug import log_perf, perf_start
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services.media import WordbankMediaService
 
@@ -23,9 +25,26 @@ MISSING_IMAGE_PLACEHOLDER = "[图片加载失败]"
 async def render_shape_message(
     shape: MessageShape,
     media_service: WordbankMediaService,
+    *,
+    trace_fields: Mapping[str, object] | None = None,
 ) -> Message:
+    load_start = perf_start()
     image_bytes_by_id = await _load_shape_image_bytes(shape, media_service)
+    if trace_fields is not None:
+        requested_image_ids = tuple(sorted(image_bytes_by_id))
+        loaded_count = sum(
+            1 for image_bytes in image_bytes_by_id.values() if image_bytes is not None
+        )
+        log_perf(
+            "plugin.build_passive_message.render_shape.images_loaded",
+            start=load_start,
+            requested_image_ids=requested_image_ids,
+            loaded_count=loaded_count,
+            missing_count=len(image_bytes_by_id) - loaded_count,
+            **cast(Any, dict(trace_fields)),
+        )
     message = Message()
+    image_segments = 0
     for atom in shape.atoms:
         if atom.kind == "text" and atom.text:
             message += MessageSegment.text(atom.text)
@@ -37,6 +56,14 @@ async def render_shape_message(
                 message += MessageSegment.text(MISSING_IMAGE_PLACEHOLDER)
                 continue
             message += MessageSegment.image(image_bytes)
+            image_segments += 1
+    if trace_fields is not None:
+        log_perf(
+            "plugin.build_passive_message.render_shape.segment_built",
+            segments=len(list(message)),
+            image_segments=image_segments,
+            **cast(Any, dict(trace_fields)),
+        )
     return message
 
 

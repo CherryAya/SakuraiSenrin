@@ -838,6 +838,60 @@ async def test_media_falls_back_to_legacy_local_storage_path_when_remote_unavail
     assert repo.images[0].remote_sync_status == "failed"
 
 
+async def test_media_logs_remote_fallback_stages_when_legacy_handles_response(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _ImageRepo()
+    storage = _ObjectStorage()
+    storage.get_bytes = AsyncMock(return_value=None)
+    legacy_root = tmp_path / "legacy"
+    legacy_root.mkdir()
+    legacy_path = legacy_root / "legacy.png"
+    legacy_bytes = _png((101, 102, 103))
+    legacy_path.write_bytes(legacy_bytes)
+    service = WordbankMediaService(
+        repo,
+        media_root=legacy_root,
+        remote_storage=ObjectStorageWordbankMediaStorage(storage),
+        cache_storage=LocalLruCacheWordbankMediaStorage(tmp_path / "cache"),
+    )
+    await repo.create_image(
+        {
+            "md5": "9" * 32,
+            "dhash": "7" * 16,
+            "phash": "7" * 16,
+            "width": 16,
+            "height": 16,
+            "file_size": len(legacy_bytes),
+            "hash_version": 2,
+            "storage_path": str(legacy_path),
+            "remote_storage_path": "r2://bucket/wordbank/media/missing.png",
+            "remote_sync_status": "failed",
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
+    await service.rebuild_cache()
+
+    events: list[str] = []
+
+    def _capture(stage: str, *, start: float | None = None, **fields: Any) -> None:
+        _ = start, fields
+        events.append(stage)
+
+    monkeypatch.setattr(media_module, "log_perf", _capture)
+
+    loaded = await service.load_canonical_storage_bytes(1)
+
+    assert loaded == legacy_bytes
+    assert "media.load_canonical_storage_bytes.remote_fetch" in events
+    assert "media.remote_sync.mark_failed" in events
+    assert "media.load_canonical_storage_bytes.remote_miss_fallback_legacy" in events
+    assert "media.load_canonical_storage_bytes.legacy_fetch" in events
+    assert "media.load_canonical_storage_bytes.end" in events
+
+
 async def test_media_syncs_legacy_local_image_to_remote_and_keeps_it_readable(
     tmp_path: Path,
 ) -> None:

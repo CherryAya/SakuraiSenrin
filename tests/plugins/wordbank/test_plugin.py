@@ -23,6 +23,7 @@ if nonebot.get_plugin("wordbank") is None:
     nonebot.load_plugin("src.plugins.wordbank")
 
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank.handlers import rendering as rendering_module
 from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.handlers.rendering import MISSING_IMAGE_PLACEHOLDER
 from src.plugins.wordbank.message_model import (
@@ -73,6 +74,42 @@ async def test_build_passive_message_rebuilds_text_and_image_segments(
     assert isinstance(message, Message)
     assert [segment.type for segment in message] == ["text", "image"]
     media_service.load_canonical_storage_bytes.assert_awaited_once_with(7)
+
+
+@pytest.mark.asyncio
+async def test_build_passive_message_logs_render_shape_stages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    media_service = SimpleNamespace(
+        load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
+    )
+    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    events: list[str] = []
+
+    def _capture(stage: str, *, start: float | None = None, **fields: object) -> None:
+        _ = start, fields
+        events.append(stage)
+
+    monkeypatch.setattr(wordbank_plugin, "log_perf", _capture)
+    monkeypatch.setattr(rendering_module, "log_perf", _capture)
+    response = PassiveResponse(
+        text="fallback",
+        trigger_group_id=12,
+        trigger_variant_id=21,
+        response_item_id=22,
+        group_id="20001",
+        user_id="10001",
+        message_type="message",
+        response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
+    )
+
+    message = await wordbank_plugin._build_passive_message(response)
+
+    assert isinstance(message, Message)
+    assert "plugin.build_passive_message.render_shape.begin" in events
+    assert "plugin.build_passive_message.render_shape.images_loaded" in events
+    assert "plugin.build_passive_message.render_shape.segment_built" in events
+    assert "plugin.build_passive_message.rendered_shape" in events
 
 
 @pytest.mark.asyncio

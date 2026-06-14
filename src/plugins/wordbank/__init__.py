@@ -1712,6 +1712,16 @@ async def _send_group_detail_view(
     await matcher.finish()
 
 
+def _message_segment_stats(message: Message | str) -> tuple[int, int]:
+    if isinstance(message, str):
+        return (1 if message else 0, 0)
+    segments = list(message)
+    return (
+        len(segments),
+        sum(1 for segment in segments if segment.type == "image"),
+    )
+
+
 async def _build_passive_message(response: PassiveResponse) -> Message | str:
     start = perf_start()
     if response.response_shape is None or response.response_shape.is_empty():
@@ -1721,9 +1731,19 @@ async def _build_passive_message(response: PassiveResponse) -> Message | str:
             response_item_id=response.response_item_id,
         )
         return response.text
+    image_atom_count = sum(
+        1 for atom in response.response_shape.atoms if atom.kind == "image"
+    )
+    log_perf(
+        "plugin.build_passive_message.render_shape.begin",
+        response_item_id=response.response_item_id,
+        atom_count=len(response.response_shape.atoms),
+        image_atom_count=image_atom_count,
+    )
     message = await render_shape_message(
         response.response_shape,
         wordbank_media_service,
+        trace_fields={"response_item_id": response.response_item_id},
     )
     log_perf(
         "plugin.build_passive_message.rendered_shape",
@@ -1755,9 +1775,25 @@ async def _(bot: Bot, event: MessageEvent) -> None:
         build_start = perf_start()
         message = await _build_passive_message(response)
         build_ms = elapsed_ms(build_start)
+        segment_count, image_segment_count = _message_segment_stats(message)
+        log_perf(
+            "plugin.passive.handle.send.begin",
+            message_type=response.message_type,
+            response_item_id=response.response_item_id,
+            segment_count=segment_count,
+            image_segment_count=image_segment_count,
+        )
         send_start = perf_start()
         send_result = await wordbank_passive.send(message)
         send_ms = elapsed_ms(send_start)
+        log_perf(
+            "plugin.passive.handle.send.done",
+            start=send_start,
+            message_type=response.message_type,
+            response_item_id=response.response_item_id,
+            segment_count=segment_count,
+            image_segment_count=image_segment_count,
+        )
         record_start = perf_start()
         await _record_passive_response_message(response, send_result)
         record_ms = elapsed_ms(record_start)

@@ -10,7 +10,7 @@ from hashlib import md5
 from io import BytesIO
 from pathlib import Path
 import re
-from typing import Final, Protocol, cast
+from typing import Any, Final, Protocol, cast
 from urllib.parse import urlparse
 
 import imagehash
@@ -24,7 +24,7 @@ from src.plugins.wordbank.database.types import (
     WordbankImagePayload,
     WordbankImageRecord,
 )
-from src.plugins.wordbank.debug import log_perf, perf_start
+from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.plugins.wordbank.services.errors import WordbankUserError
 
 DEFAULT_MEDIA_ROOT: Final[Path] = Path("./data/wordbank/media")
@@ -93,6 +93,28 @@ class PreparedImage:
 class LocalCacheEntry:
     path: str
     size: int
+
+
+def _image_log_fields(
+    image: WordbankImageRecord | None,
+    *,
+    canonical_image_id: int | None = None,
+) -> dict[str, Any]:
+    if image is None:
+        return {
+            "image_id": "-",
+            "canonical_image_id": canonical_image_id or "-",
+            "local_cache_path": "-",
+            "remote_storage_path": "-",
+            "legacy_storage_path": "-",
+        }
+    return {
+        "image_id": image.id,
+        "canonical_image_id": canonical_image_id or image.canonical_id,
+        "local_cache_path": image.local_cache_path or "-",
+        "remote_storage_path": image.remote_storage_path or "-",
+        "legacy_storage_path": image.storage_path or "-",
+    }
 
 
 class MediaRepository(Protocol):
@@ -304,23 +326,110 @@ class ObjectStorageWordbankMediaStorage:
     async def load_bytes(self, storage_path: str) -> bytes | None:
         key = self._key_from_uri(storage_path)
         if key is None:
+            log_perf(
+                "media.remote_storage.uri_unhandled_fallback",
+                provider=self.object_storage.provider,
+                bucket=self.bucket or "-",
+                uri=storage_path,
+                has_fallback=self.fallback is not None,
+                reason="uri_not_owned_by_provider",
+            )
             if self.fallback is None:
                 return None
-            return await self.fallback.load_bytes(storage_path)
+            start = perf_start()
+            loaded = await self.fallback.load_bytes(storage_path)
+            log_perf(
+                "media.remote_storage.load.done",
+                start=start,
+                provider=self.object_storage.provider,
+                bucket=self.bucket or "-",
+                key="-",
+                uri=storage_path,
+                bytes=len(loaded) if loaded is not None else 0,
+                hit=loaded is not None,
+                fallback_used=True,
+            )
+            return loaded
+        log_perf(
+            "media.remote_storage.load.begin",
+            provider=self.object_storage.provider,
+            bucket=self.bucket or "-",
+            key=key,
+            uri=storage_path,
+            fallback_used=False,
+        )
+        start = perf_start()
         try:
-            return await self.object_storage.get_bytes(key)
+            loaded = await self.object_storage.get_bytes(key)
         except Exception as exc:
+            log_perf(
+                "media.remote_storage.load.error",
+                start=start,
+                provider=self.object_storage.provider,
+                bucket=self.bucket or "-",
+                key=key,
+                uri=storage_path,
+                fallback_used=False,
+                error=type(exc).__name__,
+            )
             logger.warning(f"[Wordbank] remote media load skipped: {exc}")
             return None
+        log_perf(
+            "media.remote_storage.load.done",
+            start=start,
+            provider=self.object_storage.provider,
+            bucket=self.bucket or "-",
+            key=key,
+            uri=storage_path,
+            bytes=len(loaded) if loaded is not None else 0,
+            hit=loaded is not None,
+            fallback_used=False,
+        )
+        return loaded
 
     async def exists(self, storage_path: str) -> bool:
         key = self._key_from_uri(storage_path)
         if key is None:
+            log_perf(
+                "media.remote_storage.exists.error",
+                provider=self.object_storage.provider,
+                bucket=self.bucket or "-",
+                key="-",
+                uri=storage_path,
+                reason="uri_not_owned_by_provider",
+            )
             return False
+        log_perf(
+            "media.remote_storage.exists.begin",
+            provider=self.object_storage.provider,
+            bucket=self.bucket or "-",
+            key=key,
+            uri=storage_path,
+        )
+        start = perf_start()
         try:
-            return await self.object_storage.exists(key)
-        except Exception:
+            exists = await self.object_storage.exists(key)
+        except Exception as exc:
+            log_perf(
+                "media.remote_storage.exists.error",
+                start=start,
+                provider=self.object_storage.provider,
+                bucket=self.bucket or "-",
+                key=key,
+                uri=storage_path,
+                error=type(exc).__name__,
+            )
             return False
+        log_perf(
+            "media.remote_storage.exists.done",
+            start=start,
+            provider=self.object_storage.provider,
+            bucket=self.bucket or "-",
+            key=key,
+            uri=storage_path,
+            exists=exists,
+        )
+        return exists
 
     async def list_objects(self) -> list[StorageObject]:
         return await self.object_storage.list_objects(f"{self.key_prefix}/")
@@ -1144,10 +1253,30 @@ class WordbankMediaService:
             )
             return None
 
+        base_fields = _image_log_fields(image, canonical_image_id=canonical_image_id)
+        log_perf(
+            "media.load_canonical_storage_bytes.begin",
+            canonical_image_id=canonical_image_id,
+            has_local_cache_path=bool(image.local_cache_path),
+            has_remote_storage_path=bool(image.remote_storage_path),
+            has_legacy_storage_path=bool(image.storage_path),
+            cache_enabled=self.cache_storage.enabled,
+            remote_enabled=self.remote_storage is not None,
+        )
+
+        local_probe_start = perf_start()
         cached = await self._load_from_local_cache(image)
+        log_perf(
+            "media.load_canonical_storage_bytes.local_cache_probe",
+            start=local_probe_start,
+            phase="initial",
+            hit=cached is not None,
+            cache_enabled=self.cache_storage.enabled,
+            **base_fields,
+        )
         if cached is not None:
             log_perf(
-                "media.load_canonical_storage_bytes.hit",
+                "media.load_canonical_storage_bytes.end",
                 start=start,
                 canonical_image_id=canonical_image_id,
                 source="local_cache",
@@ -1155,12 +1284,33 @@ class WordbankMediaService:
             )
             return cached
 
-        async with self._get_remote_load_lock(canonical_image_id):
+        lock = self._get_remote_load_lock(canonical_image_id)
+        wait_start = perf_start()
+        await lock.acquire()
+        log_perf(
+            "media.load_canonical_storage_bytes.remote_lock_wait",
+            canonical_image_id=canonical_image_id,
+            wait_ms=f"{elapsed_ms(wait_start):.2f}",
+        )
+        try:
             refreshed = self._by_canonical_id.get(canonical_image_id, image)
+            refreshed_fields = _image_log_fields(
+                refreshed,
+                canonical_image_id=canonical_image_id,
+            )
+            local_probe_start = perf_start()
             cached = await self._load_from_local_cache(refreshed)
+            log_perf(
+                "media.load_canonical_storage_bytes.local_cache_probe",
+                start=local_probe_start,
+                phase="after_lock",
+                hit=cached is not None,
+                cache_enabled=self.cache_storage.enabled,
+                **refreshed_fields,
+            )
             if cached is not None:
                 log_perf(
-                    "media.load_canonical_storage_bytes.hit",
+                    "media.load_canonical_storage_bytes.end",
                     start=start,
                     canonical_image_id=canonical_image_id,
                     source="local_cache_after_lock",
@@ -1171,7 +1321,7 @@ class WordbankMediaService:
             remote_bytes = await self._load_from_remote_storage(refreshed)
             if remote_bytes is not None:
                 log_perf(
-                    "media.load_canonical_storage_bytes.hit",
+                    "media.load_canonical_storage_bytes.end",
                     start=start,
                     canonical_image_id=canonical_image_id,
                     source="remote_storage",
@@ -1179,36 +1329,97 @@ class WordbankMediaService:
                 )
                 return remote_bytes
 
+            if refreshed.remote_storage_path or self.remote_storage is not None:
+                log_perf(
+                    "media.load_canonical_storage_bytes.remote_miss_fallback_legacy",
+                    reason="remote_miss_or_unavailable",
+                    **refreshed_fields,
+                )
             legacy_bytes = await self._load_from_legacy_storage(refreshed)
             log_perf(
-                "media.load_canonical_storage_bytes.hit",
+                "media.load_canonical_storage_bytes.end",
                 start=start,
                 canonical_image_id=canonical_image_id,
                 source="legacy_storage" if legacy_bytes is not None else "miss",
                 bytes=len(legacy_bytes) if legacy_bytes is not None else 0,
             )
             return legacy_bytes
+        finally:
+            lock.release()
 
     async def _load_from_local_cache(self, image: WordbankImageRecord) -> bytes | None:
-        if not image.local_cache_path:
+        fields = _image_log_fields(image)
+        if not self.cache_storage.enabled:
+            log_perf(
+                "media.local_cache.read",
+                hit=False,
+                cache_enabled=False,
+                reason="cache_disabled",
+                **fields,
+            )
             return None
+        if not image.local_cache_path:
+            log_perf(
+                "media.local_cache.read",
+                hit=False,
+                cache_enabled=True,
+                reason="empty_cache_path",
+                **fields,
+            )
+            return None
+        read_start = perf_start()
         cached = await self.cache_storage.load_cached_bytes(image.local_cache_path)
+        log_perf(
+            "media.local_cache.read",
+            start=read_start,
+            hit=cached is not None,
+            cache_enabled=True,
+            bytes=len(cached) if cached is not None else 0,
+            **fields,
+        )
         if cached is None:
+            log_perf(
+                "media.local_cache.path_missing",
+                cache_enabled=True,
+                reason="cache_file_missing",
+                **fields,
+            )
+            metadata_start = perf_start()
             updated = await self.repository.update_image_cache_metadata(
                 image.id,
                 local_cache_path="",
                 cache_file_size=0,
             )
+            log_perf(
+                "media.local_cache.stale_metadata_cleared",
+                start=metadata_start,
+                updated=updated is not None,
+                **fields,
+            )
             if updated is not None:
                 self._cache_image(updated)
             return None
+        touch_start = perf_start()
         await self.cache_storage.touch_cache_entry(image.local_cache_path)
+        log_perf(
+            "media.local_cache.touch",
+            start=touch_start,
+            **fields,
+        )
+        metadata_start = perf_start()
         updated = await self.repository.update_image_cache_metadata(
             image.id,
             local_cache_path=image.local_cache_path,
             cache_file_size=max(image.cache_file_size, len(cached)),
             last_accessed_at=get_current_time(),
             cache_last_hit_at=get_current_time(),
+        )
+        log_perf(
+            "media.local_cache.metadata_update",
+            start=metadata_start,
+            updated=updated is not None,
+            cache_file_size=max(image.cache_file_size, len(cached)),
+            **fields,
         )
         if updated is not None:
             self._cache_image(updated)
@@ -1220,17 +1431,48 @@ class WordbankMediaService:
     ) -> bytes | None:
         if self.remote_storage is None or not image.remote_storage_path:
             return None
+        fetch_start = perf_start()
         remote_bytes = await self.remote_storage.load_bytes(image.remote_storage_path)
+        log_perf(
+            "media.load_canonical_storage_bytes.remote_fetch",
+            start=fetch_start,
+            provider=(
+                self.remote_storage.object_storage.provider
+                if isinstance(self.remote_storage, ObjectStorageWordbankMediaStorage)
+                else "-"
+            ),
+            uri=image.remote_storage_path,
+            bytes=len(remote_bytes) if remote_bytes is not None else 0,
+            hit=remote_bytes is not None,
+            **_image_log_fields(image),
+        )
         if remote_bytes is None:
             await self._mark_remote_sync_failed(image)
             return None
         await self._touch_last_access(image.id)
         updated_image = self._by_id.get(image.id, image)
         if self.cache_storage.enabled:
+            cache_store_start = perf_start()
             updated_image = await self._store_cache_bytes(
                 updated_image,
                 remote_bytes,
                 mark_as_hit=False,
+            )
+            log_perf(
+                "media.load_canonical_storage_bytes.cache_store_after_remote",
+                start=cache_store_start,
+                success=updated_image.local_cache_path != "",
+                bytes=len(remote_bytes),
+                **_image_log_fields(updated_image),
+            )
+        else:
+            log_perf(
+                "media.load_canonical_storage_bytes.cache_store_after_remote",
+                success=False,
+                bytes=len(remote_bytes),
+                cache_enabled=False,
+                reason="cache_disabled",
+                **_image_log_fields(updated_image),
             )
         return remote_bytes
 
@@ -1240,7 +1482,15 @@ class WordbankMediaService:
     ) -> bytes | None:
         if not image.storage_path or _is_remote_uri(image.storage_path):
             return None
+        legacy_start = perf_start()
         legacy_bytes = await self.legacy_storage.load_bytes(image.storage_path)
+        log_perf(
+            "media.load_canonical_storage_bytes.legacy_fetch",
+            start=legacy_start,
+            bytes=len(legacy_bytes) if legacy_bytes is not None else 0,
+            hit=legacy_bytes is not None,
+            **_image_log_fields(image),
+        )
         if legacy_bytes is None:
             return None
         updated = await self._touch_last_access(image.id)
@@ -1252,12 +1502,19 @@ class WordbankMediaService:
         current = self._by_id.get(image_id)
         if current is None:
             return None
+        start = perf_start()
         updated = await self.repository.update_image_cache_metadata(
             image_id,
             local_cache_path=current.local_cache_path,
             cache_file_size=current.cache_file_size,
             last_accessed_at=get_current_time(),
             cache_last_hit_at=current.cache_last_hit_at,
+        )
+        log_perf(
+            "media.image_last_access_update",
+            start=start,
+            updated=updated is not None,
+            **_image_log_fields(current),
         )
         if updated is not None:
             self._cache_image(updated)
@@ -1270,6 +1527,17 @@ class WordbankMediaService:
         *,
         mark_as_hit: bool,
     ) -> WordbankImageRecord:
+        if not self.cache_storage.enabled:
+            log_perf(
+                "media.local_cache.store",
+                success=False,
+                cache_enabled=False,
+                reason="cache_disabled",
+                bytes=len(data),
+                **_image_log_fields(image),
+            )
+            return image
+        store_start = perf_start()
         cached = await self.cache_storage.store_cached_bytes(
             data,
             md5_hex=image.md5,
@@ -1277,15 +1545,33 @@ class WordbankMediaService:
                 image.remote_storage_path or image.storage_path
             ),
         )
+        log_perf(
+            "media.local_cache.store",
+            start=store_start,
+            success=cached is not None,
+            cache_enabled=True,
+            bytes=len(data),
+            cache_path=cached.path if cached is not None else "-",
+            **_image_log_fields(image),
+        )
         if cached is None:
             return image
         now = get_current_time()
+        metadata_start = perf_start()
         updated = await self.repository.update_image_cache_metadata(
             image.id,
             local_cache_path=cached.path,
             cache_file_size=cached.size,
             last_accessed_at=now,
             cache_last_hit_at=now if mark_as_hit else image.cache_last_hit_at,
+        )
+        log_perf(
+            "media.local_cache.store_metadata_update",
+            start=metadata_start,
+            updated=updated is not None,
+            cache_path=cached.path,
+            cache_file_size=cached.size,
+            **_image_log_fields(image),
         )
         if updated is None:
             return image
@@ -1295,7 +1581,13 @@ class WordbankMediaService:
 
     async def evict_local_cache_if_needed(self) -> int:
         if not self.cache_storage.enabled:
+            log_perf(
+                "media.local_cache.evict_if_needed",
+                removed=0,
+                cache_enabled=False,
+            )
             return 0
+        start = perf_start()
         async with self._cache_maintenance_lock:
             cached_images = await self.repository.list_cached_images()
             evicted = await self.cache_storage.evict_if_needed(cached_images)
@@ -1313,7 +1605,15 @@ class WordbankMediaService:
                 if updated is not None:
                     self._cache_image(updated)
                 removed += 1
-            return removed
+        log_perf(
+            "media.local_cache.evict_if_needed",
+            start=start,
+            removed=removed,
+            candidate_count=len(cached_images),
+            evicted_count=len(evicted),
+            cache_enabled=True,
+        )
+        return removed
 
     async def reconcile_local_cache(self) -> dict[str, int]:
         if not self.cache_storage.enabled:
@@ -1568,6 +1868,7 @@ class WordbankMediaService:
         self,
         image: WordbankImageRecord,
     ) -> WordbankImageRecord | None:
+        start = perf_start()
         updated = await self.repository.update_image_remote_sync(
             image.id,
             remote_storage_path=image.remote_storage_path,
@@ -1575,6 +1876,13 @@ class WordbankMediaService:
             remote_synced_at=image.remote_synced_at,
             remote_etag=image.remote_etag,
             remote_object_size=image.remote_object_size,
+        )
+        log_perf(
+            "media.remote_sync.mark_failed",
+            start=start,
+            updated=updated is not None,
+            reason="remote_load_or_sync_failed",
+            **_image_log_fields(image),
         )
         if updated is not None:
             self._cache_image(updated)
