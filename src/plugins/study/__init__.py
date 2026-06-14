@@ -48,6 +48,7 @@ from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.plugins.wordbank.handlers.commands import _default_i18n_text
 from src.plugins.wordbank.message_model import MessageShape, shape_from_text
+from src.plugins.wordbank.text_parsing import has_meaningful_text
 
 name = tr("zh-CN", "plugin.study.name")
 description = tr("zh-CN", "plugin.study.description")
@@ -200,9 +201,9 @@ async def _start_guided_study_from_partial_args(
     )
     from src.plugins.wordbank.services import wordbank_service
     from src.plugins.wordbank.services.rules import RuleError
-    from src.plugins.wordbank.text_parsing import tokenize_shell_like
+    from src.plugins.wordbank.text_parsing import rest_after_token, tokenize_shell_like
 
-    source = text.strip()
+    source = text
     if not source or _contains_study_pair_separator(source):
         return False
     try:
@@ -242,7 +243,7 @@ async def _start_guided_study_from_partial_args(
         await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
         return True
 
-    trigger_text = tokens[2].value
+    trigger_text = rest_after_token(source, tokens[1])
     if not trigger_text:
         await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
         return True
@@ -517,9 +518,9 @@ async def _(
 
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     await _abort_study_on_revoke(matcher, event, locale)
-    arg_text = arg.extract_plain_text().strip()
+    arg_text = arg.extract_plain_text()
     has_images = bool(extract_image_urls(arg))
-    if not arg_text:
+    if not has_meaningful_text(arg_text):
         if has_images:
             await _start_guided_study_with_trigger_image(
                 matcher,
@@ -596,7 +597,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     if _is_truthy_state_flag(state, "study_mode_prefilled"):
         state.pop("study_mode_prefilled", None)
         return
-    text = event.message.extract_plain_text().strip()
+    text = event.message.extract_plain_text()
     try:
         parse_study_mode_choice(text)
     except RuleError as exc:
@@ -640,7 +641,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     if _is_truthy_state_flag(state, "study_group_prefilled"):
         state.pop("study_group_prefilled", None)
         return
-    text = event.message.extract_plain_text().strip()
+    text = event.message.extract_plain_text()
     try:
         parse_study_group_block_choice(text)
     except RuleError as exc:

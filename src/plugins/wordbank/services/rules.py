@@ -7,7 +7,11 @@ from typing import Any, Literal, TypedDict, cast
 
 from src.lib.i18n.keys import MessageKey
 from src.plugins.wordbank.services.errors import WordbankUserError
-from src.plugins.wordbank.text_parsing import rest_after_token, tokenize_shell_like
+from src.plugins.wordbank.text_parsing import (
+    has_meaningful_text,
+    rest_after_token,
+    tokenize_shell_like,
+)
 
 Scope = Literal[
     "current_group",
@@ -382,7 +386,7 @@ def parse_legacy_study_text(
     - ``a t 触发词 响应词``
     """
 
-    source = text.strip()
+    source = text
     for sep in ("=>", "->", "回答", "回复"):
         if sep in source:
             trigger, response = source.split(sep, 1)
@@ -401,6 +405,11 @@ def parse_legacy_study_text(
             _default_i18n_text("wordbank.error.study_format"),
             "wordbank.error.study_format",
         ) from exc
+    if not has_meaningful_text(source):
+        raise _rule_error(
+            _default_i18n_text("wordbank.error.study_format"),
+            "wordbank.error.study_format",
+        )
     if (
         len(tokens) >= 4
         and tokens[0].value.casefold() in {"a", "m"}

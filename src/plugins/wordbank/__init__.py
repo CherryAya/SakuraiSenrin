@@ -99,6 +99,7 @@ from .message_model import MessageShape
 from .services import wordbank_media_service, wordbank_service
 from .services.core import WordbankAddResult
 from .services.rules import RuleError
+from .text_parsing import has_meaningful_text, split_command_text
 
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
@@ -779,11 +780,11 @@ def _build_guided_search_parsed(
     page: int = 1,
 ) -> ParsedSearch:
     return ParsedSearch(
-        keyword=str(state.get("wordbank_guided_search_keyword", "")).strip(),
+        keyword=str(state.get("wordbank_guided_search_keyword", "")),
         page=page,
         limit=10,
         field=str(state.get("wordbank_guided_search_field", "all")).strip() or "all",
-        creator_id=str(state.get("wordbank_guided_search_creator_id", "")).strip(),
+        creator_id=str(state.get("wordbank_guided_search_creator_id", "")),
     )
 
 
@@ -908,10 +909,10 @@ async def _(
 ) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     await _abort_guided_on_revoke(matcher, event, locale)
-    text = arg.extract_plain_text().strip()
-    if text:
-        first, _, tail = text.partition(" ")
-        if first.lower() in {"add", "添加", "学习"} and not tail.strip():
+    text = arg.extract_plain_text()
+    if has_meaningful_text(text):
+        first, tail = split_command_text(text)
+        if first in {"add", "添加", "学习"} and not has_meaningful_text(tail):
             if extract_image_urls(arg):
                 await _start_guided_add_with_trigger_image(
                     matcher,
@@ -951,7 +952,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         return
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    text = event.message.extract_plain_text().strip()
+    text = event.message.extract_plain_text()
     try:
         parse_guided_scope_choice(
             text,
@@ -1030,10 +1031,11 @@ async def _(
     await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     await _abort_guided_on_revoke(matcher, event, locale)
-    if not arg.extract_plain_text().strip() and not extract_image_urls(arg):
+    plain_text = arg.extract_plain_text()
+    if not has_meaningful_text(plain_text) and not extract_image_urls(arg):
         await _start_guided_add(matcher, event, state, locale)
         return
-    if not arg.extract_plain_text().strip() and extract_image_urls(arg):
+    if not has_meaningful_text(plain_text) and extract_image_urls(arg):
         await _start_guided_add_with_trigger_image(
             matcher,
             event,
@@ -1069,7 +1071,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    text = event.message.extract_plain_text().strip()
+    text = event.message.extract_plain_text()
     try:
         parse_guided_scope_choice(
             text,
@@ -1146,10 +1148,11 @@ async def _(
     await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     await _abort_guided_on_revoke(matcher, event, locale)
-    if not arg.extract_plain_text().strip() and not extract_image_urls(arg):
+    plain_text = arg.extract_plain_text()
+    if not has_meaningful_text(plain_text) and not extract_image_urls(arg):
         await _start_guided_search(matcher, event, state, locale)
         return
-    if not arg.extract_plain_text().strip() and extract_image_urls(arg):
+    if not has_meaningful_text(plain_text) and extract_image_urls(arg):
         try:
             await _start_guided_search_with_image(
                 matcher,
@@ -1232,8 +1235,8 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     await _abort_guided_on_revoke(matcher, event, locale)
     if _guided_search_stage(state) != WORDBANK_GUIDED_SEARCH_STAGE_KEYWORD:
         return
-    keyword = event.message.extract_plain_text().strip()
-    if not keyword:
+    keyword = event.message.extract_plain_text()
+    if not has_meaningful_text(keyword):
         await _reject_guided_error(
             matcher,
             state,

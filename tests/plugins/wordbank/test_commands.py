@@ -16,6 +16,7 @@ from src.plugins.wordbank.handlers.commands import (
     handle_guided_study_shape_result,
     handle_study_media_with_rule_result,
     parse_group_view_args,
+    parse_search_args,
 )
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -241,6 +242,45 @@ async def test_handle_add_with_media_result_builds_image_response_shape() -> Non
     kwargs = add_message_entry.await_args.kwargs
     assert shape_to_summary_text(kwargs["trigger_shape"]) == "晚安"
     assert shape_to_summary_text(kwargs["response_shape"]) == "[图片:7]"
+
+
+@pytest.mark.asyncio
+async def test_handle_add_with_media_result_preserves_trigger_whitespace_verbatim() -> (
+    None
+):
+    add_message_entry = AsyncMock(return_value=_add_result(response_text="[图片:7]"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            ingest_image_bytes=AsyncMock(return_value=SimpleNamespace(canonical_id=7))
+        ),
+    )
+    event = build_group_message_event(
+        "#wordbank add 晚安 [CQ:image,url=https://example.test/a.png]"
+    )
+
+    await handle_add_with_media_result(
+        service,
+        media_service,
+        event=event,
+        text="晚安  ",
+        image_bytes=b"image-bytes",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"].atoms[0].text == "晚安  "
+
+
+def test_parse_search_args_preserves_keyword_whitespace_verbatim() -> None:
+    parsed = parse_search_args('  "第一行  第二列"   --page 2')
+
+    assert parsed.keyword == "第一行  第二列"
+    assert parsed.page == 2
 
 
 @pytest.mark.asyncio

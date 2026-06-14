@@ -76,3 +76,24 @@ def split_command_text(text: str) -> tuple[str, str]:
     action_token = tokens[0]
     rest = rest_after_token(source, action_token)
     return action_token.value.lower(), rest
+
+
+def has_meaningful_text(text: str) -> bool:
+    return any(not char.isspace() for char in text)
+
+
+def join_tokens_with_original_spacing(
+    text: str,
+    tokens: tuple[TokenSpan, ...] | list[TokenSpan],
+) -> str:
+    if not tokens:
+        return ""
+
+    parts = [tokens[0].value]
+    previous = tokens[0]
+    for token in tokens[1:]:
+        gap = text[previous.end : token.start]
+        parts.append(gap if gap and gap.isspace() else " ")
+        parts.append(token.value)
+        previous = token
+    return "".join(parts)
