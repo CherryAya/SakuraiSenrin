@@ -539,42 +539,24 @@ class WaterRankRenderer:
             main_img.paste(row, (0, y - base_y_offset), alpha=True)
             y += item_h + item_spacing
 
-        now = arrow.get(get_current_time()).datetime
-        footer_y = y + int(20 * self.SCALE)
-        main_img.draw.text(
-            (self.RENDER_WIDTH / 2, footer_y),
-            _build_copyright_text(now.year),
-            fill=self.TEXT_COLOR,
-            font=self.num_small_font,
-            anchor="ma",
-        )
-        time_footer_y = footer_y + int(30 * self.SCALE)
-        main_img.draw.text(
-            (self.PADDING, time_footer_y),
-            tr(
-                locale,
-                "water.image.generated_at",
-                time=now.strftime("%Y-%m-%d %H:%M:%S"),
-            ),
-            fill=self.TEXT_COLOR,
-            font=self.num_small_font,
-            anchor="la",
+        footer_top = y + int(20 * self.SCALE)
+        footer_h = int(80 * self.SCALE)
+        _draw_report_footer(
+            main_img,
+            locale=locale,
+            generated_at=0,
+            footer_text=footer_text or tr(locale, "water.image.day_rank.footer"),
+            width=self.RENDER_WIDTH,
+            pad=self.PADDING,
+            top=footer_top,
+            footer_h=footer_h,
+            scale=self.SCALE,
+            copyright_color=self.TEXT_COLOR,
+            time_color=self.TEXT_COLOR,
+            footer_color=self.HIGHLIGHT_COLOR,
         )
 
-        msg_y = time_footer_y + int(50 * self.SCALE)
-        main_img.draw_text(
-            (0, msg_y, self.RENDER_WIDTH, msg_y + int(30 * self.SCALE)),
-            footer_text or tr(locale, "water.image.day_rank.footer"),
-            max_fontsize=int(18 * self.SCALE),
-            fill=self.HIGHLIGHT_COLOR,
-            halign="center",
-            valign="center",
-            font_families=[SYS_FONT_NAME],
-        )
-
-        final_img = main_img.crop(
-            (0, 0, self.RENDER_WIDTH, msg_y + int(80 * self.SCALE))
-        )
+        final_img = main_img.crop((0, 0, self.RENDER_WIDTH, footer_top + footer_h))
         return (await asyncio.to_thread(final_img.save, "PNG")).getvalue()
 
 
