@@ -85,7 +85,7 @@ def test_rule_allows_scope_role_and_call_count() -> None:
 
 
 def test_canonicalize_rejects_too_large_call_window() -> None:
-    with pytest.raises(RuleError, match="24 个月"):
+    with pytest.raises(RuleError, match="3 个月"):
         canonicalize_rule(
             {
                 "call_count": {

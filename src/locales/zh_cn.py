@@ -210,7 +210,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.error.call_unknown": "调用次数窗口包含不支持字段: {fields}",
     "wordbank.error.call_integer": "调用次数窗口参数必须是整数",
     "wordbank.error.call_window_positive": "调用次数窗口必须大于 0 秒",
-    "wordbank.error.call_window_too_large": "调用次数窗口不能超过 24 个月",
+    "wordbank.error.call_window_too_large": "调用次数窗口不能超过 3 个月",
     "wordbank.error.call_non_negative": "调用次数上下限不能小于 0",
     "wordbank.error.call_min_lte_max": "调用次数最小值不能大于最大值",
     "wordbank.error.rule_unknown": "规则包含不支持字段: {fields}",

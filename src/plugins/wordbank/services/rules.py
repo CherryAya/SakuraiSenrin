@@ -32,7 +32,7 @@ ROLE_LEVELS: dict[Role, int] = {
     "admin": 2,
     "owner": 3,
 }
-MAX_CALL_COUNT_WINDOW_SECONDS = 730 * 24 * 60 * 60
+MAX_CALL_COUNT_WINDOW_SECONDS = 90 * 24 * 60 * 60
 
 SCOPE_PRIORITY: dict[str, int] = {
     "all_groups": 10,
@@ -200,7 +200,7 @@ def _normalize_call_count(value: Any) -> CallCountRule | None:
         )
     if window_seconds > MAX_CALL_COUNT_WINDOW_SECONDS:
         raise _rule_error(
-            "调用次数窗口不能超过 24 个月",
+            "调用次数窗口不能超过 3 个月",
             "wordbank.error.call_window_too_large",
         )
     if min_count < 0 or max_count < 0:
