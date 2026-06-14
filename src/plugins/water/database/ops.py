@@ -339,6 +339,7 @@ class _WaterSummaryOpsBase[T: WaterDailySummary | WaterArchivedDailySummary](
         *,
         group_ids: list[str] | None = None,
         user_id: str | None = None,
+        preserve_order: bool = True,
     ) -> list[WaterSummaryRecord]:
         stmt = select(self.model).where(
             self.model.record_date >= start_date,
@@ -350,8 +351,27 @@ class _WaterSummaryOpsBase[T: WaterDailySummary | WaterArchivedDailySummary](
             stmt = stmt.where(self.model.group_id.in_(group_ids))
         if user_id is not None:
             stmt = stmt.where(self.model.user_id == user_id)
-        result = await self.session.execute(stmt.order_by(self.model.record_date.asc()))
+        if preserve_order:
+            stmt = stmt.order_by(self.model.record_date.asc())
+        result = await self.session.execute(stmt)
         return [self._serialize_summary_row(row) for row in result.scalars().all()]
+
+    async def get_first_summary_record_date(
+        self,
+        *,
+        group_ids: list[str] | None = None,
+        user_id: str | None = None,
+    ) -> int | None:
+        stmt = select(func.min(self.model.record_date))
+        if group_ids is not None:
+            if not group_ids:
+                return None
+            stmt = stmt.where(self.model.group_id.in_(group_ids))
+        if user_id is not None:
+            stmt = stmt.where(self.model.user_id == user_id)
+        result = await self.session.execute(stmt)
+        value = result.scalar_one_or_none()
+        return int(value) if value is not None else None
 
     async def get_group_user_rank(self, group_id: str, user_id: str) -> int | None:
         own_stmt = select(func.sum(self.model.msg_count)).where(

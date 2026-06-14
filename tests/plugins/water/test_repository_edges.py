@@ -590,33 +590,84 @@ async def test_get_first_summary_record_date_uses_scope_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = WaterRepository()
+
+    from src.plugins.water.database import repo as repo_module
+
+    class _ShardSessionCtx:
+        def __init__(self, shard_key: str) -> None:
+            self._session = SimpleNamespace(shard_key=shard_key)
+
+        async def __aenter__(self) -> object:
+            return self._session
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: TracebackType | None,
+        ) -> bool:
+            _ = (exc_type, exc, tb)
+            return False
+
+    class FakeMapOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_groups_by_matrix(self, matrix_id: str) -> list[str]:
+            assert matrix_id == "mtx_test"
+            return ["20001", "20002"]
+
+    class FakeSummaryOps:
+        def __init__(self, session: object) -> None:
+            _ = session
+
+        async def get_first_summary_record_date(
+            self,
+            *,
+            group_ids: list[str] | None = None,
+            user_id: str | None = None,
+        ) -> int | None:
+            assert group_ids == ["20001", "20002"]
+            assert user_id is None
+            return 20260305
+
+    class FakeArchivedSummaryOps:
+        def __init__(self, session: SimpleNamespace) -> None:
+            self._session = session
+
+        async def get_first_summary_record_date(
+            self,
+            *,
+            group_ids: list[str] | None = None,
+            user_id: str | None = None,
+        ) -> int | None:
+            assert group_ids == ["20001", "20002"]
+            assert user_id is None
+            if self._session.shard_key == "2026_01":
+                return None
+            if self._session.shard_key == "2026_02":
+                return 20260201
+            raise AssertionError(f"unexpected shard {self._session.shard_key}")
+
+    def _fake_summary_read_session(**kwargs: Any) -> _ShardSessionCtx:
+        shard_key = repo_module.arrow.get(kwargs["time_ctx"]).format("YYYY_MM")
+        return _ShardSessionCtx(shard_key)
+
+    monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
+    monkeypatch.setattr(
+        repo_module.water_summary, "read_session", _fake_summary_read_session
+    )
+    monkeypatch.setattr(repo_module, "WaterGroupMatrixMapOps", FakeMapOps)
+    monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
+    monkeypatch.setattr(repo_module, "WaterArchivedSummaryOps", FakeArchivedSummaryOps)
+    monkeypatch.setattr(repo, "_hot_summary_start_date", lambda today_ts=None: 20260301)
+    monkeypatch.setattr(
+        repo, "_iter_month_keys", lambda start_date, end_date: ["2026_01", "2026_02"]
+    )
     monkeypatch.setattr(
         repo,
-        "_resolve_rank_scope_summaries",
-        AsyncMock(
-            return_value=[
-                WaterSummaryRecord(
-                    group_id="20001",
-                    user_id="10001",
-                    record_date=20260301,
-                    msg_count=10,
-                    active_hours=4,
-                    hourly_counts=[0] * 24,
-                    created_at=1,
-                    updated_at=1,
-                ),
-                WaterSummaryRecord(
-                    group_id="20002",
-                    user_id="10002",
-                    record_date=20260305,
-                    msg_count=12,
-                    active_hours=5,
-                    hourly_counts=[0] * 24,
-                    created_at=1,
-                    updated_at=1,
-                ),
-            ]
-        ),
+        "get_or_create_group_matrix_id",
+        AsyncMock(return_value="mtx_test"),
     )
 
     first_date = await repo.get_first_summary_record_date(
@@ -625,7 +676,7 @@ async def test_get_first_summary_record_date_uses_scope_filter(
         group_id="20001",
     )
 
-    assert first_date == 20260301
+    assert first_date == 20260201
 
 
 @pytest.mark.asyncio
@@ -1031,11 +1082,13 @@ async def test_get_summaries_in_window_merges_hot_and_archived(
             *,
             group_ids: list[str] | None = None,
             user_id: str | None = None,
+            preserve_order: bool = True,
         ) -> list[WaterSummaryRecord]:
             assert start_date == 20260301
             assert end_date == 20260331
             assert group_ids == ["20001"]
             assert user_id is None
+            assert preserve_order is True
             return hot_rows
 
     archived_mock = AsyncMock(return_value=archived_rows)
@@ -1055,6 +1108,7 @@ async def test_get_summaries_in_window_merges_hot_and_archived(
         end_date=20260228,
         group_ids=["20001"],
         user_id=None,
+        preserve_order=True,
     )
     assert [item.record_date for item in result] == [20260220, 20260305]
 

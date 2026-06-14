@@ -417,6 +417,7 @@ class WaterRepository:
         *,
         group_ids: list[str] | None = None,
         user_id: str | None = None,
+        preserve_order: bool = True,
     ) -> list[WaterSummaryRecord]:
         month_keys = self._iter_month_keys(start_date, end_date)
 
@@ -431,10 +432,33 @@ class WaterRepository:
                     end_date=end_date,
                     group_ids=group_ids,
                     user_id=user_id,
+                    preserve_order=preserve_order,
                 )
 
         results = await asyncio.gather(*(_query_for_key(key) for key in month_keys))
         return self._merge_summary_records(*results)
+
+    async def _get_archived_first_summary_record_date(
+        self,
+        *,
+        end_date: int,
+        group_ids: list[str] | None = None,
+    ) -> int | None:
+        if end_date < 19000101:
+            return None
+        month_keys = self._iter_month_keys(19000101, end_date)
+        for shard_key in month_keys:
+            time_ctx = arrow.get(shard_key, "YYYY_MM").datetime
+            async with water_summary.read_session(
+                time_ctx=time_ctx,
+                cold_policy=ColdPolicy.HYDRATE,
+            ) as session:
+                first_date = await WaterArchivedSummaryOps(
+                    session
+                ).get_first_summary_record_date(group_ids=group_ids)
+            if first_date is not None:
+                return first_date
+        return None
 
     @staticmethod
     def _build_period_aggregates(
@@ -1151,16 +1175,26 @@ class WaterRepository:
         scope: WaterRankScope,
         group_id: str,
     ) -> int | None:
-        summaries = await self._resolve_rank_scope_summaries(
-            subject=subject,
-            scope=scope,
-            group_id=group_id,
-            start_date=19000101,
-            end_date=99991231,
+        group_ids: list[str] | None = None
+        if scope == "group":
+            group_ids = [group_id]
+        elif scope == "matrix":
+            matrix_id = await self.get_or_create_group_matrix_id(group_id)
+            matrix_group_ids = await self.get_groups_by_matrix_id(matrix_id)
+            group_ids = matrix_group_ids or [group_id]
+
+        hot_start_date = self._hot_summary_start_date()
+        first_archived_date = await self._get_archived_first_summary_record_date(
+            end_date=self._previous_date(hot_start_date),
+            group_ids=group_ids,
         )
-        if not summaries:
-            return None
-        return min(int(item.record_date) for item in summaries)
+        if first_archived_date is not None:
+            return first_archived_date
+
+        async with water_core_db.session(commit=False) as session:
+            return await WaterSummaryOps(session).get_first_summary_record_date(
+                group_ids=group_ids
+            )
 
     async def get_natural_period_leaderboard(
         self,
@@ -1766,7 +1800,11 @@ class WaterRepository:
         started = perf_counter()
         _ = subject
         if scope == "global":
-            rows = await self.get_summaries_in_window(start_date, end_date)
+            rows = await self.get_summaries_in_window(
+                start_date,
+                end_date,
+                preserve_order=False,
+            )
             logger.debug(
                 "[Water][RankRepo] scope=global subject={} start={} end={} rows={} "
                 "elapsed_ms={:.2f}",
@@ -1782,6 +1820,7 @@ class WaterRepository:
                 start_date,
                 end_date,
                 group_ids=[group_id],
+                preserve_order=False,
             )
             logger.debug(
                 "[Water][RankRepo] scope=group subject={} group_id={} start={} "
@@ -1802,6 +1841,7 @@ class WaterRepository:
             start_date,
             end_date,
             group_ids=matrix_group_ids,
+            preserve_order=False,
         )
         logger.debug(
             "[Water][RankRepo] scope=matrix subject={} matrix_id={} groups={} "
@@ -2388,6 +2428,7 @@ class WaterRepository:
         *,
         group_ids: list[str] | None = None,
         user_id: str | None = None,
+        preserve_order: bool = True,
     ) -> list[WaterSummaryRecord]:
         hot_start_date = self._hot_summary_start_date()
         hot_rows: list[WaterSummaryRecord] = []
@@ -2398,6 +2439,7 @@ class WaterRepository:
                     end_date=end_date,
                     group_ids=group_ids,
                     user_id=user_id,
+                    preserve_order=preserve_order,
                 )
 
         archived_rows: list[WaterSummaryRecord] = []
@@ -2407,6 +2449,7 @@ class WaterRepository:
                 end_date=min(end_date, self._previous_date(hot_start_date)),
                 group_ids=group_ids,
                 user_id=user_id,
+                preserve_order=preserve_order,
             )
         return self._merge_summary_records(archived_rows, hot_rows)
 
