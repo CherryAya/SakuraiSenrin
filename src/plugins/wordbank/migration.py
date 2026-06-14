@@ -49,6 +49,7 @@ _LEGACY_MAX_CALL_WINDOW_SECONDS = _LEGACY_DEFAULT_CALL_WINDOW_SECONDS
 _LEGACY_IMAGE_REPO_NAME = "SakuraiSenrinPic"
 _LEGACY_IMAGE_DIR_NAME = "recovered_files"
 _LEGACY_IMAGE_MAPPING_NAME = "file_mapping.json"
+_LEGACY_INLINE_TEXT_SPACE_RE = re.compile(r"[^\S\r\n]+")
 
 
 class MigrationError(Exception):
@@ -743,6 +744,7 @@ async def legacy_message_to_shape(
     image_catalog: LegacyImageCatalog,
     media_service: WordbankMediaService,
     report: WordbankMigrationReport | None = None,
+    preserve_text_newlines: bool = False,
 ) -> MessageShape:
     event_shape = _shape_from_legacy_extra_info(extra_info)
     if event_shape is not None:
@@ -758,10 +760,16 @@ async def legacy_message_to_shape(
             continue
         segment_type = str(item.get("type", "") or "").strip().lower()
         if segment_type == "text":
-            text_value = normalize_message_text(
-                str(item.get("text", "") or ""),
-                preserve_blank_text=True,
-            )
+            raw_text = str(item.get("text", "") or "")
+            if preserve_text_newlines:
+                text_value = _normalize_legacy_message_text_preserving_newlines(
+                    raw_text
+                )
+            else:
+                text_value = normalize_message_text(
+                    raw_text,
+                    preserve_blank_text=True,
+                )
             if text_value:
                 atoms.append(MessageAtom(kind="text", text=text_value))
             continue
@@ -846,6 +854,7 @@ async def migrate_legacy_rows(
                 image_catalog=image_catalog,
                 media_service=media_service,
                 report=report,
+                preserve_text_newlines=True,
             )
             if trigger_shape.is_empty():
                 trigger_shape = shape_from_text(" ", preserve_blank_text=True)
@@ -1944,6 +1953,18 @@ def _truncate_text(value: str, *, limit: int) -> str:
     if len(value) <= limit:
         return value
     return f"{value[: limit - 3]}..."
+
+
+def _normalize_legacy_message_text_preserving_newlines(text: str) -> str:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = "\n".join(
+        _LEGACY_INLINE_TEXT_SPACE_RE.sub(" ", line).strip()
+        for line in normalized.split("\n")
+    )
+    normalized = normalized.strip("\n")
+    if normalized:
+        return normalized
+    return normalize_message_text(text, preserve_blank_text=True)
 
 
 def _validate_legacy_image_bytes(data: bytes, *, source: str) -> None:
