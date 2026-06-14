@@ -573,7 +573,7 @@ def render_doc_feature(
         f"功能名: {feature.title}",
         "",
         "指令:",
-        f"  {_feature_command_for_display(node.bundle, feature, node.title)}",
+        *_format_feature_command_lines(node.bundle, feature, node.title),
         "",
         "⚠️ 注意事项:",
     ]
@@ -952,6 +952,38 @@ def _feature_command_for_display(
     if command:
         return command
     return f"#help {node_title} {feature.slug}"
+
+
+def _format_feature_command_lines(
+    bundle: PluginDocBundle,
+    feature: FeatureDoc,
+    node_title: str,
+) -> list[str]:
+    command = _feature_command_for_display(bundle, feature, node_title)
+    sections = [
+        part.strip() for part in re.split(r"\s*[；;]\s*", command) if part.strip()
+    ]
+    if len(sections) <= 1:
+        return [f"  {command}"]
+
+    lines: list[str] = []
+    shortcut_groups: list[str] = []
+    in_shortcut_section = False
+    for section in sections:
+        if match := re.match(r"快捷入口[:：]\s*(.+)", section):
+            shortcut_groups.append(match.group(1).strip())
+            in_shortcut_section = True
+            continue
+        if in_shortcut_section:
+            shortcut_groups.append(section)
+            continue
+        lines.append(f"  {section}")
+
+    if shortcut_groups:
+        lines.append("  快捷入口:")
+        lines.extend(f"    {group}" for group in shortcut_groups)
+
+    return lines or [f"  {command}"]
 
 
 def _feature_notice_items(feature: FeatureDoc) -> list[str]:

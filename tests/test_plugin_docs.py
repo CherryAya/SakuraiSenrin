@@ -7,6 +7,7 @@ from PIL import Image
 import scripts.build_docs as plugin_docs_script
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.demo_theme import BASE_THEME, PALETTE_ACCENTS
 from src.lib.plugin_docs import (
     DemoImageRenderer,
     DocsRenderContext,
@@ -38,7 +39,7 @@ def test_load_plugin_doc_bundle_parses_real_readme() -> None:
     assert "群聊活跃度" in bundle.summary
     assert bundle.trigger == "指令触发"
     assert bundle.permission == "普通用户"
-    assert len(bundle.index) == 7
+    assert len(bundle.index) == 8
 
     profile = next(feature for feature in bundle.index if feature.slug == "profile")
     ranking = next(feature for feature in bundle.index if feature.slug == "ranking")
@@ -255,6 +256,22 @@ BOT: 操作完成
     assert "先发指令，再看返回。" not in str(message)
     assert "反馈群「427842039」" in str(message)
     assert any(segment.type == "image" for segment in message)
+
+
+def test_build_readme_docs_formats_multi_section_commands_for_help_output() -> None:
+    message = build_readme_docs(
+        source=Path("src/plugins/water/docs/README.MD"),
+        name="吹水记录",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        ctx=DocsRenderContext(locale="zh-CN", feature_query="ranking"),
+    )
+
+    rendered = str(message)
+    assert "指令:\n  #水王 / #水王 <主体> <范围> <时间>\n  快捷入口:" in rendered
+    assert "    #今日水王 / #本周水王 / #本月水王 / #本季水王" in rendered
+    assert "    #今日群榜 / #今日群聊榜 / #本周群榜 / #本周群聊榜" in rendered
 
 
 def test_build_readme_docs_can_attach_representative_overview_demo(
@@ -1155,3 +1172,284 @@ def test_audit_demo_layout_accepts_all_project_readmes() -> None:
             )
 
     assert errors == []
+
+
+def test_demo_theme_has_required_tokens() -> None:
+    """验证主题包含所有规范要求的 tokens"""
+    assert BASE_THEME.page_bg
+    assert BASE_THEME.panel_bg
+    assert BASE_THEME.accent
+    assert BASE_THEME.strong
+    assert BASE_THEME.deep
+    assert BASE_THEME.hint
+    assert BASE_THEME.line
+    assert BASE_THEME.shell_bg
+    assert BASE_THEME.shell_border
+    assert BASE_THEME.user_bubble
+    assert BASE_THEME.bot_bubble
+    assert BASE_THEME.system_bubble
+    assert BASE_THEME.inline_code_bg
+    assert BASE_THEME.inline_code_text
+
+
+def test_demo_image_renderer_uses_theme() -> None:
+    """验证 DemoImageRenderer 使用主题而非硬编码颜色"""
+    renderer = DemoImageRenderer()
+    assert hasattr(renderer, "theme")
+    assert renderer.theme == BASE_THEME
+    # 验证不再有硬编码颜色常量
+    assert not hasattr(renderer, "PAGE_BG")
+    assert not hasattr(renderer, "ACCENT")
+    assert not hasattr(renderer, "SHELL_BG")
+
+
+def test_demo_collection_renderer_uses_theme() -> None:
+    """验证 DemoCollectionRenderer 使用主题"""
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=400)
+    assert hasattr(renderer, "theme")
+    assert renderer.theme == BASE_THEME
+    # 验证不再有硬编码颜色常量
+    assert not hasattr(renderer, "PAGE_BG")
+    assert not hasattr(renderer, "CARD_BG")
+    assert not hasattr(renderer, "TITLE")
+
+
+def test_palette_accents_has_all_variants() -> None:
+    """验证调色板包含所有需要的变体"""
+    assert "study" in PALETTE_ACCENTS
+    assert "wordbank" in PALETTE_ACCENTS
+    assert "wordbank-approval" in PALETTE_ACCENTS
+    assert "default" in PALETTE_ACCENTS
+    # 验证每个调色板返回两个颜色值（浅色、深色）
+    for palette in PALETTE_ACCENTS.values():
+        assert isinstance(palette, tuple)
+        assert len(palette) == 2
+
+
+def test_demo_theme_layout_constants() -> None:
+    """验证主题的布局常量"""
+    assert BASE_THEME.outer_margin == 40
+    assert BASE_THEME.shell_radius == 32
+    assert BASE_THEME.panel_radius == 28
+    assert BASE_THEME.card_radius == 26
+    assert BASE_THEME.chip_radius == 15
+    assert BASE_THEME.inline_code_radius == 10
+    assert BASE_THEME.inline_code_pad_x == 8
+    assert BASE_THEME.inline_code_pad_y == 4
+
+
+def test_demo_collection_renderer_outer_margin_unified() -> None:
+    """验证 DemoCollectionRenderer 的 OUTER_MARGIN 已统一为 40px"""
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=400)
+    assert renderer.OUTER_MARGIN == 40
+
+
+def test_filter_features_by_permission_normal_user() -> None:
+    """验证普通用户只能看到普通用户权限的功能"""
+    from src.lib.plugin_docs import (
+        FeatureDoc,
+        filter_features_by_permission,
+    )
+
+    features = (
+        FeatureDoc(
+            slug="public",
+            title="公开功能",
+            summary="所有人可见",
+            aliases=(),
+            trigger="#public",
+            permission=Permission.NORMAL,
+            demo_filename="public.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+        ),
+        FeatureDoc(
+            slug="admin",
+            title="管理员功能",
+            summary="仅管理员可见",
+            aliases=(),
+            trigger="#admin",
+            permission=Permission.GROUP_ADMIN,
+            demo_filename="admin.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+        ),
+        FeatureDoc(
+            slug="superuser",
+            title="超级管理员功能",
+            summary="仅超级管理员可见",
+            aliases=(),
+            trigger="#superuser",
+            permission=Permission.SUPERUSER,
+            demo_filename="superuser.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+        ),
+    )
+
+    # 普通用户只能看到普通权限的功能
+    normal_visible = filter_features_by_permission(features, Permission.NORMAL)
+    assert len(normal_visible) == 1
+    assert normal_visible[0].slug == "public"
+
+
+def test_filter_features_by_permission_admin_user() -> None:
+    """验证管理员可以看到管理员及以下权限的功能"""
+    from src.lib.plugin_docs import FeatureDoc, filter_features_by_permission
+
+    features = (
+        FeatureDoc(
+            slug="public",
+            title="公开功能",
+            summary="所有人可见",
+            aliases=(),
+            trigger="#public",
+            permission=Permission.NORMAL,
+            demo_filename="public.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+        ),
+        FeatureDoc(
+            slug="admin",
+            title="管理员功能",
+            summary="仅管理员可见",
+            aliases=(),
+            trigger="#admin",
+            permission=Permission.GROUP_ADMIN,
+            demo_filename="admin.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+        ),
+        FeatureDoc(
+            slug="superuser",
+            title="超级管理员功能",
+            summary="仅超级管理员可见",
+            aliases=(),
+            trigger="#superuser",
+            permission=Permission.SUPERUSER,
+            demo_filename="superuser.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+        ),
+    )
+
+    # 管理员可以看到普通用户和管理员权限的功能
+    admin_visible = filter_features_by_permission(features, Permission.GROUP_ADMIN)
+    assert len(admin_visible) == 2
+    assert {f.slug for f in admin_visible} == {"public", "admin"}
+
+
+def test_filter_features_by_permission_superuser() -> None:
+    """验证超级管理员可以看到所有功能"""
+    from src.lib.plugin_docs import FeatureDoc, filter_features_by_permission
+
+    features = (
+        FeatureDoc(
+            slug="public",
+            title="公开功能",
+            summary="所有人可见",
+            aliases=(),
+            trigger="#public",
+            permission=Permission.NORMAL,
+            demo_filename="public.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+        ),
+        FeatureDoc(
+            slug="admin",
+            title="管理员功能",
+            summary="仅管理员可见",
+            aliases=(),
+            trigger="#admin",
+            permission=Permission.GROUP_ADMIN,
+            demo_filename="admin.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+        ),
+        FeatureDoc(
+            slug="superuser",
+            title="超级管理员功能",
+            summary="仅超级管理员可见",
+            aliases=(),
+            trigger="#superuser",
+            permission=Permission.SUPERUSER,
+            demo_filename="superuser.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+        ),
+    )
+
+    # 超级管理员可以看到所有功能
+    superuser_visible = filter_features_by_permission(features, Permission.SUPERUSER)
+    assert len(superuser_visible) == 3
+    assert {f.slug for f in superuser_visible} == {"public", "admin", "superuser"}
+
+
+def test_can_view_node_respects_permission() -> None:
+    """验证节点可见性检查遵守权限"""
+    from src.lib.plugin_docs import DocNode, PluginDocBundle, can_view_node
+
+    # 创建一个需要管理员权限的节点
+    admin_node = DocNode(
+        kind="plugin",
+        slug="admin-plugin",
+        parent_slug=None,
+        category="admin",
+        order=1,
+        visible=True,
+        hidden=False,
+        internal=False,
+        permission=Permission.GROUP_ADMIN,
+        title="管理员插件",
+        summary="仅管理员可见",
+        description="",
+        aliases=(),
+        source_path=Path("test"),
+        bundle=PluginDocBundle(
+            title="测试",
+            description="",
+            summary="",
+            trigger="",
+            permission="",
+            author="",
+            version="",
+            index=(),
+            source_path=Path("test"),
+        ),
+    )
+
+    # 普通用户看不到
+    assert not can_view_node(admin_node, Permission.NORMAL)
+
+    # 管理员可以看到
+    assert can_view_node(admin_node, Permission.GROUP_ADMIN)
+
+    # 超级管理员可以看到
+    assert can_view_node(admin_node, Permission.SUPERUSER)
