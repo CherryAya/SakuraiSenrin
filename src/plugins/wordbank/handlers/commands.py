@@ -310,7 +310,7 @@ def parse_text_add_args(text: str) -> ParsedTextAdd:
         trigger, response = pair
         if not trigger or not response:
             raise RuleError(
-                "添加词条需要同时包含触发词和响应词",
+                _default_i18n_text("wordbank.error.add_pair_required"),
                 key="wordbank.error.add_pair_required",
             )
         return ParsedTextAdd(trigger, response, raw_rule)
