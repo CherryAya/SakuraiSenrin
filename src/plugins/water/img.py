@@ -19,7 +19,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 from pil_utils import BuildImage
 
 from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.runtime import tr, tr_template
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
@@ -107,10 +107,12 @@ class WaterPeriodRankCardData:
     report_group_rank_has_hidden_before: bool = False
     report_group_rank_has_hidden_after: bool = False
     entity_label: str = tr("zh-CN", "water.report.entity_label")
-    champion_summary_label: str = tr("zh-CN", "water.report.champion.summary")
+    champion_summary_label: str = tr_template("zh-CN", "water.report.champion.summary")
     board_title: str = tr("zh-CN", "water.image.period.board.title")
-    board_summary_label: str = tr("zh-CN", "water.image.period.board.summary")
-    board_active_hours_label: str = tr("zh-CN", "water.image.period.board.active_hours")
+    board_summary_label: str = tr_template("zh-CN", "water.image.period.board.summary")
+    board_active_hours_label: str = tr_template(
+        "zh-CN", "water.image.period.board.active_hours"
+    )
     overview_title: str = tr("zh-CN", "water.image.period.overview.title")
 
     @property
