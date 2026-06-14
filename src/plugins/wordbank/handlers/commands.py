@@ -152,8 +152,8 @@ class ParsedStudyMediaPrefix:
 @dataclass(slots=True, frozen=True)
 class GuidedSearchSelection:
     field: str
-    expects_image: bool = False
-    creator_only: bool = False
+    requires_query: bool = True
+    requires_creator: bool = False
 
 
 def _split_command(text: str) -> tuple[str, str]:
@@ -604,34 +604,40 @@ def parse_group_view_args(text: str) -> ParsedGroupView:
 
 
 def parse_guided_search_mode_choice(text: str) -> GuidedSearchSelection:
-    choice = text.strip().casefold()
-    if choice in {"1", "all", "全部", "全量"}:
-        return GuidedSearchSelection(field="all")
-    if choice in {"2", "trigger", "触发", "触发词"}:
-        return GuidedSearchSelection(field="trigger")
-    if choice in {"3", "response", "响应", "响应词"}:
-        return GuidedSearchSelection(field="response")
-    if choice in {"4", "image", "图片"}:
-        return GuidedSearchSelection(field="all", expects_image=True)
-    if choice in {"5", "creator", "author", "创建者"}:
-        return GuidedSearchSelection(field="all", creator_only=True)
-    raise RuleError(
-        _default_i18n_text("wordbank.error.guided_search_mode_invalid"),
-        key="wordbank.error.guided_search_mode_invalid",
-    )
+    choice = "".join(text.strip().split())
+    if not choice:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.guided_search_mode_invalid"),
+            key="wordbank.error.guided_search_mode_invalid",
+        )
+    if any(char not in {"1", "2", "3"} for char in choice):
+        raise RuleError(
+            _default_i18n_text("wordbank.error.guided_search_mode_invalid"),
+            key="wordbank.error.guided_search_mode_invalid",
+        )
+    if len(set(choice)) != len(choice):
+        raise RuleError(
+            _default_i18n_text("wordbank.error.guided_search_mode_invalid"),
+            key="wordbank.error.guided_search_mode_invalid",
+        )
 
+    includes_trigger = "1" in choice
+    includes_response = "2" in choice
+    includes_creator = "3" in choice
 
-def parse_guided_search_image_field_choice(text: str) -> str:
-    choice = text.strip().casefold()
-    if choice in {"1", "all", "全部", "全量"}:
-        return "all"
-    if choice in {"2", "trigger", "触发", "触发词"}:
-        return "trigger"
-    if choice in {"3", "response", "响应", "响应词"}:
-        return "response"
-    raise RuleError(
-        _default_i18n_text("wordbank.error.guided_search_image_field_invalid"),
-        key="wordbank.error.guided_search_image_field_invalid",
+    if includes_trigger and includes_response:
+        field = "all"
+    elif includes_trigger:
+        field = "trigger"
+    elif includes_response:
+        field = "response"
+    else:
+        field = "all"
+
+    return GuidedSearchSelection(
+        field=field,
+        requires_query=includes_trigger or includes_response,
+        requires_creator=includes_creator,
     )
 
 

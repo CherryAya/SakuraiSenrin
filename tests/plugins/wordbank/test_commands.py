@@ -18,6 +18,7 @@ from src.plugins.wordbank.handlers.commands import (
     handle_study_media_with_rule_result,
     handle_study_with_media_result,
     parse_group_view_args,
+    parse_guided_search_mode_choice,
     parse_search_args,
 )
 from src.plugins.wordbank.message_model import (
@@ -30,6 +31,7 @@ from src.plugins.wordbank.message_model import (
 )
 from src.plugins.wordbank.services.core import WordbankAddResult, WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
+from src.plugins.wordbank.services.rules import RuleError
 from tests.plugins.water.helpers import build_group_message_event
 
 
@@ -64,6 +66,31 @@ def _search_item(*, trigger_group_id: int = 12) -> WordbankSearchItem:
         weight=3,
         created_by="10001",
     )
+
+
+def test_parse_guided_search_mode_choice_supports_combined_dimensions() -> None:
+    parsed = parse_guided_search_mode_choice("12")
+    assert parsed.field == "all"
+    assert parsed.requires_query is True
+    assert parsed.requires_creator is False
+
+    creator_filtered = parse_guided_search_mode_choice("123")
+    assert creator_filtered.field == "all"
+    assert creator_filtered.requires_query is True
+    assert creator_filtered.requires_creator is True
+
+    creator_only = parse_guided_search_mode_choice("3")
+    assert creator_only.field == "all"
+    assert creator_only.requires_query is False
+    assert creator_only.requires_creator is True
+
+
+def test_parse_guided_search_mode_choice_rejects_invalid_combinations() -> None:
+    with pytest.raises(RuleError):
+        parse_guided_search_mode_choice("11")
+
+    with pytest.raises(RuleError):
+        parse_guided_search_mode_choice("4")
 
 
 @pytest.mark.asyncio

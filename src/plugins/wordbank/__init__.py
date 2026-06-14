@@ -88,7 +88,6 @@ from .handlers.commands import (
     parse_guided_advanced_options,
     parse_guided_scope_choice,
     parse_guided_search_creator_filter,
-    parse_guided_search_image_field_choice,
     parse_guided_search_mode_choice,
     parse_guided_search_page_choice,
     parse_search_args,
@@ -156,10 +155,8 @@ WORDBANK_GUIDED_STEP_TRIGGER = 1
 WORDBANK_GUIDED_STEP_RESPONSE = 2
 WORDBANK_GUIDED_STEP_SCOPE = 3
 WORDBANK_GUIDED_STEP_ADVANCED = 4
-WORDBANK_GUIDED_SEARCH_STAGE_MODE = "search_mode"
-WORDBANK_GUIDED_SEARCH_STAGE_IMAGE_FIELD = "search_image_field"
-WORDBANK_GUIDED_SEARCH_STAGE_KEYWORD = "search_keyword"
-WORDBANK_GUIDED_SEARCH_STAGE_IMAGE = "search_image"
+WORDBANK_GUIDED_SEARCH_STAGE_DIMENSIONS = "search_dimensions"
+WORDBANK_GUIDED_SEARCH_STAGE_QUERY = "search_query"
 WORDBANK_GUIDED_SEARCH_STAGE_CREATOR = "search_creator"
 WORDBANK_GUIDED_SEARCH_STAGE_PAGE = "search_page"
 WORDBANK_GUIDED_RECALL_PENDING_KEYS: tuple[str, ...] = ()
@@ -452,12 +449,14 @@ async def _handle_wordbank_command_message(
         await _finish_add_result(matcher, bot, event, result, locale)
     elif action in {"search", "find", "查询", "搜索"}:
         try:
-            data = await fetch_first_image_bytes_from_message(arg)
-            if data is not None:
-                search_image_scores = {
-                    match.canonical_id: match.score
-                    for match in wordbank_media_service.search_similar_images(data)
-                }
+            (
+                keyword,
+                has_image,
+                search_image_scores,
+            ) = await _collect_search_query_content(
+                arg,
+                keyword_text=rest,
+            )
         except (RuleError, ValueError) as exc:
             await matcher.finish(localize_command_error(exc, locale))
             return
@@ -466,8 +465,8 @@ async def _handle_wordbank_command_message(
                 matcher,
                 event,
                 locale,
-                keyword=rest,
-                image_scores=search_image_scores,
+                keyword=keyword,
+                image_scores=search_image_scores if has_image else None,
             )
         except (RuleError, ValueError) as exc:
             await matcher.finish(localize_command_error(exc, locale))
@@ -758,6 +757,25 @@ def _guided_search_image_scores(state: Mapping[str, Any]) -> dict[int, float]:
     }
 
 
+async def _collect_search_query_content(
+    message: Message,
+    *,
+    keyword_text: str,
+    allow_image: bool = True,
+) -> tuple[str, bool, dict[int, float]]:
+    keyword = keyword_text if has_meaningful_text(keyword_text) else ""
+    if not allow_image:
+        return keyword, False, {}
+    data = await fetch_first_image_bytes_from_message(message)
+    if data is None:
+        return keyword, False, {}
+    image_scores = {
+        match.canonical_id: match.score
+        for match in wordbank_media_service.search_similar_images(data)
+    }
+    return keyword, True, image_scores
+
+
 def _build_guided_search_parsed(
     state: Mapping[str, Any],
     *,
@@ -781,43 +799,15 @@ async def _start_guided_search(
     await initialize_wordbank_plugin()
     clear_interaction_errors(state)
     state["wordbank_locale"] = locale
-    state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_MODE
+    state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_DIMENSIONS
     state["wordbank_guided_search_field"] = "all"
     state["wordbank_guided_search_keyword"] = ""
     state["wordbank_guided_search_creator_id"] = ""
     state["wordbank_guided_search_has_image"] = False
     state["wordbank_guided_search_image_scores"] = {}
-    state["wordbank_guided_search_creator_only"] = False
+    state["wordbank_guided_search_requires_creator"] = False
     register_root_message(state, event)
     await matcher.pause(tr(locale, "wordbank.guided.search.mode_prompt"))
-
-
-async def _start_guided_search_with_image(
-    matcher: Matcher,
-    event: MessageEvent,
-    state: T_State,
-    locale: LocaleCode,
-    arg: Message,
-) -> None:
-    await initialize_wordbank_plugin()
-    data = await fetch_first_image_bytes_from_message(arg)
-    if data is None:
-        await _start_guided_search(matcher, event, state, locale)
-        return
-    clear_interaction_errors(state)
-    state["wordbank_locale"] = locale
-    state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_IMAGE_FIELD
-    state["wordbank_guided_search_field"] = "all"
-    state["wordbank_guided_search_keyword"] = ""
-    state["wordbank_guided_search_creator_id"] = ""
-    state["wordbank_guided_search_has_image"] = True
-    state["wordbank_guided_search_image_scores"] = {
-        match.canonical_id: match.score
-        for match in wordbank_media_service.search_similar_images(data)
-    }
-    state["wordbank_guided_search_creator_only"] = False
-    register_root_message(state, event)
-    await matcher.pause(tr(locale, "wordbank.guided.search.image_field_prompt"))
 
 
 async def _finish_guided_search(
@@ -1136,18 +1126,6 @@ async def _(
     if not has_meaningful_text(plain_text) and not extract_image_urls(arg):
         await _start_guided_search(matcher, event, state, locale)
         return
-    if not has_meaningful_text(plain_text) and extract_image_urls(arg):
-        try:
-            await _start_guided_search_with_image(
-                matcher,
-                event,
-                state,
-                locale,
-                arg,
-            )
-        except (RuleError, ValueError) as exc:
-            await matcher.finish(localize_command_error(exc, locale))
-        return
     await _handle_wordbank_command_message(
         bot,
         matcher,
@@ -1162,7 +1140,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
     stage = _guided_search_stage(state)
-    if stage != WORDBANK_GUIDED_SEARCH_STAGE_MODE:
+    if stage != WORDBANK_GUIDED_SEARCH_STAGE_DIMENSIONS:
         return
     try:
         selection = parse_guided_search_mode_choice(event.message.extract_plain_text())
@@ -1176,31 +1154,36 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         return
     clear_interaction_errors(state)
     state["wordbank_guided_search_field"] = selection.field
-    state["wordbank_guided_search_creator_only"] = selection.creator_only
-    if selection.creator_only:
+    state["wordbank_guided_search_requires_creator"] = selection.requires_creator
+    if selection.requires_query:
+        state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_QUERY
+        await matcher.pause(tr(locale, "wordbank.guided.search.keyword_prompt"))
+        return
+    if selection.requires_creator:
         state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_CREATOR
         await matcher.pause(tr(locale, "wordbank.guided.search.creator_prompt"))
         return
-    if selection.expects_image:
-        state["wordbank_guided_search_has_image"] = True
-        state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_IMAGE
-        await matcher.pause(tr(locale, "wordbank.guided.search.image_prompt"))
-        return
-    state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_KEYWORD
-    await matcher.pause(tr(locale, "wordbank.guided.search.keyword_prompt"))
+    await _finish_guided_search(
+        matcher,
+        state,
+        event,
+        locale,
+        page_number=1,
+    )
 
 
 @wordbank_search_command.handle()
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    if _guided_search_stage(state) != WORDBANK_GUIDED_SEARCH_STAGE_IMAGE_FIELD:
+    if _guided_search_stage(state) != WORDBANK_GUIDED_SEARCH_STAGE_QUERY:
         return
     try:
-        state["wordbank_guided_search_field"] = parse_guided_search_image_field_choice(
-            event.message.extract_plain_text()
+        keyword, has_image, image_scores = await _collect_search_query_content(
+            event.message,
+            keyword_text=event.message.extract_plain_text(),
         )
-    except RuleError as exc:
+    except (RuleError, ValueError) as exc:
         await _reject_guided_error(
             matcher,
             state,
@@ -1208,19 +1191,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
             localize_command_error(exc, locale),
         )
         return
-    clear_interaction_errors(state)
-    state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_CREATOR
-    await matcher.pause(tr(locale, "wordbank.guided.search.creator_filter_prompt"))
-
-
-@wordbank_search_command.handle()
-async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    locale = state.get("wordbank_locale", "zh-CN")
-    await _abort_guided_on_revoke(matcher, event, locale)
-    if _guided_search_stage(state) != WORDBANK_GUIDED_SEARCH_STAGE_KEYWORD:
-        return
-    keyword = event.message.extract_plain_text()
-    if not has_meaningful_text(keyword):
+    if not keyword and not has_image:
         await _reject_guided_error(
             matcher,
             state,
@@ -1230,41 +1201,19 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         return
     clear_interaction_errors(state)
     state["wordbank_guided_search_keyword"] = keyword
-    state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_CREATOR
-    await matcher.pause(tr(locale, "wordbank.guided.search.creator_filter_prompt"))
-
-
-@wordbank_search_command.handle()
-async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
-    locale = state.get("wordbank_locale", "zh-CN")
-    await _abort_guided_on_revoke(matcher, event, locale)
-    if _guided_search_stage(state) != WORDBANK_GUIDED_SEARCH_STAGE_IMAGE:
+    state["wordbank_guided_search_has_image"] = has_image
+    state["wordbank_guided_search_image_scores"] = image_scores
+    if bool(state.get("wordbank_guided_search_requires_creator")):
+        state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_CREATOR
+        await matcher.pause(tr(locale, "wordbank.guided.search.creator_prompt"))
         return
-    try:
-        data = await fetch_first_image_bytes_from_message(event.message)
-    except (RuleError, ValueError) as exc:
-        await _reject_guided_error(
-            matcher,
-            state,
-            locale,
-            localize_command_error(exc, locale),
-        )
-        return
-    if data is None:
-        await _reject_guided_error(
-            matcher,
-            state,
-            locale,
-            tr(locale, "wordbank.error.guided_search_image_missing"),
-        )
-        return
-    clear_interaction_errors(state)
-    state["wordbank_guided_search_image_scores"] = {
-        match.canonical_id: match.score
-        for match in wordbank_media_service.search_similar_images(data)
-    }
-    state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_CREATOR
-    await matcher.pause(tr(locale, "wordbank.guided.search.creator_filter_prompt"))
+    await _finish_guided_search(
+        matcher,
+        state,
+        event,
+        locale,
+        page_number=1,
+    )
 
 
 @wordbank_search_command.handle()
@@ -1287,7 +1236,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
         return
     clear_interaction_errors(state)
     state["wordbank_guided_search_creator_id"] = creator_id
-    if bool(state.get("wordbank_guided_search_creator_only")) and not creator_id:
+    if bool(state.get("wordbank_guided_search_requires_creator")) and not creator_id:
         await _reject_guided_error(
             matcher,
             state,
