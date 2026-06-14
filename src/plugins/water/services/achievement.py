@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 import arrow
 
+from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
@@ -19,43 +20,52 @@ AchievementChecker = Callable[[str, str, int, int], Awaitable[bool]]
 @dataclass(frozen=True)
 class AchievementDef:
     id: str
-    name: str
-    desc: str
-    motivation: str
+    name_key: MessageKey
+    desc_key: MessageKey
+    motivation_key: MessageKey
     context: str
     track_type: Literal["permanent", "seasonal"] = "permanent"
+
+    def name(self, locale: LocaleCode = "zh-CN") -> str:
+        return tr(locale, self.name_key)
+
+    def desc(self, locale: LocaleCode = "zh-CN") -> str:
+        return tr(locale, self.desc_key)
+
+    def motivation(self, locale: LocaleCode = "zh-CN") -> str:
+        return tr(locale, self.motivation_key)
 
 
 ACHIEVEMENT_RULES: dict[str, AchievementDef] = {
     "FIRST_BLOOD": AchievementDef(
         id="FIRST_BLOOD",
-        name="萌新起步",
-        desc="首次产生水王流水记录",
-        motivation="先发一条消息点亮你的成就墙。",
+        name_key="water.achievement.def.first_blood.name",
+        desc_key="water.achievement.def.first_blood.desc",
+        motivation_key="water.achievement.def.first_blood.motivation",
         context="first message observed",
         track_type="permanent",
     ),
     "NIGHT_OWL": AchievementDef(
         id="NIGHT_OWL",
-        name="夜猫子",
-        desc="凌晨 2:00-5:00 连续 3 天活跃",
-        motivation="连续三晚在线，拿下稀有夜行者徽章。",
+        name_key="water.achievement.def.night_owl.name",
+        desc_key="water.achievement.def.night_owl.desc",
+        motivation_key="water.achievement.def.night_owl.motivation",
         context="night activity streak 3 days",
         track_type="seasonal",
     ),
     "MATRIX_PIONEER": AchievementDef(
         id="MATRIX_PIONEER",
-        name="星环先锋",
-        desc="全局等级率先达到 Lv10",
-        motivation="冲到 Lv10，抢下全服唯一先驱称号。",
+        name_key="water.achievement.def.matrix_pioneer.name",
+        desc_key="water.achievement.def.matrix_pioneer.desc",
+        motivation_key="water.achievement.def.matrix_pioneer.motivation",
         context="first global level 10",
         track_type="permanent",
     ),
     "STEADY_COMPANION": AchievementDef(
         id="STEADY_COMPANION",
-        name="长情陪伴",
-        desc="单一矩阵连续活跃 30 天",
-        motivation="坚持一个月不间断活跃，解锁长期主义徽章。",
+        name_key="water.achievement.def.steady_companion.name",
+        desc_key="water.achievement.def.steady_companion.desc",
+        motivation_key="water.achievement.def.steady_companion.motivation",
         context="30-day matrix streak",
         track_type="seasonal",
     ),
@@ -180,7 +190,7 @@ class AchievementService:
                     tr(
                         locale,
                         "water.achievement.unlocked.item",
-                        name=rule.name,
+                        name=rule.name(locale),
                         achievement_id=rule.id,
                         tag=tag,
                     )
@@ -189,7 +199,7 @@ class AchievementService:
                     tr(
                         locale,
                         "water.achievement.unlocked.desc",
-                        desc=rule.desc,
+                        desc=rule.desc(locale),
                     )
                 )
                 lines.append(
@@ -226,11 +236,13 @@ class AchievementService:
                 tr(
                     locale,
                     "water.achievement.next.item",
-                    name=rule.name,
+                    name=rule.name(locale),
                     achievement_id=rule.id,
                 )
             )
-            lines.append(tr(locale, "water.achievement.unlocked.desc", desc=rule.desc))
+            lines.append(
+                tr(locale, "water.achievement.unlocked.desc", desc=rule.desc(locale))
+            )
             lines.append(
                 tr(
                     locale,
@@ -242,7 +254,7 @@ class AchievementService:
                 tr(
                     locale,
                     "water.achievement.next.motivation",
-                    motivation=rule.motivation,
+                    motivation=rule.motivation(locale),
                 )
             )
 

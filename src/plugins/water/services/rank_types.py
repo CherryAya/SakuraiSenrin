@@ -5,30 +5,34 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from src.lib.i18n.keys import MessageKey
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
+
 WaterRankSubject = Literal["user", "group", "matrix"]
 WaterRankScope = Literal["group", "matrix", "global"]
 WaterRankPeriod = Literal["day", "week", "month", "season", "year", "total"]
 VisibleWaterRankPeriod = Literal["day", "week", "month", "season", "year", "total"]
 
-SUBJECT_LABELS: dict[WaterRankSubject, str] = {
-    "user": "用户榜",
-    "group": "群聊榜",
-    "matrix": "矩阵榜",
+SUBJECT_LABEL_KEYS: dict[WaterRankSubject, MessageKey] = {
+    "user": "water.rank.subject.user",
+    "group": "water.rank.subject.group",
+    "matrix": "water.rank.subject.matrix",
 }
 
-SCOPE_LABELS: dict[WaterRankScope, str] = {
-    "group": "本群",
-    "matrix": "本矩阵",
-    "global": "全局",
+SCOPE_LABEL_KEYS: dict[WaterRankScope, MessageKey] = {
+    "group": "water.rank.scope.group",
+    "matrix": "water.rank.scope.matrix",
+    "global": "water.rank.scope.global",
 }
 
-PERIOD_LABELS: dict[WaterRankPeriod, str] = {
-    "day": "日榜",
-    "week": "周榜",
-    "month": "月榜",
-    "season": "季榜",
-    "year": "年榜",
-    "total": "总榜",
+PERIOD_LABEL_KEYS: dict[WaterRankPeriod, MessageKey] = {
+    "day": "water.rank.period.day",
+    "week": "water.rank.period.week",
+    "month": "water.rank.period.month",
+    "season": "water.rank.period.season",
+    "year": "water.rank.period.year",
+    "total": "water.rank.period.total",
 }
 
 SHORTCUT_PERIOD_PREFIXES: dict[WaterRankPeriod, str] = {
@@ -111,18 +115,16 @@ class WaterRankQuerySpec:
     period: WaterRankPeriod
     errors: tuple[str, ...] = ()
 
-    @property
-    def title(self) -> str:
+    def title(self, locale: LocaleCode = "zh-CN") -> str:
         return (
-            f"{SUBJECT_LABELS[self.subject]} · "
-            f"{SCOPE_LABELS[self.scope]}{PERIOD_LABELS[self.period]}"
+            f"{subject_label(self.subject, locale)} · "
+            f"{scope_label(self.scope, locale)}{period_label(self.period, locale)}"
         )
 
-    @property
-    def normalized_command(self) -> str:
+    def normalized_command(self, locale: LocaleCode = "zh-CN") -> str:
         return (
-            f"#水王 {SUBJECT_LABELS[self.subject]} "
-            f"{SCOPE_LABELS[self.scope]} {PERIOD_LABELS[self.period]}"
+            f"#水王 {subject_label(self.subject, locale)} "
+            f"{scope_label(self.scope, locale)} {period_label(self.period, locale)}"
         )
 
 
@@ -167,6 +169,18 @@ RANK_SHORTCUT_ALIASES: frozenset[str] = frozenset(RANK_SHORTCUT_ALIAS_MAP)
 
 def get_rank_shortcut(alias: str) -> WaterRankShortcut | None:
     return RANK_SHORTCUT_ALIAS_MAP.get(alias.strip())
+
+
+def subject_label(subject: WaterRankSubject, locale: LocaleCode = "zh-CN") -> str:
+    return tr(locale, SUBJECT_LABEL_KEYS[subject])
+
+
+def scope_label(scope: WaterRankScope, locale: LocaleCode = "zh-CN") -> str:
+    return tr(locale, SCOPE_LABEL_KEYS[scope])
+
+
+def period_label(period: WaterRankPeriod, locale: LocaleCode = "zh-CN") -> str:
+    return tr(locale, PERIOD_LABEL_KEYS[period])
 
 
 def is_valid_rank_combo(subject: WaterRankSubject, scope: WaterRankScope) -> bool:

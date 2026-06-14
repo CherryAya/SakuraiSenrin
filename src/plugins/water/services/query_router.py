@@ -19,12 +19,9 @@ from src.plugins.water.services.profile import profile_service
 from src.plugins.water.services.rank_query import water_rank_query_service
 from src.plugins.water.services.rank_season import season_rank_service
 from src.plugins.water.services.rank_types import (
-    PERIOD_LABELS,
     PERIOD_TOKENS,
     RANK_SHORTCUTS,
-    SCOPE_LABELS,
     SCOPE_TOKENS,
-    SUBJECT_LABELS,
     SUBJECT_TOKENS,
     WaterRankPeriod,
     WaterRankQuerySpec,
@@ -33,6 +30,9 @@ from src.plugins.water.services.rank_types import (
     get_rank_shortcut,
     is_rank_period_allowed,
     is_valid_rank_combo,
+    period_label,
+    scope_label,
+    subject_label,
     suggest_scope_for_subject,
     visible_rank_periods,
 )
@@ -71,13 +71,13 @@ class WaterQueryRouter:
     @staticmethod
     def _subject_choices_text() -> str:
         return " / ".join(
-            SUBJECT_LABELS[subject] for subject in ("user", "group", "matrix")
+            subject_label(subject) for subject in ("user", "group", "matrix")
         )
 
     @staticmethod
     def _period_choices_text(*, is_superuser: bool) -> str:
         return " / ".join(
-            PERIOD_LABELS[period]
+            period_label(period)
             for period in visible_rank_periods(is_superuser=is_superuser)
         )
 
@@ -183,7 +183,7 @@ class WaterQueryRouter:
         subject: WaterRankSubject,
     ) -> str:
         labels = " / ".join(
-            SCOPE_LABELS[scope] for scope in self.valid_scopes_for_subject(subject)
+            scope_label(scope) for scope in self.valid_scopes_for_subject(subject)
         )
         return "\n".join(
             [
@@ -233,9 +233,9 @@ class WaterQueryRouter:
         return tr(
             locale,
             "water.query.rank.guided.summary",
-            subject=SUBJECT_LABELS[spec.subject],
-            scope=SCOPE_LABELS[spec.scope],
-            period=PERIOD_LABELS[spec.period],
+            subject=subject_label(spec.subject, locale),
+            scope=scope_label(spec.scope, locale),
+            period=period_label(spec.period, locale),
         )
 
     @staticmethod
@@ -300,8 +300,8 @@ class WaterQueryRouter:
         if scope is not None and not is_valid_rank_combo(subject, scope):
             suggested_scope = suggest_scope_for_subject(subject)
             suggestion = (
-                f"#水王 {SUBJECT_LABELS[subject]} "
-                f"{SCOPE_LABELS[suggested_scope]} <时间>"
+                f"#水王 {subject_label(subject, locale)} "
+                f"{scope_label(suggested_scope, locale)} <时间>"
             )
             lines.append(
                 tr(
@@ -640,7 +640,7 @@ class WaterQueryRouter:
             tr(
                 locale,
                 "water.query.rank.menu.example.matrix",
-                period=PERIOD_LABELS["total" if is_superuser else "season"],
+                period=period_label("total" if is_superuser else "season", locale),
             ),
             "",
             tr(locale, "water.query.rank.menu.shortcuts"),
@@ -665,9 +665,9 @@ class WaterQueryRouter:
         head = errors[0]
         if head == "missing_dimensions":
             missing_labels = {
-                "subject": "主体",
-                "scope": "范围",
-                "period": "时间",
+                "subject": tr(locale, "water.query.rank.dimension.subject"),
+                "scope": tr(locale, "water.query.rank.dimension.scope"),
+                "period": tr(locale, "water.query.rank.dimension.period"),
             }
             missing = "、".join(missing_labels[item] for item in errors[1:])
             return tr(
@@ -714,8 +714,9 @@ class WaterQueryRouter:
         if head == "invalid_combo" and spec is not None:
             suggested_scope = suggest_scope_for_subject(spec.subject)
             suggestion = (
-                f"#水王 {SUBJECT_LABELS[spec.subject]} "
-                f"{SCOPE_LABELS[suggested_scope]} {PERIOD_LABELS[spec.period]}"
+                f"#水王 {subject_label(spec.subject, locale)} "
+                f"{scope_label(suggested_scope, locale)} "
+                f"{period_label(spec.period, locale)}"
             )
             return tr(
                 locale,
@@ -734,7 +735,7 @@ class WaterQueryRouter:
             )
         return [
             (
-                f"{SUBJECT_LABELS[subject]} / {SCOPE_LABELS[scope]}: "
+                f"{subject_label(subject)} / {scope_label(scope)}: "
                 f"{' ; '.join(grouped[(subject, scope)])}"
             )
             for subject in ("user", "group", "matrix")

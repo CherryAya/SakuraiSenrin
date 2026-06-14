@@ -45,6 +45,9 @@ from src.plugins.wordbank.services.rules import (
     parse_legacy_study_text,
 )
 from src.plugins.wordbank.text_parsing import (
+    TokenSpan,
+    has_meaningful_text,
+    join_tokens_with_original_spacing,
     rest_after_token,
     split_command_text,
     tokenize_shell_like,
@@ -91,6 +94,22 @@ SEARCH_FIELD_ALIASES = {
 
 def _default_i18n_text(key: MessageKey, **params: object) -> str:
     return tr("zh-CN", key, **params)
+
+
+WORD_BANK_LABEL_KEYS: dict[str, MessageKey] = {
+    "scope": "wordbank.label.scope",
+    "probability": "wordbank.label.probability",
+    "weight": "wordbank.label.weight",
+    "role": "wordbank.label.role",
+    "page": "wordbank.label.page",
+    "limit": "wordbank.label.limit",
+    "search_field": "wordbank.label.search_field",
+    "creator_id": "wordbank.label.creator_id",
+}
+
+
+def _label(name: str) -> str:
+    return tr("zh-CN", WORD_BANK_LABEL_KEYS[name])
 
 
 @dataclass(slots=True, frozen=True)
@@ -178,11 +197,11 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                     _default_i18n_text(
                         "wordbank.error.flag_missing",
                         flag="--scope",
-                        expected="生效范围",
+                        expected=_label("scope"),
                     ),
                     key="wordbank.error.flag_missing",
                     flag="--scope",
-                    expected="生效范围",
+                    expected=_label("scope"),
                 )
             raw_rule["scope"] = tokens[idx].value
             consumed_ranges.append((flag_token.start, tokens[idx].end))
@@ -194,11 +213,11 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                     _default_i18n_text(
                         "wordbank.error.flag_missing",
                         flag="--prob",
-                        expected="概率",
+                        expected=_label("probability"),
                     ),
                     key="wordbank.error.flag_missing",
                     flag="--prob",
-                    expected="概率",
+                    expected=_label("probability"),
                 )
             raw_rule["probability"] = tokens[idx].value
             consumed_ranges.append((flag_token.start, tokens[idx].end))
@@ -210,11 +229,11 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                     _default_i18n_text(
                         "wordbank.error.flag_missing",
                         flag="--weight",
-                        expected="权重",
+                        expected=_label("weight"),
                     ),
                     key="wordbank.error.flag_missing",
                     flag="--weight",
-                    expected="权重",
+                    expected=_label("weight"),
                 )
             raw_rule["weight"] = tokens[idx].value
             consumed_ranges.append((flag_token.start, tokens[idx].end))
@@ -226,11 +245,11 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                     _default_i18n_text(
                         "wordbank.error.flag_missing",
                         flag="--role",
-                        expected="角色",
+                        expected=_label("role"),
                     ),
                     key="wordbank.error.flag_missing",
                     flag="--role",
-                    expected="角色",
+                    expected=_label("role"),
                 )
             raw_rule["roles"] = tokens[idx].value
             consumed_ranges.append((flag_token.start, tokens[idx].end))
@@ -265,7 +284,7 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
     source = text
     for start, end in sorted(consumed_ranges, reverse=True):
         source = source[:start] + source[end:]
-    return source.strip(), raw_rule
+    return source, raw_rule
 
 
 def _parse_positive_int(
@@ -339,14 +358,14 @@ def parse_guided_advanced_options(text: str) -> GuidedAdvancedOptions:
     }:
         return GuidedAdvancedOptions(raw_rule={})
     source, raw_rule = _parse_flags(choice)
-    if source.strip():
+    if has_meaningful_text(source):
         raise RuleError(
             _default_i18n_text(
                 "wordbank.error.guided_advanced_unknown",
-                options=source.strip(),
+                options=source,
             ),
             key="wordbank.error.guided_advanced_unknown",
-            options=source.strip(),
+            options=source,
         )
     if "scope" in raw_rule:
         raise RuleError(
@@ -401,7 +420,7 @@ def parse_guided_weight(text: str) -> int:
 
 def parse_search_args(text: str) -> ParsedSearch:
     try:
-        tokens = shlex.split(text)
+        tokens = tokenize_shell_like(text)
     except ValueError as exc:
         raise RuleError(
             _default_i18n_text("wordbank.error.parse_flags", reason=str(exc)),
@@ -409,14 +428,14 @@ def parse_search_args(text: str) -> ParsedSearch:
             reason=str(exc),
         ) from exc
 
-    keyword_parts: list[str] = []
+    keyword_tokens: list[TokenSpan] = []
     page = 1
     limit = DEFAULT_SEARCH_LIMIT
     field = "all"
     creator_id = ""
     idx = 0
     while idx < len(tokens):
-        token = tokens[idx]
+        token = tokens[idx].value
         if token in {"--page", "-p"}:
             idx += 1
             if idx >= len(tokens):
@@ -424,14 +443,14 @@ def parse_search_args(text: str) -> ParsedSearch:
                     _default_i18n_text(
                         "wordbank.error.flag_missing",
                         flag="--page",
-                        expected="页码",
+                        expected=_label("page"),
                     ),
                     key="wordbank.error.flag_missing",
                     flag="--page",
-                    expected="页码",
+                    expected=_label("page"),
                 )
             page = _parse_positive_int(
-                tokens[idx],
+                tokens[idx].value,
                 fallback=_default_i18n_text("wordbank.error.search_page_invalid"),
                 key="wordbank.error.search_page_invalid",
             )
@@ -442,14 +461,14 @@ def parse_search_args(text: str) -> ParsedSearch:
                     _default_i18n_text(
                         "wordbank.error.flag_missing",
                         flag="--limit",
-                        expected="每页数量",
+                        expected=_label("limit"),
                     ),
                     key="wordbank.error.flag_missing",
                     flag="--limit",
-                    expected="每页数量",
+                    expected=_label("limit"),
                 )
             limit = _parse_positive_int(
-                tokens[idx],
+                tokens[idx].value,
                 fallback=_default_i18n_text(
                     "wordbank.error.search_limit_invalid",
                     max_limit=MAX_SEARCH_LIMIT,
@@ -473,13 +492,13 @@ def parse_search_args(text: str) -> ParsedSearch:
                     _default_i18n_text(
                         "wordbank.error.flag_missing",
                         flag="--field",
-                        expected="搜索范围",
+                        expected=_label("search_field"),
                     ),
                     key="wordbank.error.flag_missing",
                     flag="--field",
-                    expected="搜索范围",
+                    expected=_label("search_field"),
                 )
-            normalized_field = SEARCH_FIELD_ALIASES.get(tokens[idx].casefold())
+            normalized_field = SEARCH_FIELD_ALIASES.get(tokens[idx].value.casefold())
             if normalized_field is None:
                 raise RuleError(
                     _default_i18n_text("wordbank.error.search_field_invalid"),
@@ -493,30 +512,32 @@ def parse_search_args(text: str) -> ParsedSearch:
                     _default_i18n_text(
                         "wordbank.error.flag_missing",
                         flag="--creator",
-                        expected="创建者账号",
+                        expected=_label("creator_id"),
                     ),
                     key="wordbank.error.flag_missing",
                     flag="--creator",
-                    expected="创建者账号",
+                    expected=_label("creator_id"),
                 )
-            creator_id = tokens[idx].strip()
+            creator_id = tokens[idx].value.strip()
             if not creator_id:
                 raise RuleError(
                     _default_i18n_text(
                         "wordbank.error.flag_missing",
                         flag="--creator",
-                        expected="创建者账号",
+                        expected=_label("creator_id"),
                     ),
                     key="wordbank.error.flag_missing",
                     flag="--creator",
-                    expected="创建者账号",
+                    expected=_label("creator_id"),
                 )
         else:
-            keyword_parts.append(token)
+            keyword_tokens.append(tokens[idx])
         idx += 1
 
+    keyword = join_tokens_with_original_spacing(text, keyword_tokens)
+
     return ParsedSearch(
-        keyword=" ".join(keyword_parts).strip(),
+        keyword=keyword,
         page=page,
         limit=limit,
         field=field,
@@ -546,11 +567,11 @@ def parse_group_view_args(text: str) -> ParsedGroupView:
                     _default_i18n_text(
                         "wordbank.error.flag_missing",
                         flag="--page",
-                        expected="页码",
+                        expected=_label("page"),
                     ),
                     key="wordbank.error.flag_missing",
                     flag="--page",
-                    expected="页码",
+                    expected=_label("page"),
                 )
             page = _parse_positive_int(
                 tokens[idx],
@@ -894,8 +915,8 @@ async def handle_add_with_media_result(
     user_id = str(event.user_id)
 
     if pair is None:
-        trigger_text = source.strip()
-        if not trigger_text:
+        trigger_text = source
+        if not has_meaningful_text(trigger_text):
             raise RuleError(
                 _default_i18n_text("wordbank.error.trigger_empty"),
                 key="wordbank.error.trigger_empty",

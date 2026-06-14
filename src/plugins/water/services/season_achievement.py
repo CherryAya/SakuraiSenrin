@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.lib.i18n.types import LocaleCode
 from src.plugins.water.services.achievement import ACHIEVEMENT_RULES
 
 
@@ -20,6 +21,7 @@ class SeasonAchievementService:
         *,
         season_id: str,
         unlocked_items: list[tuple[str, str, str, int]],
+        locale: LocaleCode = "zh-CN",
     ) -> SeasonAchievementSummary:
         unlocked = [
             achievement_id
@@ -27,7 +29,7 @@ class SeasonAchievementService:
             if track_type == "seasonal" and item_season_id == season_id
         ]
         available = [
-            rule.name
+            rule.name(locale)
             for rule in ACHIEVEMENT_RULES.values()
             if rule.track_type == "seasonal"
         ]
