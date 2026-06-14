@@ -439,10 +439,9 @@ async def _handle_wordbank_command_message(
     await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     text = build_forced_command_text(forced_action, arg.extract_plain_text())
-    action = text.split(maxsplit=1)[0].lower() if text else ""
+    action, rest = split_command_text(text)
     search_image_scores: dict[int, float] | None = None
     if action in {"add", "添加", "学习"}:
-        _, _, rest = text.partition(" ")
         try:
             has_images = bool(extract_image_urls(arg))
             if has_images and _should_send_media_processing_notice(image_count=1):
@@ -482,7 +481,7 @@ async def _handle_wordbank_command_message(
                 matcher,
                 event,
                 locale,
-                keyword=text.partition(" ")[2] if " " in text else "",
+                keyword=rest,
                 image_scores=search_image_scores,
             )
         except (RuleError, ValueError) as exc:
@@ -490,7 +489,7 @@ async def _handle_wordbank_command_message(
         return
     elif action in GROUP_ALIASES:
         try:
-            parsed_group = parse_group_view_args(text.partition(" ")[2])
+            parsed_group = parse_group_view_args(rest)
             await _send_group_detail_view(
                 matcher,
                 event,

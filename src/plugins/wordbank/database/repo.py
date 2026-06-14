@@ -1193,7 +1193,6 @@ class WordbankRepository:
         can_moderate_group: bool = False,
         is_superuser: bool = False,
     ) -> list[WordbankSearchItem]:
-        keyword = keyword.strip()
         async with wordbank_main_db.read_session() as session:
             stmt = (
                 select(

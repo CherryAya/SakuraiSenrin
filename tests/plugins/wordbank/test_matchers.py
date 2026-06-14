@@ -140,6 +140,48 @@ async def test_wordbank_add_direct_success_records_submission(
 
 
 @pytest.mark.asyncio
+async def test_wordbank_search_command_preserves_keyword_whitespace(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    send_search = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "initialize_wordbank_plugin",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "fetch_first_image_bytes_from_message",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "_send_search_result_view",
+        send_search,
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event(
+            "#wordbank   search   第一行  第二列  ",
+            message_id=1,
+        )
+
+        ctx.receive_event(bot, event)
+        ctx.should_finished()
+
+    send_search.assert_awaited_once()
+    assert send_search.await_args_list[0].kwargs["keyword"] == "第一行  第二列  "
+
+
+@pytest.mark.asyncio
 async def test_wordbank_add_direct_media_submission_sends_processing_hint(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
