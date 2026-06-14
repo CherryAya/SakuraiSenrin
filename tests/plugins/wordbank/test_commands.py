@@ -16,6 +16,7 @@ from src.plugins.wordbank.handlers.commands import (
     handle_guided_add_shape_result,
     handle_guided_study_shape_result,
     handle_study_media_with_rule_result,
+    handle_study_with_media_result,
     parse_group_view_args,
     parse_search_args,
 )
@@ -535,5 +536,41 @@ async def test_handle_study_media_with_rule_result_supports_two_image_messages()
 
     assert add_message_entry.await_args is not None
     kwargs = add_message_entry.await_args.kwargs
+    assert shape_to_summary_text(kwargs["trigger_shape"]) == "[图片:7]"
+    assert shape_to_summary_text(kwargs["response_shape"]) == "[图片:8]"
+
+
+@pytest.mark.asyncio
+async def test_study_media_result_supports_whitespace_legacy_tail() -> None:
+    add_message_entry = AsyncMock(return_value=_add_result(trigger_text="[图片:7]"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            ingest_image_bytes=AsyncMock(
+                side_effect=[
+                    SimpleNamespace(canonical_id=7),
+                    SimpleNamespace(canonical_id=8),
+                ]
+            )
+        ),
+    )
+    event = build_group_message_event("#study a f [image] [image]")
+
+    await handle_study_with_media_result(
+        service,
+        media_service,
+        event=event,
+        text="a f ",
+        image_bytes=b"left",
+        extra_image_bytes=(b"right",),
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["raw_rule"] == {"scope": "all_groups"}
     assert shape_to_summary_text(kwargs["trigger_shape"]) == "[图片:7]"
     assert shape_to_summary_text(kwargs["response_shape"]) == "[图片:8]"

@@ -1047,6 +1047,9 @@ async def handle_study_media_with_rule_result(
             text=source,
         )
 
+    if not has_meaningful_text(source):
+        source = ""
+
     is_group = isinstance(event, GroupMessageEvent)
     group_id = str(getattr(event, "group_id", ""))
     user_id = str(event.user_id)
