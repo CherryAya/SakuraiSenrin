@@ -34,6 +34,8 @@ from src.logger import logger
 from .manager import db_manager
 from .schema import PatchBase, PatchRegistry
 
+MAX_MAP_REDUCE_MONTH_SPAN = 24
+
 
 class ColdPolicy(StrEnum):
     DENY = "deny"
@@ -469,8 +471,12 @@ class SegmentStore(BaseDB):
         months_span = (
             (end_time.year - start_time.year) * 12 + end_time.month - start_time.month
         )
-        if months_span > 24:
-            raise ValueError("目标超出 24 个月的最大范围")
+        # Store-level safety guard for generic shard scans. Business modules should
+        # enforce their own narrower windows before reaching this layer.
+        if months_span > MAX_MAP_REDUCE_MONTH_SPAN:
+            raise ValueError(
+                f"目标超出 {MAX_MAP_REDUCE_MONTH_SPAN} 个月的最大范围"
+            )
         keys: list[str] = []
         while curr <= end:
             keys.append(curr.strftime(self.fmt))
