@@ -167,10 +167,10 @@ async def test_wordbank_search_command_preserves_keyword_whitespace(
         send_search,
     )
 
-    async with app.test_matcher(wordbank_plugin.wordbank_command) as ctx:
+    async with app.test_matcher(wordbank_plugin.wordbank_search_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         event = build_group_message_event(
-            "#wordbank   search   第一行  第二列  ",
+            "#wordbank.search   第一行  第二列  ",
             message_id=1,
         )
 

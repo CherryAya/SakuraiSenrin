@@ -653,6 +653,9 @@ async def test_count_trigger_group_calls_in_windows_counts_across_hot_and_cold_s
     )
 
     await wordbank_log_db.run_archiver_task()
+    archived_manifest_text = (
+        tmp_path / "wordbank_db" / "wordbank_logs_manifest.json"
+    ).read_text(encoding="utf-8")
     results = await repository.count_trigger_group_calls_in_windows(
         {
             1: 60 * 60 * 24 * 90,
@@ -665,7 +668,7 @@ async def test_count_trigger_group_calls_in_windows_counts_across_hot_and_cold_s
         tmp_path / "wordbank_db" / "wordbank_logs_manifest.json"
     ).read_text(encoding="utf-8")
     assert results == {1: 2, 2: 1}
-    assert '"state": "cold"' in manifest_text
+    assert '"state": "cold"' in archived_manifest_text
     assert '"state": "warm"' in manifest_text
 
 

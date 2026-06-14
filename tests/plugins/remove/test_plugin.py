@@ -3,7 +3,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot, Message
+from nonebot.adapters.onebot.v11 import Bot
 from nonebot.exception import ActionFailed
 from nonebug import App
 import pytest
@@ -79,14 +79,14 @@ async def test_remove_cancels_when_confirm_denied(
         ctx.receive_event(bot, first)
         ctx.should_call_send(
             first,
-            Message("是否确认退群？输入 y 或 yes 确认，其他内容取消："),
+            "是否确认退群？输入 y 或 yes 确认，其他内容取消：",
             bot=bot,
         )
-        ctx.should_rejected(remove_matcher)
+        ctx.should_rejected()
 
         ctx.receive_event(bot, second)
         ctx.should_call_send(second, "已取消退群。", bot=bot)
-        ctx.should_finished(remove_matcher)
+        ctx.should_finished()
 
 
 @pytest.mark.asyncio
@@ -118,14 +118,14 @@ async def test_remove_succeeds_for_admin(
         ctx.receive_event(bot, first)
         ctx.should_call_send(
             first,
-            Message("是否确认退群？输入 y 或 yes 确认，其他内容取消："),
+            "是否确认退群？输入 y 或 yes 确认，其他内容取消：",
             bot=bot,
         )
-        ctx.should_rejected(remove_matcher)
+        ctx.should_rejected()
 
         ctx.receive_event(bot, second)
-        ctx.should_call_send(second, Message("请输入退群原因："), bot=bot)
-        ctx.should_rejected(remove_matcher)
+        ctx.should_call_send(second, "请输入退群原因：", bot=bot)
+        ctx.should_rejected()
 
         ctx.receive_event(bot, third)
         ctx.should_call_send(third, "走了走了，再见啦！原因：例行维护", bot=bot)
@@ -145,7 +145,7 @@ async def test_remove_succeeds_for_admin(
             result={"message_id": 1},
         )
         ctx.should_call_send(third, "已从当前群聊退出: 测试群", bot=bot)
-        ctx.should_finished(remove_matcher)
+        ctx.should_finished()
 
     update_status.assert_awaited_once_with("20001", remove_handlers.GroupStatus.LEFT)
 
@@ -178,14 +178,14 @@ async def test_remove_handles_leave_failure(
         ctx.receive_event(bot, first)
         ctx.should_call_send(
             first,
-            Message("是否确认退群？输入 y 或 yes 确认，其他内容取消："),
+            "是否确认退群？输入 y 或 yes 确认，其他内容取消：",
             bot=bot,
         )
-        ctx.should_rejected(remove_matcher)
+        ctx.should_rejected()
 
         ctx.receive_event(bot, second)
-        ctx.should_call_send(second, Message("请输入退群原因："), bot=bot)
-        ctx.should_rejected(remove_matcher)
+        ctx.should_call_send(second, "请输入退群原因：", bot=bot)
+        ctx.should_rejected()
 
         ctx.receive_event(bot, third)
         ctx.should_call_send(third, "走了走了，再见啦！原因：例行维护", bot=bot)
@@ -195,6 +195,6 @@ async def test_remove_handles_leave_failure(
             exception=ActionFailed("OneBot V11", "leave failed"),
         )
         ctx.should_call_send(third, "退群失败，请稍后重试或联系超管处理。", bot=bot)
-        ctx.should_finished(remove_matcher)
+        ctx.should_finished()
 
     update_status.assert_not_awaited()

@@ -6,10 +6,9 @@ from pathlib import Path
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
-from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
-from nonebot.params import Arg
 from nonebot.plugin import on_command
+from nonebot.typing import T_State
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
@@ -53,41 +52,54 @@ remove_matcher = on_command("remove", aliases={"退群"}, priority=5, block=True
 async def _(
     matcher: Matcher,
     event: MessageEvent,
+    state: T_State,
 ) -> None:
+    if state.get("remove_stage"):
+        return
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
         await matcher.finish(tr(locale, "remove.group_only"))
     if not await has_remove_permission(event):
         await matcher.finish(tr(locale, "remove.permission_denied"))
+    state["remove_stage"] = "confirm"
+    await matcher.reject(tr(locale, "remove.confirm.prompt"))
 
 
-@remove_matcher.got("confirm")
-async def _confirm_step(
+@remove_matcher.handle()
+async def _(
     matcher: Matcher,
     event: GroupMessageEvent,
-    confirm: Message = Arg(),
+    state: T_State,
 ) -> None:
+    if state.get("remove_stage") != "confirm":
+        return
     locale = await resolve_locale(str(event.group_id))
-    if not confirm.extract_plain_text().strip():
+    confirm_text = event.message.extract_plain_text().strip()
+    if not confirm_text:
         await matcher.reject(tr(locale, "remove.confirm.prompt"))
-    if not is_remove_confirmed(confirm.extract_plain_text()):
+    if not is_remove_confirmed(confirm_text):
         await matcher.finish(tr(locale, "remove.cancelled"))
+    state["remove_stage"] = "reason"
+    await matcher.reject(tr(locale, "remove.reason.prompt"))
 
 
-@remove_matcher.got("reason")
-async def _reason_step(
+@remove_matcher.handle()
+async def _(
     bot: Bot,
     matcher: Matcher,
     event: GroupMessageEvent,
-    reason: Message = Arg(),
+    state: T_State,
 ) -> None:
+    if state.get("remove_stage") != "reason":
+        return
     locale = await resolve_locale(str(event.group_id))
-    if not reason.extract_plain_text().strip():
+    reason = event.message.extract_plain_text()
+    if not reason.strip():
         await matcher.reject(tr(locale, "remove.reason.prompt"))
     await perform_remove(
         bot,
         matcher,
         event,
         locale=locale,
-        reason=reason.extract_plain_text(),
+        reason=reason,
     )
