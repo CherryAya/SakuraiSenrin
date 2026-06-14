@@ -206,6 +206,21 @@ async def test_admin_invite_dot_form_hits_matcher(
 
 
 @pytest.mark.asyncio
+async def test_admin_invite_log_returns_i18n_notice(app: App) -> None:
+    event = build_private_message_event("#admin.invite log", user_id=SUPERUSER_ID)
+
+    async with app.test_matcher(admin_invite) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            tr("zh-CN", "admin.invite.log.unavailable"),
+            bot=bot,
+        )
+        ctx.should_finished(admin_invite)
+
+
+@pytest.mark.asyncio
 async def test_admin_backup_chinese_alias_hits_matcher(
     app: App,
     monkeypatch: pytest.MonkeyPatch,

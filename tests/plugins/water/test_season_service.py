@@ -7,6 +7,7 @@ from src.plugins.water.services.season import (
     SeasonCreateInput,
     SeasonLookupAmbiguous,
     SeasonService,
+    SeasonServiceError,
 )
 
 
@@ -191,3 +192,33 @@ async def test_resolve_current_collection(
 
     assert isinstance(current, list)
     assert [item.season_id for item in current] == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_create_raises_i18n_error_when_readback_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = SeasonService()
+
+    from src.plugins.water.services import season as season_module
+
+    monkeypatch.setattr(
+        season_module.water_repo,
+        "get_activity_season",
+        AsyncMock(side_effect=[None, None]),
+    )
+    monkeypatch.setattr(
+        season_module.water_repo, "create_activity_season", AsyncMock(return_value=1)
+    )
+
+    with pytest.raises(SeasonServiceError) as exc_info:
+        await service.create(
+            SeasonCreateInput(
+                season_id="spring_2026",
+                start_date=20260301,
+                end_date=20260331,
+                name="2026 春日特别季",
+            )
+        )
+
+    assert exc_info.value.key == "water.admin.season.create.read_failed"

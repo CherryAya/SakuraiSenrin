@@ -629,7 +629,7 @@ async def handle_ignore(ctx: AdminInviteContext) -> None:
 
 
 async def handle_log(ctx: AdminInviteContext) -> None:
-    raise NotImplementedError("还没做")  # TODO
+    await ctx.matcher.finish(tr(ctx.locale, "admin.invite.log.unavailable"))
 
 
 @approve_matcher.handle()

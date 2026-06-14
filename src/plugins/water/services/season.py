@@ -76,7 +76,7 @@ class SeasonService:
         )
         created = await water_repo.get_activity_season(data.season_id)
         if created is None:
-            raise RuntimeError("赛季创建后读取失败")
+            raise SeasonServiceError("water.admin.season.create.read_failed")
         return created
 
     async def publish(self, season_id: str) -> WaterActivitySeasonRecord:
@@ -89,10 +89,10 @@ class SeasonService:
             updated_at=now_ts,
         )
         if not ok:
-            raise RuntimeError("赛季发布失败")
+            raise SeasonServiceError("water.admin.season.publish.failed")
         published = await water_repo.get_activity_season(season_id)
         if published is None:
-            raise RuntimeError("赛季发布后读取失败")
+            raise SeasonServiceError("water.admin.season.publish.read_failed")
         return published
 
     async def archive(self, season_id: str) -> WaterActivitySeasonRecord:
@@ -104,10 +104,10 @@ class SeasonService:
             updated_at=now_ts,
         )
         if not ok:
-            raise RuntimeError("赛季归档失败")
+            raise SeasonServiceError("water.admin.season.archive.failed")
         archived = await water_repo.get_activity_season(season_id)
         if archived is None:
-            raise RuntimeError("赛季归档后读取失败")
+            raise SeasonServiceError("water.admin.season.archive.read_failed")
         return archived
 
     async def delete_draft(self, season_id: str) -> bool:
