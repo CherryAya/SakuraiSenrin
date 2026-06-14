@@ -18,10 +18,15 @@ from .keys import MessageKey
 from .types import LocaleCode
 
 DEFAULT_LOCALE: LocaleCode = "zh-CN"
+LOCALE_NAME_KEYS: dict[LocaleCode, MessageKey] = {
+    "zh-CN": "locale.name.zh_cn",
+    "lzh": "locale.name.lzh",
+    "x-meme": "locale.name.x_meme",
+}
 LOCALE_NAMES: dict[LocaleCode, str] = {
-    "zh-CN": "简体中文",
-    "lzh": "文言文",
-    "x-meme": "抽象文",
+    "zh-CN": ZH_CATALOG["locale.name.zh_cn"],
+    "lzh": ZH_CATALOG["locale.name.lzh"],
+    "x-meme": ZH_CATALOG["locale.name.x_meme"],
 }
 LOCALE_ALIASES: dict[str, LocaleCode] = {
     "zh": "zh-CN",
@@ -48,7 +53,7 @@ def get_catalog(locale_code: LocaleCode) -> Mapping[str, str]:
 
 
 def get_user_facing_locale_name(locale_code: LocaleCode) -> str:
-    return LOCALE_NAMES[locale_code]
+    return tr("zh-CN", LOCALE_NAME_KEYS[locale_code])
 
 
 def normalize_locale(raw_locale: str) -> LocaleCode | None:

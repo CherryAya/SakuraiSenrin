@@ -13,8 +13,13 @@ from typing import Any
 class LocalizedMixin:
     @classmethod
     def get_label(cls, member: Any) -> str:
-        labels = getattr(cls, "__labels__", {})
         val = member.value if isinstance(member, Enum) else member
+        label_keys = getattr(cls, "__label_keys__", {})
+        if val in label_keys:
+            from src.lib.i18n.runtime import tr
+
+            return tr("zh-CN", label_keys[val])
+        labels = getattr(cls, "__labels__", {})
         if val in labels:
             return labels[val]
         if isinstance(labels, Enum):
