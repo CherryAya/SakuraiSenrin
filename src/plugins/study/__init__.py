@@ -46,6 +46,7 @@ from src.lib.interactive_recall import (
 )
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
+from src.plugins.wordbank.handlers.commands import _default_i18n_text
 from src.plugins.wordbank.message_model import MessageShape, shape_from_text
 
 name = tr("zh-CN", "plugin.study.name")
@@ -422,9 +423,15 @@ async def _finish_guided_study(
         trigger_shape = _state_message_shape(state, "study_trigger_shape")
         response_shape = _state_message_shape(state, "study_response_shape")
         if trigger_shape is None or trigger_shape.is_empty():
-            raise RuleError("触发词不能为空", key="wordbank.error.trigger_empty")
+            raise RuleError(
+                _default_i18n_text("wordbank.error.trigger_empty"),
+                key="wordbank.error.trigger_empty",
+            )
         if response_shape is None or response_shape.is_empty():
-            raise RuleError("响应词不能为空", key="wordbank.error.response_empty")
+            raise RuleError(
+                _default_i18n_text("wordbank.error.response_empty"),
+                key="wordbank.error.response_empty",
+            )
         result = await handle_guided_study_shape_result(
             wordbank_service,
             event=event,

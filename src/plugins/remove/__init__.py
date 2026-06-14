@@ -61,24 +61,20 @@ async def _(
         await matcher.finish(tr(locale, "remove.permission_denied"))
 
 
-@remove_matcher.got(
-    "confirm",
-    prompt=Message(tr("zh-CN", "remove.confirm.prompt")),
-)
+@remove_matcher.got("confirm")
 async def _confirm_step(
     matcher: Matcher,
     event: GroupMessageEvent,
     confirm: Message = Arg(),
 ) -> None:
     locale = await resolve_locale(str(event.group_id))
+    if not confirm.extract_plain_text().strip():
+        await matcher.reject(tr(locale, "remove.confirm.prompt"))
     if not is_remove_confirmed(confirm.extract_plain_text()):
         await matcher.finish(tr(locale, "remove.cancelled"))
 
 
-@remove_matcher.got(
-    "reason",
-    prompt=Message(tr("zh-CN", "remove.reason.prompt")),
-)
+@remove_matcher.got("reason")
 async def _reason_step(
     bot: Bot,
     matcher: Matcher,
@@ -86,6 +82,8 @@ async def _reason_step(
     reason: Message = Arg(),
 ) -> None:
     locale = await resolve_locale(str(event.group_id))
+    if not reason.extract_plain_text().strip():
+        await matcher.reject(tr(locale, "remove.reason.prompt"))
     await perform_remove(
         bot,
         matcher,

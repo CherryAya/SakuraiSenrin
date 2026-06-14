@@ -26,6 +26,7 @@ async def render_shape_message(
     shape: MessageShape,
     media_service: WordbankMediaService,
     *,
+    locale: LocaleCode = "zh-CN",
     trace_fields: Mapping[str, object] | None = None,
     trace_sink: MutableMapping[str, object] | None = None,
 ) -> Message:
@@ -51,7 +52,9 @@ async def render_shape_message(
         elif atom.kind == "image" and atom.canonical_image_id is not None:
             image_bytes = image_bytes_by_id.get(atom.canonical_image_id)
             if image_bytes is None:
-                message += MessageSegment.text(MISSING_IMAGE_PLACEHOLDER)
+                message += MessageSegment.text(
+                    tr(locale, "wordbank.render.image_missing")
+                )
                 continue
             message += MessageSegment.image(image_bytes)
             image_segments += 1
@@ -128,8 +131,14 @@ async def render_group_detail_page_message(
             total_pages=total_pages,
         )
     )
-    message += MessageSegment.text("\n触发:\n")
-    message += await render_shape_message(detail.trigger_shape, media_service)
+    message += MessageSegment.text(
+        "\n" + tr(locale, "wordbank.group.trigger_label") + "\n"
+    )
+    message += await render_shape_message(
+        detail.trigger_shape,
+        media_service,
+        locale=locale,
+    )
     for response in responses:
         message += MessageSegment.text(
             "\n\n"
@@ -146,7 +155,11 @@ async def render_group_detail_page_message(
             )
             + "\n"
         )
-        message += await render_shape_message(response.response_shape, media_service)
+        message += await render_shape_message(
+            response.response_shape,
+            media_service,
+            locale=locale,
+        )
     if page < total_pages:
         message += MessageSegment.text(
             "\n\n"
@@ -161,7 +174,7 @@ async def render_group_detail_page_message(
 
 
 def _format_enabled(enabled: int) -> str:
-    return "开启" if enabled else "关闭"
+    return "enabled" if enabled else "disabled"
 
 
 def _format_rule_text(rule: dict[str, Any]) -> str:

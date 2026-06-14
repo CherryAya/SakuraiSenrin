@@ -19,6 +19,7 @@ from src.plugins.wordbank.services.rules import RuleError
 
 from .approval import APPROVAL_APPROVE_ALIASES, APPROVAL_REJECT_ALIASES
 from .commands import (
+    _default_i18n_text,
     actor_can_review,
     build_mutation_actor,
     handle_delete,
@@ -270,7 +271,10 @@ def parse_view_reply_for_search_result(
     assert parsed is not None
     if parsed.trigger_group_id not in set(available_group_ids):
         raise RuleError(
-            "该搜索结果页里没有这个 trigger group id",
+            _default_i18n_text(
+                "wordbank.reply.group_not_in_search_page",
+                group_id=parsed.trigger_group_id,
+            ),
             key="wordbank.reply.group_not_in_search_page",
             group_id=parsed.trigger_group_id,
         )
@@ -304,8 +308,7 @@ def parse_view_reply_for_group_detail(
         page_value = normalized.removeprefix("page ").strip()
         if not page_value.isdigit():
             raise RuleError(
-                "回复搜索结果请输入 详情 <group_id>；"
-                "回复组详情请输入 下一页 / 上一页 / 第N页",
+                _default_i18n_text("wordbank.reply.group_command_invalid"),
                 key="wordbank.reply.group_command_invalid",
             )
         return ParsedViewReplyCommand(
@@ -316,7 +319,7 @@ def parse_view_reply_for_group_detail(
     if parsed is not None:
         return parsed
     raise RuleError(
-        "回复搜索结果请输入 详情 <group_id>；回复组详情请输入 下一页 / 上一页 / 第N页",
+        _default_i18n_text("wordbank.reply.group_command_invalid"),
         key="wordbank.reply.group_command_invalid",
     )
 
@@ -329,16 +332,14 @@ def _parse_explicit_group_view_command(
     source = text.strip()
     if not source:
         raise RuleError(
-            "回复搜索结果请输入 详情 <group_id>；"
-            "回复组详情请输入 下一页 / 上一页 / 第N页",
+            _default_i18n_text("wordbank.reply.group_command_invalid"),
             key="wordbank.reply.group_command_invalid",
         )
     action, _, rest = source.partition(" ")
     if action.casefold() not in {alias.casefold() for alias in VIEW_DETAIL_ALIASES}:
         if required:
             raise RuleError(
-                "回复搜索结果请输入 详情 <group_id>；"
-                "回复组详情请输入 下一页 / 上一页 / 第N页",
+                _default_i18n_text("wordbank.reply.group_command_invalid"),
                 key="wordbank.reply.group_command_invalid",
             )
         return None

@@ -84,6 +84,10 @@ SEARCH_FIELD_ALIASES = {
 }
 
 
+def _default_i18n_text(key: MessageKey, **params: object) -> str:
+    return tr("zh-CN", key, **params)
+
+
 @dataclass(slots=True, frozen=True)
 class ParsedTextAdd:
     trigger_text: str
@@ -150,7 +154,7 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
         tokens = shlex.split(text)
     except ValueError as exc:
         raise RuleError(
-            f"参数解析失败: {exc}",
+            _default_i18n_text("wordbank.error.parse_flags", reason=str(exc)),
             key="wordbank.error.parse_flags",
             reason=str(exc),
         ) from exc
@@ -161,15 +165,18 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
         token = tokens[idx]
         if token in {"--mode", "-m"}:
             raise RuleError(
-                "当前词库只支持严格匹配，不再支持 --mode",
-                key="wordbank.error.guided_advanced_unknown",
-                options=token,
+                _default_i18n_text("wordbank.error.mode_unsupported"),
+                key="wordbank.error.mode_unsupported",
             )
         elif token in {"--scope", "-s"}:
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
-                    "--scope 需要提供生效范围",
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--scope",
+                        expected="生效范围",
+                    ),
                     key="wordbank.error.flag_missing",
                     flag="--scope",
                     expected="生效范围",
@@ -179,7 +186,11 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
-                    "--prob 需要提供概率",
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--prob",
+                        expected="概率",
+                    ),
                     key="wordbank.error.flag_missing",
                     flag="--prob",
                     expected="概率",
@@ -189,7 +200,11 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
-                    "--weight 需要提供权重",
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--weight",
+                        expected="权重",
+                    ),
                     key="wordbank.error.flag_missing",
                     flag="--weight",
                     expected="权重",
@@ -199,7 +214,11 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
-                    "--role 需要提供角色",
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--role",
+                        expected="角色",
+                    ),
                     key="wordbank.error.flag_missing",
                     flag="--role",
                     expected="角色",
@@ -209,7 +228,11 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
-                    "--call 需要提供 window:min:max",
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--call",
+                        expected="window:min:max",
+                    ),
                     key="wordbank.error.flag_missing",
                     flag="--call",
                     expected="window:min:max",
@@ -217,7 +240,7 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
             parts = tokens[idx].split(":")
             if len(parts) != 3:
                 raise RuleError(
-                    "--call 格式应为 window:min:max",
+                    _default_i18n_text("wordbank.error.call_flag_format"),
                     key="wordbank.error.call_flag_format",
                 )
             raw_rule["call_count"] = {
@@ -259,7 +282,7 @@ def parse_text_add_args(text: str) -> ParsedTextAdd:
             )
         return ParsedTextAdd(trigger, response, raw_rule)
     raise RuleError(
-        "添加格式: wordbank add 触发词 => 响应词；图片回复: wordbank add 触发词 [图片]",
+        _default_i18n_text("wordbank.error.add_format"),
         key="wordbank.error.add_format",
     )
 
@@ -283,10 +306,7 @@ def parse_guided_scope_choice(text: str, *, is_group: bool) -> str:
     if choice in {"4", "private", "private_only", "私聊"}:
         return "private_only"
     raise RuleError(
-        (
-            "生效范围选择无效，请输入 1/2/3/4。"
-            "1 当前群（默认），2 所有群，3 仅自己，4 仅私聊。"
-        ),
+        _default_i18n_text("wordbank.error.guided_scope_invalid"),
         key="wordbank.error.guided_scope_invalid",
     )
 
@@ -307,13 +327,16 @@ def parse_guided_advanced_options(text: str) -> GuidedAdvancedOptions:
     source, raw_rule = _parse_flags(choice)
     if source.strip():
         raise RuleError(
-            f"无法识别高级选项: {source.strip()}",
+            _default_i18n_text(
+                "wordbank.error.guided_advanced_unknown",
+                options=source.strip(),
+            ),
             key="wordbank.error.guided_advanced_unknown",
             options=source.strip(),
         )
     if "scope" in raw_rule:
         raise RuleError(
-            "引导模式中生效范围已经单独选择，请不要在高级选项里重复设置 --scope",
+            _default_i18n_text("wordbank.error.guided_scope_in_advanced"),
             key="wordbank.error.guided_scope_in_advanced",
         )
     return GuidedAdvancedOptions(raw_rule=raw_rule)
@@ -326,7 +349,7 @@ def parse_study_mode_choice(text: str) -> str:
     if choice in {"m", "me", "self", "自己", "仅自己"}:
         return "m"
     raise RuleError(
-        "触发方式输入错误，请输入 a 或 m。a 表示对所有人有效，m 表示仅对自己有效。",
+        _default_i18n_text("wordbank.error.study_mode_invalid"),
         key="wordbank.error.study_mode_invalid",
     )
 
@@ -338,8 +361,7 @@ def parse_study_group_block_choice(text: str) -> str:
     if choice in {"f", "false", "no", "n", "关", "关闭", "全群"}:
         return "f"
     raise RuleError(
-        "群组隔离开关输入错误，请输入 t 或 f。"
-        "t 表示开启，仅当前群聊有效；f 表示关闭，按触发方式跨群或私聊生效。",
+        _default_i18n_text("wordbank.error.study_group_block_invalid"),
         key="wordbank.error.study_group_block_invalid",
     )
 
@@ -352,12 +374,12 @@ def parse_guided_weight(text: str) -> int:
         weight = int(choice)
     except ValueError as exc:
         raise RuleError(
-            "权重必须是 1 到 5 之间的整数；直接发送 3 可用默认权重。",
+            _default_i18n_text("wordbank.error.weight_invalid"),
             key="wordbank.error.weight_invalid",
         ) from exc
     if weight < 1 or weight > 5:
         raise RuleError(
-            "权重必须是 1 到 5 之间的整数；直接发送 3 可用默认权重。",
+            _default_i18n_text("wordbank.error.weight_invalid"),
             key="wordbank.error.weight_invalid",
         )
     return weight
@@ -385,34 +407,48 @@ def parse_search_args(text: str) -> ParsedSearch:
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
-                    "--page 需要提供页码",
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--page",
+                        expected="页码",
+                    ),
                     key="wordbank.error.flag_missing",
                     flag="--page",
                     expected="页码",
                 )
             page = _parse_positive_int(
                 tokens[idx],
-                fallback="页码必须是大于 0 的整数",
+                fallback=_default_i18n_text("wordbank.error.search_page_invalid"),
                 key="wordbank.error.search_page_invalid",
             )
         elif token in {"--limit", "-n"}:
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
-                    "--limit 需要提供每页数量",
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--limit",
+                        expected="每页数量",
+                    ),
                     key="wordbank.error.flag_missing",
                     flag="--limit",
                     expected="每页数量",
                 )
             limit = _parse_positive_int(
                 tokens[idx],
-                fallback=f"每页数量必须是 1 到 {MAX_SEARCH_LIMIT} 之间的整数",
+                fallback=_default_i18n_text(
+                    "wordbank.error.search_limit_invalid",
+                    max_limit=MAX_SEARCH_LIMIT,
+                ),
                 key="wordbank.error.search_limit_invalid",
                 max_limit=MAX_SEARCH_LIMIT,
             )
             if limit > MAX_SEARCH_LIMIT:
                 raise RuleError(
-                    f"每页数量必须是 1 到 {MAX_SEARCH_LIMIT} 之间的整数",
+                    _default_i18n_text(
+                        "wordbank.error.search_limit_invalid",
+                        max_limit=MAX_SEARCH_LIMIT,
+                    ),
                     key="wordbank.error.search_limit_invalid",
                     max_limit=MAX_SEARCH_LIMIT,
                 )
@@ -420,7 +456,11 @@ def parse_search_args(text: str) -> ParsedSearch:
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
-                    "--field 需要提供搜索范围",
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--field",
+                        expected="搜索范围",
+                    ),
                     key="wordbank.error.flag_missing",
                     flag="--field",
                     expected="搜索范围",
@@ -428,7 +468,7 @@ def parse_search_args(text: str) -> ParsedSearch:
             normalized_field = SEARCH_FIELD_ALIASES.get(tokens[idx].casefold())
             if normalized_field is None:
                 raise RuleError(
-                    "--field 仅支持 all、trigger、response",
+                    _default_i18n_text("wordbank.error.search_field_invalid"),
                     key="wordbank.error.search_field_invalid",
                 )
             field = normalized_field
@@ -436,7 +476,11 @@ def parse_search_args(text: str) -> ParsedSearch:
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
-                    "--creator 需要提供创建者账号",
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--creator",
+                        expected="创建者账号",
+                    ),
                     key="wordbank.error.flag_missing",
                     flag="--creator",
                     expected="创建者账号",
@@ -444,7 +488,11 @@ def parse_search_args(text: str) -> ParsedSearch:
             creator_id = tokens[idx].strip()
             if not creator_id:
                 raise RuleError(
-                    "--creator 需要提供创建者账号",
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--creator",
+                        expected="创建者账号",
+                    ),
                     key="wordbank.error.flag_missing",
                     flag="--creator",
                     expected="创建者账号",
@@ -481,14 +529,18 @@ def parse_group_view_args(text: str) -> ParsedGroupView:
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
-                    "--page 需要提供页码",
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--page",
+                        expected="页码",
+                    ),
                     key="wordbank.error.flag_missing",
                     flag="--page",
                     expected="页码",
                 )
             page = _parse_positive_int(
                 tokens[idx],
-                fallback="页码必须是大于 0 的整数",
+                fallback=_default_i18n_text("wordbank.error.group_page_invalid"),
                 key="wordbank.error.group_page_invalid",
             )
         else:
@@ -497,24 +549,24 @@ def parse_group_view_args(text: str) -> ParsedGroupView:
 
     if not positional:
         raise RuleError(
-            "trigger group id 必须是大于 0 的整数",
+            _default_i18n_text("wordbank.error.group_id_numeric"),
             key="wordbank.error.group_id_numeric",
         )
 
     trigger_group_id = _parse_positive_int(
         positional[0],
-        fallback="trigger group id 必须是大于 0 的整数",
+        fallback=_default_i18n_text("wordbank.error.group_id_numeric"),
         key="wordbank.error.group_id_numeric",
     )
     if len(positional) >= 2:
         page = _parse_positive_int(
             positional[1],
-            fallback="页码必须是大于 0 的整数",
+            fallback=_default_i18n_text("wordbank.error.group_page_invalid"),
             key="wordbank.error.group_page_invalid",
         )
     if len(positional) > 2:
         raise RuleError(
-            "group 查看格式: wordbank group <group_id> [--page 页码]",
+            _default_i18n_text("wordbank.reply.group_command_invalid"),
             key="wordbank.reply.group_command_invalid",
         )
     return ParsedGroupView(trigger_group_id=trigger_group_id, page=page)
@@ -533,7 +585,7 @@ def parse_guided_search_mode_choice(text: str) -> GuidedSearchSelection:
     if choice in {"5", "creator", "author", "创建者"}:
         return GuidedSearchSelection(field="all", creator_only=True)
     raise RuleError(
-        "搜索模式输入无效，请输入 1/2/3/4/5。",
+        _default_i18n_text("wordbank.error.guided_search_mode_invalid"),
         key="wordbank.error.guided_search_mode_invalid",
     )
 
@@ -547,7 +599,7 @@ def parse_guided_search_image_field_choice(text: str) -> str:
     if choice in {"3", "response", "响应", "响应词"}:
         return "response"
     raise RuleError(
-        "图片搜索范围输入无效，请输入 1/2/3。",
+        _default_i18n_text("wordbank.error.guided_search_image_field_invalid"),
         key="wordbank.error.guided_search_image_field_invalid",
     )
 
@@ -575,7 +627,7 @@ def parse_guided_search_page_choice(text: str) -> int | None:
         choice = choice.removeprefix("page ").strip()
     return _parse_positive_int(
         choice,
-        fallback="页码必须是大于 0 的整数",
+        fallback=_default_i18n_text("wordbank.error.search_page_invalid"),
         key="wordbank.error.search_page_invalid",
     )
 
@@ -713,7 +765,7 @@ async def fetch_image_bytes_from_message(
         data = await fetch_image_bytes_with_retry(url)
         if data is None:
             raise WordbankUserError(
-                "图片下载失败，无法加入词库。",
+                _default_i18n_text("wordbank.error.image_download_failed"),
                 key="wordbank.error.image_download_failed",
             )
         items.append(data)
@@ -831,7 +883,7 @@ async def handle_add_with_media_result(
         trigger_text = source.strip()
         if not trigger_text:
             raise RuleError(
-                "触发词不能为空",
+                _default_i18n_text("wordbank.error.trigger_empty"),
                 key="wordbank.error.trigger_empty",
             )
         image = await media_service.ingest_image_bytes(image_bytes)
@@ -871,7 +923,7 @@ async def handle_add_with_media_result(
         )
 
     raise RuleError(
-        "添加词条需要同时包含触发词和响应词",
+        _default_i18n_text("wordbank.error.add_pair_required"),
         key="wordbank.error.add_pair_required",
     )
 
@@ -993,7 +1045,7 @@ def parse_study_media_prefix(text: str, *, is_group: bool) -> ParsedStudyMediaPr
         tokens = shlex.split(source)
     except ValueError as exc:
         raise RuleError(
-            "学习格式: study 触发词 => 响应词",
+            _default_i18n_text("wordbank.error.study_format"),
             key="wordbank.error.study_format",
         ) from exc
     if (
@@ -1011,7 +1063,7 @@ def parse_study_media_prefix(text: str, *, is_group: bool) -> ParsedStudyMediaPr
         )
     if tokens and tokens[0].casefold() in {"a", "m"}:
         raise RuleError(
-            "学习格式: study 触发词 => 响应词",
+            _default_i18n_text("wordbank.error.study_format"),
             key="wordbank.error.study_format",
         )
     return ParsedStudyMediaPrefix(source=source, raw_rule={})
@@ -1041,7 +1093,7 @@ async def handle_study_media_with_rule_result(
     if pair is None and not source:
         if len(image_bytes) < 2:
             raise RuleError(
-                "学习内容需要同时包含触发词和响应词",
+                _default_i18n_text("wordbank.error.study_pair_required"),
                 key="wordbank.error.study_pair_required",
             )
         trigger_image = await media_service.ingest_image_bytes(image_bytes[0])
@@ -1217,15 +1269,20 @@ async def build_group_detail_message(
     detail = await service.get_group_detail(trigger_group_id)
     if detail is None:
         raise RuleError(
-            f"未找到 trigger group #{trigger_group_id}",
+            _default_i18n_text(
+                "wordbank.group.not_found",
+                group_id=trigger_group_id,
+            ),
             key="wordbank.group.not_found",
             group_id=trigger_group_id,
         )
     total_pages = max(1, math.ceil(len(detail.responses) / max(GROUP_PAGE_SIZE, 1)))
     if page > total_pages:
         raise RuleError(
-            "页码超出范围",
-            key="wordbank.error.group_page_invalid",
+            _default_i18n_text(
+                "wordbank.error.guided_search_page_out_of_range",
+            ),
+            key="wordbank.error.guided_search_page_out_of_range",
             total_pages=total_pages,
         )
     message, total_pages = await render_group_detail_page_message(

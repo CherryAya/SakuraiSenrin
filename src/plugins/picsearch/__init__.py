@@ -15,7 +15,7 @@ from nonebot.typing import T_State
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import resolve_locale
+from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 
@@ -62,6 +62,8 @@ __plugin_meta__ = create_plugin_metadata(
     },
 )
 
+MULTI_IMAGE_PROMPT = Message(tr("zh-CN", "picsearch.index_prompt"))
+
 picsearch_matcher = on_regex(
     r"^\s*搜图(?:\s+(\S+))?\s*$",
     priority=5,
@@ -75,8 +77,6 @@ async def _(
     event: MessageEvent,
     state: T_State,
 ) -> None:
-    from src.lib.i18n.runtime import tr
-
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     from .handlers import check_cooldown
 
@@ -104,20 +104,13 @@ async def _(
         )
 
 
-@picsearch_matcher.got(
-    "indexes",
-    prompt=Message(
-        "检测到有多张图片，请输入对应的序号，最多允许 3 张，可以使用空格进行分割："
-    ),
-)
+@picsearch_matcher.got("indexes", prompt=MULTI_IMAGE_PROMPT)
 async def _choose_indexes(
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
     indexes: Message = Arg(),
 ) -> None:
-    from src.lib.i18n.runtime import tr
-
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     image_urls = state.get("picsearch_image_urls")
     engine_text = str(state.get("picsearch_engine", PicsearchEngine.SAUCENAO.value))

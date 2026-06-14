@@ -83,6 +83,7 @@ from .handlers import (
 )
 from .handlers.commands import (
     ParsedSearch,
+    _default_i18n_text,
     execute_search_page,
     parse_guided_advanced_options,
     parse_guided_scope_choice,
@@ -730,9 +731,15 @@ async def _finish_guided_add(
         trigger_shape = _state_message_shape(state, "wordbank_guided_trigger_shape")
         response_shape = _state_message_shape(state, "wordbank_guided_response_shape")
         if trigger_shape is None or trigger_shape.is_empty():
-            raise RuleError("触发词不能为空", key="wordbank.error.trigger_empty")
+            raise RuleError(
+                _default_i18n_text("wordbank.error.trigger_empty"),
+                key="wordbank.error.trigger_empty",
+            )
         if response_shape is None or response_shape.is_empty():
-            raise RuleError("响应词不能为空", key="wordbank.error.response_empty")
+            raise RuleError(
+                _default_i18n_text("wordbank.error.response_empty"),
+                key="wordbank.error.response_empty",
+            )
         result = await handle_guided_add_shape_result(
             wordbank_service,
             event=event,
@@ -1755,6 +1762,8 @@ def _image_payload_trace_fields(
 
 async def _build_passive_message(
     response: PassiveResponse,
+    *,
+    locale: LocaleCode,
 ) -> tuple[Message | str, dict[str, object]]:
     start = perf_start()
     if response.response_shape is None or response.response_shape.is_empty():
@@ -1777,6 +1786,7 @@ async def _build_passive_message(
     message = await render_shape_message(
         response.response_shape,
         wordbank_media_service,
+        locale=locale,
         trace_fields={"response_item_id": response.response_item_id},
         trace_sink=render_trace,
     )
@@ -1796,6 +1806,7 @@ async def _build_passive_message(
 async def _(bot: Bot, event: MessageEvent) -> None:
     start = perf_start()
     await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     try:
         handle_start = perf_start()
         response = await handle_passive_message(
@@ -1810,7 +1821,10 @@ async def _(bot: Bot, event: MessageEvent) -> None:
         return
     if response:
         build_start = perf_start()
-        message, image_trace_fields = await _build_passive_message(response)
+        message, image_trace_fields = await _build_passive_message(
+            response,
+            locale=locale,
+        )
         build_ms = elapsed_ms(build_start)
         segment_count, image_segment_count = _message_segment_stats(message)
         log_perf(
@@ -1893,6 +1907,7 @@ async def _(bot: Bot, event: NoticeEvent) -> None:
 
     start = perf_start()
     await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     try:
         handle_start = perf_start()
         response = await handle_passive_notice(bot, event, wordbank_service)
@@ -1902,7 +1917,10 @@ async def _(bot: Bot, event: NoticeEvent) -> None:
         return
     if response:
         build_start = perf_start()
-        message, image_trace_fields = await _build_passive_message(response)
+        message, image_trace_fields = await _build_passive_message(
+            response,
+            locale=locale,
+        )
         build_ms = elapsed_ms(build_start)
         segment_count, image_segment_count = _message_segment_stats(message)
         log_perf(

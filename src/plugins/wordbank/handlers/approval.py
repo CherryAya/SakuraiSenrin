@@ -69,7 +69,12 @@ async def build_add_result_message(
     media_service: WordbankMediaService,
 ) -> Message:
     text = format_add_result(result, locale=locale)
-    return await _append_response_image(result, text=text, media_service=media_service)
+    return await _append_response_image(
+        result,
+        text=text,
+        locale=locale,
+        media_service=media_service,
+    )
 
 
 async def build_pending_approval_notice_message(
@@ -80,13 +85,19 @@ async def build_pending_approval_notice_message(
     media_service: WordbankMediaService,
 ) -> Message:
     text = format_pending_approval_notice(result, event=event, locale=locale)
-    return await _append_response_image(result, text=text, media_service=media_service)
+    return await _append_response_image(
+        result,
+        text=text,
+        locale=locale,
+        media_service=media_service,
+    )
 
 
 async def _append_response_image(
     result: WordbankAddResult,
     *,
     text: str,
+    locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> Message:
     response_shape = result.response_shape
@@ -98,7 +109,11 @@ async def _append_response_image(
     return _embed_response_shape(
         text=text,
         summary=summary,
-        rendered_response=await render_shape_message(response_shape, media_service),
+        rendered_response=await render_shape_message(
+            response_shape,
+            media_service,
+            locale=locale,
+        ),
     )
 
 

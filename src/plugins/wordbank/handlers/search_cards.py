@@ -13,6 +13,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
+from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import WordbankSearchItem
 
@@ -75,26 +76,33 @@ class SearchResultCardRenderer:
         query: SearchCardQuery,
         locale: LocaleCode,
     ) -> bytes:
-        _ = locale
-        height = self._measure_height(items, query)
+        height = self._measure_height(items, query, locale)
         image = Image.new("RGB", (CARD_WIDTH, height), self.BG)
         draw = ImageDraw.Draw(image)
 
         cursor_y = CARD_PADDING_Y
-        cursor_y = self._draw_header(draw, query, cursor_y)
+        cursor_y = self._draw_header(draw, query, locale, cursor_y)
         cursor_y += 22
-        cursor_y = self._draw_summary(draw, query, cursor_y)
+        cursor_y = self._draw_summary(draw, query, locale, cursor_y)
         cursor_y += 28
 
         if items:
             for index, item in enumerate(items, start=1):
-                cursor_y = self._draw_item(image, draw, item, query, index, cursor_y)
+                cursor_y = self._draw_item(
+                    image,
+                    draw,
+                    item,
+                    query,
+                    locale,
+                    index,
+                    cursor_y,
+                )
                 cursor_y += CARD_ITEM_GAP
         else:
-            cursor_y = self._draw_empty_state(draw, query, cursor_y)
+            cursor_y = self._draw_empty_state(draw, query, locale, cursor_y)
 
         cursor_y += 8
-        self._draw_footer(draw, query, cursor_y)
+        self._draw_footer(draw, query, locale, cursor_y)
 
         buffer = BytesIO()
         image.save(buffer, format="PNG")
@@ -104,13 +112,14 @@ class SearchResultCardRenderer:
         self,
         items: tuple[WordbankSearchItem, ...],
         query: SearchCardQuery,
+        locale: LocaleCode,
     ) -> int:
         height = CARD_PADDING_Y
         height += self._line_height(self.title_font) + 12
-        height += self._summary_block_height(query) + 22
+        height += self._summary_block_height(query, locale) + 22
         if items:
             for index, item in enumerate(items, start=1):
-                height += self._item_block_height(item, index)
+                height += self._item_block_height(item, index, locale)
                 if index < len(items):
                     height += CARD_ITEM_GAP
         else:
@@ -122,10 +131,16 @@ class SearchResultCardRenderer:
         self,
         draw: ImageDraw.ImageDraw,
         query: SearchCardQuery,
+        locale: LocaleCode,
         cursor_y: int,
     ) -> int:
-        title = "词库搜索结果"
-        page_text = f"第 {query.page} / {query.total_pages} 页"
+        title = tr(locale, "wordbank.search_card.title")
+        page_text = tr(
+            locale,
+            "wordbank.search_card.page",
+            page=query.page,
+            total_pages=query.total_pages,
+        )
         draw.text(
             (CARD_PADDING_X, cursor_y),
             title,
@@ -145,10 +160,11 @@ class SearchResultCardRenderer:
         self,
         draw: ImageDraw.ImageDraw,
         query: SearchCardQuery,
+        locale: LocaleCode,
         cursor_y: int,
     ) -> int:
-        lines = self._summary_lines(query)
-        box_height = self._summary_block_height(query)
+        lines = self._summary_lines(query, locale)
+        box_height = self._summary_block_height(query, locale)
         draw.rounded_rectangle(
             (
                 CARD_PADDING_X,
@@ -178,10 +194,11 @@ class SearchResultCardRenderer:
         draw: ImageDraw.ImageDraw,
         item: WordbankSearchItem,
         query: SearchCardQuery,
+        locale: LocaleCode,
         index: int,
         cursor_y: int,
     ) -> int:
-        height = self._item_block_height(item, index)
+        height = self._item_block_height(item, index, locale)
         draw.rounded_rectangle(
             (
                 CARD_PADDING_X,
@@ -220,10 +237,17 @@ class SearchResultCardRenderer:
         )
 
         meta_text = (
-            f"#组{item.trigger_group_id}  "
-            f"[{item.status}]  "
-            f"响应数: {item.response_count}  "
-            f"创建者: {item.created_by}"
+            tr(locale, "wordbank.search_card.group_id", group_id=item.trigger_group_id)
+            + "  "
+            + tr(locale, "wordbank.search_card.status", status=item.status)
+            + "  "
+            + tr(
+                locale,
+                "wordbank.search_card.response_count",
+                count=item.response_count,
+            )
+            + "  "
+            + tr(locale, "wordbank.search_card.created_by", created_by=item.created_by)
         )
         draw.text(
             (inner_x + badge_width + 18, inner_y + 8),
@@ -233,11 +257,17 @@ class SearchResultCardRenderer:
         )
 
         body_y = int(inner_y + badge_height + 18)
-        body_y = self._draw_previews(image, draw, item, inner_x, body_y)
+        body_y = self._draw_previews(image, draw, item, inner_x, body_y, locale)
         for label, value in (
-            ("触发", item.trigger_text),
-            ("响应摘要", self._response_preview(item)),
-            ("命中", item.matched_by or self._fallback_match_label(query)),
+            (tr(locale, "wordbank.search_card.label.trigger"), item.trigger_text),
+            (
+                tr(locale, "wordbank.search_card.label.response_summary"),
+                self._response_preview(item, locale),
+            ),
+            (
+                tr(locale, "wordbank.search_card.label.matched_by"),
+                item.matched_by or self._fallback_match_label(query, locale),
+            ),
         ):
             body_y = self._draw_labeled_lines(
                 draw,
@@ -253,6 +283,7 @@ class SearchResultCardRenderer:
         self,
         draw: ImageDraw.ImageDraw,
         query: SearchCardQuery,
+        locale: LocaleCode,
         cursor_y: int,
     ) -> int:
         draw.rounded_rectangle(
@@ -269,13 +300,13 @@ class SearchResultCardRenderer:
         )
         draw.text(
             (CARD_PADDING_X + 26, cursor_y + 32),
-            f"没有找到匹配词条。当前页: {query.page}",
+            tr(locale, "wordbank.search_card.empty", page=query.page),
             font=self.item_title_font,
             fill=self.HEADER,
         )
         draw.text(
             (CARD_PADDING_X + 26, cursor_y + 72),
-            "可以换关键词、切换搜索范围，或追加创建者过滤后重试。",
+            tr(locale, "wordbank.search_card.empty_hint"),
             font=self.item_body_font,
             fill=self.MUTED,
         )
@@ -285,13 +316,16 @@ class SearchResultCardRenderer:
         self,
         draw: ImageDraw.ImageDraw,
         query: SearchCardQuery,
+        locale: LocaleCode,
         cursor_y: int,
     ) -> None:
-        footer = (
-            f"共 {query.total_count} 条结果" if query.total_count else "共 0 条结果"
-        )
+        footer = tr(locale, "wordbank.search_card.total", total=query.total_count)
         if query.page < query.total_pages:
-            footer += f"  可继续查看第 {query.page + 1} 页"
+            footer += "  " + tr(
+                locale,
+                "wordbank.search_card.next_page",
+                next_page=query.page + 1,
+            )
         draw.text(
             (CARD_PADDING_X, cursor_y),
             footer,
@@ -299,24 +333,52 @@ class SearchResultCardRenderer:
             fill=self.MUTED,
         )
 
-    def _summary_lines(self, query: SearchCardQuery) -> list[str]:
+    def _summary_lines(self, query: SearchCardQuery, locale: LocaleCode) -> list[str]:
         lines = [
-            f"搜索范围: {self._field_label(query.field)}",
-            f"关键词: {query.keyword or '无'}",
-            f"图片查询: {'是' if query.has_image else '否'}",
-            f"创建者过滤: {query.creator_id or '无'}",
+            tr(
+                locale,
+                "wordbank.search_card.summary.field",
+                field=self._field_label(query.field, locale),
+            ),
+            tr(
+                locale,
+                "wordbank.search_card.summary.keyword",
+                keyword=query.keyword or tr(locale, "wordbank.search_card.none"),
+            ),
+            tr(
+                locale,
+                "wordbank.search_card.summary.has_image",
+                has_image=tr(
+                    locale,
+                    (
+                        "wordbank.search_card.boolean.yes"
+                        if query.has_image
+                        else "wordbank.search_card.boolean.no"
+                    ),
+                ),
+            ),
+            tr(
+                locale,
+                "wordbank.search_card.summary.creator",
+                creator_id=query.creator_id or tr(locale, "wordbank.search_card.none"),
+            ),
         ]
         return lines
 
-    def _summary_block_height(self, query: SearchCardQuery) -> int:
+    def _summary_block_height(self, query: SearchCardQuery, locale: LocaleCode) -> int:
         line_height = self._line_height(self.summary_font)
         return (
             40
-            + len(self._summary_lines(query)) * line_height
-            + (len(self._summary_lines(query)) - 1) * CARD_SUMMARY_GAP
+            + len(self._summary_lines(query, locale)) * line_height
+            + (len(self._summary_lines(query, locale)) - 1) * CARD_SUMMARY_GAP
         )
 
-    def _item_block_height(self, item: WordbankSearchItem, index: int) -> int:
+    def _item_block_height(
+        self,
+        item: WordbankSearchItem,
+        index: int,
+        locale: LocaleCode,
+    ) -> int:
         _ = index
         total = CARD_ITEM_PADDING * 2
         badge_bbox = ImageDraw.Draw(Image.new("RGB", (10, 10))).textbbox(
@@ -325,12 +387,18 @@ class SearchResultCardRenderer:
             font=self.item_title_font,
         )
         total += int(badge_bbox[3] - badge_bbox[1] + 30)
-        if self._preview_specs(item):
+        if self._preview_specs(item, locale):
             total += CARD_PREVIEW_HEIGHT + CARD_PREVIEW_GAP
         for label, value in (
-            ("触发", item.trigger_text),
-            ("响应摘要", self._response_preview(item)),
-            ("命中", item.matched_by or "默认"),
+            (tr(locale, "wordbank.search_card.label.trigger"), item.trigger_text),
+            (
+                tr(locale, "wordbank.search_card.label.response_summary"),
+                self._response_preview(item, locale),
+            ),
+            (
+                tr(locale, "wordbank.search_card.label.matched_by"),
+                item.matched_by or tr(locale, "wordbank.search_card.match.default"),
+            ),
         ):
             wrapped = self._wrap_text(f"{label}: {value}", self.item_body_font)
             total += len(wrapped) * self._line_height(self.item_body_font)
@@ -344,8 +412,9 @@ class SearchResultCardRenderer:
         item: WordbankSearchItem,
         x: int,
         y: int,
+        locale: LocaleCode,
     ) -> int:
-        specs = self._preview_specs(item)
+        specs = self._preview_specs(item, locale)
         if not specs:
             return y
         count = len(specs)
@@ -387,12 +456,26 @@ class SearchResultCardRenderer:
             current_x += box_width + box_gap
         return y + CARD_PREVIEW_HEIGHT + CARD_PREVIEW_GAP
 
-    def _preview_specs(self, item: WordbankSearchItem) -> list[tuple[str, int]]:
+    def _preview_specs(
+        self,
+        item: WordbankSearchItem,
+        locale: LocaleCode,
+    ) -> list[tuple[str, int]]:
         specs: list[tuple[str, int]] = []
         if item.trigger_preview_image_id is not None:
-            specs.append(("触发图", item.trigger_preview_image_id))
+            specs.append(
+                (
+                    tr(locale, "wordbank.search_card.preview.trigger"),
+                    item.trigger_preview_image_id,
+                )
+            )
         if item.response_preview_image_id is not None:
-            specs.append(("响应图", item.response_preview_image_id))
+            specs.append(
+                (
+                    tr(locale, "wordbank.search_card.preview.response"),
+                    item.response_preview_image_id,
+                )
+            )
         return specs[:2]
 
     def _fit_preview_image(
@@ -430,26 +513,30 @@ class SearchResultCardRenderer:
             cursor_y += self._line_height(self.item_body_font)
         return cursor_y
 
-    def _fallback_match_label(self, query: SearchCardQuery) -> str:
+    def _fallback_match_label(self, query: SearchCardQuery, locale: LocaleCode) -> str:
         if query.has_image and query.keyword:
-            return "文本 + 图片"
+            return tr(locale, "wordbank.search_card.match.text_image")
         if query.has_image:
-            return "图片"
+            return tr(locale, "wordbank.search_card.match.image")
         if query.keyword:
-            return "文本"
+            return tr(locale, "wordbank.search_card.match.text")
         if query.creator_id:
-            return "创建者"
-        return "最近词条"
+            return tr(locale, "wordbank.search_card.match.creator")
+        return tr(locale, "wordbank.search_card.match.recent")
 
-    def _response_preview(self, item: WordbankSearchItem) -> str:
+    def _response_preview(self, item: WordbankSearchItem, locale: LocaleCode) -> str:
         summaries = list(item.response_summaries[:3]) or (
             [item.response_text] if item.response_text else []
         )
         preview = " / ".join(summary for summary in summaries if summary)
         if item.remaining_response_count > 0:
-            suffix = f" 还有 {item.remaining_response_count} 条"
+            suffix = tr(
+                locale,
+                "wordbank.search_card.more_responses",
+                count=item.remaining_response_count,
+            )
             preview = f"{preview}{suffix}" if preview else suffix.strip()
-        return preview or "无"
+        return preview or tr(locale, "wordbank.search_card.none")
 
     def _wrap_text(self, text: str, font: Any) -> list[str]:
         if not text:
@@ -479,11 +566,11 @@ class SearchResultCardRenderer:
             candidate = candidate[:-1]
         return f"{candidate}..."
 
-    def _field_label(self, field: str) -> str:
+    def _field_label(self, field: str, locale: LocaleCode) -> str:
         return {
-            "all": "全量",
-            "trigger": "触发词",
-            "response": "响应词",
+            "all": tr(locale, "wordbank.search_card.field.all"),
+            "trigger": tr(locale, "wordbank.search_card.field.trigger"),
+            "response": tr(locale, "wordbank.search_card.field.response"),
         }.get(field, field)
 
     def _line_height(self, font: Any) -> int:

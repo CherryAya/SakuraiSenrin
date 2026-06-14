@@ -69,7 +69,10 @@ async def test_build_passive_message_rebuilds_text_and_image_segments(
         response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
     )
 
-    message, image_trace_fields = await wordbank_plugin._build_passive_message(response)
+    message, image_trace_fields = await wordbank_plugin._build_passive_message(
+        response,
+        locale="zh-CN",
+    )
 
     assert isinstance(message, Message)
     assert [segment.type for segment in message] == ["text", "image"]
@@ -112,7 +115,10 @@ async def test_build_passive_message_logs_render_shape_stages(
         response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
     )
 
-    message, image_trace_fields = await wordbank_plugin._build_passive_message(response)
+    message, image_trace_fields = await wordbank_plugin._build_passive_message(
+        response,
+        locale="zh-CN",
+    )
 
     assert isinstance(message, Message)
     assert image_trace_fields["image_total_bytes"] == len(b"image-bytes")
@@ -147,7 +153,10 @@ async def test_build_passive_message_keeps_text_when_image_storage_is_missing(
         response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
     )
 
-    message, image_trace_fields = await wordbank_plugin._build_passive_message(response)
+    message, image_trace_fields = await wordbank_plugin._build_passive_message(
+        response,
+        locale="zh-CN",
+    )
 
     assert isinstance(message, Message)
     assert [segment.type for segment in message] == ["text", "text"]
