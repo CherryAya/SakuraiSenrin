@@ -1246,13 +1246,9 @@ class WordbankRepository:
             response = await session.get(WordbankResponseItem, response_item_id)
             if response is None or response.deleted_at != 0:
                 return False
-            group = await session.get(WordbankTriggerGroup, response.trigger_group_id)
-            if group is None or not self._response_item_allows_mutation(
+            if not self._response_item_allows_delete(
                 response,
-                group=group,
                 actor_user_id=actor_user_id,
-                actor_group_id=actor_group_id,
-                can_moderate_group=can_moderate_group,
                 is_superuser=is_superuser,
             ):
                 return False
@@ -2267,6 +2263,17 @@ class WordbankRepository:
             ),
             {"trigger_group_id": trigger_group_id},
         )
+
+    @staticmethod
+    def _response_item_allows_delete(
+        response: WordbankResponseItem,
+        *,
+        actor_user_id: str,
+        is_superuser: bool,
+    ) -> bool:
+        if is_superuser:
+            return True
+        return response.created_by == actor_user_id
 
     @staticmethod
     def _response_item_allows_mutation(

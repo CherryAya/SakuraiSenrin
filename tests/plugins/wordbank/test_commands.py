@@ -12,6 +12,7 @@ from src.plugins.wordbank.handlers.commands import (
     dispatch_wordbank_command,
     handle_add_text_result,
     handle_add_with_media_result,
+    handle_delete,
     handle_guided_add_shape_result,
     handle_guided_study_shape_result,
     handle_study_media_with_rule_result,
@@ -312,6 +313,58 @@ async def test_handle_add_with_media_result_builds_image_trigger_shape() -> None
     kwargs = add_message_entry.await_args.kwargs
     assert shape_to_summary_text(kwargs["trigger_shape"]) == "[图片:9]"
     assert shape_to_summary_text(kwargs["response_shape"]) == "是这张图"
+
+
+@pytest.mark.asyncio
+async def test_handle_delete_falls_back_to_vote_when_non_creator_cannot_delete() -> (
+    None
+):
+    delete_response_item = AsyncMock(return_value=False)
+    request_delete_vote = AsyncMock(
+        return_value=SimpleNamespace(
+            vote_id=3,
+            trigger_group_id=12,
+            response_item_id=18,
+            status="open",
+            support_count=1,
+            threshold=3,
+            created=True,
+            already_supported=False,
+            passed=False,
+            response_item_deleted=False,
+        )
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            delete_response_item=delete_response_item,
+            request_delete_vote=request_delete_vote,
+        ),
+    )
+    event = build_group_message_event("#wordbank del 18", role="admin", user_id=10002)
+
+    message = await handle_delete(
+        service,
+        event=event,
+        response_item_id_text="18",
+        locale="zh-CN",
+    )
+
+    assert "你没有直接删除词条 #18 的权限" in message
+    assert "删除投票 #3" in message
+    delete_response_item.assert_awaited_once_with(
+        18,
+        actor_user_id="10002",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    request_delete_vote.assert_awaited_once_with(
+        response_item_id=18,
+        group_id="20001",
+        user_id="10002",
+        threshold=3,
+    )
 
 
 @pytest.mark.asyncio

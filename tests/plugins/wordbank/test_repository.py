@@ -193,6 +193,42 @@ async def test_deleting_last_active_response_removes_group_from_runtime_match(
 
 
 @pytest.mark.asyncio
+async def test_group_admin_cannot_direct_delete_other_users_response(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+
+    created = await service.add_message_entry(
+        trigger_shape=shape_from_text("权限删除"),
+        response_shape=shape_from_text("创建者词条"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    await service.approve_response_item(
+        created.response_item_id,
+        actor_user_id="1",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=True,
+    )
+
+    deleted = await service.delete_response_item(
+        created.response_item_id,
+        actor_user_id="10002",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    detail = await service.get_group_detail(created.trigger_group_id)
+
+    assert deleted is False
+    assert detail is not None
+    assert detail.responses[0].deleted_at == 0
+
+
+@pytest.mark.asyncio
 async def test_search_groups_multiple_responses_into_single_card(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
