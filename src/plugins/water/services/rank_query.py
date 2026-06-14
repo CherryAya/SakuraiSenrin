@@ -22,6 +22,7 @@ from src.plugins.water.services.rank_types import (
     WaterRankSubject,
     is_valid_rank_combo,
 )
+from src.services.info import resolve_group_name
 
 
 class WaterRankQueryService:
@@ -147,10 +148,13 @@ class WaterRankQueryService:
         )
         champion = view_items[0]
         title = water_rank_service.build_rank_title(locale, subject, scope, "day")
+        group_name = await resolve_group_name(None, group_id)
         scope_label = water_rank_service.build_scope_label(locale, scope)
         subject_label = water_rank_service.build_subject_label(locale, subject)
         return WaterDayRankCardData(
             title=title,
+            group_id=group_id,
+            group_name=group_name,
             scope_label=tr(
                 locale,
                 "water.rank.day.scope_label",
