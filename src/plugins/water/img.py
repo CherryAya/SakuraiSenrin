@@ -99,12 +99,12 @@ class WaterPeriodRankCardData:
     top_items: list[WaterRankCardItem]
     champion_gap: int
     champion_share: float
-    entity_label: str = "上榜对象"
-    champion_summary_label: str = "总消息 {msg_count} 条 · 活跃 {active_days} 天"
-    board_title: str = "TOP 10 排行"
-    board_summary_label: str = "{msg_count} 条 · {active_days} 天 · 日均 {avg_daily}"
-    board_active_hours_label: str = "活跃时段覆盖 {active_hours} 小时"
-    overview_title: str = "全榜活跃画像"
+    entity_label: str = tr("zh-CN", "water.report.entity_label")
+    champion_summary_label: str = tr("zh-CN", "water.report.champion.summary")
+    board_title: str = tr("zh-CN", "water.image.period.board.title")
+    board_summary_label: str = tr("zh-CN", "water.image.period.board.summary")
+    board_active_hours_label: str = tr("zh-CN", "water.image.period.board.active_hours")
+    overview_title: str = tr("zh-CN", "water.image.period.overview.title")
 
     @property
     def active_user_count(self) -> int:

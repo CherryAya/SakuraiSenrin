@@ -11,6 +11,8 @@ import unicodedata
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
+from src.lib.i18n.runtime import tr
+
 MessageAtomKind = Literal["text", "image", "at", "event"]
 MessageAtomPayload = dict[str, int | str]
 _SPACE_RE = re.compile(r"\s+")
@@ -44,10 +46,9 @@ class MessageFingerprint:
 
 
 def shape_from_text(text: str, *, preserve_blank_text: bool = False) -> MessageShape:
-    normalized = normalize_message_text(text, preserve_blank_text=preserve_blank_text)
-    return MessageShape(
-        atoms=((MessageAtom(kind="text", text=normalized),) if normalized else ())
-    )
+    if not is_valid_message_text(text, preserve_blank_text=preserve_blank_text):
+        return MessageShape(())
+    return MessageShape(atoms=((MessageAtom(kind="text", text=text),)))
 
 
 def shape_from_image(canonical_image_id: int) -> MessageShape:
@@ -80,12 +81,12 @@ def shape_from_message(
     image_index = 0
     for segment in message:
         if segment.type == "text":
-            normalized = normalize_message_text(
-                str(segment.data.get("text", "")),
+            raw_text = str(segment.data.get("text", ""))
+            if is_valid_message_text(
+                raw_text,
                 preserve_blank_text=preserve_blank_text,
-            )
-            if normalized:
-                atoms.append(MessageAtom(kind="text", text=normalized))
+            ):
+                atoms.append(MessageAtom(kind="text", text=raw_text))
         elif segment.type == "image":
             canonical_image_id = image_ids.get(image_index)
             if canonical_image_id is not None:
@@ -153,11 +154,23 @@ def shape_to_summary_text(shape: MessageShape) -> str:
         if atom.kind == "text" and atom.text:
             parts.append(atom.text)
         elif atom.kind == "image" and atom.canonical_image_id is not None:
-            parts.append(f"[图片:{atom.canonical_image_id}]")
+            parts.append(
+                tr(
+                    "zh-CN",
+                    "wordbank.shape.image_ref",
+                    image_id=atom.canonical_image_id,
+                )
+            )
         elif atom.kind == "at" and atom.target_id:
             parts.append(f"[@:{atom.target_id}]")
         elif atom.kind == "event" and atom.event_name:
-            parts.append(f"[事件:{atom.event_name}]")
+            parts.append(
+                tr(
+                    "zh-CN",
+                    "wordbank.shape.event_ref",
+                    event_name=atom.event_name,
+                )
+            )
     return _join_shape_text_parts(parts)
 
 
@@ -239,7 +252,23 @@ def normalize_message_text(
     return normalize_text(collapsed, casefold=casefold)
 
 
+def is_valid_message_text(
+    text: str,
+    *,
+    preserve_blank_text: bool = False,
+) -> bool:
+    return bool(
+        normalize_message_text(
+            text,
+            casefold=False,
+            preserve_blank_text=preserve_blank_text,
+        )
+    )
+
+
 def _join_shape_text_parts(parts: list[str]) -> str:
+    if len(parts) == 1:
+        return parts[0]
     joined = " ".join(part for part in parts if part)
     if not joined:
         return ""

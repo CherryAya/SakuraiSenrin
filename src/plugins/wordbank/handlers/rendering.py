@@ -19,7 +19,7 @@ from src.plugins.wordbank.services.media import WordbankMediaService
 from .search_cards import SearchCardQuery, render_search_results_card_bytes
 
 GROUP_PAGE_SIZE = 10
-MISSING_IMAGE_PLACEHOLDER = "[图片加载失败]"
+MISSING_IMAGE_PLACEHOLDER = tr("zh-CN", "wordbank.render.image_missing")
 
 
 async def render_shape_message(

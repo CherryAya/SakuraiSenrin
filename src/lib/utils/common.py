@@ -68,22 +68,23 @@ class AlertTemplate:
         :return: 适配移动端展示的结构化异常消息。
         """
         from src.config import config
+        from src.lib.i18n.runtime import tr
 
         now = arrow.get(timestamp or get_current_time())
         time_str = now.strftime("%Y-%m-%d %H:%M:%S")
 
         lines = [
-            "━━━━━━ 输入错误 ━━━━━━",
-            f"错误类型:\t{exception_type}",
-            f"发生时间:\t{time_str}",
-            "────────────────",
-            "原始输入:",
+            tr("zh-CN", "alert.exception.header"),
+            tr("zh-CN", "alert.exception.type", exception_type=exception_type),
+            tr("zh-CN", "alert.exception.time", time=time_str),
+            tr("zh-CN", "alert.separator"),
+            tr("zh-CN", "alert.exception.input"),
             f"\t{user_input}",
-            "────────────────",
-            "操作指引:",
-            f"\t帮助指令:\t{help_command}",
-            f"\t反馈群组:\t{config.MAIN_GROUP_ID}",
-            "━━━━━━━━━━━━━━━━",
+            tr("zh-CN", "alert.separator"),
+            tr("zh-CN", "alert.exception.guide"),
+            tr("zh-CN", "alert.exception.help", help_command=help_command),
+            tr("zh-CN", "alert.exception.feedback", group_id=config.MAIN_GROUP_ID),
+            tr("zh-CN", "alert.footer"),
         ]
         return "\n".join(lines)
 
@@ -101,19 +102,28 @@ class AlertTemplate:
         :param timestamp: 事件发生的时间，默认为当前时间。
         :return: 格式化的 Message 对象。
         """
+        from src.lib.i18n.runtime import tr
+
         now = now = arrow.get(timestamp or get_current_time())
         time_str = now.strftime("%Y-%m-%d %H:%M:%S")
-        name = event_name or "系统通知"
+        name = event_name or tr("zh-CN", "alert.tip.default_event_name")
 
-        header = "━━━━━━ 管理通知 ━━━━━━\n"
+        header = tr("zh-CN", "alert.tip.header") + "\n"
         body = (
-            f"事件名称:\t{name}\n通知时间:\t{time_str}\n────────────────\n事件详情:\n"
+            tr("zh-CN", "alert.tip.name", event_name=name)
+            + "\n"
+            + tr("zh-CN", "alert.tip.time", time=time_str)
+            + "\n"
+            + tr("zh-CN", "alert.separator")
+            + "\n"
+            + tr("zh-CN", "alert.tip.details")
+            + "\n"
         )
 
-        details_str = str(event_details or "无详细说明")
+        details_str = str(event_details or tr("zh-CN", "alert.tip.empty_details"))
         indented_details = "\n".join([f"\t{line}" for line in details_str.split("\n")])
 
-        footer = "\n━━━━━━━━━━━━━━━━"
+        footer = "\n" + tr("zh-CN", "alert.footer")
 
         return header + body + indented_details + footer
 
@@ -129,18 +139,26 @@ class AvatarFetcher:
 
     @staticmethod
     def create_default_avatar(
-        size: int, text: str = "群", bg_color: tuple = (255, 225, 230)
+        size: int, text: str | None = None, bg_color: tuple = (255, 225, 230)
     ) -> Image.Image:
         """生成默认头像"""
+        from src.lib.i18n.runtime import tr
+
+        resolved_text = text or tr("zh-CN", "avatar.default.group")
         img = Image.new("RGBA", (size, size), bg_color)
         draw = ImageDraw.Draw(img)
 
         try:
             font = ImageFont.truetype(MAPLE_FONT_PATH, int(size * 0.5))
-            bbox = draw.textbbox((0, 0), text, font=font)
+            bbox = draw.textbbox((0, 0), resolved_text, font=font)
             text_x = (size - (bbox[2] - bbox[0])) / 2
             text_y = (size - (bbox[3] - bbox[1])) / 2 - (size * 0.1)
-            draw.text((text_x, text_y), text, fill=(180, 76, 76), font=font)
+            draw.text(
+                (text_x, text_y),
+                resolved_text,
+                fill=(180, 76, 76),
+                font=font,
+            )
         except OSError:
             pass
         return img
@@ -181,7 +199,13 @@ class AvatarFetcher:
             else:
                 return cls.apply_rounded_mask(img, radius=int(size * 0.15))
         except Exception:
-            default_text = "人" if is_user else "群"
+            from src.lib.i18n.runtime import tr
+
+            default_text = (
+                tr("zh-CN", "avatar.default.user")
+                if is_user
+                else tr("zh-CN", "avatar.default.group")
+            )
             img = cls.create_default_avatar(size, default_text)
             if is_user:
                 return cls.apply_circle_mask(img)

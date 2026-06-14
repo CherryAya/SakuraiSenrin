@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+from src.lib.i18n.runtime import tr
 from src.plugins.water.database import water_repo
 from src.plugins.water.img import WaterProfileCardData
 from src.services.info import resolve_group_card, resolve_group_name
@@ -28,7 +29,12 @@ class WaterProfileService:
             zip(
                 matrix_group_ids,
                 [
-                    name or f"群聊_{gid[-4:]}"
+                    name
+                    or tr(
+                        "zh-CN",
+                        "water.profile.group_name_fallback",
+                        group_suffix=gid[-4:],
+                    )
                     for gid, name in zip(
                         matrix_group_ids, matrix_group_names, strict=False
                     )
