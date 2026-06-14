@@ -336,10 +336,11 @@ def test_build_group_rank_summary_returns_empty_without_snapshot() -> None:
 def test_try_acquire_today_report_cooldown_skips_in_debug(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from src.lib import cooldown as cooldown_module
     from src.plugins.water.services import report as report_module
 
     water_report_service.clear_today_report_cooldowns()
-    monkeypatch.setattr(report_module.config, "DEBUG", True)
+    monkeypatch.setattr(cooldown_module.config, "DEBUG", True)
 
     first = water_report_service.try_acquire_today_report_cooldown("20001")
     second = water_report_service.try_acquire_today_report_cooldown("20001")

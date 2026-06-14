@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from time import monotonic, perf_counter
+from time import perf_counter
 from typing import Literal
 
 import arrow
@@ -12,7 +12,7 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.adapters.onebot.v11.bot import Bot
 from pil_utils import BuildImage
 
-from src.config import config
+from src.lib.cooldown import CooldownIsolateLevel, MemoryCooldown
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
@@ -39,7 +39,10 @@ REPORT_ACTIVITY_SCORE_FACTOR = 20
 REPORT_ACTIVITY_SCORE_THRESHOLD = 300
 REPORT_PUSH_INTERVAL_SECONDS = 8.0
 TODAY_REPORT_COOLDOWN_SECONDS = 60
-_today_report_group_cooldowns: dict[str, float] = {}
+_today_report_cooldown = MemoryCooldown(
+    TODAY_REPORT_COOLDOWN_SECONDS,
+    isolate_level=CooldownIsolateLevel.GROUP,
+)
 
 
 @dataclass(frozen=True)
@@ -55,18 +58,11 @@ class WaterDailyReportBatchResult:
 
 class WaterReportService:
     def try_acquire_today_report_cooldown(self, group_id: str) -> tuple[bool, int]:
-        if config.DEBUG:
-            return True, 0
-        now = monotonic()
-        expires_at = _today_report_group_cooldowns.get(group_id, 0.0)
-        if expires_at > now:
-            remain = max(1, int(expires_at - now))
-            return False, remain
-        _today_report_group_cooldowns[group_id] = now + TODAY_REPORT_COOLDOWN_SECONDS
-        return True, 0
+        result = _today_report_cooldown.acquire(group_id=group_id)
+        return result.acquired, result.remaining_seconds
 
     def clear_today_report_cooldowns(self) -> None:
-        _today_report_group_cooldowns.clear()
+        _today_report_cooldown.clear()
 
     async def build_group_report_message(
         self,

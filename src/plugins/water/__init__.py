@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from time import monotonic
 from typing import Any, cast
 
 from nonebot import get_bots, get_driver, on_message, on_notice, require
@@ -20,7 +19,7 @@ from nonebot.adapters.onebot.v11.event import (
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.internal.adapter import MessageTemplate
 from nonebot.matcher import Matcher
-from nonebot.params import Arg, CommandArg, Depends
+from nonebot.params import Arg, CommandArg
 from nonebot.permission import SUPERUSER
 from nonebot.plugin import on_command
 from nonebot.rule import is_type
@@ -29,6 +28,11 @@ from nonebot.typing import T_State
 from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.cooldown import (
+    CooldownIsolateLevel,
+    MemoryCooldown,
+    build_cooldown_dependency,
+)
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.interaction import (
@@ -108,7 +112,10 @@ __plugin_meta__ = create_plugin_metadata(
 )
 
 _water_plugin_initialized = False
-_water_query_cooldowns: dict[str, float] = {}
+_water_query_cooldown = MemoryCooldown(
+    30,
+    isolate_level=CooldownIsolateLevel.USER,
+)
 GUIDED_MAX_ERRORS = 3
 WATER_STEP_SUBJECT = 1
 WATER_STEP_SCOPE = 2
@@ -120,42 +127,43 @@ def water_query_cooldown(
     *,
     skip_today_report: bool = False,
 ) -> Any:
-    async def dependency(matcher: Matcher, event: MessageEvent) -> None:
-        if config.DEBUG:
-            return
-        if matcher.get_target():
-            return
-        if skip_today_report:
-            raw_message = getattr(event, "raw_message", "").strip()
-            text = raw_message
-            if text.startswith(("#", "/", "＃", "井")):
-                text = text[1:].strip()
-            if text.startswith("水王"):
-                text = text.removeprefix("水王").strip()
-            if "".join(text.split()) in {
-                "今日报告",
-                "今日報告",
-                "水王日报",
-                "水王日報",
-                "日报",
-                "日報",
-            }:
-                return
-        try:
-            user_id = event.get_user_id()
-        except Exception:
-            return
+    store = (
+        _water_query_cooldown
+        if cooldown == _water_query_cooldown.cooldown
+        else MemoryCooldown(cooldown, isolate_level=CooldownIsolateLevel.USER)
+    )
 
-        now = monotonic()
-        expires_at = _water_query_cooldowns.get(user_id, 0.0)
-        if expires_at > now:
-            locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-            await matcher.finish(
-                tr(locale, "water.common.cooldown", seconds=int(cooldown))
-            )
-        _water_query_cooldowns[user_id] = now + cooldown
+    async def prompt_builder(event: MessageEvent, remaining_seconds: int) -> str:
+        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+        return tr(locale, "water.common.cooldown", seconds=remaining_seconds)
 
-    return Depends(dependency)
+    async def bypass_checker(event: MessageEvent) -> bool:
+        if not skip_today_report:
+            return False
+        raw_message = getattr(event, "raw_message", "").strip()
+        text = raw_message
+        if text.startswith(("#", "/", "＃", "井")):
+            text = text[1:].strip()
+        if text.startswith("水王"):
+            text = text.removeprefix("水王").strip()
+        return "".join(text.split()) in {
+            "今日报告",
+            "今日報告",
+            "水王日报",
+            "水王日報",
+            "日报",
+            "日報",
+        }
+
+    return build_cooldown_dependency(
+        store,
+        prompt_builder=prompt_builder,
+        bypass_checker=bypass_checker if skip_today_report else None,
+    )
+
+
+def clear_water_query_cooldowns() -> None:
+    _water_query_cooldown.clear()
 
 
 def _is_water_superuser(event: MessageEvent) -> bool:

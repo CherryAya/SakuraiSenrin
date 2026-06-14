@@ -32,7 +32,7 @@ MULTI_IMAGE_PROMPT = Message(
 
 @pytest.mark.asyncio
 async def test_picsearch_requires_reply_image(app: App) -> None:
-    picsearch_handlers._picsearch_cooldowns.clear()
+    picsearch_handlers.clear_picsearch_cooldowns()
     event = build_group_message_event("搜图")
 
     async with app.test_matcher(picsearch_matcher) as ctx:
@@ -51,7 +51,7 @@ async def test_picsearch_single_image_uses_default_saucenao(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    picsearch_handlers._picsearch_cooldowns.clear()
+    picsearch_handlers.clear_picsearch_cooldowns()
     event = build_group_message_event("搜图", message_id=1)
     attach_reply_message(
         event,
@@ -112,7 +112,7 @@ async def test_picsearch_rejects_invalid_index_on_multi_image(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    picsearch_handlers._picsearch_cooldowns.clear()
+    picsearch_handlers.clear_picsearch_cooldowns()
     first = build_group_message_event("搜图 ascii2d", message_id=1)
     attach_reply_message(
         first,
@@ -142,7 +142,7 @@ async def test_picsearch_multi_image_ascii2d_success(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    picsearch_handlers._picsearch_cooldowns.clear()
+    picsearch_handlers.clear_picsearch_cooldowns()
     first = build_group_message_event("搜图 ascii2d", message_id=1)
     attach_reply_message(
         first,
@@ -225,7 +225,7 @@ async def test_picsearch_requires_saucenao_key(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    picsearch_handlers._picsearch_cooldowns.clear()
+    picsearch_handlers.clear_picsearch_cooldowns()
     event = build_group_message_event("搜图", message_id=1)
     attach_reply_message(
         event,
@@ -250,7 +250,7 @@ async def test_picsearch_handles_no_result(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    picsearch_handlers._picsearch_cooldowns.clear()
+    picsearch_handlers.clear_picsearch_cooldowns()
     event = build_group_message_event("搜图", message_id=1)
     attach_reply_message(
         event,

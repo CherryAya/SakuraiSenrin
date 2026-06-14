@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from time import monotonic
-
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.matcher import Matcher
 
+from src.lib.cooldown import CooldownIsolateLevel, MemoryCooldown
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.logger import logger
@@ -22,7 +21,10 @@ from .services import (
 )
 
 MAX_IMAGE_SELECTION = 3
-_picsearch_cooldowns: dict[str, float] = {}
+_picsearch_cooldown = MemoryCooldown(
+    30,
+    isolate_level=CooldownIsolateLevel.USER,
+)
 
 
 def extract_reply_image_urls(event: MessageEvent) -> list[str]:
@@ -83,15 +85,16 @@ def build_result_message(
 
 
 async def check_cooldown(matcher: Matcher, event: MessageEvent) -> None:
-    user_id = event.get_user_id()
-    now = monotonic()
-    expires_at = _picsearch_cooldowns.get(user_id, 0.0)
-    if expires_at > now:
+    result = _picsearch_cooldown.acquire_for_event(event)
+    if not result.acquired:
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         await matcher.finish(
-            tr(locale, "picsearch.cooldown", seconds=int(expires_at - now) or 1)
+            tr(locale, "picsearch.cooldown", seconds=result.remaining_seconds)
         )
-    _picsearch_cooldowns[user_id] = now + 30
+
+
+def clear_picsearch_cooldowns() -> None:
+    _picsearch_cooldown.clear()
 
 
 async def run_search(
