@@ -136,8 +136,8 @@ async def test_wordbank_add_command_pipeline_matches_after_approval(
     await _reset_wordbank_runtime()
     monkeypatch.setattr(
         wordbank_plugin,
-        "send_pending_approval_notice",
-        AsyncMock(return_value=None),
+        "schedule_pending_approval_notice",
+        lambda *args, **kwargs: None,
     )
     monkeypatch.setattr(
         wordbank_plugin,
