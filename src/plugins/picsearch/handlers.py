@@ -84,13 +84,12 @@ def build_result_message(
     return message
 
 
-async def check_cooldown(matcher: Matcher, event: MessageEvent) -> None:
-    result = _picsearch_cooldown.acquire_for_event(event)
-    if not result.acquired:
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        await matcher.finish(
-            tr(locale, "picsearch.cooldown", seconds=result.remaining_seconds)
-        )
+async def build_cooldown_prompt(
+    event: MessageEvent,
+    remaining_seconds: int,
+) -> str:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    return tr(locale, "picsearch.cooldown", seconds=remaining_seconds)
 
 
 def clear_picsearch_cooldowns() -> None:

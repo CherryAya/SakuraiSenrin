@@ -14,12 +14,15 @@ from nonebot.typing import T_State
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.cooldown import build_cooldown_dependency
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 
 from .handlers import (
+    _picsearch_cooldown,
+    build_cooldown_prompt,
     extract_reply_image_urls,
     parse_indexes,
     parse_request_text,
@@ -71,16 +74,20 @@ picsearch_matcher = on_regex(
 )
 
 
-@picsearch_matcher.handle()
+@picsearch_matcher.handle(
+    parameterless=[
+        build_cooldown_dependency(
+            _picsearch_cooldown,
+            prompt_builder=build_cooldown_prompt,
+        )
+    ]
+)
 async def _(
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
 ) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-    from .handlers import check_cooldown
-
-    await check_cooldown(matcher, event)
 
     image_urls = extract_reply_image_urls(event)
     if not image_urls:
