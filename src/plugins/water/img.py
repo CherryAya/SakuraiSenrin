@@ -718,7 +718,7 @@ async def build_water_group_report_image(
     group_rank_row_h = int(44 * scale)
     group_rank_row_gap = int(6 * scale)
     histogram_h = int(182 * scale)
-    footer_h = int(48 * scale)
+    footer_h = int(50 * scale)
 
     user_count = len(data.top_items)
     left_h = (
@@ -1271,39 +1271,19 @@ async def build_water_group_report_image(
     )
 
     y += histogram_h + gap
-    generated_at = arrow.get(data.generated_at).to("Asia/Shanghai")
-    footer_left = tr(locale, "water.image.period.footer")
-    card.draw_text(
-        (
-            pad,
-            y,
-            width - pad,
-            y + int(18 * scale),
-        ),
-        footer_left,
-        max_fontsize=int(10 * scale),
-        min_fontsize=int(8 * scale),
-        fill=hint,
-        halign="left",
-        font_families=[SYS_FONT_NAME],
-    )
-    card.draw_text(
-        (
-            pad,
-            y + int(18 * scale),
-            width - pad,
-            y + footer_h,
-        ),
-        tr(
-            locale,
-            "water.image.generated_at",
-            time=generated_at.format("YYYY-MM-DD HH:mm:ss"),
-        ),
-        max_fontsize=int(10 * scale),
-        min_fontsize=int(8 * scale),
-        fill=accent,
-        halign="left",
-        font_families=[SYS_FONT_NAME],
+    _draw_report_footer(
+        card,
+        locale=locale,
+        generated_at=data.generated_at,
+        footer_text=tr(locale, "water.image.period.footer"),
+        width=width,
+        pad=pad,
+        top=y,
+        footer_h=footer_h,
+        scale=scale,
+        copyright_color=hint,
+        time_color=accent,
+        footer_color=strong,
     )
 
     image = (await asyncio.to_thread(card.save, "PNG")).getvalue()
@@ -1533,6 +1513,64 @@ def _build_copyright_text(year: int) -> str:
     return f"© 2020-{year} SakuraiSenrin"
 
 
+def _draw_report_footer(
+    card: BuildImage,
+    *,
+    locale: LocaleCode,
+    generated_at: int,
+    footer_text: str,
+    width: int,
+    pad: int,
+    top: int,
+    footer_h: int,
+    scale: float,
+    copyright_color: str,
+    time_color: str,
+    footer_color: str,
+) -> None:
+    footer_time = (
+        arrow.get(generated_at).to("Asia/Shanghai")
+        if generated_at > 0
+        else arrow.get(get_current_time()).to("Asia/Shanghai")
+    )
+    copyright_bottom = top + int(14 * scale)
+    generated_at_bottom = top + int(28 * scale)
+    card.draw_text(
+        (0, top, width, copyright_bottom),
+        _build_copyright_text(footer_time.year),
+        max_fontsize=int(10 * scale),
+        min_fontsize=int(8 * scale),
+        fill=copyright_color,
+        halign="center",
+        valign="center",
+        font_families=[SYS_FONT_NAME],
+    )
+    card.draw_text(
+        (pad, copyright_bottom, width - pad, generated_at_bottom),
+        tr(
+            locale,
+            "water.image.generated_at",
+            time=footer_time.format("YYYY-MM-DD HH:mm:ss"),
+        ),
+        max_fontsize=int(10 * scale),
+        min_fontsize=int(8 * scale),
+        fill=time_color,
+        halign="left",
+        valign="center",
+        font_families=[SYS_FONT_NAME],
+    )
+    card.draw_text(
+        (0, generated_at_bottom, width, top + footer_h),
+        footer_text,
+        max_fontsize=int(11 * scale),
+        min_fontsize=int(8 * scale),
+        fill=footer_color,
+        halign="center",
+        valign="center",
+        font_families=[SYS_FONT_NAME],
+    )
+
+
 def _draw_progress_bar(
     card: BuildImage,
     x: int,
@@ -1749,11 +1787,11 @@ async def build_water_period_rank_image(
         width = int(760 * scale)
         pad = int(24 * scale)
         gap = int(12 * scale)
-        hero_h = int(144 * scale)
-        champion_h = int(128 * scale)
+        hero_h = int(160 * scale)
+        champion_h = int(130 * scale)
         tiles_h = int(152 * scale)
         overview_h = int(168 * scale)
-        footer_h = int(42 * scale)
+        footer_h = int(50 * scale)
         row_h = int(86 * scale)
         row_gap = int(8 * scale)
         board_header_h = int(34 * scale)
@@ -1823,15 +1861,15 @@ async def build_water_period_rank_image(
             radius=int(20 * scale),
             fill=hero_bg,
         )
-        _draw_gloss_lines(
-            card,
-            pad,
-            y,
-            width - pad * 2,
-            hero_h,
-            tone="#FFF6FA",
-            strength=0.85,
-        )
+        # _draw_gloss_lines(
+        #     card,
+        #     pad,
+        #     y,
+        #     width - pad * 2,
+        #     hero_h,
+        #     tone="#FFF6FA",
+        #     strength=0.85,
+        # )
         card.draw_text(
             (
                 pad + int(18 * scale),
@@ -1929,7 +1967,7 @@ async def build_water_period_rank_image(
         for idx, (label, value, value_color, bg) in enumerate(stats):
             sx = pad + int(18 * scale) + idx * (stat_w + stat_gap)
             card.draw_rounded_rectangle(
-                (sx, stat_top, sx + stat_w, y + hero_h - int(18 * scale)),
+                (sx, stat_top, sx + stat_w, y + hero_h - int(15 * scale)),
                 radius=int(12 * scale),
                 fill=bg,
             )
@@ -1948,7 +1986,7 @@ async def build_water_period_rank_image(
                 font_families=[SYS_FONT_NAME],
             )
             card.draw.text(
-                (sx + int(10 * scale), stat_top + int(50 * scale)),
+                (sx + int(13 * scale), stat_top + int(37 * scale)),
                 value,
                 fill=value_color,
                 font=stat_value_font,
@@ -1962,15 +2000,15 @@ async def build_water_period_rank_image(
             radius=int(20 * scale),
             fill=panel_bg,
         )
-        _draw_gloss_lines(
-            card,
-            pad,
-            y,
-            width - pad * 2,
-            champion_h,
-            tone="#FFF7FB",
-            strength=0.82,
-        )
+        # _draw_gloss_lines(
+        #     card,
+        #     pad,
+        #     y,
+        #     width - pad * 2,
+        #     champion_h,
+        #     tone="#FFF7FB",
+        #     strength=0.82,
+        # )
         avatar_size = int(88 * scale)
         avatar_x = pad + int(18 * scale)
         avatar_y = y + int(18 * scale)
@@ -2139,15 +2177,15 @@ async def build_water_period_rank_image(
             radius=int(20 * scale),
             fill=panel_soft_bg,
         )
-        _draw_gloss_lines(
-            card,
-            pad,
-            y,
-            width - pad * 2,
-            board_h,
-            tone="#FFF6FA",
-            strength=0.8,
-        )
+        # _draw_gloss_lines(
+        #     card,
+        #     pad,
+        #     y,
+        #     width - pad * 2,
+        #     board_h,
+        #     tone="#FFF6FA",
+        #     strength=0.8,
+        # )
         card.draw_text(
             (
                 pad + int(18 * scale),
@@ -2555,39 +2593,19 @@ async def build_water_period_rank_image(
         else:
             y += group_rank_h + gap
 
-        generated_at = arrow.get(data.generated_at).to("Asia/Shanghai")
-        footer_left = tr(locale, "water.image.period.footer")
-        card.draw_text(
-            (
-                pad,
-                y,
-                width - pad,
-                y + int(18 * scale),
-            ),
-            footer_left,
-            max_fontsize=int(10 * scale),
-            min_fontsize=int(8 * scale),
-            fill=hint,
-            halign="left",
-            font_families=[SYS_FONT_NAME],
-        )
-        card.draw_text(
-            (
-                pad,
-                y + int(18 * scale),
-                width - pad,
-                y + footer_h,
-            ),
-            tr(
-                locale,
-                "water.image.generated_at",
-                time=generated_at.format("YYYY-MM-DD HH:mm:ss"),
-            ),
-            max_fontsize=int(10 * scale),
-            min_fontsize=int(8 * scale),
-            fill=accent,
-            halign="left",
-            font_families=[SYS_FONT_NAME],
+        _draw_report_footer(
+            card,
+            locale=locale,
+            generated_at=data.generated_at,
+            footer_text=tr(locale, "water.image.period.footer"),
+            width=width,
+            pad=pad,
+            top=y,
+            footer_h=footer_h,
+            scale=scale,
+            copyright_color=hint,
+            time_color=accent,
+            footer_color=strong,
         )
         image = (await asyncio.to_thread(card.save, "PNG")).getvalue()
         logger.debug(
