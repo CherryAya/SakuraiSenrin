@@ -154,6 +154,29 @@ class WaterGroupReportMember:
 
 
 @dataclass(frozen=True)
+class WaterGroupDailyRankItem:
+    group_id: str
+    msg_count: int
+    active_user_count: int
+    active_hours: int
+    hourly_counts: list[int]
+    current_rank: int
+    trend: int | None
+
+
+@dataclass(frozen=True)
+class WaterGroupDailyRankSnapshot:
+    focus_group_id: str
+    record_date: int
+    total_groups: int
+    focus_rank: int
+    focus_trend: int | None
+    leaderboard: list[WaterGroupDailyRankItem]
+    has_hidden_before: bool
+    has_hidden_after: bool
+
+
+@dataclass(frozen=True)
 class WaterGroupReportSnapshot:
     group_id: str
     record_date: int
@@ -1488,6 +1511,37 @@ class WaterRepository:
             limit=limit,
         )
 
+    async def get_group_daily_rank_snapshot(
+        self,
+        *,
+        group_id: str,
+        record_date: int,
+        working_group_ids: Sequence[str],
+        radius: int = 2,
+    ) -> WaterGroupDailyRankSnapshot | None:
+        if not working_group_ids or group_id not in working_group_ids:
+            return None
+        previous_date = self._previous_date(record_date)
+        current_rows, previous_rows = await asyncio.gather(
+            self.get_summaries_in_window(
+                record_date,
+                record_date,
+                group_ids=list(working_group_ids),
+            ),
+            self.get_summaries_in_window(
+                previous_date,
+                previous_date,
+                group_ids=list(working_group_ids),
+            ),
+        )
+        return self._build_group_daily_rank_snapshot_from_rows(
+            focus_group_id=group_id,
+            record_date=record_date,
+            current_rows=current_rows,
+            previous_rows=previous_rows,
+            radius=radius,
+        )
+
     def _build_group_report_snapshot_from_rows(
         self,
         *,
@@ -1568,6 +1622,113 @@ class WaterRepository:
             previous_active_hours=sum(1 for count in previous_hourly if count > 0),
             previous_hourly_counts=previous_hourly,
             leaderboard=leaderboard,
+        )
+
+    def _build_group_daily_rank_snapshot_from_rows(
+        self,
+        *,
+        focus_group_id: str,
+        record_date: int,
+        current_rows: Sequence[WaterSummaryRecord],
+        previous_rows: Sequence[WaterSummaryRecord],
+        radius: int,
+    ) -> WaterGroupDailyRankSnapshot | None:
+        if not current_rows:
+            return None
+
+        current_aggregates = self._build_entity_period_aggregates(
+            current_rows,
+            lambda item: item.group_id,
+        )
+        if focus_group_id not in current_aggregates:
+            return None
+
+        group_active_users: dict[str, set[str]] = defaultdict(set)
+        group_hourly_counts: dict[str, list[int]] = defaultdict(lambda: [0] * 24)
+        for row in current_rows:
+            group_id = str(row.group_id)
+            group_active_users[group_id].add(str(row.user_id))
+            hourly_counts = group_hourly_counts[group_id]
+            for hour, count in enumerate(row.hourly_counts):
+                hourly_counts[hour] += int(count)
+
+        previous_aggregates = self._build_entity_period_aggregates(
+            previous_rows,
+            lambda item: item.group_id,
+        )
+
+        ordered_current = sorted(
+            (
+                (
+                    entity_id,
+                    msg_count,
+                    active_days,
+                    active_hours,
+                    hourly_counts,
+                    group_count,
+                )
+                for entity_id, (
+                    msg_count,
+                    active_days,
+                    active_hours,
+                    hourly_counts,
+                    group_count,
+                ) in current_aggregates.items()
+            ),
+            key=self._natural_rank_sort_key,
+        )
+        previous_ranks = self._build_previous_rank_map(
+            previous_aggregates,
+            [entity_id for entity_id, *_rest in ordered_current],
+        )
+        items = [
+            WaterGroupDailyRankItem(
+                group_id=entity_id,
+                msg_count=msg_count,
+                active_user_count=len(group_active_users.get(entity_id, set())),
+                active_hours=sum(
+                    1 for count in group_hourly_counts.get(entity_id, [0] * 24) if count
+                ),
+                hourly_counts=group_hourly_counts.get(entity_id, hourly_counts),
+                current_rank=current_rank,
+                trend=(
+                    previous_ranks[entity_id] - current_rank
+                    if entity_id in previous_ranks
+                    else None
+                ),
+            )
+            for current_rank, (
+                entity_id,
+                msg_count,
+                _active_days,
+                _active_hours,
+                hourly_counts,
+                _group_count,
+            ) in enumerate(ordered_current, 1)
+        ]
+        focus_index = next(
+            (
+                index
+                for index, item in enumerate(items)
+                if item.group_id == focus_group_id
+            ),
+            None,
+        )
+        if focus_index is None:
+            return None
+
+        start = max(0, focus_index - radius)
+        end = min(len(items), focus_index + radius + 1)
+        focus_item = items[focus_index]
+        return WaterGroupDailyRankSnapshot(
+            focus_group_id=focus_group_id,
+            record_date=record_date,
+            total_groups=len(items),
+            focus_rank=focus_item.current_rank,
+            focus_trend=focus_item.trend,
+            leaderboard=items[start:end],
+            has_hidden_before=start > 0,
+            has_hidden_after=end < len(items),
         )
 
     async def _build_rank_entity_aggregates(

@@ -99,9 +99,9 @@ class WaterPeriodRankCardData:
     top_items: list[WaterRankCardItem]
     champion_gap: int
     champion_share: float
-    report_tile_title: str = tr("zh-CN", "water.report.tiles.title")
-    report_tile_subtitle: str = tr("zh-CN", "water.report.tiles.subtitle")
-    report_group_rank_title: str = tr("zh-CN", "water.report.group_rank.title")
+    report_tile_title: str = ""
+    report_tile_subtitle: str = ""
+    report_group_rank_title: str = ""
     report_group_rank_summary: str = ""
     report_group_rank_items: list["WaterGroupDailyRankCardItem"] | None = None
     report_group_rank_has_hidden_before: bool = False
@@ -1099,6 +1099,7 @@ async def build_water_period_rank_image(
         group_rank_header_h = int(34 * scale)
         group_rank_row_h = int(42 * scale)
         group_rank_row_gap = int(6 * scale)
+        show_tiles = bool(data.report_tile_title)
         board_h = (
             board_header_h
             + int(12 * scale)
@@ -1107,6 +1108,7 @@ async def build_water_period_rank_image(
             + int(16 * scale)
         )
         group_rank_items = data.report_group_rank_items or []
+        visible_tiles_h = tiles_h if show_tiles else 0
         hidden_rows = int(data.report_group_rank_has_hidden_before) + int(
             data.report_group_rank_has_hidden_after
         )
@@ -1124,8 +1126,8 @@ async def build_water_period_rank_image(
             + hero_h
             + gap
             + champion_h
-            + gap
-            + tiles_h
+            + (gap if show_tiles else 0)
+            + visible_tiles_h
             + gap
             + board_h
             + (gap if group_rank_h else 0)
@@ -1418,55 +1420,58 @@ async def build_water_period_rank_image(
                 font_families=[SYS_FONT_NAME],
             )
 
-        y += champion_h + gap
-        card.draw_rounded_rectangle(
-            (pad, y, width - pad, y + tiles_h),
-            radius=int(20 * scale),
-            fill=panel_bg,
-        )
-        _draw_gloss_lines(
-            card,
-            pad,
-            y,
-            width - pad * 2,
-            tiles_h,
-            tone="#FFF7FB",
-            strength=0.82,
-        )
-        card.draw_text(
-            (
-                pad + int(18 * scale),
-                y + int(10 * scale),
-                width - pad,
-                y + int(34 * scale),
-            ),
-            data.report_tile_title,
-            max_fontsize=int(18 * scale),
-            min_fontsize=int(12 * scale),
-            fill=deep,
-            halign="left",
-            font_families=[SYS_FONT_NAME],
-        )
-        card.draw_text(
-            (
-                pad + int(18 * scale),
-                y + int(34 * scale),
-                width - pad,
-                y + int(54 * scale),
-            ),
-            data.report_tile_subtitle,
-            max_fontsize=int(11 * scale),
-            min_fontsize=int(8 * scale),
-            fill=hint,
-            halign="left",
-            font_families=[SYS_FONT_NAME],
-        )
-        tile_chart = WaterRankRenderer()._generate_tile_chart(data.hourly_counts)
-        tile_x = (width - tile_chart.width) // 2
-        tile_y = y + int(64 * scale)
-        card.paste(tile_chart, (tile_x, tile_y), alpha=True)
+        y += champion_h
+        if show_tiles:
+            y += gap
+            card.draw_rounded_rectangle(
+                (pad, y, width - pad, y + tiles_h),
+                radius=int(20 * scale),
+                fill=panel_bg,
+            )
+            _draw_gloss_lines(
+                card,
+                pad,
+                y,
+                width - pad * 2,
+                tiles_h,
+                tone="#FFF7FB",
+                strength=0.82,
+            )
+            card.draw_text(
+                (
+                    pad + int(18 * scale),
+                    y + int(10 * scale),
+                    width - pad,
+                    y + int(34 * scale),
+                ),
+                data.report_tile_title,
+                max_fontsize=int(18 * scale),
+                min_fontsize=int(12 * scale),
+                fill=deep,
+                halign="left",
+                font_families=[SYS_FONT_NAME],
+            )
+            card.draw_text(
+                (
+                    pad + int(18 * scale),
+                    y + int(34 * scale),
+                    width - pad,
+                    y + int(54 * scale),
+                ),
+                data.report_tile_subtitle,
+                max_fontsize=int(11 * scale),
+                min_fontsize=int(8 * scale),
+                fill=hint,
+                halign="left",
+                font_families=[SYS_FONT_NAME],
+            )
+            tile_chart = WaterRankRenderer()._generate_tile_chart(data.hourly_counts)
+            tile_x = (width - tile_chart.width) // 2
+            tile_y = y + int(64 * scale)
+            card.paste(tile_chart, (tile_x, tile_y), alpha=True)
+            y += tiles_h
 
-        y += tiles_h + gap
+        y += gap
         card.draw_rounded_rectangle(
             (pad, y, width - pad, y + board_h),
             radius=int(20 * scale),

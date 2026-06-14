@@ -11,7 +11,11 @@ from src.plugins.water.database.repo import (
     NaturalRankItem,
     NaturalRankOverview,
 )
-from src.plugins.water.img import WaterPeriodRankCardData, WaterRankCardItem
+from src.plugins.water.img import (
+    WaterGroupDailyRankCardItem,
+    WaterPeriodRankCardData,
+    WaterRankCardItem,
+)
 from src.plugins.water.services.rank import WaterRankService
 from src.plugins.water.services.rank_query import water_rank_query_service
 from src.plugins.water.services.rank_types import (
@@ -547,6 +551,69 @@ async def test_build_water_period_rank_image_smoke() -> None:
                 current_rank=2,
                 trend=-1,
             ),
+        ],
+        champion_gap=30,
+        champion_share=120 / 420,
+        report_tile_title="本群当日瓷砖图",
+        report_tile_subtitle="24 小时活跃分布",
+        report_group_rank_title="群聊当日排名",
+        report_group_rank_summary="本群当前排名 #3 / 12 · 较昨日 +1",
+        report_group_rank_items=[
+            WaterGroupDailyRankCardItem(
+                group_id="20001",
+                display_name="测试群",
+                msg_count=120,
+                current_rank=3,
+                trend=1,
+            ),
+            WaterGroupDailyRankCardItem(
+                group_id="20002",
+                display_name="隔壁群",
+                msg_count=98,
+                current_rank=4,
+                trend=-1,
+            ),
+        ],
+        report_group_rank_has_hidden_before=True,
+        report_group_rank_has_hidden_after=True,
+    )
+
+    from src.plugins.water.img import build_water_period_rank_image
+
+    img = await build_water_period_rank_image(data, "zh-CN")
+
+    assert img is not None
+    assert img.startswith(b"\x89PNG")
+
+
+@pytest.mark.asyncio
+async def test_build_water_period_rank_image_without_report_rank_block() -> None:
+    avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
+    data = WaterPeriodRankCardData(
+        period="month",
+        title="用户榜 · 本群月榜",
+        badge="2026.05",
+        range_text="2026.05.01 - 2026.05.23",
+        compare_text="对比区间 2026.04.01 - 2026.04.23",
+        generated_at=1_747_960_000,
+        total_msg_count=420,
+        active_entity_count=66,
+        hourly_counts=[(idx % 6) + 1 for idx in range(24)],
+        peak_hour=5,
+        previous_total_msg_count=390,
+        top_items=[
+            WaterRankCardItem(
+                entity_id="10001",
+                display_name="Alice",
+                secondary_label="用户 10001",
+                avatar=avatar,
+                msg_count=120,
+                active_days=15,
+                active_hours=28,
+                hourly_counts=[(idx % 5) + 1 for idx in range(24)],
+                current_rank=1,
+                trend=3,
+            )
         ],
         champion_gap=30,
         champion_share=120 / 420,

@@ -1315,3 +1315,134 @@ async def test_get_group_activity_rank_uses_group_stats_table(
 
     assert rank == 7
     stats_mock.assert_awaited_once_with("20001")
+
+
+def test_build_group_daily_rank_snapshot_from_rows_keeps_focus_window() -> None:
+    repo = WaterRepository()
+    current_rows = [
+        WaterSummaryRecord(
+            group_id=f"2000{idx}",
+            user_id=f"1000{idx}",
+            record_date=20260613,
+            msg_count=60 - idx * 5,
+            active_hours=idx + 2,
+            hourly_counts=[1 if hour == idx else 0 for hour in range(24)],
+            created_at=1,
+            updated_at=2,
+        )
+        for idx in range(1, 8)
+    ]
+    previous_rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260612,
+            msg_count=65,
+            active_hours=4,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20002",
+            user_id="10002",
+            record_date=20260612,
+            msg_count=50,
+            active_hours=4,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20004",
+            user_id="10004",
+            record_date=20260612,
+            msg_count=55,
+            active_hours=4,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+    ]
+
+    snapshot = repo._build_group_daily_rank_snapshot_from_rows(
+        focus_group_id="20004",
+        record_date=20260613,
+        current_rows=current_rows,
+        previous_rows=previous_rows,
+        radius=2,
+    )
+
+    assert snapshot is not None
+    assert snapshot.total_groups == 7
+    assert snapshot.focus_rank == 4
+    assert snapshot.focus_trend == -2
+    assert snapshot.has_hidden_before is True
+    assert snapshot.has_hidden_after is True
+    assert [item.group_id for item in snapshot.leaderboard] == [
+        "20002",
+        "20003",
+        "20004",
+        "20005",
+        "20006",
+    ]
+    focus_item = next(item for item in snapshot.leaderboard if item.group_id == "20004")
+    assert focus_item.active_user_count == 1
+    assert focus_item.active_hours == 1
+
+
+def test_build_group_daily_rank_snapshot_from_rows_handles_top_edge() -> None:
+    repo = WaterRepository()
+    current_rows = [
+        WaterSummaryRecord(
+            group_id=f"3000{idx}",
+            user_id=f"1000{idx}",
+            record_date=20260613,
+            msg_count=50 - idx,
+            active_hours=3,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        )
+        for idx in range(1, 5)
+    ]
+
+    snapshot = repo._build_group_daily_rank_snapshot_from_rows(
+        focus_group_id="30001",
+        record_date=20260613,
+        current_rows=current_rows,
+        previous_rows=[],
+        radius=2,
+    )
+
+    assert snapshot is not None
+    assert snapshot.focus_rank == 1
+    assert snapshot.has_hidden_before is False
+    assert snapshot.has_hidden_after is True
+    assert [item.current_rank for item in snapshot.leaderboard] == [1, 2, 3]
+
+
+def test_group_daily_rank_snapshot_returns_none_when_focus_missing() -> None:
+    repo = WaterRepository()
+    current_rows = [
+        WaterSummaryRecord(
+            group_id="40001",
+            user_id="10001",
+            record_date=20260613,
+            msg_count=20,
+            active_hours=2,
+            hourly_counts=[0] * 24,
+            created_at=1,
+            updated_at=2,
+        )
+    ]
+
+    snapshot = repo._build_group_daily_rank_snapshot_from_rows(
+        focus_group_id="49999",
+        record_date=20260613,
+        current_rows=current_rows,
+        previous_rows=[],
+        radius=2,
+    )
+
+    assert snapshot is None

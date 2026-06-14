@@ -19,9 +19,11 @@ from src.logger import logger
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo import (
     WaterDailyReportCandidate,
+    WaterGroupDailyRankSnapshot,
     WaterGroupReportSnapshot,
 )
 from src.plugins.water.img import (
+    WaterGroupDailyRankCardItem,
     WaterPeriodRankCardData,
     WaterRankCardItem,
     build_water_period_rank_image,
@@ -256,6 +258,10 @@ class WaterReportService:
         locale: LocaleCode,
     ) -> WaterPeriodRankCardData:
         top_items = await self._build_view_items(snapshot, locale)
+        group_rank_snapshot = await self._build_group_rank_snapshot(snapshot)
+        group_rank_items = await self._build_group_rank_items(
+            group_rank_snapshot,
+        )
         champion = top_items[0]
         group_name = await resolve_group_name(None, snapshot.group_id)
         title = (
@@ -309,6 +315,24 @@ class WaterReportService:
                 champion.msg_count / snapshot.total_msg_count
                 if snapshot.total_msg_count > 0
                 else 0.0
+            ),
+            report_tile_title=tr(locale, "water.report.tiles.title"),
+            report_tile_subtitle=tr(locale, "water.report.tiles.subtitle"),
+            report_group_rank_title=tr(locale, "water.report.group_rank.title"),
+            report_group_rank_summary=self._build_group_rank_summary(
+                group_rank_snapshot,
+                locale,
+            ),
+            report_group_rank_items=group_rank_items,
+            report_group_rank_has_hidden_before=(
+                group_rank_snapshot.has_hidden_before
+                if group_rank_snapshot is not None
+                else False
+            ),
+            report_group_rank_has_hidden_after=(
+                group_rank_snapshot.has_hidden_after
+                if group_rank_snapshot is not None
+                else False
             ),
             entity_label=tr(locale, "water.report.entity_label"),
             champion_summary_label=tr_template(locale, "water.report.champion.summary"),
@@ -376,6 +400,57 @@ class WaterReportService:
         if value > 0:
             return f"+{value}"
         return str(value)
+
+    async def _build_group_rank_snapshot(
+        self,
+        snapshot: WaterGroupReportSnapshot,
+    ) -> WaterGroupDailyRankSnapshot | None:
+        working_group_ids = await group_repo.get_working_group_ids()
+        return await water_repo.get_group_daily_rank_snapshot(
+            group_id=snapshot.group_id,
+            record_date=snapshot.record_date,
+            working_group_ids=working_group_ids,
+        )
+
+    async def _build_group_rank_items(
+        self,
+        snapshot: WaterGroupDailyRankSnapshot | None,
+    ) -> list[WaterGroupDailyRankCardItem] | None:
+        if snapshot is None:
+            return None
+        names = await asyncio.gather(
+            *(resolve_group_name(None, item.group_id) for item in snapshot.leaderboard)
+        )
+        return [
+            WaterGroupDailyRankCardItem(
+                group_id=item.group_id,
+                display_name=names[idx],
+                msg_count=item.msg_count,
+                current_rank=item.current_rank,
+                trend=item.trend,
+            )
+            for idx, item in enumerate(snapshot.leaderboard)
+        ]
+
+    def _build_group_rank_summary(
+        self,
+        snapshot: WaterGroupDailyRankSnapshot | None,
+        locale: LocaleCode,
+    ) -> str:
+        if snapshot is None:
+            return ""
+        trend_text = (
+            tr(locale, "water.report.group_rank.new")
+            if snapshot.focus_trend is None
+            else self._format_delta(snapshot.focus_trend)
+        )
+        return tr(
+            locale,
+            "water.report.group_rank.summary",
+            rank=snapshot.focus_rank,
+            total_groups=snapshot.total_groups,
+            trend=trend_text,
+        )
 
 
 def now_ts_or_current(now_ts: int | None) -> int:
