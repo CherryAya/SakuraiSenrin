@@ -309,6 +309,29 @@ async def test_passive_event_at_pipeline_uses_original_message_after_strip(
 
 
 @pytest.mark.asyncio
+async def test_passive_text_pipeline_uses_original_message_after_callme_strip(
+    app: App,
+) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_text("凛凛的妙妙小工具"),
+        response_text="完整原文命中",
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("的妙妙小工具", message_id=1)
+        event.message = Message("的妙妙小工具")
+        event.original_message = Message("凛凛的妙妙小工具")
+        event.raw_message = "凛凛的妙妙小工具"
+        event.to_me = True
+
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, Message("完整原文命中"), bot=bot)
+
+
+@pytest.mark.asyncio
 async def test_passive_invalid_call_count_window_does_not_break_matching(
     app: App,
 ) -> None:

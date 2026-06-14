@@ -7,6 +7,7 @@ import pytest
 
 from src.plugins.wordbank.handlers.passive import (
     PassiveImageRef,
+    build_message_match_shapes,
     build_passive_response,
     build_rule_context,
     handle_passive_message,
@@ -152,6 +153,54 @@ async def test_handle_passive_message_preserves_single_space_trigger() -> None:
     assert response.text == "空格触发"
     first_shape = match_message.await_args_list[0].args[0]
     assert first_shape == shape_from_text(" ", preserve_blank_text=True)
+
+
+@pytest.mark.asyncio
+async def test_handle_passive_message_tries_original_message_after_to_me_strip() -> (
+    None
+):
+    bot = cast(Bot, SimpleNamespace(self_id="99999"))
+    event = build_group_message_event("的妙妙小工具")
+    event.message = type(event.message)("的妙妙小工具")
+    event.original_message = type(event.message)("凛凛的妙妙小工具")
+    event.raw_message = "凛凛的妙妙小工具"
+    event.to_me = True
+    match_message = AsyncMock(side_effect=[None, _selected(response_text="完整命中")])
+    service = cast(
+        WordbankService,
+        SimpleNamespace(match_message=match_message),
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            resolve_canonical_id_from_hints=lambda _hints: None,
+            resolve_canonical_id=lambda _data, **_kwargs: None,
+        ),
+    )
+
+    response = await handle_passive_message(
+        bot,
+        event,
+        service,
+        media_service,
+    )
+
+    assert response is not None
+    assert response.text == "完整命中"
+    assert match_message.await_count == 2
+    assert match_message.await_args_list[0].args[0] == shape_from_text("的妙妙小工具")
+    assert match_message.await_args_list[1].args[0] == shape_from_text(
+        "凛凛的妙妙小工具"
+    )
+
+
+def test_build_message_match_shapes_deduplicates_same_message_sources() -> None:
+    event = build_group_message_event("晚安")
+    event.original_message = type(event.message)("晚安")
+
+    shapes = build_message_match_shapes(event, image_ids={})
+
+    assert shapes == (("message", shape_from_text("晚安")),)
 
 
 @pytest.mark.asyncio

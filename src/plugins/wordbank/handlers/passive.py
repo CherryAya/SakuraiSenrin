@@ -22,6 +22,7 @@ from src.plugins.wordbank.message_model import (
     MessageShape,
     shape_from_event,
     shape_from_message,
+    shape_to_payload,
 )
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.matching import SelectedMatch
@@ -71,7 +72,8 @@ def build_rule_context(event: MessageEvent | NoticeEvent) -> RuleContext:
 
 def extract_image_refs(event: MessageEvent) -> list[PassiveImageRef]:
     refs: list[PassiveImageRef] = []
-    for segment in event.message:
+    message = getattr(event, "original_message", None) or event.message
+    for segment in message:
         if segment.type != "image":
             continue
         url = str(segment.data.get("url") or "").strip()
@@ -90,6 +92,34 @@ def extract_image_refs(event: MessageEvent) -> list[PassiveImageRef]:
 
 def extract_image_urls(event: MessageEvent) -> list[str]:
     return [item.url for item in extract_image_refs(event)]
+
+
+def build_message_match_shapes(
+    event: MessageEvent,
+    *,
+    image_ids: dict[int, int],
+) -> tuple[tuple[str, MessageShape], ...]:
+    shapes: list[tuple[str, MessageShape]] = []
+    seen_keys: set[str] = set()
+    for source, message in (
+        ("message", getattr(event, "message", None)),
+        ("original_message", getattr(event, "original_message", None)),
+    ):
+        if message is None:
+            continue
+        shape = shape_from_message(
+            message,
+            image_ids=image_ids,
+            preserve_blank_text=True,
+        )
+        if shape.is_empty():
+            continue
+        key = shape_to_payload(shape)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        shapes.append((source, shape))
+    return tuple(shapes)
 
 
 def build_passive_response(
@@ -284,21 +314,28 @@ async def handle_passive_message(
     resolve_start = perf_start()
     image_ids = await resolve_message_image_ids(media_service, image_refs)
     resolve_elapsed = elapsed_ms(resolve_start)
-    message_shape = shape_from_message(
-        event.message,
-        image_ids=image_ids,
-        preserve_blank_text=True,
+    message_shapes = build_message_match_shapes(event, image_ids=image_ids)
+    primary_message_shape = (
+        message_shapes[0][1]
+        if message_shapes
+        else shape_from_message(
+            event.message,
+            image_ids=image_ids,
+            preserve_blank_text=True,
+        )
     )
     selected: SelectedMatch | None = None
     message_match_elapsed = 0.0
-    if not message_shape.is_empty():
+    attempted_message_sources: list[str] = []
+    for message_source, message_shape in message_shapes:
+        attempted_message_sources.append(message_source)
         match_start = perf_start()
         selected = await service.match_message(
             message_shape,
             context=context,
             message_type="message",
         )
-        message_match_elapsed = elapsed_ms(match_start)
+        message_match_elapsed += elapsed_ms(match_start)
         if selected is not None:
             log_perf(
                 "passive.handle_message.matched",
@@ -309,6 +346,8 @@ async def handle_passive_message(
                 resolved_images=len(image_ids),
                 shape_atoms=len(message_shape.atoms),
                 match_stage="message",
+                message_source=message_source,
+                message_attempts=len(attempted_message_sources),
                 message_match_ms=f"{message_match_elapsed:.2f}",
                 image_resolve_ms=f"{resolve_elapsed:.2f}",
                 response_item_id=selected.response.id,
@@ -339,8 +378,9 @@ async def handle_passive_message(
                     user_id=context.user_id,
                     image_refs=len(image_refs),
                     resolved_images=len(image_ids),
-                    shape_atoms=len(message_shape.atoms),
+                    shape_atoms=len(primary_message_shape.atoms),
                     match_stage=event_trigger,
+                    message_attempts=len(attempted_message_sources),
                     message_match_ms=f"{message_match_elapsed:.2f}",
                     event_match_ms=f"{event_match_elapsed:.2f}",
                     image_resolve_ms=f"{resolve_elapsed:.2f}",
@@ -358,7 +398,8 @@ async def handle_passive_message(
         user_id=context.user_id,
         image_refs=len(image_refs),
         resolved_images=len(image_ids),
-        shape_atoms=len(message_shape.atoms),
+        shape_atoms=len(primary_message_shape.atoms),
+        message_attempts=len(attempted_message_sources),
         message_match_ms=f"{message_match_elapsed:.2f}",
         image_resolve_ms=f"{resolve_elapsed:.2f}",
         event_triggers=event_match_count,

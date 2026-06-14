@@ -209,6 +209,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.error.guided_search_image_missing": "请发送一张图片作为搜索内容。",
     "wordbank.error.guided_search_creator_empty": "创建者搜索需要提供账号。",
     "wordbank.error.guided_search_page_out_of_range": "页码超出范围，请输入有效页码。",
+    "wordbank.error.search_field_invalid": "搜索范围无效，请使用 all、trigger 或 response。",
     "wordbank.error.trigger_empty": "触发词不能为空",
     "wordbank.error.response_empty": "响应词不能为空",
     "wordbank.error.entry_id_numeric": "词条 ID 必须是数字。",
