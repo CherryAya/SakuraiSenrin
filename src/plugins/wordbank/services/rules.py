@@ -51,6 +51,12 @@ def _rule_error(fallback: str, key: MessageKey, **params: object) -> RuleError:
     return RuleError(fallback, key=key, **params)
 
 
+def _default_i18n_text(key: MessageKey, **params: object) -> str:
+    from src.lib.i18n.runtime import tr
+
+    return tr("zh-CN", key, **params)
+
+
 class CallCountRule(TypedDict):
     window_seconds: int
     min: int
@@ -84,7 +90,10 @@ def _single_value(value: Any, field: str) -> Any:
         values = list(value)
         if len(values) != 1:
             raise _rule_error(
-                f"{field} 只能设置一个约束",
+                _default_i18n_text(
+                    "wordbank.error.single_constraint",
+                    field=field,
+                ),
                 "wordbank.error.single_constraint",
                 field=field,
             )
@@ -101,14 +110,17 @@ def _normalize_scope(value: Any, *, is_group: bool) -> Scope:
             return "self_in_current_group"
         if len(values) != 1:
             raise _rule_error(
-                "scope 只能设置一个生效范围",
+                _default_i18n_text("wordbank.error.scope_single"),
                 "wordbank.error.scope_single",
             )
         value = next(iter(values))
     scope = str(value).strip()
     if scope not in VALID_SCOPES:
         raise _rule_error(
-            f"不支持的生效范围: {scope}",
+            _default_i18n_text(
+                "wordbank.error.scope_unsupported",
+                scope=scope,
+            ),
             "wordbank.error.scope_unsupported",
             scope=scope,
         )
@@ -122,7 +134,10 @@ def _normalize_role(value: Any) -> Role:
     role = str(value).strip()
     if role not in VALID_ROLES:
         raise _rule_error(
-            f"不支持的角色限制: {role}",
+            _default_i18n_text(
+                "wordbank.error.role_unsupported",
+                role=role,
+            ),
             "wordbank.error.role_unsupported",
             role=role,
         )
@@ -137,12 +152,12 @@ def _normalize_probability(value: Any, *, short_trigger: bool) -> float:
         probability = float(value)
     except (TypeError, ValueError) as exc:
         raise _rule_error(
-            "概率必须是 0.0 到 1.0 之间的数字",
+            _default_i18n_text("wordbank.error.probability_invalid"),
             "wordbank.error.probability_invalid",
         ) from exc
     if probability < 0 or probability > 1:
         raise _rule_error(
-            "概率必须是 0.0 到 1.0 之间的数字",
+            _default_i18n_text("wordbank.error.probability_invalid"),
             "wordbank.error.probability_invalid",
         )
     return probability
@@ -172,7 +187,7 @@ def _normalize_call_count(value: Any) -> CallCountRule | None:
         return None
     if not isinstance(value, dict):
         raise _rule_error(
-            "调用次数窗口必须使用固定结构",
+            _default_i18n_text("wordbank.error.call_structure"),
             "wordbank.error.call_structure",
         )
     allowed = {"window_seconds", "min", "max"}
@@ -180,7 +195,10 @@ def _normalize_call_count(value: Any) -> CallCountRule | None:
     if unknown:
         fields = ", ".join(sorted(unknown))
         raise _rule_error(
-            f"调用次数窗口包含不支持字段: {fields}",
+            _default_i18n_text(
+                "wordbank.error.call_unknown",
+                fields=fields,
+            ),
             "wordbank.error.call_unknown",
             fields=fields,
         )
@@ -190,27 +208,27 @@ def _normalize_call_count(value: Any) -> CallCountRule | None:
         max_count = int(value.get("max", 0))
     except (TypeError, ValueError) as exc:
         raise _rule_error(
-            "调用次数窗口参数必须是整数",
+            _default_i18n_text("wordbank.error.call_integer"),
             "wordbank.error.call_integer",
         ) from exc
     if window_seconds <= 0:
         raise _rule_error(
-            "调用次数窗口必须大于 0 秒",
+            _default_i18n_text("wordbank.error.call_window_positive"),
             "wordbank.error.call_window_positive",
         )
     if window_seconds > MAX_CALL_COUNT_WINDOW_SECONDS:
         raise _rule_error(
-            "调用次数窗口不能超过 3 个月",
+            _default_i18n_text("wordbank.error.call_window_too_large"),
             "wordbank.error.call_window_too_large",
         )
     if min_count < 0 or max_count < 0:
         raise _rule_error(
-            "调用次数上下限不能小于 0",
+            _default_i18n_text("wordbank.error.call_non_negative"),
             "wordbank.error.call_non_negative",
         )
     if max_count and min_count > max_count:
         raise _rule_error(
-            "调用次数最小值不能大于最大值",
+            _default_i18n_text("wordbank.error.call_min_lte_max"),
             "wordbank.error.call_min_lte_max",
         )
     return {
@@ -232,7 +250,10 @@ def canonicalize_rule(
     if unknown:
         fields = ", ".join(sorted(unknown))
         raise _rule_error(
-            f"规则包含不支持字段: {fields}",
+            _default_i18n_text(
+                "wordbank.error.rule_unknown",
+                fields=fields,
+            ),
             "wordbank.error.rule_unknown",
             fields=fields,
         )
@@ -369,7 +390,7 @@ def parse_legacy_study_text(
             response = response.strip()
             if not trigger or not response:
                 raise _rule_error(
-                    "学习内容需要同时包含触发词和响应词",
+                    _default_i18n_text("wordbank.error.study_pair_required"),
                     "wordbank.error.study_pair_required",
                 )
             return trigger, response, {}
@@ -377,7 +398,7 @@ def parse_legacy_study_text(
         tokens = shlex.split(source)
     except ValueError as exc:
         raise _rule_error(
-            "学习格式: study 触发词 => 响应词",
+            _default_i18n_text("wordbank.error.study_format"),
             "wordbank.error.study_format",
         ) from exc
     if (
@@ -389,7 +410,7 @@ def parse_legacy_study_text(
         response = " ".join(tokens[3:]).strip()
         if not trigger or not response:
             raise _rule_error(
-                "学习内容需要同时包含触发词和响应词",
+                _default_i18n_text("wordbank.error.study_pair_required"),
                 "wordbank.error.study_pair_required",
             )
         return (
@@ -403,13 +424,13 @@ def parse_legacy_study_text(
         )
     if tokens and tokens[0].casefold() in {"a", "m"}:
         raise _rule_error(
-            "学习格式: study 触发词 => 响应词",
+            _default_i18n_text("wordbank.error.study_format"),
             "wordbank.error.study_format",
         )
     parts = source.split(maxsplit=1)
     if len(parts) == 2:
         return parts[0].strip(), parts[1].strip(), {}
     raise _rule_error(
-        "学习格式: study 触发词 => 响应词",
+        _default_i18n_text("wordbank.error.study_format"),
         "wordbank.error.study_format",
     )

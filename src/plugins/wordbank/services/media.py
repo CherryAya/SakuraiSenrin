@@ -993,7 +993,7 @@ class WordbankMediaService:
             except Exception as exc:
                 if self.remote_required:
                     raise MediaError(
-                        "图片远端存储失败",
+                        "图片文件不存在，无法发送词库图片回复。",
                         key="wordbank.error.image_storage_missing",
                     ) from exc
                 logger.warning(f"[Wordbank] remote media save fallback to local: {exc}")
@@ -1008,7 +1008,7 @@ class WordbankMediaService:
         elif remote_expected:
             if self.remote_required:
                 raise MediaError(
-                    "图片远端存储未配置",
+                    "图片文件不存在，无法发送词库图片回复。",
                     key="wordbank.error.image_storage_missing",
                 )
             remote_sync_status = REMOTE_SYNC_FAILED
