@@ -1041,9 +1041,8 @@ def _format_shortcut_section_lines(sections: Sequence[str]) -> list[str]:
         if ":" not in section:
             lines.append(f"    {section}")
             continue
-        title, commands = section.split(":", 1)
-        lines.append(f"    {title.strip()}:")
-        lines.append(f"      {commands.strip()}")
+        _, commands = section.split(":", 1)
+        lines.append(f"    {commands.strip()}")
     return lines
 
 
