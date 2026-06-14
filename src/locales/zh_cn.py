@@ -22,6 +22,7 @@ CATALOG: Final[dict[str, str]] = {
     "hook.processor.group_unauthorized": "群聊未授权",
     "hook.processor.group_all_shut": "群聊被全员禁言",
     "hook.processor.user_group_banned": "用户已被群组黑名单",
+    "db.map_reduce.month_span_exceeded": "目标超出 {max_months} 个月的最大范围",
     "docs.default.empty": "暂无说明",
     "docs.default.no_description": "暂无描述",
     "docs.default.trigger": "触发方式",

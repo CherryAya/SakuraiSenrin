@@ -171,12 +171,12 @@ def _normalize_weight(value: Any) -> int:
         weight = int(value)
     except (TypeError, ValueError) as exc:
         raise _rule_error(
-            "权重必须是 1 到 5 之间的整数",
+            _default_i18n_text("wordbank.error.weight_invalid"),
             "wordbank.error.weight_invalid",
         ) from exc
     if weight < 1 or weight > 5:
         raise _rule_error(
-            "权重必须是 1 到 5 之间的整数",
+            _default_i18n_text("wordbank.error.weight_invalid"),
             "wordbank.error.weight_invalid",
         )
     return weight

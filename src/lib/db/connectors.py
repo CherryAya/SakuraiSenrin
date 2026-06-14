@@ -474,8 +474,14 @@ class SegmentStore(BaseDB):
         # Store-level safety guard for generic shard scans. Business modules should
         # enforce their own narrower windows before reaching this layer.
         if months_span > MAX_MAP_REDUCE_MONTH_SPAN:
+            from src.lib.i18n.runtime import tr
+
             raise ValueError(
-                f"目标超出 {MAX_MAP_REDUCE_MONTH_SPAN} 个月的最大范围"
+                tr(
+                    "zh-CN",
+                    "db.map_reduce.month_span_exceeded",
+                    max_months=MAX_MAP_REDUCE_MONTH_SPAN,
+                )
             )
         keys: list[str] = []
         while curr <= end:

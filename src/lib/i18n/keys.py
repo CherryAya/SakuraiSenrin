@@ -101,6 +101,7 @@ MessageKey = Literal[
     "admin.user.unbanned",
     "admin.user.unknown_command",
     "admin.user.user_missing",
+    "db.map_reduce.month_span_exceeded",
     "docs.default.empty",
     "docs.default.no_description",
     "docs.default.passive",
@@ -704,7 +705,7 @@ MessageKey = Literal[
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 ]
 
 ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
@@ -806,6 +807,7 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "admin.user.unbanned",
     "admin.user.unknown_command",
     "admin.user.user_missing",
+    "db.map_reduce.month_span_exceeded",
     "docs.default.empty",
     "docs.default.no_description",
     "docs.default.passive",
@@ -1409,5 +1411,5 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 )
