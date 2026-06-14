@@ -826,6 +826,7 @@ class WordbankMediaService:
         cache_enabled: bool = True,
         remote_required: bool = False,
         remote_provider: str = "local",
+        remote_sync_mode: str = "deferred",
         prewarm_local_cache: bool = True,
         similarity_threshold: int = 8,
         candidate_limit: int = 128,
@@ -855,6 +856,7 @@ class WordbankMediaService:
         )
         self.remote_required = remote_required
         self.remote_provider = remote_provider.strip().lower()
+        self.remote_sync_mode = remote_sync_mode.strip().lower()
         self.prewarm_local_cache = prewarm_local_cache
         self.similarity_threshold = similarity_threshold
         self.candidate_limit = candidate_limit
@@ -867,6 +869,7 @@ class WordbankMediaService:
         self._dhash_tree: BKTree | None = None
         self._remote_load_locks: dict[int, asyncio.Lock] = {}
         self._cache_maintenance_lock = asyncio.Lock()
+        self._background_remote_sync_tasks: set[asyncio.Task[None]] = set()
 
     async def rebuild_cache(self) -> None:
         start = perf_start()
@@ -959,8 +962,13 @@ class WordbankMediaService:
         remote_object_size = 0
         storage_path = ""
         remote_expected = self._remote_expected()
+        remote_sync_deferred = (
+            self.remote_storage is not None
+            and not self.remote_required
+            and self.remote_sync_mode != "sync"
+        )
 
-        if self.remote_storage is not None:
+        if self.remote_storage is not None and not remote_sync_deferred:
             try:
                 remote_save_start = perf_start()
                 stored = await self.remote_storage.save_prepared_image(
@@ -990,6 +998,13 @@ class WordbankMediaService:
                     ) from exc
                 logger.warning(f"[Wordbank] remote media save fallback to local: {exc}")
                 remote_sync_status = REMOTE_SYNC_FAILED
+        elif remote_sync_deferred:
+            log_perf(
+                "media.ingest_image_bytes.remote_deferred",
+                md5=fingerprint.md5,
+                canonical_id=canonical_id or "new",
+                remote_provider=self.remote_provider or "unknown",
+            )
         elif remote_expected:
             if self.remote_required:
                 raise MediaError(
@@ -1038,16 +1053,17 @@ class WordbankMediaService:
         )
         create_ms = (perf_start() - create_start) * 1000
         self._cache_image(image)
-        if (
-            self.prewarm_local_cache
-            and self.remote_storage is not None
-            and image.remote_storage_path
-            and self.cache_storage.enabled
-        ):
+        if self.prewarm_local_cache and self.cache_storage.enabled:
             image = await self._store_cache_bytes(
                 image,
                 prepared.stored_media.data,
                 mark_as_hit=False,
+            )
+        if remote_sync_deferred:
+            self._schedule_background_remote_sync(
+                image,
+                prepared=prepared,
+                keep_original=keep_original,
             )
         log_perf(
             "media.ingest_image_bytes.done",
@@ -1060,9 +1076,103 @@ class WordbankMediaService:
             prepare_ms=f"{prepare_ms * 1000:.2f}",
             candidate_lookup_ms=f"{candidate_lookup_ms * 1000:.2f}",
             create_ms=f"{create_ms:.2f}",
-            storage="remote" if remote_storage_path else "local",
+            remote_sync_deferred=remote_sync_deferred,
+            storage=(
+                "remote"
+                if remote_storage_path
+                else "local_deferred_remote"
+                if remote_sync_deferred
+                else "local"
+            ),
         )
         return image
+
+    def _schedule_background_remote_sync(
+        self,
+        image: WordbankImageRecord,
+        *,
+        prepared: PreparedImage,
+        keep_original: bool,
+    ) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(
+            self._run_background_remote_sync(
+                image.id,
+                prepared=prepared,
+                keep_original=keep_original,
+            )
+        )
+        self._background_remote_sync_tasks.add(task)
+        task.add_done_callback(self._background_remote_sync_tasks.discard)
+
+    async def _run_background_remote_sync(
+        self,
+        image_id: int,
+        *,
+        prepared: PreparedImage,
+        keep_original: bool,
+    ) -> None:
+        if self.remote_storage is None:
+            return
+        image = self._by_id.get(image_id)
+        if image is None:
+            return
+        start = perf_start()
+        log_perf(
+            "media.remote_sync.background.begin",
+            image_id=image.id,
+            canonical_image_id=image.canonical_id,
+            md5=image.md5,
+            keep_original=keep_original,
+        )
+        try:
+            stored = await self.remote_storage.save_prepared_image(
+                prepared,
+                md5_hex=image.md5,
+                keep_original=keep_original,
+            )
+        except Exception as exc:
+            logger.warning(f"[Wordbank] background remote media sync failed: {exc}")
+            updated = await self._mark_remote_sync_failed(image)
+            log_perf(
+                "media.remote_sync.background.failed",
+                start=start,
+                updated=updated is not None,
+                image_id=image.id,
+                canonical_image_id=image.canonical_id,
+                md5=image.md5,
+            )
+            return
+
+        storage_path = (
+            image.storage_path
+            if image.storage_path and not _is_remote_uri(image.storage_path)
+            else stored.uri
+        )
+        updated = await self.repository.update_image_remote_sync(
+            image.id,
+            remote_storage_path=stored.uri,
+            remote_sync_status=REMOTE_SYNC_SYNCED,
+            remote_synced_at=get_current_time(),
+            remote_etag=stored.etag or "",
+            remote_object_size=stored.size,
+            storage_path=storage_path,
+        )
+        if updated is not None:
+            self._cache_image(updated)
+        log_perf(
+            "media.remote_sync.background.done",
+            start=start,
+            updated=updated is not None,
+            image_id=image.id,
+            canonical_image_id=image.canonical_id,
+            md5=image.md5,
+            remote_size=stored.size,
+            remote_storage_path=stored.uri,
+        )
 
     def _cache_image(self, image: WordbankImageRecord) -> None:
         existing = self._by_id.get(image.id)

@@ -79,7 +79,7 @@ from .handlers import (
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
     record_submission_approval_message,
-    send_pending_approval_notice,
+    schedule_pending_approval_notice,
 )
 from .handlers.commands import (
     ParsedSearch,
@@ -369,14 +369,6 @@ async def _finish_add_result(
     result: WordbankAddResult,
     locale: LocaleCode,
 ) -> None:
-    await send_pending_approval_notice(
-        bot,
-        wordbank_service,
-        event=event,
-        result=result,
-        locale=locale,
-        media_service=wordbank_media_service,
-    )
     send_result = await matcher.send(
         await build_add_result_message(
             result,
@@ -390,7 +382,22 @@ async def _finish_add_result(
         result=result,
         send_result=send_result,
     )
+    schedule_pending_approval_notice(
+        bot,
+        wordbank_service,
+        event=event,
+        result=result,
+        locale=locale,
+        media_service=wordbank_media_service,
+    )
     await matcher.finish()
+
+
+def _should_send_media_processing_notice(
+    *,
+    image_count: int,
+) -> bool:
+    return image_count > 0
 
 
 async def _notify_approval_source(
@@ -436,6 +443,8 @@ async def _handle_wordbank_command_message(
         _, _, rest = text.partition(" ")
         try:
             data = await fetch_first_image_bytes_from_message(arg)
+            if data is not None and _should_send_media_processing_notice(image_count=1):
+                await matcher.send(tr(locale, "wordbank.add.processing_with_media"))
             if data is not None:
                 result = await handle_add_with_media_result(
                     wordbank_service,

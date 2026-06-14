@@ -551,6 +551,7 @@ async def test_media_ingest_persists_remote_storage_path_for_new_images(
         media_root=tmp_path / "legacy",
         remote_storage=ObjectStorageWordbankMediaStorage(storage),
         cache_storage=LocalLruCacheWordbankMediaStorage(tmp_path / "cache"),
+        remote_sync_mode="sync",
     )
 
     image = await service.ingest_image_bytes(_png((1, 2, 3)))
@@ -559,6 +560,30 @@ async def test_media_ingest_persists_remote_storage_path_for_new_images(
     assert image.remote_sync_status == "synced"
     assert image.storage_path == image.remote_storage_path
     assert await asyncio.to_thread(Path(repo.images[0].local_cache_path).is_file)
+
+
+async def test_media_ingest_defers_remote_sync_and_keeps_local_storage_available(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    storage = _ObjectStorage()
+    service = WordbankMediaService(
+        repo,
+        media_root=tmp_path / "legacy",
+        remote_storage=ObjectStorageWordbankMediaStorage(storage),
+        legacy_storage=LocalWordbankMediaStorage(tmp_path / "legacy"),
+        cache_storage=LocalLruCacheWordbankMediaStorage(tmp_path / "cache"),
+        remote_sync_mode="deferred",
+    )
+
+    image = await service.ingest_image_bytes(_png((14, 15, 16)))
+    await asyncio.sleep(0)
+
+    assert image.remote_storage_path == ""
+    assert image.remote_sync_status == "pending"
+    assert await asyncio.to_thread(Path(image.storage_path).is_file)
+    assert storage.objects[f"wordbank/media/{image.md5}.webp"]
+    assert repo.images[0].remote_sync_status == "synced"
 
 
 async def test_media_ingest_marks_failed_when_expected_remote_is_unavailable(

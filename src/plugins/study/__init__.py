@@ -412,7 +412,7 @@ async def _finish_guided_study(
         build_add_result_message,
         handle_guided_study_shape_result,
         record_submission_approval_message,
-        send_pending_approval_notice,
+        schedule_pending_approval_notice,
     )
     from src.plugins.wordbank.handlers.commands import localize_command_error
     from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
@@ -442,14 +442,6 @@ async def _finish_guided_study(
             localize_command_error(exc, locale),
         )
         return
-    await send_pending_approval_notice(
-        bot,
-        wordbank_service,
-        event=event,
-        result=result,
-        locale=locale,
-        media_service=wordbank_media_service,
-    )
     send_result = await matcher.send(
         await build_add_result_message(
             result,
@@ -462,6 +454,14 @@ async def _finish_guided_study(
         event=event,
         result=result,
         send_result=send_result,
+    )
+    schedule_pending_approval_notice(
+        bot,
+        wordbank_service,
+        event=event,
+        result=result,
+        locale=locale,
+        media_service=wordbank_media_service,
     )
     await matcher.finish()
 
@@ -503,7 +503,7 @@ async def _(
         fetch_image_bytes_from_message,
         handle_study_with_media_result,
         record_submission_approval_message,
-        send_pending_approval_notice,
+        schedule_pending_approval_notice,
     )
     from src.plugins.wordbank.handlers.commands import localize_command_error
     from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
@@ -540,6 +540,8 @@ async def _(
     await wordbank_service.initialize()
     try:
         image_items = await fetch_image_bytes_from_message(arg, limit=2)
+        if image_items:
+            await matcher.send(tr(locale, "wordbank.add.processing_with_media"))
         result = await handle_study_with_media_result(
             wordbank_service,
             wordbank_media_service,
@@ -551,14 +553,6 @@ async def _(
     except (RuleError, ValueError) as exc:
         await matcher.finish(localize_command_error(exc, locale))
         return
-    await send_pending_approval_notice(
-        bot,
-        wordbank_service,
-        event=event,
-        result=result,
-        locale=locale,
-        media_service=wordbank_media_service,
-    )
     send_result = await matcher.send(
         await build_add_result_message(
             result,
@@ -571,6 +565,14 @@ async def _(
         event=event,
         result=result,
         send_result=send_result,
+    )
+    schedule_pending_approval_notice(
+        bot,
+        wordbank_service,
+        event=event,
+        result=result,
+        locale=locale,
+        media_service=wordbank_media_service,
     )
     await matcher.finish()
 

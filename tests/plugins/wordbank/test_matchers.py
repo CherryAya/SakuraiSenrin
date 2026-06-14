@@ -1,5 +1,5 @@
 import sys
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import nonebot
 from nonebot.adapters.onebot.v11 import Bot, Message
@@ -81,9 +81,9 @@ async def test_wordbank_add_direct_success_records_submission(
         response_shape=shape_from_text("做个好梦"),
     )
     handle_add = AsyncMock(return_value=result)
-    send_pending = AsyncMock(return_value=None)
     build_result_message = AsyncMock(return_value=Message("词条已提交审核"))
     record_submission = AsyncMock(return_value=None)
+    schedule_pending = Mock()
 
     monkeypatch.setattr(
         wordbank_plugin,
@@ -102,11 +102,6 @@ async def test_wordbank_add_direct_success_records_submission(
     )
     monkeypatch.setattr(
         wordbank_plugin,
-        "send_pending_approval_notice",
-        send_pending,
-    )
-    monkeypatch.setattr(
-        wordbank_plugin,
         "build_add_result_message",
         build_result_message,
     )
@@ -114,6 +109,11 @@ async def test_wordbank_add_direct_success_records_submission(
         wordbank_plugin,
         "record_submission_approval_message",
         record_submission,
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "schedule_pending_approval_notice",
+        schedule_pending,
     )
     monkeypatch.setattr(
         wordbank_plugin,
@@ -134,8 +134,87 @@ async def test_wordbank_add_direct_success_records_submission(
 
     handle_add.assert_awaited_once()
     assert handle_add.await_args_list[0].kwargs["text"] == "晚安 => 做个好梦"
-    send_pending.assert_awaited_once()
+    schedule_pending.assert_called_once()
     build_result_message.assert_awaited_once()
+    record_submission.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_wordbank_add_direct_media_submission_sends_processing_hint(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = WordbankAddResult(
+        trigger_group_id=12,
+        trigger_variant_id=21,
+        response_item_id=22,
+        trigger_text="晚安",
+        response_text="[图片:7]",
+        scope="current_group",
+        probability=1.0,
+        weight=1,
+        status="pending",
+        trigger_shape=shape_from_text("晚安"),
+        response_shape=shape_from_text("[图片:7]"),
+    )
+    handle_add = AsyncMock(return_value=result)
+    build_result_message = AsyncMock(return_value=Message("词条已提交审核"))
+    record_submission = AsyncMock(return_value=None)
+    schedule_pending = Mock()
+
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "initialize_wordbank_plugin",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "handle_add_with_media_result",
+        handle_add,
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "build_add_result_message",
+        build_result_message,
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "record_submission_approval_message",
+        record_submission,
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "schedule_pending_approval_notice",
+        schedule_pending,
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "fetch_first_image_bytes_from_message",
+        AsyncMock(return_value=b"image-bytes"),
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_add_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event(
+            "#wordbank.add 晚安 => [图片]",
+            message_id=1,
+        )
+
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            tr("zh-CN", "wordbank.add.processing_with_media"),
+            bot=bot,
+        )
+        ctx.should_call_send(event, Message("词条已提交审核"), bot=bot)
+        ctx.should_finished()
+
+    schedule_pending.assert_called_once()
     record_submission.assert_awaited_once()
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from nonebot.adapters.onebot.v11 import Message
@@ -25,6 +26,7 @@ from .rendering import render_shape_message
 APPROVAL_APPROVE_ALIASES = {"y", "approve", "通过", "同意", "批准"}
 APPROVAL_REJECT_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
 APPROVAL_REPLY_ALIASES = APPROVAL_APPROVE_ALIASES | APPROVAL_REJECT_ALIASES
+_background_tasks: set[asyncio.Task[None]] = set()
 
 
 def extract_sent_message_id(result: Any) -> str | None:
@@ -165,6 +167,33 @@ async def send_pending_approval_notice(
             logger.warning(
                 f"[Wordbank] approval notice skipped for {superuser_id}: {exc}"
             )
+
+
+def schedule_pending_approval_notice(
+    bot: Bot,
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    result: WordbankAddResult,
+    locale: LocaleCode,
+    media_service: WordbankMediaService | None = None,
+) -> None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    task = loop.create_task(
+        send_pending_approval_notice(
+            bot,
+            service,
+            event=event,
+            result=result,
+            locale=locale,
+            media_service=media_service,
+        )
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 async def record_submission_approval_message(

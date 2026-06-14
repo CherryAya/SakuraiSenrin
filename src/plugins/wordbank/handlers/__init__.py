@@ -6,6 +6,7 @@ from .approval import (
     build_pending_approval_notice_message,
     extract_sent_message_id,
     record_submission_approval_message,
+    schedule_pending_approval_notice,
     send_pending_approval_notice,
 )
 from .commands import (
@@ -78,6 +79,7 @@ __all__ = [
     "parse_view_reply_for_group_detail",
     "parse_view_reply_for_search_result",
     "record_submission_approval_message",
+    "schedule_pending_approval_notice",
     "send_pending_approval_notice",
     "wordbank_help_text",
 ]
