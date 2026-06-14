@@ -44,6 +44,11 @@ from src.plugins.wordbank.services.rules import (
     build_legacy_study_shortcut_rule,
     parse_legacy_study_text,
 )
+from src.plugins.wordbank.text_parsing import (
+    rest_after_token,
+    split_command_text,
+    tokenize_shell_like,
+)
 
 from .rendering import (
     GROUP_PAGE_SIZE,
@@ -137,38 +142,36 @@ class GuidedSearchSelection:
 
 
 def _split_command(text: str) -> tuple[str, str]:
-    stripped = text.strip()
-    if not stripped:
-        return "", ""
-    action, _, rest = stripped.partition(" ")
-    return action.lower(), rest.strip()
+    return split_command_text(text)
 
 
 def build_forced_command_text(action: str | None, raw_text: str) -> str:
-    raw_text = raw_text.strip()
-    return f"{action} {raw_text}".strip() if action else raw_text
+    if action is None:
+        return raw_text
+    return f"{action} {raw_text}" if raw_text else action
 
 
 def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
     try:
-        tokens = shlex.split(text)
+        tokens = tokenize_shell_like(text)
     except ValueError as exc:
         raise RuleError(
             _default_i18n_text("wordbank.error.parse_flags", reason=str(exc)),
             key="wordbank.error.parse_flags",
             reason=str(exc),
         ) from exc
-    remaining: list[str] = []
+    consumed_ranges: list[tuple[int, int]] = []
     raw_rule: dict[str, Any] = {}
     idx = 0
     while idx < len(tokens):
-        token = tokens[idx]
+        token = tokens[idx].value
         if token in {"--mode", "-m"}:
             raise RuleError(
                 _default_i18n_text("wordbank.error.mode_unsupported"),
                 key="wordbank.error.mode_unsupported",
             )
         elif token in {"--scope", "-s"}:
+            flag_token = tokens[idx]
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
@@ -181,8 +184,10 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                     flag="--scope",
                     expected="生效范围",
                 )
-            raw_rule["scope"] = tokens[idx]
+            raw_rule["scope"] = tokens[idx].value
+            consumed_ranges.append((flag_token.start, tokens[idx].end))
         elif token in {"--prob", "--probability", "-p"}:
+            flag_token = tokens[idx]
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
@@ -195,8 +200,10 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                     flag="--prob",
                     expected="概率",
                 )
-            raw_rule["probability"] = tokens[idx]
+            raw_rule["probability"] = tokens[idx].value
+            consumed_ranges.append((flag_token.start, tokens[idx].end))
         elif token in {"--weight", "-w"}:
+            flag_token = tokens[idx]
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
@@ -209,8 +216,10 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                     flag="--weight",
                     expected="权重",
                 )
-            raw_rule["weight"] = tokens[idx]
+            raw_rule["weight"] = tokens[idx].value
+            consumed_ranges.append((flag_token.start, tokens[idx].end))
         elif token in {"--role", "--roles", "-r"}:
+            flag_token = tokens[idx]
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
@@ -223,8 +232,10 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                     flag="--role",
                     expected="角色",
                 )
-            raw_rule["roles"] = tokens[idx]
+            raw_rule["roles"] = tokens[idx].value
+            consumed_ranges.append((flag_token.start, tokens[idx].end))
         elif token == "--call":
+            flag_token = tokens[idx]
             idx += 1
             if idx >= len(tokens):
                 raise RuleError(
@@ -237,7 +248,7 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                     flag="--call",
                     expected="window:min:max",
                 )
-            parts = tokens[idx].split(":")
+            parts = tokens[idx].value.split(":")
             if len(parts) != 3:
                 raise RuleError(
                     _default_i18n_text("wordbank.error.call_flag_format"),
@@ -248,10 +259,13 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                 "min": parts[1],
                 "max": parts[2],
             }
-        else:
-            remaining.append(token)
+            consumed_ranges.append((flag_token.start, tokens[idx].end))
         idx += 1
-    return " ".join(remaining), raw_rule
+
+    source = text
+    for start, end in sorted(consumed_ranges, reverse=True):
+        source = source[:start] + source[end:]
+    return source.strip(), raw_rule
 
 
 def _parse_positive_int(
@@ -291,7 +305,7 @@ def split_add_pair(source: str) -> tuple[str, str] | None:
     for sep in ADD_SEPARATORS:
         if sep in source:
             trigger, response = source.split(sep, 1)
-            return trigger.strip(), response.strip()
+            return trigger.rstrip(), response.lstrip()
     return None
 
 
@@ -390,7 +404,7 @@ def parse_search_args(text: str) -> ParsedSearch:
         tokens = shlex.split(text)
     except ValueError as exc:
         raise RuleError(
-            f"参数解析失败: {exc}",
+            _default_i18n_text("wordbank.error.parse_flags", reason=str(exc)),
             key="wordbank.error.parse_flags",
             reason=str(exc),
         ) from exc
@@ -515,7 +529,7 @@ def parse_group_view_args(text: str) -> ParsedGroupView:
         tokens = shlex.split(text)
     except ValueError as exc:
         raise RuleError(
-            f"参数解析失败: {exc}",
+            _default_i18n_text("wordbank.error.parse_flags", reason=str(exc)),
             key="wordbank.error.parse_flags",
             reason=str(exc),
         ) from exc
@@ -1040,9 +1054,8 @@ async def handle_study_with_media_result(
 
 
 def parse_study_media_prefix(text: str, *, is_group: bool) -> ParsedStudyMediaPrefix:
-    source = text.strip()
     try:
-        tokens = shlex.split(source)
+        tokens = tokenize_shell_like(text)
     except ValueError as exc:
         raise RuleError(
             _default_i18n_text("wordbank.error.study_format"),
@@ -1050,23 +1063,23 @@ def parse_study_media_prefix(text: str, *, is_group: bool) -> ParsedStudyMediaPr
         ) from exc
     if (
         len(tokens) >= 2
-        and tokens[0].casefold() in {"a", "m"}
-        and tokens[1].casefold() in {"t", "f"}
+        and tokens[0].value.casefold() in {"a", "m"}
+        and tokens[1].value.casefold() in {"t", "f"}
     ):
         return ParsedStudyMediaPrefix(
-            source=" ".join(tokens[2:]).strip(),
+            source=rest_after_token(text, tokens[1]),
             raw_rule=build_legacy_study_shortcut_rule(
-                tokens[0].casefold(),
-                tokens[1].casefold(),
+                tokens[0].value.casefold(),
+                tokens[1].value.casefold(),
                 is_group=is_group,
             ),
         )
-    if tokens and tokens[0].casefold() in {"a", "m"}:
+    if tokens and tokens[0].value.casefold() in {"a", "m"}:
         raise RuleError(
             _default_i18n_text("wordbank.error.study_format"),
             key="wordbank.error.study_format",
         )
-    return ParsedStudyMediaPrefix(source=source, raw_rule={})
+    return ParsedStudyMediaPrefix(source=text, raw_rule={})
 
 
 async def handle_study_media_with_rule_result(

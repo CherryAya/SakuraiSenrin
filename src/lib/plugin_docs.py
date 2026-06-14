@@ -1800,7 +1800,11 @@ class DemoImageRenderer:
         bubble_y = top + max((self.AVATAR_SIZE - spec.height) // 2, 0)
         fill = self.theme.user_bubble if is_user else self.theme.bot_bubble
         text_fill = self.theme.deep if is_user else self.theme.indigo_text
-        label = "你" if is_user else "凛"
+        label = (
+            tr("zh-CN", "docs.demo.avatar.user")
+            if is_user
+            else tr("zh-CN", "docs.demo.avatar.bot")
+        )
         avatar_fill = self.theme.accent if is_user else self.theme.indigo
 
         if is_user:
@@ -1868,7 +1872,13 @@ class DemoImageRenderer:
         y: int,
     ) -> None:
         if self.senrin_avatar is None:
-            self._draw_avatar(draw, x=x, y=y, label="凛", fill=self.theme.indigo)
+            self._draw_avatar(
+                draw,
+                x=x,
+                y=y,
+                label=tr("zh-CN", "docs.demo.avatar.bot"),
+                fill=self.theme.indigo,
+            )
             return
         avatar = self.senrin_avatar
         mask = Image.new("L", avatar.size, 0)
@@ -1888,7 +1898,13 @@ class DemoImageRenderer:
         draw: ImageDraw.ImageDraw,
     ) -> None:
         if self.senrin_standee is None:
-            self._draw_avatar(draw, x=1088, y=128, label="凛", fill=self.theme.indigo)
+            self._draw_avatar(
+                draw,
+                x=1088,
+                y=128,
+                label=tr("zh-CN", "docs.demo.avatar.bot"),
+                fill=self.theme.indigo,
+            )
             return
         image.paste(
             self.senrin_standee,

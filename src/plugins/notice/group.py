@@ -152,7 +152,7 @@ async def _(
             bot,
             str(event.group_id),
             str(event.operator_id),
-            "恶意踢出凛凛",
+            tr("zh-CN", "notice.group.kick.reason"),
         )
     )
     group_name = await resolve_group_name(bot, str(event.group_id))
@@ -194,7 +194,7 @@ async def _(
             bot,
             str(event.group_id),
             str(event.operator_id),
-            "恶意禁言凛凛",
+            tr("zh-CN", "notice.group.ban.reason"),
         )
     )
     locale = await resolve_locale(group_id)

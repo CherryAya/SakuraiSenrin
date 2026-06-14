@@ -17,6 +17,7 @@ import imagehash
 from PIL import Image, ImageSequence, UnidentifiedImageError
 from pybktree import BKTree
 
+from src.lib.i18n.runtime import tr
 from src.lib.object_storage.types import ObjectStorageClient, StorageObject
 from src.lib.utils.common import get_current_time
 from src.logger import logger
@@ -585,7 +586,7 @@ def fingerprint_image(data: bytes) -> ImageFingerprint:
         return prepare_image_fingerprint(data)
     except UnidentifiedImageError as exc:
         raise MediaError(
-            "无法识别图片内容",
+            tr("zh-CN", "wordbank.error.image_unrecognized"),
             key="wordbank.error.image_unrecognized",
         ) from exc
 
@@ -993,7 +994,7 @@ class WordbankMediaService:
             except Exception as exc:
                 if self.remote_required:
                     raise MediaError(
-                        "图片文件不存在，无法发送词库图片回复。",
+                        tr("zh-CN", "wordbank.error.image_storage_missing"),
                         key="wordbank.error.image_storage_missing",
                     ) from exc
                 logger.warning(f"[Wordbank] remote media save fallback to local: {exc}")
@@ -1008,7 +1009,7 @@ class WordbankMediaService:
         elif remote_expected:
             if self.remote_required:
                 raise MediaError(
-                    "图片文件不存在，无法发送词库图片回复。",
+                    tr("zh-CN", "wordbank.error.image_storage_missing"),
                     key="wordbank.error.image_storage_missing",
                 )
             remote_sync_status = REMOTE_SYNC_FAILED

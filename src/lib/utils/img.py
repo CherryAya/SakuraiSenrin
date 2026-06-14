@@ -26,15 +26,19 @@ class QQAvatar:
 
     @classmethod
     async def fetch_user(cls, uid: str, size: int = 100) -> BuildImage:
+        from src.lib.i18n.runtime import tr
+
         s_param = 640 if size > 100 else 100
         url = f"https://q1.qlogo.cn/g?b=qq&nk={uid}&s={s_param}"
-        return await cls._fetch(url, size, "人")
+        return await cls._fetch(url, size, tr("zh-CN", "avatar.default.user"))
 
     @classmethod
     async def fetch_group(cls, gid: str, size: int = 100) -> BuildImage:
+        from src.lib.i18n.runtime import tr
+
         s_param = 640 if size > 100 else 100
         url = f"https://p.qlogo.cn/gh/{gid}/{gid}/{s_param}"
-        return await cls._fetch(url, size, "群")
+        return await cls._fetch(url, size, tr("zh-CN", "avatar.default.group"))
 
     @classmethod
     async def _fetch(cls, url: str, size: int, fallback: str) -> BuildImage:
