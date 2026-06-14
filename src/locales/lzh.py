@@ -28,6 +28,8 @@ CATALOG: Final[dict[str, str]] = {
     "docs.node.notice.item1": "1. 請確認指令參數填寫完整。",
     "docs.feature.name": "功能名: {name}",
     "docs.feature.commands": "指令:",
+    "docs.feature.shortcuts": "快捷入口:",
+    "docs.feature.trigger_example": "指令示例: {command}",
     "docs.feature.not_found": "未得子功能文檔: {query}",
     "wordbank.approval.response_label": "響應:",
     "help.index.hint": "發 #help <插件名> 以觀詳文。",

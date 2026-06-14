@@ -206,11 +206,15 @@ class NodeMatchResult:
 
 
 def _support_note(locale: LocaleCode) -> str:
-    return tr(
-        locale,
-        "help.index.notice.item2",
-        main_group_id=config.MAIN_GROUP_ID,
-    ).removeprefix("2. ").strip()
+    return (
+        tr(
+            locale,
+            "help.index.notice.item2",
+            main_group_id=config.MAIN_GROUP_ID,
+        )
+        .removeprefix("2. ")
+        .strip()
+    )
 
 
 def create_docs_meta(
@@ -551,7 +555,12 @@ def render_doc_node_overview(
         for index, feature in enumerate(visible_features, start=1):
             lines.append(f"{index}. {feature.title}")
             lines.extend(
-                _format_feature_command_lines(node.bundle, feature, node.title)
+                _format_feature_command_lines(
+                    node.bundle,
+                    feature,
+                    node.title,
+                    locale=locale,
+                )
             )
             lines.append("")
     else:
@@ -589,7 +598,12 @@ def render_doc_feature(
         tr(locale, "docs.feature.name", name=feature.title),
         "",
         tr(locale, "docs.feature.commands"),
-        *_format_feature_command_lines(node.bundle, feature, node.title),
+        *_format_feature_command_lines(
+            node.bundle,
+            feature,
+            node.title,
+            locale=locale,
+        ),
         "",
         tr(locale, "docs.node.notice"),
     ]
@@ -908,6 +922,7 @@ def render_demo_png(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes:
         plugin_version=bundle.version,
         plugin_author=bundle.author,
         turns=feature.demo_turns,
+        locale="zh-CN",
     )
 
 
@@ -959,6 +974,7 @@ def audit_demo_layout(bundle: PluginDocBundle, feature: FeatureDoc) -> tuple[str
         plugin_version=bundle.version,
         plugin_author=bundle.author,
         turns=feature.demo_turns,
+        locale="zh-CN",
     )
 
 
@@ -977,6 +993,8 @@ def _format_feature_command_lines(
     bundle: PluginDocBundle,
     feature: FeatureDoc,
     node_title: str,
+    *,
+    locale: LocaleCode = "zh-CN",
 ) -> list[str]:
     command = _feature_command_for_display(bundle, feature, node_title)
     sections = [
@@ -1007,11 +1025,11 @@ def _format_feature_command_lines(
         lines.append(f"  {section}")
 
     if shortcut_sections:
-        lines.append("  快捷入口:")
+        lines.append(f"  {tr(locale, 'docs.feature.shortcuts')}")
         lines.extend(_format_shortcut_section_lines(shortcut_sections))
 
     if shortcut_groups:
-        lines.append("  快捷入口:")
+        lines.append(f"  {tr(locale, 'docs.feature.shortcuts')}")
         lines.extend(f"    {group}" for group in shortcut_groups)
 
     return lines or [f"  {command}"]
@@ -1498,6 +1516,7 @@ class DemoImageRenderer:
         plugin_version: str,
         plugin_author: str,
         turns: Sequence[DocsDemoTurn],
+        locale: LocaleCode = "zh-CN",
     ) -> bytes:
         turn_specs = [self._measure_turn(turn) for turn in turns]
         conversation_height = self._conversation_height(turn_specs)
@@ -1528,6 +1547,7 @@ class DemoImageRenderer:
             feature_title=feature_title,
             feature_trigger=feature_trigger,
             turn_count=len(turns),
+            locale=locale,
         )
         self._draw_conversation_panel(
             draw,
@@ -1573,6 +1593,7 @@ class DemoImageRenderer:
         feature_title: str,
         feature_trigger: str,
         turn_count: int,
+        locale: LocaleCode,
     ) -> None:
         draw.rounded_rectangle((96, 94, 106, 190), radius=5, fill=self.theme.accent)
         self._draw_chip(
@@ -1623,11 +1644,16 @@ class DemoImageRenderer:
             fill=self.theme.strong,
         )
         if feature_trigger.strip():
+            trigger_example = tr(
+                locale,
+                "docs.feature.trigger_example",
+                command=feature_trigger,
+            )
             self._draw_inline_chip(
                 draw,
                 x=self.HEADER_LEFT,
                 y=self.HEADER_TRIGGER_TOP,
-                text=f"指令示例: {feature_trigger}",
+                text=trigger_example,
                 max_width=760,
                 fill=self.theme.inline_code_bg,
                 text_fill=self.theme.hint,
@@ -2007,6 +2033,7 @@ class DemoImageRenderer:
         plugin_version: str,
         plugin_author: str,
         turns: Sequence[DocsDemoTurn],
+        locale: LocaleCode = "zh-CN",
     ) -> tuple[str, ...]:
         errors: list[str] = []
         turn_specs = [self._measure_turn(turn) for turn in turns]
@@ -2075,11 +2102,16 @@ class DemoImageRenderer:
         )
         trigger_rect: tuple[int, int, int, int] | None = None
         if feature_trigger.strip():
+            trigger_example = tr(
+                locale,
+                "docs.feature.trigger_example",
+                command=feature_trigger,
+            )
             trigger_rect = self._inline_chip_rect(
                 x=self.HEADER_LEFT,
                 y=self.HEADER_TRIGGER_TOP,
                 line=self._fit_inline_spans(
-                    split_inline_text_spans(f"指令示例: {feature_trigger}"),
+                    split_inline_text_spans(trigger_example),
                     self.meta_font,
                     760,
                 ),

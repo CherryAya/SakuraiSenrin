@@ -2,6 +2,7 @@ from pathlib import Path
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.i18n.runtime import tr
 from src.lib.plugin_docs import (
     DemoImageRenderer,
     InlineTextSpan,
@@ -72,10 +73,11 @@ def test_demo_image_renderer_wraps_long_admin_command() -> None:
 
 def test_demo_image_renderer_fit_inline_spans_keeps_code_flags() -> None:
     renderer = DemoImageRenderer()
+    trigger_prefix = tr("zh-CN", "docs.feature.trigger_example", command="")
 
     fitted = renderer._fit_inline_spans(  # pyright: ignore[reportPrivateUsage]
         (
-            InlineTextSpan("指令示例: ", code=False),
+            InlineTextSpan(trigger_prefix, code=False),
             InlineTextSpan("#water.merge yes", code=True),
             InlineTextSpan(" / ", code=False),
             InlineTextSpan("#water.merge no", code=True),

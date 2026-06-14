@@ -254,12 +254,12 @@ class WordbankService:
         start = perf_start()
         if trigger_shape.is_empty():
             raise WordbankUserError(
-                "触发词不能为空",
+                tr("zh-CN", "wordbank.error.trigger_empty"),
                 key="wordbank.error.trigger_empty",
             )
         if response_shape.is_empty():
             raise WordbankUserError(
-                "响应词不能为空",
+                tr("zh-CN", "wordbank.error.response_empty"),
                 key="wordbank.error.response_empty",
             )
         rule = canonicalize_rule(

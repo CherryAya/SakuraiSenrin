@@ -11,6 +11,7 @@ import pytest
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.i18n.runtime import tr
 from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
@@ -363,10 +364,11 @@ async def test_help_matcher_formats_water_overview_shortcuts(app: App) -> None:
             all_entries=entries,
         )
         rendered = str(expected)
+        shortcut_label = f"  {tr('zh-CN', 'docs.feature.shortcuts')}"
 
         assert "3. 查看周期榜单" in rendered
         assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
-        assert "  快捷入口:" in rendered
+        assert shortcut_label in rendered
         assert "    用户榜 / 本群:" in rendered
         assert "      #今日水王 / #本周水王 / #本月水王 / #本季水王" in rendered
         assert "    群聊榜 / 本矩阵:" in rendered

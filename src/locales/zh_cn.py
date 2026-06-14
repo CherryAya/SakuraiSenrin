@@ -34,6 +34,8 @@ CATALOG: Final[dict[str, str]] = {
     "docs.node.notice.item1": "1. 请确认指令参数填写完整。",
     "docs.feature.name": "功能名: {name}",
     "docs.feature.commands": "指令:",
+    "docs.feature.shortcuts": "快捷入口:",
+    "docs.feature.trigger_example": "指令示例: {command}",
     "docs.feature.not_found": "未找到子功能文档: {query}",
     "docs.help.description": "统一汇总插件文档，并按 metadata.docs 自动注册。",
     "docs.help.content": "#help\n#help <插件名>",

@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 from typing import Any, Protocol
 
+from src.lib.i18n.runtime import tr
+
 REVOKE_MARKERS = ("revoke", "recall")
-DEFAULT_ABORT_MESSAGE = "本次操作已被取消。"
-DEFAULT_TOO_MANY_ERRORS_MESSAGE = "连续输入错误 3 次，本次操作已被取消。"
+DEFAULT_ABORT_MESSAGE = tr("zh-CN", "interaction.cancelled")
+DEFAULT_TOO_MANY_ERRORS_MESSAGE = tr("zh-CN", "interaction.too_many_errors")
 INTERACTION_ERROR_COUNT_KEY = "__interaction_error_count__"
 
 

@@ -8,6 +8,7 @@ import scripts.build_docs as plugin_docs_script
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.demo_theme import BASE_THEME, PALETTE_ACCENTS
+from src.lib.i18n.runtime import tr
 from src.lib.plugin_docs import (
     DemoImageRenderer,
     DocsRenderContext,
@@ -186,10 +187,11 @@ def test_demo_image_renderer_fit_inline_spans_keeps_code_spans_without_backticks
     None
 ):
     renderer = DemoImageRenderer()
+    trigger_prefix = tr("zh-CN", "docs.feature.trigger_example", command="")
 
     fitted = renderer._fit_inline_spans(  # pyright: ignore[reportPrivateUsage]
         (
-            InlineTextSpan("指令示例: ", code=False),
+            InlineTextSpan(trigger_prefix, code=False),
             InlineTextSpan("#help 词库审核", code=True),
         ),
         renderer.meta_font,  # pyright: ignore[reportPrivateUsage]
@@ -260,6 +262,7 @@ BOT: 操作完成
 
 
 def test_build_readme_docs_formats_multi_section_commands_for_help_output() -> None:
+    shortcut_label = tr("zh-CN", "docs.feature.shortcuts")
     message = build_readme_docs(
         source=Path("src/plugins/water/docs/README.MD"),
         name="吹水记录",
@@ -270,7 +273,8 @@ def test_build_readme_docs_formats_multi_section_commands_for_help_output() -> N
     )
 
     rendered = str(message)
-    assert "指令:\n  #水王 / #水王 <主体> <范围> <时间>\n  快捷入口:" in rendered
+    expected_prefix = f"指令:\n  #水王 / #水王 <主体> <范围> <时间>\n  {shortcut_label}"
+    assert expected_prefix in rendered
     assert "    用户榜 / 本群:" in rendered
     assert "      #今日水王 / #本周水王 / #本月水王 / #本季水王" in rendered
     assert "    群聊榜 / 全局:" in rendered
@@ -296,7 +300,7 @@ def test_render_doc_node_overview_formats_multi_section_commands() -> None:
     rendered = str(message)
     assert "3. 查看周期榜单" in rendered
     assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
-    assert "  快捷入口:" in rendered
+    assert f"  {tr('zh-CN', 'docs.feature.shortcuts')}" in rendered
     assert "    群聊榜 / 本矩阵:" in rendered
     assert "      #今日矩阵群榜 / #本周矩阵群榜" in rendered
 
