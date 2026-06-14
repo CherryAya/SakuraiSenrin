@@ -8,6 +8,13 @@ LOCALE: Final[LocaleCode] = "x-meme"
 CATALOG: Final[dict[str, str]] = {
     **ZH_CATALOG,
     "docs.default.empty": "暂无说明，先脑补一下。",
+    "docs.node.children": "子节点:",
+    "docs.node.empty": "目前没啥可用功能。",
+    "docs.node.notice": "⚠️ 注意事项:",
+    "docs.node.notice.item1": "1. 先把指令参数填完整再说。",
+    "docs.feature.name": "功能名: {name}",
+    "docs.feature.commands": "指令:",
+    "docs.feature.not_found": "这个子功能文档没翻到: {query}",
     "help.index.hint": "发 `#help <插件名>`，直接开看。",
     "help.index.header": "📖 ===== 帮助文档 =====",
     "help.index.prefix": "命令前缀: #help / #帮助",

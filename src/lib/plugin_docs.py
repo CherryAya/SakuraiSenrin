@@ -395,8 +395,12 @@ def build_readme_docs(
             return Message(
                 "\n".join(
                     [
-                        f"子功能查询存在歧义: {ctx.feature_query}",
-                        "请使用更精确的子功能名。",
+                        tr(
+                            locale,
+                            "help.query.feature_ambiguous.title",
+                            query=ctx.feature_query,
+                        ),
+                        tr(locale, "help.query.feature_ambiguous.hint"),
                         "",
                         *(
                             f"- {feature.title} ({feature.slug})"
@@ -405,7 +409,13 @@ def build_readme_docs(
                     ]
                 ).strip()
             )
-        return Message(f"未找到子功能文档: {ctx.feature_query}".strip())
+        return Message(
+            tr(
+                locale,
+                "docs.feature.not_found",
+                query=ctx.feature_query,
+            ).strip()
+        )
     include_demo = (
         ctx.include_demo if ctx is not None and ctx.view == "plugin" else False
     )
@@ -532,7 +542,7 @@ def render_doc_node_overview(
     visible_features = filter_features_by_permission(node.features, actor_permission)
 
     if visible_children:
-        lines.append("子节点:")
+        lines.append(tr(locale, "docs.node.children"))
         for index, child in enumerate(visible_children, start=1):
             lines.append(f"{index}. {child.title}")
             lines.append(f"  #help {child.title}")
@@ -545,12 +555,12 @@ def render_doc_node_overview(
             )
             lines.append("")
     else:
-        lines.extend(["暂无可用功能。", ""])
+        lines.extend([tr(locale, "docs.node.empty"), ""])
 
     lines.extend(
         [
-            "⚠️ 注意事项:",
-            "1. 请确认指令参数填写完整。",
+            tr(locale, "docs.node.notice"),
+            tr(locale, "docs.node.notice.item1"),
             f"2. {_support_note(locale)}",
         ]
     )
@@ -576,12 +586,12 @@ def render_doc_feature(
     lines = [
         f"📖 ===== {node.title} / {feature.title} =====",
         "",
-        f"功能名: {feature.title}",
+        tr(locale, "docs.feature.name", name=feature.title),
         "",
-        "指令:",
+        tr(locale, "docs.feature.commands"),
         *_format_feature_command_lines(node.bundle, feature, node.title),
         "",
-        "⚠️ 注意事项:",
+        tr(locale, "docs.node.notice"),
     ]
     for index, note in enumerate(
         _feature_notice_items(feature, locale=locale),
@@ -1025,7 +1035,7 @@ def _feature_notice_items(feature: FeatureDoc, *, locale: LocaleCode) -> list[st
     if preconditions and preconditions != "无":
         notes.append(preconditions)
     else:
-        notes.append("请确认指令参数填写完整。")
+        notes.append(tr(locale, "docs.node.notice.item1"))
     notes.append(_support_note(locale))
     return notes
 

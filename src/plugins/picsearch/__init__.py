@@ -27,8 +27,8 @@ from .handlers import (
 )
 from .services import PicsearchEngine
 
-name = "图片搜索"
-description = "回复图片后发送“搜图 [引擎]”进行搜索。"
+name = tr("zh-CN", "plugin.picsearch.name")
+description = tr("zh-CN", "plugin.picsearch.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
