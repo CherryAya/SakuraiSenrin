@@ -1649,6 +1649,121 @@ class WordbankMediaService:
             "evicted": evicted,
         }
 
+    async def backfill_local_cache_metadata(
+        self,
+        *,
+        dry_run: bool = False,
+        limit: int = 0,
+        id_start: int = 0,
+        only_missing: bool = True,
+    ) -> dict[str, Any]:
+        images = await self.repository.list_images()
+        scanned = 0
+        updated = 0
+        unchanged = 0
+        skipped_existing = 0
+        missing_files = 0
+        failed = 0
+        rows: list[dict[str, Any]] = []
+        remaining = max(limit, 0)
+
+        for image in sorted(images, key=lambda item: item.id):
+            if image.id < id_start:
+                continue
+            if remaining > 0 and scanned >= remaining:
+                break
+
+            scanned += 1
+            extension = _extension_from_storage_path(
+                image.remote_storage_path or image.storage_path
+            )
+            expected_path = self.cache_storage.cache_root / (f"{image.md5}{extension}")
+            row: dict[str, Any] = {
+                "id": image.id,
+                "canonical_image_id": image.canonical_id,
+                "md5": image.md5,
+                "expected_cache_path": str(expected_path),
+                "local_cache_path_before": image.local_cache_path,
+                "cache_file_size_before": image.cache_file_size,
+            }
+
+            if only_missing and image.local_cache_path:
+                skipped_existing += 1
+                row["action"] = "skip_existing"
+                rows.append(row)
+                continue
+
+            exists = await asyncio.to_thread(expected_path.is_file)
+            if not exists:
+                missing_files += 1
+                row["action"] = "missing_file"
+                rows.append(row)
+                continue
+
+            file_size = await asyncio.to_thread(lambda: expected_path.stat().st_size)
+            normalized_path = str(expected_path)
+            row["cache_file_size_detected"] = file_size
+
+            if (
+                image.local_cache_path == normalized_path
+                and image.cache_file_size == file_size
+            ):
+                unchanged += 1
+                row["action"] = "unchanged"
+                rows.append(row)
+                continue
+
+            if dry_run:
+                updated += 1
+                row["action"] = "would_update"
+                row["local_cache_path_after"] = normalized_path
+                row["cache_file_size_after"] = file_size
+                rows.append(row)
+                continue
+
+            refreshed = await self.repository.update_image_cache_metadata(
+                image.id,
+                local_cache_path=normalized_path,
+                cache_file_size=file_size,
+            )
+            if refreshed is None:
+                failed += 1
+                row["action"] = "update_failed"
+                rows.append(row)
+                continue
+
+            self._cache_image(refreshed)
+            updated += 1
+            row["action"] = "updated"
+            row["local_cache_path_after"] = refreshed.local_cache_path
+            row["cache_file_size_after"] = refreshed.cache_file_size
+            rows.append(row)
+
+        report = {
+            "dry_run": dry_run,
+            "limit": limit,
+            "id_start": id_start,
+            "only_missing": only_missing,
+            "scanned": scanned,
+            "updated": updated,
+            "unchanged": unchanged,
+            "skipped_existing": skipped_existing,
+            "missing_files": missing_files,
+            "failed": failed,
+            "rows": rows,
+        }
+        log_perf(
+            "media.backfill_local_cache_metadata.done",
+            dry_run=dry_run,
+            scanned=scanned,
+            updated=updated,
+            unchanged=unchanged,
+            skipped_existing=skipped_existing,
+            missing_files=missing_files,
+            failed=failed,
+        )
+        return report
+
     async def rebuild_cache_metadata(
         self,
         image: WordbankImageRecord,

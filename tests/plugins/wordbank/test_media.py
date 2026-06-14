@@ -892,6 +892,87 @@ async def test_media_logs_remote_fallback_stages_when_legacy_handles_response(
     assert "media.load_canonical_storage_bytes.end" in events
 
 
+async def test_media_backfills_local_cache_metadata_from_existing_cache_files(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    image_bytes = _png((12, 34, 56))
+    cache_path = cache_root / f"{'a' * 32}.webp"
+    cache_path.write_bytes(image_bytes)
+    service = WordbankMediaService(
+        repo,
+        media_root=tmp_path / "legacy",
+        cache_storage=LocalLruCacheWordbankMediaStorage(cache_root),
+    )
+    await repo.create_image(
+        {
+            "md5": "a" * 32,
+            "dhash": "1" * 16,
+            "phash": "1" * 16,
+            "width": 16,
+            "height": 16,
+            "file_size": len(image_bytes),
+            "hash_version": 2,
+            "storage_path": str(tmp_path / "legacy" / "a.webp"),
+            "remote_storage_path": "r2://bucket/wordbank/media/test.webp",
+            "local_cache_path": "",
+            "cache_file_size": 0,
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
+
+    report = await service.backfill_local_cache_metadata()
+
+    assert report["scanned"] == 1
+    assert report["updated"] == 1
+    assert report["missing_files"] == 0
+    assert repo.images[0].local_cache_path == str(cache_path)
+    assert repo.images[0].cache_file_size == len(image_bytes)
+
+
+async def test_media_backfill_dry_run_reports_updates_without_writing(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    image_bytes = _png((65, 43, 21))
+    cache_path = cache_root / f"{'b' * 32}.webp"
+    cache_path.write_bytes(image_bytes)
+    service = WordbankMediaService(
+        repo,
+        media_root=tmp_path / "legacy",
+        cache_storage=LocalLruCacheWordbankMediaStorage(cache_root),
+    )
+    await repo.create_image(
+        {
+            "md5": "b" * 32,
+            "dhash": "2" * 16,
+            "phash": "2" * 16,
+            "width": 16,
+            "height": 16,
+            "file_size": len(image_bytes),
+            "hash_version": 2,
+            "storage_path": str(tmp_path / "legacy" / "b.webp"),
+            "remote_storage_path": "r2://bucket/wordbank/media/test2.webp",
+            "local_cache_path": "",
+            "cache_file_size": 0,
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
+
+    report = await service.backfill_local_cache_metadata(dry_run=True)
+
+    assert report["updated"] == 1
+    assert report["rows"][0]["action"] == "would_update"
+    assert repo.images[0].local_cache_path == ""
+    assert repo.images[0].cache_file_size == 0
+
+
 async def test_media_syncs_legacy_local_image_to_remote_and_keeps_it_readable(
     tmp_path: Path,
 ) -> None:
