@@ -199,6 +199,28 @@ async def test_picsearch_multi_image_ascii2d_success(
 
 
 @pytest.mark.asyncio
+async def test_build_result_message_uses_locale_labels() -> None:
+    message = picsearch_handlers.build_result_message(
+        1,
+        PicsearchResult(
+            engine=PicsearchEngine.ASCII2D,
+            title="标题",
+            author="作者",
+            similarity="N/A",
+            source_url="https://example.com/ascii",
+            thumbnail_url="",
+        ),
+        None,
+        locale="lzh",
+    )
+
+    text = str(message)
+    assert "第 1 張圖搜圖結果：" in text
+    assert "標題：标题" in text
+    assert "鏈接：https://example.com/ascii" in text
+
+
+@pytest.mark.asyncio
 async def test_picsearch_requires_saucenao_key(
     app: App,
     monkeypatch: pytest.MonkeyPatch,

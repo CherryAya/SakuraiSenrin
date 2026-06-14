@@ -10,6 +10,8 @@ from httpx import AsyncClient
 from PicImageSearch import Ascii2D, Network, SauceNAO
 
 from src.config import config
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 
 
 class PicsearchEngine(StrEnum):
@@ -50,23 +52,46 @@ def get_thumbnail_url(item: Any) -> str:
     return ""
 
 
-def _to_result(engine: PicsearchEngine, item: Any) -> PicsearchResult:
+def _to_result(
+    engine: PicsearchEngine,
+    item: Any,
+    *,
+    locale: LocaleCode = "zh-CN",
+) -> PicsearchResult:
     if engine is PicsearchEngine.SAUCENAO:
         return PicsearchResult(
             engine=engine,
-            title=str(getattr(item, "title", "") or "未知标题"),
-            author=str(getattr(item, "author", "") or "未知作者"),
-            similarity=str(getattr(item, "similarity", "") or "未知"),
-            source_url=str(getattr(item, "source", "") or "未提供"),
+            title=str(
+                getattr(item, "title", "")
+                or tr(locale, "picsearch.result.unknown_title")
+            ),
+            author=str(
+                getattr(item, "author", "")
+                or tr(locale, "picsearch.result.unknown_author")
+            ),
+            similarity=str(
+                getattr(item, "similarity", "")
+                or tr(locale, "picsearch.result.unknown_similarity")
+            ),
+            source_url=str(
+                getattr(item, "source", "")
+                or tr(locale, "picsearch.result.unknown_source")
+            ),
             thumbnail_url=get_thumbnail_url(item),
         )
 
     return PicsearchResult(
         engine=engine,
-        title=str(getattr(item, "title", "") or "未知标题"),
-        author=str(getattr(item, "author", "") or "未知作者"),
+        title=str(
+            getattr(item, "title", "") or tr(locale, "picsearch.result.unknown_title")
+        ),
+        author=str(
+            getattr(item, "author", "") or tr(locale, "picsearch.result.unknown_author")
+        ),
         similarity="N/A",
-        source_url=str(getattr(item, "url", "") or "未提供"),
+        source_url=str(
+            getattr(item, "url", "") or tr(locale, "picsearch.result.unknown_source")
+        ),
         thumbnail_url=get_thumbnail_url(item),
     )
 
@@ -74,6 +99,8 @@ def _to_result(engine: PicsearchEngine, item: Any) -> PicsearchResult:
 async def search_image(
     image_url: str,
     engine: PicsearchEngine,
+    *,
+    locale: LocaleCode = "zh-CN",
 ) -> PicsearchResult | None:
     async with Network(proxies=config.HTTP_PROXY) as network:
         if engine is PicsearchEngine.SAUCENAO:
@@ -91,7 +118,7 @@ async def search_image(
     if not raw_items:
         return None
 
-    return _to_result(engine, raw_items[0])
+    return _to_result(engine, raw_items[0], locale=locale)
 
 
 async def load_thumbnail_bytes(url: str) -> bytes | None:

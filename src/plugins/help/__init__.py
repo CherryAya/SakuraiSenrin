@@ -266,24 +266,24 @@ def _build_index_message(
         if node.visible and can_view_node(node, actor_permission) and not node.hidden
     ]
     lines = [
-        "📖 ===== 帮助文档 =====",
+        tr(locale, "help.index.header"),
         "",
-        "命令前缀: #help / #帮助",
+        tr(locale, "help.index.prefix"),
         "",
-        "帮助信息",
-        "  示例: #help <节点名>",
-        "  示例: #help <节点名> <子功能名>",
+        tr(locale, "help.index.usage"),
+        tr(locale, "help.index.example.node"),
+        tr(locale, "help.index.example.feature"),
         "",
-        "⚠️ 注意事项:",
-        "1. 请确保输入的插件名称或节点名称存在。",
-        "2. 如需进一步支持，请联系管理员，或加入反馈群「427842039」💬。",
+        tr(locale, "help.index.notice"),
+        tr(locale, "help.index.notice.item1"),
+        tr(locale, "help.index.notice.item2"),
     ]
 
     if not roots:
         lines.extend(["", tr(locale, "help.index.empty")])
         return Message("\n".join(lines))
 
-    lines.extend(["", "🔧 当前可用模块如下:", ""])
+    lines.extend(["", tr(locale, "help.index.available"), ""])
     for index, node in enumerate(roots, start=1):
         lines.append(f"{index}. {node.title}")
         lines.append(f"  #help {node.title}")
@@ -328,11 +328,13 @@ def _build_ambiguous_message(
     return Message("\n".join(lines))
 
 
-def _build_permission_denied_message(entry: DocsEntry) -> Message:
+def _build_permission_denied_message(entry: DocsEntry, locale: LocaleCode) -> Message:
     return Message(
-        (
-            f"无权限查看插件文档: {entry.display_name}\n"
-            f"需要权限: {entry.permission.label}"
+        tr(
+            locale,
+            "help.query.permission_denied",
+            name=entry.display_name,
+            permission=entry.permission.label,
         ).strip()
     )
 
@@ -394,8 +396,12 @@ async def _resolve_docs_message(
             return Message(
                 "\n".join(
                     [
-                        f"子功能查询存在歧义: {feature_query}",
-                        "请使用更精确的子功能名。",
+                        tr(
+                            locale,
+                            "help.query.feature_ambiguous.title",
+                            query=feature_query,
+                        ),
+                        tr(locale, "help.query.feature_ambiguous.hint"),
                         "",
                         *(
                             f"- {feature.title} ({feature.slug})"
@@ -448,7 +454,9 @@ async def _(
             and denied_match.entry is not None
             and not _can_view_entry(denied_match.entry, actor_permission)
         ):
-            await matcher.finish(_build_permission_denied_message(denied_match.entry))
+            await matcher.finish(
+                _build_permission_denied_message(denied_match.entry, locale)
+            )
         await matcher.finish(Message(tr(locale, "help.query.not_found", query=query)))
 
     if match_result.status == "ambiguous":
@@ -458,7 +466,9 @@ async def _(
 
     assert match_result.entry is not None
     if not _can_view_entry(match_result.entry, actor_permission):
-        await matcher.finish(_build_permission_denied_message(match_result.entry))
+        await matcher.finish(
+            _build_permission_denied_message(match_result.entry, locale)
+        )
 
     docs_message = await _resolve_docs_message(
         match_result.entry,

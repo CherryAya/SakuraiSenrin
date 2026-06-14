@@ -65,14 +65,16 @@ def build_result_message(
     index: int,
     result: PicsearchResult,
     thumbnail_bytes: bytes | None,
+    *,
+    locale: LocaleCode,
 ) -> Message:
     lines = [
-        f"第 {index} 张图片搜索结果：",
-        f"引擎：{result.engine.value}",
-        f"相似度：{result.similarity}",
-        f"标题：{result.title}",
-        f"作者：{result.author}",
-        f"链接：{result.source_url}",
+        tr(locale, "picsearch.result.header", index=index),
+        tr(locale, "picsearch.result.engine", engine=result.engine.value),
+        tr(locale, "picsearch.result.similarity", similarity=result.similarity),
+        tr(locale, "picsearch.result.title", title=result.title),
+        tr(locale, "picsearch.result.author", author=result.author),
+        tr(locale, "picsearch.result.link", link=result.source_url),
     ]
     message = Message("\n".join(lines))
     if thumbnail_bytes is not None:
@@ -113,7 +115,7 @@ async def run_search(
             )
         )
         try:
-            result = await search_image(image_urls[selected], engine)
+            result = await search_image(image_urls[selected], engine, locale=locale)
         except Exception as exc:
             logger.warning(
                 "[Picsearch] search failed: "
@@ -149,6 +151,13 @@ async def run_search(
                 f"engine={engine.value} index={selected + 1}: {exc}"
             )
 
-        await matcher.send(build_result_message(selected + 1, result, thumbnail_bytes))
+        await matcher.send(
+            build_result_message(
+                selected + 1,
+                result,
+                thumbnail_bytes,
+                locale=locale,
+            )
+        )
 
     await matcher.finish()
