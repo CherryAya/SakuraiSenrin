@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="apply safe fixes by removing invalid call_count constraints",
+        help="apply safe fixes by clamping invalid call_count windows to 3 months",
     )
     return parser.parse_args()
 
