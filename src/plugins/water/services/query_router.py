@@ -44,6 +44,7 @@ WaterView = Literal[
     "overview",
     "score",
     "rank",
+    "report",
     "achievement",
     "profile",
     "ops",
@@ -86,6 +87,8 @@ class WaterQueryRouter:
             return True
         if spec.view in {"achievement", "profile"}:
             return True
+        if spec.view == "report":
+            return True
         if spec.scope_type == "rank":
             return spec.rank_spec is not None and not spec.errors
         return False
@@ -120,6 +123,14 @@ class WaterQueryRouter:
                 scope_type="history",
                 scope_value="all",
                 view="achievement",
+                mode="simple",
+            )
+        if joined in {"今日报告", "今日報告", "水王日报", "水王日報", "日报", "日報"}:
+            return WaterQuerySpec(
+                subject="group",
+                scope_type="activity",
+                scope_value="today",
+                view="report",
                 mode="simple",
             )
 
@@ -445,6 +456,14 @@ class WaterQueryRouter:
         locale: LocaleCode,
         is_superuser: bool = False,
     ) -> Message:
+        if spec.view == "report":
+            from src.plugins.water.services.report import water_report_service
+
+            return await water_report_service.build_group_report_message(
+                window="today_live",
+                group_id=group_id,
+                locale=locale,
+            )
         if spec.scope_type == "activity":
             return await self._execute_activity(
                 spec=spec,

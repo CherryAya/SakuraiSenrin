@@ -500,3 +500,119 @@ async def test_water_query_guided_revoke_aborts(
         ctx.receive_event(bot, second)
         ctx.should_call_send(second, "本次操作已被取消。", bot=bot)
         ctx.should_finished()
+
+
+@pytest.mark.asyncio
+async def test_water_today_report_requires_group_admin(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin._water_query_cooldowns.clear()
+    water_plugin.water_report_service.clear_today_report_cooldowns()
+    monkeypatch.setattr(
+        water_plugin.water_report_service,
+        "build_group_report_message",
+        AsyncMock(return_value=Message("SHOULD_NOT_RUN")),
+    )
+
+    event = build_group_message_event("#水王 今日报告", role="member", message_id=1)
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, "这条要群管理员或群主来确认喔~", bot=bot)
+        ctx.should_finished()
+
+
+@pytest.mark.asyncio
+async def test_water_today_report_runs_for_group_admin(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin._water_query_cooldowns.clear()
+    water_plugin.water_report_service.clear_today_report_cooldowns()
+    build_report_message = AsyncMock(return_value=Message("REPORT_OK"))
+    monkeypatch.setattr(
+        water_plugin.water_report_service,
+        "build_group_report_message",
+        build_report_message,
+    )
+
+    event = build_group_message_event("#水王 今日报告", role="admin", message_id=1)
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_send(event, Message("REPORT_OK"), bot=bot)
+        ctx.should_finished()
+
+    build_report_message.assert_awaited_once_with(
+        window="today_live",
+        group_id="20001",
+        locale="zh-CN",
+    )
+
+
+@pytest.mark.asyncio
+async def test_water_today_report_alias_runs(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin._water_query_cooldowns.clear()
+    water_plugin.water_report_service.clear_today_report_cooldowns()
+    build_report_message = AsyncMock(return_value=Message("REPORT_ALIAS_OK"))
+    monkeypatch.setattr(
+        water_plugin.water_report_service,
+        "build_group_report_message",
+        build_report_message,
+    )
+
+    event = build_group_message_event("#水王日报", role="owner", message_id=1)
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_send(event, Message("REPORT_ALIAS_OK"), bot=bot)
+        ctx.should_finished()
+
+
+@pytest.mark.asyncio
+async def test_water_today_report_group_shared_cooldown(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin._water_query_cooldowns.clear()
+    water_plugin.water_report_service.clear_today_report_cooldowns()
+    build_report_message = AsyncMock(return_value=Message("REPORT_OK"))
+    monkeypatch.setattr(
+        water_plugin.water_report_service,
+        "build_group_report_message",
+        build_report_message,
+    )
+
+    first = build_group_message_event("#水王 今日报告", role="admin", message_id=1)
+    second = build_group_message_event(
+        "#水王 今日报告",
+        user_id=10002,
+        role="owner",
+        message_id=2,
+    )
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(first, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_send(first, Message("REPORT_OK"), bot=bot)
+        ctx.should_finished()
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(
+            second,
+            "本群报告冷却中，请 59s 后再试 qwq",
+            bot=bot,
+        )
+        ctx.should_finished()

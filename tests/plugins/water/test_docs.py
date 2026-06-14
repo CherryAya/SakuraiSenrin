@@ -24,3 +24,10 @@ def test_water_ranking_docs_include_shortcuts_and_hide_restricted_periods() -> N
     assert "#水王 矩阵榜 全局 总榜" not in ranking.flow_notes
     assert "年榜" not in ranking.overview
     assert "总榜" not in ranking.overview
+
+    today_report = next(
+        feature for feature in bundle.index if feature.slug == "today-report"
+    )
+    assert "#水王 今日报告" in today_report.trigger
+    assert any(turn.text == "#水王日报" for turn in today_report.demo_turns)
+    assert "1 分钟冷却" in today_report.overview

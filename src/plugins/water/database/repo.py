@@ -144,6 +144,59 @@ class NaturalPeriodRankSnapshot:
 
 
 @dataclass(frozen=True)
+class WaterGroupReportMember:
+    user_id: str
+    msg_count: int
+    active_hours: int
+    hourly_counts: list[int]
+    current_rank: int
+    trend: int | None
+
+
+@dataclass(frozen=True)
+class WaterGroupReportSnapshot:
+    group_id: str
+    record_date: int
+    total_msg_count: int
+    active_user_count: int
+    active_hours: int
+    hourly_counts: list[int]
+    previous_total_msg_count: int
+    previous_active_user_count: int
+    previous_active_hours: int
+    previous_hourly_counts: list[int]
+    leaderboard: list[WaterGroupReportMember]
+
+    @property
+    def peak_hour(self) -> int:
+        if not any(self.hourly_counts):
+            return 0
+        return max(range(24), key=lambda hour: self.hourly_counts[hour])
+
+    @property
+    def delta_total_msg_count(self) -> int:
+        return self.total_msg_count - self.previous_total_msg_count
+
+    @property
+    def delta_active_user_count(self) -> int:
+        return self.active_user_count - self.previous_active_user_count
+
+    @property
+    def activity_score(self) -> int:
+        return self.total_msg_count + 20 * self.active_user_count
+
+
+@dataclass(frozen=True)
+class WaterDailyReportCandidate:
+    group_id: str
+    record_date: int
+    total_msg_count: int
+    active_user_count: int
+    active_hours: int
+    activity_score: int
+
+
+@dataclass(frozen=True)
 class WaterActivitySeasonRecord:
     season_id: str
     name: str
@@ -1325,6 +1378,197 @@ class WaterRepository:
             group_id=group_id,
         )
         return snapshot.overview
+
+    async def list_daily_report_candidates(
+        self,
+        *,
+        record_date: int,
+        min_activity_score: int,
+        working_group_ids: Sequence[str],
+    ) -> list[WaterDailyReportCandidate]:
+        if not working_group_ids:
+            return []
+        rows = await self.get_summaries_in_window(
+            record_date,
+            record_date,
+            group_ids=list(working_group_ids),
+        )
+        aggregates = self._build_entity_period_aggregates(
+            rows,
+            lambda item: item.group_id,
+        )
+        ordered = sorted(
+            (
+                WaterDailyReportCandidate(
+                    group_id=group_id,
+                    record_date=record_date,
+                    total_msg_count=msg_count,
+                    active_user_count=active_users,
+                    active_hours=active_hours,
+                    activity_score=msg_count + 20 * active_users,
+                )
+                for group_id, (
+                    msg_count,
+                    active_users,
+                    active_hours,
+                    _hourly_counts,
+                    _group_count,
+                ) in aggregates.items()
+                if msg_count + 20 * active_users >= min_activity_score
+            ),
+            key=lambda item: (
+                -item.activity_score,
+                -item.total_msg_count,
+                item.group_id,
+            ),
+        )
+        logger.debug(
+            "[Water][ReportRepo] date={} working_groups={} candidates={} threshold={}",
+            record_date,
+            len(working_group_ids),
+            len(ordered),
+            min_activity_score,
+        )
+        return ordered
+
+    async def get_group_report_summary_snapshot(
+        self,
+        *,
+        group_id: str,
+        record_date: int,
+        limit: int = 10,
+    ) -> WaterGroupReportSnapshot | None:
+        current_rows, previous_rows = await asyncio.gather(
+            self.get_summaries_in_window(
+                record_date,
+                record_date,
+                group_ids=[group_id],
+            ),
+            self.get_summaries_in_window(
+                self._previous_date(record_date),
+                self._previous_date(record_date),
+                group_ids=[group_id],
+            ),
+        )
+        return self._build_group_report_snapshot_from_rows(
+            group_id=group_id,
+            record_date=record_date,
+            current_rows=current_rows,
+            previous_rows=previous_rows,
+            limit=limit,
+        )
+
+    async def get_group_report_live_snapshot(
+        self,
+        *,
+        group_id: str,
+        now_ts: int | None = None,
+        limit: int = 10,
+    ) -> WaterGroupReportSnapshot | None:
+        await water_writer.flush_now()
+        now = arrow.get(now_ts or get_current_time()).to("Asia/Shanghai")
+        record_date = int(now.format("YYYYMMDD"))
+        current_rows, previous_rows = await asyncio.gather(
+            self._collect_realtime_daily_rows(
+                scope="group",
+                group_id=group_id,
+                record_date=record_date,
+            ),
+            self.get_summaries_in_window(
+                self._previous_date(record_date),
+                self._previous_date(record_date),
+                group_ids=[group_id],
+            ),
+        )
+        return self._build_group_report_snapshot_from_rows(
+            group_id=group_id,
+            record_date=record_date,
+            current_rows=current_rows,
+            previous_rows=previous_rows,
+            limit=limit,
+        )
+
+    def _build_group_report_snapshot_from_rows(
+        self,
+        *,
+        group_id: str,
+        record_date: int,
+        current_rows: Sequence[WaterSummaryRecord],
+        previous_rows: Sequence[WaterSummaryRecord],
+        limit: int,
+    ) -> WaterGroupReportSnapshot | None:
+        if not current_rows:
+            return None
+        current_aggregates = self._build_entity_period_aggregates(
+            current_rows,
+            lambda item: item.user_id,
+        )
+        previous_aggregates = self._build_entity_period_aggregates(
+            previous_rows,
+            lambda item: item.user_id,
+        )
+        ordered_current = nsmallest(
+            limit,
+            (
+                (
+                    user_id,
+                    msg_count,
+                    active_days,
+                    active_hours,
+                    hourly_counts,
+                    group_count,
+                )
+                for user_id, (
+                    msg_count,
+                    active_days,
+                    active_hours,
+                    hourly_counts,
+                    group_count,
+                ) in current_aggregates.items()
+            ),
+            key=self._natural_rank_sort_key,
+        )
+        previous_ranks = self._build_previous_rank_map(
+            previous_aggregates,
+            [user_id for user_id, *_rest in ordered_current],
+        )
+        leaderboard = [
+            WaterGroupReportMember(
+                user_id=user_id,
+                msg_count=msg_count,
+                active_hours=active_hours,
+                hourly_counts=hourly_counts,
+                current_rank=current_rank,
+                trend=(
+                    previous_ranks[user_id] - current_rank
+                    if user_id in previous_ranks
+                    else None
+                ),
+            )
+            for current_rank, (
+                user_id,
+                msg_count,
+                _active_days,
+                active_hours,
+                hourly_counts,
+                _group_count,
+            ) in enumerate(ordered_current, 1)
+        ]
+        current_hourly = self._sum_hourly(current_rows)
+        previous_hourly = self._sum_hourly(previous_rows)
+        return WaterGroupReportSnapshot(
+            group_id=group_id,
+            record_date=record_date,
+            total_msg_count=sum(int(row.msg_count) for row in current_rows),
+            active_user_count=len(current_aggregates),
+            active_hours=sum(1 for count in current_hourly if count > 0),
+            hourly_counts=current_hourly,
+            previous_total_msg_count=sum(int(row.msg_count) for row in previous_rows),
+            previous_active_user_count=len(previous_aggregates),
+            previous_active_hours=sum(1 for count in previous_hourly if count > 0),
+            previous_hourly_counts=previous_hourly,
+            leaderboard=leaderboard,
+        )
 
     async def _build_rank_entity_aggregates(
         self,

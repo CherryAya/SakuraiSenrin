@@ -7,7 +7,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any, cast
 
-from nonebot import get_driver, on_message, on_notice, require
+from nonebot import get_bots, get_driver, on_message, on_notice, require
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
     FriendRecallNoticeEvent,
@@ -75,6 +75,7 @@ from .services.matrix_suggestion import matrix_suggestion_service
 from .services.query_router import WaterQuerySpec, water_query_router
 from .services.rank_query import water_rank_query_service
 from .services.rank_types import RANK_SHORTCUT_ALIASES, WaterRankQuerySpec
+from .services.report import water_report_service
 from .services.settlement import water_settlement_service
 
 require("nonebot_plugin_apscheduler")
@@ -236,7 +237,7 @@ async def _initialize_water_plugin() -> None:
 
 water_query = on_command(
     "水王",
-    aliases={"水王排行榜", *RANK_SHORTCUT_ALIASES},
+    aliases={"水王排行榜", "水王日报", *RANK_SHORTCUT_ALIASES},
     priority=5,
     block=True,
 )
@@ -322,6 +323,34 @@ async def _water_summary_archive_job() -> None:
         logger.exception(f"[Water] cron summary archive failed: {e}")
 
 
+@scheduler.scheduled_job(
+    "cron",
+    hour=0,
+    minute=40,
+    id="water_daily_report_push",
+    coalesce=True,
+    misfire_grace_time=300,
+    max_instances=1,
+)
+async def _water_daily_report_push_job() -> None:
+    try:
+        bots = list(get_bots().values())
+        if not bots:
+            logger.warning("[Water][ReportPush] skipped: no bot connected")
+            return
+        result = await water_report_service.run_daily_group_report_push(
+            bot=cast(Bot, bots[0]),
+            locale="zh-CN",
+        )
+        logger.success(
+            "[Water][ReportPush] cron done: "
+            f"date={result.record_date} candidates={result.candidate_groups} "
+            f"sent={result.sent_groups} failed={result.failed_groups}"
+        )
+    except Exception as e:
+        logger.exception(f"[Water][ReportPush] cron failed: {e}")
+
+
 @water_recorder.handle()
 async def _(bot: Bot, event: GroupMessageEvent) -> None:
     await handle_water_record(bot, event)
@@ -381,7 +410,23 @@ async def _(
     shortcut_rank_spec, shortcut_errors = water_query_router.parse_shortcut_command(
         getattr(event, "raw_message", "")
     )
-    if shortcut_rank_spec is not None:
+    raw_message = getattr(event, "raw_message", "").strip()
+    today_report_aliases = {
+        "#水王日报",
+        "水王日报",
+        "/水王日报",
+        "＃水王日报",
+        "井水王日报",
+    }
+    if raw_message in today_report_aliases:
+        spec = WaterQuerySpec(
+            subject="group",
+            scope_type="activity",
+            scope_value="today",
+            view="report",
+            mode="simple",
+        )
+    elif shortcut_rank_spec is not None:
         spec = WaterQuerySpec(
             subject="personal",
             scope_type="rank",
@@ -402,6 +447,16 @@ async def _(
         return
     else:
         spec = water_query_router.parse(text)
+    if spec.view == "report":
+        if not is_group_admin_event(event):
+            await matcher.finish(tr(locale, "water.common.admin_confirm"))
+        acquired, remain_seconds = (
+            water_report_service.try_acquire_today_report_cooldown(str(event.group_id))
+        )
+        if not acquired:
+            await matcher.finish(
+                tr(locale, "water.report.cooldown", seconds=remain_seconds)
+            )
     if water_query_router.should_send_working(spec) and (
         spec.rank_spec is None
         or water_query_router.is_rank_period_allowed(
