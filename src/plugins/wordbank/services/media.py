@@ -1318,6 +1318,17 @@ class WordbankMediaService:
                 )
                 return cached
 
+            legacy_bytes = await self._load_from_legacy_storage(refreshed)
+            if legacy_bytes is not None:
+                log_perf(
+                    "media.load_canonical_storage_bytes.end",
+                    start=start,
+                    canonical_image_id=canonical_image_id,
+                    source="legacy_storage",
+                    bytes=len(legacy_bytes),
+                )
+                return legacy_bytes
+
             remote_bytes = await self._load_from_remote_storage(refreshed)
             if remote_bytes is not None:
                 log_perf(
@@ -1329,21 +1340,14 @@ class WordbankMediaService:
                 )
                 return remote_bytes
 
-            if refreshed.remote_storage_path or self.remote_storage is not None:
-                log_perf(
-                    "media.load_canonical_storage_bytes.remote_miss_fallback_legacy",
-                    reason="remote_miss_or_unavailable",
-                    **refreshed_fields,
-                )
-            legacy_bytes = await self._load_from_legacy_storage(refreshed)
             log_perf(
                 "media.load_canonical_storage_bytes.end",
                 start=start,
                 canonical_image_id=canonical_image_id,
-                source="legacy_storage" if legacy_bytes is not None else "miss",
-                bytes=len(legacy_bytes) if legacy_bytes is not None else 0,
+                source="miss",
+                bytes=0,
             )
-            return legacy_bytes
+            return None
         finally:
             lock.release()
 

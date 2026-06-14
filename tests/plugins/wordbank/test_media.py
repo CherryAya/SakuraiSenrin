@@ -797,12 +797,12 @@ async def test_media_cache_singleflight_prevents_duplicate_remote_download(
     assert storage.calls == 1
 
 
-async def test_media_falls_back_to_legacy_local_storage_path_when_remote_unavailable(
+async def test_media_prefers_legacy_local_storage_before_remote(
     tmp_path: Path,
 ) -> None:
     repo = _ImageRepo()
     storage = _ObjectStorage()
-    storage.get_bytes = AsyncMock(return_value=None)
+    storage.get_bytes = AsyncMock(side_effect=AssertionError("remote should not run"))
     legacy_root = tmp_path / "legacy"
     legacy_root.mkdir()
     legacy_path = legacy_root / "legacy.png"
@@ -836,15 +836,16 @@ async def test_media_falls_back_to_legacy_local_storage_path_when_remote_unavail
 
     assert loaded == legacy_bytes
     assert repo.images[0].remote_sync_status == "failed"
+    storage.get_bytes.assert_not_awaited()
 
 
-async def test_media_logs_remote_fallback_stages_when_legacy_handles_response(
+async def test_media_logs_legacy_stages_when_local_file_is_used_first(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = _ImageRepo()
     storage = _ObjectStorage()
-    storage.get_bytes = AsyncMock(return_value=None)
+    storage.get_bytes = AsyncMock(side_effect=AssertionError("remote should not run"))
     legacy_root = tmp_path / "legacy"
     legacy_root.mkdir()
     legacy_path = legacy_root / "legacy.png"
@@ -885,11 +886,9 @@ async def test_media_logs_remote_fallback_stages_when_legacy_handles_response(
     loaded = await service.load_canonical_storage_bytes(1)
 
     assert loaded == legacy_bytes
-    assert "media.load_canonical_storage_bytes.remote_fetch" in events
-    assert "media.remote_sync.mark_failed" in events
-    assert "media.load_canonical_storage_bytes.remote_miss_fallback_legacy" in events
     assert "media.load_canonical_storage_bytes.legacy_fetch" in events
     assert "media.load_canonical_storage_bytes.end" in events
+    assert "media.load_canonical_storage_bytes.remote_fetch" not in events
 
 
 async def test_media_backfills_local_cache_metadata_from_existing_cache_files(
