@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from src.database.core.consts import GroupStatus, InvitationStatus
+from src.lib.i18n.runtime import tr
 
 
 def get_group_block_reason(status: GroupStatus) -> str | None:
     if status.is_banned:
-        return "群聊已封禁"
+        return tr("zh-CN", "hook.processor.group_banned")
     if status.is_unauthorized:
-        return "群聊未授权"
+        return tr("zh-CN", "hook.processor.group_unauthorized")
     return None
 
 

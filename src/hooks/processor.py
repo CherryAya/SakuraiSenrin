@@ -20,6 +20,7 @@ from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import GLOBAL_GROUP_FLAG, TriggerType
 from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, is_set
@@ -35,6 +36,10 @@ from src.services.sync import (
 name = tr("zh-CN", "plugin.hook_processor.name")
 description = tr("zh-CN", "plugin.hook_processor.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "processor" / "README.MD"
+
+
+def _runtime_locale(group_id: str | None = None) -> LocaleCode:
+    return "zh-CN"
 
 
 __plugin_meta__ = create_plugin_metadata(
@@ -116,7 +121,7 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
             return
         if is_group_event and group_id in allowed_groups:
             return
-        raise IgnoredException("DEBUG 模式仅响应 DEV_TEST_GROUPS / DEV_TEST_USERS")
+        raise IgnoredException(tr(_runtime_locale(group_id), "hook.processor.debug_only"))
 
     user = await user_repo.get_user(user_id) if is_user_event else None
     group = await group_repo.get_group(group_id) if is_group_event else None
@@ -136,26 +141,28 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
     if is_no_check:
         return
 
+    locale = _runtime_locale(group_id or None)
+
     if is_user_event and user_id in config.IGNORED_USERS:
-        raise IgnoredException("用户已被全局配置忽略")
+        raise IgnoredException(tr(locale, "hook.processor.user_ignored"))
     if is_user_event and user_id in config.SUPERUSERS:
         return
     if is_user_event and await blacklist_repo.is_banned(user_id, GLOBAL_GROUP_FLAG):
-        raise IgnoredException("用户已被全局黑名单")
+        raise IgnoredException(tr(locale, "hook.processor.user_global_banned"))
     if is_group_event and user and getattr(user, "is_self_ignore", False):
-        raise IgnoredException("用户已启用 self_ignore")
+        raise IgnoredException(tr(locale, "hook.processor.user_self_ignored"))
     if is_group_event:
         if not group:
-            raise IgnoredException("未命中群缓存，默认阻止")
+            raise IgnoredException(tr(locale, "hook.processor.group_cache_miss"))
 
         if reason := get_group_block_reason(group.status):
             raise IgnoredException(reason)
 
         if group.is_all_shut:
-            raise IgnoredException("群聊被全员禁言")
+            raise IgnoredException(tr(locale, "hook.processor.group_all_shut"))
 
         if is_user_event and await blacklist_repo.is_banned(user_id, group_id):
-            raise IgnoredException("用户已被群组黑名单")
+            raise IgnoredException(tr(locale, "hook.processor.user_group_banned"))
 
 
 @run_preprocessor
