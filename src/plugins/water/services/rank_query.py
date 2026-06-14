@@ -17,9 +17,6 @@ from src.plugins.water.img import (
 )
 from src.plugins.water.services.rank import water_rank_service
 from src.plugins.water.services.rank_types import (
-    PERIOD_LABELS,
-    SCOPE_LABELS,
-    SUBJECT_LABELS,
     WaterRankPeriod,
     WaterRankScope,
     WaterRankSubject,
@@ -149,23 +146,34 @@ class WaterRankQueryService:
             locale,
         )
         champion = view_items[0]
-        title = (
-            f"{SUBJECT_LABELS[subject]} · {SCOPE_LABELS[scope]}{PERIOD_LABELS['day']}"
-        )
+        title = water_rank_service.build_rank_title(locale, subject, scope, "day")
+        scope_label = water_rank_service.build_scope_label(locale, scope)
+        subject_label = water_rank_service.build_subject_label(locale, subject)
         return WaterDayRankCardData(
             title=title,
-            scope_label=f"{SCOPE_LABELS[scope]} · {SUBJECT_LABELS[subject]}",
-            subject_label=SUBJECT_LABELS[subject],
+            scope_label=tr(
+                locale,
+                "water.rank.day.scope_label",
+                scope=scope_label,
+                subject=subject_label,
+            ),
+            subject_label=subject_label,
             leader_name=champion.display_name,
-            leader_rank_label=f"#{champion.current_rank}",
+            leader_rank_label=tr(
+                locale,
+                "water.rank.day.leader_rank",
+                rank=champion.current_rank,
+            ),
             generated_at=0,
             top_items=view_items,
-            summary_label=(
-                f"今日领跑: {champion.display_name}\n"
-                f"实时累计: {champion.msg_count} 条 · "
-                f"上榜对象: {overview.active_entity_count}"
+            summary_label=tr(
+                locale,
+                "water.rank.day.summary",
+                leader_name=champion.display_name,
+                msg_count=champion.msg_count,
+                active_entity_count=overview.active_entity_count,
             ),
-            footer_label="统计口径: 当天实时累计，图形为日榜瓷砖图。",
+            footer_label=tr(locale, "water.rank.day.footer"),
         )
 
 

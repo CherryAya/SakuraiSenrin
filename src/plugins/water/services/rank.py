@@ -149,6 +149,29 @@ class WaterRankService:
             return None
         return await build_water_period_rank_image(data, locale)
 
+    def build_rank_title(
+        self,
+        locale: LocaleCode,
+        subject: WaterRankSubject,
+        scope: WaterRankScope,
+        period: WaterRankPeriod,
+    ) -> str:
+        return self._build_rank_title(locale, subject, scope, period)
+
+    def build_subject_label(
+        self,
+        locale: LocaleCode,
+        subject: WaterRankSubject,
+    ) -> str:
+        return tr(locale, RANK_SUBJECT_LABEL_KEYS[subject])
+
+    def build_scope_label(
+        self,
+        locale: LocaleCode,
+        scope: WaterRankScope,
+    ) -> str:
+        return tr(locale, RANK_SCOPE_LABEL_KEYS[scope])
+
     async def build_natural_period_rank_data(
         self,
         *,

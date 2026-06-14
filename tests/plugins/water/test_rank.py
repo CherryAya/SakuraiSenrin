@@ -274,6 +274,73 @@ async def test_build_natural_period_rank_data_uses_i18n_display_meta(
     assert "{msg_count}" in data.board_summary_label
 
 
+@pytest.mark.asyncio
+async def test_build_day_rank_data_uses_i18n_labels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import rank_query as query_module
+
+    monkeypatch.setattr(
+        query_module.water_repo,
+        "get_natural_day_snapshot",
+        AsyncMock(
+            return_value=NaturalPeriodRankSnapshot(
+                leaderboard=[
+                    NaturalRankItem(
+                        entity_id="20001",
+                        msg_count=12,
+                        active_days=1,
+                        active_hours=4,
+                        hourly_counts=[1] * 24,
+                        current_rank=1,
+                        trend=1,
+                    )
+                ],
+                overview=NaturalRankOverview(
+                    total_msg_count=20,
+                    active_entity_count=3,
+                    hourly_counts=[1] * 24,
+                    previous_total_msg_count=10,
+                ),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        query_module.water_rank_service,
+        "_build_view_items",
+        AsyncMock(
+            return_value=[
+                WaterRankCardItem(
+                    entity_id="20001",
+                    display_name="群聊 20001",
+                    secondary_label="群號 20001",
+                    avatar=None,
+                    msg_count=12,
+                    active_days=1,
+                    active_hours=4,
+                    hourly_counts=[1] * 24,
+                    current_rank=1,
+                    trend=1,
+                )
+            ]
+        ),
+    )
+
+    data = await query_module.water_rank_query_service._build_day_rank_data(
+        subject="group",
+        scope="global",
+        group_id="20001",
+        locale="lzh",
+        limit=10,
+    )
+
+    assert data is not None
+    assert data.title == "群聊榜 · 全局日榜"
+    assert data.scope_label == "全局 · 群聊榜"
+    assert data.subject_label == "群聊榜"
+    assert data.summary_label.startswith("今日領跑:")
+
+
 async def _fake_total_snapshot(
     kwargs: dict[str, Any],
     builder: Any,
