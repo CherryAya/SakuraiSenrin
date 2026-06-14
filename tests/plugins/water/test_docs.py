@@ -18,6 +18,11 @@ def test_water_ranking_docs_include_shortcuts_and_hide_restricted_periods() -> N
 
     ranking = next(feature for feature in bundle.index if feature.slug == "ranking")
 
+    assert "#今日水王" in ranking.trigger
+    assert "#本周群榜" in ranking.trigger
+    assert "#本季矩阵榜" in ranking.trigger
+    assert "#本年水王" not in ranking.trigger
+    assert "#总水王" not in ranking.trigger
     assert "#今日水王" in ranking.overview
     assert "#本周群榜" in ranking.overview
     assert "revoke / recall" in ranking.overview
