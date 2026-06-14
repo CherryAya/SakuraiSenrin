@@ -1722,7 +1722,30 @@ def _message_segment_stats(message: Message | str) -> tuple[int, int]:
     )
 
 
-async def _build_passive_message(response: PassiveResponse) -> Message | str:
+def _image_payload_trace_fields(
+    trace_fields: Mapping[str, object] | None,
+) -> dict[str, object]:
+    if trace_fields is None:
+        return {}
+    payload: dict[str, object] = {}
+    for key in (
+        "requested_image_ids",
+        "loaded_image_ids",
+        "loaded_image_sizes",
+        "loaded_count",
+        "missing_count",
+        "image_total_bytes",
+        "image_max_bytes",
+    ):
+        value = trace_fields.get(key)
+        if value is not None:
+            payload[key] = value
+    return payload
+
+
+async def _build_passive_message(
+    response: PassiveResponse,
+) -> tuple[Message | str, dict[str, object]]:
     start = perf_start()
     if response.response_shape is None or response.response_shape.is_empty():
         log_perf(
@@ -1730,7 +1753,7 @@ async def _build_passive_message(response: PassiveResponse) -> Message | str:
             start=start,
             response_item_id=response.response_item_id,
         )
-        return response.text
+        return response.text, {}
     image_atom_count = sum(
         1 for atom in response.response_shape.atoms if atom.kind == "image"
     )
@@ -1740,19 +1763,23 @@ async def _build_passive_message(response: PassiveResponse) -> Message | str:
         atom_count=len(response.response_shape.atoms),
         image_atom_count=image_atom_count,
     )
+    render_trace: dict[str, object] = {}
     message = await render_shape_message(
         response.response_shape,
         wordbank_media_service,
         trace_fields={"response_item_id": response.response_item_id},
+        trace_sink=render_trace,
     )
+    image_trace_fields = _image_payload_trace_fields(render_trace)
     log_perf(
         "plugin.build_passive_message.rendered_shape",
         start=start,
         response_item_id=response.response_item_id,
         atoms=len(response.response_shape.atoms),
         segments=len(list(message)),
+        **cast(Any, image_trace_fields),
     )
-    return message
+    return message, image_trace_fields
 
 
 @wordbank_passive.handle()
@@ -1773,7 +1800,7 @@ async def _(bot: Bot, event: MessageEvent) -> None:
         return
     if response:
         build_start = perf_start()
-        message = await _build_passive_message(response)
+        message, image_trace_fields = await _build_passive_message(response)
         build_ms = elapsed_ms(build_start)
         segment_count, image_segment_count = _message_segment_stats(message)
         log_perf(
@@ -1782,6 +1809,7 @@ async def _(bot: Bot, event: MessageEvent) -> None:
             response_item_id=response.response_item_id,
             segment_count=segment_count,
             image_segment_count=image_segment_count,
+            **cast(Any, image_trace_fields),
         )
         send_start = perf_start()
         send_result = await wordbank_passive.send(message)
@@ -1793,6 +1821,7 @@ async def _(bot: Bot, event: MessageEvent) -> None:
             response_item_id=response.response_item_id,
             segment_count=segment_count,
             image_segment_count=image_segment_count,
+            **cast(Any, image_trace_fields),
         )
         record_start = perf_start()
         await _record_passive_response_message(response, send_result)
@@ -1803,10 +1832,13 @@ async def _(bot: Bot, event: MessageEvent) -> None:
             message_type=response.message_type,
             trigger_group_id=response.trigger_group_id,
             response_item_id=response.response_item_id,
+            segment_count=segment_count,
+            image_segment_count=image_segment_count,
             handle_ms=f"{handle_ms:.2f}",
             build_ms=f"{build_ms:.2f}",
             send_ms=f"{send_ms:.2f}",
             record_ms=f"{record_ms:.2f}",
+            **cast(Any, image_trace_fields),
         )
         return
     log_perf(
@@ -1860,11 +1892,29 @@ async def _(bot: Bot, event: NoticeEvent) -> None:
         return
     if response:
         build_start = perf_start()
-        message = await _build_passive_message(response)
+        message, image_trace_fields = await _build_passive_message(response)
         build_ms = elapsed_ms(build_start)
+        segment_count, image_segment_count = _message_segment_stats(message)
+        log_perf(
+            "plugin.notice.handle.send.begin",
+            message_type=response.message_type,
+            response_item_id=response.response_item_id,
+            segment_count=segment_count,
+            image_segment_count=image_segment_count,
+            **cast(Any, image_trace_fields),
+        )
         send_start = perf_start()
         send_result = await wordbank_notice.send(message)
         send_ms = elapsed_ms(send_start)
+        log_perf(
+            "plugin.notice.handle.send.done",
+            start=send_start,
+            message_type=response.message_type,
+            response_item_id=response.response_item_id,
+            segment_count=segment_count,
+            image_segment_count=image_segment_count,
+            **cast(Any, image_trace_fields),
+        )
         record_start = perf_start()
         await _record_passive_response_message(response, send_result)
         record_ms = elapsed_ms(record_start)
@@ -1874,10 +1924,13 @@ async def _(bot: Bot, event: NoticeEvent) -> None:
             message_type=response.message_type,
             trigger_group_id=response.trigger_group_id,
             response_item_id=response.response_item_id,
+            segment_count=segment_count,
+            image_segment_count=image_segment_count,
             handle_ms=f"{handle_ms:.2f}",
             build_ms=f"{build_ms:.2f}",
             send_ms=f"{send_ms:.2f}",
             record_ms=f"{record_ms:.2f}",
+            **cast(Any, image_trace_fields),
         )
         return
     log_perf(

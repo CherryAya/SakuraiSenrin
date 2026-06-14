@@ -69,10 +69,19 @@ async def test_build_passive_message_rebuilds_text_and_image_segments(
         response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
     )
 
-    message = await wordbank_plugin._build_passive_message(response)
+    message, image_trace_fields = await wordbank_plugin._build_passive_message(response)
 
     assert isinstance(message, Message)
     assert [segment.type for segment in message] == ["text", "image"]
+    assert image_trace_fields == {
+        "requested_image_ids": (7,),
+        "loaded_image_ids": (7,),
+        "loaded_image_sizes": (11,),
+        "loaded_count": 1,
+        "missing_count": 0,
+        "image_total_bytes": 11,
+        "image_max_bytes": 11,
+    }
     media_service.load_canonical_storage_bytes.assert_awaited_once_with(7)
 
 
@@ -84,11 +93,11 @@ async def test_build_passive_message_logs_render_shape_stages(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
     monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
-    events: list[str] = []
+    events: dict[str, dict[str, object]] = {}
 
     def _capture(stage: str, *, start: float | None = None, **fields: object) -> None:
-        _ = start, fields
-        events.append(stage)
+        _ = start
+        events[stage] = fields
 
     monkeypatch.setattr(wordbank_plugin, "log_perf", _capture)
     monkeypatch.setattr(rendering_module, "log_perf", _capture)
@@ -103,13 +112,20 @@ async def test_build_passive_message_logs_render_shape_stages(
         response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
     )
 
-    message = await wordbank_plugin._build_passive_message(response)
+    message, image_trace_fields = await wordbank_plugin._build_passive_message(response)
 
     assert isinstance(message, Message)
+    assert image_trace_fields["image_total_bytes"] == len(b"image-bytes")
     assert "plugin.build_passive_message.render_shape.begin" in events
-    assert "plugin.build_passive_message.render_shape.images_loaded" in events
-    assert "plugin.build_passive_message.render_shape.segment_built" in events
-    assert "plugin.build_passive_message.rendered_shape" in events
+    assert events["plugin.build_passive_message.render_shape.images_loaded"][
+        "loaded_image_sizes"
+    ] == (len(b"image-bytes"),)
+    assert events["plugin.build_passive_message.render_shape.segment_built"][
+        "image_total_bytes"
+    ] == len(b"image-bytes")
+    assert events["plugin.build_passive_message.rendered_shape"][
+        "image_max_bytes"
+    ] == len(b"image-bytes")
 
 
 @pytest.mark.asyncio
@@ -131,10 +147,19 @@ async def test_build_passive_message_keeps_text_when_image_storage_is_missing(
         response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
     )
 
-    message = await wordbank_plugin._build_passive_message(response)
+    message, image_trace_fields = await wordbank_plugin._build_passive_message(response)
 
     assert isinstance(message, Message)
     assert [segment.type for segment in message] == ["text", "text"]
     assert message[0].data["text"] == "做个好梦"
     assert message[1].data["text"] == MISSING_IMAGE_PLACEHOLDER
+    assert image_trace_fields == {
+        "requested_image_ids": (7,),
+        "loaded_image_ids": (),
+        "loaded_image_sizes": (),
+        "loaded_count": 0,
+        "missing_count": 1,
+        "image_total_bytes": 0,
+        "image_max_bytes": 0,
+    }
     media_service.load_canonical_storage_bytes.assert_awaited_once_with(7)

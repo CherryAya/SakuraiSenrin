@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 import math
 from typing import Any, cast
 
@@ -27,20 +27,18 @@ async def render_shape_message(
     media_service: WordbankMediaService,
     *,
     trace_fields: Mapping[str, object] | None = None,
+    trace_sink: MutableMapping[str, object] | None = None,
 ) -> Message:
     load_start = perf_start()
     image_bytes_by_id = await _load_shape_image_bytes(shape, media_service)
+    payload_stats = _build_image_payload_stats(image_bytes_by_id)
+    if trace_sink is not None:
+        trace_sink.update(payload_stats)
     if trace_fields is not None:
-        requested_image_ids = tuple(sorted(image_bytes_by_id))
-        loaded_count = sum(
-            1 for image_bytes in image_bytes_by_id.values() if image_bytes is not None
-        )
         log_perf(
             "plugin.build_passive_message.render_shape.images_loaded",
             start=load_start,
-            requested_image_ids=requested_image_ids,
-            loaded_count=loaded_count,
-            missing_count=len(image_bytes_by_id) - loaded_count,
+            **cast(Any, payload_stats),
             **cast(Any, dict(trace_fields)),
         )
     message = Message()
@@ -62,6 +60,7 @@ async def render_shape_message(
             "plugin.build_passive_message.render_shape.segment_built",
             segments=len(list(message)),
             image_segments=image_segments,
+            **cast(Any, payload_stats),
             **cast(Any, dict(trace_fields)),
         )
     return message
@@ -204,3 +203,25 @@ async def _load_image_bytes_map(
         )
     )
     return dict(zip(sorted(image_ids), loaded, strict=False))
+
+
+def _build_image_payload_stats(
+    image_bytes_by_id: Mapping[int, bytes | None],
+) -> dict[str, object]:
+    requested_image_ids = tuple(sorted(image_bytes_by_id))
+    loaded_pairs = tuple(
+        (image_id, len(image_bytes))
+        for image_id, image_bytes in sorted(image_bytes_by_id.items())
+        if image_bytes is not None
+    )
+    loaded_count = len(loaded_pairs)
+    image_total_bytes = sum(size for _, size in loaded_pairs)
+    return {
+        "requested_image_ids": requested_image_ids,
+        "loaded_image_ids": tuple(image_id for image_id, _ in loaded_pairs),
+        "loaded_image_sizes": tuple(size for _, size in loaded_pairs),
+        "loaded_count": loaded_count,
+        "missing_count": len(image_bytes_by_id) - loaded_count,
+        "image_total_bytes": image_total_bytes,
+        "image_max_bytes": max((size for _, size in loaded_pairs), default=0),
+    }
