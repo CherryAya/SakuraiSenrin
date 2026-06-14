@@ -370,10 +370,8 @@ async def test_help_matcher_formats_water_overview_shortcuts(app: App) -> None:
         assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
         assert shortcut_label in rendered
         assert "    #今日水王 / #本周水王 / #本月水王 / #本季水王" in rendered
-        assert (
-            "    #今日矩阵群榜 / #本周矩阵群榜 / #本月矩阵群榜 / #本季矩阵群榜"
-            in rendered
-        )
+        assert "    #今日矩阵群榜 / ..." in rendered
+        assert "    #今日矩阵榜 / ..." in rendered
 
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, expected, bot=bot)

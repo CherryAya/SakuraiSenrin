@@ -1037,13 +1037,29 @@ def _format_feature_command_lines(
 
 def _format_shortcut_section_lines(sections: Sequence[str]) -> list[str]:
     lines: list[str] = []
-    for section in sections:
+    for index, section in enumerate(sections):
         if ":" not in section:
             lines.append(f"    {section}")
             continue
         _, commands = section.split(":", 1)
-        lines.append(f"    {commands.strip()}")
+        summarized = _summarize_shortcut_commands(
+            commands.strip(),
+            keep_full=index == 0,
+        )
+        lines.append(f"    {summarized}")
     return lines
+
+
+def _summarize_shortcut_commands(commands: str, *, keep_full: bool = False) -> str:
+    if keep_full:
+        return commands
+    parts = [part.strip() for part in commands.split("/") if part.strip()]
+    if not parts:
+        return commands
+    primary = parts[0]
+    if len(parts) == 1:
+        return primary
+    return f"{primary} / ..."
 
 
 def _feature_notice_items(feature: FeatureDoc, *, locale: LocaleCode) -> list[str]:

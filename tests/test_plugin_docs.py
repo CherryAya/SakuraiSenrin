@@ -276,7 +276,8 @@ def test_build_readme_docs_formats_multi_section_commands_for_help_output() -> N
     expected_prefix = f"指令:\n  #水王 / #水王 <主体> <范围> <时间>\n  {shortcut_label}"
     assert expected_prefix in rendered
     assert "    #今日水王 / #本周水王 / #本月水王 / #本季水王" in rendered
-    assert "    #今日群榜 / #本周群榜 / #本月群榜 / #本季群榜" in rendered
+    assert "    #今日群榜 / ..." in rendered
+    assert "    #今日矩阵榜 / ..." in rendered
 
 
 def test_render_doc_node_overview_formats_multi_section_commands() -> None:
@@ -299,7 +300,7 @@ def test_render_doc_node_overview_formats_multi_section_commands() -> None:
     assert "3. 查看周期榜单" in rendered
     assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
     assert f"  {tr('zh-CN', 'docs.feature.shortcuts')}" in rendered
-    assert "    #今日矩阵群榜 / #本周矩阵群榜" in rendered
+    assert "    #今日矩阵群榜 / ..." in rendered
 
 
 def test_build_readme_docs_can_attach_representative_overview_demo(
