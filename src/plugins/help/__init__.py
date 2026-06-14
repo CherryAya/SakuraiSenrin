@@ -19,6 +19,7 @@ from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
 from nonebot.plugin import Plugin, PluginMetadata, on_command
 
+from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
@@ -276,7 +277,11 @@ def _build_index_message(
         "",
         tr(locale, "help.index.notice"),
         tr(locale, "help.index.notice.item1"),
-        tr(locale, "help.index.notice.item2"),
+        tr(
+            locale,
+            "help.index.notice.item2",
+            main_group_id=config.MAIN_GROUP_ID,
+        ),
     ]
 
     if not roots:

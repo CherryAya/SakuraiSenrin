@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pil_utils import BuildImage
 from pil_utils.text2image import Text2Image
 
+from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
 from src.lib.demo_theme import BASE_THEME
@@ -32,7 +33,6 @@ from .consts import TriggerType
 DEMO_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 DEMO_AVATAR_PATH = DEMO_ASSETS_DIR / "senrin-demo-avatar.png"
 DEMO_STANDEE_PATH = DEMO_ASSETS_DIR / "senrin-demo-standee.png"
-SUPPORT_NOTE = "如需进一步支持，请联系管理员，或加入反馈群「427842039」💬。"
 DEFAULT_HELP_CATEGORY = "general"
 
 type DocsResult = Message | Awaitable[Message] | str | Awaitable[str]
@@ -203,6 +203,14 @@ class NodeMatchResult:
     status: Literal["matched", "not_found", "ambiguous"]
     node: DocNode | None = None
     candidates: tuple[DocNode, ...] = ()
+
+
+def _support_note(locale: LocaleCode) -> str:
+    return tr(
+        locale,
+        "help.index.notice.item2",
+        main_group_id=config.MAIN_GROUP_ID,
+    ).removeprefix("2. ").strip()
 
 
 def create_docs_meta(
@@ -514,7 +522,6 @@ def render_doc_node_overview(
     actor_permission: Permission = Permission.NORMAL,
     children: Sequence[DocNode] = (),
 ) -> Message:
-    del locale
     lines = [f"📖 ===== {node.title} =====", ""]
     if node.summary:
         lines.extend([node.summary, ""])
@@ -544,7 +551,7 @@ def render_doc_node_overview(
         [
             "⚠️ 注意事项:",
             "1. 请确认指令参数填写完整。",
-            f"2. {SUPPORT_NOTE}",
+            f"2. {_support_note(locale)}",
         ]
     )
     message = Message("\n".join(lines).strip())
@@ -566,7 +573,6 @@ def render_doc_feature(
     locale: LocaleCode,
     include_demo: bool = True,
 ) -> Message:
-    del locale
     lines = [
         f"📖 ===== {node.title} / {feature.title} =====",
         "",
@@ -577,7 +583,10 @@ def render_doc_feature(
         "",
         "⚠️ 注意事项:",
     ]
-    for index, note in enumerate(_feature_notice_items(feature), start=1):
+    for index, note in enumerate(
+        _feature_notice_items(feature, locale=locale),
+        start=1,
+    ):
         lines.append(f"{index}. {note}")
     message = Message("\n".join(lines).strip())
     if not include_demo:
@@ -1010,14 +1019,14 @@ def _format_shortcut_section_lines(sections: Sequence[str]) -> list[str]:
     return lines
 
 
-def _feature_notice_items(feature: FeatureDoc) -> list[str]:
+def _feature_notice_items(feature: FeatureDoc, *, locale: LocaleCode) -> list[str]:
     notes: list[str] = []
     preconditions = _normalize_inline_text(feature.preconditions)
     if preconditions and preconditions != "无":
         notes.append(preconditions)
     else:
         notes.append("请确认指令参数填写完整。")
-    notes.append(SUPPORT_NOTE)
+    notes.append(_support_note(locale))
     return notes
 
 

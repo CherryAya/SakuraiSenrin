@@ -29,7 +29,7 @@ CATALOG: Final[dict[str, str]] = {
     "help.index.example.feature": "  示例: #help <节点名> <子功能名>",
     "help.index.notice": "⚠️ 注意事项:",
     "help.index.notice.item1": "1. 请确保输入的插件名称或节点名称存在。",
-    "help.index.notice.item2": "2. 如需进一步支持，请联系管理员，或加入反馈群「427842039」💬。",
+    "help.index.notice.item2": "2. 如需进一步支持，请联系管理员，或加入反馈群「{main_group_id}」💬。",
     "help.index.available": "🔧 当前可用模块如下:",
     "help.index.hint": "发送 #help <插件名> 查看详细文档。",
     "help.index.empty": "当前暂无可展示插件文档。",
