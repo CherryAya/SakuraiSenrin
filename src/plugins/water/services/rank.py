@@ -11,7 +11,7 @@ import arrow
 from pil_utils import BuildImage
 
 from src.lib.i18n.keys import MessageKey
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.runtime import tr, tr_template
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.logger import logger
@@ -23,9 +23,6 @@ from src.plugins.water.img import (
     build_water_period_rank_image,
 )
 from src.plugins.water.services.rank_types import (
-    PERIOD_LABELS,
-    SCOPE_LABELS,
-    SUBJECT_LABELS,
     WaterRankPeriod,
     WaterRankScope,
     WaterRankSubject,
@@ -34,6 +31,51 @@ from src.repositories import user_repo
 from src.services.info import resolve_group_name
 
 PeriodType = Literal["week", "month", "season", "year"]
+
+RANK_SUBJECT_LABEL_KEYS: dict[WaterRankSubject, MessageKey] = {
+    "user": "water.rank.subject.user",
+    "group": "water.rank.subject.group",
+    "matrix": "water.rank.subject.matrix",
+}
+RANK_SCOPE_LABEL_KEYS: dict[WaterRankScope, MessageKey] = {
+    "group": "water.rank.scope.group",
+    "matrix": "water.rank.scope.matrix",
+    "global": "water.rank.scope.global",
+}
+RANK_PERIOD_LABEL_KEYS: dict[WaterRankPeriod, MessageKey] = {
+    "day": "water.rank.period.day",
+    "week": "water.rank.period.week",
+    "month": "water.rank.period.month",
+    "season": "water.rank.period.season",
+    "year": "water.rank.period.year",
+    "total": "water.rank.period.total",
+}
+RANK_DISPLAY_META_KEYS: dict[WaterRankSubject, dict[str, MessageKey]] = {
+    "user": {
+        "entity_label": "water.rank.display.user.entity_label",
+        "champion_summary_label": "water.rank.display.user.champion_summary",
+        "board_title": "water.rank.display.user.board_title",
+        "board_summary_label": "water.rank.display.user.board_summary",
+        "board_active_hours_label": "water.rank.display.user.board_active_hours",
+        "overview_title": "water.rank.display.user.overview_title",
+    },
+    "group": {
+        "entity_label": "water.rank.display.group.entity_label",
+        "champion_summary_label": "water.rank.display.group.champion_summary",
+        "board_title": "water.rank.display.group.board_title",
+        "board_summary_label": "water.rank.display.group.board_summary",
+        "board_active_hours_label": "water.rank.display.group.board_active_hours",
+        "overview_title": "water.rank.display.group.overview_title",
+    },
+    "matrix": {
+        "entity_label": "water.rank.display.matrix.entity_label",
+        "champion_summary_label": "water.rank.display.matrix.champion_summary",
+        "board_title": "water.rank.display.matrix.board_title",
+        "board_summary_label": "water.rank.display.matrix.board_summary",
+        "board_active_hours_label": "water.rank.display.matrix.board_active_hours",
+        "overview_title": "water.rank.display.matrix.overview_title",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -159,14 +201,12 @@ class WaterRankService:
         hydrate_elapsed = (perf_counter() - hydrate_started) * 1000
         champion = view_items[0]
         runner_up_count = view_items[1].msg_count if len(view_items) > 1 else 0
-        display_meta = self._build_display_meta(subject, scope)
+        display_meta = self._build_display_meta(subject, locale)
         normalized_period = cast(
             Literal["week", "month", "season", "year", "total"],
             "total" if period == "total" else period,
         )
-        title = (
-            f"{SUBJECT_LABELS[subject]} · {SCOPE_LABELS[scope]}{PERIOD_LABELS[period]}"
-        )
+        title = self._build_rank_title(locale, subject, scope, period)
         card_data = WaterPeriodRankCardData(
             period=normalized_period,
             title=title,
@@ -275,7 +315,7 @@ class WaterRankService:
             return RankWindow(
                 period=period,
                 locale=locale,
-                title=f"{SUBJECT_LABELS[subject]} · {SCOPE_LABELS[scope]}总榜",
+                title=self._build_rank_title(locale, subject, scope, period),
                 badge=f"{day_count}d",
                 current_start=current_start,
                 current_end=anchor,
@@ -292,7 +332,7 @@ class WaterRankService:
         return RankWindow(
             period=period,
             locale=locale,
-            title=tr(locale, self.PERIOD_TITLE_KEYS[period_key]),
+            title=self._build_rank_title(locale, subject, scope, period),
             badge=self._build_badge(anchor, period_key),
             current_start=current_start,
             current_end=anchor,
@@ -387,44 +427,36 @@ class WaterRankService:
     def _build_display_meta(
         self,
         subject: WaterRankSubject,
-        scope: WaterRankScope,
+        locale: LocaleCode,
     ) -> dict[str, str]:
-        _ = scope
-        if subject == "group":
-            return {
-                "entity_label": "群聊",
-                "champion_summary_label": (
-                    "总消息 {msg_count} 条 · 活跃 {active_days} 天"
-                ),
-                "board_title": "TOP 10 群聊榜",
-                "board_summary_label": "{msg_count} 条 · 活跃 {active_days} 天",
-                "board_active_hours_label": "活跃时段覆盖 {active_hours} 小时",
-                "overview_title": "群聊活跃画像",
-            }
-        if subject == "matrix":
-            return {
-                "entity_label": "矩阵",
-                "champion_summary_label": (
-                    "总消息 {msg_count} 条 · "
-                    "活跃 {active_days} 天 · 覆盖 {group_count} 群"
-                ),
-                "board_title": "TOP 10 矩阵榜",
-                "board_summary_label": (
-                    "{msg_count} 条 · {active_days} 天 · 覆盖 {group_count} 群"
-                ),
-                "board_active_hours_label": "活跃时段覆盖 {active_hours} 小时",
-                "overview_title": "矩阵活跃画像",
-            }
-        return {
-            "entity_label": "用户",
-            "champion_summary_label": "总消息 {msg_count} 条 · 活跃 {active_days} 天",
-            "board_title": "TOP 10 用户榜",
-            "board_summary_label": (
-                "{msg_count} 条 · {active_days} 天 · 日均 {avg_daily}"
-            ),
-            "board_active_hours_label": "活跃时段覆盖 {active_hours} 小时",
-            "overview_title": "用户活跃画像",
+        template_fields = {
+            "champion_summary_label",
+            "board_summary_label",
+            "board_active_hours_label",
         }
+        meta_keys = RANK_DISPLAY_META_KEYS[subject]
+        display_meta: dict[str, str] = {}
+        for field, key in meta_keys.items():
+            if field in template_fields:
+                display_meta[field] = tr_template(locale, key)
+            else:
+                display_meta[field] = tr(locale, key)
+        return display_meta
+
+    @staticmethod
+    def _build_rank_title(
+        locale: LocaleCode,
+        subject: WaterRankSubject,
+        scope: WaterRankScope,
+        period: WaterRankPeriod,
+    ) -> str:
+        return tr(
+            locale,
+            "water.rank.title.format",
+            subject=tr(locale, RANK_SUBJECT_LABEL_KEYS[subject]),
+            scope=tr(locale, RANK_SCOPE_LABEL_KEYS[scope]),
+            period=tr(locale, RANK_PERIOD_LABEL_KEYS[period]),
+        )
 
     @staticmethod
     async def _resolve_display_name(
@@ -449,9 +481,14 @@ class WaterRankService:
         locale: LocaleCode,
     ) -> str:
         if subject == "group":
-            return f"群号 {entity_id}"
+            return tr(locale, "water.rank.secondary.group", entity_id=entity_id)
         if subject == "matrix":
-            return f"矩阵 {entity_id} · {group_count} 群"
+            return tr(
+                locale,
+                "water.rank.secondary.matrix",
+                entity_id=entity_id,
+                group_count=group_count,
+            )
         return tr(locale, "water.image.day_rank.member_fallback", tail=entity_id[-4:])
 
     @staticmethod

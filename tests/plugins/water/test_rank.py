@@ -210,6 +210,70 @@ async def test_build_natural_total_rank_data_uses_first_record_window(
     assert data.board_title == "TOP 10 矩阵榜"
 
 
+@pytest.mark.asyncio
+async def test_build_natural_period_rank_data_uses_i18n_display_meta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import rank as rank_service_module
+
+    service = WaterRankService()
+
+    async def _fake_period_snapshot(**kwargs: Any) -> NaturalPeriodRankSnapshot:
+        _ = kwargs
+        return _build_snapshot(
+            [
+                NaturalRankItem(
+                    entity_id="20001",
+                    msg_count=88,
+                    active_days=6,
+                    active_hours=18,
+                    hourly_counts=[2] * 24,
+                    current_rank=1,
+                    trend=2,
+                )
+            ],
+            total_msg_count=240,
+            active_entity_count=36,
+            previous_total_msg_count=180,
+        )
+
+    monkeypatch.setattr(
+        rank_service_module.water_repo,
+        "get_settlement_state",
+        AsyncMock(return_value={"last_success_record_date": 20260523}),
+    )
+    monkeypatch.setattr(
+        rank_service_module.water_repo,
+        "get_natural_period_snapshot",
+        AsyncMock(side_effect=_fake_period_snapshot),
+    )
+    monkeypatch.setattr(
+        service,
+        "_resolve_display_name",
+        AsyncMock(return_value="群聊 20001"),
+    )
+    monkeypatch.setattr(service, "_resolve_avatar", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        service,
+        "_resolve_secondary_label",
+        AsyncMock(return_value="群號 20001"),
+    )
+
+    data = await service.build_natural_period_rank_data(
+        subject="group",
+        scope="global",
+        period="week",
+        group_id="20001",
+        locale="lzh",
+    )
+
+    assert data is not None
+    assert data.title == "群聊榜 · 全局週榜"
+    assert data.entity_label == "群聊"
+    assert data.board_title == "群聊前十榜"
+    assert "{msg_count}" in data.board_summary_label
+
+
 async def _fake_total_snapshot(
     kwargs: dict[str, Any],
     builder: Any,
