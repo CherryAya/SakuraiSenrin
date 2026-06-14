@@ -533,8 +533,8 @@ def render_doc_node_overview(
     elif visible_features:
         for index, feature in enumerate(visible_features, start=1):
             lines.append(f"{index}. {feature.title}")
-            lines.append(
-                f"  {_feature_command_for_display(node.bundle, feature, node.title)}"
+            lines.extend(
+                _format_feature_command_lines(node.bundle, feature, node.title)
             )
             lines.append("")
     else:

@@ -20,6 +20,7 @@ from src.lib.plugin_docs import (
     load_plugin_doc_bundle,
     load_representative_demo_bytes,
     match_feature,
+    render_doc_node_overview,
     split_inline_text_spans,
 )
 
@@ -272,6 +273,29 @@ def test_build_readme_docs_formats_multi_section_commands_for_help_output() -> N
     assert "指令:\n  #水王 / #水王 <主体> <范围> <时间>\n  快捷入口:" in rendered
     assert "    #今日水王 / #本周水王 / #本月水王 / #本季水王" in rendered
     assert "    #今日群榜 / #今日群聊榜 / #本周群榜 / #本周群聊榜" in rendered
+
+
+def test_render_doc_node_overview_formats_multi_section_commands() -> None:
+    node = load_doc_node(
+        source=Path("src/plugins/water/docs/README.MD"),
+        default_name="吹水记录",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    message = render_doc_node_overview(
+        node,
+        locale="zh-CN",
+        include_demo=False,
+        actor_permission=Permission.NORMAL,
+    )
+
+    rendered = str(message)
+    assert "3. 查看周期榜单" in rendered
+    assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
+    assert "  快捷入口:" in rendered
+    assert "    #今日矩阵群榜 / #今日矩阵群聊榜" in rendered
 
 
 def test_build_readme_docs_can_attach_representative_overview_demo(

@@ -1,9 +1,13 @@
+import sys
 from types import SimpleNamespace
 from typing import Any, cast
 
 import nonebot
+from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.plugin import PluginMetadata
+from nonebug import App
+import pytest
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
@@ -14,8 +18,15 @@ from src.lib.plugin_docs import (
     create_docs_meta,
     load_doc_node,
 )
+from tests.plugins.water.helpers import build_group_message_event
 
 nonebot.init()
+nonebot.require("nonebot_plugin_apscheduler")
+if nonebot.get_plugin("help") is None:
+    nonebot.load_plugin("src.plugins.help")
+if nonebot.get_plugin("water") is None:
+    sys.modules.pop("src.plugins.water", None)
+    nonebot.load_plugin("src.plugins.water")
 
 from src.plugins.help import (
     DocsEntry,
@@ -23,10 +34,13 @@ from src.plugins.help import (
     _build_permission_denied_message,
     _can_view_entry,
     _filter_authorized_entries,
+    _iter_docs_entries,
     _match_entry,
     _read_plugin_permission,
+    _resolve_actor_permission,
     _resolve_docs_message,
     _split_query,
+    help_matcher,
 )
 
 
@@ -330,3 +344,30 @@ async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:
     assert "子节点:" in str(root_message)
     assert "群组管理模块" in str(root_message)
     assert "📖 ===== 群组管理模块 =====" in str(child_message)
+
+
+@pytest.mark.asyncio
+async def test_help_matcher_formats_water_overview_shortcuts(app: App) -> None:
+    event = build_group_message_event("#help 吹水记录")
+    entries = _iter_docs_entries("zh-CN")
+    water_entry = next(entry for entry in entries if entry.display_name == "吹水记录")
+
+    async with app.test_matcher(help_matcher) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        actor_permission = await _resolve_actor_permission(bot, event)
+        expected = await _resolve_docs_message(
+            water_entry,
+            "zh-CN",
+            actor_permission=actor_permission,
+            all_entries=entries,
+        )
+        rendered = str(expected)
+
+        assert "3. 查看周期榜单" in rendered
+        assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
+        assert "  快捷入口:" in rendered
+        assert "    #今日矩阵群榜 / #今日矩阵群聊榜" in rendered
+
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, expected, bot=bot)
+        ctx.should_finished(help_matcher)
