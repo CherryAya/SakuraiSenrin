@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11 import Message
 import pytest
 
-from src.plugins.water.database.repo import WaterDailyReportCandidate
+from src.plugins.water.database.repo import (
+    WaterDailyReportCandidate,
+    WaterGroupReportMember,
+    WaterGroupReportSnapshot,
+)
 from src.plugins.water.services.report import (
     TODAY_REPORT_COOLDOWN_SECONDS,
     WaterDailyReportBatchResult,
@@ -123,3 +127,68 @@ async def test_run_daily_group_report_push_renders_parallel_and_sends_serially(
     assert first_call.kwargs["group_id"] == 20002
     assert second_call.kwargs["group_id"] == 20001
     assert sleep_mock.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_build_card_data_keeps_report_templates_unformatted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import report as report_module
+
+    monkeypatch.setattr(
+        report_module,
+        "resolve_group_name",
+        AsyncMock(return_value="测试群"),
+    )
+    monkeypatch.setattr(
+        report_module.water_report_service,
+        "_build_view_items",
+        AsyncMock(
+            return_value=[
+                report_module.WaterRankCardItem(
+                    entity_id="10001",
+                    display_name="Alice",
+                    secondary_label="群成员",
+                    avatar=None,
+                    msg_count=42,
+                    active_days=1,
+                    active_hours=6,
+                    hourly_counts=[0] * 24,
+                    current_rank=1,
+                    trend=1,
+                )
+            ]
+        ),
+    )
+    snapshot = WaterGroupReportSnapshot(
+        group_id="20001",
+        record_date=20260613,
+        total_msg_count=42,
+        active_user_count=1,
+        active_hours=6,
+        hourly_counts=[0] * 24,
+        previous_total_msg_count=21,
+        previous_active_user_count=1,
+        previous_active_hours=4,
+        previous_hourly_counts=[0] * 24,
+        leaderboard=[
+            WaterGroupReportMember(
+                user_id="10001",
+                msg_count=42,
+                active_hours=6,
+                hourly_counts=[0] * 24,
+                current_rank=1,
+                trend=1,
+            )
+        ],
+    )
+
+    data = await water_report_service._build_card_data(
+        "today_live",
+        snapshot,
+        "zh-CN",
+    )
+
+    assert "{msg_count}" in data.champion_summary_label
+    assert "{msg_count}" in data.board_summary_label
+    assert "{active_hours}" in data.board_active_hours_label

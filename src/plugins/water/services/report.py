@@ -12,7 +12,7 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.adapters.onebot.v11.bot import Bot
 from pil_utils import BuildImage
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.runtime import tr, tr_template
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.logger import logger
@@ -311,10 +311,12 @@ class WaterReportService:
                 else 0.0
             ),
             entity_label=tr(locale, "water.report.entity_label"),
-            champion_summary_label=tr(locale, "water.report.champion.summary"),
+            champion_summary_label=tr_template(locale, "water.report.champion.summary"),
             board_title=tr(locale, "water.report.board.title"),
-            board_summary_label=tr(locale, "water.report.board.summary"),
-            board_active_hours_label=tr(locale, "water.report.board.active_hours"),
+            board_summary_label=tr_template(locale, "water.report.board.summary"),
+            board_active_hours_label=tr_template(
+                locale, "water.report.board.active_hours"
+            ),
             overview_title=tr(locale, "water.report.overview.title"),
         )
 

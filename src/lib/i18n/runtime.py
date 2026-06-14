@@ -90,6 +90,20 @@ def tr(locale_code: LocaleCode, key: MessageKey, **params: object) -> str:
     )
 
 
+def tr_template(locale_code: LocaleCode, key: MessageKey) -> str:
+    requested_catalog = get_catalog(locale_code)
+    if key in requested_catalog:
+        return requested_catalog[key]
+
+    fallback = ZH_CATALOG.get(key)
+    if fallback is not None:
+        logger.warning(f"[i18n] missing key in locale {locale_code}: {key}")
+        return fallback
+
+    logger.error(f"[i18n] missing key in default locale: {key}")
+    return ZH_CATALOG["i18n.missing"]
+
+
 def msg(locale_code: LocaleCode, key: MessageKey, **params: object) -> Message:
     return Message(tr(locale_code, key, **params))
 
