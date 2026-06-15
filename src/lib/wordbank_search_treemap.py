@@ -1456,14 +1456,18 @@ class SearchTreemapRenderer:
     ) -> int:
         if not text or width <= 0 or height <= 0:
             return 0
-        line_height = self._line_height(font)
-        max_lines = max(1, height // line_height)
-        lines = self._wrap_text(text, font, width, max_lines=max_lines)
+        fitted_font, lines = self._fit_lxgw_text_block_layout(
+            text,
+            max_width=width,
+            max_height=height,
+            preferred_size=getattr(font, "size", None),
+        )
+        line_height = self._line_height(fitted_font)
         cursor_y = y
         for line in lines:
             if cursor_y + line_height > y + height + 2:
                 break
-            draw.text((x, cursor_y), line, font=font, fill=self.CARD_ACCENT)
+            draw.text((x, cursor_y), line, font=fitted_font, fill=self.CARD_ACCENT)
             cursor_y += line_height
         return max(0, cursor_y - y)
 
@@ -1677,6 +1681,15 @@ class SearchTreemapRenderer:
         max_height: int,
     ) -> tuple[Any, list[str]]:
         safe_text = text.strip() or "?"
+        if len(safe_text) <= 4:
+            preferred_lines = 1
+        elif len(safe_text) <= 8:
+            preferred_lines = 2
+        elif len(safe_text) <= 14:
+            preferred_lines = 3
+        else:
+            preferred_lines = 4
+        fallback_fit: tuple[Any, list[str]] | None = None
         for size in (28, 24, 20, 18, 16, 14, 12, 10):
             font = self._load_maple_font(size)
             line_height = self._line_height(font)
@@ -1690,7 +1703,12 @@ class SearchTreemapRenderer:
                 max_lines=max(1, len(safe_text)),
             )
             if len(lines) <= max_lines and len(lines) * line_height <= max_height:
-                return font, lines
+                if len(lines) <= preferred_lines:
+                    return font, lines
+                if fallback_fit is None:
+                    fallback_fit = (font, lines)
+        if fallback_fit is not None:
+            return fallback_fit
         fallback_font = self._load_maple_font(10)
         fallback_line_height = self._line_height(fallback_font)
         fallback_max_lines = max(1, min(7, max_height // max(fallback_line_height, 1)))
@@ -1803,6 +1821,50 @@ class SearchTreemapRenderer:
             max_lines=max(1, len(normalized)),
         )
         return fallback_font, fallback_lines
+
+    def _fit_lxgw_text_block_layout(
+        self,
+        text: str,
+        *,
+        max_width: int,
+        max_height: int,
+        preferred_size: int | None,
+    ) -> tuple[Any, list[str]]:
+        normalized = text.strip()
+        if not normalized:
+            return self.card_title_font, []
+        if preferred_size is None or preferred_size <= 0:
+            preferred_size = 20
+        candidate_sizes = list(range(preferred_size, 7, -2))
+        if candidate_sizes[-1] != 8:
+            candidate_sizes.append(8)
+        fallback_fit: tuple[Any, list[str]] | None = None
+        for size in candidate_sizes:
+            font = self._load_lxgw_font(size)
+            line_height = self._line_height(font)
+            max_lines = max(1, max_height // max(line_height, 1))
+            lines = self._wrap_text(
+                normalized,
+                font,
+                max_width,
+                max_lines=max(1, len(normalized)),
+            )
+            if len(lines) <= max_lines and len(lines) * line_height <= max_height:
+                return font, lines
+            if fallback_fit is None:
+                fallback_fit = (font, lines)
+        if fallback_fit is not None:
+            return fallback_fit
+        fallback_font = self._load_lxgw_font(8)
+        return (
+            fallback_font,
+            self._wrap_text(
+                normalized,
+                fallback_font,
+                max_width,
+                max_lines=max(1, len(normalized)),
+            ),
+        )
 
     def _fit_preview_image(
         self,

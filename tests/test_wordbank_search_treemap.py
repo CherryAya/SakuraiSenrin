@@ -247,6 +247,18 @@ def test_renderer_fits_long_trigger_title_without_ellipsis() -> None:
     assert all("..." not in line for line in lines)
 
 
+def test_renderer_prefers_fewer_lines_for_short_trigger_title() -> None:
+    renderer = SearchTreemapRenderer()
+
+    _, lines = renderer._fit_tile_title_layout(  # pyright: ignore[reportPrivateUsage]
+        "晚安，不许复读",
+        max_width=100,
+        max_height=160,
+    )
+
+    assert len(lines) <= 3
+
+
 def test_renderer_uses_smaller_response_font_for_narrow_cards() -> None:
     renderer = SearchTreemapRenderer()
 
@@ -336,6 +348,20 @@ def test_renderer_single_text_layout_fits_long_text_into_available_height() -> N
 
     assert lines
     assert len(lines) * renderer._line_height(font) <= 180  # pyright: ignore[reportPrivateUsage]
+
+
+def test_renderer_regular_text_block_layout_falls_back_font_to_fit_height() -> None:
+    renderer = SearchTreemapRenderer()
+
+    font, lines = renderer._fit_lxgw_text_block_layout(  # pyright: ignore[reportPrivateUsage]
+        "今日同您携手共进的是:（地狱把妹王）",
+        max_width=120,
+        max_height=72,
+        preferred_size=24,
+    )
+
+    assert lines
+    assert len(lines) * renderer._line_height(font) <= 72  # pyright: ignore[reportPrivateUsage]
 
 
 def test_renderer_expands_masonry_layout_to_fill_column_height() -> None:
