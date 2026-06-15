@@ -44,6 +44,7 @@ from src.lib.wordbank_search_treemap import (
     SearchTreemapPage,
     SearchTreemapQuery,
     SearchTreemapResponseCard,
+    SearchTreemapResponseSegment,
     render_search_results_treemap_bytes,
 )
 from src.plugins.wordbank.migration import LegacyPgConfig, load_legacy_pg_config
@@ -324,6 +325,48 @@ def strip_image_placeholder(text: str) -> str:
     return cleaned.strip()
 
 
+def build_legacy_message_segments(
+    value: object,
+    *,
+    media_samples: Sequence[str],
+    sample_index: int,
+) -> tuple[tuple[SearchTreemapResponseSegment, ...], int]:
+    payload = _load_json_payload(value)
+    if not isinstance(payload, list):
+        text = str(value or "").strip()
+        return (
+            (SearchTreemapResponseSegment(kind="text", text=text),) if text else (),
+            sample_index,
+        )
+    segments: list[SearchTreemapResponseSegment] = []
+    next_index = sample_index
+    for item in payload:
+        if not isinstance(item, Mapping):
+            continue
+        kind = str(item.get("type") or "").strip().lower()
+        if kind == "text":
+            text = str(item.get("text") or "").replace("\r", "\n").strip()
+            normalized = " ".join(part for part in text.splitlines() if part).strip()
+            if normalized:
+                segments.append(
+                    SearchTreemapResponseSegment(kind="text", text=normalized)
+                )
+            continue
+        if kind == "image":
+            image_path = ""
+            if media_samples:
+                image_path = media_samples[next_index % len(media_samples)]
+                next_index += 1
+            if image_path:
+                segments.append(
+                    SearchTreemapResponseSegment(
+                        kind="image",
+                        image_path=image_path,
+                    )
+                )
+    return (tuple(segments), next_index)
+
+
 def legacy_payload_contains_image(value: object) -> bool:
     payload = _load_json_payload(value)
     if not isinstance(payload, list):
@@ -441,11 +484,21 @@ def build_page_from_rows(
         trigger_text = summarize_legacy_message_payload(group_rows[0]["trigger_text"])
         response_cards_list: list[SearchTreemapResponseCard] = []
         for row in group_rows[:preview_responses]:
-            image_path = ""
             text = summarize_legacy_message_payload(row["response_text"])
-            if legacy_payload_contains_image(row["response_text"]) and media_samples:
-                image_path = media_samples[sample_index % len(media_samples)]
-                sample_index += 1
+            segments, sample_index = build_legacy_message_segments(
+                row["response_text"],
+                media_samples=media_samples,
+                sample_index=sample_index,
+            )
+            image_path = next(
+                (
+                    segment.image_path
+                    for segment in segments
+                    if segment.kind == "image" and segment.image_path
+                ),
+                "",
+            )
+            if image_path:
                 text = strip_image_placeholder(text)
             response_cards_list.append(
                 SearchTreemapResponseCard(
@@ -454,6 +507,7 @@ def build_page_from_rows(
                     weight=_coerce_int(row.get("weight") or 0),
                     rule=summarize_legacy_rule(row.get("response_rule_conditions")),
                     image_path=image_path,
+                    segments=segments,
                 )
             )
         response_cards = tuple(response_cards_list)
@@ -515,6 +569,14 @@ def page_to_fixture_dict(page: SearchTreemapPage) -> dict[str, object]:
                         "weight": response.weight,
                         "rule": response.rule,
                         "image_path": response.image_path,
+                        "segments": [
+                            {
+                                "kind": segment.kind,
+                                "text": segment.text,
+                                "image_path": segment.image_path,
+                            }
+                            for segment in response.segments
+                        ],
                     }
                     for response in item.responses
                 ],

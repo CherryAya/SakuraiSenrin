@@ -59,12 +59,55 @@ class SearchTreemapQuery:
 
 
 @dataclass(slots=True, frozen=True)
+class SearchTreemapResponseSegment:
+    kind: str
+    text: str = ""
+    image_path: str = ""
+
+
+@dataclass(slots=True, frozen=True)
 class SearchTreemapResponseCard:
     text: str
     created_by: str
     weight: int
     rule: str
     image_path: str = ""
+    segments: tuple[SearchTreemapResponseSegment, ...] = ()
+
+    @property
+    def ordered_segments(self) -> tuple[SearchTreemapResponseSegment, ...]:
+        if self.segments:
+            return self.segments
+        built: list[SearchTreemapResponseSegment] = []
+        if self.text.strip():
+            built.append(SearchTreemapResponseSegment(kind="text", text=self.text))
+        if self.image_path:
+            built.append(
+                SearchTreemapResponseSegment(kind="image", image_path=self.image_path)
+            )
+        return tuple(built)
+
+    @property
+    def primary_image_path(self) -> str:
+        for segment in self.ordered_segments:
+            if segment.kind == "image" and segment.image_path:
+                return segment.image_path
+        return self.image_path
+
+    @property
+    def has_image(self) -> bool:
+        return bool(self.primary_image_path)
+
+    @property
+    def visible_text(self) -> str:
+        text_parts = [
+            segment.text.strip()
+            for segment in self.ordered_segments
+            if segment.kind == "text" and segment.text.strip()
+        ]
+        if text_parts:
+            return " ".join(text_parts)
+        return self.text.strip()
 
 
 @dataclass(slots=True, frozen=True)
@@ -737,9 +780,9 @@ class SearchTreemapRenderer:
             return (1, 0)
         card_gap = 8
         sample = responses[: min(len(responses), 4)]
-        has_images = any(response.image_path for response in sample)
+        has_images = any(response.has_image for response in sample)
         average_text_len = sum(
-            len(response.text) + len(response.rule) for response in sample
+            len(response.visible_text) + len(response.rule) for response in sample
         ) / max(len(sample), 1)
         min_card_height = 94 if has_images else (58 if average_text_len <= 18 else 66)
         preferred_height = 120 if has_images else (76 if average_text_len <= 18 else 92)
@@ -789,9 +832,9 @@ class SearchTreemapRenderer:
             width=1,
         )
         normalized_text = self._normalize_response_text(
-            response.text,
+            response.visible_text,
             locale,
-            has_image_preview=bool(response.image_path),
+            has_image_preview=response.has_image,
         )
         compact_card = len(normalized_text) <= 14 and len(response.rule) <= 10
         spacious_card = width >= 240 and height >= 150
@@ -800,137 +843,356 @@ class SearchTreemapRenderer:
             if spacious_card and not compact_card
             else (8 if compact_card or min(width, height) < 120 else 10)
         )
-        thumb_size = min(
-            height - pad * 2,
-            max(
-                52,
-                min(
-                    148 if spacious_card else 108, width // (2 if spacious_card else 3)
-                ),
-            ),
-        )
-        thumb_drawn = False
-        text_width = max(1, width - pad * 2)
-        if response.image_path and width >= 220 and height >= 84 and thumb_size >= 48:
-            preview = self._fit_preview_image(
-                response.image_path,
-                max_width=thumb_size,
-                max_height=thumb_size,
-            )
-            if preview is not None:
-                thumb_x = x + width - pad - preview.width
-                thumb_y = y + pad
-                image.paste(preview, (thumb_x, thumb_y))
-                draw.rectangle(
-                    (
-                        thumb_x,
-                        thumb_y,
-                        thumb_x + preview.width,
-                        thumb_y + preview.height,
-                    ),
-                    outline=self.BORDER,
-                    width=1,
-                )
-                thumb_drawn = True
-                text_width = max(1, width - pad * 3 - preview.width)
-
-        title_font = (
-            self.card_large_title_font
-            if spacious_card and len(normalized_text.strip()) <= 18
-            else self.card_title_font
-        )
         meta_font = (
             self.card_large_meta_font
             if spacious_card and len(response.rule.strip()) <= 16
             else self.card_meta_font
         )
-        meta_lines: list[str] = []
-        for label, value in (
-            ("创建者", response.created_by),
-            ("权重", str(response.weight)),
-            ("规则", response.rule),
-        ):
-            meta_lines.append(
-                self._truncate_line(
-                    f"{label} {self._normalize_text(value, locale)}",
-                    meta_font,
-                    text_width,
-                )
-            )
-        title_line_height = self._line_height(title_font)
+        title_font = (
+            self.card_large_title_font
+            if spacious_card and len(normalized_text.strip()) <= 18
+            else self.card_title_font
+        )
+        meta_lines = self._build_response_meta_lines(
+            response,
+            locale,
+            font=meta_font,
+            max_width=max(1, width - pad * 2),
+        )
         meta_line_height = self._line_height(meta_font)
-        title_budget = max(1, 2 if compact_card or height < 132 else 3)
-        available_text_height = max(
-            title_line_height,
-            height
-            - pad * 2
-            - len(meta_lines) * meta_line_height
-            - (1 if compact_card else 2),
+        meta_gap = 8
+        meta_height = (
+            len(meta_lines) * meta_line_height + max(0, len(meta_lines) - 1) * 2
         )
-        max_title_lines = max(
-            1, min(title_budget, available_text_height // title_line_height)
+        content_x = x + pad
+        content_y = y + pad
+        content_width = max(1, width - pad * 2)
+        content_height = max(1, height - pad * 2 - meta_gap - meta_height)
+        self._draw_response_content(
+            image,
+            draw,
+            response,
+            locale,
+            font=title_font,
+            x=content_x,
+            y=content_y,
+            width=content_width,
+            height=content_height,
         )
-        title_lines = (
-            self._wrap_text(
-                normalized_text,
-                title_font,
-                text_width,
-                max_lines=max_title_lines,
+        divider_y = y + height - pad - meta_height - 4
+        if divider_y > content_y + 8:
+            draw.line(
+                (content_x, divider_y, content_x + content_width, divider_y),
+                fill=self.DIVIDER,
+                width=1,
             )
-            if normalized_text
-            else []
-        )
-        content_height = len(title_lines) * title_line_height
-        content_height += 1 if compact_card else 2
-        content_height += len(meta_lines) * meta_line_height
-        if not thumb_drawn and height - pad * 2 > content_height + 24:
-            cursor_y = y + pad + max(0, (height - pad * 2 - content_height) // 3)
-        else:
-            cursor_y = y + pad
-        for line in title_lines:
-            draw.text(
-                (x + pad, cursor_y),
-                line,
-                font=title_font,
-                fill=self.CARD_ACCENT,
-            )
-            cursor_y += self._line_height(title_font)
-
-        cursor_y += 1 if compact_card else 2
+        cursor_y = max(content_y + content_height + 6, y + height - pad - meta_height)
         for line in meta_lines:
-            if cursor_y + self._line_height(meta_font) > y + height - pad:
+            if cursor_y + meta_line_height > y + height - pad + 2:
                 break
             draw.text(
-                (x + pad, cursor_y),
+                (content_x, cursor_y),
                 line,
                 font=meta_font,
                 fill=self.BODY,
             )
-            cursor_y += self._line_height(meta_font)
-        if (
-            not thumb_drawn
-            and response.image_path
-            and width >= 180
-            and height >= 70
-            and cursor_y <= y + height - pad - 42
-        ):
-            preview = self._fit_preview_image(
-                response.image_path,
-                max_width=max(56, width - pad * 2),
-                max_height=min(max(72, height // 3), y + height - pad - cursor_y),
+            cursor_y += meta_line_height + 2
+
+    def _build_response_meta_lines(
+        self,
+        response: SearchTreemapResponseCard,
+        locale: LocaleCode,
+        *,
+        font: Any,
+        max_width: int,
+    ) -> list[str]:
+        rule_text = self._normalize_text(response.rule, locale)
+        compact = self._truncate_line(
+            f"创 {response.created_by}  权 {response.weight}  规 {rule_text}",
+            font,
+            max_width,
+        )
+        if self._text_width(compact, font) <= max_width and len(compact) < 34:
+            return [compact]
+        return [
+            self._truncate_line(
+                f"创 {response.created_by}  权 {response.weight}",
+                font,
+                max_width,
+            ),
+            self._truncate_line(
+                f"规 {rule_text}",
+                font,
+                max_width,
+            ),
+        ]
+
+    def _draw_response_content(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        response: SearchTreemapResponseCard,
+        locale: LocaleCode,
+        *,
+        font: Any,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> None:
+        segments = tuple(
+            segment
+            for segment in response.ordered_segments
+            if (segment.kind == "text" and segment.text.strip())
+            or (segment.kind == "image" and segment.image_path)
+        )
+        if not segments:
+            return
+        if self._can_use_pair_layout(segments):
+            self._draw_response_pair_content(
+                image,
+                draw,
+                response,
+                locale,
+                segments=segments,
+                font=font,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
             )
-            if preview is not None:
-                image.paste(preview, (x + pad, cursor_y + 4))
-                draw.rectangle(
-                    (
-                        x + pad,
-                        cursor_y + 4,
-                        x + pad + preview.width,
-                        cursor_y + 4 + preview.height,
+            return
+        text_segments = [segment for segment in segments if segment.kind == "text"]
+        image_segments = [segment for segment in segments if segment.kind == "image"]
+        if image_segments and not text_segments:
+            self._draw_response_image_grid(
+                image,
+                draw,
+                image_segments=image_segments,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+            )
+            return
+        self._draw_response_sequence_content(
+            image,
+            draw,
+            response,
+            locale,
+            segments=segments,
+            font=font,
+            x=x,
+            y=y,
+            width=width,
+            height=height,
+        )
+
+    def _can_use_pair_layout(
+        self,
+        segments: Sequence[SearchTreemapResponseSegment],
+    ) -> bool:
+        return len(segments) == 2 and {segment.kind for segment in segments} == {
+            "text",
+            "image",
+        }
+
+    def _draw_response_pair_content(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        response: SearchTreemapResponseCard,
+        locale: LocaleCode,
+        *,
+        segments: Sequence[SearchTreemapResponseSegment],
+        font: Any,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> None:
+        gap = 10
+        image_width = min(max(92, width // 2), max(92, int(width * 0.42)))
+        text_width = max(1, width - image_width - gap)
+        if segments[0].kind == "text":
+            text_x, image_x = x, x + text_width + gap
+        else:
+            image_x, text_x = x, x + image_width + gap
+        text_segment = next(segment for segment in segments if segment.kind == "text")
+        image_segment = next(segment for segment in segments if segment.kind == "image")
+        self._draw_text_block(
+            draw,
+            self._normalize_response_text(
+                text_segment.text,
+                locale,
+                has_image_preview=bool(response.primary_image_path),
+            ),
+            font=font,
+            x=text_x,
+            y=y,
+            width=text_width,
+            height=height,
+        )
+        self._draw_image_block(
+            image,
+            draw,
+            image_segment.image_path,
+            x=image_x,
+            y=y,
+            width=image_width,
+            height=height,
+        )
+
+    def _draw_response_sequence_content(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        response: SearchTreemapResponseCard,
+        locale: LocaleCode,
+        *,
+        segments: Sequence[SearchTreemapResponseSegment],
+        font: Any,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> None:
+        gap = 6
+        cursor_y = y
+        for index, segment in enumerate(segments):
+            remaining_height = y + height - cursor_y
+            if remaining_height <= 16:
+                break
+            remaining_count = len(segments) - index
+            available_height = max(
+                1, remaining_height - gap * max(0, remaining_count - 1)
+            )
+            if segment.kind == "text":
+                used = self._draw_text_block(
+                    draw,
+                    self._normalize_response_text(
+                        segment.text,
+                        locale,
+                        has_image_preview=bool(response.primary_image_path),
                     ),
-                    outline=self.BORDER,
-                    width=1,
+                    font=font,
+                    x=x,
+                    y=cursor_y,
+                    width=width,
+                    height=available_height,
                 )
+            else:
+                used = self._draw_image_block(
+                    image,
+                    draw,
+                    segment.image_path,
+                    x=x,
+                    y=cursor_y,
+                    width=width,
+                    height=max(56, min(available_height, height // 2)),
+                )
+            if used <= 0:
+                continue
+            cursor_y += used + gap
+
+    def _draw_response_image_grid(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        image_segments: Sequence[SearchTreemapResponseSegment],
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> None:
+        if len(image_segments) == 1 or width < 180:
+            self._draw_image_block(
+                image,
+                draw,
+                image_segments[0].image_path,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+            )
+            return
+        gap = 6
+        cols = 2
+        rows = max(1, math.ceil(min(len(image_segments), 4) / cols))
+        cell_width = max(1, (width - gap * (cols - 1)) // cols)
+        cell_height = max(1, (height - gap * (rows - 1)) // rows)
+        for index, segment in enumerate(image_segments[:4]):
+            row = index // cols
+            col = index % cols
+            self._draw_image_block(
+                image,
+                draw,
+                segment.image_path,
+                x=x + col * (cell_width + gap),
+                y=y + row * (cell_height + gap),
+                width=cell_width,
+                height=cell_height,
+            )
+
+    def _draw_text_block(
+        self,
+        draw: ImageDraw.ImageDraw,
+        text: str,
+        *,
+        font: Any,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> int:
+        if not text or width <= 0 or height <= 0:
+            return 0
+        line_height = self._line_height(font)
+        max_lines = max(1, height // line_height)
+        lines = self._wrap_text(text, font, width, max_lines=max_lines)
+        cursor_y = y
+        for line in lines:
+            if cursor_y + line_height > y + height + 2:
+                break
+            draw.text((x, cursor_y), line, font=font, fill=self.CARD_ACCENT)
+            cursor_y += line_height
+        return max(0, cursor_y - y)
+
+    def _draw_image_block(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        image_path: str,
+        *,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> int:
+        if not image_path or width <= 0 or height <= 0:
+            return 0
+        preview = self._fit_preview_image(
+            image_path,
+            max_width=width,
+            max_height=height,
+        )
+        if preview is None:
+            return 0
+        offset_x = x + max(0, (width - preview.width) // 2)
+        offset_y = y + max(0, (height - preview.height) // 2)
+        image.paste(preview, (offset_x, offset_y))
+        draw.rectangle(
+            (
+                offset_x,
+                offset_y,
+                offset_x + preview.width,
+                offset_y + preview.height,
+            ),
+            outline=self.BORDER,
+            width=1,
+        )
+        return height
 
     def _draw_overflow_banner(
         self,
@@ -1189,11 +1451,42 @@ def _parse_response_card(
             "Search treemap response card at item index "
             f"{parent_index}, response index {index} must be an object"
         )
+    raw_segments = payload.get("segments")
+    segments = (
+        tuple(
+            _parse_response_segment(item, item_index, parent_index=parent_index)
+            for item_index, item in enumerate(raw_segments)
+        )
+        if isinstance(raw_segments, list)
+        else ()
+    )
     return SearchTreemapResponseCard(
         text=_require_str(payload, "text"),
         created_by=_require_str(payload, "created_by"),
         weight=_require_int(payload, "weight", min_value=0),
         rule=_require_str(payload, "rule"),
+        image_path=str(payload.get("image_path", "") or ""),
+        segments=segments,
+    )
+
+
+def _parse_response_segment(
+    payload: object,
+    index: int,
+    *,
+    parent_index: int,
+) -> SearchTreemapResponseSegment:
+    if not isinstance(payload, dict):
+        raise ValueError(
+            "Search treemap response segment at item index "
+            f"{parent_index}, segment index {index} must be an object"
+        )
+    kind = _require_str(payload, "kind")
+    if kind not in {"text", "image"}:
+        raise ValueError(f"Unsupported response segment kind: {kind}")
+    return SearchTreemapResponseSegment(
+        kind=kind,
+        text=str(payload.get("text", "") or ""),
         image_path=str(payload.get("image_path", "") or ""),
     )
 

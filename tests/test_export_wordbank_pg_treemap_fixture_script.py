@@ -1,4 +1,5 @@
 from scripts.export_wordbank_pg_treemap_fixture import (
+    build_legacy_message_segments,
     detect_match_source,
     sanitize_filename,
     summarize_legacy_message_payload,
@@ -22,6 +23,24 @@ def test_summarize_legacy_message_payload_handles_pure_image_payload() -> None:
     payload = '[{"type":"image","file":"abc.webp"},{"type":"image","file":"def.webp"}]'
 
     assert summarize_legacy_message_payload(payload) == "[图片x2]"
+
+
+def test_build_legacy_message_segments_preserves_text_image_order() -> None:
+    payload = (
+        '[{"type":"text","text":"前半句"},'
+        '{"type":"image","file":"abc.webp"},'
+        '{"type":"text","text":"后半句"}]'
+    )
+
+    segments, next_index = build_legacy_message_segments(
+        payload,
+        media_samples=("/tmp/a.webp", "/tmp/b.webp"),
+        sample_index=0,
+    )
+
+    assert [segment.kind for segment in segments] == ["text", "image", "text"]
+    assert segments[1].image_path == "/tmp/a.webp"
+    assert next_index == 1
 
 
 def test_summarize_legacy_rule_formats_known_fields() -> None:

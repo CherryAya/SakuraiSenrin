@@ -13,6 +13,7 @@ from src.lib.wordbank_search_treemap import (
     SearchTreemapQuery,
     SearchTreemapRenderer,
     SearchTreemapResponseCard,
+    SearchTreemapResponseSegment,
     build_search_treemap_layout,
     load_search_treemap_fixture,
     render_search_results_treemap,
@@ -60,6 +61,19 @@ def test_load_search_treemap_fixture_rejects_incomplete_response_card(
 
     with pytest.raises(ValueError, match=r"rule"):
         load_search_treemap_fixture(source)
+
+
+def test_load_search_treemap_fixture_accepts_response_segments(tmp_path: Path) -> None:
+    source = tmp_path / "segments.json"
+    source.write_text(
+        '{"query":{"keyword":"x","field":"trigger","creator_id":"","has_image":false,"page":1,"total_count":1,"limit":10},"items":[{"trigger_group_id":1,"trigger_text":"t","status":"approved","created_by":"10001","response_count":1,"responses":[{"text":"摘要","created_by":"10002","weight":3,"rule":"默认","segments":[{"kind":"text","text":"前半句"},{"kind":"image","image_path":"/tmp/a.webp"},{"kind":"text","text":"后半句"}]}]}]}',
+        encoding="utf-8",
+    )
+
+    page = load_search_treemap_fixture(source)
+
+    assert len(page.items[0].responses[0].segments) == 3
+    assert page.items[0].responses[0].segments[1].kind == "image"
 
 
 def test_build_search_treemap_layout_scales_area_with_response_count() -> None:
@@ -174,6 +188,12 @@ def test_renderer_prefers_three_columns_for_wide_dense_tiles() -> None:
             weight=3,
             rule="默认",
             image_path="/tmp/example.webp",
+            segments=(
+                SearchTreemapResponseSegment(kind="text", text=f"响应 {index}"),
+                SearchTreemapResponseSegment(
+                    kind="image", image_path="/tmp/example.webp"
+                ),
+            ),
         )
         for index in range(8)
     )
