@@ -4,6 +4,7 @@ from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.handlers.search_cards import (
     SearchCardQuery,
     SearchResultCardRenderer,
+    _build_copyright_text,
     render_search_results_card,
 )
 
@@ -100,3 +101,7 @@ def test_search_card_renderer_adds_fold_hint_for_multi_response_group() -> None:
     assert "本组共 5 条词条" in hint
     assert "前 3 条" in hint
     assert "详情 123" in hint
+
+
+def test_search_card_copyright_text_matches_water_style() -> None:
+    assert _build_copyright_text(2026) == "© 2020-2026 SakuraiSenrin"

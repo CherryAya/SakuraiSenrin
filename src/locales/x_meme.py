@@ -121,6 +121,7 @@ CATALOG: Final[dict[str, str]] = {
     "water.query.rank.guided.period_prompt": "最后选时间：{choices}",
     "water.query.rank.guided.period_invalid": "时间没选对，请发：{choices}",
     "water.query.rank.guided.summary": "你刚刚选的是：{subject} / {scope} / {period}",
+    "water.image.generated_at": "生成时间：{time}",
     "water.query.rank.error.missing_dimensions": "还缺 {dimensions}，补成 #水王 <主体> <范围> <时间> 才能查。",
     "water.query.rank.error.unknown_tokens": "这里有几个词我没认出来：{tokens}。",
     "water.query.rank.error.duplicate_subject": "主体填一个就够了，别叠 buff。",

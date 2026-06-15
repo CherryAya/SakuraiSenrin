@@ -8,6 +8,7 @@ from io import BytesIO
 import math
 from typing import Any
 
+import arrow
 from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw, ImageFont
@@ -15,6 +16,7 @@ from PIL import Image, ImageDraw, ImageFont
 from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.types import WordbankSearchItem
 
 CARD_WIDTH = 1320
@@ -28,6 +30,8 @@ CARD_MAX_TEXT_WIDTH = CARD_WIDTH - CARD_PADDING_X * 2 - CARD_ITEM_PADDING * 2
 CARD_PREVIEW_HEIGHT = 180
 CARD_PREVIEW_GAP = 14
 CARD_PREVIEW_RADIUS = 20
+CARD_FOOTER_HEIGHT = 76
+CARD_FOOTER_LINE_GAP = 6
 
 
 @dataclass(slots=True, frozen=True)
@@ -67,6 +71,8 @@ class SearchResultCardRenderer:
         self.item_title_font = self._load_font(24)
         self.item_body_font = self._load_font(22)
         self.item_meta_font = self._load_font(20)
+        self.footer_font = self._load_font(18)
+        self.footer_minor_font = self._load_font(16)
         self.preview_bytes = dict(preview_bytes or {})
 
     def render(
@@ -101,7 +107,7 @@ class SearchResultCardRenderer:
         else:
             cursor_y = self._draw_empty_state(draw, query, locale, cursor_y)
 
-        cursor_y += 8
+        cursor_y += 12
         self._draw_footer(draw, query, locale, cursor_y)
 
         buffer = BytesIO()
@@ -124,7 +130,7 @@ class SearchResultCardRenderer:
                     height += CARD_ITEM_GAP
         else:
             height += 120
-        height += 64
+        height += CARD_FOOTER_HEIGHT + 16
         return height
 
     def _draw_header(
@@ -344,6 +350,13 @@ class SearchResultCardRenderer:
         locale: LocaleCode,
         cursor_y: int,
     ) -> None:
+        footer_time = arrow.get(get_current_time()).to("Asia/Shanghai")
+        copyright_text = _build_copyright_text(footer_time.year)
+        generated_at_text = tr(
+            locale,
+            "water.image.generated_at",
+            time=footer_time.format("YYYY-MM-DD HH:mm:ss"),
+        )
         footer = tr(locale, "wordbank.search_card.total", total=query.total_count)
         if query.page < query.total_pages:
             footer += "  " + tr(
@@ -352,9 +365,37 @@ class SearchResultCardRenderer:
                 next_page=query.page + 1,
             )
         draw.text(
-            (CARD_PADDING_X, cursor_y),
+            self._centered_text_origin(
+                draw,
+                copyright_text,
+                self.footer_minor_font,
+                y=cursor_y,
+            ),
+            copyright_text,
+            font=self.footer_minor_font,
+            fill=self.MUTED,
+        )
+        generated_y = cursor_y + self._line_height(self.footer_minor_font)
+        draw.text(
+            (CARD_PADDING_X, generated_y),
+            generated_at_text,
+            font=self.footer_minor_font,
+            fill=self.MUTED,
+        )
+        footer_y = (
+            generated_y
+            + self._line_height(self.footer_minor_font)
+            + CARD_FOOTER_LINE_GAP
+        )
+        draw.text(
+            self._centered_text_origin(
+                draw,
+                footer,
+                self.footer_font,
+                y=footer_y,
+            ),
             footer,
-            font=self.item_meta_font,
+            font=self.footer_font,
             fill=self.MUTED,
         )
 
@@ -661,11 +702,29 @@ class SearchResultCardRenderer:
             )
         )
 
+    def _centered_text_origin(
+        self,
+        draw: ImageDraw.ImageDraw,
+        text: str,
+        font: Any,
+        *,
+        y: int | None = None,
+    ) -> tuple[int, int]:
+        text_width = int(draw.textlength(text, font=font))
+        return (
+            int((CARD_WIDTH - text_width) / 2),
+            0 if y is None else y,
+        )
+
     def _load_font(self, size: int) -> Any:
         try:
             return ImageFont.truetype(MAPLE_FONT_PATH, size)
         except Exception:
             return ImageFont.load_default()
+
+
+def _build_copyright_text(year: int) -> str:
+    return f"© 2020-{year} SakuraiSenrin"
 
 
 def render_search_results_card_bytes(

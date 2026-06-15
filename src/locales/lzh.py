@@ -140,6 +140,7 @@ CATALOG: Final[dict[str, str]] = {
     "water.query.rank.guided.period_prompt": "請擇時間：{choices}",
     "water.query.rank.guided.period_invalid": "時間所輸未合，請發：{choices}",
     "water.query.rank.guided.summary": "已擇：{subject} / {scope} / {period}",
+    "water.image.generated_at": "生成時: {time}",
     "water.query.rank.error.missing_dimensions": "缺 {dimensions}，請補成 #水王 <主體> <範圍> <時間>。",
     "water.query.rank.error.unknown_tokens": "有未識別之詞: {tokens}。",
     "water.query.rank.error.duplicate_subject": "主體止可填一。",
