@@ -48,14 +48,14 @@ class SearchCardQuery:
 
 
 class SearchResultCardRenderer:
-    BG = "#1A1B26"
-    PANEL = "#24283B"
-    HEADER = "#C0CAF5"
-    BODY = "#C0CAF5"
-    MUTED = "#A9B1D6"
-    ACCENT = "#7AA2F7"
-    ACCENT_SOFT = "#2A2F45"
-    BORDER = "#414868"
+    BG = "#FFF8F3"
+    PANEL = "#FFFFFF"
+    HEADER = "#2F2A34"
+    BODY = "#564D5C"
+    MUTED = "#8A7B86"
+    ACCENT = "#D9826B"
+    ACCENT_SOFT = "#FBE9E2"
+    BORDER = "#E8D5CF"
 
     def __init__(
         self,
