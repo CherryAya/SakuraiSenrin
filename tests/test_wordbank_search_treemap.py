@@ -289,6 +289,18 @@ def test_renderer_uses_poster_tile_header_for_narrow_tall_single_text_tile() -> 
     )
 
 
+def test_renderer_poster_tile_title_layout_caps_to_two_lines() -> None:
+    renderer = SearchTreemapRenderer()
+
+    _, lines = renderer._fit_poster_tile_title_layout(  # pyright: ignore[reportPrivateUsage]
+        "晚安，不许复读测试一下海报式标题",
+        max_width=110,
+        max_height=80,
+    )
+
+    assert len(lines) <= 2
+
+
 def test_renderer_does_not_use_poster_header_for_image_tile() -> None:
     renderer = SearchTreemapRenderer()
     tile = SearchTreemapTile(
@@ -862,3 +874,32 @@ def test_renderer_vertical_layout_does_not_pin_single_text_metadata_to_bottom() 
     )
 
     assert layout.meta_y < 20 + 260 - 12 - 66
+
+
+def test_renderer_vertical_layout_compacts_narrow_text_cards() -> None:
+    renderer = SearchTreemapRenderer()
+
+    regular = renderer._compute_response_card_vertical_layout(  # pyright: ignore[reportPrivateUsage]
+        y=20,
+        height=300,
+        width=220,
+        pad=8,
+        content_height=92,
+        meta_height=66,
+        meta_gap=6,
+        content_mode="single_text",
+        narrow_text_card=False,
+    )
+    compact = renderer._compute_response_card_vertical_layout(  # pyright: ignore[reportPrivateUsage]
+        y=20,
+        height=300,
+        width=160,
+        pad=4,
+        content_height=92,
+        meta_height=60,
+        meta_gap=2,
+        content_mode="single_text",
+        narrow_text_card=True,
+    )
+
+    assert compact.content_y > regular.content_y

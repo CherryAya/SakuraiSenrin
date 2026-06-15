@@ -561,13 +561,20 @@ class SearchTreemapRenderer:
             title_y = inner_y
         title_budget = max(
             self._line_height(self.tile_small_title_font),
-            rect.height - pad * 2 - (128 if poster_tile else 112),
+            rect.height - pad * 2 - (132 if poster_tile else 112),
         )
-        title_font, title_lines = self._fit_tile_title_layout(
-            tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
-            max_width=title_width,
-            max_height=title_budget,
-        )
+        if poster_tile:
+            title_font, title_lines = self._fit_poster_tile_title_layout(
+                tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
+                max_width=title_width,
+                max_height=title_budget,
+            )
+        else:
+            title_font, title_lines = self._fit_tile_title_layout(
+                tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
+                max_width=title_width,
+                max_height=title_budget,
+            )
         cursor_y = title_y
         for line in title_lines:
             draw.text(
@@ -1121,7 +1128,7 @@ class SearchTreemapRenderer:
         spacious_card = width >= 240
         narrow_text_card = single_text is not None and width < 176
         if narrow_text_card:
-            pad = 6
+            pad = 4
         elif spacious_card and not compact_card:
             pad = 12
         else:
@@ -1154,7 +1161,7 @@ class SearchTreemapRenderer:
             font=title_font,
             width=max(1, width - pad * 2),
         )
-        meta_gap = 4 if narrow_text_card else (6 if compact_card else 8)
+        meta_gap = 2 if narrow_text_card else (6 if compact_card else 8)
         base_height = pad * 2 + content_height + meta_gap + meta_height
         if response.has_image:
             minimum_content = max(
@@ -1396,7 +1403,7 @@ class SearchTreemapRenderer:
         spacious_card = width >= 240 and height >= 150
         narrow_text_card = single_text is not None and width < 176 and height >= 220
         if narrow_text_card:
-            pad = 6
+            pad = 4
         elif spacious_card and not compact_card:
             pad = 12
         else:
@@ -1419,7 +1426,7 @@ class SearchTreemapRenderer:
             max_width=max(1, width - pad * 2),
         )
         meta_line_height = self._line_height(meta_font)
-        meta_gap = 4 if narrow_text_card else (6 if compact_card else 8)
+        meta_gap = 2 if narrow_text_card else (6 if compact_card else 8)
         meta_height = (
             len(meta_lines) * meta_line_height + max(0, len(meta_lines) - 1) * 2
         )
@@ -1448,6 +1455,7 @@ class SearchTreemapRenderer:
             meta_height=meta_height,
             meta_gap=meta_gap,
             content_mode=content_mode,
+            narrow_text_card=narrow_text_card,
         )
         if single_text is not None:
             self._draw_fitted_single_text_response(
@@ -1491,7 +1499,7 @@ class SearchTreemapRenderer:
                 font=meta_font,
                 fill=self.BODY,
             )
-            cursor_y += meta_line_height + 2
+            cursor_y += meta_line_height + (1 if narrow_text_card else 2)
 
     def _response_content_mode(
         self,
@@ -1532,9 +1540,13 @@ class SearchTreemapRenderer:
         meta_height: int,
         meta_gap: int,
         content_mode: str,
+        narrow_text_card: bool = False,
     ) -> ResponseCardVerticalLayout:
         inner_height = max(1, height - pad * 2)
-        divider_gap = 8 if inner_height >= 118 else 6
+        if narrow_text_card:
+            divider_gap = 4
+        else:
+            divider_gap = 8 if inner_height >= 118 else 6
         max_content_height = max(1, inner_height - meta_height - meta_gap - divider_gap)
         clipped_content_height = min(max_content_height, max(1, content_height))
         block_height = clipped_content_height + divider_gap + meta_gap + meta_height
@@ -1547,7 +1559,7 @@ class SearchTreemapRenderer:
             "image": 0.16,
         }.get(content_mode, 0.24)
         if content_mode == "single_text" and height >= max(240, width + 56):
-            bias = 0.60
+            bias = 0.66 if narrow_text_card else 0.60
         top_offset = round(spare_height * bias)
         content_y = y + pad + top_offset
         divider_y = content_y + clipped_content_height + divider_gap - 2
@@ -2096,6 +2108,42 @@ class SearchTreemapRenderer:
             return fallback_font, full_lines
         return fallback_font, full_lines[:fallback_max_lines]
 
+    def _fit_poster_tile_title_layout(
+        self,
+        text: str,
+        *,
+        max_width: int,
+        max_height: int,
+    ) -> tuple[Any, list[str]]:
+        safe_text = text.strip() or "?"
+        fallback_fit: tuple[Any, list[str]] | None = None
+        for size in (20, 18, 16, 14, 12, 10):
+            font = self._load_maple_font(size)
+            line_height = self._line_height(font)
+            max_lines = max(1, min(2, max_height // max(line_height, 1)))
+            if max_lines <= 0:
+                continue
+            lines = self._wrap_text(
+                safe_text,
+                font,
+                max_width,
+                max_lines=max(1, len(safe_text)),
+            )
+            if len(lines) <= max_lines and len(lines) * line_height <= max_height:
+                return font, lines
+            if fallback_fit is None:
+                fallback_fit = (font, lines[:max_lines])
+        if fallback_fit is not None:
+            return fallback_fit
+        fallback_font = self._load_maple_font(10)
+        fallback_lines = self._wrap_text(
+            safe_text,
+            fallback_font,
+            max_width,
+            max_lines=2,
+        )
+        return fallback_font, fallback_lines[:2]
+
     def _choose_response_title_font(
         self,
         text: str,
@@ -2207,15 +2255,15 @@ class SearchTreemapRenderer:
         if len(text) <= 4:
             text_cap = 108
         elif len(text) <= 8:
-            text_cap = 104
+            text_cap = 112
         elif len(text) <= 16:
-            text_cap = 64
+            text_cap = 70
         else:
             text_cap = 34
         width_cap = max(
-            24, int(max_width * 0.58 if len(text) <= 8 else max_width * 0.50)
+            24, int(max_width * 0.64 if len(text) <= 8 else max_width * 0.54)
         )
-        height_cap = max(24, int(max_height * 0.72))
+        height_cap = max(24, int(max_height * 0.80))
         return max(12, min(text_cap, width_cap, height_cap))
 
     def _fit_lxgw_text_block_layout(
