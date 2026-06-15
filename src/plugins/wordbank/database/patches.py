@@ -96,6 +96,132 @@ async def _patch_wordbank_trigger_group_probability(session: AsyncSession) -> No
     )
 
 
+async def _drop_wordbank_response_item_probability(session: AsyncSession) -> None:
+    columns = await session.execute(text("PRAGMA table_info(wordbank_response_item)"))
+    column_names = {str(row[1]) for row in columns.all()}
+    if not column_names or "probability" not in column_names:
+        return
+    await session.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS wordbank_response_item_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trigger_group_id INTEGER NOT NULL,
+                status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                scope VARCHAR(32) NOT NULL,
+                priority INTEGER NOT NULL,
+                weight INTEGER NOT NULL DEFAULT 3,
+                rule JSON NOT NULL DEFAULT '{}',
+                group_id VARCHAR(64) NOT NULL DEFAULT '',
+                created_by VARCHAR(64) NOT NULL,
+                approved_by VARCHAR(64) NOT NULL DEFAULT '',
+                deleted_at INTEGER NOT NULL DEFAULT 0,
+                text TEXT NOT NULL DEFAULT '',
+                message_json TEXT NOT NULL DEFAULT '[]',
+                exact_md5 VARCHAR(32) NOT NULL DEFAULT '',
+                structure_key TEXT NOT NULL DEFAULT '',
+                search_text TEXT NOT NULL DEFAULT '',
+                search_tokens TEXT NOT NULL DEFAULT '',
+                image_keys TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """
+        )
+    )
+    await session.execute(
+        text(
+            """
+            INSERT INTO wordbank_response_item_new (
+                id,
+                trigger_group_id,
+                status,
+                enabled,
+                scope,
+                priority,
+                weight,
+                rule,
+                group_id,
+                created_by,
+                approved_by,
+                deleted_at,
+                text,
+                message_json,
+                exact_md5,
+                structure_key,
+                search_text,
+                search_tokens,
+                image_keys,
+                created_at,
+                updated_at
+            )
+            SELECT
+                id,
+                trigger_group_id,
+                status,
+                enabled,
+                scope,
+                priority,
+                weight,
+                rule,
+                group_id,
+                created_by,
+                approved_by,
+                deleted_at,
+                text,
+                message_json,
+                exact_md5,
+                structure_key,
+                search_text,
+                search_tokens,
+                image_keys,
+                created_at,
+                updated_at
+            FROM wordbank_response_item
+            """
+        )
+    )
+    await session.execute(text("DROP TABLE wordbank_response_item"))
+    await session.execute(
+        text(
+            """
+            ALTER TABLE wordbank_response_item_new
+            RENAME TO wordbank_response_item
+            """
+        )
+    )
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_wordbank_response_item_group_status
+            ON wordbank_response_item (
+                trigger_group_id,
+                status,
+                enabled,
+                deleted_at
+            )
+            """
+        )
+    )
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_wordbank_response_item_scope
+            ON wordbank_response_item (scope, group_id)
+            """
+        )
+    )
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_wordbank_response_item_created_by
+            ON wordbank_response_item (created_by, created_at)
+            """
+        )
+    )
+
+
 async def _drop_wordbank_log_matched_text(session: AsyncSession) -> None:
     columns = await session.execute(text("PRAGMA table_info(wordbank_log)"))
     column_names = {str(row[1]) for row in columns.all()}
@@ -175,6 +301,12 @@ def build_wordbank_main_patch_registry() -> PatchRegistry:
         SchemaPatch(
             patch_id="wordbank_main:trigger_group_probability:v1",
             apply=_patch_wordbank_trigger_group_probability,
+        )
+    )
+    registry.register(
+        SchemaPatch(
+            patch_id="wordbank_main:drop_response_item_probability:v1",
+            apply=_drop_wordbank_response_item_probability,
         )
     )
     return registry
