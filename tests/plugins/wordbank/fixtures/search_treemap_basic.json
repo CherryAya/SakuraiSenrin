@@ -1,0 +1,122 @@
+{
+  "query": {
+    "keyword": "晚安",
+    "field": "trigger",
+    "creator_id": "",
+    "has_image": false,
+    "page": 1,
+    "total_count": 8,
+    "limit": 10
+  },
+  "items": [
+    {
+      "trigger_group_id": 101,
+      "trigger_text": "晚安啦",
+      "status": "approved",
+      "created_by": "10001",
+      "response_count": 12,
+      "response_summaries": [
+        "做个好梦",
+        "早点睡觉",
+        "晚安安"
+      ],
+      "remaining_response_count": 9,
+      "matched_by": "text:trigger"
+    },
+    {
+      "trigger_group_id": 102,
+      "trigger_text": "早八人集合",
+      "status": "approved",
+      "created_by": "10002",
+      "response_count": 8,
+      "response_summaries": [
+        "别睡了快起床",
+        "今天也是努力的一天",
+        "闹钟已经响第三遍了"
+      ],
+      "remaining_response_count": 5,
+      "matched_by": "text:trigger"
+    },
+    {
+      "trigger_group_id": 103,
+      "trigger_text": "凛凛贴贴",
+      "status": "approved",
+      "created_by": "10003",
+      "response_count": 6,
+      "response_summaries": [
+        "贴贴",
+        "给你一个抱抱",
+        "今天也要开心"
+      ],
+      "remaining_response_count": 3,
+      "matched_by": "text:response"
+    },
+    {
+      "trigger_group_id": 104,
+      "trigger_text": "妙妙小工具",
+      "status": "approved",
+      "created_by": "10004",
+      "response_count": 5,
+      "response_summaries": [
+        "运势",
+        "猜拳",
+        "漂流瓶"
+      ],
+      "remaining_response_count": 2,
+      "matched_by": "text:trigger"
+    },
+    {
+      "trigger_group_id": 105,
+      "trigger_text": "午饭吃啥",
+      "status": "approved",
+      "created_by": "10005",
+      "response_count": 4,
+      "response_summaries": [
+        "盖饭",
+        "面条",
+        "再来一份炸鸡"
+      ],
+      "remaining_response_count": 1,
+      "matched_by": "creator"
+    },
+    {
+      "trigger_group_id": 106,
+      "trigger_text": "周末去哪",
+      "status": "approved",
+      "created_by": "10006",
+      "response_count": 3,
+      "response_summaries": [
+        "逛公园",
+        "看电影",
+        "宅家补觉"
+      ],
+      "remaining_response_count": 0,
+      "matched_by": "recent"
+    },
+    {
+      "trigger_group_id": 107,
+      "trigger_text": "快夸我",
+      "status": "approved",
+      "created_by": "10007",
+      "response_count": 2,
+      "response_summaries": [
+        "今天也很棒",
+        "辛苦啦"
+      ],
+      "remaining_response_count": 0,
+      "matched_by": "text:trigger"
+    },
+    {
+      "trigger_group_id": 108,
+      "trigger_text": "发呆",
+      "status": "approved",
+      "created_by": "10008",
+      "response_count": 1,
+      "response_summaries": [
+        "......"
+      ],
+      "remaining_response_count": 0,
+      "matched_by": "text:trigger"
+    }
+  ]
+}
