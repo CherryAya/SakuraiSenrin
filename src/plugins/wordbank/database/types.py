@@ -291,6 +291,27 @@ class WordbankSearchPage:
 
 
 @dataclass(slots=True, frozen=True)
+class WordbankCreatorLeaderboardItem:
+    created_by: str
+    approved_count: int
+    latest_created_at: int
+    group_count: int = 0
+    current_group_count: int = 0
+    all_groups_count: int = 0
+    self_count: int = 0
+    private_only_count: int = 0
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankCreatorLeaderboardSnapshot:
+    month_start: int
+    month_end: int
+    total_creator_count: int
+    total_approved_count: int
+    items: tuple[WordbankCreatorLeaderboardItem, ...]
+
+
+@dataclass(slots=True, frozen=True)
 class WordbankDeleteVoteRecord:
     id: int
     trigger_group_id: int

@@ -35,6 +35,7 @@ from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
     format_add_result,
+    format_monthly_creator_leaderboard,
     format_pending_items,
     format_search_items,
 )
@@ -57,6 +58,7 @@ from src.plugins.wordbank.text_parsing import (
 from .rendering import (
     GROUP_PAGE_SIZE,
     render_group_detail_page_message,
+    render_monthly_leaderboard_card_message,
     render_search_results_card_message,
 )
 
@@ -68,6 +70,7 @@ RESTORE_ALIASES = {"restore", "恢复"}
 APPROVE_ALIASES = {"approve", "pass", "通过", "审核通过"}
 REJECT_ALIASES = {"reject", "deny", "拒绝", "驳回"}
 PENDING_ALIASES = {"pending", "review", "待审", "待审核", "审核列表"}
+RANK_ALIASES = {"rank", "排行", "榜", "苦瓜榜"}
 TRIGGER_ALIASES = {"trigger", "触发", "触发词"}
 RESPONSE_ALIASES = {"response", "响应", "响应词"}
 SET_ALIASES = {"set", "edit", "修改"}
@@ -1550,6 +1553,22 @@ async def handle_pending_entries(
     )
 
 
+async def handle_monthly_creator_leaderboard(
+    service: WordbankService,
+    *,
+    locale: LocaleCode,
+) -> Message:
+    data = await service.build_monthly_creator_leaderboard(locale=locale)
+    try:
+        return await render_monthly_leaderboard_card_message(
+            data=data,
+            locale=locale,
+        )
+    except Exception:
+        logger.exception("[Wordbank] creator leaderboard render failed")
+        return Message(format_monthly_creator_leaderboard(data, locale=locale))
+
+
 async def handle_approve(
     service: WordbankService,
     *,
@@ -1860,6 +1879,11 @@ async def dispatch_wordbank_command(
             service,
             event=event,
             text=rest,
+            locale=locale,
+        )
+    if action in RANK_ALIASES:
+        return await handle_monthly_creator_leaderboard(
+            service,
             locale=locale,
         )
     if action in APPROVE_ALIASES:

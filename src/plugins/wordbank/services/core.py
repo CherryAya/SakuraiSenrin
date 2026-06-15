@@ -10,6 +10,8 @@ import json
 import random
 from typing import Any
 
+import arrow
+
 from src.database.consts import WritePolicy
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -44,6 +46,7 @@ from src.plugins.wordbank.services.rules import (
     RuleContext,
     canonicalize_rule,
 )
+from src.repositories import user_repo
 
 
 @dataclass(slots=True, frozen=True)
@@ -74,6 +77,36 @@ class WordbankDeleteVoteResult:
     already_supported: bool
     passed: bool
     response_item_deleted: bool
+
+
+@dataclass(slots=True)
+class WordbankLeaderboardCardItem:
+    user_id: str
+    display_name: str
+    approved_count: int
+    current_rank: int
+    share: float
+    latest_created_at: int
+    group_count: int
+    current_group_count: int
+    all_groups_count: int
+    self_count: int
+    private_only_count: int
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankLeaderboardCardData:
+    title: str
+    subtitle: str
+    month_label: str
+    generated_at: int
+    total_creator_count: int
+    total_approved_count: int
+    champion_gap: int
+    top_share: float
+    items: tuple[WordbankLeaderboardCardItem, ...]
+    month_start: int
+    month_end: int
 
 
 @dataclass(slots=True)
@@ -736,6 +769,67 @@ class WordbankService:
             is_superuser=is_superuser,
         )
 
+    async def build_monthly_creator_leaderboard(
+        self,
+        *,
+        locale: LocaleCode,
+        limit: int = 10,
+        now_ts: int | None = None,
+    ) -> WordbankLeaderboardCardData:
+        generated_at = now_ts or get_current_time()
+        snapshot = await self.repository.get_monthly_creator_leaderboard(
+            limit=limit,
+            now_ts=generated_at,
+        )
+        names = await asyncio.gather(
+            *(
+                self._resolve_creator_display_name(item.created_by)
+                for item in snapshot.items
+            )
+        )
+        items: list[WordbankLeaderboardCardItem] = []
+        total_approved_count = max(snapshot.total_approved_count, 1)
+        for index, (row, display_name) in enumerate(
+            zip(snapshot.items, names, strict=False),
+            start=1,
+        ):
+            items.append(
+                WordbankLeaderboardCardItem(
+                    user_id=row.created_by,
+                    display_name=display_name,
+                    approved_count=row.approved_count,
+                    current_rank=index,
+                    share=row.approved_count / total_approved_count,
+                    latest_created_at=row.latest_created_at,
+                    group_count=row.group_count,
+                    current_group_count=row.current_group_count,
+                    all_groups_count=row.all_groups_count,
+                    self_count=row.self_count,
+                    private_only_count=row.private_only_count,
+                )
+            )
+        champion_count = items[0].approved_count if items else 0
+        runner_up_count = items[1].approved_count if len(items) > 1 else 0
+        return WordbankLeaderboardCardData(
+            title=tr(locale, "wordbank.rank.title"),
+            subtitle=tr(locale, "wordbank.rank.subtitle"),
+            month_label=arrow.get(snapshot.month_start)
+            .to("Asia/Shanghai")
+            .format("YYYY.MM"),
+            generated_at=generated_at,
+            total_creator_count=snapshot.total_creator_count,
+            total_approved_count=snapshot.total_approved_count,
+            champion_gap=max(0, champion_count - runner_up_count),
+            top_share=(
+                champion_count / snapshot.total_approved_count
+                if snapshot.total_approved_count > 0
+                else 0.0
+            ),
+            items=tuple(items),
+            month_start=snapshot.month_start,
+            month_end=snapshot.month_end,
+        )
+
     async def match_message(
         self,
         shape: MessageShape,
@@ -946,6 +1040,13 @@ class WordbankService:
             active_only=False,
         )
 
+    async def _resolve_creator_display_name(self, user_id: str) -> str:
+        name = await user_repo.get_name_by_uid(user_id)
+        if name:
+            return name
+        suffix = user_id[-4:] if user_id else "未知"
+        return f"用户_{suffix}"
+
 
 def format_search_items(
     items: Sequence[WordbankSearchItem],
@@ -1015,6 +1116,37 @@ def format_pending_items(
                 "wordbank.approval.pending_more",
                 next_page=page + 1,
                 limit=limit,
+            )
+        )
+    return "\n".join(lines)
+
+
+def format_monthly_creator_leaderboard(
+    data: WordbankLeaderboardCardData,
+    *,
+    locale: LocaleCode,
+) -> str:
+    if not data.items:
+        return tr(locale, "wordbank.rank.empty")
+    lines = [
+        tr(
+            locale,
+            "wordbank.rank.text.title",
+            month=data.month_label,
+            total_creator_count=data.total_creator_count,
+            total_approved_count=data.total_approved_count,
+        )
+    ]
+    for item in data.items:
+        lines.append(
+            tr(
+                locale,
+                "wordbank.rank.text.item",
+                rank=item.current_rank,
+                name=item.display_name,
+                approved_count=item.approved_count,
+                group_count=item.group_count,
+                share=f"{item.share * 100:.1f}%",
             )
         )
     return "\n".join(lines)

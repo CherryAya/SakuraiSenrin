@@ -6,6 +6,7 @@ from nonebot.adapters.onebot.v11.message import Message
 import pytest
 
 from src.plugins.wordbank.database.types import WordbankSearchItem, WordbankSearchPage
+from src.plugins.wordbank.handlers import commands as commands_module
 from src.plugins.wordbank.handlers.commands import (
     build_group_detail_message,
     build_message_shape_from_message,
@@ -117,6 +118,28 @@ def test_parse_search_session_command_supports_page_detail_delete_and_exit() -> 
     assert delete.action == "delete"
     assert delete.delete_indexes == (1, 2)
     assert exit_cmd.action == "exit"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_wordbank_command_routes_rank_to_leaderboard_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handle_rank = AsyncMock(return_value=Message("RANK_OK"))
+    monkeypatch.setattr(
+        commands_module,
+        "handle_monthly_creator_leaderboard",
+        handle_rank,
+    )
+
+    message = await dispatch_wordbank_command(
+        cast(WordbankService, SimpleNamespace()),
+        event=build_group_message_event("#wordbank rank"),
+        text="rank",
+        locale="zh-CN",
+    )
+
+    assert message == Message("RANK_OK")
+    handle_rank.assert_awaited_once()
 
 
 @pytest.mark.asyncio

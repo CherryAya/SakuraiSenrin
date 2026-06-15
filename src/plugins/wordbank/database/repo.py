@@ -11,7 +11,8 @@ import re
 from typing import cast
 import unicodedata
 
-from sqlalchemy import delete, exists, func, or_, select, text
+import arrow
+from sqlalchemy import case, delete, exists, func, or_, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +51,8 @@ from .tables import (
 )
 from .types import (
     WordbankCreatedResponse,
+    WordbankCreatorLeaderboardItem,
+    WordbankCreatorLeaderboardSnapshot,
     WordbankDeleteVoteMutation,
     WordbankDeleteVoteRecord,
     WordbankGroupDetail,
@@ -1231,6 +1234,94 @@ class WordbankRepository:
             self._pending_item_from_rows(group, variant, response)
             for group, variant, response in rows
         ]
+
+    async def get_monthly_creator_leaderboard(
+        self,
+        *,
+        limit: int = 10,
+        now_ts: int | None = None,
+    ) -> WordbankCreatorLeaderboardSnapshot:
+        now = arrow.get(now_ts or get_current_time()).to("Asia/Shanghai")
+        month_start = now.floor("month")
+        month_end = month_start.shift(months=1)
+        month_start_ts = month_start.int_timestamp
+        month_end_ts = month_end.int_timestamp
+        filters = (
+            WordbankResponseItem.status == "approved",
+            WordbankResponseItem.created_at >= month_start_ts,
+            WordbankResponseItem.created_at < month_end_ts,
+        )
+        base_stmt = (
+            select(
+                WordbankResponseItem.created_by.label("created_by"),
+                func.count(WordbankResponseItem.id).label("approved_count"),
+                func.max(WordbankResponseItem.created_at).label("latest_created_at"),
+                func.count(
+                    func.distinct(func.nullif(WordbankResponseItem.group_id, ""))
+                ).label("group_count"),
+                func.sum(
+                    case(
+                        (WordbankResponseItem.scope == "current_group", 1),
+                        else_=0,
+                    )
+                ).label("current_group_count"),
+                func.sum(
+                    case(
+                        (WordbankResponseItem.scope == "all_groups", 1),
+                        else_=0,
+                    )
+                ).label("all_groups_count"),
+                func.sum(
+                    case(
+                        (WordbankResponseItem.scope == "self", 1),
+                        else_=0,
+                    )
+                ).label("self_count"),
+                func.sum(
+                    case(
+                        (WordbankResponseItem.scope == "private_only", 1),
+                        else_=0,
+                    )
+                ).label("private_only_count"),
+            )
+            .where(*filters)
+            .group_by(WordbankResponseItem.created_by)
+            .order_by(
+                text("approved_count DESC"),
+                text("latest_created_at DESC"),
+                WordbankResponseItem.created_by.asc(),
+            )
+            .limit(max(1, limit))
+        )
+        stats_stmt = select(
+            func.count(WordbankResponseItem.id),
+            func.count(func.distinct(WordbankResponseItem.created_by)),
+        ).where(*filters)
+        async with wordbank_main_db.read_session() as session:
+            rows = (await session.execute(base_stmt)).all()
+            total_approved_count, total_creator_count = (
+                await session.execute(stats_stmt)
+            ).one()
+        items = tuple(
+            WordbankCreatorLeaderboardItem(
+                created_by=str(row.created_by or ""),
+                approved_count=int(row.approved_count or 0),
+                latest_created_at=int(row.latest_created_at or 0),
+                group_count=int(row.group_count or 0),
+                current_group_count=int(row.current_group_count or 0),
+                all_groups_count=int(row.all_groups_count or 0),
+                self_count=int(row.self_count or 0),
+                private_only_count=int(row.private_only_count or 0),
+            )
+            for row in rows
+        )
+        return WordbankCreatorLeaderboardSnapshot(
+            month_start=month_start_ts,
+            month_end=month_end_ts,
+            total_creator_count=int(total_creator_count or 0),
+            total_approved_count=int(total_approved_count or 0),
+            items=items,
+        )
 
     async def delete_response_item(
         self,

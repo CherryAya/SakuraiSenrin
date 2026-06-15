@@ -299,6 +299,12 @@ wordbank_pending_command = on_command(
     priority=5,
     block=True,
 )
+wordbank_rank_command = on_command(
+    ("wordbank", "rank"),
+    aliases={"苦瓜榜"},
+    priority=5,
+    block=True,
+)
 wordbank_approve_command = on_command(
     ("wordbank", "approve"),
     aliases={"通过词条", "审核通过词条"},
@@ -1482,6 +1488,22 @@ async def _(
         event,
         arg,
         forced_action="pending",
+    )
+
+
+@wordbank_rank_command.handle()
+async def _(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await _handle_wordbank_command_message(
+        bot,
+        matcher,
+        event,
+        arg,
+        forced_action="rank",
     )
 
 

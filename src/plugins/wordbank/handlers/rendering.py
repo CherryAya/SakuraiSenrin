@@ -14,9 +14,11 @@ from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
 from src.plugins.wordbank.debug import log_perf, perf_start
 from src.plugins.wordbank.message_model import MessageShape
+from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
 from src.plugins.wordbank.services.media import WordbankMediaService
 
 from .group_detail_cards import GroupDetailCardPage, render_group_detail_card_bytes
+from .leaderboard_cards import render_wordbank_leaderboard_card_bytes
 from .search_cards import SearchCardQuery, render_search_results_card_bytes
 
 GROUP_PAGE_SIZE = 10
@@ -204,6 +206,19 @@ async def render_group_detail_page_message(
             )
         )
     return message, total_pages
+
+
+async def render_monthly_leaderboard_card_message(
+    *,
+    data: WordbankLeaderboardCardData,
+    locale: LocaleCode,
+) -> Message:
+    image_bytes = await asyncio.to_thread(
+        render_wordbank_leaderboard_card_bytes,
+        data=data,
+        locale=locale,
+    )
+    return Message(MessageSegment.image(image_bytes))
 
 
 def _format_enabled(enabled: int) -> str:

@@ -182,6 +182,31 @@ async def test_wordbank_search_command_preserves_keyword_whitespace(
 
 
 @pytest.mark.asyncio
+async def test_wordbank_rank_command_routes_to_forced_rank_action(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handle_command = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "_handle_wordbank_command_message",
+        handle_command,
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_rank_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("#苦瓜榜", message_id=1)
+
+        ctx.receive_event(bot, event)
+
+    handle_command.assert_awaited_once()
+    await_args = handle_command.await_args
+    assert await_args is not None
+    assert await_args.kwargs["forced_action"] == "rank"
+
+
+@pytest.mark.asyncio
 async def test_wordbank_add_direct_media_submission_sends_processing_hint(
     app: App,
     monkeypatch: pytest.MonkeyPatch,

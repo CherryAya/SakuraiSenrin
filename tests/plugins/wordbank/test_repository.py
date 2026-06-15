@@ -1197,3 +1197,120 @@ async def test_repository_update_trigger_content_resets_active_responses_and_sea
     )
     assert search_page.total_count == 1
     assert search_page.items[0].trigger_group_id == first.trigger_group_id
+
+
+@pytest.mark.asyncio
+async def test_repository_monthly_creator_leaderboard_aggregates_current_month_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+
+    now = arrow.get(get_current_time()).to("Asia/Shanghai")
+    month_start = now.floor("month").int_timestamp
+    previous_month_start = now.shift(months=-1).floor("month").int_timestamp
+
+    await repository.import_message_entry(
+        trigger_shape=shape_from_text("触发一"),
+        response_shape=shape_from_text("响应一"),
+        rule={},
+        scope="current_group",
+        priority=30,
+        trigger_probability=1.0,
+        weight=3,
+        group_id="20001",
+        created_by="10001",
+        status="approved",
+        enabled=1,
+        approved_by="1",
+        deleted_at=0,
+        created_at=month_start + 10,
+        updated_at=month_start + 10,
+    )
+    await repository.import_message_entry(
+        trigger_shape=shape_from_text("触发二"),
+        response_shape=shape_from_text("响应二"),
+        rule={},
+        scope="all_groups",
+        priority=30,
+        trigger_probability=1.0,
+        weight=3,
+        group_id="20002",
+        created_by="10001",
+        status="approved",
+        enabled=1,
+        approved_by="1",
+        deleted_at=0,
+        created_at=month_start + 20,
+        updated_at=month_start + 20,
+    )
+    await repository.import_message_entry(
+        trigger_shape=shape_from_text("触发三"),
+        response_shape=shape_from_text("响应三"),
+        rule={},
+        scope="private_only",
+        priority=30,
+        trigger_probability=1.0,
+        weight=3,
+        group_id="",
+        created_by="10002",
+        status="approved",
+        enabled=1,
+        approved_by="1",
+        deleted_at=0,
+        created_at=month_start + 30,
+        updated_at=month_start + 30,
+    )
+    await repository.import_message_entry(
+        trigger_shape=shape_from_text("旧月触发"),
+        response_shape=shape_from_text("旧月响应"),
+        rule={},
+        scope="self",
+        priority=30,
+        trigger_probability=1.0,
+        weight=3,
+        group_id="20003",
+        created_by="10003",
+        status="approved",
+        enabled=1,
+        approved_by="1",
+        deleted_at=0,
+        created_at=previous_month_start + 10,
+        updated_at=previous_month_start + 10,
+    )
+    await repository.import_message_entry(
+        trigger_shape=shape_from_text("待审触发"),
+        response_shape=shape_from_text("待审响应"),
+        rule={},
+        scope="current_group",
+        priority=30,
+        trigger_probability=1.0,
+        weight=3,
+        group_id="20004",
+        created_by="10004",
+        status="pending",
+        enabled=1,
+        approved_by="",
+        deleted_at=0,
+        created_at=month_start + 40,
+        updated_at=month_start + 40,
+    )
+
+    snapshot = await repository.get_monthly_creator_leaderboard(
+        limit=10,
+        now_ts=month_start + 3600,
+    )
+
+    assert snapshot.month_start == month_start
+    assert snapshot.total_creator_count == 2
+    assert snapshot.total_approved_count == 3
+    assert [item.created_by for item in snapshot.items] == ["10001", "10002"]
+    assert snapshot.items[0].approved_count == 2
+    assert snapshot.items[0].group_count == 2
+    assert snapshot.items[0].current_group_count == 1
+    assert snapshot.items[0].all_groups_count == 1
+    assert snapshot.items[1].private_only_count == 1
