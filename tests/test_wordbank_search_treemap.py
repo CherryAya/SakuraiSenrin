@@ -14,6 +14,8 @@ from src.lib.wordbank_search_treemap import (
     SearchTreemapRenderer,
     SearchTreemapResponseCard,
     SearchTreemapResponseSegment,
+    SearchTreemapTile,
+    TreemapRect,
     build_search_treemap_layout,
     load_search_treemap_fixture,
     render_search_results_treemap,
@@ -264,6 +266,57 @@ def test_renderer_uses_smaller_response_font_for_narrow_cards() -> None:
     assert renderer._line_height(compact_font) < renderer._line_height(regular_font)  # pyright: ignore[reportPrivateUsage]
 
 
+def test_renderer_detects_sparse_text_cards() -> None:
+    renderer = SearchTreemapRenderer()
+    response = SearchTreemapResponseCard(
+        text="晚安啦",
+        created_by="10001",
+        weight=3,
+        rule="默认",
+    )
+
+    assert renderer._is_sparse_text_card(  # pyright: ignore[reportPrivateUsage]
+        response,
+        width=240,
+        height=180,
+    )
+
+
+def test_renderer_does_not_mark_long_text_as_sparse_card() -> None:
+    renderer = SearchTreemapRenderer()
+    response = SearchTreemapResponseCard(
+        text="晚安啦！一定会做个好梦的！最后是，明天再见！",
+        created_by="10001",
+        weight=3,
+        rule="默认",
+    )
+
+    assert not renderer._is_sparse_text_card(  # pyright: ignore[reportPrivateUsage]
+        response,
+        width=240,
+        height=180,
+    )
+
+
+def test_renderer_sparse_text_layout_prefers_larger_font_when_space_allows() -> None:
+    renderer = SearchTreemapRenderer()
+
+    sparse_font, sparse_lines = renderer._fit_sparse_response_text_layout(  # pyright: ignore[reportPrivateUsage]
+        "晚安啦",
+        max_width=220,
+        max_height=180,
+    )
+    regular_font = renderer._choose_response_title_font(  # pyright: ignore[reportPrivateUsage]
+        "晚安啦",
+        width=220,
+        spacious=True,
+        has_image=False,
+    )
+
+    assert sparse_lines
+    assert renderer._line_height(sparse_font) >= renderer._line_height(regular_font)  # pyright: ignore[reportPrivateUsage]
+
+
 def test_renderer_expands_masonry_layout_to_fill_column_height() -> None:
     renderer = SearchTreemapRenderer()
     responses = (
@@ -301,6 +354,44 @@ def test_renderer_expands_masonry_layout_to_fill_column_height() -> None:
 
     assert placements
     assert expanded[-1][1].y + expanded[-1][1].height == 340
+
+
+def test_renderer_draws_fallback_card_when_masonry_cannot_place_response() -> None:
+    renderer = SearchTreemapRenderer()
+    response = SearchTreemapResponseCard(
+        text="我很确定你没有睡，只是不想理我，我不想你带着情绪睡。",
+        created_by="10001",
+        weight=3,
+        rule="默认",
+    )
+    tile = SearchTreemapTile(
+        item=SearchTreemapItem(
+            trigger_group_id=1,
+            trigger_text="晚安小朋友",
+            status="approved",
+            created_by="10001",
+            response_count=1,
+            responses=(response,),
+        ),
+        rect=TreemapRect(x=0, y=0, width=180, height=120),
+        raw_weight=1,
+        normalized_weight=1,
+    )
+    image = Image.new("RGB", (220, 180), "#ffffff")
+    draw = ImageDraw.Draw(image)
+
+    renderer._draw_response_card_grid(  # pyright: ignore[reportPrivateUsage]
+        image,
+        draw,
+        tile,
+        "zh-CN",
+        x=10,
+        y=10,
+        width=150,
+        height=70,
+    )
+
+    assert image.getpixel((12, 12)) != (255, 255, 255)
 
 
 def test_renderer_strips_image_placeholder_when_preview_exists() -> None:
