@@ -266,7 +266,7 @@ def test_renderer_uses_smaller_response_font_for_narrow_cards() -> None:
     assert renderer._line_height(compact_font) < renderer._line_height(regular_font)  # pyright: ignore[reportPrivateUsage]
 
 
-def test_renderer_detects_sparse_text_cards() -> None:
+def test_renderer_detects_single_text_response() -> None:
     renderer = SearchTreemapRenderer()
     response = SearchTreemapResponseCard(
         text="晚安啦",
@@ -275,33 +275,41 @@ def test_renderer_detects_sparse_text_cards() -> None:
         rule="默认",
     )
 
-    assert renderer._is_sparse_text_card(  # pyright: ignore[reportPrivateUsage]
-        response,
-        width=240,
-        height=180,
+    assert (
+        renderer._single_text_response_text(  # pyright: ignore[reportPrivateUsage]
+            response,
+            "zh-CN",
+        )
+        == "晚安啦"
     )
 
 
-def test_renderer_does_not_mark_long_text_as_sparse_card() -> None:
+def test_renderer_ignores_multi_segment_response_for_single_text_fit() -> None:
     renderer = SearchTreemapRenderer()
     response = SearchTreemapResponseCard(
-        text="晚安啦！一定会做个好梦的！最后是，明天再见！",
+        text="晚安啦",
         created_by="10001",
         weight=3,
         rule="默认",
+        segments=(
+            SearchTreemapResponseSegment(kind="text", text="晚安啦"),
+            SearchTreemapResponseSegment(kind="image", image_path="/tmp/a.webp"),
+        ),
     )
 
-    assert not renderer._is_sparse_text_card(  # pyright: ignore[reportPrivateUsage]
-        response,
-        width=240,
-        height=180,
+    assert (
+        renderer._single_text_response_text(  # pyright: ignore[reportPrivateUsage]
+            response,
+            "zh-CN",
+        )
+        is None
     )
 
 
-def test_renderer_sparse_text_layout_prefers_larger_font_when_space_allows() -> None:
+def test_renderer_single_text_layout_prefers_larger_font_when_space_allows() -> None:
     renderer = SearchTreemapRenderer()
 
-    sparse_font, sparse_lines = renderer._fit_sparse_response_text_layout(  # pyright: ignore[reportPrivateUsage]
+    sparse_font, sparse_lines = renderer._fit_single_text_response_layout(  # pyright: ignore[reportPrivateUsage]
         "晚安啦",
         max_width=220,
         max_height=180,
@@ -315,6 +323,19 @@ def test_renderer_sparse_text_layout_prefers_larger_font_when_space_allows() -> 
 
     assert sparse_lines
     assert renderer._line_height(sparse_font) >= renderer._line_height(regular_font)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_renderer_single_text_layout_fits_long_text_into_available_height() -> None:
+    renderer = SearchTreemapRenderer()
+
+    font, lines = renderer._fit_single_text_response_layout(  # pyright: ignore[reportPrivateUsage]
+        "我很确定你没有睡，只是不想理我，我不想你带着情绪睡，那样对身体不好。",
+        max_width=220,
+        max_height=180,
+    )
+
+    assert lines
+    assert len(lines) * renderer._line_height(font) <= 180  # pyright: ignore[reportPrivateUsage]
 
 
 def test_renderer_expands_masonry_layout_to_fill_column_height() -> None:

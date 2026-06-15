@@ -682,6 +682,41 @@ class SearchTreemapRenderer:
             footer_height = self._line_height(self.tile_meta_font) + 4
 
         grid_height = max(1, height - overflow_height - footer_height)
+        if len(responses) == 1:
+            self._draw_response_card(
+                image,
+                draw,
+                responses[0],
+                locale,
+                x=x,
+                y=y,
+                width=width,
+                height=grid_height,
+            )
+            total_hidden = max(0, tile.item.response_count - 1)
+            if total_hidden > 0 and overflow_height > 0:
+                self._draw_overflow_banner(
+                    draw,
+                    locale,
+                    x=x,
+                    y=y + height - overflow_height,
+                    width=width,
+                    height=overflow_height,
+                    hidden_count=total_hidden,
+                )
+            elif footer_height > 0:
+                meta = self._truncate_line(
+                    self._format_matched_by_label(tile.item.matched_by, locale),
+                    self.tile_meta_font,
+                    width,
+                )
+                draw.text(
+                    (x, y + height - footer_height + 2),
+                    meta,
+                    font=self.tile_meta_font,
+                    fill=self.MUTED,
+                )
+            return
         cols, _ = self._choose_card_layout(
             width=width,
             height=grid_height,
@@ -1126,16 +1161,11 @@ class SearchTreemapRenderer:
         content_y = y + pad
         content_width = max(1, width - pad * 2)
         content_height = max(1, height - pad * 2 - meta_gap - meta_height)
-        sparse_mode = self._is_sparse_text_card(
-            response,
-            width=content_width,
-            height=content_height,
-        )
-        if sparse_mode:
-            self._draw_sparse_response_content(
+        single_text = self._single_text_response_text(response, locale)
+        if single_text is not None:
+            self._draw_fitted_single_text_response(
                 draw,
-                response,
-                locale,
+                single_text,
                 x=content_x,
                 y=content_y,
                 width=content_width,
@@ -1199,41 +1229,37 @@ class SearchTreemapRenderer:
             ),
         ]
 
-    def _is_sparse_text_card(
+    def _single_text_response_text(
         self,
-        response: SearchTreemapResponseCard,
-        *,
-        width: int,
-        height: int,
-    ) -> bool:
-        if response.has_image:
-            return False
-        text = response.visible_text.strip()
-        if not text:
-            return False
-        if len(text) > 12:
-            return False
-        if width < 120 or height < 150:
-            return False
-        return all(segment.kind != "image" for segment in response.ordered_segments)
-
-    def _draw_sparse_response_content(
-        self,
-        draw: ImageDraw.ImageDraw,
         response: SearchTreemapResponseCard,
         locale: LocaleCode,
+    ) -> str | None:
+        segments = tuple(
+            segment
+            for segment in response.ordered_segments
+            if (segment.kind == "text" and segment.text.strip())
+            or (segment.kind == "image" and segment.image_path)
+        )
+        if len(segments) != 1 or segments[0].kind != "text":
+            return None
+        text = self._normalize_response_text(
+            segments[0].text,
+            locale,
+            has_image_preview=False,
+        )
+        return text or None
+
+    def _draw_fitted_single_text_response(
+        self,
+        draw: ImageDraw.ImageDraw,
+        text: str,
         *,
         x: int,
         y: int,
         width: int,
         height: int,
     ) -> None:
-        text = self._normalize_response_text(
-            response.visible_text,
-            locale,
-            has_image_preview=False,
-        )
-        font, lines = self._fit_sparse_response_text_layout(
+        font, lines = self._fit_single_text_response_layout(
             text,
             max_width=width,
             max_height=height,
@@ -1242,7 +1268,12 @@ class SearchTreemapRenderer:
             return
         line_height = self._line_height(font)
         total_height = len(lines) * line_height
-        cursor_y = y + max(0, (height - total_height) // 2)
+        if len(lines) <= 2:
+            cursor_y = y + max(0, (height - total_height) // 2)
+        elif total_height < int(height * 0.55):
+            cursor_y = y + max(0, (height - total_height) // 3)
+        else:
+            cursor_y = y
         for line in lines:
             draw.text((x, cursor_y), line, font=font, fill=self.CARD_ACCENT)
             cursor_y += line_height
@@ -1720,7 +1751,7 @@ class SearchTreemapRenderer:
                 return font
         return self._load_lxgw_font(candidate_sizes[-1])
 
-    def _fit_sparse_response_text_layout(
+    def _fit_single_text_response_layout(
         self,
         text: str,
         *,
@@ -1730,10 +1761,27 @@ class SearchTreemapRenderer:
         normalized = text.strip()
         if not normalized:
             return self.card_title_font, []
-        for size in (40, 36, 32, 28, 24, 22, 20, 18, 16):
+        if len(normalized) <= 4:
+            candidate_sizes = (56, 50, 44, 38, 34, 30, 26, 22, 20, 18, 16, 14, 12)
+        elif len(normalized) <= 8:
+            candidate_sizes = (48, 42, 38, 34, 30, 26, 22, 20, 18, 16, 14, 12)
+        elif len(normalized) <= 20:
+            candidate_sizes = (34, 30, 26, 24, 22, 20, 18, 16, 14, 12)
+        else:
+            candidate_sizes = (28, 24, 22, 20, 18, 16, 14, 12, 10)
+        if len(normalized) <= 4:
+            preferred_lines = 1
+        elif len(normalized) <= 8:
+            preferred_lines = 2
+        elif len(normalized) <= 16:
+            preferred_lines = 3
+        else:
+            preferred_lines = 5
+        fallback_fit: tuple[Any, list[str]] | None = None
+        for size in candidate_sizes:
             font = self._load_lxgw_font(size)
             line_height = self._line_height(font)
-            max_lines = max(1, min(6, max_height // max(line_height, 1)))
+            max_lines = max(1, min(12, max_height // max(line_height, 1)))
             lines = self._wrap_text(
                 normalized,
                 font,
@@ -1741,8 +1789,13 @@ class SearchTreemapRenderer:
                 max_lines=max(1, len(normalized)),
             )
             if len(lines) <= max_lines and len(lines) * line_height <= max_height:
-                return font, lines
-        fallback_font = self._load_lxgw_font(16)
+                if len(lines) <= preferred_lines:
+                    return font, lines
+                if fallback_fit is None:
+                    fallback_fit = (font, lines)
+        if fallback_fit is not None:
+            return fallback_fit
+        fallback_font = self._load_lxgw_font(10)
         fallback_lines = self._wrap_text(
             normalized,
             fallback_font,
