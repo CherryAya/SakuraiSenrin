@@ -41,8 +41,10 @@ class DemoTheme:
     muted_light: str
 
     # Showcase-specific colors
-    mesh_pink: str
-    mesh_blue: str
+    grid_color: str
+    decor_color: str
+    footer_divider: str
+    standee_anchor_fill: str
     hero_title: str
     hero_summary: str
     pill_blue_bg: str
@@ -58,6 +60,7 @@ class DemoTheme:
     demo_heading: str
     bot_text: str
     system_line: str
+    standee_anchor_shadow: tuple[int, int, int, int]
     bubble_shadow: tuple[int, int, int, int]
     card_shadow: tuple[int, int, int, int]
 
@@ -70,6 +73,7 @@ class DemoTheme:
     inline_code_radius: int
     inline_code_pad_x: int
     inline_code_pad_y: int
+    grid_spacing: int
 
     # Showcase layout tokens
     canvas_width: int
@@ -133,8 +137,10 @@ _BASE_LAYOUT_THEME = DemoTheme(
     indigo_soft="#F1F4FF",
     indigo_text="#364FC7",
     muted_light="#F7F3F5",
-    mesh_pink="#FFE8F0",
-    mesh_blue="#E8F0FF",
+    grid_color="#EBCBCE",
+    decor_color="#F06292",
+    footer_divider="#EBCBCE",
+    standee_anchor_fill="#FFFFFF",
     hero_title="#1C1E26",
     hero_summary="#5C5F66",
     pill_blue_bg="#F1F4FF",
@@ -150,6 +156,7 @@ _BASE_LAYOUT_THEME = DemoTheme(
     demo_heading="#868E96",
     bot_text="#A61E4D",
     system_line="#ADB5BD",
+    standee_anchor_shadow=(0, 0, 0, 16),
     bubble_shadow=(0, 0, 0, 24),
     card_shadow=(0, 0, 0, 24),
     outer_margin=40,
@@ -160,6 +167,7 @@ _BASE_LAYOUT_THEME = DemoTheme(
     inline_code_radius=12,
     inline_code_pad_x=8,
     inline_code_pad_y=4,
+    grid_spacing=32,
     canvas_width=1280,
     hero_top=64,
     hero_side_padding=88,
@@ -195,7 +203,7 @@ _BASE_LAYOUT_THEME = DemoTheme(
     bubble_line_height=48,
     system_line_gap=24,
     footer_gap_top=40,
-    footer_height=32,
+    footer_height=72,
 )
 
 
@@ -225,12 +233,11 @@ def build_demo_theme(impression_color: str | None = None) -> DemoTheme:
     soft_fill_rgb = _tune_hls(base_rgb, lightness=0.92, saturation=0.45)
     softer_fill_rgb = _tune_hls(base_rgb, lightness=0.965, saturation=0.22)
     shell_border_rgb = _mix(base_rgb, (255, 255, 255), 0.88)
-    warm_mesh_rgb = _shifted_rgb(
-        base_rgb, hue_shift=-0.045, lightness=0.90, saturation=0.42
-    )
-    cool_mesh_rgb = _shifted_rgb(
-        base_rgb, hue_shift=0.06, lightness=0.91, saturation=0.38
-    )
+    page_bg_rgb = _tune_hls(base_rgb, lightness=0.985, saturation=0.12)
+    grid_rgb = _tune_hls(base_rgb, lightness=0.86, saturation=0.28)
+    decor_rgb = _tune_hls(base_rgb, lightness=0.62, saturation=0.52)
+    footer_divider_rgb = _tune_hls(base_rgb, lightness=0.82, saturation=0.20)
+    anchor_fill_rgb = _mix(base_rgb, (255, 255, 255), 0.92)
     pill_alt_bg_rgb = _shifted_rgb(
         base_rgb, hue_shift=0.05, lightness=0.93, saturation=0.32
     )
@@ -242,7 +249,7 @@ def build_demo_theme(impression_color: str | None = None) -> DemoTheme:
 
     return replace(
         _BASE_LAYOUT_THEME,
-        page_bg=_rgb_to_hex(softer_fill_rgb),
+        page_bg=_rgb_to_hex(page_bg_rgb),
         panel_soft_bg=_rgb_to_hex(soft_fill_rgb),
         accent=_rgb_to_hex(accent_rgb),
         strong=_rgb_to_hex(strong_rgb),
@@ -261,8 +268,10 @@ def build_demo_theme(impression_color: str | None = None) -> DemoTheme:
         indigo_soft=_rgb_to_hex(pill_alt_bg_rgb),
         indigo_text=_rgb_to_hex(pill_alt_text_rgb),
         muted_light=_rgb_to_hex(soft_fill_rgb),
-        mesh_pink=_rgb_to_hex(warm_mesh_rgb),
-        mesh_blue=_rgb_to_hex(cool_mesh_rgb),
+        grid_color=_rgb_to_hex(grid_rgb),
+        decor_color=_rgb_to_hex(decor_rgb),
+        footer_divider=_rgb_to_hex(footer_divider_rgb),
+        standee_anchor_fill=_rgb_to_hex(anchor_fill_rgb),
         hero_title=_rgb_to_hex(dark_rgb),
         hero_summary=_rgb_to_hex(_mix(dark_rgb, (255, 255, 255), 0.38)),
         pill_blue_bg=_rgb_to_hex(soft_fill_rgb),
@@ -276,6 +285,7 @@ def build_demo_theme(impression_color: str | None = None) -> DemoTheme:
         demo_heading=_rgb_to_hex(hint_rgb),
         bot_text=_rgb_to_hex(dark_rgb),
         system_line=neutral_hint,
+        standee_anchor_shadow=(*base_rgb, 18),
         bubble_shadow=(*base_rgb, shadow_alpha),
         card_shadow=(*base_rgb, shadow_alpha),
     )

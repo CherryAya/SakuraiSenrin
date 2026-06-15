@@ -1,3 +1,4 @@
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -883,7 +884,7 @@ BOT: Beta 完成
     monkeypatch.setattr(
         plugin_docs_script,
         "render_demo_png",
-        lambda _bundle, feature: f"demo:{feature.slug}".encode(),
+        lambda _bundle, feature, *, generated_at=None: f"demo:{feature.slug}".encode(),
     )
 
     assert plugin_docs_script.generate(workers=2) == 0
@@ -1267,6 +1268,10 @@ def test_demo_theme_has_required_tokens() -> None:
     assert BASE_THEME.system_bubble
     assert BASE_THEME.inline_code_bg
     assert BASE_THEME.inline_code_text
+    assert BASE_THEME.grid_color
+    assert BASE_THEME.decor_color
+    assert BASE_THEME.footer_divider
+    assert BASE_THEME.standee_anchor_fill
 
 
 def test_build_demo_theme_uses_dynamic_impression_color_palette() -> None:
@@ -1276,6 +1281,8 @@ def test_build_demo_theme_uses_dynamic_impression_color_palette() -> None:
     assert theme.page_bg != theme.accent
     assert theme.bot_bubble == theme.panel_soft_bg
     assert theme.deep != theme.hint
+    assert theme.grid_color != theme.accent
+    assert theme.standee_anchor_fill != theme.accent
 
 
 def test_normalize_hex_color_falls_back_to_default() -> None:
@@ -1379,6 +1386,93 @@ def test_demo_theme_showcase_tokens_follow_expected_scale() -> None:
     assert BASE_THEME.bubble_padding_y % 8 == 0
     assert BASE_THEME.hero_summary_line_height >= 56
     assert BASE_THEME.bubble_line_height >= 48
+    assert BASE_THEME.grid_spacing % 8 == 0
+    assert BASE_THEME.footer_height >= 72
+
+
+def test_demo_image_renderer_measure_layout_includes_footer_traceability() -> None:
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+    generated_at = datetime(2026, 6, 16, 21, 30, 45)
+
+    layout = renderer._measure_layout(
+        plugin_title="测试插件",
+        feature_title="查询功能",
+        feature_summary="用于查询状态。",
+        feature_trigger="#query",
+        feature_overview="输入命令后即可查看状态。",
+        feature_preconditions="需要在群聊中调用。",
+        feature_failures="参数错误时会提示原因。",
+        feature_flow_notes="支持直接回复触发。",
+        plugin_trigger="指令触发",
+        feature_permission="普通用户",
+        plugin_version="v1.2.3",
+        plugin_author="SakuraiCora",
+        turns=(),
+        locale="zh-CN",
+        generated_at=generated_at,
+    )
+
+    assert layout.footer_left_text == "测试插件 · 查询功能 · v1.2.3 · By SakuraiCora"
+    assert (
+        layout.footer_right_text == "Generated at 2026-06-16 21:30:45 | © SakuraiSenrin"
+    )
+    assert layout.footer_rect[3] - layout.footer_rect[1] == BASE_THEME.footer_height
+
+
+def test_plugin_docs_generate_reuses_one_build_timestamp(
+    monkeypatch: Any,
+) -> None:
+    dummy_bundle = plugin_docs_module.PluginDocBundle(
+        title="测试插件",
+        description="",
+        summary="",
+        trigger="",
+        permission="",
+        author="",
+        version="",
+        impression_color=DEFAULT_IMPRESSION_COLOR,
+        index=(),
+        source_path=Path("test"),
+    )
+    jobs = (
+        plugin_docs_script.DemoRenderJob(
+            bundle=dummy_bundle,
+            feature_index=0,
+            output=plugin_docs_script.ROOT / "tmp-demo-a.png",
+        ),
+        plugin_docs_script.DemoRenderJob(
+            bundle=dummy_bundle,
+            feature_index=1,
+            output=plugin_docs_script.ROOT / "tmp-demo-b.png",
+        ),
+    )
+    seen_times: list[datetime | None] = []
+
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "collect_demo_jobs",
+        lambda: (1, jobs),
+    )
+
+    def fake_render_demo_job(
+        job: plugin_docs_script.DemoRenderJob,
+        *,
+        generated_at: datetime | None = None,
+    ) -> tuple[Path, bytes]:
+        seen_times.append(generated_at)
+        return job.output, b"demo"
+
+    monkeypatch.setattr(plugin_docs_script, "render_demo_job", fake_render_demo_job)
+    monkeypatch.setattr(
+        plugin_docs_script, "write_demo_result", lambda result: result[0]
+    )
+    monkeypatch.setattr(plugin_docs_script, "_write_line", lambda message: None)
+
+    assert plugin_docs_script.generate(workers=1) == 0
+    assert len(seen_times) == 2
+    assert seen_times[0] == seen_times[1]
+    assert seen_times[0] is not None
+    assert seen_times[0].microsecond == 0
 
 
 def test_demo_image_renderer_handles_features_without_demo_turns() -> None:

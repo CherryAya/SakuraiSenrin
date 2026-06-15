@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from functools import lru_cache
 from importlib import import_module
 from io import BytesIO
@@ -33,6 +34,7 @@ from src.lib.demo_theme import (
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.utils.common import get_current_time
 
 from .consts import TriggerType
 
@@ -953,7 +955,12 @@ def _permission_label(permission: Permission) -> str:
     return labels.get(permission, "普通用户")
 
 
-def render_demo_png(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes:
+def render_demo_png(
+    bundle: PluginDocBundle,
+    feature: FeatureDoc,
+    *,
+    generated_at: datetime | None = None,
+) -> bytes:
     return DemoImageRenderer(impression_color=bundle.impression_color).render(
         plugin_title=bundle.title,
         feature_title=feature.title,
@@ -969,6 +976,7 @@ def render_demo_png(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes:
         plugin_author=bundle.author,
         turns=feature.demo_turns,
         locale="zh-CN",
+        generated_at=generated_at,
     )
 
 
@@ -1012,7 +1020,12 @@ def _slugify_doc_path_part(value: str) -> str:
     return "-".join(part for part in slug.split("-") if part)
 
 
-def audit_demo_layout(bundle: PluginDocBundle, feature: FeatureDoc) -> tuple[str, ...]:
+def audit_demo_layout(
+    bundle: PluginDocBundle,
+    feature: FeatureDoc,
+    *,
+    generated_at: datetime | None = None,
+) -> tuple[str, ...]:
     return DemoImageRenderer(impression_color=bundle.impression_color).audit(
         plugin_title=bundle.title,
         feature_title=feature.title,
@@ -1028,6 +1041,7 @@ def audit_demo_layout(bundle: PluginDocBundle, feature: FeatureDoc) -> tuple[str
         plugin_author=bundle.author,
         turns=feature.demo_turns,
         locale="zh-CN",
+        generated_at=generated_at,
     )
 
 
@@ -2770,6 +2784,8 @@ class _ShowcaseLayout:
     demo_rect: tuple[int, int, int, int]
     turn_placements: tuple[_ShowcaseTurnPlacement, ...]
     footer_rect: tuple[int, int, int, int]
+    footer_left_text: str
+    footer_right_text: str
     total_height: int
 
 
@@ -2829,6 +2845,7 @@ class DemoImageRenderer:
         plugin_author: str,
         turns: Sequence[DocsDemoTurn],
         locale: LocaleCode = "zh-CN",
+        generated_at: datetime | None = None,
     ) -> bytes:
         layout = self._measure_layout(
             plugin_title=plugin_title,
@@ -2845,6 +2862,7 @@ class DemoImageRenderer:
             plugin_author=plugin_author,
             turns=turns,
             locale=locale,
+            generated_at=generated_at,
         )
         image = Image.new("RGBA", (self.WIDTH, layout.total_height), self.theme.page_bg)
         self._paint_background(image)
@@ -2875,6 +2893,7 @@ class DemoImageRenderer:
         plugin_author: str,
         turns: Sequence[DocsDemoTurn],
         locale: LocaleCode = "zh-CN",
+        generated_at: datetime | None = None,
     ) -> tuple[str, ...]:
         layout = self._measure_layout(
             plugin_title=plugin_title,
@@ -2891,6 +2910,7 @@ class DemoImageRenderer:
             plugin_author=plugin_author,
             turns=turns,
             locale=locale,
+            generated_at=generated_at,
         )
         errors: list[str] = []
         canvas = (0, 0, self.WIDTH, layout.total_height)
@@ -2980,8 +3000,12 @@ class DemoImageRenderer:
         plugin_author: str,
         turns: Sequence[DocsDemoTurn],
         locale: LocaleCode,
+        generated_at: datetime | None,
     ) -> _ShowcaseLayout:
         _ = locale
+        generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
+            microsecond=0
+        )
         side = self.theme.hero_side_padding
         standee_size = self.theme.hero_standee_size
         text_max_width = (
@@ -3242,6 +3266,13 @@ class DemoImageRenderer:
             self.WIDTH - side,
             footer_top + self.theme.footer_height,
         )
+        footer_left_text = (
+            f"{plugin_title} · {feature_title} · "
+            f"v{plugin_version.lstrip('v')} · By {plugin_author}"
+        )
+        footer_right_text = (
+            f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
+        )
         return _ShowcaseLayout(
             plugin_title=plugin_title,
             feature_title=feature_title,
@@ -3275,6 +3306,8 @@ class DemoImageRenderer:
             ),
             turn_placements=tuple(turn_placements),
             footer_rect=footer_rect,
+            footer_left_text=footer_left_text,
+            footer_right_text=footer_right_text,
             total_height=footer_rect[3] + self.theme.outer_margin,
         )
 
@@ -3282,18 +3315,8 @@ class DemoImageRenderer:
         draw = ImageDraw.Draw(image)
         width, height = image.size
         draw.rectangle((0, 0, width, height), fill=self.theme.page_bg)
-        mesh = Image.new("RGBA", image.size, (0, 0, 0, 0))
-        mesh_draw = ImageDraw.Draw(mesh)
-        mesh_draw.ellipse(
-            (width - 520, -180, width + 180, 520),
-            fill=self._rgba(self.theme.mesh_pink, 190),
-        )
-        mesh_draw.ellipse(
-            (-260, height - 540, 420, height + 140),
-            fill=self._rgba(self.theme.mesh_blue, 190),
-        )
-        mesh = mesh.filter(ImageFilter.GaussianBlur(220))
-        image.alpha_composite(mesh)
+        self._draw_dot_matrix(draw, width=width, height=height)
+        self._draw_floating_decor(draw, width=width, height=height)
 
     def _draw_hero(
         self,
@@ -3532,6 +3555,7 @@ class DemoImageRenderer:
         draw: ImageDraw.ImageDraw,
         rect: tuple[int, int, int, int],
     ) -> None:
+        self._draw_standee_anchor(image, rect)
         if self.senrin_standee is None:
             self._draw_avatar(
                 draw,
@@ -3589,29 +3613,41 @@ class DemoImageRenderer:
         draw: ImageDraw.ImageDraw,
         layout: _ShowcaseLayout,
     ) -> None:
-        line_y = layout.footer_rect[1] + 12
-        draw.line(
-            (layout.footer_rect[0], line_y, layout.footer_rect[2], line_y),
-            fill=self.theme.line,
-            width=2,
+        divider_y = layout.footer_rect[1] + 8
+        self._draw_dashed_line(
+            draw,
+            start=(layout.footer_rect[0], divider_y),
+            end=(layout.footer_rect[2], divider_y),
+            fill=self.theme.footer_divider,
+            dash=10,
+            gap=10,
         )
-        text = (
-            f"{layout.plugin_title} · {layout.feature_title} · "
-            f"v{layout.plugin_version.lstrip('v')} · {layout.plugin_author}"
-        )
-        fitted = self._fit_text(
+        right_bbox = self._text_size(layout.footer_right_text, self.footer_font)
+        right_width = int(right_bbox[2] - right_bbox[0])
+        footer_y = layout.footer_rect[1] + 28
+        right_x = layout.footer_rect[2] - right_width
+        left_max_width = max(120, right_x - layout.footer_rect[0] - 32)
+        left_text = self._fit_text(
             ImageDraw.Draw(Image.new("RGB", (1, 1), "#FFFFFF")),
-            text,
+            layout.footer_left_text,
             self.footer_font,
-            max_width=layout.footer_rect[2] - layout.footer_rect[0],
+            max_width=left_max_width,
         )
         self._draw_text(
             draw,
             x=layout.footer_rect[0],
-            y=layout.footer_rect[1] + 20,
-            text=fitted,
+            y=footer_y,
+            text=left_text,
             font=self.footer_font,
-            fill=self.theme.hint,
+            fill=self.theme.system_text,
+        )
+        self._draw_text(
+            draw,
+            x=right_x,
+            y=footer_y,
+            text=layout.footer_right_text,
+            font=self.footer_font,
+            fill=self.theme.system_text,
         )
 
     def _draw_shadowed_rect(
@@ -3637,6 +3673,162 @@ class DemoImageRenderer:
         shadow = shadow.filter(ImageFilter.GaussianBlur(shadow_blur))
         image.alpha_composite(shadow)
         ImageDraw.Draw(image).rounded_rectangle(rect, radius=radius, fill=fill)
+
+    def _draw_standee_anchor(
+        self,
+        image: Image.Image,
+        rect: tuple[int, int, int, int],
+    ) -> None:
+        width = rect[2] - rect[0]
+        height = rect[3] - rect[1]
+        anchor_size = int(min(width, height) * 0.82)
+        anchor_left = rect[0] + (width - anchor_size) // 2
+        anchor_top = rect[1] + int(height * 0.1)
+        anchor_rect = (
+            anchor_left,
+            anchor_top,
+            anchor_left + anchor_size,
+            anchor_top + anchor_size,
+        )
+        shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        shadow_draw = ImageDraw.Draw(shadow)
+        shadow_rect = (
+            anchor_rect[0],
+            anchor_rect[1] + self.theme.instruction_shadow_offset_y,
+            anchor_rect[2],
+            anchor_rect[3] + self.theme.instruction_shadow_offset_y,
+        )
+        shadow_draw.ellipse(shadow_rect, fill=self.theme.standee_anchor_shadow)
+        shadow = shadow.filter(ImageFilter.GaussianBlur(20))
+        image.alpha_composite(shadow)
+        ImageDraw.Draw(image).ellipse(
+            anchor_rect,
+            fill=self.theme.standee_anchor_fill,
+            outline=self.theme.line,
+            width=1,
+        )
+
+    def _draw_dot_matrix(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        width: int,
+        height: int,
+    ) -> None:
+        dot_fill = self._rgba(self.theme.grid_color, 38)
+        radius = 1
+        max_height = min(height, max(height // 2 + 160, 480))
+        for y in range(self.theme.hero_top // 2, max_height, self.theme.grid_spacing):
+            for x in range(
+                self.theme.hero_side_padding // 2,
+                width - self.theme.hero_side_padding // 2,
+                self.theme.grid_spacing,
+            ):
+                draw.ellipse(
+                    (x - radius, y - radius, x + radius, y + radius),
+                    fill=dot_fill,
+                )
+
+    def _draw_floating_decor(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        width: int,
+        height: int,
+    ) -> None:
+        decor_fill = self._rgba(self.theme.decor_color, 72)
+        plus_origins = (
+            (self.theme.hero_side_padding - 8, self.theme.hero_top + 24),
+            (width - self.theme.hero_side_padding - 184, self.theme.hero_top + 120),
+            (width - self.theme.hero_side_padding - 56, height - 168),
+        )
+        for origin_x, origin_y in plus_origins:
+            self._draw_plus_cluster(
+                draw, origin_x=origin_x, origin_y=origin_y, fill=decor_fill
+            )
+        self._draw_hollow_circle(
+            draw,
+            center=(
+                width - self.theme.hero_side_padding - 132,
+                self.theme.hero_top + 184,
+            ),
+            radius=28,
+            outline=decor_fill,
+        )
+        self._draw_zigzag(
+            draw,
+            start=(width - self.theme.hero_side_padding - 224, height // 2 + 88),
+            fill=decor_fill,
+        )
+
+    def _draw_plus_cluster(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        origin_x: int,
+        origin_y: int,
+        fill: tuple[int, int, int, int],
+    ) -> None:
+        offsets = ((0, 0), (28, 12), (12, 32))
+        for offset_x, offset_y in offsets:
+            cx = origin_x + offset_x
+            cy = origin_y + offset_y
+            draw.line((cx - 6, cy, cx + 6, cy), fill=fill, width=2)
+            draw.line((cx, cy - 6, cx, cy + 6), fill=fill, width=2)
+
+    def _draw_hollow_circle(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        center: tuple[int, int],
+        radius: int,
+        outline: tuple[int, int, int, int],
+    ) -> None:
+        draw.ellipse(
+            (
+                center[0] - radius,
+                center[1] - radius,
+                center[0] + radius,
+                center[1] + radius,
+            ),
+            outline=outline,
+            width=3,
+        )
+
+    def _draw_zigzag(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        start: tuple[int, int],
+        fill: tuple[int, int, int, int],
+    ) -> None:
+        x, y = start
+        points = [
+            (x, y),
+            (x + 16, y - 8),
+            (x + 32, y),
+            (x + 48, y - 8),
+            (x + 64, y),
+        ]
+        draw.line(points, fill=fill, width=3)
+
+    def _draw_dashed_line(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        start: tuple[int, int],
+        end: tuple[int, int],
+        fill: str,
+        dash: int,
+        gap: int,
+    ) -> None:
+        x1, y = start
+        x2, _ = end
+        cursor = x1
+        while cursor < x2:
+            segment_end = min(cursor + dash, x2)
+            draw.line((cursor, y, segment_end, y), fill=fill, width=1)
+            cursor = segment_end + gap
 
     def _draw_pill(
         self,

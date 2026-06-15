@@ -6,6 +6,8 @@ import argparse
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
+from functools import partial
 from io import BytesIO
 from math import ceil
 import os
@@ -34,6 +36,7 @@ from src.lib.plugin_docs import (
     render_demo_png,
     split_inline_text_spans,
 )
+from src.lib.utils.common import get_current_time
 
 DOCS_ROOTS = (
     ROOT / "src" / "plugins",
@@ -140,9 +143,13 @@ def collect_demo_jobs() -> tuple[int, tuple[DemoRenderJob, ...]]:
     return total_files, tuple(jobs)
 
 
-def render_demo_job(job: DemoRenderJob) -> tuple[Path, bytes]:
+def render_demo_job(
+    job: DemoRenderJob,
+    *,
+    generated_at: datetime | None = None,
+) -> tuple[Path, bytes]:
     feature = job.bundle.index[job.feature_index]
-    return job.output, render_demo_png(job.bundle, feature)
+    return job.output, render_demo_png(job.bundle, feature, generated_at=generated_at)
 
 
 def write_demo_result(result: tuple[Path, bytes]) -> Path:
@@ -305,18 +312,8 @@ class DemoCollectionRenderer:
         draw = ImageDraw.Draw(image)
         width, height = image.size
         draw.rectangle((0, 0, width, height), fill=self.theme.page_bg)
-        mesh = Image.new("RGBA", image.size, (0, 0, 0, 0))
-        mesh_draw = ImageDraw.Draw(mesh)
-        mesh_draw.ellipse(
-            (width - 420, -160, width + 180, 420),
-            fill=self._rgba(self.theme.mesh_pink, 170),
-        )
-        mesh_draw.ellipse(
-            (-220, height - 460, 360, height + 120),
-            fill=self._rgba(self.theme.mesh_blue, 170),
-        )
-        mesh = mesh.filter(ImageFilter.GaussianBlur(180))
-        image.alpha_composite(mesh)
+        self._draw_dot_matrix(draw, width=width, height=height)
+        self._draw_floating_decor(draw, width=width, height=height)
 
     def _measure_header_layout(self, *, title: str, summary: str) -> HeaderLayout:
         left_x = self.OUTER_MARGIN
@@ -577,6 +574,110 @@ class DemoCollectionRenderer:
             radius=radius,
             fill=self.theme.panel_bg,
         )
+
+    def _draw_dot_matrix(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        width: int,
+        height: int,
+    ) -> None:
+        dot_fill = self._rgba(self.theme.grid_color, 38)
+        radius = 1
+        max_height = min(height, max(height // 2 + 160, 480))
+        for y in range(self.HEADER_TOP // 2, max_height, self.theme.grid_spacing):
+            for x in range(
+                self.OUTER_MARGIN // 2,
+                width - self.OUTER_MARGIN // 2,
+                self.theme.grid_spacing,
+            ):
+                draw.ellipse(
+                    (x - radius, y - radius, x + radius, y + radius),
+                    fill=dot_fill,
+                )
+
+    def _draw_floating_decor(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        width: int,
+        height: int,
+    ) -> None:
+        decor_fill = self._rgba(self.theme.decor_color, 72)
+        plus_origins = (
+            (self.OUTER_MARGIN - 8, self.HEADER_TOP + 16),
+            (width - self.OUTER_MARGIN - 176, self.HEADER_TOP + 104),
+            (width - self.OUTER_MARGIN - 72, height - 160),
+        )
+        for origin_x, origin_y in plus_origins:
+            self._draw_plus_cluster(
+                draw,
+                origin_x=origin_x,
+                origin_y=origin_y,
+                fill=decor_fill,
+            )
+        self._draw_hollow_circle(
+            draw,
+            center=(width - self.OUTER_MARGIN - 128, self.HEADER_TOP + 172),
+            radius=28,
+            outline=decor_fill,
+        )
+        self._draw_zigzag(
+            draw,
+            start=(width - self.OUTER_MARGIN - 216, height // 2 + 72),
+            fill=decor_fill,
+        )
+
+    def _draw_plus_cluster(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        origin_x: int,
+        origin_y: int,
+        fill: tuple[int, int, int, int],
+    ) -> None:
+        offsets = ((0, 0), (28, 12), (12, 32))
+        for offset_x, offset_y in offsets:
+            cx = origin_x + offset_x
+            cy = origin_y + offset_y
+            draw.line((cx - 6, cy, cx + 6, cy), fill=fill, width=2)
+            draw.line((cx, cy - 6, cx, cy + 6), fill=fill, width=2)
+
+    def _draw_hollow_circle(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        center: tuple[int, int],
+        radius: int,
+        outline: tuple[int, int, int, int],
+    ) -> None:
+        draw.ellipse(
+            (
+                center[0] - radius,
+                center[1] - radius,
+                center[0] + radius,
+                center[1] + radius,
+            ),
+            outline=outline,
+            width=3,
+        )
+
+    def _draw_zigzag(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        start: tuple[int, int],
+        fill: tuple[int, int, int, int],
+    ) -> None:
+        x, y = start
+        points = [
+            (x, y),
+            (x + 16, y - 8),
+            (x + 32, y),
+            (x + 48, y - 8),
+            (x + 64, y),
+        ]
+        draw.line(points, fill=fill, width=3)
 
     def _card_width(self, columns: int) -> int:
         total_gap = max(0, columns - 1) * self.GRID_GAP_X
@@ -880,14 +981,16 @@ class DemoCollectionRenderer:
 def generate(*, workers: int | None = None) -> int:
     worker_count = workers if workers is not None else default_worker_count()
     total_files, jobs = collect_demo_jobs()
+    build_time = datetime.fromtimestamp(get_current_time()).replace(microsecond=0)
+    render_job = partial(render_demo_job, generated_at=build_time)
     if worker_count == 1 or len(jobs) <= 1:
         for job in jobs:
-            output = write_demo_result(render_demo_job(job))
+            output = write_demo_result(render_job(job))
             _write_line(f"generated {output.relative_to(ROOT)}")
     else:
         max_workers = min(worker_count, len(jobs))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for result in executor.map(render_demo_job, jobs):
+            for result in executor.map(render_job, jobs):
                 output = write_demo_result(result)
                 _write_line(f"generated {output.relative_to(ROOT)}")
 
