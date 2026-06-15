@@ -1244,9 +1244,14 @@ class SearchTreemapRenderer:
     ) -> int:
         single_text = self._single_text_response_text(response, locale)
         if single_text is not None:
+            layout_width = self._single_text_layout_width(
+                width,
+                height_cap=self._single_text_layout_height_cap(width, text=single_text),
+                text=single_text,
+            )
             layout_font, lines = self._fit_single_text_response_layout(
                 single_text,
-                max_width=width,
+                max_width=layout_width,
                 max_height=self._single_text_layout_height_cap(width, text=single_text),
             )
             return len(lines) * self._line_height(layout_font)
@@ -1329,7 +1334,7 @@ class SearchTreemapRenderer:
         if width < 120:
             base = 96
         elif width < 168:
-            base = 118
+            base = 136
         elif width < 224:
             base = 146
         else:
@@ -1337,7 +1342,7 @@ class SearchTreemapRenderer:
         if len(text.strip()) >= 18:
             base += 18
         elif len(text.strip()) <= 8:
-            base += 42
+            base += 64
         return base
 
     def _estimate_layout_image_height(
@@ -1641,9 +1646,14 @@ class SearchTreemapRenderer:
         width: int,
         height: int,
     ) -> None:
+        layout_width = self._single_text_layout_width(
+            width,
+            height_cap=height,
+            text=text,
+        )
         font, lines = self._fit_single_text_response_layout(
             text,
-            max_width=width,
+            max_width=layout_width,
             max_height=height,
         )
         if not lines:
@@ -1663,6 +1673,17 @@ class SearchTreemapRenderer:
                 line_x += max(0, (width - self._text_width(line, font)) // 2)
             draw.text((line_x, cursor_y), line, font=font, fill=self.CARD_ACCENT)
             cursor_y += line_height
+
+    def _single_text_layout_width(
+        self,
+        width: int,
+        *,
+        height_cap: int,
+        text: str,
+    ) -> int:
+        if width < 176 and height_cap >= 220 and len(text.strip()) <= 10:
+            return max(1, int(width * 0.84))
+        return width
 
     def _draw_response_content(
         self,
@@ -2253,17 +2274,21 @@ class SearchTreemapRenderer:
         max_height: int,
     ) -> int:
         if len(text) <= 4:
-            text_cap = 108
+            text_cap = 124
         elif len(text) <= 8:
-            text_cap = 112
+            text_cap = 128
         elif len(text) <= 16:
-            text_cap = 70
+            text_cap = 78
         else:
             text_cap = 34
+        width_ratio = 0.58 if len(text) > 8 else 0.74
+        if len(text) <= 8 and max_width < 176 and max_height >= 260:
+            width_ratio = 0.82
         width_cap = max(
-            24, int(max_width * 0.64 if len(text) <= 8 else max_width * 0.54)
+            24,
+            int(max_width * width_ratio),
         )
-        height_cap = max(24, int(max_height * 0.80))
+        height_cap = max(24, int(max_height * 0.92))
         return max(12, min(text_cap, width_cap, height_cap))
 
     def _fit_lxgw_text_block_layout(

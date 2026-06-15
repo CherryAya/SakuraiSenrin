@@ -450,6 +450,41 @@ def test_renderer_single_text_initial_font_size_scales_with_available_space() ->
     assert large > compact
 
 
+def test_renderer_single_text_initial_font_size_boosts_narrow_tall_cards() -> None:
+    renderer = SearchTreemapRenderer()
+
+    regular = renderer._single_text_initial_font_size(  # pyright: ignore[reportPrivateUsage]
+        text="晚安，不许复读",
+        max_width=180,
+        max_height=180,
+    )
+    tall = renderer._single_text_initial_font_size(  # pyright: ignore[reportPrivateUsage]
+        text="晚安，不许复读",
+        max_width=160,
+        max_height=300,
+    )
+
+    assert tall >= regular
+
+
+def test_renderer_reduces_layout_width_for_narrow_tall_single_text_cards() -> None:
+    renderer = SearchTreemapRenderer()
+
+    reduced = renderer._single_text_layout_width(  # pyright: ignore[reportPrivateUsage]
+        160,
+        height_cap=260,
+        text="晚安，不许复读",
+    )
+    regular = renderer._single_text_layout_width(  # pyright: ignore[reportPrivateUsage]
+        220,
+        height_cap=180,
+        text="晚安，不许复读",
+    )
+
+    assert reduced < 160
+    assert regular == 220
+
+
 def test_renderer_single_text_layout_fits_long_text_into_available_height() -> None:
     renderer = SearchTreemapRenderer()
 
