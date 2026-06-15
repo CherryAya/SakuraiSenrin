@@ -206,7 +206,7 @@ def test_renderer_prefers_three_columns_for_wide_dense_tiles() -> None:
     )
 
     assert cols == 3
-    assert shown >= 6
+    assert shown >= 3
 
 
 def test_renderer_uses_single_column_for_single_response() -> None:
@@ -298,3 +298,22 @@ def test_renderer_estimates_taller_height_for_longer_content() -> None:
     )
 
     assert long_height > short_height
+
+
+def test_renderer_builds_three_metadata_lines() -> None:
+    renderer = SearchTreemapRenderer()
+    response = SearchTreemapResponseCard(
+        text="晚安",
+        created_by="10001",
+        weight=3,
+        rule="默认",
+    )
+
+    lines = renderer._build_response_meta_lines(  # pyright: ignore[reportPrivateUsage]
+        response,
+        "zh-CN",
+        font=renderer.card_meta_font,  # pyright: ignore[reportPrivateUsage]
+        max_width=220,
+    )
+
+    assert lines == ["创建者 10001", "权重 3", "规则 默认"]

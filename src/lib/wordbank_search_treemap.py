@@ -1052,21 +1052,19 @@ class SearchTreemapRenderer:
         max_width: int,
     ) -> list[str]:
         rule_text = self._normalize_text(response.rule, locale)
-        compact = self._truncate_line(
-            f"创 {response.created_by}  权 {response.weight}  规 {rule_text}",
-            font,
-            max_width,
-        )
-        if self._text_width(compact, font) <= max_width and len(compact) < 34:
-            return [compact]
         return [
             self._truncate_line(
-                f"创 {response.created_by}  权 {response.weight}",
+                f"创建者 {response.created_by}",
                 font,
                 max_width,
             ),
             self._truncate_line(
-                f"规 {rule_text}",
+                f"权重 {response.weight}",
+                font,
+                max_width,
+            ),
+            self._truncate_line(
+                f"规则 {rule_text}",
                 font,
                 max_width,
             ),
