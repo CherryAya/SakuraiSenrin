@@ -25,6 +25,7 @@ from src.plugins.wordbank.handlers.commands import (
     handle_trigger_probability_update,
     parse_group_view_args,
     parse_guided_search_mode_choice,
+    parse_rank_period,
     parse_search_args,
     parse_search_session_command,
 )
@@ -120,6 +121,14 @@ def test_parse_search_session_command_supports_page_detail_delete_and_exit() -> 
     assert exit_cmd.action == "exit"
 
 
+def test_parse_rank_period_supports_default_and_aliases() -> None:
+    assert parse_rank_period("") == "month"
+    assert parse_rank_period("周榜") == "week"
+    assert parse_rank_period("month") == "month"
+    assert parse_rank_period("本季") == "season"
+    assert parse_rank_period("总榜") == "total"
+
+
 @pytest.mark.asyncio
 async def test_dispatch_wordbank_command_routes_rank_to_leaderboard_handler(
     monkeypatch: pytest.MonkeyPatch,
@@ -127,19 +136,22 @@ async def test_dispatch_wordbank_command_routes_rank_to_leaderboard_handler(
     handle_rank = AsyncMock(return_value=Message("RANK_OK"))
     monkeypatch.setattr(
         commands_module,
-        "handle_monthly_creator_leaderboard",
+        "handle_creator_leaderboard",
         handle_rank,
     )
 
     message = await dispatch_wordbank_command(
         cast(WordbankService, SimpleNamespace()),
-        event=build_group_message_event("#wordbank rank"),
-        text="rank",
+        event=build_group_message_event("#wordbank rank 周榜"),
+        text="rank 周榜",
         locale="zh-CN",
     )
 
     assert message == Message("RANK_OK")
     handle_rank.assert_awaited_once()
+    await_args = handle_rank.await_args
+    assert await_args is not None
+    assert await_args.kwargs["text"] == "周榜"
 
 
 @pytest.mark.asyncio

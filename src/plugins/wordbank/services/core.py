@@ -8,11 +8,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 import random
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import arrow
 
 from src.database.consts import WritePolicy
+from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
@@ -22,6 +23,7 @@ from src.plugins.wordbank.database.types import (
     WordbankLogPayload,
     WordbankMessageRefKind,
     WordbankMessageRefRecord,
+    WordbankRankPeriod,
     WordbankResponseItemRecord,
     WordbankSearchItem,
     WordbankSearchPage,
@@ -47,6 +49,17 @@ from src.plugins.wordbank.services.rules import (
     canonicalize_rule,
 )
 from src.repositories import user_repo
+
+if TYPE_CHECKING:
+    from pil_utils import BuildImage
+
+
+WORDBANK_RANK_PERIOD_LABEL_KEYS: dict[WordbankRankPeriod, MessageKey] = {
+    "week": "wordbank.rank.period.week",
+    "month": "wordbank.rank.period.month",
+    "season": "wordbank.rank.period.season",
+    "total": "wordbank.rank.period.total",
+}
 
 
 @dataclass(slots=True, frozen=True)
@@ -92,21 +105,24 @@ class WordbankLeaderboardCardItem:
     all_groups_count: int
     self_count: int
     private_only_count: int
+    avatar: BuildImage | None = None
 
 
 @dataclass(slots=True, frozen=True)
 class WordbankLeaderboardCardData:
     title: str
     subtitle: str
-    month_label: str
+    period: WordbankRankPeriod
+    badge_text: str
+    range_text: str
     generated_at: int
     total_creator_count: int
     total_approved_count: int
     champion_gap: int
     top_share: float
     items: tuple[WordbankLeaderboardCardItem, ...]
-    month_start: int
-    month_end: int
+    range_start: int
+    range_end: int
 
 
 @dataclass(slots=True)
@@ -769,15 +785,17 @@ class WordbankService:
             is_superuser=is_superuser,
         )
 
-    async def build_monthly_creator_leaderboard(
+    async def build_creator_leaderboard(
         self,
         *,
+        period: WordbankRankPeriod = "month",
         locale: LocaleCode,
         limit: int = 10,
         now_ts: int | None = None,
     ) -> WordbankLeaderboardCardData:
         generated_at = now_ts or get_current_time()
-        snapshot = await self.repository.get_monthly_creator_leaderboard(
+        snapshot = await self.repository.get_creator_leaderboard(
+            period=period,
             limit=limit,
             now_ts=generated_at,
         )
@@ -812,10 +830,18 @@ class WordbankService:
         runner_up_count = items[1].approved_count if len(items) > 1 else 0
         return WordbankLeaderboardCardData(
             title=tr(locale, "wordbank.rank.title"),
-            subtitle=tr(locale, "wordbank.rank.subtitle"),
-            month_label=arrow.get(snapshot.month_start)
-            .to("Asia/Shanghai")
-            .format("YYYY.MM"),
+            subtitle=tr(
+                locale,
+                "wordbank.rank.subtitle",
+                period=self._rank_period_label(snapshot.period, locale),
+            ),
+            period=snapshot.period,
+            badge_text=self._rank_period_label(snapshot.period, locale),
+            range_text=self._rank_range_text(
+                snapshot.range_start,
+                snapshot.range_end,
+                locale=locale,
+            ),
             generated_at=generated_at,
             total_creator_count=snapshot.total_creator_count,
             total_approved_count=snapshot.total_approved_count,
@@ -826,8 +852,28 @@ class WordbankService:
                 else 0.0
             ),
             items=tuple(items),
-            month_start=snapshot.month_start,
-            month_end=snapshot.month_end,
+            range_start=snapshot.range_start,
+            range_end=snapshot.range_end,
+        )
+
+    @staticmethod
+    def _rank_period_label(period: WordbankRankPeriod, locale: LocaleCode) -> str:
+        return tr(locale, WORDBANK_RANK_PERIOD_LABEL_KEYS[period])
+
+    @staticmethod
+    def _rank_range_text(
+        range_start: int,
+        range_end: int,
+        *,
+        locale: LocaleCode,
+    ) -> str:
+        start_text = arrow.get(range_start).to("Asia/Shanghai").format("YYYY-MM-DD")
+        end_text = arrow.get(range_end).to("Asia/Shanghai").format("YYYY-MM-DD HH:mm")
+        return tr(
+            locale,
+            "wordbank.rank.range",
+            start=start_text,
+            end=end_text,
         )
 
     async def match_message(
@@ -1121,7 +1167,7 @@ def format_pending_items(
     return "\n".join(lines)
 
 
-def format_monthly_creator_leaderboard(
+def format_creator_leaderboard(
     data: WordbankLeaderboardCardData,
     *,
     locale: LocaleCode,
@@ -1132,7 +1178,8 @@ def format_monthly_creator_leaderboard(
         tr(
             locale,
             "wordbank.rank.text.title",
-            month=data.month_label,
+            period=tr(locale, WORDBANK_RANK_PERIOD_LABEL_KEYS[data.period]),
+            range=data.range_text,
             total_creator_count=data.total_creator_count,
             total_approved_count=data.total_approved_count,
         )

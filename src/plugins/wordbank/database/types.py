@@ -10,6 +10,9 @@ if TYPE_CHECKING:
     from src.plugins.wordbank.message_model import MessageShape
 
 
+WordbankRankPeriod = Literal["week", "month", "season", "total"]
+
+
 class WordbankTriggerGroupPayload(TypedDict):
     status: str
     enabled: int
@@ -304,8 +307,9 @@ class WordbankCreatorLeaderboardItem:
 
 @dataclass(slots=True, frozen=True)
 class WordbankCreatorLeaderboardSnapshot:
-    month_start: int
-    month_end: int
+    period: WordbankRankPeriod
+    range_start: int
+    range_end: int
     total_creator_count: int
     total_approved_count: int
     items: tuple[WordbankCreatorLeaderboardItem, ...]

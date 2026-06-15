@@ -1,4 +1,4 @@
-"""Pillow leaderboard rendering for the monthly wordbank creator board."""
+"""Pillow leaderboard rendering for the wordbank creator board."""
 
 from __future__ import annotations
 
@@ -22,40 +22,46 @@ CARD_WIDTH = 1320
 PADDING_X = 56
 PADDING_Y = 52
 SECTION_GAP = 24
-ROW_GAP = 14
+ROW_GAP = 16
 FOOTER_HEIGHT = 72
 
 
 class WordbankLeaderboardCardRenderer:
-    BG = "#FAF7F2"
-    PANEL = "#FFFFFF"
-    PANEL_SOFT = "#FFF2E9"
-    HEADER = "#2E2630"
-    BODY = "#5B4F58"
-    MUTED = "#8E7D86"
-    ACCENT = "#D87E52"
-    ACCENT_SOFT = "#F7E2D6"
-    BORDER = "#EADCCF"
-    HERO = "#FFF6EF"
-    GOLD = "#E4A64B"
-    SILVER = "#8C93B9"
-    BRONZE = "#6FA89D"
-    CHIP = "#F3ECE5"
+    BG = "#FFF5FA"
+    BG_STRONG = "#FFE3EF"
+    PANEL = "#FFFDFE"
+    PANEL_SOFT = "#FFF2F7"
+    PANEL_PINK = "#FFE9F1"
+    HEADER = "#4E2135"
+    BODY = "#72455A"
+    MUTED = "#B37A92"
+    ACCENT = "#E45C8C"
+    ACCENT_DEEP = "#C94073"
+    ACCENT_SOFT = "#FFD8E7"
+    BORDER = "#F3C5D9"
+    HERO = "#FFF7FB"
+    GOLD = "#E4A955"
+    SILVER = "#A284E8"
+    BRONZE = "#7AC4B1"
+    CHIP_BG = "#FFF0F6"
+    CHIP_FG = "#A85074"
 
     def __init__(self) -> None:
-        self.title_font = self._load_font(48)
+        self.title_font = self._load_font(50)
         self.subtitle_font = self._load_font(24)
-        self.month_font = self._load_font(22)
+        self.range_font = self._load_font(20)
+        self.badge_font = self._load_font(22)
         self.summary_label_font = self._load_font(18)
-        self.summary_value_font = self._load_font(30)
-        self.hero_rank_font = self._load_font(40)
-        self.hero_name_font = self._load_font(34)
-        self.hero_count_font = self._load_font(56)
+        self.summary_value_font = self._load_font(32)
+        self.hero_rank_font = self._load_font(26)
+        self.hero_name_font = self._load_font(38)
+        self.hero_count_font = self._load_font(64)
         self.hero_meta_font = self._load_font(22)
         self.row_rank_font = self._load_font(22)
         self.row_name_font = self._load_font(28)
-        self.row_value_font = self._load_font(30)
+        self.row_value_font = self._load_font(34)
         self.row_meta_font = self._load_font(20)
+        self.row_chip_font = self._load_font(18)
         self.footer_font = self._load_font(18)
         self.avatar_font = self._load_font(30)
 
@@ -72,9 +78,9 @@ class WordbankLeaderboardCardRenderer:
         cursor_y += SECTION_GAP
 
         if data.items:
-            cursor_y = self._draw_hero(draw, data, locale, cursor_y)
+            cursor_y = self._draw_hero(image, draw, data, locale, cursor_y)
             cursor_y += SECTION_GAP
-            cursor_y = self._draw_rows(draw, data, locale, cursor_y)
+            cursor_y = self._draw_rows(image, draw, data, locale, cursor_y)
         else:
             cursor_y = self._draw_empty(draw, locale, cursor_y)
 
@@ -86,27 +92,29 @@ class WordbankLeaderboardCardRenderer:
 
     def _measure_height(self, data: WordbankLeaderboardCardData) -> int:
         height = PADDING_Y
-        height += 112
-        height += 136 + SECTION_GAP
+        height += 132
+        height += 152 + SECTION_GAP
         if data.items:
-            height += 240 + SECTION_GAP
+            height += 268 + SECTION_GAP
             row_count = max(0, len(data.items) - 1)
             if row_count:
-                height += row_count * 112 + max(0, row_count - 1) * ROW_GAP
+                height += row_count * 124 + max(0, row_count - 1) * ROW_GAP
         else:
-            height += 180
+            height += 190
         height += FOOTER_HEIGHT + PADDING_Y
         return height
 
     def _paint_background(self, draw: ImageDraw.ImageDraw, height: int) -> None:
         draw.rectangle((0, 0, CARD_WIDTH, height), fill=self.BG)
-        draw.rounded_rectangle((42, 34, 138, height - 42), radius=28, fill="#FFF2EA")
+        draw.ellipse((-120, -40, 220, 300), fill=self.BG_STRONG)
+        draw.ellipse((CARD_WIDTH - 320, 40, CARD_WIDTH + 80, 420), fill="#FFEAF4")
         draw.rounded_rectangle(
-            (CARD_WIDTH - 126, 112, CARD_WIDTH - 72, height - 96),
-            radius=28,
-            fill="#F2F7FF",
+            (30, 20, CARD_WIDTH - 30, height - 24),
+            radius=42,
+            outline="#FFE0EC",
+            width=2,
         )
-        draw.rectangle((0, 0, CARD_WIDTH, 12), fill=self.ACCENT)
+        draw.rectangle((0, 0, CARD_WIDTH, 10), fill=self.ACCENT)
 
     def _draw_header(
         self,
@@ -121,28 +129,36 @@ class WordbankLeaderboardCardRenderer:
             fill=self.HEADER,
         )
         draw.text(
-            (PADDING_X, cursor_y + 58),
+            (PADDING_X, cursor_y + 60),
             data.subtitle,
             font=self.subtitle_font,
             fill=self.BODY,
         )
-        month_text = data.month_label
-        chip_w = int(draw.textlength(month_text, font=self.month_font)) + 40
-        chip_x = CARD_WIDTH - PADDING_X - chip_w
+        draw.text(
+            (PADDING_X, cursor_y + 94),
+            data.range_text,
+            font=self.range_font,
+            fill=self.MUTED,
+        )
+
+        badge_w = int(draw.textlength(data.badge_text, font=self.badge_font)) + 48
+        badge_x = CARD_WIDTH - PADDING_X - badge_w
+        badge_y = cursor_y + 14
         draw.rounded_rectangle(
-            (chip_x, cursor_y + 8, chip_x + chip_w, cursor_y + 50),
-            radius=20,
-            fill=self.CHIP,
+            (badge_x, badge_y, badge_x + badge_w, badge_y + 42),
+            radius=21,
+            fill=self.ACCENT_SOFT,
             outline=self.BORDER,
             width=2,
         )
         draw.text(
-            (chip_x + 20, cursor_y + 18),
-            month_text,
-            font=self.month_font,
-            fill=self.ACCENT,
+            (badge_x + badge_w / 2, badge_y + 21),
+            data.badge_text,
+            font=self.badge_font,
+            fill=self.ACCENT_DEEP,
+            anchor="mm",
         )
-        return cursor_y + 92
+        return cursor_y + 114
 
     def _draw_summary(
         self,
@@ -151,35 +167,41 @@ class WordbankLeaderboardCardRenderer:
         locale: LocaleCode,
         cursor_y: int,
     ) -> int:
-        box_h = 136
+        box_h = 152
         draw.rounded_rectangle(
             (PADDING_X, cursor_y, CARD_WIDTH - PADDING_X, cursor_y + box_h),
-            radius=30,
+            radius=34,
             fill=self.PANEL,
             outline=self.BORDER,
             width=2,
         )
-        stat_w = (CARD_WIDTH - PADDING_X * 2 - 32 * 2 - 24 * 2) // 3
+        stat_w = (CARD_WIDTH - PADDING_X * 2 - 32 * 2 - 22 * 2) // 3
         stats = (
             (
                 tr(locale, "wordbank.rank.summary.creators"),
                 str(data.total_creator_count),
+                self.PANEL_SOFT,
+                self.ACCENT_DEEP,
             ),
             (
                 tr(locale, "wordbank.rank.summary.entries"),
                 str(data.total_approved_count),
+                "#FFF2FB",
+                "#9C62E8",
             ),
             (
                 tr(locale, "wordbank.rank.summary.share"),
                 f"{data.top_share * 100:.0f}%",
+                "#FFF5ED",
+                "#D9863D",
             ),
         )
-        for index, (label, value) in enumerate(stats):
-            x0 = PADDING_X + 32 + index * (stat_w + 24)
+        for index, (label, value, bg, fg) in enumerate(stats):
+            x0 = PADDING_X + 32 + index * (stat_w + 22)
             draw.rounded_rectangle(
                 (x0, cursor_y + 24, x0 + stat_w, cursor_y + box_h - 24),
                 radius=24,
-                fill=self.PANEL_SOFT,
+                fill=bg,
             )
             draw.text(
                 (x0 + 20, cursor_y + 42),
@@ -188,131 +210,137 @@ class WordbankLeaderboardCardRenderer:
                 fill=self.MUTED,
             )
             draw.text(
-                (x0 + 20, cursor_y + 74),
+                (x0 + 20, cursor_y + 80),
                 value,
                 font=self.summary_value_font,
-                fill=self.HEADER,
+                fill=fg,
             )
         return cursor_y + box_h
 
     def _draw_hero(
         self,
+        image: Image.Image,
         draw: ImageDraw.ImageDraw,
         data: WordbankLeaderboardCardData,
         locale: LocaleCode,
         cursor_y: int,
     ) -> int:
         champion = data.items[0]
-        box_h = 240
+        box_h = 268
         draw.rounded_rectangle(
             (PADDING_X, cursor_y, CARD_WIDTH - PADDING_X, cursor_y + box_h),
-            radius=34,
+            radius=38,
             fill=self.HERO,
             outline=self.BORDER,
             width=2,
         )
-        avatar_x = PADDING_X + 34
-        avatar_y = cursor_y + 38
-        self._draw_avatar(draw, champion, avatar_x, avatar_y, 120, self.GOLD)
-        draw.text(
-            (avatar_x + 150, cursor_y + 42),
-            "NO.1",
-            font=self.hero_rank_font,
-            fill=self.GOLD,
+        avatar_x = PADDING_X + 36
+        avatar_y = cursor_y + 40
+        self._paste_avatar(image, champion, avatar_x, avatar_y, 132, self.GOLD)
+        self._draw_rank_capsule(
+            draw,
+            x=avatar_x + 160,
+            y=cursor_y + 42,
+            text="#1",
+            fill="#FFF1D7",
+            fg="#B97728",
+            width=84,
         )
         draw.text(
-            (avatar_x + 150, cursor_y + 96),
-            self._fit_text(draw, champion.display_name, self.hero_name_font, 520),
+            (avatar_x + 160, cursor_y + 98),
+            self._fit_text(draw, champion.display_name, self.hero_name_font, 460),
             font=self.hero_name_font,
             fill=self.HEADER,
         )
-        share_text = tr(
-            locale,
-            "wordbank.rank.hero.share",
-            share=f"{champion.share * 100:.1f}%",
-        )
-        scope_text = self._scope_summary(locale, champion)
         draw.text(
-            (avatar_x + 150, cursor_y + 146),
-            share_text,
+            (avatar_x + 160, cursor_y + 150),
+            tr(
+                locale,
+                "wordbank.rank.hero.share",
+                share=f"{champion.share * 100:.1f}%",
+            ),
             font=self.hero_meta_font,
             fill=self.BODY,
         )
         draw.text(
-            (avatar_x + 150, cursor_y + 176),
-            scope_text,
+            (avatar_x + 160, cursor_y + 182),
+            tr(
+                locale,
+                "wordbank.rank.row.meta",
+                group_count=champion.group_count,
+                date=arrow.get(champion.latest_created_at)
+                .to("Asia/Shanghai")
+                .format("MM-DD HH:mm"),
+            ),
             font=self.hero_meta_font,
             fill=self.MUTED,
         )
+        chip_y = cursor_y + 212
+        self._draw_scope_chips(draw, champion, locale, x=avatar_x + 160, y=chip_y)
 
         count_text = str(champion.approved_count)
         count_w = int(draw.textlength(count_text, font=self.hero_count_font))
-        count_x = CARD_WIDTH - PADDING_X - 40 - count_w
+        count_x = CARD_WIDTH - PADDING_X - 42 - count_w
         draw.text(
-            (count_x, cursor_y + 66),
+            (count_x, cursor_y + 74),
             count_text,
             font=self.hero_count_font,
-            fill=self.ACCENT,
+            fill=self.ACCENT_DEEP,
         )
-        meta_text = tr(
-            locale,
-            "wordbank.rank.hero.gap",
-            gap=max(0, data.champion_gap),
-        )
-        meta_w = int(draw.textlength(meta_text, font=self.hero_meta_font))
-        draw.text(
-            (CARD_WIDTH - PADDING_X - 40 - meta_w, cursor_y + 148),
-            meta_text,
-            font=self.hero_meta_font,
-            fill=self.BODY,
+        self._draw_rank_capsule(
+            draw,
+            x=CARD_WIDTH - PADDING_X - 240,
+            y=cursor_y + 166,
+            text=tr(locale, "wordbank.rank.hero.gap", gap=max(0, data.champion_gap)),
+            fill="#FFE9F2",
+            fg=self.ACCENT_DEEP,
+            width=198,
         )
         return cursor_y + box_h
 
     def _draw_rows(
         self,
+        image: Image.Image,
         draw: ImageDraw.ImageDraw,
         data: WordbankLeaderboardCardData,
         locale: LocaleCode,
         cursor_y: int,
     ) -> int:
         for item in data.items[1:]:
-            row_h = 112
+            row_h = 124
+            fill, capsule_fill, capsule_fg = self._row_theme(item.current_rank)
             draw.rounded_rectangle(
                 (PADDING_X, cursor_y, CARD_WIDTH - PADDING_X, cursor_y + row_h),
-                radius=28,
-                fill=self.PANEL,
+                radius=30,
+                fill=fill,
                 outline=self.BORDER,
                 width=2,
             )
-            badge_fill = self._rank_fill(item.current_rank)
-            draw.rounded_rectangle(
-                (PADDING_X + 18, cursor_y + 22, PADDING_X + 90, cursor_y + 90),
-                radius=22,
-                fill=badge_fill,
-            )
-            draw.text(
-                (PADDING_X + 54, cursor_y + 56),
-                str(item.current_rank),
-                font=self.row_rank_font,
-                fill="#FFFFFF",
-                anchor="mm",
-            )
-            self._draw_avatar(
+            self._draw_rank_capsule(
                 draw,
+                x=PADDING_X + 24,
+                y=cursor_y + 26,
+                text=f"#{item.current_rank}",
+                fill=capsule_fill,
+                fg=capsule_fg,
+                width=76,
+            )
+            self._paste_avatar(
+                image,
                 item,
-                PADDING_X + 112,
-                cursor_y + 20,
-                72,
-                self._rank_fill(item.current_rank),
+                PADDING_X + 120,
+                cursor_y + 24,
+                74,
+                capsule_fg,
             )
             draw.text(
-                (PADDING_X + 208, cursor_y + 28),
-                self._fit_text(draw, item.display_name, self.row_name_font, 520),
+                (PADDING_X + 220, cursor_y + 26),
+                self._fit_text(draw, item.display_name, self.row_name_font, 480),
                 font=self.row_name_font,
                 fill=self.HEADER,
             )
             draw.text(
-                (PADDING_X + 208, cursor_y + 66),
+                (PADDING_X + 220, cursor_y + 64),
                 tr(
                     locale,
                     "wordbank.rank.row.meta",
@@ -324,21 +352,22 @@ class WordbankLeaderboardCardRenderer:
                 font=self.row_meta_font,
                 fill=self.MUTED,
             )
-            scope_text = self._scope_summary(locale, item)
-            scope_w = int(draw.textlength(scope_text, font=self.row_meta_font))
-            draw.text(
-                (CARD_WIDTH - PADDING_X - 34 - scope_w, cursor_y + 28),
-                scope_text,
-                font=self.row_meta_font,
-                fill=self.BODY,
+            self._draw_scope_chips(
+                draw,
+                item,
+                locale,
+                x=PADDING_X + 220,
+                y=cursor_y + 88,
             )
+
             count_text = str(item.approved_count)
             count_w = int(draw.textlength(count_text, font=self.row_value_font))
+            count_x = CARD_WIDTH - PADDING_X - 34 - count_w
             draw.text(
-                (CARD_WIDTH - PADDING_X - 34 - count_w, cursor_y + 58),
+                (count_x, cursor_y + 42),
                 count_text,
                 font=self.row_value_font,
-                fill=self.ACCENT,
+                fill=self.ACCENT_DEEP,
             )
             cursor_y += row_h + ROW_GAP
         return cursor_y - ROW_GAP
@@ -349,18 +378,27 @@ class WordbankLeaderboardCardRenderer:
         locale: LocaleCode,
         cursor_y: int,
     ) -> int:
-        box_h = 180
+        box_h = 190
         draw.rounded_rectangle(
             (PADDING_X, cursor_y, CARD_WIDTH - PADDING_X, cursor_y + box_h),
-            radius=30,
+            radius=34,
             fill=self.PANEL,
             outline=self.BORDER,
             width=2,
         )
+        self._draw_rank_capsule(
+            draw,
+            x=(CARD_WIDTH - 132) // 2,
+            y=cursor_y + 44,
+            text="NO DATA",
+            fill=self.ACCENT_SOFT,
+            fg=self.ACCENT_DEEP,
+            width=132,
+        )
         draw.text(
-            (CARD_WIDTH / 2, cursor_y + 84),
+            (CARD_WIDTH / 2, cursor_y + 114),
             tr(locale, "wordbank.rank.empty"),
-            font=self.hero_name_font,
+            font=self.hero_meta_font,
             fill=self.MUTED,
             anchor="mm",
         )
@@ -396,47 +434,132 @@ class WordbankLeaderboardCardRenderer:
             fill=self.MUTED,
         )
 
-    def _draw_avatar(
+    def _draw_scope_chips(
         self,
         draw: ImageDraw.ImageDraw,
+        item: WordbankLeaderboardCardItem,
+        locale: LocaleCode,
+        *,
+        x: int,
+        y: int,
+    ) -> None:
+        cursor_x = x
+        for label, bg, fg in self._scope_chips(locale, item)[:2]:
+            width = int(draw.textlength(label, font=self.row_chip_font)) + 28
+            draw.rounded_rectangle(
+                (cursor_x, y, cursor_x + width, y + 30),
+                radius=15,
+                fill=bg,
+            )
+            draw.text(
+                (cursor_x + 14, y + 6),
+                label,
+                font=self.row_chip_font,
+                fill=fg,
+            )
+            cursor_x += width + 10
+
+    def _scope_chips(
+        self,
+        locale: LocaleCode,
+        item: WordbankLeaderboardCardItem,
+    ) -> list[tuple[str, str, str]]:
+        values: tuple[tuple[MessageKey, int, str, str], ...] = (
+            (
+                "wordbank.rank.scope.current_group",
+                item.current_group_count,
+                "#FFE6F0",
+                "#C84B79",
+            ),
+            (
+                "wordbank.rank.scope.all_groups",
+                item.all_groups_count,
+                "#EEF1FF",
+                "#6F61CC",
+            ),
+            (
+                "wordbank.rank.scope.self",
+                item.self_count,
+                "#FFF3E6",
+                "#D68432",
+            ),
+            (
+                "wordbank.rank.scope.private_only",
+                item.private_only_count,
+                "#EAFBF7",
+                "#4D9E89",
+            ),
+        )
+        return [
+            (tr(locale, key, count=count), bg, fg)
+            for key, count, bg, fg in values
+            if count > 0
+        ]
+
+    def _row_theme(self, rank: int) -> tuple[str, str, str]:
+        if rank == 2:
+            return ("#F8F2FF", "#ECE1FF", "#8868D7")
+        if rank == 3:
+            return ("#EFFAF7", "#DDF6EE", "#4DA88D")
+        if rank == 4:
+            return ("#FFF5FA", "#FFE2EE", self.ACCENT_DEEP)
+        return (self.PANEL, "#FFE6F0", self.ACCENT_DEEP)
+
+    def _draw_rank_capsule(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        y: int,
+        text: str,
+        fill: str,
+        fg: str,
+        width: int,
+    ) -> None:
+        height = 36
+        draw.rounded_rectangle(
+            (x, y, x + width, y + height),
+            radius=height // 2,
+            fill=fill,
+        )
+        draw.text(
+            (x + width / 2, y + height / 2),
+            text,
+            font=self.row_rank_font,
+            fill=fg,
+            anchor="mm",
+        )
+
+    def _paste_avatar(
+        self,
+        image: Image.Image,
         item: WordbankLeaderboardCardItem,
         x: int,
         y: int,
         size: int,
-        fill: str,
+        fallback_fill: str,
     ) -> None:
-        draw.ellipse((x, y, x + size, y + size), fill=fill)
+        avatar = getattr(item, "avatar", None)
+        if avatar is not None:
+            avatar_image = avatar.circle().resize((size, size)).image
+            mask = (
+                avatar_image.getchannel("A") if "A" in avatar_image.getbands() else None
+            )
+            image.paste(avatar_image, (x, y), mask)
+            return
+
+        fallback = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        fallback_draw = ImageDraw.Draw(fallback)
+        fallback_draw.ellipse((0, 0, size, size), fill=fallback_fill)
         label = item.display_name[:1] if item.display_name else item.user_id[-1:] or "?"
-        draw.text(
-            (x + size / 2, y + size / 2),
+        fallback_draw.text(
+            (size / 2, size / 2),
             label,
             font=self.avatar_font,
             fill="#FFFFFF",
             anchor="mm",
         )
-
-    def _scope_summary(
-        self,
-        locale: LocaleCode,
-        item: WordbankLeaderboardCardItem,
-    ) -> str:
-        values: tuple[tuple[MessageKey, int], ...] = (
-            ("wordbank.rank.scope.current_group", item.current_group_count),
-            ("wordbank.rank.scope.all_groups", item.all_groups_count),
-            ("wordbank.rank.scope.self", item.self_count),
-            ("wordbank.rank.scope.private_only", item.private_only_count),
-        )
-        parts = [tr(locale, key, count=count) for key, count in values if count > 0]
-        return " · ".join(parts[:2]) if parts else "-"
-
-    def _rank_fill(self, rank: int) -> str:
-        if rank == 1:
-            return self.GOLD
-        if rank == 2:
-            return self.SILVER
-        if rank == 3:
-            return self.BRONZE
-        return self.ACCENT
+        image.paste(fallback, (x, y), fallback)
 
     def _fit_text(
         self,

@@ -20,6 +20,7 @@ from src.lib.i18n.types import LocaleCode
 from src.logger import logger
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
+    WordbankRankPeriod,
     WordbankSearchPage,
     WordbankSearchRequest,
 )
@@ -35,7 +36,7 @@ from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
     format_add_result,
-    format_monthly_creator_leaderboard,
+    format_creator_leaderboard,
     format_pending_items,
     format_search_items,
 )
@@ -57,8 +58,8 @@ from src.plugins.wordbank.text_parsing import (
 
 from .rendering import (
     GROUP_PAGE_SIZE,
+    render_creator_leaderboard_card_message,
     render_group_detail_page_message,
-    render_monthly_leaderboard_card_message,
     render_search_results_card_message,
 )
 
@@ -95,6 +96,30 @@ SEARCH_FIELD_ALIASES = {
     "r": "response",
     "响应": "response",
     "响应词": "response",
+}
+RANK_PERIOD_ALIASES: dict[str, WordbankRankPeriod] = {
+    "week": "week",
+    "w": "week",
+    "周": "week",
+    "周榜": "week",
+    "本周": "week",
+    "month": "month",
+    "m": "month",
+    "月": "month",
+    "月榜": "month",
+    "本月": "month",
+    "season": "season",
+    "quarter": "season",
+    "q": "season",
+    "季": "season",
+    "季榜": "season",
+    "本季": "season",
+    "quarterly": "season",
+    "total": "total",
+    "all": "total",
+    "总": "total",
+    "总榜": "total",
+    "累计": "total",
 }
 _COMPACT_GROUP_VIEW_RE = re.compile(
     r"^(?P<action>详情|展开|group|grp)(?P<group_id>\d+)(?:\s+(?P<page>\d+))?$",
@@ -200,6 +225,33 @@ class ParsedSearchSessionCommand:
     page: int | None = None
     trigger_group_id: int | None = None
     delete_indexes: tuple[int, ...] = ()
+
+
+def parse_rank_period(text: str) -> WordbankRankPeriod:
+    normalized = text.strip()
+    if not normalized:
+        return "month"
+    token, rest = split_command_text(normalized)
+    if rest.strip():
+        raise RuleError(
+            _default_i18n_text(
+                "wordbank.rank.invalid_period",
+                value=normalized,
+            ),
+            key="wordbank.rank.invalid_period",
+            value=normalized,
+        )
+    period = RANK_PERIOD_ALIASES.get(token.casefold()) or RANK_PERIOD_ALIASES.get(token)
+    if period is None:
+        raise RuleError(
+            _default_i18n_text(
+                "wordbank.rank.invalid_period",
+                value=normalized,
+            ),
+            key="wordbank.rank.invalid_period",
+            value=normalized,
+        )
+    return period
 
 
 def _split_command(text: str) -> tuple[str, str]:
@@ -1553,20 +1605,22 @@ async def handle_pending_entries(
     )
 
 
-async def handle_monthly_creator_leaderboard(
+async def handle_creator_leaderboard(
     service: WordbankService,
     *,
+    text: str,
     locale: LocaleCode,
 ) -> Message:
-    data = await service.build_monthly_creator_leaderboard(locale=locale)
+    period = parse_rank_period(text)
+    data = await service.build_creator_leaderboard(period=period, locale=locale)
     try:
-        return await render_monthly_leaderboard_card_message(
+        return await render_creator_leaderboard_card_message(
             data=data,
             locale=locale,
         )
     except Exception:
         logger.exception("[Wordbank] creator leaderboard render failed")
-        return Message(format_monthly_creator_leaderboard(data, locale=locale))
+        return Message(format_creator_leaderboard(data, locale=locale))
 
 
 async def handle_approve(
@@ -1882,8 +1936,9 @@ async def dispatch_wordbank_command(
             locale=locale,
         )
     if action in RANK_ALIASES:
-        return await handle_monthly_creator_leaderboard(
+        return await handle_creator_leaderboard(
             service,
+            text=rest,
             locale=locale,
         )
     if action in APPROVE_ALIASES:

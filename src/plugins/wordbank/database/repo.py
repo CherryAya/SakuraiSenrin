@@ -64,6 +64,7 @@ from .types import (
     WordbankMessageRefRecord,
     WordbankMessageRoutePayload,
     WordbankMessageRouteRecord,
+    WordbankRankPeriod,
     WordbankResponseItemDetail,
     WordbankResponseItemRecord,
     WordbankSearchItem,
@@ -1235,21 +1236,43 @@ class WordbankRepository:
             for group, variant, response in rows
         ]
 
-    async def get_monthly_creator_leaderboard(
+    async def get_creator_leaderboard(
         self,
         *,
+        period: WordbankRankPeriod,
         limit: int = 10,
         now_ts: int | None = None,
     ) -> WordbankCreatorLeaderboardSnapshot:
         now = arrow.get(now_ts or get_current_time()).to("Asia/Shanghai")
-        month_start = now.floor("month")
-        month_end = month_start.shift(months=1)
-        month_start_ts = month_start.int_timestamp
-        month_end_ts = month_end.int_timestamp
+        range_end_ts = now.int_timestamp
+        if period == "week":
+            range_start = now.floor("week")
+            query_end_ts = range_start.shift(weeks=1).int_timestamp
+        elif period == "month":
+            range_start = now.floor("month")
+            query_end_ts = range_start.shift(months=1).int_timestamp
+        elif period == "season":
+            quarter = (now.month - 1) // 3
+            range_start = now.shift(months=-(now.month - (quarter * 3 + 1))).floor(
+                "month"
+            )
+            query_end_ts = range_start.shift(months=3).int_timestamp
+        else:
+            earliest_stmt = select(func.min(WordbankResponseItem.created_at)).where(
+                WordbankResponseItem.status == "approved"
+            )
+            async with wordbank_main_db.read_session() as session:
+                earliest_created_at = await session.scalar(earliest_stmt)
+            range_start = arrow.get(int(earliest_created_at or range_end_ts)).to(
+                "Asia/Shanghai"
+            )
+            query_end_ts = range_end_ts + 1
+
+        range_start_ts = range_start.int_timestamp
         filters = (
             WordbankResponseItem.status == "approved",
-            WordbankResponseItem.created_at >= month_start_ts,
-            WordbankResponseItem.created_at < month_end_ts,
+            WordbankResponseItem.created_at >= range_start_ts,
+            WordbankResponseItem.created_at < query_end_ts,
         )
         base_stmt = (
             select(
@@ -1316,8 +1339,9 @@ class WordbankRepository:
             for row in rows
         )
         return WordbankCreatorLeaderboardSnapshot(
-            month_start=month_start_ts,
-            month_end=month_end_ts,
+            period=period,
+            range_start=range_start_ts,
+            range_end=range_end_ts,
             total_creator_count=int(total_creator_count or 0),
             total_approved_count=int(total_approved_count or 0),
             items=items,

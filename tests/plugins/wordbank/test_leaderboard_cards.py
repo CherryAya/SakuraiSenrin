@@ -14,8 +14,10 @@ def _data(
 ) -> WordbankLeaderboardCardData:
     return WordbankLeaderboardCardData(
         title="苦瓜榜",
-        subtitle="词条创建数量排行",
-        month_label="2026.06",
+        subtitle="词条创建数量 本月 排行",
+        period="month",
+        badge_text="本月",
+        range_text="统计范围 2026-06-01 至 2026-06-15 12:00",
         generated_at=1_718_000_000,
         total_creator_count=len(items),
         total_approved_count=sum(item.approved_count for item in items),
@@ -24,8 +26,8 @@ def _data(
         else 0,
         top_share=0.6 if items else 0.0,
         items=items,
-        month_start=1_717_200_000,
-        month_end=1_719_878_400,
+        range_start=1_717_200_000,
+        range_end=1_718_000_000,
     )
 
 
@@ -110,4 +112,4 @@ def test_wordbank_leaderboard_height_excludes_duplicate_champion_row() -> None:
     one_height = renderer._measure_height(_data(items=items[:1]))  # pyright: ignore[reportPrivateUsage]
     two_height = renderer._measure_height(_data(items=items))  # pyright: ignore[reportPrivateUsage]
 
-    assert two_height - one_height == 112
+    assert two_height - one_height == 124

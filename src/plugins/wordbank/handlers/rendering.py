@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, MutableMapping
+from dataclasses import replace
 import math
 from typing import Any, cast
 
@@ -11,6 +12,7 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.utils.img import QQAvatar
 from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
 from src.plugins.wordbank.debug import log_perf, perf_start
 from src.plugins.wordbank.message_model import MessageShape
@@ -208,11 +210,25 @@ async def render_group_detail_page_message(
     return message, total_pages
 
 
-async def render_monthly_leaderboard_card_message(
+async def render_creator_leaderboard_card_message(
     *,
     data: WordbankLeaderboardCardData,
     locale: LocaleCode,
 ) -> Message:
+    items = data.items
+    if items:
+        avatars = await asyncio.gather(
+            *(QQAvatar.fetch_user(item.user_id, size=160) for item in items),
+            return_exceptions=True,
+        )
+        items = tuple(
+            replace(
+                item,
+                avatar=avatar if not isinstance(avatar, Exception) else None,
+            )
+            for item, avatar in zip(items, avatars, strict=False)
+        )
+        data = replace(data, items=items)
     image_bytes = await asyncio.to_thread(
         render_wordbank_leaderboard_card_bytes,
         data=data,
