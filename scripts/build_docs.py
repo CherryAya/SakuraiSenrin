@@ -402,16 +402,7 @@ class DemoCollectionRenderer:
 
     def _crop_demo_conversation(self, image: Image.Image) -> Image.Image:
         renderer = DemoImageRenderer()
-        panel_top = (
-            renderer.OUTER_MARGIN + renderer.HEADER_HEIGHT + renderer.BODY_TOP_GAP
-        )
-        footer_cut = (
-            renderer.FOOTER_TOP_GAP + renderer.FOOTER_HEIGHT + renderer.OUTER_MARGIN
-        )
-        left = renderer.OUTER_MARGIN + 28
-        top = panel_top
-        right = renderer.WIDTH - renderer.OUTER_MARGIN - 28
-        bottom = max(top + 1, image.height - footer_cut)
+        left, top, right, bottom = renderer.preview_crop_box(image.size)
         cropped = image.crop((left, top, right, bottom))
         return cropped if cropped.width > 0 and cropped.height > 0 else image
 
