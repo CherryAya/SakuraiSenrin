@@ -16,9 +16,11 @@ from src.plugins.wordbank.handlers.commands import (
     handle_delete,
     handle_guided_add_shape_result,
     handle_guided_study_shape_result,
+    handle_response_content_update,
     handle_response_weight_update,
     handle_study_media_with_rule_result,
     handle_study_with_media_result,
+    handle_trigger_content_update,
     handle_trigger_probability_update,
     parse_group_view_args,
     parse_guided_search_mode_choice,
@@ -421,6 +423,55 @@ async def test_handle_trigger_probability_update_passes_superuser_context() -> N
 
 
 @pytest.mark.asyncio
+async def test_handle_trigger_content_update_builds_shape_and_passes_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.wordbank.handlers import commands as commands_module
+
+    update_trigger_content = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(update_trigger_content=update_trigger_content),
+    )
+    event = build_group_message_event("#wordbank trigger set 18 新触发", user_id=1)
+
+    async def _build_shape(
+        _media_service: WordbankMediaService,
+        *,
+        text: str,
+        message: Message,
+    ) -> MessageShape:
+        assert text == "新触发"
+        assert str(message) == "#wordbank trigger set 18 新触发"
+        return shape_from_text(f"{text} [图片:9]")
+
+    monkeypatch.setattr(
+        commands_module,
+        "build_shape_from_text_and_images",
+        _build_shape,
+    )
+
+    message = await handle_trigger_content_update(
+        service,
+        cast(WordbankMediaService, SimpleNamespace()),
+        event=event,
+        trigger_group_id=18,
+        text="新触发",
+        raw_message=Message("#wordbank trigger set 18 新触发"),
+        locale="zh-CN",
+    )
+
+    assert message == "trigger group #18 的触发词已更新，该组响应已重新进入待审核。"
+    assert update_trigger_content.await_args is not None
+    kwargs = update_trigger_content.await_args.kwargs
+    assert kwargs["actor_user_id"] == "1"
+    assert kwargs["actor_group_id"] == "20001"
+    assert kwargs["can_moderate_group"] is False
+    assert kwargs["is_superuser"] is True
+    assert shape_to_summary_text(kwargs["trigger_shape"]) == "新触发 [图片:9]"
+
+
+@pytest.mark.asyncio
 async def test_handle_response_weight_update_uses_response_permissions() -> None:
     update_response_weight = AsyncMock(return_value=True)
     service = cast(
@@ -446,6 +497,173 @@ async def test_handle_response_weight_update_uses_response_permissions() -> None
         can_moderate_group=False,
         is_superuser=False,
     )
+
+
+@pytest.mark.asyncio
+async def test_handle_response_content_update_builds_shape_and_passes_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.wordbank.handlers import commands as commands_module
+
+    update_response_content = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(update_response_content=update_response_content),
+    )
+    event = build_group_message_event(
+        "#wordbank response set 18 新响应",
+        role="admin",
+        user_id=10002,
+    )
+
+    async def _build_shape(
+        _media_service: WordbankMediaService,
+        *,
+        text: str,
+        message: Message,
+    ) -> MessageShape:
+        assert text == "新响应"
+        assert str(message) == "#wordbank response set 18 新响应"
+        return shape_from_text(text)
+
+    monkeypatch.setattr(
+        commands_module,
+        "build_shape_from_text_and_images",
+        _build_shape,
+    )
+
+    message = await handle_response_content_update(
+        service,
+        cast(WordbankMediaService, SimpleNamespace()),
+        event=event,
+        response_item_id=18,
+        text="新响应",
+        raw_message=Message("#wordbank response set 18 新响应"),
+        locale="zh-CN",
+    )
+
+    assert message == "词条 #18 的响应内容已更新，并重新进入待审核。"
+    assert update_response_content.await_args is not None
+    kwargs = update_response_content.await_args.kwargs
+    assert kwargs["actor_user_id"] == "10002"
+    assert kwargs["actor_group_id"] == "20001"
+    assert kwargs["can_moderate_group"] is True
+    assert kwargs["is_superuser"] is False
+    assert shape_to_summary_text(kwargs["response_shape"]) == "新响应"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_wordbank_command_routes_trigger_set_to_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.wordbank.handlers import commands as commands_module
+
+    handle_trigger_content = AsyncMock(return_value="ok")
+    monkeypatch.setattr(
+        commands_module,
+        "handle_trigger_content_update",
+        handle_trigger_content,
+    )
+    event = build_group_message_event("#wordbank trigger set 18 新触发", user_id=1)
+    service = cast(WordbankService, SimpleNamespace())
+    media_service = cast(WordbankMediaService, SimpleNamespace())
+    raw_message = Message("#wordbank trigger set 18 新触发")
+
+    message = await dispatch_wordbank_command(
+        service,
+        event=event,
+        text="trigger set 18 新触发",
+        raw_message=raw_message,
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    assert message == "ok"
+    handle_trigger_content.assert_awaited_once_with(
+        service,
+        media_service,
+        event=event,
+        trigger_group_id=18,
+        text="新触发",
+        raw_message=raw_message,
+        locale="zh-CN",
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_wordbank_command_routes_response_set_to_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.wordbank.handlers import commands as commands_module
+
+    handle_response_content = AsyncMock(return_value="ok")
+    monkeypatch.setattr(
+        commands_module,
+        "handle_response_content_update",
+        handle_response_content,
+    )
+    event = build_group_message_event("#wordbank response set 18 新响应", user_id=10002)
+    service = cast(WordbankService, SimpleNamespace())
+    media_service = cast(WordbankMediaService, SimpleNamespace())
+    raw_message = Message("#wordbank response set 18 新响应")
+
+    message = await dispatch_wordbank_command(
+        service,
+        event=event,
+        text="response set 18 新响应",
+        raw_message=raw_message,
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    assert message == "ok"
+    handle_response_content.assert_awaited_once_with(
+        service,
+        media_service,
+        event=event,
+        response_item_id=18,
+        text="新响应",
+        raw_message=raw_message,
+        locale="zh-CN",
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_wordbank_command_requires_raw_message_for_trigger_set() -> None:
+    event = build_group_message_event("#wordbank trigger set 18 新触发", user_id=1)
+
+    with pytest.raises(
+        RuntimeError,
+        match="wordbank raw message is required for trigger set",
+    ):
+        await dispatch_wordbank_command(
+            cast(WordbankService, SimpleNamespace()),
+            event=event,
+            text="trigger set 18 新触发",
+            raw_message=None,
+            locale="zh-CN",
+            media_service=cast(WordbankMediaService, SimpleNamespace()),
+        )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_wordbank_command_requires_raw_message_for_response_set() -> (
+    None
+):
+    event = build_group_message_event("#wordbank response set 18 新响应", user_id=10002)
+
+    with pytest.raises(
+        RuntimeError,
+        match="wordbank raw message is required for response set",
+    ):
+        await dispatch_wordbank_command(
+            cast(WordbankService, SimpleNamespace()),
+            event=event,
+            text="response set 18 新响应",
+            raw_message=None,
+            locale="zh-CN",
+            media_service=cast(WordbankMediaService, SimpleNamespace()),
+        )
 
 
 @pytest.mark.asyncio

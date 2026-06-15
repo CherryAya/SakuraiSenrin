@@ -3,6 +3,8 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent
+from nonebot.adapters.onebot.v11.message import Message
+import pytest
 
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
@@ -15,7 +17,11 @@ from src.plugins.wordbank.handlers.reply import (
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
 )
-from src.plugins.wordbank.message_model import shape_from_text
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    shape_from_text,
+    shape_to_summary_text,
+)
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
 from tests.plugins.water.helpers import build_group_message_event
@@ -263,6 +269,148 @@ async def test_reply_response_weight_uses_response_item_id() -> None:
         can_moderate_group=True,
         is_superuser=False,
     )
+
+
+async def test_reply_trigger_set_uses_trigger_group_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.wordbank.handlers import commands as commands_module
+
+    event = _event_with_reply("trigger set 新触发")
+    update_trigger_content = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_response_message()),
+            update_trigger_content=update_trigger_content,
+        ),
+    )
+
+    async def _build_shape(
+        _media_service: WordbankMediaService,
+        *,
+        text: str,
+        message: Message,
+    ) -> MessageShape:
+        assert text == "新触发"
+        assert str(message) == "trigger set 新触发"
+        return shape_from_text(text)
+
+    monkeypatch.setattr(
+        commands_module,
+        "build_shape_from_text_and_images",
+        _build_shape,
+    )
+
+    message = await handle_reply_command(
+        service,
+        event=event,
+        message=Message("trigger set 新触发"),
+        text="trigger set 新触发",
+        locale="zh-CN",
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
+    )
+
+    assert message == "trigger group #12 的触发词已更新，该组响应已重新进入待审核。"
+    assert update_trigger_content.await_args is not None
+    kwargs = update_trigger_content.await_args.kwargs
+    assert kwargs["actor_user_id"] == "10001"
+    assert kwargs["can_moderate_group"] is True
+    assert kwargs["is_superuser"] is False
+    assert shape_to_summary_text(kwargs["trigger_shape"]) == "新触发"
+
+
+async def test_reply_trigger_set_returns_permission_error_when_denied() -> None:
+    event = _event_with_reply("trigger set 新触发")
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_response_message()),
+            update_trigger_content=AsyncMock(return_value=False),
+        ),
+    )
+
+    message = await handle_reply_command(
+        service,
+        event=event,
+        message=Message("trigger set 新触发"),
+        text="trigger set 新触发",
+        locale="zh-CN",
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
+    )
+
+    assert message == "未找到可修改的 trigger group #12，或你没有操作权限。"
+
+
+async def test_reply_response_set_uses_response_item_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.wordbank.handlers import commands as commands_module
+
+    event = _event_with_reply("response set 新响应")
+    update_response_content = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_response_message()),
+            update_response_content=update_response_content,
+        ),
+    )
+
+    async def _build_shape(
+        _media_service: WordbankMediaService,
+        *,
+        text: str,
+        message: Message,
+    ) -> MessageShape:
+        assert text == "新响应"
+        assert str(message) == "response set 新响应"
+        return shape_from_text(f"{text} 修改")
+
+    monkeypatch.setattr(
+        commands_module,
+        "build_shape_from_text_and_images",
+        _build_shape,
+    )
+
+    message = await handle_reply_command(
+        service,
+        event=event,
+        message=Message("response set 新响应"),
+        text="response set 新响应",
+        locale="zh-CN",
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
+    )
+
+    assert message == "词条 #300 的响应内容已更新，并重新进入待审核。"
+    assert update_response_content.await_args is not None
+    kwargs = update_response_content.await_args.kwargs
+    assert kwargs["actor_user_id"] == "10001"
+    assert kwargs["can_moderate_group"] is True
+    assert kwargs["is_superuser"] is False
+    assert shape_to_summary_text(kwargs["response_shape"]) == "新响应 修改"
+
+
+async def test_reply_response_set_returns_permission_error_when_denied() -> None:
+    event = _event_with_reply("response set 新响应")
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_response_message()),
+            update_response_content=AsyncMock(return_value=False),
+        ),
+    )
+
+    message = await handle_reply_command(
+        service,
+        event=event,
+        message=Message("response set 新响应"),
+        text="response set 新响应",
+        locale="zh-CN",
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
+    )
+
+    assert message == "未找到可修改的词条 #300，或你没有操作权限。"
 
 
 async def test_approval_reply_approves_response_item() -> None:

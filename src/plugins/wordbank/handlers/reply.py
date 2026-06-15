@@ -180,7 +180,8 @@ async def handle_reply_command(
 
     if action.startswith("trigger set"):
         parsed = parse_trigger_set_args(
-            f"{response_message.trigger_group_id} {text.strip()[len('trigger set') :]}"
+            f"{response_message.trigger_group_id} "
+            f"{text.strip()[len('trigger set') :].strip()}"
         )
         return await handle_trigger_content_update(
             service,
@@ -206,7 +207,8 @@ async def handle_reply_command(
 
     if action.startswith("response set"):
         parsed = parse_response_set_args(
-            f"{response_message.response_item_id} {text.strip()[len('response set') :]}"
+            f"{response_message.response_item_id} "
+            f"{text.strip()[len('response set') :].strip()}"
         )
         return await handle_response_content_update(
             service,

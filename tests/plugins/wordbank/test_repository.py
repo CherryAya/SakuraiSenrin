@@ -1013,3 +1013,187 @@ async def test_repository_updates_trigger_probability_and_response_content(
     assert detail.selected_response is not None
     assert detail.selected_response.response_text == "已修改响应"
     assert detail.selected_response.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_repository_trigger_updates_require_superuser(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+
+    imported = await repository.import_message_entry(
+        trigger_shape=shape_from_text("旧版触发"),
+        response_shape=shape_from_text("旧版响应"),
+        rule={},
+        scope="current_group",
+        priority=30,
+        trigger_probability=1.0,
+        weight=3,
+        group_id="20001",
+        created_by="10001",
+        status="approved",
+        enabled=1,
+        approved_by="10002",
+        deleted_at=0,
+        created_at=1700000000,
+        updated_at=1700001234,
+    )
+
+    updated_probability = await repository.update_trigger_probability(
+        imported.trigger_group_id,
+        probability=0.25,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    updated_content = await repository.update_trigger_content(
+        imported.trigger_group_id,
+        trigger_shape=shape_from_text("新版触发"),
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    detail = await repository.get_group_detail(imported.trigger_group_id)
+
+    assert updated_probability is False
+    assert updated_content is False
+    assert detail is not None
+    assert detail.probability == 1.0
+    assert detail.trigger_text == "旧版触发"
+
+
+@pytest.mark.asyncio
+async def test_repository_response_edits_require_creator_or_superuser(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+
+    imported = await repository.import_message_entry(
+        trigger_shape=shape_from_text("旧版触发"),
+        response_shape=shape_from_text("旧版响应"),
+        rule={},
+        scope="current_group",
+        priority=30,
+        trigger_probability=1.0,
+        weight=3,
+        group_id="20001",
+        created_by="10001",
+        status="approved",
+        enabled=1,
+        approved_by="10002",
+        deleted_at=0,
+        created_at=1700000000,
+        updated_at=1700001234,
+    )
+
+    updated_weight = await repository.update_response_weight(
+        imported.response_item_id,
+        weight=5,
+        actor_user_id="10002",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    updated_content = await repository.update_response_content(
+        imported.response_item_id,
+        response_shape=shape_from_text("管理员改词"),
+        actor_user_id="10002",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    detail = await repository.get_group_detail(
+        imported.trigger_group_id,
+        response_item_id=imported.response_item_id,
+    )
+
+    assert updated_weight is False
+    assert updated_content is False
+    assert detail is not None
+    assert detail.selected_response is not None
+    assert detail.selected_response.weight == 3
+    assert detail.selected_response.response_text == "旧版响应"
+    assert detail.selected_response.status == "approved"
+
+
+@pytest.mark.asyncio
+async def test_repository_update_trigger_content_resets_active_responses_and_search(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+
+    first = await repository.import_message_entry(
+        trigger_shape=shape_from_text("旧版触发"),
+        response_shape=shape_from_text("旧版响应一"),
+        rule={},
+        scope="current_group",
+        priority=30,
+        trigger_probability=1.0,
+        weight=3,
+        group_id="20001",
+        created_by="10001",
+        status="approved",
+        enabled=1,
+        approved_by="10002",
+        deleted_at=0,
+        created_at=1700000000,
+        updated_at=1700001234,
+    )
+    second = await repository.import_message_entry(
+        trigger_shape=shape_from_text("旧版触发"),
+        response_shape=shape_from_text("旧版响应二"),
+        rule={},
+        scope="current_group",
+        priority=30,
+        trigger_probability=1.0,
+        weight=4,
+        group_id="20001",
+        created_by="10002",
+        status="approved",
+        enabled=1,
+        approved_by="10003",
+        deleted_at=0,
+        created_at=1700000001,
+        updated_at=1700001235,
+    )
+
+    updated = await repository.update_trigger_content(
+        first.trigger_group_id,
+        trigger_shape=shape_from_text("新版触发"),
+        actor_user_id="1",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=True,
+    )
+    detail = await repository.get_group_detail(first.trigger_group_id)
+    search_page = await repository.search_page(
+        WordbankSearchRequest(keyword="新版", field="trigger"),
+    )
+
+    assert first.trigger_group_id == second.trigger_group_id
+    assert updated is True
+    assert detail is not None
+    assert detail.trigger_text == "新版触发"
+    assert tuple(response.status for response in detail.responses) == (
+        "pending",
+        "pending",
+    )
+    assert search_page.total_count == 1
+    assert search_page.items[0].trigger_group_id == first.trigger_group_id
