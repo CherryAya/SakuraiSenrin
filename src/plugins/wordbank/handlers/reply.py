@@ -79,6 +79,10 @@ VIEW_DETAIL_ALIASES = {"详情", "group", "展开"}
 VIEW_NEXT_ALIASES = {"下一页", "next"}
 VIEW_PREV_ALIASES = {"上一页", "prev"}
 _PAGE_ONLY_RE = re.compile(r"^(?:第\s*)?(\d+)(?:\s*页)?$", re.IGNORECASE)
+_COMPACT_GROUP_VIEW_RE = re.compile(
+    r"^(?P<action>详情|展开|group)(?P<group_id>\d+)(?:\s+(?P<page>\d+))?$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -407,6 +411,22 @@ def _parse_explicit_group_view_command(
     required: bool = True,
 ) -> ParsedViewReplyCommand | None:
     source = text.strip()
+    compact_match = _COMPACT_GROUP_VIEW_RE.fullmatch(source)
+    if compact_match is not None:
+        parsed = parse_group_view_args(
+            " ".join(
+                part
+                for part in (
+                    compact_match.group("group_id"),
+                    compact_match.group("page"),
+                )
+                if part
+            )
+        )
+        return ParsedViewReplyCommand(
+            trigger_group_id=parsed.trigger_group_id,
+            page=parsed.page,
+        )
     if not source:
         raise RuleError(
             _default_i18n_text("wordbank.reply.group_command_invalid"),

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 from nonebot.adapters.onebot.v11.message import Message
 import pytest
@@ -102,6 +102,7 @@ def test_parse_guided_search_mode_choice_rejects_invalid_combinations() -> None:
 def test_parse_search_session_command_supports_page_detail_delete_and_exit() -> None:
     page = parse_search_session_command("page 2")
     detail = parse_search_session_command("详情 271 3")
+    compact_detail = parse_search_session_command("详情271 4")
     delete = parse_search_session_command("del 1 2 2")
     exit_cmd = parse_search_session_command("exit")
 
@@ -110,6 +111,9 @@ def test_parse_search_session_command_supports_page_detail_delete_and_exit() -> 
     assert detail.action == "detail"
     assert detail.trigger_group_id == 271
     assert detail.page == 3
+    assert compact_detail.action == "detail"
+    assert compact_detail.trigger_group_id == 271
+    assert compact_detail.page == 4
     assert delete.action == "delete"
     assert delete.delete_indexes == (1, 2)
     assert exit_cmd.action == "exit"
@@ -192,7 +196,11 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
             approved_by="10002",
             deleted_at=0,
             response_text=f"响应{index}",
-            response_shape=shape_from_text(f"响应{index}"),
+            response_shape=(
+                combine_shapes(shape_from_text(f"响应{index}"), shape_from_image(index))
+                if index >= 11
+                else shape_from_text(f"响应{index}")
+            ),
         )
         for index in range(1, 13)
     )
@@ -216,7 +224,9 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
     media_service = cast(
         WordbankMediaService,
         SimpleNamespace(
-            load_canonical_storage_bytes=AsyncMock(side_effect=[b"trigger-image"])
+            load_canonical_storage_bytes=AsyncMock(
+                side_effect=[b"trigger-image", b"response-11", b"response-12"]
+            )
         ),
     )
 
@@ -230,11 +240,14 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
 
     assert total_pages == 2
     assert returned_detail is detail
-    assert "Trigger Group #271" in str(message)
-    assert "触发概率: 0.4" in str(message)
-    assert "响应 #11" in str(message)
-    assert "响应 #12" in str(message)
-    assert "响应 #10" not in str(message)
+    assert len(message) == 1
+    assert message[0].type == "image"
+    load_bytes = cast(AsyncMock, media_service.load_canonical_storage_bytes)
+    assert load_bytes.await_args_list == [
+        call(7),
+        call(11),
+        call(12),
+    ]
 
 
 @pytest.mark.asyncio

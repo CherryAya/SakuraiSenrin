@@ -461,7 +461,7 @@ async def test_approval_reply_rejects_response_item() -> None:
 
 def test_parse_view_reply_for_search_result_requires_group_from_current_page() -> None:
     parsed = parse_view_reply_for_search_result(
-        "详情 271 2",
+        "详情271 2",
         available_group_ids=(271, 300),
     )
 
@@ -475,6 +475,11 @@ def test_parse_view_reply_for_group_detail_supports_navigation_aliases() -> None
         trigger_group_id=271,
         current_page=2,
     )
+    compact_jump = parse_view_reply_for_group_detail(
+        "详情271 4",
+        trigger_group_id=271,
+        current_page=2,
+    )
     page_jump = parse_view_reply_for_group_detail(
         "第5页",
         trigger_group_id=271,
@@ -483,4 +488,5 @@ def test_parse_view_reply_for_group_detail_supports_navigation_aliases() -> None
 
     assert next_page.trigger_group_id == 271
     assert next_page.page == 3
+    assert compact_jump.page == 4
     assert page_jump.page == 5

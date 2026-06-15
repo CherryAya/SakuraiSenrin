@@ -100,7 +100,7 @@ def test_search_card_renderer_adds_fold_hint_for_multi_response_group() -> None:
 
     assert "本组共 5 条词条" in hint
     assert "前 3 条" in hint
-    assert "详情 123" in hint
+    assert "详情123" in hint
     assert renderer._has_folded_preview(item) is True  # pyright: ignore[reportPrivateUsage]
     assert renderer._folded_preview_block_height() > 0  # pyright: ignore[reportPrivateUsage]
 

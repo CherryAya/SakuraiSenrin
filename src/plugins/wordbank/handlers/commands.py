@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 import math
+import re
 import shlex
 from typing import Any
 
@@ -92,6 +93,10 @@ SEARCH_FIELD_ALIASES = {
     "响应": "response",
     "响应词": "response",
 }
+_COMPACT_GROUP_VIEW_RE = re.compile(
+    r"^(?P<action>详情|展开|group|grp)(?P<group_id>\d+)(?:\s+(?P<page>\d+))?$",
+    re.IGNORECASE,
+)
 
 
 def _default_i18n_text(key: MessageKey, **params: object) -> str:
@@ -816,6 +821,14 @@ def parse_search_session_command(text: str) -> ParsedSearchSessionCommand:
     if not source:
         return ParsedSearchSessionCommand(action="exit")
 
+    compact_detail = _parse_compact_group_view_command(source)
+    if compact_detail is not None:
+        return ParsedSearchSessionCommand(
+            action="detail",
+            page=compact_detail.page,
+            trigger_group_id=compact_detail.trigger_group_id,
+        )
+
     action, _, rest = source.partition(" ")
     normalized = action.casefold()
 
@@ -862,6 +875,28 @@ def parse_search_session_command(text: str) -> ParsedSearchSessionCommand:
         _default_i18n_text("wordbank.error.search_session_command_invalid"),
         key="wordbank.error.search_session_command_invalid",
     )
+
+
+def _parse_compact_group_view_command(text: str) -> ParsedGroupView | None:
+    match = _COMPACT_GROUP_VIEW_RE.fullmatch(text.strip())
+    if match is None:
+        return None
+    group_id = _parse_positive_int(
+        match.group("group_id"),
+        fallback=_default_i18n_text("wordbank.error.group_id_numeric"),
+        key="wordbank.error.group_id_numeric",
+    )
+    page_value = match.group("page")
+    page = (
+        _parse_positive_int(
+            page_value,
+            fallback=_default_i18n_text("wordbank.error.group_page_invalid"),
+            key="wordbank.error.group_page_invalid",
+        )
+        if page_value
+        else 1
+    )
+    return ParsedGroupView(trigger_group_id=group_id, page=page)
 
 
 def build_mutation_actor(event: MessageEvent) -> MutationActor:

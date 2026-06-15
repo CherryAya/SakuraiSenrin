@@ -16,6 +16,7 @@ from src.plugins.wordbank.debug import log_perf, perf_start
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services.media import WordbankMediaService
 
+from .group_detail_cards import GroupDetailCardPage, render_group_detail_card_bytes
 from .search_cards import SearchCardQuery, render_search_results_card_bytes
 
 GROUP_PAGE_SIZE = 10
@@ -109,6 +110,38 @@ async def render_group_detail_page_message(
     start = (page - 1) * page_size
     end = start + page_size
     responses = detail.responses[start:end]
+    preview_ids = {
+        image_id
+        for shape in (
+            detail.trigger_shape,
+            *(response.response_shape for response in responses),
+        )
+        for image_id in _shape_preview_ids(shape)
+    }
+
+    try:
+        preview_bytes = await _load_image_bytes_map(preview_ids, media_service)
+        image_bytes = await asyncio.to_thread(
+            render_group_detail_card_bytes,
+            page_data=GroupDetailCardPage(
+                detail=detail,
+                page=page,
+                total_pages=total_pages,
+                page_size=page_size,
+                start_index=start,
+                responses=responses,
+            ),
+            locale=locale,
+            preview_bytes=preview_bytes,
+        )
+        return Message(MessageSegment.image(image_bytes)), total_pages
+    except Exception:
+        log_perf(
+            "plugin.render_group_detail_page_message.fallback_text",
+            trigger_group_id=detail.trigger_group_id,
+            page=page,
+            total_pages=total_pages,
+        )
 
     message = Message(
         tr(
@@ -189,6 +222,16 @@ def _format_rule_text(rule: dict[str, Any]) -> str:
         max_count = int(call_count.get("max", 0))
         parts.append(f"call={window_seconds}:{min_count}:{max_count}")
     return ", ".join(parts) if parts else "-"
+
+
+def _shape_preview_ids(shape: MessageShape) -> tuple[int, ...]:
+    image_ids: list[int] = []
+    for atom in shape.atoms:
+        if atom.kind != "image" or atom.canonical_image_id is None:
+            continue
+        image_ids.append(atom.canonical_image_id)
+        break
+    return tuple(image_ids)
 
 
 async def _load_shape_image_bytes(

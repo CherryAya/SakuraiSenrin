@@ -422,6 +422,23 @@ async def _handle_wordbank_command_message(
     text = build_forced_command_text(forced_action, arg.extract_plain_text())
     action, rest = split_command_text(text)
     search_image_scores: dict[int, float] | None = None
+    try:
+        parsed_session_command = parse_search_session_command(text)
+    except RuleError:
+        parsed_session_command = None
+    if (
+        parsed_session_command is not None
+        and parsed_session_command.action == "detail"
+        and parsed_session_command.trigger_group_id is not None
+    ):
+        await _send_group_detail_view(
+            matcher,
+            event,
+            locale,
+            trigger_group_id=parsed_session_command.trigger_group_id,
+            page=parsed_session_command.page or 1,
+        )
+        return
     if action in {"add", "添加", "学习"}:
         try:
             has_images = bool(extract_image_urls(arg))
@@ -471,7 +488,7 @@ async def _handle_wordbank_command_message(
         except (RuleError, ValueError) as exc:
             await matcher.finish(localize_command_error(exc, locale))
         return
-    elif action in GROUP_ALIASES:
+    elif action in {"详情", *GROUP_ALIASES}:
         try:
             parsed_group = parse_group_view_args(rest)
             await _send_group_detail_view(
