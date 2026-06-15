@@ -9,14 +9,17 @@ from src.plugins.wordbank.database.types import WordbankSearchItem, WordbankSear
 from src.plugins.wordbank.handlers.commands import (
     build_group_detail_message,
     build_message_shape_from_message,
+    build_shape_from_text_and_images,
     dispatch_wordbank_command,
     handle_add_text_result,
     handle_add_with_media_result,
     handle_delete,
     handle_guided_add_shape_result,
     handle_guided_study_shape_result,
+    handle_response_weight_update,
     handle_study_media_with_rule_result,
     handle_study_with_media_result,
+    handle_trigger_probability_update,
     parse_group_view_args,
     parse_guided_search_mode_choice,
     parse_search_args,
@@ -163,7 +166,6 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
             status="approved",
             enabled=1,
             scope="current_group",
-            probability=1.0,
             weight=3,
             rule={},
             group_id="20001",
@@ -179,6 +181,7 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
         trigger_group_id=271,
         status="approved",
         enabled=1,
+        probability=0.4,
         group_id="20001",
         created_by="10001",
         deleted_at=0,
@@ -209,6 +212,7 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
     assert total_pages == 2
     assert returned_detail is detail
     assert "Trigger Group #271" in str(message)
+    assert "触发概率: 0.4" in str(message)
     assert "响应 #11" in str(message)
     assert "响应 #12" in str(message)
     assert "响应 #10" not in str(message)
@@ -386,6 +390,97 @@ async def test_handle_delete_rejects_non_creator_without_vote() -> None:
         can_moderate_group=True,
         is_superuser=False,
     )
+
+
+@pytest.mark.asyncio
+async def test_handle_trigger_probability_update_passes_superuser_context() -> None:
+    update_trigger_probability = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(update_trigger_probability=update_trigger_probability),
+    )
+    event = build_group_message_event("#wordbank trigger prob 18 0.3", user_id=1)
+
+    message = await handle_trigger_probability_update(
+        service,
+        event=event,
+        trigger_group_id=18,
+        probability=0.3,
+        locale="zh-CN",
+    )
+
+    assert message == "trigger group #18 的触发概率已更新为 0.3。"
+    update_trigger_probability.assert_awaited_once_with(
+        18,
+        probability=0.3,
+        actor_user_id="1",
+        actor_group_id="20001",
+        can_moderate_group=False,
+        is_superuser=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_response_weight_update_uses_response_permissions() -> None:
+    update_response_weight = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(update_response_weight=update_response_weight),
+    )
+    event = build_group_message_event("#wordbank response weight 18 5", user_id=10002)
+
+    message = await handle_response_weight_update(
+        service,
+        event=event,
+        response_item_id=18,
+        weight=5,
+        locale="zh-CN",
+    )
+
+    assert message == "词条 #18 的响应权重已更新为 5。"
+    update_response_weight.assert_awaited_once_with(
+        18,
+        weight=5,
+        actor_user_id="10002",
+        actor_group_id="20001",
+        can_moderate_group=False,
+        is_superuser=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_shape_from_text_and_images_combines_text_and_media(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.wordbank.handlers import commands as commands_module
+
+    async def _fetch_image_bytes(
+        _message: Message,
+        *,
+        limit: int = 4,
+    ) -> tuple[bytes, ...]:
+        _ = limit
+        return (b"image-bytes",)
+
+    monkeypatch.setattr(
+        commands_module,
+        "fetch_image_bytes_from_message",
+        _fetch_image_bytes,
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            ingest_image_bytes=AsyncMock(return_value=SimpleNamespace(canonical_id=9))
+        ),
+    )
+
+    shape = await build_shape_from_text_and_images(
+        media_service,
+        text="新的响应",
+        message=Message("[CQ:image,url=https://example.test/a.png]"),
+    )
+
+    assert shape_to_summary_text(shape) == "新的响应 [图片:9]"
 
 
 @pytest.mark.asyncio

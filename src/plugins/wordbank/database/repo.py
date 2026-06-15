@@ -279,7 +279,6 @@ class WordbankRepository:
             enabled=row.enabled,
             scope=row.scope,
             priority=row.priority,
-            probability=row.probability,
             weight=row.weight,
             rule=dict(row.rule or {}),
             group_id=row.group_id,
@@ -306,6 +305,7 @@ class WordbankRepository:
             id=group.id,
             status=group.status,
             enabled=group.enabled,
+            probability=group.probability,
             group_id=group.group_id,
             created_by=group.created_by,
             deleted_at=group.deleted_at,
@@ -440,7 +440,7 @@ class WordbankRepository:
             if response.status == "approved" and response.enabled == 1
             else 0,
             scope=response.scope,
-            probability=response.probability,
+            probability=group.probability,
             weight=response.weight,
             created_by=response.created_by,
             response_item_ids=(response.id,),
@@ -460,7 +460,6 @@ class WordbankRepository:
                 status=response.status,
                 enabled=response.enabled,
                 scope=response.scope,
-                probability=response.probability,
                 weight=response.weight,
                 rule=dict(response.rule or {}),
                 group_id=response.group_id,
@@ -476,6 +475,7 @@ class WordbankRepository:
             trigger_group_id=bundle.group.id,
             status=bundle.group.status,
             enabled=bundle.group.enabled,
+            probability=bundle.group.probability,
             group_id=bundle.group.group_id,
             created_by=bundle.group.created_by,
             deleted_at=bundle.group.deleted_at,
@@ -517,7 +517,7 @@ class WordbankRepository:
             "created_by": bundle.group.created_by,
             "deleted_at": bundle.group.deleted_at,
             "scope": representative.scope,
-            "probability": representative.probability,
+            "probability": bundle.group.probability,
             "weight": representative.weight,
             "trigger_text": variant.trigger_text,
             "trigger_exact_md5": variant.exact_md5,
@@ -571,7 +571,7 @@ class WordbankRepository:
         rule: dict,
         scope: str,
         priority: int,
-        probability: float,
+        trigger_probability: float,
         weight: int,
         group_id: str,
         created_by: str,
@@ -601,6 +601,7 @@ class WordbankRepository:
                 trigger_image_keys=trigger_fingerprint.image_keys,
                 group_id=group_id,
                 created_by=created_by,
+                probability=trigger_probability,
                 created_at=created_at,
                 updated_at=updated_at,
             )
@@ -610,7 +611,6 @@ class WordbankRepository:
                 enabled=enabled,
                 scope=scope,
                 priority=priority,
-                probability=probability,
                 weight=weight,
                 rule=rule,
                 group_id=group_id,
@@ -660,7 +660,7 @@ class WordbankRepository:
         rule: dict,
         scope: str,
         priority: int,
-        probability: float,
+        trigger_probability: float,
         weight: int,
         group_id: str,
         created_by: str,
@@ -677,7 +677,7 @@ class WordbankRepository:
             rule=rule,
             scope=scope,
             priority=priority,
-            probability=probability,
+            trigger_probability=trigger_probability,
             weight=weight,
             group_id=group_id,
             created_by=created_by,
@@ -1283,6 +1283,159 @@ class WordbankRepository:
             ):
                 return False
             response.deleted_at = 0
+            response.updated_at = now
+            await session.flush()
+            await self._refresh_group_in_session(session, response.trigger_group_id)
+            return True
+
+    async def update_trigger_probability(
+        self,
+        trigger_group_id: int,
+        *,
+        probability: float,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        now = get_current_time()
+        async with wordbank_main_db.write_session() as session:
+            group = await session.get(WordbankTriggerGroup, trigger_group_id)
+            if group is None or group.deleted_at != 0:
+                return False
+            if not self._trigger_group_allows_edit(
+                group,
+                actor_user_id=actor_user_id,
+                actor_group_id=actor_group_id,
+                can_moderate_group=can_moderate_group,
+                is_superuser=is_superuser,
+            ):
+                return False
+            group.probability = probability
+            group.updated_at = now
+            await session.flush()
+            await self._refresh_group_in_session(session, trigger_group_id)
+            return True
+
+    async def update_trigger_content(
+        self,
+        trigger_group_id: int,
+        *,
+        trigger_shape: MessageShape,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        now = get_current_time()
+        trigger_fingerprint = fingerprint_shape(trigger_shape)
+        trigger_payload = shape_to_payload(trigger_shape)
+        async with wordbank_main_db.write_session() as session:
+            group = await session.get(WordbankTriggerGroup, trigger_group_id)
+            if group is None or group.deleted_at != 0:
+                return False
+            if not self._trigger_group_allows_edit(
+                group,
+                actor_user_id=actor_user_id,
+                actor_group_id=actor_group_id,
+                can_moderate_group=can_moderate_group,
+                is_superuser=is_superuser,
+            ):
+                return False
+            variants = await self._load_variants_by_group_ids(
+                session, [trigger_group_id]
+            )
+            if not variants:
+                return False
+            for variant in variants:
+                variant.trigger_text = trigger_fingerprint.summary_text
+                variant.message_json = trigger_payload
+                variant.exact_md5 = trigger_fingerprint.exact_md5
+                variant.structure_key = trigger_fingerprint.structure_key
+                variant.search_text = trigger_fingerprint.search_text
+                variant.search_tokens = trigger_fingerprint.search_tokens
+                variant.image_keys = trigger_fingerprint.image_keys
+                variant.updated_at = now
+            responses = await self._load_responses_by_group_ids(
+                session,
+                [trigger_group_id],
+                include_deleted=True,
+                active_only=False,
+            )
+            for response in responses:
+                if response.deleted_at != 0:
+                    continue
+                response.status = "pending"
+                response.approved_by = ""
+                response.updated_at = now
+            group.updated_at = now
+            await session.flush()
+            await self._refresh_group_in_session(session, trigger_group_id)
+            return True
+
+    async def update_response_weight(
+        self,
+        response_item_id: int,
+        *,
+        weight: int,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        now = get_current_time()
+        async with wordbank_main_db.write_session() as session:
+            response = await session.get(WordbankResponseItem, response_item_id)
+            if response is None or response.deleted_at != 0:
+                return False
+            if not self._response_item_allows_edit(
+                response,
+                actor_user_id=actor_user_id,
+                actor_group_id=actor_group_id,
+                can_moderate_group=can_moderate_group,
+                is_superuser=is_superuser,
+            ):
+                return False
+            response.weight = weight
+            response.updated_at = now
+            await session.flush()
+            await self._refresh_group_in_session(session, response.trigger_group_id)
+            return True
+
+    async def update_response_content(
+        self,
+        response_item_id: int,
+        *,
+        response_shape: MessageShape,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        now = get_current_time()
+        response_fingerprint = fingerprint_shape(response_shape)
+        response_payload = shape_to_payload(response_shape)
+        async with wordbank_main_db.write_session() as session:
+            response = await session.get(WordbankResponseItem, response_item_id)
+            if response is None or response.deleted_at != 0:
+                return False
+            if not self._response_item_allows_edit(
+                response,
+                actor_user_id=actor_user_id,
+                actor_group_id=actor_group_id,
+                can_moderate_group=can_moderate_group,
+                is_superuser=is_superuser,
+            ):
+                return False
+            response.status = "pending"
+            response.approved_by = ""
+            response.text = response_fingerprint.summary_text
+            response.message_json = response_payload
+            response.exact_md5 = response_fingerprint.exact_md5
+            response.structure_key = response_fingerprint.structure_key
+            response.search_text = response_fingerprint.search_text
+            response.search_tokens = response_fingerprint.search_tokens
+            response.image_keys = response_fingerprint.image_keys
             response.updated_at = now
             await session.flush()
             await self._refresh_group_in_session(session, response.trigger_group_id)
@@ -2011,6 +2164,7 @@ class WordbankRepository:
         trigger_image_keys: str,
         group_id: str,
         created_by: str,
+        probability: float,
         created_at: int,
         updated_at: int,
     ) -> tuple[WordbankTriggerGroup, WordbankTriggerVariant, bool]:
@@ -2034,6 +2188,7 @@ class WordbankRepository:
         group = WordbankTriggerGroup(
             status="pending",
             enabled=0,
+            probability=probability,
             group_id=group_id,
             created_by=created_by,
             deleted_at=0,
@@ -2276,6 +2431,18 @@ class WordbankRepository:
         return response.created_by == actor_user_id
 
     @staticmethod
+    def _trigger_group_allows_edit(
+        group: WordbankTriggerGroup,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        _ = group, actor_user_id, actor_group_id, can_moderate_group
+        return is_superuser
+
+    @staticmethod
     def _response_item_allows_mutation(
         response: WordbankResponseItem,
         *,
@@ -2292,6 +2459,20 @@ class WordbankRepository:
         return bool(
             can_moderate_group and actor_group_id and group.group_id == actor_group_id
         )
+
+    @staticmethod
+    def _response_item_allows_edit(
+        response: WordbankResponseItem,
+        *,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        _ = actor_group_id, can_moderate_group
+        if is_superuser:
+            return True
+        return response.created_by == actor_user_id
 
     @staticmethod
     def _group_allows_review(

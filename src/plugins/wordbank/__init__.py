@@ -57,7 +57,6 @@ from .database.types import WordbankMessageRefRecord
 from .handlers import (
     APPROVAL_REPLY_ALIASES,
     GROUP_ALIASES,
-    REPLY_COMMAND_ALIASES,
     PassiveResponse,
     build_add_result_message,
     build_forced_command_text,
@@ -323,9 +322,7 @@ wordbank_restore_command = on_command(
     priority=5,
     block=True,
 )
-wordbank_reply_command = on_fullmatch(
-    tuple(REPLY_COMMAND_ALIASES),
-    ignorecase=True,
+wordbank_reply_command = on_message(
     rule=to_me() & is_reply & is_wordbank_response_reply,
     priority=5,
     block=True,
@@ -491,6 +488,7 @@ async def _handle_wordbank_command_message(
             event=event,
             text=text,
             locale=locale,
+            raw_message=arg,
             search_image_scores=search_image_scores,
             media_service=wordbank_media_service,
         )
@@ -1372,8 +1370,10 @@ async def _(matcher: Matcher, event: MessageEvent) -> None:
         msg = await handle_reply_command(
             wordbank_service,
             event=event,
+            message=event.message,
             text=event.message.extract_plain_text(),
             locale=locale,
+            media_service=wordbank_media_service,
         )
     except (RuleError, ValueError) as exc:
         await matcher.finish(localize_command_error(exc, locale))

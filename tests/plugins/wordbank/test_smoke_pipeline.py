@@ -354,7 +354,7 @@ async def test_passive_invalid_call_count_window_does_not_break_matching(
         },
         scope="current_group",
         priority=9,
-        probability=1.0,
+        trigger_probability=1.0,
         weight=3,
         group_id="20001",
         created_by="10001",

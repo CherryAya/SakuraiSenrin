@@ -117,6 +117,7 @@ async def render_group_detail_page_message(
             group_id=detail.trigger_group_id,
             status=detail.status,
             created_by=detail.created_by,
+            probability=f"{detail.probability:g}",
             response_count=len(detail.responses),
             active_response_count=sum(
                 1
@@ -149,7 +150,6 @@ async def render_group_detail_page_message(
                 status=response.status,
                 enabled=_format_enabled(response.enabled),
                 scope=response.scope,
-                probability=f"{response.probability:g}",
                 weight=response.weight,
                 rule=_format_rule_text(response.rule),
             )

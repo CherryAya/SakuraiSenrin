@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 class WordbankTriggerGroupPayload(TypedDict):
     status: str
     enabled: int
+    probability: float
     group_id: str
     created_by: str
     deleted_at: int
@@ -39,7 +40,6 @@ class WordbankResponseItemPayload(TypedDict):
     enabled: int
     scope: str
     priority: int
-    probability: float
     weight: int
     rule: dict
     group_id: str
@@ -156,7 +156,6 @@ class WordbankResponseItemRecord:
     enabled: int
     scope: str
     priority: int
-    probability: float
     weight: int
     rule: dict
     group_id: str
@@ -177,6 +176,7 @@ class WordbankTriggerGroupRecord:
     id: int
     status: str
     enabled: int
+    probability: float
     group_id: str
     created_by: str
     deleted_at: int
@@ -201,7 +201,7 @@ class WordbankCreatedResponse:
 
     @property
     def probability(self) -> float:
-        return self.response_item.probability
+        return self.trigger_group.probability
 
     @property
     def weight(self) -> int:
@@ -327,7 +327,6 @@ class WordbankResponseItemDetail:
     status: str
     enabled: int
     scope: str
-    probability: float
     weight: int
     rule: dict
     group_id: str
@@ -343,6 +342,7 @@ class WordbankGroupDetail:
     trigger_group_id: int
     status: str
     enabled: int
+    probability: float
     group_id: str
     created_by: str
     deleted_at: int

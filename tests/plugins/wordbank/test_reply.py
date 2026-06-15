@@ -17,6 +17,7 @@ from src.plugins.wordbank.handlers.reply import (
 )
 from src.plugins.wordbank.message_model import shape_from_text
 from src.plugins.wordbank.services.core import WordbankService
+from src.plugins.wordbank.services.media import WordbankMediaService
 from tests.plugins.water.helpers import build_group_message_event
 
 
@@ -75,6 +76,7 @@ def _group_detail() -> WordbankGroupDetail:
         trigger_group_id=12,
         status="approved",
         enabled=1,
+        probability=1.0,
         group_id="20001",
         created_by="10001",
         deleted_at=0,
@@ -87,7 +89,6 @@ def _group_detail() -> WordbankGroupDetail:
                 status="approved",
                 enabled=1,
                 scope="current_group",
-                probability=1.0,
                 weight=3,
                 rule={},
                 group_id="20001",
@@ -103,6 +104,7 @@ def _group_detail() -> WordbankGroupDetail:
 
 
 async def test_reply_info_formats_selected_response_item_detail() -> None:
+    event = _event_with_reply()
     get_message_ref = AsyncMock(return_value=_response_message())
     get_group_detail = AsyncMock(return_value=_group_detail())
     service = cast(
@@ -115,9 +117,11 @@ async def test_reply_info_formats_selected_response_item_detail() -> None:
 
     message = await handle_reply_command(
         service,
-        event=_event_with_reply(),
+        event=event,
+        message=event.message,
         text="详情",
         locale="zh-CN",
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
     )
 
     assert "词条详情 #300" in message
@@ -128,6 +132,7 @@ async def test_reply_info_formats_selected_response_item_detail() -> None:
 
 
 async def test_reply_history_returns_status_summary() -> None:
+    event = _event_with_reply("history")
     service = cast(
         WordbankService,
         SimpleNamespace(
@@ -138,9 +143,11 @@ async def test_reply_history_returns_status_summary() -> None:
 
     message = await handle_reply_command(
         service,
-        event=_event_with_reply("history"),
+        event=event,
+        message=event.message,
         text="history",
         locale="zh-CN",
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
     )
 
     assert "词条 #300 状态摘要" in message
@@ -159,17 +166,23 @@ async def test_reply_delete_and_restore_use_response_item_id() -> None:
         ),
     )
 
+    deleted_event = _event_with_reply("del response")
     deleted = await handle_reply_command(
         service,
-        event=_event_with_reply("del response"),
+        event=deleted_event,
+        message=deleted_event.message,
         text="del response",
         locale="zh-CN",
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
     )
+    restored_event = _event_with_reply("恢复")
     restored = await handle_reply_command(
         service,
-        event=_event_with_reply("恢复"),
+        event=restored_event,
+        message=restored_event.message,
         text="恢复",
         locale="zh-CN",
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
     )
 
     assert deleted == "词条 #300 已删除。"
@@ -183,6 +196,68 @@ async def test_reply_delete_and_restore_use_response_item_id() -> None:
     )
     restore_response_item.assert_awaited_once_with(
         300,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+
+
+async def test_reply_trigger_prob_uses_trigger_group_id() -> None:
+    event = _event_with_reply("trigger prob 0.3")
+    update_trigger_probability = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_response_message()),
+            update_trigger_probability=update_trigger_probability,
+        ),
+    )
+
+    message = await handle_reply_command(
+        service,
+        event=event,
+        message=event.message,
+        text="trigger prob 0.3",
+        locale="zh-CN",
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
+    )
+
+    assert message == "trigger group #12 的触发概率已更新为 0.3。"
+    update_trigger_probability.assert_awaited_once_with(
+        12,
+        probability=0.3,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+
+
+async def test_reply_response_weight_uses_response_item_id() -> None:
+    event = _event_with_reply("response weight 5")
+    update_response_weight = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_response_message()),
+            update_response_weight=update_response_weight,
+        ),
+    )
+
+    message = await handle_reply_command(
+        service,
+        event=event,
+        message=event.message,
+        text="response weight 5",
+        locale="zh-CN",
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
+    )
+
+    assert message == "词条 #300 的响应权重已更新为 5。"
+    update_response_weight.assert_awaited_once_with(
+        300,
+        weight=5,
         actor_user_id="10001",
         actor_group_id="20001",
         can_moderate_group=True,

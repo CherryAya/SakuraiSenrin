@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import re
 
 from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.adapters.onebot.v11.message import Message
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -15,16 +16,25 @@ from src.plugins.wordbank.database.types import (
     WordbankMessageRefRecord,
 )
 from src.plugins.wordbank.services.core import WordbankService
+from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import RuleError
 
 from .approval import APPROVAL_APPROVE_ALIASES, APPROVAL_REJECT_ALIASES
 from .commands import (
     _default_i18n_text,
+    _parse_probability_value,
+    _parse_weight_value,
     actor_can_review,
     build_mutation_actor,
     handle_delete,
+    handle_response_content_update,
+    handle_response_weight_update,
     handle_restore,
+    handle_trigger_content_update,
+    handle_trigger_probability_update,
     parse_group_view_args,
+    parse_response_set_args,
+    parse_trigger_set_args,
 )
 
 INFO_ALIASES = {"info", "详情"}
@@ -51,8 +61,19 @@ RESTORE_ALIASES = {
     "restore trigger",
     "恢复触发词",
 }
+TRIGGER_PROB_ALIASES = {"trigger prob", "trigger probability", "触发 概率"}
+TRIGGER_SET_ALIASES = {"trigger set", "trigger edit", "触发 修改"}
+RESPONSE_WEIGHT_ALIASES = {"response weight", "响应 权重"}
+RESPONSE_SET_ALIASES = {"response set", "response edit", "响应 修改"}
 REPLY_COMMAND_ALIASES = (
-    INFO_ALIASES | HISTORY_ALIASES | DELETE_ALIASES | RESTORE_ALIASES
+    INFO_ALIASES
+    | HISTORY_ALIASES
+    | DELETE_ALIASES
+    | RESTORE_ALIASES
+    | TRIGGER_PROB_ALIASES
+    | TRIGGER_SET_ALIASES
+    | RESPONSE_WEIGHT_ALIASES
+    | RESPONSE_SET_ALIASES
 )
 VIEW_DETAIL_ALIASES = {"详情", "group", "展开"}
 VIEW_NEXT_ALIASES = {"下一页", "next"}
@@ -92,8 +113,10 @@ async def handle_reply_command(
     service: WordbankService,
     *,
     event: MessageEvent,
+    message: Message,
     text: str,
     locale: LocaleCode,
+    media_service: WordbankMediaService,
 ) -> str:
     message_id = get_reply_message_id(event)
     if message_id is None:
@@ -140,6 +163,58 @@ async def handle_reply_command(
             service,
             event=event,
             response_item_id_text=str(response_message.response_item_id),
+            locale=locale,
+        )
+
+    if action.startswith("trigger prob"):
+        probability_text = text.strip()[len("trigger") :].strip()
+        _, _, value_text = probability_text.partition(" ")
+        probability = _parse_probability_value(value_text.strip())
+        return await handle_trigger_probability_update(
+            service,
+            event=event,
+            trigger_group_id=response_message.trigger_group_id,
+            probability=probability,
+            locale=locale,
+        )
+
+    if action.startswith("trigger set"):
+        parsed = parse_trigger_set_args(
+            f"{response_message.trigger_group_id} {text.strip()[len('trigger set') :]}"
+        )
+        return await handle_trigger_content_update(
+            service,
+            media_service,
+            event=event,
+            trigger_group_id=parsed.trigger_group_id,
+            text=parsed.text,
+            raw_message=message,
+            locale=locale,
+        )
+
+    if action.startswith("response weight"):
+        weight_text = text.strip()[len("response") :].strip()
+        _, _, value_text = weight_text.partition(" ")
+        weight = _parse_weight_value(value_text.strip())
+        return await handle_response_weight_update(
+            service,
+            event=event,
+            response_item_id=response_message.response_item_id,
+            weight=weight,
+            locale=locale,
+        )
+
+    if action.startswith("response set"):
+        parsed = parse_response_set_args(
+            f"{response_message.response_item_id} {text.strip()[len('response set') :]}"
+        )
+        return await handle_response_content_update(
+            service,
+            media_service,
+            event=event,
+            response_item_id=parsed.response_item_id,
+            text=parsed.text,
+            raw_message=message,
             locale=locale,
         )
 
@@ -380,7 +455,7 @@ def format_entry_detail(
         created_by=selected.created_by,
         trigger_text=detail.trigger_text,
         response_text=selected.response_text,
-        probability=f"{selected.probability:g}",
+        probability=f"{detail.probability:g}",
         weight=selected.weight,
         message_id=response_message.message_id,
         message_type=response_message.message_type,
@@ -402,7 +477,7 @@ def format_entry_history(
         enabled=_format_enabled(selected.enabled),
         deleted_at=_format_deleted_at(selected.deleted_at),
         scope=selected.scope,
-        probability=f"{selected.probability:g}",
+        probability=f"{detail.probability:g}",
         weight=selected.weight,
     )
 

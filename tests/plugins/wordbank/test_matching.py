@@ -36,6 +36,7 @@ def _entry(
         id=trigger_group_id,
         status="approved",
         enabled=1,
+        probability=probability,
         group_id="",
         created_by="10001",
         deleted_at=0,
@@ -60,7 +61,6 @@ def _entry(
                 enabled=1,
                 scope="all_groups",
                 priority=priority,
-                probability=probability,
                 weight=weight,
                 rule={},
                 group_id="",
@@ -172,3 +172,21 @@ def test_runtime_index_matches_single_space_trigger() -> None:
     assert exact[0].group.id == 3
     assert exact[0].matched_text == " "
     assert miss == []
+
+
+def test_runtime_index_distinguishes_original_whitespace() -> None:
+    index = RuntimeIndex.build(
+        [
+            _entry(
+                trigger_group_id=4,
+                trigger_text="第一行\n第二行",
+                response_text="命中换行",
+            )
+        ]
+    )
+
+    exact = index.find_message(fingerprint_shape(shape_from_text("第一行\n第二行")))
+    collapsed = index.find_message(fingerprint_shape(shape_from_text("第一行 第二行")))
+
+    assert len(exact) == 1
+    assert collapsed == []

@@ -67,6 +67,11 @@ RESTORE_ALIASES = {"restore", "恢复"}
 APPROVE_ALIASES = {"approve", "pass", "通过", "审核通过"}
 REJECT_ALIASES = {"reject", "deny", "拒绝", "驳回"}
 PENDING_ALIASES = {"pending", "review", "待审", "待审核", "审核列表"}
+TRIGGER_ALIASES = {"trigger", "触发", "触发词"}
+RESPONSE_ALIASES = {"response", "响应", "响应词"}
+SET_ALIASES = {"set", "edit", "修改"}
+PROBABILITY_ALIASES = {"prob", "probability", "概率"}
+WEIGHT_ALIASES = {"weight", "权重"}
 ADD_SEPARATORS = ("=>", "->", "回答", "回复")
 DEFAULT_SEARCH_LIMIT = 10
 MAX_SEARCH_LIMIT = 20
@@ -129,6 +134,30 @@ class ParsedSearch:
 class ParsedGroupView:
     trigger_group_id: int
     page: int
+
+
+@dataclass(slots=True, frozen=True)
+class ParsedTriggerProbability:
+    trigger_group_id: int
+    probability: float
+
+
+@dataclass(slots=True, frozen=True)
+class ParsedResponseWeight:
+    response_item_id: int
+    weight: int
+
+
+@dataclass(slots=True, frozen=True)
+class ParsedTriggerSet:
+    trigger_group_id: int
+    text: str
+
+
+@dataclass(slots=True, frozen=True)
+class ParsedResponseSet:
+    response_item_id: int
+    text: str
 
 
 @dataclass(slots=True, frozen=True)
@@ -298,6 +327,110 @@ def _parse_positive_int(
     if parsed <= 0:
         raise RuleError(fallback, key=key, **params)
     return parsed
+
+
+def _parse_probability_value(value: str) -> float:
+    try:
+        probability = float(value)
+    except ValueError as exc:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.probability_invalid"),
+            key="wordbank.error.probability_invalid",
+        ) from exc
+    if probability < 0 or probability > 1:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.probability_invalid"),
+            key="wordbank.error.probability_invalid",
+        )
+    return probability
+
+
+def _parse_weight_value(value: str) -> int:
+    try:
+        weight = int(value)
+    except ValueError as exc:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.weight_invalid"),
+            key="wordbank.error.weight_invalid",
+        ) from exc
+    if weight < 1 or weight > 5:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.weight_invalid"),
+            key="wordbank.error.weight_invalid",
+        )
+    return weight
+
+
+def parse_trigger_probability_args(text: str) -> ParsedTriggerProbability:
+    tokens = tokenize_shell_like(text)
+    if len(tokens) != 2:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.group_id_numeric"),
+            key="wordbank.error.group_id_numeric",
+        )
+    trigger_group_id = _parse_positive_int(
+        tokens[0].value,
+        fallback=_default_i18n_text("wordbank.error.group_id_numeric"),
+        key="wordbank.error.group_id_numeric",
+    )
+    return ParsedTriggerProbability(
+        trigger_group_id=trigger_group_id,
+        probability=_parse_probability_value(tokens[1].value),
+    )
+
+
+def parse_response_weight_args(text: str) -> ParsedResponseWeight:
+    tokens = tokenize_shell_like(text)
+    if len(tokens) != 2:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.entry_id_numeric"),
+            key="wordbank.error.entry_id_numeric",
+        )
+    response_item_id = _parse_positive_int(
+        tokens[0].value,
+        fallback=_default_i18n_text("wordbank.error.entry_id_numeric"),
+        key="wordbank.error.entry_id_numeric",
+    )
+    return ParsedResponseWeight(
+        response_item_id=response_item_id,
+        weight=_parse_weight_value(tokens[1].value),
+    )
+
+
+def parse_trigger_set_args(text: str) -> ParsedTriggerSet:
+    tokens = tokenize_shell_like(text)
+    if not tokens:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.group_id_numeric"),
+            key="wordbank.error.group_id_numeric",
+        )
+    trigger_group_id = _parse_positive_int(
+        tokens[0].value,
+        fallback=_default_i18n_text("wordbank.error.group_id_numeric"),
+        key="wordbank.error.group_id_numeric",
+    )
+    return ParsedTriggerSet(
+        trigger_group_id=trigger_group_id,
+        text=rest_after_token(text, tokens[0]),
+    )
+
+
+def parse_response_set_args(text: str) -> ParsedResponseSet:
+    tokens = tokenize_shell_like(text)
+    if not tokens:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.entry_id_numeric"),
+            key="wordbank.error.entry_id_numeric",
+        )
+    response_item_id = _parse_positive_int(
+        tokens[0].value,
+        fallback=_default_i18n_text("wordbank.error.entry_id_numeric"),
+        key="wordbank.error.entry_id_numeric",
+    )
+    return ParsedResponseSet(
+        response_item_id=response_item_id,
+        text=rest_after_token(text, tokens[0]),
+    )
 
 
 def parse_text_add_args(text: str) -> ParsedTextAdd:
@@ -783,6 +916,26 @@ async def build_message_shape_from_message(
         image = await media_service.ingest_image_bytes(image_bytes)
         image_ids[index] = image.canonical_id
     return shape_from_message(message, image_ids=image_ids)
+
+
+async def build_shape_from_text_and_images(
+    media_service: WordbankMediaService,
+    *,
+    text: str,
+    message: Message,
+    image_limit: int = GUIDED_MESSAGE_IMAGE_LIMIT,
+) -> MessageShape:
+    image_bytes_items = await fetch_image_bytes_from_message(
+        message,
+        limit=image_limit,
+    )
+    parts: list[MessageShape] = []
+    if has_meaningful_text(text):
+        parts.append(shape_from_text(text))
+    for image_bytes in image_bytes_items:
+        image = await media_service.ingest_image_bytes(image_bytes)
+        parts.append(shape_from_image(image.canonical_id))
+    return combine_shapes(*parts)
 
 
 async def handle_add_text(
@@ -1394,6 +1547,187 @@ async def handle_restore(
     return tr(locale, "wordbank.restore.not_found", entry_id=response_item_id)
 
 
+async def handle_trigger_probability_update(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    trigger_group_id: int,
+    probability: float,
+    locale: LocaleCode,
+) -> str:
+    actor = build_mutation_actor(event)
+    if await service.update_trigger_probability(
+        trigger_group_id,
+        probability=probability,
+        actor_user_id=actor.user_id,
+        actor_group_id=actor.group_id,
+        can_moderate_group=actor.can_moderate_group,
+        is_superuser=actor.is_superuser,
+    ):
+        return f"trigger group #{trigger_group_id} 的触发概率已更新为 {probability:g}。"
+    return f"未找到可修改的 trigger group #{trigger_group_id}，或你没有操作权限。"
+
+
+async def handle_trigger_content_update(
+    service: WordbankService,
+    media_service: WordbankMediaService,
+    *,
+    event: MessageEvent,
+    trigger_group_id: int,
+    text: str,
+    raw_message: Message,
+    locale: LocaleCode,
+) -> str:
+    actor = build_mutation_actor(event)
+    trigger_shape = await build_shape_from_text_and_images(
+        media_service,
+        text=text,
+        message=raw_message,
+    )
+    if await service.update_trigger_content(
+        trigger_group_id,
+        trigger_shape=trigger_shape,
+        actor_user_id=actor.user_id,
+        actor_group_id=actor.group_id,
+        can_moderate_group=actor.can_moderate_group,
+        is_superuser=actor.is_superuser,
+    ):
+        return (
+            f"trigger group #{trigger_group_id} 的触发词已更新，"
+            "该组响应已重新进入待审核。"
+        )
+    return f"未找到可修改的 trigger group #{trigger_group_id}，或你没有操作权限。"
+
+
+async def handle_response_weight_update(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    response_item_id: int,
+    weight: int,
+    locale: LocaleCode,
+) -> str:
+    actor = build_mutation_actor(event)
+    if await service.update_response_weight(
+        response_item_id,
+        weight=weight,
+        actor_user_id=actor.user_id,
+        actor_group_id=actor.group_id,
+        can_moderate_group=actor.can_moderate_group,
+        is_superuser=actor.is_superuser,
+    ):
+        return f"词条 #{response_item_id} 的响应权重已更新为 {weight}。"
+    return f"未找到可修改的词条 #{response_item_id}，或你没有操作权限。"
+
+
+async def handle_response_content_update(
+    service: WordbankService,
+    media_service: WordbankMediaService,
+    *,
+    event: MessageEvent,
+    response_item_id: int,
+    text: str,
+    raw_message: Message,
+    locale: LocaleCode,
+) -> str:
+    actor = build_mutation_actor(event)
+    response_shape = await build_shape_from_text_and_images(
+        media_service,
+        text=text,
+        message=raw_message,
+    )
+    if await service.update_response_content(
+        response_item_id,
+        response_shape=response_shape,
+        actor_user_id=actor.user_id,
+        actor_group_id=actor.group_id,
+        can_moderate_group=actor.can_moderate_group,
+        is_superuser=actor.is_superuser,
+    ):
+        return f"词条 #{response_item_id} 的响应内容已更新，并重新进入待审核。"
+    return f"未找到可修改的词条 #{response_item_id}，或你没有操作权限。"
+
+
+async def handle_trigger_command(
+    service: WordbankService,
+    media_service: WordbankMediaService,
+    *,
+    event: MessageEvent,
+    text: str,
+    raw_message: Message | None,
+    locale: LocaleCode,
+) -> str:
+    action, rest = _split_command(text)
+    if action in PROBABILITY_ALIASES:
+        parsed = parse_trigger_probability_args(rest)
+        return await handle_trigger_probability_update(
+            service,
+            event=event,
+            trigger_group_id=parsed.trigger_group_id,
+            probability=parsed.probability,
+            locale=locale,
+        )
+    if action in SET_ALIASES:
+        if raw_message is None:
+            raise RuntimeError("wordbank raw message is required for trigger set")
+        parsed = parse_trigger_set_args(rest)
+        return await handle_trigger_content_update(
+            service,
+            media_service,
+            event=event,
+            trigger_group_id=parsed.trigger_group_id,
+            text=parsed.text,
+            raw_message=raw_message,
+            locale=locale,
+        )
+    raise RuleError(
+        "trigger 子命令仅支持 prob / set。",
+        key="wordbank.error.unknown_subcommand",
+        action=f"trigger {action}".strip(),
+        help=wordbank_help_text(locale),
+    )
+
+
+async def handle_response_command(
+    service: WordbankService,
+    media_service: WordbankMediaService,
+    *,
+    event: MessageEvent,
+    text: str,
+    raw_message: Message | None,
+    locale: LocaleCode,
+) -> str:
+    action, rest = _split_command(text)
+    if action in WEIGHT_ALIASES:
+        parsed = parse_response_weight_args(rest)
+        return await handle_response_weight_update(
+            service,
+            event=event,
+            response_item_id=parsed.response_item_id,
+            weight=parsed.weight,
+            locale=locale,
+        )
+    if action in SET_ALIASES:
+        if raw_message is None:
+            raise RuntimeError("wordbank raw message is required for response set")
+        parsed = parse_response_set_args(rest)
+        return await handle_response_content_update(
+            service,
+            media_service,
+            event=event,
+            response_item_id=parsed.response_item_id,
+            text=parsed.text,
+            raw_message=raw_message,
+            locale=locale,
+        )
+    raise RuleError(
+        "response 子命令仅支持 weight / set。",
+        key="wordbank.error.unknown_subcommand",
+        action=f"response {action}".strip(),
+        help=wordbank_help_text(locale),
+    )
+
+
 def wordbank_help_text(locale: LocaleCode = "zh-CN") -> str:
     return tr(locale, "wordbank.help")
 
@@ -1404,6 +1738,7 @@ async def dispatch_wordbank_command(
     event: MessageEvent,
     text: str,
     locale: LocaleCode,
+    raw_message: Message | None = None,
     search_image_scores: dict[int, float] | None = None,
     media_service: WordbankMediaService | None = None,
 ) -> str | Message:
@@ -1457,6 +1792,30 @@ async def dispatch_wordbank_command(
             service,
             event=event,
             response_item_id_text=rest,
+            locale=locale,
+        )
+    if action in TRIGGER_ALIASES:
+        if media_service is None:
+            raise RuntimeError("wordbank media service is required for trigger editing")
+        return await handle_trigger_command(
+            service,
+            media_service,
+            event=event,
+            text=rest,
+            raw_message=raw_message,
+            locale=locale,
+        )
+    if action in RESPONSE_ALIASES:
+        if media_service is None:
+            raise RuntimeError(
+                "wordbank media service is required for response editing"
+            )
+        return await handle_response_command(
+            service,
+            media_service,
+            event=event,
+            text=rest,
+            raw_message=raw_message,
             locale=locale,
         )
     return tr(

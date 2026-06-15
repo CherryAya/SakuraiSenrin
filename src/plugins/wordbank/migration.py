@@ -890,7 +890,7 @@ async def migrate_legacy_rows(
                     rule=target.rule,
                     scope=target.scope,
                     priority=SCOPE_PRIORITY[target.scope],
-                    probability=probability,
+                    trigger_probability=probability,
                     weight=weight,
                     group_id=target.group_id,
                     created_by=created_by,

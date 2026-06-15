@@ -123,12 +123,12 @@ SYSTEM: 因为 scope=private_only，所以群聊不触发。
 scope 拼写错误或同时设置多个 scope 时会返回明确说明。
 
 ### `add-prob` 触发概率选项
-- 摘要: 控制命中后实际回复的概率。
+- 摘要: 控制某个 trigger group 命中后是否真正触发回复。
 - 别名: prob, 概率, 触发概率
 - 指令: `wordbank add 触发词 => 响应词 --prob 0.0-1.0`
 - Demo: wordbank-add-prob.png
 #### 说明
-`--prob 1` 表示必中，`--prob 0.5` 表示大约一半概率触发。这个设置适合给高频短词降噪。
+`--prob 1` 表示必中，`--prob 0.5` 表示大约一半概率触发。这里的概率属于 trigger，而不是单条响应；只要 trigger 本次通过，后续具体回哪条响应仍由响应权重决定。这个设置适合给高频短词降噪。
 #### 常用示例命令
 - `#wordbank add 早 => 早安呀 --prob 0.5`
 - `#wordbank add 哈哈 => 笑死 --prob 0.2`
@@ -148,12 +148,12 @@ SYSTEM: 这次概率未命中，因此不回复。
 概率超出 0 到 1 范围，或不是数字时会返回明确说明。
 
 ### `add-weight` 权重选项
-- 摘要: 控制多条候选命中时被选中的倾向。
+- 摘要: 控制同一 trigger 已触发后，多条响应之间被选中的倾向。
 - 别名: weight, 权重
 - 指令: `wordbank add 触发词 => 响应词 --weight 1-5`
 - Demo: wordbank-add-weight.png
 #### 说明
-多个候选词条同时满足条件时，会先比较 scope 优先级，再按词条权重选中；进入某条词条后，如果它有多条响应，响应自身也会按权重选择。
+多个候选 trigger 同时满足条件时，会先比较 scope 优先级，再决定命中哪组 trigger；进入某个 trigger group 后，如果它有多条响应，响应会按各自 `weight` 抽样选择。`weight` 不再承担 trigger 是否触发的职责。
 #### 常用示例命令
 - `#wordbank add 晚安 => 做个好梦 --weight 5`
 - `#wordbank add 晚安 => 晚安晚安 --weight 1`
@@ -320,6 +320,40 @@ BOT: 做个好梦
 #### 失败情况
 ID 非数字、词条不存在或当前用户没有操作权限时返回明确说明。
 
+### `trigger` 修改触发词与触发概率
+- 摘要: 仅超级用户可修改 trigger group 的整体触发概率或触发内容。
+- 指令:
+  - `wordbank trigger prob <group_id> <0.0-1.0>`
+  - `wordbank trigger set <group_id> <新触发内容>`
+#### 说明
+`trigger prob` 调整的是整组 trigger 的命中概率；`trigger set` 支持文本、图片、图文混排。修改触发内容后，该组下未删除的响应会重新进入 `pending`，需要重新审核后才会继续参与被动匹配。
+#### 常用示例命令
+- `#wordbank trigger prob 271 0.3`
+- `#wordbank trigger set 271 晚安啦`
+- `#wordbank trigger set 271 [图片]`
+- `#wordbank trigger set 271 晚安啦 [图片]`
+#### 前置条件
+仅超级用户可执行。
+#### 失败情况
+group id 非法、group 不存在、权限不足，或新触发内容与其他 trigger group 完全重复时会返回明确说明。
+
+### `response` 修改响应词与响应权重
+- 摘要: 仅超级用户或该词条创建者可修改响应内容或响应权重。
+- 指令:
+  - `wordbank response weight <id> <1-5>`
+  - `wordbank response set <id> <新响应内容>`
+#### 说明
+`response weight` 只影响同组多条响应之间的抽样权重；`response set` 支持文本、图片、图文混排。修改响应内容后，该响应会重新进入 `pending`，审核通过前不会参与被动匹配。
+#### 常用示例命令
+- `#wordbank response weight 12 5`
+- `#wordbank response set 12 做个好梦`
+- `#wordbank response set 12 [图片]`
+- `#wordbank response set 12 做个好梦 [图片]`
+#### 前置条件
+超级用户可修改任意响应；非超管仅允许修改自己创建的响应。
+#### 失败情况
+词条 ID 非法、词条不存在、权限不足，或权重超出范围时会返回明确说明。
+
 ### `passive` 被动匹配
 - 摘要: 普通消息命中词条后自动回复。
 - 别名: 被动, 自动回复
@@ -357,14 +391,14 @@ SYSTEM: 检测到 group_recall / message_revoke / recall 片段时直接跳过�
 
 ### `reply-shortcut` 回复管理
 - 摘要: 回复机器人词库自动回复后，用短命令管理对应词条。
-- 别名: info, 详情, history, 摘要, del, delete, 删除, rst, restore, 恢复
-- 指令: 回复机器人词库自动回复并发送 `info` / `history` / `del` / `rst`
+- 别名: info, 详情, history, 摘要, del, delete, 删除, rst, restore, 恢复, trigger prob, trigger set, response weight, response set
+- 指令: 回复机器人词库自动回复并发送 `info` / `history` / `del` / `rst` / `trigger prob` / `trigger set` / `response weight` / `response set`
 - 兼容指令: `详情`、`history`、`删除`、`恢复`
 - Demo: wordbank-reply-shortcut.png
 #### 说明
-词库自动回复发送成功后会记录该回复消息 ID 与命中的词条、触发词、响应词的关系。之后回复这条机器人消息并 @ 机器人发送短命令即可管理词条。`info` / `详情` 会查看词条详情；`history` 会查看当前状态摘要；`del` / `delete` / `删除` 复用新版删除权限；`rst` / `restore` / `恢复` 复用新版恢复权限。搜索结果卡片和 group 详情页也会记录自己的视图消息 ID，因此回复搜索结果发送 `详情 <group_id>`、回复 group 详情发送 `下一页` / `上一页` / `第N页` 也会走同一套上下文展开逻辑。审批通知 / 提交回执的 `y` / `n` 快捷处理不在这里，请查看 `#help 词库审核`。
+词库自动回复发送成功后会记录该回复消息 ID 与命中的词条、触发词、响应词的关系。之后回复这条机器人消息并 @ 机器人发送短命令即可管理词条。`info` / `详情` 会查看词条详情；`history` 会查看当前状态摘要；`del` / `delete` / `删除` 复用新版删除权限；`rst` / `restore` / `恢复` 复用新版恢复权限；`trigger prob <0.0-1.0>` 会修改当前 trigger group 的整体触发概率；`trigger set <新触发内容>` 会修改当前 trigger；`response weight <1-5>` 会修改当前响应权重；`response set <新响应内容>` 会修改当前响应内容。搜索结果卡片和 group 详情页也会记录自己的视图消息 ID，因此回复搜索结果发送 `详情 <group_id>`、回复 group 详情发送 `下一页` / `上一页` / `第N页` 也会走同一套上下文展开逻辑。审批通知 / 提交回执的 `y` / `n` 快捷处理不在这里，请查看 `#help 词库审核`。
 #### 前置条件
-必须回复一条由词库被动匹配发出的机器人消息；删除只允许创建者或超级用户直接执行；恢复则保持原规则，创建者可恢复自己的词条，群管理员/群主可恢复当前群词条，超级用户可恢复任意词条。
+必须回复一条由词库被动匹配发出的机器人消息；删除只允许创建者或超级用户直接执行；恢复则保持原规则，创建者可恢复自己的词条，群管理员/群主可恢复当前群词条，超级用户可恢复任意词条；`trigger` 相关快捷命令仅超级用户可执行；`response` 相关快捷命令仅超级用户或当前响应创建者可执行。
 #### 完整流程
 ```demo
 USER: 大家晚安啦
@@ -376,6 +410,10 @@ BOT: 词条详情 #12
 响应: 做个好梦
 USER: [回复上条机器人消息] @机器人 删除
 BOT: 词条 #12 已删除。
+USER: [回复上条机器人消息] @机器人 trigger prob 0.3
+BOT: trigger group #271 的触发概率已更新为 0.3。
+USER: [回复上条机器人消息] @机器人 response weight 5
+BOT: 词条 #12 的响应权重已更新为 5。
 ```
 #### 失败情况
 未回复词库自动回复、消息记录不存在、词条已被清理、当前用户没有删除或恢复权限时会返回明确说明。被回复消息本身如为撤回类 `revoke` / `recall` 信号，不会被被动词库记录。

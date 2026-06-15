@@ -24,6 +24,7 @@ from src.plugins.wordbank.database.types import (
     WordbankSearchItem,
     WordbankSearchPage,
     WordbankSearchRequest,
+    WordbankTriggerGroupRecord,
 )
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.plugins.wordbank.message_model import (
@@ -273,7 +274,7 @@ class WordbankService:
             rule=dict(rule.rule),
             scope=rule.scope,
             priority=rule.priority,
-            probability=rule.probability,
+            trigger_probability=rule.probability,
             weight=rule.weight,
             group_id=group_id if is_group else "",
             created_by=user_id,
@@ -286,7 +287,7 @@ class WordbankService:
             response_item_id=created.response_item_id,
             status=created.status,
             scope=rule.scope,
-            probability=f"{rule.probability:g}",
+            probability=f"{created.probability:g}",
             weight=rule.weight,
             trigger_atoms=len(trigger_shape.atoms),
             response_atoms=len(response_shape.atoms),
@@ -301,7 +302,7 @@ class WordbankService:
             trigger_text=shape_to_summary_text(trigger_shape),
             response_text=shape_to_summary_text(response_shape),
             scope=rule.scope,
-            probability=rule.probability,
+            probability=created.probability,
             weight=rule.weight,
             trigger_shape=trigger_shape,
             response_shape=response_shape,
@@ -319,6 +320,117 @@ class WordbankService:
         response_item = await self._get_response_item_for_mutation(response_item_id)
         ok = await self.repository.delete_response_item(
             response_item_id,
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
+        if ok and response_item is not None:
+            self.mark_dirty(response_item.trigger_group_id)
+        return ok
+
+    async def update_trigger_probability(
+        self,
+        trigger_group_id: int,
+        *,
+        probability: float,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        _ = actor_user_id, actor_group_id, can_moderate_group
+        group = await self._get_trigger_group_for_mutation(trigger_group_id)
+        ok = await self.repository.update_trigger_probability(
+            trigger_group_id,
+            probability=probability,
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
+        if ok and group is not None:
+            self.mark_dirty(group.id)
+        return ok
+
+    async def update_trigger_content(
+        self,
+        trigger_group_id: int,
+        *,
+        trigger_shape: MessageShape,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        if trigger_shape.is_empty():
+            raise WordbankUserError(
+                tr("zh-CN", "wordbank.error.trigger_empty"),
+                key="wordbank.error.trigger_empty",
+            )
+        existing = await self.repository.find_trigger_group_by_shape(
+            trigger_shape,
+            include_deleted=True,
+        )
+        if existing is not None and existing.id != trigger_group_id:
+            raise ValueError(
+                "已存在相同触发词的 trigger group，请直接修改概率或新增响应词。"
+            )
+        group = await self._get_trigger_group_for_mutation(trigger_group_id)
+        ok = await self.repository.update_trigger_content(
+            trigger_group_id,
+            trigger_shape=trigger_shape,
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
+        if ok and group is not None:
+            self.mark_dirty(group.id)
+        return ok
+
+    async def update_response_weight(
+        self,
+        response_item_id: int,
+        *,
+        weight: int,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        response_item = await self._get_response_item_for_mutation(response_item_id)
+        ok = await self.repository.update_response_weight(
+            response_item_id,
+            weight=weight,
+            actor_user_id=actor_user_id,
+            actor_group_id=actor_group_id,
+            can_moderate_group=can_moderate_group,
+            is_superuser=is_superuser,
+        )
+        if ok and response_item is not None:
+            self.mark_dirty(response_item.trigger_group_id)
+        return ok
+
+    async def update_response_content(
+        self,
+        response_item_id: int,
+        *,
+        response_shape: MessageShape,
+        actor_user_id: str,
+        actor_group_id: str,
+        can_moderate_group: bool,
+        is_superuser: bool,
+    ) -> bool:
+        if response_shape.is_empty():
+            raise WordbankUserError(
+                tr("zh-CN", "wordbank.error.response_empty"),
+                key="wordbank.error.response_empty",
+            )
+        response_item = await self._get_response_item_for_mutation(response_item_id)
+        ok = await self.repository.update_response_content(
+            response_item_id,
+            response_shape=response_shape,
             actor_user_id=actor_user_id,
             actor_group_id=actor_group_id,
             can_moderate_group=can_moderate_group,
@@ -822,6 +934,16 @@ class WordbankService:
         return await self.repository.get_response_item_record(
             response_item_id,
             include_deleted=True,
+        )
+
+    async def _get_trigger_group_for_mutation(
+        self,
+        trigger_group_id: int,
+    ) -> WordbankTriggerGroupRecord | None:
+        return await self.repository.get_trigger_group_record(
+            trigger_group_id,
+            include_deleted=True,
+            active_only=False,
         )
 
 

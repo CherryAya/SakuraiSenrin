@@ -32,7 +32,6 @@ class RuntimeResponseItem:
     enabled: int
     scope: str
     priority: int
-    probability: float
     weight: int
     rule: dict[str, Any]
     group_id: str
@@ -54,6 +53,7 @@ class RuntimeTriggerGroup:
     id: int
     status: str
     enabled: int
+    probability: float
     group_id: str
     created_by: str
     responses: tuple[RuntimeResponseItem, ...]
@@ -94,6 +94,7 @@ class RuntimeIndex:
                 id=record.id,
                 status=record.status,
                 enabled=record.enabled,
+                probability=record.probability,
                 group_id=record.group_id,
                 created_by=record.created_by,
                 responses=responses,
@@ -128,6 +129,11 @@ class RuntimeIndex:
         call_counts = call_counts or {}
         allowed: list[tuple[MatchCandidate, RuntimeResponseItem]] = []
         for candidate in candidates:
+            if (
+                candidate.group.probability < 1.0
+                and rng.random() > candidate.group.probability
+            ):
+                continue
             for response in candidate.group.responses:
                 if not rule_allows(
                     scope=response.scope,
@@ -137,8 +143,6 @@ class RuntimeIndex:
                     context=context,
                     current_call_count=call_counts.get(response.trigger_group_id, 0),
                 ):
-                    continue
-                if response.probability < 1.0 and rng.random() > response.probability:
                     continue
                 allowed.append((candidate, response))
         if not allowed:
@@ -167,7 +171,6 @@ def _to_runtime_response(
         enabled=record.enabled,
         scope=record.scope,
         priority=record.priority,
-        probability=record.probability,
         weight=record.weight,
         rule=dict(record.rule),
         group_id=record.group_id or parent.group_id,

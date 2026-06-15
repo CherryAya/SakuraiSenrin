@@ -81,6 +81,21 @@ async def _patch_wordbank_image_media_columns(session: AsyncSession) -> None:
     )
 
 
+async def _patch_wordbank_trigger_group_probability(session: AsyncSession) -> None:
+    columns = await session.execute(text("PRAGMA table_info(wordbank_trigger_group)"))
+    column_names = {str(row[1]) for row in columns.all()}
+    if not column_names or "probability" in column_names:
+        return
+    await session.execute(
+        text(
+            """
+            ALTER TABLE wordbank_trigger_group
+            ADD COLUMN probability FLOAT NOT NULL DEFAULT 1.0
+            """
+        )
+    )
+
+
 async def _drop_wordbank_log_matched_text(session: AsyncSession) -> None:
     columns = await session.execute(text("PRAGMA table_info(wordbank_log)"))
     column_names = {str(row[1]) for row in columns.all()}
@@ -154,6 +169,12 @@ def build_wordbank_main_patch_registry() -> PatchRegistry:
         SchemaPatch(
             patch_id="wordbank_main:image_media_columns:v1",
             apply=_patch_wordbank_image_media_columns,
+        )
+    )
+    registry.register(
+        SchemaPatch(
+            patch_id="wordbank_main:trigger_group_probability:v1",
+            apply=_patch_wordbank_trigger_group_probability,
         )
     )
     return registry

@@ -839,7 +839,7 @@ async def test_init_all_tables_creates_fts_and_clears_wordbank_patch_chain(
         }
 
     assert service.repository is not None
-    assert len(wordbank_main_db.patch_registry.patches) == 1
+    assert len(wordbank_main_db.patch_registry.patches) == 2
     assert len(wordbank_log_db.patch_registry.patches) == 1
     assert wordbank_message_route_db.patch_registry.patches == []
     assert wordbank_message_ref_db.patch_registry.patches == []
@@ -1004,7 +1004,7 @@ async def test_repository_import_message_entry_preserves_group_and_response_stat
         rule={},
         scope="all_groups",
         priority=10,
-        probability=0.75,
+        trigger_probability=0.75,
         weight=4,
         group_id="",
         created_by="10001",
@@ -1024,3 +1024,62 @@ async def test_repository_import_message_entry_preserves_group_and_response_stat
     assert imported.probability == 0.75
     assert imported.trigger_group.trigger_variants[0].trigger_text == "旧版触发"
     assert page.items[0].trigger_group_id == imported.trigger_group_id
+
+
+@pytest.mark.asyncio
+async def test_repository_updates_trigger_probability_and_response_content(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+
+    imported = await repository.import_message_entry(
+        trigger_shape=shape_from_text("旧版触发"),
+        response_shape=shape_from_text("旧版响应"),
+        rule={},
+        scope="current_group",
+        priority=30,
+        trigger_probability=1.0,
+        weight=3,
+        group_id="20001",
+        created_by="10001",
+        status="approved",
+        enabled=1,
+        approved_by="10002",
+        deleted_at=0,
+        created_at=1700000000,
+        updated_at=1700001234,
+    )
+
+    updated_probability = await repository.update_trigger_probability(
+        imported.trigger_group_id,
+        probability=0.25,
+        actor_user_id="1",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=True,
+    )
+    updated_content = await repository.update_response_content(
+        imported.response_item_id,
+        response_shape=shape_from_text("已修改响应"),
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    detail = await repository.get_group_detail(
+        imported.trigger_group_id,
+        response_item_id=imported.response_item_id,
+    )
+
+    assert updated_probability is True
+    assert updated_content is True
+    assert detail is not None
+    assert detail.probability == 0.25
+    assert detail.selected_response is not None
+    assert detail.selected_response.response_text == "已修改响应"
+    assert detail.selected_response.status == "pending"
