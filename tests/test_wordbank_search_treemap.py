@@ -337,6 +337,40 @@ def test_renderer_single_text_layout_prefers_larger_font_when_space_allows() -> 
     assert renderer._line_height(sparse_font) >= renderer._line_height(regular_font)  # pyright: ignore[reportPrivateUsage]
 
 
+def test_renderer_single_text_layout_uses_larger_font_for_taller_cards() -> None:
+    renderer = SearchTreemapRenderer()
+
+    regular_font, _ = renderer._fit_single_text_response_layout(  # pyright: ignore[reportPrivateUsage]
+        "晚安呢！",
+        max_width=220,
+        max_height=160,
+    )
+    large_font, _ = renderer._fit_single_text_response_layout(  # pyright: ignore[reportPrivateUsage]
+        "晚安呢！",
+        max_width=320,
+        max_height=260,
+    )
+
+    assert renderer._line_height(large_font) > renderer._line_height(regular_font)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_renderer_single_text_initial_font_size_scales_with_available_space() -> None:
+    renderer = SearchTreemapRenderer()
+
+    compact = renderer._single_text_initial_font_size(  # pyright: ignore[reportPrivateUsage]
+        text="晚安呢！",
+        max_width=180,
+        max_height=120,
+    )
+    large = renderer._single_text_initial_font_size(  # pyright: ignore[reportPrivateUsage]
+        text="晚安呢！",
+        max_width=320,
+        max_height=260,
+    )
+
+    assert large > compact
+
+
 def test_renderer_single_text_layout_fits_long_text_into_available_height() -> None:
     renderer = SearchTreemapRenderer()
 
@@ -727,3 +761,19 @@ def test_renderer_measures_single_text_layout_height_for_card_estimate() -> None
     )
 
     assert measured >= simple
+
+
+def test_renderer_vertical_layout_does_not_pin_single_text_metadata_to_bottom() -> None:
+    renderer = SearchTreemapRenderer()
+
+    layout = renderer._compute_response_card_vertical_layout(  # pyright: ignore[reportPrivateUsage]
+        y=20,
+        height=260,
+        pad=12,
+        content_height=72,
+        meta_height=66,
+        meta_gap=8,
+        content_mode="single_text",
+    )
+
+    assert layout.meta_y < 20 + 260 - 12 - 66

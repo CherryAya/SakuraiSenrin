@@ -152,6 +152,14 @@ class SearchTreemapTile:
     normalized_weight: int
 
 
+@dataclass(slots=True, frozen=True)
+class ResponseCardVerticalLayout:
+    content_y: int
+    content_height: int
+    divider_y: int
+    meta_y: int
+
+
 def load_search_treemap_fixture(path: str | Path) -> SearchTreemapPage:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -1039,7 +1047,7 @@ class SearchTreemapRenderer:
                 continue
             used_bottom = max(rect.y + rect.height for _, rect in entries)
             leftover = column_bottom - used_bottom
-            if leftover <= 12:
+            if leftover <= 2:
                 expanded.extend(entries)
                 continue
             weights = [
@@ -1055,6 +1063,7 @@ class SearchTreemapRenderer:
                 continue
             cursor_y = entries[0][1].y
             consumed = 0
+            column_expanded: list[tuple[int, TreemapRect]] = []
             weighted_entries = zip(entries, weights)
             for entry_index, ((item_index, rect), weight) in enumerate(
                 weighted_entries
@@ -1071,8 +1080,22 @@ class SearchTreemapRenderer:
                     width=rect.width,
                     height=rect.height + max(0, extra),
                 )
-                expanded.append((item_index, new_rect))
+                column_expanded.append((item_index, new_rect))
                 cursor_y = new_rect.y + new_rect.height + 8
+            if column_expanded:
+                last_index, last_rect = column_expanded[-1]
+                delta = column_bottom - (last_rect.y + last_rect.height)
+                if delta != 0:
+                    column_expanded[-1] = (
+                        last_index,
+                        TreemapRect(
+                            x=last_rect.x,
+                            y=last_rect.y,
+                            width=last_rect.width,
+                            height=max(1, last_rect.height + delta),
+                        ),
+                    )
+            expanded.extend(column_expanded)
         expanded.sort(key=lambda item: (item[1].y, item[1].x))
         return expanded
 
@@ -1303,8 +1326,10 @@ class SearchTreemapRenderer:
         elif width < 224:
             base = 146
         else:
-            base = 176
+            base = 196
         if len(text.strip()) >= 18:
+            base += 18
+        elif len(text.strip()) <= 8:
             base += 18
         return base
 
@@ -1396,18 +1421,39 @@ class SearchTreemapRenderer:
             len(meta_lines) * meta_line_height + max(0, len(meta_lines) - 1) * 2
         )
         content_x = x + pad
-        content_y = y + pad
         content_width = max(1, width - pad * 2)
-        content_height = max(1, height - pad * 2 - meta_gap - meta_height)
         single_text = self._single_text_response_text(response, locale)
+        measured_content_height = max(
+            1,
+            self._measure_response_content_height_for_layout(
+                response,
+                locale,
+                font=title_font,
+                width=content_width,
+            ),
+        )
+        content_mode = self._response_content_mode(
+            response,
+            locale,
+            single_text=single_text,
+        )
+        card_layout = self._compute_response_card_vertical_layout(
+            y=y,
+            height=height,
+            pad=pad,
+            content_height=measured_content_height,
+            meta_height=meta_height,
+            meta_gap=meta_gap,
+            content_mode=content_mode,
+        )
         if single_text is not None:
             self._draw_fitted_single_text_response(
                 draw,
                 single_text,
                 x=content_x,
-                y=content_y,
+                y=card_layout.content_y,
                 width=content_width,
-                height=content_height,
+                height=card_layout.content_height,
             )
         else:
             self._draw_response_content(
@@ -1417,18 +1463,22 @@ class SearchTreemapRenderer:
                 locale,
                 font=title_font,
                 x=content_x,
-                y=content_y,
+                y=card_layout.content_y,
                 width=content_width,
-                height=content_height,
+                height=card_layout.content_height,
             )
-        divider_y = y + height - pad - meta_height - 4
-        if divider_y > content_y + 8:
+        if card_layout.divider_y > card_layout.content_y + 8:
             draw.line(
-                (content_x, divider_y, content_x + content_width, divider_y),
+                (
+                    content_x,
+                    card_layout.divider_y,
+                    content_x + content_width,
+                    card_layout.divider_y,
+                ),
                 fill=self.DIVIDER,
                 width=1,
             )
-        cursor_y = max(content_y + content_height + 6, y + height - pad - meta_height)
+        cursor_y = card_layout.meta_y
         for line in meta_lines:
             if cursor_y + meta_line_height > y + height - pad + 2:
                 break
@@ -1439,6 +1489,69 @@ class SearchTreemapRenderer:
                 fill=self.BODY,
             )
             cursor_y += meta_line_height + 2
+
+    def _response_content_mode(
+        self,
+        response: SearchTreemapResponseCard,
+        locale: LocaleCode,
+        *,
+        single_text: str | None,
+    ) -> str:
+        if single_text is not None:
+            return "single_text"
+        segments = tuple(
+            segment
+            for segment in response.ordered_segments
+            if (segment.kind == "text" and segment.text.strip())
+            or (segment.kind == "image" and segment.image_path)
+        )
+        has_text = any(segment.kind == "text" for segment in segments)
+        has_image = any(segment.kind == "image" for segment in segments)
+        if has_image and has_text:
+            return "mixed"
+        if has_image:
+            return "image"
+        normalized = self._normalize_response_text(
+            response.visible_text,
+            locale,
+            has_image_preview=False,
+        )
+        return "text_short" if len(normalized) <= 24 else "text"
+
+    def _compute_response_card_vertical_layout(
+        self,
+        *,
+        y: int,
+        height: int,
+        pad: int,
+        content_height: int,
+        meta_height: int,
+        meta_gap: int,
+        content_mode: str,
+    ) -> ResponseCardVerticalLayout:
+        inner_height = max(1, height - pad * 2)
+        divider_gap = 8 if inner_height >= 118 else 6
+        max_content_height = max(1, inner_height - meta_height - meta_gap - divider_gap)
+        clipped_content_height = min(max_content_height, max(1, content_height))
+        block_height = clipped_content_height + divider_gap + meta_gap + meta_height
+        spare_height = max(0, inner_height - block_height)
+        bias = {
+            "single_text": 0.34,
+            "text_short": 0.30,
+            "text": 0.27,
+            "mixed": 0.20,
+            "image": 0.16,
+        }.get(content_mode, 0.24)
+        top_offset = round(spare_height * bias)
+        content_y = y + pad + top_offset
+        divider_y = content_y + clipped_content_height + divider_gap - 2
+        meta_y = divider_y + meta_gap
+        return ResponseCardVerticalLayout(
+            content_y=content_y,
+            content_height=clipped_content_height,
+            divider_y=divider_y,
+            meta_y=meta_y,
+        )
 
     def _build_response_meta_lines(
         self,
@@ -1512,8 +1625,12 @@ class SearchTreemapRenderer:
             cursor_y = y + max(0, (height - total_height) // 3)
         else:
             cursor_y = y
+        centered_lines = len(lines) <= 2 and len(text.strip()) <= 12
         for line in lines:
-            draw.text((x, cursor_y), line, font=font, fill=self.CARD_ACCENT)
+            line_x = x
+            if centered_lines:
+                line_x += max(0, (width - self._text_width(line, font)) // 2)
+            draw.text((line_x, cursor_y), line, font=font, fill=self.CARD_ACCENT)
             cursor_y += line_height
 
     def _draw_response_content(
@@ -2017,14 +2134,14 @@ class SearchTreemapRenderer:
         normalized = text.strip()
         if not normalized:
             return self.card_title_font, []
-        if len(normalized) <= 4:
-            candidate_sizes = (56, 50, 44, 38, 34, 30, 26, 22, 20, 18, 16, 14, 12)
-        elif len(normalized) <= 8:
-            candidate_sizes = (48, 42, 38, 34, 30, 26, 22, 20, 18, 16, 14, 12)
-        elif len(normalized) <= 20:
-            candidate_sizes = (34, 30, 26, 24, 22, 20, 18, 16, 14, 12)
-        else:
-            candidate_sizes = (28, 24, 22, 20, 18, 16, 14, 12, 10)
+        largest_size = self._single_text_initial_font_size(
+            text=normalized,
+            max_width=max_width,
+            max_height=max_height,
+        )
+        candidate_sizes = list(range(largest_size, 11, -4))
+        if candidate_sizes[-1] != 12:
+            candidate_sizes.append(12)
         if len(normalized) <= 4:
             preferred_lines = 1
         elif len(normalized) <= 8:
@@ -2059,6 +2176,25 @@ class SearchTreemapRenderer:
             max_lines=max(1, len(normalized)),
         )
         return fallback_font, fallback_lines
+
+    def _single_text_initial_font_size(
+        self,
+        *,
+        text: str,
+        max_width: int,
+        max_height: int,
+    ) -> int:
+        if len(text) <= 4:
+            text_cap = 76
+        elif len(text) <= 8:
+            text_cap = 64
+        elif len(text) <= 16:
+            text_cap = 48
+        else:
+            text_cap = 34
+        width_cap = max(24, int(max_width * 0.36))
+        height_cap = max(24, int(max_height * 0.48))
+        return max(12, min(text_cap, width_cap, height_cap))
 
     def _fit_lxgw_text_block_layout(
         self,
