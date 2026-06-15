@@ -2,7 +2,7 @@ from io import BytesIO
 from pathlib import Path
 
 from nonebot.adapters.onebot.v11.message import Message
-from PIL import Image
+from PIL import Image, ImageDraw
 import pytest
 
 from src.lib.wordbank_search_treemap import (
@@ -269,6 +269,47 @@ def test_renderer_fits_preview_image_without_cropping(tmp_path: Path) -> None:
     assert preview is not None
     assert preview.width == 120
     assert preview.height == 30
+
+
+def test_renderer_estimates_sequence_image_height_from_aspect_ratio(
+    tmp_path: Path,
+) -> None:
+    renderer = SearchTreemapRenderer()
+    wide = tmp_path / "wide.png"
+    tall = tmp_path / "tall.png"
+    Image.new("RGB", (480, 160), "#ff6699").save(wide)
+    Image.new("RGB", (160, 480), "#66ccff").save(tall)
+
+    wide_height = renderer._preferred_sequence_image_height(  # pyright: ignore[reportPrivateUsage]
+        180,
+        image_path=str(wide),
+    )
+    tall_height = renderer._preferred_sequence_image_height(  # pyright: ignore[reportPrivateUsage]
+        180,
+        image_path=str(tall),
+    )
+
+    assert wide_height < tall_height
+    assert wide_height >= 44
+
+
+def test_renderer_draw_image_block_returns_real_preview_height(tmp_path: Path) -> None:
+    renderer = SearchTreemapRenderer()
+    source = tmp_path / "wide.png"
+    Image.new("RGB", (400, 100), "#ff6699").save(source)
+    image = Image.new("RGB", (240, 240), "#ffffff")
+
+    used = renderer._draw_image_block(  # pyright: ignore[reportPrivateUsage]
+        image,
+        ImageDraw.Draw(image),
+        str(source),
+        x=0,
+        y=0,
+        width=120,
+        height=120,
+    )
+
+    assert used == 30
 
 
 def test_renderer_estimates_taller_height_for_longer_content() -> None:

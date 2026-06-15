@@ -261,6 +261,7 @@ class SearchTreemapRenderer:
         self.card_title_font = self._load_lxgw_font(20)
         self.card_large_meta_font = self._load_lxgw_font(18)
         self.card_meta_font = self._load_lxgw_font(16)
+        self._image_size_cache: dict[str, tuple[int, int] | None] = {}
 
     def render(self, page: SearchTreemapPage, *, locale: LocaleCode) -> bytes:
         image = Image.new("RGB", (TREEMAP_WIDTH, TREEMAP_HEIGHT), self.BG)
@@ -887,6 +888,7 @@ class SearchTreemapRenderer:
             if spacious_card and len(normalized_text.strip()) <= 18
             else self.card_title_font
         )
+        title_line_height = self._line_height(title_font)
         meta_lines = self._build_response_meta_lines(
             response,
             locale,
@@ -903,8 +905,14 @@ class SearchTreemapRenderer:
             font=title_font,
             width=max(1, width - pad * 2),
         )
-        base_height = pad * 2 + content_height + 8 + meta_height
-        minimum = 92 if response.has_image else (66 if compact_card else 84)
+        meta_gap = 6 if compact_card else 8
+        base_height = pad * 2 + content_height + meta_gap + meta_height
+        minimum_content = (
+            max(title_line_height + 2, min(content_height, title_line_height * 2))
+            if not response.has_image
+            else max(60, min(content_height, 96))
+        )
+        minimum = pad * 2 + meta_gap + meta_height + minimum_content
         maximum = 260 if response.has_image else 220
         return max(minimum, min(maximum, base_height))
 
@@ -927,9 +935,19 @@ class SearchTreemapRenderer:
         line_height = self._line_height(font)
         if all(segment.kind == "image" for segment in segments):
             if len(segments) == 1 or width < 180:
-                return max(92, min(176, int(width * 0.75)))
+                return self._preferred_sequence_image_height(
+                    width,
+                    image_path=segments[0].image_path,
+                )
             rows = max(1, math.ceil(min(len(segments), 4) / 2))
-            cell_height = max(64, min(120, width // 2))
+            cell_width = max(1, (width - 6) // 2)
+            cell_height = max(
+                self._preferred_sequence_image_height(
+                    cell_width,
+                    image_path=segment.image_path,
+                )
+                for segment in segments[:4]
+            )
             return rows * cell_height + (rows - 1) * 6
         content_height = 0
         for index, segment in enumerate(segments):
@@ -942,17 +960,35 @@ class SearchTreemapRenderer:
                     ),
                     font,
                     width,
-                    max_lines=6,
+                    max_lines=8 if width >= 220 else 6,
                 )
                 content_height += len(text_lines) * line_height
             else:
-                content_height += self._preferred_sequence_image_height(width)
+                content_height += self._preferred_sequence_image_height(
+                    width,
+                    image_path=segment.image_path,
+                )
             if index < len(segments) - 1:
                 content_height += 6
         return content_height
 
-    def _preferred_sequence_image_height(self, width: int) -> int:
-        return max(84, min(196, int(width * 0.74)))
+    def _preferred_sequence_image_height(self, width: int, *, image_path: str) -> int:
+        if width <= 0:
+            return 0
+        image_size = self._load_image_size(image_path)
+        if image_size is None:
+            natural_height = int(width * 0.62)
+        else:
+            image_width, image_height = image_size
+            natural_height = max(
+                36,
+                round(width * (image_height / max(image_width, 1))),
+            )
+        soft_floor = max(52, int(width * 0.26))
+        if natural_height < soft_floor:
+            natural_height = (natural_height + soft_floor) // 2
+        soft_ceiling = max(120, int(width * 1.05))
+        return max(44, min(soft_ceiling, natural_height))
 
     def _draw_response_card(
         self,
@@ -1001,7 +1037,7 @@ class SearchTreemapRenderer:
             max_width=max(1, width - pad * 2),
         )
         meta_line_height = self._line_height(meta_font)
-        meta_gap = 8
+        meta_gap = 6 if compact_card else 8
         meta_height = (
             len(meta_lines) * meta_line_height + max(0, len(meta_lines) - 1) * 2
         )
@@ -1160,10 +1196,13 @@ class SearchTreemapRenderer:
                     y=cursor_y,
                     width=width,
                     height=max(
-                        72,
+                        44,
                         min(
                             available_height,
-                            self._preferred_sequence_image_height(width),
+                            self._preferred_sequence_image_height(
+                                width,
+                                image_path=segment.image_path,
+                            ),
                         ),
                     ),
                 )
@@ -1268,7 +1307,7 @@ class SearchTreemapRenderer:
             outline=self.BORDER,
             width=1,
         )
-        return height
+        return preview.height
 
     def _draw_overflow_banner(
         self,
@@ -1458,6 +1497,19 @@ class SearchTreemapRenderer:
         canvas = Image.new("RGB", (resized.width, resized.height), "#FFFFFF")
         canvas.paste(resized, (0, 0))
         return canvas
+
+    def _load_image_size(self, image_path: str) -> tuple[int, int] | None:
+        if not image_path:
+            return None
+        if image_path in self._image_size_cache:
+            return self._image_size_cache[image_path]
+        try:
+            with Image.open(image_path) as source:
+                size = (source.width, source.height)
+        except Exception:
+            size = None
+        self._image_size_cache[image_path] = size
+        return size
 
 
 def render_search_results_treemap_bytes(
