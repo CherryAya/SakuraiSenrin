@@ -607,6 +607,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     )
 
     add = next(feature for feature in wordbank.index if feature.slug == "add")
+    rank = next(feature for feature in wordbank.index if feature.slug == "rank")
     passive = next(feature for feature in wordbank.index if feature.slug == "passive")
     reply = next(
         feature for feature in wordbank.index if feature.slug == "reply-shortcut"
@@ -638,6 +639,9 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert "连续输错 3 次" in add.failures
     assert "#help 词库审核" in wordbank.summary
     assert "ID: 12" in add.demo_turns[9].text
+    assert rank.demo_filename == "wordbank-rank.png"
+    assert rank.demo_turns[0].text == "#苦瓜榜"
+    assert "[发送苦瓜榜海报]" in rank.demo_turns[1].text
     assert passive.demo_turns[-1].speaker == "SYSTEM"
     assert "group_recall" in passive.demo_turns[-1].text
     assert reply.demo_filename == "wordbank-reply-shortcut.png"

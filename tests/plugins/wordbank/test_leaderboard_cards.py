@@ -74,3 +74,40 @@ def test_wordbank_leaderboard_renderer_supports_empty_state() -> None:
     payload = renderer.render(data=_data(items=()), locale="zh-CN")
 
     assert payload.startswith(b"\x89PNG")
+
+
+def test_wordbank_leaderboard_height_excludes_duplicate_champion_row() -> None:
+    renderer = WordbankLeaderboardCardRenderer()
+    items = (
+        WordbankLeaderboardCardItem(
+            user_id="10001",
+            display_name="凛凛",
+            approved_count=6,
+            current_rank=1,
+            share=0.6,
+            latest_created_at=1_718_000_000,
+            group_count=3,
+            current_group_count=2,
+            all_groups_count=2,
+            self_count=0,
+            private_only_count=0,
+        ),
+        WordbankLeaderboardCardItem(
+            user_id="10002",
+            display_name="妙妙",
+            approved_count=4,
+            current_rank=2,
+            share=0.4,
+            latest_created_at=1_718_000_100,
+            group_count=2,
+            current_group_count=1,
+            all_groups_count=1,
+            self_count=0,
+            private_only_count=1,
+        ),
+    )
+
+    one_height = renderer._measure_height(_data(items=items[:1]))  # pyright: ignore[reportPrivateUsage]
+    two_height = renderer._measure_height(_data(items=items))  # pyright: ignore[reportPrivateUsage]
+
+    assert two_height - one_height == 112

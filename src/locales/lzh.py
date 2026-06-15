@@ -211,7 +211,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.rank.subtitle": "詞條創建數排行",
     "wordbank.rank.summary.creators": "本月上榜建者",
     "wordbank.rank.summary.entries": "本月通過詞條",
-    "wordbank.rank.summary.share": "魁首占比 {share}",
+    "wordbank.rank.summary.share": "魁首占比",
     "wordbank.rank.hero.share": "占本月通過詞條 {share}",
     "wordbank.rank.hero.gap": "領先次席 {gap} 條",
     "wordbank.rank.row.meta": "涉 {group_count} 群 · 最近創建 {date}",

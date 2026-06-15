@@ -78,7 +78,7 @@ class WordbankLeaderboardCardRenderer:
         else:
             cursor_y = self._draw_empty(draw, locale, cursor_y)
 
-        self._draw_footer(draw, locale, cursor_y + 12)
+        self._draw_footer(draw, data, locale, cursor_y + 12)
 
         buffer = BytesIO()
         image.save(buffer, format="PNG")
@@ -90,7 +90,9 @@ class WordbankLeaderboardCardRenderer:
         height += 136 + SECTION_GAP
         if data.items:
             height += 240 + SECTION_GAP
-            height += len(data.items) * 112 + max(0, len(data.items) - 1) * ROW_GAP
+            row_count = max(0, len(data.items) - 1)
+            if row_count:
+                height += row_count * 112 + max(0, row_count - 1) * ROW_GAP
         else:
             height += 180
         height += FOOTER_HEIGHT + PADDING_Y
@@ -168,12 +170,8 @@ class WordbankLeaderboardCardRenderer:
                 str(data.total_approved_count),
             ),
             (
-                tr(
-                    locale,
-                    "wordbank.rank.summary.share",
-                    share=f"{data.top_share * 100:.0f}%",
-                ),
-                "Top 1",
+                tr(locale, "wordbank.rank.summary.share"),
+                f"{data.top_share * 100:.0f}%",
             ),
         )
         for index, (label, value) in enumerate(stats):
@@ -277,7 +275,7 @@ class WordbankLeaderboardCardRenderer:
         locale: LocaleCode,
         cursor_y: int,
     ) -> int:
-        for item in data.items:
+        for item in data.items[1:]:
             row_h = 112
             draw.rounded_rectangle(
                 (PADDING_X, cursor_y, CARD_WIDTH - PADDING_X, cursor_y + row_h),
@@ -371,10 +369,13 @@ class WordbankLeaderboardCardRenderer:
     def _draw_footer(
         self,
         draw: ImageDraw.ImageDraw,
+        data: WordbankLeaderboardCardData,
         locale: LocaleCode,
         cursor_y: int,
     ) -> None:
-        footer_time = arrow.get(get_current_time()).to("Asia/Shanghai")
+        footer_time = arrow.get(data.generated_at or get_current_time()).to(
+            "Asia/Shanghai"
+        )
         footer_text = tr(
             locale,
             "wordbank.rank.footer",
