@@ -196,7 +196,8 @@ def test_load_plugin_doc_bundle_preserves_inline_backticks_in_meta_value() -> No
 
     assert (
         reply_shortcut.trigger
-        == "回复机器人词库自动回复并发送 `info` / `history` / `del` / `rst`"
+        == "回复机器人词库自动回复并发送 `info` / `history` / `del` / `rst` / "
+        "`trigger prob` / `trigger set` / `response weight` / `response set`"
     )
 
 

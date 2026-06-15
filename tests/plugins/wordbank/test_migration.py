@@ -1563,7 +1563,7 @@ def test_migration_report_groups_failures_by_category() -> None:
 
 
 @pytest.mark.asyncio
-async def test_wordbank_image_schema_patch_adds_remote_media_fields_with_defaults(
+async def test_migrate_legacy_rows_recreates_target_namespace_without_patches(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1573,21 +1573,33 @@ async def test_wordbank_image_schema_patch_adds_remote_media_fields_with_default
     db_dir = tmp_path / "db" / "wordbank_db"
     db_dir.mkdir(parents=True, exist_ok=True)
     db_path = db_dir / "wordbank_main.db"
+    sentinel = db_dir / "legacy-sentinel.txt"
+    sentinel.write_text("legacy", encoding="utf-8")
 
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             """
-            CREATE TABLE wordbank_image (
+            CREATE TABLE wordbank_response_item (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                canonical_image_id INTEGER,
-                md5 VARCHAR(32) NOT NULL,
-                dhash VARCHAR(16) NOT NULL,
-                phash VARCHAR(16) NOT NULL,
-                width INTEGER NOT NULL,
-                height INTEGER NOT NULL,
-                file_size INTEGER NOT NULL,
-                hash_version INTEGER NOT NULL DEFAULT 1,
-                storage_path TEXT NOT NULL DEFAULT '',
+                trigger_group_id INTEGER NOT NULL,
+                status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                scope VARCHAR(32) NOT NULL,
+                priority INTEGER NOT NULL,
+                weight INTEGER NOT NULL DEFAULT 3,
+                probability FLOAT NOT NULL DEFAULT 1.0,
+                rule JSON NOT NULL DEFAULT '{}',
+                group_id VARCHAR(64) NOT NULL DEFAULT '',
+                created_by VARCHAR(64) NOT NULL,
+                approved_by VARCHAR(64) NOT NULL DEFAULT '',
+                deleted_at INTEGER NOT NULL DEFAULT 0,
+                text TEXT NOT NULL DEFAULT '',
+                message_json TEXT NOT NULL DEFAULT '[]',
+                exact_md5 VARCHAR(32) NOT NULL DEFAULT '',
+                structure_key TEXT NOT NULL DEFAULT '',
+                search_text TEXT NOT NULL DEFAULT '',
+                search_tokens TEXT NOT NULL DEFAULT '',
+                image_keys TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )
@@ -1595,84 +1607,110 @@ async def test_wordbank_image_schema_patch_adds_remote_media_fields_with_default
         )
         conn.execute(
             """
-            INSERT INTO wordbank_image (
-                canonical_image_id,
-                md5,
-                dhash,
-                phash,
-                width,
-                height,
-                file_size,
-                hash_version,
-                storage_path,
+            INSERT INTO wordbank_response_item (
+                trigger_group_id,
+                status,
+                enabled,
+                scope,
+                priority,
+                weight,
+                probability,
+                rule,
+                group_id,
+                created_by,
+                approved_by,
+                deleted_at,
+                text,
+                message_json,
+                exact_md5,
+                structure_key,
+                search_text,
+                search_tokens,
+                image_keys,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
+            ) VALUES (
                 1,
-                "a" * 32,
-                "0" * 16,
-                "1" * 16,
-                16,
-                16,
-                123,
-                2,
-                "/tmp/legacy.png",
+                'approved',
                 1,
-                10,
-            ),
-        )
-        conn.execute(
+                'self',
+                40,
+                3,
+                0.5,
+                '{}',
+                '',
+                'legacy-user',
+                '',
+                0,
+                'legacy',
+                '[]',
+                'legacy-md5',
+                'text',
+                'legacy',
+                'legacy',
+                '',
+                1,
+                1
+            )
             """
-            INSERT INTO wordbank_image (
-                canonical_image_id,
-                md5,
-                dhash,
-                phash,
-                width,
-                height,
-                file_size,
-                hash_version,
-                storage_path,
-                created_at,
-                updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                2,
-                "b" * 32,
-                "2" * 16,
-                "3" * 16,
-                16,
-                16,
-                456,
-                2,
-                "r2://bucket/wordbank/media/existing.webp",
-                2,
-                20,
-            ),
         )
         conn.commit()
 
     repository = WordbankRepository()
-    await repository.init_all_tables()
-    images = await repository.list_images()
-    images_by_md5 = {image.md5: image for image in images}
+    media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    catalog = build_legacy_image_catalog(image_root, None)
+    rows = [
+        {
+            "response_id": 1,
+            "trigger_id": 1,
+            "response_text": json.dumps(
+                [{"type": "text", "text": "新回复"}],
+                ensure_ascii=False,
+            ),
+            "response_rule_conditions": json.dumps({"group_id": {"$eq": 20001}}),
+            "weight": 4,
+            "priority": 2,
+            "created_by": "10001",
+            "created_at": 1700000000,
+            "response_available": True,
+            "trigger_text": json.dumps(
+                [{"type": "text", "text": "新触发"}],
+                ensure_ascii=False,
+            ),
+            "trigger_config": json.dumps({"probability": 0.8}),
+            "extra_info": None,
+            "approval_status": "APPROVED",
+        }
+    ]
 
-    local_image = images_by_md5["a" * 32]
-    remote_image = images_by_md5["b" * 32]
-
-    assert local_image.remote_storage_path == ""
-    assert local_image.remote_sync_status == "pending"
-    assert local_image.local_cache_path == ""
-    assert local_image.cache_file_size == 0
-    assert (
-        remote_image.remote_storage_path == "r2://bucket/wordbank/media/existing.webp"
+    report = await migrate_legacy_rows(
+        rows,
+        repository=repository,
+        media_service=media_service,
+        image_catalog=catalog,
+        reset_target=True,
     )
-    assert remote_image.remote_sync_status == "synced"
-    assert remote_image.remote_synced_at == 20
-    assert remote_image.remote_object_size == 456
+
+    assert report.imported_rows == 1
+    assert not sentinel.exists()
+
+    with sqlite3.connect(db_path) as conn:
+        columns = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(wordbank_response_item)")
+        }
+        response_count = conn.execute(
+            "SELECT COUNT(*) FROM wordbank_response_item"
+        ).fetchone()[0]
+        created_by = conn.execute(
+            "SELECT created_by FROM wordbank_response_item"
+        ).fetchone()[0]
+
+    assert "probability" not in columns
+    assert response_count == 1
+    assert created_by == "10001"
 
 
 def _segment_list(value: dict[str, object]) -> list[dict[str, Any]]:

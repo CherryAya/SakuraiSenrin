@@ -1,16 +1,14 @@
 import asyncio
-from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
 import arrow
 from PIL import Image
 import pytest
-from sqlalchemy import func, select, text
+from sqlalchemy import text
 
 from src.database.consts import WritePolicy
 from src.lib.db.connectors import ColdPolicy
-from src.lib.db.schema import AppliedSchemaPatch
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.instances import (
     wordbank_log_db,
@@ -19,7 +17,6 @@ from src.plugins.wordbank.database.instances import (
     wordbank_message_route_db,
 )
 from src.plugins.wordbank.database.repo import WordbankRepository
-from src.plugins.wordbank.database.tables import WordbankLogBase, WordbankMainBase
 from src.plugins.wordbank.database.types import WordbankSearchRequest
 from src.plugins.wordbank.message_model import (
     combine_shapes,
@@ -839,8 +836,8 @@ async def test_init_all_tables_creates_fts_and_clears_wordbank_patch_chain(
         }
 
     assert service.repository is not None
-    assert len(wordbank_main_db.patch_registry.patches) == 3
-    assert len(wordbank_log_db.patch_registry.patches) == 1
+    assert wordbank_main_db.patch_registry.patches == []
+    assert wordbank_log_db.patch_registry.patches == []
     assert wordbank_message_route_db.patch_registry.patches == []
     assert wordbank_message_ref_db.patch_registry.patches == []
     assert "wordbank_search_trigger_fts" in main_objects
@@ -850,192 +847,6 @@ async def test_init_all_tables_creates_fts_and_clears_wordbank_patch_chain(
     assert "wordbank_view_message" not in main_objects
     assert route_objects == {"wordbank_message_route"}
     assert ref_objects == {"wordbank_message_ref"}
-
-
-@pytest.mark.asyncio
-async def test_wordbank_log_patch_drops_matched_text_from_legacy_shard(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.lib.db import connectors as connectors_module
-
-    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
-    shard_path = tmp_path / "wordbank_db" / "wordbank_logs_2026_06.db"
-    shard_path.parent.mkdir(parents=True, exist_ok=True)
-
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{shard_path}")
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                """
-                CREATE TABLE wordbank_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    trigger_group_id INTEGER NOT NULL,
-                    trigger_variant_id INTEGER NOT NULL,
-                    response_item_id INTEGER NOT NULL,
-                    group_id VARCHAR(64) NOT NULL DEFAULT '',
-                    user_id VARCHAR(64) NOT NULL DEFAULT '',
-                    message_type VARCHAR(16) NOT NULL DEFAULT 'text',
-                    matched_text TEXT NOT NULL DEFAULT '',
-                    created_at INTEGER NOT NULL
-                )
-                """
-            )
-        )
-        await conn.execute(
-            text(
-                """
-                INSERT INTO wordbank_log (
-                    trigger_group_id,
-                    trigger_variant_id,
-                    response_item_id,
-                    group_id,
-                    user_id,
-                    message_type,
-                    matched_text,
-                    created_at
-                ) VALUES (1, 2, 3, '20001', '10001', 'group', '旧字段', 1718150400)
-                """
-            )
-        )
-    await engine.dispose()
-
-    await wordbank_log_db.init_schema(WordbankLogBase)
-
-    async with wordbank_log_db.read_session(
-        time_ctx=datetime(2026, 6, 12),
-    ) as session:
-        columns = await session.execute(text("PRAGMA table_info(wordbank_log)"))
-        count_result = await session.execute(
-            select(func.count()).select_from(AppliedSchemaPatch)
-        )
-        row_count = await session.execute(text("SELECT COUNT(*) FROM wordbank_log"))
-
-    column_names = {str(row[1]) for row in columns.all()}
-    assert "matched_text" not in column_names
-    assert int(count_result.scalar() or 0) == 1
-    assert int(row_count.scalar() or 0) == 1
-
-
-@pytest.mark.asyncio
-async def test_wordbank_main_patch_drops_response_probability_from_legacy_table(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.lib.db import connectors as connectors_module
-
-    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
-    db_path = tmp_path / "wordbank_db" / "wordbank_main.db"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                """
-                CREATE TABLE wordbank_response_item (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    trigger_group_id INTEGER NOT NULL,
-                    status VARCHAR(16) NOT NULL DEFAULT 'pending',
-                    enabled INTEGER NOT NULL DEFAULT 1,
-                    scope VARCHAR(32) NOT NULL,
-                    priority INTEGER NOT NULL,
-                    weight INTEGER NOT NULL DEFAULT 3,
-                    probability FLOAT NOT NULL DEFAULT 1.0,
-                    rule JSON NOT NULL DEFAULT '{}',
-                    group_id VARCHAR(64) NOT NULL DEFAULT '',
-                    created_by VARCHAR(64) NOT NULL,
-                    approved_by VARCHAR(64) NOT NULL DEFAULT '',
-                    deleted_at INTEGER NOT NULL DEFAULT 0,
-                    text TEXT NOT NULL DEFAULT '',
-                    message_json TEXT NOT NULL DEFAULT '[]',
-                    exact_md5 VARCHAR(32) NOT NULL DEFAULT '',
-                    structure_key TEXT NOT NULL DEFAULT '',
-                    search_text TEXT NOT NULL DEFAULT '',
-                    search_tokens TEXT NOT NULL DEFAULT '',
-                    image_keys TEXT NOT NULL DEFAULT '',
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL
-                )
-                """
-            )
-        )
-        await conn.execute(
-            text(
-                """
-                INSERT INTO wordbank_response_item (
-                    trigger_group_id,
-                    status,
-                    enabled,
-                    scope,
-                    priority,
-                    weight,
-                    probability,
-                    rule,
-                    group_id,
-                    created_by,
-                    approved_by,
-                    deleted_at,
-                    text,
-                    message_json,
-                    exact_md5,
-                    structure_key,
-                    search_text,
-                    search_tokens,
-                    image_keys,
-                    created_at,
-                    updated_at
-                ) VALUES (
-                    1,
-                    'approved',
-                    1,
-                    'self',
-                    40,
-                    4,
-                    0.7,
-                    '{}',
-                    '',
-                    '10001',
-                    '',
-                    0,
-                    '旧回复',
-                    '[]',
-                    'abc',
-                    'text',
-                    '旧回复',
-                    '旧 回复',
-                    '',
-                    1718150400,
-                    1718150400
-                )
-                """
-            )
-        )
-    await engine.dispose()
-
-    await wordbank_main_db.init_schema(WordbankMainBase)
-
-    async with wordbank_main_db.read_session() as session:
-        columns = await session.execute(
-            text("PRAGMA table_info(wordbank_response_item)")
-        )
-        row_count = await session.execute(
-            text("SELECT COUNT(*) FROM wordbank_response_item")
-        )
-        patch_ids = await session.execute(
-            select(AppliedSchemaPatch.patch_id).order_by(AppliedSchemaPatch.patch_id)
-        )
-
-    column_names = {str(row[1]) for row in columns.all()}
-    assert "probability" not in column_names
-    assert int(row_count.scalar() or 0) == 1
-    assert "wordbank_main:drop_response_item_probability:v1" in set(
-        patch_ids.scalars().all()
-    )
 
 
 @pytest.mark.asyncio

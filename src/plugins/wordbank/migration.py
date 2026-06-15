@@ -13,12 +13,14 @@ from io import BytesIO
 import json
 from pathlib import Path
 import re
+import shutil
 from typing import TYPE_CHECKING, Any, cast
 
 from PIL import Image, UnidentifiedImageError
 
 from src.database.consts import WritePolicy
 from src.lib.utils.common import get_current_time
+from src.plugins.wordbank.database.instances import wordbank_main_db
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.message_model import (
     MessageAtom,
@@ -822,9 +824,9 @@ async def migrate_legacy_rows(
     progress: LegacyMigrationProgressCallback | None = None,
     progress_every: int = 100,
 ) -> WordbankMigrationReport:
-    await repository.init_all_tables()
     if reset_target:
-        await repository.reset_all_data(include_images=True, include_logs=True)
+        await _recreate_wordbank_target_namespace()
+    await repository.init_all_tables()
     await media_service.rebuild_cache()
 
     report = WordbankMigrationReport(total_rows=len(rows))
@@ -994,6 +996,13 @@ async def migrate_legacy_rows(
         detail={},
     )
     return report
+
+
+async def _recreate_wordbank_target_namespace() -> None:
+    namespace_dir = wordbank_main_db.base_dir
+    if namespace_dir.exists():
+        await asyncio.to_thread(shutil.rmtree, namespace_dir)
+    await asyncio.to_thread(namespace_dir.mkdir, parents=True, exist_ok=True)
 
 
 async def migrate_legacy_response_logs(
