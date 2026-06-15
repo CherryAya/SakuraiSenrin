@@ -7,12 +7,13 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from io import BytesIO
+from math import ceil
 import os
 from pathlib import Path
 import re
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -20,9 +21,8 @@ if str(ROOT) not in sys.path:
 
 from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
-from src.lib.demo_theme import BASE_THEME, PALETTE_ACCENTS
+from src.lib.demo_theme import BASE_THEME, build_demo_theme
 from src.lib.plugin_docs import (
-    DemoImageRenderer,
     DocNode,
     PluginDocBundle,
     audit_demo_layout,
@@ -55,7 +55,6 @@ class DemoCollectionTile:
     slug: str
     summary: str
     trigger: str
-    source: Path
 
 
 @dataclass(slots=True, frozen=True)
@@ -64,7 +63,6 @@ class DemoCollectionJob:
     output: Path
     tiles: tuple[DemoCollectionTile, ...]
     columns: int
-    thumb_width: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -74,25 +72,19 @@ class PreparedCollectionTile:
     slug: str
     summary: str
     trigger: str
-    image: Image.Image
+    title_lines: tuple[tuple[tuple[str, bool], ...], ...]
+    summary_lines: tuple[tuple[tuple[str, bool], ...], ...]
+    command_lines: tuple[tuple[tuple[str, bool], ...], ...]
+    height: int
 
 
 @dataclass(slots=True, frozen=True)
 class HeaderLayout:
-    panel_left: int
-    panel_top: int
-    panel_right: int
-    panel_height: int
     left_x: int
-    right_x: int
-    left_width: int
-    right_width: int
     title_y: int
     summary_y: int
-    right_y: int
-    help_y: int
-    summary_lines: tuple[tuple, ...]
-    help_lines: tuple[tuple, ...]
+    summary_lines: tuple[tuple[tuple[str, bool], ...], ...]
+    height: int
 
 
 def iter_readmes() -> list[Path]:
@@ -160,9 +152,7 @@ def write_demo_result(result: tuple[Path, bytes]) -> Path:
 
 
 def collect_collection_jobs(
-    *,
-    columns: int,
-    thumb_width: int,
+    *, columns: int
 ) -> tuple[int, tuple[DemoCollectionJob, ...]]:
     total_files = 0
     jobs: list[DemoCollectionJob] = []
@@ -171,6 +161,8 @@ def collect_collection_jobs(
         demos_dir = path.parent / "demos"
         demos_dir.mkdir(parents=True, exist_ok=True)
         total_files += 1
+        if not bundle.index:
+            continue
         tiles = tuple(
             DemoCollectionTile(
                 index=feature_index + 1,
@@ -178,20 +170,15 @@ def collect_collection_jobs(
                 slug=feature.slug,
                 summary=feature.summary,
                 trigger=feature.trigger,
-                source=demos_dir / feature.demo_filename,
             )
             for feature_index, feature in enumerate(bundle.index)
-            if feature.demo_turns and feature.demo_filename
         )
-        if not tiles:
-            continue
         jobs.append(
             DemoCollectionJob(
                 bundle=bundle,
                 output=demos_dir / collection_demo_filename(path),
                 tiles=tiles,
                 columns=columns,
-                thumb_width=thumb_width,
             )
         )
     return total_files, tuple(jobs)
@@ -202,26 +189,18 @@ def render_collection_job(job: DemoCollectionJob) -> tuple[Path, bytes]:
 
 
 def render_collection_png(job: DemoCollectionJob) -> bytes:
-    renderer = DemoCollectionRenderer(columns=job.columns, thumb_width=job.thumb_width)
+    renderer = DemoCollectionRenderer(columns=job.columns)
     return renderer.render(
         title=job.bundle.title,
         summary=job.bundle.summary,
-        source_path=job.bundle.source_path,
+        impression_color=job.bundle.impression_color,
         tiles=job.tiles,
     )
 
 
-def compose(
-    *,
-    workers: int | None = None,
-    columns: int = 2,
-    thumb_width: int = 860,
-) -> int:
+def compose(*, workers: int | None = None, columns: int = 2) -> int:
     worker_count = workers if workers is not None else default_worker_count()
-    total_files, jobs = collect_collection_jobs(
-        columns=columns,
-        thumb_width=thumb_width,
-    )
+    total_files, jobs = collect_collection_jobs(columns=columns)
     if worker_count == 1 or len(jobs) <= 1:
         for job in jobs:
             output = write_demo_result(render_collection_job(job))
@@ -239,19 +218,13 @@ def compose(
     return 0
 
 
-def build(
-    *,
-    workers: int | None = None,
-    columns: int = 2,
-    thumb_width: int = 860,
-) -> int:
+def build(*, workers: int | None = None, columns: int = 2) -> int:
     generated = generate(workers=workers)
     if generated != 0:
         return generated
     composed = compose(
         workers=workers,
         columns=columns,
-        thumb_width=thumb_width,
     )
     if composed != 0:
         return composed
@@ -259,252 +232,211 @@ def build(
 
 
 class DemoCollectionRenderer:
-    MIN_WIDTH = 1920
-    MAX_WIDTH = 2400
-    OUTER_MARGIN = 40  # 统一为 40px
-    HEADER_PANEL_MIN_HEIGHT = 112
-    HEADER_TOP = 50
-    HEADER_LEFT = 84
-    HEADER_RIGHT_TOP = 74
-    HEADER_BOTTOM_PAD = 26
-    HEADER_SIDE_PAD = 18
-    HEADER_EXTRA_COMPENSATION = 10
-    HEADER_RIGHT_BLOCK_WIDTH = 440
-    HEADER_RIGHT_GAP = 20
-    HEADER_LEFT_GAP = 36
-    CONTENT_TOP_GAP = 28
-    CARD_PADDING = 24
-    CARD_RADIUS = 26
-    CARD_BAND_HEIGHT = 64
-    CARD_DEMO_TOP_GAP = 18
-    CARD_DEMO_BOTTOM_GAP = 20
-    CARD_GAP_X = 28
-    CARD_GAP_Y = 30
-    BOTTOM_MARGIN = 42
-    CARD_SLUG_MIN_WIDTH = 68
-    CARD_SLUG_MAX_WIDTH = 240
-    CARD_COMMAND_BG = BASE_THEME.muted_light
-    CARD_COMMAND_CODE_BG = BASE_THEME.inline_code_bg
-    CARD_COMMAND_CODE_BORDER = BASE_THEME.line
+    CANVAS_WIDTH = BASE_THEME.canvas_width
+    OUTER_MARGIN = 88
+    HEADER_TOP = 72
+    HEADER_BOTTOM_GAP = 64
+    GRID_GAP_X = 32
+    GRID_GAP_Y = 32
+    CARD_RADIUS = 32
+    CARD_PADDING_X = 40
+    CARD_PADDING_Y = 40
+    CARD_COMMAND_PADDING_X = 24
+    CARD_COMMAND_PADDING_Y = 16
+    CARD_INNER_GAP = 24
+    CARD_BOTTOM_MARGIN = 64
 
-    def __init__(self, *, columns: int, thumb_width: int) -> None:
+    def __init__(self, *, columns: int) -> None:
         self.theme = BASE_THEME
-        self.columns = max(1, columns)
-        self.thumb_width = max(240, thumb_width)
+        self.columns = max(1, min(columns, 2))
         try:
-            # 移动端优化：增大字体
-            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 58)  # 44 → 58
-            self.summary_font = ImageFont.truetype(MAPLE_FONT_PATH, 25)  # 19 → 25
-            self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 26)  # 20 → 26
-            self.tile_font = ImageFont.truetype(MAPLE_FONT_PATH, 32)  # 24 → 32
-            self.tile_meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)  # 18 → 24
-            self.tile_body_font = ImageFont.truetype(MAPLE_FONT_PATH, 26)  # 20 → 26
-            self.tile_index_font = ImageFont.truetype(MAPLE_FONT_PATH, 28)  # 21 → 28
-            self.slug_font = ImageFont.truetype(MAPLE_FONT_PATH, 23)  # 17 → 23
+            self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 64)
+            self.summary_font = ImageFont.truetype(MAPLE_FONT_PATH, 32)
+            self.tile_title_font = ImageFont.truetype(MAPLE_FONT_PATH, 36)
+            self.tile_summary_font = ImageFont.truetype(MAPLE_FONT_PATH, 28)
+            self.tile_command_font = ImageFont.truetype(MAPLE_FONT_PATH, 26)
+            self.tile_index_font = ImageFont.truetype(MAPLE_FONT_PATH, 32)
         except OSError:
             self.title_font = ImageFont.load_default()
             self.summary_font = ImageFont.load_default()
-            self.meta_font = ImageFont.load_default()
-            self.tile_font = ImageFont.load_default()
-            self.tile_meta_font = ImageFont.load_default()
-            self.tile_body_font = ImageFont.load_default()
+            self.tile_title_font = ImageFont.load_default()
+            self.tile_summary_font = ImageFont.load_default()
+            self.tile_command_font = ImageFont.load_default()
             self.tile_index_font = ImageFont.load_default()
-            self.slug_font = ImageFont.load_default()
-
-    @property
-    def card_width(self) -> int:
-        return self.thumb_width + self.CARD_PADDING * 2
 
     def render(
         self,
         *,
         title: str,
         summary: str,
-        source_path: Path,
+        impression_color: str,
         tiles: Sequence[DemoCollectionTile],
     ) -> bytes:
+        self.theme = build_demo_theme(impression_color)
         columns = self._effective_columns(len(tiles))
-        prepared = tuple(
-            PreparedCollectionTile(
-                index=tile.index,
-                title=tile.title,
-                slug=tile.slug,
-                summary=tile.summary,
-                trigger=tile.trigger,
-                image=self._load_thumbnail(tile.source),
-            )
-            for tile in tiles
+        card_width = self._card_width(columns)
+        prepared = tuple(self._prepare_tile(tile, card_width) for tile in tiles)
+        header = self._measure_header_layout(title=title, summary=summary)
+        placements, content_height = self._grid_layout(
+            prepared,
+            card_width=card_width,
+            content_top=self.OUTER_MARGIN + header.height + self.HEADER_BOTTOM_GAP,
+            columns=columns,
         )
-        content_width = columns * self.card_width + (columns - 1) * self.CARD_GAP_X
-        width = min(
-            self.MAX_WIDTH,
-            max(self.MIN_WIDTH, content_width + self.OUTER_MARGIN * 2 + 24),
+        height = (
+            self.OUTER_MARGIN
+            + header.height
+            + self.HEADER_BOTTOM_GAP
+            + content_height
+            + self.CARD_BOTTOM_MARGIN
         )
-        content_x = (width - content_width) // 2
-        if self._should_use_grid_layout(len(prepared), columns):
-            placements, content_height = self._grid_layout(
-                prepared,
-                content_x=content_x,
-                columns=columns,
-                content_top=0,
-            )
-        else:
-            placements, content_height = self._masonry_layout(
-                prepared,
-                content_x=content_x,
-                columns=columns,
-                content_top=0,
-            )
-        header_height = self._header_height(summary=summary, title=title, width=width)
-        content_top = self.OUTER_MARGIN + header_height + self.CONTENT_TOP_GAP
-        placements = [
-            (tile, x, y + content_top, height) for tile, x, y, height in placements
-        ]
-        height = content_top + content_height + self.BOTTOM_MARGIN + self.OUTER_MARGIN
-        image = Image.new("RGB", (width, height), self.theme.page_bg)
+        image = Image.new("RGBA", (self.CANVAS_WIDTH, height), self.theme.page_bg)
+        self._paint_background(image)
         draw = ImageDraw.Draw(image)
-        draw.rounded_rectangle(
-            (
-                self.OUTER_MARGIN,
-                self.OUTER_MARGIN,
-                width - self.OUTER_MARGIN,
-                height - self.OUTER_MARGIN,
-            ),
-            radius=self.theme.shell_radius,
-            fill=self.theme.shell_bg,
-            outline=self.theme.shell_border,
-            width=2,
-        )
-        self._draw_header(
-            draw,
-            title=title,
-            summary=summary,
-            source_path=source_path,
-            tile_count=len(prepared),
-            width=width,
-        )
-        self._draw_tiles(
-            image,
-            draw,
-            placements=placements,
-        )
+        self._draw_header(draw, title=title, tile_count=len(prepared), layout=header)
+        for tile, x, y in placements:
+            self._draw_tile(image, draw, tile=tile, x=x, y=y, width=card_width)
 
         buffer = BytesIO()
-        image.save(buffer, format="PNG", optimize=True)
+        image.convert("RGB").save(buffer, format="PNG", optimize=True)
         return buffer.getvalue()
 
-    def _load_thumbnail(self, path: Path) -> Image.Image:
-        with Image.open(path) as source:
-            image = source.convert("RGB")
-        image = self._crop_demo_conversation(image)
-        height = max(1, round(image.height * self.thumb_width / image.width))
-        return image.resize((self.thumb_width, height), Image.Resampling.LANCZOS)
+    def _paint_background(self, image: Image.Image) -> None:
+        draw = ImageDraw.Draw(image)
+        width, height = image.size
+        draw.rectangle((0, 0, width, height), fill=self.theme.page_bg)
+        mesh = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        mesh_draw = ImageDraw.Draw(mesh)
+        mesh_draw.ellipse(
+            (width - 420, -160, width + 180, 420),
+            fill=self._rgba(self.theme.mesh_pink, 170),
+        )
+        mesh_draw.ellipse(
+            (-220, height - 460, 360, height + 120),
+            fill=self._rgba(self.theme.mesh_blue, 170),
+        )
+        mesh = mesh.filter(ImageFilter.GaussianBlur(180))
+        image.alpha_composite(mesh)
 
-    def _crop_demo_conversation(self, image: Image.Image) -> Image.Image:
-        renderer = DemoImageRenderer()
-        left, top, right, bottom = renderer.preview_crop_box(image.size)
-        cropped = image.crop((left, top, right, bottom))
-        return cropped if cropped.width > 0 and cropped.height > 0 else image
-
-    def _card_height(self, tile: PreparedCollectionTile) -> int:
-        content_width = self.card_width - self.CARD_PADDING * 2
-        command_lines = self._tile_command_lines(tile, content_width)
-        summary_lines = self._tile_summary_lines(tile, content_width)
-        command_height = len(command_lines) * self._line_height(self.tile_body_font, 8)
-        summary_height = len(summary_lines) * self._line_height(self.tile_meta_font, 6)
-        return (
-            self.CARD_PADDING
-            + self.CARD_BAND_HEIGHT
-            + self.CARD_DEMO_TOP_GAP
-            + tile.image.height
-            + self.CARD_DEMO_BOTTOM_GAP
-            + command_height
-            + summary_height
-            + 94
+    def _measure_header_layout(self, *, title: str, summary: str) -> HeaderLayout:
+        left_x = self.OUTER_MARGIN
+        title_y = self.HEADER_TOP
+        max_width = self.CANVAS_WIDTH - self.OUTER_MARGIN * 2
+        summary_lines = tuple(
+            self._wrap_inline_text(
+                summary.strip() or "浏览该模块下的所有说明卡片。",
+                self.summary_font,
+                max_width=max_width,
+                max_lines=3,
+            )
+        )
+        title_height = self._line_height_for_font(self.title_font)
+        summary_y = title_y + title_height + 24
+        summary_height = len(summary_lines) * self._line_height_for_font(
+            self.summary_font
+        )
+        height = max(200, (summary_y - self.OUTER_MARGIN) + summary_height)
+        _ = title
+        return HeaderLayout(
+            left_x=left_x,
+            title_y=title_y,
+            summary_y=summary_y,
+            summary_lines=summary_lines,
+            height=height,
         )
 
-    def _masonry_layout(
+    def _prepare_tile(
         self,
-        tiles: Sequence[PreparedCollectionTile],
-        *,
-        content_x: int,
-        columns: int,
-        content_top: int,
-    ) -> tuple[list[tuple[PreparedCollectionTile, int, int, int]], int]:
-        column_bottoms = [content_top for _ in range(columns)]
-        placements: list[tuple[PreparedCollectionTile, int, int, int]] = []
-        for index, tile in enumerate(tiles):
-            _ = index
-            height = self._card_height(tile)
-            column = min(range(columns), key=column_bottoms.__getitem__)
-            x = content_x + column * (self.card_width + self.CARD_GAP_X)
-            y = column_bottoms[column]
-            placements.append((tile, x, y, height))
-            column_bottoms[column] = y + height + self.CARD_GAP_Y
-        content_height = max(column_bottoms, default=content_top) - content_top
-        content_height = max(0, content_height - self.CARD_GAP_Y)
-        return placements, content_height
+        tile: DemoCollectionTile,
+        card_width: int,
+    ) -> PreparedCollectionTile:
+        content_width = card_width - self.CARD_PADDING_X * 2
+        title_lines = tuple(
+            self._wrap_inline_text(
+                tile.title.strip() or tile.slug,
+                self.tile_title_font,
+                max_width=content_width - 92,
+                max_lines=2,
+            )
+        )
+        summary_lines = tuple(
+            self._wrap_inline_text(
+                tile.summary.strip() or "查看该子功能的用途、常见用法和关键边界。",
+                self.tile_summary_font,
+                max_width=content_width,
+                max_lines=3,
+            )
+        )
+        command_lines = tuple(
+            self._wrap_inline_text(
+                tile.trigger.strip() or f"#help {tile.slug}",
+                self.tile_command_font,
+                max_width=content_width - self.CARD_COMMAND_PADDING_X * 2,
+                max_lines=3,
+            )
+        )
+        title_height = len(title_lines) * self._line_height_for_font(
+            self.tile_title_font
+        )
+        summary_height = len(summary_lines) * self._line_height_for_font(
+            self.tile_summary_font
+        )
+        command_height = len(command_lines) * self._line_height_for_font(
+            self.tile_command_font
+        )
+        command_box_height = command_height + self.CARD_COMMAND_PADDING_Y * 2
+        height = (
+            self.CARD_PADDING_Y * 2
+            + title_height
+            + summary_height
+            + command_box_height
+            + self.CARD_INNER_GAP * 3
+            + 40
+        )
+        return PreparedCollectionTile(
+            index=tile.index,
+            title=tile.title,
+            slug=tile.slug,
+            summary=tile.summary,
+            trigger=tile.trigger,
+            title_lines=title_lines,
+            summary_lines=summary_lines,
+            command_lines=command_lines,
+            height=height,
+        )
 
     def _grid_layout(
         self,
         tiles: Sequence[PreparedCollectionTile],
         *,
-        content_x: int,
-        columns: int,
+        card_width: int,
         content_top: int,
-    ) -> tuple[list[tuple[PreparedCollectionTile, int, int, int]], int]:
-        placements: list[tuple[PreparedCollectionTile, int, int, int]] = []
+        columns: int,
+    ) -> tuple[list[tuple[PreparedCollectionTile, int, int]], int]:
+        placements: list[tuple[PreparedCollectionTile, int, int]] = []
+        content_width = columns * card_width + (columns - 1) * self.GRID_GAP_X
+        start_x = (self.CANVAS_WIDTH - content_width) // 2
         y = content_top
-        for start in range(0, len(tiles), columns):
-            row = list(tiles[start : start + columns])
-            row_heights = [self._card_height(tile) for tile in row]
-            row_height = max(row_heights, default=0)
-            row_width = (
-                len(row) * self.card_width + max(0, len(row) - 1) * self.CARD_GAP_X
-            )
-            row_x = content_x
-            if len(row) < columns:
-                full_width = columns * self.card_width + (columns - 1) * self.CARD_GAP_X
-                row_x = content_x + (full_width - row_width) // 2
+        for offset in range(0, len(tiles), columns):
+            row = list(tiles[offset : offset + columns])
+            row_height = max((tile.height for tile in row), default=0)
+            row_width = len(row) * card_width + max(0, len(row) - 1) * self.GRID_GAP_X
+            row_start_x = start_x + max(0, (content_width - row_width) // 2)
             for index, tile in enumerate(row):
-                x = row_x + index * (self.card_width + self.CARD_GAP_X)
-                placements.append((tile, x, y, self._card_height(tile)))
-            y += row_height + self.CARD_GAP_Y
-        content_height = max(0, y - content_top - self.CARD_GAP_Y)
+                x = row_start_x + index * (card_width + self.GRID_GAP_X)
+                placements.append((tile, x, y))
+            y += row_height + self.GRID_GAP_Y
+        content_height = max(0, y - content_top - self.GRID_GAP_Y)
         return placements, content_height
-
-    def _effective_columns(self, tile_count: int) -> int:
-        if tile_count <= 0:
-            return 1
-        return min(self.columns, tile_count)
-
-    def _should_use_grid_layout(self, tile_count: int, columns: int) -> bool:
-        if columns <= 1:
-            return True
-        return columns == 2 and tile_count <= 6
 
     def _draw_header(
         self,
         draw: ImageDraw.ImageDraw,
         *,
         title: str,
-        summary: str,
-        source_path: Path,
         tile_count: int,
-        width: int,
+        layout: HeaderLayout,
     ) -> None:
-        layout = self._measure_header_layout(summary=summary, title=title, width=width)
-        panel_left = layout.panel_left
-        panel_top = layout.panel_top
-        panel_right = layout.panel_right
-        panel_bottom = panel_top + layout.panel_height
-        panel_fill, _ = self._palette_for_source(source_path)
-        draw.rounded_rectangle(
-            (panel_left, panel_top, panel_right, panel_bottom),
-            radius=28,
-            fill=panel_fill,
-        )
-
         draw.text(
             (layout.left_x, layout.title_y),
             title,
@@ -515,36 +447,29 @@ class DemoCollectionRenderer:
             self._draw_inline_line(
                 draw,
                 x=layout.left_x,
-                y=layout.summary_y + index * self._line_height(self.summary_font, 4),
+                y=layout.summary_y
+                + index * self._line_height_for_font(self.summary_font),
                 line=line,
                 font=self.summary_font,
                 fill=self.theme.hint,
             )
-        draw.text(
-            (layout.right_x, layout.right_y),
-            f"共 {tile_count} 个功能卡片",
-            fill=self.theme.deep,
-            font=self.meta_font,
+        count_text = f"{tile_count:02d} 个功能卡片"
+        count_width = self._text_width(count_text, self.tile_command_font) + 40
+        chip_height = 48
+        chip_right = self.CANVAS_WIDTH - self.OUTER_MARGIN
+        chip_left = chip_right - count_width
+        chip_top = layout.title_y + 8
+        draw.rounded_rectangle(
+            (chip_left, chip_top, chip_right, chip_top + chip_height),
+            radius=chip_height // 2,
+            fill=self.theme.panel_soft_bg,
         )
-        for index, line in enumerate(layout.help_lines):
-            self._draw_inline_line(
-                draw,
-                x=layout.right_x,
-                y=layout.help_y + index * self._line_height(self.summary_font, 4),
-                line=line,
-                font=self.summary_font,
-                fill=self.theme.hint,
-            )
-
-    def _draw_tiles(
-        self,
-        image: Image.Image,
-        draw: ImageDraw.ImageDraw,
-        *,
-        placements: Sequence[tuple[PreparedCollectionTile, int, int, int]],
-    ) -> None:
-        for tile, x, y, height in placements:
-            self._draw_tile(image, draw, tile=tile, x=x, y=y, height=height)
+        draw.text(
+            (chip_left + 20, chip_top + 8),
+            count_text,
+            fill=self.theme.accent,
+            font=self.tile_command_font,
+        )
 
     def _draw_tile(
         self,
@@ -554,111 +479,113 @@ class DemoCollectionRenderer:
         tile: PreparedCollectionTile,
         x: int,
         y: int,
-        height: int,
+        width: int,
     ) -> None:
-        draw.rounded_rectangle(
-            (x + 4, y + 6, x + self.card_width + 4, y + height + 6),
-            radius=self.CARD_RADIUS,
-            fill=self.theme.panel_soft_bg,
-        )
-        draw.rounded_rectangle(
-            (x, y, x + self.card_width, y + height),
-            radius=self.CARD_RADIUS,
-            fill=self.theme.panel_bg,
-            outline=self.theme.line,
-            width=2,
-        )
-        _, title_band = self._palette_for_slug(tile.slug)
-        draw.rounded_rectangle(
-            (
-                x + 12,
-                y + 12,
-                x + self.card_width - 12,
-                y + 12 + self.CARD_BAND_HEIGHT,
-            ),
-            radius=18,
-            fill=title_band,
-        )
-        title_x = x + self.CARD_PADDING
-        title_y = y + self.CARD_PADDING
-        content_width = self.card_width - self.CARD_PADDING * 2
-
-        index_text = f"{tile.index:02d}"
-        title_text = f"{index_text}  {tile.title}"
-        slug_text = tile.slug
-        slug_width = min(
-            self.CARD_SLUG_MAX_WIDTH,
-            max(
-                self.CARD_SLUG_MIN_WIDTH,
-                self._text_width(slug_text, self.slug_font) + 26,
-            ),
-        )
-        slug_x = x + self.card_width - self.CARD_PADDING - slug_width
-        title_width_limit = max(180, slug_x - title_x - 18)
+        rect = (x, y, x + width, y + tile.height)
+        self._draw_shadowed_rect(image, rect=rect, radius=self.CARD_RADIUS)
+        title_x = x + self.CARD_PADDING_X
+        title_y = y + self.CARD_PADDING_Y
         draw.text(
-            (title_x, title_y + 7),
-            self._ellipsize(title_text, self.tile_index_font, title_width_limit),
-            fill=self.theme.deep,
+            (title_x, title_y + 4),
+            f"{tile.index:02d}",
+            fill=self.theme.panel_soft_bg,
             font=self.tile_index_font,
         )
-        draw.rounded_rectangle(
-            (slug_x, title_y, slug_x + slug_width, title_y + 30),
-            radius=14,
-            fill=self.theme.muted_light,
+        title_text_x = title_x + 88
+        for index, line in enumerate(tile.title_lines):
+            self._draw_inline_line(
+                draw,
+                x=title_text_x,
+                y=title_y + index * self._line_height_for_font(self.tile_title_font),
+                line=line,
+                font=self.tile_title_font,
+                fill=self.theme.deep,
+            )
+        title_height = len(tile.title_lines) * self._line_height_for_font(
+            self.tile_title_font
         )
-        draw.text(
-            (slug_x + 13, title_y + 5),
-            self._ellipsize(slug_text, self.slug_font, slug_width - 26),
-            fill=self.theme.strong,
-            font=self.slug_font,
-        )
-
-        demo_x = x + self.CARD_PADDING
-        demo_y = y + self.CARD_PADDING + self.CARD_BAND_HEIGHT + self.CARD_DEMO_TOP_GAP
-        image.paste(tile.image, (demo_x, demo_y))
-
-        command_lines = self._tile_command_lines(tile, content_width)
-        command_top = demo_y + tile.image.height + self.CARD_DEMO_BOTTOM_GAP
-        self._draw_info_block(
-            draw,
-            x=title_x,
-            y=command_top,
-            width=content_width,
-            lines=command_lines,
-            font=self.tile_body_font,
-            fill=self.theme.inline_code_text,
-            background=self.theme.inline_code_bg,
-        )
-
-        command_height = (
-            len(command_lines) * self._line_height(self.tile_body_font, 8) + 22
-        )
-        summary_lines = self._tile_summary_lines(tile, content_width)
-        summary_top = command_top + command_height + 18
-        for index, line in enumerate(summary_lines):
+        summary_y = title_y + title_height + self.CARD_INNER_GAP
+        for index, line in enumerate(tile.summary_lines):
             self._draw_inline_line(
                 draw,
                 x=title_x,
-                y=summary_top + index * self._line_height(self.tile_meta_font, 6),
+                y=summary_y
+                + index * self._line_height_for_font(self.tile_summary_font),
                 line=line,
-                font=self.tile_meta_font,
+                font=self.tile_summary_font,
                 fill=self.theme.hint,
             )
+        summary_height = len(tile.summary_lines) * self._line_height_for_font(
+            self.tile_summary_font
+        )
+        command_y = summary_y + summary_height + self.CARD_INNER_GAP
+        command_height = (
+            len(tile.command_lines) * self._line_height_for_font(self.tile_command_font)
+            + self.CARD_COMMAND_PADDING_Y * 2
+        )
+        command_rect = (
+            title_x,
+            command_y,
+            x + width - self.CARD_PADDING_X,
+            command_y + command_height,
+        )
+        draw.rounded_rectangle(
+            command_rect,
+            radius=20,
+            fill=self.theme.panel_soft_bg,
+        )
+        for index, line in enumerate(tile.command_lines):
+            self._draw_inline_line(
+                draw,
+                x=command_rect[0] + self.CARD_COMMAND_PADDING_X,
+                y=command_rect[1]
+                + self.CARD_COMMAND_PADDING_Y
+                + index * self._line_height_for_font(self.tile_command_font),
+                line=line,
+                font=self.tile_command_font,
+                fill=self.theme.accent,
+                code_background=self.theme.panel_soft_bg,
+                code_fill=self.theme.accent,
+            )
 
-    def _ellipsize(
+    def _draw_shadowed_rect(
         self,
-        text: str,
-        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
-        max_width: int,
-    ) -> str:
-        if self._text_width(text, font) <= max_width:
-            return text
-        suffix = "..."
-        suffix_width = self._text_width(suffix, font)
-        clipped = text
-        while clipped and self._text_width(clipped, font) + suffix_width > max_width:
-            clipped = clipped[:-1]
-        return f"{clipped}{suffix}" if clipped else suffix
+        image: Image.Image,
+        *,
+        rect: tuple[int, int, int, int],
+        radius: int,
+    ) -> None:
+        shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        shadow_draw = ImageDraw.Draw(shadow)
+        shadow_rect = (
+            rect[0],
+            rect[1] + self.theme.instruction_shadow_offset_y,
+            rect[2],
+            rect[3] + self.theme.instruction_shadow_offset_y,
+        )
+        shadow_draw.rounded_rectangle(
+            shadow_rect,
+            radius=radius,
+            fill=self.theme.card_shadow,
+        )
+        shadow = shadow.filter(
+            ImageFilter.GaussianBlur(self.theme.instruction_shadow_blur)
+        )
+        image.alpha_composite(shadow)
+        ImageDraw.Draw(image).rounded_rectangle(
+            rect,
+            radius=radius,
+            fill=self.theme.panel_bg,
+        )
+
+    def _card_width(self, columns: int) -> int:
+        total_gap = max(0, columns - 1) * self.GRID_GAP_X
+        return (self.CANVAS_WIDTH - self.OUTER_MARGIN * 2 - total_gap) // max(
+            columns, 1
+        )
+
+    def _effective_columns(self, tile_count: int) -> int:
+        return max(1, min(self.columns, tile_count or 1))
 
     def _text_width(
         self,
@@ -671,6 +598,13 @@ class DemoCollectionRenderer:
             font=font,
         )
         return int(bbox[2] - bbox[0])
+
+    def _line_height_for_font(
+        self,
+        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+    ) -> int:
+        size = int(getattr(font, "size", 16))
+        return ((max(ceil(size * 1.4), size + 8) + 7) // 8) * 8
 
     def _wrap_inline_text(
         self,
@@ -708,10 +642,7 @@ class DemoCollectionRenderer:
         suffix = "..."
         while (
             clipped[-1]
-            and self._inline_line_width(
-                [*list(clipped[-1]), (suffix, False)],
-                font,
-            )
+            and self._inline_line_width([*list(clipped[-1]), (suffix, False)], font)
             > max_width
         ):
             clipped[-1] = clipped[-1][:-1]
@@ -741,30 +672,6 @@ class DemoCollectionRenderer:
                 line.pop(0)
         return [tuple(line) for line in normalized if line]
 
-    def _tile_command_lines(
-        self,
-        tile: PreparedCollectionTile,
-        content_width: int,
-    ) -> list[tuple]:
-        return self._wrap_inline_text(
-            tile.trigger.strip() or f"#help {tile.slug}",
-            self.tile_body_font,
-            content_width,
-            max_lines=None,
-        )
-
-    def _tile_summary_lines(
-        self,
-        tile: PreparedCollectionTile,
-        content_width: int,
-    ) -> list[tuple]:
-        return self._wrap_inline_text(
-            tile.summary.strip() or "查看该子功能的用途、常见用法和关键边界。",
-            self.tile_meta_font,
-            content_width,
-            max_lines=None,
-        )
-
     def _append_plain_span_wrapped(
         self,
         current: list[tuple[str, bool]],
@@ -773,8 +680,7 @@ class DemoCollectionRenderer:
         max_width: int,
     ) -> tuple[list[tuple[str, bool]], list[tuple]]:
         flushed: list[tuple] = []
-        segments = self._split_wrappable_segments(text)
-        for segment in segments:
+        for segment in self._split_wrappable_segments(text):
             candidate = [*current, (segment, False)]
             if self._inline_line_width(candidate, font) <= max_width:
                 current = candidate
@@ -809,8 +715,7 @@ class DemoCollectionRenderer:
             if current:
                 flushed.append(tuple(current))
             return [(text, True)], flushed
-        segments = self._split_wrappable_segments(text)
-        for segment in segments:
+        for segment in self._split_wrappable_segments(text):
             candidate = [*current, (segment, True)]
             if self._inline_line_width(candidate, font) <= max_width:
                 current = candidate
@@ -824,10 +729,7 @@ class DemoCollectionRenderer:
             for piece in self._split_oversized_code_segment(segment, font, max_width):
                 if (
                     current
-                    and self._inline_line_width(
-                        [*current, (piece, True)],
-                        font,
-                    )
+                    and self._inline_line_width([*current, (piece, True)], font)
                     > max_width
                 ):
                     flushed.append(tuple(current))
@@ -903,6 +805,30 @@ class DemoCollectionRenderer:
             segments.append(part)
         return tuple(segments)
 
+    def _append_inline_char(
+        self,
+        current: list[tuple[str, bool]],
+        char: str,
+        *,
+        code: bool,
+    ) -> list[tuple[str, bool]]:
+        if current and current[-1][1] == code:
+            current[-1] = (current[-1][0] + char, code)
+            return current
+        return [*current, (char, code)]
+
+    def _inline_line_width(
+        self,
+        line: Sequence[tuple[str, bool]],
+        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+    ) -> int:
+        width = 0
+        for text, code in line:
+            width += self._text_width(text, font)
+            if code:
+                width += self.theme.inline_code_pad_x * 2
+        return width
+
     def _draw_inline_line(
         self,
         draw: ImageDraw.ImageDraw,
@@ -914,13 +840,11 @@ class DemoCollectionRenderer:
         fill: str,
         code_background: str | None = None,
         code_fill: str | None = None,
-        code_outline: str | None = None,
     ) -> None:
         cursor_x = x
-        line_height = self._text_height(font)
         chip_background = code_background or self.theme.inline_code_bg
         chip_fill = code_fill or self.theme.inline_code_text
-        chip_outline = code_outline if code_outline is not None else None
+        chip_height = self._line_height_for_font(font)
         for text, code in line:
             if not text:
                 continue
@@ -929,19 +853,11 @@ class DemoCollectionRenderer:
                 cursor_x += self._text_width(text, font)
                 continue
             text_width = self._text_width(text, font)
-            chip_height = line_height + self.theme.inline_code_pad_y * 2 - 2
-            chip_y = y - 1
             chip_width = text_width + self.theme.inline_code_pad_x * 2
             draw.rounded_rectangle(
-                (
-                    cursor_x,
-                    chip_y,
-                    cursor_x + chip_width,
-                    chip_y + chip_height,
-                ),
+                (cursor_x, y - 2, cursor_x + chip_width, y - 2 + chip_height),
                 radius=self.theme.inline_code_radius,
                 fill=chip_background,
-                outline=chip_outline,
             )
             draw.text(
                 (cursor_x + self.theme.inline_code_pad_x, y),
@@ -951,177 +867,14 @@ class DemoCollectionRenderer:
             )
             cursor_x += chip_width
 
-    def _draw_info_block(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        x: int,
-        y: int,
-        width: int,
-        lines: Sequence[tuple[str, bool] | tuple],
-        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
-        fill: str,
-        background: str,
-    ) -> None:
-        line_height = self._line_height(font, 8)
-        height = len(lines) * line_height + 22
-        draw.rounded_rectangle(
-            (x, y, x + width, y + height),
-            radius=18,
-            fill=background,
+    def _rgba(self, color: str, alpha: int) -> tuple[int, int, int, int]:
+        value = color.lstrip("#")
+        return (
+            int(value[0:2], 16),
+            int(value[2:4], 16),
+            int(value[4:6], 16),
+            alpha,
         )
-        for index, line in enumerate(lines):
-            self._draw_inline_line(
-                draw,
-                x=x + 16,
-                y=y + 11 + index * line_height,
-                line=line,
-                font=font,
-                fill=fill,
-                code_background="#FFFFFF",
-                code_fill=self.theme.strong,
-                code_outline=self.theme.accent,
-            )
-
-    def _header_height(self, *, summary: str, title: str, width: int) -> int:
-        return self._measure_header_layout(
-            summary=summary,
-            title=title,
-            width=width,
-        ).panel_height
-
-    def _measure_header_layout(
-        self,
-        *,
-        summary: str,
-        title: str,
-        width: int,
-    ) -> HeaderLayout:
-        panel_left = self.OUTER_MARGIN + self.HEADER_SIDE_PAD
-        panel_top = self.HEADER_TOP
-        panel_right = width - self.OUTER_MARGIN - self.HEADER_SIDE_PAD
-        panel_width = panel_right - panel_left
-        right_block_width = min(
-            self.HEADER_RIGHT_BLOCK_WIDTH,
-            max(340, panel_width // 4),
-        )
-        left_x = panel_left + 44
-        right_x = panel_right - right_block_width - self.HEADER_RIGHT_GAP
-        left_width = max(260, right_x - left_x - self.HEADER_LEFT_GAP)
-        summary_lines = self._wrap_inline_text(
-            summary.strip() or "已按子功能拆分生成合集预览。",
-            self.summary_font,
-            left_width,
-            max_lines=6,
-        )
-        help_lines = self._wrap_inline_text(
-            f"使用 #help {title} <子功能> 查看对应说明",
-            self.summary_font,
-            right_block_width,
-            max_lines=4,
-        )
-        title_y = panel_top + 24
-        summary_y = title_y + 48
-        right_y = panel_top + 28
-        help_y = right_y + 34
-        summary_step = self._line_height(self.summary_font, 4)
-        help_step = self._line_height(self.summary_font, 4)
-        summary_bottom = summary_y + len(summary_lines) * summary_step
-        help_bottom = help_y + len(help_lines) * help_step
-        title_bottom = title_y + self._text_height(self.title_font)
-        meta_bottom = right_y + self._text_height(self.meta_font)
-        panel_height = max(
-            self.HEADER_PANEL_MIN_HEIGHT,
-            max(
-                title_bottom,
-                meta_bottom,
-                summary_bottom,
-                help_bottom,
-            )
-            - panel_top
-            + self.HEADER_BOTTOM_PAD
-            + self.HEADER_EXTRA_COMPENSATION,
-        )
-        return HeaderLayout(
-            panel_left=panel_left,
-            panel_top=panel_top,
-            panel_right=panel_right,
-            panel_height=panel_height,
-            left_x=left_x,
-            right_x=right_x,
-            left_width=left_width,
-            right_width=right_block_width,
-            title_y=title_y,
-            summary_y=summary_y,
-            right_y=right_y,
-            help_y=help_y,
-            summary_lines=tuple(summary_lines),
-            help_lines=tuple(help_lines),
-        )
-
-    def _inline_line_width(
-        self,
-        line: Sequence[tuple[str, bool]],
-        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
-    ) -> int:
-        width = 0
-        for text, code in line:
-            if not text:
-                continue
-            width += self._text_width(text, font)
-            if code:
-                width += self.theme.inline_code_pad_x * 2
-        return width
-
-    def _append_inline_char(
-        self,
-        line: Sequence[tuple[str, bool]],
-        char: str,
-        *,
-        code: bool,
-    ) -> list[tuple[str, bool]]:
-        updated = list(line)
-        if updated and updated[-1][1] is code:
-            prev_text, _ = updated[-1]
-            updated[-1] = (prev_text + char, code)
-        else:
-            updated.append((char, code))
-        return updated
-
-    def _text_height(
-        self,
-        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
-    ) -> int:
-        bbox = ImageDraw.Draw(Image.new("RGB", (1, 1))).textbbox(
-            (0, 0),
-            "Ag",
-            font=font,
-        )
-        return int(bbox[3] - bbox[1])
-
-    def _line_height(
-        self,
-        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
-        extra: int,
-    ) -> int:
-        return self._text_height(font) + extra
-
-    def _palette_for_source(self, source_path: Path) -> tuple[str, str]:
-        path_text = source_path.as_posix()
-        if "/wordbank/docs/approval/" in path_text:
-            return PALETTE_ACCENTS["wordbank-approval"]
-        for key in ("wordbank", "study"):
-            if key in path_text:
-                return PALETTE_ACCENTS[key]
-        return PALETTE_ACCENTS["default"]
-
-    def _palette_for_slug(self, slug: str) -> tuple[str, str]:
-        lowered = slug.lower()
-        if lowered.startswith("add") or lowered in {"shortcut", "guided-flow"}:
-            return PALETTE_ACCENTS["study"]
-        if "approve" in lowered or "reject" in lowered or "pending" in lowered:
-            return PALETTE_ACCENTS["wordbank-approval"]
-        return PALETTE_ACCENTS["wordbank"]
 
 
 def generate(*, workers: int | None = None) -> int:
@@ -1170,6 +923,7 @@ def validate() -> int:
             trigger=TriggerType.COMMAND,
             permission=Permission.NORMAL,
             docs_meta=docs_meta,
+            impression_color=bundle.impression_color,
         )
         nodes.append(node)
         prior = slugs_seen.get(node.slug)
@@ -1219,7 +973,8 @@ def validate() -> int:
                     f"{path.relative_to(ROOT)}: feature {feature.slug} {message}"
                     for message in layout_errors
                 )
-        if any(feature.demo_turns for feature in bundle.index):
+
+        if bundle.index:
             collection_path = path.parent / "demos" / collection_demo_filename(path)
             if not collection_path.exists():
                 errors.append(
@@ -1271,15 +1026,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=2,
         help="number of columns in each collection image (default: %(default)s)",
     )
-    build_parser.add_argument(
-        "--thumb-width",
-        type=positive_int,
-        default=700,
-        help="thumbnail width for each feature demo (default: %(default)s)",
-    )
     compose_parser = subparsers.add_parser(
         "compose",
-        help="compose per-README collection PNG assets from generated demo files",
+        help="compose per-README collection PNG assets from README feature data",
     )
     compose_parser.add_argument(
         "-j",
@@ -1296,12 +1045,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=positive_int,
         default=2,
         help="number of columns in each collection image (default: %(default)s)",
-    )
-    compose_parser.add_argument(
-        "--thumb-width",
-        type=positive_int,
-        default=700,
-        help="thumbnail width for each feature demo (default: %(default)s)",
     )
     generate_parser = subparsers.add_parser(
         "generate",
@@ -1328,13 +1071,11 @@ def main() -> int:
             return build(
                 workers=args.workers,
                 columns=args.columns,
-                thumb_width=args.thumb_width,
             )
         case "compose":
             return compose(
                 workers=args.workers,
                 columns=args.columns,
-                thumb_width=args.thumb_width,
             )
         case "generate":
             return generate(workers=args.workers)

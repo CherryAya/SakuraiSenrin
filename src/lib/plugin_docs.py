@@ -24,7 +24,12 @@ from pil_utils.text2image import Text2Image
 
 from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
-from src.lib.demo_theme import BASE_THEME
+from src.lib.demo_theme import (
+    BASE_THEME,
+    DEFAULT_IMPRESSION_COLOR,
+    build_demo_theme,
+    normalize_hex_color,
+)
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -134,6 +139,7 @@ class PluginDocBundle:
     permission: str
     author: str
     version: str
+    impression_color: str
     index: tuple[FeatureDoc, ...]
     source_path: Path
 
@@ -502,6 +508,7 @@ def load_doc_node(
     default_description: str,
     trigger: TriggerType,
     permission: Permission,
+    impression_color: str | None = None,
     docs_meta: DocsMeta | None = None,
     module_name: str = "",
     plugin_name: str = "",
@@ -519,6 +526,7 @@ def load_doc_node(
         default_description=default_description,
         trigger=trigger,
         permission=permission,
+        impression_color=impression_color,
     )
     slug = meta["tree"]["slug"]
     return DocNode(
@@ -677,6 +685,7 @@ def load_plugin_doc_bundle(
     default_description: str,
     trigger: TriggerType,
     permission: Permission,
+    impression_color: str | None = None,
 ) -> PluginDocBundle:
     source_path = Path(source).resolve()
     return _load_plugin_doc_bundle_cached(
@@ -685,6 +694,9 @@ def load_plugin_doc_bundle(
         default_description,
         trigger,
         permission,
+        normalize_hex_color(impression_color)
+        if impression_color is not None
+        else _resolve_doc_impression_color(source_path),
     )
 
 
@@ -695,6 +707,7 @@ def _load_plugin_doc_bundle_cached(
     default_description: str,
     trigger: TriggerType,
     permission: Permission,
+    impression_color: str,
 ) -> PluginDocBundle:
     raw_text = source_path.read_text(encoding="utf-8")
     tokens = tuple(_markdown_parser().parse(raw_text))
@@ -724,6 +737,7 @@ def _load_plugin_doc_bundle_cached(
         permission=meta.get("权限", permission.label),
         author=author,
         version=version,
+        impression_color=impression_color,
         index=features,
         source_path=source_path,
     )
@@ -940,7 +954,7 @@ def _permission_label(permission: Permission) -> str:
 
 
 def render_demo_png(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes:
-    return DemoImageRenderer().render(
+    return DemoImageRenderer(impression_color=bundle.impression_color).render(
         plugin_title=bundle.title,
         feature_title=feature.title,
         feature_summary=feature.summary,
@@ -999,7 +1013,7 @@ def _slugify_doc_path_part(value: str) -> str:
 
 
 def audit_demo_layout(bundle: PluginDocBundle, feature: FeatureDoc) -> tuple[str, ...]:
-    return DemoImageRenderer().audit(
+    return DemoImageRenderer(impression_color=bundle.impression_color).audit(
         plugin_title=bundle.title,
         feature_title=feature.title,
         feature_summary=feature.summary,
@@ -1456,6 +1470,18 @@ def _resolve_doc_signature(source_path: Path) -> tuple[str, str]:
     author = _extract_metadata_field(raw_text, "author") or "Unknown"
     version = _extract_metadata_field(raw_text, "version") or "0.0.0"
     return author, version
+
+
+def _resolve_doc_impression_color(source_path: Path) -> str:
+    module_path = _resolve_doc_owner_module_path(source_path)
+    if module_path is None or not module_path.exists():
+        return DEFAULT_IMPRESSION_COLOR
+
+    raw_text = module_path.read_text(encoding="utf-8")
+    return normalize_hex_color(
+        _extract_metadata_field(raw_text, "impression_color"),
+        fallback=DEFAULT_IMPRESSION_COLOR,
+    )
 
 
 def _resolve_doc_owner_module_path(source_path: Path) -> Path | None:
@@ -2754,8 +2780,9 @@ class DemoImageRenderer:
     OUTER_MARGIN = BASE_THEME.outer_margin
     FONT_FAMILIES: ClassVar[list[str]] = [MAPLE_FONT_NAME]
 
-    def __init__(self) -> None:
-        self.theme = BASE_THEME
+    def __init__(self, *, impression_color: str | None = None) -> None:
+        self.impression_color = normalize_hex_color(impression_color)
+        self.theme = build_demo_theme(self.impression_color)
         try:
             self.kicker_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
             self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)
@@ -3005,7 +3032,11 @@ class DemoImageRenderer:
             side,
             plugin_y,
             side + self._max_inline_line_width(plugin_lines, self.kicker_font),
-            plugin_y + self._line_block_height(plugin_lines, 32),
+            plugin_y
+            + self._line_block_height(
+                plugin_lines,
+                self._line_height_for_font(self.kicker_font),
+            ),
         )
 
         title_lines = tuple(
@@ -3020,7 +3051,11 @@ class DemoImageRenderer:
             side,
             title_y,
             side + self._max_inline_line_width(title_lines, self.title_font),
-            title_y + self._line_block_height(title_lines, 76),
+            title_y
+            + self._line_block_height(
+                title_lines,
+                self._line_height_for_font(self.title_font),
+            ),
         )
 
         summary_source = (
@@ -3043,7 +3078,10 @@ class DemoImageRenderer:
             summary_y
             + self._line_block_height(
                 summary_lines,
-                self.theme.hero_summary_line_height,
+                self._line_height_for_font(
+                    self.summary_font,
+                    minimum=self.theme.hero_summary_line_height,
+                ),
             ),
         )
 
@@ -3089,7 +3127,7 @@ class DemoImageRenderer:
         )
         trigger_height = self.theme.trigger_padding_y * 2 + self._line_block_height(
             trigger_lines,
-            44,
+            self._line_height_for_font(self.body_font),
         )
         trigger_rect = (
             content_left,
@@ -3112,7 +3150,11 @@ class DemoImageRenderer:
             instruction_y,
             content_left
             + self._max_inline_line_width(overview_lines, self.instruction_font),
-            instruction_y + self._line_block_height(overview_lines, 40),
+            instruction_y
+            + self._line_block_height(
+                overview_lines,
+                self._line_height_for_font(self.instruction_font),
+            ),
         )
         instruction_content_rects.append(overview_rect)
         instruction_y = overview_rect[3]
@@ -3131,7 +3173,10 @@ class DemoImageRenderer:
                 content_left + self._max_inline_line_width(flow_lines, self.note_font),
                 instruction_y
                 + self.theme.note_gap
-                + self._line_block_height(flow_lines, 34),
+                + self._line_block_height(
+                    flow_lines,
+                    self._line_height_for_font(self.note_font),
+                ),
             )
             instruction_content_rects.append(flow_rect)
             instruction_y = flow_rect[3]
@@ -3241,11 +3286,11 @@ class DemoImageRenderer:
         mesh_draw = ImageDraw.Draw(mesh)
         mesh_draw.ellipse(
             (width - 520, -180, width + 180, 520),
-            fill=self._rgba(self.theme.mesh_pink, 235),
+            fill=self._rgba(self.theme.mesh_pink, 190),
         )
         mesh_draw.ellipse(
             (-260, height - 540, 420, height + 140),
-            fill=self._rgba(self.theme.mesh_blue, 235),
+            fill=self._rgba(self.theme.mesh_blue, 190),
         )
         mesh = mesh.filter(ImageFilter.GaussianBlur(220))
         image.alpha_composite(mesh)
@@ -3271,7 +3316,7 @@ class DemoImageRenderer:
             lines=layout.plugin_lines,
             font=self.kicker_font,
             fill=self.theme.strong,
-            line_height=32,
+            line_height=self._line_height_for_font(self.kicker_font),
         )
         self._draw_multiline_text(
             draw,
@@ -3280,7 +3325,7 @@ class DemoImageRenderer:
             lines=layout.title_lines,
             font=self.title_font,
             fill="#FFFFFF",
-            line_height=76,
+            line_height=self._line_height_for_font(self.title_font),
         )
         self._draw_multiline_text(
             draw,
@@ -3289,7 +3334,7 @@ class DemoImageRenderer:
             lines=layout.title_lines,
             font=self.title_font,
             fill=self.theme.hero_title,
-            line_height=76,
+            line_height=self._line_height_for_font(self.title_font),
         )
         self._draw_multiline_text(
             draw,
@@ -3298,7 +3343,10 @@ class DemoImageRenderer:
             lines=layout.summary_lines,
             font=self.summary_font,
             fill=self.theme.hero_summary,
-            line_height=self.theme.hero_summary_line_height,
+            line_height=self._line_height_for_font(
+                self.summary_font,
+                minimum=self.theme.hero_summary_line_height,
+            ),
         )
         self._draw_standee(image, draw, layout.standee_rect)
 
@@ -3329,7 +3377,7 @@ class DemoImageRenderer:
             lines=layout.trigger_lines,
             font=self.body_font,
             fill=self.theme.terminal_text,
-            line_height=44,
+            line_height=self._line_height_for_font(self.body_font),
             render_code_chip=False,
         )
         self._draw_multiline_text(
@@ -3339,7 +3387,7 @@ class DemoImageRenderer:
             lines=layout.overview_lines,
             font=self.instruction_font,
             fill=self.theme.deep,
-            line_height=40,
+            line_height=self._line_height_for_font(self.instruction_font),
             render_code_chip=False,
         )
         for item in layout.note_items:
@@ -3425,7 +3473,7 @@ class DemoImageRenderer:
                 lines=spec.lines,
                 font=self.system_font,
                 fill=self.theme.system_text,
-                line_height=32,
+                line_height=self._line_height_for_font(self.system_font),
                 align="center",
                 area_width=placement.text_rect[2] - placement.text_rect[0],
                 render_code_chip=False,
@@ -3472,7 +3520,10 @@ class DemoImageRenderer:
             lines=spec.lines,
             font=self.body_font,
             fill=bubble_fill,
-            line_height=self.theme.bubble_line_height,
+            line_height=self._line_height_for_font(
+                self.body_font,
+                minimum=self.theme.bubble_line_height,
+            ),
         )
 
     def _draw_standee(
@@ -3528,7 +3579,7 @@ class DemoImageRenderer:
                 fill=self.theme.indigo,
             )
             return
-        draw.ellipse(rect, fill="#FFFFFF", outline="#D8E3FF", width=2)
+        draw.ellipse(rect, fill="#FFFFFF", outline=self.theme.line, width=2)
         mask = Image.new("L", self.senrin_avatar.size, 0)
         ImageDraw.Draw(mask).ellipse((0, 0, mask.width - 1, mask.height - 1), fill=255)
         image.paste(self.senrin_avatar, (rect[0], rect[1]), mask)
@@ -3636,7 +3687,7 @@ class DemoImageRenderer:
                     font=self.note_font,
                 )
             )
-            line_height = 34
+            line_height = self._line_height_for_font(self.note_font)
             height = self._line_block_height(lines, line_height)
             rect = (x, cursor_y, x + width, cursor_y + height)
             items.append(
@@ -3725,7 +3776,7 @@ class DemoImageRenderer:
                     font=self.system_font,
                 )
             )
-            line_height = 32
+            line_height = self._line_height_for_font(self.system_font)
             return _ShowcaseTurnSpec(
                 turn=turn,
                 lines=lines,
@@ -3745,7 +3796,10 @@ class DemoImageRenderer:
                 font=self.body_font,
             )
         )
-        line_height = self.theme.bubble_line_height
+        line_height = self._line_height_for_font(
+            self.body_font,
+            minimum=self.theme.bubble_line_height,
+        )
         text_height = self._line_block_height(lines, line_height)
         bubble_height = text_height + self.theme.bubble_padding_y * 2
         bubble_width = (
@@ -4200,6 +4254,10 @@ class DemoImageRenderer:
 
     def _font_size(self, font: Any) -> int:
         return int(getattr(font, "size", 16))
+
+    def _line_height_for_font(self, font: Any, *, minimum: int = 0) -> int:
+        natural = ceil(self._font_size(font) * 1.4)
+        return max(minimum, ceil(natural / 8) * 8)
 
     def _contains_emoji(self, text: str) -> bool:
         return any(

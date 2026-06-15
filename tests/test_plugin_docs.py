@@ -8,7 +8,12 @@ from PIL import Image
 import scripts.build_docs as plugin_docs_script
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.demo_theme import BASE_THEME, PALETTE_ACCENTS
+from src.lib.demo_theme import (
+    BASE_THEME,
+    DEFAULT_IMPRESSION_COLOR,
+    build_demo_theme,
+    normalize_hex_color,
+)
 from src.lib.i18n.runtime import tr
 import src.lib.plugin_docs as plugin_docs_module
 from src.lib.plugin_docs import (
@@ -991,9 +996,6 @@ BOT: Beta 完成
 """.strip(),
         encoding="utf-8",
     )
-    Image.new("RGB", (320, 240), "#FFF0F5").save(demos_dir / "sample-alpha.png")
-    Image.new("RGB", (320, 180), "#EEF4FF").save(demos_dir / "sample-beta.png")
-
     monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
     monkeypatch.setattr(
         plugin_docs_script,
@@ -1001,15 +1003,15 @@ BOT: Beta 完成
         (tmp_path / "src" / "plugins",),
     )
 
-    assert plugin_docs_script.compose(workers=2, columns=2, thumb_width=240) == 0
+    assert plugin_docs_script.compose(workers=2, columns=2) == 0
     collection_path = demos_dir / "sample-collection.png"
     assert collection_path.is_file()
     with Image.open(collection_path) as collection:
-        assert collection.width == 1920
+        assert collection.width == 1280
         assert collection.height > 300
 
 
-def test_collection_tile_keeps_demo_preview_and_metadata(
+def test_collection_tile_is_text_only_and_keeps_metadata(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
@@ -1048,8 +1050,6 @@ BOT: Alpha 完成
 """.strip(),
         encoding="utf-8",
     )
-    Image.new("RGB", (320, 240), "#FFF0F5").save(demos_dir / "sample-alpha.png")
-
     monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
     monkeypatch.setattr(
         plugin_docs_script,
@@ -1057,45 +1057,22 @@ BOT: Alpha 完成
         (tmp_path / "src" / "plugins",),
     )
 
-    _, jobs = plugin_docs_script.collect_collection_jobs(columns=2, thumb_width=240)
+    _, jobs = plugin_docs_script.collect_collection_jobs(columns=2)
     tile = jobs[0].tiles[0]
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=240)
-    prepared = plugin_docs_script.PreparedCollectionTile(
-        index=tile.index,
-        title=tile.title,
-        slug=tile.slug,
-        summary=tile.summary,
-        trigger=tile.trigger,
-        image=renderer._load_thumbnail(tile.source),  # pyright: ignore[reportPrivateUsage]
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
+    prepared = renderer._prepare_tile(  # pyright: ignore[reportPrivateUsage]
+        tile,
+        renderer._card_width(2),  # pyright: ignore[reportPrivateUsage]
     )
 
     assert prepared.index == 1
     assert prepared.trigger == "#alpha run"
-    assert prepared.image.width == 240
-
-
-def test_collection_thumbnail_crops_to_conversation_panel() -> None:
-    source = Path("src/plugins/study/docs/demos/study-shortcut.png")
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=240)
-
-    with Image.open(source) as original:
-        original_size = original.size
-    thumb = renderer._load_thumbnail(source)  # pyright: ignore[reportPrivateUsage]
-
-    full_scaled_height = round(original_size[1] * 240 / original_size[0])
-    assert thumb.width == 240
-    assert thumb.height < full_scaled_height
-
-
-def test_collection_command_block_uses_distinct_code_chip_palette() -> None:
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=240)
-
-    assert renderer.CARD_COMMAND_CODE_BG != renderer.CARD_COMMAND_BG
-    assert renderer.CARD_COMMAND_CODE_BORDER is not None
+    assert prepared.command_lines
+    assert prepared.height > 0
 
 
 def test_collection_header_layout_stays_within_reasonable_height() -> None:
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=860)
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
 
     layout = renderer._measure_header_layout(  # pyright: ignore[reportPrivateUsage]
         title="学习模块",
@@ -1104,31 +1081,30 @@ def test_collection_header_layout_stays_within_reasonable_height() -> None:
             "`wordbank`。查询、审核、删除、投票删除、恢复、回复式词条管理和"
             "被动匹配都由 `wordbank` 负责。"
         ),
-        width=1978,
     )
 
-    assert layout.panel_height < 340
-    assert layout.right_x + layout.right_width <= layout.panel_right - 8
+    assert layout.height < 360
+    assert layout.left_x == renderer.OUTER_MARGIN
 
 
 def test_collection_renderer_keeps_requested_two_column_layout() -> None:
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=860)
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
 
     assert renderer._effective_columns(14) == 2  # pyright: ignore[reportPrivateUsage]
 
 
 def test_collection_wraps_long_code_command_spans_without_overflow() -> None:
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=860)
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
 
     lines = renderer._wrap_inline_text(  # pyright: ignore[reportPrivateUsage]
         "`wordbank add 触发词 => 响应词 --mode contains|fullmatch|prefix`",
-        renderer.tile_body_font,  # pyright: ignore[reportPrivateUsage]
+        renderer.tile_command_font,  # pyright: ignore[reportPrivateUsage]
         320,
         max_lines=None,
     )
 
     assert all(
-        renderer._inline_line_width(line, renderer.tile_body_font) <= 320  # pyright: ignore[reportPrivateUsage]
+        renderer._inline_line_width(line, renderer.tile_command_font) <= 320  # pyright: ignore[reportPrivateUsage]
         for line in lines
     )
     assert all(
@@ -1137,20 +1113,20 @@ def test_collection_wraps_long_code_command_spans_without_overflow() -> None:
 
 
 def test_collection_wraps_long_scope_code_command_spans_without_overflow() -> None:
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=860)
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
 
     lines = renderer._wrap_inline_text(  # pyright: ignore[reportPrivateUsage]
         (
             "`wordbank add 触发词 => 响应词 --scope "
             "current_group|all_groups|self|private_only`"
         ),
-        renderer.tile_body_font,  # pyright: ignore[reportPrivateUsage]
+        renderer.tile_command_font,  # pyright: ignore[reportPrivateUsage]
         320,
         max_lines=None,
     )
 
     assert all(
-        renderer._inline_line_width(line, renderer.tile_body_font) <= 320  # pyright: ignore[reportPrivateUsage]
+        renderer._inline_line_width(line, renderer.tile_command_font) <= 320  # pyright: ignore[reportPrivateUsage]
         for line in lines
     )
     assert all(
@@ -1158,11 +1134,55 @@ def test_collection_wraps_long_scope_code_command_spans_without_overflow() -> No
     )
 
 
-def test_collection_slug_chip_allows_wider_display_before_ellipsis() -> None:
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=860)
+def test_collection_jobs_do_not_require_demo_png_files(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    docs_root = tmp_path / "src" / "plugins" / "sample" / "docs"
+    docs_root.mkdir(parents=True)
+    (docs_root / "README.MD").write_text(
+        """
+# 测试插件
 
-    assert renderer.CARD_SLUG_MIN_WIDTH == 68
-    assert renderer.CARD_SLUG_MAX_WIDTH == 240
+## 概览
+用于测试合集任务。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一条说明。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一条说明。
+- 指令: `#alpha run`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha run
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+
+    _, jobs = plugin_docs_script.collect_collection_jobs(columns=2)
+
+    assert len(jobs) == 1
+    assert jobs[0].tiles[0].trigger == "#alpha run"
 
 
 def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
@@ -1178,7 +1198,6 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
         *,
         workers: int | None = None,
         columns: int = 2,
-        thumb_width: int = 620,
     ) -> int:
         calls.append(
             (
@@ -1186,7 +1205,6 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
                 {
                     "workers": workers,
                     "columns": columns,
-                    "thumb_width": thumb_width,
                 },
             )
         )
@@ -1200,10 +1218,10 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
     monkeypatch.setattr(plugin_docs_script, "compose", fake_compose)
     monkeypatch.setattr(plugin_docs_script, "validate", fake_validate)
 
-    assert plugin_docs_script.build(workers=3, columns=4, thumb_width=360) == 0
+    assert plugin_docs_script.build(workers=3, columns=4) == 0
     assert calls == [
         ("generate", {"workers": 3}),
-        ("compose", {"workers": 3, "columns": 4, "thumb_width": 360}),
+        ("compose", {"workers": 3, "columns": 4}),
         ("validate", {}),
     ]
 
@@ -1235,7 +1253,6 @@ def test_audit_demo_layout_accepts_all_project_readmes() -> None:
 
 
 def test_demo_theme_has_required_tokens() -> None:
-    """验证主题包含所有规范要求的 tokens"""
     assert BASE_THEME.page_bg
     assert BASE_THEME.panel_bg
     assert BASE_THEME.accent
@@ -1252,48 +1269,95 @@ def test_demo_theme_has_required_tokens() -> None:
     assert BASE_THEME.inline_code_text
 
 
+def test_build_demo_theme_uses_dynamic_impression_color_palette() -> None:
+    theme = build_demo_theme("#3BC9DB")
+
+    assert theme.accent == "#3BC9DB"
+    assert theme.page_bg != theme.accent
+    assert theme.bot_bubble == theme.panel_soft_bg
+    assert theme.deep != theme.hint
+
+
+def test_normalize_hex_color_falls_back_to_default() -> None:
+    assert normalize_hex_color("not-a-color") == DEFAULT_IMPRESSION_COLOR
+    assert normalize_hex_color("#abc") == "#AABBCC"
+
+
+def test_load_plugin_doc_bundle_uses_explicit_impression_color_override(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "README.MD"
+    source.write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试颜色透传。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一条说明。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一条说明。
+- 指令: `#alpha`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="测试插件",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        impression_color="#3BC9DB",
+    )
+
+    assert bundle.impression_color == "#3BC9DB"
+
+
 def test_demo_image_renderer_uses_theme() -> None:
-    """验证 DemoImageRenderer 使用主题而非硬编码颜色"""
-    renderer = DemoImageRenderer()
-    assert hasattr(renderer, "theme")
-    assert renderer.theme == BASE_THEME
-    # 验证不再有硬编码颜色常量
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+
+    assert renderer.theme == build_demo_theme("#3BC9DB")
     assert not hasattr(renderer, "PAGE_BG")
     assert not hasattr(renderer, "ACCENT")
     assert not hasattr(renderer, "SHELL_BG")
 
 
 def test_demo_collection_renderer_uses_theme() -> None:
-    """验证 DemoCollectionRenderer 使用主题"""
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=400)
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
+
     assert hasattr(renderer, "theme")
     assert renderer.theme == BASE_THEME
-    # 验证不再有硬编码颜色常量
     assert not hasattr(renderer, "PAGE_BG")
     assert not hasattr(renderer, "CARD_BG")
     assert not hasattr(renderer, "TITLE")
 
 
-def test_palette_accents_has_all_variants() -> None:
-    """验证调色板包含所有需要的变体"""
-    assert "study" in PALETTE_ACCENTS
-    assert "wordbank" in PALETTE_ACCENTS
-    assert "wordbank-approval" in PALETTE_ACCENTS
-    assert "default" in PALETTE_ACCENTS
-    # 验证每个调色板返回两个颜色值（浅色、深色）
-    for palette in PALETTE_ACCENTS.values():
-        assert isinstance(palette, tuple)
-        assert len(palette) == 2
-
-
 def test_demo_theme_layout_constants() -> None:
-    """验证主题的布局常量"""
     assert BASE_THEME.outer_margin == 40
     assert BASE_THEME.shell_radius == 32
     assert BASE_THEME.panel_radius == 28
-    assert BASE_THEME.card_radius == 26
-    assert BASE_THEME.chip_radius == 15
-    assert BASE_THEME.inline_code_radius == 10
+    assert BASE_THEME.card_radius == 32
+    assert BASE_THEME.chip_radius == 20
+    assert BASE_THEME.inline_code_radius == 12
     assert BASE_THEME.inline_code_pad_x == 8
     assert BASE_THEME.inline_code_pad_y == 4
 
@@ -1313,6 +1377,8 @@ def test_demo_theme_showcase_tokens_follow_expected_scale() -> None:
     assert BASE_THEME.avatar_size % 8 == 0
     assert BASE_THEME.bubble_padding_x % 8 == 0
     assert BASE_THEME.bubble_padding_y % 8 == 0
+    assert BASE_THEME.hero_summary_line_height >= 56
+    assert BASE_THEME.bubble_line_height >= 48
 
 
 def test_demo_image_renderer_handles_features_without_demo_turns() -> None:
@@ -1360,10 +1426,13 @@ def test_demo_image_renderer_handles_features_without_demo_turns() -> None:
     )
 
 
-def test_demo_collection_renderer_outer_margin_unified() -> None:
-    """验证 DemoCollectionRenderer 的 OUTER_MARGIN 已统一为 40px"""
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2, thumb_width=400)
-    assert renderer.OUTER_MARGIN == 40
+def test_demo_collection_renderer_uses_showcase_canvas_width() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
+
+    assert renderer.CANVAS_WIDTH == 1280
+    assert renderer.OUTER_MARGIN == 88
+    assert renderer.GRID_GAP_X % 8 == 0
+    assert renderer.GRID_GAP_Y % 8 == 0
 
 
 def test_filter_features_by_permission_normal_user() -> None:
@@ -1562,6 +1631,7 @@ def test_can_view_node_respects_permission() -> None:
             permission="",
             author="",
             version="",
+            impression_color=DEFAULT_IMPRESSION_COLOR,
             index=(),
             source_path=Path("test"),
         ),

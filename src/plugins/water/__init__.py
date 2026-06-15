@@ -96,6 +96,7 @@ __plugin_meta__ = create_plugin_metadata(
     extra={
         "author": "SakuraiCora",
         "version": "0.4.0",
+        "impression_color": "#4DABF7",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.NORMAL,
         "i18n": {
