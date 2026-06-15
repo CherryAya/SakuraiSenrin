@@ -163,3 +163,49 @@ def test_renderer_can_fall_back_to_minimal_tiles() -> None:
     image_bytes = SearchTreemapRenderer().render(page, locale="zh-CN")
 
     assert len(image_bytes) > 8000
+
+
+def test_renderer_prefers_three_columns_for_wide_dense_tiles() -> None:
+    renderer = SearchTreemapRenderer()
+    responses = tuple(
+        SearchTreemapResponseCard(
+            text=f"响应 {index}",
+            created_by="10001",
+            weight=3,
+            rule="默认",
+            image_path="/tmp/example.webp",
+        )
+        for index in range(8)
+    )
+
+    cols, shown = renderer._choose_card_layout(  # pyright: ignore[reportPrivateUsage]
+        width=720,
+        height=360,
+        responses=responses,
+        response_count=len(responses),
+    )
+
+    assert cols == 3
+    assert shown >= 6
+
+
+def test_renderer_uses_single_column_for_single_response() -> None:
+    renderer = SearchTreemapRenderer()
+    responses = (
+        SearchTreemapResponseCard(
+            text="晚安啦",
+            created_by="10001",
+            weight=3,
+            rule="默认",
+        ),
+    )
+
+    cols, shown = renderer._choose_card_layout(  # pyright: ignore[reportPrivateUsage]
+        width=420,
+        height=260,
+        responses=responses,
+        response_count=1,
+    )
+
+    assert cols == 1
+    assert shown == 1
