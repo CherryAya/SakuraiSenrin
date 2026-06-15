@@ -11,7 +11,7 @@ from typing import Any
 import arrow
 from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.message import Message
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.i18n.runtime import tr
@@ -23,18 +23,19 @@ CARD_WIDTH = 1320
 CARD_PADDING_X = 56
 CARD_PADDING_Y = 48
 CARD_ITEM_GAP = 22
-CARD_ITEM_PADDING = 26
-CARD_SUMMARY_GAP = 14
+CARD_ITEM_PADDING = 30
+CARD_SUMMARY_GAP = 12
 CARD_LINE_GAP = 10
+CARD_SECTION_GAP = 18
+CARD_FLOW_GAP = 12
 CARD_MAX_TEXT_WIDTH = CARD_WIDTH - CARD_PADDING_X * 2 - CARD_ITEM_PADDING * 2
-CARD_PREVIEW_HEIGHT = 180
-CARD_PREVIEW_GAP = 14
-CARD_PREVIEW_RADIUS = 20
-CARD_FOLDED_BLOCK_GAP = 8
-CARD_FOLDED_BLOCK_HEIGHT = 108
-CARD_FOLDED_STACK_OFFSET = 8
+CARD_IMAGE_WIDTH = CARD_MAX_TEXT_WIDTH - 20
+CARD_PREVIEW_MAX_HEIGHT = 400
+CARD_IMAGE_RADIUS = 24
+CARD_FOLDED_BLOCK_HEIGHT = 44
 CARD_FOOTER_HEIGHT = 76
 CARD_FOOTER_LINE_GAP = 6
+CARD_RADIUS = 24
 
 
 @dataclass(slots=True, frozen=True)
@@ -55,16 +56,16 @@ class SearchCardQuery:
 
 
 class SearchResultCardRenderer:
-    BG = "#FFF8F3"
+    BG = "#FDFBF7"
     PANEL = "#FFFFFF"
-    HEADER = "#2F2A34"
-    BODY = "#564D5C"
-    MUTED = "#8A7B86"
-    ACCENT = "#D9826B"
-    ACCENT_SOFT = "#FBE9E2"
-    BORDER = "#E8D5CF"
-    FOLDED_LAYER = "#F4DDD4"
-    FOLDED_FACE = "#FFF4EF"
+    PANEL_SOFT = "#FFF5F3"
+    HEADER = "#2C2830"
+    BODY = "#3A353F"
+    MUTED = "#8E8794"
+    ACCENT = "#E88B8B"
+    ACCENT_SOFT = "#FBEAEA"
+    BORDER = "#F0E5E1"
+    FOLDED_LAYER = "#F5E9E6"
 
     def __init__(
         self,
@@ -73,12 +74,16 @@ class SearchResultCardRenderer:
     ) -> None:
         self.title_font = self._load_font(38)
         self.summary_font = self._load_font(22)
-        self.item_title_font = self._load_font(24)
+        self.item_title_font = self._load_font(26)
         self.item_body_font = self._load_font(22)
-        self.item_meta_font = self._load_font(20)
+        self.item_meta_font = self._load_font(18)
         self.footer_font = self._load_font(18)
         self.footer_minor_font = self._load_font(16)
         self.preview_bytes = dict(preview_bytes or {})
+        self._preview_size_cache: dict[
+            tuple[int, int, int],
+            tuple[int, int] | None,
+        ] = {}
 
     def render(
         self,
@@ -183,10 +188,10 @@ class SearchResultCardRenderer:
                 CARD_WIDTH - CARD_PADDING_X,
                 cursor_y + box_height,
             ),
-            radius=28,
+            radius=CARD_RADIUS,
             fill=self.ACCENT_SOFT,
             outline=self.BORDER,
-            width=2,
+            width=1,
         )
         text_y = cursor_y + 20
         for line in lines:
@@ -217,10 +222,10 @@ class SearchResultCardRenderer:
                 CARD_WIDTH - CARD_PADDING_X,
                 cursor_y + height,
             ),
-            radius=28,
+            radius=CARD_RADIUS,
             fill=self.PANEL,
             outline=self.BORDER,
-            width=2,
+            width=1,
         )
 
         inner_x = CARD_PADDING_X + CARD_ITEM_PADDING
@@ -228,8 +233,8 @@ class SearchResultCardRenderer:
 
         badge = f"{index + (query.page - 1) * query.limit:02d}"
         badge_bbox = draw.textbbox((0, 0), badge, font=self.item_title_font)
-        badge_width = badge_bbox[2] - badge_bbox[0] + 26
-        badge_height = badge_bbox[3] - badge_bbox[1] + 12
+        badge_width = int(badge_bbox[2] - badge_bbox[0] + 28)
+        badge_height = int(badge_bbox[3] - badge_bbox[1] + 14)
         draw.rounded_rectangle(
             (
                 inner_x,
@@ -237,11 +242,11 @@ class SearchResultCardRenderer:
                 inner_x + badge_width,
                 inner_y + badge_height,
             ),
-            radius=18,
+            radius=16,
             fill=self.ACCENT_SOFT,
         )
         draw.text(
-            (inner_x + 13, inner_y + 6),
+            (inner_x + 14, inner_y + 7),
             badge,
             font=self.item_title_font,
             fill=self.ACCENT,
@@ -267,58 +272,105 @@ class SearchResultCardRenderer:
             fill=self.MUTED,
         )
 
-        body_y = int(inner_y + badge_height + 18)
-        body_y = self._draw_previews(image, draw, item, inner_x, body_y, locale)
-        meta_label = _safe_meta_label(locale)
-        meta_lines = [
-            (
-                f"{_safe_field_label(locale, 'scope')}: {item.scope}  "
-                f"{_safe_field_label(locale, 'probability')}: {item.probability:g}  "
-                f"{_safe_field_label(locale, 'weight')}: {item.weight}"
-            )
-        ]
-        for meta_line in meta_lines:
-            body_y = self._draw_labeled_lines(
-                draw,
-                x=inner_x,
-                y=body_y,
-                label=meta_label,
-                value=meta_line,
-            )
-            body_y += CARD_LINE_GAP
-        sections: list[tuple[str, str]] = [
-            (tr(locale, "wordbank.search_card.label.trigger"), item.trigger_text),
-            (
-                tr(locale, "wordbank.search_card.label.response_summary"),
-                self._response_preview(item, locale),
-            ),
-        ]
-        sections.append(
-            (
-                tr(locale, "wordbank.search_card.label.matched_by"),
-                item.matched_by or self._fallback_match_label(query, locale),
-            )
+        body_y = inner_y + badge_height + 20
+        body_y = self._draw_message_section(
+            image,
+            draw,
+            title=tr(locale, "wordbank.search_card.label.trigger"),
+            text=item.trigger_text or tr(locale, "wordbank.search_card.none"),
+            image_id=item.trigger_preview_image_id,
+            x=inner_x,
+            y=body_y,
         )
-        for section_index, (label, value) in enumerate(sections):
-            body_y = self._draw_labeled_lines(
+        body_y += CARD_SECTION_GAP
+        body_y = self._draw_message_section(
+            image,
+            draw,
+            title=tr(locale, "wordbank.search_card.label.response_summary"),
+            text=self._response_preview(item, locale),
+            image_id=item.response_preview_image_id,
+            x=inner_x,
+            y=body_y,
+        )
+        if self._has_folded_preview(item):
+            body_y += CARD_FLOW_GAP
+            body_y = self._draw_folded_preview_block(
+                image,
                 draw,
+                item,
                 x=inner_x,
                 y=body_y,
-                label=label,
-                value=value,
+                locale=locale,
             )
-            body_y += CARD_LINE_GAP
-            if section_index == 1 and self._has_folded_preview(item):
-                body_y = self._draw_folded_preview_block(
-                    image,
-                    draw,
-                    item,
-                    x=inner_x,
-                    y=body_y,
-                    locale=locale,
-                )
-                body_y += CARD_LINE_GAP
+        body_y += CARD_SECTION_GAP
+        body_y = self._draw_labeled_lines(
+            draw,
+            x=inner_x,
+            y=body_y,
+            label=tr(locale, "wordbank.search_card.label.matched_by"),
+            value=item.matched_by or self._fallback_match_label(query, locale),
+            font=self.item_meta_font,
+            fill=self.MUTED,
+        )
+        body_y += CARD_FLOW_GAP
+        body_y = self._draw_bottom_meta(draw, item, locale, inner_x, body_y)
         return cursor_y + height
+
+    def _draw_message_section(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        title: str,
+        text: str,
+        image_id: int | None,
+        x: int,
+        y: int,
+    ) -> int:
+        draw.text(
+            (x, y),
+            title,
+            font=self.item_meta_font,
+            fill=self.ACCENT,
+        )
+        cursor_y = y + self._line_height(self.item_meta_font) + 6
+        cursor_y = self._draw_wrapped_text(
+            draw,
+            x=x,
+            y=cursor_y,
+            text=text,
+            font=self.item_body_font,
+            fill=self.BODY,
+            max_width=CARD_MAX_TEXT_WIDTH,
+            max_lines=4,
+        )
+        if image_id is not None:
+            cursor_y += CARD_FLOW_GAP
+            cursor_y = self._draw_previews(image, image_id=image_id, x=x, y=cursor_y)
+        return cursor_y
+
+    def _draw_bottom_meta(
+        self,
+        draw: ImageDraw.ImageDraw,
+        item: WordbankSearchItem,
+        locale: LocaleCode,
+        x: int,
+        y: int,
+    ) -> int:
+        meta_text = (
+            f"{_safe_field_label(locale, 'scope')}: {item.scope}  "
+            f"{_safe_field_label(locale, 'probability')}: {item.probability:g}  "
+            f"{_safe_field_label(locale, 'weight')}: {item.weight}"
+        )
+        return self._draw_labeled_lines(
+            draw,
+            x=x,
+            y=y,
+            label=_safe_meta_label(locale),
+            value=meta_text,
+            font=self.item_meta_font,
+            fill=self.MUTED,
+        )
 
     def _draw_empty_state(
         self,
@@ -334,10 +386,10 @@ class SearchResultCardRenderer:
                 CARD_WIDTH - CARD_PADDING_X,
                 cursor_y + 120,
             ),
-            radius=28,
+            radius=CARD_RADIUS,
             fill=self.PANEL,
             outline=self.BORDER,
-            width=2,
+            width=1,
         )
         draw.text(
             (CARD_PADDING_X + 26, cursor_y + 32),
@@ -398,19 +450,14 @@ class SearchResultCardRenderer:
             + CARD_FOOTER_LINE_GAP
         )
         draw.text(
-            self._centered_text_origin(
-                draw,
-                footer,
-                self.footer_font,
-                y=footer_y,
-            ),
+            self._centered_text_origin(draw, footer, self.footer_font, y=footer_y),
             footer,
             font=self.footer_font,
             fill=self.MUTED,
         )
 
     def _summary_lines(self, query: SearchCardQuery, locale: LocaleCode) -> list[str]:
-        lines = [
+        return [
             tr(
                 locale,
                 "wordbank.search_card.summary.field",
@@ -439,7 +486,6 @@ class SearchResultCardRenderer:
                 creator_id=query.creator_id or tr(locale, "wordbank.search_card.none"),
             ),
         ]
-        return lines
 
     def _summary_block_height(self, query: SearchCardQuery, locale: LocaleCode) -> int:
         line_height = self._line_height(self.summary_font)
@@ -462,128 +508,94 @@ class SearchResultCardRenderer:
             "00",
             font=self.item_title_font,
         )
-        total += int(badge_bbox[3] - badge_bbox[1] + 30)
-        if self._preview_specs(item, locale):
-            total += CARD_PREVIEW_HEIGHT + CARD_PREVIEW_GAP
-        meta_line = (
+        total += int(badge_bbox[3] - badge_bbox[1] + 34)
+        total += self._message_section_height(
+            title=tr(locale, "wordbank.search_card.label.trigger"),
+            text=item.trigger_text or tr(locale, "wordbank.search_card.none"),
+            image_id=item.trigger_preview_image_id,
+        )
+        total += CARD_SECTION_GAP
+        total += self._message_section_height(
+            title=tr(locale, "wordbank.search_card.label.response_summary"),
+            text=self._response_preview(item, locale),
+            image_id=item.response_preview_image_id,
+        )
+        if self._has_folded_preview(item):
+            total += CARD_FLOW_GAP + self._folded_preview_block_height()
+        total += CARD_SECTION_GAP
+        matched_by = item.matched_by or tr(locale, "wordbank.search_card.match.default")
+        total += self._wrapped_text_height(
+            f"{tr(locale, 'wordbank.search_card.label.matched_by')}: {matched_by}",
+            self.item_meta_font,
+            max_lines=2,
+            max_width=CARD_MAX_TEXT_WIDTH,
+        )
+        total += CARD_FLOW_GAP
+        meta_text = (
+            f"{_safe_meta_label(locale)}: "
             f"{_safe_field_label(locale, 'scope')}: {item.scope}  "
             f"{_safe_field_label(locale, 'probability')}: {item.probability:g}  "
             f"{_safe_field_label(locale, 'weight')}: {item.weight}"
         )
-        wrapped_meta = self._wrap_text(
-            f"{_safe_meta_label(locale)}: {meta_line}",
-            self.item_body_font,
+        total += self._wrapped_text_height(
+            meta_text,
+            self.item_meta_font,
+            max_lines=2,
+            max_width=CARD_MAX_TEXT_WIDTH,
         )
-        total += len(wrapped_meta) * self._line_height(self.item_body_font)
-        total += CARD_LINE_GAP
-        sections: list[tuple[str, str]] = [
-            (tr(locale, "wordbank.search_card.label.trigger"), item.trigger_text),
-            (
-                tr(locale, "wordbank.search_card.label.response_summary"),
-                self._response_preview(item, locale),
-            ),
-        ]
-        sections.append(
-            (
-                tr(locale, "wordbank.search_card.label.matched_by"),
-                item.matched_by or tr(locale, "wordbank.search_card.match.default"),
-            )
-        )
-        for section_index, (label, value) in enumerate(sections):
-            wrapped = self._wrap_text(f"{label}: {value}", self.item_body_font)
-            total += len(wrapped) * self._line_height(self.item_body_font)
-            total += CARD_LINE_GAP
-            if section_index == 1 and self._has_folded_preview(item):
-                total += self._folded_preview_block_height()
-                total += CARD_LINE_GAP
         return int(total)
+
+    def _message_section_height(
+        self,
+        *,
+        title: str,
+        text: str,
+        image_id: int | None,
+    ) -> int:
+        total = self._line_height(self.item_meta_font) + 6
+        total += self._wrapped_text_height(
+            text,
+            self.item_body_font,
+            max_lines=4,
+            max_width=CARD_MAX_TEXT_WIDTH,
+        )
+        if image_id is not None:
+            preview_height = self._preview_height(
+                image_id,
+                max_width=CARD_IMAGE_WIDTH,
+                max_height=CARD_PREVIEW_MAX_HEIGHT,
+            )
+            if preview_height > 0:
+                total += CARD_FLOW_GAP + preview_height
+        _ = title
+        return total
 
     def _draw_previews(
         self,
         image: Image.Image,
-        draw: ImageDraw.ImageDraw,
-        item: WordbankSearchItem,
+        *,
+        image_id: int,
         x: int,
         y: int,
-        locale: LocaleCode,
     ) -> int:
-        specs = self._preview_specs(item, locale)
-        if not specs:
+        image_bytes = self.preview_bytes.get(image_id)
+        if not image_bytes:
             return y
-        count = len(specs)
-        box_gap = 18
-        total_width = CARD_MAX_TEXT_WIDTH
-        box_width = total_width if count == 1 else int((total_width - box_gap) / 2)
-        current_x = x
-        for label, image_id in specs:
-            box = (
-                current_x,
-                y,
-                current_x + box_width,
-                y + CARD_PREVIEW_HEIGHT,
-            )
-            draw.rounded_rectangle(
-                box,
-                radius=CARD_PREVIEW_RADIUS,
-                fill=self.ACCENT_SOFT,
-                outline=self.BORDER,
-                width=2,
-            )
-            image_bytes = self.preview_bytes.get(image_id)
-            if image_bytes:
-                preview = self._fit_preview_image(
-                    image_bytes,
-                    box_width,
-                    CARD_PREVIEW_HEIGHT,
-                )
-                if preview is not None:
-                    preview_x = current_x + int((box_width - preview.width) / 2)
-                    preview_y = y + int((CARD_PREVIEW_HEIGHT - preview.height) / 2)
-                    image.paste(preview, (preview_x, preview_y))
-            draw.text(
-                (current_x + 12, y + 10),
-                label,
-                font=self.item_meta_font,
-                fill=self.ACCENT,
-            )
-            current_x += box_width + box_gap
-        return y + CARD_PREVIEW_HEIGHT + CARD_PREVIEW_GAP
-
-    def _preview_specs(
-        self,
-        item: WordbankSearchItem,
-        locale: LocaleCode,
-    ) -> list[tuple[str, int]]:
-        specs: list[tuple[str, int]] = []
-        if item.trigger_preview_image_id is not None:
-            specs.append(
-                (
-                    tr(locale, "wordbank.search_card.preview.trigger"),
-                    item.trigger_preview_image_id,
-                )
-            )
-        if item.response_preview_image_id is not None:
-            specs.append(
-                (
-                    tr(locale, "wordbank.search_card.preview.response"),
-                    item.response_preview_image_id,
-                )
-            )
-        return specs[:2]
-
-    def _fit_preview_image(
-        self,
-        image_bytes: bytes,
-        max_width: int,
-        max_height: int,
-    ) -> Image.Image | None:
-        try:
-            with Image.open(BytesIO(image_bytes)) as image:
-                prepared = image.convert("RGB")
-                prepared.thumbnail((max_width - 16, max_height - 16))
-                return prepared.copy()
-        except Exception:
-            return None
+        preview = self._prepare_preview_image(
+            image_bytes,
+            max_width=CARD_IMAGE_WIDTH,
+            max_height=CARD_PREVIEW_MAX_HEIGHT,
+        )
+        if preview is None:
+            return y
+        preview_x = x + int((CARD_MAX_TEXT_WIDTH - preview.width) / 2)
+        self._paste_rounded_image(
+            image,
+            preview,
+            (preview_x, y),
+            radius=CARD_IMAGE_RADIUS,
+        )
+        return y + preview.height
 
     def _draw_labeled_lines(
         self,
@@ -593,18 +605,20 @@ class SearchResultCardRenderer:
         y: int,
         label: str,
         value: str,
+        font: Any,
+        fill: str,
+        max_lines: int = 3,
     ) -> int:
-        wrapped = self._wrap_text(f"{label}: {value}", self.item_body_font)
-        cursor_y = y
-        for line in wrapped:
-            draw.text(
-                (x, cursor_y),
-                line,
-                font=self.item_body_font,
-                fill=self.BODY,
-            )
-            cursor_y += self._line_height(self.item_body_font)
-        return cursor_y
+        return self._draw_wrapped_text(
+            draw,
+            x=x,
+            y=y,
+            text=f"{label}: {value}",
+            font=font,
+            fill=fill,
+            max_width=CARD_MAX_TEXT_WIDTH,
+            max_lines=max_lines,
+        )
 
     def _draw_folded_preview_block(
         self,
@@ -616,96 +630,48 @@ class SearchResultCardRenderer:
         y: int,
         locale: LocaleCode,
     ) -> int:
+        _ = image
         width = CARD_MAX_TEXT_WIDTH
-        height = self._folded_preview_block_height()
-        back_rect = (
-            x + CARD_FOLDED_STACK_OFFSET * 2,
-            y + CARD_FOLDED_STACK_OFFSET * 2,
-            x + width - CARD_FOLDED_STACK_OFFSET * 2,
-            y + height,
-        )
-        middle_rect = (
-            x + CARD_FOLDED_STACK_OFFSET,
-            y + CARD_FOLDED_STACK_OFFSET,
-            x + width - CARD_FOLDED_STACK_OFFSET,
-            y + height - CARD_FOLDED_STACK_OFFSET,
-        )
-        front_rect = (
-            x,
-            y,
-            x + width,
-            y + height - CARD_FOLDED_STACK_OFFSET * 2,
-        )
-
+        center_x = x + width / 2
+        line_left = x + 36
+        line_right = x + width - 36
         draw.rounded_rectangle(
-            back_rect,
-            radius=22,
+            (line_left + 16, y + 24, line_right - 16, y + 30),
+            radius=3,
             fill=self.FOLDED_LAYER,
-            outline=self.BORDER,
-            width=1,
         )
         draw.rounded_rectangle(
-            middle_rect,
-            radius=22,
-            fill=self.ACCENT_SOFT,
-            outline=self.BORDER,
-            width=1,
+            (line_left, y + 12, line_right, y + 18),
+            radius=3,
+            fill=self.BORDER,
         )
-        draw.rounded_rectangle(
-            front_rect,
-            radius=22,
-            fill=self.FOLDED_FACE,
-            outline=self.BORDER,
-            width=2,
-        )
-
-        chip_text = tr(locale, "wordbank.search_card.label.folded")
-        chip_width = self._text_width(chip_text, self.item_meta_font) + 28
-        draw.rounded_rectangle(
-            (
-                x + 16,
-                y + 14,
-                x + 16 + chip_width,
-                y + 14 + 30,
-            ),
-            radius=15,
-            fill=self.ACCENT_SOFT,
-        )
-        draw.text(
-            (x + 30, y + 21),
-            chip_text,
-            font=self.item_meta_font,
-            fill=self.ACCENT,
-        )
-
-        title = tr(
+        folded_text = "👇 " + tr(
             locale,
             "wordbank.search_card.folded_title",
             total=item.response_count,
         )
-        hint = tr(
-            locale,
-            "wordbank.search_card.folded_hint",
-            total=item.response_count,
-            shown=max(1, self._preview_summary_count(item)),
-            group_id=item.trigger_group_id,
+        text_width = int(draw.textlength(folded_text, font=self.item_meta_font))
+        text_y = y + 2
+        draw.rounded_rectangle(
+            (
+                int(center_x - text_width / 2 - 14),
+                text_y,
+                int(center_x + text_width / 2 + 14),
+                text_y + 28,
+            ),
+            radius=14,
+            fill=self.PANEL,
         )
         draw.text(
-            (x + 16, y + 52),
-            title,
-            font=self.item_body_font,
-            fill=self.HEADER,
-        )
-        draw.text(
-            (x + 16, y + 82),
-            f"▼ {hint}",
+            (int(center_x - text_width / 2), text_y + 5),
+            folded_text,
             font=self.item_meta_font,
-            fill=self.ACCENT,
+            fill=self.MUTED,
         )
-        return y + height
+        return y + self._folded_preview_block_height()
 
     def _folded_preview_block_height(self) -> int:
-        return CARD_FOLDED_BLOCK_HEIGHT + CARD_FOLDED_STACK_OFFSET * 2
+        return CARD_FOLDED_BLOCK_HEIGHT
 
     def _fallback_match_label(self, query: SearchCardQuery, locale: LocaleCode) -> str:
         if query.has_image and query.keyword:
@@ -722,14 +688,14 @@ class SearchResultCardRenderer:
         summaries = list(item.response_summaries[:3]) or (
             [item.response_text] if item.response_text else []
         )
-        preview = " / ".join(summary for summary in summaries if summary)
+        preview = "\n".join(summary for summary in summaries if summary)
         if item.remaining_response_count > 0:
             suffix = tr(
                 locale,
                 "wordbank.search_card.more_responses",
                 count=item.remaining_response_count,
             )
-            preview = f"{preview}{suffix}" if preview else suffix.strip()
+            preview = f"{preview}\n{suffix}".strip() if preview else suffix.strip()
         return preview or tr(locale, "wordbank.search_card.none")
 
     def _fold_hint(self, item: WordbankSearchItem, locale: LocaleCode) -> str:
@@ -754,7 +720,54 @@ class SearchResultCardRenderer:
             return len(summaries)
         return 1 if item.response_text else 0
 
-    def _wrap_text(self, text: str, font: Any) -> list[str]:
+    def _draw_wrapped_text(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        y: int,
+        text: str,
+        font: Any,
+        fill: str,
+        max_width: int,
+        max_lines: int | None = None,
+    ) -> int:
+        lines = self._wrap_text(
+            text,
+            font,
+            max_width=max_width,
+            max_lines=max_lines,
+        )
+        cursor_y = y
+        for line in lines:
+            draw.text((x, cursor_y), line, font=font, fill=fill)
+            cursor_y += self._line_height(font)
+        return cursor_y
+
+    def _wrapped_text_height(
+        self,
+        text: str,
+        font: Any,
+        *,
+        max_width: int,
+        max_lines: int | None = None,
+    ) -> int:
+        lines = self._wrap_text(
+            text,
+            font,
+            max_width=max_width,
+            max_lines=max_lines,
+        )
+        return len(lines) * self._line_height(font)
+
+    def _wrap_text(
+        self,
+        text: str,
+        font: Any,
+        *,
+        max_width: int,
+        max_lines: int | None = None,
+    ) -> list[str]:
         if not text:
             return [""]
         lines: list[str] = []
@@ -765,7 +778,7 @@ class SearchResultCardRenderer:
             current = ""
             for char in raw_line:
                 candidate = f"{current}{char}"
-                if self._text_width(candidate, font) <= CARD_MAX_TEXT_WIDTH:
+                if self._text_width(candidate, font) <= max_width:
                     current = candidate
                     continue
                 if current:
@@ -775,22 +788,95 @@ class SearchResultCardRenderer:
                 lines.append(current)
         if not lines:
             return [""]
-        if len(lines) <= 3:
-            return [self._truncate_line(line, font) for line in lines]
-        truncated = lines[:3]
-        truncated[-1] = self._truncate_line(f"{truncated[-1]}...", font)
+        if max_lines is None or len(lines) <= max_lines:
+            return [self._truncate_line(line, font, max_width) for line in lines]
+        truncated = lines[:max_lines]
+        truncated[-1] = self._truncate_line(
+            f"{truncated[-1]}...",
+            font,
+            max_width,
+        )
         return truncated
 
-    def _truncate_line(self, text: str, font: Any) -> str:
-        if self._text_width(text, font) <= CARD_MAX_TEXT_WIDTH:
+    def _truncate_line(self, text: str, font: Any, max_width: int) -> str:
+        if self._text_width(text, font) <= max_width:
             return text
         candidate = text
-        while (
-            candidate
-            and self._text_width(f"{candidate}...", font) > CARD_MAX_TEXT_WIDTH
-        ):
+        while candidate and self._text_width(f"{candidate}...", font) > max_width:
             candidate = candidate[:-1]
         return f"{candidate}..."
+
+    def _preview_height(self, image_id: int, *, max_width: int, max_height: int) -> int:
+        cache_key = (image_id, max_width, max_height)
+        if cache_key not in self._preview_size_cache:
+            image_bytes = self.preview_bytes.get(image_id)
+            if not image_bytes:
+                self._preview_size_cache[cache_key] = None
+            else:
+                self._preview_size_cache[cache_key] = self._measure_preview_size(
+                    image_bytes,
+                    max_width=max_width,
+                    max_height=max_height,
+                )
+        measured = self._preview_size_cache[cache_key]
+        return measured[1] if measured is not None else 0
+
+    def _measure_preview_size(
+        self,
+        image_bytes: bytes,
+        *,
+        max_width: int,
+        max_height: int,
+    ) -> tuple[int, int] | None:
+        try:
+            with Image.open(BytesIO(image_bytes)) as preview:
+                prepared = preview.convert("RGB")
+                width, height = prepared.size
+        except Exception:
+            return None
+
+        if width <= 0 or height <= 0:
+            return None
+        scale = min(max_width / width, max_height / height, 1.0)
+        return (max(1, int(width * scale)), max(1, int(height * scale)))
+
+    def _prepare_preview_image(
+        self,
+        image_bytes: bytes,
+        *,
+        max_width: int,
+        max_height: int,
+    ) -> Image.Image | None:
+        measured = self._measure_preview_size(
+            image_bytes,
+            max_width=max_width,
+            max_height=max_height,
+        )
+        if measured is None:
+            return None
+        try:
+            with Image.open(BytesIO(image_bytes)) as preview:
+                prepared = preview.convert("RGB")
+                return ImageOps.contain(prepared, measured).copy()
+        except Exception:
+            return None
+
+    def _paste_rounded_image(
+        self,
+        image: Image.Image,
+        preview: Image.Image,
+        origin: tuple[int, int],
+        *,
+        radius: int,
+    ) -> None:
+        mask = Image.new("L", preview.size, 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.rounded_rectangle(
+            (0, 0, preview.width, preview.height),
+            radius=radius,
+            fill=255,
+        )
+        image.paste(preview, origin, mask)
 
     def _field_label(self, field: str, locale: LocaleCode) -> str:
         return {

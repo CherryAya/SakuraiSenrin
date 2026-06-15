@@ -1,4 +1,7 @@
+from io import BytesIO
+
 from nonebot.adapters.onebot.v11.message import Message
+from PIL import Image
 
 from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.handlers.search_cards import (
@@ -7,6 +10,13 @@ from src.plugins.wordbank.handlers.search_cards import (
     _build_copyright_text,
     render_search_results_card,
 )
+
+
+def _png_bytes(color: str = "#E88B8B") -> bytes:
+    image = Image.new("RGB", (120, 80), color)
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def _item(
@@ -73,6 +83,42 @@ def test_render_search_results_card_supports_multiline_response_text() -> None:
             limit=10,
         ),
         locale="zh-CN",
+    )
+
+    assert isinstance(message, Message)
+    assert len(message) == 1
+    assert message[0].type == "image"
+
+
+def test_render_search_results_card_supports_inline_preview_images() -> None:
+    message = render_search_results_card(
+        items=(
+            WordbankSearchItem(
+                trigger_group_id=22,
+                status="approved",
+                trigger_text="晚安图片版",
+                response_text="第一条响应",
+                response_summaries=("第一条响应",),
+                trigger_preview_image_id=7,
+                response_preview_image_id=8,
+                scope="current_group",
+                probability=1.0,
+                weight=3,
+                created_by="10001",
+                matched_by="image:trigger",
+            ),
+        ),
+        query=SearchCardQuery(
+            keyword="晚安",
+            field="all",
+            creator_id="",
+            has_image=True,
+            page=1,
+            total_count=1,
+            limit=10,
+        ),
+        locale="zh-CN",
+        preview_bytes={7: _png_bytes("#FBEAEA"), 8: _png_bytes("#E88B8B")},
     )
 
     assert isinstance(message, Message)
