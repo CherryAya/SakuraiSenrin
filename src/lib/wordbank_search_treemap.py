@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from functools import reduce
 from io import BytesIO
 import json
 import math
@@ -30,6 +29,7 @@ TREEMAP_TILE_GAP = 10
 TREEMAP_TILE_PADDING = 18
 TREEMAP_MIN_TILE_WIDTH = 80
 TREEMAP_MIN_TILE_HEIGHT = 72
+TREEMAP_LAYOUT_WEIGHT_BIAS = 2.0
 
 
 @dataclass(slots=True, frozen=True)
@@ -55,6 +55,7 @@ class SearchTreemapResponseCard:
     created_by: str
     weight: int
     rule: str
+    image_path: str = ""
 
 
 @dataclass(slots=True, frozen=True)
@@ -138,8 +139,10 @@ def build_search_treemap_layout(
         return ()
 
     weights = [max(item.response_count, 1) for item in page.items]
-    divisor = _gcd_many(weights)
-    normalized = [max(1, weight // divisor) for weight in weights]
+    normalized = [
+        max(1, round((math.sqrt(weight) + TREEMAP_LAYOUT_WEIGHT_BIAS) * 100))
+        for weight in weights
+    ]
     sizes = squarify.normalize_sizes(
         normalized,
         content_width,
@@ -468,21 +471,33 @@ class SearchTreemapRenderer:
 
         title_x = inner_x + number_width + 10
         title_width = max(1, inner_width - badge_width - number_width - 22)
-        title_lines = self._wrap_text(
-            tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
-            self.tile_title_font,
-            title_width,
-            max_lines=2,
+        title_font = self.tile_title_font if title_width >= 110 else self.tile_meta_font
+        title_max_lines = 2 if title_width >= 180 and rect.height >= 110 else 1
+        title_lines = (
+            [
+                self._truncate_line(
+                    tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
+                    title_font,
+                    title_width,
+                )
+            ]
+            if title_max_lines == 1
+            else self._wrap_text(
+                tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
+                title_font,
+                title_width,
+                max_lines=title_max_lines,
+            )
         )
         cursor_y = inner_y
         for line in title_lines:
             draw.text(
                 (title_x, cursor_y),
                 line,
-                font=self.tile_title_font,
+                font=title_font,
                 fill=self.HEADER,
             )
-            cursor_y += self._line_height(self.tile_title_font)
+            cursor_y += self._line_height(title_font)
 
         meta_text = (
             tr(
@@ -522,6 +537,7 @@ class SearchTreemapRenderer:
             return
 
         self._draw_response_card_grid(
+            image,
             draw,
             tile,
             locale,
@@ -547,6 +563,7 @@ class SearchTreemapRenderer:
 
     def _draw_response_card_grid(
         self,
+        image: Image.Image,
         draw: ImageDraw.ImageDraw,
         tile: SearchTreemapTile,
         locale: LocaleCode,
@@ -598,6 +615,7 @@ class SearchTreemapRenderer:
             card_x = x + col * (card_width + card_gap)
             card_y = y + row * (card_height + card_gap)
             self._draw_response_card(
+                image,
                 draw,
                 response,
                 locale,
@@ -682,6 +700,7 @@ class SearchTreemapRenderer:
 
     def _draw_response_card(
         self,
+        image: Image.Image,
         draw: ImageDraw.ImageDraw,
         response: SearchTreemapResponseCard,
         locale: LocaleCode,
@@ -698,11 +717,37 @@ class SearchTreemapRenderer:
             width=1,
         )
         pad = 10 if min(width, height) >= 120 else 8
+        thumb_size = min(height - pad * 2, max(56, min(112, width // 3)))
+        thumb_drawn = False
+        text_width = max(1, width - pad * 2)
+        if response.image_path and width >= 220 and height >= 84 and thumb_size >= 48:
+            preview = self._fit_preview_image(
+                response.image_path,
+                max_width=thumb_size,
+                max_height=thumb_size,
+            )
+            if preview is not None:
+                thumb_x = x + width - pad - preview.width
+                thumb_y = y + pad
+                image.paste(preview, (thumb_x, thumb_y))
+                draw.rectangle(
+                    (
+                        thumb_x,
+                        thumb_y,
+                        thumb_x + preview.width,
+                        thumb_y + preview.height,
+                    ),
+                    outline=self.BORDER,
+                    width=1,
+                )
+                thumb_drawn = True
+                text_width = max(1, width - pad * 3 - preview.width)
+
         text_max_lines = 3 if height >= 138 else 2
         title_lines = self._wrap_text(
             self._normalize_text(response.text, locale),
             self.card_title_font,
-            max(1, width - pad * 2),
+            text_width,
             max_lines=text_max_lines,
         )
         cursor_y = y + pad
@@ -716,7 +761,7 @@ class SearchTreemapRenderer:
             cursor_y += self._line_height(self.card_title_font)
 
         cursor_y += 2
-        meta_width = max(1, width - pad * 2)
+        meta_width = text_width
         for label, value in (
             ("创建者", response.created_by),
             ("权重", str(response.weight)),
@@ -736,6 +781,30 @@ class SearchTreemapRenderer:
                 fill=self.BODY,
             )
             cursor_y += self._line_height(self.card_meta_font)
+        if (
+            not thumb_drawn
+            and response.image_path
+            and width >= 180
+            and height >= 70
+            and cursor_y <= y + height - pad - 42
+        ):
+            preview = self._fit_preview_image(
+                response.image_path,
+                max_width=max(56, width - pad * 2),
+                max_height=min(72, y + height - pad - cursor_y),
+            )
+            if preview is not None:
+                image.paste(preview, (x + pad, cursor_y + 4))
+                draw.rectangle(
+                    (
+                        x + pad,
+                        cursor_y + 4,
+                        x + pad + preview.width,
+                        cursor_y + 4 + preview.height,
+                    ),
+                    outline=self.BORDER,
+                    width=1,
+                )
 
     def _draw_overflow_banner(
         self,
@@ -894,6 +963,32 @@ class SearchTreemapRenderer:
         except Exception:
             return ImageFont.load_default()
 
+    def _fit_preview_image(
+        self,
+        image_path: str,
+        *,
+        max_width: int,
+        max_height: int,
+    ) -> Image.Image | None:
+        try:
+            with Image.open(image_path) as source:
+                image = source.convert("RGB")
+        except Exception:
+            return None
+        if max_width <= 0 or max_height <= 0:
+            return None
+        scale = max(max_width / image.width, max_height / image.height)
+        resized = image.resize(
+            (
+                max(1, round(image.width * scale)),
+                max(1, round(image.height * scale)),
+            ),
+            Image.Resampling.LANCZOS,
+        )
+        left = max(0, (resized.width - max_width) // 2)
+        top = max(0, (resized.height - max_height) // 2)
+        return resized.crop((left, top, left + max_width, top + max_height))
+
 
 def render_search_results_treemap_bytes(
     *,
@@ -967,6 +1062,7 @@ def _parse_response_card(
         created_by=_require_str(payload, "created_by"),
         weight=_require_int(payload, "weight", min_value=0),
         rule=_require_str(payload, "rule"),
+        image_path=str(payload.get("image_path", "") or ""),
     )
 
 
@@ -1001,11 +1097,6 @@ def _coerce_int(value: object, *, field_name: str, min_value: int) -> int:
             f"Search treemap fixture field must be >= {min_value}: {field_name}"
         )
     return value
-
-
-def _gcd_many(values: Sequence[int]) -> int:
-    positive = [value for value in values if value > 0]
-    return reduce(math.gcd, positive, positive[0]) if positive else 1
 
 
 def _build_rects_from_squarify(

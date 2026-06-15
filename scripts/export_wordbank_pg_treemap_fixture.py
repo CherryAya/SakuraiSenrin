@@ -49,6 +49,7 @@ from src.lib.wordbank_search_treemap import (
 from src.plugins.wordbank.migration import LegacyPgConfig, load_legacy_pg_config
 
 _NON_FILENAME_RE = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._-]+")
+_MEDIA_CACHE_ROOT = ROOT / "data" / "wordbank" / "media_cache"
 
 
 def parse_args() -> argparse.Namespace:
@@ -316,6 +317,17 @@ def summarize_legacy_message_payload(value: object) -> str:
     return summary or "无文本内容"
 
 
+def legacy_payload_contains_image(value: object) -> bool:
+    payload = _load_json_payload(value)
+    if not isinstance(payload, list):
+        return False
+    return any(
+        isinstance(item, Mapping)
+        and str(item.get("type") or "").strip().lower() == "image"
+        for item in payload
+    )
+
+
 def summarize_legacy_rule(value: object) -> str:
     payload = _load_json_payload(value)
     if not isinstance(payload, Mapping) or not payload:
@@ -380,6 +392,17 @@ def sanitize_filename(value: str) -> str:
     return cleaned[:80] or "keyword"
 
 
+def load_media_cache_samples(limit: int = 512) -> tuple[str, ...]:
+    if not _MEDIA_CACHE_ROOT.is_dir():
+        return ()
+    samples = sorted(
+        str(path.resolve())
+        for path in _MEDIA_CACHE_ROOT.iterdir()
+        if path.is_file() and path.suffix.lower() in {".webp", ".png", ".jpg", ".jpeg"}
+    )
+    return tuple(samples[:limit])
+
+
 def build_page_from_rows(
     *,
     keyword: str,
@@ -390,6 +413,7 @@ def build_page_from_rows(
     preview_responses: int,
     counts: Sequence[dict[str, object]],
     rows: Sequence[dict[str, object]],
+    media_samples: Sequence[str],
 ) -> SearchTreemapPage:
     total_count = len(counts)
     order = [_coerce_int(item["trigger_id"]) for item in counts]
@@ -402,20 +426,28 @@ def build_page_from_rows(
         rows_by_trigger[_coerce_int(row["trigger_id"])].append(row)
 
     items: list[SearchTreemapItem] = []
+    sample_index = 0
     for trigger_id in order:
         group_rows = rows_by_trigger.get(trigger_id)
         if not group_rows:
             continue
         trigger_text = summarize_legacy_message_payload(group_rows[0]["trigger_text"])
-        response_cards = tuple(
-            SearchTreemapResponseCard(
-                text=summarize_legacy_message_payload(row["response_text"]),
-                created_by=str(row.get("created_by") or ""),
-                weight=_coerce_int(row.get("weight") or 0),
-                rule=summarize_legacy_rule(row.get("response_rule_conditions")),
+        response_cards_list: list[SearchTreemapResponseCard] = []
+        for row in group_rows[:preview_responses]:
+            image_path = ""
+            if legacy_payload_contains_image(row["response_text"]) and media_samples:
+                image_path = media_samples[sample_index % len(media_samples)]
+                sample_index += 1
+            response_cards_list.append(
+                SearchTreemapResponseCard(
+                    text=summarize_legacy_message_payload(row["response_text"]),
+                    created_by=str(row.get("created_by") or ""),
+                    weight=_coerce_int(row.get("weight") or 0),
+                    rule=summarize_legacy_rule(row.get("response_rule_conditions")),
+                    image_path=image_path,
+                )
             )
-            for row in group_rows[:preview_responses]
-        )
+        response_cards = tuple(response_cards_list)
         response_texts = [card.text for card in response_cards]
         response_count = response_count_by_trigger_id[trigger_id]
         items.append(
@@ -473,6 +505,7 @@ def page_to_fixture_dict(page: SearchTreemapPage) -> dict[str, object]:
                         "created_by": response.created_by,
                         "weight": response.weight,
                         "rule": response.rule,
+                        "image_path": response.image_path,
                     }
                     for response in item.responses
                 ],
@@ -496,6 +529,7 @@ async def export_keyword(
     locale: str,
     output_dir: Path,
 ) -> tuple[Path, Path]:
+    media_samples = load_media_cache_samples()
     counts = await fetch_matching_group_counts(
         config,
         keyword=keyword,
@@ -515,6 +549,7 @@ async def export_keyword(
         preview_responses=preview_responses,
         counts=counts,
         rows=rows,
+        media_samples=media_samples,
     )
     await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
     slug = sanitize_filename(keyword)
