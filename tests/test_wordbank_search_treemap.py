@@ -441,6 +441,119 @@ def test_renderer_draws_fallback_card_when_masonry_cannot_place_response() -> No
     assert image.getpixel((12, 12)) != (255, 255, 255)
 
 
+def test_renderer_draws_dual_response_cards_side_by_side_when_wide() -> None:
+    renderer = SearchTreemapRenderer()
+    responses = (
+        SearchTreemapResponseCard(
+            text="晚安啦！",
+            created_by="10001",
+            weight=3,
+            rule="默认",
+        ),
+        SearchTreemapResponseCard(
+            text="明天见！",
+            created_by="10002",
+            weight=3,
+            rule="默认",
+        ),
+    )
+    image = Image.new("RGB", (420, 240), "#ffffff")
+    draw = ImageDraw.Draw(image)
+
+    renderer._draw_dual_response_cards(  # pyright: ignore[reportPrivateUsage]
+        image,
+        draw,
+        responses=responses,
+        locale="zh-CN",
+        x=10,
+        y=10,
+        width=360,
+        height=140,
+    )
+
+    assert image.getpixel((12, 12)) != (255, 255, 255)
+    assert image.getpixel((200, 12)) != (255, 255, 255)
+
+
+def test_renderer_draws_dual_response_cards_stacked_when_tall() -> None:
+    renderer = SearchTreemapRenderer()
+    responses = (
+        SearchTreemapResponseCard(
+            text="晚安啦！",
+            created_by="10001",
+            weight=3,
+            rule="默认",
+        ),
+        SearchTreemapResponseCard(
+            text="明天见！",
+            created_by="10002",
+            weight=3,
+            rule="默认",
+        ),
+    )
+    image = Image.new("RGB", (260, 360), "#ffffff")
+    draw = ImageDraw.Draw(image)
+
+    renderer._draw_dual_response_cards(  # pyright: ignore[reportPrivateUsage]
+        image,
+        draw,
+        responses=responses,
+        locale="zh-CN",
+        x=10,
+        y=10,
+        width=180,
+        height=220,
+    )
+
+    assert image.getpixel((12, 12)) != (255, 255, 255)
+    assert image.getpixel((12, 130)) != (255, 255, 255)
+
+
+def test_renderer_rejects_dual_response_layout_when_cards_do_not_fit() -> None:
+    renderer = SearchTreemapRenderer()
+    responses = (
+        SearchTreemapResponseCard(
+            text="今日同您携手共进的是:（弥命）",
+            created_by="10001",
+            weight=3,
+            rule="用户 10001",
+            image_path="/tmp/a.webp",
+            segments=(
+                SearchTreemapResponseSegment(
+                    kind="text",
+                    text="今日同您携手共进的是:（弥命）",
+                ),
+                SearchTreemapResponseSegment(kind="image", image_path="/tmp/a.webp"),
+            ),
+        ),
+        SearchTreemapResponseCard(
+            text="今日同您携手共进的是:（弥命）",
+            created_by="10001",
+            weight=3,
+            rule="用户 10001",
+            image_path="/tmp/b.webp",
+            segments=(
+                SearchTreemapResponseSegment(
+                    kind="text",
+                    text="今日同您携手共进的是:（弥命）",
+                ),
+                SearchTreemapResponseSegment(kind="image", image_path="/tmp/b.webp"),
+            ),
+        ),
+    )
+    rects = renderer._dual_response_rects(  # pyright: ignore[reportPrivateUsage]
+        width=280,
+        height=180,
+    )
+
+    assert rects is not None
+    assert not renderer._can_use_dual_response_layout(  # pyright: ignore[reportPrivateUsage]
+        responses=responses,
+        locale="zh-CN",
+        rects=rects,
+    )
+
+
 def test_renderer_strips_image_placeholder_when_preview_exists() -> None:
     renderer = SearchTreemapRenderer()
 

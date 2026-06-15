@@ -717,6 +717,39 @@ class SearchTreemapRenderer:
                     fill=self.MUTED,
                 )
             return
+        dual_rects = (
+            self._dual_response_rects(width=width, height=grid_height)
+            if len(responses) == 2 and tile.item.hidden_response_count <= 0
+            else None
+        )
+        if dual_rects and self._can_use_dual_response_layout(
+            responses=responses,
+            locale=locale,
+            rects=dual_rects,
+        ):
+            self._draw_dual_response_cards(
+                image,
+                draw,
+                responses=responses,
+                locale=locale,
+                x=x,
+                y=y,
+                width=width,
+                height=grid_height,
+            )
+            if footer_height > 0:
+                meta = self._truncate_line(
+                    self._format_matched_by_label(tile.item.matched_by, locale),
+                    self.tile_meta_font,
+                    width,
+                )
+                draw.text(
+                    (x, y + height - footer_height + 2),
+                    meta,
+                    font=self.tile_meta_font,
+                    fill=self.MUTED,
+                )
+            return
         cols, _ = self._choose_card_layout(
             width=width,
             height=grid_height,
@@ -802,6 +835,83 @@ class SearchTreemapRenderer:
                 font=self.tile_meta_font,
                 fill=self.MUTED,
             )
+
+    def _draw_dual_response_cards(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        responses: Sequence[SearchTreemapResponseCard],
+        locale: LocaleCode,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> None:
+        rects = self._dual_response_rects(width=width, height=height)
+        if rects is None:
+            return
+        for response, rect in zip(responses[:2], rects):
+            self._draw_response_card(
+                image,
+                draw,
+                response,
+                locale,
+                x=rect.x,
+                y=rect.y,
+                width=rect.width,
+                height=rect.height,
+            )
+
+    def _dual_response_rects(
+        self,
+        *,
+        width: int,
+        height: int,
+    ) -> tuple[TreemapRect, TreemapRect] | None:
+        if width <= 0 or height <= 0:
+            return None
+        gap = 8
+        if width >= max(320, height + 80):
+            card_width = max(1, (width - gap) // 2)
+            return (
+                TreemapRect(x=0, y=0, width=card_width, height=height),
+                TreemapRect(
+                    x=card_width + gap,
+                    y=0,
+                    width=max(1, width - card_width - gap),
+                    height=height,
+                ),
+            )
+        card_height = max(1, (height - gap) // 2)
+        return (
+            TreemapRect(x=0, y=0, width=width, height=card_height),
+            TreemapRect(
+                x=0,
+                y=card_height + gap,
+                width=width,
+                height=max(1, height - card_height - gap),
+            ),
+        )
+
+    def _can_use_dual_response_layout(
+        self,
+        *,
+        responses: Sequence[SearchTreemapResponseCard],
+        locale: LocaleCode,
+        rects: Sequence[TreemapRect],
+    ) -> bool:
+        if len(responses) < 2 or len(rects) < 2:
+            return False
+        for response, rect in zip(responses[:2], rects):
+            estimated_height = self._estimate_response_card_height(
+                response,
+                locale,
+                width=rect.width,
+            )
+            if estimated_height > rect.height:
+                return False
+        return True
 
     def _choose_card_layout(
         self,
