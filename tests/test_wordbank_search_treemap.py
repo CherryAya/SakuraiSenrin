@@ -738,6 +738,23 @@ def test_renderer_builds_three_metadata_lines() -> None:
     assert lines == ["创建者 10001", "权重 3", "规则 默认"]
 
 
+def test_renderer_uses_compact_meta_font_for_narrow_cards() -> None:
+    renderer = SearchTreemapRenderer()
+
+    compact_font = renderer._choose_response_meta_font(  # pyright: ignore[reportPrivateUsage]
+        width=160,
+        spacious=False,
+        rule="默认",
+    )
+    regular_font = renderer._choose_response_meta_font(  # pyright: ignore[reportPrivateUsage]
+        width=220,
+        spacious=False,
+        rule="默认",
+    )
+
+    assert renderer._line_height(compact_font) < renderer._line_height(regular_font)  # pyright: ignore[reportPrivateUsage]
+
+
 def test_renderer_measures_single_text_layout_height_for_card_estimate() -> None:
     renderer = SearchTreemapRenderer()
     response = SearchTreemapResponseCard(

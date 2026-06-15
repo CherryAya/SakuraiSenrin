@@ -552,7 +552,7 @@ class SearchTreemapRenderer:
         title_width = max(1, inner_width - badge_width - number_width - 22)
         title_budget = max(
             self._line_height(self.tile_small_title_font),
-            rect.height - pad * 2 - 104,
+            rect.height - pad * 2 - 112,
         )
         title_font, title_lines = self._fit_tile_title_layout(
             tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
@@ -583,7 +583,7 @@ class SearchTreemapRenderer:
                 tile.item.matched_by,
                 locale,
             )
-        if rect.width >= 220 and rect.height >= 145:
+        if rect.width >= 260 and rect.height >= 152:
             draw.text(
                 (inner_x, cursor_y + 2),
                 self._truncate_line(meta_text, self.tile_meta_font, inner_width),
@@ -1088,13 +1088,20 @@ class SearchTreemapRenderer:
             locale,
             has_image_preview=response.has_image,
         )
+        single_text = self._single_text_response_text(response, locale)
         compact_card = len(normalized_text) <= 14 and len(response.rule) <= 10
         spacious_card = width >= 240
-        pad = 12 if spacious_card and not compact_card else (8 if compact_card else 10)
-        meta_font = (
-            self.card_large_meta_font
-            if spacious_card and len(response.rule.strip()) <= 16
-            else self.card_meta_font
+        narrow_text_card = single_text is not None and width < 176
+        if narrow_text_card:
+            pad = 6
+        elif spacious_card and not compact_card:
+            pad = 12
+        else:
+            pad = 8 if compact_card else 10
+        meta_font = self._choose_response_meta_font(
+            width=width,
+            spacious=spacious_card,
+            rule=response.rule,
         )
         title_font = self._choose_response_title_font(
             normalized_text,
@@ -1119,9 +1126,8 @@ class SearchTreemapRenderer:
             font=title_font,
             width=max(1, width - pad * 2),
         )
-        meta_gap = 6 if compact_card else 8
+        meta_gap = 4 if narrow_text_card else (6 if compact_card else 8)
         base_height = pad * 2 + content_height + meta_gap + meta_height
-        single_text = self._single_text_response_text(response, locale)
         if response.has_image:
             minimum_content = max(
                 58 if len(response.ordered_segments) <= 1 else 72,
@@ -1357,17 +1363,20 @@ class SearchTreemapRenderer:
             locale,
             has_image_preview=response.has_image,
         )
+        single_text = self._single_text_response_text(response, locale)
         compact_card = len(normalized_text) <= 14 and len(response.rule) <= 10
         spacious_card = width >= 240 and height >= 150
-        pad = (
-            12
-            if spacious_card and not compact_card
-            else (8 if compact_card or min(width, height) < 120 else 10)
-        )
-        meta_font = (
-            self.card_large_meta_font
-            if spacious_card and len(response.rule.strip()) <= 16
-            else self.card_meta_font
+        narrow_text_card = single_text is not None and width < 176 and height >= 220
+        if narrow_text_card:
+            pad = 6
+        elif spacious_card and not compact_card:
+            pad = 12
+        else:
+            pad = 8 if compact_card or min(width, height) < 120 else 10
+        meta_font = self._choose_response_meta_font(
+            width=width,
+            spacious=spacious_card,
+            rule=response.rule,
         )
         title_font = self._choose_response_title_font(
             normalized_text,
@@ -1382,13 +1391,12 @@ class SearchTreemapRenderer:
             max_width=max(1, width - pad * 2),
         )
         meta_line_height = self._line_height(meta_font)
-        meta_gap = 6 if compact_card else 8
+        meta_gap = 4 if narrow_text_card else (6 if compact_card else 8)
         meta_height = (
             len(meta_lines) * meta_line_height + max(0, len(meta_lines) - 1) * 2
         )
         content_x = x + pad
         content_width = max(1, width - pad * 2)
-        single_text = self._single_text_response_text(response, locale)
         measured_content_height = max(
             1,
             self._measure_response_content_height_for_layout(
@@ -1522,6 +1530,19 @@ class SearchTreemapRenderer:
             divider_y=divider_y,
             meta_y=meta_y,
         )
+
+    def _choose_response_meta_font(
+        self,
+        *,
+        width: int,
+        spacious: bool,
+        rule: str,
+    ) -> Any:
+        if width < 176:
+            return self._load_lxgw_font(15)
+        if spacious and len(rule.strip()) <= 16:
+            return self.card_large_meta_font
+        return self.card_meta_font
 
     def _build_response_meta_lines(
         self,
