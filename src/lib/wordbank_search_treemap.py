@@ -639,6 +639,18 @@ class SearchTreemapRenderer:
     def _format_item_number(self, number: int) -> str:
         return f"{number:02d}" if number < 100 else str(number)
 
+    def _format_matched_by_label(self, value: str, locale: LocaleCode) -> str:
+        if not value:
+            return tr(locale, "wordbank.search_card.none")
+        return {
+            "text:mixed": "触发+响应",
+            "text:trigger": tr(locale, "wordbank.search_card.field.trigger"),
+            "text:response": tr(locale, "wordbank.search_card.field.response"),
+            "text:group": "分组",
+            "image:trigger": tr(locale, "wordbank.search_card.preview.trigger"),
+            "image:response": tr(locale, "wordbank.search_card.preview.response"),
+        }.get(value, value)
+
     def _normalize_text(self, text: str, locale: LocaleCode) -> str:
         cleaned = " ".join(part.strip() for part in text.splitlines() if part.strip())
         return cleaned or tr(locale, "wordbank.search_card.none")
@@ -740,7 +752,7 @@ class SearchTreemapRenderer:
             total_hidden == 0 and width >= 220 and height >= 84 and tile.item.matched_by
         ):
             meta = self._truncate_line(
-                tile.item.matched_by,
+                self._format_matched_by_label(tile.item.matched_by, locale),
                 self.tile_meta_font,
                 width,
             )
@@ -913,25 +925,6 @@ class SearchTreemapRenderer:
         if not segments:
             return 0
         line_height = self._line_height(font)
-        if self._can_use_pair_layout(segments):
-            image_width = min(max(92, width // 2), max(92, int(width * 0.42)))
-            text_width = max(1, width - image_width - 10)
-            text_segment = next(
-                segment for segment in segments if segment.kind == "text"
-            )
-            text_lines = self._wrap_text(
-                self._normalize_response_text(
-                    text_segment.text,
-                    locale,
-                    has_image_preview=bool(response.primary_image_path),
-                ),
-                font,
-                text_width,
-                max_lines=5,
-            )
-            text_height = len(text_lines) * line_height
-            image_height = max(84, min(152, width // 2))
-            return max(text_height, image_height)
         if all(segment.kind == "image" for segment in segments):
             if len(segments) == 1 or width < 180:
                 return max(92, min(176, int(width * 0.75)))
@@ -953,10 +946,13 @@ class SearchTreemapRenderer:
                 )
                 content_height += len(text_lines) * line_height
             else:
-                content_height += max(72, min(148, int(width * 0.72)))
+                content_height += self._preferred_sequence_image_height(width)
             if index < len(segments) - 1:
                 content_height += 6
         return content_height
+
+    def _preferred_sequence_image_height(self, width: int) -> int:
+        return max(84, min(196, int(width * 0.74)))
 
     def _draw_response_card(
         self,
@@ -1091,20 +1087,6 @@ class SearchTreemapRenderer:
         )
         if not segments:
             return
-        if self._can_use_pair_layout(segments):
-            self._draw_response_pair_content(
-                image,
-                draw,
-                response,
-                locale,
-                segments=segments,
-                font=font,
-                x=x,
-                y=y,
-                width=width,
-                height=height,
-            )
-            return
         text_segments = [segment for segment in segments if segment.kind == "text"]
         image_segments = [segment for segment in segments if segment.kind == "image"]
         if image_segments and not text_segments:
@@ -1128,61 +1110,6 @@ class SearchTreemapRenderer:
             x=x,
             y=y,
             width=width,
-            height=height,
-        )
-
-    def _can_use_pair_layout(
-        self,
-        segments: Sequence[SearchTreemapResponseSegment],
-    ) -> bool:
-        return len(segments) == 2 and {segment.kind for segment in segments} == {
-            "text",
-            "image",
-        }
-
-    def _draw_response_pair_content(
-        self,
-        image: Image.Image,
-        draw: ImageDraw.ImageDraw,
-        response: SearchTreemapResponseCard,
-        locale: LocaleCode,
-        *,
-        segments: Sequence[SearchTreemapResponseSegment],
-        font: Any,
-        x: int,
-        y: int,
-        width: int,
-        height: int,
-    ) -> None:
-        gap = 10
-        image_width = min(max(92, width // 2), max(92, int(width * 0.42)))
-        text_width = max(1, width - image_width - gap)
-        if segments[0].kind == "text":
-            text_x, image_x = x, x + text_width + gap
-        else:
-            image_x, text_x = x, x + image_width + gap
-        text_segment = next(segment for segment in segments if segment.kind == "text")
-        image_segment = next(segment for segment in segments if segment.kind == "image")
-        self._draw_text_block(
-            draw,
-            self._normalize_response_text(
-                text_segment.text,
-                locale,
-                has_image_preview=bool(response.primary_image_path),
-            ),
-            font=font,
-            x=text_x,
-            y=y,
-            width=text_width,
-            height=height,
-        )
-        self._draw_image_block(
-            image,
-            draw,
-            image_segment.image_path,
-            x=image_x,
-            y=y,
-            width=image_width,
             height=height,
         )
 
@@ -1232,7 +1159,13 @@ class SearchTreemapRenderer:
                     x=x,
                     y=cursor_y,
                     width=width,
-                    height=max(56, min(available_height, height // 2)),
+                    height=max(
+                        72,
+                        min(
+                            available_height,
+                            self._preferred_sequence_image_height(width),
+                        ),
+                    ),
                 )
             if used <= 0:
                 continue
@@ -1400,7 +1333,7 @@ class SearchTreemapRenderer:
                 locale,
             ),
             f"总响应 {tile.item.response_count}",
-            f"命中 {tile.item.matched_by or '-'}",
+            f"命中 {self._format_matched_by_label(tile.item.matched_by, locale)}",
         )
         cursor_y = y + pad
         for index, line in enumerate(lines):
