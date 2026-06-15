@@ -14,6 +14,7 @@ from typing import Any
 from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw, ImageFont
+import squarify
 
 from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.i18n.runtime import tr
@@ -131,13 +132,19 @@ def build_search_treemap_layout(
     weights = [max(item.response_count, 1) for item in page.items]
     divisor = _gcd_many(weights)
     normalized = [max(1, weight // divisor) for weight in weights]
-    areas = _normalize_areas(normalized, content_width, content_height)
-    rects = _squarify(
-        areas,
-        content_x,
-        content_y,
-        float(content_width),
-        float(content_height),
+    sizes = squarify.normalize_sizes(
+        normalized,
+        content_width,
+        content_height,
+    )
+    rects = _build_rects_from_squarify(
+        squarify.padded_squarify(
+            sizes,
+            content_x,
+            content_y,
+            content_width,
+            content_height,
+        )
     )
     return tuple(
         SearchTreemapTile(
@@ -696,159 +703,19 @@ def _gcd_many(values: Sequence[int]) -> int:
     return reduce(math.gcd, positive, positive[0]) if positive else 1
 
 
-def _normalize_areas(weights: Sequence[int], width: int, height: int) -> list[float]:
-    total_weight = float(sum(weights))
-    total_area = float(width * height)
-    return [(weight / total_weight) * total_area for weight in weights]
-
-
-def _squarify(
-    areas: Sequence[float],
-    x: int,
-    y: int,
-    width: float,
-    height: float,
+def _build_rects_from_squarify(
+    rects: Sequence[dict[str, float]],
 ) -> list[TreemapRect]:
-    remaining = list(areas)
-    row: list[float] = []
-    rects: list[TreemapRect] = []
-    current_x = float(x)
-    current_y = float(y)
-    current_width = width
-    current_height = height
-
-    while remaining:
-        next_area = remaining[0]
-        short_side = min(current_width, current_height)
-        if not row or _worst_ratio([*row, next_area], short_side) <= _worst_ratio(
-            row,
-            short_side,
-        ):
-            row.append(remaining.pop(0))
-            continue
-
-        laid_out, current_x, current_y, current_width, current_height = _layout_row(
-            row,
-            current_x,
-            current_y,
-            current_width,
-            current_height,
-        )
-        rects.extend(laid_out)
-        row = []
-
-    if row:
-        laid_out, current_x, current_y, current_width, current_height = _layout_row(
-            row,
-            current_x,
-            current_y,
-            current_width,
-            current_height,
-        )
-        rects.extend(laid_out)
-
-    return _apply_tile_gap(rects, TREEMAP_TILE_GAP)
-
-
-def _worst_ratio(row: Sequence[float], short_side: float) -> float:
-    if not row or short_side <= 0:
-        return float("inf")
-    total = sum(row)
-    max_area = max(row)
-    min_area = min(row)
-    side_sq = short_side * short_side
-    return max(
-        (side_sq * max_area) / (total * total), (total * total) / (side_sq * min_area)
-    )
-
-
-def _layout_row(
-    row: Sequence[float],
-    x: float,
-    y: float,
-    width: float,
-    height: float,
-) -> tuple[list[TreemapRect], float, float, float, float]:
-    total = sum(row)
-    if width >= height:
-        row_height = total / width if width else 0.0
-        rects = _split_horizontally(row, x, y, width, row_height)
-        return rects, x, y + row_height, width, max(0.0, height - row_height)
-
-    row_width = total / height if height else 0.0
-    rects = _split_vertically(row, x, y, row_width, height)
-    return rects, x + row_width, y, max(0.0, width - row_width), height
-
-
-def _split_horizontally(
-    row: Sequence[float],
-    x: float,
-    y: float,
-    width: float,
-    height: float,
-) -> list[TreemapRect]:
-    total_width = max(len(row), round(width))
-    total_height = max(1, round(height))
-    cursor = 0
-    rects: list[TreemapRect] = []
-    for index, area in enumerate(row):
-        if index == len(row) - 1:
-            rect_width = total_width - cursor
-        else:
-            rect_width = max(1, round(area / height)) if height else 1
-            max_width = total_width - cursor - (len(row) - index - 1)
-            rect_width = min(rect_width, max_width)
-        rects.append(
-            TreemapRect(
-                x=round(x) + cursor,
-                y=round(y),
-                width=rect_width,
-                height=total_height,
-            )
-        )
-        cursor += rect_width
-    return rects
-
-
-def _split_vertically(
-    row: Sequence[float],
-    x: float,
-    y: float,
-    width: float,
-    height: float,
-) -> list[TreemapRect]:
-    total_width = max(1, round(width))
-    total_height = max(len(row), round(height))
-    cursor = 0
-    rects: list[TreemapRect] = []
-    for index, area in enumerate(row):
-        if index == len(row) - 1:
-            rect_height = total_height - cursor
-        else:
-            rect_height = max(1, round(area / width)) if width else 1
-            max_height = total_height - cursor - (len(row) - index - 1)
-            rect_height = min(rect_height, max_height)
-        rects.append(
-            TreemapRect(
-                x=round(x),
-                y=round(y) + cursor,
-                width=total_width,
-                height=rect_height,
-            )
-        )
-        cursor += rect_height
-    return rects
-
-
-def _apply_tile_gap(rects: Sequence[TreemapRect], gap: int) -> list[TreemapRect]:
-    shrunk: list[TreemapRect] = []
+    built: list[TreemapRect] = []
     for rect in rects:
-        inset = min(gap // 2, rect.width // 4, rect.height // 4)
-        width = max(TREEMAP_MIN_TILE_WIDTH, rect.width - inset * 2)
-        height = max(TREEMAP_MIN_TILE_HEIGHT, rect.height - inset * 2)
-        width = min(width, rect.width)
-        height = min(height, rect.height)
-        x = rect.x + max(0, (rect.width - width) // 2)
-        y = rect.y + max(0, (rect.height - height) // 2)
-        shrunk.append(TreemapRect(x=x, y=y, width=width, height=height))
-    return shrunk
+        width = max(1, round(rect["dx"]))
+        height = max(1, round(rect["dy"]))
+        built.append(
+            TreemapRect(
+                x=round(rect["x"]),
+                y=round(rect["y"]),
+                width=width,
+                height=height,
+            )
+        )
+    return built

@@ -23,6 +23,7 @@ dependencies = [
     "markdown-it-py>=3.0.0",
     "pybktree>=1.1",
     "zstandard>=0.25.0",
+    "squarify>=0.4.4",
 ]
 
 
