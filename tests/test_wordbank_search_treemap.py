@@ -12,6 +12,7 @@ from src.lib.wordbank_search_treemap import (
     SearchTreemapPage,
     SearchTreemapQuery,
     SearchTreemapRenderer,
+    SearchTreemapResponseCard,
     build_search_treemap_layout,
     load_search_treemap_fixture,
     render_search_results_treemap,
@@ -29,6 +30,7 @@ def test_load_search_treemap_fixture_builds_page() -> None:
     assert len(page.items) == 8
     assert page.items[0].response_count == 12
     assert page.items[0].remaining_response_count == 7
+    assert page.items[0].responses[0].weight == 8
 
 
 def test_load_search_treemap_fixture_rejects_missing_required_fields(
@@ -42,8 +44,21 @@ def test_load_search_treemap_fixture_rejects_missing_required_fields(
 
     with pytest.raises(
         ValueError,
-        match=r"response_count|response_summaries|trigger_text",
+        match=r"response_count|responses|trigger_text",
     ):
+        load_search_treemap_fixture(source)
+
+
+def test_load_search_treemap_fixture_rejects_incomplete_response_card(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "broken-response.json"
+    source.write_text(
+        '{"query":{"keyword":"x","field":"trigger","creator_id":"","has_image":false,"page":1,"total_count":1,"limit":10},"items":[{"trigger_group_id":1,"trigger_text":"t","status":"approved","created_by":"10001","response_count":1,"responses":[{"text":"r","created_by":"10002","weight":3}]}]}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"rule"):
         load_search_treemap_fixture(source)
 
 
@@ -106,7 +121,7 @@ def test_render_search_results_treemap_returns_image_message() -> None:
     assert message[0].type == "image"
 
 
-def test_renderer_handles_long_and_multiline_response_summaries() -> None:
+def test_renderer_handles_long_and_multiline_response_cards() -> None:
     page = load_search_treemap_fixture(FIXTURES_ROOT / "search_treemap_stress.json")
 
     image_bytes = render_search_results_treemap_bytes(page=page, locale="zh-CN")
@@ -132,7 +147,14 @@ def test_renderer_can_fall_back_to_minimal_tiles() -> None:
                 status="approved",
                 created_by="10001",
                 response_count=1 if index < 11 else 8,
-                response_summaries=("测试摘要",),
+                responses=(
+                    SearchTreemapResponseCard(
+                        text="测试摘要",
+                        created_by="10001",
+                        weight=1,
+                        rule="默认",
+                    ),
+                ),
             )
             for index in range(12)
         ),

@@ -50,19 +50,27 @@ class SearchTreemapQuery:
 
 
 @dataclass(slots=True, frozen=True)
+class SearchTreemapResponseCard:
+    text: str
+    created_by: str
+    weight: int
+    rule: str
+
+
+@dataclass(slots=True, frozen=True)
 class SearchTreemapItem:
     trigger_group_id: int
     trigger_text: str
     status: str
     created_by: str
     response_count: int
-    response_summaries: tuple[str, ...]
+    responses: tuple[SearchTreemapResponseCard, ...]
     remaining_response_count: int = 0
     matched_by: str = ""
 
     @property
-    def display_summaries(self) -> tuple[str, ...]:
-        return self.response_summaries
+    def hidden_response_count(self) -> int:
+        return max(0, self.response_count - len(self.responses))
 
 
 @dataclass(slots=True, frozen=True)
@@ -181,7 +189,8 @@ class SearchTreemapRenderer:
     ACCENT = "#D96E95"
     BADGE_BG = "#FFFFFF"
     BADGE_TEXT = "#B44B70"
-    BULLET = "#B85B7F"
+    CARD_BG = "#FFFCFD"
+    CARD_ACCENT = "#AF5477"
     DIVIDER = "#F2DCE5"
 
     def __init__(self) -> None:
@@ -191,6 +200,8 @@ class SearchTreemapRenderer:
         self.tile_meta_font = self._load_font(18)
         self.tile_body_font = self._load_font(18)
         self.tile_badge_font = self._load_font(18)
+        self.card_title_font = self._load_font(19)
+        self.card_meta_font = self._load_font(15)
 
     def render(self, page: SearchTreemapPage, *, locale: LocaleCode) -> bytes:
         image = Image.new("RGB", (TREEMAP_WIDTH, TREEMAP_HEIGHT), self.BG)
@@ -300,14 +311,13 @@ class SearchTreemapRenderer:
         )
         row_height = self._line_height(self.summary_font)
         box_height = 22 + len(rows) * row_height + (len(rows) - 1) * 8 + 24
-        draw.rounded_rectangle(
+        draw.rectangle(
             (
                 TREEMAP_MARGIN_X,
                 y,
                 TREEMAP_WIDTH - TREEMAP_MARGIN_X,
                 y + box_height,
             ),
-            radius=28,
             fill=self.PANEL,
             outline=self.BORDER,
             width=2,
@@ -336,9 +346,8 @@ class SearchTreemapRenderer:
         width: int,
         height: int,
     ) -> None:
-        draw.rounded_rectangle(
+        draw.rectangle(
             (x, y, x + width, y + height),
-            radius=32,
             fill="#FFFFFF",
             outline=self.BORDER,
             width=2,
@@ -391,15 +400,13 @@ class SearchTreemapRenderer:
             return
 
         fill = self.PANEL_ALT[index % len(self.PANEL_ALT)]
-        radius = max(12, min(26, min(rect.width, rect.height) // 7))
-        draw.rounded_rectangle(
+        draw.rectangle(
             (
                 rect.x,
                 rect.y,
                 rect.x + rect.width,
                 rect.y + rect.height,
             ),
-            radius=radius,
             fill=fill,
             outline=self.BORDER,
             width=2,
@@ -417,14 +424,13 @@ class SearchTreemapRenderer:
         badge_height = self._line_height(self.tile_badge_font) + 4
         badge_x1 = rect.x + rect.width - pad - badge_width
         badge_y1 = rect.y + pad
-        draw.rounded_rectangle(
+        draw.rectangle(
             (
                 badge_x1,
                 badge_y1,
                 badge_x1 + badge_width,
                 badge_y1 + badge_height,
             ),
-            radius=16,
             fill=self.BADGE_BG,
             outline=self.BORDER,
             width=1,
@@ -486,78 +492,19 @@ class SearchTreemapRenderer:
         )
         cursor_y += 10
 
-        shown = 0
         bottom_limit = rect.y + rect.height - pad
-        summary_candidates = tile.item.display_summaries
-        response_max_lines = 2 if rect.width >= 260 and rect.height >= 180 else 1
-        for summary in summary_candidates:
-            response_lines = self._wrap_text(
-                f"• {self._normalize_summary(summary, locale)}",
-                self.tile_body_font,
-                inner_width,
-                max_lines=response_max_lines,
-            )
-            needed_height = (
-                len(response_lines) * self._line_height(self.tile_body_font) + 8
-            )
-            if cursor_y + needed_height > bottom_limit - self._line_height(
-                self.tile_meta_font
-            ):
-                break
-            for line in response_lines:
-                draw.text(
-                    (inner_x, cursor_y),
-                    line,
-                    font=self.tile_body_font,
-                    fill=self.BODY if shown else self.BULLET,
-                )
-                cursor_y += self._line_height(self.tile_body_font)
-            cursor_y += 8
-            shown += 1
+        if cursor_y >= bottom_limit:
+            return
 
-        hidden_count = (
-            max(0, len(summary_candidates) - shown) + tile.item.remaining_response_count
+        self._draw_response_card_grid(
+            draw,
+            tile,
+            locale,
+            x=inner_x,
+            y=cursor_y,
+            width=inner_width,
+            height=max(1, bottom_limit - cursor_y),
         )
-        capsule_drawn = False
-        if hidden_count > 0:
-            capsule_drawn = self._draw_hidden_response_capsules(
-                draw,
-                x=inner_x,
-                y=cursor_y + 4,
-                width=inner_width,
-                bottom_limit=bottom_limit - 2,
-                count=hidden_count,
-            )
-        if (
-            hidden_count > 0
-            and not capsule_drawn
-            and cursor_y + self._line_height(self.tile_meta_font) <= bottom_limit
-        ):
-            suffix = tr(
-                locale,
-                "wordbank.search_card.more_responses",
-                count=hidden_count,
-            ).strip()
-            draw.text(
-                (inner_x, bottom_limit - self._line_height(self.tile_meta_font)),
-                suffix,
-                font=self.tile_meta_font,
-                fill=self.ACCENT,
-            )
-        if hidden_count == 0 and rect.width >= 240 and rect.height >= 150:
-            footer_meta = self._truncate_line(
-                f"@{tile.item.created_by}  {tile.item.matched_by or '-'}",
-                self.tile_meta_font,
-                inner_width,
-            )
-            footer_y = bottom_limit - self._line_height(self.tile_meta_font)
-            if footer_y > cursor_y + 6:
-                draw.text(
-                    (inner_x, footer_y),
-                    footer_meta,
-                    font=self.tile_meta_font,
-                    fill=self.MUTED,
-                )
 
     def _field_label(self, field: str, locale: LocaleCode) -> str:
         return {
@@ -566,72 +513,288 @@ class SearchTreemapRenderer:
             "response": tr(locale, "wordbank.search_card.field.response"),
         }.get(field, field)
 
-    def _normalize_summary(self, summary: str, locale: LocaleCode) -> str:
-        cleaned = " ".join(
-            part.strip() for part in summary.splitlines() if part.strip()
-        )
+    def _normalize_text(self, text: str, locale: LocaleCode) -> str:
+        cleaned = " ".join(part.strip() for part in text.splitlines() if part.strip())
         return cleaned or tr(locale, "wordbank.search_card.none")
 
-    def _draw_hidden_response_capsules(
+    def _draw_response_card_grid(
         self,
         draw: ImageDraw.ImageDraw,
+        tile: SearchTreemapTile,
+        locale: LocaleCode,
         *,
         x: int,
         y: int,
         width: int,
-        bottom_limit: int,
-        count: int,
-    ) -> bool:
-        chip_height = self._line_height(self.tile_meta_font) + 4
-        chip_gap_x = 8
-        chip_gap_y = 8
-        chip_width = 62
-        available_height = bottom_limit - y
-        if width < 180 or available_height < chip_height * 2 + chip_gap_y:
-            return False
+        height: int,
+    ) -> None:
+        responses = tile.item.responses
+        if width < 150 or height < 54:
+            return
 
-        cols = max(1, (width + chip_gap_x) // (chip_width + chip_gap_x))
-        rows = max(1, (available_height + chip_gap_y) // (chip_height + chip_gap_y))
-        capacity = cols * rows
-        if capacity < 2:
-            return False
+        hidden_count = tile.item.hidden_response_count
+        overflow_height = 0
+        if hidden_count > 0 and height >= 112:
+            overflow_height = min(
+                30, max(24, self._line_height(self.tile_meta_font) + 4)
+            )
 
-        visible = min(count, capacity)
-        chip_index = 0
-        for row in range(rows):
-            for col in range(cols):
-                if chip_index >= visible:
-                    return True
-                chip_x = x + col * (chip_width + chip_gap_x)
-                chip_y = y + row * (chip_height + chip_gap_y)
-                if chip_y + chip_height > bottom_limit:
-                    return True
-                is_overflow_chip = chip_index == visible - 1 and count > capacity
-                label = (
-                    f"+{count - capacity + 1}"
-                    if is_overflow_chip
-                    else f"R{chip_index + 1}"
-                )
-                draw.rounded_rectangle(
-                    (
-                        chip_x,
-                        chip_y,
-                        chip_x + chip_width,
-                        chip_y + chip_height,
-                    ),
-                    radius=12,
-                    fill="#FFFDFE",
-                    outline=self.BORDER,
-                    width=1,
-                )
+        grid_height = max(1, height - overflow_height)
+        cols, max_cards = self._choose_card_layout(
+            width=width,
+            height=grid_height,
+            response_count=len(responses) + (1 if hidden_count > 0 else 0),
+        )
+        overflow_as_card = hidden_count > 0 and max_cards > len(responses)
+        shown_count = min(len(responses), max_cards - (1 if overflow_as_card else 0))
+        display_count = shown_count + (1 if overflow_as_card else 0)
+        if display_count <= 0:
+            self._draw_overflow_banner(
+                draw,
+                locale,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                hidden_count=hidden_count,
+            )
+            return
+
+        rows = max(1, math.ceil(display_count / cols))
+        card_gap = 8
+        card_width = max(1, (width - card_gap * (cols - 1)) // cols)
+        card_height = max(1, (grid_height - card_gap * (rows - 1)) // rows)
+        for card_index, response in enumerate(responses[:shown_count]):
+            row = card_index // cols
+            col = card_index % cols
+            card_x = x + col * (card_width + card_gap)
+            card_y = y + row * (card_height + card_gap)
+            self._draw_response_card(
+                draw,
+                response,
+                locale,
+                x=card_x,
+                y=card_y,
+                width=card_width,
+                height=card_height,
+            )
+
+        if overflow_as_card:
+            overflow_index = shown_count
+            row = overflow_index // cols
+            col = overflow_index % cols
+            card_x = x + col * (card_width + card_gap)
+            card_y = y + row * (card_height + card_gap)
+            self._draw_overflow_card(
+                draw,
+                tile,
+                locale,
+                x=card_x,
+                y=card_y,
+                width=card_width,
+                height=card_height,
+                hidden_count=max(0, tile.item.response_count - shown_count),
+            )
+
+        total_hidden = max(0, tile.item.response_count - shown_count)
+        if total_hidden > 0 and overflow_height > 0 and not overflow_as_card:
+            self._draw_overflow_banner(
+                draw,
+                locale,
+                x=x,
+                y=y + height - overflow_height,
+                width=width,
+                height=overflow_height,
+                hidden_count=total_hidden,
+            )
+        elif (
+            total_hidden == 0 and width >= 220 and height >= 84 and tile.item.matched_by
+        ):
+            meta = self._truncate_line(
+                tile.item.matched_by,
+                self.tile_meta_font,
+                width,
+            )
+            draw.text(
+                (x, y + height - self._line_height(self.tile_meta_font)),
+                meta,
+                font=self.tile_meta_font,
+                fill=self.MUTED,
+            )
+
+    def _choose_card_layout(
+        self,
+        *,
+        width: int,
+        height: int,
+        response_count: int,
+    ) -> tuple[int, int]:
+        if response_count <= 0:
+            return (1, 0)
+        card_gap = 8
+        candidates: list[tuple[int, int, tuple[int, int, int]]] = []
+        for cols in (2, 1):
+            if cols == 2 and width < 340:
+                continue
+            card_width = (width - card_gap * (cols - 1)) // cols
+            if card_width < 150:
+                continue
+            max_rows = min(5, max(1, (height + card_gap) // (72 + card_gap)))
+            shown = min(response_count, cols * max_rows)
+            rows = max(1, math.ceil(shown / cols))
+            card_height = (height - card_gap * (rows - 1)) // rows
+            if card_height < 72:
+                continue
+            score = (shown, -abs(card_height - 112), cols)
+            candidates.append((cols, shown, score))
+        if not candidates:
+            return (1, 1 if width >= 180 and height >= 90 else 0)
+        cols, shown, _ = max(candidates, key=lambda item: item[2])
+        return (cols, shown)
+
+    def _draw_response_card(
+        self,
+        draw: ImageDraw.ImageDraw,
+        response: SearchTreemapResponseCard,
+        locale: LocaleCode,
+        *,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> None:
+        draw.rectangle(
+            (x, y, x + width, y + height),
+            fill=self.CARD_BG,
+            outline=self.BORDER,
+            width=1,
+        )
+        pad = 10 if min(width, height) >= 120 else 8
+        text_max_lines = 3 if height >= 138 else 2
+        title_lines = self._wrap_text(
+            self._normalize_text(response.text, locale),
+            self.card_title_font,
+            max(1, width - pad * 2),
+            max_lines=text_max_lines,
+        )
+        cursor_y = y + pad
+        for line in title_lines:
+            draw.text(
+                (x + pad, cursor_y),
+                line,
+                font=self.card_title_font,
+                fill=self.CARD_ACCENT,
+            )
+            cursor_y += self._line_height(self.card_title_font)
+
+        cursor_y += 2
+        meta_width = max(1, width - pad * 2)
+        for label, value in (
+            ("创建者", response.created_by),
+            ("权重", str(response.weight)),
+            ("规则", response.rule),
+        ):
+            if cursor_y + self._line_height(self.card_meta_font) > y + height - pad:
+                break
+            line = self._truncate_line(
+                f"{label} {self._normalize_text(value, locale)}",
+                self.card_meta_font,
+                meta_width,
+            )
+            draw.text(
+                (x + pad, cursor_y),
+                line,
+                font=self.card_meta_font,
+                fill=self.BODY,
+            )
+            cursor_y += self._line_height(self.card_meta_font)
+
+    def _draw_overflow_banner(
+        self,
+        draw: ImageDraw.ImageDraw,
+        locale: LocaleCode,
+        *,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        hidden_count: int,
+    ) -> None:
+        if hidden_count <= 0:
+            return
+        draw.rectangle(
+            (x, y, x + width, y + height),
+            fill="#FFF5F8",
+            outline=self.BORDER,
+            width=1,
+        )
+        label = tr(
+            locale,
+            "wordbank.search_card.more_responses",
+            count=hidden_count,
+        ).strip()
+        draw.text(
+            (
+                x + 10,
+                y + max(2, (height - self._line_height(self.tile_meta_font)) // 2),
+            ),
+            self._truncate_line(label, self.tile_meta_font, max(1, width - 20)),
+            font=self.tile_meta_font,
+            fill=self.ACCENT,
+        )
+
+    def _draw_overflow_card(
+        self,
+        draw: ImageDraw.ImageDraw,
+        tile: SearchTreemapTile,
+        locale: LocaleCode,
+        *,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        hidden_count: int,
+    ) -> None:
+        draw.rectangle(
+            (x, y, x + width, y + height),
+            fill="#FFF5F8",
+            outline=self.BORDER,
+            width=1,
+        )
+        pad = 10 if min(width, height) >= 120 else 8
+        lines = (
+            self._normalize_text(
+                tr(
+                    locale,
+                    "wordbank.search_card.more_responses",
+                    count=hidden_count,
+                ).strip(),
+                locale,
+            ),
+            f"总响应 {tile.item.response_count}",
+            f"命中 {tile.item.matched_by or '-'}",
+        )
+        cursor_y = y + pad
+        for index, line in enumerate(lines):
+            font = self.card_title_font if index == 0 else self.card_meta_font
+            color = self.ACCENT if index == 0 else self.BODY
+            wrapped = self._wrap_text(
+                line,
+                font,
+                max(1, width - pad * 2),
+                max_lines=2 if index == 0 else 1,
+            )
+            for item in wrapped:
+                if cursor_y + self._line_height(font) > y + height - pad:
+                    return
                 draw.text(
-                    (chip_x + 10, chip_y + 2),
-                    label,
-                    font=self.tile_meta_font,
-                    fill=self.ACCENT if is_overflow_chip else self.MUTED,
+                    (x + pad, cursor_y),
+                    item,
+                    font=font,
+                    fill=color,
                 )
-                chip_index += 1
-        return True
+                cursor_y += self._line_height(font)
+            cursor_y += 2
 
     def _wrap_text(
         self,
@@ -728,18 +891,25 @@ def _parse_treemap_item(payload: object, index: int) -> SearchTreemapItem:
     if not isinstance(payload, dict):
         raise ValueError(f"Search treemap item at index {index} must be an object")
     response_count = _require_int(payload, "response_count", min_value=1)
-    raw_summaries = payload.get("response_summaries")
-    if not isinstance(raw_summaries, list):
+    raw_responses = payload.get("responses")
+    if not isinstance(raw_responses, list):
+        raise ValueError(
+            f"Search treemap item at index {index} is missing array field: responses"
+        )
+    responses = tuple(
+        _parse_response_card(item, item_index, parent_index=index)
+        for item_index, item in enumerate(raw_responses)
+    )
+    if len(responses) > response_count:
         raise ValueError(
             "Search treemap item at index "
-            f"{index} is missing array field: response_summaries"
+            f"{index} has more response cards than response_count"
         )
-    summaries = tuple(str(item) for item in raw_summaries if str(item))
     remaining = payload.get("remaining_response_count")
     remaining_count = (
         _coerce_int(remaining, field_name="remaining_response_count", min_value=0)
         if remaining is not None
-        else max(0, response_count - len(summaries))
+        else max(0, response_count - len(responses))
     )
     return SearchTreemapItem(
         trigger_group_id=_require_int(payload, "trigger_group_id", min_value=1),
@@ -747,9 +917,28 @@ def _parse_treemap_item(payload: object, index: int) -> SearchTreemapItem:
         status=_require_str(payload, "status"),
         created_by=_require_str(payload, "created_by"),
         response_count=response_count,
-        response_summaries=summaries,
+        responses=responses,
         remaining_response_count=remaining_count,
         matched_by=str(payload.get("matched_by", "") or ""),
+    )
+
+
+def _parse_response_card(
+    payload: object,
+    index: int,
+    *,
+    parent_index: int,
+) -> SearchTreemapResponseCard:
+    if not isinstance(payload, dict):
+        raise ValueError(
+            "Search treemap response card at item index "
+            f"{parent_index}, response index {index} must be an object"
+        )
+    return SearchTreemapResponseCard(
+        text=_require_str(payload, "text"),
+        created_by=_require_str(payload, "created_by"),
+        weight=_require_int(payload, "weight", min_value=0),
+        rule=_require_str(payload, "rule"),
     )
 
 

@@ -15,12 +15,37 @@
       "status": "approved",
       "created_by": "2092282735",
       "response_count": 21,
-      "response_summaries": [
-        "第一行响应会很长很长很长，需要在固定字号下截断并且不能溢出矩形边界",
-        "第二条响应\n故意带换行\n测试归一化逻辑",
-        "第三条响应同样比较长，看看双行摘要裁剪之后是否稳定",
-        "第四条响应是补充说明，观察大块是否会继续展示更多内容",
-        "第五条响应模拟更多可见文本，减少大片空白"
+      "responses": [
+        {
+          "text": "第一行响应会很长很长很长，需要在固定字号下截断并且不能溢出矩形边界",
+          "created_by": "2092282735",
+          "weight": 12,
+          "rule": "默认"
+        },
+        {
+          "text": "第二条响应\n故意带换行\n测试归一化逻辑",
+          "created_by": "10031",
+          "weight": 9,
+          "rule": "精准"
+        },
+        {
+          "text": "第三条响应同样比较长，看看双行摘要裁剪之后是否稳定",
+          "created_by": "10032",
+          "weight": 7,
+          "rule": "群内限定"
+        },
+        {
+          "text": "第四条响应是补充说明，观察大块是否会继续展示更多内容",
+          "created_by": "10033",
+          "weight": 6,
+          "rule": "概率 65%"
+        },
+        {
+          "text": "第五条响应模拟更多可见文本，减少大片空白",
+          "created_by": "10034",
+          "weight": 5,
+          "rule": "图片优先"
+        }
       ],
       "remaining_response_count": 16,
       "matched_by": "text:trigger"
@@ -31,8 +56,8 @@
       "status": "approved",
       "created_by": "10002",
       "response_count": 1,
-      "response_summaries": [
-        "短"
+      "responses": [
+        { "text": "短", "created_by": "10002", "weight": 1, "rule": "默认" }
       ],
       "remaining_response_count": 0,
       "matched_by": "recent"
@@ -43,8 +68,8 @@
       "status": "approved",
       "created_by": "10003",
       "response_count": 1,
-      "response_summaries": [
-        "也很短"
+      "responses": [
+        { "text": "也很短", "created_by": "10003", "weight": 1, "rule": "默认" }
       ],
       "remaining_response_count": 0,
       "matched_by": "recent"
@@ -55,11 +80,11 @@
       "status": "approved",
       "created_by": "10004",
       "response_count": 7,
-      "response_summaries": [
-        "一号响应内容",
-        "二号响应内容",
-        "三号响应内容",
-        "四号响应内容"
+      "responses": [
+        { "text": "一号响应内容", "created_by": "10004", "weight": 6, "rule": "默认" },
+        { "text": "二号响应内容", "created_by": "10041", "weight": 5, "rule": "精准" },
+        { "text": "三号响应内容", "created_by": "10042", "weight": 4, "rule": "概率 80%" },
+        { "text": "四号响应内容", "created_by": "10043", "weight": 2, "rule": "仅群聊" }
       ],
       "remaining_response_count": 3,
       "matched_by": "creator"
@@ -70,11 +95,11 @@
       "status": "approved",
       "created_by": "10005",
       "response_count": 5,
-      "response_summaries": [
-        "第一行\n第二行\n第三行",
-        "甲乙丙丁戊己庚辛壬癸",
-        "这是第三条摘要",
-        "第四条补充摘要"
+      "responses": [
+        { "text": "第一行\n第二行\n第三行", "created_by": "10005", "weight": 7, "rule": "默认" },
+        { "text": "甲乙丙丁戊己庚辛壬癸", "created_by": "10051", "weight": 5, "rule": "精准" },
+        { "text": "这是第三条摘要", "created_by": "10052", "weight": 3, "rule": "限定群" },
+        { "text": "第四条补充摘要", "created_by": "10053", "weight": 2, "rule": "概率 50%" }
       ],
       "remaining_response_count": 1,
       "matched_by": "text:response"
@@ -85,10 +110,10 @@
       "status": "approved",
       "created_by": "10006",
       "response_count": 3,
-      "response_summaries": [
-        "触发图命中",
-        "响应图命中",
-        "文本 + 图片命中"
+      "responses": [
+        { "text": "触发图命中", "created_by": "10006", "weight": 4, "rule": "触发图" },
+        { "text": "响应图命中", "created_by": "10061", "weight": 3, "rule": "响应图" },
+        { "text": "文本 + 图片命中", "created_by": "10062", "weight": 2, "rule": "混合匹配" }
       ],
       "remaining_response_count": 0,
       "matched_by": "text:image"

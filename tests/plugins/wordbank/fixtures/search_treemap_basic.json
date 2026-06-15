@@ -15,12 +15,12 @@
       "status": "approved",
       "created_by": "10001",
       "response_count": 12,
-      "response_summaries": [
-        "做个好梦",
-        "早点睡觉",
-        "晚安安",
-        "今晚也辛苦啦",
-        "被子盖好不要着凉"
+      "responses": [
+        { "text": "做个好梦", "created_by": "10001", "weight": 8, "rule": "默认" },
+        { "text": "早点睡觉", "created_by": "10011", "weight": 6, "rule": "仅群聊" },
+        { "text": "晚安安", "created_by": "10012", "weight": 5, "rule": "精准" },
+        { "text": "今晚也辛苦啦", "created_by": "10013", "weight": 4, "rule": "概率 80%" },
+        { "text": "被子盖好不要着凉", "created_by": "10014", "weight": 3, "rule": "艾特优先" }
       ],
       "remaining_response_count": 7,
       "matched_by": "text:trigger"
@@ -31,11 +31,11 @@
       "status": "approved",
       "created_by": "10002",
       "response_count": 8,
-      "response_summaries": [
-        "别睡了快起床",
-        "今天也是努力的一天",
-        "闹钟已经响第三遍了",
-        "咖啡已经替你准备好了"
+      "responses": [
+        { "text": "别睡了快起床", "created_by": "10002", "weight": 7, "rule": "默认" },
+        { "text": "今天也是努力的一天", "created_by": "10015", "weight": 5, "rule": "精准" },
+        { "text": "闹钟已经响第三遍了", "created_by": "10016", "weight": 4, "rule": "仅早间" },
+        { "text": "咖啡已经替你准备好了", "created_by": "10017", "weight": 3, "rule": "概率 70%" }
       ],
       "remaining_response_count": 4,
       "matched_by": "text:trigger"
@@ -46,11 +46,11 @@
       "status": "approved",
       "created_by": "10003",
       "response_count": 6,
-      "response_summaries": [
-        "贴贴",
-        "给你一个抱抱",
-        "今天也要开心",
-        "再来一张猫猫表情包"
+      "responses": [
+        { "text": "贴贴", "created_by": "10003", "weight": 9, "rule": "默认" },
+        { "text": "给你一个抱抱", "created_by": "10018", "weight": 6, "rule": "精准" },
+        { "text": "今天也要开心", "created_by": "10019", "weight": 4, "rule": "概率 60%" },
+        { "text": "再来一张猫猫表情包", "created_by": "10020", "weight": 3, "rule": "带图优先" }
       ],
       "remaining_response_count": 2,
       "matched_by": "text:response"
@@ -61,10 +61,10 @@
       "status": "approved",
       "created_by": "10004",
       "response_count": 5,
-      "response_summaries": [
-        "运势",
-        "猜拳",
-        "漂流瓶"
+      "responses": [
+        { "text": "运势", "created_by": "10004", "weight": 5, "rule": "默认" },
+        { "text": "猜拳", "created_by": "10021", "weight": 4, "rule": "精准" },
+        { "text": "漂流瓶", "created_by": "10022", "weight": 2, "rule": "群内限定" }
       ],
       "remaining_response_count": 2,
       "matched_by": "text:trigger"
@@ -75,10 +75,10 @@
       "status": "approved",
       "created_by": "10005",
       "response_count": 4,
-      "response_summaries": [
-        "盖饭",
-        "面条",
-        "再来一份炸鸡"
+      "responses": [
+        { "text": "盖饭", "created_by": "10005", "weight": 5, "rule": "默认" },
+        { "text": "面条", "created_by": "10023", "weight": 4, "rule": "精准" },
+        { "text": "再来一份炸鸡", "created_by": "10024", "weight": 3, "rule": "加餐模式" }
       ],
       "remaining_response_count": 1,
       "matched_by": "creator"
@@ -89,10 +89,10 @@
       "status": "approved",
       "created_by": "10006",
       "response_count": 3,
-      "response_summaries": [
-        "逛公园",
-        "看电影",
-        "宅家补觉"
+      "responses": [
+        { "text": "逛公园", "created_by": "10006", "weight": 4, "rule": "默认" },
+        { "text": "看电影", "created_by": "10025", "weight": 4, "rule": "精准" },
+        { "text": "宅家补觉", "created_by": "10026", "weight": 2, "rule": "雨天优先" }
       ],
       "remaining_response_count": 0,
       "matched_by": "recent"
@@ -103,9 +103,9 @@
       "status": "approved",
       "created_by": "10007",
       "response_count": 2,
-      "response_summaries": [
-        "今天也很棒",
-        "辛苦啦"
+      "responses": [
+        { "text": "今天也很棒", "created_by": "10007", "weight": 4, "rule": "默认" },
+        { "text": "辛苦啦", "created_by": "10027", "weight": 2, "rule": "精准" }
       ],
       "remaining_response_count": 0,
       "matched_by": "text:trigger"
@@ -116,8 +116,8 @@
       "status": "approved",
       "created_by": "10008",
       "response_count": 1,
-      "response_summaries": [
-        "......"
+      "responses": [
+        { "text": "......", "created_by": "10008", "weight": 1, "rule": "默认" }
       ],
       "remaining_response_count": 0,
       "matched_by": "text:trigger"
