@@ -2960,16 +2960,25 @@ class DemoImageRenderer:
         text_max_width = (
             self.WIDTH - side * 2 - standee_size - self.theme.hero_content_gap
         )
-        pills = (
+        pills_list = [
             ("PLUGIN DOCS", self.theme.pill_blue_bg, self.theme.pill_blue_text),
-            (feature_permission, self.theme.pill_pink_bg, self.theme.pill_pink_text),
             (
                 plugin_trigger or "文档指引",
                 self.theme.pill_blue_bg,
                 self.theme.pill_blue_text,
             ),
             (plugin_author, self.theme.pill_pink_bg, self.theme.pill_pink_text),
-        )
+        ]
+        if feature_permission.strip() and feature_permission != "普通用户":
+            pills_list.insert(
+                1,
+                (
+                    feature_permission,
+                    self.theme.pill_pink_bg,
+                    self.theme.pill_pink_text,
+                ),
+            )
+        pills = tuple(pills_list)
         pill_rects: list[tuple[int, int, int, int]] = []
         x = side
         y = self.theme.hero_top
@@ -3609,7 +3618,7 @@ class DemoImageRenderer:
         items: list[_ShowcaseNoteItem] = []
         cursor_y = start_y
         source_items: list[tuple[str, str]] = []
-        if feature_permission.strip():
+        if feature_permission.strip() and feature_permission != "普通用户":
             source_items.append((feature_permission.strip(), self.theme.note_danger))
         source_items.extend(
             (text, self.theme.note_success)

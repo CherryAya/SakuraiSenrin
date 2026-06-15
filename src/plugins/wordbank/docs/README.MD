@@ -365,6 +365,15 @@ ID 非数字、词条不存在或当前用户没有操作权限时返回明确�
 - `#wordbank trigger set 271 晚安啦 [图片]`
 #### 前置条件
 仅超级用户可执行。
+#### 完整流程
+```demo
+USER: #wordbank trigger prob 271 0.3
+BOT: Trigger Group #271 的触发概率已更新为 0.3。
+SYSTEM: 后续命中该 trigger group 时，会先按 0.3 的概率决定是否继续响应。
+USER: #wordbank trigger set 271 晚安啦
+BOT: Trigger Group #271 已更新触发内容，组内响应已重新进入 pending。
+SYSTEM: 重新审核通过前，这组 trigger 不会参与被动匹配；审核文档请查看 #help 词库审核。
+```
 #### 失败情况
 group id 非法、group 不存在、权限不足，或新触发内容与其他 trigger group 完全重复时会返回明确说明。
 
@@ -382,6 +391,15 @@ group id 非法、group 不存在、权限不足，或新触发内容与其他 t
 - `#wordbank response set 12 做个好梦 [图片]`
 #### 前置条件
 超级用户可修改任意响应；非超管仅允许修改自己创建的响应。
+#### 完整流程
+```demo
+USER: #wordbank response weight 12 5
+BOT: 词条 #12 的响应权重已更新为 5。
+SYSTEM: 同组 trigger 命中后，这条响应会更容易被抽中，但 trigger 概率不受影响。
+USER: #wordbank response set 12 做个好梦
+BOT: 词条 #12 的响应内容已更新，并重新进入 pending。
+SYSTEM: 审核通过前，这条响应不会参与被动匹配；审核文档请查看 #help 词库审核。
+```
 #### 失败情况
 词条 ID 非法、词条不存在、权限不足，或权重超出范围时会返回明确说明。
 

@@ -1,3 +1,4 @@
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -608,6 +609,8 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
 
     add = next(feature for feature in wordbank.index if feature.slug == "add")
     rank = next(feature for feature in wordbank.index if feature.slug == "rank")
+    trigger = next(feature for feature in wordbank.index if feature.slug == "trigger")
+    response = next(feature for feature in wordbank.index if feature.slug == "response")
     passive = next(feature for feature in wordbank.index if feature.slug == "passive")
     reply = next(
         feature for feature in wordbank.index if feature.slug == "reply-shortcut"
@@ -642,6 +645,12 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert rank.demo_filename == "wordbank-rank.png"
     assert rank.demo_turns[0].text == "#苦瓜榜"
     assert "[发送苦瓜榜海报]" in rank.demo_turns[1].text
+    assert trigger.demo_filename == "wordbank-trigger.png"
+    assert trigger.demo_turns[0].text == "#wordbank trigger prob 271 0.3"
+    assert "重新进入 pending" in trigger.demo_turns[4].text
+    assert response.demo_filename == "wordbank-response.png"
+    assert response.demo_turns[0].text == "#wordbank response weight 12 5"
+    assert "重新进入 pending" in response.demo_turns[4].text
     assert passive.demo_turns[-1].speaker == "SYSTEM"
     assert "group_recall" in passive.demo_turns[-1].text
     assert reply.demo_filename == "wordbank-reply-shortcut.png"
@@ -1287,6 +1296,68 @@ def test_demo_theme_layout_constants() -> None:
     assert BASE_THEME.inline_code_radius == 10
     assert BASE_THEME.inline_code_pad_x == 8
     assert BASE_THEME.inline_code_pad_y == 4
+
+
+def test_demo_theme_showcase_tokens_follow_expected_scale() -> None:
+    assert BASE_THEME.canvas_width == 1280
+    assert BASE_THEME.hero_top == 64
+    assert BASE_THEME.hero_side_padding % 8 == 0
+    assert BASE_THEME.hero_bottom_padding % 8 == 0
+    assert BASE_THEME.hero_standee_size == 304
+    assert BASE_THEME.pill_height == 40
+    assert BASE_THEME.section_gap % 8 == 0
+    assert BASE_THEME.instruction_padding_x % 8 == 0
+    assert BASE_THEME.instruction_padding_y % 8 == 0
+    assert BASE_THEME.trigger_padding_x % 8 == 0
+    assert BASE_THEME.trigger_padding_y % 8 == 0
+    assert BASE_THEME.avatar_size % 8 == 0
+    assert BASE_THEME.bubble_padding_x % 8 == 0
+    assert BASE_THEME.bubble_padding_y % 8 == 0
+
+
+def test_demo_image_renderer_handles_features_without_demo_turns() -> None:
+    renderer = DemoImageRenderer()
+    image = Image.open(
+        BytesIO(
+            renderer.render(
+                plugin_title="测试插件",
+                feature_title="无 Demo 功能",
+                feature_summary="仅展示说明内容。",
+                feature_trigger="#noop",
+                feature_overview="这个功能只有概览和说明。",
+                feature_preconditions="需要在群聊中调用。",
+                feature_failures="参数错误时会提示原因。",
+                feature_flow_notes="不会附带完整流程演示。",
+                plugin_trigger="指令触发",
+                feature_permission="普通用户",
+                plugin_version="0.1.0",
+                plugin_author="SakuraiCora",
+                turns=(),
+                locale="zh-CN",
+            )
+        )
+    )
+    assert image.width == 1280
+    assert image.height < 1200
+    assert (
+        renderer.audit(
+            plugin_title="测试插件",
+            feature_title="无 Demo 功能",
+            feature_summary="仅展示说明内容。",
+            feature_trigger="#noop",
+            feature_overview="这个功能只有概览和说明。",
+            feature_preconditions="需要在群聊中调用。",
+            feature_failures="参数错误时会提示原因。",
+            feature_flow_notes="不会附带完整流程演示。",
+            plugin_trigger="指令触发",
+            feature_permission="普通用户",
+            plugin_version="0.1.0",
+            plugin_author="SakuraiCora",
+            turns=(),
+            locale="zh-CN",
+        )
+        == ()
+    )
 
 
 def test_demo_collection_renderer_outer_margin_unified() -> None:
