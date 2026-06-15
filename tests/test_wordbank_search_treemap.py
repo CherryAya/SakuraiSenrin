@@ -769,6 +769,7 @@ def test_renderer_vertical_layout_does_not_pin_single_text_metadata_to_bottom() 
     layout = renderer._compute_response_card_vertical_layout(  # pyright: ignore[reportPrivateUsage]
         y=20,
         height=260,
+        width=180,
         pad=12,
         content_height=72,
         meta_height=66,

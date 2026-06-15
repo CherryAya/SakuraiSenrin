@@ -578,6 +578,11 @@ class SearchTreemapRenderer:
             + "  "
             + tr(locale, "wordbank.search_card.status", status=tile.item.status)
         )
+        if tile.item.matched_by and rect.width >= 460:
+            meta_text += "  命中 " + self._format_matched_by_label(
+                tile.item.matched_by,
+                locale,
+            )
         if rect.width >= 220 and rect.height >= 145:
             draw.text(
                 (inner_x, cursor_y + 2),
@@ -685,11 +690,8 @@ class SearchTreemapRenderer:
         overflow_height = 0
         if hidden_count > 0 and height >= 112:
             overflow_height = min(28, max(22, self._line_height(self.tile_meta_font)))
-        footer_height = 0
-        if hidden_count <= 0 and width >= 220 and height >= 84 and tile.item.matched_by:
-            footer_height = self._line_height(self.tile_meta_font) + 4
 
-        grid_height = max(1, height - overflow_height - footer_height)
+        grid_height = max(1, height - overflow_height)
         if len(responses) == 1:
             self._draw_response_card(
                 image,
@@ -712,18 +714,6 @@ class SearchTreemapRenderer:
                     height=overflow_height,
                     hidden_count=total_hidden,
                 )
-            elif footer_height > 0:
-                meta = self._truncate_line(
-                    self._format_matched_by_label(tile.item.matched_by, locale),
-                    self.tile_meta_font,
-                    width,
-                )
-                draw.text(
-                    (x, y + height - footer_height + 2),
-                    meta,
-                    font=self.tile_meta_font,
-                    fill=self.MUTED,
-                )
             return
         dual_rects = (
             self._dual_response_rects(width=width, height=grid_height)
@@ -745,18 +735,6 @@ class SearchTreemapRenderer:
                 width=width,
                 height=grid_height,
             )
-            if footer_height > 0:
-                meta = self._truncate_line(
-                    self._format_matched_by_label(tile.item.matched_by, locale),
-                    self.tile_meta_font,
-                    width,
-                )
-                draw.text(
-                    (x, y + height - footer_height + 2),
-                    meta,
-                    font=self.tile_meta_font,
-                    fill=self.MUTED,
-                )
             return
         cols, _ = self._choose_card_layout(
             width=width,
@@ -830,18 +808,6 @@ class SearchTreemapRenderer:
                 width=width,
                 height=overflow_height,
                 hidden_count=total_hidden,
-            )
-        elif footer_height > 0:
-            meta = self._truncate_line(
-                self._format_matched_by_label(tile.item.matched_by, locale),
-                self.tile_meta_font,
-                width,
-            )
-            draw.text(
-                (x, y + height - footer_height + 2),
-                meta,
-                font=self.tile_meta_font,
-                fill=self.MUTED,
             )
 
     def _draw_dual_response_cards(
@@ -1440,6 +1406,7 @@ class SearchTreemapRenderer:
         card_layout = self._compute_response_card_vertical_layout(
             y=y,
             height=height,
+            width=width,
             pad=pad,
             content_height=measured_content_height,
             meta_height=meta_height,
@@ -1523,6 +1490,7 @@ class SearchTreemapRenderer:
         *,
         y: int,
         height: int,
+        width: int,
         pad: int,
         content_height: int,
         meta_height: int,
@@ -1542,6 +1510,8 @@ class SearchTreemapRenderer:
             "mixed": 0.20,
             "image": 0.16,
         }.get(content_mode, 0.24)
+        if content_mode == "single_text" and height >= max(240, width + 56):
+            bias = 0.60
         top_offset = round(spare_height * bias)
         content_y = y + pad + top_offset
         divider_y = content_y + clipped_content_height + divider_gap - 2
@@ -2188,12 +2158,14 @@ class SearchTreemapRenderer:
         if len(text) <= 4:
             text_cap = 108
         elif len(text) <= 8:
-            text_cap = 92
+            text_cap = 104
         elif len(text) <= 16:
             text_cap = 64
         else:
             text_cap = 34
-        width_cap = max(24, int(max_width * 0.50))
+        width_cap = max(
+            24, int(max_width * 0.58 if len(text) <= 8 else max_width * 0.50)
+        )
         height_cap = max(24, int(max_height * 0.72))
         return max(12, min(text_cap, width_cap, height_cap))
 
