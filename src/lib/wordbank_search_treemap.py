@@ -189,6 +189,8 @@ class SearchTreemapRenderer:
     ACCENT = "#D96E95"
     BADGE_BG = "#FFFFFF"
     BADGE_TEXT = "#B44B70"
+    NUMBER_BG = "#FFFDFE"
+    NUMBER_TEXT = "#C25279"
     CARD_BG = "#FFFCFD"
     CARD_ACCENT = "#AF5477"
     DIVIDER = "#F2DCE5"
@@ -200,6 +202,7 @@ class SearchTreemapRenderer:
         self.tile_meta_font = self._load_font(18)
         self.tile_body_font = self._load_font(18)
         self.tile_badge_font = self._load_font(18)
+        self.tile_number_font = self._load_font(18)
         self.card_title_font = self._load_font(19)
         self.card_meta_font = self._load_font(15)
 
@@ -419,6 +422,27 @@ class SearchTreemapRenderer:
         inner_x = rect.x + pad
         inner_y = rect.y + pad
         inner_width = max(1, rect.width - pad * 2)
+        number_text = self._format_item_number(index + 1)
+        number_width = self._text_width(number_text, self.tile_number_font) + 20
+        number_height = self._line_height(self.tile_number_font) + 4
+        draw.rectangle(
+            (
+                inner_x,
+                inner_y,
+                inner_x + number_width,
+                inner_y + number_height,
+            ),
+            fill=self.NUMBER_BG,
+            outline=self.BORDER,
+            width=1,
+        )
+        draw.text(
+            (inner_x + 10, inner_y + 2),
+            number_text,
+            font=self.tile_number_font,
+            fill=self.NUMBER_TEXT,
+        )
+
         badge_text = f"x{tile.item.response_count}"
         badge_width = self._text_width(badge_text, self.tile_badge_font) + 20
         badge_height = self._line_height(self.tile_badge_font) + 4
@@ -442,7 +466,8 @@ class SearchTreemapRenderer:
             fill=self.BADGE_TEXT,
         )
 
-        title_width = max(1, inner_width - badge_width - 12)
+        title_x = inner_x + number_width + 10
+        title_width = max(1, inner_width - badge_width - number_width - 22)
         title_lines = self._wrap_text(
             tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
             self.tile_title_font,
@@ -452,7 +477,7 @@ class SearchTreemapRenderer:
         cursor_y = inner_y
         for line in title_lines:
             draw.text(
-                (inner_x, cursor_y),
+                (title_x, cursor_y),
                 line,
                 font=self.tile_title_font,
                 fill=self.HEADER,
@@ -512,6 +537,9 @@ class SearchTreemapRenderer:
             "trigger": tr(locale, "wordbank.search_card.field.trigger"),
             "response": tr(locale, "wordbank.search_card.field.response"),
         }.get(field, field)
+
+    def _format_item_number(self, number: int) -> str:
+        return f"{number:02d}" if number < 100 else str(number)
 
     def _normalize_text(self, text: str, locale: LocaleCode) -> str:
         cleaned = " ".join(part.strip() for part in text.splitlines() if part.strip())
