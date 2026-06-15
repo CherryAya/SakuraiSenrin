@@ -269,3 +269,32 @@ def test_renderer_fits_preview_image_without_cropping(tmp_path: Path) -> None:
     assert preview is not None
     assert preview.width == 120
     assert preview.height == 30
+
+
+def test_renderer_estimates_taller_height_for_longer_content() -> None:
+    renderer = SearchTreemapRenderer()
+    short = SearchTreemapResponseCard(
+        text="晚安",
+        created_by="10001",
+        weight=3,
+        rule="默认",
+    )
+    long = SearchTreemapResponseCard(
+        text="晚安晚安晚安晚安晚安晚安晚安晚安，今天也要早点休息，记得盖好被子。",
+        created_by="10001",
+        weight=3,
+        rule="默认",
+    )
+
+    short_height = renderer._estimate_response_card_height(  # pyright: ignore[reportPrivateUsage]
+        short,
+        "zh-CN",
+        width=220,
+    )
+    long_height = renderer._estimate_response_card_height(  # pyright: ignore[reportPrivateUsage]
+        long,
+        "zh-CN",
+        width=220,
+    )
+
+    assert long_height > short_height

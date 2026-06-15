@@ -684,16 +684,24 @@ class SearchTreemapRenderer:
             overflow_height = min(28, max(22, self._line_height(self.tile_meta_font)))
 
         grid_height = max(1, height - overflow_height)
-        cols, max_cards = self._choose_card_layout(
+        cols, _ = self._choose_card_layout(
             width=width,
             height=grid_height,
             responses=responses,
-            response_count=len(responses) + (1 if hidden_count > 0 else 0),
+            response_count=len(responses),
+            locale=locale,
         )
-        overflow_as_card = hidden_count > 0 and max_cards > len(responses)
-        shown_count = min(len(responses), max_cards - (1 if overflow_as_card else 0))
-        display_count = shown_count + (1 if overflow_as_card else 0)
-        if display_count <= 0:
+        placements = self._build_masonry_layout(
+            responses=responses,
+            locale=locale,
+            x=x,
+            y=y,
+            width=width,
+            height=grid_height,
+            cols=cols,
+        )
+        shown_count = len(placements)
+        if shown_count <= 0:
             self._draw_overflow_banner(
                 draw,
                 locale,
@@ -705,45 +713,20 @@ class SearchTreemapRenderer:
             )
             return
 
-        rows = max(1, math.ceil(display_count / cols))
-        card_gap = 8
-        card_width = max(1, (width - card_gap * (cols - 1)) // cols)
-        card_height = max(1, (grid_height - card_gap * (rows - 1)) // rows)
-        for card_index, response in enumerate(responses[:shown_count]):
-            row = card_index // cols
-            col = card_index % cols
-            card_x = x + col * (card_width + card_gap)
-            card_y = y + row * (card_height + card_gap)
+        for card_index, rect in placements:
             self._draw_response_card(
                 image,
                 draw,
-                response,
+                responses[card_index],
                 locale,
-                x=card_x,
-                y=card_y,
-                width=card_width,
-                height=card_height,
-            )
-
-        if overflow_as_card:
-            overflow_index = shown_count
-            row = overflow_index // cols
-            col = overflow_index % cols
-            card_x = x + col * (card_width + card_gap)
-            card_y = y + row * (card_height + card_gap)
-            self._draw_overflow_card(
-                draw,
-                tile,
-                locale,
-                x=card_x,
-                y=card_y,
-                width=card_width,
-                height=card_height,
-                hidden_count=max(0, tile.item.response_count - shown_count),
+                x=rect.x,
+                y=rect.y,
+                width=rect.width,
+                height=rect.height,
             )
 
         total_hidden = max(0, tile.item.response_count - shown_count)
-        if total_hidden > 0 and overflow_height > 0 and not overflow_as_card:
+        if total_hidden > 0 and overflow_height > 0:
             self._draw_overflow_banner(
                 draw,
                 locale,
@@ -775,6 +758,7 @@ class SearchTreemapRenderer:
         height: int,
         responses: Sequence[SearchTreemapResponseCard],
         response_count: int,
+        locale: LocaleCode = "zh-CN",
     ) -> tuple[int, int]:
         if response_count <= 0:
             return (1, 0)
@@ -786,7 +770,6 @@ class SearchTreemapRenderer:
         ) / max(len(sample), 1)
         min_card_height = 94 if has_images else (58 if average_text_len <= 18 else 66)
         preferred_height = 120 if has_images else (76 if average_text_len <= 18 else 92)
-        max_rows = 4 if has_images else 6
         candidates: list[tuple[int, int, tuple[int, int, int]]] = []
         for cols in (3, 2, 1):
             if response_count < cols:
@@ -798,20 +781,182 @@ class SearchTreemapRenderer:
             card_width = (width - card_gap * (cols - 1)) // cols
             if card_width < (176 if has_images else 136):
                 continue
-            rows_limit = min(
-                max_rows, max(1, (height + card_gap) // (min_card_height + card_gap))
+            placements = self._build_masonry_layout(
+                responses=responses[:response_count],
+                locale=locale,
+                x=0,
+                y=0,
+                width=width,
+                height=height,
+                cols=cols,
             )
-            shown = min(response_count, cols * rows_limit)
-            rows = max(1, math.ceil(shown / cols))
-            card_height = (height - card_gap * (rows - 1)) // rows
+            shown = len(placements)
+            if shown <= 0:
+                continue
+            used_heights = [
+                placement[1].y + placement[1].height for placement in placements
+            ]
+            card_height = sum(rect.height for _, rect in placements) // max(
+                len(placements), 1
+            )
             if card_height < min_card_height:
                 continue
+            column_bottom = max(used_heights, default=0)
             score = (shown, -abs(card_height - preferred_height), cols)
+            if column_bottom > 0:
+                score = (shown, -abs(card_height - preferred_height), -column_bottom)
             candidates.append((cols, shown, score))
         if not candidates:
             return (1, 1 if width >= 180 and height >= min_card_height else 0)
         cols, shown, _ = max(candidates, key=lambda item: item[2])
         return (cols, shown)
+
+    def _build_masonry_layout(
+        self,
+        *,
+        responses: Sequence[SearchTreemapResponseCard],
+        locale: LocaleCode,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        cols: int,
+    ) -> list[tuple[int, TreemapRect]]:
+        if cols <= 0 or width <= 0 or height <= 0:
+            return []
+        card_gap = 8
+        card_width = max(1, (width - card_gap * (cols - 1)) // cols)
+        column_heights = [0] * cols
+        placements: list[tuple[int, TreemapRect]] = []
+        for index, response in enumerate(responses):
+            estimated_height = self._estimate_response_card_height(
+                response,
+                locale,
+                width=card_width,
+            )
+            column = min(range(cols), key=lambda item: column_heights[item])
+            next_y = y + column_heights[column]
+            if column_heights[column] > 0:
+                next_y += card_gap
+            if next_y + estimated_height > y + height:
+                break
+            rect = TreemapRect(
+                x=x + column * (card_width + card_gap),
+                y=next_y,
+                width=card_width,
+                height=estimated_height,
+            )
+            placements.append((index, rect))
+            column_heights[column] = rect.y + rect.height - y
+        return placements
+
+    def _estimate_response_card_height(
+        self,
+        response: SearchTreemapResponseCard,
+        locale: LocaleCode,
+        *,
+        width: int,
+    ) -> int:
+        normalized_text = self._normalize_response_text(
+            response.visible_text,
+            locale,
+            has_image_preview=response.has_image,
+        )
+        compact_card = len(normalized_text) <= 14 and len(response.rule) <= 10
+        spacious_card = width >= 240
+        pad = 12 if spacious_card and not compact_card else (8 if compact_card else 10)
+        meta_font = (
+            self.card_large_meta_font
+            if spacious_card and len(response.rule.strip()) <= 16
+            else self.card_meta_font
+        )
+        title_font = (
+            self.card_large_title_font
+            if spacious_card and len(normalized_text.strip()) <= 18
+            else self.card_title_font
+        )
+        meta_lines = self._build_response_meta_lines(
+            response,
+            locale,
+            font=meta_font,
+            max_width=max(1, width - pad * 2),
+        )
+        meta_line_height = self._line_height(meta_font)
+        meta_height = (
+            len(meta_lines) * meta_line_height + max(0, len(meta_lines) - 1) * 2
+        )
+        content_height = self._estimate_response_content_height(
+            response,
+            locale,
+            font=title_font,
+            width=max(1, width - pad * 2),
+        )
+        base_height = pad * 2 + content_height + 8 + meta_height
+        minimum = 92 if response.has_image else (66 if compact_card else 84)
+        maximum = 260 if response.has_image else 220
+        return max(minimum, min(maximum, base_height))
+
+    def _estimate_response_content_height(
+        self,
+        response: SearchTreemapResponseCard,
+        locale: LocaleCode,
+        *,
+        font: Any,
+        width: int,
+    ) -> int:
+        segments = tuple(
+            segment
+            for segment in response.ordered_segments
+            if (segment.kind == "text" and segment.text.strip())
+            or (segment.kind == "image" and segment.image_path)
+        )
+        if not segments:
+            return 0
+        line_height = self._line_height(font)
+        if self._can_use_pair_layout(segments):
+            image_width = min(max(92, width // 2), max(92, int(width * 0.42)))
+            text_width = max(1, width - image_width - 10)
+            text_segment = next(
+                segment for segment in segments if segment.kind == "text"
+            )
+            text_lines = self._wrap_text(
+                self._normalize_response_text(
+                    text_segment.text,
+                    locale,
+                    has_image_preview=bool(response.primary_image_path),
+                ),
+                font,
+                text_width,
+                max_lines=5,
+            )
+            text_height = len(text_lines) * line_height
+            image_height = max(84, min(152, width // 2))
+            return max(text_height, image_height)
+        if all(segment.kind == "image" for segment in segments):
+            if len(segments) == 1 or width < 180:
+                return max(92, min(176, int(width * 0.75)))
+            rows = max(1, math.ceil(min(len(segments), 4) / 2))
+            cell_height = max(64, min(120, width // 2))
+            return rows * cell_height + (rows - 1) * 6
+        content_height = 0
+        for index, segment in enumerate(segments):
+            if segment.kind == "text":
+                text_lines = self._wrap_text(
+                    self._normalize_response_text(
+                        segment.text,
+                        locale,
+                        has_image_preview=bool(response.primary_image_path),
+                    ),
+                    font,
+                    width,
+                    max_lines=6,
+                )
+                content_height += len(text_lines) * line_height
+            else:
+                content_height += max(72, min(148, int(width * 0.72)))
+            if index < len(segments) - 1:
+                content_height += 6
+        return content_height
 
     def _draw_response_card(
         self,
