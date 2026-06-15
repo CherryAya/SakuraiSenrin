@@ -497,10 +497,13 @@ class SearchTreemapRenderer:
             width=2,
         )
 
+        poster_tile = self._use_poster_tile_header(tile, locale, rect=rect)
         pad = min(
             TREEMAP_TILE_PADDING,
             max(10, min(rect.width // 8, rect.height // 8)),
         )
+        if poster_tile:
+            pad = min(pad, 8)
         inner_x = rect.x + pad
         inner_y = rect.y + pad
         inner_width = max(1, rect.width - pad * 2)
@@ -548,18 +551,24 @@ class SearchTreemapRenderer:
             fill=self.BADGE_TEXT,
         )
 
-        title_x = inner_x + number_width + 10
-        title_width = max(1, inner_width - badge_width - number_width - 22)
+        if poster_tile:
+            title_x = inner_x
+            title_width = inner_width
+            title_y = inner_y + number_height + 6
+        else:
+            title_x = inner_x + number_width + 10
+            title_width = max(1, inner_width - badge_width - number_width - 22)
+            title_y = inner_y
         title_budget = max(
             self._line_height(self.tile_small_title_font),
-            rect.height - pad * 2 - 112,
+            rect.height - pad * 2 - (128 if poster_tile else 112),
         )
         title_font, title_lines = self._fit_tile_title_layout(
             tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
             max_width=title_width,
             max_height=title_budget,
         )
-        cursor_y = inner_y
+        cursor_y = title_y
         for line in title_lines:
             draw.text(
                 (title_x, cursor_y),
@@ -583,7 +592,7 @@ class SearchTreemapRenderer:
                 tile.item.matched_by,
                 locale,
             )
-        if rect.width >= 260 and rect.height >= 152:
+        if not poster_tile and rect.width >= 260 and rect.height >= 152:
             draw.text(
                 (inner_x, cursor_y + 2),
                 self._truncate_line(meta_text, self.tile_meta_font, inner_width),
@@ -591,6 +600,8 @@ class SearchTreemapRenderer:
                 fill=self.MUTED,
             )
             cursor_y += self._line_height(self.tile_meta_font) + 4
+        elif poster_tile:
+            cursor_y += 4
 
         if (
             rect.width < TREEMAP_TILE_RESPONSE_MIN_WIDTH
@@ -623,6 +634,23 @@ class SearchTreemapRenderer:
             y=cursor_y,
             width=inner_width,
             height=max(1, bottom_limit - cursor_y),
+        )
+
+    def _use_poster_tile_header(
+        self,
+        tile: SearchTreemapTile,
+        locale: LocaleCode,
+        *,
+        rect: TreemapRect,
+    ) -> bool:
+        if len(tile.item.responses) != 1:
+            return False
+        if rect.width >= 220:
+            return False
+        if rect.height < max(260, rect.width + 90):
+            return False
+        return (
+            self._single_text_response_text(tile.item.responses[0], locale) is not None
         )
 
     def _field_label(self, field: str, locale: LocaleCode) -> str:

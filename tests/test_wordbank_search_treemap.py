@@ -259,6 +259,73 @@ def test_renderer_prefers_fewer_lines_for_short_trigger_title() -> None:
     assert len(lines) <= 3
 
 
+def test_renderer_uses_poster_tile_header_for_narrow_tall_single_text_tile() -> None:
+    renderer = SearchTreemapRenderer()
+    tile = SearchTreemapTile(
+        item=SearchTreemapItem(
+            trigger_group_id=1,
+            trigger_text="晚安，不许复读",
+            status="approved",
+            created_by="10001",
+            response_count=1,
+            responses=(
+                SearchTreemapResponseCard(
+                    text="晚安，不许复读",
+                    created_by="10001",
+                    weight=3,
+                    rule="默认",
+                ),
+            ),
+        ),
+        rect=TreemapRect(x=0, y=0, width=170, height=320),
+        raw_weight=1,
+        normalized_weight=1,
+    )
+
+    assert renderer._use_poster_tile_header(  # pyright: ignore[reportPrivateUsage]
+        tile,
+        "zh-CN",
+        rect=tile.rect,
+    )
+
+
+def test_renderer_does_not_use_poster_header_for_image_tile() -> None:
+    renderer = SearchTreemapRenderer()
+    tile = SearchTreemapTile(
+        item=SearchTreemapItem(
+            trigger_group_id=1,
+            trigger_text="jrlp空门苍",
+            status="approved",
+            created_by="10001",
+            response_count=1,
+            responses=(
+                SearchTreemapResponseCard(
+                    text="",
+                    created_by="10001",
+                    weight=3,
+                    rule="默认",
+                    image_path="/tmp/a.webp",
+                    segments=(
+                        SearchTreemapResponseSegment(
+                            kind="image",
+                            image_path="/tmp/a.webp",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        rect=TreemapRect(x=0, y=0, width=170, height=320),
+        raw_weight=1,
+        normalized_weight=1,
+    )
+
+    assert not renderer._use_poster_tile_header(  # pyright: ignore[reportPrivateUsage]
+        tile,
+        "zh-CN",
+        rect=tile.rect,
+    )
+
+
 def test_renderer_uses_smaller_response_font_for_narrow_cards() -> None:
     renderer = SearchTreemapRenderer()
 
