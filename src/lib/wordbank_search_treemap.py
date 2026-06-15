@@ -248,6 +248,9 @@ class SearchTreemapRenderer:
     DIVIDER = "#F2DCE5"
 
     def __init__(self) -> None:
+        self._maple_font_cache: dict[int, Any] = {}
+        self._lxgw_font_cache: dict[int, Any] = {}
+        self._image_size_cache: dict[str, tuple[int, int] | None] = {}
         self.title_font = self._load_maple_font(38)
         self.summary_font = self._load_lxgw_font(22)
         self.summary_small_font = self._load_lxgw_font(20)
@@ -261,7 +264,6 @@ class SearchTreemapRenderer:
         self.card_title_font = self._load_lxgw_font(20)
         self.card_large_meta_font = self._load_lxgw_font(18)
         self.card_meta_font = self._load_lxgw_font(16)
-        self._image_size_cache: dict[str, tuple[int, int] | None] = {}
 
     def render(self, page: SearchTreemapPage, *, locale: LocaleCode) -> bytes:
         image = Image.new("RGB", (TREEMAP_WIDTH, TREEMAP_HEIGHT), self.BG)
@@ -540,34 +542,14 @@ class SearchTreemapRenderer:
 
         title_x = inner_x + number_width + 10
         title_width = max(1, inner_width - badge_width - number_width - 22)
-        short_trigger = len(tile.item.trigger_text.strip()) <= 8
-        if title_width >= 300 and rect.height >= 164 and short_trigger:
-            title_font = self.tile_large_title_font
-        elif title_width >= 170:
-            title_font = self.tile_title_font
-        else:
-            title_font = self.tile_small_title_font
-        title_max_lines = (
-            2
-            if title_width >= TREEMAP_TILE_TITLE_SINGLE_LINE_WIDTH
-            and rect.height >= 132
-            else 1
+        title_budget = max(
+            self._line_height(self.tile_small_title_font),
+            rect.height - pad * 2 - 88,
         )
-        title_lines = (
-            [
-                self._truncate_line(
-                    tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
-                    title_font,
-                    title_width,
-                )
-            ]
-            if title_max_lines == 1
-            else self._wrap_text(
-                tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
-                title_font,
-                title_width,
-                max_lines=title_max_lines,
-            )
+        title_font, title_lines = self._fit_tile_title_layout(
+            tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
+            max_width=title_width,
+            max_height=title_budget,
         )
         cursor_y = inner_y
         for line in title_lines:
@@ -695,8 +677,11 @@ class SearchTreemapRenderer:
         overflow_height = 0
         if hidden_count > 0 and height >= 112:
             overflow_height = min(28, max(22, self._line_height(self.tile_meta_font)))
+        footer_height = 0
+        if hidden_count <= 0 and width >= 220 and height >= 84 and tile.item.matched_by:
+            footer_height = self._line_height(self.tile_meta_font) + 4
 
-        grid_height = max(1, height - overflow_height)
+        grid_height = max(1, height - overflow_height - footer_height)
         cols, _ = self._choose_card_layout(
             width=width,
             height=grid_height,
@@ -710,6 +695,14 @@ class SearchTreemapRenderer:
             x=x,
             y=y,
             width=width,
+            height=grid_height,
+            cols=cols,
+        )
+        placements = self._expand_masonry_layout(
+            placements,
+            responses=responses,
+            x=x,
+            y=y,
             height=grid_height,
             cols=cols,
         )
@@ -749,16 +742,14 @@ class SearchTreemapRenderer:
                 height=overflow_height,
                 hidden_count=total_hidden,
             )
-        elif (
-            total_hidden == 0 and width >= 220 and height >= 84 and tile.item.matched_by
-        ):
+        elif footer_height > 0:
             meta = self._truncate_line(
                 self._format_matched_by_label(tile.item.matched_by, locale),
                 self.tile_meta_font,
                 width,
             )
             draw.text(
-                (x, y + height - self._line_height(self.tile_meta_font)),
+                (x, y + height - footer_height + 2),
                 meta,
                 font=self.tile_meta_font,
                 fill=self.MUTED,
@@ -863,6 +854,81 @@ class SearchTreemapRenderer:
             column_heights[column] = rect.y + rect.height - y
         return placements
 
+    def _expand_masonry_layout(
+        self,
+        placements: Sequence[tuple[int, TreemapRect]],
+        *,
+        responses: Sequence[SearchTreemapResponseCard],
+        x: int,
+        y: int,
+        height: int,
+        cols: int,
+    ) -> list[tuple[int, TreemapRect]]:
+        if not placements or cols <= 0 or height <= 0:
+            return list(placements)
+        column_map: dict[int, list[tuple[int, TreemapRect]]] = {
+            index: [] for index in range(cols)
+        }
+        for item_index, rect in placements:
+            column = max(0, round((rect.x - x) / max(rect.width + 8, 1)))
+            column_map[min(cols - 1, column)].append((item_index, rect))
+
+        expanded: list[tuple[int, TreemapRect]] = []
+        column_bottom = y + height
+        for column in range(cols):
+            entries = column_map.get(column, [])
+            if not entries:
+                continue
+            used_bottom = max(rect.y + rect.height for _, rect in entries)
+            leftover = column_bottom - used_bottom
+            if leftover <= 12:
+                expanded.extend(entries)
+                continue
+            weights = [
+                max(
+                    1,
+                    self._estimate_card_flex_weight(responses[item_index], rect.height),
+                )
+                for item_index, rect in entries
+            ]
+            total_weight = sum(weights)
+            if total_weight <= 0:
+                expanded.extend(entries)
+                continue
+            cursor_y = entries[0][1].y
+            consumed = 0
+            weighted_entries = zip(entries, weights)
+            for entry_index, ((item_index, rect), weight) in enumerate(
+                weighted_entries
+            ):
+                extra = (
+                    leftover - consumed
+                    if entry_index == len(entries) - 1
+                    else round(leftover * weight / total_weight)
+                )
+                consumed += extra
+                new_rect = TreemapRect(
+                    x=rect.x,
+                    y=cursor_y,
+                    width=rect.width,
+                    height=rect.height + max(0, extra),
+                )
+                expanded.append((item_index, new_rect))
+                cursor_y = new_rect.y + new_rect.height + 8
+        expanded.sort(key=lambda item: (item[1].y, item[1].x))
+        return expanded
+
+    def _estimate_card_flex_weight(
+        self,
+        response: SearchTreemapResponseCard,
+        estimated_height: int,
+    ) -> int:
+        segment_count = len(response.ordered_segments) or 1
+        text_weight = max(1, len(response.visible_text.strip()) // 10)
+        image_weight = 2 if response.has_image else 0
+        base_weight = max(1, estimated_height // 48)
+        return base_weight + segment_count + text_weight + image_weight
+
     def _estimate_response_card_height(
         self,
         response: SearchTreemapResponseCard,
@@ -883,10 +949,11 @@ class SearchTreemapRenderer:
             if spacious_card and len(response.rule.strip()) <= 16
             else self.card_meta_font
         )
-        title_font = (
-            self.card_large_title_font
-            if spacious_card and len(normalized_text.strip()) <= 18
-            else self.card_title_font
+        title_font = self._choose_response_title_font(
+            normalized_text,
+            width=width - pad * 2,
+            spacious=spacious_card,
+            has_image=response.has_image,
         )
         title_line_height = self._line_height(title_font)
         meta_lines = self._build_response_meta_lines(
@@ -1025,10 +1092,11 @@ class SearchTreemapRenderer:
             if spacious_card and len(response.rule.strip()) <= 16
             else self.card_meta_font
         )
-        title_font = (
-            self.card_large_title_font
-            if spacious_card and len(normalized_text.strip()) <= 18
-            else self.card_title_font
+        title_font = self._choose_response_title_font(
+            normalized_text,
+            width=width - pad * 2,
+            spacious=spacious_card,
+            has_image=response.has_image,
         )
         meta_lines = self._build_response_meta_lines(
             response,
@@ -1123,6 +1191,23 @@ class SearchTreemapRenderer:
         )
         if not segments:
             return
+        estimated_height = self._estimate_response_content_height(
+            response,
+            locale,
+            font=font,
+            width=width,
+        )
+        if estimated_height > 0 and estimated_height < height:
+            spare_height = height - estimated_height
+            if not response.has_image and len(response.visible_text.strip()) <= 20:
+                offset = min(64, max(0, spare_height // 2))
+            else:
+                offset = min(
+                    36 if response.has_image else 48,
+                    max(0, spare_height // (3 if response.has_image else 2)),
+                )
+            y += offset
+            height = max(1, height - offset)
         text_segments = [segment for segment in segments if segment.kind == "text"]
         image_segments = [segment for segment in segments if segment.kind == "image"]
         if image_segments and not text_segments:
@@ -1461,16 +1546,102 @@ class SearchTreemapRenderer:
         )
 
     def _load_maple_font(self, size: int) -> Any:
-        try:
-            return ImageFont.truetype(MAPLE_FONT_PATH, size)
-        except Exception:
-            return ImageFont.load_default()
+        if size not in self._maple_font_cache:
+            try:
+                self._maple_font_cache[size] = ImageFont.truetype(MAPLE_FONT_PATH, size)
+            except Exception:
+                self._maple_font_cache[size] = ImageFont.load_default()
+        return self._maple_font_cache[size]
 
     def _load_lxgw_font(self, size: int) -> Any:
-        try:
-            return ImageFont.truetype(LXGW_FONG_PATH, size)
-        except Exception:
-            return ImageFont.load_default()
+        if size not in self._lxgw_font_cache:
+            try:
+                self._lxgw_font_cache[size] = ImageFont.truetype(LXGW_FONG_PATH, size)
+            except Exception:
+                self._lxgw_font_cache[size] = ImageFont.load_default()
+        return self._lxgw_font_cache[size]
+
+    def _fit_tile_title_layout(
+        self,
+        text: str,
+        *,
+        max_width: int,
+        max_height: int,
+    ) -> tuple[Any, list[str]]:
+        safe_text = text.strip() or "?"
+        for size in (28, 24, 20, 18, 16, 14, 12):
+            font = self._load_maple_font(size)
+            line_height = self._line_height(font)
+            max_lines = max(1, min(5, max_height // max(line_height, 1)))
+            if max_lines <= 0:
+                continue
+            lines = self._wrap_text(
+                safe_text,
+                font,
+                max_width,
+                max_lines=max(1, len(safe_text)),
+            )
+            if len(lines) <= max_lines and len(lines) * line_height <= max_height:
+                return font, lines
+        fallback_font = self._load_maple_font(12)
+        fallback_line_height = self._line_height(fallback_font)
+        fallback_max_lines = max(1, min(6, max_height // max(fallback_line_height, 1)))
+        full_lines = self._wrap_text(
+            safe_text,
+            fallback_font,
+            max_width,
+            max_lines=max(1, len(safe_text)),
+        )
+        if len(full_lines) <= fallback_max_lines:
+            return fallback_font, full_lines
+        return fallback_font, full_lines[:fallback_max_lines]
+
+    def _choose_response_title_font(
+        self,
+        text: str,
+        *,
+        width: int,
+        spacious: bool,
+        has_image: bool,
+    ) -> Any:
+        normalized = text.strip()
+        if not normalized:
+            return self.card_large_title_font if spacious else self.card_title_font
+        if has_image:
+            if width < 112:
+                candidate_sizes = (18, 16, 14)
+            elif width < 148:
+                candidate_sizes = (20, 18, 16, 14)
+            elif width < 196:
+                candidate_sizes = (22, 20, 18, 16)
+            elif spacious:
+                candidate_sizes = (28, 24, 22, 20, 18)
+            else:
+                candidate_sizes = (24, 22, 20, 18, 16)
+        elif width < 112:
+            candidate_sizes = (18, 16, 14)
+        elif width < 148:
+            candidate_sizes = (22, 20, 18, 16, 14)
+        elif width < 196:
+            candidate_sizes = (24, 22, 20, 18, 16)
+        elif spacious and len(normalized) <= 12:
+            candidate_sizes = (34, 30, 26, 24, 22, 20)
+        elif spacious:
+            candidate_sizes = (30, 26, 24, 22, 20, 18)
+        else:
+            candidate_sizes = (28, 24, 22, 20, 18, 16)
+        max_lines = 3 if has_image else 5
+        for size in candidate_sizes:
+            font = self._load_lxgw_font(size)
+            lines = self._wrap_text(
+                normalized,
+                font,
+                max(1, width),
+                max_lines=max(1, len(normalized)),
+            )
+            if len(lines) <= max_lines:
+                return font
+        return self._load_lxgw_font(candidate_sizes[-1])
 
     def _fit_preview_image(
         self,

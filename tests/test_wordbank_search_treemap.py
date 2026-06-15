@@ -231,6 +231,78 @@ def test_renderer_uses_single_column_for_single_response() -> None:
     assert shown == 1
 
 
+def test_renderer_fits_long_trigger_title_without_ellipsis() -> None:
+    renderer = SearchTreemapRenderer()
+
+    font, lines = renderer._fit_tile_title_layout(  # pyright: ignore[reportPrivateUsage]
+        "晚安不许复读测试一下超长触发词布局",
+        max_width=160,
+        max_height=140,
+    )
+
+    assert font is not None
+    assert "".join(lines) == "晚安不许复读测试一下超长触发词布局"
+    assert all("..." not in line for line in lines)
+
+
+def test_renderer_uses_smaller_response_font_for_narrow_cards() -> None:
+    renderer = SearchTreemapRenderer()
+
+    compact_font = renderer._choose_response_title_font(  # pyright: ignore[reportPrivateUsage]
+        "晚安不许复读",
+        width=96,
+        spacious=False,
+        has_image=False,
+    )
+    regular_font = renderer._choose_response_title_font(  # pyright: ignore[reportPrivateUsage]
+        "晚安不许复读",
+        width=220,
+        spacious=False,
+        has_image=False,
+    )
+
+    assert renderer._line_height(compact_font) < renderer._line_height(regular_font)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_renderer_expands_masonry_layout_to_fill_column_height() -> None:
+    renderer = SearchTreemapRenderer()
+    responses = (
+        SearchTreemapResponseCard(
+            text="晚安",
+            created_by="10001",
+            weight=3,
+            rule="默认",
+        ),
+        SearchTreemapResponseCard(
+            text="好梦",
+            created_by="10001",
+            weight=3,
+            rule="默认",
+        ),
+    )
+
+    placements = renderer._build_masonry_layout(  # pyright: ignore[reportPrivateUsage]
+        responses=responses,
+        locale="zh-CN",
+        x=10,
+        y=20,
+        width=220,
+        height=320,
+        cols=1,
+    )
+    expanded = renderer._expand_masonry_layout(  # pyright: ignore[reportPrivateUsage]
+        placements,
+        responses=responses,
+        x=10,
+        y=20,
+        height=320,
+        cols=1,
+    )
+
+    assert placements
+    assert expanded[-1][1].y + expanded[-1][1].height == 340
+
+
 def test_renderer_strips_image_placeholder_when_preview_exists() -> None:
     renderer = SearchTreemapRenderer()
 
