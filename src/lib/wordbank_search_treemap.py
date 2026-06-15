@@ -62,7 +62,7 @@ class SearchTreemapItem:
 
     @property
     def display_summaries(self) -> tuple[str, ...]:
-        return self.response_summaries[:3]
+        return self.response_summaries
 
 
 @dataclass(slots=True, frozen=True)
@@ -271,19 +271,6 @@ class SearchTreemapRenderer:
         locale: LocaleCode,
         y: int,
     ) -> int:
-        box_height = 150
-        draw.rounded_rectangle(
-            (
-                TREEMAP_MARGIN_X,
-                y,
-                TREEMAP_WIDTH - TREEMAP_MARGIN_X,
-                y + box_height,
-            ),
-            radius=28,
-            fill=self.PANEL,
-            outline=self.BORDER,
-            width=2,
-        )
         rows = (
             tr(
                 locale,
@@ -311,6 +298,20 @@ class SearchTreemapRenderer:
                 creator_id=query.creator_id or tr(locale, "wordbank.search_card.none"),
             ),
         )
+        row_height = self._line_height(self.summary_font)
+        box_height = 22 + len(rows) * row_height + (len(rows) - 1) * 8 + 24
+        draw.rounded_rectangle(
+            (
+                TREEMAP_MARGIN_X,
+                y,
+                TREEMAP_WIDTH - TREEMAP_MARGIN_X,
+                y + box_height,
+            ),
+            radius=28,
+            fill=self.PANEL,
+            outline=self.BORDER,
+            width=2,
+        )
         row_y = y + 22
         for row_index, row in enumerate(rows):
             draw.text(
@@ -319,7 +320,7 @@ class SearchTreemapRenderer:
                 font=self.summary_font,
                 fill=self.BODY,
             )
-            row_y += self._line_height(self.summary_font) + 8
+            row_y += row_height + 8
             if row_index == 1:
                 row_y += 2
         return y + box_height
@@ -488,12 +489,13 @@ class SearchTreemapRenderer:
         shown = 0
         bottom_limit = rect.y + rect.height - pad
         summary_candidates = tile.item.display_summaries
+        response_max_lines = 2 if rect.width >= 260 and rect.height >= 180 else 1
         for summary in summary_candidates:
             response_lines = self._wrap_text(
                 f"• {self._normalize_summary(summary, locale)}",
                 self.tile_body_font,
                 inner_width,
-                max_lines=2,
+                max_lines=response_max_lines,
             )
             needed_height = (
                 len(response_lines) * self._line_height(self.tile_body_font) + 8
@@ -516,8 +518,19 @@ class SearchTreemapRenderer:
         hidden_count = (
             max(0, len(summary_candidates) - shown) + tile.item.remaining_response_count
         )
+        capsule_drawn = False
+        if hidden_count > 0:
+            capsule_drawn = self._draw_hidden_response_capsules(
+                draw,
+                x=inner_x,
+                y=cursor_y + 4,
+                width=inner_width,
+                bottom_limit=bottom_limit - 2,
+                count=hidden_count,
+            )
         if (
             hidden_count > 0
+            and not capsule_drawn
             and cursor_y + self._line_height(self.tile_meta_font) <= bottom_limit
         ):
             suffix = tr(
@@ -531,6 +544,20 @@ class SearchTreemapRenderer:
                 font=self.tile_meta_font,
                 fill=self.ACCENT,
             )
+        if hidden_count == 0 and rect.width >= 240 and rect.height >= 150:
+            footer_meta = self._truncate_line(
+                f"@{tile.item.created_by}  {tile.item.matched_by or '-'}",
+                self.tile_meta_font,
+                inner_width,
+            )
+            footer_y = bottom_limit - self._line_height(self.tile_meta_font)
+            if footer_y > cursor_y + 6:
+                draw.text(
+                    (inner_x, footer_y),
+                    footer_meta,
+                    font=self.tile_meta_font,
+                    fill=self.MUTED,
+                )
 
     def _field_label(self, field: str, locale: LocaleCode) -> str:
         return {
@@ -544,6 +571,67 @@ class SearchTreemapRenderer:
             part.strip() for part in summary.splitlines() if part.strip()
         )
         return cleaned or tr(locale, "wordbank.search_card.none")
+
+    def _draw_hidden_response_capsules(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        y: int,
+        width: int,
+        bottom_limit: int,
+        count: int,
+    ) -> bool:
+        chip_height = self._line_height(self.tile_meta_font) + 4
+        chip_gap_x = 8
+        chip_gap_y = 8
+        chip_width = 62
+        available_height = bottom_limit - y
+        if width < 180 or available_height < chip_height * 2 + chip_gap_y:
+            return False
+
+        cols = max(1, (width + chip_gap_x) // (chip_width + chip_gap_x))
+        rows = max(1, (available_height + chip_gap_y) // (chip_height + chip_gap_y))
+        capacity = cols * rows
+        if capacity < 2:
+            return False
+
+        visible = min(count, capacity)
+        chip_index = 0
+        for row in range(rows):
+            for col in range(cols):
+                if chip_index >= visible:
+                    return True
+                chip_x = x + col * (chip_width + chip_gap_x)
+                chip_y = y + row * (chip_height + chip_gap_y)
+                if chip_y + chip_height > bottom_limit:
+                    return True
+                is_overflow_chip = chip_index == visible - 1 and count > capacity
+                label = (
+                    f"+{count - capacity + 1}"
+                    if is_overflow_chip
+                    else f"R{chip_index + 1}"
+                )
+                draw.rounded_rectangle(
+                    (
+                        chip_x,
+                        chip_y,
+                        chip_x + chip_width,
+                        chip_y + chip_height,
+                    ),
+                    radius=12,
+                    fill="#FFFDFE",
+                    outline=self.BORDER,
+                    width=1,
+                )
+                draw.text(
+                    (chip_x + 10, chip_y + 2),
+                    label,
+                    font=self.tile_meta_font,
+                    fill=self.ACCENT if is_overflow_chip else self.MUTED,
+                )
+                chip_index += 1
+        return True
 
     def _wrap_text(
         self,

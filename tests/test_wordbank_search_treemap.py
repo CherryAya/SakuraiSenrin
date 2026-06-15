@@ -28,7 +28,7 @@ def test_load_search_treemap_fixture_builds_page() -> None:
     assert page.query.keyword == "晚安"
     assert len(page.items) == 8
     assert page.items[0].response_count == 12
-    assert page.items[0].remaining_response_count == 9
+    assert page.items[0].remaining_response_count == 7
 
 
 def test_load_search_treemap_fixture_rejects_missing_required_fields(

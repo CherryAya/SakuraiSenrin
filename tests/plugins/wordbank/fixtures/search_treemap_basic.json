@@ -18,9 +18,11 @@
       "response_summaries": [
         "做个好梦",
         "早点睡觉",
-        "晚安安"
+        "晚安安",
+        "今晚也辛苦啦",
+        "被子盖好不要着凉"
       ],
-      "remaining_response_count": 9,
+      "remaining_response_count": 7,
       "matched_by": "text:trigger"
     },
     {
@@ -32,9 +34,10 @@
       "response_summaries": [
         "别睡了快起床",
         "今天也是努力的一天",
-        "闹钟已经响第三遍了"
+        "闹钟已经响第三遍了",
+        "咖啡已经替你准备好了"
       ],
-      "remaining_response_count": 5,
+      "remaining_response_count": 4,
       "matched_by": "text:trigger"
     },
     {
@@ -46,9 +49,10 @@
       "response_summaries": [
         "贴贴",
         "给你一个抱抱",
-        "今天也要开心"
+        "今天也要开心",
+        "再来一张猫猫表情包"
       ],
-      "remaining_response_count": 3,
+      "remaining_response_count": 2,
       "matched_by": "text:response"
     },
     {

@@ -18,9 +18,11 @@
       "response_summaries": [
         "第一行响应会很长很长很长，需要在固定字号下截断并且不能溢出矩形边界",
         "第二条响应\n故意带换行\n测试归一化逻辑",
-        "第三条响应同样比较长，看看双行摘要裁剪之后是否稳定"
+        "第三条响应同样比较长，看看双行摘要裁剪之后是否稳定",
+        "第四条响应是补充说明，观察大块是否会继续展示更多内容",
+        "第五条响应模拟更多可见文本，减少大片空白"
       ],
-      "remaining_response_count": 18,
+      "remaining_response_count": 16,
       "matched_by": "text:trigger"
     },
     {
@@ -56,9 +58,10 @@
       "response_summaries": [
         "一号响应内容",
         "二号响应内容",
-        "三号响应内容"
+        "三号响应内容",
+        "四号响应内容"
       ],
-      "remaining_response_count": 4,
+      "remaining_response_count": 3,
       "matched_by": "creator"
     },
     {
@@ -70,9 +73,10 @@
       "response_summaries": [
         "第一行\n第二行\n第三行",
         "甲乙丙丁戊己庚辛壬癸",
-        "这是第三条摘要"
+        "这是第三条摘要",
+        "第四条补充摘要"
       ],
-      "remaining_response_count": 2,
+      "remaining_response_count": 1,
       "matched_by": "text:response"
     },
     {
