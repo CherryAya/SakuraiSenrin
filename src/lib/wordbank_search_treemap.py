@@ -552,7 +552,7 @@ class SearchTreemapRenderer:
         title_width = max(1, inner_width - badge_width - number_width - 22)
         title_budget = max(
             self._line_height(self.tile_small_title_font),
-            rect.height - pad * 2 - 88,
+            rect.height - pad * 2 - 104,
         )
         title_font, title_lines = self._fit_tile_title_layout(
             tile.item.trigger_text or tr(locale, "wordbank.search_card.none"),
@@ -585,7 +585,7 @@ class SearchTreemapRenderer:
                 font=self.tile_meta_font,
                 fill=self.MUTED,
             )
-            cursor_y += self._line_height(self.tile_meta_font) + 6
+            cursor_y += self._line_height(self.tile_meta_font) + 4
 
         if (
             rect.width < TREEMAP_TILE_RESPONSE_MIN_WIDTH
@@ -603,7 +603,7 @@ class SearchTreemapRenderer:
             fill=self.DIVIDER,
             width=1,
         )
-        cursor_y += 10
+        cursor_y += 8
 
         bottom_limit = rect.y + rect.height - pad
         if cursor_y >= bottom_limit:
@@ -1326,11 +1326,11 @@ class SearchTreemapRenderer:
         elif width < 224:
             base = 146
         else:
-            base = 220
+            base = 236
         if len(text.strip()) >= 18:
             base += 18
         elif len(text.strip()) <= 8:
-            base += 34
+            base += 42
         return base
 
     def _estimate_layout_image_height(
@@ -1536,8 +1536,8 @@ class SearchTreemapRenderer:
         block_height = clipped_content_height + divider_gap + meta_gap + meta_height
         spare_height = max(0, inner_height - block_height)
         bias = {
-            "single_text": 0.48,
-            "text_short": 0.40,
+            "single_text": 0.52,
+            "text_short": 0.44,
             "text": 0.27,
             "mixed": 0.20,
             "image": 0.16,
@@ -1625,7 +1625,7 @@ class SearchTreemapRenderer:
             cursor_y = y + max(0, (height - total_height) // 3)
         else:
             cursor_y = y
-        centered_lines = len(lines) <= 3 and len(text.strip()) <= 18
+        centered_lines = len(lines) <= 4 and len(text.strip()) <= 24
         for line in lines:
             line_x = x
             if centered_lines:
@@ -2139,7 +2139,8 @@ class SearchTreemapRenderer:
             max_width=max_width,
             max_height=max_height,
         )
-        candidate_sizes = list(range(largest_size, 11, -4))
+        step = 2 if largest_size <= 44 else 4
+        candidate_sizes = list(range(largest_size, 11, -step))
         if candidate_sizes[-1] != 12:
             candidate_sizes.append(12)
         if len(normalized) <= 4:
@@ -2185,15 +2186,15 @@ class SearchTreemapRenderer:
         max_height: int,
     ) -> int:
         if len(text) <= 4:
-            text_cap = 92
+            text_cap = 108
         elif len(text) <= 8:
-            text_cap = 78
+            text_cap = 92
         elif len(text) <= 16:
-            text_cap = 56
+            text_cap = 64
         else:
             text_cap = 34
-        width_cap = max(24, int(max_width * 0.44))
-        height_cap = max(24, int(max_height * 0.62))
+        width_cap = max(24, int(max_width * 0.50))
+        height_cap = max(24, int(max_height * 0.72))
         return max(12, min(text_cap, width_cap, height_cap))
 
     def _fit_lxgw_text_block_layout(
