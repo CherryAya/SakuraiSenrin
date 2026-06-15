@@ -28,16 +28,31 @@ CARD_WIDTH = 1320
 CARD_PADDING_X = 56
 CARD_PADDING_Y = 48
 CARD_PANEL_PADDING = 30
-CARD_SECTION_GAP = 22
-CARD_TEXT_GAP = 10
+CARD_SECTION_GAP = 24
 CARD_FLOW_GAP = 12
-CARD_TEXT_WIDTH = CARD_WIDTH - CARD_PADDING_X * 2 - CARD_PANEL_PADDING * 2
-CARD_IMAGE_WIDTH = CARD_TEXT_WIDTH
-CARD_PREVIEW_MAX_HEIGHT = 400
-CARD_IMAGE_RADIUS = 24
-CARD_FOOTER_HEIGHT = 110
-CARD_FOOTER_LINE_GAP = 6
 CARD_RADIUS = 24
+CARD_TEXT_INSET = 24
+CARD_IMAGE_RADIUS = 24
+CARD_FOOTER_HEIGHT = 118
+CARD_FOOTER_LINE_GAP = 6
+CARD_PREVIEW_MAX_HEIGHT = 350
+TEXTURE_SPACING = 40
+TEXTURE_DOT_RADIUS = 2
+TREE_INDENT = 68
+TREE_TRUNK_OFFSET = 28
+TREE_BRANCH_GAP = 14
+BADGE_SIZE = 56
+DETAIL_CTA_MIN_HEIGHT = 82
+
+TRIGGER_PANEL_X = CARD_PADDING_X
+TRIGGER_PANEL_WIDTH = CARD_WIDTH - CARD_PADDING_X * 2
+RESPONSE_PANEL_X = CARD_PADDING_X + TREE_INDENT
+RESPONSE_PANEL_WIDTH = CARD_WIDTH - CARD_PADDING_X - RESPONSE_PANEL_X
+TRUNK_X = RESPONSE_PANEL_X - TREE_TRUNK_OFFSET
+RESPONSE_TEXT_WIDTH = (
+    RESPONSE_PANEL_WIDTH - CARD_PANEL_PADDING * 2 - CARD_TEXT_INSET * 2
+)
+TRIGGER_TEXT_WIDTH = TRIGGER_PANEL_WIDTH - CARD_PANEL_PADDING * 2 - CARD_TEXT_INSET * 2
 
 
 @dataclass(slots=True, frozen=True)
@@ -57,27 +72,44 @@ class _ShapeBlock:
     image_id: int | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class _ResponseLayout:
+    response: WordbankResponseItemDetail
+    absolute_index: int
+    top: int
+    height: int
+
+    @property
+    def connector_y(self) -> int:
+        return self.top + CARD_PANEL_PADDING + BADGE_SIZE // 2
+
+
 class GroupDetailCardRenderer:
     BG = "#FDFBF7"
+    TRIGGER_PANEL = "#FFF0F5"
+    TRIGGER_BORDER = "#FDD8E5"
+    RESPONSE_PANEL = "#FFFFFF"
+    RESPONSE_BORDER = "#E8F0FE"
     PANEL = "#FFFFFF"
-    PANEL_SOFT = "#FFF5F3"
-    HEADER = "#2C2830"
-    BODY = "#3A353F"
-    MUTED = "#8E8794"
-    ACCENT = "#E88B8B"
-    ACCENT_SOFT = "#FBEAEA"
-    BORDER = "#F0E5E1"
+    HEADER = "#4A4350"
+    BODY = "#4A4350"
+    MUTED = "#A49BAE"
+    ACCENT = "#FFA6C9"
+    ACCENT_DEEP = "#E1759C"
+    ACCENT_SOFT = "#FFF5F8"
+    TEXTURE = "#F5EBEF"
+    BADGE_TEXT = "#FFFFFF"
 
     def __init__(
         self,
         *,
         preview_bytes: Mapping[int, bytes | None] | None = None,
     ) -> None:
-        self.title_font = self._load_font(38)
-        self.summary_font = self._load_font(20)
-        self.item_title_font = self._load_font(26)
-        self.item_body_font = self._load_font(22)
-        self.item_meta_font = self._load_font(17)
+        self.title_font = self._load_font(42)
+        self.summary_font = self._load_font(24)
+        self.item_title_font = self._load_font(30)
+        self.item_body_font = self._load_font(30)
+        self.item_meta_font = self._load_font(20)
         self.footer_font = self._load_font(18)
         self.footer_minor_font = self._load_font(16)
         self.preview_bytes = dict(preview_bytes or {})
@@ -95,35 +127,59 @@ class GroupDetailCardRenderer:
         height = self._measure_height(page_data, locale)
         image = Image.new("RGB", (CARD_WIDTH, height), self.BG)
         draw = ImageDraw.Draw(image)
+        self._draw_background_texture(draw, height)
 
         cursor_y = CARD_PADDING_Y
         cursor_y = self._draw_header(draw, page_data, locale, cursor_y)
         cursor_y += 22
         cursor_y = self._draw_summary(draw, page_data, locale, cursor_y)
-        cursor_y += 24
-        cursor_y = self._draw_shape_panel(
-            image,
-            draw,
-            label=tr(locale, "wordbank.group.card.trigger_label"),
-            shape=page_data.detail.trigger_shape,
-            top=cursor_y,
-            panel_fill=self.PANEL_SOFT,
-            locale=locale,
-        )
+        cursor_y += 26
+        trigger_top = cursor_y
+        cursor_y = self._draw_trigger_panel(image, draw, page_data, locale, trigger_top)
         cursor_y += CARD_SECTION_GAP
 
-        for index, response in enumerate(
-            page_data.responses,
-            start=page_data.start_index + 1,
-        ):
-            cursor_y = self._draw_response_panel(
-                image,
-                draw,
-                response,
-                absolute_index=index,
-                locale=locale,
-                cursor_y=cursor_y,
+        response_layouts: list[_ResponseLayout] = []
+        layout_cursor = cursor_y
+        for offset, response in enumerate(page_data.responses):
+            absolute_index = page_data.start_index + offset + 1
+            height = self._response_panel_height(response, locale=locale)
+            response_layouts.append(
+                _ResponseLayout(
+                    response=response,
+                    absolute_index=absolute_index,
+                    top=layout_cursor,
+                    height=height,
+                )
             )
+            layout_cursor += height + CARD_SECTION_GAP
+
+        if response_layouts:
+            self._draw_tree_trunk(
+                draw,
+                start_y=trigger_top + self._trigger_trunk_anchor_offset(),
+                end_y=response_layouts[-1].connector_y,
+            )
+            for layout in response_layouts:
+                self._draw_response_panel(
+                    image,
+                    draw,
+                    response=layout.response,
+                    absolute_index=layout.absolute_index,
+                    locale=locale,
+                    cursor_y=layout.top,
+                    connector_y=layout.connector_y,
+                )
+            cursor_y = (
+                response_layouts[-1].top
+                + response_layouts[-1].height
+                + CARD_SECTION_GAP
+            )
+        else:
+            cursor_y = self._draw_empty_state(draw, locale, cursor_y)
+            cursor_y += CARD_SECTION_GAP
+
+        if page_data.page < page_data.total_pages:
+            cursor_y = self._draw_page_more_cta(draw, page_data, locale, cursor_y)
             cursor_y += CARD_SECTION_GAP
 
         self._draw_footer(draw, page_data, locale, cursor_y)
@@ -137,15 +193,45 @@ class GroupDetailCardRenderer:
         locale: LocaleCode,
     ) -> int:
         total = CARD_PADDING_Y
-        total += self._line_height(self.title_font) + 12
-        total += self._summary_block_height(page_data, locale) + 22
-        total += self._shape_panel_height(page_data.detail.trigger_shape, locale=locale)
+        total += self._line_height(self.title_font) + 22
+        total += self._summary_block_height(page_data, locale) + 26
+        total += self._trigger_panel_height(
+            page_data.detail.trigger_shape,
+            locale=locale,
+        )
         total += CARD_SECTION_GAP
-        for response in page_data.responses:
-            total += self._response_panel_height(response, locale=locale)
+        if page_data.responses:
+            for index, response in enumerate(page_data.responses):
+                total += self._response_panel_height(response, locale=locale)
+                if index < len(page_data.responses) - 1:
+                    total += CARD_SECTION_GAP
             total += CARD_SECTION_GAP
-        total += CARD_FOOTER_HEIGHT + 16
+        else:
+            total += self._empty_state_height() + CARD_SECTION_GAP
+        if page_data.page < page_data.total_pages:
+            total += self._page_more_cta_height(page_data, locale) + CARD_SECTION_GAP
+        total += CARD_FOOTER_HEIGHT
         return total
+
+    def _draw_background_texture(self, draw: ImageDraw.ImageDraw, height: int) -> None:
+        for row, y in enumerate(
+            range(CARD_PADDING_Y // 2, height + TEXTURE_SPACING, TEXTURE_SPACING)
+        ):
+            offset = 0 if row % 2 == 0 else TEXTURE_SPACING // 2
+            for x in range(
+                CARD_PADDING_X // 2 + offset,
+                CARD_WIDTH + TEXTURE_SPACING,
+                TEXTURE_SPACING,
+            ):
+                draw.ellipse(
+                    (
+                        x - TEXTURE_DOT_RADIUS,
+                        y - TEXTURE_DOT_RADIUS,
+                        x + TEXTURE_DOT_RADIUS,
+                        y + TEXTURE_DOT_RADIUS,
+                    ),
+                    fill=self.TEXTURE,
+                )
 
     def _draw_header(
         self,
@@ -192,19 +278,19 @@ class GroupDetailCardRenderer:
                 cursor_y + box_height,
             ),
             radius=CARD_RADIUS,
-            fill=self.ACCENT_SOFT,
-            outline=self.BORDER,
+            fill=self.PANEL,
+            outline="#F0E8ED",
             width=1,
         )
 
-        chip_x = CARD_PADDING_X + 22
+        chip_x = CARD_PADDING_X + 20
         chip_y = cursor_y + 18
-        max_x = CARD_WIDTH - CARD_PADDING_X - 22
+        max_x = CARD_WIDTH - CARD_PADDING_X - 20
         for chip_text in self._summary_chips(page_data, locale):
             chip_width = self._text_width(chip_text, self.summary_font) + 26
             chip_height = self._line_height(self.summary_font) + 6
             if chip_x + chip_width > max_x:
-                chip_x = CARD_PADDING_X + 22
+                chip_x = CARD_PADDING_X + 20
                 chip_y += chip_height + 10
             draw.rounded_rectangle(
                 (
@@ -213,69 +299,67 @@ class GroupDetailCardRenderer:
                     chip_x + chip_width,
                     chip_y + chip_height,
                 ),
-                radius=15,
-                fill=self.PANEL,
+                radius=chip_height // 2,
+                fill=self.ACCENT_SOFT,
             )
             draw.text(
                 (chip_x + 13, chip_y + 4),
                 chip_text,
                 font=self.summary_font,
-                fill=self.BODY,
+                fill=self.HEADER,
             )
             chip_x += chip_width + 10
         return cursor_y + box_height
 
-    def _draw_shape_panel(
+    def _draw_trigger_panel(
         self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
-        *,
-        label: str,
-        shape: MessageShape,
-        top: int,
-        panel_fill: str,
+        page_data: GroupDetailCardPage,
         locale: LocaleCode,
+        top: int,
     ) -> int:
-        height = self._shape_panel_height(shape, locale=locale)
-        draw.rounded_rectangle(
-            (
-                CARD_PADDING_X,
-                top,
-                CARD_WIDTH - CARD_PADDING_X,
-                top + height,
-            ),
-            radius=CARD_RADIUS,
-            fill=panel_fill,
-            outline=self.BORDER,
-            width=1,
+        height = self._trigger_panel_height(
+            page_data.detail.trigger_shape,
+            locale=locale,
+        )
+        self._draw_card_panel(
+            draw,
+            x=TRIGGER_PANEL_X,
+            y=top,
+            width=TRIGGER_PANEL_WIDTH,
+            height=height,
+            fill=self.TRIGGER_PANEL,
+            outline=self.TRIGGER_BORDER,
         )
 
-        inner_x = CARD_PADDING_X + CARD_PANEL_PADDING
+        inner_x = TRIGGER_PANEL_X + CARD_PANEL_PADDING
         inner_y = top + CARD_PANEL_PADDING
+        label = tr(locale, "wordbank.group.card.trigger_label")
         label_width = self._text_width(label, self.item_meta_font) + 28
         draw.rounded_rectangle(
             (
                 inner_x,
                 inner_y,
                 inner_x + label_width,
-                inner_y + 28,
+                inner_y + 34,
             ),
-            radius=14,
+            radius=17,
             fill=self.PANEL,
         )
         draw.text(
-            (inner_x + 14, inner_y + 5),
+            (inner_x + 14, inner_y + 6),
             label,
             font=self.item_meta_font,
-            fill=self.ACCENT,
+            fill=self.ACCENT_DEEP,
         )
-        body_y = inner_y + 40
         self._draw_shape_flow(
             image,
             draw,
-            shape,
-            x=inner_x,
-            y=body_y,
+            page_data.detail.trigger_shape,
+            x=inner_x + CARD_TEXT_INSET,
+            y=inner_y + 46,
+            max_width=TRIGGER_TEXT_WIDTH,
             locale=locale,
         )
         return top + height
@@ -289,154 +373,206 @@ class GroupDetailCardRenderer:
         absolute_index: int,
         locale: LocaleCode,
         cursor_y: int,
+        connector_y: int,
     ) -> int:
         height = self._response_panel_height(response, locale=locale)
-        draw.rounded_rectangle(
-            (
-                CARD_PADDING_X,
-                cursor_y,
-                CARD_WIDTH - CARD_PADDING_X,
-                cursor_y + height,
-            ),
-            radius=CARD_RADIUS,
-            fill=self.PANEL,
-            outline=self.BORDER,
-            width=1,
+        self._draw_horizontal_branch(draw, y=connector_y)
+        self._draw_card_panel(
+            draw,
+            x=RESPONSE_PANEL_X,
+            y=cursor_y,
+            width=RESPONSE_PANEL_WIDTH,
+            height=height,
+            fill=self.RESPONSE_PANEL,
+            outline=self.RESPONSE_BORDER,
         )
 
-        inner_x = CARD_PADDING_X + CARD_PANEL_PADDING
+        inner_x = RESPONSE_PANEL_X + CARD_PANEL_PADDING
         inner_y = cursor_y + CARD_PANEL_PADDING
-
-        badge = f"{absolute_index:03d}"
-        badge_bbox = draw.textbbox((0, 0), badge, font=self.item_title_font)
-        badge_width = int(badge_bbox[2] - badge_bbox[0] + 28)
-        badge_height = int(badge_bbox[3] - badge_bbox[1] + 14)
-        draw.rounded_rectangle(
+        badge_text = f"{absolute_index:02d}"
+        draw.ellipse(
             (
                 inner_x,
                 inner_y,
-                inner_x + badge_width,
-                inner_y + badge_height,
+                inner_x + BADGE_SIZE,
+                inner_y + BADGE_SIZE,
             ),
-            radius=16,
-            fill=self.ACCENT_SOFT,
-        )
-        draw.text(
-            (inner_x + 14, inner_y + 7),
-            badge,
-            font=self.item_title_font,
             fill=self.ACCENT,
         )
+        badge_bbox = draw.textbbox((0, 0), badge_text, font=self.item_title_font)
+        badge_width = int(badge_bbox[2] - badge_bbox[0])
+        badge_height = int(badge_bbox[3] - badge_bbox[1])
+        draw.text(
+            (
+                inner_x + (BADGE_SIZE - badge_width) / 2,
+                inner_y + (BADGE_SIZE - badge_height) / 2 - 2,
+            ),
+            badge_text,
+            font=self.item_title_font,
+            fill=self.BADGE_TEXT,
+        )
 
-        body_y = inner_y + badge_height + 18
         body_y = self._draw_shape_flow(
             image,
             draw,
             response.response_shape,
-            x=inner_x,
-            y=body_y,
+            x=inner_x + CARD_TEXT_INSET,
+            y=inner_y + BADGE_SIZE + 16,
+            max_width=RESPONSE_TEXT_WIDTH,
             locale=locale,
         )
         body_y += CARD_FLOW_GAP
         self._draw_response_meta(
             draw,
             response,
-            x=inner_x,
+            x=inner_x + CARD_TEXT_INSET,
             y=body_y,
             locale=locale,
         )
         return cursor_y + height
 
-    def _shape_panel_height(
+    def _draw_tree_trunk(
         self,
-        shape: MessageShape,
-        *,
-        locale: LocaleCode,
-    ) -> int:
-        total = CARD_PANEL_PADDING * 2 + 40
-        total += self._shape_flow_height(shape, locale=locale)
-        return total
-
-    def _response_panel_height(
-        self,
-        response: WordbankResponseItemDetail,
-        *,
-        locale: LocaleCode,
-    ) -> int:
-        total = CARD_PANEL_PADDING * 2
-        badge_bbox = ImageDraw.Draw(Image.new("RGB", (10, 10))).textbbox(
-            (0, 0),
-            "000",
-            font=self.item_title_font,
-        )
-        total += int(badge_bbox[3] - badge_bbox[1] + 34)
-        total += self._shape_flow_height(response.response_shape, locale=locale)
-        total += CARD_FLOW_GAP
-        total += self._response_meta_height(response, locale=locale)
-        return total
-
-    def _draw_shape_flow(
-        self,
-        image: Image.Image,
         draw: ImageDraw.ImageDraw,
-        shape: MessageShape,
+        *,
+        start_y: int,
+        end_y: int,
+    ) -> None:
+        self._draw_vertical_dashed_line(
+            draw,
+            x=TRUNK_X,
+            start_y=start_y,
+            end_y=end_y,
+            color="#F3C7D7",
+        )
+
+    def _draw_horizontal_branch(self, draw: ImageDraw.ImageDraw, *, y: int) -> None:
+        draw.line(
+            ((TRUNK_X, y), (RESPONSE_PANEL_X - TREE_BRANCH_GAP, y)),
+            fill="#F3C7D7",
+            width=4,
+        )
+        draw.ellipse(
+            (
+                TRUNK_X - 8,
+                y - 8,
+                TRUNK_X + 8,
+                y + 8,
+            ),
+            fill=self.ACCENT,
+        )
+
+    def _draw_card_panel(
+        self,
+        draw: ImageDraw.ImageDraw,
         *,
         x: int,
         y: int,
-        locale: LocaleCode,
-    ) -> int:
-        blocks = self._shape_blocks(shape, locale)
-        cursor_y = y
-        for index, block in enumerate(blocks):
-            if block.kind == "text" and block.text:
-                cursor_y = self._draw_wrapped_text(
-                    draw,
-                    x=x,
-                    y=cursor_y,
-                    text=block.text,
-                    font=self.item_body_font,
-                    fill=self.BODY,
-                    max_width=CARD_TEXT_WIDTH,
-                )
-            elif block.kind == "image" and block.image_id is not None:
-                drawn_bottom = self._draw_image_block(
-                    image,
-                    image_id=block.image_id,
-                    x=x,
-                    y=cursor_y,
-                    width=CARD_IMAGE_WIDTH,
-                )
-                if drawn_bottom == cursor_y:
-                    continue
-                cursor_y = drawn_bottom
-            if index < len(blocks) - 1:
-                cursor_y += CARD_FLOW_GAP
-        return cursor_y
+        width: int,
+        height: int,
+        fill: str,
+        outline: str,
+    ) -> None:
+        draw.rounded_rectangle(
+            (x, y, x + width, y + height),
+            radius=CARD_RADIUS,
+            fill=fill,
+            outline=outline,
+            width=1,
+        )
 
-    def _shape_flow_height(
+    def _draw_page_more_cta(
         self,
-        shape: MessageShape,
-        *,
+        draw: ImageDraw.ImageDraw,
+        page_data: GroupDetailCardPage,
+        locale: LocaleCode,
+        cursor_y: int,
+    ) -> int:
+        hint = "💬 " + tr(
+            locale,
+            "wordbank.group.page_more",
+            next_page=min(page_data.total_pages, page_data.page + 1),
+            group_id=page_data.detail.trigger_group_id,
+        )
+        block_height = self._page_more_cta_height(page_data, locale)
+        x = RESPONSE_PANEL_X
+        width = RESPONSE_PANEL_WIDTH
+        draw.rounded_rectangle(
+            (x + 12, cursor_y + 5, x + width + 12, cursor_y + block_height + 5),
+            radius=22,
+            fill="#FCEAF2",
+        )
+        draw.rounded_rectangle(
+            (x, cursor_y, x + width, cursor_y + block_height),
+            radius=22,
+            fill=self.ACCENT_SOFT,
+            outline="#F7D8E6",
+            width=1,
+        )
+        lines = self._wrap_text(
+            hint,
+            self.item_meta_font,
+            max_width=width - 60,
+            max_lines=3,
+        )
+        line_height = self._line_height(self.item_meta_font)
+        text_y = cursor_y + int((block_height - len(lines) * line_height) / 2)
+        for line in lines:
+            line_width = self._text_width(line, self.item_meta_font)
+            draw.text(
+                (x + (width - line_width) / 2, text_y),
+                line,
+                font=self.item_meta_font,
+                fill=self.ACCENT_DEEP,
+            )
+            text_y += line_height
+        return cursor_y + block_height
+
+    def _page_more_cta_height(
+        self,
+        page_data: GroupDetailCardPage,
         locale: LocaleCode,
     ) -> int:
-        total = 0
-        blocks = self._shape_blocks(shape, locale)
-        for index, block in enumerate(blocks):
-            if block.kind == "text" and block.text:
-                total += self._wrapped_text_height(
-                    block.text,
-                    self.item_body_font,
-                    max_width=CARD_TEXT_WIDTH,
-                )
-            elif block.kind == "image" and block.image_id is not None:
-                total += self._preview_height(
-                    block.image_id,
-                    max_width=CARD_IMAGE_WIDTH,
-                    max_height=CARD_PREVIEW_MAX_HEIGHT,
-                )
-            if index < len(blocks) - 1:
-                total += CARD_FLOW_GAP
-        return total
+        hint = "💬 " + tr(
+            locale,
+            "wordbank.group.page_more",
+            next_page=min(page_data.total_pages, page_data.page + 1),
+            group_id=page_data.detail.trigger_group_id,
+        )
+        text_height = self._wrapped_text_height(
+            hint,
+            self.item_meta_font,
+            max_width=RESPONSE_PANEL_WIDTH - 60,
+            max_lines=3,
+        )
+        return max(DETAIL_CTA_MIN_HEIGHT, text_height + 28)
+
+    def _draw_empty_state(
+        self,
+        draw: ImageDraw.ImageDraw,
+        locale: LocaleCode,
+        cursor_y: int,
+    ) -> int:
+        height = self._empty_state_height()
+        self._draw_card_panel(
+            draw,
+            x=RESPONSE_PANEL_X,
+            y=cursor_y,
+            width=RESPONSE_PANEL_WIDTH,
+            height=height,
+            fill=self.RESPONSE_PANEL,
+            outline=self.RESPONSE_BORDER,
+        )
+        draw.text(
+            (RESPONSE_PANEL_X + 32, cursor_y + 32),
+            tr(locale, "wordbank.search_card.none"),
+            font=self.item_title_font,
+            fill=self.HEADER,
+        )
+        return cursor_y + height
+
+    def _empty_state_height(self) -> int:
+        return 108
 
     def _draw_response_meta(
         self,
@@ -456,31 +592,27 @@ class GroupDetailCardRenderer:
             scope=response.scope,
             weight=response.weight,
         )
-        cursor_y = self._draw_wrapped_text(
-            draw,
-            x=x,
-            y=y,
-            text=meta_line,
-            font=self.item_meta_font,
-            fill=self.MUTED,
-            max_width=CARD_TEXT_WIDTH,
-            max_lines=2,
-        )
-        cursor_y += 4
         rule_line = (
             f"{tr(locale, 'wordbank.group.card.rule_label')}: "
             f"{_format_rule_text(response.rule)}"
         )
-        return self._draw_wrapped_text(
-            draw,
-            x=x,
-            y=cursor_y,
-            text=rule_line,
-            font=self.item_meta_font,
-            fill=self.MUTED,
-            max_width=CARD_TEXT_WIDTH,
+        lines = self._wrap_text(
+            f"{meta_line}  ·  {rule_line}",
+            self.item_meta_font,
+            max_width=RESPONSE_TEXT_WIDTH,
             max_lines=2,
         )
+        cursor_y = y
+        for line in lines:
+            line_width = self._text_width(line, self.item_meta_font)
+            draw.text(
+                (x + RESPONSE_TEXT_WIDTH - line_width, cursor_y),
+                line,
+                font=self.item_meta_font,
+                fill=self.MUTED,
+            )
+            cursor_y += self._line_height(self.item_meta_font)
+        return cursor_y
 
     def _response_meta_height(
         self,
@@ -496,23 +628,110 @@ class GroupDetailCardRenderer:
             scope=response.scope,
             weight=response.weight,
         )
-        total = self._wrapped_text_height(
-            meta_line,
-            self.item_meta_font,
-            max_width=CARD_TEXT_WIDTH,
-            max_lines=2,
-        )
-        total += 4
         rule_line = (
             f"{tr(locale, 'wordbank.group.card.rule_label')}: "
             f"{_format_rule_text(response.rule)}"
         )
-        total += self._wrapped_text_height(
-            rule_line,
+        return self._wrapped_text_height(
+            f"{meta_line}  ·  {rule_line}",
             self.item_meta_font,
-            max_width=CARD_TEXT_WIDTH,
+            max_width=RESPONSE_TEXT_WIDTH,
             max_lines=2,
         )
+
+    def _trigger_panel_height(
+        self,
+        shape: MessageShape,
+        *,
+        locale: LocaleCode,
+    ) -> int:
+        total = CARD_PANEL_PADDING * 2 + 46
+        total += self._shape_flow_height(
+            shape,
+            max_width=TRIGGER_TEXT_WIDTH,
+            locale=locale,
+        )
+        return total
+
+    def _response_panel_height(
+        self,
+        response: WordbankResponseItemDetail,
+        *,
+        locale: LocaleCode,
+    ) -> int:
+        total = CARD_PANEL_PADDING * 2 + BADGE_SIZE + 16
+        total += self._shape_flow_height(
+            response.response_shape,
+            max_width=RESPONSE_TEXT_WIDTH,
+            locale=locale,
+        )
+        total += CARD_FLOW_GAP
+        total += self._response_meta_height(response, locale=locale)
+        return total
+
+    def _draw_shape_flow(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        shape: MessageShape,
+        *,
+        x: int,
+        y: int,
+        max_width: int,
+        locale: LocaleCode,
+    ) -> int:
+        blocks = self._shape_blocks(shape, locale)
+        cursor_y = y
+        for index, block in enumerate(blocks):
+            if block.kind == "text" and block.text:
+                cursor_y = self._draw_wrapped_text(
+                    draw,
+                    x=x,
+                    y=cursor_y,
+                    text=block.text,
+                    font=self.item_body_font,
+                    fill=self.BODY,
+                    max_width=max_width,
+                )
+            elif block.kind == "image" and block.image_id is not None:
+                drawn_bottom = self._draw_image_block(
+                    image,
+                    image_id=block.image_id,
+                    x=x,
+                    y=cursor_y,
+                    max_width=max_width,
+                )
+                if drawn_bottom == cursor_y:
+                    continue
+                cursor_y = drawn_bottom
+            if index < len(blocks) - 1:
+                cursor_y += CARD_FLOW_GAP
+        return cursor_y
+
+    def _shape_flow_height(
+        self,
+        shape: MessageShape,
+        *,
+        max_width: int,
+        locale: LocaleCode,
+    ) -> int:
+        total = 0
+        blocks = self._shape_blocks(shape, locale)
+        for index, block in enumerate(blocks):
+            if block.kind == "text" and block.text:
+                total += self._wrapped_text_height(
+                    block.text,
+                    self.item_body_font,
+                    max_width=max_width,
+                )
+            elif block.kind == "image" and block.image_id is not None:
+                total += self._preview_height(
+                    block.image_id,
+                    max_width=max_width,
+                    max_height=CARD_PREVIEW_MAX_HEIGHT,
+                )
+            if index < len(blocks) - 1:
+                total += CARD_FLOW_GAP
         return total
 
     def _draw_image_block(
@@ -522,14 +741,14 @@ class GroupDetailCardRenderer:
         image_id: int,
         x: int,
         y: int,
-        width: int,
+        max_width: int,
     ) -> int:
         image_bytes = self.preview_bytes.get(image_id)
         if not image_bytes:
             return y
         preview = self._prepare_preview_image(
             image_bytes,
-            max_width=width,
+            max_width=max_width,
             max_height=CARD_PREVIEW_MAX_HEIGHT,
         )
         if preview is None:
@@ -605,7 +824,7 @@ class GroupDetailCardRenderer:
             ),
             command_text,
             font=self.footer_font,
-            fill=self.ACCENT,
+            fill=self.ACCENT_DEEP,
         )
 
     def _summary_chips(
@@ -649,16 +868,16 @@ class GroupDetailCardRenderer:
     ) -> int:
         chips = self._summary_chips(page_data, locale)
         if not chips:
-            return 60
+            return 62
         chip_height = self._line_height(self.summary_font) + 6
-        current_x = CARD_PADDING_X + 22
-        max_x = CARD_WIDTH - CARD_PADDING_X - 22
+        current_x = CARD_PADDING_X + 20
+        max_x = CARD_WIDTH - CARD_PADDING_X - 20
         rows = 1
         for chip_text in chips:
             chip_width = self._text_width(chip_text, self.summary_font) + 26
             if current_x + chip_width > max_x:
                 rows += 1
-                current_x = CARD_PADDING_X + 22 + chip_width + 10
+                current_x = CARD_PADDING_X + 20 + chip_width + 10
                 continue
             current_x += chip_width + 10
         return 18 + rows * chip_height + (rows - 1) * 10 + 18
@@ -691,13 +910,18 @@ class GroupDetailCardRenderer:
                 if atom.kind in {"at", "event"}:
                     text_buffer.append(" ")
             text_buffer.append(atom_text)
+
         if text_buffer:
             text = "".join(text_buffer).strip()
             if text:
                 blocks.append(_ShapeBlock(kind="text", text=text))
+
         if not blocks:
             blocks.append(
-                _ShapeBlock(kind="text", text=tr(locale, "wordbank.search_card.none"))
+                _ShapeBlock(
+                    kind="text",
+                    text=tr(locale, "wordbank.search_card.none"),
+                )
             )
         return tuple(blocks)
 
@@ -707,98 +931,8 @@ class GroupDetailCardRenderer:
         if atom.kind == "at" and atom.target_id:
             return f"[@:{atom.target_id}]"
         if atom.kind == "event" and atom.event_name:
-            return tr(
-                locale,
-                "wordbank.shape.event_ref",
-                event_name=atom.event_name,
-            )
+            return tr(locale, "wordbank.shape.event_ref", event_name=atom.event_name)
         return ""
-
-    def _draw_wrapped_text(
-        self,
-        draw: ImageDraw.ImageDraw,
-        *,
-        x: int,
-        y: int,
-        text: str,
-        font: Any,
-        fill: str,
-        max_width: int,
-        max_lines: int | None = None,
-    ) -> int:
-        lines = self._wrap_text(
-            text,
-            font,
-            max_width=max_width,
-            max_lines=max_lines,
-        )
-        cursor_y = y
-        for line in lines:
-            draw.text((x, cursor_y), line, font=font, fill=fill)
-            cursor_y += self._line_height(font)
-        return cursor_y
-
-    def _wrapped_text_height(
-        self,
-        text: str,
-        font: Any,
-        *,
-        max_width: int,
-        max_lines: int | None = None,
-    ) -> int:
-        lines = self._wrap_text(
-            text,
-            font,
-            max_width=max_width,
-            max_lines=max_lines,
-        )
-        return len(lines) * self._line_height(font)
-
-    def _wrap_text(
-        self,
-        text: str,
-        font: Any,
-        *,
-        max_width: int,
-        max_lines: int | None = None,
-    ) -> list[str]:
-        if not text:
-            return [""]
-        lines: list[str] = []
-        for raw_line in text.splitlines() or [text]:
-            if not raw_line:
-                lines.append("")
-                continue
-            current = ""
-            for char in raw_line:
-                candidate = f"{current}{char}"
-                if self._text_width(candidate, font) <= max_width:
-                    current = candidate
-                    continue
-                if current:
-                    lines.append(current)
-                current = char
-            if current:
-                lines.append(current)
-        if not lines:
-            return [""]
-        if max_lines is None or len(lines) <= max_lines:
-            return [self._truncate_line(line, font, max_width) for line in lines]
-        truncated = lines[:max_lines]
-        truncated[-1] = self._truncate_line(
-            f"{truncated[-1]}...",
-            font,
-            max_width,
-        )
-        return truncated
-
-    def _truncate_line(self, text: str, font: Any, max_width: int) -> str:
-        if self._text_width(text, font) <= max_width:
-            return text
-        candidate = text
-        while candidate and self._text_width(f"{candidate}...", font) > max_width:
-            candidate = candidate[:-1]
-        return f"{candidate}..."
 
     def _preview_height(self, image_id: int, *, max_width: int, max_height: int) -> int:
         cache_key = (image_id, max_width, max_height)
@@ -871,13 +1005,118 @@ class GroupDetailCardRenderer:
         )
         image.paste(preview, origin, mask)
 
+    def _draw_wrapped_text(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        y: int,
+        text: str,
+        font: Any,
+        fill: str,
+        max_width: int,
+        max_lines: int | None = None,
+    ) -> int:
+        lines = self._wrap_text(
+            text,
+            font,
+            max_width=max_width,
+            max_lines=max_lines,
+        )
+        cursor_y = y
+        for line in lines:
+            draw.text((x, cursor_y), line, font=font, fill=fill)
+            cursor_y += self._line_height(font)
+        return cursor_y
+
+    def _wrapped_text_height(
+        self,
+        text: str,
+        font: Any,
+        *,
+        max_width: int,
+        max_lines: int | None = None,
+    ) -> int:
+        lines = self._wrap_text(
+            text,
+            font,
+            max_width=max_width,
+            max_lines=max_lines,
+        )
+        return len(lines) * self._line_height(font)
+
+    def _wrap_text(
+        self,
+        text: str,
+        font: Any,
+        *,
+        max_width: int,
+        max_lines: int | None = None,
+    ) -> list[str]:
+        if not text:
+            return [""]
+        lines: list[str] = []
+        for raw_line in text.splitlines() or [text]:
+            if not raw_line:
+                lines.append("")
+                continue
+            current = ""
+            for char in raw_line:
+                candidate = f"{current}{char}"
+                if self._text_width(candidate, font) <= max_width:
+                    current = candidate
+                    continue
+                if current:
+                    lines.append(current)
+                current = char
+            if current:
+                lines.append(current)
+        if not lines:
+            return [""]
+        if max_lines is None or len(lines) <= max_lines:
+            return [self._truncate_line(line, font, max_width) for line in lines]
+        truncated = lines[:max_lines]
+        truncated[-1] = self._truncate_line(f"{truncated[-1]}...", font, max_width)
+        return truncated
+
+    def _truncate_line(self, text: str, font: Any, max_width: int) -> str:
+        if self._text_width(text, font) <= max_width:
+            return text
+        candidate = text
+        while candidate and self._text_width(f"{candidate}...", font) > max_width:
+            candidate = candidate[:-1]
+        return f"{candidate}..."
+
+    def _draw_vertical_dashed_line(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        start_y: int,
+        end_y: int,
+        color: str,
+    ) -> None:
+        dash = 10
+        gap = 8
+        current_y = start_y
+        while current_y < end_y:
+            draw.line(
+                ((x, current_y), (x, min(current_y + dash, end_y))),
+                fill=color,
+                width=4,
+            )
+            current_y += dash + gap
+
+    def _trigger_trunk_anchor_offset(self) -> int:
+        return CARD_PANEL_PADDING + 56
+
     def _line_height(self, font: Any) -> int:
         bbox = ImageDraw.Draw(Image.new("RGB", (10, 10))).textbbox(
             (0, 0),
             "Ag",
             font=font,
         )
-        return int(bbox[3] - bbox[1] + 6)
+        return int(bbox[3] - bbox[1] + 8)
 
     def _text_width(self, text: str, font: Any) -> int:
         return int(
