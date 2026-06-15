@@ -1124,7 +1124,7 @@ class SearchTreemapRenderer:
         meta_height = (
             len(meta_lines) * meta_line_height + max(0, len(meta_lines) - 1) * 2
         )
-        content_height = self._estimate_response_content_height(
+        content_height = self._measure_response_content_height_for_layout(
             response,
             locale,
             font=title_font,
@@ -1132,13 +1132,20 @@ class SearchTreemapRenderer:
         )
         meta_gap = 6 if compact_card else 8
         base_height = pad * 2 + content_height + meta_gap + meta_height
-        minimum_content = (
-            max(title_line_height + 2, min(content_height, title_line_height * 2))
-            if not response.has_image
-            else max(60, min(content_height, 96))
-        )
+        single_text = self._single_text_response_text(response, locale)
+        if response.has_image:
+            minimum_content = max(
+                58 if len(response.ordered_segments) <= 1 else 72,
+                content_height,
+            )
+        elif single_text is not None:
+            minimum_content = max(title_line_height + 6, content_height)
+        else:
+            minimum_content = max(
+                title_line_height + (6 if compact_card else 10), content_height
+            )
         minimum = pad * 2 + meta_gap + meta_height + minimum_content
-        maximum = 260 if response.has_image else 220
+        maximum = 248 if response.has_image else 212
         return max(minimum, min(maximum, base_height))
 
     def _estimate_response_content_height(
@@ -1196,6 +1203,127 @@ class SearchTreemapRenderer:
             if index < len(segments) - 1:
                 content_height += 6
         return content_height
+
+    def _measure_response_content_height_for_layout(
+        self,
+        response: SearchTreemapResponseCard,
+        locale: LocaleCode,
+        *,
+        font: Any,
+        width: int,
+    ) -> int:
+        single_text = self._single_text_response_text(response, locale)
+        if single_text is not None:
+            layout_font, lines = self._fit_single_text_response_layout(
+                single_text,
+                max_width=width,
+                max_height=self._single_text_layout_height_cap(width, text=single_text),
+            )
+            return len(lines) * self._line_height(layout_font)
+
+        segments = tuple(
+            segment
+            for segment in response.ordered_segments
+            if (segment.kind == "text" and segment.text.strip())
+            or (segment.kind == "image" and segment.image_path)
+        )
+        if not segments:
+            return 0
+
+        mixed_content = any(segment.kind == "text" for segment in segments) and any(
+            segment.kind == "image" for segment in segments
+        )
+        content_height = 0
+        for index, segment in enumerate(segments):
+            if segment.kind == "text":
+                content_height += self._measure_response_text_height_for_layout(
+                    self._normalize_response_text(
+                        segment.text,
+                        locale,
+                        has_image_preview=bool(response.primary_image_path),
+                    ),
+                    width=width,
+                    preferred_size=getattr(font, "size", None),
+                    has_image=response.has_image,
+                )
+            else:
+                content_height += self._estimate_layout_image_height(
+                    width,
+                    image_path=segment.image_path,
+                    mixed_content=mixed_content,
+                )
+            if index < len(segments) - 1:
+                content_height += 6
+        return content_height
+
+    def _measure_response_text_height_for_layout(
+        self,
+        text: str,
+        *,
+        width: int,
+        preferred_size: int | None,
+        has_image: bool,
+    ) -> int:
+        fitted_font, lines = self._fit_lxgw_text_block_layout(
+            text,
+            max_width=width,
+            max_height=self._layout_text_height_cap(
+                width, has_image=has_image, text=text
+            ),
+            preferred_size=preferred_size,
+        )
+        return len(lines) * self._line_height(fitted_font)
+
+    def _layout_text_height_cap(
+        self,
+        width: int,
+        *,
+        has_image: bool,
+        text: str,
+    ) -> int:
+        if width < 120:
+            base = 88
+        elif width < 168:
+            base = 108
+        elif width < 224:
+            base = 132
+        else:
+            base = 156
+        if not has_image:
+            base += 20
+        if len(text.strip()) >= 28:
+            base += 16
+        return base
+
+    def _single_text_layout_height_cap(self, width: int, *, text: str) -> int:
+        if width < 120:
+            base = 96
+        elif width < 168:
+            base = 118
+        elif width < 224:
+            base = 146
+        else:
+            base = 176
+        if len(text.strip()) >= 18:
+            base += 18
+        return base
+
+    def _estimate_layout_image_height(
+        self,
+        width: int,
+        *,
+        image_path: str,
+        mixed_content: bool,
+    ) -> int:
+        natural_height = self._preferred_sequence_image_height(
+            width,
+            image_path=image_path,
+        )
+        if not mixed_content:
+            return natural_height
+        mixed_floor = max(40, int(width * 0.24))
+        mixed_ceiling = max(72, int(width * 0.72))
+        return max(mixed_floor, min(mixed_ceiling, natural_height))
 
     def _preferred_sequence_image_height(self, width: int, *, image_path: str) -> int:
         if width <= 0:

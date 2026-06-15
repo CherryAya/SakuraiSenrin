@@ -616,6 +616,27 @@ def test_renderer_estimates_sequence_image_height_from_aspect_ratio(
     assert wide_height >= 44
 
 
+def test_renderer_uses_shorter_layout_image_height_for_mixed_content(
+    tmp_path: Path,
+) -> None:
+    renderer = SearchTreemapRenderer()
+    source = tmp_path / "tall.png"
+    Image.new("RGB", (160, 480), "#66ccff").save(source)
+
+    pure_height = renderer._estimate_layout_image_height(  # pyright: ignore[reportPrivateUsage]
+        180,
+        image_path=str(source),
+        mixed_content=False,
+    )
+    mixed_height = renderer._estimate_layout_image_height(  # pyright: ignore[reportPrivateUsage]
+        180,
+        image_path=str(source),
+        mixed_content=True,
+    )
+
+    assert mixed_height < pure_height
+
+
 def test_renderer_draw_image_block_returns_real_preview_height(tmp_path: Path) -> None:
     renderer = SearchTreemapRenderer()
     source = tmp_path / "wide.png"
@@ -681,3 +702,28 @@ def test_renderer_builds_three_metadata_lines() -> None:
     )
 
     assert lines == ["创建者 10001", "权重 3", "规则 默认"]
+
+
+def test_renderer_measures_single_text_layout_height_for_card_estimate() -> None:
+    renderer = SearchTreemapRenderer()
+    response = SearchTreemapResponseCard(
+        text="晚安啦",
+        created_by="10001",
+        weight=3,
+        rule="默认",
+    )
+
+    measured = renderer._measure_response_content_height_for_layout(  # pyright: ignore[reportPrivateUsage]
+        response,
+        "zh-CN",
+        font=renderer.card_title_font,  # pyright: ignore[reportPrivateUsage]
+        width=220,
+    )
+    simple = renderer._estimate_response_content_height(  # pyright: ignore[reportPrivateUsage]
+        response,
+        "zh-CN",
+        font=renderer.card_title_font,  # pyright: ignore[reportPrivateUsage]
+        width=220,
+    )
+
+    assert measured >= simple
