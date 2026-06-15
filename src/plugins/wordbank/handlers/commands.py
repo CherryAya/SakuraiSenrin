@@ -16,6 +16,7 @@ from src.config import config
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.logger import logger
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
     WordbankSearchPage,
@@ -1219,6 +1220,11 @@ async def render_search_page_message(
             media_service=media_service,
         )
     except Exception:
+        logger.exception(
+            "[Wordbank] search card render failed; fallback to text. "
+            f"keyword={parsed.keyword!r} page={parsed.page} field={parsed.field} "
+            f"has_image={has_image} total_count={page.total_count}"
+        )
         text = format_search_items(
             list(page.items),
             locale=locale,

@@ -542,18 +542,28 @@ class SearchResultCardRenderer:
         if not text:
             return [""]
         lines: list[str] = []
-        current = ""
-        for char in text:
-            candidate = f"{current}{char}"
-            if self._text_width(candidate, font) <= CARD_MAX_TEXT_WIDTH:
-                current = candidate
+        for raw_line in text.splitlines() or [text]:
+            if not raw_line:
+                lines.append("")
                 continue
+            current = ""
+            for char in raw_line:
+                candidate = f"{current}{char}"
+                if self._text_width(candidate, font) <= CARD_MAX_TEXT_WIDTH:
+                    current = candidate
+                    continue
+                if current:
+                    lines.append(current)
+                current = char
             if current:
                 lines.append(current)
-            current = char
-        if current:
-            lines.append(current)
-        return [self._truncate_line(line, font) for line in lines[:3]]
+        if not lines:
+            return [""]
+        if len(lines) <= 3:
+            return [self._truncate_line(line, font) for line in lines]
+        truncated = lines[:3]
+        truncated[-1] = self._truncate_line(f"{truncated[-1]}...", font)
+        return truncated
 
     def _truncate_line(self, text: str, font: Any) -> str:
         if self._text_width(text, font) <= CARD_MAX_TEXT_WIDTH:
