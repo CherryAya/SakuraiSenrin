@@ -3,6 +3,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.handlers.search_cards import (
     SearchCardQuery,
+    SearchResultCardRenderer,
     render_search_results_card,
 )
 
@@ -76,3 +77,26 @@ def test_render_search_results_card_supports_multiline_response_text() -> None:
     assert isinstance(message, Message)
     assert len(message) == 1
     assert message[0].type == "image"
+
+
+def test_search_card_renderer_adds_fold_hint_for_multi_response_group() -> None:
+    renderer = SearchResultCardRenderer()
+    item = WordbankSearchItem(
+        trigger_group_id=123,
+        status="approved",
+        trigger_text="晚安",
+        response_text="第一条",
+        response_summaries=("第一条", "第二条", "第三条"),
+        response_count=5,
+        scope="current_group",
+        probability=1.0,
+        weight=3,
+        created_by="10001",
+        matched_by="text:trigger",
+    )
+
+    hint = renderer._fold_hint(item, "zh-CN")  # pyright: ignore[reportPrivateUsage]
+
+    assert "本组共 5 条词条" in hint
+    assert "前 3 条" in hint
+    assert "详情 123" in hint

@@ -275,17 +275,25 @@ class SearchResultCardRenderer:
                 value=meta_line,
             )
             body_y += CARD_LINE_GAP
-        for label, value in (
+        sections: list[tuple[str, str]] = [
             (tr(locale, "wordbank.search_card.label.trigger"), item.trigger_text),
             (
                 tr(locale, "wordbank.search_card.label.response_summary"),
                 self._response_preview(item, locale),
             ),
+        ]
+        fold_hint = self._fold_hint(item, locale)
+        if fold_hint:
+            sections.append(
+                (tr(locale, "wordbank.search_card.label.folded"), fold_hint)
+            )
+        sections.append(
             (
                 tr(locale, "wordbank.search_card.label.matched_by"),
                 item.matched_by or self._fallback_match_label(query, locale),
-            ),
-        ):
+            )
+        )
+        for label, value in sections:
             body_y = self._draw_labeled_lines(
                 draw,
                 x=inner_x,
@@ -417,17 +425,25 @@ class SearchResultCardRenderer:
         )
         total += len(wrapped_meta) * self._line_height(self.item_body_font)
         total += CARD_LINE_GAP
-        for label, value in (
+        sections: list[tuple[str, str]] = [
             (tr(locale, "wordbank.search_card.label.trigger"), item.trigger_text),
             (
                 tr(locale, "wordbank.search_card.label.response_summary"),
                 self._response_preview(item, locale),
             ),
+        ]
+        fold_hint = self._fold_hint(item, locale)
+        if fold_hint:
+            sections.append(
+                (tr(locale, "wordbank.search_card.label.folded"), fold_hint)
+            )
+        sections.append(
             (
                 tr(locale, "wordbank.search_card.label.matched_by"),
                 item.matched_by or tr(locale, "wordbank.search_card.match.default"),
-            ),
-        ):
+            )
+        )
+        for label, value in sections:
             wrapped = self._wrap_text(f"{label}: {value}", self.item_body_font)
             total += len(wrapped) * self._line_height(self.item_body_font)
             total += CARD_LINE_GAP
@@ -565,6 +581,24 @@ class SearchResultCardRenderer:
             )
             preview = f"{preview}{suffix}" if preview else suffix.strip()
         return preview or tr(locale, "wordbank.search_card.none")
+
+    def _fold_hint(self, item: WordbankSearchItem, locale: LocaleCode) -> str:
+        shown_count = self._preview_summary_count(item)
+        if item.response_count <= max(1, shown_count):
+            return ""
+        return tr(
+            locale,
+            "wordbank.search_card.folded_hint",
+            total=item.response_count,
+            shown=max(1, shown_count),
+            group_id=item.trigger_group_id,
+        )
+
+    def _preview_summary_count(self, item: WordbankSearchItem) -> int:
+        summaries = [summary for summary in item.response_summaries[:3] if summary]
+        if summaries:
+            return len(summaries)
+        return 1 if item.response_text else 0
 
     def _wrap_text(self, text: str, font: Any) -> list[str]:
         if not text:
