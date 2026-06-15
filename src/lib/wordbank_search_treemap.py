@@ -1326,11 +1326,11 @@ class SearchTreemapRenderer:
         elif width < 224:
             base = 146
         else:
-            base = 196
+            base = 220
         if len(text.strip()) >= 18:
             base += 18
         elif len(text.strip()) <= 8:
-            base += 18
+            base += 34
         return base
 
     def _estimate_layout_image_height(
@@ -1536,8 +1536,8 @@ class SearchTreemapRenderer:
         block_height = clipped_content_height + divider_gap + meta_gap + meta_height
         spare_height = max(0, inner_height - block_height)
         bias = {
-            "single_text": 0.34,
-            "text_short": 0.30,
+            "single_text": 0.48,
+            "text_short": 0.40,
             "text": 0.27,
             "mixed": 0.20,
             "image": 0.16,
@@ -1625,7 +1625,7 @@ class SearchTreemapRenderer:
             cursor_y = y + max(0, (height - total_height) // 3)
         else:
             cursor_y = y
-        centered_lines = len(lines) <= 2 and len(text.strip()) <= 12
+        centered_lines = len(lines) <= 3 and len(text.strip()) <= 18
         for line in lines:
             line_x = x
             if centered_lines:
@@ -2185,15 +2185,15 @@ class SearchTreemapRenderer:
         max_height: int,
     ) -> int:
         if len(text) <= 4:
-            text_cap = 76
+            text_cap = 92
         elif len(text) <= 8:
-            text_cap = 64
+            text_cap = 78
         elif len(text) <= 16:
-            text_cap = 48
+            text_cap = 56
         else:
             text_cap = 34
-        width_cap = max(24, int(max_width * 0.36))
-        height_cap = max(24, int(max_height * 0.48))
+        width_cap = max(24, int(max_width * 0.44))
+        height_cap = max(24, int(max_height * 0.62))
         return max(12, min(text_cap, width_cap, height_cap))
 
     def _fit_lxgw_text_block_layout(
