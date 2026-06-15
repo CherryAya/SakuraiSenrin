@@ -84,12 +84,13 @@ from .handlers.commands import (
     ParsedSearch,
     _default_i18n_text,
     execute_search_page,
+    handle_delete,
     parse_guided_advanced_options,
     parse_guided_scope_choice,
     parse_guided_search_creator_filter,
     parse_guided_search_mode_choice,
-    parse_guided_search_page_choice,
     parse_search_args,
+    parse_search_session_command,
     render_search_page_message,
 )
 from .handlers.rendering import render_shape_message
@@ -414,6 +415,7 @@ async def _handle_wordbank_command_message(
     arg: Message,
     *,
     forced_action: str | None = None,
+    state: T_State | None = None,
 ) -> None:
     await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
@@ -464,6 +466,7 @@ async def _handle_wordbank_command_message(
                 locale,
                 keyword=keyword,
                 image_scores=search_image_scores if has_image else None,
+                state=state,
             )
         except (RuleError, ValueError) as exc:
             await matcher.finish(localize_command_error(exc, locale))
@@ -788,6 +791,74 @@ def _build_guided_search_parsed(
     )
 
 
+def _guided_search_current_page(state: Mapping[str, Any]) -> int:
+    value = state.get("wordbank_guided_search_current_page", 1)
+    return int(value) if isinstance(value, int) and value > 0 else 1
+
+
+def _guided_search_total_pages(state: Mapping[str, Any]) -> int:
+    value = state.get("wordbank_guided_search_total_pages", 1)
+    return int(value) if isinstance(value, int) and value > 0 else 1
+
+
+def _guided_search_group_ids(state: Mapping[str, Any]) -> tuple[int, ...]:
+    value = state.get("wordbank_guided_search_group_ids")
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(
+        int(item) for item in value if isinstance(item, int) or str(item).isdigit()
+    )
+
+
+def _guided_search_delete_target_ids(state: Mapping[str, Any]) -> tuple[int, ...]:
+    value = state.get("wordbank_guided_search_delete_target_ids")
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(
+        int(item) for item in value if isinstance(item, int) or str(item).isdigit()
+    )
+
+
+def _representative_detail_response_item_id(detail: Any) -> int | None:
+    responses = tuple(getattr(detail, "responses", ()) or ())
+    if not responses:
+        return None
+
+    def _sort_key(response: Any) -> tuple[int, int, int]:
+        deleted_at = int(getattr(response, "deleted_at", 0) or 0)
+        status = str(getattr(response, "status", "") or "")
+        enabled = int(getattr(response, "enabled", 0) or 0)
+        response_item_id = int(getattr(response, "response_item_id", 0) or 0)
+        active_rank = (
+            0 if deleted_at == 0 and status == "approved" and enabled == 1 else 1
+        )
+        deleted_rank = 0 if deleted_at == 0 else 1
+        return (active_rank, deleted_rank, response_item_id)
+
+    representative = min(responses, key=_sort_key)
+    response_item_id = int(getattr(representative, "response_item_id", 0) or 0)
+    return response_item_id if response_item_id > 0 else None
+
+
+async def _resolve_search_delete_target_ids(page: Any) -> tuple[int, ...]:
+    target_ids: list[int] = []
+    for item in page.items:
+        if item.response_item_ids:
+            target_ids.append(int(item.response_item_ids[0]))
+            continue
+        detail = await wordbank_service.get_group_detail(item.trigger_group_id)
+        target_ids.append(_representative_detail_response_item_id(detail) or 0)
+    return tuple(target_ids)
+
+
+def _search_session_prompt(locale: LocaleCode, *, total_pages: int) -> str:
+    return tr(
+        locale,
+        "wordbank.guided.search.page_prompt",
+        total_pages=total_pages,
+    )
+
+
 async def _start_guided_search(
     matcher: Matcher,
     event: MessageEvent,
@@ -815,17 +886,35 @@ async def _finish_guided_search(
     locale: LocaleCode,
     *,
     page_number: int,
+    clamp_page: bool = False,
 ) -> None:
+    image_scores = (
+        _guided_search_image_scores(state)
+        if bool(state.get("wordbank_guided_search_has_image"))
+        else None
+    )
     parsed = _build_guided_search_parsed(state, page=page_number)
     page = await execute_search_page(
         wordbank_service,
         parsed=parsed,
-        image_scores=(
-            _guided_search_image_scores(state)
-            if bool(state.get("wordbank_guided_search_has_image"))
-            else None
-        ),
+        image_scores=image_scores,
     )
+    total_pages = max(1, (page.total_count + parsed.limit - 1) // parsed.limit)
+    if page.total_count > 0 and page_number > total_pages:
+        if not clamp_page:
+            await _reject_guided_error(
+                matcher,
+                state,
+                locale,
+                tr(locale, "wordbank.error.guided_search_page_out_of_range"),
+            )
+            return
+        parsed = _build_guided_search_parsed(state, page=total_pages)
+        page = await execute_search_page(
+            wordbank_service,
+            parsed=parsed,
+            image_scores=image_scores,
+        )
     message = await render_search_page_message(
         page,
         parsed=parsed,
@@ -833,27 +922,17 @@ async def _finish_guided_search(
         has_image=bool(state.get("wordbank_guided_search_has_image")),
         media_service=wordbank_media_service,
     )
-    total_pages = max(1, (page.total_count + parsed.limit - 1) // parsed.limit)
-    if page.total_count > 0 and page_number > total_pages:
-        await _reject_guided_error(
-            matcher,
-            state,
-            locale,
-            tr(locale, "wordbank.error.guided_search_page_out_of_range"),
-        )
-        return
-    if total_pages <= 1:
-        send_result = await matcher.send(message)
-        await _record_search_result_view_message(
-            send_result=send_result,
-            event=event,
-            parsed=parsed,
-            page=page,
-            has_image=bool(state.get("wordbank_guided_search_has_image")),
-        )
-        await matcher.finish()
-        return
     state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_PAGE
+    state["wordbank_guided_search_current_page"] = parsed.page
+    state["wordbank_guided_search_total_pages"] = max(
+        1, (page.total_count + parsed.limit - 1) // parsed.limit
+    )
+    state["wordbank_guided_search_group_ids"] = tuple(
+        item.trigger_group_id for item in page.items
+    )
+    state[
+        "wordbank_guided_search_delete_target_ids"
+    ] = await _resolve_search_delete_target_ids(page)
     send_result = await matcher.send(message)
     await _record_search_result_view_message(
         send_result=send_result,
@@ -862,12 +941,118 @@ async def _finish_guided_search(
         page=page,
         has_image=bool(state.get("wordbank_guided_search_has_image")),
     )
+    if page.total_count <= 0:
+        await matcher.finish()
+        return
     await matcher.pause(
-        tr(
+        _search_session_prompt(
             locale,
-            "wordbank.guided.search.page_prompt",
-            total_pages=total_pages,
+            total_pages=_guided_search_total_pages(state),
         )
+    )
+
+
+async def _handle_search_session_event(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+) -> None:
+    if _guided_search_stage(state) != WORDBANK_GUIDED_SEARCH_STAGE_PAGE:
+        return
+    try:
+        parsed = parse_search_session_command(event.message.extract_plain_text())
+    except RuleError as exc:
+        await _reject_guided_error(
+            matcher,
+            state,
+            locale,
+            localize_command_error(exc, locale),
+        )
+        return
+
+    if parsed.action == "exit":
+        await matcher.finish(tr(locale, "wordbank.guided.search.finished"))
+        return
+
+    if parsed.action == "detail":
+        try:
+            view = parse_view_reply_for_search_result(
+                event.message.extract_plain_text(),
+                available_group_ids=_guided_search_group_ids(state),
+            )
+        except RuleError as exc:
+            await _reject_guided_error(
+                matcher,
+                state,
+                locale,
+                localize_command_error(exc, locale),
+            )
+            return
+        clear_interaction_errors(state)
+        await _send_group_detail_view(
+            matcher,
+            event,
+            locale,
+            trigger_group_id=view.trigger_group_id,
+            page=view.page,
+            finish_after_send=False,
+        )
+        await matcher.pause(
+            _search_session_prompt(
+                locale,
+                total_pages=_guided_search_total_pages(state),
+            )
+        )
+        return
+
+    if parsed.action == "delete":
+        delete_target_ids = _guided_search_delete_target_ids(state)
+        if (
+            not delete_target_ids
+            or any(index > len(delete_target_ids) for index in parsed.delete_indexes)
+            or any(delete_target_ids[index - 1] <= 0 for index in parsed.delete_indexes)
+        ):
+            await _reject_guided_error(
+                matcher,
+                state,
+                locale,
+                tr(locale, "wordbank.error.search_delete_index_invalid"),
+            )
+            return
+        messages = [
+            await handle_delete(
+                wordbank_service,
+                event=event,
+                response_item_id_text=str(delete_target_ids[index - 1]),
+                locale=locale,
+            )
+            for index in parsed.delete_indexes
+        ]
+        if messages:
+            await matcher.send("\n".join(messages))
+        clear_interaction_errors(state)
+        await _finish_guided_search(
+            matcher,
+            state,
+            event,
+            locale,
+            page_number=_guided_search_current_page(state),
+            clamp_page=True,
+        )
+        return
+
+    page_number = parsed.page
+    if page_number is None:
+        await matcher.finish(tr(locale, "wordbank.guided.search.finished"))
+        return
+    clear_interaction_errors(state)
+    await _finish_guided_search(
+        matcher,
+        state,
+        event,
+        locale,
+        page_number=page_number,
     )
 
 
@@ -897,7 +1082,7 @@ async def _(
                 await _start_guided_add(matcher, event, state, locale)
             return
     await initialize_wordbank_plugin()
-    await _handle_wordbank_command_message(bot, matcher, event, arg)
+    await _handle_wordbank_command_message(bot, matcher, event, arg, state=state)
 
 
 @wordbank_command.handle()
@@ -992,6 +1177,13 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
     await _finish_guided_add(bot, matcher, event, state)
 
 
+@wordbank_command.handle()
+async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+    locale = state.get("wordbank_locale", "zh-CN")
+    await _abort_guided_on_revoke(matcher, event, locale)
+    await _handle_search_session_event(matcher, event, state, locale)
+
+
 @wordbank_add_command.handle()
 async def _(
     bot: Bot,
@@ -1022,6 +1214,7 @@ async def _(
         event,
         arg,
         forced_action="add",
+        state=state,
     )
 
 
@@ -1130,6 +1323,7 @@ async def _(
         event,
         arg,
         forced_action="search",
+        state=state,
     )
 
 
@@ -1255,31 +1449,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
 async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    if _guided_search_stage(state) != WORDBANK_GUIDED_SEARCH_STAGE_PAGE:
-        return
-    try:
-        page_number = parse_guided_search_page_choice(
-            event.message.extract_plain_text()
-        )
-    except RuleError as exc:
-        await _reject_guided_error(
-            matcher,
-            state,
-            locale,
-            localize_command_error(exc, locale),
-        )
-        return
-    if page_number is None:
-        await matcher.finish(tr(locale, "wordbank.guided.search.finished"))
-        return
-    clear_interaction_errors(state)
-    await _finish_guided_search(
-        matcher,
-        state,
-        event,
-        locale,
-        page_number=page_number,
-    )
+    await _handle_search_session_event(matcher, event, state, locale)
 
 
 @wordbank_pending_command.handle()
@@ -1582,29 +1752,49 @@ async def _send_search_result_view(
     *,
     keyword: str,
     image_scores: dict[int, float] | None = None,
+    state: T_State | None = None,
 ) -> None:
     parsed = parse_search_args(keyword)
-    page = await execute_search_page(
-        wordbank_service,
-        parsed=parsed,
-        image_scores=image_scores,
+    if state is None:
+        page = await execute_search_page(
+            wordbank_service,
+            parsed=parsed,
+            image_scores=image_scores,
+        )
+        message = await render_search_page_message(
+            page,
+            parsed=parsed,
+            locale=locale,
+            has_image=image_scores is not None,
+            media_service=wordbank_media_service,
+        )
+        send_result = await matcher.send(message)
+        await _record_search_result_view_message(
+            send_result=send_result,
+            event=event,
+            parsed=parsed,
+            page=page,
+            has_image=image_scores is not None,
+        )
+        await matcher.finish()
+        return
+
+    clear_interaction_errors(state)
+    state["wordbank_locale"] = locale
+    state["wordbank_guided_search_field"] = parsed.field
+    state["wordbank_guided_search_keyword"] = parsed.keyword
+    state["wordbank_guided_search_creator_id"] = parsed.creator_id
+    state["wordbank_guided_search_has_image"] = image_scores is not None
+    state["wordbank_guided_search_image_scores"] = dict(image_scores or {})
+    state["wordbank_guided_search_requires_creator"] = False
+    register_root_message(state, event)
+    await _finish_guided_search(
+        matcher,
+        state,
+        event,
+        locale,
+        page_number=parsed.page,
     )
-    message = await render_search_page_message(
-        page,
-        parsed=parsed,
-        locale=locale,
-        has_image=image_scores is not None,
-        media_service=wordbank_media_service,
-    )
-    send_result = await matcher.send(message)
-    await _record_search_result_view_message(
-        send_result=send_result,
-        event=event,
-        parsed=parsed,
-        page=page,
-        has_image=image_scores is not None,
-    )
-    await matcher.finish()
 
 
 async def _send_group_detail_view(
@@ -1614,6 +1804,7 @@ async def _send_group_detail_view(
     *,
     trigger_group_id: int,
     page: int,
+    finish_after_send: bool = True,
 ) -> None:
     message, detail, _ = await build_group_detail_message(
         wordbank_service,
@@ -1630,7 +1821,8 @@ async def _send_group_detail_view(
         page=page,
         has_image=_group_detail_has_image(detail),
     )
-    await matcher.finish()
+    if finish_after_send:
+        await matcher.finish()
 
 
 def _message_segment_stats(message: Message | str) -> tuple[int, int]:

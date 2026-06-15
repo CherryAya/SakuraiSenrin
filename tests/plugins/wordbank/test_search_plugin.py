@@ -30,6 +30,7 @@ from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank import wordbank_search_command
 from src.plugins.wordbank.database.types import (
     WordbankMessageRefRecord,
+    WordbankSearchItem,
     WordbankSearchPage,
 )
 from tests.plugins.water.helpers import attach_reply_message, build_group_message_event
@@ -37,20 +38,27 @@ from tests.plugins.water.helpers import attach_reply_message, build_group_messag
 _SEARCH_DIMENSIONS_PROMPT = tr("zh-CN", "wordbank.guided.search.mode_prompt")
 _SEARCH_QUERY_PROMPT = tr("zh-CN", "wordbank.guided.search.keyword_prompt")
 _SEARCH_CREATOR_PROMPT = tr("zh-CN", "wordbank.guided.search.creator_prompt")
+_SEARCH_SESSION_PROMPT = tr(
+    "zh-CN",
+    "wordbank.guided.search.page_prompt",
+    total_pages=1,
+)
 
 
 class _FinishMatcher:
     def __init__(self) -> None:
         self.sent: list[Message] = []
         self.finished: Message | None = None
+        self.paused: list[str] = []
 
-    async def send(self, message: Message) -> None:
-        self.sent.append(message)
+    async def send(self, message: Message | str) -> None:
+        self.sent.append(Message(message))
 
     async def finish(self, message: Message | str | None = None) -> None:
         self.finished = Message(message or "")
 
-    async def pause(self, _message: str) -> None:
+    async def pause(self, message: str) -> None:
+        self.paused.append(message)
         return None
 
 
@@ -278,6 +286,128 @@ async def test_finish_guided_search_finishes_with_rendered_card(
 
     assert matcher.sent == [Message("CARD")]
     assert matcher.finished == Message("")
+
+
+@pytest.mark.asyncio
+async def test_finish_guided_search_keeps_search_session_when_results_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matcher = _FinishMatcher()
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "execute_search_page",
+        AsyncMock(
+            return_value=WordbankSearchPage(
+                items=(
+                    WordbankSearchItem(
+                        trigger_group_id=271,
+                        status="approved",
+                        trigger_text="晚安",
+                        response_text="做个好梦",
+                        response_summaries=("做个好梦",),
+                        response_count=1,
+                        scope="current_group",
+                        probability=1.0,
+                        weight=3,
+                        created_by="10001",
+                    ),
+                ),
+                total_count=1,
+                offset=0,
+                limit=10,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "render_search_page_message",
+        AsyncMock(return_value=Message("CARD")),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "_resolve_search_delete_target_ids",
+        AsyncMock(return_value=(12,)),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "_record_search_result_view_message",
+        AsyncMock(return_value=None),
+    )
+
+    state = {
+        "wordbank_guided_search_field": "all",
+        "wordbank_guided_search_keyword": "晚安",
+        "wordbank_guided_search_creator_id": "",
+        "wordbank_guided_search_has_image": False,
+        "wordbank_guided_search_image_scores": {},
+    }
+    event = build_group_message_event("#搜索词条 晚安")
+
+    await wordbank_plugin._finish_guided_search(
+        cast(Matcher, matcher),
+        state,
+        event,
+        "zh-CN",
+        page_number=1,
+    )
+
+    assert matcher.sent == [Message("CARD")]
+    assert matcher.finished is None
+    assert matcher.paused == [_SEARCH_SESSION_PROMPT]
+    assert state["wordbank_guided_search_current_page"] == 1
+    assert state["wordbank_guided_search_total_pages"] == 1
+    assert state["wordbank_guided_search_group_ids"] == (271,)
+    assert state["wordbank_guided_search_delete_target_ids"] == (12,)
+
+
+@pytest.mark.asyncio
+async def test_handle_search_session_delete_refreshes_current_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matcher = _FinishMatcher()
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "handle_delete",
+        AsyncMock(return_value="词条 #12 已删除。"),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "_finish_guided_search",
+        AsyncMock(return_value=None),
+    )
+
+    state = {
+        "wordbank_guided_search_stage": (
+            wordbank_plugin.WORDBANK_GUIDED_SEARCH_STAGE_PAGE
+        ),
+        "wordbank_guided_search_current_page": 1,
+        "wordbank_guided_search_total_pages": 2,
+        "wordbank_guided_search_group_ids": (271,),
+        "wordbank_guided_search_delete_target_ids": (12,),
+        "wordbank_guided_search_field": "all",
+        "wordbank_guided_search_keyword": "晚安",
+        "wordbank_guided_search_creator_id": "",
+        "wordbank_guided_search_has_image": False,
+        "wordbank_guided_search_image_scores": {},
+    }
+    event = build_group_message_event("del 1")
+
+    await wordbank_plugin._handle_search_session_event(
+        cast(Matcher, matcher),
+        event,
+        state,
+        "zh-CN",
+    )
+
+    assert matcher.sent == [Message("词条 #12 已删除。")]
+    assert isinstance(wordbank_plugin.handle_delete, AsyncMock)
+    wordbank_plugin.handle_delete.assert_awaited_once()
+    assert isinstance(wordbank_plugin._finish_guided_search, AsyncMock)
+    wordbank_plugin._finish_guided_search.assert_awaited_once()
+    await_args = wordbank_plugin._finish_guided_search.await_args
+    assert await_args is not None
+    assert await_args.kwargs["page_number"] == 1
+    assert await_args.kwargs["clamp_page"] is True
 
 
 @pytest.mark.asyncio

@@ -193,5 +193,10 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.search_card.field.all": "全量",
     "wordbank.search_card.field.trigger": "觸發詞",
     "wordbank.search_card.field.response": "響應詞",
+    "wordbank.guided.search.page_prompt": "可發 `page 頁碼` 以觀他頁、`詳情 組號` 以展詞條、`del 序號...` 以刪當頁所示詞條，或發 `exit` 以終搜索。今最多 {total_pages} 頁。",
+    "wordbank.guided.search.finished": "已終搜索。",
+    "wordbank.error.search_page_invalid": "頁碼須為大於 0 之整數",
+    "wordbank.error.search_session_command_invalid": "請發 `page 頁碼`、`詳情 組號`、`del 序號...` 或 `exit`。",
+    "wordbank.error.search_delete_index_invalid": "刪除序號須為當頁內之正整數，可作 `del 1 2`。",
     "wordbank.error.mode_unsupported": "今之詞庫惟支嚴格匹配，不復納 --mode。",
 }

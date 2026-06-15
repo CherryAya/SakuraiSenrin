@@ -186,6 +186,14 @@ class GuidedSearchSelection:
     requires_creator: bool = False
 
 
+@dataclass(slots=True, frozen=True)
+class ParsedSearchSessionCommand:
+    action: str
+    page: int | None = None
+    trigger_group_id: int | None = None
+    delete_indexes: tuple[int, ...] = ()
+
+
 def _split_command(text: str) -> tuple[str, str]:
     return split_command_text(text)
 
@@ -800,6 +808,59 @@ def parse_guided_search_page_choice(text: str) -> int | None:
         choice,
         fallback=_default_i18n_text("wordbank.error.search_page_invalid"),
         key="wordbank.error.search_page_invalid",
+    )
+
+
+def parse_search_session_command(text: str) -> ParsedSearchSessionCommand:
+    source = text.strip()
+    if not source:
+        return ParsedSearchSessionCommand(action="exit")
+
+    action, _, rest = source.partition(" ")
+    normalized = action.casefold()
+
+    if normalized in {"exit", "q", "quit"} or source == "结束":
+        return ParsedSearchSessionCommand(action="exit")
+
+    if action in {"详情", *GROUP_ALIASES}:
+        parsed = parse_group_view_args(rest)
+        return ParsedSearchSessionCommand(
+            action="detail",
+            page=parsed.page,
+            trigger_group_id=parsed.trigger_group_id,
+        )
+
+    if action in DELETE_ALIASES:
+        raw_indexes = tuple(part for part in rest.split() if part)
+        if not raw_indexes:
+            raise RuleError(
+                _default_i18n_text("wordbank.error.search_delete_index_invalid"),
+                key="wordbank.error.search_delete_index_invalid",
+            )
+        indexes: list[int] = []
+        for raw_index in raw_indexes:
+            if not raw_index.isdigit() or int(raw_index) <= 0:
+                raise RuleError(
+                    _default_i18n_text("wordbank.error.search_delete_index_invalid"),
+                    key="wordbank.error.search_delete_index_invalid",
+                )
+            value = int(raw_index)
+            if value not in indexes:
+                indexes.append(value)
+        return ParsedSearchSessionCommand(
+            action="delete",
+            delete_indexes=tuple(indexes),
+        )
+
+    if source.isdigit() or normalized == "page":
+        return ParsedSearchSessionCommand(
+            action="page",
+            page=parse_guided_search_page_choice(source),
+        )
+
+    raise RuleError(
+        _default_i18n_text("wordbank.error.search_session_command_invalid"),
+        key="wordbank.error.search_session_command_invalid",
     )
 
 

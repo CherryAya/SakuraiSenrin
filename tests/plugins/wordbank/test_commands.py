@@ -25,6 +25,7 @@ from src.plugins.wordbank.handlers.commands import (
     parse_group_view_args,
     parse_guided_search_mode_choice,
     parse_search_args,
+    parse_search_session_command,
 )
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -96,6 +97,22 @@ def test_parse_guided_search_mode_choice_rejects_invalid_combinations() -> None:
 
     with pytest.raises(RuleError):
         parse_guided_search_mode_choice("4")
+
+
+def test_parse_search_session_command_supports_page_detail_delete_and_exit() -> None:
+    page = parse_search_session_command("page 2")
+    detail = parse_search_session_command("详情 271 3")
+    delete = parse_search_session_command("del 1 2 2")
+    exit_cmd = parse_search_session_command("exit")
+
+    assert page.action == "page"
+    assert page.page == 2
+    assert detail.action == "detail"
+    assert detail.trigger_group_id == 271
+    assert detail.page == 3
+    assert delete.action == "delete"
+    assert delete.delete_indexes == (1, 2)
+    assert exit_cmd.action == "exit"
 
 
 @pytest.mark.asyncio

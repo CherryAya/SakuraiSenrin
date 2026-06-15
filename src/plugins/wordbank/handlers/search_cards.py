@@ -48,14 +48,14 @@ class SearchCardQuery:
 
 
 class SearchResultCardRenderer:
-    BG = "#FFF9FB"
-    PANEL = "#FFFFFF"
-    HEADER = "#2E2533"
-    BODY = "#5E5263"
-    MUTED = "#8C7A88"
-    ACCENT = "#E2799D"
-    ACCENT_SOFT = "#FFE8F0"
-    BORDER = "#F2D7E2"
+    BG = "#1A1B26"
+    PANEL = "#24283B"
+    HEADER = "#C0CAF5"
+    BODY = "#C0CAF5"
+    MUTED = "#A9B1D6"
+    ACCENT = "#7AA2F7"
+    ACCENT_SOFT = "#2A2F45"
+    BORDER = "#414868"
 
     def __init__(
         self,
@@ -143,7 +143,7 @@ class SearchResultCardRenderer:
         )
         draw.text(
             (CARD_PADDING_X, cursor_y),
-            title,
+            f"SakuraiSenrin {title}",
             font=self.title_font,
             fill=self.HEADER,
         )
@@ -258,6 +258,23 @@ class SearchResultCardRenderer:
 
         body_y = int(inner_y + badge_height + 18)
         body_y = self._draw_previews(image, draw, item, inner_x, body_y, locale)
+        meta_label = _safe_meta_label(locale)
+        meta_lines = [
+            (
+                f"{_safe_field_label(locale, 'scope')}: {item.scope}  "
+                f"{_safe_field_label(locale, 'probability')}: {item.probability:g}  "
+                f"{_safe_field_label(locale, 'weight')}: {item.weight}"
+            )
+        ]
+        for meta_line in meta_lines:
+            body_y = self._draw_labeled_lines(
+                draw,
+                x=inner_x,
+                y=body_y,
+                label=meta_label,
+                value=meta_line,
+            )
+            body_y += CARD_LINE_GAP
         for label, value in (
             (tr(locale, "wordbank.search_card.label.trigger"), item.trigger_text),
             (
@@ -389,6 +406,17 @@ class SearchResultCardRenderer:
         total += int(badge_bbox[3] - badge_bbox[1] + 30)
         if self._preview_specs(item, locale):
             total += CARD_PREVIEW_HEIGHT + CARD_PREVIEW_GAP
+        meta_line = (
+            f"{_safe_field_label(locale, 'scope')}: {item.scope}  "
+            f"{_safe_field_label(locale, 'probability')}: {item.probability:g}  "
+            f"{_safe_field_label(locale, 'weight')}: {item.weight}"
+        )
+        wrapped_meta = self._wrap_text(
+            f"{_safe_meta_label(locale)}: {meta_line}",
+            self.item_body_font,
+        )
+        total += len(wrapped_meta) * self._line_height(self.item_body_font)
+        total += CARD_LINE_GAP
         for label, value in (
             (tr(locale, "wordbank.search_card.label.trigger"), item.trigger_text),
             (
@@ -615,6 +643,36 @@ def render_search_results_card_bytes(
 ) -> bytes:
     renderer = SearchResultCardRenderer(preview_bytes=preview_bytes)
     return renderer.render(items=items, query=query, locale=locale)
+
+
+def _safe_field_label(locale: LocaleCode, key: str) -> str:
+    labels = {
+        "scope": {
+            "zh-CN": "范围",
+            "lzh": "範圍",
+            "x-meme": "范围",
+        },
+        "probability": {
+            "zh-CN": "概率",
+            "lzh": "概率",
+            "x-meme": "概率",
+        },
+        "weight": {
+            "zh-CN": "权重",
+            "lzh": "權重",
+            "x-meme": "权重",
+        },
+    }
+    locale_labels = labels.get(key, {})
+    return locale_labels.get(locale, locale_labels.get("zh-CN", key))
+
+
+def _safe_meta_label(locale: LocaleCode) -> str:
+    return {
+        "zh-CN": "配置",
+        "lzh": "配置",
+        "x-meme": "配置",
+    }.get(locale, "配置")
 
 
 def render_search_results_card(
