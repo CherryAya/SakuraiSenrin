@@ -50,6 +50,7 @@ from src.plugins.wordbank.migration import LegacyPgConfig, load_legacy_pg_config
 
 _NON_FILENAME_RE = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._-]+")
 _MEDIA_CACHE_ROOT = ROOT / "data" / "wordbank" / "media_cache"
+_IMAGE_PLACEHOLDER_RE = re.compile(r"\s*\[图片x\d+\]\s*")
 
 
 def parse_args() -> argparse.Namespace:
@@ -317,6 +318,12 @@ def summarize_legacy_message_payload(value: object) -> str:
     return summary or "无文本内容"
 
 
+def strip_image_placeholder(text: str) -> str:
+    cleaned = _IMAGE_PLACEHOLDER_RE.sub(" ", text)
+    cleaned = " ".join(part for part in cleaned.split() if part)
+    return cleaned.strip()
+
+
 def legacy_payload_contains_image(value: object) -> bool:
     payload = _load_json_payload(value)
     if not isinstance(payload, list):
@@ -435,12 +442,14 @@ def build_page_from_rows(
         response_cards_list: list[SearchTreemapResponseCard] = []
         for row in group_rows[:preview_responses]:
             image_path = ""
+            text = summarize_legacy_message_payload(row["response_text"])
             if legacy_payload_contains_image(row["response_text"]) and media_samples:
                 image_path = media_samples[sample_index % len(media_samples)]
                 sample_index += 1
+                text = strip_image_placeholder(text)
             response_cards_list.append(
                 SearchTreemapResponseCard(
-                    text=summarize_legacy_message_payload(row["response_text"]),
+                    text=text,
                     created_by=str(row.get("created_by") or ""),
                     weight=_coerce_int(row.get("weight") or 0),
                     rule=summarize_legacy_rule(row.get("response_rule_conditions")),

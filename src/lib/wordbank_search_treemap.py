@@ -8,6 +8,7 @@ from io import BytesIO
 import json
 import math
 from pathlib import Path
+import re
 from typing import Any
 
 from nonebot.adapters.onebot.v11 import MessageSegment
@@ -19,8 +20,8 @@ from src.lib.consts import LXGW_FONG_PATH, MAPLE_FONT_PATH
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 
-TREEMAP_WIDTH = 1560
-TREEMAP_HEIGHT = 1080
+TREEMAP_WIDTH = 1760
+TREEMAP_HEIGHT = 1280
 TREEMAP_MARGIN_X = 52
 TREEMAP_MARGIN_Y = 44
 TREEMAP_SUMMARY_GAP = 22
@@ -36,6 +37,8 @@ TREEMAP_LAYOUT_MAX_WEIGHT = 100
 TREEMAP_TILE_TITLE_SINGLE_LINE_WIDTH = 240
 TREEMAP_TILE_RESPONSE_MIN_WIDTH = 180
 TREEMAP_TILE_RESPONSE_MIN_HEIGHT = 120
+
+_IMAGE_PLACEHOLDER_RE = re.compile(r"\s*\[图片x\d+\]\s*")
 
 
 @dataclass(slots=True, frozen=True)
@@ -597,6 +600,25 @@ class SearchTreemapRenderer:
         cleaned = " ".join(part.strip() for part in text.splitlines() if part.strip())
         return cleaned or tr(locale, "wordbank.search_card.none")
 
+    def _normalize_response_text(
+        self,
+        text: str,
+        locale: LocaleCode,
+        *,
+        has_image_preview: bool,
+    ) -> str:
+        candidate = text
+        if has_image_preview:
+            candidate = _IMAGE_PLACEHOLDER_RE.sub(" ", candidate)
+        cleaned = " ".join(
+            part.strip() for part in candidate.splitlines() if part.strip()
+        )
+        if cleaned:
+            return cleaned
+        if has_image_preview:
+            return ""
+        return tr(locale, "wordbank.search_card.none")
+
     def _draw_response_card_grid(
         self,
         image: Image.Image,
@@ -766,7 +788,12 @@ class SearchTreemapRenderer:
             outline=self.BORDER,
             width=1,
         )
-        compact_card = len(response.text) <= 14 and len(response.rule) <= 10
+        normalized_text = self._normalize_response_text(
+            response.text,
+            locale,
+            has_image_preview=bool(response.image_path),
+        )
+        compact_card = len(normalized_text) <= 14 and len(response.rule) <= 10
         spacious_card = width >= 240 and height >= 150
         pad = (
             12
@@ -809,20 +836,13 @@ class SearchTreemapRenderer:
 
         title_font = (
             self.card_large_title_font
-            if spacious_card and len(response.text.strip()) <= 18
+            if spacious_card and len(normalized_text.strip()) <= 18
             else self.card_title_font
         )
         meta_font = (
             self.card_large_meta_font
             if spacious_card and len(response.rule.strip()) <= 16
             else self.card_meta_font
-        )
-        text_max_lines = 2 if compact_card or height < 132 else 3
-        title_lines = self._wrap_text(
-            self._normalize_text(response.text, locale),
-            title_font,
-            text_width,
-            max_lines=text_max_lines,
         )
         meta_lines: list[str] = []
         for label, value in (
@@ -837,9 +857,32 @@ class SearchTreemapRenderer:
                     text_width,
                 )
             )
-        content_height = len(title_lines) * self._line_height(title_font)
+        title_line_height = self._line_height(title_font)
+        meta_line_height = self._line_height(meta_font)
+        title_budget = max(1, 2 if compact_card or height < 132 else 3)
+        available_text_height = max(
+            title_line_height,
+            height
+            - pad * 2
+            - len(meta_lines) * meta_line_height
+            - (1 if compact_card else 2),
+        )
+        max_title_lines = max(
+            1, min(title_budget, available_text_height // title_line_height)
+        )
+        title_lines = (
+            self._wrap_text(
+                normalized_text,
+                title_font,
+                text_width,
+                max_lines=max_title_lines,
+            )
+            if normalized_text
+            else []
+        )
+        content_height = len(title_lines) * title_line_height
         content_height += 1 if compact_card else 2
-        content_height += len(meta_lines) * self._line_height(meta_font)
+        content_height += len(meta_lines) * meta_line_height
         if not thumb_drawn and height - pad * 2 > content_height + 24:
             cursor_y = y + pad + max(0, (height - pad * 2 - content_height) // 3)
         else:
@@ -1066,7 +1109,7 @@ class SearchTreemapRenderer:
             return None
         if max_width <= 0 or max_height <= 0:
             return None
-        scale = max(max_width / image.width, max_height / image.height)
+        scale = min(max_width / image.width, max_height / image.height)
         resized = image.resize(
             (
                 max(1, round(image.width * scale)),
@@ -1074,9 +1117,9 @@ class SearchTreemapRenderer:
             ),
             Image.Resampling.LANCZOS,
         )
-        left = max(0, (resized.width - max_width) // 2)
-        top = max(0, (resized.height - max_height) // 2)
-        return resized.crop((left, top, left + max_width, top + max_height))
+        canvas = Image.new("RGB", (resized.width, resized.height), "#FFFFFF")
+        canvas.paste(resized, (0, 0))
+        return canvas
 
 
 def render_search_results_treemap_bytes(

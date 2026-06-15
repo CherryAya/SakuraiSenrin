@@ -209,3 +209,43 @@ def test_renderer_uses_single_column_for_single_response() -> None:
 
     assert cols == 1
     assert shown == 1
+
+
+def test_renderer_strips_image_placeholder_when_preview_exists() -> None:
+    renderer = SearchTreemapRenderer()
+
+    normalized = renderer._normalize_response_text(  # pyright: ignore[reportPrivateUsage]
+        "今天陪你的是 [图片x1]",
+        "zh-CN",
+        has_image_preview=True,
+    )
+
+    assert normalized == "今天陪你的是"
+
+
+def test_renderer_keeps_image_only_cards_without_none_placeholder() -> None:
+    renderer = SearchTreemapRenderer()
+
+    normalized = renderer._normalize_response_text(  # pyright: ignore[reportPrivateUsage]
+        "[图片x1]",
+        "zh-CN",
+        has_image_preview=True,
+    )
+
+    assert normalized == ""
+
+
+def test_renderer_fits_preview_image_without_cropping(tmp_path: Path) -> None:
+    renderer = SearchTreemapRenderer()
+    source = tmp_path / "wide.png"
+    Image.new("RGB", (400, 100), "#ff6699").save(source)
+
+    preview = renderer._fit_preview_image(  # pyright: ignore[reportPrivateUsage]
+        str(source),
+        max_width=120,
+        max_height=120,
+    )
+
+    assert preview is not None
+    assert preview.width == 120
+    assert preview.height == 30
