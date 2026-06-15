@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 
 import arrow
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
@@ -24,6 +25,7 @@ PADDING_Y = 52
 SECTION_GAP = 24
 ROW_GAP = 16
 FOOTER_HEIGHT = 72
+SENRIN_MASCOT_PATH = Path("data/image/senrin-v3-transparent.png")
 
 
 class WordbankLeaderboardCardRenderer:
@@ -64,12 +66,13 @@ class WordbankLeaderboardCardRenderer:
         self.row_chip_font = self._load_font(18)
         self.footer_font = self._load_font(18)
         self.avatar_font = self._load_font(30)
+        self.mascot_image = self._load_mascot_image()
 
     def render(self, *, data: WordbankLeaderboardCardData, locale: LocaleCode) -> bytes:
         height = self._measure_height(data)
         image = Image.new("RGB", (CARD_WIDTH, height), self.BG)
         draw = ImageDraw.Draw(image)
-        self._paint_background(draw, height)
+        self._paint_background(image, draw, height)
 
         cursor_y = PADDING_Y
         cursor_y = self._draw_header(draw, data, cursor_y)
@@ -104,10 +107,16 @@ class WordbankLeaderboardCardRenderer:
         height += FOOTER_HEIGHT + PADDING_Y
         return height
 
-    def _paint_background(self, draw: ImageDraw.ImageDraw, height: int) -> None:
+    def _paint_background(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        height: int,
+    ) -> None:
         draw.rectangle((0, 0, CARD_WIDTH, height), fill=self.BG)
         draw.ellipse((-120, -40, 220, 300), fill=self.BG_STRONG)
         draw.ellipse((CARD_WIDTH - 320, 40, CARD_WIDTH + 80, 420), fill="#FFEAF4")
+        self._paste_mascot(image)
         draw.rounded_rectangle(
             (30, 20, CARD_WIDTH - 30, height - 24),
             radius=42,
@@ -561,6 +570,18 @@ class WordbankLeaderboardCardRenderer:
         )
         image.paste(fallback, (x, y), fallback)
 
+    def _paste_mascot(self, image: Image.Image) -> None:
+        mascot = self.mascot_image
+        if mascot is None:
+            return
+        mascot = mascot.copy()
+        mascot.thumbnail((340, 340))
+        alpha = mascot.getchannel("A").point(lambda value: value * 0.26)
+        mascot.putalpha(alpha)
+        x = CARD_WIDTH - mascot.width - 68
+        y = 26
+        image.paste(mascot, (x, y), mascot)
+
     def _fit_text(
         self,
         draw: ImageDraw.ImageDraw,
@@ -583,6 +604,13 @@ class WordbankLeaderboardCardRenderer:
             return ImageFont.truetype(MAPLE_FONT_PATH, size)
         except OSError:
             return ImageFont.load_default()
+
+    @staticmethod
+    def _load_mascot_image() -> Image.Image | None:
+        try:
+            return Image.open(SENRIN_MASCOT_PATH).convert("RGBA")
+        except OSError:
+            return None
 
 
 def render_wordbank_leaderboard_card_bytes(
