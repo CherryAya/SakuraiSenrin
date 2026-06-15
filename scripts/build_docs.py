@@ -25,9 +25,13 @@ from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.demo_theme import BASE_THEME, build_demo_theme
 from src.lib.plugin_docs import (
+    CommandLayout,
+    CommandPalette,
     DocNode,
+    InlineTextSpan,
     PluginDocBundle,
     audit_demo_layout,
+    build_command_layout,
     build_doc_tree,
     collection_demo_filename,
     create_docs_meta,
@@ -77,7 +81,7 @@ class PreparedCollectionTile:
     trigger: str
     title_lines: tuple[tuple[tuple[str, bool], ...], ...]
     summary_lines: tuple[tuple[tuple[str, bool], ...], ...]
-    command_lines: tuple[tuple[tuple[str, bool], ...], ...]
+    command_layout: CommandLayout
     height: int
 
 
@@ -252,6 +256,7 @@ class DemoCollectionRenderer:
     CARD_COMMAND_PADDING_Y = 16
     CARD_INNER_GAP = 24
     CARD_BOTTOM_MARGIN = 64
+    COMMAND_INDENT_PX = 48
 
     def __init__(self, *, columns: int) -> None:
         self.theme = BASE_THEME
@@ -364,13 +369,13 @@ class DemoCollectionRenderer:
                 max_lines=3,
             )
         )
-        command_lines = tuple(
-            self._wrap_inline_text(
-                tile.trigger.strip() or f"#help {tile.slug}",
-                self.tile_command_font,
-                max_width=content_width - self.CARD_COMMAND_PADDING_X * 2,
-                max_lines=3,
-            )
+        command_layout = build_command_layout(
+            tile.trigger.strip() or f"#help {tile.slug}",
+            max_width=content_width - self.CARD_COMMAND_PADDING_X * 2,
+            line_height=self._line_height_for_font(self.tile_command_font),
+            indent_px=self.COMMAND_INDENT_PX,
+            measure_text=lambda value: self._text_width(value, self.tile_command_font),
+            palette=self._command_palette(),
         )
         title_height = len(title_lines) * self._line_height_for_font(
             self.tile_title_font
@@ -378,10 +383,9 @@ class DemoCollectionRenderer:
         summary_height = len(summary_lines) * self._line_height_for_font(
             self.tile_summary_font
         )
-        command_height = len(command_lines) * self._line_height_for_font(
-            self.tile_command_font
+        command_box_height = (
+            command_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
         )
-        command_box_height = command_height + self.CARD_COMMAND_PADDING_Y * 2
         height = (
             self.CARD_PADDING_Y * 2
             + title_height
@@ -398,7 +402,7 @@ class DemoCollectionRenderer:
             trigger=tile.trigger,
             title_lines=title_lines,
             summary_lines=summary_lines,
-            command_lines=command_lines,
+            command_layout=command_layout,
             height=height,
         )
 
@@ -517,8 +521,7 @@ class DemoCollectionRenderer:
         )
         command_y = summary_y + summary_height + self.CARD_INNER_GAP
         command_height = (
-            len(tile.command_lines) * self._line_height_for_font(self.tile_command_font)
-            + self.CARD_COMMAND_PADDING_Y * 2
+            tile.command_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
         )
         command_rect = (
             title_x,
@@ -531,19 +534,15 @@ class DemoCollectionRenderer:
             radius=20,
             fill=self.theme.panel_soft_bg,
         )
-        for index, line in enumerate(tile.command_lines):
-            self._draw_inline_line(
-                draw,
-                x=command_rect[0] + self.CARD_COMMAND_PADDING_X,
-                y=command_rect[1]
-                + self.CARD_COMMAND_PADDING_Y
-                + index * self._line_height_for_font(self.tile_command_font),
-                line=line,
-                font=self.tile_command_font,
-                fill=self.theme.accent,
-                code_background=self.theme.panel_soft_bg,
-                code_fill=self.theme.accent,
-            )
+        self._draw_command_layout(
+            draw,
+            x=command_rect[0] + self.CARD_COMMAND_PADDING_X,
+            y=command_rect[1] + self.CARD_COMMAND_PADDING_Y,
+            layout=tile.command_layout,
+            font=self.tile_command_font,
+            default_fill=self.theme.deep,
+            guide_fill=self.theme.line,
+        )
 
     def _draw_shadowed_rect(
         self,
@@ -929,6 +928,59 @@ class DemoCollectionRenderer:
             if code:
                 width += self.theme.inline_code_pad_x * 2
         return width
+
+    def _command_palette(self) -> CommandPalette:
+        return CommandPalette(
+            root=self.theme.indigo_text,
+            text=self.theme.deep,
+            param=self.theme.terminal_param,
+            flag=self.theme.terminal_flag,
+        )
+
+    def _draw_command_layout(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        y: int,
+        layout: CommandLayout,
+        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+        default_fill: str,
+        guide_fill: str,
+    ) -> None:
+        if layout.has_guide:
+            top = y + layout.line_height
+            bottom = y + layout.total_height - max(layout.line_height // 4, 4)
+            if bottom > top:
+                guide_x = x + layout.indent_px - 18
+                draw.line((guide_x, top, guide_x, bottom), fill=guide_fill, width=2)
+        for index, line in enumerate(layout.lines):
+            self._draw_command_line(
+                draw,
+                x=x + line.indent_level * layout.indent_px,
+                y=y + index * layout.line_height,
+                line=line.segments,
+                font=font,
+                fill=default_fill,
+            )
+
+    def _draw_command_line(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        y: int,
+        line: Sequence[InlineTextSpan],
+        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+        fill: str,
+    ) -> None:
+        cursor_x = x
+        for span in line:
+            if not span.text:
+                continue
+            span_fill = span.fill or fill
+            draw.text((cursor_x, y), span.text, fill=span_fill, font=font)
+            cursor_x += self._text_width(span.text, font)
 
     def _draw_inline_line(
         self,

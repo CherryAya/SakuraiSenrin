@@ -54,6 +54,7 @@ class DemoTheme:
     terminal_bg: str
     terminal_text: str
     terminal_param: str
+    terminal_flag: str
     note_text: str
     note_success: str
     note_danger: str
@@ -150,6 +151,7 @@ _BASE_LAYOUT_THEME = DemoTheme(
     terminal_bg="#FFF0F6",
     terminal_text="#1C1E26",
     terminal_param="#E64980",
+    terminal_flag="#2F9E44",
     note_text="#868E96",
     note_success="#40C057",
     note_danger="#FA5252",
@@ -281,6 +283,7 @@ def build_demo_theme(impression_color: str | None = None) -> DemoTheme:
         terminal_bg=_rgb_to_hex(soft_fill_rgb),
         terminal_text=_rgb_to_hex(dark_rgb),
         terminal_param=_rgb_to_hex(accent_rgb),
+        terminal_flag="#2F9E44",
         note_text=_rgb_to_hex(hint_rgb),
         demo_heading=_rgb_to_hex(hint_rgb),
         bot_text=_rgb_to_hex(dark_rgb),

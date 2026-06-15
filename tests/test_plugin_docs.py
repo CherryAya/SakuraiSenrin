@@ -22,6 +22,7 @@ from src.lib.plugin_docs import (
     DocsRenderContext,
     InlineTextSpan,
     audit_demo_layout,
+    build_command_layout,
     build_doc_tree,
     build_readme_docs,
     create_docs_meta,
@@ -1068,7 +1069,7 @@ BOT: Alpha 完成
 
     assert prepared.index == 1
     assert prepared.trigger == "#alpha run"
-    assert prepared.command_lines
+    assert prepared.command_layout.lines
     assert prepared.height > 0
 
 
@@ -1094,45 +1095,124 @@ def test_collection_renderer_keeps_requested_two_column_layout() -> None:
     assert renderer._effective_columns(14) == 2  # pyright: ignore[reportPrivateUsage]
 
 
-def test_collection_wraps_long_code_command_spans_without_overflow() -> None:
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
-
-    lines = renderer._wrap_inline_text(  # pyright: ignore[reportPrivateUsage]
-        "`wordbank add 触发词 => 响应词 --mode contains|fullmatch|prefix`",
-        renderer.tile_command_font,  # pyright: ignore[reportPrivateUsage]
-        320,
-        max_lines=None,
+def test_build_command_layout_breaks_flags_into_hanging_indent_lines() -> None:
+    renderer = DemoImageRenderer()
+    palette = plugin_docs_module.CommandPalette(
+        root=renderer.theme.indigo_text,
+        text=renderer.theme.terminal_text,
+        param=renderer.theme.terminal_param,
+        flag=renderer.theme.terminal_flag,
     )
 
-    assert all(
-        renderer._inline_line_width(line, renderer.tile_command_font) <= 320  # pyright: ignore[reportPrivateUsage]
-        for line in lines
-    )
-    assert all(
-        not line[0][0].startswith(("|", "/", "_", " --", " => ")) for line in lines[1:]
-    )
-
-
-def test_collection_wraps_long_scope_code_command_spans_without_overflow() -> None:
-    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
-
-    lines = renderer._wrap_inline_text(  # pyright: ignore[reportPrivateUsage]
+    layout = build_command_layout(
         (
-            "`wordbank add 触发词 => 响应词 --scope "
-            "current_group|all_groups|self|private_only`"
+            "wordbank add 触发词 => 响应词 --scope "
+            "current_group|all_groups|self|private_only "
+            "--prob 0.0-1.0 --weight 1-5"
         ),
-        renderer.tile_command_font,  # pyright: ignore[reportPrivateUsage]
-        320,
-        max_lines=None,
+        max_width=720,
+        line_height=renderer._line_height_for_font(renderer.body_font),  # pyright: ignore[reportPrivateUsage]
+        indent_px=48,
+        measure_text=lambda value: renderer._text_width(value, renderer.body_font),  # pyright: ignore[reportPrivateUsage]
+        palette=palette,
     )
 
-    assert all(
-        renderer._inline_line_width(line, renderer.tile_command_font) <= 320  # pyright: ignore[reportPrivateUsage]
-        for line in lines
+    assert [line.kind for line in layout.lines[:4]] == [
+        "root",
+        "flag",
+        "continuation",
+        "flag",
+    ]
+    assert layout.lines[0].indent_level == 0
+    assert layout.lines[1].indent_level == 1
+    assert layout.lines[2].indent_level == 2
+    assert layout.lines[3].indent_level == 1
+    assert layout.has_guide
+
+
+def test_build_command_layout_wraps_long_flag_values_with_double_indent() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
+    layout = build_command_layout(
+        "wordbank add 触发词 => 响应词 --role owner|admin|member|visitor|reviewer",
+        max_width=408,
+        line_height=renderer._line_height_for_font(renderer.tile_command_font),  # pyright: ignore[reportPrivateUsage]
+        indent_px=48,
+        measure_text=lambda value: renderer._text_width(
+            value, renderer.tile_command_font
+        ),  # pyright: ignore[reportPrivateUsage]
+        palette=plugin_docs_module.CommandPalette(
+            root=renderer.theme.indigo_text,
+            text=renderer.theme.deep,
+            param=renderer.theme.terminal_param,
+            flag=renderer.theme.terminal_flag,
+        ),
     )
-    assert all(
-        not line[0][0].startswith(("|", "/", "_", " --", " => ")) for line in lines[1:]
+
+    assert [line.kind for line in layout.lines[:4]] == [
+        "root",
+        "continuation",
+        "flag",
+        "continuation",
+    ]
+    assert layout.lines[1].indent_level == 1
+    assert layout.lines[2].indent_level == 1
+    assert layout.lines[3].indent_level == 2
+
+
+def test_build_command_layout_splits_root_level_alternatives() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
+    layout = build_command_layout(
+        (
+            "#admin.invite reject -g <gid> / "
+            "#admin.invite reject -f <flag> / "
+            "#admin.invite reject --all"
+        ),
+        max_width=320,
+        line_height=renderer._line_height_for_font(renderer.tile_command_font),  # pyright: ignore[reportPrivateUsage]
+        indent_px=48,
+        measure_text=lambda value: renderer._text_width(
+            value, renderer.tile_command_font
+        ),  # pyright: ignore[reportPrivateUsage]
+        palette=plugin_docs_module.CommandPalette(
+            root=renderer.theme.indigo_text,
+            text=renderer.theme.deep,
+            param=renderer.theme.terminal_param,
+            flag=renderer.theme.terminal_flag,
+        ),
     )
+
+    assert layout.lines[0].kind == "root"
+    assert all(
+        line.kind in {"alternative", "flag", "continuation"}
+        for line in layout.lines[1:]
+    )
+    assert any(line.kind == "alternative" for line in layout.lines[1:])
+    assert layout.lines[1].indent_level >= 1
+
+
+def test_build_command_layout_splits_consecutive_inline_code_variants() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
+    layout = build_command_layout(
+        "`wordbank trigger prob <group_id> <0.0-1.0>` "
+        "`wordbank trigger set <group_id> <新触发内容>`",
+        max_width=408,
+        line_height=renderer._line_height_for_font(renderer.tile_command_font),  # pyright: ignore[reportPrivateUsage]
+        indent_px=48,
+        measure_text=lambda value: renderer._text_width(
+            value, renderer.tile_command_font
+        ),  # pyright: ignore[reportPrivateUsage]
+        palette=plugin_docs_module.CommandPalette(
+            root=renderer.theme.indigo_text,
+            text=renderer.theme.deep,
+            param=renderer.theme.terminal_param,
+            flag=renderer.theme.terminal_flag,
+        ),
+    )
+
+    assert layout.lines[0].kind == "root"
+    assert any(line.kind == "alternative" for line in layout.lines)
+    alternative_line = next(line for line in layout.lines if line.kind == "alternative")
+    assert alternative_line.indent_level == 1
 
 
 def test_collection_jobs_do_not_require_demo_png_files(
@@ -1268,6 +1348,7 @@ def test_demo_theme_has_required_tokens() -> None:
     assert BASE_THEME.system_bubble
     assert BASE_THEME.inline_code_bg
     assert BASE_THEME.inline_code_text
+    assert BASE_THEME.terminal_flag
     assert BASE_THEME.grid_color
     assert BASE_THEME.decor_color
     assert BASE_THEME.footer_divider
@@ -1417,6 +1498,37 @@ def test_demo_image_renderer_measure_layout_includes_footer_traceability() -> No
         layout.footer_right_text == "Generated at 2026-06-16 21:30:45 | © SakuraiSenrin"
     )
     assert layout.footer_rect[3] - layout.footer_rect[1] == BASE_THEME.footer_height
+
+
+def test_demo_image_renderer_measure_layout_uses_structured_trigger_layout() -> None:
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+
+    layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
+        plugin_title="测试插件",
+        feature_title="复杂命令",
+        feature_summary="测试结构化命令布局。",
+        feature_trigger=(
+            "wordbank search [关键词] [图片] --field all|trigger|response "
+            "--creator 账号 --page 页码 --limit 每页数量"
+        ),
+        feature_overview="测试说明。",
+        feature_preconditions="无",
+        feature_failures="无",
+        feature_flow_notes="",
+        plugin_trigger="指令触发",
+        feature_permission="普通用户",
+        plugin_version="v1.2.3",
+        plugin_author="SakuraiCora",
+        turns=(),
+        locale="zh-CN",
+        generated_at=datetime(2026, 6, 16, 21, 30, 45),
+    )
+
+    assert layout.trigger_layout.lines[0].kind == "root"
+    assert any(line.kind == "flag" for line in layout.trigger_layout.lines[1:])
+    assert layout.trigger_layout.total_height > renderer._line_height_for_font(
+        renderer.body_font
+    )  # pyright: ignore[reportPrivateUsage]
 
 
 def test_plugin_docs_generate_reuses_one_build_timestamp(
