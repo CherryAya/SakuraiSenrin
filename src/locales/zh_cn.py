@@ -303,6 +303,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.search_card.label.folded": "折叠",
     "wordbank.search_card.label.response_summary": "响应摘要",
     "wordbank.search_card.label.matched_by": "命中",
+    "wordbank.search_card.folded_title": "本组下还有 {total} 条词条",
     "wordbank.search_card.folded_hint": "本组共 {total} 条词条，当前仅展示前 {shown} 条；输入「详情 {group_id}」展开更多。",
     "wordbank.search_card.empty": "没有找到匹配词条。当前页: {page}",
     "wordbank.search_card.empty_hint": "可以换关键词、切换搜索范围，或追加创建者过滤后重试。",

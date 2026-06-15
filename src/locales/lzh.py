@@ -172,6 +172,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.search_card.label.folded": "摺疊",
     "wordbank.search_card.label.response_summary": "響應摘要",
     "wordbank.search_card.label.matched_by": "命中",
+    "wordbank.search_card.folded_title": "本組下尚有 {total} 條詞條",
     "wordbank.search_card.folded_hint": "本組共 {total} 條詞條，今僅示前 {shown} 條；輸「詳情 {group_id}」可展其餘。",
     "wordbank.search_card.empty": "未得匹配詞條。當前頁: {page}",
     "wordbank.search_card.empty_hint": "可易關鍵詞、改搜範圍，或加建者過濾而再試。",

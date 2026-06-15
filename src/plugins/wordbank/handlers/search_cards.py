@@ -30,6 +30,9 @@ CARD_MAX_TEXT_WIDTH = CARD_WIDTH - CARD_PADDING_X * 2 - CARD_ITEM_PADDING * 2
 CARD_PREVIEW_HEIGHT = 180
 CARD_PREVIEW_GAP = 14
 CARD_PREVIEW_RADIUS = 20
+CARD_FOLDED_BLOCK_GAP = 8
+CARD_FOLDED_BLOCK_HEIGHT = 108
+CARD_FOLDED_STACK_OFFSET = 8
 CARD_FOOTER_HEIGHT = 76
 CARD_FOOTER_LINE_GAP = 6
 
@@ -60,6 +63,8 @@ class SearchResultCardRenderer:
     ACCENT = "#D9826B"
     ACCENT_SOFT = "#FBE9E2"
     BORDER = "#E8D5CF"
+    FOLDED_LAYER = "#F4DDD4"
+    FOLDED_FACE = "#FFF4EF"
 
     def __init__(
         self,
@@ -288,18 +293,13 @@ class SearchResultCardRenderer:
                 self._response_preview(item, locale),
             ),
         ]
-        fold_hint = self._fold_hint(item, locale)
-        if fold_hint:
-            sections.append(
-                (tr(locale, "wordbank.search_card.label.folded"), fold_hint)
-            )
         sections.append(
             (
                 tr(locale, "wordbank.search_card.label.matched_by"),
                 item.matched_by or self._fallback_match_label(query, locale),
             )
         )
-        for label, value in sections:
+        for section_index, (label, value) in enumerate(sections):
             body_y = self._draw_labeled_lines(
                 draw,
                 x=inner_x,
@@ -308,6 +308,16 @@ class SearchResultCardRenderer:
                 value=value,
             )
             body_y += CARD_LINE_GAP
+            if section_index == 1 and self._has_folded_preview(item):
+                body_y = self._draw_folded_preview_block(
+                    image,
+                    draw,
+                    item,
+                    x=inner_x,
+                    y=body_y,
+                    locale=locale,
+                )
+                body_y += CARD_LINE_GAP
         return cursor_y + height
 
     def _draw_empty_state(
@@ -473,21 +483,19 @@ class SearchResultCardRenderer:
                 self._response_preview(item, locale),
             ),
         ]
-        fold_hint = self._fold_hint(item, locale)
-        if fold_hint:
-            sections.append(
-                (tr(locale, "wordbank.search_card.label.folded"), fold_hint)
-            )
         sections.append(
             (
                 tr(locale, "wordbank.search_card.label.matched_by"),
                 item.matched_by or tr(locale, "wordbank.search_card.match.default"),
             )
         )
-        for label, value in sections:
+        for section_index, (label, value) in enumerate(sections):
             wrapped = self._wrap_text(f"{label}: {value}", self.item_body_font)
             total += len(wrapped) * self._line_height(self.item_body_font)
             total += CARD_LINE_GAP
+            if section_index == 1 and self._has_folded_preview(item):
+                total += self._folded_preview_block_height()
+                total += CARD_LINE_GAP
         return int(total)
 
     def _draw_previews(
@@ -598,6 +606,107 @@ class SearchResultCardRenderer:
             cursor_y += self._line_height(self.item_body_font)
         return cursor_y
 
+    def _draw_folded_preview_block(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        item: WordbankSearchItem,
+        *,
+        x: int,
+        y: int,
+        locale: LocaleCode,
+    ) -> int:
+        width = CARD_MAX_TEXT_WIDTH
+        height = self._folded_preview_block_height()
+        back_rect = (
+            x + CARD_FOLDED_STACK_OFFSET * 2,
+            y + CARD_FOLDED_STACK_OFFSET * 2,
+            x + width - CARD_FOLDED_STACK_OFFSET * 2,
+            y + height,
+        )
+        middle_rect = (
+            x + CARD_FOLDED_STACK_OFFSET,
+            y + CARD_FOLDED_STACK_OFFSET,
+            x + width - CARD_FOLDED_STACK_OFFSET,
+            y + height - CARD_FOLDED_STACK_OFFSET,
+        )
+        front_rect = (
+            x,
+            y,
+            x + width,
+            y + height - CARD_FOLDED_STACK_OFFSET * 2,
+        )
+
+        draw.rounded_rectangle(
+            back_rect,
+            radius=22,
+            fill=self.FOLDED_LAYER,
+            outline=self.BORDER,
+            width=1,
+        )
+        draw.rounded_rectangle(
+            middle_rect,
+            radius=22,
+            fill=self.ACCENT_SOFT,
+            outline=self.BORDER,
+            width=1,
+        )
+        draw.rounded_rectangle(
+            front_rect,
+            radius=22,
+            fill=self.FOLDED_FACE,
+            outline=self.BORDER,
+            width=2,
+        )
+
+        chip_text = tr(locale, "wordbank.search_card.label.folded")
+        chip_width = self._text_width(chip_text, self.item_meta_font) + 28
+        draw.rounded_rectangle(
+            (
+                x + 16,
+                y + 14,
+                x + 16 + chip_width,
+                y + 14 + 30,
+            ),
+            radius=15,
+            fill=self.ACCENT_SOFT,
+        )
+        draw.text(
+            (x + 30, y + 21),
+            chip_text,
+            font=self.item_meta_font,
+            fill=self.ACCENT,
+        )
+
+        title = tr(
+            locale,
+            "wordbank.search_card.folded_title",
+            total=item.response_count,
+        )
+        hint = tr(
+            locale,
+            "wordbank.search_card.folded_hint",
+            total=item.response_count,
+            shown=max(1, self._preview_summary_count(item)),
+            group_id=item.trigger_group_id,
+        )
+        draw.text(
+            (x + 16, y + 52),
+            title,
+            font=self.item_body_font,
+            fill=self.HEADER,
+        )
+        draw.text(
+            (x + 16, y + 82),
+            f"▼ {hint}",
+            font=self.item_meta_font,
+            fill=self.ACCENT,
+        )
+        return y + height
+
+    def _folded_preview_block_height(self) -> int:
+        return CARD_FOLDED_BLOCK_HEIGHT + CARD_FOLDED_STACK_OFFSET * 2
+
     def _fallback_match_label(self, query: SearchCardQuery, locale: LocaleCode) -> str:
         if query.has_image and query.keyword:
             return tr(locale, "wordbank.search_card.match.text_image")
@@ -634,6 +743,10 @@ class SearchResultCardRenderer:
             shown=max(1, shown_count),
             group_id=item.trigger_group_id,
         )
+
+    def _has_folded_preview(self, item: WordbankSearchItem) -> bool:
+        shown_count = self._preview_summary_count(item)
+        return item.response_count > max(1, shown_count)
 
     def _preview_summary_count(self, item: WordbankSearchItem) -> int:
         summaries = [summary for summary in item.response_summaries[:3] if summary]
