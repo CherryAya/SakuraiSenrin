@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
 
 from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
-from src.lib.demo_theme import BASE_THEME, build_demo_theme
+from src.lib.demo_theme import DEFAULT_DEMO_THEME, SENRIN_V3_THEME, get_demo_theme
 from src.lib.plugin_docs import (
     CommandLayout,
     CommandPalette,
@@ -247,7 +247,7 @@ def build(*, workers: int | None = None, columns: int = 2) -> int:
 
 
 class DemoCollectionRenderer:
-    CANVAS_WIDTH = BASE_THEME.canvas_width
+    CANVAS_WIDTH = DEFAULT_DEMO_THEME.canvas_width
     OUTER_MARGIN = 88
     HEADER_TOP = 72
     HEADER_BOTTOM_GAP = 64
@@ -263,7 +263,8 @@ class DemoCollectionRenderer:
     COMMAND_INDENT_PX = 48
 
     def __init__(self, *, columns: int) -> None:
-        self.theme = BASE_THEME
+        self.theme_name = SENRIN_V3_THEME.name
+        self.theme = DEFAULT_DEMO_THEME
         self.columns = max(1, min(columns, 2))
         try:
             self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 64)
@@ -288,7 +289,10 @@ class DemoCollectionRenderer:
         impression_color: str,
         tiles: Sequence[DemoCollectionTile],
     ) -> bytes:
-        self.theme = build_demo_theme(impression_color)
+        self.theme = get_demo_theme(
+            theme_name=self.theme_name,
+            impression_color=impression_color,
+        )
         columns = self._effective_columns(len(tiles))
         card_width = self._card_width(columns)
         prepared = tuple(self._prepare_tile(tile, card_width) for tile in tiles)

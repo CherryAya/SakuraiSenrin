@@ -26,9 +26,10 @@ from pil_utils.text2image import Text2Image
 from src.database.core.consts import Permission
 from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
 from src.lib.demo_theme import (
-    BASE_THEME,
+    DEFAULT_DEMO_THEME,
     DEFAULT_IMPRESSION_COLOR,
-    build_demo_theme,
+    SENRIN_V3_THEME,
+    get_demo_theme,
     normalize_hex_color,
 )
 from src.lib.i18n.keys import MessageKey
@@ -2447,7 +2448,8 @@ class LegacyDemoImageRenderer:
     FONT_FAMILIES: ClassVar[list[str]] = [MAPLE_FONT_NAME]
 
     def __init__(self) -> None:
-        self.theme = BASE_THEME
+        self.theme_name = SENRIN_V3_THEME.name
+        self.theme = DEFAULT_DEMO_THEME
         try:
             # 移动端优化：增大字体以便手机聊天查看
             self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 22)  # 16 → 22
@@ -2540,11 +2542,15 @@ class LegacyDemoImageRenderer:
         width, height = image.size
         draw.rectangle((0, 0, width, height), fill=self.theme.page_bg)
         draw.rectangle((0, 0, width, 10), fill=self.theme.accent)
-        draw.rounded_rectangle((74, 66, 112, height - 76), radius=19, fill="#FFF4F7")
+        draw.rounded_rectangle(
+            (74, 66, 112, height - 76),
+            radius=19,
+            fill=self.theme.showcase_accent_rail_bg,
+        )
         draw.rounded_rectangle(
             (width - 142, 126, width - 86, height - 124),
             radius=28,
-            fill="#F1F4FF",
+            fill=self.theme.showcase_support_rail_bg,
         )
 
     def _draw_header(
@@ -2808,7 +2814,7 @@ class LegacyDemoImageRenderer:
             y=y + (self.AVATAR_SIZE - text_height) / 2 - 2,
             text=label,
             font=self.meta_font,
-            fill="#FFFFFF",
+            fill=self.theme.avatar_text,
         )
 
     def _draw_bot_avatar(
@@ -2834,8 +2840,8 @@ class LegacyDemoImageRenderer:
         mask_draw.ellipse((0, 0, avatar.width - 1, avatar.height - 1), fill=255)
         draw.ellipse(
             (x, y, x + self.AVATAR_SIZE, y + self.AVATAR_SIZE),
-            fill="#F7FAFF",
-            outline="#D8E3FF",
+            fill=self.theme.bot_avatar_bg,
+            outline=self.theme.bot_avatar_border,
             width=2,
         )
         image.paste(avatar, (x, y), mask)
@@ -3022,7 +3028,9 @@ class LegacyDemoImageRenderer:
         panel_bottom = body_top + conversation_height + self.BODY_PADDING_Y
         footer_top = panel_bottom + self.FOOTER_TOP_GAP
         height = footer_top + self.FOOTER_HEIGHT + self.OUTER_MARGIN
-        draw = ImageDraw.Draw(Image.new("RGB", (self.WIDTH, height), "#FFFFFF"))
+        draw = ImageDraw.Draw(
+            Image.new("RGB", (self.WIDTH, height), self.theme.panel_bg)
+        )
 
         hero_rect = (
             self.OUTER_MARGIN,
@@ -3502,13 +3510,13 @@ class LegacyDemoImageRenderer:
         if not text:
             return (0, 0, 0, self._font_line_height(font))
         if not self._contains_emoji(text):
-            draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#FFFFFF"))
+            draw = ImageDraw.Draw(Image.new("RGB", (10, 10), self.theme.panel_bg))
             bbox = draw.textbbox((0, 0), text, font=font)
             return int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
         text_image = Text2Image.from_text(
             text,
             self._font_size(font),
-            fill="#000000",
+            fill=self.theme.deep,
             stroke_width=0,
             font_families=self.FONT_FAMILIES,
         )
@@ -3661,14 +3669,18 @@ class _ShowcaseLayout:
 class DemoImageRenderer:
     """Render plugin docs feature demos as a single-canvas showcase infographic."""
 
-    WIDTH = BASE_THEME.canvas_width
-    OUTER_MARGIN = BASE_THEME.outer_margin
+    WIDTH = DEFAULT_DEMO_THEME.canvas_width
+    OUTER_MARGIN = DEFAULT_DEMO_THEME.outer_margin
     FONT_FAMILIES: ClassVar[list[str]] = [MAPLE_FONT_NAME]
     COMMAND_INDENT_PX = 48
 
     def __init__(self, *, impression_color: str | None = None) -> None:
+        self.theme_name = SENRIN_V3_THEME.name
         self.impression_color = normalize_hex_color(impression_color)
-        self.theme = build_demo_theme(self.impression_color)
+        self.theme = get_demo_theme(
+            theme_name=self.theme_name,
+            impression_color=self.impression_color,
+        )
         try:
             self.kicker_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
             self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)
@@ -4211,7 +4223,7 @@ class DemoImageRenderer:
             y=layout.title_rect[1] + self.theme.hero_title_shadow_offset_y,
             lines=layout.title_lines,
             font=self.title_font,
-            fill="#FFFFFF",
+            fill=self.theme.hero_title_shadow,
             line_height=self._line_height_for_font(self.title_font),
         )
         self._draw_multiline_text(
@@ -4447,7 +4459,7 @@ class DemoImageRenderer:
             y=rect[1] + ((rect[3] - rect[1]) - text_height) / 2 - 2,
             text=label,
             font=self.meta_font,
-            fill="#FFFFFF",
+            fill=self.theme.avatar_text,
         )
 
     def _draw_bot_avatar(
@@ -4466,7 +4478,7 @@ class DemoImageRenderer:
                 fill=self.theme.indigo,
             )
             return
-        draw.ellipse(rect, fill="#FFFFFF", outline=self.theme.line, width=2)
+        draw.ellipse(rect, fill=self.theme.panel_bg, outline=self.theme.line, width=2)
         mask = Image.new("L", self.senrin_avatar.size, 0)
         ImageDraw.Draw(mask).ellipse((0, 0, mask.width - 1, mask.height - 1), fill=255)
         image.paste(self.senrin_avatar, (rect[0], rect[1]), mask)
@@ -4491,7 +4503,7 @@ class DemoImageRenderer:
         right_x = layout.footer_rect[2] - right_width
         left_max_width = max(120, right_x - layout.footer_rect[0] - 32)
         left_text = self._fit_text(
-            ImageDraw.Draw(Image.new("RGB", (1, 1), "#FFFFFF")),
+            ImageDraw.Draw(Image.new("RGB", (1, 1), self.theme.panel_bg)),
             layout.footer_left_text,
             self.footer_font,
             max_width=left_max_width,
@@ -5240,13 +5252,13 @@ class DemoImageRenderer:
         if not text:
             return (0, 0, 0, self._font_line_height(font))
         if not self._contains_emoji(text):
-            draw = ImageDraw.Draw(Image.new("RGB", (10, 10), "#FFFFFF"))
+            draw = ImageDraw.Draw(Image.new("RGB", (10, 10), self.theme.panel_bg))
             bbox = draw.textbbox((0, 0), text, font=font)
             return int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
         text_image = Text2Image.from_text(
             text,
             self._font_size(font),
-            fill="#000000",
+            fill=self.theme.deep,
             stroke_width=0,
             font_families=self.FONT_FAMILIES,
         )
@@ -5686,7 +5698,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         node: DocNode,
         width: int,
     ) -> _DashboardCardLayout:
-        theme = build_demo_theme(node.bundle.impression_color)
+        theme = get_demo_theme(
+            theme_name=SENRIN_V3_THEME.name,
+            impression_color=node.bundle.impression_color,
+        )
         content_width = width - self.DASHBOARD_CARD_PADDING_X * 2
         title_lines = tuple(
             self._wrap_inline_text(
@@ -5750,7 +5765,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             shadow_color=self.theme.card_shadow,
             shadow_offset_y=self.theme.instruction_shadow_offset_y,
             shadow_blur=self.theme.instruction_shadow_blur,
-            fill="#FFFFFF",
+            fill=self.theme.panel_bg,
         )
         accent_rect = (x + 24, y + 24, x + 40, y + card.height - 24)
         draw.rounded_rectangle(accent_rect, radius=8, fill=card.theme.accent)
@@ -5936,7 +5951,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             shadow_color=self.theme.card_shadow,
             shadow_offset_y=self.theme.instruction_shadow_offset_y,
             shadow_blur=self.theme.instruction_shadow_blur,
-            fill="#FFFFFF",
+            fill=self.theme.panel_bg,
         )
         content_left = rect[0] + self.GUIDE_SECTION_PADDING_X
         cursor_y = rect[1] + self.GUIDE_SECTION_PADDING_Y
@@ -6186,7 +6201,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             shadow_color=self.theme.card_shadow,
             shadow_offset_y=self.theme.instruction_shadow_offset_y,
             shadow_blur=self.theme.instruction_shadow_blur,
-            fill="#FFFFFF",
+            fill=self.theme.panel_bg,
         )
         content_left = rect[0] + self.GUIDE_SECTION_PADDING_X
         cursor_y = rect[1] + self.GUIDE_SECTION_PADDING_Y
@@ -6308,7 +6323,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         right_x = footer_rect[2] - right_width
         left_max_width = max(120, right_x - footer_rect[0] - 32)
         left_fitted = self._fit_text(
-            ImageDraw.Draw(Image.new("RGB", (1, 1), "#FFFFFF")),
+            ImageDraw.Draw(Image.new("RGB", (1, 1), self.theme.panel_bg)),
             left_text,
             self.footer_font,
             max_width=left_max_width,

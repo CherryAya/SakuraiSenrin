@@ -1,4 +1,4 @@
-"""Unified theme tokens for plugin docs demo renderers."""
+"""Unified senrinV3 theme tokens for plugin docs demo renderers."""
 
 from __future__ import annotations
 
@@ -6,11 +6,15 @@ import colorsys
 from dataclasses import dataclass, replace
 
 DEFAULT_IMPRESSION_COLOR = "#F06292"
+SENRIN_V3_THEME_NAME = "senrinV3"
 
 
 @dataclass(frozen=True)
 class DemoTheme:
-    """Theme tokens shared by plugin docs renderers."""
+    """Resolved theme tokens shared by plugin docs renderers."""
+
+    theme_name: str
+    impression_color: str
 
     # Core colors
     page_bg: str
@@ -33,6 +37,9 @@ class DemoTheme:
     footer_bg: str
     inline_code_bg: str
     inline_code_text: str
+    avatar_text: str
+    bot_avatar_bg: str
+    bot_avatar_border: str
 
     # Supporting palette
     indigo: str
@@ -46,6 +53,7 @@ class DemoTheme:
     footer_divider: str
     standee_anchor_fill: str
     hero_title: str
+    hero_title_shadow: str
     hero_summary: str
     pill_blue_bg: str
     pill_blue_text: str
@@ -61,6 +69,8 @@ class DemoTheme:
     demo_heading: str
     bot_text: str
     system_line: str
+    showcase_accent_rail_bg: str
+    showcase_support_rail_bg: str
     standee_anchor_shadow: tuple[int, int, int, int]
     bubble_shadow: tuple[int, int, int, int]
     card_shadow: tuple[int, int, int, int]
@@ -115,7 +125,18 @@ class DemoTheme:
     footer_height: int
 
 
-_BASE_LAYOUT_THEME = DemoTheme(
+@dataclass(frozen=True)
+class DemoThemeDefinition:
+    """Named theme definition with a default impression color."""
+
+    name: str
+    default_impression_color: str
+    base_theme: DemoTheme
+
+
+_SENRIN_V3_BASE_THEME = DemoTheme(
+    theme_name=SENRIN_V3_THEME_NAME,
+    impression_color=DEFAULT_IMPRESSION_COLOR,
     page_bg="#FAFAFC",
     panel_bg="#FFFFFF",
     panel_soft_bg="#FFF0F6",
@@ -134,6 +155,9 @@ _BASE_LAYOUT_THEME = DemoTheme(
     footer_bg="#FAFAFC",
     inline_code_bg="#FFF7FA",
     inline_code_text="#7D3653",
+    avatar_text="#FFFFFF",
+    bot_avatar_bg="#F7FAFF",
+    bot_avatar_border="#D8E3FF",
     indigo="#5C7CFA",
     indigo_soft="#F1F4FF",
     indigo_text="#364FC7",
@@ -143,6 +167,7 @@ _BASE_LAYOUT_THEME = DemoTheme(
     footer_divider="#EBCBCE",
     standee_anchor_fill="#FFFFFF",
     hero_title="#1C1E26",
+    hero_title_shadow="#FFFFFF",
     hero_summary="#5C5F66",
     pill_blue_bg="#F1F4FF",
     pill_blue_text="#5C7CFA",
@@ -158,6 +183,8 @@ _BASE_LAYOUT_THEME = DemoTheme(
     demo_heading="#868E96",
     bot_text="#A61E4D",
     system_line="#ADB5BD",
+    showcase_accent_rail_bg="#FFF4F7",
+    showcase_support_rail_bg="#F1F4FF",
     standee_anchor_shadow=(0, 0, 0, 16),
     bubble_shadow=(0, 0, 0, 24),
     card_shadow=(0, 0, 0, 24),
@@ -208,6 +235,12 @@ _BASE_LAYOUT_THEME = DemoTheme(
     footer_height=72,
 )
 
+SENRIN_V3_THEME = DemoThemeDefinition(
+    name=SENRIN_V3_THEME_NAME,
+    default_impression_color=DEFAULT_IMPRESSION_COLOR,
+    base_theme=_SENRIN_V3_BASE_THEME,
+)
+
 
 def normalize_hex_color(
     value: str | None,
@@ -224,8 +257,28 @@ def normalize_hex_color(
     return f"#{raw.upper()}"
 
 
+def get_demo_theme(
+    *,
+    theme_name: str = SENRIN_V3_THEME.name,
+    impression_color: str | None = None,
+) -> DemoTheme:
+    if theme_name != SENRIN_V3_THEME.name:
+        msg = f"Unsupported demo theme: {theme_name}"
+        raise ValueError(msg)
+    return _resolve_senrin_v3_theme(impression_color)
+
+
 def build_demo_theme(impression_color: str | None = None) -> DemoTheme:
-    base_hex = normalize_hex_color(impression_color)
+    """Backward-compatible alias for resolving the default demo theme."""
+
+    return get_demo_theme(impression_color=impression_color)
+
+
+def _resolve_senrin_v3_theme(impression_color: str | None = None) -> DemoTheme:
+    base_hex = normalize_hex_color(
+        impression_color,
+        fallback=SENRIN_V3_THEME.default_impression_color,
+    )
     base_rgb = _hex_to_rgb(base_hex)
     accent_rgb = _tune_hls(base_rgb, saturation=max(_rgb_to_hls(base_rgb)[2], 0.58))
     dark_rgb = _tune_hls(base_rgb, lightness=0.16, saturation=0.18)
@@ -246,11 +299,35 @@ def build_demo_theme(impression_color: str | None = None) -> DemoTheme:
     pill_alt_text_rgb = _shifted_rgb(
         base_rgb, hue_shift=0.05, lightness=0.36, saturation=0.48
     )
+    showcase_accent_rail_rgb = _tune_hls(
+        base_rgb,
+        lightness=0.972,
+        saturation=0.30,
+    )
+    showcase_support_rail_rgb = _shifted_rgb(
+        base_rgb,
+        hue_shift=0.05,
+        lightness=0.955,
+        saturation=0.20,
+    )
+    bot_avatar_bg_rgb = _shifted_rgb(
+        base_rgb,
+        hue_shift=0.05,
+        lightness=0.975,
+        saturation=0.14,
+    )
+    bot_avatar_border_rgb = _shifted_rgb(
+        base_rgb,
+        hue_shift=0.05,
+        lightness=0.89,
+        saturation=0.24,
+    )
     neutral_hint = "#ADB5BD"
     shadow_alpha = 24
 
     return replace(
-        _BASE_LAYOUT_THEME,
+        _SENRIN_V3_BASE_THEME,
+        impression_color=base_hex,
         page_bg=_rgb_to_hex(page_bg_rgb),
         panel_soft_bg=_rgb_to_hex(soft_fill_rgb),
         accent=_rgb_to_hex(accent_rgb),
@@ -266,6 +343,8 @@ def build_demo_theme(impression_color: str | None = None) -> DemoTheme:
         footer_bg=_rgb_to_hex(softer_fill_rgb),
         inline_code_bg=_rgb_to_hex(soft_fill_rgb),
         inline_code_text=_rgb_to_hex(strong_rgb),
+        bot_avatar_bg=_rgb_to_hex(bot_avatar_bg_rgb),
+        bot_avatar_border=_rgb_to_hex(bot_avatar_border_rgb),
         indigo=_rgb_to_hex(pill_alt_text_rgb),
         indigo_soft=_rgb_to_hex(pill_alt_bg_rgb),
         indigo_text=_rgb_to_hex(pill_alt_text_rgb),
@@ -288,6 +367,8 @@ def build_demo_theme(impression_color: str | None = None) -> DemoTheme:
         demo_heading=_rgb_to_hex(hint_rgb),
         bot_text=_rgb_to_hex(dark_rgb),
         system_line=neutral_hint,
+        showcase_accent_rail_bg=_rgb_to_hex(showcase_accent_rail_rgb),
+        showcase_support_rail_bg=_rgb_to_hex(showcase_support_rail_rgb),
         standee_anchor_shadow=(*base_rgb, 18),
         bubble_shadow=(*base_rgb, shadow_alpha),
         card_shadow=(*base_rgb, shadow_alpha),
@@ -325,7 +406,9 @@ def _shifted_rgb(
 
 
 def _hls_to_rgb(
-    hue: float, lightness: float, saturation: float
+    hue: float,
+    lightness: float,
+    saturation: float,
 ) -> tuple[int, int, int]:
     red, green, blue = colorsys.hls_to_rgb(
         max(0.0, min(1.0, hue)),
@@ -364,4 +447,5 @@ def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
     return "#{:02X}{:02X}{:02X}".format(*rgb)
 
 
-BASE_THEME = build_demo_theme(DEFAULT_IMPRESSION_COLOR)
+DEFAULT_DEMO_THEME = get_demo_theme()
+BASE_THEME = DEFAULT_DEMO_THEME

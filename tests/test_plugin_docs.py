@@ -10,9 +10,11 @@ import scripts.build_docs as plugin_docs_script
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.demo_theme import (
-    BASE_THEME,
+    DEFAULT_DEMO_THEME,
     DEFAULT_IMPRESSION_COLOR,
+    SENRIN_V3_THEME,
     build_demo_theme,
+    get_demo_theme,
     normalize_hex_color,
 )
 from src.lib.i18n.runtime import tr
@@ -1476,30 +1478,39 @@ def test_audit_demo_layout_accepts_all_project_readmes() -> None:
 
 
 def test_demo_theme_has_required_tokens() -> None:
-    assert BASE_THEME.page_bg
-    assert BASE_THEME.panel_bg
-    assert BASE_THEME.accent
-    assert BASE_THEME.strong
-    assert BASE_THEME.deep
-    assert BASE_THEME.hint
-    assert BASE_THEME.line
-    assert BASE_THEME.shell_bg
-    assert BASE_THEME.shell_border
-    assert BASE_THEME.user_bubble
-    assert BASE_THEME.bot_bubble
-    assert BASE_THEME.system_bubble
-    assert BASE_THEME.inline_code_bg
-    assert BASE_THEME.inline_code_text
-    assert BASE_THEME.terminal_flag
-    assert BASE_THEME.grid_color
-    assert BASE_THEME.decor_color
-    assert BASE_THEME.footer_divider
-    assert BASE_THEME.standee_anchor_fill
+    assert DEFAULT_DEMO_THEME.theme_name == SENRIN_V3_THEME.name
+    assert DEFAULT_DEMO_THEME.impression_color == DEFAULT_IMPRESSION_COLOR
+    assert DEFAULT_DEMO_THEME.page_bg
+    assert DEFAULT_DEMO_THEME.panel_bg
+    assert DEFAULT_DEMO_THEME.accent
+    assert DEFAULT_DEMO_THEME.strong
+    assert DEFAULT_DEMO_THEME.deep
+    assert DEFAULT_DEMO_THEME.hint
+    assert DEFAULT_DEMO_THEME.line
+    assert DEFAULT_DEMO_THEME.shell_bg
+    assert DEFAULT_DEMO_THEME.shell_border
+    assert DEFAULT_DEMO_THEME.user_bubble
+    assert DEFAULT_DEMO_THEME.bot_bubble
+    assert DEFAULT_DEMO_THEME.system_bubble
+    assert DEFAULT_DEMO_THEME.inline_code_bg
+    assert DEFAULT_DEMO_THEME.inline_code_text
+    assert DEFAULT_DEMO_THEME.avatar_text
+    assert DEFAULT_DEMO_THEME.bot_avatar_bg
+    assert DEFAULT_DEMO_THEME.bot_avatar_border
+    assert DEFAULT_DEMO_THEME.terminal_flag
+    assert DEFAULT_DEMO_THEME.grid_color
+    assert DEFAULT_DEMO_THEME.decor_color
+    assert DEFAULT_DEMO_THEME.footer_divider
+    assert DEFAULT_DEMO_THEME.standee_anchor_fill
+    assert DEFAULT_DEMO_THEME.showcase_accent_rail_bg
+    assert DEFAULT_DEMO_THEME.showcase_support_rail_bg
 
 
 def test_build_demo_theme_uses_dynamic_impression_color_palette() -> None:
-    theme = build_demo_theme("#3BC9DB")
+    theme = get_demo_theme(impression_color="#3BC9DB")
 
+    assert theme.theme_name == SENRIN_V3_THEME.name
+    assert theme.impression_color == "#3BC9DB"
     assert theme.accent == "#3BC9DB"
     assert theme.page_bg != theme.accent
     assert theme.bot_bubble == theme.panel_soft_bg
@@ -1511,6 +1522,10 @@ def test_build_demo_theme_uses_dynamic_impression_color_palette() -> None:
 def test_normalize_hex_color_falls_back_to_default() -> None:
     assert normalize_hex_color("not-a-color") == DEFAULT_IMPRESSION_COLOR
     assert normalize_hex_color("#abc") == "#AABBCC"
+
+
+def test_build_demo_theme_keeps_backward_compatible_alias() -> None:
+    assert build_demo_theme("#3BC9DB") == get_demo_theme(impression_color="#3BC9DB")
 
 
 def test_load_plugin_doc_bundle_uses_explicit_impression_color_override(
@@ -1565,7 +1580,8 @@ BOT: Alpha 完成
 def test_demo_image_renderer_uses_theme() -> None:
     renderer = DemoImageRenderer(impression_color="#3BC9DB")
 
-    assert renderer.theme == build_demo_theme("#3BC9DB")
+    assert renderer.theme_name == SENRIN_V3_THEME.name
+    assert renderer.theme == get_demo_theme(impression_color="#3BC9DB")
     assert not hasattr(renderer, "PAGE_BG")
     assert not hasattr(renderer, "ACCENT")
     assert not hasattr(renderer, "SHELL_BG")
@@ -1574,43 +1590,59 @@ def test_demo_image_renderer_uses_theme() -> None:
 def test_demo_collection_renderer_uses_theme() -> None:
     renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
 
+    assert renderer.theme_name == SENRIN_V3_THEME.name
     assert hasattr(renderer, "theme")
-    assert renderer.theme == BASE_THEME
+    assert renderer.theme == DEFAULT_DEMO_THEME
     assert not hasattr(renderer, "PAGE_BG")
     assert not hasattr(renderer, "CARD_BG")
     assert not hasattr(renderer, "TITLE")
 
 
+def test_demo_collection_renderer_resolves_impression_color_on_render() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
+
+    renderer.render(
+        title="测试插件",
+        summary="用于测试 collection 是否走印象色。",
+        impression_color="#3BC9DB",
+        tiles=(),
+    )
+
+    assert renderer.theme.theme_name == SENRIN_V3_THEME.name
+    assert renderer.theme.impression_color == "#3BC9DB"
+    assert renderer.theme.accent == "#3BC9DB"
+
+
 def test_demo_theme_layout_constants() -> None:
-    assert BASE_THEME.outer_margin == 40
-    assert BASE_THEME.shell_radius == 32
-    assert BASE_THEME.panel_radius == 28
-    assert BASE_THEME.card_radius == 32
-    assert BASE_THEME.chip_radius == 20
-    assert BASE_THEME.inline_code_radius == 12
-    assert BASE_THEME.inline_code_pad_x == 8
-    assert BASE_THEME.inline_code_pad_y == 4
+    assert DEFAULT_DEMO_THEME.outer_margin == 40
+    assert DEFAULT_DEMO_THEME.shell_radius == 32
+    assert DEFAULT_DEMO_THEME.panel_radius == 28
+    assert DEFAULT_DEMO_THEME.card_radius == 32
+    assert DEFAULT_DEMO_THEME.chip_radius == 20
+    assert DEFAULT_DEMO_THEME.inline_code_radius == 12
+    assert DEFAULT_DEMO_THEME.inline_code_pad_x == 8
+    assert DEFAULT_DEMO_THEME.inline_code_pad_y == 4
 
 
 def test_demo_theme_showcase_tokens_follow_expected_scale() -> None:
-    assert BASE_THEME.canvas_width == 1280
-    assert BASE_THEME.hero_top == 64
-    assert BASE_THEME.hero_side_padding % 8 == 0
-    assert BASE_THEME.hero_bottom_padding % 8 == 0
-    assert BASE_THEME.hero_standee_size == 304
-    assert BASE_THEME.pill_height == 40
-    assert BASE_THEME.section_gap % 8 == 0
-    assert BASE_THEME.instruction_padding_x % 8 == 0
-    assert BASE_THEME.instruction_padding_y % 8 == 0
-    assert BASE_THEME.trigger_padding_x % 8 == 0
-    assert BASE_THEME.trigger_padding_y % 8 == 0
-    assert BASE_THEME.avatar_size % 8 == 0
-    assert BASE_THEME.bubble_padding_x % 8 == 0
-    assert BASE_THEME.bubble_padding_y % 8 == 0
-    assert BASE_THEME.hero_summary_line_height >= 56
-    assert BASE_THEME.bubble_line_height >= 48
-    assert BASE_THEME.grid_spacing % 8 == 0
-    assert BASE_THEME.footer_height >= 72
+    assert DEFAULT_DEMO_THEME.canvas_width == 1280
+    assert DEFAULT_DEMO_THEME.hero_top == 64
+    assert DEFAULT_DEMO_THEME.hero_side_padding % 8 == 0
+    assert DEFAULT_DEMO_THEME.hero_bottom_padding % 8 == 0
+    assert DEFAULT_DEMO_THEME.hero_standee_size == 304
+    assert DEFAULT_DEMO_THEME.pill_height == 40
+    assert DEFAULT_DEMO_THEME.section_gap % 8 == 0
+    assert DEFAULT_DEMO_THEME.instruction_padding_x % 8 == 0
+    assert DEFAULT_DEMO_THEME.instruction_padding_y % 8 == 0
+    assert DEFAULT_DEMO_THEME.trigger_padding_x % 8 == 0
+    assert DEFAULT_DEMO_THEME.trigger_padding_y % 8 == 0
+    assert DEFAULT_DEMO_THEME.avatar_size % 8 == 0
+    assert DEFAULT_DEMO_THEME.bubble_padding_x % 8 == 0
+    assert DEFAULT_DEMO_THEME.bubble_padding_y % 8 == 0
+    assert DEFAULT_DEMO_THEME.hero_summary_line_height >= 56
+    assert DEFAULT_DEMO_THEME.bubble_line_height >= 48
+    assert DEFAULT_DEMO_THEME.grid_spacing % 8 == 0
+    assert DEFAULT_DEMO_THEME.footer_height >= 72
 
 
 def test_demo_image_renderer_measure_layout_includes_footer_traceability() -> None:
@@ -1639,7 +1671,10 @@ def test_demo_image_renderer_measure_layout_includes_footer_traceability() -> No
     assert (
         layout.footer_right_text == "Generated at 2026-06-16 21:30:45 | © SakuraiSenrin"
     )
-    assert layout.footer_rect[3] - layout.footer_rect[1] == BASE_THEME.footer_height
+    assert (
+        layout.footer_rect[3] - layout.footer_rect[1]
+        == DEFAULT_DEMO_THEME.footer_height
+    )
 
 
 def test_demo_image_renderer_measure_layout_uses_structured_trigger_layout() -> None:
