@@ -1206,7 +1206,9 @@ BOT: Alpha 完成
 
     assert prepared.index == 1
     assert prepared.trigger == "#alpha run"
-    assert prepared.command_layout.lines
+    assert prepared.demo_help == "#help 测试插件 alpha"
+    assert prepared.trigger_layout.lines
+    assert prepared.demo_layout.lines
     assert prepared.height > 0
 
 

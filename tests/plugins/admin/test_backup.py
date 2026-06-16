@@ -28,9 +28,13 @@ if nonebot.get_plugin("help") is None:
 SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 
 from src.lib.i18n.runtime import tr
-from src.lib.plugin_docs import DocsRenderContext
-from src.plugins.admin.backup import admin_backup, build_docs
-from src.plugins.help import help_matcher
+from src.plugins.admin.backup import _build_error_demo, admin_backup
+from src.plugins.help import (
+    _iter_docs_entries,
+    _resolve_actor_permission,
+    _resolve_docs_message,
+    help_matcher,
+)
 from tests.plugins.water.helpers import (
     build_group_message_event,
     build_private_message_event,
@@ -54,6 +58,13 @@ class _Snapshot:
         self.hostname = hostname
         self.total_files_processed = files
         self.total_bytes_processed = bytes_total
+
+
+def _freeze_error_demo(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.lib.plugin_docs.render_feature_deep_dive",
+        lambda *args, **kwargs: b"feature-demo",
+    )
 
 
 @pytest.mark.asyncio
@@ -123,7 +134,9 @@ async def test_admin_backup_check_returns_latest_snapshot(
 @pytest.mark.asyncio
 async def test_admin_backup_snapshots_rejects_invalid_limit(
     app: App,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _freeze_error_demo(monkeypatch)
     event = build_private_message_event(
         "#admin.backup snapshots 0",
         user_id=SUPERUSER_ID,
@@ -134,7 +147,11 @@ async def test_admin_backup_snapshots_rejects_invalid_limit(
         ctx.receive_event(bot, event)
         ctx.should_call_send(
             event,
-            tr("zh-CN", "admin.backup.limit.invalid"),
+            _build_error_demo(
+                "zh-CN",
+                tr("zh-CN", "admin.backup.limit.invalid"),
+                "snapshots",
+            ),
             bot=bot,
         )
 
@@ -196,17 +213,28 @@ async def test_admin_backup_run_returns_backup_result(
 
 
 @pytest.mark.asyncio
-async def test_help_can_find_admin_backup_docs(app: App) -> None:
+async def test_help_can_find_admin_backup_docs(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     event = build_group_message_event("#help 备份管理模块")
-    expected = build_docs(
-        DocsRenderContext(
-            locale="zh-CN",
-            view="plugin",
-        )
+    entries = _iter_docs_entries("zh-CN")
+    backup_entry = next(
+        entry for entry in entries if entry.display_name == "备份管理模块"
+    )
+    monkeypatch.setattr(
+        "src.plugins.help.render_plugin_guide", lambda *args, **kwargs: b"guide-demo"
     )
 
     async with app.test_matcher(help_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
+        actor_permission = await _resolve_actor_permission(bot, event)
+        expected = await _resolve_docs_message(
+            backup_entry,
+            "zh-CN",
+            actor_permission=actor_permission,
+            all_entries=entries,
+        )
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, expected, bot=bot)
         ctx.should_finished(help_matcher)

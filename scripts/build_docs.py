@@ -62,6 +62,7 @@ class DemoCollectionTile:
     slug: str
     summary: str
     trigger: str
+    demo_help: str
 
 
 @dataclass(slots=True, frozen=True)
@@ -79,9 +80,11 @@ class PreparedCollectionTile:
     slug: str
     summary: str
     trigger: str
+    demo_help: str
     title_lines: tuple[tuple[tuple[str, bool], ...], ...]
     summary_lines: tuple[tuple[tuple[str, bool], ...], ...]
-    command_layout: CommandLayout
+    trigger_layout: CommandLayout
+    demo_layout: CommandLayout
     height: int
 
 
@@ -181,6 +184,7 @@ def collect_collection_jobs(
                 slug=feature.slug,
                 summary=feature.summary,
                 trigger=feature.trigger,
+                demo_help=f"#help {bundle.title} {feature.slug}",
             )
             for feature_index, feature in enumerate(bundle.index)
         )
@@ -369,8 +373,16 @@ class DemoCollectionRenderer:
                 max_lines=3,
             )
         )
-        command_layout = build_command_layout(
+        trigger_layout = build_command_layout(
             tile.trigger.strip() or f"#help {tile.slug}",
+            max_width=content_width - self.CARD_COMMAND_PADDING_X * 2,
+            line_height=self._line_height_for_font(self.tile_command_font),
+            indent_px=self.COMMAND_INDENT_PX,
+            measure_text=lambda value: self._text_width(value, self.tile_command_font),
+            palette=self._command_palette(),
+        )
+        demo_layout = build_command_layout(
+            tile.demo_help,
             max_width=content_width - self.CARD_COMMAND_PADDING_X * 2,
             line_height=self._line_height_for_font(self.tile_command_font),
             indent_px=self.COMMAND_INDENT_PX,
@@ -383,15 +395,19 @@ class DemoCollectionRenderer:
         summary_height = len(summary_lines) * self._line_height_for_font(
             self.tile_summary_font
         )
-        command_box_height = (
-            command_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
+        trigger_box_height = (
+            trigger_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
+        )
+        demo_box_height = (
+            demo_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
         )
         height = (
             self.CARD_PADDING_Y * 2
             + title_height
             + summary_height
-            + command_box_height
-            + self.CARD_INNER_GAP * 3
+            + trigger_box_height
+            + demo_box_height
+            + self.CARD_INNER_GAP * 4
             + 40
         )
         return PreparedCollectionTile(
@@ -400,9 +416,11 @@ class DemoCollectionRenderer:
             slug=tile.slug,
             summary=tile.summary,
             trigger=tile.trigger,
+            demo_help=tile.demo_help,
             title_lines=title_lines,
             summary_lines=summary_lines,
-            command_layout=command_layout,
+            trigger_layout=trigger_layout,
+            demo_layout=demo_layout,
             height=height,
         )
 
@@ -519,28 +537,60 @@ class DemoCollectionRenderer:
         summary_height = len(tile.summary_lines) * self._line_height_for_font(
             self.tile_summary_font
         )
-        command_y = summary_y + summary_height + self.CARD_INNER_GAP
-        command_height = (
-            tile.command_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
+        trigger_y = summary_y + summary_height + self.CARD_INNER_GAP
+        trigger_height = (
+            tile.trigger_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
         )
-        command_rect = (
+        trigger_rect = (
             title_x,
-            command_y,
+            trigger_y,
             x + width - self.CARD_PADDING_X,
-            command_y + command_height,
+            trigger_y + trigger_height,
         )
         draw.rounded_rectangle(
-            command_rect,
+            trigger_rect,
             radius=20,
             fill=self.theme.panel_soft_bg,
         )
         self._draw_command_layout(
             draw,
-            x=command_rect[0] + self.CARD_COMMAND_PADDING_X,
-            y=command_rect[1] + self.CARD_COMMAND_PADDING_Y,
-            layout=tile.command_layout,
+            x=trigger_rect[0] + self.CARD_COMMAND_PADDING_X,
+            y=trigger_rect[1] + self.CARD_COMMAND_PADDING_Y,
+            layout=tile.trigger_layout,
             font=self.tile_command_font,
             default_fill=self.theme.deep,
+            guide_fill=self.theme.line,
+        )
+        demo_y = trigger_rect[3] + self.CARD_INNER_GAP
+        demo_label_y = demo_y
+        draw.text(
+            (title_x, demo_label_y),
+            "查看 demo",
+            fill=self.theme.hint,
+            font=self.tile_summary_font,
+        )
+        demo_label_height = self._line_height_for_font(self.tile_summary_font)
+        demo_height = tile.demo_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
+        demo_rect = (
+            title_x,
+            demo_label_y + demo_label_height + 8,
+            x + width - self.CARD_PADDING_X,
+            demo_label_y + demo_label_height + 8 + demo_height,
+        )
+        draw.rounded_rectangle(
+            demo_rect,
+            radius=20,
+            fill=self.theme.panel_bg,
+            outline=self._rgba(self.theme.line, 110),
+            width=2,
+        )
+        self._draw_command_layout(
+            draw,
+            x=demo_rect[0] + self.CARD_COMMAND_PADDING_X,
+            y=demo_rect[1] + self.CARD_COMMAND_PADDING_Y,
+            layout=tile.demo_layout,
+            font=self.tile_command_font,
+            default_fill=self.theme.accent,
             guide_fill=self.theme.line,
         )
 
