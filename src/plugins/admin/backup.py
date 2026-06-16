@@ -14,7 +14,12 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_doc_demo_message,
+    build_readme_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.services.backup import (
     BackupResult,
@@ -36,6 +41,23 @@ def build_docs(ctx: DocsRenderContext | None = None) -> Message:
         trigger=TriggerType.COMMAND,
         permission=Permission.SUPERUSER,
         ctx=ctx,
+    )
+
+
+def _build_error_demo(
+    locale: LocaleCode,
+    message: str,
+    feature_query: str | None,
+) -> Message:
+    return build_doc_demo_message(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        locale=locale,
+        feature_query=feature_query,
+        prefix_text=message,
     )
 
 
@@ -165,7 +187,13 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
             try:
                 limit = _parse_limit(args[1] if len(args) > 1 else None)
             except ValueError:
-                await matcher.finish(tr(locale, "admin.backup.limit.invalid"))
+                await matcher.finish(
+                    _build_error_demo(
+                        locale,
+                        tr(locale, "admin.backup.limit.invalid"),
+                        "snapshots",
+                    )
+                )
                 return
             snapshots = await service.list_snapshots()
             if not snapshots:
@@ -193,7 +221,16 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
             return
 
         await matcher.finish(
-            tr(locale, "admin.backup.unknown_command", action=action, docs=docs_text)
+            _build_error_demo(
+                locale,
+                tr(
+                    locale,
+                    "admin.backup.unknown_command",
+                    action=action,
+                    docs=docs_text,
+                ),
+                None,
+            )
         )
     except FinishedException:
         raise

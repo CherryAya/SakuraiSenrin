@@ -17,7 +17,13 @@ from src.lib.consts import TriggerType
 from src.lib.cooldown import build_cooldown_dependency
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import resolve_locale, tr
-from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
+from src.lib.i18n.types import LocaleCode
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_doc_demo_message,
+    build_readme_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 
 from .handlers import (
@@ -43,6 +49,19 @@ def build_docs(ctx: DocsRenderContext | None = None) -> Message:
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
         ctx=ctx,
+    )
+
+
+def _build_error_demo(locale: LocaleCode, message: str) -> Message:
+    return build_doc_demo_message(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        locale=locale,
+        feature_query="search",
+        prefix_text=message,
     )
 
 
@@ -92,12 +111,16 @@ async def _(
 
     image_urls = extract_reply_image_urls(event)
     if not image_urls:
-        await matcher.finish(tr(locale, "picsearch.reply_required"))
+        await matcher.finish(
+            _build_error_demo(locale, tr(locale, "picsearch.reply_required"))
+        )
 
     try:
         engine = parse_request_text(event.get_plaintext())
     except ValueError:
-        await matcher.finish(tr(locale, "picsearch.engine_invalid"))
+        await matcher.finish(
+            _build_error_demo(locale, tr(locale, "picsearch.engine_invalid"))
+        )
 
     state["picsearch_engine"] = engine.value
     state["picsearch_image_urls"] = image_urls
@@ -141,7 +164,7 @@ async def _choose_indexes(
                 "too_many": "picsearch.index_too_many",
             }.get(str(exc), "picsearch.index_invalid"),
         )
-        await matcher.reject(tr(locale, message_key))
+        await matcher.reject(_build_error_demo(locale, tr(locale, message_key)))
 
     await run_search(
         matcher,

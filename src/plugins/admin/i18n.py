@@ -12,7 +12,13 @@ from nonebot.plugin import CommandGroup
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import LOCALE_NAMES, normalize_locale, resolve_locale, tr
-from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
+from src.lib.i18n.types import LocaleCode
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_doc_demo_message,
+    build_readme_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import i18n_repo
 
@@ -29,6 +35,23 @@ def build_docs(ctx: DocsRenderContext | None = None) -> Message:
         trigger=TriggerType.COMMAND,
         permission=Permission.SUPERUSER,
         ctx=ctx,
+    )
+
+
+def _build_error_demo(
+    locale: LocaleCode,
+    message: str,
+    feature_query: str | None,
+) -> Message:
+    return build_doc_demo_message(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        locale=locale,
+        feature_query=feature_query,
+        prefix_text=message,
     )
 
 
@@ -127,11 +150,15 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
         locale_code = normalize_locale(args[1])
         if locale_code is None:
             await matcher.finish(
-                tr(
+                _build_error_demo(
                     locale,
-                    "admin.i18n.locale.invalid",
-                    locale=args[1],
-                    choices=_choices_text(),
+                    tr(
+                        locale,
+                        "admin.i18n.locale.invalid",
+                        locale=args[1],
+                        choices=_choices_text(),
+                    ),
+                    "default",
                 )
             )
             return
@@ -148,21 +175,35 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
         locale_code = normalize_locale(args[1])
         if locale_code is None:
             await matcher.finish(
-                tr(
+                _build_error_demo(
                     locale,
-                    "admin.i18n.locale.invalid",
-                    locale=args[1],
-                    choices=_choices_text(),
+                    tr(
+                        locale,
+                        "admin.i18n.locale.invalid",
+                        locale=args[1],
+                        choices=_choices_text(),
+                    ),
+                    "set",
                 )
             )
             return
         group_id = _resolve_group_id(event, args[2] if len(args) > 2 else None)
         if group_id is None:
-            await matcher.finish(tr(locale, "admin.i18n.group.required"))
+            await matcher.finish(
+                _build_error_demo(
+                    locale,
+                    tr(locale, "admin.i18n.group.required"),
+                    "set",
+                )
+            )
             return
         if not group_id.isdigit():
             await matcher.finish(
-                tr(locale, "admin.i18n.group.invalid", group_id=group_id)
+                _build_error_demo(
+                    locale,
+                    tr(locale, "admin.i18n.group.invalid", group_id=group_id),
+                    "set",
+                )
             )
             return
         await i18n_repo.set_group_locale(group_id, locale_code)
@@ -179,11 +220,21 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
     if action == "clear":
         group_id = _resolve_group_id(event, args[1] if len(args) > 1 else None)
         if group_id is None:
-            await matcher.finish(tr(locale, "admin.i18n.group.required"))
+            await matcher.finish(
+                _build_error_demo(
+                    locale,
+                    tr(locale, "admin.i18n.group.required"),
+                    "clear",
+                )
+            )
             return
         if not group_id.isdigit():
             await matcher.finish(
-                tr(locale, "admin.i18n.group.invalid", group_id=group_id)
+                _build_error_demo(
+                    locale,
+                    tr(locale, "admin.i18n.group.invalid", group_id=group_id),
+                    "clear",
+                )
             )
             return
         changed = await i18n_repo.clear_group_locale(group_id)
@@ -206,4 +257,10 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
         await matcher.finish("\n".join(lines))
         return
 
-    await matcher.finish(build_docs(DocsRenderContext(locale=locale)))
+    await matcher.finish(
+        _build_error_demo(
+            locale,
+            str(build_docs(DocsRenderContext(locale=locale))),
+            None,
+        )
+    )

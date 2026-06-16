@@ -24,11 +24,13 @@ from src.lib.plugin_docs import (
     InlineTextSpan,
     audit_demo_layout,
     build_command_layout,
+    build_doc_demo_message,
     build_doc_tree,
     build_feature_copy_text,
     build_plugin_guide_copy_text,
     build_readme_docs,
     create_docs_meta,
+    feature_demo_help_command,
     load_doc_node,
     load_plugin_doc_bundle,
     load_representative_demo_bytes,
@@ -1719,7 +1721,9 @@ def test_render_plugin_guide_and_copy_text_use_disclosure_selection() -> None:
     )
     assert "👉 基础添加" in copy_text
     assert "wordbank add 触发词 => 响应词" in copy_text
+    assert "查看 demo：#help 词库模块 add" in copy_text
     assert "更多高级功能" in copy_text
+    assert "wordbank add 触发词 => 响应词 --scope current_group" in copy_text
     assert "#help 词库模块 add-scope" in copy_text
 
 
@@ -1737,6 +1741,74 @@ def test_build_feature_copy_text_returns_command_skeleton() -> None:
 
     assert "👉 查看周期榜单" in copy_text
     assert "#水王" in copy_text
+
+
+def test_feature_demo_help_command_uses_plugin_title_and_slug() -> None:
+    node = load_doc_node(
+        source="src/plugins/water/docs/README.MD",
+        default_name="吹水记录",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    ranking = next(feature for feature in node.features if feature.slug == "ranking")
+
+    assert feature_demo_help_command(node, ranking) == "#help 吹水记录 ranking"
+
+
+def test_build_doc_demo_message_prefers_feature_demo(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        plugin_docs_module,
+        "render_feature_deep_dive",
+        lambda *args, **kwargs: b"feature-demo",
+    )
+    monkeypatch.setattr(
+        plugin_docs_module,
+        "render_plugin_guide",
+        lambda *args, **kwargs: b"guide-demo",
+    )
+
+    message = build_doc_demo_message(
+        source="src/plugins/wordbank/docs/README.MD",
+        name="词库模块",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        locale="zh-CN",
+        feature_query="add-scope",
+        prefix_text="参数错误",
+    )
+
+    assert str(message).startswith("参数错误")
+    assert any(segment.type == "image" for segment in message)
+    assert message[-1].data["file"] == "base64://ZmVhdHVyZS1kZW1v"
+
+
+def test_build_doc_demo_message_falls_back_to_plugin_guide(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        plugin_docs_module,
+        "render_feature_deep_dive",
+        lambda *args, **kwargs: b"feature-demo",
+    )
+    monkeypatch.setattr(
+        plugin_docs_module,
+        "render_plugin_guide",
+        lambda *args, **kwargs: b"guide-demo",
+    )
+
+    message = build_doc_demo_message(
+        source="src/plugins/wordbank/docs/README.MD",
+        name="词库模块",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        locale="zh-CN",
+        feature_query="missing-feature",
+        prefix_text="参数错误",
+    )
+
+    assert any(segment.type == "image" for segment in message)
+    assert message[-1].data["file"] == "base64://Z3VpZGUtZGVtbw=="
 
 
 def test_plugin_docs_generate_reuses_one_build_timestamp(

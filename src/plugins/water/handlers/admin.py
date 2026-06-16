@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import arrow
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 
+from src.database.core.consts import Permission
+from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.plugin_docs import build_doc_demo_message
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.renderers import render_season_list
@@ -23,12 +28,30 @@ from src.plugins.water.services.settlement import (
     water_settlement_service,
 )
 
+DOCS_SOURCE = Path(__file__).resolve().parent.parent / "docs" / "README.MD"
+PLUGIN_NAME = tr("zh-CN", "plugin.water.name")
+PLUGIN_DESCRIPTION = tr("zh-CN", "plugin.water.description")
+
 
 @dataclass
 class WaterAdminContext:
     matcher: Matcher
     args: list[str]
     locale: LocaleCode
+
+
+def _build_error_demo(locale: LocaleCode, message: str) -> Message:
+    return build_doc_demo_message(
+        source=DOCS_SOURCE,
+        name=PLUGIN_NAME,
+        description=PLUGIN_DESCRIPTION,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        actor_permission=Permission.SUPERUSER,
+        locale=locale,
+        feature_query="admin-maintenance",
+        prefix_text=message,
+    )
 
 
 def water_help_message(locale: LocaleCode) -> str:
@@ -100,18 +123,29 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
             continue
         if date_arg is not None:
             await ctx.matcher.finish(
-                tr(ctx.locale, "water.admin.settle.args_multiple_date")
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.settle.args_multiple_date"),
+                )
             )
         date_arg = arg
 
     if date_arg is not None:
         if len(date_arg) != 8 or not date_arg.isdigit():
-            await ctx.matcher.finish(tr(ctx.locale, "water.admin.settle.date_invalid"))
+            await ctx.matcher.finish(
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.settle.date_invalid"),
+                )
+            )
         try:
             target_day = arrow.get(date_arg, "YYYYMMDD")
         except ValueError:
             await ctx.matcher.finish(
-                tr(ctx.locale, "water.admin.settle.date_parse_failed")
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.settle.date_parse_failed"),
+                )
             )
 
     await ctx.matcher.send(tr(ctx.locale, "water.admin.settle.running"))
@@ -124,10 +158,14 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
 
 async def handle_pardon(ctx: WaterAdminContext) -> None:
     if len(ctx.args) < 2:
-        await ctx.matcher.finish(tr(ctx.locale, "water.admin.pardon.missing"))
+        await ctx.matcher.finish(
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.pardon.missing"))
+        )
     penalty_id = ctx.args[1]
     if not penalty_id.isdigit():
-        await ctx.matcher.finish(tr(ctx.locale, "water.admin.pardon.invalid"))
+        await ctx.matcher.finish(
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.pardon.invalid"))
+        )
 
     ok = await water_repo.pardon_penalty(int(penalty_id))
     if ok:
@@ -141,10 +179,14 @@ async def handle_pardon(ctx: WaterAdminContext) -> None:
 
 async def handle_ignore(ctx: WaterAdminContext) -> None:
     if len(ctx.args) < 2:
-        await ctx.matcher.finish(tr(ctx.locale, "water.admin.ignore.missing"))
+        await ctx.matcher.finish(
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.ignore.missing"))
+        )
     group_id = ctx.args[1]
     if not group_id.isdigit():
-        await ctx.matcher.finish(tr(ctx.locale, "water.admin.ignore.invalid"))
+        await ctx.matcher.finish(
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.ignore.invalid"))
+        )
 
     ok = await water_repo.ignore_matrix_suggestion(group_id)
     if ok:
@@ -201,16 +243,28 @@ async def handle_state(ctx: WaterAdminContext) -> None:
 
 async def handle_season(ctx: WaterAdminContext) -> None:
     if len(ctx.args) < 2:
-        await ctx.matcher.finish(tr(ctx.locale, "water.admin.season.usage"))
+        await ctx.matcher.finish(
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.season.usage"))
+        )
     action = ctx.args[1].lower()
     if action == "create":
         if len(ctx.args) < 6:
-            await ctx.matcher.finish(tr(ctx.locale, "water.admin.season.create.usage"))
+            await ctx.matcher.finish(
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.create.usage"),
+                )
+            )
         season_id = ctx.args[2]
         start_date = ctx.args[3]
         end_date = ctx.args[4]
         if not (start_date.isdigit() and end_date.isdigit()):
-            await ctx.matcher.finish(tr(ctx.locale, "water.admin.season.date_invalid"))
+            await ctx.matcher.finish(
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.date_invalid"),
+                )
+            )
         name = " ".join(ctx.args[5:]).strip()
         try:
             season = await season_service.create(
@@ -235,7 +289,12 @@ async def handle_season(ctx: WaterAdminContext) -> None:
         )
     if action == "publish":
         if len(ctx.args) < 3:
-            await ctx.matcher.finish(tr(ctx.locale, "water.admin.season.publish.usage"))
+            await ctx.matcher.finish(
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.publish.usage"),
+                )
+            )
         try:
             season = await season_service.publish(ctx.args[2])
         except SeasonServiceError as exc:
@@ -250,7 +309,12 @@ async def handle_season(ctx: WaterAdminContext) -> None:
         )
     if action == "archive":
         if len(ctx.args) < 3:
-            await ctx.matcher.finish(tr(ctx.locale, "water.admin.season.archive.usage"))
+            await ctx.matcher.finish(
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.archive.usage"),
+                )
+            )
         try:
             season = await season_service.archive(ctx.args[2])
         except SeasonServiceError as exc:
@@ -265,7 +329,12 @@ async def handle_season(ctx: WaterAdminContext) -> None:
         )
     if action == "show":
         if len(ctx.args) < 3:
-            await ctx.matcher.finish(tr(ctx.locale, "water.admin.season.show.usage"))
+            await ctx.matcher.finish(
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.show.usage"),
+                )
+            )
         try:
             season = await season_service.require(ctx.args[2])
         except SeasonServiceError as exc:
@@ -310,7 +379,12 @@ async def handle_season(ctx: WaterAdminContext) -> None:
         )
     if action == "delete":
         if len(ctx.args) < 3:
-            await ctx.matcher.finish(tr(ctx.locale, "water.admin.season.delete.usage"))
+            await ctx.matcher.finish(
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.delete.usage"),
+                )
+            )
         try:
             ok = await season_service.delete_draft(ctx.args[2])
         except SeasonServiceError as exc:
@@ -326,5 +400,8 @@ async def handle_season(ctx: WaterAdminContext) -> None:
             )
         )
     await ctx.matcher.finish(
-        tr(ctx.locale, "water.admin.season.unknown", action=action)
+        _build_error_demo(
+            ctx.locale,
+            tr(ctx.locale, "water.admin.season.unknown", action=action),
+        )
     )

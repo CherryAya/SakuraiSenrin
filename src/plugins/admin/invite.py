@@ -32,7 +32,12 @@ from src.database.core.consts import InvitationStatus, Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_doc_demo_message,
+    build_readme_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils.common import get_current_time
@@ -54,6 +59,23 @@ def build_docs(ctx: DocsRenderContext | None = None) -> Message:
         trigger=TriggerType.COMMAND,
         permission=Permission.SUPERUSER,
         ctx=ctx,
+    )
+
+
+def _build_error_demo(
+    locale: LocaleCode,
+    message: str,
+    feature_query: str | None,
+) -> Message:
+    return build_doc_demo_message(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        locale=locale,
+        feature_query=feature_query,
+        prefix_text=message,
     )
 
 
@@ -678,10 +700,14 @@ async def _(
             await admin_invite.finish(build_docs(DocsRenderContext(locale=locale)))
         else:
             await admin_invite.finish(
-                tr(
+                _build_error_demo(
                     locale,
-                    "admin.invite.args_error",
-                    message=tr(locale, "admin.invite.args_error.detail"),
+                    tr(
+                        locale,
+                        "admin.invite.args_error",
+                        message=tr(locale, "admin.invite.args_error.detail"),
+                    ),
+                    argv[0].lower() if argv else None,
                 )
             )
 
@@ -713,7 +739,13 @@ async def _(
         case "log" | "日志":
             handler = handle_log
         case _:
-            await admin_invite.finish(tr(locale, "admin.invite.unknown_command"))
+            await admin_invite.finish(
+                _build_error_demo(
+                    locale,
+                    tr(locale, "admin.invite.unknown_command"),
+                    None,
+                )
+            )
 
     await handler(ctx)
     await admin_invite.finish()

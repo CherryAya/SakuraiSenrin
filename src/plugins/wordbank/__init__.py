@@ -48,7 +48,7 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
-from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
@@ -107,6 +107,75 @@ name = tr("zh-CN", "plugin.wordbank.name")
 description = tr("zh-CN", "plugin.wordbank.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 APPROVAL_DOCS_SOURCE = Path(__file__).parent / "docs" / "approval" / "README.MD"
+
+
+def _wordbank_error_feature(exc: Exception, default_feature: str | None) -> str | None:
+    key = str(getattr(exc, "key", "")).strip()
+    if not key:
+        return default_feature
+    if key.startswith("wordbank.rank."):
+        return "rank"
+    if key.startswith("wordbank.error.guided_search_") or key.startswith(
+        "wordbank.error.search_"
+    ):
+        return "search"
+    if key == "wordbank.reply.group_command_invalid":
+        return default_feature or "reply-shortcut"
+    if key.startswith("wordbank.error.scope_") or (
+        key == "wordbank.error.guided_scope_invalid"
+    ):
+        return "add-scope"
+    if "probability" in key:
+        return "add-prob"
+    if "weight" in key:
+        return "add-weight"
+    if "role_" in key:
+        return "add-role"
+    if "call_" in key:
+        return "add-call"
+    if key.startswith("wordbank.error.study_"):
+        return default_feature
+    if key in {"wordbank.error.trigger_empty", "wordbank.error.response_empty"}:
+        return default_feature
+    return default_feature
+
+
+def _build_wordbank_error_demo(
+    locale: LocaleCode,
+    message: str,
+    *,
+    feature_query: str | None,
+    source: Path = DOCS_SOURCE,
+    actor_permission: Permission = Permission.NORMAL,
+) -> Message:
+    return build_doc_demo_message(
+        source=source,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        actor_permission=actor_permission,
+        locale=locale,
+        feature_query=feature_query,
+        prefix_text=message,
+    )
+
+
+def _wordbank_error_message(
+    exc: Exception,
+    locale: LocaleCode,
+    *,
+    default_feature: str | None = None,
+    source: Path = DOCS_SOURCE,
+    actor_permission: Permission = Permission.NORMAL,
+) -> Message:
+    return _build_wordbank_error_demo(
+        locale,
+        localize_command_error(exc, locale),
+        feature_query=_wordbank_error_feature(exc, default_feature),
+        source=source,
+        actor_permission=actor_permission,
+    )
 
 
 def _build_wordbank_docs_meta() -> list[object]:
@@ -467,7 +536,9 @@ async def _handle_wordbank_command_message(
                     text=rest,
                 )
         except (RuleError, ValueError) as exc:
-            await matcher.finish(localize_command_error(exc, locale))
+            await matcher.finish(
+                _wordbank_error_message(exc, locale, default_feature="add")
+            )
             return
         await _finish_add_result(matcher, bot, event, result, locale)
     elif action in {"search", "find", "查询", "搜索"}:
@@ -481,7 +552,9 @@ async def _handle_wordbank_command_message(
                 keyword_text=rest,
             )
         except (RuleError, ValueError) as exc:
-            await matcher.finish(localize_command_error(exc, locale))
+            await matcher.finish(
+                _wordbank_error_message(exc, locale, default_feature="search")
+            )
             return
         try:
             await _send_search_result_view(
@@ -493,7 +566,9 @@ async def _handle_wordbank_command_message(
                 state=state,
             )
         except (RuleError, ValueError) as exc:
-            await matcher.finish(localize_command_error(exc, locale))
+            await matcher.finish(
+                _wordbank_error_message(exc, locale, default_feature="search")
+            )
         return
     elif action in {"详情", *GROUP_ALIASES}:
         try:
@@ -506,7 +581,13 @@ async def _handle_wordbank_command_message(
                 page=parsed_group.page,
             )
         except (RuleError, ValueError) as exc:
-            await matcher.finish(localize_command_error(exc, locale))
+            await matcher.finish(
+                _wordbank_error_message(
+                    exc,
+                    locale,
+                    default_feature="reply-shortcut",
+                )
+            )
         return
 
     try:
@@ -520,7 +601,7 @@ async def _handle_wordbank_command_message(
             media_service=wordbank_media_service,
         )
     except (RuleError, ValueError) as exc:
-        await matcher.finish(localize_command_error(exc, locale))
+        await matcher.finish(_wordbank_error_message(exc, locale))
         return
     await matcher.finish(msg)
 
@@ -632,7 +713,7 @@ async def _reject_guided_error(
     matcher: Matcher,
     state: T_State,
     locale: LocaleCode,
-    message: str,
+    message: Any,
 ) -> None:
     await reject_or_abort_on_error(
         matcher,
@@ -762,7 +843,7 @@ async def _finish_guided_add(
             matcher,
             state,
             locale,
-            localize_command_error(exc, locale),
+            _wordbank_error_message(exc, locale, default_feature="add"),
         )
         return
     await _finish_add_result(matcher, bot, event, result, locale)
@@ -991,7 +1072,7 @@ async def _handle_search_session_event(
             matcher,
             state,
             locale,
-            localize_command_error(exc, locale),
+            _wordbank_error_message(exc, locale, default_feature="search"),
         )
         return
 
@@ -1010,7 +1091,7 @@ async def _handle_search_session_event(
                 matcher,
                 state,
                 locale,
-                localize_command_error(exc, locale),
+                _wordbank_error_message(exc, locale, default_feature="search"),
             )
             return
         clear_interaction_errors(state)
@@ -1144,7 +1225,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
             matcher,
             state,
             locale,
-            localize_command_error(exc, locale),
+            _wordbank_error_message(exc, locale, default_feature="add-scope"),
         )
         return
     clear_interaction_errors(state)
@@ -1179,7 +1260,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
             matcher,
             state,
             locale,
-            localize_command_error(exc, locale),
+            _wordbank_error_message(exc, locale, default_feature="add"),
         )
         return
     clear_interaction_errors(state)
@@ -1271,7 +1352,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
             matcher,
             state,
             locale,
-            localize_command_error(exc, locale),
+            _wordbank_error_message(exc, locale, default_feature="add-scope"),
         )
         return
     clear_interaction_errors(state)
@@ -1304,7 +1385,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
             matcher,
             state,
             locale,
-            localize_command_error(exc, locale),
+            _wordbank_error_message(exc, locale, default_feature="add"),
         )
         return
     clear_interaction_errors(state)
@@ -1365,7 +1446,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
             matcher,
             state,
             locale,
-            localize_command_error(exc, locale),
+            _wordbank_error_message(exc, locale, default_feature="search"),
         )
         return
     clear_interaction_errors(state)
@@ -1404,7 +1485,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
             matcher,
             state,
             locale,
-            localize_command_error(exc, locale),
+            _wordbank_error_message(exc, locale, default_feature="search"),
         )
         return
     if not keyword and not has_image:
@@ -1447,7 +1528,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
             matcher,
             state,
             locale,
-            localize_command_error(exc, locale),
+            _wordbank_error_message(exc, locale, default_feature="search"),
         )
         return
     clear_interaction_errors(state)
@@ -1586,7 +1667,13 @@ async def _(matcher: Matcher, event: MessageEvent) -> None:
             media_service=wordbank_media_service,
         )
     except (RuleError, ValueError) as exc:
-        await matcher.finish(localize_command_error(exc, locale))
+        await matcher.finish(
+            _wordbank_error_message(
+                exc,
+                locale,
+                default_feature="reply-shortcut",
+            )
+        )
         return
     await matcher.finish(msg)
 
@@ -1603,7 +1690,15 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
             locale=locale,
         )
     except (RuleError, ValueError) as exc:
-        await matcher.finish(localize_command_error(exc, locale))
+        await matcher.finish(
+            _wordbank_error_message(
+                exc,
+                locale,
+                default_feature="approval-reply",
+                source=APPROVAL_DOCS_SOURCE,
+                actor_permission=Permission.GROUP_ADMIN,
+            )
+        )
         return
     if outcome.completed and outcome.approval_message is not None:
         await _notify_approval_source(bot, outcome.approval_message, outcome.message)
@@ -1656,7 +1751,13 @@ async def _(matcher: Matcher, event: MessageEvent) -> None:
             page=parsed.page,
         )
     except (RuleError, ValueError) as exc:
-        await matcher.finish(localize_command_error(exc, locale))
+        await matcher.finish(
+            _wordbank_error_message(
+                exc,
+                locale,
+                default_feature="reply-shortcut",
+            )
+        )
 
 
 def _extract_sent_message_id(result: Any) -> str | None:

@@ -1769,6 +1769,10 @@ def _feature_command_for_display(
     return f"#help {node_title} {feature.slug}"
 
 
+def feature_demo_help_command(node: DocNode, feature: FeatureDoc) -> str:
+    return f"#help {node.title} {feature.slug}"
+
+
 def _format_feature_command_lines(
     bundle: PluginDocBundle,
     feature: FeatureDoc,
@@ -1865,6 +1869,52 @@ def feature_command_sections(
     return tuple(sections) or (command,)
 
 
+def build_doc_demo_message(
+    *,
+    source: str | Path,
+    name: str,
+    description: str,
+    trigger: TriggerType,
+    permission: Permission,
+    locale: LocaleCode,
+    actor_permission: Permission | None = None,
+    feature_query: str | None = None,
+    prefix_text: str | None = None,
+) -> Message:
+    node = load_doc_node(
+        source=source,
+        default_name=name,
+        default_description=description,
+        trigger=trigger,
+        permission=permission,
+    )
+    viewer_permission = actor_permission or permission
+    image_bytes: bytes | None = None
+    if feature_query:
+        visible_features = filter_features_by_permission(
+            node.features,
+            viewer_permission,
+        )
+        match = match_feature(visible_features, feature_query)
+        if match.status == "matched" and match.feature is not None:
+            image_bytes = render_feature_deep_dive(
+                node,
+                match.feature,
+                locale=locale,
+            )
+    if image_bytes is None:
+        image_bytes = render_plugin_guide(
+            node,
+            actor_permission=viewer_permission,
+            locale=locale,
+        )
+
+    text = (prefix_text or "").strip()
+    if not text:
+        return Message(MessageSegment.image(image_bytes))
+    return Message(f"{text}\n参考示例如下：\n") + MessageSegment.image(image_bytes)
+
+
 def build_feature_copy_text(
     node: DocNode,
     feature: FeatureDoc,
@@ -1905,11 +1955,21 @@ def build_plugin_guide_copy_text(
                 node.title,
             )
         )
+        lines.append(f"查看 demo：{feature_demo_help_command(node, feature)}")
         lines.append("")
     if advanced_features:
         lines.append("更多高级功能：")
         for feature in advanced_features:
-            lines.append(f"- #help {node.title} {feature.slug}")
+            lines.append(f"- {feature.title}")
+            lines.extend(
+                f"  {section}"
+                for section in feature_command_sections(
+                    node.bundle,
+                    feature,
+                    node.title,
+                )
+            )
+            lines.append(f"  查看 demo：{feature_demo_help_command(node, feature)}")
     return "\n".join(line for line in lines if line is not None).strip()
 
 
@@ -5321,6 +5381,7 @@ class _GuideSectionLayout:
     title_lines: tuple[tuple[InlineTextSpan, ...], ...]
     summary_lines: tuple[tuple[InlineTextSpan, ...], ...]
     trigger_layout: CommandLayout
+    demo_layout: CommandLayout
     overview_lines: tuple[tuple[InlineTextSpan, ...], ...]
     note_items: tuple[_ShowcaseNoteItem, ...]
     turn_placements: tuple[_ShowcaseTurnPlacement, ...]
@@ -5332,7 +5393,8 @@ class _GuideAdvancedItemLayout:
     feature: FeatureDoc
     title_lines: tuple[tuple[InlineTextSpan, ...], ...]
     summary_lines: tuple[tuple[InlineTextSpan, ...], ...]
-    command_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    trigger_layout: CommandLayout
+    demo_layout: CommandLayout
     height: int
 
 
@@ -5788,6 +5850,14 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             measure_text=lambda value: self._text_width(value, self.body_font),
             palette=self._command_palette(),
         )
+        demo_layout = build_command_layout(
+            feature_demo_help_command(node, feature),
+            max_width=content_width - self.theme.trigger_padding_x * 2,
+            line_height=self._line_height_for_font(self.note_font),
+            indent_px=self.COMMAND_INDENT_PX,
+            measure_text=lambda value: self._text_width(value, self.note_font),
+            palette=self._command_palette(),
+        )
         overview_lines = tuple(
             self._wrap_inline_text(
                 feature.overview or feature.summary,
@@ -5828,16 +5898,18 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + len(title_lines) * self._line_height_for_font(self.summary_font)
             + len(summary_lines) * self._line_height_for_font(self.instruction_font)
             + trigger_layout.total_height
+            + demo_layout.total_height
             + len(overview_lines) * self._line_height_for_font(self.instruction_font)
             + note_height
             + demo_height
-            + 176
+            + 220
         )
         return _GuideSectionLayout(
             feature=feature,
             title_lines=title_lines,
             summary_lines=summary_lines,
             trigger_layout=trigger_layout,
+            demo_layout=demo_layout,
             overview_lines=overview_lines,
             note_items=note_items,
             turn_placements=tuple(turn_placements),
@@ -5917,7 +5989,41 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             default_fill=self.theme.terminal_text,
             guide_fill=self.theme.line,
         )
-        cursor_y = trigger_rect[3] + 24
+        cursor_y = trigger_rect[3] + 12
+        self._draw_multiline_text(
+            draw,
+            x=content_left,
+            y=cursor_y,
+            lines=(split_inline_text_spans("查看 demo"),),
+            font=self.note_font,
+            fill=self.theme.hint,
+            line_height=self._line_height_for_font(self.note_font),
+            render_code_chip=False,
+        )
+        cursor_y += self._line_height_for_font(self.note_font) + 8
+        demo_rect = (
+            content_left,
+            cursor_y,
+            rect[2] - self.GUIDE_SECTION_PADDING_X,
+            cursor_y
+            + layout.demo_layout.total_height
+            + self.theme.trigger_padding_y * 2,
+        )
+        draw.rounded_rectangle(
+            demo_rect,
+            radius=self.theme.trigger_radius,
+            fill=self.theme.panel_soft_bg,
+        )
+        self._draw_command_layout(
+            draw,
+            x=demo_rect[0] + self.theme.trigger_padding_x,
+            y=demo_rect[1] + self.theme.trigger_padding_y,
+            layout=layout.demo_layout,
+            font=self.note_font,
+            default_fill=self.theme.deep,
+            guide_fill=self.theme.line,
+        )
+        cursor_y = demo_rect[3] + 24
         self._draw_multiline_text(
             draw,
             x=content_left,
@@ -6026,24 +6132,35 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 font=self.note_font,
             )
         )[:2]
-        command_lines = tuple(
-            self._wrap_inline_text(
-                f"#help {node.title} {feature.slug}",
-                max_width=width,
-                font=self.note_font,
-            )
+        trigger_layout = build_command_layout(
+            _feature_command_for_display(node.bundle, feature, node.title),
+            max_width=width,
+            line_height=self._line_height_for_font(self.note_font),
+            indent_px=self.COMMAND_INDENT_PX,
+            measure_text=lambda value: self._text_width(value, self.note_font),
+            palette=self._command_palette(),
+        )
+        demo_layout = build_command_layout(
+            feature_demo_help_command(node, feature),
+            max_width=width,
+            line_height=self._line_height_for_font(self.note_font),
+            indent_px=self.COMMAND_INDENT_PX,
+            measure_text=lambda value: self._text_width(value, self.note_font),
+            palette=self._command_palette(),
         )
         height = (
             len(title_lines) * self._line_height_for_font(self.instruction_font)
             + len(summary_lines) * self._line_height_for_font(self.note_font)
-            + len(command_lines) * self._line_height_for_font(self.note_font)
-            + 24
+            + trigger_layout.total_height
+            + demo_layout.total_height
+            + 48
         )
         return _GuideAdvancedItemLayout(
             feature=feature,
             title_lines=title_lines,
             summary_lines=summary_lines,
-            command_lines=command_lines,
+            trigger_layout=trigger_layout,
+            demo_layout=demo_layout,
             height=height,
         )
 
@@ -6119,22 +6236,54 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             )
             cursor_y += (
                 len(layout.summary_lines) * self._line_height_for_font(self.note_font)
-                + 8
+                + 12
             )
-            self._draw_multiline_text(
+            trigger_rect = (
+                content_left,
+                cursor_y,
+                rect[2] - self.GUIDE_SECTION_PADDING_X,
+                cursor_y
+                + layout.trigger_layout.total_height
+                + self.theme.trigger_padding_y * 2,
+            )
+            draw.rounded_rectangle(
+                trigger_rect,
+                radius=self.theme.trigger_radius,
+                fill=self.theme.terminal_bg,
+            )
+            self._draw_command_layout(
                 draw,
-                x=content_left,
-                y=cursor_y,
-                lines=layout.command_lines,
+                x=trigger_rect[0] + self.theme.trigger_padding_x,
+                y=trigger_rect[1] + self.theme.trigger_padding_y,
+                layout=layout.trigger_layout,
                 font=self.note_font,
-                fill=self.theme.accent,
-                line_height=self._line_height_for_font(self.note_font),
-                render_code_chip=False,
+                default_fill=self.theme.terminal_text,
+                guide_fill=self.theme.line,
             )
-            cursor_y += (
-                len(layout.command_lines) * self._line_height_for_font(self.note_font)
-                + 24
+            cursor_y = trigger_rect[3] + 10
+            demo_rect = (
+                content_left,
+                cursor_y,
+                rect[2] - self.GUIDE_SECTION_PADDING_X,
+                cursor_y
+                + layout.demo_layout.total_height
+                + self.theme.trigger_padding_y * 2,
             )
+            draw.rounded_rectangle(
+                demo_rect,
+                radius=self.theme.trigger_radius,
+                fill=self.theme.panel_soft_bg,
+            )
+            self._draw_command_layout(
+                draw,
+                x=demo_rect[0] + self.theme.trigger_padding_x,
+                y=demo_rect[1] + self.theme.trigger_padding_y,
+                layout=layout.demo_layout,
+                font=self.note_font,
+                default_fill=self.theme.accent,
+                guide_fill=self.theme.line,
+            )
+            cursor_y = demo_rect[3] + 24
 
     def _draw_trace_footer(
         self,

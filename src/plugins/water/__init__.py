@@ -50,7 +50,7 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
-from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 
@@ -121,6 +121,26 @@ GUIDED_MAX_ERRORS = 3
 WATER_STEP_SUBJECT = 1
 WATER_STEP_SCOPE = 2
 WATER_STEP_PERIOD = 3
+
+
+def _build_water_demo_message(
+    locale: LocaleCode,
+    message: str,
+    feature_query: str | None,
+    *,
+    actor_permission: Permission = Permission.NORMAL,
+) -> Message:
+    return build_doc_demo_message(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        actor_permission=actor_permission,
+        locale=locale,
+        feature_query=feature_query,
+        prefix_text=message,
+    )
 
 
 def water_query_cooldown(
@@ -746,11 +766,16 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
             handler = handle_season
         case _:
             await matcher.finish(
-                tr(
+                _build_water_demo_message(
                     locale,
-                    "water.common.unknown_subcommand",
-                    action=action,
-                    docs=water_help_message(locale),
+                    tr(
+                        locale,
+                        "water.common.unknown_subcommand",
+                        action=action,
+                        docs=water_help_message(locale),
+                    ),
+                    "admin-maintenance",
+                    actor_permission=Permission.SUPERUSER,
                 )
             )
 

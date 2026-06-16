@@ -24,7 +24,12 @@ from src.lib.cache.field import GroupCacheItem
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_doc_demo_message,
+    build_readme_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import group_repo
 from src.services.info import resolve_group_name
@@ -42,6 +47,23 @@ def build_docs(ctx: DocsRenderContext | None = None) -> Message:
         trigger=TriggerType.COMMAND,
         permission=Permission.SUPERUSER,
         ctx=ctx,
+    )
+
+
+def _build_error_demo(
+    locale: LocaleCode,
+    message: str,
+    feature_query: str | None,
+) -> Message:
+    return build_doc_demo_message(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        locale=locale,
+        feature_query=feature_query,
+        prefix_text=message,
     )
 
 
@@ -169,7 +191,11 @@ async def _(
             handler = leave_group
         case _:
             await matcher.finish(
-                tr(locale, "admin.group.unknown_command", docs=docs_text)
+                _build_error_demo(
+                    locale,
+                    tr(locale, "admin.group.unknown_command", docs=docs_text),
+                    None,
+                )
             )
 
     group_ids = args[1:]
@@ -182,7 +208,13 @@ async def _(
     results = []
     for gid in set(group_ids):
         if not gid.isdigit():
-            await matcher.finish(tr(locale, "admin.group.group_invalid", group_id=gid))
+            await matcher.finish(
+                _build_error_demo(
+                    locale,
+                    tr(locale, "admin.group.group_invalid", group_id=gid),
+                    command,
+                )
+            )
 
         name = await resolve_group_name(bot, gid)
         group = await group_repo.get_group(gid)

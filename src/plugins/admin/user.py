@@ -28,7 +28,12 @@ from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
 from src.lib.i18n.runtime import format_duration, resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.plugin_docs import DocsRenderContext, build_readme_docs, create_docs_meta
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_doc_demo_message,
+    build_readme_docs,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
 from src.lib.utils.common import get_current_time, time_to_timedelta
@@ -48,6 +53,23 @@ def build_docs(ctx: DocsRenderContext | None = None) -> Message:
         trigger=TriggerType.COMMAND,
         permission=Permission.SUPERUSER,
         ctx=ctx,
+    )
+
+
+def _build_error_demo(
+    locale: LocaleCode,
+    message: str,
+    feature_query: str | None,
+) -> Message:
+    return build_doc_demo_message(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        locale=locale,
+        feature_query=feature_query,
+        prefix_text=message,
     )
 
 
@@ -187,10 +209,14 @@ async def _(
             await matcher.finish(build_docs(DocsRenderContext(locale=locale)))
         else:
             await matcher.finish(
-                tr(
+                _build_error_demo(
                     locale,
-                    "admin.user.args_error",
-                    message=tr(locale, "admin.user.args_error.detail"),
+                    tr(
+                        locale,
+                        "admin.user.args_error",
+                        message=tr(locale, "admin.user.args_error.detail"),
+                    ),
+                    argv[0].lower() if argv else None,
                 )
             )
 
@@ -209,7 +235,13 @@ async def _(
         case "status" | "状态":
             handler = status_user
         case _:
-            await matcher.finish(tr(locale, "admin.user.unknown_command"))
+            await matcher.finish(
+                _build_error_demo(
+                    locale,
+                    tr(locale, "admin.user.unknown_command"),
+                    None,
+                )
+            )
 
     operator_id = str(event.user_id)
     results = []
