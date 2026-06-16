@@ -21,9 +21,11 @@ from src.lib.i18n.runtime import tr
 import src.lib.plugin_docs as plugin_docs_module
 from src.lib.plugin_docs import (
     DemoImageRenderer,
+    DocNode,
     DocsRenderContext,
     FeatureDoc,
     InlineTextSpan,
+    ProgressiveDisclosureRenderer,
     audit_demo_layout,
     build_command_layout,
     build_doc_demo_message,
@@ -1720,6 +1722,94 @@ def test_render_help_dashboard_returns_showcase_canvas() -> None:
     image = Image.open(BytesIO(render_help_dashboard((node,), locale="zh-CN")))
     assert image.width == 1280
     assert image.height > 500
+
+
+def test_dashboard_pixel_truncation_reserves_ellipsis_width() -> None:
+    renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")
+
+    text = "A very long mixed 文本 description for dashboard card rendering"
+    max_width = renderer._pixel_text_width(
+        "A very long mixed 文本 desc",
+        renderer.note_font,
+    )
+    fitted = renderer._truncate_text_to_width_pixels(
+        text,
+        renderer.note_font,
+        max_width=max_width,
+    )
+
+    assert fitted.endswith("...")
+    assert renderer._pixel_text_width(fitted, renderer.note_font) <= max_width
+
+
+def test_dashboard_card_layout_bottom_anchors_command_and_limits_summary_height(
+) -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    renderer = ProgressiveDisclosureRenderer(
+        impression_color=node.bundle.impression_color
+    )
+    card_width = (
+        renderer.WIDTH
+        - renderer.theme.hero_side_padding * 2
+        - renderer.DASHBOARD_CARD_GAP_X
+    ) // 2
+    verbose_node = DocNode(
+        kind=node.kind,
+        slug=node.slug,
+        parent_slug=node.parent_slug,
+        category=node.category,
+        order=node.order,
+        visible=node.visible,
+        hidden=node.hidden,
+        internal=node.internal,
+        permission=node.permission,
+        title=node.title,
+        summary=(
+            "这是一个非常长的 Bot Dashboard 描述，"
+            "用来验证中英 mixed text 在固定卡片高度里会按像素换行，"
+            "并且在触底前安全截断，"
+            "不会压到底部的 #help 指令块，也不会因为字符数估算错误导致遮挡。 "
+            "Visit https://example.com/really/long/path/for/layout/check if needed."
+        ),
+        description=node.description,
+        aliases=node.aliases,
+        source_path=node.source_path,
+        bundle=node.bundle,
+        module_name=node.module_name,
+        plugin_name=node.plugin_name,
+    )
+
+    card = renderer._measure_dashboard_card(verbose_node, card_width)
+
+    assert card.command_rect[3] == card.height - renderer.DASHBOARD_CARD_PADDING_Y
+    assert card.command_rect[1] > card.summary_top + card.summary_block_height
+    assert len(card.summary_lines) <= renderer.DASHBOARD_CARD_SUMMARY_VISIBLE_LINES
+    if card.summary_lines:
+        last_line = "".join(span.text for span in card.summary_lines[-1])
+        assert last_line.endswith("...") or (
+            len(card.summary_lines) < renderer.DASHBOARD_CARD_SUMMARY_VISIBLE_LINES
+        )
+
+
+def test_dashboard_footer_left_text_preserves_plugins_when_pixels_allow() -> None:
+    renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")
+    left_text = "Help Center · Global Dashboard · 5 plugins · By SakuraiSenrin"
+    max_width = renderer._pixel_text_width(left_text, renderer.footer_font)
+
+    fitted = renderer._truncate_text_to_width_pixels(
+        left_text,
+        renderer.footer_font,
+        max_width=max_width,
+    )
+
+    assert fitted == left_text
+    assert "5 plugins" in fitted
 
 
 def test_render_plugin_guide_and_copy_text_use_disclosure_selection() -> None:

@@ -5384,6 +5384,16 @@ class _DashboardCardLayout:
     title_lines: tuple[tuple[InlineTextSpan, ...], ...]
     summary_lines: tuple[tuple[InlineTextSpan, ...], ...]
     command_layout: CommandLayout
+    content_x: int
+    content_width: int
+    category_rect: tuple[int, int, int, int]
+    title_top: int
+    title_line_height: int
+    title_block_height: int
+    summary_top: int
+    summary_line_height: int
+    summary_block_height: int
+    command_rect: tuple[int, int, int, int]
     height: int
 
 
@@ -5416,6 +5426,13 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     DASHBOARD_CARD_RADIUS = 32
     DASHBOARD_CARD_PADDING_X = 40
     DASHBOARD_CARD_PADDING_Y = 40
+    DASHBOARD_CARD_TEXT_SPACING = 8
+    DASHBOARD_CARD_TITLE_GAP = 24
+    DASHBOARD_CARD_SUMMARY_GAP = 16
+    DASHBOARD_CARD_BOTTOM_SAFE_GAP = 24
+    DASHBOARD_CARD_COMMAND_PADDING_X = 24
+    DASHBOARD_CARD_COMMAND_PADDING_Y = 16
+    DASHBOARD_CARD_SUMMARY_VISIBLE_LINES = 4
     GUIDE_SECTION_GAP = 48
     GUIDE_SECTION_PADDING_X = 48
     GUIDE_SECTION_PADDING_Y = 40
@@ -5723,20 +5740,98 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             param=theme.pill_pink_text,
             flag=theme.note_success,
         )
+        content_x = self.DASHBOARD_CARD_PADDING_X + 24
+        content_width = width - content_x - self.DASHBOARD_CARD_PADDING_X
+        category_top = self.DASHBOARD_CARD_PADDING_Y
+        pill_height = 40
+        pill_width = max(
+            108,
+            self._pixel_text_width(node.category.upper(), self.eyebrow_font) + 28,
+        )
+        category_rect = (
+            content_x,
+            category_top,
+            content_x + pill_width,
+            category_top + pill_height,
+        )
+        title_line_height = self._line_height_for_font(
+            self.summary_font,
+            minimum=self._font_pixel_height(self.summary_font)
+            + self.DASHBOARD_CARD_TEXT_SPACING,
+        )
+        title_max_height = self._line_block_height_with_spacing(
+            (
+                "M",
+                "M",
+            ),
+            self.summary_font,
+            self.DASHBOARD_CARD_TEXT_SPACING,
+        )
+        title_lines = self._wrap_plain_text_for_height(
+            node.title,
+            font=self.summary_font,
+            max_width=content_width,
+            max_height=title_max_height,
+            line_spacing=self.DASHBOARD_CARD_TEXT_SPACING,
+            ellipsis="...",
+        )
+        title_top = category_rect[3] + self.DASHBOARD_CARD_TITLE_GAP
+        title_block_height = self._line_block_height_with_spacing(
+            tuple(self._plain_text_from_line(line) for line in title_lines),
+            self.summary_font,
+            self.DASHBOARD_CARD_TEXT_SPACING,
+        )
+        summary_top = title_top + title_block_height + self.DASHBOARD_CARD_SUMMARY_GAP
         command_layout = build_command_layout(
             f"#help {node.title}",
-            max_width=content_width - 48,
+            max_width=content_width - self.DASHBOARD_CARD_COMMAND_PADDING_X * 2,
             line_height=self._line_height_for_font(self.note_font),
             indent_px=self.COMMAND_INDENT_PX,
             measure_text=lambda value: self._text_width(value, self.note_font),
             palette=palette,
         )
+        command_height = (
+            command_layout.total_height + self.DASHBOARD_CARD_COMMAND_PADDING_Y * 2
+        )
+        summary_max_height = self._line_block_height_with_spacing(
+            tuple("M" for _ in range(self.DASHBOARD_CARD_SUMMARY_VISIBLE_LINES)),
+            self.note_font,
+            self.DASHBOARD_CARD_TEXT_SPACING,
+        )
         height = (
-            self.DASHBOARD_CARD_PADDING_Y * 2
-            + len(title_lines) * self._line_height_for_font(self.summary_font)
-            + len(summary_lines) * self._line_height_for_font(self.note_font)
-            + command_layout.total_height
-            + 112
+            summary_top
+            + summary_max_height
+            + self.DASHBOARD_CARD_BOTTOM_SAFE_GAP
+            + command_height
+            + self.DASHBOARD_CARD_PADDING_Y
+        )
+        command_rect = (
+            content_x,
+            height - self.DASHBOARD_CARD_PADDING_Y - command_height,
+            width - self.DASHBOARD_CARD_PADDING_X,
+            height - self.DASHBOARD_CARD_PADDING_Y,
+        )
+        summary_available_height = max(
+            0,
+            command_rect[1] - self.DASHBOARD_CARD_BOTTOM_SAFE_GAP - summary_top,
+        )
+        summary_lines = self._wrap_plain_text_for_height(
+            node.summary or node.bundle.summary,
+            font=self.note_font,
+            max_width=content_width,
+            max_height=summary_available_height,
+            line_spacing=self.DASHBOARD_CARD_TEXT_SPACING,
+            ellipsis="...",
+        )
+        summary_line_height = self._line_height_for_font(
+            self.note_font,
+            minimum=self._font_pixel_height(self.note_font)
+            + self.DASHBOARD_CARD_TEXT_SPACING,
+        )
+        summary_block_height = self._line_block_height_with_spacing(
+            tuple(self._plain_text_from_line(line) for line in summary_lines),
+            self.note_font,
+            self.DASHBOARD_CARD_TEXT_SPACING,
         )
         return _DashboardCardLayout(
             node=node,
@@ -5744,6 +5839,16 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             title_lines=title_lines,
             summary_lines=summary_lines,
             command_layout=command_layout,
+            content_x=content_x,
+            content_width=content_width,
+            category_rect=category_rect,
+            title_top=title_top,
+            title_line_height=title_line_height,
+            title_block_height=title_block_height,
+            summary_top=summary_top,
+            summary_line_height=summary_line_height,
+            summary_block_height=summary_block_height,
+            command_rect=command_rect,
             height=height,
         )
 
@@ -5769,66 +5874,56 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         accent_rect = (x + 24, y + 24, x + 40, y + card.height - 24)
         draw.rounded_rectangle(accent_rect, radius=8, fill=card.theme.accent)
-        content_x = x + self.DASHBOARD_CARD_PADDING_X + 24
-        title_y = y + self.DASHBOARD_CARD_PADDING_Y
-        pill_height = 40
-        pill_width = max(
-            108, self._text_width(card.node.category.upper(), self.eyebrow_font) + 28
+        content_x = x + card.content_x
+        category_rect = (
+            x + card.category_rect[0],
+            y + card.category_rect[1],
+            x + card.category_rect[2],
+            y + card.category_rect[3],
         )
         draw.rounded_rectangle(
-            (content_x, title_y, content_x + pill_width, title_y + pill_height),
-            radius=pill_height // 2,
-            fill=card.theme.panel_soft_bg,
+            category_rect,
+            radius=(category_rect[3] - category_rect[1]) // 2,
+            fill=card.theme.indigo_soft,
         )
         self._draw_text_centered(
             draw,
-            (content_x, title_y, content_x + pill_width, title_y + pill_height),
+            category_rect,
             card.node.category.upper(),
             font=self.eyebrow_font,
-            fill=card.theme.accent,
+            fill=card.theme.indigo_text,
         )
-        title_top = title_y + pill_height + 24
         self._draw_multiline_text(
             draw,
             x=content_x,
-            y=title_top,
+            y=y + card.title_top,
             lines=card.title_lines,
             font=self.summary_font,
             fill=card.theme.deep,
-            line_height=self._line_height_for_font(self.summary_font),
-        )
-        summary_top = (
-            title_top
-            + len(card.title_lines) * self._line_height_for_font(self.summary_font)
-            + 16
+            line_height=card.title_line_height,
+            render_code_chip=False,
         )
         self._draw_multiline_text(
             draw,
             x=content_x,
-            y=summary_top,
+            y=y + card.summary_top,
             lines=card.summary_lines,
             font=self.note_font,
             fill=card.theme.hint,
-            line_height=self._line_height_for_font(self.note_font),
+            line_height=card.summary_line_height,
             render_code_chip=False,
         )
-        command_top = (
-            rect[3]
-            - self.DASHBOARD_CARD_PADDING_Y
-            - card.command_layout.total_height
-            - 32
-        )
         command_rect = (
-            content_x,
-            command_top - 16,
-            rect[2] - self.DASHBOARD_CARD_PADDING_X,
-            command_top + card.command_layout.total_height + 16,
+            x + card.command_rect[0],
+            y + card.command_rect[1],
+            x + card.command_rect[2],
+            y + card.command_rect[3],
         )
         draw.rounded_rectangle(command_rect, radius=20, fill=card.theme.panel_soft_bg)
         self._draw_command_layout(
             draw,
-            x=command_rect[0] + 24,
-            y=command_rect[1] + 16,
+            x=command_rect[0] + self.DASHBOARD_CARD_COMMAND_PADDING_X,
+            y=command_rect[1] + self.DASHBOARD_CARD_COMMAND_PADDING_Y,
             layout=card.command_layout,
             font=self.note_font,
             default_fill=card.theme.deep,
@@ -6322,11 +6417,11 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         right_width = int(right_bbox[2] - right_bbox[0])
         right_x = footer_rect[2] - right_width
         left_max_width = max(120, right_x - footer_rect[0] - 32)
-        left_fitted = self._fit_text(
-            ImageDraw.Draw(Image.new("RGB", (1, 1), self.theme.panel_bg)),
+        left_fitted = self._truncate_text_to_width_pixels(
             left_text,
             self.footer_font,
             max_width=left_max_width,
+            ellipsis="...",
         )
         self._draw_text(
             draw,
@@ -6344,3 +6439,216 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             font=self.footer_font,
             fill=self.theme.system_text,
         )
+
+    def _wrap_plain_text_for_height(
+        self,
+        text: str,
+        *,
+        font: Any,
+        max_width: int,
+        max_height: int,
+        line_spacing: int,
+        ellipsis: str = "...",
+    ) -> tuple[tuple[InlineTextSpan, ...], ...]:
+        normalized = text.strip()
+        if not normalized:
+            return ((),)
+
+        raw_lines = self._wrap_plain_text_pixels(
+            normalized,
+            font=font,
+            max_width=max_width,
+            max_height=max_height,
+            line_spacing=line_spacing,
+            ellipsis=ellipsis,
+        )
+        return tuple(
+            ((InlineTextSpan(line, code=False),) if line else ())
+            for line in raw_lines
+        )
+
+    def _wrap_plain_text_pixels(
+        self,
+        text: str,
+        *,
+        font: Any,
+        max_width: int,
+        max_height: int,
+        line_spacing: int,
+        ellipsis: str = "...",
+    ) -> tuple[str, ...]:
+        if max_width <= 0 or max_height <= 0:
+            return (self._truncate_text_to_width_pixels(text, font, max_width=0),)
+
+        lines: list[str] = []
+        used_height = 0
+        paragraphs = [part.strip() for part in text.splitlines()] or [text]
+
+        for paragraph in paragraphs:
+            remaining = paragraph
+            while remaining:
+                line, rest = self._fit_plain_text_line_pixels(
+                    remaining,
+                    font=font,
+                    max_width=max_width,
+                )
+                line_height = self._pixel_text_height(line or "Ag", font)
+                projected_height = used_height + (
+                    line_height if not lines else line_spacing + line_height
+                )
+                if projected_height > max_height:
+                    if lines:
+                        lines[-1] = self._truncate_text_to_width_pixels(
+                            lines[-1],
+                            font,
+                            max_width=max_width,
+                            ellipsis=ellipsis,
+                        )
+                        return tuple(lines)
+                    return (
+                        self._truncate_text_to_width_pixels(
+                            remaining,
+                            font,
+                            max_width=max_width,
+                            ellipsis=ellipsis,
+                        ),
+                    )
+
+                if rest:
+                    next_height = (
+                        projected_height
+                        + line_spacing
+                        + self._pixel_text_height("Ag", font)
+                    )
+                    if next_height > max_height:
+                        lines.append(
+                            self._truncate_text_to_width_pixels(
+                                line,
+                                font,
+                                max_width=max_width,
+                                ellipsis=ellipsis,
+                            )
+                        )
+                        return tuple(lines)
+
+                lines.append(line)
+                used_height = projected_height
+                remaining = rest
+
+        return tuple(lines or [""])
+
+    def _fit_plain_text_line_pixels(
+        self,
+        text: str,
+        *,
+        font: Any,
+        max_width: int,
+    ) -> tuple[str, str]:
+        if not text:
+            return "", ""
+        if max_width <= 0:
+            return "", text
+
+        current_chars: list[str] = []
+        current_width = 0
+        last_break_after = -1
+        allow_mid_word_break = self._looks_like_url(text)
+
+        for index, char in enumerate(text):
+            char_width = self._pixel_text_width(char, font)
+            if current_chars and current_width + char_width > max_width:
+                split_at = len(current_chars)
+                if not allow_mid_word_break and last_break_after > 0:
+                    split_at = last_break_after
+                line = "".join(current_chars[:split_at]).rstrip()
+                carry = "".join(current_chars[split_at:]) + text[index:]
+                return line or "".join(current_chars), carry.lstrip()
+
+            current_chars.append(char)
+            current_width += char_width
+            if self._is_wrap_boundary(char):
+                last_break_after = len(current_chars)
+
+        return "".join(current_chars).rstrip(), ""
+
+    def _truncate_text_to_width_pixels(
+        self,
+        text: str,
+        font: Any,
+        *,
+        max_width: int,
+        ellipsis: str = "...",
+    ) -> str:
+        if max_width <= 0:
+            return ellipsis
+        if self._pixel_text_width(text, font) <= max_width:
+            return text
+
+        ellipsis_width = self._pixel_text_width(ellipsis, font)
+        if ellipsis_width >= max_width:
+            return ellipsis
+
+        current_chars: list[str] = []
+        current_width = 0
+        for char in text:
+            char_width = self._pixel_text_width(char, font)
+            if (
+                current_chars
+                and current_width + char_width + ellipsis_width > max_width
+            ):
+                break
+            if not current_chars and char_width + ellipsis_width > max_width:
+                break
+            current_chars.append(char)
+            current_width += char_width
+
+        candidate = "".join(current_chars).rstrip()
+        while (
+            candidate
+            and self._pixel_text_width(candidate + ellipsis, font) > max_width
+        ):
+            candidate = candidate[:-1].rstrip()
+        return f"{candidate}{ellipsis}" if candidate else ellipsis
+
+    def _pixel_text_width(self, text: str, font: Any) -> int:
+        if not text:
+            return 0
+        if not self._contains_emoji(text) and hasattr(font, "getlength"):
+            return ceil(float(font.getlength(text)))
+        return self._text_width(text, font)
+
+    def _pixel_text_height(self, text: str, font: Any) -> int:
+        sample = text or "Ag"
+        if not self._contains_emoji(sample) and hasattr(font, "getbbox"):
+            bbox = font.getbbox(sample)
+            return int(bbox[3] - bbox[1])
+        bbox = self._text_size(sample, font)
+        return int(bbox[3] - bbox[1])
+
+    def _font_pixel_height(self, font: Any) -> int:
+        return self._pixel_text_height("Ag", font)
+
+    def _line_block_height_with_spacing(
+        self,
+        lines: Sequence[str],
+        font: Any,
+        line_spacing: int,
+    ) -> int:
+        if not lines:
+            return 0
+        total = 0
+        for index, line in enumerate(lines):
+            total += self._pixel_text_height(line or "Ag", font)
+            if index < len(lines) - 1:
+                total += line_spacing
+        return total
+
+    def _plain_text_from_line(self, line: Sequence[InlineTextSpan]) -> str:
+        return "".join(span.text for span in line)
+
+    def _is_wrap_boundary(self, char: str) -> bool:
+        return char.isspace() or char in "-/_,.;:|)]}>"
+
+    def _looks_like_url(self, text: str) -> bool:
+        lowered = text.lower()
+        return "://" in lowered or lowered.startswith("www.") or "www." in lowered
