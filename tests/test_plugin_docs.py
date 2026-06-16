@@ -20,10 +20,13 @@ import src.lib.plugin_docs as plugin_docs_module
 from src.lib.plugin_docs import (
     DemoImageRenderer,
     DocsRenderContext,
+    FeatureDoc,
     InlineTextSpan,
     audit_demo_layout,
     build_command_layout,
     build_doc_tree,
+    build_feature_copy_text,
+    build_plugin_guide_copy_text,
     build_readme_docs,
     create_docs_meta,
     load_doc_node,
@@ -31,6 +34,9 @@ from src.lib.plugin_docs import (
     load_representative_demo_bytes,
     match_feature,
     render_doc_node_overview,
+    render_help_dashboard,
+    render_plugin_guide,
+    split_features_for_disclosure,
     split_inline_text_spans,
 )
 
@@ -69,6 +75,135 @@ def test_load_plugin_doc_bundle_parses_real_readme() -> None:
     assert admin.permission == Permission.SUPERUSER
     assert "#water ..." not in admin.trigger
     assert "#water season delete <season_id>" in admin.trigger
+    assert profile.hero is True
+    assert profile.priority == 10
+    assert ranking.hero is True
+    assert ranking.priority == 30
+    assert merge.advanced is True
+    assert admin.advanced is True
+
+
+def test_load_plugin_doc_bundle_parses_disclosure_metadata(tmp_path: Path) -> None:
+    source = tmp_path / "README.MD"
+    source.write_text(
+        """
+# 测试插件
+
+## 概览
+测试 progressive disclosure 元数据。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha: 第一条。
+- `beta` Beta: 第二条。
+
+## 子功能详情
+### `alpha` Alpha
+- 摘要: 第一条。
+- Hero: true
+- Priority: 12
+- 指令: `#alpha`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 失败情况
+无
+
+### `beta` Beta
+- 摘要: 第二条。
+- Advanced: true
+- Priority: 90
+- 指令: `#beta`
+#### 说明
+beta
+#### 前置条件
+无
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="测试插件",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    alpha = next(feature for feature in bundle.index if feature.slug == "alpha")
+    beta = next(feature for feature in bundle.index if feature.slug == "beta")
+    assert alpha.hero is True
+    assert alpha.priority == 12
+    assert alpha.advanced is False
+    assert beta.hero is False
+    assert beta.advanced is True
+    assert beta.priority == 90
+
+
+def test_split_features_for_disclosure_prefers_hero_then_non_advanced() -> None:
+    features = (
+        FeatureDoc(
+            slug="hero",
+            title="Hero",
+            summary="hero",
+            aliases=(),
+            trigger="#hero",
+            permission=Permission.NORMAL,
+            demo_filename="hero.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+            hero=True,
+            priority=20,
+        ),
+        FeatureDoc(
+            slug="starter",
+            title="Starter",
+            summary="starter",
+            aliases=(),
+            trigger="#starter",
+            permission=Permission.NORMAL,
+            demo_filename="starter.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+            priority=30,
+        ),
+        FeatureDoc(
+            slug="advanced",
+            title="Advanced",
+            summary="advanced",
+            aliases=(),
+            trigger="#advanced",
+            permission=Permission.NORMAL,
+            demo_filename="advanced.png",
+            overview="",
+            preconditions="",
+            flow_notes="",
+            failures="",
+            demo_turns=(),
+            advanced=True,
+            priority=10,
+        ),
+    )
+
+    hero_features, advanced_features = split_features_for_disclosure(
+        features,
+        actor_permission=Permission.NORMAL,
+    )
+
+    assert [feature.slug for feature in hero_features] == ["hero", "starter"]
+    assert [feature.slug for feature in advanced_features] == ["advanced"]
 
 
 def test_match_feature_supports_exact_fuzzy_ambiguous_and_not_found(
@@ -1532,6 +1667,76 @@ def test_demo_image_renderer_measure_layout_uses_structured_trigger_layout() -> 
     assert layout.trigger_layout.total_height > renderer._line_height_for_font(
         renderer.body_font
     )  # pyright: ignore[reportPrivateUsage]
+
+
+def test_render_help_dashboard_returns_showcase_canvas() -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    image = Image.open(BytesIO(render_help_dashboard((node,), locale="zh-CN")))
+    assert image.width == 1280
+    assert image.height > 500
+
+
+def test_render_plugin_guide_and_copy_text_use_disclosure_selection() -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    hero_features, advanced_features = split_features_for_disclosure(
+        node.features,
+        actor_permission=Permission.NORMAL,
+    )
+    assert [feature.slug for feature in hero_features] == ["add", "search", "passive"]
+    assert "add-scope" in {feature.slug for feature in advanced_features}
+
+    image = Image.open(
+        BytesIO(
+            render_plugin_guide(
+                node,
+                actor_permission=Permission.NORMAL,
+                locale="zh-CN",
+            )
+        )
+    )
+    assert image.width == 1280
+    assert image.height > 1200
+
+    copy_text = build_plugin_guide_copy_text(
+        node,
+        hero_features=hero_features,
+        advanced_features=advanced_features,
+        locale="zh-CN",
+    )
+    assert "👉 基础添加" in copy_text
+    assert "wordbank add 触发词 => 响应词" in copy_text
+    assert "更多高级功能" in copy_text
+    assert "#help 词库模块 add-scope" in copy_text
+
+
+def test_build_feature_copy_text_returns_command_skeleton() -> None:
+    node = load_doc_node(
+        source="src/plugins/water/docs/README.MD",
+        default_name="吹水记录",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    ranking = next(feature for feature in node.features if feature.slug == "ranking")
+
+    copy_text = build_feature_copy_text(node, ranking, locale="zh-CN")
+
+    assert "👉 查看周期榜单" in copy_text
+    assert "#水王" in copy_text
 
 
 def test_plugin_docs_generate_reuses_one_build_timestamp(

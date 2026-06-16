@@ -20,6 +20,8 @@
 ## 子功能详情
 ### `profile` 查看个人画像
 - 摘要: 查询默认个人画像。
+- Hero: true
+- Priority: 10
 - 别名: 我有多水, 画像
 - 指令: `#我有多水`
 - Demo: water-profile.png
@@ -38,6 +40,7 @@ BOT: [发送个人画像图片]
 
 ### `profile-full` 查看完整画像
 - 摘要: 查询完整版个人画像。
+- Priority: 20
 - 别名: 完整画像, full
 - 指令: `#我有多水 完整`
 - Demo: water-profile-full.png
@@ -56,6 +59,8 @@ BOT: [发送完整版个人画像图片]
 
 ### `ranking` 查看周期榜单
 - 摘要: 按 主体 + 范围 + 时间 查询自然榜单。
+- Hero: true
+- Priority: 30
 - 别名: 榜单
 - 指令: `#水王` / `#水王 <主体> <范围> <时间>`；快捷入口分组：`用户榜 / 本群: #今日水王 / #本周水王 / #本月水王 / #本季水王`；`用户榜 / 本矩阵: #今日矩阵水王 / #本周矩阵水王 / #本月矩阵水王 / #本季矩阵水王`；`用户榜 / 全局: #今日全局水王 / #本周全局水王 / #本月全局水王 / #本季全局水王`；`群聊榜 / 本矩阵: #今日矩阵群榜 / #本周矩阵群榜 / #本月矩阵群榜 / #本季矩阵群榜`；`群聊榜 / 全局: #今日群榜 / #本周群榜 / #本月群榜 / #本季群榜`；`矩阵榜 / 全局: #今日矩阵榜 / #本周矩阵榜 / #本月矩阵榜 / #本季矩阵榜`
 - Demo: water-ranking.png
@@ -119,6 +124,8 @@ BOT: [发送群聊榜 · 全局周榜图片]
 
 ### `today-report` 查看今日群报告
 - 摘要: 群管理主动拉取当前群当天实时报告。
+- Advanced: true
+- Priority: 130
 - 别名: 水王日报, 今日报告
 - 指令: `#水王 今日报告` / `#水王日报`
 - Demo: water-ranking.png
@@ -146,6 +153,8 @@ BOT: 本群报告冷却中，请 58s 后再试 qwq
 
 ### `achievement` 查看个人成就
 - 摘要: 查询当前已解锁与下一步成就。
+- Hero: true
+- Priority: 40
 - 别名: 成就
 - 指令: `#水王 成就`
 - Demo: water-achievement.png
@@ -165,6 +174,8 @@ BOT: ===== 成就总览 =====
 
 ### `season-query` 查看赛季数据
 - 摘要: 查询赛季概览、积分、排名与成就视图。
+- Advanced: true
+- Priority: 140
 - 别名: 赛季
 - 指令: `#水王 赛季` / `#水王 赛季 列表` / `#水王 赛季 当前列表` / `#水王 赛季 <season_id|名称> [个人|群聊|矩阵] [概览|积分|排名|成就]`
 - Demo: water-season-query.png
@@ -185,6 +196,8 @@ BOT: [发送赛季积分图]
 
 ### `merge-confirm` 处理矩阵合并建议
 - 摘要: 对智能建议发送 `#water.merge yes/no`。
+- Advanced: true
+- Priority: 150
 - 别名: merge, 合并建议
 - 指令: `#water.merge yes` / `#water.merge no`
 - 权限: 群管理员
@@ -205,6 +218,8 @@ BOT: 已记录为“同意合并”啦
 
 ### `admin-maintenance` 超管维护命令
 - 摘要: 结算、回档、忽略、状态与赛季管理。
+- Advanced: true
+- Priority: 160
 - 别名: water 管理, 超管命令
 - 指令: `#water help` / `#water settle [YYYYMMDD] [-f|--force]` / `#water pardon <penalty_id>` / `#water ignore <group_id>` / `#water ignored` / `#water state` / `#water season create <season_id> <YYYYMMDD> <YYYYMMDD> <name>` / `#water season publish <season_id>` / `#water season archive <season_id>` / `#water season show <season_id>` / `#water season list [current|published|archived|draft]` / `#water season delete <season_id>`
 - 权限: 超级管理员

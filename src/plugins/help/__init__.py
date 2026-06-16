@@ -19,7 +19,6 @@ from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
 from nonebot.plugin import Plugin, PluginMetadata, on_command
 
-from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
@@ -28,15 +27,18 @@ from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
     build_doc_tree,
+    build_feature_copy_text,
+    build_plugin_guide_copy_text,
     can_view_node,
     create_docs_meta,
-    load_demo_bytes,
     load_doc_node,
     match_doc_node,
     match_feature,
     read_docs_metas,
-    render_doc_feature,
-    render_doc_node_overview,
+    render_feature_deep_dive,
+    render_help_dashboard,
+    render_plugin_guide,
+    split_features_for_disclosure,
 )
 from src.lib.plugin_meta import create_plugin_metadata
 
@@ -267,55 +269,18 @@ def _build_index_message(
         for node in tree.roots()
         if node.visible and can_view_node(node, actor_permission) and not node.hidden
     ]
-    lines = [
-        tr(locale, "help.index.header"),
-        "",
-        tr(locale, "help.index.prefix"),
-        "",
-        tr(locale, "help.index.usage"),
-        tr(locale, "help.index.example.node"),
-        tr(locale, "help.index.example.feature"),
-        "",
-        tr(locale, "help.index.notice"),
-        tr(locale, "help.index.notice.item1"),
-        tr(
-            locale,
-            "help.index.notice.item2",
-            main_group_id=config.MAIN_GROUP_ID,
-        ),
-    ]
-
     if not roots:
-        lines.extend(["", tr(locale, "help.index.empty")])
-        return Message("\n".join(lines))
+        return Message(tr(locale, "help.index.empty"))
 
-    lines.extend(["", tr(locale, "help.index.available"), ""])
-    for index, node in enumerate(roots, start=1):
-        lines.append(f"{index}. {node.title}")
-        lines.append(f"  #help {node.title}")
-
-    message = Message("\n".join(lines).strip())
-    demo_message = _load_help_index_demo()
-    if not demo_message:
-        return message
-    return message + demo_message
-
-
-def _load_help_index_demo() -> Message:
-    node = load_doc_node(
-        source=DOCS_SOURCE,
-        default_name=name,
-        default_description=description,
-        trigger=TriggerType.COMMAND,
-        permission=Permission.NORMAL,
-    )
-    match = match_feature(node.features, "index")
-    if match.status != "matched" or match.feature is None:
-        return Message()
-    demo_bytes = load_demo_bytes(node.bundle, match.feature)
-    if demo_bytes is None:
-        return Message()
-    return Message(MessageSegment.image(demo_bytes))
+    dashboard_bytes = render_help_dashboard(roots, locale=locale)
+    lines = [
+        "欢迎来到 SakuraiSenrin 帮助中心。",
+        "发送下面这些命令，即可进入插件级完整指引：",
+        "",
+    ]
+    for node in roots:
+        lines.append(f"👉 #help {node.title}")
+    return _compose_help_reply(dashboard_bytes, "\n".join(lines).strip())
 
 
 def _build_ambiguous_message(
@@ -355,6 +320,10 @@ def _split_query(query: str) -> tuple[str, str | None]:
     return plugin_query.strip(), feature_query.strip() or None
 
 
+def _compose_help_reply(image_bytes: bytes, text: str) -> Message:
+    return Message(MessageSegment.image(image_bytes)) + Message(f"\n{text.strip()}")
+
+
 async def _resolve_docs_message(
     entry: DocsEntry,
     locale: LocaleCode,
@@ -374,11 +343,18 @@ async def _resolve_docs_message(
         )
         match = match_feature(visible_features, feature_query)
         if match.status == "matched" and match.feature is not None:
-            return render_doc_feature(
+            image_bytes = render_feature_deep_dive(
                 entry.node,
                 match.feature,
                 locale=locale,
-                include_demo=True,
+            )
+            return _compose_help_reply(
+                image_bytes,
+                build_feature_copy_text(
+                    entry.node,
+                    match.feature,
+                    locale=locale,
+                ),
             )
         child_match = match_doc_node(children, feature_query)
         if child_match.status == "matched" and child_match.node is not None:
@@ -391,12 +367,23 @@ async def _resolve_docs_message(
                 None,
             )
             if child_entry is not None:
-                return render_doc_node_overview(
+                hero_features, advanced_features = split_features_for_disclosure(
+                    child_entry.node.features,
+                    actor_permission=actor_permission,
+                )
+                image_bytes = render_plugin_guide(
                     child_entry.node,
                     locale=locale,
-                    include_demo=True,
                     actor_permission=actor_permission,
-                    children=tree.children_of(child_entry.node.slug),
+                )
+                return _compose_help_reply(
+                    image_bytes,
+                    build_plugin_guide_copy_text(
+                        child_entry.node,
+                        hero_features=hero_features,
+                        advanced_features=advanced_features,
+                        locale=locale,
+                    ),
                 )
         if match.status == "ambiguous":
             return Message(
@@ -417,13 +404,23 @@ async def _resolve_docs_message(
                 ).strip()
             )
         return Message(tr(locale, "help.query.not_found", query=feature_query))
-
-    return render_doc_node_overview(
+    hero_features, advanced_features = split_features_for_disclosure(
+        entry.node.features,
+        actor_permission=actor_permission,
+    )
+    image_bytes = render_plugin_guide(
         entry.node,
         locale=locale,
-        include_demo=True,
         actor_permission=actor_permission,
-        children=children,
+    )
+    return _compose_help_reply(
+        image_bytes,
+        build_plugin_guide_copy_text(
+            entry.node,
+            hero_features=hero_features,
+            advanced_features=advanced_features,
+            locale=locale,
+        ),
     )
 
 

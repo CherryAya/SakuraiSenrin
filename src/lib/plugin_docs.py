@@ -148,6 +148,9 @@ class FeatureDoc:
     flow_notes: str
     failures: str
     demo_turns: tuple[DocsDemoTurn, ...]
+    hero: bool = False
+    priority: int = 1000
+    advanced: bool = False
 
     @property
     def search_tokens(self) -> set[str]:
@@ -684,6 +687,53 @@ def filter_features_by_permission(
         for feature in features
         if _permission_allows(actor_permission, feature.permission)
     )
+
+
+def rank_features_for_disclosure(
+    features: Sequence[FeatureDoc],
+) -> tuple[FeatureDoc, ...]:
+    indexed = tuple(enumerate(features))
+    ranked = sorted(
+        indexed,
+        key=lambda item: (
+            not item[1].hero,
+            item[1].advanced and not item[1].hero,
+            item[1].priority,
+            item[0],
+        ),
+    )
+    return tuple(feature for _, feature in ranked)
+
+
+def split_features_for_disclosure(
+    features: Sequence[FeatureDoc],
+    *,
+    actor_permission: Permission,
+    hero_limit: int = 3,
+) -> tuple[tuple[FeatureDoc, ...], tuple[FeatureDoc, ...]]:
+    visible = filter_features_by_permission(features, actor_permission)
+    if not visible:
+        return (), ()
+
+    ranked = rank_features_for_disclosure(visible)
+    hero_features: list[FeatureDoc] = []
+    remainder: list[FeatureDoc] = []
+
+    for feature in ranked:
+        if len(hero_features) < hero_limit and (
+            feature.hero or not feature.advanced or not hero_features
+        ):
+            hero_features.append(feature)
+            continue
+        remainder.append(feature)
+
+    if not hero_features and ranked:
+        hero_features.append(ranked[0])
+        remainder = list(ranked[1:])
+
+    seen = {feature.slug for feature in hero_features}
+    advanced = tuple(feature for feature in ranked if feature.slug not in seen)
+    return tuple(hero_features), advanced
 
 
 def _permission_allows(
@@ -1594,6 +1644,55 @@ def render_demo_png(
     )
 
 
+def render_feature_deep_dive(
+    node: DocNode,
+    feature: FeatureDoc,
+    *,
+    locale: LocaleCode = "zh-CN",
+    generated_at: datetime | None = None,
+) -> bytes:
+    _ = locale
+    return render_demo_png(node.bundle, feature, generated_at=generated_at)
+
+
+def render_plugin_guide(
+    node: DocNode,
+    *,
+    actor_permission: Permission,
+    locale: LocaleCode = "zh-CN",
+    generated_at: datetime | None = None,
+) -> bytes:
+    hero_features, advanced_features = split_features_for_disclosure(
+        node.features,
+        actor_permission=actor_permission,
+    )
+    return ProgressiveDisclosureRenderer(
+        impression_color=node.bundle.impression_color
+    ).render_plugin_guide(
+        node=node,
+        hero_features=hero_features,
+        advanced_features=advanced_features,
+        locale=locale,
+        generated_at=generated_at,
+    )
+
+
+def render_help_dashboard(
+    nodes: Sequence[DocNode],
+    *,
+    locale: LocaleCode = "zh-CN",
+    generated_at: datetime | None = None,
+) -> bytes:
+    theme_color = (
+        nodes[0].bundle.impression_color if nodes else DEFAULT_IMPRESSION_COLOR
+    )
+    return ProgressiveDisclosureRenderer(impression_color=theme_color).render_dashboard(
+        nodes=nodes,
+        locale=locale,
+        generated_at=generated_at,
+    )
+
+
 def collection_demo_filename(source_path: Path) -> str:
     return f"{doc_asset_prefix(source_path)}-collection.png"
 
@@ -1754,6 +1853,66 @@ def _feature_notice_items(feature: FeatureDoc, *, locale: LocaleCode) -> list[st
     return notes
 
 
+def feature_command_sections(
+    bundle: PluginDocBundle,
+    feature: FeatureDoc,
+    node_title: str,
+) -> tuple[str, ...]:
+    command = _feature_command_for_display(bundle, feature, node_title)
+    sections = [
+        part.strip() for part in re.split(r"\s*[；;]\s*", command) if part.strip()
+    ]
+    return tuple(sections) or (command,)
+
+
+def build_feature_copy_text(
+    node: DocNode,
+    feature: FeatureDoc,
+    *,
+    locale: LocaleCode,
+) -> str:
+    lines = [
+        f"👉 {feature.title}",
+        *(
+            section
+            for section in feature_command_sections(node.bundle, feature, node.title)
+        ),
+    ]
+    note_items = _feature_notice_items(feature, locale=locale)
+    if note_items:
+        lines.extend(["", f"说明：{note_items[0]}"])
+    return "\n".join(lines).strip()
+
+
+def build_plugin_guide_copy_text(
+    node: DocNode,
+    *,
+    hero_features: Sequence[FeatureDoc],
+    advanced_features: Sequence[FeatureDoc],
+    locale: LocaleCode,
+) -> str:
+    lines = [
+        f"📖 {node.title}",
+        "下面这些命令可以直接复制发送：",
+        "",
+    ]
+    for feature in hero_features:
+        lines.append(f"👉 {feature.title}")
+        lines.extend(
+            feature_command_sections(
+                node.bundle,
+                feature,
+                node.title,
+            )
+        )
+        lines.append("")
+    if advanced_features:
+        lines.append("更多高级功能：")
+        for feature in advanced_features:
+            lines.append(f"- #help {node.title} {feature.slug}")
+    return "\n".join(line for line in lines if line is not None).strip()
+
+
 _EMPTY_HEADING = Token("inline", "", 0)
 _EMPTY_SECTION = MarkdownSection(title="", heading=_EMPTY_HEADING, tokens=())
 
@@ -1909,6 +2068,27 @@ def _parse_permission(value: str) -> Permission:
         return Permission.NORMAL
 
 
+def _parse_bool_meta(value: str, *, default: bool = False) -> bool:
+    normalized = value.strip().strip("`").lower()
+    if not normalized:
+        return default
+    if normalized in {"1", "true", "yes", "y", "on", "是", "真"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off", "否", "假"}:
+        return False
+    return default
+
+
+def _parse_int_meta(value: str, *, default: int = 1000) -> int:
+    normalized = value.strip().strip("`")
+    if not normalized:
+        return default
+    try:
+        return int(normalized)
+    except ValueError:
+        return default
+
+
 def _parse_feature_index_tokens(tokens: Sequence[Token]) -> dict[str, tuple[str, str]]:
     entries: dict[str, tuple[str, str]] = {}
     for item_tokens in _extract_list_item_tokens(tokens):
@@ -1956,6 +2136,15 @@ def _parse_feature_details_tokens(
             trigger=meta.get("指令", "").strip() or meta.get("触发", "").strip(),
             permission=_parse_permission(meta.get("权限", "")),
             demo_filename=demo_filename,
+            hero=_parse_bool_meta(
+                meta.get("Hero", "").strip() or meta.get("主推", "").strip()
+            ),
+            priority=_parse_int_meta(
+                meta.get("Priority", "").strip() or meta.get("优先级", "").strip()
+            ),
+            advanced=_parse_bool_meta(
+                meta.get("Advanced", "").strip() or meta.get("高级", "").strip()
+            ),
             overview=_render_markdown_blocks(subsections.get("说明", ())).strip(),
             preconditions=_render_markdown_blocks(
                 subsections.get("前置条件", ())
@@ -2053,6 +2242,9 @@ def _merge_features(
                     trigger="",
                     permission=Permission.NORMAL,
                     demo_filename="",
+                    hero=False,
+                    priority=1000,
+                    advanced=False,
                     overview="",
                     preconditions="",
                     flow_notes="",
@@ -2070,6 +2262,9 @@ def _merge_features(
                     trigger=detail.trigger,
                     permission=detail.permission,
                     demo_filename=detail.demo_filename,
+                    hero=detail.hero,
+                    priority=detail.priority,
+                    advanced=detail.advanced,
                     overview=detail.overview,
                     preconditions=detail.preconditions,
                     flow_notes=detail.flow_notes,
@@ -5107,4 +5302,881 @@ class DemoImageRenderer:
             int(color[2:4], 16),
             int(color[4:6], 16),
             alpha,
+        )
+
+
+@dataclass(slots=True, frozen=True)
+class _DashboardCardLayout:
+    node: DocNode
+    theme: Any
+    title_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    summary_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    command_layout: CommandLayout
+    height: int
+
+
+@dataclass(slots=True, frozen=True)
+class _GuideSectionLayout:
+    feature: FeatureDoc
+    title_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    summary_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    trigger_layout: CommandLayout
+    overview_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    note_items: tuple[_ShowcaseNoteItem, ...]
+    turn_placements: tuple[_ShowcaseTurnPlacement, ...]
+    height: int
+
+
+@dataclass(slots=True, frozen=True)
+class _GuideAdvancedItemLayout:
+    feature: FeatureDoc
+    title_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    summary_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    command_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    height: int
+
+
+class ProgressiveDisclosureRenderer(DemoImageRenderer):
+    DASHBOARD_CARD_GAP_X = 32
+    DASHBOARD_CARD_GAP_Y = 32
+    DASHBOARD_CARD_RADIUS = 32
+    DASHBOARD_CARD_PADDING_X = 40
+    DASHBOARD_CARD_PADDING_Y = 40
+    GUIDE_SECTION_GAP = 48
+    GUIDE_SECTION_PADDING_X = 48
+    GUIDE_SECTION_PADDING_Y = 40
+    GUIDE_SECTION_RADIUS = 32
+
+    def render_dashboard(
+        self,
+        *,
+        nodes: Sequence[DocNode],
+        locale: LocaleCode,
+        generated_at: datetime | None = None,
+    ) -> bytes:
+        _ = locale
+        generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
+            microsecond=0
+        )
+        display_nodes = tuple(nodes[:4])
+        side = self.theme.hero_side_padding
+        header_title = "Bot Dashboard"
+        header_summary = "发送 #help 插件名，即可进入分层指引与完整演示。"
+        header_title_lines = tuple(
+            self._wrap_inline_text(
+                header_title,
+                max_width=self.WIDTH - side * 2 - self.theme.hero_standee_size,
+                font=self.title_font,
+            )
+        )
+        header_summary_lines = tuple(
+            self._wrap_inline_text(
+                header_summary,
+                max_width=self.WIDTH - side * 2 - self.theme.hero_standee_size,
+                font=self.summary_font,
+            )
+        )
+        header_height = (
+            self.theme.hero_top
+            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + self.theme.hero_text_gap
+            + len(header_summary_lines)
+            * self._line_height_for_font(
+                self.summary_font,
+                minimum=self.theme.hero_summary_line_height,
+            )
+            + self.theme.hero_bottom_padding
+        )
+
+        card_width = (self.WIDTH - side * 2 - self.DASHBOARD_CARD_GAP_X) // 2
+        cards = tuple(
+            self._measure_dashboard_card(node, card_width) for node in display_nodes
+        )
+        placements: list[tuple[_DashboardCardLayout, int, int]] = []
+        cursor_y = header_height
+        for row_start in range(0, len(cards), 2):
+            row = cards[row_start : row_start + 2]
+            row_height = max((card.height for card in row), default=0)
+            for column, card in enumerate(row):
+                x = side + column * (card_width + self.DASHBOARD_CARD_GAP_X)
+                placements.append((card, x, cursor_y))
+            cursor_y += row_height + self.DASHBOARD_CARD_GAP_Y
+        content_bottom = (
+            cursor_y - self.DASHBOARD_CARD_GAP_Y if placements else header_height
+        )
+        footer_rect = (
+            side,
+            content_bottom + self.theme.footer_gap_top,
+            self.WIDTH - side,
+            content_bottom + self.theme.footer_gap_top + self.theme.footer_height,
+        )
+        total_height = footer_rect[3] + self.theme.outer_margin
+
+        image = Image.new("RGBA", (self.WIDTH, total_height), self.theme.page_bg)
+        self._paint_background(image)
+        draw = ImageDraw.Draw(image)
+        self._draw_multiline_text(
+            draw,
+            x=side,
+            y=self.theme.hero_top,
+            lines=header_title_lines,
+            font=self.title_font,
+            fill=self.theme.hero_title,
+            line_height=self._line_height_for_font(self.title_font),
+        )
+        summary_top = (
+            self.theme.hero_top
+            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + self.theme.hero_text_gap
+        )
+        self._draw_multiline_text(
+            draw,
+            x=side,
+            y=summary_top,
+            lines=header_summary_lines,
+            font=self.summary_font,
+            fill=self.theme.hero_summary,
+            line_height=self._line_height_for_font(
+                self.summary_font,
+                minimum=self.theme.hero_summary_line_height,
+            ),
+        )
+        standee_rect = (
+            self.WIDTH - side - self.theme.hero_standee_size,
+            self.theme.hero_top + 8,
+            self.WIDTH - side,
+            self.theme.hero_top + 8 + self.theme.hero_standee_size,
+        )
+        self._draw_standee(image, draw, standee_rect)
+
+        for card, x, y in placements:
+            self._draw_dashboard_card(
+                image, draw, card=card, x=x, y=y, width=card_width
+            )
+
+        self._draw_trace_footer(
+            draw,
+            footer_rect=footer_rect,
+            left_text=(
+                f"Help Center · Global Dashboard · {len(nodes)} plugins "
+                "· By SakuraiSenrin"
+            ),
+            right_text=f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin",
+        )
+        buffer = BytesIO()
+        image.convert("RGB").save(buffer, format="PNG", optimize=True)
+        return buffer.getvalue()
+
+    def render_plugin_guide(
+        self,
+        *,
+        node: DocNode,
+        hero_features: Sequence[FeatureDoc],
+        advanced_features: Sequence[FeatureDoc],
+        locale: LocaleCode,
+        generated_at: datetime | None = None,
+    ) -> bytes:
+        generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
+            microsecond=0
+        )
+        side = self.theme.hero_side_padding
+        header_title_lines = tuple(
+            self._wrap_inline_text(
+                node.title,
+                max_width=self.WIDTH - side * 2 - self.theme.hero_standee_size,
+                font=self.title_font,
+            )
+        )
+        header_summary_lines = tuple(
+            self._wrap_inline_text(
+                node.summary or node.bundle.summary,
+                max_width=self.WIDTH - side * 2 - self.theme.hero_standee_size,
+                font=self.summary_font,
+            )
+        )
+        hero_bottom = (
+            self.theme.hero_top
+            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + self.theme.hero_text_gap
+            + len(header_summary_lines)
+            * self._line_height_for_font(
+                self.summary_font,
+                minimum=self.theme.hero_summary_line_height,
+            )
+            + self.theme.hero_bottom_padding
+        )
+
+        content_width = self.WIDTH - side * 2
+        section_width = content_width
+        hero_layouts = tuple(
+            self._measure_plugin_guide_section(
+                node=node,
+                feature=feature,
+                section_width=section_width,
+            )
+            for feature in hero_features
+        )
+        advanced_layouts = tuple(
+            self._measure_advanced_item(
+                node=node,
+                feature=feature,
+                width=section_width - self.GUIDE_SECTION_PADDING_X * 2,
+            )
+            for feature in advanced_features
+        )
+
+        cursor_y = hero_bottom
+        section_positions: list[tuple[_GuideSectionLayout, int]] = []
+        for layout in hero_layouts:
+            section_positions.append((layout, cursor_y))
+            cursor_y += layout.height + self.GUIDE_SECTION_GAP
+
+        advanced_top = cursor_y if advanced_layouts else None
+        advanced_height = 0
+        if advanced_layouts:
+            advanced_height = self.GUIDE_SECTION_PADDING_Y * 2 + 72
+            advanced_height += sum(item.height for item in advanced_layouts)
+            advanced_height += max(0, len(advanced_layouts) - 1) * 24
+            cursor_y += advanced_height + self.GUIDE_SECTION_GAP
+
+        footer_rect = (
+            side,
+            cursor_y + self.theme.footer_gap_top,
+            self.WIDTH - side,
+            cursor_y + self.theme.footer_gap_top + self.theme.footer_height,
+        )
+        total_height = footer_rect[3] + self.theme.outer_margin
+        image = Image.new("RGBA", (self.WIDTH, total_height), self.theme.page_bg)
+        self._paint_background(image)
+        draw = ImageDraw.Draw(image)
+
+        self._draw_multiline_text(
+            draw,
+            x=side,
+            y=self.theme.hero_top,
+            lines=header_title_lines,
+            font=self.title_font,
+            fill=self.theme.hero_title,
+            line_height=self._line_height_for_font(self.title_font),
+        )
+        summary_top = (
+            self.theme.hero_top
+            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + self.theme.hero_text_gap
+        )
+        self._draw_multiline_text(
+            draw,
+            x=side,
+            y=summary_top,
+            lines=header_summary_lines,
+            font=self.summary_font,
+            fill=self.theme.hero_summary,
+            line_height=self._line_height_for_font(
+                self.summary_font,
+                minimum=self.theme.hero_summary_line_height,
+            ),
+        )
+        standee_rect = (
+            self.WIDTH - side - self.theme.hero_standee_size,
+            self.theme.hero_top + 8,
+            self.WIDTH - side,
+            self.theme.hero_top + 8 + self.theme.hero_standee_size,
+        )
+        self._draw_standee(image, draw, standee_rect)
+
+        for layout, top in section_positions:
+            self._draw_plugin_guide_section(
+                image,
+                draw,
+                node=node,
+                layout=layout,
+                top=top,
+                left=side,
+                locale=locale,
+            )
+
+        if advanced_top is not None:
+            self._draw_advanced_options(
+                image,
+                draw,
+                node=node,
+                layouts=advanced_layouts,
+                top=advanced_top,
+                left=side,
+                width=section_width,
+            )
+
+        self._draw_trace_footer(
+            draw,
+            footer_rect=footer_rect,
+            left_text=(
+                f"{node.title} · Guide · "
+                f"v{node.bundle.version.lstrip('v')} · By {node.bundle.author}"
+            ),
+            right_text=f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin",
+        )
+        buffer = BytesIO()
+        image.convert("RGB").save(buffer, format="PNG", optimize=True)
+        return buffer.getvalue()
+
+    def _measure_dashboard_card(
+        self,
+        node: DocNode,
+        width: int,
+    ) -> _DashboardCardLayout:
+        theme = build_demo_theme(node.bundle.impression_color)
+        content_width = width - self.DASHBOARD_CARD_PADDING_X * 2
+        title_lines = tuple(
+            self._wrap_inline_text(
+                node.title,
+                max_width=content_width,
+                font=self.summary_font,
+            )
+        )[:2]
+        summary_lines = tuple(
+            self._wrap_inline_text(
+                node.summary or node.bundle.summary,
+                max_width=content_width,
+                font=self.note_font,
+            )
+        )[:3]
+        palette = CommandPalette(
+            root=theme.indigo_text,
+            text=theme.deep,
+            param=theme.pill_pink_text,
+            flag=theme.note_success,
+        )
+        command_layout = build_command_layout(
+            f"#help {node.title}",
+            max_width=content_width - 48,
+            line_height=self._line_height_for_font(self.note_font),
+            indent_px=self.COMMAND_INDENT_PX,
+            measure_text=lambda value: self._text_width(value, self.note_font),
+            palette=palette,
+        )
+        height = (
+            self.DASHBOARD_CARD_PADDING_Y * 2
+            + len(title_lines) * self._line_height_for_font(self.summary_font)
+            + len(summary_lines) * self._line_height_for_font(self.note_font)
+            + command_layout.total_height
+            + 112
+        )
+        return _DashboardCardLayout(
+            node=node,
+            theme=theme,
+            title_lines=title_lines,
+            summary_lines=summary_lines,
+            command_layout=command_layout,
+            height=height,
+        )
+
+    def _draw_dashboard_card(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        card: _DashboardCardLayout,
+        x: int,
+        y: int,
+        width: int,
+    ) -> None:
+        rect = (x, y, x + width, y + card.height)
+        self._draw_shadowed_rect(
+            image,
+            rect=rect,
+            radius=self.DASHBOARD_CARD_RADIUS,
+            shadow_color=self.theme.card_shadow,
+            shadow_offset_y=self.theme.instruction_shadow_offset_y,
+            shadow_blur=self.theme.instruction_shadow_blur,
+            fill="#FFFFFF",
+        )
+        accent_rect = (x + 24, y + 24, x + 40, y + card.height - 24)
+        draw.rounded_rectangle(accent_rect, radius=8, fill=card.theme.accent)
+        content_x = x + self.DASHBOARD_CARD_PADDING_X + 24
+        title_y = y + self.DASHBOARD_CARD_PADDING_Y
+        pill_height = 40
+        pill_width = max(
+            108, self._text_width(card.node.category.upper(), self.eyebrow_font) + 28
+        )
+        draw.rounded_rectangle(
+            (content_x, title_y, content_x + pill_width, title_y + pill_height),
+            radius=pill_height // 2,
+            fill=card.theme.panel_soft_bg,
+        )
+        self._draw_text_centered(
+            draw,
+            (content_x, title_y, content_x + pill_width, title_y + pill_height),
+            card.node.category.upper(),
+            font=self.eyebrow_font,
+            fill=card.theme.accent,
+        )
+        title_top = title_y + pill_height + 24
+        self._draw_multiline_text(
+            draw,
+            x=content_x,
+            y=title_top,
+            lines=card.title_lines,
+            font=self.summary_font,
+            fill=card.theme.deep,
+            line_height=self._line_height_for_font(self.summary_font),
+        )
+        summary_top = (
+            title_top
+            + len(card.title_lines) * self._line_height_for_font(self.summary_font)
+            + 16
+        )
+        self._draw_multiline_text(
+            draw,
+            x=content_x,
+            y=summary_top,
+            lines=card.summary_lines,
+            font=self.note_font,
+            fill=card.theme.hint,
+            line_height=self._line_height_for_font(self.note_font),
+            render_code_chip=False,
+        )
+        command_top = (
+            rect[3]
+            - self.DASHBOARD_CARD_PADDING_Y
+            - card.command_layout.total_height
+            - 32
+        )
+        command_rect = (
+            content_x,
+            command_top - 16,
+            rect[2] - self.DASHBOARD_CARD_PADDING_X,
+            command_top + card.command_layout.total_height + 16,
+        )
+        draw.rounded_rectangle(command_rect, radius=20, fill=card.theme.panel_soft_bg)
+        self._draw_command_layout(
+            draw,
+            x=command_rect[0] + 24,
+            y=command_rect[1] + 16,
+            layout=card.command_layout,
+            font=self.note_font,
+            default_fill=card.theme.deep,
+            guide_fill=card.theme.line,
+        )
+
+    def _measure_plugin_guide_section(
+        self,
+        *,
+        node: DocNode,
+        feature: FeatureDoc,
+        section_width: int,
+    ) -> _GuideSectionLayout:
+        content_width = section_width - self.GUIDE_SECTION_PADDING_X * 2
+        title_lines = tuple(
+            self._wrap_inline_text(
+                feature.title,
+                max_width=content_width,
+                font=self.summary_font,
+            )
+        )
+        summary_lines = tuple(
+            self._wrap_inline_text(
+                feature.summary,
+                max_width=content_width,
+                font=self.instruction_font,
+            )
+        )[:2]
+        trigger_layout = build_command_layout(
+            _feature_command_for_display(node.bundle, feature, node.title),
+            max_width=content_width - self.theme.trigger_padding_x * 2,
+            line_height=self._line_height_for_font(self.body_font),
+            indent_px=self.COMMAND_INDENT_PX,
+            measure_text=lambda value: self._text_width(value, self.body_font),
+            palette=self._command_palette(),
+        )
+        overview_lines = tuple(
+            self._wrap_inline_text(
+                feature.overview or feature.summary,
+                max_width=content_width,
+                font=self.instruction_font,
+            )
+        )[:5]
+        note_items = tuple(
+            self._measure_note_items(
+                feature_preconditions=feature.preconditions,
+                feature_failures=feature.failures,
+                feature_permission=_permission_label(feature.permission),
+                width=content_width,
+                start_y=0,
+                x=0,
+            )
+        )
+        demo_left = self.theme.hero_side_padding
+        demo_right = self.WIDTH - self.theme.hero_side_padding
+        turn_placements: list[_ShowcaseTurnPlacement] = []
+        y_cursor = 0
+        for turn in feature.demo_turns:
+            spec = self._measure_turn(turn, demo_right - demo_left)
+            placement = self._place_turn(
+                spec,
+                top=y_cursor,
+                left=demo_left,
+                right=demo_right,
+            )
+            turn_placements.append(placement)
+            y_cursor = placement.rect[3] + self.theme.bubble_gap
+        demo_height = max(0, y_cursor - self.theme.bubble_gap)
+        note_height = 0
+        if note_items:
+            note_height = note_items[-1].rect[3] - note_items[0].rect[1]
+        height = (
+            self.GUIDE_SECTION_PADDING_Y * 2
+            + len(title_lines) * self._line_height_for_font(self.summary_font)
+            + len(summary_lines) * self._line_height_for_font(self.instruction_font)
+            + trigger_layout.total_height
+            + len(overview_lines) * self._line_height_for_font(self.instruction_font)
+            + note_height
+            + demo_height
+            + 176
+        )
+        return _GuideSectionLayout(
+            feature=feature,
+            title_lines=title_lines,
+            summary_lines=summary_lines,
+            trigger_layout=trigger_layout,
+            overview_lines=overview_lines,
+            note_items=note_items,
+            turn_placements=tuple(turn_placements),
+            height=height,
+        )
+
+    def _draw_plugin_guide_section(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        node: DocNode,
+        layout: _GuideSectionLayout,
+        top: int,
+        left: int,
+        locale: LocaleCode,
+    ) -> None:
+        width = self.WIDTH - left * 2
+        rect = (left, top, left + width, top + layout.height)
+        self._draw_shadowed_rect(
+            image,
+            rect=rect,
+            radius=self.GUIDE_SECTION_RADIUS,
+            shadow_color=self.theme.card_shadow,
+            shadow_offset_y=self.theme.instruction_shadow_offset_y,
+            shadow_blur=self.theme.instruction_shadow_blur,
+            fill="#FFFFFF",
+        )
+        content_left = rect[0] + self.GUIDE_SECTION_PADDING_X
+        cursor_y = rect[1] + self.GUIDE_SECTION_PADDING_Y
+        self._draw_multiline_text(
+            draw,
+            x=content_left,
+            y=cursor_y,
+            lines=layout.title_lines,
+            font=self.summary_font,
+            fill=self.theme.deep,
+            line_height=self._line_height_for_font(self.summary_font),
+        )
+        cursor_y += (
+            len(layout.title_lines) * self._line_height_for_font(self.summary_font) + 12
+        )
+        self._draw_multiline_text(
+            draw,
+            x=content_left,
+            y=cursor_y,
+            lines=layout.summary_lines,
+            font=self.instruction_font,
+            fill=self.theme.hint,
+            line_height=self._line_height_for_font(self.instruction_font),
+            render_code_chip=False,
+        )
+        cursor_y += (
+            len(layout.summary_lines)
+            * self._line_height_for_font(self.instruction_font)
+            + 24
+        )
+        trigger_rect = (
+            content_left,
+            cursor_y,
+            rect[2] - self.GUIDE_SECTION_PADDING_X,
+            cursor_y
+            + layout.trigger_layout.total_height
+            + self.theme.trigger_padding_y * 2,
+        )
+        draw.rounded_rectangle(
+            trigger_rect,
+            radius=self.theme.trigger_radius,
+            fill=self.theme.terminal_bg,
+        )
+        self._draw_command_layout(
+            draw,
+            x=trigger_rect[0] + self.theme.trigger_padding_x,
+            y=trigger_rect[1] + self.theme.trigger_padding_y,
+            layout=layout.trigger_layout,
+            font=self.body_font,
+            default_fill=self.theme.terminal_text,
+            guide_fill=self.theme.line,
+        )
+        cursor_y = trigger_rect[3] + 24
+        self._draw_multiline_text(
+            draw,
+            x=content_left,
+            y=cursor_y,
+            lines=layout.overview_lines,
+            font=self.instruction_font,
+            fill=self.theme.deep,
+            line_height=self._line_height_for_font(self.instruction_font),
+            render_code_chip=False,
+        )
+        cursor_y += (
+            len(layout.overview_lines)
+            * self._line_height_for_font(self.instruction_font)
+            + 24
+        )
+
+        if layout.note_items:
+            for item in layout.note_items:
+                actual_rect = (
+                    content_left,
+                    cursor_y,
+                    rect[2] - self.GUIDE_SECTION_PADDING_X,
+                    cursor_y + (item.rect[3] - item.rect[1]),
+                )
+                dot_y = actual_rect[1] + max(
+                    0, (item.line_height - self.theme.note_dot_size) // 2
+                )
+                draw.ellipse(
+                    (
+                        actual_rect[0],
+                        dot_y,
+                        actual_rect[0] + self.theme.note_dot_size,
+                        dot_y + self.theme.note_dot_size,
+                    ),
+                    fill=item.dot_color,
+                )
+                self._draw_multiline_text(
+                    draw,
+                    x=actual_rect[0] + 24,
+                    y=actual_rect[1],
+                    lines=item.lines,
+                    font=self.note_font,
+                    fill=self.theme.note_text,
+                    line_height=item.line_height,
+                    render_code_chip=False,
+                )
+                cursor_y = actual_rect[3] + self.theme.note_gap
+            cursor_y += 8
+
+        for placement in layout.turn_placements:
+            shifted = _ShowcaseTurnPlacement(
+                spec=placement.spec,
+                rect=(
+                    placement.rect[0],
+                    placement.rect[1] + cursor_y,
+                    placement.rect[2],
+                    placement.rect[3] + cursor_y,
+                ),
+                avatar_rect=(
+                    None
+                    if placement.avatar_rect is None
+                    else (
+                        placement.avatar_rect[0],
+                        placement.avatar_rect[1] + cursor_y,
+                        placement.avatar_rect[2],
+                        placement.avatar_rect[3] + cursor_y,
+                    )
+                ),
+                bubble_rect=(
+                    None
+                    if placement.bubble_rect is None
+                    else (
+                        placement.bubble_rect[0],
+                        placement.bubble_rect[1] + cursor_y,
+                        placement.bubble_rect[2],
+                        placement.bubble_rect[3] + cursor_y,
+                    )
+                ),
+                text_rect=(
+                    placement.text_rect[0],
+                    placement.text_rect[1] + cursor_y,
+                    placement.text_rect[2],
+                    placement.text_rect[3] + cursor_y,
+                ),
+            )
+            self._draw_turn(image, draw, shifted, locale=locale)
+
+    def _measure_advanced_item(
+        self,
+        *,
+        node: DocNode,
+        feature: FeatureDoc,
+        width: int,
+    ) -> _GuideAdvancedItemLayout:
+        title_lines = tuple(
+            self._wrap_inline_text(
+                feature.title,
+                max_width=width,
+                font=self.instruction_font,
+            )
+        )[:2]
+        summary_lines = tuple(
+            self._wrap_inline_text(
+                feature.summary,
+                max_width=width,
+                font=self.note_font,
+            )
+        )[:2]
+        command_lines = tuple(
+            self._wrap_inline_text(
+                f"#help {node.title} {feature.slug}",
+                max_width=width,
+                font=self.note_font,
+            )
+        )
+        height = (
+            len(title_lines) * self._line_height_for_font(self.instruction_font)
+            + len(summary_lines) * self._line_height_for_font(self.note_font)
+            + len(command_lines) * self._line_height_for_font(self.note_font)
+            + 24
+        )
+        return _GuideAdvancedItemLayout(
+            feature=feature,
+            title_lines=title_lines,
+            summary_lines=summary_lines,
+            command_lines=command_lines,
+            height=height,
+        )
+
+    def _draw_advanced_options(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        node: DocNode,
+        layouts: Sequence[_GuideAdvancedItemLayout],
+        top: int,
+        left: int,
+        width: int,
+    ) -> None:
+        total_height = self.GUIDE_SECTION_PADDING_Y * 2 + 72
+        total_height += sum(layout.height for layout in layouts)
+        total_height += max(0, len(layouts) - 1) * 24
+        rect = (left, top, left + width, top + total_height)
+        self._draw_shadowed_rect(
+            image,
+            rect=rect,
+            radius=self.GUIDE_SECTION_RADIUS,
+            shadow_color=self.theme.card_shadow,
+            shadow_offset_y=self.theme.instruction_shadow_offset_y,
+            shadow_blur=self.theme.instruction_shadow_blur,
+            fill="#FFFFFF",
+        )
+        content_left = rect[0] + self.GUIDE_SECTION_PADDING_X
+        cursor_y = rect[1] + self.GUIDE_SECTION_PADDING_Y
+        title_lines = tuple(
+            self._wrap_inline_text(
+                "Advanced Options",
+                max_width=width - self.GUIDE_SECTION_PADDING_X * 2,
+                font=self.summary_font,
+            )
+        )
+        self._draw_multiline_text(
+            draw,
+            x=content_left,
+            y=cursor_y,
+            lines=title_lines,
+            font=self.summary_font,
+            fill=self.theme.deep,
+            line_height=self._line_height_for_font(self.summary_font),
+        )
+        cursor_y += (
+            len(title_lines) * self._line_height_for_font(self.summary_font) + 24
+        )
+        for layout in layouts:
+            self._draw_multiline_text(
+                draw,
+                x=content_left,
+                y=cursor_y,
+                lines=layout.title_lines,
+                font=self.instruction_font,
+                fill=self.theme.deep,
+                line_height=self._line_height_for_font(self.instruction_font),
+            )
+            cursor_y += (
+                len(layout.title_lines)
+                * self._line_height_for_font(self.instruction_font)
+                + 8
+            )
+            self._draw_multiline_text(
+                draw,
+                x=content_left,
+                y=cursor_y,
+                lines=layout.summary_lines,
+                font=self.note_font,
+                fill=self.theme.hint,
+                line_height=self._line_height_for_font(self.note_font),
+                render_code_chip=False,
+            )
+            cursor_y += (
+                len(layout.summary_lines) * self._line_height_for_font(self.note_font)
+                + 8
+            )
+            self._draw_multiline_text(
+                draw,
+                x=content_left,
+                y=cursor_y,
+                lines=layout.command_lines,
+                font=self.note_font,
+                fill=self.theme.accent,
+                line_height=self._line_height_for_font(self.note_font),
+                render_code_chip=False,
+            )
+            cursor_y += (
+                len(layout.command_lines) * self._line_height_for_font(self.note_font)
+                + 24
+            )
+
+    def _draw_trace_footer(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        footer_rect: tuple[int, int, int, int],
+        left_text: str,
+        right_text: str,
+    ) -> None:
+        divider_y = footer_rect[1] + 8
+        self._draw_dashed_line(
+            draw,
+            start=(footer_rect[0], divider_y),
+            end=(footer_rect[2], divider_y),
+            fill=self.theme.footer_divider,
+            dash=10,
+            gap=10,
+        )
+        footer_y = footer_rect[1] + 28
+        right_bbox = self._text_size(right_text, self.footer_font)
+        right_width = int(right_bbox[2] - right_bbox[0])
+        right_x = footer_rect[2] - right_width
+        left_max_width = max(120, right_x - footer_rect[0] - 32)
+        left_fitted = self._fit_text(
+            ImageDraw.Draw(Image.new("RGB", (1, 1), "#FFFFFF")),
+            left_text,
+            self.footer_font,
+            max_width=left_max_width,
+        )
+        self._draw_text(
+            draw,
+            x=footer_rect[0],
+            y=footer_y,
+            text=left_fitted,
+            font=self.footer_font,
+            fill=self.theme.system_text,
+        )
+        self._draw_text(
+            draw,
+            x=right_x,
+            y=footer_y,
+            text=right_text,
+            font=self.footer_font,
+            fill=self.theme.system_text,
         )

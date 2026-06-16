@@ -25,6 +25,8 @@
 ## 子功能详情
 ### `add` 基础添加
 - 摘要: 添加文本回复、图片回复、图片触发或图文混排词条。
+- Hero: true
+- Priority: 10
 - 别名: 添加, 学习, wordbank.add, 添加词条
 - 指令: `wordbank add 触发词 => 响应词`
 - 兼容指令: `wordbank.add 触发词 => 响应词`、`添加词条 触发词 => 响应词`
@@ -99,6 +101,8 @@ ID: 14
 
 ### `add-scope` 生效范围选项
 - 摘要: 选择词条在哪些场景和对象上生效。
+- Advanced: true
+- Priority: 110
 - 别名: scope, 范围, 生效范围
 - 指令: `wordbank add 触发词 => 响应词 --scope current_group|all_groups|self|private_only`
 - Demo: wordbank-add-scope.png
@@ -125,6 +129,8 @@ scope 拼写错误或同时设置多个 scope 时会返回明确说明。
 
 ### `add-prob` 触发概率选项
 - 摘要: 控制某个 trigger group 命中后是否真正触发回复。
+- Advanced: true
+- Priority: 120
 - 别名: prob, 概率, 触发概率
 - 指令: `wordbank add 触发词 => 响应词 --prob 0.0-1.0`
 - Demo: wordbank-add-prob.png
@@ -150,6 +156,8 @@ SYSTEM: 这次概率未命中，因此不回复。
 
 ### `add-weight` 权重选项
 - 摘要: 控制同一 trigger 已触发后，多条响应之间被选中的倾向。
+- Advanced: true
+- Priority: 130
 - 别名: weight, 权重
 - 指令: `wordbank add 触发词 => 响应词 --weight 1-5`
 - Demo: wordbank-add-weight.png
@@ -172,6 +180,8 @@ SYSTEM: 两条词条都命中“晚安”时，权重 5 的那条更容易被选
 
 ### `add-role` 角色限制选项
 - 摘要: 限制只有特定群角色才能触发词条。
+- Advanced: true
+- Priority: 140
 - 别名: role, roles, 角色限制
 - 指令: `wordbank add 触发词 => 响应词 --role owner|admin|member`
 - Demo: wordbank-add-role.png
@@ -197,6 +207,8 @@ BOT: 管理员请看这里
 
 ### `add-call` 调用次数窗口选项
 - 摘要: 按时间窗口限制触发次数区间。
+- Advanced: true
+- Priority: 150
 - 别名: call, 调用次数窗口
 - 指令: `wordbank add 触发词 => 响应词 --call window:min:max`
 - Demo: wordbank-add-call.png
@@ -224,6 +236,8 @@ BOT: 你今天很活跃
 
 ### `search` 搜索词条
 - 摘要: 统一搜索文本、图片或图文混排查询。
+- Hero: true
+- Priority: 20
 - 别名: 查询, 搜索, wordbank.search, 搜索词条
 - 指令: `wordbank search [关键词] [图片] [--field all|trigger|response] [--creator 账号] [--page 页码] [--limit 每页数量]`
 - 兼容指令: `wordbank.search [关键词]`、`搜索词条 [关键词]`
@@ -264,6 +278,7 @@ BOT: 词库搜索结果 (第 1 页):
 
 ### `rank` 苦瓜榜
 - 摘要: 查看全局已通过审核词条创建数排行海报，支持周榜、月榜、季榜、总榜。
+- Priority: 40
 - 别名: 苦瓜榜, rank, 排行, 榜
 - 指令: `wordbank rank [周榜|月榜|季榜|总榜]`
 - 兼容指令: `苦瓜榜`
@@ -287,6 +302,8 @@ SYSTEM: 海报展示对应周期的全局已通过审核词条创建 Top 10、�
 
 ### `group` 组详情
 - 摘要: 直接查看某个 trigger group 的完整详情，默认每页 10 条响应。
+- Advanced: true
+- Priority: 160
 - 别名: group, 展开
 - 指令: `wordbank group <group_id> [--page 页码]`
 - Demo: wordbank-search.png
@@ -313,6 +330,7 @@ group id 非法、group 不存在、页码超出范围时会返回当前群语�
 
 ### `delete` 删除词条
 - 摘要: 软删除指定词条。
+- Priority: 50
 - 别名: 删除, remove, wordbank.delete, wordbank.del, 删除词条
 - 指令: `wordbank delete <id>`
 - 兼容指令: `wordbank.delete <id>`、`wordbank.del <id>`、`删除词条 <id>`
@@ -333,6 +351,7 @@ ID 非数字、词条不存在或当前用户没有操作权限时返回明确�
 
 ### `restore` 恢复词条
 - 摘要: 恢复已删除词条。
+- Priority: 60
 - 别名: 恢复, wordbank.restore, 恢复词条
 - 指令: `wordbank restore <id>`
 - 兼容指令: `wordbank.restore <id>`、`恢复词条 <id>`
@@ -405,6 +424,8 @@ SYSTEM: 审核通过前，这条响应不会参与被动匹配；审核文档请
 
 ### `passive` 被动匹配
 - 摘要: 普通消息命中词条后自动回复。
+- Hero: true
+- Priority: 30
 - 别名: 被动, 自动回复
 - 指令: 无
 - Demo: wordbank-passive.png
@@ -440,6 +461,8 @@ SYSTEM: 检测到 group_recall / message_revoke / recall 片段时直接跳过�
 
 ### `reply-shortcut` 回复管理
 - 摘要: 回复机器人词库自动回复后，用短命令管理对应词条。
+- Advanced: true
+- Priority: 170
 - 别名: info, 详情, history, 摘要, del, delete, 删除, rst, restore, 恢复, trigger prob, trigger set, response weight, response set
 - 指令: 回复机器人词库自动回复并发送 `info` / `history` / `del` / `rst` / `trigger prob` / `trigger set` / `response weight` / `response set`
 - 兼容指令: `详情`、`history`、`删除`、`恢复`

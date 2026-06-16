@@ -4,14 +4,12 @@ from typing import Any, cast
 
 import nonebot
 from nonebot.adapters.onebot.v11 import Bot
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.plugin import PluginMetadata
 from nonebug import App
 import pytest
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.i18n.runtime import tr
 from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
@@ -271,7 +269,7 @@ def test_permission_denied_message_uses_required_permission_label() -> None:
     assert "需要权限: 超级管理员" in str(message)
 
 
-def test_build_index_message_only_lists_root_nodes(monkeypatch: Any) -> None:
+def test_build_index_message_only_lists_root_nodes() -> None:
     root = _make_entry(
         display_name="管理模块总览",
         plugin_name="admin",
@@ -287,11 +285,6 @@ def test_build_index_message_only_lists_root_nodes(monkeypatch: Any) -> None:
         parent_slug="admin",
         visible=True,
     )
-    monkeypatch.setattr(
-        "src.plugins.help._load_help_index_demo",
-        lambda: Message(MessageSegment.image(b"fake-demo")),
-    )
-
     message = _build_index_message(
         [root, child],
         "zh-CN",
@@ -302,7 +295,7 @@ def test_build_index_message_only_lists_root_nodes(monkeypatch: Any) -> None:
     )
 
     rendered = str(message)
-    assert "管理模块总览" in rendered
+    assert "欢迎来到 SakuraiSenrin 帮助中心" in rendered
     assert "#help 管理模块总览" in rendered
     assert "群组管理模块" not in rendered
     assert any(segment.type == "image" for segment in message)
@@ -343,16 +336,24 @@ async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:
         all_entries=entries,
     )
 
-    assert "子节点:" in str(root_message)
-    assert "群组管理模块" in str(root_message)
-    assert "📖 ===== 群组管理模块 =====" in str(child_message)
+    assert any(segment.type == "image" for segment in root_message)
+    assert "下面这些命令可以直接复制发送" in str(root_message)
+    assert "👉 插件索引" in str(root_message)
+    assert any(segment.type == "image" for segment in child_message)
+    assert "📖 群组管理模块" in str(child_message)
 
 
 @pytest.mark.asyncio
-async def test_help_matcher_formats_water_overview_shortcuts(app: App) -> None:
+async def test_help_matcher_formats_water_overview_shortcuts(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     event = build_group_message_event("#help 吹水记录")
     entries = _iter_docs_entries("zh-CN")
     water_entry = next(entry for entry in entries if entry.display_name == "吹水记录")
+    monkeypatch.setattr(
+        "src.plugins.help.render_plugin_guide", lambda *args, **kwargs: b"guide-demo"
+    )
 
     async with app.test_matcher(help_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -364,14 +365,14 @@ async def test_help_matcher_formats_water_overview_shortcuts(app: App) -> None:
             all_entries=entries,
         )
         rendered = str(expected)
-        shortcut_label = f"  {tr('zh-CN', 'docs.feature.shortcuts')}"
 
-        assert "3. 查看周期榜单" in rendered
-        assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
-        assert shortcut_label in rendered
-        assert "    #今日水王 / #本周水王 / #本月水王 / #本季水王" in rendered
-        assert "    #今日矩阵群榜 / ..." in rendered
-        assert "    #今日矩阵榜 / ..." in rendered
+        assert any(segment.type == "image" for segment in expected)
+        assert "下面这些命令可以直接复制发送" in rendered
+        assert "👉 查看个人画像" in rendered
+        assert "#我有多水" in rendered
+        assert "👉 查看周期榜单" in rendered
+        assert "#水王" in rendered
+        assert "更多高级功能" in rendered
 
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, expected, bot=bot)
