@@ -10,6 +10,7 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from PIL import Image, ImageDraw, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
+from src.lib.demo_theme import SENRIN_V3_WORDBANK_LEADERBOARD_THEME
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -29,26 +30,28 @@ SENRIN_MASCOT_PATH = Path("data/image/senrin-v3-transparent.png")
 
 
 class WordbankLeaderboardCardRenderer:
-    BG = "#FFF5FA"
-    BG_STRONG = "#FFE3EF"
-    PANEL = "#FFFDFE"
-    PANEL_SOFT = "#FFF2F7"
-    PANEL_PINK = "#FFE9F1"
-    HEADER = "#4E2135"
-    BODY = "#72455A"
-    MUTED = "#B37A92"
-    ACCENT = "#E45C8C"
-    ACCENT_DEEP = "#C94073"
-    ACCENT_SOFT = "#FFD8E7"
-    BORDER = "#F3C5D9"
-    HERO = "#FFF7FB"
-    GOLD = "#E4A955"
-    SILVER = "#A284E8"
-    BRONZE = "#7AC4B1"
-    CHIP_BG = "#FFF0F6"
-    CHIP_FG = "#A85074"
+    THEME = SENRIN_V3_WORDBANK_LEADERBOARD_THEME
 
     def __init__(self) -> None:
+        self.theme = self.THEME
+        self.BG = self.theme.bg
+        self.BG_STRONG = self.theme.bg_strong
+        self.PANEL = self.theme.panel
+        self.PANEL_SOFT = self.theme.panel_soft
+        self.PANEL_PINK = self.theme.panel_pink
+        self.HEADER = self.theme.header
+        self.BODY = self.theme.body
+        self.MUTED = self.theme.muted
+        self.ACCENT = self.theme.accent
+        self.ACCENT_DEEP = self.theme.accent_deep
+        self.ACCENT_SOFT = self.theme.accent_soft
+        self.BORDER = self.theme.border
+        self.HERO = self.theme.hero
+        self.GOLD = self.theme.gold
+        self.SILVER = self.theme.silver
+        self.BRONZE = self.theme.bronze
+        self.CHIP_BG = self.theme.chip_bg
+        self.CHIP_FG = self.theme.chip_fg
         self.title_font = self._load_font(50)
         self.subtitle_font = self._load_font(24)
         self.range_font = self._load_font(20)
@@ -115,12 +118,15 @@ class WordbankLeaderboardCardRenderer:
     ) -> None:
         draw.rectangle((0, 0, CARD_WIDTH, height), fill=self.BG)
         draw.ellipse((-120, -40, 220, 300), fill=self.BG_STRONG)
-        draw.ellipse((CARD_WIDTH - 320, 40, CARD_WIDTH + 80, 420), fill="#FFEAF4")
+        draw.ellipse(
+            (CARD_WIDTH - 320, 40, CARD_WIDTH + 80, 420),
+            fill=self.theme.halo_fill,
+        )
         self._paste_mascot(image)
         draw.rounded_rectangle(
             (30, 20, CARD_WIDTH - 30, height - 24),
             radius=42,
-            outline="#FFE0EC",
+            outline=self.theme.halo_outline,
             width=2,
         )
         draw.rectangle((0, 0, CARD_WIDTH, 10), fill=self.ACCENT)
@@ -195,14 +201,14 @@ class WordbankLeaderboardCardRenderer:
             (
                 tr(locale, "wordbank.rank.summary.entries"),
                 str(data.total_approved_count),
-                "#FFF2FB",
-                "#9C62E8",
+                self.theme.violet_panel,
+                self.theme.violet_panel_outline,
             ),
             (
                 tr(locale, "wordbank.rank.summary.share"),
                 f"{data.top_share * 100:.0f}%",
-                "#FFF5ED",
-                "#D9863D",
+                self.theme.amber_panel,
+                self.theme.amber_panel_outline,
             ),
         )
         for index, (label, value, bg, fg) in enumerate(stats):
@@ -251,8 +257,8 @@ class WordbankLeaderboardCardRenderer:
             x=avatar_x + 160,
             y=cursor_y + 42,
             text="#1",
-            fill="#FFF1D7",
-            fg="#B97728",
+            fill=self.theme.hero_summary_fill,
+            fg=self.theme.hero_summary_text,
             width=84,
         )
         draw.text(
@@ -301,7 +307,7 @@ class WordbankLeaderboardCardRenderer:
             x=CARD_WIDTH - PADDING_X - 240,
             y=cursor_y + 166,
             text=tr(locale, "wordbank.rank.hero.gap", gap=max(0, data.champion_gap)),
-            fill="#FFE9F2",
+            fill=self.theme.hero_stat_fill,
             fg=self.ACCENT_DEEP,
             width=198,
         )
@@ -477,26 +483,26 @@ class WordbankLeaderboardCardRenderer:
             (
                 "wordbank.rank.scope.current_group",
                 item.current_group_count,
-                "#FFE6F0",
-                "#C84B79",
+                self.theme.row_pink_fill,
+                self.theme.row_pink_text,
             ),
             (
                 "wordbank.rank.scope.all_groups",
                 item.all_groups_count,
-                "#EEF1FF",
-                "#6F61CC",
+                self.theme.row_blue_fill,
+                self.theme.row_blue_text,
             ),
             (
                 "wordbank.rank.scope.self",
                 item.self_count,
-                "#FFF3E6",
-                "#D68432",
+                self.theme.row_amber_fill,
+                self.theme.row_amber_text,
             ),
             (
                 "wordbank.rank.scope.private_only",
                 item.private_only_count,
-                "#EAFBF7",
-                "#4D9E89",
+                self.theme.row_mint_fill,
+                self.theme.row_mint_text,
             ),
         )
         return [
@@ -507,12 +513,20 @@ class WordbankLeaderboardCardRenderer:
 
     def _row_theme(self, rank: int) -> tuple[str, str, str]:
         if rank == 2:
-            return ("#F8F2FF", "#ECE1FF", "#8868D7")
+            return (
+                self.theme.avatar_violet_fill,
+                self.theme.avatar_violet_outline,
+                self.theme.avatar_violet_text,
+            )
         if rank == 3:
-            return ("#EFFAF7", "#DDF6EE", "#4DA88D")
+            return (
+                self.theme.avatar_mint_fill,
+                self.theme.avatar_mint_outline,
+                self.theme.avatar_mint_text,
+            )
         if rank == 4:
-            return ("#FFF5FA", "#FFE2EE", self.ACCENT_DEEP)
-        return (self.PANEL, "#FFE6F0", self.ACCENT_DEEP)
+            return (self.BG, self.theme.avatar_pink_fill, self.ACCENT_DEEP)
+        return (self.PANEL, self.theme.row_pink_fill, self.ACCENT_DEEP)
 
     def _draw_rank_capsule(
         self,
@@ -565,7 +579,7 @@ class WordbankLeaderboardCardRenderer:
             (size / 2, size / 2),
             label,
             font=self.avatar_font,
-            fill="#FFFFFF",
+            fill=self.theme.white,
             anchor="mm",
         )
         image.paste(fallback, (x, y), fallback)

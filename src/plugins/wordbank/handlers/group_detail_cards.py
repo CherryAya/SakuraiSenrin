@@ -13,6 +13,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from src.lib.consts import MAPLE_FONT_PATH
+from src.lib.demo_theme import SENRIN_V3_WORDBANK_CARD_THEME
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
@@ -85,26 +86,28 @@ class _ResponseLayout:
 
 
 class GroupDetailCardRenderer:
-    BG = "#FDFBF7"
-    TRIGGER_PANEL = "#FFF0F5"
-    TRIGGER_BORDER = "#FDD8E5"
-    RESPONSE_PANEL = "#FFFFFF"
-    RESPONSE_BORDER = "#E8F0FE"
-    PANEL = "#FFFFFF"
-    HEADER = "#4A4350"
-    BODY = "#4A4350"
-    MUTED = "#A49BAE"
-    ACCENT = "#FFA6C9"
-    ACCENT_DEEP = "#E1759C"
-    ACCENT_SOFT = "#FFF5F8"
-    TEXTURE = "#F5EBEF"
-    BADGE_TEXT = "#FFFFFF"
+    THEME = SENRIN_V3_WORDBANK_CARD_THEME
 
     def __init__(
         self,
         *,
         preview_bytes: Mapping[int, bytes | None] | None = None,
     ) -> None:
+        self.theme = self.THEME
+        self.BG = self.theme.bg
+        self.TRIGGER_PANEL = self.theme.trigger_panel
+        self.TRIGGER_BORDER = self.theme.trigger_border
+        self.RESPONSE_PANEL = self.theme.response_panel
+        self.RESPONSE_BORDER = self.theme.response_border
+        self.PANEL = self.theme.panel
+        self.HEADER = self.theme.header
+        self.BODY = self.theme.body
+        self.MUTED = self.theme.muted
+        self.ACCENT = self.theme.accent
+        self.ACCENT_DEEP = self.theme.accent_deep
+        self.ACCENT_SOFT = self.theme.accent_soft
+        self.TEXTURE = self.theme.texture
+        self.BADGE_TEXT = self.theme.badge_text
         self.title_font = self._load_font(42)
         self.summary_font = self._load_font(24)
         self.item_title_font = self._load_font(30)
@@ -125,7 +128,7 @@ class GroupDetailCardRenderer:
         locale: LocaleCode,
     ) -> bytes:
         height = self._measure_height(page_data, locale)
-        image = Image.new("RGB", (CARD_WIDTH, height), self.BG)
+        image = Image.new("RGB", (CARD_WIDTH, height), self.theme.bg)
         draw = ImageDraw.Draw(image)
         self._draw_background_texture(draw, height)
 
@@ -279,7 +282,7 @@ class GroupDetailCardRenderer:
             ),
             radius=CARD_RADIUS,
             fill=self.PANEL,
-            outline="#F0E8ED",
+            outline=self.theme.panel_outline,
             width=1,
         )
 
@@ -443,13 +446,13 @@ class GroupDetailCardRenderer:
             x=TRUNK_X,
             start_y=start_y,
             end_y=end_y,
-            color="#F3C7D7",
+            color=self.theme.tree_line,
         )
 
     def _draw_horizontal_branch(self, draw: ImageDraw.ImageDraw, *, y: int) -> None:
         draw.line(
             ((TRUNK_X, y), (RESPONSE_PANEL_X - TREE_BRANCH_GAP, y)),
-            fill="#F3C7D7",
+            fill=self.theme.tree_line,
             width=4,
         )
         draw.ellipse(
@@ -500,13 +503,13 @@ class GroupDetailCardRenderer:
         draw.rounded_rectangle(
             (x + 12, cursor_y + 5, x + width + 12, cursor_y + block_height + 5),
             radius=22,
-            fill="#FCEAF2",
+            fill=self.theme.page_more_shadow_fill,
         )
         draw.rounded_rectangle(
             (x, cursor_y, x + width, cursor_y + block_height),
             radius=22,
             fill=self.ACCENT_SOFT,
-            outline="#F7D8E6",
+            outline=self.theme.page_more_outline,
             width=1,
         )
         lines = self._wrap_text(

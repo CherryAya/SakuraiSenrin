@@ -134,6 +134,102 @@ class DemoThemeDefinition:
     base_theme: DemoTheme
 
 
+@dataclass(frozen=True)
+class WordbankCardTheme:
+    bg: str
+    trigger_panel: str
+    trigger_border: str
+    response_panel: str
+    response_border: str
+    panel: str
+    header: str
+    body: str
+    muted: str
+    accent: str
+    accent_deep: str
+    accent_soft: str
+    border: str
+    texture: str
+    badge_text: str
+    folded_shadow_fill: str
+    folded_outline: str
+    tree_line: str
+    panel_outline: str
+    page_more_shadow_fill: str
+    page_more_outline: str
+
+
+@dataclass(frozen=True)
+class WordbankLeaderboardTheme:
+    bg: str
+    bg_strong: str
+    panel: str
+    panel_soft: str
+    panel_pink: str
+    header: str
+    body: str
+    muted: str
+    accent: str
+    accent_deep: str
+    accent_soft: str
+    border: str
+    hero: str
+    gold: str
+    silver: str
+    bronze: str
+    chip_bg: str
+    chip_fg: str
+    halo_fill: str
+    halo_outline: str
+    violet_panel: str
+    violet_panel_outline: str
+    violet_text: str
+    amber_panel: str
+    amber_panel_outline: str
+    amber_text: str
+    hero_summary_fill: str
+    hero_summary_text: str
+    hero_stat_fill: str
+    row_pink_fill: str
+    row_pink_text: str
+    row_blue_fill: str
+    row_blue_text: str
+    row_amber_fill: str
+    row_amber_text: str
+    row_mint_fill: str
+    row_mint_text: str
+    avatar_violet_fill: str
+    avatar_violet_outline: str
+    avatar_violet_text: str
+    avatar_mint_fill: str
+    avatar_mint_outline: str
+    avatar_mint_text: str
+    avatar_pink_fill: str
+    avatar_pink_outline: str
+    white: str
+
+
+@dataclass(frozen=True)
+class WordbankTreemapTheme:
+    bg: str
+    panel: str
+    panel_alt: tuple[str, ...]
+    border: str
+    header: str
+    body: str
+    muted: str
+    accent: str
+    badge_bg: str
+    badge_text: str
+    number_bg: str
+    number_text: str
+    card_bg: str
+    card_accent: str
+    divider: str
+    white: str
+    highlight_fill: str
+
+
 _SENRIN_V3_BASE_THEME = DemoTheme(
     theme_name=SENRIN_V3_THEME_NAME,
     impression_color=DEFAULT_IMPRESSION_COLOR,
@@ -239,6 +335,106 @@ SENRIN_V3_THEME = DemoThemeDefinition(
     name=SENRIN_V3_THEME_NAME,
     default_impression_color=DEFAULT_IMPRESSION_COLOR,
     base_theme=_SENRIN_V3_BASE_THEME,
+)
+
+SENRIN_V3_WORDBANK_CARD_THEME = WordbankCardTheme(
+    bg="#FDFBF7",
+    trigger_panel="#FFF0F5",
+    trigger_border="#FDD8E5",
+    response_panel="#FFFFFF",
+    response_border="#E8F0FE",
+    panel="#FFFFFF",
+    header="#4A4350",
+    body="#4A4350",
+    muted="#A49BAE",
+    accent="#FFA6C9",
+    accent_deep="#E1759C",
+    accent_soft="#FFF5F8",
+    border="#EEE6EA",
+    texture="#F5EBEF",
+    badge_text="#FFFFFF",
+    folded_shadow_fill="#FDEFF5",
+    folded_outline="#F8D9E6",
+    tree_line="#F3C7D7",
+    panel_outline="#F0E8ED",
+    page_more_shadow_fill="#FCEAF2",
+    page_more_outline="#F7D8E6",
+)
+
+SENRIN_V3_WORDBANK_LEADERBOARD_THEME = WordbankLeaderboardTheme(
+    bg="#FFF5FA",
+    bg_strong="#FFE3EF",
+    panel="#FFFDFE",
+    panel_soft="#FFF2F7",
+    panel_pink="#FFE9F1",
+    header="#4E2135",
+    body="#72455A",
+    muted="#B37A92",
+    accent="#E45C8C",
+    accent_deep="#C94073",
+    accent_soft="#FFD8E7",
+    border="#F3C5D9",
+    hero="#FFF7FB",
+    gold="#E4A955",
+    silver="#A284E8",
+    bronze="#7AC4B1",
+    chip_bg="#FFF0F6",
+    chip_fg="#A85074",
+    halo_fill="#FFEAF4",
+    halo_outline="#FFE0EC",
+    violet_panel="#FFF2FB",
+    violet_panel_outline="#9C62E8",
+    violet_text="#8868D7",
+    amber_panel="#FFF5ED",
+    amber_panel_outline="#D9863D",
+    amber_text="#B97728",
+    hero_summary_fill="#FFF1D7",
+    hero_summary_text="#B97728",
+    hero_stat_fill="#FFE9F2",
+    row_pink_fill="#FFE6F0",
+    row_pink_text="#C84B79",
+    row_blue_fill="#EEF1FF",
+    row_blue_text="#6F61CC",
+    row_amber_fill="#FFF3E6",
+    row_amber_text="#D68432",
+    row_mint_fill="#EAFBF7",
+    row_mint_text="#4D9E89",
+    avatar_violet_fill="#F8F2FF",
+    avatar_violet_outline="#ECE1FF",
+    avatar_violet_text="#8868D7",
+    avatar_mint_fill="#EFFAF7",
+    avatar_mint_outline="#DDF6EE",
+    avatar_mint_text="#4DA88D",
+    avatar_pink_fill="#FFE2EE",
+    avatar_pink_outline="#FFE6F0",
+    white="#FFFFFF",
+)
+
+SENRIN_V3_WORDBANK_TREEMAP_THEME = WordbankTreemapTheme(
+    bg="#FFF8FA",
+    panel="#FFF1F5",
+    panel_alt=(
+        "#FFEAF1",
+        "#FFF1E8",
+        "#EEF6FF",
+        "#F4F1FF",
+        "#EFFBF5",
+        "#FFF7DE",
+    ),
+    border="#F0D5E0",
+    header="#2E2533",
+    body="#4F4554",
+    muted="#867884",
+    accent="#D96E95",
+    badge_bg="#FFFFFF",
+    badge_text="#B44B70",
+    number_bg="#FFFDFE",
+    number_text="#C25279",
+    card_bg="#FFFCFD",
+    card_accent="#AF5477",
+    divider="#F2DCE5",
+    white="#FFFFFF",
+    highlight_fill="#FFF5F8",
 )
 
 

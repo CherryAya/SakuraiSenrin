@@ -14,6 +14,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
+from src.lib.demo_theme import SENRIN_V3_WORDBANK_CARD_THEME
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
@@ -57,27 +58,29 @@ class SearchCardQuery:
 
 
 class SearchResultCardRenderer:
-    BG = "#FDFBF7"
-    TRIGGER_PANEL = "#FFF0F5"
-    TRIGGER_BORDER = "#FDD8E5"
-    RESPONSE_PANEL = "#FFFFFF"
-    RESPONSE_BORDER = "#E8F0FE"
-    PANEL = "#FFFFFF"
-    HEADER = "#4A4350"
-    BODY = "#4A4350"
-    MUTED = "#A49BAE"
-    ACCENT = "#FFA6C9"
-    ACCENT_DEEP = "#E1759C"
-    ACCENT_SOFT = "#FFF5F8"
-    BORDER = "#EEE6EA"
-    TEXTURE = "#F5EBEF"
-    BADGE_TEXT = "#FFFFFF"
+    THEME = SENRIN_V3_WORDBANK_CARD_THEME
 
     def __init__(
         self,
         *,
         preview_bytes: Mapping[int, bytes | None] | None = None,
     ) -> None:
+        self.theme = self.THEME
+        self.BG = self.theme.bg
+        self.TRIGGER_PANEL = self.theme.trigger_panel
+        self.TRIGGER_BORDER = self.theme.trigger_border
+        self.RESPONSE_PANEL = self.theme.response_panel
+        self.RESPONSE_BORDER = self.theme.response_border
+        self.PANEL = self.theme.panel
+        self.HEADER = self.theme.header
+        self.BODY = self.theme.body
+        self.MUTED = self.theme.muted
+        self.ACCENT = self.theme.accent
+        self.ACCENT_DEEP = self.theme.accent_deep
+        self.ACCENT_SOFT = self.theme.accent_soft
+        self.BORDER = self.theme.border
+        self.TEXTURE = self.theme.texture
+        self.BADGE_TEXT = self.theme.badge_text
         self.title_font = self._load_font(42)
         self.summary_font = self._load_font(24)
         self.item_title_font = self._load_font(28)
@@ -99,7 +102,7 @@ class SearchResultCardRenderer:
         locale: LocaleCode,
     ) -> bytes:
         height = self._measure_height(items, query, locale)
-        image = Image.new("RGB", (CARD_WIDTH, height), self.BG)
+        image = Image.new("RGB", (CARD_WIDTH, height), self.theme.bg)
         draw = ImageDraw.Draw(image)
         self._draw_background_texture(draw, height)
 
@@ -517,7 +520,7 @@ class SearchResultCardRenderer:
                 y + block_height + 3,
             ),
             radius=20,
-            fill="#FDEFF5",
+            fill=self.theme.folded_shadow_fill,
         )
         draw.rounded_rectangle(
             (
@@ -527,8 +530,8 @@ class SearchResultCardRenderer:
                 y + block_height,
             ),
             radius=20,
-            fill=self.ACCENT_SOFT,
-            outline="#F8D9E6",
+            fill=self.theme.accent_soft,
+            outline=self.theme.folded_outline,
             width=1,
         )
         lines = self._wrap_text(
