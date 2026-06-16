@@ -19,6 +19,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 from pil_utils import BuildImage
 
 from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
+from src.lib.demo_theme import SENRIN_V3_WATER_IMAGE_THEME, WaterImageTheme
 from src.lib.i18n.runtime import tr, tr_template
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
@@ -32,6 +33,25 @@ from .services.achievement import ACHIEVEMENT_RULES
 
 SYS_FONT_NAME = MAPLE_FONT_NAME
 FALLBACK_FONT_PATH = MAPLE_FONT_PATH
+WATER_THEME = SENRIN_V3_WATER_IMAGE_THEME
+
+
+def _water_podium_themes(
+    theme: WaterImageTheme = WATER_THEME,
+) -> dict[int, tuple[str, str, str]]:
+    return {
+        1: (theme.podium_gold_bg, theme.podium_gold_badge, theme.podium_badge_text),
+        2: (
+            theme.podium_silver_bg,
+            theme.podium_silver_badge,
+            theme.podium_badge_text,
+        ),
+        3: (
+            theme.podium_bronze_bg,
+            theme.podium_bronze_badge,
+            theme.podium_badge_text,
+        ),
+    }
 
 
 @dataclass
@@ -171,19 +191,19 @@ class WaterGroupReportImageData:
 
 class WaterRankRenderer:
     def __init__(self) -> None:
-        self.BG_COLOR = "#FFF4F7"
-        self.TEXT_COLOR = "#8F3D56"
-        self.ITEM_BG_COLOR = "#FFF9FB"
-        self.HIGHLIGHT_COLOR = "#E45A84"
-        self.MUTED_COLOR = "#A77A88"
-        self.HEADER_BG = "#FFE3ED"
-        self.HEADER_TEXT = "#7A2F4A"
-        self.SUBTEXT_COLOR = "#B05A79"
-        self.TILE_BASE_COLORS = ("#E987AE", "#F1A58E", "#C8B5FF", "#9FDCE8")
+        self.theme = WATER_THEME
+        self.BG_COLOR = self.theme.page_bg
+        self.TEXT_COLOR = self.theme.text_color
+        self.ITEM_BG_COLOR = self.theme.item_bg
+        self.HIGHLIGHT_COLOR = self.theme.highlight_color
+        self.MUTED_COLOR = self.theme.muted_color
+        self.HEADER_BG = self.theme.header_bg
+        self.HEADER_TEXT = self.theme.header_text
+        self.SUBTEXT_COLOR = self.theme.subtext_color
+        self.TILE_BASE_COLORS = self.theme.tile_base_colors
         self.RANK_THEMES = {
-            1: {"bg": "#FFE9C7", "badge": "#E2A243", "badge_txt": "#FFFFFF"},
-            2: {"bg": "#EEE8FF", "badge": "#8D7AD8", "badge_txt": "#FFFFFF"},
-            3: {"bg": "#E8F8F3", "badge": "#57A89A", "badge_txt": "#FFFFFF"},
+            rank: {"bg": bg, "badge": badge, "badge_txt": fg}
+            for rank, (bg, badge, fg) in _water_podium_themes(self.theme).items()
         }
         self.SCALE = 3.2
         self.RENDER_WIDTH = int(900 * self.SCALE)
@@ -261,7 +281,7 @@ class WaterRankRenderer:
         base_y = int(10 * self.SCALE)
 
         row = BuildImage.new("RGBA", (self.RENDER_WIDTH, item_h + base_y), (0, 0, 0, 0))
-        default_bg = self.ITEM_BG_COLOR if rank % 2 == 1 else "#FFF1F6"
+        default_bg = self.ITEM_BG_COLOR if rank % 2 == 1 else self.theme.item_bg_alt
         theme = self.RANK_THEMES.get(rank, {"bg": default_bg, "badge": None})
 
         row.draw_rounded_rectangle(
@@ -279,13 +299,13 @@ class WaterRankRenderer:
 
         trend = user.get("trend")
         t_str, t_color = (
-            ("NEW", (244, 171, 120))
+            ("NEW", self.theme.trend_new)
             if trend is None
-            else (f"↑ {trend}", (236, 109, 150))
+            else (f"↑ {trend}", self.theme.trend_up)
             if trend > 0
-            else (f"↓ {abs(trend)}", (93, 171, 159))
+            else (f"↓ {abs(trend)}", self.theme.trend_down)
             if trend < 0
-            else ("− 0", (177, 160, 176))
+            else ("− 0", self.theme.trend_flat)
         )
 
         badge_x, badge_y = (
@@ -297,13 +317,13 @@ class WaterRankRenderer:
             (badge_x, badge_y, badge_x + pill_w, badge_y + pill_h),
             radius=pill_h // 2,
             fill=t_color,
-            outline="white",
+            outline=self.theme.white,
             width=int(2.5 * self.SCALE),
         )
         row.draw.text(
             (badge_x + pill_w / 2, badge_y + pill_h / 2),
             t_str,
-            fill="white",
+            fill=self.theme.white,
             font=self.num_small_font,
             anchor="mm",
         )
@@ -511,7 +531,7 @@ class WaterRankRenderer:
                 info_card_top + info_card_h,
             ),
             radius=int(12 * self.SCALE),
-            fill="#FFF0F5",
+            fill=self.theme.info_card_bg,
         )
         main_img.draw_text(
             (
@@ -634,8 +654,8 @@ async def build_water_day_rank_image(
         avatar_img = item.avatar or _build_avatar_fallback(
             128,
             item.display_name[:1] or "?",
-            "#FFDDE9",
-            "#D84E7A",
+            WATER_THEME.avatar_fallback_bg,
+            WATER_THEME.avatar_fallback_fg,
         )
         users_data[item.entity_id] = {
             "user_id": item.entity_id,
@@ -653,8 +673,8 @@ async def build_water_day_rank_image(
         header_avatar = _build_avatar_fallback(
             96,
             data.group_name[:1] or "?",
-            "#FFE3ED",
-            "#7A2F4A",
+            WATER_THEME.group_avatar_fallback_bg,
+            WATER_THEME.group_avatar_fallback_fg,
         )
     image = await renderer.render_async(
         group_id=data.group_id,
@@ -723,19 +743,20 @@ async def build_water_group_report_image(
     middle_h = max(left_h, right_h)
     height = pad * 2 + hero_h + gap + middle_h + gap + histogram_h + gap + footer_h
 
-    page_bg = "#FFF4F7"
-    hero_bg = "#FFE8F0"
-    panel_bg = "#FFF9FB"
-    panel_soft_bg = "#FFF3F8"
-    accent = "#7A2F4A"
-    strong = "#D84E7A"
-    deep = "#401828"
-    hint = "#AA6B82"
-    line = "#F6D9E6"
-    blue = "#5B8CFF"
-    mint = "#67BAA6"
-    badge_bg = "#FFF0C7"
-    badge_fg = "#9A6723"
+    theme = WATER_THEME
+    page_bg = theme.page_bg
+    hero_bg = theme.hero_bg
+    panel_bg = theme.panel_bg
+    panel_soft_bg = theme.panel_soft_bg
+    accent = theme.accent
+    strong = theme.strong
+    deep = theme.deep
+    hint = theme.hint
+    line = theme.line
+    blue = theme.blue
+    mint = theme.mint
+    badge_bg = theme.badge_bg
+    badge_fg = theme.badge_fg
 
     card = BuildImage.new("RGB", (width, height), page_bg)
     y = pad
@@ -751,7 +772,7 @@ async def build_water_group_report_image(
         y,
         width - pad * 2,
         hero_h,
-        tone="#FFF6FA",
+        tone=theme.gloss_hero_tone,
         strength=0.85,
     )
     card.draw_text(
@@ -829,21 +850,21 @@ async def build_water_group_report_image(
             tr(locale, "water.image.period.stats.total_msg_count"),
             _short_exp(data.total_msg_count),
             strong,
-            "#FFF0F6",
+            theme.stat_total_bg,
         ),
         (
             tr(locale, "water.image.period.stats.active_user_count"),
             str(data.active_user_count),
             blue,
-            "#F0F6FF",
+            theme.stat_active_bg,
         ),
         (
             tr(locale, "water.image.period.stats.delta"),
             _format_delta(data.total_msg_count - data.previous_total_msg_count),
             mint if data.total_msg_count >= data.previous_total_msg_count else strong,
-            "#F1FFF9"
+            theme.stat_delta_positive_bg
             if data.total_msg_count >= data.previous_total_msg_count
-            else "#FFF0F6",
+            else theme.stat_delta_negative_bg,
         ),
     ]
     for idx, (label, value, value_color, bg) in enumerate(stats):
@@ -890,7 +911,7 @@ async def build_water_group_report_image(
         y,
         left_w,
         left_h,
-        tone="#FFF6FA",
+        tone=theme.gloss_soft_tone,
         strength=0.8,
     )
     card.draw_text(
@@ -909,16 +930,12 @@ async def build_water_group_report_image(
     )
 
     row_y = y + int(38 * scale)
-    rank_themes = {
-        1: ("#FFE9C7", "#E0A141", "#FFFFFF"),
-        2: ("#EEE8FF", "#8D7AD8", "#FFFFFF"),
-        3: ("#E8F8F3", "#57A89A", "#FFFFFF"),
-    }
+    rank_themes = _water_podium_themes(theme)
     tile_renderer = WaterRankRenderer()
     for item in data.top_items:
         bg, badge_fill, badge_fg = rank_themes.get(
             item.current_rank,
-            ("#FFF9FB", "#F4D8E5", accent),
+            (theme.rank_row_fill, theme.row_default_badge_fill, accent),
         )
         card.draw_rounded_rectangle(
             (
@@ -956,7 +973,7 @@ async def build_water_group_report_image(
         avatar = item.avatar or _build_avatar_fallback(
             avatar_size,
             item.display_name[:1] or "?",
-            "#FFDDE9",
+            theme.avatar_fallback_bg,
             strong,
         )
         card.paste(
@@ -1036,7 +1053,7 @@ async def build_water_group_report_image(
             trend_text,
             max_fontsize=int(11 * scale),
             min_fontsize=int(8 * scale),
-            fill="#FFFFFF",
+            fill=theme.white,
             halign="center",
             valign="center",
             font_families=[SYS_FONT_NAME],
@@ -1055,7 +1072,7 @@ async def build_water_group_report_image(
         y,
         right_w,
         right_h,
-        tone="#FFF7FB",
+        tone=theme.gloss_panel_tone,
         strength=0.82,
     )
     card.draw_text(
@@ -1119,7 +1136,7 @@ async def build_water_group_report_image(
                 rank_y + group_rank_row_h,
             ),
             radius=int(12 * scale),
-            fill="#FFF9FB",
+            fill=theme.rank_row_fill,
         )
         card.draw_text(
             (
@@ -1166,7 +1183,7 @@ async def build_water_group_report_image(
             trend_text,
             max_fontsize=int(10 * scale),
             min_fontsize=int(8 * scale),
-            fill="#FFFFFF",
+            fill=theme.white,
             halign="center",
             valign="center",
             font_families=[SYS_FONT_NAME],
@@ -1203,7 +1220,7 @@ async def build_water_group_report_image(
         y,
         width - pad * 2,
         histogram_h,
-        tone="#FFF7FB",
+        tone=theme.gloss_panel_tone,
         strength=0.82,
     )
     card.draw_text(
@@ -1571,7 +1588,7 @@ def _draw_progress_bar(
         card.draw_rounded_rectangle((x, y, fill_right, y + h), radius=radius, fill=fg)
         # 预绘纹理层：方向恒定、密度可控，再覆盖到填充段，避免边界硬裁导致的反向感。
         texture = BuildImage.new("RGBA", (fill_w, h), (0, 0, 0, 0))
-        stripe_color = _mix_hex(fg, "#FFFFFF", 0.52)
+        stripe_color = _mix_hex(fg, WATER_THEME.white, 0.52)
         stripe_step = max(7, int(h * 0.55))
         stripe_span = max(10, int(h * 1.3))
         stripe_width = max(1, int(h * 0.22))
@@ -1582,7 +1599,7 @@ def _draw_progress_bar(
                 width=stripe_width,
             )
 
-        bubble_color = _mix_hex(fg, "#FFFFFF", 0.72)
+        bubble_color = _mix_hex(fg, WATER_THEME.white, 0.72)
         bubble_r = max(2, int(h * 0.2))
         bubble_y = h // 2
         for offset in (int(h * 0.8), int(h * 1.8)):
@@ -1618,10 +1635,10 @@ def _draw_gloss_lines(
     w: int,
     h: int,
     *,
-    tone: str = "#FFFFFF",
+    tone: str = WATER_THEME.white,
     strength: float = 0.7,
 ) -> None:
-    gloss = _mix_hex(tone, "#FFFFFF", strength)
+    gloss = _mix_hex(tone, WATER_THEME.white, strength)
     top_y = y + max(2, int(h * 0.13))
     mid_y = y + max(4, int(h * 0.23))
     start_x = x + max(8, int(w * 0.05))
@@ -1644,12 +1661,12 @@ def _format_delta(delta: int) -> str:
 
 def _format_trend(trend: int | None) -> tuple[str, str]:
     if trend is None:
-        return ("NEW", "#F0B36D")
+        return ("NEW", WATER_THEME.trend_new)
     if trend > 0:
-        return (f"↑{trend}", "#E96A96")
+        return (f"↑{trend}", WATER_THEME.trend_up)
     if trend < 0:
-        return (f"↓{abs(trend)}", "#66B3A5")
-    return ("-0", "#B8A1AE")
+        return (f"↓{abs(trend)}", WATER_THEME.trend_down)
+    return ("-0", WATER_THEME.trend_flat)
 
 
 def _safe_hourly_counts(hourly_counts: list[int]) -> list[int]:
@@ -1692,7 +1709,7 @@ def _draw_hourly_histogram(
         fill = (
             bar_color
             if hour != max(range(24), key=lambda idx: hourly[idx])
-            else "#F5A340"
+            else WATER_THEME.overview_highlight_bar
         )
         card.draw_rounded_rectangle(
             (bx, by, bx + bar_w, y + chart_h),
@@ -1735,7 +1752,11 @@ def _draw_user_distribution(
         bx = x + hour * (bar_w + gap)
         bh = max(2, int((count / max_count) * h)) if count > 0 else 2
         by = y + h - bh
-        tone = base_color if count > 0 else _mix_hex(base_color, "#FFFFFF", 0.55)
+        tone = (
+            base_color
+            if count > 0
+            else _mix_hex(base_color, WATER_THEME.white, 0.55)
+        )
         card.draw_rounded_rectangle(
             (bx, by, bx + bar_w, y + h),
             radius=max(1, int(2 * scale)),
@@ -1765,6 +1786,7 @@ async def build_water_period_rank_image(
 ) -> bytes | None:
     started = perf_counter()
     try:
+        theme = WATER_THEME
         scale = 2.0
         width = int(760 * scale)
         pad = int(24 * scale)
@@ -1820,20 +1842,20 @@ async def build_water_period_rank_image(
             + footer_h
         )
 
-        page_bg = "#FFF4F7"
-        hero_bg = "#FFE8F0"
-        panel_bg = "#FFF9FB"
-        panel_soft_bg = "#FFF3F8"
-        accent = "#7A2F4A"
-        strong = "#D84E7A"
-        deep = "#401828"
-        hint = "#AA6B82"
-        line = "#F6D9E6"
-        blue = "#5B8CFF"
-        gold = "#D4973C"
-        mint = "#67BAA6"
-        badge_bg = "#FFF0C7"
-        badge_fg = "#9A6723"
+        page_bg = theme.page_bg
+        hero_bg = theme.hero_bg
+        panel_bg = theme.panel_bg
+        panel_soft_bg = theme.panel_soft_bg
+        accent = theme.accent
+        strong = theme.strong
+        deep = theme.deep
+        hint = theme.hint
+        line = theme.line
+        blue = theme.blue
+        gold = theme.gold
+        mint = theme.mint
+        badge_bg = theme.badge_bg
+        badge_fg = theme.badge_fg
 
         card = BuildImage.new("RGB", (width, height), page_bg)
         y = pad
@@ -1849,7 +1871,7 @@ async def build_water_period_rank_image(
         #     y,
         #     width - pad * 2,
         #     hero_h,
-        #     tone="#FFF6FA",
+        #     tone=theme.gloss_hero_tone,
         #     strength=0.85,
         # )
         card.draw_text(
@@ -1927,13 +1949,13 @@ async def build_water_period_rank_image(
                 tr(locale, "water.image.period.stats.total_msg_count"),
                 _short_exp(data.total_msg_count),
                 strong,
-                "#FFF0F6",
+                theme.stat_total_bg,
             ),
             (
                 tr(locale, "water.image.period.stats.active_user_count"),
                 str(data.active_entity_count),
                 blue,
-                "#F0F6FF",
+                theme.stat_active_bg,
             ),
             (
                 tr(locale, "water.image.period.stats.delta"),
@@ -1941,9 +1963,9 @@ async def build_water_period_rank_image(
                 mint
                 if data.total_msg_count >= data.previous_total_msg_count
                 else strong,
-                "#F1FFF9"
+                theme.stat_delta_positive_bg
                 if data.total_msg_count >= data.previous_total_msg_count
-                else "#FFF0F6",
+                else theme.stat_delta_negative_bg,
             ),
         ]
         for idx, (label, value, value_color, bg) in enumerate(stats):
@@ -1988,7 +2010,7 @@ async def build_water_period_rank_image(
         #     y,
         #     width - pad * 2,
         #     champion_h,
-        #     tone="#FFF7FB",
+        #     tone=theme.gloss_panel_tone,
         #     strength=0.82,
         # )
         avatar_size = int(88 * scale)
@@ -1999,8 +2021,8 @@ async def build_water_period_rank_image(
             avatar = _build_avatar_fallback(
                 avatar_size,
                 "1",
-                "#F6C65B",
-                "#FFFFFF",
+                theme.podium_gold_badge,
+                theme.white,
             )
         card.paste(
             avatar.circle().resize((avatar_size, avatar_size)),
@@ -2060,8 +2082,8 @@ async def build_water_period_rank_image(
         chip_specs = [
             (
                 tr(locale, "water.image.period.champion.gap", gap=data.champion_gap),
-                "#FFF0D8",
-                "#B67828",
+                theme.progress_season_bg,
+                theme.achievement_chip_text,
             ),
             (
                 tr(
@@ -2069,7 +2091,7 @@ async def build_water_period_rank_image(
                     "water.image.period.champion.share",
                     share=f"{data.champion_share * 100:.1f}",
                 ),
-                "#F0F6FF",
+                theme.stat_active_bg,
                 blue,
             ),
         ]
@@ -2116,7 +2138,7 @@ async def build_water_period_rank_image(
                 y,
                 width - pad * 2,
                 tiles_h,
-                tone="#FFF7FB",
+                tone=theme.gloss_panel_tone,
                 strength=0.82,
             )
             card.draw_text(
@@ -2165,7 +2187,7 @@ async def build_water_period_rank_image(
         #     y,
         #     width - pad * 2,
         #     board_h,
-        #     tone="#FFF6FA",
+        #     tone=theme.gloss_soft_tone,
         #     strength=0.8,
         # )
         card.draw_text(
@@ -2184,15 +2206,11 @@ async def build_water_period_rank_image(
         )
 
         row_y = y + board_header_h + int(10 * scale)
-        rank_themes = {
-            1: ("#FFE9C7", "#E0A141", "#FFFFFF"),
-            2: ("#EEE8FF", "#8D7AD8", "#FFFFFF"),
-            3: ("#E8F8F3", "#57A89A", "#FFFFFF"),
-        }
+        rank_themes = _water_podium_themes(theme)
         for item in data.top_items:
             bg, badge_fill, badge_fg = rank_themes.get(
                 item.current_rank,
-                ("#FFF9FB", "#F4D8E5", accent),
+                (theme.rank_row_fill, theme.row_default_badge_fill, accent),
             )
             card.draw_rounded_rectangle(
                 (
@@ -2232,7 +2250,7 @@ async def build_water_period_rank_image(
                 item_avatar = _build_avatar_fallback(
                     item_avatar_size,
                     item.username[:1] or "?",
-                    "#FFDDE9",
+                    theme.avatar_fallback_bg,
                     strong,
                 )
             card.paste(
@@ -2320,7 +2338,9 @@ async def build_water_period_rank_image(
                 w=int(108 * scale),
                 h=int(40 * scale),
                 hourly_counts=item.hourly_counts,
-                base_color=strong if item.current_rank <= 3 else "#C0829B",
+                base_color=(
+                    strong if item.current_rank <= 3 else theme.rank_spark_fallback
+                ),
                 scale=scale,
             )
 
@@ -2339,7 +2359,7 @@ async def build_water_period_rank_image(
                 trend_text,
                 max_fontsize=int(11 * scale),
                 min_fontsize=int(8 * scale),
-                fill="#FFFFFF",
+                fill=theme.white,
                 halign="center",
                 valign="center",
                 font_families=[SYS_FONT_NAME],
@@ -2375,7 +2395,7 @@ async def build_water_period_rank_image(
                 y,
                 width - pad * 2,
                 group_rank_h,
-                tone="#FFF7FB",
+                tone=theme.gloss_panel_tone,
                 strength=0.82,
             )
             card.draw_text(
@@ -2438,7 +2458,7 @@ async def build_water_period_rank_image(
                         row_y + group_rank_row_h,
                     ),
                     radius=int(12 * scale),
-                    fill="#FFF9FB",
+                    fill=theme.rank_row_fill,
                 )
                 card.draw_text(
                     (
@@ -2500,7 +2520,7 @@ async def build_water_period_rank_image(
                     trend_text,
                     max_fontsize=int(10 * scale),
                     min_fontsize=int(8 * scale),
-                    fill="#FFFFFF",
+                    fill=theme.white,
                     halign="center",
                     valign="center",
                     font_families=[SYS_FONT_NAME],
@@ -2523,7 +2543,7 @@ async def build_water_period_rank_image(
                 y,
                 width - pad * 2,
                 overview_h,
-                tone="#FFF7FB",
+                tone=theme.gloss_panel_tone,
                 strength=0.82,
             )
             card.draw_text(
@@ -2623,26 +2643,27 @@ async def build_my_water_simple_image(
     locale: LocaleCode,
 ) -> bytes | None:
     try:
+        theme = WATER_THEME
         scale = 2.0
         width = int(680 * scale)
         pad = int(24 * scale)
         gap = int(10 * scale)
-        page_bg = "#FFF4F7"
-        title_panel_bg = "#FFE8F0"
-        panel_bg = "#FFF9FB"
-        panel_soft_bg = "#FFF5F9"
-        chip_bg = "#F3E8FF"
-        chip_alt_bg = "#E6F4FF"
-        accent = "#7A2F4A"
-        strong = "#D84E7A"
-        deep = "#3F1A29"
-        title_main = "#5E2138"
-        title_sub = "#7A2F4A"
-        title_hint = "#A54A6B"
-        global_color = "#4F7DF3"
-        matrix_color = "#F28A3B"
-        global_panel = "#F0F7FF"
-        matrix_panel = "#FFF0F6"
+        page_bg = theme.page_bg
+        title_panel_bg = theme.title_panel_bg
+        panel_bg = theme.panel_bg
+        panel_soft_bg = theme.profile_panel_soft_bg
+        chip_bg = theme.chip_bg
+        chip_alt_bg = theme.chip_alt_bg
+        accent = theme.accent
+        strong = theme.strong
+        deep = theme.profile_deep
+        title_main = theme.title_main
+        title_sub = theme.title_sub
+        title_hint = theme.title_hint
+        global_color = theme.global_color
+        matrix_color = theme.matrix_color
+        global_panel = theme.global_panel
+        matrix_panel = theme.matrix_panel
 
         title_h = int(118 * scale)
         exp_title_h = int(18 * scale)
@@ -2774,7 +2795,7 @@ async def build_my_water_simple_image(
         card.draw_rounded_rectangle(
             (chip_x, chip_y, chip_x + chip_w, chip_y + chip_h),
             radius=int(8 * scale),
-            fill="#FFF0F6",
+            fill=theme.matrix_group_active_bg,
         )
         if isinstance(group_avatar, BuildImage):
             g_avatar_size = chip_h - int(6 * scale)
@@ -2810,7 +2831,7 @@ async def build_my_water_simple_image(
             y,
             width - pad * 2,
             exp_panel_h,
-            tone="#F7EAF1",
+            tone=theme.gloss_profile_tone,
             strength=0.72,
         )
         card.draw_text(
@@ -2923,7 +2944,7 @@ async def build_my_water_simple_image(
                 w=block_w - int(20 * scale),
                 h=int(10 * scale),
                 progress=ratio,
-                bg="#E5EEFF" if idx == 0 else "#FCEEDC",
+                bg=theme.progress_global_bg if idx == 0 else theme.progress_season_bg,
                 fg=fg,
             )
 
@@ -2939,7 +2960,7 @@ async def build_my_water_simple_image(
             y,
             width - pad * 2,
             ach_panel_h,
-            tone="#F7EAF1",
+            tone=theme.gloss_profile_tone,
             strength=0.72,
         )
         card.draw_text(
@@ -3013,7 +3034,7 @@ async def build_my_water_simple_image(
                 card.draw_rounded_rectangle(
                     (cx, cy, cx + chip_w, cy + ach_chip_h),
                     radius=int(8 * scale),
-                    fill="#FFEFD6",
+                    fill=theme.achievement_chip_bg,
                 )
                 card.draw_text(
                     (
@@ -3025,7 +3046,7 @@ async def build_my_water_simple_image(
                     title,
                     max_fontsize=int(10 * scale),
                     min_fontsize=int(8 * scale),
-                    fill="#B0712A",
+                    fill=theme.achievement_chip_text,
                     halign="left",
                     font_families=[SYS_FONT_NAME],
                 )
@@ -3042,7 +3063,7 @@ async def build_my_water_simple_image(
             y,
             width - pad * 2,
             rank_panel_h,
-            tone="#F2E8F3",
+            tone=theme.gloss_profile_soft_tone,
             strength=0.72,
         )
         card.draw_text(
@@ -3124,7 +3145,7 @@ async def build_my_water_simple_image(
             y,
             width - pad * 2,
             history_h,
-            tone="#F7EAF1",
+            tone=theme.gloss_profile_tone,
             strength=0.72,
         )
         card.draw_text(
@@ -3170,7 +3191,7 @@ async def build_my_water_simple_image(
                             width - pad - int(18 * scale),
                             row_top,
                         ),
-                        fill="#EFD2DD",
+                        fill=theme.history_divider,
                         width=max(1, int(1.2 * scale)),
                     )
                 card.draw_text(
@@ -3233,26 +3254,27 @@ async def build_my_water_image(
     locale: LocaleCode,
 ) -> bytes | None:
     try:
+        theme = WATER_THEME
         scale = 2.2
         width = int(680 * scale)
         pad = int(24 * scale)
         gap = int(10 * scale)
-        page_bg = "#FFF4F7"
-        title_panel_bg = "#FFE8F0"
-        panel_bg = "#FFF9FB"
-        panel_soft_bg = "#FFF5F9"
-        chip_bg = "#F3E8FF"
-        chip_alt_bg = "#E6F4FF"
-        accent = "#7A2F4A"
-        strong = "#D84E7A"
-        deep = "#3F1A29"
-        title_main = "#5E2138"
-        title_sub = "#7A2F4A"
-        title_hint = "#A54A6B"
-        season = "#D4973C"
-        success = "#43A396"
-        my_value = "#8B4FD4"
-        group_value = "#2F83C9"
+        page_bg = theme.page_bg
+        title_panel_bg = theme.title_panel_bg
+        panel_bg = theme.panel_bg
+        panel_soft_bg = theme.profile_panel_soft_bg
+        chip_bg = theme.chip_bg
+        chip_alt_bg = theme.chip_alt_bg
+        accent = theme.accent
+        strong = theme.strong
+        deep = theme.profile_deep
+        title_main = theme.title_main
+        title_sub = theme.title_sub
+        title_hint = theme.title_hint
+        season = theme.season
+        success = theme.success
+        my_value = theme.my_value
+        group_value = theme.group_value
 
         current_achievements, history_achievements = _split_achievement_views(
             data.achievement_items,
@@ -3391,7 +3413,11 @@ async def build_my_water_image(
             card.draw_rounded_rectangle(
                 (chip_x, chip_y, chip_x + chip_w, chip_y + group_chip_h),
                 radius=int(8 * scale),
-                fill="#FFF0F6" if group_id == data.group_id else "#F8EEF4",
+                fill=(
+                    theme.matrix_group_active_bg
+                    if group_id == data.group_id
+                    else theme.matrix_group_inactive_bg
+                ),
             )
             avatar_item = matrix_group_avatars[idx]
             if isinstance(avatar_item, BuildImage):
@@ -3480,7 +3506,7 @@ async def build_my_water_image(
                 metric_top + metric_h,
             ),
             radius=int(8 * scale),
-            fill="#FFF0F6",
+            fill=theme.matrix_panel,
         )
         card.draw_rounded_rectangle(
             (
@@ -3490,7 +3516,7 @@ async def build_my_water_image(
                 metric_top + metric_h,
             ),
             radius=int(8 * scale),
-            fill="#F0F7FF",
+            fill=theme.global_panel,
         )
         card.draw_text(
             (
@@ -3608,7 +3634,7 @@ async def build_my_water_image(
                 card.draw_rounded_rectangle(
                     (cx, cy, cx + chip_w, cy + chip_h),
                     radius=int(8 * scale),
-                    fill="#FFEFD6",
+                    fill=theme.achievement_chip_bg,
                 )
                 card.draw_text(
                     (
@@ -3620,7 +3646,7 @@ async def build_my_water_image(
                     title,
                     max_fontsize=int(10 * scale),
                     min_fontsize=int(8 * scale),
-                    fill="#B0712A",
+                    fill=theme.achievement_chip_text,
                     halign="center",
                     font_families=[SYS_FONT_NAME],
                 )
@@ -3678,15 +3704,15 @@ async def build_my_water_image(
         col_w = int((width - pad * 2 - int(40 * scale) - col_gap) / 2)
         left_x = pad + int(20 * scale)
         right_x = left_x + col_w + col_gap
-        text_color = "#151015"
-        meta_color = "#382430"
+        text_color = theme.text_color_dark
+        meta_color = theme.meta_color_dark
         progress_rows_h = len(global_progress_items) * exp_row_block - exp_row_gap
         col_panel_h = exp_header_h + int(8 * scale) + progress_rows_h + int(10 * scale)
 
         card.draw_rounded_rectangle(
             (left_x, exp_panel_top, left_x + col_w, exp_panel_top + col_panel_h),
             radius=int(10 * scale),
-            fill="#F5F9FF",
+            fill=theme.status_global_panel,
         )
         _draw_gloss_lines(
             card,
@@ -3694,13 +3720,13 @@ async def build_my_water_image(
             exp_panel_top,
             col_w,
             col_panel_h,
-            tone="#D7E6FF",
+            tone=theme.gloss_global_tone,
             strength=0.8,
         )
         card.draw_rounded_rectangle(
             (right_x, exp_panel_top, right_x + col_w, exp_panel_top + col_panel_h),
             radius=int(10 * scale),
-            fill="#FFF8F1",
+            fill=theme.status_season_panel,
         )
         _draw_gloss_lines(
             card,
@@ -3708,7 +3734,7 @@ async def build_my_water_image(
             exp_panel_top,
             col_w,
             col_panel_h,
-            tone="#FFE8D0",
+            tone=theme.gloss_season_tone,
             strength=0.8,
         )
 
@@ -3722,7 +3748,7 @@ async def build_my_water_image(
             tr(locale, "water.profile.image.progress.global_section"),
             max_fontsize=int(12 * scale),
             min_fontsize=int(10 * scale),
-            fill="#1E40AF",
+            fill=theme.status_global_title,
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
@@ -3736,7 +3762,7 @@ async def build_my_water_image(
             tr(locale, "water.profile.image.progress.season_section"),
             max_fontsize=int(12 * scale),
             min_fontsize=int(10 * scale),
-            fill="#B45309",
+            fill=theme.status_season_title,
             halign="left",
             font_families=[SYS_FONT_NAME],
         )
@@ -3769,7 +3795,7 @@ async def build_my_water_image(
                 pct,
                 max_fontsize=int(12 * scale),
                 min_fontsize=int(10 * scale),
-                fill="#1E40AF",
+                fill=theme.status_global_title,
                 halign="right",
                 font_families=[SYS_FONT_NAME],
             )
@@ -3798,8 +3824,8 @@ async def build_my_water_image(
                 w=col_w - int(20 * scale),
                 h=exp_row_h,
                 progress=ratio,
-                bg="#E5EEFF",
-                fg="#4F7DF3",
+                bg=theme.progress_global_bg,
+                fg=theme.global_color,
             )
         for idx, (label, gap_value, ratio) in enumerate(seasonal_progress_items):
             row_top = exp_rows_top + idx * exp_row_block
@@ -3828,7 +3854,7 @@ async def build_my_water_image(
                 pct,
                 max_fontsize=int(12 * scale),
                 min_fontsize=int(10 * scale),
-                fill="#B45309",
+                fill=theme.status_season_title,
                 halign="right",
                 font_families=[SYS_FONT_NAME],
             )
@@ -3857,8 +3883,8 @@ async def build_my_water_image(
                 w=col_w - int(20 * scale),
                 h=exp_row_h,
                 progress=ratio,
-                bg="#FCEEDC",
-                fg="#F28A3B",
+                bg=theme.progress_season_bg,
+                fg=theme.matrix_color,
             )
 
         y = max(y + status_h, exp_panel_top + col_panel_h + int(12 * scale)) + gap
@@ -3873,7 +3899,7 @@ async def build_my_water_image(
             y,
             width - pad * 2,
             rank_h,
-            tone="#F2E8F3",
+            tone=theme.gloss_profile_soft_tone,
             strength=0.72,
         )
         card.draw_rounded_rectangle(
@@ -3995,7 +4021,7 @@ async def build_my_water_image(
             card.draw_rounded_rectangle(
                 (lx, ly, lx + col_w, ly + left_chip_h),
                 radius=int(10 * scale),
-                fill=chip_bg if idx % 2 == 0 else "#EFE4FC",
+                fill=chip_bg if idx % 2 == 0 else theme.left_chip_alt_bg,
             )
             card.draw_text(
                 (
@@ -4021,7 +4047,7 @@ async def build_my_water_image(
                 meta,
                 max_fontsize=int(10 * scale),
                 min_fontsize=int(8 * scale),
-                fill="#5A3A74",
+                fill=theme.left_chip_meta,
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
@@ -4046,7 +4072,7 @@ async def build_my_water_image(
             card.draw_rounded_rectangle(
                 (rx, ry, rx + col_w, ry + right_chip_h),
                 radius=int(10 * scale),
-                fill=chip_alt_bg if idx % 2 == 0 else "#DDF0FF",
+                fill=chip_alt_bg if idx % 2 == 0 else theme.right_chip_alt_bg,
             )
             card.draw_text(
                 (
@@ -4072,7 +4098,7 @@ async def build_my_water_image(
                 meta,
                 max_fontsize=int(10 * scale),
                 min_fontsize=int(8 * scale),
-                fill="#355A78",
+                fill=theme.right_chip_meta,
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
@@ -4103,7 +4129,7 @@ async def build_my_water_image(
             y,
             width - pad * 2,
             history_h,
-            tone="#F7EAF1",
+            tone=theme.gloss_profile_tone,
             strength=0.72,
         )
         card.draw_rounded_rectangle(
@@ -4159,7 +4185,7 @@ async def build_my_water_image(
                             width - pad - int(18 * scale),
                             row_top,
                         ),
-                        fill="#EFD2DD",
+                        fill=theme.history_divider,
                         width=max(1, int(1.2 * scale)),
                     )
                 card.draw_text(

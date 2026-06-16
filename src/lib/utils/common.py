@@ -18,6 +18,7 @@ import httpx
 from PIL import Image, ImageDraw, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
+from src.lib.demo_theme import SENRIN_V3_AVATAR_FALLBACK_THEME
 
 if TYPE_CHECKING:
     from datetime import datetime, timedelta
@@ -139,7 +140,9 @@ class AvatarFetcher:
 
     @staticmethod
     def create_default_avatar(
-        size: int, text: str | None = None, bg_color: tuple = (255, 225, 230)
+        size: int,
+        text: str | None = None,
+        bg_color: tuple = SENRIN_V3_AVATAR_FALLBACK_THEME.bg_color,
     ) -> Image.Image:
         """生成默认头像"""
         from src.lib.i18n.runtime import tr
@@ -156,7 +159,7 @@ class AvatarFetcher:
             draw.text(
                 (text_x, text_y),
                 resolved_text,
-                fill=(180, 76, 76),
+                fill=SENRIN_V3_AVATAR_FALLBACK_THEME.text_color,
                 font=font,
             )
         except OSError:

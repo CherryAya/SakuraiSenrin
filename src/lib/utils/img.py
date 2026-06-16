@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pil_utils import BuildImage
 
 from src.lib.consts import MAPLE_FONT_PATH
+from src.lib.demo_theme import SENRIN_V3_AVATAR_FALLBACK_THEME
 
 
 class QQAvatar:
@@ -53,7 +54,7 @@ class QQAvatar:
 
     @staticmethod
     def _generate_fallback(size: int, text: str) -> BuildImage:
-        img = Image.new("RGBA", (size, size), (255, 225, 230))
+        img = Image.new("RGBA", (size, size), SENRIN_V3_AVATAR_FALLBACK_THEME.bg_color)
         draw = ImageDraw.Draw(img)
         try:
             font = ImageFont.truetype(MAPLE_FONT_PATH, int(size * 0.5))
@@ -62,7 +63,7 @@ class QQAvatar:
         draw.text(
             (size / 2, size / 2 - size * 0.05),
             text,
-            fill=(180, 76, 76),
+            fill=SENRIN_V3_AVATAR_FALLBACK_THEME.text_color,
             font=font,
             anchor="mm",
         )

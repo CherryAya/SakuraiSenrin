@@ -30,6 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from src.database.core.consts import InvitationStatus, Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
+from src.lib.demo_theme import SENRIN_V3_ADMIN_INVITE_IMAGE_THEME
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import (
@@ -210,11 +211,12 @@ class InvitationListRenderer:
         font_path: str | Path = MAPLE_FONT_PATH,
     ) -> None:
         self.locale = locale
-        self.BG_COLOR = (255, 217, 222)  # #ffd9de
-        self.TEXT_COLOR = (180, 76, 76)  # #b44c4c
-        self.ITEM_BG_COLOR = (255, 240, 245)  # #fff0f5
-        self.SUB_TEXT_COLOR = (200, 110, 110)  # 次要文本颜色
-        self.HIGHLIGHT_COLOR = (220, 90, 100)  # 强调色(如ID、序号)
+        self.theme = SENRIN_V3_ADMIN_INVITE_IMAGE_THEME
+        self.BG_COLOR = self.theme.bg_color
+        self.TEXT_COLOR = self.theme.text_color
+        self.ITEM_BG_COLOR = self.theme.item_bg_color
+        self.SUB_TEXT_COLOR = self.theme.sub_text_color
+        self.HIGHLIGHT_COLOR = self.theme.highlight_color
 
         # 尺寸与超采样配置 (渲染宽度 800*3.2=2560 达到 2K 标准)
         self.SCALE = 3.2

@@ -230,6 +230,113 @@ class WordbankTreemapTheme:
     highlight_fill: str
 
 
+@dataclass(frozen=True)
+class WaterImageTheme:
+    white: str
+    page_bg: str
+    hero_bg: str
+    panel_bg: str
+    panel_soft_bg: str
+    profile_panel_soft_bg: str
+    title_panel_bg: str
+    item_bg: str
+    item_bg_alt: str
+    info_card_bg: str
+    header_bg: str
+    header_text: str
+    subtext_color: str
+    text_color: str
+    highlight_color: str
+    muted_color: str
+    accent: str
+    strong: str
+    deep: str
+    profile_deep: str
+    hint: str
+    line: str
+    blue: str
+    mint: str
+    gold: str
+    season: str
+    success: str
+    my_value: str
+    group_value: str
+    badge_bg: str
+    badge_fg: str
+    chip_bg: str
+    chip_alt_bg: str
+    title_main: str
+    title_sub: str
+    title_hint: str
+    global_color: str
+    matrix_color: str
+    global_panel: str
+    matrix_panel: str
+    matrix_group_active_bg: str
+    matrix_group_inactive_bg: str
+    avatar_fallback_bg: str
+    avatar_fallback_fg: str
+    group_avatar_fallback_bg: str
+    group_avatar_fallback_fg: str
+    gloss_hero_tone: str
+    gloss_panel_tone: str
+    gloss_soft_tone: str
+    gloss_profile_tone: str
+    gloss_profile_soft_tone: str
+    gloss_global_tone: str
+    gloss_season_tone: str
+    stat_total_bg: str
+    stat_active_bg: str
+    stat_delta_positive_bg: str
+    stat_delta_negative_bg: str
+    podium_gold_bg: str
+    podium_gold_badge: str
+    podium_silver_bg: str
+    podium_silver_badge: str
+    podium_bronze_bg: str
+    podium_bronze_badge: str
+    podium_badge_text: str
+    row_default_badge_fill: str
+    rank_row_fill: str
+    rank_spark_fallback: str
+    overview_highlight_bar: str
+    progress_global_bg: str
+    progress_season_bg: str
+    achievement_chip_bg: str
+    achievement_chip_text: str
+    history_divider: str
+    left_chip_alt_bg: str
+    left_chip_meta: str
+    right_chip_alt_bg: str
+    right_chip_meta: str
+    status_global_panel: str
+    status_season_panel: str
+    status_global_title: str
+    status_season_title: str
+    text_color_dark: str
+    meta_color_dark: str
+    trend_new: str
+    trend_up: str
+    trend_down: str
+    trend_flat: str
+    tile_base_colors: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class AdminInviteImageTheme:
+    bg_color: tuple[int, int, int]
+    text_color: tuple[int, int, int]
+    item_bg_color: tuple[int, int, int]
+    sub_text_color: tuple[int, int, int]
+    highlight_color: tuple[int, int, int]
+
+
+@dataclass(frozen=True)
+class AvatarFallbackTheme:
+    bg_color: tuple[int, int, int]
+    text_color: tuple[int, int, int]
+
+
 _SENRIN_V3_BASE_THEME = DemoTheme(
     theme_name=SENRIN_V3_THEME_NAME,
     impression_color=DEFAULT_IMPRESSION_COLOR,
@@ -435,6 +542,110 @@ SENRIN_V3_WORDBANK_TREEMAP_THEME = WordbankTreemapTheme(
     divider="#F2DCE5",
     white="#FFFFFF",
     highlight_fill="#FFF5F8",
+)
+
+SENRIN_V3_WATER_IMAGE_THEME = WaterImageTheme(
+    white="#FFFFFF",
+    page_bg="#FFF4F7",
+    hero_bg="#FFE8F0",
+    panel_bg="#FFF9FB",
+    panel_soft_bg="#FFF3F8",
+    profile_panel_soft_bg="#FFF5F9",
+    title_panel_bg="#FFE8F0",
+    item_bg="#FFF9FB",
+    item_bg_alt="#FFF1F6",
+    info_card_bg="#FFF0F5",
+    header_bg="#FFE3ED",
+    header_text="#7A2F4A",
+    subtext_color="#B05A79",
+    text_color="#8F3D56",
+    highlight_color="#E45A84",
+    muted_color="#A77A88",
+    accent="#7A2F4A",
+    strong="#D84E7A",
+    deep="#401828",
+    profile_deep="#3F1A29",
+    hint="#AA6B82",
+    line="#F6D9E6",
+    blue="#5B8CFF",
+    mint="#67BAA6",
+    gold="#D4973C",
+    season="#D4973C",
+    success="#43A396",
+    my_value="#8B4FD4",
+    group_value="#2F83C9",
+    badge_bg="#FFF0C7",
+    badge_fg="#9A6723",
+    chip_bg="#F3E8FF",
+    chip_alt_bg="#E6F4FF",
+    title_main="#5E2138",
+    title_sub="#7A2F4A",
+    title_hint="#A54A6B",
+    global_color="#4F7DF3",
+    matrix_color="#F28A3B",
+    global_panel="#F0F7FF",
+    matrix_panel="#FFF0F6",
+    matrix_group_active_bg="#FFF0F6",
+    matrix_group_inactive_bg="#F8EEF4",
+    avatar_fallback_bg="#FFDDE9",
+    avatar_fallback_fg="#D84E7A",
+    group_avatar_fallback_bg="#FFE3ED",
+    group_avatar_fallback_fg="#7A2F4A",
+    gloss_hero_tone="#FFF6FA",
+    gloss_panel_tone="#FFF7FB",
+    gloss_soft_tone="#FFF6FA",
+    gloss_profile_tone="#F7EAF1",
+    gloss_profile_soft_tone="#F2E8F3",
+    gloss_global_tone="#D7E6FF",
+    gloss_season_tone="#FFE8D0",
+    stat_total_bg="#FFF0F6",
+    stat_active_bg="#F0F6FF",
+    stat_delta_positive_bg="#F1FFF9",
+    stat_delta_negative_bg="#FFF0F6",
+    podium_gold_bg="#FFE9C7",
+    podium_gold_badge="#E0A141",
+    podium_silver_bg="#EEE8FF",
+    podium_silver_badge="#8D7AD8",
+    podium_bronze_bg="#E8F8F3",
+    podium_bronze_badge="#57A89A",
+    podium_badge_text="#FFFFFF",
+    row_default_badge_fill="#F4D8E5",
+    rank_row_fill="#FFF9FB",
+    rank_spark_fallback="#C0829B",
+    overview_highlight_bar="#F5A340",
+    progress_global_bg="#E5EEFF",
+    progress_season_bg="#FCEEDC",
+    achievement_chip_bg="#FFEFD6",
+    achievement_chip_text="#B0712A",
+    history_divider="#EFD2DD",
+    left_chip_alt_bg="#EFE4FC",
+    left_chip_meta="#5A3A74",
+    right_chip_alt_bg="#DDF0FF",
+    right_chip_meta="#355A78",
+    status_global_panel="#F5F9FF",
+    status_season_panel="#FFF8F1",
+    status_global_title="#1E40AF",
+    status_season_title="#B45309",
+    text_color_dark="#151015",
+    meta_color_dark="#382430",
+    trend_new="#F0B36D",
+    trend_up="#E96A96",
+    trend_down="#66B3A5",
+    trend_flat="#B8A1AE",
+    tile_base_colors=("#E987AE", "#F1A58E", "#C8B5FF", "#9FDCE8"),
+)
+
+SENRIN_V3_ADMIN_INVITE_IMAGE_THEME = AdminInviteImageTheme(
+    bg_color=(255, 217, 222),
+    text_color=(180, 76, 76),
+    item_bg_color=(255, 240, 245),
+    sub_text_color=(200, 110, 110),
+    highlight_color=(220, 90, 100),
+)
+
+SENRIN_V3_AVATAR_FALLBACK_THEME = AvatarFallbackTheme(
+    bg_color=(255, 225, 230),
+    text_color=(180, 76, 76),
 )
 
 
