@@ -1117,16 +1117,19 @@ def test_build_command_layout_breaks_flags_into_hanging_indent_lines() -> None:
         palette=palette,
     )
 
-    assert [line.kind for line in layout.lines[:4]] == [
+    assert [line.kind for line in layout.lines[:6]] == [
         "root",
         "flag",
         "continuation",
+        "continuation",
+        "flag",
         "flag",
     ]
     assert layout.lines[0].indent_level == 0
     assert layout.lines[1].indent_level == 1
     assert layout.lines[2].indent_level == 2
-    assert layout.lines[3].indent_level == 1
+    assert layout.lines[3].indent_level == 2
+    assert layout.lines[4].indent_level == 1
     assert layout.has_guide
 
 

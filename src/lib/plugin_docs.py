@@ -1036,6 +1036,14 @@ def _split_command_tokens(text: str) -> tuple[str, ...]:
     brace_depth = 0
     paren_depth = 0
     for char in text:
+        if char in {"；", ";"} and not any(
+            (bracket_depth, angle_depth, brace_depth, paren_depth)
+        ):
+            if buffer:
+                tokens.append("".join(buffer))
+                buffer.clear()
+            tokens.append(char)
+            continue
         if char.isspace() and not any(
             (bracket_depth, angle_depth, brace_depth, paren_depth)
         ):
@@ -1321,7 +1329,13 @@ def _wrap_command_token_roles(
         token, role = roles[index]
         available_width = max(0, max_width - current_indent * indent_px)
         candidate = [*current, (token, role)]
-        if not current or (
+        if current and (
+            _command_role_width(candidate, measure_text, palette) <= available_width
+        ):
+            current = candidate
+            index += 1
+            continue
+        if not current and (
             _command_role_width(candidate, measure_text, palette) <= available_width
         ):
             current = candidate
