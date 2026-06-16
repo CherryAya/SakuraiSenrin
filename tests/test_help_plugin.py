@@ -10,6 +10,7 @@ import pytest
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR
 from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
@@ -343,6 +344,24 @@ async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:
     assert "📖 群组管理模块" in str(child_message)
 
 
+async def test_resolve_docs_message_feature_query_returns_deep_dive_reply() -> None:
+    entries = _iter_docs_entries("zh-CN")
+    water_entry = next(entry for entry in entries if entry.display_name == "吹水记录")
+
+    message = await _resolve_docs_message(
+        water_entry,
+        "zh-CN",
+        feature_query="ranking",
+        actor_permission=Permission.NORMAL,
+        all_entries=entries,
+    )
+
+    assert any(segment.type == "image" for segment in message)
+    rendered = str(message)
+    assert "👉 查看周期榜单" in rendered
+    assert "#水王" in rendered
+
+
 @pytest.mark.asyncio
 async def test_help_matcher_formats_water_overview_shortcuts(
     app: App,
@@ -377,3 +396,37 @@ async def test_help_matcher_formats_water_overview_shortcuts(
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, expected, bot=bot)
         ctx.should_finished(help_matcher)
+
+
+def test_iter_docs_entries_resolves_explicit_or_inherited_impression_colors() -> None:
+    for module_name in (
+        "src.hooks.processor",
+        "src.plugins.admin",
+        "src.plugins.notice",
+        "src.plugins.picsearch",
+        "src.plugins.remove",
+    ):
+        if nonebot.get_plugin(module_name.split(".")[-1]) is None:
+            nonebot.load_plugin(module_name)
+
+    entries = _iter_docs_entries("zh-CN")
+    color_by_slug = {
+        entry.node.slug: entry.node.bundle.impression_color for entry in entries
+    }
+
+    assert color_by_slug["admin"] == "#FF922B"
+    assert color_by_slug["admin.group"] == "#FF922B"
+    assert color_by_slug["notice"] == "#845EF7"
+    assert color_by_slug["notice.group"] == "#845EF7"
+    assert color_by_slug["picsearch"] == "#748FFC"
+    assert color_by_slug["remove"] == "#FA5252"
+    assert color_by_slug["hook.processor"] == "#12B886"
+    direct_hook_plugin = load_doc_node(
+        source="src/hooks/docs/plugin/README.MD",
+        default_name="插件钩子扩展点",
+        default_description="desc",
+        trigger=TriggerType.PASSIVE,
+        permission=Permission.SUPERUSER,
+    )
+    assert direct_hook_plugin.bundle.impression_color == "#15AABF"
+    assert all(color != DEFAULT_IMPRESSION_COLOR for color in color_by_slug.values())

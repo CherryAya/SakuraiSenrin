@@ -48,6 +48,7 @@ __plugin_meta__ = create_plugin_metadata(
     extra={
         "author": "SakuraiCora",
         "version": "0.2.0",
+        "impression_color": "#12B886",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
         "i18n": {
@@ -121,7 +122,9 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
             return
         if is_group_event and group_id in allowed_groups:
             return
-        raise IgnoredException(tr(_runtime_locale(group_id), "hook.processor.debug_only"))
+        raise IgnoredException(
+            tr(_runtime_locale(group_id), "hook.processor.debug_only")
+        )
 
     user = await user_repo.get_user(user_id) if is_user_event else None
     group = await group_repo.get_group(group_id) if is_group_event else None

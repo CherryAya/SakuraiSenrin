@@ -21,6 +21,7 @@ from nonebot.plugin import Plugin, PluginMetadata, on_command
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import (
@@ -138,9 +139,47 @@ def _read_plugin_permission(metadata: PluginMetadata) -> Permission:
         return Permission.NORMAL
 
 
+def _read_plugin_impression_color(metadata: PluginMetadata) -> str | None:
+    raw_color = metadata.extra.get("impression_color")
+    if isinstance(raw_color, str) and raw_color.strip():
+        return normalize_hex_color(raw_color, fallback=DEFAULT_IMPRESSION_COLOR)
+    return None
+
+
+def _resolve_docs_impression_color(
+    plugin: Plugin,
+    metadata: PluginMetadata,
+    loaded_plugins: list[Plugin],
+) -> str | None:
+    explicit_color = _read_plugin_impression_color(metadata)
+    if explicit_color is not None:
+        return explicit_color
+
+    parts = plugin.module_name.split(".")
+    for index in range(len(parts) - 1, 0, -1):
+        parent_module = ".".join(parts[:index])
+        if parent_module == plugin.module_name:
+            continue
+        parent_plugin = next(
+            (
+                candidate
+                for candidate in loaded_plugins
+                if candidate.module_name == parent_module
+            ),
+            None,
+        )
+        if parent_plugin is None or parent_plugin.metadata is None:
+            continue
+        inherited_color = _read_plugin_impression_color(parent_plugin.metadata)
+        if inherited_color is not None:
+            return inherited_color
+    return None
+
+
 def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
     entries: list[DocsEntry] = []
-    for plugin in nonebot.get_loaded_plugins():
+    loaded_plugins = list(nonebot.get_loaded_plugins())
+    for plugin in loaded_plugins:
         if not _is_project_plugin(plugin):
             continue
         metadata = plugin.metadata
@@ -152,6 +191,11 @@ def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
         display_name = _resolve_metadata_text(metadata, locale, "name") or plugin.name
         summary = _resolve_metadata_text(metadata, locale, "description")
         permission = _read_plugin_permission(metadata)
+        impression_color = _resolve_docs_impression_color(
+            plugin,
+            metadata,
+            loaded_plugins,
+        )
         for docs in docs_metas:
             node = load_doc_node(
                 source=docs["source"]["readme_path"],
@@ -159,6 +203,7 @@ def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
                 default_description=summary,
                 trigger=metadata.extra.get("trigger", TriggerType.COMMAND),
                 permission=permission,
+                impression_color=impression_color,
                 docs_meta={
                     **docs,
                     "permission": docs.get("permission", permission),
