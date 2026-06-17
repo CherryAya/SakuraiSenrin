@@ -355,6 +355,56 @@ def test_iter_docs_entries_includes_wordbank_derived_root_entry() -> None:
     assert not derived.node.bundle.index
 
 
+def test_iter_docs_entries_no_longer_exposes_wordbank_derived_feature_nodes() -> None:
+    entries = _iter_docs_entries("zh-CN")
+
+    slugs = {entry.node.slug for entry in entries}
+
+    assert "derived.wordbank.miaomiao-toolkit" in slugs
+    assert all(
+        not slug.startswith("derived.wordbank.miaomiao-toolkit.")
+        for slug in slugs
+    )
+
+
+def test_build_index_message_filters_invisible_and_unauthorized_root_entries() -> None:
+    visible_normal = _make_entry(
+        display_name="可见普通插件",
+        plugin_name="visible",
+        module_name="src.plugins.visible",
+        slug="visible",
+        permission=Permission.NORMAL,
+        visible=True,
+    )
+    hidden_visible_false = _make_entry(
+        display_name="不可见插件",
+        plugin_name="hidden",
+        module_name="src.plugins.hidden",
+        slug="hidden",
+        permission=Permission.NORMAL,
+        visible=False,
+    )
+    superuser_only = _make_entry(
+        display_name="超管插件",
+        plugin_name="super",
+        module_name="src.plugins.super",
+        slug="super",
+        permission=Permission.SUPERUSER,
+        visible=True,
+    )
+
+    message = _build_index_message(
+        [visible_normal, hidden_visible_false, superuser_only],
+        "zh-CN",
+        Permission.NORMAL,
+    )
+
+    rendered = str(message)
+    assert "#help 可见普通插件" in rendered
+    assert "#help 不可见插件" not in rendered
+    assert "#help 超管插件" not in rendered
+
+
 async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:
     root = _make_entry(
         display_name="管理模块总览",
@@ -472,6 +522,7 @@ async def test_resolve_docs_message_simple_leaf_returns_direct_demo_reply() -> N
     rendered = str(message)
     assert any(segment.type == "image" for segment in message)
     assert "👉 图片搜索" in rendered
+    assert "搜图" in rendered
     assert "查看 demo：#help 图片搜索 search" in rendered
     assert "下面这些命令可以直接复制发送" not in rendered
 
