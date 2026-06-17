@@ -337,7 +337,6 @@ def test_try_acquire_today_report_cooldown_skips_in_debug(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.lib import cooldown as cooldown_module
-    from src.plugins.water.services import report as report_module
 
     water_report_service.clear_today_report_cooldowns()
     monkeypatch.setattr(cooldown_module.config, "DEBUG", True)

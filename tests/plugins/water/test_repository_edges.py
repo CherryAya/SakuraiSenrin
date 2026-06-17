@@ -1500,3 +1500,59 @@ def test_group_daily_rank_snapshot_returns_none_when_focus_missing() -> None:
     )
 
     assert snapshot is None
+
+
+@pytest.mark.asyncio
+async def test_get_group_daily_rank_snapshot_queries_global_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+    current_rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260613,
+            msg_count=20,
+            active_hours=2,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="29999",
+            user_id="10002",
+            record_date=20260613,
+            msg_count=25,
+            active_hours=3,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+    ]
+    previous_rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260612,
+            msg_count=18,
+            active_hours=2,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        )
+    ]
+    get_window_mock = AsyncMock(side_effect=[current_rows, previous_rows])
+    monkeypatch.setattr(repo, "get_summaries_in_window", get_window_mock)
+
+    snapshot = await repo.get_group_daily_rank_snapshot(
+        group_id="20001",
+        record_date=20260613,
+    )
+
+    assert snapshot is not None
+    assert snapshot.total_groups == 2
+    assert snapshot.focus_rank == 2
+    assert snapshot.focus_trend == -1
+    assert [item.group_id for item in snapshot.leaderboard] == ["29999", "20001"]
+    assert get_window_mock.await_args_list[0].args == (20260613, 20260613)
+    assert get_window_mock.await_args_list[1].args == (20260612, 20260612)

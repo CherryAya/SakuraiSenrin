@@ -142,7 +142,17 @@ async def build_water_group_report_image(
     }
     tile_renderer = WaterRankRenderer()
     for item in data.top_items:
-        bg, badge_fill, badge_fg = rank_themes.get(item.current_rank, (theme.rank_row_fill, theme.row_default_badge_fill, accent))
+        rank_theme = rank_themes.get(
+            item.current_rank,
+            {
+                "bg": theme.rank_row_fill,
+                "badge": theme.row_default_badge_fill,
+                "badge_txt": accent,
+            },
+        )
+        bg = rank_theme["bg"]
+        badge_fill = rank_theme["badge"]
+        badge_fg = rank_theme["badge_txt"]
         card.draw_rounded_rectangle((left_x + int(14 * scale), row_y, left_x + left_w - int(14 * scale), row_y + user_card_h), radius=int(14 * scale), fill=bg)
         badge_x = left_x + int(24 * scale)
         badge_y = row_y + int(16 * scale)
@@ -338,7 +348,17 @@ async def build_water_period_rank_image(
         rank_themes = {rank: {"bg": bg, "badge": badge, "badge_txt": fg} for rank, (bg, badge, fg) in {1: (theme.podium_gold_bg, theme.podium_gold_badge, theme.podium_badge_text), 2: (theme.podium_silver_bg, theme.podium_silver_badge, theme.podium_badge_text), 3: (theme.podium_bronze_bg, theme.podium_bronze_badge, theme.podium_badge_text)}.items()}
         tile_renderer = WaterRankRenderer()
         for item in data.top_items:
-            bg, badge_fill, badge_fg = rank_themes.get(item.current_rank, (theme.rank_row_fill, theme.row_default_badge_fill, accent))
+            rank_theme = rank_themes.get(
+                item.current_rank,
+                {
+                    "bg": theme.rank_row_fill,
+                    "badge": theme.row_default_badge_fill,
+                    "badge_txt": accent,
+                },
+            )
+            bg = rank_theme["bg"]
+            badge_fill = rank_theme["badge"]
+            badge_fg = rank_theme["badge_txt"]
             card.draw_rounded_rectangle((left_x + int(14 * scale), row_y, left_x + left_w - int(14 * scale), row_y + row_h), radius=int(14 * scale), fill=bg)
             badge_x = left_x + int(24 * scale)
             badge_y = row_y + int(16 * scale)

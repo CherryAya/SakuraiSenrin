@@ -13,6 +13,7 @@ from src.plugins.water.database.repo import (
 )
 from src.plugins.water.img import (
     WaterGroupDailyRankCardItem,
+    WaterGroupReportImageData,
     WaterPeriodRankCardData,
     WaterRankCardItem,
 )
@@ -512,17 +513,16 @@ async def test_rank_query_service_routes_day_and_non_day(
 
 
 @pytest.mark.asyncio
-async def test_build_water_period_rank_image_smoke() -> None:
+async def test_build_water_group_report_image_smoke() -> None:
     avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
-    data = WaterPeriodRankCardData(
-        period="month",
-        title="用户榜 · 本群月榜",
-        badge="2026.05",
-        range_text="2026.05.01 - 2026.05.23",
-        compare_text="对比区间 2026.04.01 - 2026.04.23",
+    data = WaterGroupReportImageData(
+        title="测试群 · 今日群报告",
+        badge="测试群",
+        range_text="统计日期: 2026.06.14 · 今日实时快照",
+        compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
         generated_at=1_747_960_000,
         total_msg_count=420,
-        active_entity_count=66,
+        active_user_count=66,
         hourly_counts=[(idx % 6) + 1 for idx in range(24)],
         peak_hour=5,
         previous_total_msg_count=390,
@@ -552,13 +552,9 @@ async def test_build_water_period_rank_image_smoke() -> None:
                 trend=-1,
             ),
         ],
-        champion_gap=30,
-        champion_share=120 / 420,
-        report_tile_title="本群当日瓷砖图",
-        report_tile_subtitle="24 小时活跃分布",
-        report_group_rank_title="群聊当日排名",
-        report_group_rank_summary="本群当前排名 #3 / 12 · 较昨日 +1",
-        report_group_rank_items=[
+        group_rank_title="群聊当日排名",
+        group_rank_summary="本群当前排名 #3 / 12 · 较昨日 +1",
+        group_rank_items=[
             WaterGroupDailyRankCardItem(
                 group_id="20001",
                 display_name="测试群",
@@ -574,30 +570,29 @@ async def test_build_water_period_rank_image_smoke() -> None:
                 trend=-1,
             ),
         ],
-        report_group_rank_has_hidden_before=True,
-        report_group_rank_has_hidden_after=True,
+        group_rank_has_hidden_before=True,
+        group_rank_has_hidden_after=True,
     )
 
-    from src.plugins.water.img import build_water_period_rank_image
+    from src.plugins.water.img import build_water_group_report_image
 
-    img = await build_water_period_rank_image(data, "zh-CN")
+    img = await build_water_group_report_image(data, "zh-CN")
 
     assert img is not None
     assert img.startswith(b"\x89PNG")
 
 
 @pytest.mark.asyncio
-async def test_build_water_period_rank_image_without_report_rank_block() -> None:
+async def test_build_water_group_report_image_without_group_rank_block() -> None:
     avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
-    data = WaterPeriodRankCardData(
-        period="month",
-        title="用户榜 · 本群月榜",
-        badge="2026.05",
-        range_text="2026.05.01 - 2026.05.23",
-        compare_text="对比区间 2026.04.01 - 2026.04.23",
+    data = WaterGroupReportImageData(
+        title="测试群 · 今日群报告",
+        badge="测试群",
+        range_text="统计日期: 2026.06.14 · 今日实时快照",
+        compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
         generated_at=1_747_960_000,
         total_msg_count=420,
-        active_entity_count=66,
+        active_user_count=66,
         hourly_counts=[(idx % 6) + 1 for idx in range(24)],
         peak_hour=5,
         previous_total_msg_count=390,
@@ -615,13 +610,14 @@ async def test_build_water_period_rank_image_without_report_rank_block() -> None
                 trend=3,
             )
         ],
-        champion_gap=30,
-        champion_share=120 / 420,
+        group_rank_title="群聊当日排名",
+        group_rank_summary="",
+        group_rank_items=[],
     )
 
-    from src.plugins.water.img import build_water_period_rank_image
+    from src.plugins.water.img import build_water_group_report_image
 
-    img = await build_water_period_rank_image(data, "zh-CN")
+    img = await build_water_group_report_image(data, "zh-CN")
 
     assert img is not None
     assert img.startswith(b"\x89PNG")

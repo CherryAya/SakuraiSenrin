@@ -1,0 +1,602 @@
+"""Water repository report and realtime snapshot helpers."""
+
+from __future__ import annotations
+
+import asyncio
+from collections import defaultdict
+from collections.abc import Callable, Mapping, Sequence
+from heapq import nsmallest
+from time import perf_counter
+from typing import TYPE_CHECKING
+
+import arrow
+from sqlalchemy.engine.row import Row
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.lib.db.connectors import ColdPolicy
+from src.lib.utils.common import get_current_time
+from src.logger import logger
+from src.plugins.water.services.rank_types import WaterRankScope, WaterRankSubject
+
+from .instances import water_message
+from .ops import WaterMessageOps
+from .types import WaterSummaryRecord
+from .writers import water_writer
+
+if TYPE_CHECKING:
+    from .repo import (
+        NaturalPeriodRankSnapshot,
+        NaturalRankOverview,
+        WaterDailyReportCandidate,
+        WaterGroupDailyRankSnapshot,
+        WaterGroupReportSnapshot,
+    )
+
+
+def _repo_module():
+    from . import repo as repo_module
+
+    return repo_module
+
+
+class _WaterRepositoryReportsSupport:
+    async def get_summaries_in_window(
+        self,
+        start_date: int,
+        end_date: int,
+        *,
+        group_ids: list[str] | None = None,
+        user_id: str | None = None,
+        preserve_order: bool = True,
+    ) -> list[WaterSummaryRecord]: ...
+
+    async def get_or_create_group_matrix_id(self, group_id: str) -> str: ...
+
+    async def get_groups_by_matrix_id(self, matrix_id: str) -> list[str]: ...
+
+    @staticmethod
+    def _previous_date(record_date: int) -> int: ...
+
+    @staticmethod
+    def _natural_rank_sort_key(
+        item: tuple[str, int, int, int, list[int], int] | tuple[str, int, int, int],
+    ) -> tuple[int, int, int, str]: ...
+
+    @classmethod
+    def _build_previous_rank_map(
+        cls,
+        aggregates: Mapping[str, tuple[int, int, int, list[int], int]]
+        | Mapping[str, tuple[int, int, int, list[int]]],
+        target_entity_ids: Sequence[str],
+    ) -> dict[str, int]: ...
+
+    @staticmethod
+    def _build_entity_period_aggregates(
+        summaries: Sequence[WaterSummaryRecord],
+        entity_key_resolver: Callable[[WaterSummaryRecord], str],
+    ) -> dict[str, tuple[int, int, int, list[int], int]]: ...
+
+    @staticmethod
+    def _sum_hourly(items: Sequence[WaterSummaryRecord]) -> list[int]: ...
+
+    async def _build_natural_period_snapshot_from_rows(
+        self,
+        *,
+        subject: WaterRankSubject,
+        current_rows: Sequence[WaterSummaryRecord],
+        previous_rows: Sequence[WaterSummaryRecord],
+        limit: int,
+    ) -> "NaturalPeriodRankSnapshot": ...
+
+    async def _resolve_rank_scope_summaries(
+        self,
+        *,
+        subject: WaterRankSubject,
+        scope: WaterRankScope,
+        group_id: str,
+        start_date: int,
+        end_date: int,
+    ) -> list[WaterSummaryRecord]: ...
+
+
+if TYPE_CHECKING:
+    _WaterRepositoryReportsMixinBase = _WaterRepositoryReportsSupport
+else:
+    _WaterRepositoryReportsMixinBase = object
+
+
+class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
+    async def get_natural_day_snapshot(
+        self,
+        *,
+        subject: WaterRankSubject,
+        scope: WaterRankScope,
+        group_id: str,
+        limit: int = 10,
+    ) -> "NaturalPeriodRankSnapshot":
+        repo_module = _repo_module()
+        started = perf_counter()
+        await water_writer.flush_now()
+        now = arrow.get(repo_module.get_current_time()).to("Asia/Shanghai")
+        record_date = int(now.format("YYYYMMDD"))
+        current_rows, previous_rows = await asyncio.gather(
+            self._collect_realtime_daily_rows(
+                scope=scope,
+                group_id=group_id,
+                record_date=record_date,
+            ),
+            self._resolve_previous_day_rows(
+                scope=scope,
+                group_id=group_id,
+                record_date=record_date,
+            ),
+        )
+        snapshot = await self._build_natural_period_snapshot_from_rows(
+            subject=subject,
+            current_rows=current_rows,
+            previous_rows=previous_rows,
+            limit=limit,
+        )
+        logger.debug(
+            "[Water][RankRepo] scope={} subject={} day_record={} current_rows={} "
+            "previous_rows={} top={} active={} elapsed_ms={:.2f}",
+            scope,
+            subject,
+            record_date,
+            len(current_rows),
+            len(previous_rows),
+            len(snapshot.leaderboard),
+            snapshot.overview.active_entity_count,
+            (perf_counter() - started) * 1000,
+        )
+        return snapshot
+
+    async def get_natural_day_leaderboard(
+        self,
+        *,
+        subject: WaterRankSubject,
+        scope: WaterRankScope,
+        group_id: str,
+        limit: int = 10,
+    ):
+        snapshot = await self.get_natural_day_snapshot(
+            subject=subject,
+            scope=scope,
+            group_id=group_id,
+            limit=limit,
+        )
+        return snapshot.leaderboard
+
+    async def get_natural_day_overview(
+        self,
+        *,
+        subject: WaterRankSubject,
+        scope: WaterRankScope,
+        group_id: str,
+    ) -> "NaturalRankOverview":
+        snapshot = await self.get_natural_day_snapshot(
+            subject=subject,
+            scope=scope,
+            group_id=group_id,
+        )
+        return snapshot.overview
+
+    async def list_daily_report_candidates(
+        self,
+        *,
+        record_date: int,
+        min_activity_score: int,
+        working_group_ids: Sequence[str],
+    ) -> list["WaterDailyReportCandidate"]:
+        if not working_group_ids:
+            return []
+        rows = await self.get_summaries_in_window(
+            record_date,
+            record_date,
+            group_ids=list(working_group_ids),
+        )
+        aggregates = self._build_entity_period_aggregates(
+            rows,
+            lambda item: item.group_id,
+        )
+        from .repo import WaterDailyReportCandidate
+
+        ordered = sorted(
+            (
+                WaterDailyReportCandidate(
+                    group_id=group_id,
+                    record_date=record_date,
+                    total_msg_count=msg_count,
+                    active_user_count=active_users,
+                    active_hours=active_hours,
+                    activity_score=msg_count + 20 * active_users,
+                )
+                for group_id, (
+                    msg_count,
+                    active_users,
+                    active_hours,
+                    _hourly_counts,
+                    _group_count,
+                ) in aggregates.items()
+                if msg_count + 20 * active_users >= min_activity_score
+            ),
+            key=lambda item: (-item.activity_score, -item.total_msg_count, item.group_id),
+        )
+        logger.debug(
+            "[Water][ReportRepo] date={} working_groups={} candidates={} threshold={}",
+            record_date,
+            len(working_group_ids),
+            len(ordered),
+            min_activity_score,
+        )
+        return ordered
+
+    async def get_group_report_summary_snapshot(
+        self,
+        *,
+        group_id: str,
+        record_date: int,
+        limit: int = 10,
+    ) -> "WaterGroupReportSnapshot | None":
+        current_rows, previous_rows = await asyncio.gather(
+            self.get_summaries_in_window(record_date, record_date, group_ids=[group_id]),
+            self.get_summaries_in_window(
+                self._previous_date(record_date),
+                self._previous_date(record_date),
+                group_ids=[group_id],
+            ),
+        )
+        return self._build_group_report_snapshot_from_rows(
+            group_id=group_id,
+            record_date=record_date,
+            current_rows=current_rows,
+            previous_rows=previous_rows,
+            limit=limit,
+        )
+
+    async def get_group_report_live_snapshot(
+        self,
+        *,
+        group_id: str,
+        now_ts: int | None = None,
+        limit: int = 10,
+    ) -> "WaterGroupReportSnapshot | None":
+        await water_writer.flush_now()
+        repo_module = _repo_module()
+        now = arrow.get(now_ts or repo_module.get_current_time()).to("Asia/Shanghai")
+        record_date = int(now.format("YYYYMMDD"))
+        current_rows, previous_rows = await asyncio.gather(
+            self._collect_realtime_daily_rows(
+                scope="group",
+                group_id=group_id,
+                record_date=record_date,
+            ),
+            self.get_summaries_in_window(
+                self._previous_date(record_date),
+                self._previous_date(record_date),
+                group_ids=[group_id],
+            ),
+        )
+        return self._build_group_report_snapshot_from_rows(
+            group_id=group_id,
+            record_date=record_date,
+            current_rows=current_rows,
+            previous_rows=previous_rows,
+            limit=limit,
+        )
+
+    async def get_group_daily_rank_snapshot(
+        self,
+        *,
+        group_id: str,
+        record_date: int,
+        radius: int = 2,
+    ) -> "WaterGroupDailyRankSnapshot | None":
+        previous_date = self._previous_date(record_date)
+        current_rows, previous_rows = await asyncio.gather(
+            self.get_summaries_in_window(record_date, record_date),
+            self.get_summaries_in_window(previous_date, previous_date),
+        )
+        return self._build_group_daily_rank_snapshot_from_rows(
+            focus_group_id=group_id,
+            record_date=record_date,
+            current_rows=current_rows,
+            previous_rows=previous_rows,
+            radius=radius,
+        )
+
+    def _build_group_report_snapshot_from_rows(
+        self,
+        *,
+        group_id: str,
+        record_date: int,
+        current_rows: Sequence[WaterSummaryRecord],
+        previous_rows: Sequence[WaterSummaryRecord],
+        limit: int,
+    ) -> "WaterGroupReportSnapshot | None":
+        if not current_rows:
+            return None
+        current_aggregates = self._build_entity_period_aggregates(
+            current_rows,
+            lambda item: item.user_id,
+        )
+        previous_aggregates = self._build_entity_period_aggregates(
+            previous_rows,
+            lambda item: item.user_id,
+        )
+        ordered_current = nsmallest(
+            limit,
+            (
+                (
+                    user_id,
+                    msg_count,
+                    active_days,
+                    active_hours,
+                    hourly_counts,
+                    group_count,
+                )
+                for user_id, (
+                    msg_count,
+                    active_days,
+                    active_hours,
+                    hourly_counts,
+                    group_count,
+                ) in current_aggregates.items()
+            ),
+            key=self._natural_rank_sort_key,
+        )
+        previous_ranks = self._build_previous_rank_map(
+            previous_aggregates,
+            [user_id for user_id, *_rest in ordered_current],
+        )
+        from .repo import WaterGroupReportMember, WaterGroupReportSnapshot
+
+        leaderboard = [
+            WaterGroupReportMember(
+                user_id=user_id,
+                msg_count=msg_count,
+                active_hours=active_hours,
+                hourly_counts=hourly_counts,
+                current_rank=current_rank,
+                trend=(
+                    previous_ranks[user_id] - current_rank
+                    if user_id in previous_ranks
+                    else None
+                ),
+            )
+            for current_rank, (
+                user_id,
+                msg_count,
+                _active_days,
+                active_hours,
+                hourly_counts,
+                _group_count,
+            ) in enumerate(ordered_current, 1)
+        ]
+        current_hourly = self._sum_hourly(current_rows)
+        previous_hourly = self._sum_hourly(previous_rows)
+        return WaterGroupReportSnapshot(
+            group_id=group_id,
+            record_date=record_date,
+            total_msg_count=sum(int(row.msg_count) for row in current_rows),
+            active_user_count=len(current_aggregates),
+            active_hours=sum(1 for count in current_hourly if count > 0),
+            hourly_counts=current_hourly,
+            previous_total_msg_count=sum(int(row.msg_count) for row in previous_rows),
+            previous_active_user_count=len(previous_aggregates),
+            previous_active_hours=sum(1 for count in previous_hourly if count > 0),
+            previous_hourly_counts=previous_hourly,
+            leaderboard=leaderboard,
+        )
+
+    def _build_group_daily_rank_snapshot_from_rows(
+        self,
+        *,
+        focus_group_id: str,
+        record_date: int,
+        current_rows: Sequence[WaterSummaryRecord],
+        previous_rows: Sequence[WaterSummaryRecord],
+        radius: int,
+    ) -> "WaterGroupDailyRankSnapshot | None":
+        if not current_rows:
+            return None
+
+        current_aggregates = self._build_entity_period_aggregates(
+            current_rows,
+            lambda item: item.group_id,
+        )
+        if focus_group_id not in current_aggregates:
+            return None
+
+        group_active_users: dict[str, set[str]] = defaultdict(set)
+        group_hourly_counts: dict[str, list[int]] = defaultdict(lambda: [0] * 24)
+        for row in current_rows:
+            current_group_id = str(row.group_id)
+            group_active_users[current_group_id].add(str(row.user_id))
+            hourly_counts = group_hourly_counts[current_group_id]
+            for hour, count in enumerate(row.hourly_counts):
+                hourly_counts[hour] += int(count)
+
+        previous_aggregates = self._build_entity_period_aggregates(
+            previous_rows,
+            lambda item: item.group_id,
+        )
+
+        ordered_current = sorted(
+            (
+                (
+                    entity_id,
+                    msg_count,
+                    active_days,
+                    active_hours,
+                    hourly_counts,
+                    group_count,
+                )
+                for entity_id, (
+                    msg_count,
+                    active_days,
+                    active_hours,
+                    hourly_counts,
+                    group_count,
+                ) in current_aggregates.items()
+            ),
+            key=self._natural_rank_sort_key,
+        )
+        previous_ranks = self._build_previous_rank_map(
+            previous_aggregates,
+            [entity_id for entity_id, *_rest in ordered_current],
+        )
+        from .repo import WaterGroupDailyRankItem, WaterGroupDailyRankSnapshot
+
+        items = [
+            WaterGroupDailyRankItem(
+                group_id=entity_id,
+                msg_count=msg_count,
+                active_user_count=len(group_active_users.get(entity_id, set())),
+                active_hours=sum(
+                    1 for count in group_hourly_counts.get(entity_id, [0] * 24) if count
+                ),
+                hourly_counts=group_hourly_counts.get(entity_id, hourly_counts),
+                current_rank=current_rank,
+                trend=(
+                    previous_ranks[entity_id] - current_rank
+                    if entity_id in previous_ranks
+                    else None
+                ),
+            )
+            for current_rank, (
+                entity_id,
+                msg_count,
+                _active_days,
+                _active_hours,
+                hourly_counts,
+                _group_count,
+            ) in enumerate(ordered_current, 1)
+        ]
+        focus_index = next(
+            (index for index, item in enumerate(items) if item.group_id == focus_group_id),
+            None,
+        )
+        if focus_index is None:
+            return None
+
+        start = max(0, focus_index - radius)
+        end = min(len(items), focus_index + radius + 1)
+        focus_item = items[focus_index]
+        return WaterGroupDailyRankSnapshot(
+            focus_group_id=focus_group_id,
+            record_date=record_date,
+            total_groups=len(items),
+            focus_rank=focus_item.current_rank,
+            focus_trend=focus_item.trend,
+            leaderboard=items[start:end],
+            has_hidden_before=start > 0,
+            has_hidden_after=end < len(items),
+        )
+
+    async def _collect_realtime_daily_rows(
+        self,
+        *,
+        scope: WaterRankScope,
+        group_id: str,
+        record_date: int,
+    ) -> list[WaterSummaryRecord]:
+        repo_module = _repo_module()
+        started = perf_counter()
+        now = arrow.get(str(record_date), "YYYYMMDD").to("Asia/Shanghai")
+        start_ts = now.floor("day").int_timestamp
+        end_ts = now.ceil("day").int_timestamp
+
+        async def _stats_in_shard(
+            session: AsyncSession,
+        ) -> Sequence[Row[tuple[str, str, int, int]]]:
+            return await repo_module.WaterMessageOps(session).aggregate_daily_stats(
+                start_ts, end_ts
+            )
+
+        async def _hourly_in_shard(
+            session: AsyncSession,
+        ) -> Sequence[tuple[str, str, int, int]]:
+            return await repo_module.WaterMessageOps(session).aggregate_daily_hourly_stats(
+                start_ts, end_ts
+            )
+
+        stats_per_shard = await water_message.map_reduce(
+            now.datetime,
+            now.datetime,
+            _stats_in_shard,
+            cold_policy=ColdPolicy.HYDRATE,
+        )
+        hourly_per_shard = await water_message.map_reduce(
+            now.datetime,
+            now.datetime,
+            _hourly_in_shard,
+            cold_policy=ColdPolicy.HYDRATE,
+        )
+        allowed_group_ids: set[str] | None = None
+        if scope == "group":
+            allowed_group_ids = {group_id}
+        elif scope == "matrix":
+            matrix_id = await self.get_or_create_group_matrix_id(group_id)
+            group_ids = await self.get_groups_by_matrix_id(matrix_id)
+            allowed_group_ids = set(group_ids or [group_id])
+
+        merged_stats: dict[tuple[str, str], tuple[int, int]] = {}
+        for shard_rows in stats_per_shard:
+            for row_group_id, user_id, msg_count, active_hours in shard_rows:
+                if allowed_group_ids is not None and row_group_id not in allowed_group_ids:
+                    continue
+                key = (str(row_group_id), str(user_id))
+                old_msg, old_hours = merged_stats.get(key, (0, 0))
+                merged_stats[key] = (
+                    old_msg + int(msg_count),
+                    old_hours + int(active_hours),
+                )
+
+        merged_hourly: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0] * 24)
+        for shard_rows in hourly_per_shard:
+            for row_group_id, user_id, hour, count in shard_rows:
+                if allowed_group_ids is not None and row_group_id not in allowed_group_ids:
+                    continue
+                merged_hourly[(str(row_group_id), str(user_id))][int(hour)] += int(count)
+
+        rows = [
+            WaterSummaryRecord(
+                group_id=row_group_id,
+                user_id=user_id,
+                record_date=record_date,
+                msg_count=msg_count,
+                active_hours=active_hours,
+                hourly_counts=merged_hourly[(row_group_id, user_id)],
+                created_at=0,
+                updated_at=0,
+            )
+            for (row_group_id, user_id), (msg_count, active_hours) in merged_stats.items()
+        ]
+        logger.debug(
+            "[Water][RankRepo] realtime scope={} group_id={} record_date={} rows={} "
+            "merged_hourly_keys={} elapsed_ms={:.2f}",
+            scope,
+            group_id,
+            record_date,
+            len(rows),
+            len(merged_hourly),
+            (perf_counter() - started) * 1000,
+        )
+        return rows
+
+    async def _resolve_previous_day_rows(
+        self,
+        *,
+        scope: WaterRankScope,
+        group_id: str,
+        record_date: int,
+    ) -> list[WaterSummaryRecord]:
+        previous_date = self._previous_date(record_date)
+        return await self._resolve_rank_scope_summaries(
+            subject="user",
+            scope=scope,
+            group_id=group_id,
+            start_date=previous_date,
+            end_date=previous_date,
+        )
