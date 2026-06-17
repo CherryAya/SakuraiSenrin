@@ -54,6 +54,7 @@ from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 
 from .database.types import WordbankMessageRefRecord
+from .derived_help import build_wordbank_derived_help
 from .handlers import (
     APPROVAL_REPLY_ALIASES,
     GROUP_ALIASES,
@@ -216,6 +217,7 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.wordbank.description",
         },
         "docs": _build_wordbank_docs_meta(),
+        "derived_help_provider": build_wordbank_derived_help,
     },
 )
 

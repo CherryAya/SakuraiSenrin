@@ -27,18 +27,22 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
+    VirtualPluginDocSpec,
     build_doc_tree,
     build_feature_copy_text,
     build_plugin_guide_copy_text,
+    build_simple_leaf_copy_text,
     can_view_node,
     create_docs_meta,
     load_doc_node,
+    load_virtual_doc_node,
     match_doc_node,
     match_feature,
     read_docs_metas,
     render_feature_deep_dive,
     render_help_dashboard,
     render_plugin_guide,
+    resolve_help_entry_shape,
     split_features_for_disclosure,
 )
 from src.lib.plugin_meta import create_plugin_metadata
@@ -186,7 +190,8 @@ def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
         if metadata is None:
             continue
         docs_metas = read_docs_metas(metadata)
-        if not docs_metas:
+        derived_specs = _read_derived_help_specs(metadata, locale)
+        if not docs_metas and not derived_specs:
             continue
         display_name = _resolve_metadata_text(metadata, locale, "name") or plugin.name
         summary = _resolve_metadata_text(metadata, locale, "description")
@@ -222,6 +227,57 @@ def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
                     node=node,
                 )
             )
+        for spec in derived_specs:
+            spec_permission = spec.permission
+            node = load_virtual_doc_node(
+                VirtualPluginDocSpec(
+                    slug=spec.slug,
+                    title=spec.title,
+                    summary=spec.summary,
+                    description=spec.description,
+                    trigger=spec.trigger,
+                    author=spec.author,
+                    version=spec.version,
+                    impression_color=spec.impression_color
+                    or impression_color
+                    or DEFAULT_IMPRESSION_COLOR,
+                    features=spec.features,
+                    aliases=spec.aliases,
+                    permission=spec_permission,
+                    category=spec.category,
+                    order=spec.order,
+                    visible=spec.visible,
+                    hidden=spec.hidden,
+                    internal=spec.internal,
+                    kind=spec.kind,
+                    parent_slug=spec.parent_slug,
+                    plugin_name=plugin.name,
+                    module_name=plugin.module_name,
+                    origin_plugin_slug=spec.origin_plugin_slug or plugin.name,
+                )
+            )
+            entries.append(
+                DocsEntry(
+                    plugin=plugin,
+                    metadata=metadata,
+                    docs=create_docs_meta(
+                        visible=spec.visible,
+                        hidden=spec.hidden,
+                        internal=spec.internal,
+                        kind=spec.kind,
+                        category=spec.category,
+                        order=spec.order,
+                        source=node.source_path,
+                        slug=spec.slug,
+                        parent_slug=spec.parent_slug,
+                        aliases=spec.aliases,
+                    ),
+                    display_name=spec.title,
+                    summary=spec.summary,
+                    permission=spec_permission,
+                    node=node,
+                )
+            )
 
     return sorted(
         entries,
@@ -231,6 +287,19 @@ def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
             entry.display_name.lower(),
         ),
     )
+
+
+def _read_derived_help_specs(
+    metadata: PluginMetadata,
+    locale: LocaleCode,
+) -> tuple[VirtualPluginDocSpec, ...]:
+    raw = metadata.extra.get("derived_help_provider")
+    if not callable(raw):
+        return ()
+    specs = raw(locale)
+    if not isinstance(specs, (list, tuple)):
+        return ()
+    return tuple(spec for spec in specs if isinstance(spec, VirtualPluginDocSpec))
 
 
 async def _resolve_actor_permission(bot: Bot, event: MessageEvent) -> Permission:
@@ -320,11 +389,34 @@ def _build_index_message(
     dashboard_bytes = render_help_dashboard(roots, locale=locale)
     lines = [
         "欢迎来到 SakuraiSenrin 帮助中心。",
-        "发送下面这些命令，即可进入插件级完整指引：",
+        "发送下面这些命令，即可直接查看功能说明或 demo：",
         "",
     ]
     for node in roots:
+        children = tree.children_of(node.slug)
+        shape = resolve_help_entry_shape(
+            node,
+            actor_permission=actor_permission,
+            children=children,
+        )
         lines.append(f"👉 #help {node.title}")
+        if shape == "overview_group":
+            visible_children = tuple(
+                child
+                for child in children
+                if child.visible and can_view_node(child, actor_permission)
+            )
+            if visible_children:
+                child = visible_children[0]
+                child_query = child.slug.split(".")[-1]
+                lines.append(f"  继续查看：#help {node.title} {child_query}")
+        elif shape == "plugin_guide":
+            hero_features, _ = split_features_for_disclosure(
+                node.features,
+                actor_permission=actor_permission,
+            )
+            if hero_features:
+                lines.append(f"  查看 demo：#help {node.title} {hero_features[0].slug}")
     return _compose_help_reply(dashboard_bytes, "\n".join(lines).strip())
 
 
@@ -379,6 +471,11 @@ async def _resolve_docs_message(
 ) -> Message:
     tree = build_doc_tree([item.node for item in (all_entries or [entry])])
     children = tree.children_of(entry.node.slug)
+    entry_shape = resolve_help_entry_shape(
+        entry.node,
+        actor_permission=actor_permission,
+        children=children,
+    )
     if feature_query:
         visible_features = tuple(
             feature
@@ -453,6 +550,21 @@ async def _resolve_docs_message(
         entry.node.features,
         actor_permission=actor_permission,
     )
+    if entry_shape == "simple_leaf" and hero_features:
+        feature = hero_features[0]
+        image_bytes = render_feature_deep_dive(
+            entry.node,
+            feature,
+            locale=locale,
+        )
+        return _compose_help_reply(
+            image_bytes,
+            build_simple_leaf_copy_text(
+                entry.node,
+                feature,
+                locale=locale,
+            ),
+        )
     image_bytes = render_plugin_guide(
         entry.node,
         locale=locale,

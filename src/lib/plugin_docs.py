@@ -49,6 +49,7 @@ type DocsProvider = Callable[..., DocsResult]
 type DocNodeKind = Literal["plugin", "overview", "internal"]
 type DocRenderView = Literal["text", "index", "plugin", "feature"]
 type CommandLineKind = Literal["root", "flag", "continuation", "alternative"]
+type HelpEntryShape = Literal["simple_leaf", "plugin_guide", "overview_group"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -163,6 +164,24 @@ class FeatureDoc:
 
 
 @dataclass(slots=True, frozen=True)
+class VirtualFeatureDocSpec:
+    slug: str
+    title: str
+    summary: str
+    trigger: str
+    overview: str
+    preconditions: str
+    failures: str
+    demo_turns: tuple[DocsDemoTurn, ...]
+    aliases: tuple[str, ...] = ()
+    permission: Permission = Permission.NORMAL
+    hero: bool = False
+    priority: int = 1000
+    advanced: bool = False
+    demo_filename: str = ""
+
+
+@dataclass(slots=True, frozen=True)
 class PluginDocBundle:
     title: str
     description: str
@@ -174,6 +193,31 @@ class PluginDocBundle:
     impression_color: str
     index: tuple[FeatureDoc, ...]
     source_path: Path
+
+
+@dataclass(slots=True, frozen=True)
+class VirtualPluginDocSpec:
+    slug: str
+    title: str
+    summary: str
+    description: str
+    trigger: str
+    author: str
+    version: str
+    impression_color: str
+    features: tuple[VirtualFeatureDocSpec, ...]
+    aliases: tuple[str, ...] = ()
+    permission: Permission = Permission.NORMAL
+    category: str = DEFAULT_HELP_CATEGORY
+    order: int = 100
+    visible: bool = True
+    hidden: bool = False
+    internal: bool = False
+    kind: DocNodeKind = "plugin"
+    parent_slug: str | None = None
+    plugin_name: str = ""
+    module_name: str = ""
+    origin_plugin_slug: str = ""
 
 
 @dataclass(slots=True, frozen=True)
@@ -236,6 +280,13 @@ class DocTree:
 
     def roots(self) -> tuple[DocNode, ...]:
         return tuple(node for node in self.nodes if node.parent_slug is None)
+
+    def root_of(self, slug: str) -> DocNode | None:
+        mapping = {node.slug: node for node in self.nodes}
+        current = mapping.get(slug)
+        while current is not None and current.parent_slug is not None:
+            current = mapping.get(current.parent_slug)
+        return current
 
 
 @dataclass(slots=True, frozen=True)
@@ -582,6 +633,66 @@ def load_doc_node(
     )
 
 
+def build_virtual_plugin_doc_bundle(spec: VirtualPluginDocSpec) -> PluginDocBundle:
+    features = tuple(
+        FeatureDoc(
+            slug=feature.slug,
+            title=feature.title,
+            summary=feature.summary,
+            aliases=feature.aliases,
+            trigger=feature.trigger,
+            permission=feature.permission,
+            demo_filename=feature.demo_filename,
+            overview=feature.overview,
+            preconditions=feature.preconditions,
+            flow_notes="",
+            failures=feature.failures,
+            demo_turns=feature.demo_turns,
+            hero=feature.hero,
+            priority=feature.priority,
+            advanced=feature.advanced,
+        )
+        for feature in spec.features
+    )
+    virtual_origin = spec.origin_plugin_slug or spec.plugin_name or "plugin"
+    virtual_source = Path(f"/virtual/{virtual_origin}/{spec.slug}")
+    return PluginDocBundle(
+        title=spec.title,
+        description=spec.description,
+        summary=spec.summary,
+        trigger=spec.trigger,
+        permission=spec.permission.label,
+        author=spec.author,
+        version=spec.version,
+        impression_color=normalize_hex_color(spec.impression_color),
+        index=features,
+        source_path=virtual_source,
+    )
+
+
+def load_virtual_doc_node(spec: VirtualPluginDocSpec) -> DocNode:
+    bundle = build_virtual_plugin_doc_bundle(spec)
+    return DocNode(
+        kind=spec.kind,
+        slug=spec.slug,
+        parent_slug=spec.parent_slug,
+        category=spec.category,
+        order=spec.order,
+        visible=spec.visible,
+        hidden=spec.hidden,
+        internal=spec.internal,
+        permission=spec.permission,
+        title=spec.title,
+        summary=spec.summary,
+        description=spec.description,
+        aliases=spec.aliases,
+        source_path=bundle.source_path,
+        bundle=bundle,
+        module_name=spec.module_name,
+        plugin_name=spec.plugin_name,
+    )
+
+
 def render_doc_node_overview(
     node: DocNode,
     *,
@@ -637,6 +748,30 @@ def render_doc_node_overview(
     if demo_bytes is None:
         return message
     return message + MessageSegment.image(demo_bytes)
+
+
+def resolve_help_entry_shape(
+    node: DocNode,
+    *,
+    actor_permission: Permission = Permission.NORMAL,
+    children: Sequence[DocNode] = (),
+) -> HelpEntryShape:
+    visible_children = tuple(
+        child for child in children if can_view_node(child, actor_permission)
+    )
+    if node.kind == "overview" or visible_children:
+        return "overview_group"
+
+    visible_features = filter_features_by_permission(node.features, actor_permission)
+    if len(visible_features) <= 1:
+        return "simple_leaf"
+
+    if len(visible_features) <= 2 and all(
+        not feature.advanced for feature in visible_features
+    ):
+        return "simple_leaf"
+
+    return "plugin_guide"
 
 
 def render_doc_feature(
@@ -1595,11 +1730,13 @@ def load_collection_demo_bytes(bundle: PluginDocBundle) -> bytes | None:
 def load_representative_demo_bytes(
     bundle: PluginDocBundle,
     actor_permission: Permission = Permission.NORMAL,
+    prefer_collection: bool = True,
 ) -> bytes | None:
     """加载代表性 demo 图片，优先使用集合图片，否则使用第一个有权限的功能 demo"""
-    collection_demo = load_collection_demo_bytes(bundle)
-    if collection_demo is not None:
-        return collection_demo
+    if prefer_collection:
+        collection_demo = load_collection_demo_bytes(bundle)
+        if collection_demo is not None:
+            return collection_demo
     # 按权限过滤功能，只加载用户有权限查看的 demo
     visible_features = filter_features_by_permission(bundle.index, actor_permission)
     for feature in visible_features:
@@ -1932,6 +2069,7 @@ def build_feature_copy_text(
     note_items = _feature_notice_items(feature, locale=locale)
     if note_items:
         lines.extend(["", f"说明：{note_items[0]}"])
+    lines.extend(["", f"查看 demo：{feature_demo_help_command(node, feature)}"])
     return "\n".join(lines).strip()
 
 
@@ -1972,6 +2110,24 @@ def build_plugin_guide_copy_text(
             )
             lines.append(f"  查看 demo：{feature_demo_help_command(node, feature)}")
     return "\n".join(line for line in lines if line is not None).strip()
+
+
+def build_simple_leaf_copy_text(
+    node: DocNode,
+    feature: FeatureDoc,
+    *,
+    locale: LocaleCode,
+) -> str:
+    lines = [
+        f"👉 {node.title}",
+        *feature_command_sections(node.bundle, feature, node.title),
+        "",
+        f"查看 demo：{feature_demo_help_command(node, feature)}",
+    ]
+    note_items = _feature_notice_items(feature, locale=locale)
+    if note_items:
+        lines.extend(["", f"说明：{note_items[0]}"])
+    return "\n".join(lines).strip()
 
 
 _EMPTY_HEADING = Token("inline", "", 0)

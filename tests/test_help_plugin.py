@@ -27,6 +27,9 @@ if nonebot.get_plugin("help") is None:
 if nonebot.get_plugin("water") is None:
     sys.modules.pop("src.plugins.water", None)
     nonebot.load_plugin("src.plugins.water")
+if nonebot.get_plugin("wordbank") is None:
+    sys.modules.pop("src.plugins.wordbank", None)
+    nonebot.load_plugin("src.plugins.wordbank")
 
 from src.plugins.help import (
     DocsEntry,
@@ -298,8 +301,37 @@ def test_build_index_message_only_lists_root_nodes() -> None:
     rendered = str(message)
     assert "欢迎来到 SakuraiSenrin 帮助中心" in rendered
     assert "#help 管理模块总览" in rendered
+    assert "继续查看：#help 管理模块总览 group" in rendered
     assert "群组管理模块" not in rendered
     assert any(segment.type == "image" for segment in message)
+
+
+def test_build_index_message_adds_demo_hint_for_complex_single_page_nodes() -> None:
+    entries = _iter_docs_entries("zh-CN")
+
+    message = _build_index_message(
+        entries,
+        "zh-CN",
+        Permission.NORMAL,
+    )
+
+    rendered = str(message)
+    assert "#help 吹水记录" in rendered
+    assert "查看 demo：#help 吹水记录 profile" in rendered
+
+
+def test_iter_docs_entries_includes_wordbank_derived_root_entry() -> None:
+    entries = _iter_docs_entries("zh-CN")
+
+    derived = next(
+        entry
+        for entry in entries
+        if entry.node.slug == "derived.wordbank.miaomiao-toolkit"
+    )
+
+    assert derived.display_name == "凛凛的妙妙小工具目录"
+    assert derived.node.plugin_name == "wordbank"
+    assert derived.node.bundle.index[0].title == "运势"
 
 
 async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:
@@ -339,7 +371,7 @@ async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:
 
     assert any(segment.type == "image" for segment in root_message)
     assert "下面这些命令可以直接复制发送" in str(root_message)
-    assert "👉 插件索引" in str(root_message)
+    assert "👉 帮助入口" in str(root_message)
     assert any(segment.type == "image" for segment in child_message)
     assert "📖 群组管理模块" in str(child_message)
 
@@ -360,6 +392,59 @@ async def test_resolve_docs_message_feature_query_returns_deep_dive_reply() -> N
     rendered = str(message)
     assert "👉 查看周期榜单" in rendered
     assert "#水王" in rendered
+
+
+async def test_resolve_docs_message_supports_wordbank_derived_root_and_feature(
+) -> None:
+    entries = _iter_docs_entries("zh-CN")
+    derived_entry = next(
+        entry
+        for entry in entries
+        if entry.node.slug == "derived.wordbank.miaomiao-toolkit"
+    )
+
+    root_message = await _resolve_docs_message(
+        derived_entry,
+        "zh-CN",
+        actor_permission=Permission.NORMAL,
+        all_entries=entries,
+    )
+    feature_message = await _resolve_docs_message(
+        derived_entry,
+        "zh-CN",
+        feature_query="运势",
+        actor_permission=Permission.NORMAL,
+        all_entries=entries,
+    )
+
+    assert any(segment.type == "image" for segment in root_message)
+    assert "📖 凛凛的妙妙小工具目录" in str(root_message)
+    assert "查看 demo：#help 凛凛的妙妙小工具目录 fortune" in str(root_message)
+    assert any(segment.type == "image" for segment in feature_message)
+    assert "👉 运势" in str(feature_message)
+    assert "查看 demo：#help 凛凛的妙妙小工具目录 fortune" in str(feature_message)
+
+
+async def test_resolve_docs_message_simple_leaf_returns_direct_demo_reply() -> None:
+    if nonebot.get_plugin("picsearch") is None:
+        nonebot.load_plugin("src.plugins.picsearch")
+    entries = _iter_docs_entries("zh-CN")
+    picsearch_entry = next(
+        entry for entry in entries if entry.display_name == "图片搜索"
+    )
+
+    message = await _resolve_docs_message(
+        picsearch_entry,
+        "zh-CN",
+        actor_permission=Permission.NORMAL,
+        all_entries=entries,
+    )
+
+    rendered = str(message)
+    assert any(segment.type == "image" for segment in message)
+    assert "👉 图片搜索" in rendered
+    assert "查看 demo：#help 图片搜索 search" in rendered
+    assert "下面这些命令可以直接复制发送" not in rendered
 
 
 @pytest.mark.asyncio

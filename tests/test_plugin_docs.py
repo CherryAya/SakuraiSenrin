@@ -26,6 +26,8 @@ from src.lib.plugin_docs import (
     FeatureDoc,
     InlineTextSpan,
     ProgressiveDisclosureRenderer,
+    VirtualFeatureDocSpec,
+    VirtualPluginDocSpec,
     audit_demo_layout,
     build_command_layout,
     build_doc_demo_message,
@@ -33,15 +35,19 @@ from src.lib.plugin_docs import (
     build_feature_copy_text,
     build_plugin_guide_copy_text,
     build_readme_docs,
+    build_simple_leaf_copy_text,
+    build_virtual_plugin_doc_bundle,
     create_docs_meta,
     feature_demo_help_command,
     load_doc_node,
     load_plugin_doc_bundle,
     load_representative_demo_bytes,
+    load_virtual_doc_node,
     match_feature,
     render_doc_node_overview,
     render_help_dashboard,
     render_plugin_guide,
+    resolve_help_entry_shape,
     split_features_for_disclosure,
     split_inline_text_spans,
 )
@@ -87,6 +93,38 @@ def test_load_plugin_doc_bundle_parses_real_readme() -> None:
     assert ranking.priority == 30
     assert merge.advanced is True
     assert admin.advanced is True
+
+
+def test_virtual_plugin_doc_bundle_builds_feature_index() -> None:
+    spec = VirtualPluginDocSpec(
+        slug="derived.wordbank.sample",
+        title="样例目录",
+        summary="样例摘要",
+        description="样例描述",
+        trigger="词条触发 / #help 查询",
+        author="SakuraiSenrin",
+        version="0.1.0",
+        impression_color="#74C0FC",
+        features=(
+            VirtualFeatureDocSpec(
+                slug="alpha",
+                title="Alpha",
+                summary="第一项",
+                trigger="样例1",
+                overview="alpha overview",
+                preconditions="无",
+                failures="无",
+                demo_turns=(plugin_docs_module.DocsDemoTurn("USER", "样例1"),),
+            ),
+        ),
+    )
+
+    bundle = build_virtual_plugin_doc_bundle(spec)
+
+    assert bundle.title == "样例目录"
+    assert bundle.summary == "样例摘要"
+    assert bundle.index[0].slug == "alpha"
+    assert bundle.index[0].trigger == "样例1"
 
 
 def test_load_plugin_doc_bundle_parses_disclosure_metadata(tmp_path: Path) -> None:
@@ -1084,6 +1122,61 @@ BOT: Alpha 完成
     assert load_representative_demo_bytes(bundle) == b"collection-demo"
 
 
+def test_representative_demo_can_skip_collection_for_simple_leaf(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "src" / "plugins" / "sample" / "docs" / "README.MD"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试简单叶子代表图回退。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一个功能。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一个功能。
+- 指令: `#alpha`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    demos_dir = source.parent / "demos"
+    demos_dir.mkdir()
+    (demos_dir / "sample-alpha.png").write_bytes(b"feature-demo")
+    (demos_dir / "sample-collection.png").write_bytes(b"collection-demo")
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="测试插件",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    assert load_representative_demo_bytes(
+        bundle,
+        prefer_collection=False,
+    ) == b"feature-demo"
+
+
 def test_plugin_docs_compose_builds_collection_image(
     tmp_path: Path,
     monkeypatch: Any,
@@ -1852,6 +1945,122 @@ def test_render_plugin_guide_and_copy_text_use_disclosure_selection() -> None:
     assert "更多高级功能" in copy_text
     assert "wordbank add 触发词 => 响应词 --scope current_group" in copy_text
     assert "#help 词库模块 add-scope" in copy_text
+
+
+def test_resolve_help_entry_shape_distinguishes_simple_leaf_and_grouped_nodes() -> None:
+    picsearch = load_doc_node(
+        source="src/plugins/picsearch/docs/README.MD",
+        default_name="图片搜索",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    wordbank = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    admin_meta = create_docs_meta(
+        visible=False,
+        category="admin",
+        order=10,
+        source="src/plugins/admin/docs/README.MD",
+        slug="admin",
+        kind="overview",
+    )
+    admin = load_doc_node(
+        source=admin_meta["source"]["readme_path"],
+        default_name="管理模块总览",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        docs_meta=admin_meta,
+    )
+
+    assert resolve_help_entry_shape(picsearch) == "simple_leaf"
+    assert resolve_help_entry_shape(wordbank) == "plugin_guide"
+    assert resolve_help_entry_shape(admin) == "overview_group"
+
+
+def test_virtual_doc_node_behaves_like_complex_plugin_guide() -> None:
+    node = load_virtual_doc_node(
+        VirtualPluginDocSpec(
+            slug="derived.wordbank.miaomiao-toolkit",
+            title="凛凛的妙妙小工具目录",
+            summary="目录摘要",
+            description="目录描述",
+            trigger="词条触发 / #help 查询",
+            author="SakuraiSenrin",
+            version="0.1.0",
+            impression_color="#74C0FC",
+            plugin_name="wordbank",
+            module_name="src.plugins.wordbank",
+            origin_plugin_slug="wordbank",
+            features=(
+                VirtualFeatureDocSpec(
+                    slug="fortune",
+                    title="运势",
+                    summary="运势说明",
+                    trigger="妙妙小工具1",
+                    overview="运势玩法说明",
+                    preconditions="词条已存在",
+                    failures="词条不存在时不会回复",
+                    demo_turns=(
+                        plugin_docs_module.DocsDemoTurn("USER", "妙妙小工具1"),
+                        plugin_docs_module.DocsDemoTurn("BOT", "运势说明"),
+                    ),
+                    hero=True,
+                ),
+                VirtualFeatureDocSpec(
+                    slug="jrlp",
+                    title="jrlp",
+                    summary="jrlp 说明",
+                    trigger="妙妙小工具2",
+                    overview="jrlp 玩法说明",
+                    preconditions="词条已存在",
+                    failures="词条不存在时不会回复",
+                    demo_turns=(
+                        plugin_docs_module.DocsDemoTurn("USER", "妙妙小工具2"),
+                        plugin_docs_module.DocsDemoTurn("BOT", "jrlp 说明"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert resolve_help_entry_shape(node) == "simple_leaf"
+    match = match_feature(node.features, "运势")
+    assert match.status == "matched"
+    assert match.feature is not None
+    assert match.feature.slug == "fortune"
+
+
+def test_wordbank_derived_directory_is_classified_as_plugin_guide() -> None:
+    from src.plugins.wordbank.derived_help import build_wordbank_derived_help
+
+    spec = build_wordbank_derived_help("zh-CN")[0]
+    node = load_virtual_doc_node(spec)
+
+    assert resolve_help_entry_shape(node) == "plugin_guide"
+
+
+def test_build_simple_leaf_copy_text_includes_direct_demo_command() -> None:
+    node = load_doc_node(
+        source="src/plugins/picsearch/docs/README.MD",
+        default_name="图片搜索",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    feature = node.features[0]
+
+    copy_text = build_simple_leaf_copy_text(node, feature, locale="zh-CN")
+
+    assert "👉 图片搜索" in copy_text
+    assert "搜图 [saucenao|ascii2d]" in copy_text
+    assert "查看 demo：#help 图片搜索 search" in copy_text
 
 
 def test_build_feature_copy_text_returns_command_skeleton() -> None:
