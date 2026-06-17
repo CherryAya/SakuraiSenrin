@@ -2,19 +2,28 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
+from httpx import AsyncClient
 from nonebot import on_regex
 from nonebot.adapters.onebot.v11.event import MessageEvent
-from nonebot.adapters.onebot.v11.message import Message
+from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import Arg
 from nonebot.typing import T_State
+from PicImageSearch import Ascii2D, Network, SauceNAO
 
+from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.cooldown import build_cooldown_dependency
+from src.lib.cooldown import (
+    CooldownIsolateLevel,
+    MemoryCooldown,
+    build_cooldown_dependency,
+)
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
@@ -25,20 +34,27 @@ from src.lib.plugin_docs import (
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
-
-from .handlers import (
-    _picsearch_cooldown,
-    build_cooldown_prompt,
-    extract_reply_image_urls,
-    parse_indexes,
-    parse_request_text,
-    run_search,
-)
-from .services import PicsearchEngine
+from src.logger import logger
 
 name = tr("zh-CN", "plugin.picsearch.name")
 description = tr("zh-CN", "plugin.picsearch.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+MAX_IMAGE_SELECTION = 3
+
+
+class PicsearchEngine(StrEnum):
+    SAUCENAO = "saucenao"
+    ASCII2D = "ascii2d"
+
+
+@dataclass(slots=True, frozen=True)
+class PicsearchResult:
+    engine: PicsearchEngine
+    title: str
+    author: str
+    similarity: str
+    source_url: str
+    thumbnail_url: str
 
 
 def build_docs(ctx: DocsRenderContext | None = None) -> Message:
@@ -86,12 +102,256 @@ __plugin_meta__ = create_plugin_metadata(
 )
 
 MULTI_IMAGE_PROMPT = Message(tr("zh-CN", "picsearch.index_prompt"))
+_picsearch_cooldown = MemoryCooldown(
+    30,
+    isolate_level=CooldownIsolateLevel.USER,
+)
 
 picsearch_matcher = on_regex(
     r"^\s*搜图(?:\s+(\S+))?\s*$",
     priority=5,
     block=True,
 )
+
+
+def extract_reply_image_urls(event: MessageEvent) -> list[str]:
+    if event.reply is None:
+        return []
+    urls: list[str] = []
+    for segment in event.reply.message:
+        if segment.type != "image":
+            continue
+        url = str(segment.data.get("url", "") or segment.data.get("file", "")).strip()
+        if url:
+            urls.append(url)
+    return urls
+
+
+def parse_request_text(text: str) -> PicsearchEngine:
+    _, _, rest = text.strip().partition(" ")
+    return parse_engine(rest)
+
+
+def parse_indexes(raw_text: str, image_count: int) -> list[int]:
+    parts = [part for part in raw_text.strip().split() if part]
+    if not parts:
+        raise ValueError("empty")
+    if len(parts) > MAX_IMAGE_SELECTION:
+        raise ValueError("too_many")
+
+    indexes: list[int] = []
+    for part in parts:
+        if not part.isdigit():
+            raise ValueError("invalid")
+        parsed = int(part)
+        if parsed < 1 or parsed > image_count:
+            raise ValueError("range")
+        indexes.append(parsed - 1)
+    return indexes
+
+
+def parse_engine(text: str) -> PicsearchEngine:
+    normalized = text.strip().lower()
+    if normalized in {"", "saucenao", "sauce", "s"}:
+        return PicsearchEngine.SAUCENAO
+    if normalized in {"ascii2d", "ascii", "a"}:
+        return PicsearchEngine.ASCII2D
+    raise ValueError(normalized)
+
+
+def get_engine_key(engine: PicsearchEngine) -> str | None:
+    if engine is PicsearchEngine.SAUCENAO:
+        return config.SAUCENAO_KEY
+    return config.ASCII2D_KEY
+
+
+def get_thumbnail_url(item: Any) -> str:
+    for attr in ("thumbnail", "thumbnail_url"):
+        value = getattr(item, attr, "")
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _to_result(
+    engine: PicsearchEngine,
+    item: Any,
+    *,
+    locale: LocaleCode = "zh-CN",
+) -> PicsearchResult:
+    if engine is PicsearchEngine.SAUCENAO:
+        return PicsearchResult(
+            engine=engine,
+            title=str(
+                getattr(item, "title", "")
+                or tr(locale, "picsearch.result.unknown_title")
+            ),
+            author=str(
+                getattr(item, "author", "")
+                or tr(locale, "picsearch.result.unknown_author")
+            ),
+            similarity=str(
+                getattr(item, "similarity", "")
+                or tr(locale, "picsearch.result.unknown_similarity")
+            ),
+            source_url=str(
+                getattr(item, "source", "")
+                or tr(locale, "picsearch.result.unknown_source")
+            ),
+            thumbnail_url=get_thumbnail_url(item),
+        )
+
+    return PicsearchResult(
+        engine=engine,
+        title=str(
+            getattr(item, "title", "") or tr(locale, "picsearch.result.unknown_title")
+        ),
+        author=str(
+            getattr(item, "author", "") or tr(locale, "picsearch.result.unknown_author")
+        ),
+        similarity="N/A",
+        source_url=str(
+            getattr(item, "url", "") or tr(locale, "picsearch.result.unknown_source")
+        ),
+        thumbnail_url=get_thumbnail_url(item),
+    )
+
+
+async def search_image(
+    image_url: str,
+    engine: PicsearchEngine,
+    *,
+    locale: LocaleCode = "zh-CN",
+) -> PicsearchResult | None:
+    async with Network(proxies=config.HTTP_PROXY) as network:
+        if engine is PicsearchEngine.SAUCENAO:
+            response = await SauceNAO(
+                api_key=get_engine_key(engine),
+                client=network,
+            ).search(url=image_url)
+        else:
+            response = await Ascii2D(
+                bovw=False,
+                client=network,
+            ).search(url=image_url)
+
+    raw_items = getattr(response, "raw", None)
+    if not raw_items:
+        return None
+
+    return _to_result(engine, raw_items[0], locale=locale)
+
+
+async def load_thumbnail_bytes(url: str) -> bytes | None:
+    if not url:
+        return None
+
+    async with AsyncClient(proxy=config.HTTP_PROXY) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.content
+
+
+def build_result_message(
+    index: int,
+    result: PicsearchResult,
+    thumbnail_bytes: bytes | None,
+    *,
+    locale: LocaleCode,
+) -> Message:
+    lines = [
+        tr(locale, "picsearch.result.header", index=index),
+        tr(locale, "picsearch.result.engine", engine=result.engine.value),
+        tr(locale, "picsearch.result.similarity", similarity=result.similarity),
+        tr(locale, "picsearch.result.title", title=result.title),
+        tr(locale, "picsearch.result.author", author=result.author),
+        tr(locale, "picsearch.result.link", link=result.source_url),
+    ]
+    message = Message("\n".join(lines))
+    if thumbnail_bytes is not None:
+        message += MessageSegment.image(thumbnail_bytes)
+    return message
+
+
+async def build_cooldown_prompt(
+    event: MessageEvent,
+    remaining_seconds: int,
+) -> str:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    return tr(locale, "picsearch.cooldown", seconds=remaining_seconds)
+
+
+def clear_picsearch_cooldowns() -> None:
+    _picsearch_cooldown.clear()
+
+
+async def run_search(
+    matcher: Matcher,
+    *,
+    locale: LocaleCode,
+    engine: PicsearchEngine,
+    image_urls: list[str],
+    indexes: list[int],
+) -> None:
+    if engine is PicsearchEngine.SAUCENAO and get_engine_key(engine) is None:
+        await matcher.finish(tr(locale, "picsearch.engine_key_missing", engine=engine))
+
+    for selected in indexes:
+        await matcher.send(
+            tr(
+                locale,
+                "picsearch.searching",
+                index=selected + 1,
+                engine=engine.value,
+            )
+        )
+        try:
+            result = await search_image(image_urls[selected], engine, locale=locale)
+        except Exception as exc:
+            logger.warning(
+                "[Picsearch] search failed: "
+                f"engine={engine.value} index={selected + 1}: {exc}"
+            )
+            await matcher.send(
+                tr(
+                    locale,
+                    "picsearch.search_failed",
+                    index=selected + 1,
+                    engine=engine.value,
+                )
+            )
+            continue
+
+        if result is None:
+            await matcher.send(
+                tr(
+                    locale,
+                    "picsearch.no_result",
+                    index=selected + 1,
+                    engine=engine.value,
+                )
+            )
+            continue
+
+        thumbnail_bytes: bytes | None = None
+        try:
+            thumbnail_bytes = await load_thumbnail_bytes(result.thumbnail_url)
+        except Exception as exc:
+            logger.warning(
+                "[Picsearch] thumbnail load failed: "
+                f"engine={engine.value} index={selected + 1}: {exc}"
+            )
+
+        await matcher.send(
+            build_result_message(
+                selected + 1,
+                result,
+                thumbnail_bytes,
+                locale=locale,
+            )
+        )
+
+    await matcher.finish()
 
 
 @picsearch_matcher.handle(

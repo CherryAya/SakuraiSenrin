@@ -23,15 +23,19 @@ if nonebot.get_plugin("picsearch") is None:
 if nonebot.get_plugin("help") is None:
     nonebot.load_plugin("src.plugins.help")
 
+from src.plugins import picsearch as picsearch_plugin
 from src.plugins.help import (
     _iter_docs_entries,
     _resolve_actor_permission,
     _resolve_docs_message,
     help_matcher,
 )
-from src.plugins.picsearch import _build_error_demo, picsearch_matcher
-from src.plugins.picsearch import handlers as picsearch_handlers
-from src.plugins.picsearch.services import PicsearchEngine, PicsearchResult
+from src.plugins.picsearch import (
+    PicsearchEngine,
+    PicsearchResult,
+    _build_error_demo,
+    picsearch_matcher,
+)
 from tests.plugins.water.helpers import attach_reply_message, build_group_message_event
 
 MULTI_IMAGE_PROMPT = Message(
@@ -62,7 +66,7 @@ async def test_picsearch_requires_reply_image(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    picsearch_handlers.clear_picsearch_cooldowns()
+    picsearch_plugin.clear_picsearch_cooldowns()
     _freeze_error_demo(monkeypatch)
     event = build_group_message_event("搜图")
 
@@ -85,16 +89,16 @@ async def test_picsearch_single_image_uses_default_saucenao(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    picsearch_handlers.clear_picsearch_cooldowns()
+    picsearch_plugin.clear_picsearch_cooldowns()
     event = build_group_message_event("搜图", message_id=1)
     attach_reply_message(
         event,
         MessageSegment("image", {"url": "https://example.com/1.png"}),
     )
 
-    monkeypatch.setattr(picsearch_handlers, "get_engine_key", lambda engine: "key")
+    monkeypatch.setattr(picsearch_plugin, "get_engine_key", lambda engine: "key")
     monkeypatch.setattr(
-        picsearch_handlers,
+        picsearch_plugin,
         "search_image",
         AsyncMock(
             return_value=PicsearchResult(
@@ -108,7 +112,7 @@ async def test_picsearch_single_image_uses_default_saucenao(
         ),
     )
     monkeypatch.setattr(
-        picsearch_handlers,
+        picsearch_plugin,
         "load_thumbnail_bytes",
         AsyncMock(return_value=b"thumb"),
     )
@@ -146,7 +150,7 @@ async def test_picsearch_rejects_invalid_index_on_multi_image(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    picsearch_handlers.clear_picsearch_cooldowns()
+    picsearch_plugin.clear_picsearch_cooldowns()
     _freeze_error_demo(monkeypatch)
     first = build_group_message_event("搜图 ascii2d", message_id=1)
     attach_reply_message(
@@ -181,7 +185,7 @@ async def test_picsearch_multi_image_ascii2d_success(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    picsearch_handlers.clear_picsearch_cooldowns()
+    picsearch_plugin.clear_picsearch_cooldowns()
     first = build_group_message_event("搜图 ascii2d", message_id=1)
     attach_reply_message(
         first,
@@ -191,7 +195,7 @@ async def test_picsearch_multi_image_ascii2d_success(
     second = build_group_message_event("2", message_id=2)
 
     monkeypatch.setattr(
-        picsearch_handlers,
+        picsearch_plugin,
         "search_image",
         AsyncMock(
             return_value=PicsearchResult(
@@ -239,7 +243,7 @@ async def test_picsearch_multi_image_ascii2d_success(
 
 @pytest.mark.asyncio
 async def test_build_result_message_uses_locale_labels() -> None:
-    message = picsearch_handlers.build_result_message(
+    message = picsearch_plugin.build_result_message(
         1,
         PicsearchResult(
             engine=PicsearchEngine.ASCII2D,
@@ -264,14 +268,14 @@ async def test_picsearch_requires_saucenao_key(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    picsearch_handlers.clear_picsearch_cooldowns()
+    picsearch_plugin.clear_picsearch_cooldowns()
     event = build_group_message_event("搜图", message_id=1)
     attach_reply_message(
         event,
         MessageSegment("image", {"url": "https://example.com/1.png"}),
     )
 
-    monkeypatch.setattr(picsearch_handlers, "get_engine_key", lambda engine: None)
+    monkeypatch.setattr(picsearch_plugin, "get_engine_key", lambda engine: None)
 
     async with app.test_matcher(picsearch_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -289,16 +293,16 @@ async def test_picsearch_handles_no_result(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    picsearch_handlers.clear_picsearch_cooldowns()
+    picsearch_plugin.clear_picsearch_cooldowns()
     event = build_group_message_event("搜图", message_id=1)
     attach_reply_message(
         event,
         MessageSegment("image", {"url": "https://example.com/1.png"}),
     )
 
-    monkeypatch.setattr(picsearch_handlers, "get_engine_key", lambda engine: "key")
+    monkeypatch.setattr(picsearch_plugin, "get_engine_key", lambda engine: "key")
     monkeypatch.setattr(
-        picsearch_handlers,
+        picsearch_plugin,
         "search_image",
         AsyncMock(return_value=None),
     )
@@ -330,7 +334,8 @@ async def test_help_can_find_picsearch_docs(
         entry for entry in entries if entry.display_name == "图片搜索"
     )
     monkeypatch.setattr(
-        "src.plugins.help.render_plugin_guide", lambda *args, **kwargs: b"guide-demo"
+        "src.plugins.help.render_feature_deep_dive",
+        lambda *args, **kwargs: b"feature-demo",
     )
 
     async with app.test_matcher(help_matcher) as ctx:

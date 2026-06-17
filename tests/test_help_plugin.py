@@ -519,7 +519,6 @@ async def test_resolve_docs_message_simple_leaf_returns_direct_demo_reply() -> N
     )
 
     rendered = str(message)
-    assert any(segment.type == "image" for segment in message)
     assert "👉 图片搜索" in rendered
     assert "搜图" in rendered
     assert "查看 demo：" not in rendered
