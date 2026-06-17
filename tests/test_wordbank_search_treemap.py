@@ -5,7 +5,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw
 import pytest
 
-from src.lib.wordbank_search_treemap import (
+from src.plugins.wordbank.wordbank_search_treemap import (
     TREEMAP_HEIGHT,
     TREEMAP_WIDTH,
     SearchTreemapItem,
@@ -483,6 +483,40 @@ def test_renderer_reduces_layout_width_for_narrow_tall_single_text_cards() -> No
 
     assert reduced < 160
     assert regular == 220
+
+
+def test_renderer_prefers_semantic_lines_for_short_punctuated_text() -> None:
+    renderer = SearchTreemapRenderer()
+
+    assert renderer._preferred_single_text_manual_lines(  # pyright: ignore[reportPrivateUsage]
+        "晚安，不许复读"
+    ) == ("晚安，", "不许复读")
+
+
+def test_renderer_keeps_full_layout_width_for_very_short_narrow_tall_text() -> None:
+    renderer = SearchTreemapRenderer()
+
+    width = renderer._single_text_layout_width(  # pyright: ignore[reportPrivateUsage]
+        160,
+        height_cap=260,
+        text="晚安呢！",
+    )
+
+    assert width == 160
+
+
+def test_renderer_adds_line_gap_for_narrow_tall_multi_line_text() -> None:
+    renderer = SearchTreemapRenderer()
+
+    assert (
+        renderer._single_text_line_gap(  # pyright: ignore[reportPrivateUsage]
+            width=160,
+            height_cap=260,
+            text="晚安，不许复读",
+            line_count=3,
+        )
+        == 4
+    )
 
 
 def test_renderer_single_text_layout_fits_long_text_into_available_height() -> None:
