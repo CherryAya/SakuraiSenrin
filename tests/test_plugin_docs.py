@@ -259,6 +259,7 @@ def test_real_simple_plugin_readmes_parse_as_single_feature() -> None:
         (Path("src/plugins/sentry/docs/README.MD"), "被动触发"),
         (Path("src/plugins/test/docs/README.MD"), "被动触发"),
         (Path("src/hooks/docs/processor/README.MD"), "被动触发"),
+        (Path("src/plugins/notice/docs/user/README.MD"), "被动触发"),
     ):
         bundle = load_plugin_doc_bundle(
             source=source,
