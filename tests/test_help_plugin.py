@@ -362,8 +362,7 @@ def test_iter_docs_entries_no_longer_exposes_wordbank_derived_feature_nodes() ->
 
     assert "derived.wordbank.miaomiao-toolkit" in slugs
     assert all(
-        not slug.startswith("derived.wordbank.miaomiao-toolkit.")
-        for slug in slugs
+        not slug.startswith("derived.wordbank.miaomiao-toolkit.") for slug in slugs
     )
 
 
@@ -523,7 +522,7 @@ async def test_resolve_docs_message_simple_leaf_returns_direct_demo_reply() -> N
     assert any(segment.type == "image" for segment in message)
     assert "👉 图片搜索" in rendered
     assert "搜图" in rendered
-    assert "查看 demo：#help 图片搜索 search" in rendered
+    assert "查看 demo：" not in rendered
     assert "下面这些命令可以直接复制发送" not in rendered
 
 

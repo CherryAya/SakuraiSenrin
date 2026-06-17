@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from unittest.mock import AsyncMock
 
 import nonebot
@@ -17,8 +18,11 @@ nonebot.init(
     GITHUB_BRANCH="main",
     WORDBANK_MEDIA_PROVIDER="local",
 )
+if nonebot.get_plugin("remove") is None:
+    sys.modules.pop("src.plugins.remove", None)
+    nonebot.load_plugin("src.plugins.remove")
 
-from src.plugins.remove import handlers as remove_handlers
+import src.plugins.remove as remove_plugin
 from src.plugins.remove import remove_matcher
 from tests.plugins.water.helpers import (
     build_group_message_event,
@@ -44,7 +48,7 @@ async def test_remove_rejects_member_without_permission(
 ) -> None:
     event = build_group_message_event("#remove", role="member", user_id=10001)
     monkeypatch.setattr(
-        remove_handlers.invite_repo,
+        remove_plugin.invite_repo,
         "get_by_group_id",
         AsyncMock(return_value=None),
     )
@@ -68,7 +72,7 @@ async def test_remove_cancels_when_confirm_denied(
     first = build_group_message_event("#remove", role="admin", message_id=1)
     second = build_group_message_event("n", role="admin", message_id=2)
     monkeypatch.setattr(
-        remove_handlers.invite_repo,
+        remove_plugin.invite_repo,
         "get_by_group_id",
         AsyncMock(return_value=None),
     )
@@ -99,18 +103,18 @@ async def test_remove_succeeds_for_admin(
     third = build_group_message_event("例行维护", role="admin", message_id=3)
 
     monkeypatch.setattr(
-        remove_handlers.invite_repo,
+        remove_plugin.invite_repo,
         "get_by_group_id",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        remove_handlers,
+        remove_plugin,
         "resolve_group_name",
         AsyncMock(return_value="测试群"),
     )
     update_status = AsyncMock()
-    monkeypatch.setattr(remove_handlers.group_repo, "update_status", update_status)
-    monkeypatch.setattr(remove_handlers.config, "SUPERUSERS", {"2"})
+    monkeypatch.setattr(remove_plugin.group_repo, "update_status", update_status)
+    monkeypatch.setattr(remove_plugin.config, "SUPERUSERS", {"2"})
 
     async with app.test_matcher(remove_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -147,7 +151,7 @@ async def test_remove_succeeds_for_admin(
         ctx.should_call_send(third, "已从当前群聊退出: 测试群", bot=bot)
         ctx.should_finished()
 
-    update_status.assert_awaited_once_with("20001", remove_handlers.GroupStatus.LEFT)
+    update_status.assert_awaited_once_with("20001", remove_plugin.GroupStatus.LEFT)
 
 
 @pytest.mark.asyncio
@@ -160,17 +164,17 @@ async def test_remove_handles_leave_failure(
     third = build_group_message_event("例行维护", role="admin", message_id=3)
 
     monkeypatch.setattr(
-        remove_handlers.invite_repo,
+        remove_plugin.invite_repo,
         "get_by_group_id",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        remove_handlers,
+        remove_plugin,
         "resolve_group_name",
         AsyncMock(return_value="测试群"),
     )
     update_status = AsyncMock()
-    monkeypatch.setattr(remove_handlers.group_repo, "update_status", update_status)
+    monkeypatch.setattr(remove_plugin.group_repo, "update_status", update_status)
 
     async with app.test_matcher(remove_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")

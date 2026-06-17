@@ -38,6 +38,8 @@ from src.lib.plugin_docs import (
     load_doc_node,
     load_plugin_doc_bundle,
     render_demo_png,
+    resolve_help_entry_shape,
+    should_prefer_collection_demo,
     split_inline_text_spans,
 )
 from src.lib.utils.common import get_current_time
@@ -176,6 +178,22 @@ def collect_collection_jobs(
         demos_dir.mkdir(parents=True, exist_ok=True)
         total_files += 1
         if not bundle.index:
+            continue
+        docs_meta = create_docs_meta(
+            visible=True,
+            category="general",
+            order=100,
+            source=path,
+        )
+        node = load_doc_node(
+            source=path,
+            default_name=bundle.title,
+            default_description=bundle.description,
+            trigger=TriggerType.COMMAND,
+            permission=Permission.NORMAL,
+            docs_meta=docs_meta,
+        )
+        if not should_prefer_collection_demo(node):
             continue
         tiles = tuple(
             DemoCollectionTile(
@@ -402,9 +420,7 @@ class DemoCollectionRenderer:
         trigger_box_height = (
             trigger_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
         )
-        demo_box_height = (
-            demo_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
-        )
+        demo_box_height = demo_layout.total_height + self.CARD_COMMAND_PADDING_Y * 2
         height = (
             self.CARD_PADDING_Y * 2
             + title_height
@@ -1184,12 +1200,27 @@ def validate() -> int:
                 )
 
         if bundle.index:
-            collection_path = path.parent / "demos" / collection_demo_filename(path)
-            if not collection_path.exists():
-                errors.append(
-                    f"{path.relative_to(ROOT)}: missing collection demo file "
-                    f"{collection_path.name}"
+            node = load_doc_node(
+                source=path,
+                default_name=bundle.title,
+                default_description=bundle.description,
+                trigger=TriggerType.COMMAND,
+                permission=Permission.NORMAL,
+                impression_color=bundle.impression_color,
+            )
+            if (
+                resolve_help_entry_shape(
+                    node,
+                    actor_permission=Permission.NORMAL,
                 )
+                != "simple_leaf"
+            ):
+                collection_path = path.parent / "demos" / collection_demo_filename(path)
+                if not collection_path.exists():
+                    errors.append(
+                        f"{path.relative_to(ROOT)}: missing collection demo file "
+                        f"{collection_path.name}"
+                    )
 
     if not errors:
         tree = build_doc_tree(nodes)

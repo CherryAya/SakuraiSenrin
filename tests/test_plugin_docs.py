@@ -1203,6 +1203,7 @@ def test_plugin_docs_compose_builds_collection_image(
 ## 子功能目录
 - `alpha` Alpha 功能: 第一个功能。
 - `beta` Beta 功能: 第二个功能。
+- `gamma` Gamma 功能: 第三个功能。
 
 ## 子功能详情
 ### `alpha` Alpha 功能
@@ -1231,6 +1232,22 @@ beta
 ```demo
 USER: #beta
 BOT: Beta 完成
+```
+#### 失败情况
+无
+
+### `gamma` Gamma 功能
+- 摘要: 第三个功能。
+- Advanced: true
+- 指令: `#gamma`
+#### 说明
+gamma
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #gamma
+BOT: Gamma 完成
 ```
 #### 失败情况
 无
@@ -1272,6 +1289,7 @@ def test_collection_tile_is_text_only_and_keeps_metadata(
 
 ## 子功能目录
 - `alpha` Alpha 功能: 第一条说明。
+- `beta` Beta 功能: 第二条说明。
 
 ## 子功能详情
 ### `alpha` Alpha 功能
@@ -1285,6 +1303,22 @@ alpha
 ```demo
 USER: #alpha run
 BOT: Alpha 完成
+```
+#### 失败情况
+无
+
+### `beta` Beta 功能
+- 摘要: 第二条说明。
+- Advanced: true
+- 指令: `#beta run`
+#### 说明
+beta
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #beta run
+BOT: Beta 完成
 ```
 #### 失败情况
 无
@@ -1478,6 +1512,7 @@ def test_collection_jobs_do_not_require_demo_png_files(
 
 ## 子功能目录
 - `alpha` Alpha 功能: 第一条说明。
+- `beta` Beta 功能: 第二条说明。
 
 ## 子功能详情
 ### `alpha` Alpha 功能
@@ -1491,6 +1526,22 @@ alpha
 ```demo
 USER: #alpha run
 BOT: Alpha 完成
+```
+#### 失败情况
+无
+
+### `beta` Beta 功能
+- 摘要: 第二条说明。
+- Advanced: true
+- 指令: `#beta run`
+#### 说明
+beta
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #beta run
+BOT: Beta 完成
 ```
 #### 失败情况
 无
@@ -2055,7 +2106,7 @@ def test_build_simple_leaf_copy_text_includes_direct_demo_command() -> None:
 
     assert "👉 图片搜索" in copy_text
     assert "搜图 [saucenao|ascii2d]" in copy_text
-    assert "查看 demo：#help 图片搜索 search" in copy_text
+    assert "查看 demo：" not in copy_text
 
 
 def test_build_feature_copy_text_returns_command_skeleton() -> None:

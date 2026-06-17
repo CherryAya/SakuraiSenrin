@@ -755,6 +755,11 @@ def render_doc_node_overview(
     demo_bytes = load_representative_demo_bytes(
         bundle=node.bundle,
         actor_permission=actor_permission,
+        prefer_collection=should_prefer_collection_demo(
+            node,
+            actor_permission=actor_permission,
+            children=children,
+        ),
     )
     if demo_bytes is None:
         return message
@@ -786,6 +791,22 @@ def resolve_help_entry_shape(
         return "simple_leaf"
 
     return "plugin_guide"
+
+
+def should_prefer_collection_demo(
+    node: DocNode,
+    *,
+    actor_permission: Permission = Permission.NORMAL,
+    children: Sequence[DocNode] = (),
+) -> bool:
+    return (
+        resolve_help_entry_shape(
+            node,
+            actor_permission=actor_permission,
+            children=children,
+        )
+        != "simple_leaf"
+    )
 
 
 def render_doc_feature(
@@ -2138,8 +2159,6 @@ def build_simple_leaf_copy_text(
     lines = [
         f"👉 {node.title}",
         *feature_command_sections(node.bundle, feature, node.title),
-        "",
-        f"查看 demo：{feature_demo_help_command(node, feature)}",
     ]
     note_items = _feature_notice_items(feature, locale=locale)
     if note_items:
