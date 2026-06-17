@@ -977,6 +977,15 @@ def _load_plugin_doc_bundle_cached(
         source_path,
     )
     features = _merge_features(feature_index, details)
+    if not features:
+        features = _parse_single_feature_bundle(
+            source_path=source_path,
+            title=title,
+            summary=summary or default_description,
+            trigger_label=meta.get("触发方式", trigger.label),
+            default_permission=permission,
+            sections=sections,
+        )
     author, version = _resolve_doc_signature(source_path)
     return PluginDocBundle(
         title=title,
@@ -990,6 +999,62 @@ def _load_plugin_doc_bundle_cached(
         index=features,
         source_path=source_path,
     )
+
+
+def _parse_single_feature_bundle(
+    *,
+    source_path: Path,
+    title: str,
+    summary: str,
+    trigger_label: str,
+    default_permission: Permission,
+    sections: dict[str, MarkdownSection],
+) -> tuple[FeatureDoc, ...]:
+    feature_slug = _derive_single_feature_slug(source_path)
+    meta = _parse_meta_block_tokens(sections.get("用法", _EMPTY_SECTION).tokens)
+    raw_permission = meta.get("权限", "").strip()
+    flow_notes, demo_turns = _parse_flow_section_tokens(
+        sections.get("完整流程", _EMPTY_SECTION).tokens
+    )
+    demo_filename = meta.get(
+        "Demo",
+        f"{doc_asset_prefix(source_path)}-{feature_slug}.png",
+    )
+    demo_filename = demo_filename.strip("`")
+    feature = FeatureDoc(
+        slug=feature_slug,
+        title=title,
+        summary=summary or title,
+        aliases=_split_csv(meta.get("别名", "")),
+        trigger=meta.get("指令", "").strip() or trigger_label,
+        permission=(
+            _parse_permission(raw_permission) if raw_permission else default_permission
+        ),
+        demo_filename=demo_filename,
+        hero=True,
+        priority=10,
+        advanced=False,
+        overview=_render_markdown_blocks(
+            sections.get("说明", _EMPTY_SECTION).tokens
+        ).strip(),
+        preconditions=_render_markdown_blocks(
+            sections.get("前置条件", _EMPTY_SECTION).tokens
+        ).strip(),
+        flow_notes=flow_notes.strip(),
+        failures=_render_markdown_blocks(
+            sections.get("失败情况", _EMPTY_SECTION).tokens
+        ).strip(),
+        demo_turns=demo_turns,
+    )
+    return (feature,)
+
+
+def _derive_single_feature_slug(source_path: Path) -> str:
+    if source_path.name == "README.MD" and source_path.parent.name != "docs":
+        return "main"
+    if source_path.parent.name == "docs":
+        return "main"
+    return source_path.parent.name.lower()
 
 
 def match_feature(

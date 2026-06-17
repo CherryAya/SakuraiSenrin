@@ -39,6 +39,17 @@ MULTI_IMAGE_PROMPT = Message(
 )
 
 
+@pytest.fixture(autouse=True)
+def _disable_runtime_processor(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.hooks.processor._runtime_sync", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        "src.hooks.processor._runtime_check",
+        AsyncMock(return_value=None),
+    )
+
+
 def _freeze_error_demo(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "src.lib.plugin_docs.render_feature_deep_dive",

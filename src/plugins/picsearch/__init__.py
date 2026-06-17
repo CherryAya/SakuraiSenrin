@@ -60,7 +60,7 @@ def _build_error_demo(locale: LocaleCode, message: str) -> Message:
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
         locale=locale,
-        feature_query="search",
+        feature_query="main",
         prefix_text=message,
     )
 

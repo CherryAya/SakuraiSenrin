@@ -192,6 +192,87 @@ beta
     assert beta.priority == 90
 
 
+def test_load_plugin_doc_bundle_supports_single_page_simple_plugin(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "README.MD"
+    source.write_text(
+        """
+# 简单插件
+
+## 概览
+这是一个单页单功能插件。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 用法
+- 别名: 简单, demo
+- 指令: `#simple`
+- Demo: simple-main.png
+
+## 说明
+直接展示最终说明。
+
+## 前置条件
+无
+
+## 完整流程
+```demo
+USER: #simple
+BOT: OK
+```
+
+## 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="简单插件",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    assert bundle.title == "简单插件"
+    assert bundle.summary == "这是一个单页单功能插件。"
+    assert len(bundle.index) == 1
+    feature = bundle.index[0]
+    assert feature.slug == "main"
+    assert feature.title == "简单插件"
+    assert feature.trigger == "#simple"
+    assert feature.aliases == ("简单", "demo")
+    assert feature.demo_filename == "simple-main.png"
+    assert feature.hero is True
+    assert feature.overview == "直接展示最终说明。"
+    assert feature.demo_turns[0].text == "#simple"
+
+
+def test_real_simple_plugin_readmes_parse_as_single_feature() -> None:
+    for source, expected_trigger in (
+        (Path("src/plugins/remove/docs/README.MD"), "#remove"),
+        (Path("src/plugins/picsearch/docs/README.MD"), "搜图 [saucenao|ascii2d]"),
+        (Path("src/plugins/sentry/docs/README.MD"), "被动触发"),
+        (Path("src/plugins/test/docs/README.MD"), "被动触发"),
+    ):
+        bundle = load_plugin_doc_bundle(
+            source=source,
+            default_name="测试",
+            default_description="desc",
+            trigger=TriggerType.COMMAND,
+            permission=Permission.NORMAL,
+        )
+
+        assert len(bundle.index) == 1, source
+        feature = bundle.index[0]
+        assert feature.slug == "main", source
+        assert feature.trigger == expected_trigger, source
+
+
 def test_split_features_for_disclosure_prefers_hero_then_non_advanced() -> None:
     features = (
         FeatureDoc(

@@ -30,6 +30,17 @@ from tests.plugins.water.helpers import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _disable_runtime_processor(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.hooks.processor._runtime_sync", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        "src.hooks.processor._runtime_check",
+        AsyncMock(return_value=None),
+    )
+
+
 @pytest.mark.asyncio
 async def test_remove_rejects_private_message(app: App) -> None:
     event = build_private_message_event("#remove")
