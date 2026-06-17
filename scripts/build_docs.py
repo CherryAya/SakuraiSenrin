@@ -1186,11 +1186,13 @@ def validate() -> int:
                     f"{path.relative_to(ROOT)}: feature {feature.slug} "
                     "missing demo turns"
                 )
-            demo_path = path.parent / "demos" / feature.demo_filename
-            if not demo_path.exists():
+                continue
+            try:
+                render_demo_png(bundle, feature)
+            except Exception as exc:
                 errors.append(
                     f"{path.relative_to(ROOT)}: feature {feature.slug} "
-                    f"missing demo file {feature.demo_filename}"
+                    f"demo render failed: {type(exc).__name__}: {exc}"
                 )
             layout_errors = audit_demo_layout(bundle, feature)
             if layout_errors:
@@ -1215,11 +1217,32 @@ def validate() -> int:
                 )
                 != "simple_leaf"
             ):
-                collection_path = path.parent / "demos" / collection_demo_filename(path)
-                if not collection_path.exists():
+                tiles = tuple(
+                    DemoCollectionTile(
+                        index=feature_index + 1,
+                        title=feature.title,
+                        slug=feature.slug,
+                        summary=feature.summary,
+                        trigger=feature.trigger,
+                        demo_help=f"#help {bundle.title} {feature.slug}",
+                    )
+                    for feature_index, feature in enumerate(bundle.index)
+                )
+                try:
+                    render_collection_png(
+                        DemoCollectionJob(
+                            bundle=bundle,
+                            output=path.parent
+                            / "demos"
+                            / collection_demo_filename(path),
+                            tiles=tiles,
+                            columns=2,
+                        )
+                    )
+                except Exception as exc:
                     errors.append(
-                        f"{path.relative_to(ROOT)}: missing collection demo file "
-                        f"{collection_path.name}"
+                        f"{path.relative_to(ROOT)}: collection demo render failed: "
+                        f"{type(exc).__name__}: {exc}"
                     )
 
     if not errors:

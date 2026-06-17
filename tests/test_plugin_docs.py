@@ -258,6 +258,7 @@ def test_real_simple_plugin_readmes_parse_as_single_feature() -> None:
         (Path("src/plugins/picsearch/docs/README.MD"), "搜图 [saucenao|ascii2d]"),
         (Path("src/plugins/sentry/docs/README.MD"), "被动触发"),
         (Path("src/plugins/test/docs/README.MD"), "被动触发"),
+        (Path("src/hooks/docs/processor/README.MD"), "被动触发"),
     ):
         bundle = load_plugin_doc_bundle(
             source=source,
@@ -1687,6 +1688,70 @@ BOT: Sample 完成
     _, jobs = plugin_docs_script.collect_collection_jobs(columns=2)
 
     assert jobs == ()
+
+
+def test_validate_accepts_renderable_docs_without_demo_png_files(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    docs_root = tmp_path / "src" / "plugins" / "sample" / "docs"
+    docs_root.mkdir(parents=True)
+    (docs_root / "README.MD").write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试 validate 不再依赖已落盘 PNG。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一条说明。
+- `beta` Beta 功能: 第二条说明。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一条说明。
+- 指令: `#alpha run`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha run
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+
+### `beta` Beta 功能
+- 摘要: 第二条说明。
+- 指令: `#beta run`
+#### 说明
+beta
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #beta run
+BOT: Beta 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+
+    assert plugin_docs_script.validate() == 0
 
 
 def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
