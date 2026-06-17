@@ -27,23 +27,27 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
+    HelpDashboardSection,
     VirtualPluginDocSpec,
     build_doc_tree,
     build_feature_copy_text,
     build_plugin_guide_copy_text,
     build_simple_leaf_copy_text,
+    build_static_entry_copy_text,
     can_view_node,
     create_docs_meta,
+    filter_features_by_permission,
     load_doc_node,
     load_virtual_doc_node,
     match_doc_node,
     match_feature,
     read_docs_metas,
+    render_doc_node_overview,
     render_feature_deep_dive,
     render_help_dashboard,
     render_plugin_guide,
+    render_static_entry,
     resolve_help_entry_shape,
-    split_features_for_disclosure,
 )
 from src.lib.plugin_meta import create_plugin_metadata
 
@@ -68,6 +72,15 @@ class MatchResult:
     status: Literal["matched", "not_found", "ambiguous"]
     entry: DocsEntry | None = None
     candidates: list[DocsEntry] | None = None
+
+
+type RootSection = Literal["system", "developer", "community"]
+
+SECTION_TITLES: dict[RootSection, str] = {
+    "system": "系统预置",
+    "developer": "开发者插件",
+    "community": "社区创作",
+}
 
 
 __plugin_meta__ = create_plugin_metadata(
@@ -342,6 +355,53 @@ def _unique_entries(entries: list[DocsEntry]) -> list[DocsEntry]:
     return unique
 
 
+def _root_entries_for_index(
+    entries: list[DocsEntry],
+    actor_permission: Permission,
+) -> list[DocsEntry]:
+    tree = build_doc_tree([entry.node for entry in entries])
+    root_slugs = {node.slug for node in tree.roots()}
+    return [
+        entry
+        for entry in entries
+        if entry.node.slug in root_slugs
+        and entry.node.visible
+        and not entry.node.hidden
+        and not entry.node.internal
+        and _can_view_entry(entry, actor_permission)
+    ]
+
+
+def _classify_root_section(entry: DocsEntry) -> RootSection:
+    slug = entry.node.slug
+    module_name = entry.node.module_name
+    if slug.startswith("derived."):
+        return "community"
+    if module_name.startswith("src.hooks."):
+        return "system"
+    if slug in {"help", "notice", "admin"}:
+        return "system"
+    return "developer"
+
+
+def _build_index_sections(
+    entries: list[DocsEntry],
+    actor_permission: Permission,
+) -> list[tuple[RootSection, list[DocsEntry]]]:
+    buckets: dict[RootSection, list[DocsEntry]] = {
+        "system": [],
+        "developer": [],
+        "community": [],
+    }
+    for entry in _root_entries_for_index(entries, actor_permission):
+        buckets[_classify_root_section(entry)].append(entry)
+    return [
+        (section, buckets[section])
+        for section in ("system", "developer", "community")
+        if buckets[section]
+    ]
+
+
 def _match_entry(entries: list[DocsEntry], query: str) -> MatchResult:
     result = match_doc_node([entry.node for entry in entries], query)
     if result.status == "matched" and result.node is not None:
@@ -377,46 +437,30 @@ def _build_index_message(
     locale: LocaleCode,
     actor_permission: Permission = Permission.NORMAL,
 ) -> Message:
-    tree = build_doc_tree([entry.node for entry in entries])
-    roots = [
-        node
-        for node in tree.roots()
-        if node.visible and can_view_node(node, actor_permission) and not node.hidden
-    ]
-    if not roots:
+    grouped_sections = _build_index_sections(entries, actor_permission)
+    if not grouped_sections:
         return Message(tr(locale, "help.index.empty"))
 
-    dashboard_bytes = render_help_dashboard(roots, locale=locale)
+    dashboard_bytes = render_help_dashboard(
+        tuple(
+            HelpDashboardSection(
+                title=SECTION_TITLES[section],
+                nodes=tuple(entry.node for entry in section_entries),
+            )
+            for section, section_entries in grouped_sections
+        ),
+        locale=locale,
+    )
     lines = [
         "欢迎来到 SakuraiSenrin 帮助中心。",
-        "发送下面这些命令，即可直接查看功能说明或 demo：",
+        "以下是当前可用帮助入口：",
         "",
     ]
-    for node in roots:
-        children = tree.children_of(node.slug)
-        shape = resolve_help_entry_shape(
-            node,
-            actor_permission=actor_permission,
-            children=children,
-        )
-        lines.append(f"👉 #help {node.title}")
-        if shape == "overview_group":
-            visible_children = tuple(
-                child
-                for child in children
-                if child.visible and can_view_node(child, actor_permission)
-            )
-            if visible_children:
-                child = visible_children[0]
-                child_query = child.slug.split(".")[-1]
-                lines.append(f"  继续查看：#help {node.title} {child_query}")
-        elif shape == "plugin_guide":
-            hero_features, _ = split_features_for_disclosure(
-                node.features,
-                actor_permission=actor_permission,
-            )
-            if hero_features:
-                lines.append(f"  查看 demo：#help {node.title} {hero_features[0].slug}")
+    for section, section_entries in grouped_sections:
+        lines.append(f"【{SECTION_TITLES[section]}】")
+        for entry in section_entries:
+            lines.append(f"- #help {entry.node.title}")
+        lines.append("")
     return _compose_help_reply(dashboard_bytes, "\n".join(lines).strip())
 
 
@@ -470,7 +514,11 @@ async def _resolve_docs_message(
     all_entries: list[DocsEntry] | None = None,
 ) -> Message:
     tree = build_doc_tree([item.node for item in (all_entries or [entry])])
-    children = tree.children_of(entry.node.slug)
+    children = tuple(
+        child
+        for child in tree.children_of(entry.node.slug)
+        if can_view_node(child, actor_permission)
+    )
     entry_shape = resolve_help_entry_shape(
         entry.node,
         actor_permission=actor_permission,
@@ -509,10 +557,27 @@ async def _resolve_docs_message(
                 None,
             )
             if child_entry is not None:
-                hero_features, advanced_features = split_features_for_disclosure(
+                features = filter_features_by_permission(
                     child_entry.node.features,
                     actor_permission=actor_permission,
                 )
+                child_shape = resolve_help_entry_shape(
+                    child_entry.node,
+                    actor_permission=actor_permission,
+                    children=tree.children_of(child_entry.node.slug),
+                )
+                if child_shape == "static_entry":
+                    image_bytes = render_static_entry(
+                        child_entry.node,
+                        locale=locale,
+                    )
+                    return _compose_help_reply(
+                        image_bytes,
+                        build_static_entry_copy_text(
+                            child_entry.node,
+                            locale=locale,
+                        ),
+                    )
                 image_bytes = render_plugin_guide(
                     child_entry.node,
                     locale=locale,
@@ -522,8 +587,7 @@ async def _resolve_docs_message(
                     image_bytes,
                     build_plugin_guide_copy_text(
                         child_entry.node,
-                        hero_features=hero_features,
-                        advanced_features=advanced_features,
+                        features=features,
                         locale=locale,
                     ),
                 )
@@ -546,12 +610,40 @@ async def _resolve_docs_message(
                 ).strip()
             )
         return Message(tr(locale, "help.query.not_found", query=feature_query))
-    hero_features, advanced_features = split_features_for_disclosure(
+    features = filter_features_by_permission(
         entry.node.features,
         actor_permission=actor_permission,
     )
-    if entry_shape == "simple_leaf" and hero_features:
-        feature = hero_features[0]
+    if entry_shape == "static_entry":
+        image_bytes = render_static_entry(
+            entry.node,
+            locale=locale,
+        )
+        return _compose_help_reply(
+            image_bytes,
+            build_static_entry_copy_text(
+                entry.node,
+                locale=locale,
+            ),
+        )
+    if entry_shape == "overview_group":
+        image_bytes = render_plugin_guide(
+            entry.node,
+            locale=locale,
+            actor_permission=actor_permission,
+        )
+        overview_text = str(
+            render_doc_node_overview(
+                entry.node,
+                locale=locale,
+                include_demo=False,
+                actor_permission=actor_permission,
+                children=children,
+            )
+        )
+        return _compose_help_reply(image_bytes, overview_text)
+    if entry_shape == "simple_leaf" and features:
+        feature = features[0]
         image_bytes = render_feature_deep_dive(
             entry.node,
             feature,
@@ -574,8 +666,7 @@ async def _resolve_docs_message(
         image_bytes,
         build_plugin_guide_copy_text(
             entry.node,
-            hero_features=hero_features,
-            advanced_features=advanced_features,
+            features=features,
             locale=locale,
         ),
     )

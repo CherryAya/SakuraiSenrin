@@ -274,11 +274,25 @@ def test_permission_denied_message_uses_required_permission_label() -> None:
 
 
 def test_build_index_message_only_lists_root_nodes() -> None:
-    root = _make_entry(
-        display_name="管理模块总览",
-        plugin_name="admin",
-        module_name="src.plugins.admin",
-        slug="admin",
+    system_root = _make_entry(
+        display_name="帮助中心",
+        plugin_name="help",
+        module_name="src.plugins.help",
+        slug="help",
+        visible=True,
+    )
+    plugin_root = _make_entry(
+        display_name="吹水记录",
+        plugin_name="water",
+        module_name="src.plugins.water",
+        slug="water",
+        visible=True,
+    )
+    community_root = _make_entry(
+        display_name="凛凛的妙妙小工具目录",
+        plugin_name="wordbank",
+        module_name="src.plugins.wordbank",
+        slug="derived.wordbank.miaomiao-toolkit",
         visible=True,
     )
     child = _make_entry(
@@ -290,7 +304,7 @@ def test_build_index_message_only_lists_root_nodes() -> None:
         visible=True,
     )
     message = _build_index_message(
-        [root, child],
+        [system_root, plugin_root, community_root, child],
         "zh-CN",
         Permission.NORMAL
         | Permission.GROUP_ADMIN
@@ -300,13 +314,19 @@ def test_build_index_message_only_lists_root_nodes() -> None:
 
     rendered = str(message)
     assert "欢迎来到 SakuraiSenrin 帮助中心" in rendered
-    assert "#help 管理模块总览" in rendered
-    assert "继续查看：#help 管理模块总览 group" in rendered
+    assert "以下是当前可用帮助入口" in rendered
+    assert "【系统预置】" in rendered
+    assert "【开发者插件】" in rendered
+    assert "【社区创作】" in rendered
+    assert "- #help 帮助中心" in rendered
+    assert "- #help 吹水记录" in rendered
+    assert "- #help 凛凛的妙妙小工具目录" in rendered
+    assert "继续查看" not in rendered
     assert "群组管理模块" not in rendered
     assert any(segment.type == "image" for segment in message)
 
 
-def test_build_index_message_adds_demo_hint_for_complex_single_page_nodes() -> None:
+def test_build_index_message_lists_full_root_entries_without_demo_hint() -> None:
     entries = _iter_docs_entries("zh-CN")
 
     message = _build_index_message(
@@ -317,7 +337,8 @@ def test_build_index_message_adds_demo_hint_for_complex_single_page_nodes() -> N
 
     rendered = str(message)
     assert "#help 吹水记录" in rendered
-    assert "查看 demo：#help 吹水记录 profile" in rendered
+    assert "#help 凛凛的妙妙小工具目录" in rendered
+    assert "查看 demo：" not in rendered
 
 
 def test_iter_docs_entries_includes_wordbank_derived_root_entry() -> None:
@@ -331,7 +352,7 @@ def test_iter_docs_entries_includes_wordbank_derived_root_entry() -> None:
 
     assert derived.display_name == "凛凛的妙妙小工具目录"
     assert derived.node.plugin_name == "wordbank"
-    assert derived.node.bundle.index[0].title == "运势"
+    assert not derived.node.bundle.index
 
 
 async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:
@@ -349,6 +370,7 @@ async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:
         slug="admin.group",
         parent_slug="admin",
         permission=Permission.SUPERUSER,
+        visible=True,
     )
     entries = [root, child]
     tree = build_doc_tree([entry.node for entry in entries])
@@ -370,8 +392,7 @@ async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:
     )
 
     assert any(segment.type == "image" for segment in root_message)
-    assert "下面这些命令可以直接复制发送" in str(root_message)
-    assert "👉 帮助入口" in str(root_message)
+    assert "群组管理模块" in str(root_message)
     assert any(segment.type == "image" for segment in child_message)
     assert "📖 群组管理模块" in str(child_message)
 
@@ -394,8 +415,7 @@ async def test_resolve_docs_message_feature_query_returns_deep_dive_reply() -> N
     assert "#水王" in rendered
 
 
-async def test_resolve_docs_message_supports_wordbank_derived_root_and_feature(
-) -> None:
+async def test_resolve_docs_message_supports_wordbank_derived_static_entry() -> None:
     entries = _iter_docs_entries("zh-CN")
     derived_entry = next(
         entry
@@ -409,7 +429,21 @@ async def test_resolve_docs_message_supports_wordbank_derived_root_and_feature(
         actor_permission=Permission.NORMAL,
         all_entries=entries,
     )
-    feature_message = await _resolve_docs_message(
+
+    assert any(segment.type == "image" for segment in root_message)
+    assert "📖 凛凛的妙妙小工具目录" in str(root_message)
+    assert "不提供子功能级 help" in str(root_message)
+
+
+async def test_derived_static_entry_feature_query_is_not_found() -> None:
+    entries = _iter_docs_entries("zh-CN")
+    derived_entry = next(
+        entry
+        for entry in entries
+        if entry.node.slug == "derived.wordbank.miaomiao-toolkit"
+    )
+
+    message = await _resolve_docs_message(
         derived_entry,
         "zh-CN",
         feature_query="运势",
@@ -417,12 +451,7 @@ async def test_resolve_docs_message_supports_wordbank_derived_root_and_feature(
         all_entries=entries,
     )
 
-    assert any(segment.type == "image" for segment in root_message)
-    assert "📖 凛凛的妙妙小工具目录" in str(root_message)
-    assert "查看 demo：#help 凛凛的妙妙小工具目录 fortune" in str(root_message)
-    assert any(segment.type == "image" for segment in feature_message)
-    assert "👉 运势" in str(feature_message)
-    assert "查看 demo：#help 凛凛的妙妙小工具目录 fortune" in str(feature_message)
+    assert "未找到" in str(message)
 
 
 async def test_resolve_docs_message_simple_leaf_returns_direct_demo_reply() -> None:
@@ -476,7 +505,7 @@ async def test_help_matcher_formats_water_overview_shortcuts(
         assert "#我有多水" in rendered
         assert "👉 查看周期榜单" in rendered
         assert "#水王" in rendered
-        assert "更多高级功能" in rendered
+        assert "更多高级功能" not in rendered
 
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, expected, bot=bot)

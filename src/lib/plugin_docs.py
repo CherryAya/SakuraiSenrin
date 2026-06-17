@@ -49,7 +49,12 @@ type DocsProvider = Callable[..., DocsResult]
 type DocNodeKind = Literal["plugin", "overview", "internal"]
 type DocRenderView = Literal["text", "index", "plugin", "feature"]
 type CommandLineKind = Literal["root", "flag", "continuation", "alternative"]
-type HelpEntryShape = Literal["simple_leaf", "plugin_guide", "overview_group"]
+type HelpEntryShape = Literal[
+    "simple_leaf",
+    "plugin_guide",
+    "overview_group",
+    "static_entry",
+]
 
 
 @dataclass(slots=True, frozen=True)
@@ -268,6 +273,12 @@ class DocNode:
             tokens.add(module)
             tokens.add(module.split(".")[-1])
         return {token for token in tokens if token}
+
+
+@dataclass(slots=True, frozen=True)
+class HelpDashboardSection:
+    title: str
+    nodes: tuple[DocNode, ...]
 
 
 @dataclass(slots=True, frozen=True)
@@ -761,6 +772,9 @@ def resolve_help_entry_shape(
     )
     if node.kind == "overview" or visible_children:
         return "overview_group"
+
+    if not node.features:
+        return "static_entry"
 
     visible_features = filter_features_by_permission(node.features, actor_permission)
     if len(visible_features) <= 1:
@@ -1800,32 +1814,49 @@ def render_plugin_guide(
     locale: LocaleCode = "zh-CN",
     generated_at: datetime | None = None,
 ) -> bytes:
-    hero_features, advanced_features = split_features_for_disclosure(
-        node.features,
-        actor_permission=actor_permission,
-    )
+    visible_features = filter_features_by_permission(node.features, actor_permission)
     return ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
     ).render_plugin_guide(
         node=node,
-        hero_features=hero_features,
-        advanced_features=advanced_features,
+        features=visible_features,
+        locale=locale,
+        generated_at=generated_at,
+    )
+
+
+def render_static_entry(
+    node: DocNode,
+    *,
+    locale: LocaleCode = "zh-CN",
+    generated_at: datetime | None = None,
+) -> bytes:
+    return ProgressiveDisclosureRenderer(
+        impression_color=node.bundle.impression_color
+    ).render_static_entry(
+        node=node,
         locale=locale,
         generated_at=generated_at,
     )
 
 
 def render_help_dashboard(
-    nodes: Sequence[DocNode],
+    sections: Sequence[HelpDashboardSection],
     *,
     locale: LocaleCode = "zh-CN",
     generated_at: datetime | None = None,
 ) -> bytes:
+    first_node = next(
+        (node for section in sections for node in section.nodes),
+        None,
+    )
     theme_color = (
-        nodes[0].bundle.impression_color if nodes else DEFAULT_IMPRESSION_COLOR
+        first_node.bundle.impression_color
+        if first_node is not None
+        else DEFAULT_IMPRESSION_COLOR
     )
     return ProgressiveDisclosureRenderer(impression_color=theme_color).render_dashboard(
-        nodes=nodes,
+        sections=sections,
         locale=locale,
         generated_at=generated_at,
     )
@@ -2076,8 +2107,7 @@ def build_feature_copy_text(
 def build_plugin_guide_copy_text(
     node: DocNode,
     *,
-    hero_features: Sequence[FeatureDoc],
-    advanced_features: Sequence[FeatureDoc],
+    features: Sequence[FeatureDoc],
     locale: LocaleCode,
 ) -> str:
     lines = [
@@ -2085,7 +2115,7 @@ def build_plugin_guide_copy_text(
         "下面这些命令可以直接复制发送：",
         "",
     ]
-    for feature in hero_features:
+    for feature in features:
         lines.append(f"👉 {feature.title}")
         lines.extend(
             feature_command_sections(
@@ -2096,19 +2126,6 @@ def build_plugin_guide_copy_text(
         )
         lines.append(f"查看 demo：{feature_demo_help_command(node, feature)}")
         lines.append("")
-    if advanced_features:
-        lines.append("更多高级功能：")
-        for feature in advanced_features:
-            lines.append(f"- {feature.title}")
-            lines.extend(
-                f"  {section}"
-                for section in feature_command_sections(
-                    node.bundle,
-                    feature,
-                    node.title,
-                )
-            )
-            lines.append(f"  查看 demo：{feature_demo_help_command(node, feature)}")
     return "\n".join(line for line in lines if line is not None).strip()
 
 
@@ -2127,6 +2144,29 @@ def build_simple_leaf_copy_text(
     note_items = _feature_notice_items(feature, locale=locale)
     if note_items:
         lines.extend(["", f"说明：{note_items[0]}"])
+    return "\n".join(lines).strip()
+
+
+def build_static_entry_copy_text(
+    node: DocNode,
+    *,
+    locale: LocaleCode,
+) -> str:
+    lines = [f"📖 {node.title}"]
+    if node.summary:
+        lines.extend(["", node.summary])
+    if node.description and node.description != node.summary:
+        lines.extend(["", node.description])
+    lines.extend(
+        [
+            "",
+            "这是一个静态社区入口说明页，不提供子功能级 help。",
+            "实际可触发内容由社区词条或运行时数据决定。",
+            "help 只负责暴露这个入口本身，不为每个社区词条派生独立命令说明。",
+            "",
+            f"说明：{_support_note(locale)}",
+        ]
+    )
     return "\n".join(lines).strip()
 
 
@@ -5597,7 +5637,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     def render_dashboard(
         self,
         *,
-        nodes: Sequence[DocNode],
+        sections: Sequence[HelpDashboardSection],
         locale: LocaleCode,
         generated_at: datetime | None = None,
     ) -> bytes:
@@ -5605,10 +5645,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
             microsecond=0
         )
-        display_nodes = tuple(nodes[:4])
         side = self.theme.hero_side_padding
-        header_title = "Bot Dashboard"
-        header_summary = "发送 #help 插件名，即可进入分层指引与完整演示。"
+        all_nodes = tuple(node for section in sections for node in section.nodes)
+        header_title = "Help Center"
+        header_summary = "以下是当前可用帮助入口，按分区完整列出。"
         header_title_lines = tuple(
             self._wrap_inline_text(
                 header_title,
@@ -5635,21 +5675,19 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + self.theme.hero_bottom_padding
         )
 
-        card_width = (self.WIDTH - side * 2 - self.DASHBOARD_CARD_GAP_X) // 2
-        cards = tuple(
-            self._measure_dashboard_card(node, card_width) for node in display_nodes
-        )
-        placements: list[tuple[_DashboardCardLayout, int, int]] = []
         cursor_y = header_height
-        for row_start in range(0, len(cards), 2):
-            row = cards[row_start : row_start + 2]
-            row_height = max((card.height for card in row), default=0)
-            for column, card in enumerate(row):
-                x = side + column * (card_width + self.DASHBOARD_CARD_GAP_X)
-                placements.append((card, x, cursor_y))
-            cursor_y += row_height + self.DASHBOARD_CARD_GAP_Y
+        section_width = self.WIDTH - side * 2
+        for section in sections:
+            section_rect = (
+                side,
+                cursor_y,
+                self.WIDTH - side,
+                cursor_y
+                + self._measure_dashboard_section_height(section, section_width),
+            )
+            cursor_y = section_rect[3] + self.DASHBOARD_CARD_GAP_Y
         content_bottom = (
-            cursor_y - self.DASHBOARD_CARD_GAP_Y if placements else header_height
+            cursor_y - self.DASHBOARD_CARD_GAP_Y if sections else header_height
         )
         footer_rect = (
             side,
@@ -5696,16 +5734,26 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         self._draw_standee(image, draw, standee_rect)
 
-        for card, x, y in placements:
-            self._draw_dashboard_card(
-                image, draw, card=card, x=x, y=y, width=card_width
+        cursor_y = header_height
+        for section in sections:
+            self._draw_dashboard_section(
+                image,
+                draw,
+                section=section,
+                top=cursor_y,
+                left=side,
+                width=section_width,
+            )
+            cursor_y += (
+                self._measure_dashboard_section_height(section, section_width)
+                + self.DASHBOARD_CARD_GAP_Y
             )
 
         self._draw_trace_footer(
             draw,
             footer_rect=footer_rect,
             left_text=(
-                f"Help Center · Global Dashboard · {len(nodes)} plugins "
+                f"Help Center · Sectioned Index · {len(all_nodes)} entries "
                 "· By SakuraiSenrin"
             ),
             right_text=f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin",
@@ -5718,8 +5766,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         self,
         *,
         node: DocNode,
-        hero_features: Sequence[FeatureDoc],
-        advanced_features: Sequence[FeatureDoc],
+        features: Sequence[FeatureDoc],
         locale: LocaleCode,
         generated_at: datetime | None = None,
     ) -> bytes:
@@ -5755,36 +5802,20 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
 
         content_width = self.WIDTH - side * 2
         section_width = content_width
-        hero_layouts = tuple(
+        feature_layouts = tuple(
             self._measure_plugin_guide_section(
                 node=node,
                 feature=feature,
                 section_width=section_width,
             )
-            for feature in hero_features
-        )
-        advanced_layouts = tuple(
-            self._measure_advanced_item(
-                node=node,
-                feature=feature,
-                width=section_width - self.GUIDE_SECTION_PADDING_X * 2,
-            )
-            for feature in advanced_features
+            for feature in features
         )
 
         cursor_y = hero_bottom
         section_positions: list[tuple[_GuideSectionLayout, int]] = []
-        for layout in hero_layouts:
+        for layout in feature_layouts:
             section_positions.append((layout, cursor_y))
             cursor_y += layout.height + self.GUIDE_SECTION_GAP
-
-        advanced_top = cursor_y if advanced_layouts else None
-        advanced_height = 0
-        if advanced_layouts:
-            advanced_height = self.GUIDE_SECTION_PADDING_Y * 2 + 72
-            advanced_height += sum(item.height for item in advanced_layouts)
-            advanced_height += max(0, len(advanced_layouts) - 1) * 24
-            cursor_y += advanced_height + self.GUIDE_SECTION_GAP
 
         footer_rect = (
             side,
@@ -5842,17 +5873,6 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 locale=locale,
             )
 
-        if advanced_top is not None:
-            self._draw_advanced_options(
-                image,
-                draw,
-                node=node,
-                layouts=advanced_layouts,
-                top=advanced_top,
-                left=side,
-                width=section_width,
-            )
-
         self._draw_trace_footer(
             draw,
             footer_rect=footer_rect,
@@ -5860,6 +5880,130 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 f"{node.title} · Guide · "
                 f"v{node.bundle.version.lstrip('v')} · By {node.bundle.author}"
             ),
+            right_text=f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin",
+        )
+        buffer = BytesIO()
+        image.convert("RGB").save(buffer, format="PNG", optimize=True)
+        return buffer.getvalue()
+
+    def render_static_entry(
+        self,
+        *,
+        node: DocNode,
+        locale: LocaleCode,
+        generated_at: datetime | None = None,
+    ) -> bytes:
+        generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
+            microsecond=0
+        )
+        side = self.theme.hero_side_padding
+        width = self.WIDTH - side * 2
+        header_title_lines = tuple(
+            self._wrap_inline_text(
+                node.title,
+                max_width=self.WIDTH - side * 2 - self.theme.hero_standee_size,
+                font=self.title_font,
+            )
+        )
+        header_summary_lines = tuple(
+            self._wrap_inline_text(
+                node.summary or node.bundle.summary,
+                max_width=self.WIDTH - side * 2 - self.theme.hero_standee_size,
+                font=self.summary_font,
+            )
+        )
+        hero_bottom = (
+            self.theme.hero_top
+            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + self.theme.hero_text_gap
+            + len(header_summary_lines)
+            * self._line_height_for_font(
+                self.summary_font,
+                minimum=self.theme.hero_summary_line_height,
+            )
+            + self.theme.hero_bottom_padding
+        )
+        body_lines = tuple(
+            self._wrap_inline_text(
+                build_static_entry_copy_text(node, locale=locale),
+                max_width=width - self.GUIDE_SECTION_PADDING_X * 2,
+                font=self.instruction_font,
+            )
+        )
+        body_line_height = self._line_height_for_font(self.instruction_font)
+        section_height = (
+            self.GUIDE_SECTION_PADDING_Y * 2 + len(body_lines) * body_line_height + 24
+        )
+        footer_rect = (
+            side,
+            hero_bottom + section_height + self.theme.footer_gap_top,
+            self.WIDTH - side,
+            hero_bottom
+            + section_height
+            + self.theme.footer_gap_top
+            + self.theme.footer_height,
+        )
+        total_height = footer_rect[3] + self.theme.outer_margin
+        image = Image.new("RGBA", (self.WIDTH, total_height), self.theme.page_bg)
+        self._paint_background(image)
+        draw = ImageDraw.Draw(image)
+        self._draw_multiline_text(
+            draw,
+            x=side,
+            y=self.theme.hero_top,
+            lines=header_title_lines,
+            font=self.title_font,
+            fill=self.theme.hero_title,
+            line_height=self._line_height_for_font(self.title_font),
+        )
+        summary_top = (
+            self.theme.hero_top
+            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + self.theme.hero_text_gap
+        )
+        self._draw_multiline_text(
+            draw,
+            x=side,
+            y=summary_top,
+            lines=header_summary_lines,
+            font=self.summary_font,
+            fill=self.theme.hero_summary,
+            line_height=self._line_height_for_font(
+                self.summary_font,
+                minimum=self.theme.hero_summary_line_height,
+            ),
+        )
+        standee_rect = (
+            self.WIDTH - side - self.theme.hero_standee_size,
+            self.theme.hero_top + 8,
+            self.WIDTH - side,
+            self.theme.hero_top + 8 + self.theme.hero_standee_size,
+        )
+        self._draw_standee(image, draw, standee_rect)
+        rect = (side, hero_bottom, side + width, hero_bottom + section_height)
+        self._draw_shadowed_rect(
+            image,
+            rect=rect,
+            radius=self.GUIDE_SECTION_RADIUS,
+            shadow_color=self.theme.card_shadow,
+            shadow_offset_y=self.theme.instruction_shadow_offset_y,
+            shadow_blur=self.theme.instruction_shadow_blur,
+            fill=self.theme.panel_bg,
+        )
+        self._draw_multiline_text(
+            draw,
+            x=rect[0] + self.GUIDE_SECTION_PADDING_X,
+            y=rect[1] + self.GUIDE_SECTION_PADDING_Y,
+            lines=body_lines,
+            font=self.instruction_font,
+            fill=self.theme.deep,
+            line_height=body_line_height,
+            render_code_chip=False,
+        )
+        self._draw_trace_footer(
+            draw,
+            footer_rect=footer_rect,
+            left_text=f"{node.title} · Static Entry · By {node.bundle.author}",
             right_text=f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin",
         )
         buffer = BytesIO()
@@ -6085,6 +6229,157 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             default_fill=card.theme.deep,
             guide_fill=card.theme.line,
         )
+
+    def _measure_dashboard_section_height(
+        self,
+        section: HelpDashboardSection,
+        width: int,
+    ) -> int:
+        content_width = width - self.GUIDE_SECTION_PADDING_X * 2
+        title_lines = tuple(
+            self._wrap_inline_text(
+                section.title,
+                max_width=content_width,
+                font=self.summary_font,
+            )
+        )
+        line_height = self._line_height_for_font(self.note_font)
+        item_height = 0
+        for node in section.nodes:
+            summary_lines = tuple(
+                self._wrap_inline_text(
+                    node.summary or node.bundle.summary,
+                    max_width=content_width - 36,
+                    font=self.note_font,
+                )
+            )[:2]
+            item_height += 28
+            item_height += self._line_height_for_font(self.instruction_font)
+            item_height += len(summary_lines) * line_height
+            item_height += 26
+        return (
+            self.GUIDE_SECTION_PADDING_Y * 2
+            + len(title_lines) * self._line_height_for_font(self.summary_font)
+            + 24
+            + item_height
+        )
+
+    def _draw_dashboard_section(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        section: HelpDashboardSection,
+        top: int,
+        left: int,
+        width: int,
+    ) -> None:
+        section_height = self._measure_dashboard_section_height(section, width)
+        rect = (left, top, left + width, top + section_height)
+        self._draw_shadowed_rect(
+            image,
+            rect=rect,
+            radius=self.GUIDE_SECTION_RADIUS,
+            shadow_color=self.theme.card_shadow,
+            shadow_offset_y=self.theme.instruction_shadow_offset_y,
+            shadow_blur=self.theme.instruction_shadow_blur,
+            fill=self.theme.panel_bg,
+        )
+        content_left = rect[0] + self.GUIDE_SECTION_PADDING_X
+        content_width = width - self.GUIDE_SECTION_PADDING_X * 2
+        cursor_y = rect[1] + self.GUIDE_SECTION_PADDING_Y
+        title_lines = tuple(
+            self._wrap_inline_text(
+                section.title,
+                max_width=content_width,
+                font=self.summary_font,
+            )
+        )
+        self._draw_multiline_text(
+            draw,
+            x=content_left,
+            y=cursor_y,
+            lines=title_lines,
+            font=self.summary_font,
+            fill=self.theme.deep,
+            line_height=self._line_height_for_font(self.summary_font),
+            render_code_chip=False,
+        )
+        cursor_y += (
+            len(title_lines) * self._line_height_for_font(self.summary_font) + 24
+        )
+        for node in section.nodes:
+            command_layout = build_command_layout(
+                f"#help {node.title}",
+                max_width=content_width - 40,
+                line_height=self._line_height_for_font(self.note_font),
+                indent_px=self.COMMAND_INDENT_PX,
+                measure_text=lambda value: self._text_width(value, self.note_font),
+                palette=self._command_palette(),
+            )
+            summary_lines = tuple(
+                self._wrap_inline_text(
+                    node.summary or node.bundle.summary,
+                    max_width=content_width - 36,
+                    font=self.note_font,
+                )
+            )[:2]
+            draw.ellipse(
+                (
+                    content_left,
+                    cursor_y + 10,
+                    content_left + 12,
+                    cursor_y + 22,
+                ),
+                fill=self.theme.accent,
+            )
+            self._draw_multiline_text(
+                draw,
+                x=content_left + 24,
+                y=cursor_y,
+                lines=(split_inline_text_spans(node.title),),
+                font=self.instruction_font,
+                fill=self.theme.deep,
+                line_height=self._line_height_for_font(self.instruction_font),
+                render_code_chip=False,
+            )
+            cursor_y += self._line_height_for_font(self.instruction_font) + 8
+            self._draw_multiline_text(
+                draw,
+                x=content_left + 24,
+                y=cursor_y,
+                lines=summary_lines,
+                font=self.note_font,
+                fill=self.theme.hint,
+                line_height=self._line_height_for_font(self.note_font),
+                render_code_chip=False,
+            )
+            cursor_y += (
+                len(summary_lines) * self._line_height_for_font(self.note_font) + 10
+            )
+            command_rect = (
+                content_left + 24,
+                cursor_y,
+                rect[2] - self.GUIDE_SECTION_PADDING_X,
+                cursor_y
+                + command_layout.total_height
+                + self.DASHBOARD_CARD_COMMAND_PADDING_Y * 2,
+            )
+            draw.rounded_rectangle(
+                command_rect,
+                radius=20,
+                fill=self.theme.panel_soft_bg,
+            )
+            self._draw_command_layout(
+                draw,
+                x=command_rect[0] + self.DASHBOARD_CARD_COMMAND_PADDING_X,
+                y=command_rect[1] + self.DASHBOARD_CARD_COMMAND_PADDING_Y,
+                layout=command_layout,
+                font=self.note_font,
+                default_fill=self.theme.deep,
+                guide_fill=self.theme.line,
+            )
+            cursor_y = command_rect[3] + 26
 
     def _measure_plugin_guide_section(
         self,
@@ -6619,8 +6914,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             ellipsis=ellipsis,
         )
         return tuple(
-            ((InlineTextSpan(line, code=False),) if line else ())
-            for line in raw_lines
+            ((InlineTextSpan(line, code=False),) if line else ()) for line in raw_lines
         )
 
     def _wrap_plain_text_pixels(
@@ -6760,8 +7054,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
 
         candidate = "".join(current_chars).rstrip()
         while (
-            candidate
-            and self._pixel_text_width(candidate + ellipsis, font) > max_width
+            candidate and self._pixel_text_width(candidate + ellipsis, font) > max_width
         ):
             candidate = candidate[:-1].rstrip()
         return f"{candidate}{ellipsis}" if candidate else ellipsis

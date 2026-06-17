@@ -24,6 +24,7 @@ from src.lib.plugin_docs import (
     DocNode,
     DocsRenderContext,
     FeatureDoc,
+    HelpDashboardSection,
     InlineTextSpan,
     ProgressiveDisclosureRenderer,
     VirtualFeatureDocSpec,
@@ -47,6 +48,7 @@ from src.lib.plugin_docs import (
     render_doc_node_overview,
     render_help_dashboard,
     render_plugin_guide,
+    render_static_entry,
     resolve_help_entry_shape,
     split_features_for_disclosure,
     split_inline_text_spans,
@@ -1171,10 +1173,13 @@ BOT: Alpha 完成
         permission=Permission.NORMAL,
     )
 
-    assert load_representative_demo_bytes(
-        bundle,
-        prefer_collection=False,
-    ) == b"feature-demo"
+    assert (
+        load_representative_demo_bytes(
+            bundle,
+            prefer_collection=False,
+        )
+        == b"feature-demo"
+    )
 
 
 def test_plugin_docs_compose_builds_collection_image(
@@ -1812,7 +1817,19 @@ def test_render_help_dashboard_returns_showcase_canvas() -> None:
         permission=Permission.NORMAL,
     )
 
-    image = Image.open(BytesIO(render_help_dashboard((node,), locale="zh-CN")))
+    image = Image.open(
+        BytesIO(
+            render_help_dashboard(
+                (
+                    HelpDashboardSection(
+                        title="开发者插件",
+                        nodes=(node,),
+                    ),
+                ),
+                locale="zh-CN",
+            )
+        )
+    )
     assert image.width == 1280
     assert image.height > 500
 
@@ -1835,8 +1852,9 @@ def test_dashboard_pixel_truncation_reserves_ellipsis_width() -> None:
     assert renderer._pixel_text_width(fitted, renderer.note_font) <= max_width
 
 
-def test_dashboard_card_layout_bottom_anchors_command_and_limits_summary_height(
-) -> None:
+def test_dashboard_card_layout_bottom_anchors_command_and_limits_summary_height() -> (
+    None
+):
     node = load_doc_node(
         source="src/plugins/wordbank/docs/README.MD",
         default_name="词库模块",
@@ -1905,7 +1923,7 @@ def test_dashboard_footer_left_text_preserves_plugins_when_pixels_allow() -> Non
     assert "5 plugins" in fitted
 
 
-def test_render_plugin_guide_and_copy_text_use_disclosure_selection() -> None:
+def test_render_plugin_guide_and_copy_text_list_all_visible_features() -> None:
     node = load_doc_node(
         source="src/plugins/wordbank/docs/README.MD",
         default_name="词库模块",
@@ -1914,12 +1932,12 @@ def test_render_plugin_guide_and_copy_text_use_disclosure_selection() -> None:
         permission=Permission.NORMAL,
     )
 
-    hero_features, advanced_features = split_features_for_disclosure(
+    visible_features = plugin_docs_module.filter_features_by_permission(
         node.features,
         actor_permission=Permission.NORMAL,
     )
-    assert [feature.slug for feature in hero_features] == ["add", "search", "passive"]
-    assert "add-scope" in {feature.slug for feature in advanced_features}
+    assert "add" in {feature.slug for feature in visible_features}
+    assert "add-scope" in {feature.slug for feature in visible_features}
 
     image = Image.open(
         BytesIO(
@@ -1935,14 +1953,12 @@ def test_render_plugin_guide_and_copy_text_use_disclosure_selection() -> None:
 
     copy_text = build_plugin_guide_copy_text(
         node,
-        hero_features=hero_features,
-        advanced_features=advanced_features,
+        features=visible_features,
         locale="zh-CN",
     )
     assert "👉 基础添加" in copy_text
     assert "wordbank add 触发词 => 响应词" in copy_text
     assert "查看 demo：#help 词库模块 add" in copy_text
-    assert "更多高级功能" in copy_text
     assert "wordbank add 触发词 => 响应词 --scope current_group" in copy_text
     assert "#help 词库模块 add-scope" in copy_text
 
@@ -1984,7 +2000,7 @@ def test_resolve_help_entry_shape_distinguishes_simple_leaf_and_grouped_nodes() 
     assert resolve_help_entry_shape(admin) == "overview_group"
 
 
-def test_virtual_doc_node_behaves_like_complex_plugin_guide() -> None:
+def test_virtual_doc_node_without_features_is_static_entry() -> None:
     node = load_virtual_doc_node(
         VirtualPluginDocSpec(
             slug="derived.wordbank.miaomiao-toolkit",
@@ -1998,52 +2014,31 @@ def test_virtual_doc_node_behaves_like_complex_plugin_guide() -> None:
             plugin_name="wordbank",
             module_name="src.plugins.wordbank",
             origin_plugin_slug="wordbank",
-            features=(
-                VirtualFeatureDocSpec(
-                    slug="fortune",
-                    title="运势",
-                    summary="运势说明",
-                    trigger="妙妙小工具1",
-                    overview="运势玩法说明",
-                    preconditions="词条已存在",
-                    failures="词条不存在时不会回复",
-                    demo_turns=(
-                        plugin_docs_module.DocsDemoTurn("USER", "妙妙小工具1"),
-                        plugin_docs_module.DocsDemoTurn("BOT", "运势说明"),
-                    ),
-                    hero=True,
-                ),
-                VirtualFeatureDocSpec(
-                    slug="jrlp",
-                    title="jrlp",
-                    summary="jrlp 说明",
-                    trigger="妙妙小工具2",
-                    overview="jrlp 玩法说明",
-                    preconditions="词条已存在",
-                    failures="词条不存在时不会回复",
-                    demo_turns=(
-                        plugin_docs_module.DocsDemoTurn("USER", "妙妙小工具2"),
-                        plugin_docs_module.DocsDemoTurn("BOT", "jrlp 说明"),
-                    ),
-                ),
-            ),
+            features=(),
         )
     )
 
-    assert resolve_help_entry_shape(node) == "simple_leaf"
-    match = match_feature(node.features, "运势")
-    assert match.status == "matched"
-    assert match.feature is not None
-    assert match.feature.slug == "fortune"
+    assert resolve_help_entry_shape(node) == "static_entry"
 
 
-def test_wordbank_derived_directory_is_classified_as_plugin_guide() -> None:
+def test_wordbank_derived_directory_is_classified_as_static_entry() -> None:
     from src.plugins.wordbank.derived_help import build_wordbank_derived_help
 
     spec = build_wordbank_derived_help("zh-CN")[0]
     node = load_virtual_doc_node(spec)
 
-    assert resolve_help_entry_shape(node) == "plugin_guide"
+    assert resolve_help_entry_shape(node) == "static_entry"
+
+
+def test_render_static_entry_returns_showcase_canvas() -> None:
+    from src.plugins.wordbank.derived_help import build_wordbank_derived_help
+
+    node = load_virtual_doc_node(build_wordbank_derived_help("zh-CN")[0])
+
+    image = Image.open(BytesIO(render_static_entry(node, locale="zh-CN")))
+
+    assert image.width == 1280
+    assert image.height > 500
 
 
 def test_build_simple_leaf_copy_text_includes_direct_demo_command() -> None:
