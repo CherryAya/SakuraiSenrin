@@ -108,6 +108,7 @@ __plugin_meta__ = create_plugin_metadata(
             category="fun",
             order=100,
             source=DOCS_SOURCE,
+            aliases=("吹水记录", "吹水", "water"),
         ),
     },
 )

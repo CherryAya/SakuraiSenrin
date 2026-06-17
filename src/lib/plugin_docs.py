@@ -632,7 +632,9 @@ def load_doc_node(
         visible=meta["visibility"]["visible"],
         hidden=meta["visibility"]["hidden"],
         internal=meta["visibility"]["internal"],
-        permission=_coerce_permission(meta["permission"] or permission),
+        permission=_coerce_permission(meta["permission"])
+        if meta.get("permission") not in (None, Permission.NORMAL)
+        else permission,
         title=bundle.title or default_name,
         summary=bundle.summary or default_description,
         description=default_description,
@@ -712,7 +714,7 @@ def render_doc_node_overview(
     actor_permission: Permission = Permission.NORMAL,
     children: Sequence[DocNode] = (),
 ) -> Message:
-    lines = [f"📖 ===== {node.title} =====", ""]
+    lines = [node.title, ""]
     if node.summary:
         lines.extend([node.summary, ""])
 
@@ -722,14 +724,15 @@ def render_doc_node_overview(
     visible_features = filter_features_by_permission(node.features, actor_permission)
 
     if visible_children:
-        lines.append(tr(locale, "docs.node.children"))
-        for index, child in enumerate(visible_children, start=1):
-            lines.append(f"{index}. {child.title}")
-            lines.append(f"  #help {child.title}")
+        lines.append("可用子模块：")
+        for child in visible_children:
+            lines.append(child.title)
+            lines.append(f"#help {child.title}")
         lines.append("")
     elif visible_features:
-        for index, feature in enumerate(visible_features, start=1):
-            lines.append(f"{index}. {feature.title}")
+        lines.append("可用功能：")
+        for feature in visible_features:
+            lines.append(feature.title)
             lines.extend(
                 _format_feature_command_lines(
                     node.bundle,
@@ -817,11 +820,10 @@ def render_doc_feature(
     include_demo: bool = True,
 ) -> Message:
     lines = [
-        f"📖 ===== {node.title} / {feature.title} =====",
+        node.title,
+        feature.title,
         "",
-        tr(locale, "docs.feature.name", name=feature.title),
-        "",
-        tr(locale, "docs.feature.commands"),
+        "命令：",
         *_format_feature_command_lines(
             node.bundle,
             feature,
@@ -829,7 +831,7 @@ def render_doc_feature(
             locale=locale,
         ),
         "",
-        tr(locale, "docs.node.notice"),
+        "说明：",
     ]
     for index, note in enumerate(
         _feature_notice_items(feature, locale=locale),
@@ -2177,7 +2179,10 @@ def build_feature_copy_text(
     locale: LocaleCode,
 ) -> str:
     lines = [
-        f"👉 {feature.title}",
+        node.title,
+        feature.title,
+        "",
+        "命令：",
         *(
             section
             for section in feature_command_sections(node.bundle, feature, node.title)
@@ -2186,7 +2191,6 @@ def build_feature_copy_text(
     note_items = _feature_notice_items(feature, locale=locale)
     if note_items:
         lines.extend(["", f"说明：{note_items[0]}"])
-    lines.extend(["", f"查看 demo：{feature_demo_help_command(node, feature)}"])
     return "\n".join(lines).strip()
 
 
@@ -2197,12 +2201,12 @@ def build_plugin_guide_copy_text(
     locale: LocaleCode,
 ) -> str:
     lines = [
-        f"📖 {node.title}",
+        node.title,
         "下面这些命令可以直接复制发送：",
         "",
     ]
     for feature in features:
-        lines.append(f"👉 {feature.title}")
+        lines.append(feature.title)
         lines.extend(
             feature_command_sections(
                 node.bundle,
@@ -2210,7 +2214,6 @@ def build_plugin_guide_copy_text(
                 node.title,
             )
         )
-        lines.append(f"查看 demo：{feature_demo_help_command(node, feature)}")
         lines.append("")
     return "\n".join(line for line in lines if line is not None).strip()
 
@@ -2222,7 +2225,9 @@ def build_simple_leaf_copy_text(
     locale: LocaleCode,
 ) -> str:
     lines = [
-        f"👉 {node.title}",
+        node.title,
+        "",
+        "命令：",
         *feature_command_sections(node.bundle, feature, node.title),
     ]
     note_items = _feature_notice_items(feature, locale=locale)
@@ -2236,7 +2241,7 @@ def build_static_entry_copy_text(
     *,
     locale: LocaleCode,
 ) -> str:
-    lines = [f"📖 {node.title}"]
+    lines = [node.title]
     if node.summary:
         lines.extend(["", node.summary])
     if node.description and node.description != node.summary:

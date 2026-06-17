@@ -56,12 +56,13 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.hook_processor.description",
         },
         "docs": create_docs_meta(
-            visible=False,
-            category="internal",
+            visible=True,
+            category="system",
             order=10,
             source=DOCS_SOURCE,
             slug="hook.processor",
-            kind="internal",
+            kind="overview",
+            aliases=("运行时处理器", "运行时检查", "hook.processor"),
         ),
     },
 )

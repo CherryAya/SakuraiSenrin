@@ -96,7 +96,7 @@ __plugin_meta__ = create_plugin_metadata(
             order=120,
             source=DOCS_SOURCE,
             slug="picsearch",
-            aliases=("图片搜索",),
+            aliases=("图片搜索", "搜索图片", "搜图", "picsearch"),
         ),
     },
 )

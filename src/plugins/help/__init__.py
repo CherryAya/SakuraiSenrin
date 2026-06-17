@@ -377,7 +377,7 @@ def _classify_root_section(entry: DocsEntry) -> RootSection:
     module_name = entry.node.module_name
     if slug.startswith("derived."):
         return "community"
-    if module_name.startswith("src.hooks."):
+    if module_name.startswith("src.hooks.") or slug.startswith("hook."):
         return "system"
     if slug in {"help", "notice", "admin"}:
         return "system"
@@ -457,9 +457,9 @@ def _build_index_message(
         "",
     ]
     for section, section_entries in grouped_sections:
-        lines.append(f"【{SECTION_TITLES[section]}】")
+        lines.append(SECTION_TITLES[section])
         for entry in section_entries:
-            lines.append(f"- #help {entry.node.title}")
+            lines.append(f"#help {entry.node.title}")
         lines.append("")
     return _compose_help_reply(dashboard_bytes, "\n".join(lines).strip())
 
@@ -476,7 +476,7 @@ def _build_ambiguous_message(
         tr(locale, "help.query.ambiguous.candidates"),
     ]
     for entry in candidates:
-        lines.append(f"- {entry.display_name} ({entry.node.slug})")
+        lines.append(f"{entry.display_name} ({entry.node.slug})")
     return Message("\n".join(lines))
 
 

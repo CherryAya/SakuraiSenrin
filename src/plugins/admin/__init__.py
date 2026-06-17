@@ -35,13 +35,13 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.admin_overview.description",
         },
         "docs": create_docs_meta(
-            visible=False,
+            visible=True,
             category="admin",
             order=10,
             source=DOCS_SOURCE,
             slug="admin",
             kind="overview",
-            aliases=("管理模块总览", "admin"),
+            aliases=("管理模块总览", "管理插件", "admin"),
         ),
     },
 )

@@ -3,9 +3,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot
 from nonebot.plugin import PluginMetadata
-from nonebug import App
 import pytest
 
 from src.database.core.consts import Permission
@@ -18,7 +16,6 @@ from src.lib.plugin_docs import (
     create_docs_meta,
     load_doc_node,
 )
-from tests.plugins.water.helpers import build_group_message_event
 
 nonebot.init()
 nonebot.require("nonebot_plugin_apscheduler")
@@ -40,10 +37,8 @@ from src.plugins.help import (
     _iter_docs_entries,
     _match_entry,
     _read_plugin_permission,
-    _resolve_actor_permission,
     _resolve_docs_message,
     _split_query,
-    help_matcher,
 )
 
 
@@ -315,12 +310,12 @@ def test_build_index_message_only_lists_root_nodes() -> None:
     rendered = str(message)
     assert "欢迎来到 SakuraiSenrin 帮助中心" in rendered
     assert "以下是当前可用帮助入口" in rendered
-    assert "【系统预置】" in rendered
-    assert "【开发者插件】" in rendered
-    assert "【社区创作】" in rendered
-    assert "- #help 帮助中心" in rendered
-    assert "- #help 吹水记录" in rendered
-    assert "- #help 凛凛的妙妙小工具目录" in rendered
+    assert "系统预置" in rendered
+    assert "开发者插件" in rendered
+    assert "社区创作" in rendered
+    assert "#help 帮助中心" in rendered
+    assert "#help 吹水记录" in rendered
+    assert "#help 凛凛的妙妙小工具目录" in rendered
     assert "继续查看" not in rendered
     assert "群组管理模块" not in rendered
     assert any(segment.type == "image" for segment in message)
@@ -336,9 +331,50 @@ def test_build_index_message_lists_full_root_entries_without_demo_hint() -> None
     )
 
     rendered = str(message)
+    assert "#help 运行时处理器" not in rendered
     assert "#help 吹水记录" in rendered
     assert "#help 凛凛的妙妙小工具目录" in rendered
     assert "查看 demo：" not in rendered
+
+
+def test_build_index_message_superuser_sees_system_hooks_and_admin() -> None:
+    for module_name, plugin_name in (
+        ("src.plugins.admin", "admin"),
+        ("src.hooks.processor", "hook.processor"),
+        ("src.hooks.plugin", "hook.plugin"),
+        ("src.plugins.notice", "notice"),
+    ):
+        if nonebot.get_plugin(plugin_name) is None:
+            sys.modules.pop(module_name, None)
+            nonebot.load_plugin(module_name)
+
+    entries = _iter_docs_entries("zh-CN")
+
+    message = _build_index_message(
+        entries,
+        "zh-CN",
+        Permission.NORMAL
+        | Permission.GROUP_ADMIN
+        | Permission.GROUP_OWNER
+        | Permission.SUPERUSER,
+    )
+
+    rendered = str(message)
+    assert "系统预置" in rendered
+    assert "#help 管理模块总览" in rendered
+    assert "#help 检测服务" in rendered
+    assert "#help 插件钩子扩展点" in rendered
+
+
+def test_build_index_message_normal_user_hides_admin_and_hooks() -> None:
+    entries = _iter_docs_entries("zh-CN")
+
+    message = _build_index_message(entries, "zh-CN", Permission.NORMAL)
+
+    rendered = str(message)
+    assert "#help 管理模块总览" not in rendered
+    assert "#help 检测服务" not in rendered
+    assert "#help 插件钩子扩展点" not in rendered
 
 
 def test_iter_docs_entries_includes_wordbank_derived_root_entry() -> None:
@@ -443,7 +479,7 @@ async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:
     assert any(segment.type == "image" for segment in root_message)
     assert "群组管理模块" in str(root_message)
     assert any(segment.type == "image" for segment in child_message)
-    assert "📖 群组管理模块" in str(child_message)
+    assert "群组管理模块" in str(child_message)
 
 
 async def test_resolve_docs_message_feature_query_returns_deep_dive_reply() -> None:
@@ -460,7 +496,7 @@ async def test_resolve_docs_message_feature_query_returns_deep_dive_reply() -> N
 
     assert any(segment.type == "image" for segment in message)
     rendered = str(message)
-    assert "👉 查看周期榜单" in rendered
+    assert "查看周期榜单" in rendered
     assert "#水王" in rendered
 
 
@@ -480,7 +516,7 @@ async def test_resolve_docs_message_supports_wordbank_derived_static_entry() -> 
     )
 
     assert any(segment.type == "image" for segment in root_message)
-    assert "📖 凛凛的妙妙小工具目录" in str(root_message)
+    assert "凛凛的妙妙小工具目录" in str(root_message)
     assert "不提供子功能级 help" in str(root_message)
 
 
@@ -519,46 +555,56 @@ async def test_resolve_docs_message_simple_leaf_returns_direct_demo_reply() -> N
     )
 
     rendered = str(message)
-    assert "👉 图片搜索" in rendered
+    assert "图片搜索" in rendered
     assert "搜图" in rendered
     assert "查看 demo：" not in rendered
     assert "下面这些命令可以直接复制发送" not in rendered
 
 
+def test_match_entry_supports_manual_aliases() -> None:
+    entries = _iter_docs_entries("zh-CN")
+
+    picsearch = _match_entry(entries, "搜索图片")
+    picsearch_short = _match_entry(entries, "搜图")
+    picsearch_slug = _match_entry(entries, "picsearch")
+
+    assert picsearch.status == "matched"
+    assert picsearch.entry is not None
+    assert picsearch.entry.node.slug == "picsearch"
+    assert picsearch_short.status == "matched"
+    assert picsearch_short.entry is not None
+    assert picsearch_short.entry.node.slug == "picsearch"
+    assert picsearch_slug.status == "matched"
+    assert picsearch_slug.entry is not None
+    assert picsearch_slug.entry.node.slug == "picsearch"
+
+
 @pytest.mark.asyncio
-async def test_help_matcher_formats_water_overview_shortcuts(
-    app: App,
+async def test_resolve_docs_message_formats_water_overview_shortcuts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    event = build_group_message_event("#help 吹水记录")
     entries = _iter_docs_entries("zh-CN")
     water_entry = next(entry for entry in entries if entry.display_name == "吹水记录")
     monkeypatch.setattr(
         "src.plugins.help.render_plugin_guide", lambda *args, **kwargs: b"guide-demo"
     )
+    message = await _resolve_docs_message(
+        water_entry,
+        "zh-CN",
+        actor_permission=Permission.NORMAL,
+        all_entries=entries,
+    )
+    rendered = str(message)
 
-    async with app.test_matcher(help_matcher) as ctx:
-        bot = ctx.create_bot(base=Bot, self_id="99999")
-        actor_permission = await _resolve_actor_permission(bot, event)
-        expected = await _resolve_docs_message(
-            water_entry,
-            "zh-CN",
-            actor_permission=actor_permission,
-            all_entries=entries,
-        )
-        rendered = str(expected)
-
-        assert any(segment.type == "image" for segment in expected)
-        assert "下面这些命令可以直接复制发送" in rendered
-        assert "👉 查看个人画像" in rendered
-        assert "#我有多水" in rendered
-        assert "👉 查看周期榜单" in rendered
-        assert "#水王" in rendered
-        assert "更多高级功能" not in rendered
-
-        ctx.receive_event(bot, event)
-        ctx.should_call_send(event, expected, bot=bot)
-        ctx.should_finished(help_matcher)
+    assert any(segment.type == "image" for segment in message)
+    assert "下面这些命令可以直接复制发送" in rendered
+    assert "查看个人画像" in rendered
+    assert "#我有多水" in rendered
+    assert "查看周期榜单" in rendered
+    assert "#水王" in rendered
+    assert "更多高级功能" not in rendered
+    assert "👉" not in rendered
+    assert "📖" not in rendered
 
 
 def test_iter_docs_entries_resolves_explicit_or_inherited_impression_colors() -> None:

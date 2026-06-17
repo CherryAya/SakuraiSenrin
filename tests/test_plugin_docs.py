@@ -2201,11 +2201,11 @@ def test_render_plugin_guide_and_copy_text_list_all_visible_features() -> None:
         features=visible_features,
         locale="zh-CN",
     )
-    assert "👉 基础添加" in copy_text
+    assert "基础添加" in copy_text
     assert "wordbank add 触发词 => 响应词" in copy_text
-    assert "查看 demo：#help 词库模块 add" in copy_text
+    assert "查看 demo：" not in copy_text
     assert "wordbank add 触发词 => 响应词 --scope current_group" in copy_text
-    assert "#help 词库模块 add-scope" in copy_text
+    assert "#help 词库模块 add-scope" not in copy_text
 
 
 def test_resolve_help_entry_shape_distinguishes_simple_leaf_and_grouped_nodes() -> None:
@@ -2298,7 +2298,7 @@ def test_build_simple_leaf_copy_text_includes_direct_demo_command() -> None:
 
     copy_text = build_simple_leaf_copy_text(node, feature, locale="zh-CN")
 
-    assert "👉 图片搜索" in copy_text
+    assert "图片搜索" in copy_text
     assert "搜图 [saucenao|ascii2d]" in copy_text
     assert "查看 demo：" not in copy_text
 
@@ -2315,7 +2315,7 @@ def test_build_feature_copy_text_returns_command_skeleton() -> None:
 
     copy_text = build_feature_copy_text(node, ranking, locale="zh-CN")
 
-    assert "👉 查看周期榜单" in copy_text
+    assert "查看周期榜单" in copy_text
     assert "#水王" in copy_text
 
 

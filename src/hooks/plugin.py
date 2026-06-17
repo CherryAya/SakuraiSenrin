@@ -33,12 +33,13 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.hook_plugin.description",
         },
         "docs": create_docs_meta(
-            visible=False,
-            category="internal",
+            visible=True,
+            category="system",
             order=20,
             source=DOCS_SOURCE,
             slug="hook.plugin",
-            kind="internal",
+            kind="overview",
+            aliases=("插件钩子扩展点", "插件钩子", "hook.plugin"),
         ),
     },
 )

@@ -186,7 +186,7 @@ def _build_wordbank_docs_meta() -> list[object]:
         order=80,
         source=DOCS_SOURCE,
         slug="wordbank",
-        aliases=("词库模块", "wordbank"),
+        aliases=("词库模块", "词库", "wordbank"),
     )
     main_docs["permission"] = Permission.NORMAL
 

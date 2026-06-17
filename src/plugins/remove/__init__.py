@@ -46,6 +46,7 @@ __plugin_meta__ = create_plugin_metadata(
             category="system",
             order=90,
             source=DOCS_SOURCE,
+            aliases=("退群模块", "退群", "remove"),
         ),
     },
 )

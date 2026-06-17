@@ -35,13 +35,13 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.notice.description",
         },
         "docs": create_docs_meta(
-            visible=False,
+            visible=True,
             category="system",
             order=10,
             source=DOCS_SOURCE,
             slug="notice",
             kind="overview",
-            aliases=("通知模块总览", "notice"),
+            aliases=("通知模块总览", "通知模块", "notice"),
         ),
     },
 )
