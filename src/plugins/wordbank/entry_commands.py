@@ -31,10 +31,13 @@ from .handlers import (
     fetch_first_image_bytes_from_message,
     handle_add_text_result,
     handle_add_with_media_result,
+    parse_group_view_args,
 )
 from .handlers.commands import (
     parse_guided_advanced_options,
     parse_guided_scope_choice,
+)
+from .handlers.parsers import (
     parse_guided_search_creator_filter,
     parse_guided_search_mode_choice,
     parse_search_session_command,
@@ -77,7 +80,9 @@ def register_wordbank_command_handlers(
         Awaitable[None],
     ],
     collect_search_query_content: SearchQueryCollector,
-    start_guided_add: Callable[[Matcher, MessageEvent, T_State, LocaleCode], Awaitable[None]],
+    start_guided_add: Callable[
+        [Matcher, MessageEvent, T_State, LocaleCode], Awaitable[None]
+    ],
     start_guided_add_with_trigger_image: Callable[
         [Matcher, MessageEvent, T_State, LocaleCode, Message],
         Awaitable[None],
@@ -101,7 +106,9 @@ def register_wordbank_command_handlers(
         Awaitable[None],
     ],
     guided_search_stage: Callable[[T_State], str | None],
-    reject_guided_error: Callable[[Matcher, T_State, LocaleCode, Message | str], Awaitable[None]],
+    reject_guided_error: Callable[
+        [Matcher, T_State, LocaleCode, Message | str], Awaitable[None]
+    ],
     register_guided_checkpoint: Callable[..., None],
     guided_locale: Callable[[T_State], LocaleCode],
     copy_guided_state: Callable[..., dict[str, Any]],
@@ -176,9 +183,11 @@ def register_wordbank_command_handlers(
             return
         if action in {"search", "find", "查询", "搜索"}:
             try:
-                keyword, has_image, search_image_scores = (
-                    await collect_search_query_content(arg, keyword_text=rest)
-                )
+                (
+                    keyword,
+                    has_image,
+                    search_image_scores,
+                ) = await collect_search_query_content(arg, keyword_text=rest)
             except (RuleError, ValueError) as exc:
                 await matcher.finish(
                     build_error_message(exc, locale, default_feature="search")
@@ -200,8 +209,6 @@ def register_wordbank_command_handlers(
             return
         if action in {"详情", *GROUP_ALIASES}:
             try:
-                from .handlers import parse_group_view_args
-
                 parsed_group = parse_group_view_args(rest)
                 await send_group_detail_view(
                     matcher,
@@ -235,7 +242,11 @@ def register_wordbank_command_handlers(
             return
         await matcher.finish(msg)
 
-    setattr(register_wordbank_command_handlers, "_handle_wordbank_command_message", handle_wordbank_command_message)
+    setattr(
+        register_wordbank_command_handlers,
+        "_handle_wordbank_command_message",
+        handle_wordbank_command_message,
+    )
 
     @wordbank_command.handle()
     async def _wordbank_root(
@@ -260,7 +271,9 @@ def register_wordbank_command_handlers(
                         arg,
                     )
                 else:
-                    await _call_dynamic("_start_guided_add", matcher, event, state, locale)
+                    await _call_dynamic(
+                        "_start_guided_add", matcher, event, state, locale
+                    )
                 return
         await initialize_plugin()
         handler = handle_wordbank_command_message_fn or handle_wordbank_command_message
@@ -484,7 +497,9 @@ def register_wordbank_command_handlers(
         await initialize_plugin()
         locale = await resolve_locale_fn(str(getattr(event, "group_id", "")) or None)
         await _abort_guided_on_revoke(matcher, event, locale)
-        if not has_meaningful_text(arg.extract_plain_text()) and not extract_image_urls(arg):
+        if not has_meaningful_text(arg.extract_plain_text()) and not extract_image_urls(
+            arg
+        ):
             await _call_dynamic("_start_guided_search", matcher, event, state, locale)
             return
         handler = handle_wordbank_command_message_fn or handle_wordbank_command_message
@@ -508,7 +523,9 @@ def register_wordbank_command_handlers(
         if guided_search_stage(state) != WORDBANK_GUIDED_SEARCH_STAGE_DIMENSIONS:
             return
         try:
-            selection = parse_guided_search_mode_choice(event.message.extract_plain_text())
+            selection = parse_guided_search_mode_choice(
+                event.message.extract_plain_text()
+            )
         except RuleError as exc:
             await reject_guided_error(
                 matcher,
@@ -609,7 +626,10 @@ def register_wordbank_command_handlers(
             return
         clear_interaction_errors(state)
         state["wordbank_guided_search_creator_id"] = creator_id
-        if bool(state.get("wordbank_guided_search_requires_creator")) and not creator_id:
+        if (
+            bool(state.get("wordbank_guided_search_requires_creator"))
+            and not creator_id
+        ):
             await reject_guided_error(
                 matcher,
                 state,
@@ -634,7 +654,9 @@ def register_wordbank_command_handlers(
     ) -> None:
         locale = state.get("wordbank_locale", "zh-CN")
         await _abort_guided_on_revoke(matcher, event, locale)
-        await _call_dynamic("_handle_search_session_event", matcher, event, state, locale)
+        await _call_dynamic(
+            "_handle_search_session_event", matcher, event, state, locale
+        )
 
     def _register_forced_command(matcher_obj: Any, action: str) -> None:
         @matcher_obj.handle()

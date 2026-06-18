@@ -56,15 +56,13 @@ async def fetch_image_bytes_from_message(
     *,
     limit: int = 2,
 ) -> tuple[bytes, ...]:
-    from .commands import fetch_image_bytes_with_retry as _fetch_image_bytes_with_retry
-
     urls = extract_image_urls(message)
     if not urls:
         return ()
 
     items: list[bytes] = []
     for url in urls[: max(1, limit)]:
-        data = await _fetch_image_bytes_with_retry(url)
+        data = await fetch_image_bytes_with_retry(url)
         if data is None:
             raise WordbankUserError(
                 tr("zh-CN", "wordbank.error.image_download_failed"),
@@ -83,7 +81,9 @@ def shape_from_text_value(text: str) -> MessageShape:
     return shape_from_text(text)
 
 
-def shape_from_response_parts(text: str, *, image_id: int | None = None) -> MessageShape:
+def shape_from_response_parts(
+    text: str, *, image_id: int | None = None
+) -> MessageShape:
     parts = [shape_from_text_value(text)]
     if image_id is not None:
         parts.append(shape_from_image(image_id))
@@ -103,9 +103,7 @@ async def build_message_shape_from_message(
     *,
     image_limit: int = GUIDED_MESSAGE_IMAGE_LIMIT,
 ) -> MessageShape:
-    from .commands import fetch_image_bytes_from_message as _fetch_image_bytes_from_message
-
-    image_bytes_items = await _fetch_image_bytes_from_message(
+    image_bytes_items = await fetch_image_bytes_from_message(
         message,
         limit=image_limit,
     )
@@ -123,9 +121,7 @@ async def build_shape_from_text_and_images(
     message: Message,
     image_limit: int = GUIDED_MESSAGE_IMAGE_LIMIT,
 ) -> MessageShape:
-    from .commands import fetch_image_bytes_from_message as _fetch_image_bytes_from_message
-
-    image_bytes_items = await _fetch_image_bytes_from_message(
+    image_bytes_items = await fetch_image_bytes_from_message(
         message,
         limit=image_limit,
     )

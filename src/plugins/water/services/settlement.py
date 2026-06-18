@@ -8,7 +8,7 @@ from loguru import logger
 
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
-from src.plugins.water.database.repo import DailyAggregateItem
+from src.plugins.water.database.repo_models import DailyAggregateItem
 
 from .achievement import AchievementService
 

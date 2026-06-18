@@ -20,10 +20,6 @@ from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import RuleError
 
 from .approval import APPROVAL_APPROVE_ALIASES, APPROVAL_REJECT_ALIASES
-from .commands import (
-    _default_i18n_text,
-    parse_group_view_args,
-)
 from .mutation import (
     build_mutation_actor,
     handle_delete,
@@ -34,9 +30,11 @@ from .mutation import (
     handle_trigger_probability_update,
 )
 from .parsers import (
+    _default_i18n_text,
     _parse_probability_value,
     _parse_weight_value,
     actor_can_review,
+    parse_group_view_args,
     parse_response_set_args,
     parse_trigger_set_args,
 )

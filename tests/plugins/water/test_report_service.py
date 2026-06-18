@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11 import Message
 import pytest
 
-from src.plugins.water.database.repo import (
+from src.plugins.water.database.repo_models import (
     WaterDailyReportCandidate,
     WaterGroupDailyRankItem,
     WaterGroupDailyRankSnapshot,

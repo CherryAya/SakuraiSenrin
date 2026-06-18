@@ -9,7 +9,6 @@ from src.plugins.wordbank.database.types import WordbankSearchItem, WordbankSear
 from src.plugins.wordbank.handlers import commands as commands_module
 from src.plugins.wordbank.handlers.commands import (
     build_group_detail_message,
-    build_message_shape_from_message,
     build_shape_from_text_and_images,
     dispatch_wordbank_command,
     handle_add_text_result,
@@ -23,10 +22,13 @@ from src.plugins.wordbank.handlers.commands import (
     handle_study_with_media_result,
     handle_trigger_content_update,
     handle_trigger_probability_update,
-    parse_group_view_args,
-    parse_guided_search_mode_choice,
     parse_rank_period,
     parse_search_args,
+)
+from src.plugins.wordbank.handlers.media_helpers import build_message_shape_from_message
+from src.plugins.wordbank.handlers.parsers import (
+    parse_group_view_args,
+    parse_guided_search_mode_choice,
     parse_search_session_command,
 )
 from src.plugins.wordbank.message_model import (

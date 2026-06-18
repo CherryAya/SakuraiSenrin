@@ -3,11 +3,11 @@ from io import BytesIO
 from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image
 
+from src.plugins.water.img import _build_copyright_text
 from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.handlers.search_cards import (
     SearchCardQuery,
     SearchResultCardRenderer,
-    _build_copyright_text,
     render_search_results_card,
 )
 
@@ -142,13 +142,13 @@ def test_search_card_renderer_adds_fold_hint_for_multi_response_group() -> None:
         matched_by="text:trigger",
     )
 
-    hint = renderer._fold_hint(item, "zh-CN")  # pyright: ignore[reportPrivateUsage]
+    hint = renderer._fold_hint(item, "zh-CN")  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
 
     assert "本组共 5 条词条" in hint
     assert "前 3 条" in hint
     assert "详情123" in hint
-    assert renderer._has_folded_preview(item) is True  # pyright: ignore[reportPrivateUsage]
-    assert renderer._folded_preview_block_height() > 0  # pyright: ignore[reportPrivateUsage]
+    assert renderer._has_folded_preview(item) is True  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+    assert renderer._folded_preview_block_height() > 0  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
 
 
 def test_search_card_copyright_text_matches_water_style() -> None:

@@ -2,55 +2,34 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
+import math
 from typing import Any
 
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 
-from src.config import config
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.logger import logger
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
-    WordbankRankPeriod,
     WordbankSearchPage,
     WordbankSearchRequest,
 )
-from src.plugins.wordbank.handlers.search_cards import SearchCardQuery
 from src.plugins.wordbank.handlers.parsers import (
-    GuidedAdvancedOptions,
-    GuidedSearchSelection,
-    MutationActor,
-    ParsedAddMedia,
-    ParsedGroupView,
-    ParsedResponseSet,
-    ParsedResponseWeight,
     ParsedSearch,
-    ParsedSearchSessionCommand,
-    ParsedStudyMediaPrefix,
-    ParsedTextAdd,
-    ParsedTriggerProbability,
-    ParsedTriggerSet,
-    build_forced_command_text,
     actor_can_review,
     localize_wordbank_error,
     parse_add_media_args,
-    parse_group_view_args,
     parse_guided_advanced_options,
     parse_guided_scope_choice,
-    parse_guided_search_creator_filter,
-    parse_guided_search_mode_choice,
-    parse_guided_search_page_choice,
     parse_guided_weight,
     parse_rank_period,
     parse_response_set_args,
     parse_response_weight_args,
     parse_search_args,
-    parse_search_session_command,
     parse_study_group_block_choice,
     parse_study_media_prefix,
     parse_study_mode_choice,
@@ -59,16 +38,18 @@ from src.plugins.wordbank.handlers.parsers import (
     parse_trigger_set_args,
     split_add_pair,
 )
+from src.plugins.wordbank.handlers.search_cards import SearchCardQuery
 from src.plugins.wordbank.message_model import MessageShape, shape_from_image
-from src.plugins.wordbank.services.core import (
-    WordbankAddResult,
-    WordbankService,
+from src.plugins.wordbank.services import (
     format_add_result,
     format_creator_leaderboard,
     format_pending_items,
     format_search_items,
 )
-from src.plugins.wordbank.services.errors import WordbankUserError
+from src.plugins.wordbank.services.core import (
+    WordbankAddResult,
+    WordbankService,
+)
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import (
     RuleError,
@@ -78,27 +59,21 @@ from src.plugins.wordbank.services.rules import (
 from src.plugins.wordbank.text_parsing import has_meaningful_text, split_command_text
 
 from .media_helpers import (
-    build_message_shape_from_message,
     build_shape_from_text_and_images,
-    extract_image_urls,
-    fetch_first_image_bytes_from_message,
-    fetch_image_bytes_from_message,
-    fetch_image_bytes_with_retry,
     shape_from_response_parts,
     shape_from_text_value,
 )
-from .passive import fetch_image_bytes
 from .mutation import (
     build_mutation_actor,
     handle_approve,
     handle_delete,
     handle_reject,
-    handle_response_command as _handle_response_command,
-    handle_response_content_update as _handle_response_content_update,
-    handle_response_weight_update as _handle_response_weight_update,
     handle_restore,
-    handle_trigger_command as _handle_trigger_command,
-    handle_trigger_content_update as _handle_trigger_content_update,
+)
+from .mutation import (
+    handle_response_weight_update as _handle_response_weight_update,
+)
+from .mutation import (
     handle_trigger_probability_update as _handle_trigger_probability_update,
 )
 from .rendering import (
@@ -122,6 +97,8 @@ RESPONSE_ALIASES = {"response", "响应", "响应词"}
 SET_ALIASES = {"set", "edit", "修改"}
 PROBABILITY_ALIASES = {"prob", "probability", "概率"}
 WEIGHT_ALIASES = {"weight", "权重"}
+
+
 def _default_i18n_text(key: MessageKey, **params: object) -> str:
     return tr("zh-CN", key, **params)
 
@@ -368,6 +345,7 @@ async def handle_study_with_media_result(
         text=text,
         image_bytes=image_items[0],
     )
+
 
 async def handle_study_media_with_rule_result(
     service: WordbankService,
@@ -692,7 +670,10 @@ async def handle_trigger_content_update(
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return f"trigger group #{trigger_group_id} 的触发词已更新，该组响应已重新进入待审核。"
+        return (
+            f"trigger group #{trigger_group_id} 的触发词已更新，"
+            "该组响应已重新进入待审核。"
+        )
     return f"未找到可修改的 trigger group #{trigger_group_id}，或你没有操作权限。"
 
 

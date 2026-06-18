@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+import shutil
 
 from src.database.consts import WritePolicy
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.instances import wordbank_main_db
 from src.plugins.wordbank.database.repo import WordbankRepository
-from src.plugins.wordbank.message_model import MessageAtom, MessageShape, shape_from_text
+from src.plugins.wordbank.message_model import (
+    MessageAtom,
+    MessageShape,
+    shape_from_event,
+    shape_from_text,
+)
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import SCOPE_PRIORITY
 
@@ -30,6 +34,8 @@ from .wordbank_legacy_source import (
 )
 from .wordbank_rules import (
     MigrationError,
+    _coerce_int,
+    _optional_coerce_int,
     _resolve_legacy_call_window_seconds,
     extract_failure_details_from_categorized_report,
     infer_report_response_available,
@@ -41,8 +47,6 @@ from .wordbank_rules import (
     normalize_legacy_scope,
     normalize_legacy_state,
     normalize_legacy_timestamp,
-    _coerce_int,
-    _optional_coerce_int,
     rebuild_legacy_row_from_failure_detail,
     rebuild_legacy_rows_from_failure_details,
     shape_from_legacy_extra_info,
@@ -50,9 +54,8 @@ from .wordbank_rules import (
 )
 from .wordbank_types import (
     LegacyImageCatalog,
-    LegacyEntryState,
-    LegacyImportTarget,
     LegacyImportedLogTarget,
+    LegacyImportTarget,
     LegacyMigrationProgressCallback,
     LegacyPgConfig,
     WordbankMigrationReport,
@@ -72,7 +75,11 @@ async def legacy_message_to_shape(
 
     event_shape = shape_from_legacy_extra_info(extra_info)
     if event_shape is not None:
-        return event_shape
+        if isinstance(event_shape, MessageShape):
+            return event_shape
+        if isinstance(event_shape, str):
+            return shape_from_event(event_shape)
+        raise MigrationError("legacy extra_info produced unsupported message shape")
 
     segments = load_legacy_json(payload)
     if not isinstance(segments, list):
@@ -352,7 +359,9 @@ async def migrate_legacy_response_logs(
     imported_message_ids: set[str] = set()
     if report is not None:
         report.total_log_rows += len(rows)
-    _emit_progress(progress, phase="response_logs", current=0, total=len(rows), detail={})
+    _emit_progress(
+        progress, phase="response_logs", current=0, total=len(rows), detail={}
+    )
     for index, row in enumerate(rows, start=1):
         log_id = row.get("log_id")
         try:
@@ -418,7 +427,9 @@ async def migrate_legacy_trigger_logs(
 ) -> None:
     if report is not None:
         report.total_trigger_log_rows += len(rows)
-    _emit_progress(progress, phase="trigger_logs", current=0, total=len(rows), detail={})
+    _emit_progress(
+        progress, phase="trigger_logs", current=0, total=len(rows), detail={}
+    )
     for index, row in enumerate(rows, start=1):
         log_id = row.get("log_id")
         message_id = str(row.get("message_id") or "").strip()
@@ -499,7 +510,9 @@ async def migrate_legacy_approval_message_refs(
 
     if report is not None:
         report.total_approval_ref_rows += len(rows)
-    _emit_progress(progress, phase="approval_refs", current=0, total=len(rows), detail={})
+    _emit_progress(
+        progress, phase="approval_refs", current=0, total=len(rows), detail={}
+    )
 
     for index, row in enumerate(rows, start=1):
         message_id = str(row.get("message_id") or "").strip()
@@ -549,7 +562,9 @@ async def migrate_legacy_approval_message_refs(
                         or ""
                     ).strip(),
                     "message_type": (
-                        "group" if str(add_source.get("group_id") or "").strip() else "private"
+                        "group"
+                        if str(add_source.get("group_id") or "").strip()
+                        else "private"
                     ),
                     "source_message_id": str(
                         addition_row.get("created_message_id")
@@ -646,6 +661,7 @@ __all__ = [
     "LegacyPgConfig",
     "MigrationError",
     "WordbankMigrationReport",
+    "_resolve_legacy_call_window_seconds",
     "build_legacy_image_catalog",
     "extract_failure_details_from_categorized_report",
     "fetch_legacy_addition_log_rows",
@@ -667,5 +683,4 @@ __all__ = [
     "parse_legacy_env_file",
     "rebuild_legacy_row_from_failure_detail",
     "rebuild_legacy_rows_from_failure_details",
-    "_resolve_legacy_call_window_seconds",
 ]

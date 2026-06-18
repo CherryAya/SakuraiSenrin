@@ -56,18 +56,11 @@ from .types import (
 )
 
 if TYPE_CHECKING:
-    from .repo import (
-        DailyAggregateItem,
-        SeasonGroupAggregate,
-        SeasonMatrixAggregate,
-        SeasonUserAggregate,
-        WaterActivitySeasonRecord,
-    )
+    from .repo import DailyAggregateItem, SeasonGroupAggregate, SeasonMatrixAggregate, SeasonUserAggregate, WaterActivitySeasonRecord
 
 
 def _repo_module():
     from . import repo as repo_module
-
     return repo_module
 
 
@@ -984,8 +977,12 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
                 )
 
             if global_delta > 0:
-                global_exp = (global_level[0] if global_level is not None else 0) + global_delta
-                global_season_exp = (global_level[1] if global_level is not None else 0) + global_delta
+                global_exp = (
+                    global_level[0] if global_level is not None else 0
+                ) + global_delta
+                global_season_exp = (
+                    global_level[1] if global_level is not None else 0
+                ) + global_delta
                 await level_ops.upsert_global_levels(
                     [
                         {

@@ -24,19 +24,16 @@ from src.lib.interactive_recall import (
 )
 from src.plugins.wordbank.handlers import (
     build_message_shape_from_message,
-    extract_image_urls,
     handle_guided_add_shape_result,
 )
-from src.plugins.wordbank.handlers.reply import parse_view_reply_for_search_result
 from src.plugins.wordbank.handlers.commands import (
     ParsedSearch,
     _default_i18n_text,
-    parse_guided_advanced_options,
-    parse_guided_scope_choice,
-    parse_guided_search_creator_filter,
-    parse_guided_search_mode_choice,
+)
+from src.plugins.wordbank.handlers.parsers import (
     parse_search_session_command,
 )
+from src.plugins.wordbank.handlers.reply import parse_view_reply_for_search_result
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services.rules import RuleError
 
@@ -326,8 +323,8 @@ async def collect_search_query_content(
     allow_image: bool = True,
     media_service: Any,
 ) -> tuple[str, bool, dict[int, float]]:
-    from src.plugins.wordbank.text_parsing import has_meaningful_text
     from src.plugins import wordbank as wordbank_plugin
+    from src.plugins.wordbank.text_parsing import has_meaningful_text
 
     keyword = keyword_text if has_meaningful_text(keyword_text) else ""
     if not allow_image:
@@ -405,7 +402,9 @@ def representative_detail_response_item_id(detail: Any) -> int | None:
     return response_item_id if response_item_id > 0 else None
 
 
-async def resolve_search_delete_target_ids(page: Any, *, wordbank_service: Any) -> tuple[int, ...]:
+async def resolve_search_delete_target_ids(
+    page: Any, *, wordbank_service: Any
+) -> tuple[int, ...]:
     target_ids: list[int] = []
     for item in page.items:
         if item.response_item_ids:
@@ -502,11 +501,11 @@ async def finish_guided_search(
     state["wordbank_guided_search_group_ids"] = tuple(
         item.trigger_group_id for item in page.items
     )
-    state["wordbank_guided_search_delete_target_ids"] = await (
-        wordbank_plugin._resolve_search_delete_target_ids(
-            page,
-            wordbank_service=wordbank_service,
-        )
+    state[
+        "wordbank_guided_search_delete_target_ids"
+    ] = await wordbank_plugin._resolve_search_delete_target_ids(
+        page,
+        wordbank_service=wordbank_service,
     )
     send_result = await matcher.send(message)
     await record_search_result_view_message(

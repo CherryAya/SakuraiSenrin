@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 # pyright: reportAttributeAccessIssue=false
-
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -21,7 +20,6 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.plugin_docs import (
     DemoCollectionJob,
-    DemoCollectionRenderer,
     DemoCollectionTile,
     DocNode,
     PluginDocBundle,
@@ -31,12 +29,17 @@ from src.lib.plugin_docs import (
     create_docs_meta,
     load_doc_node,
     load_plugin_doc_bundle,
-    render_demo_png,
     render_collection_png,
+    render_demo_png,
     resolve_help_entry_shape,
     should_prefer_collection_demo,
 )
+from src.lib.plugin_docs import (
+    DemoCollectionRenderer as _DemoCollectionRenderer,
+)
 from src.lib.utils.common import get_current_time
+
+DemoCollectionRenderer = _DemoCollectionRenderer
 
 DOCS_ROOTS = (
     ROOT / "src" / "plugins",

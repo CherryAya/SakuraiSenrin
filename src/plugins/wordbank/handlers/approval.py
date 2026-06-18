@@ -13,11 +13,13 @@ from src.config import config
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.logger import logger
+from src.plugins.wordbank.services import (
+    format_add_result,
+    format_response_summary,
+)
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
-    format_add_result,
-    format_response_summary,
 )
 from src.plugins.wordbank.services.media import WordbankMediaService
 

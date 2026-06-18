@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock
 from pil_utils import BuildImage
 import pytest
 
-from src.plugins.water.database.repo import (
+from src.plugins.water.database.repo_models import (
     NaturalPeriodRankSnapshot,
     NaturalRankItem,
     NaturalRankOverview,
 )
-from src.plugins.water.img import (
+from src.plugins.water.renderers import (
     WaterGroupDailyRankCardItem,
     WaterGroupReportImageData,
     WaterPeriodRankCardData,
@@ -574,7 +574,7 @@ async def test_build_water_group_report_image_smoke() -> None:
         group_rank_has_hidden_after=True,
     )
 
-    from src.plugins.water.img import build_water_group_report_image
+    from src.plugins.water.renderers import build_water_group_report_image
 
     img = await build_water_group_report_image(data, "zh-CN")
 
@@ -615,7 +615,7 @@ async def test_build_water_group_report_image_without_group_rank_block() -> None
         group_rank_items=[],
     )
 
-    from src.plugins.water.img import build_water_group_report_image
+    from src.plugins.water.renderers import build_water_group_report_image
 
     img = await build_water_group_report_image(data, "zh-CN")
 

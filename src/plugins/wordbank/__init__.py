@@ -9,7 +9,8 @@ Description: 插件入口
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 from nonebot import get_driver, on_message, on_notice, require
 from nonebot.adapters.onebot.v11.event import MessageEvent
@@ -28,18 +29,17 @@ from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 
+from .derived_help import build_wordbank_derived_help
 from .docs_support import (
     APPROVAL_DOCS_SOURCE,
     DOCS_SOURCE,
     wordbank_docs_meta,
     wordbank_error_message,
 )
-from .derived_help import build_wordbank_derived_help
 from .entry_commands import register_wordbank_command_handlers
 from .entry_runtime import register_wordbank_runtime_handlers
 from .guided_flow import (
     WORDBANK_GUIDED_RECALL_PENDING_KEYS,
-    WORDBANK_GUIDED_SEARCH_STAGE_PAGE,
     cancel_guided_resources,
     collect_search_query_content,
     copy_guided_state,
@@ -47,29 +47,37 @@ from .guided_flow import (
     finish_guided_search,
     guided_search_stage,
     handle_search_session_event,
-    resolve_search_delete_target_ids,
     record_guided_response,
     record_guided_trigger,
     register_guided_checkpoint,
     reject_guided_error,
+    resolve_search_delete_target_ids,
     start_guided_add,
     start_guided_add_with_trigger_image,
     start_guided_search,
     wordbank_guided_locale,
 )
+from .guided_flow import (
+    WORDBANK_GUIDED_SEARCH_STAGE_PAGE as WORDBANK_GUIDED_SEARCH_STAGE_PAGE,
+)
 from .handlers import (
     APPROVAL_REPLY_ALIASES,
     build_add_result_message,
-    fetch_first_image_bytes_from_message,
-    handle_delete,
     is_reply,
     localize_command_error,
     record_submission_approval_message,
     schedule_pending_approval_notice,
 )
+from .handlers import (
+    fetch_first_image_bytes_from_message as fetch_first_image_bytes_from_message,
+)
+from .handlers import (
+    handle_delete as handle_delete,
+)
+from .handlers.commands import execute_search_page as execute_search_page
+from .handlers.commands import render_search_page_message as render_search_page_message
 from .services import wordbank_media_service, wordbank_service
 from .services.core import WordbankAddResult
-from .handlers.commands import execute_search_page, render_search_page_message
 
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
@@ -83,7 +91,7 @@ def _wordbank_error_message(
     locale: LocaleCode,
     *,
     default_feature: str | None = None,
-    source=DOCS_SOURCE,
+    source: Path = DOCS_SOURCE,
     actor_permission: Permission = Permission.NORMAL,
 ) -> Message:
     return wordbank_error_message(
@@ -558,8 +566,21 @@ async def _record_search_result_view_message(*args: Any, **kwargs: Any) -> None:
     await runtime_exports["record_search_result_view_message"](*args, **kwargs)
 
 
-async def _resolve_search_delete_target_ids(*args: Any, **kwargs: Any) -> tuple[int, ...]:
+async def _resolve_search_delete_target_ids(
+    *args: Any, **kwargs: Any
+) -> tuple[int, ...]:
     return await resolve_search_delete_target_ids(*args, **kwargs)
+
+
+async def _build_passive_message(
+    response: Any,
+    *,
+    locale: LocaleCode,
+) -> tuple[Message | str, dict[str, object]]:
+    result = await runtime_exports["_build_passive_message"](response, locale=locale)
+    if result is None:
+        raise RuntimeError("wordbank passive message builder is not registered")
+    return cast(tuple[Message | str, dict[str, object]], result)
 
 
 register_wordbank_command_handlers(
@@ -592,5 +613,7 @@ register_wordbank_command_handlers(
     send_group_detail_view=_send_group_detail_view,
     send_search_result_view=_send_search_result_view,
     resolve_locale_fn=resolve_locale,
-    handle_wordbank_command_message_fn=lambda *args, **kwargs: _handle_wordbank_command_message(*args, **kwargs),
+    handle_wordbank_command_message_fn=lambda *args, **kwargs: (
+        _handle_wordbank_command_message(*args, **kwargs)
+    ),
 )
