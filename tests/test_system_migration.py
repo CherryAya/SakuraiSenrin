@@ -20,15 +20,15 @@ from src.services.runtime_policy import (
 
 
 def test_map_legacy_group_status_preserves_banned_semantics() -> None:
-    assert map_legacy_group_status("BAN") == GroupStatus.BANNED
-    assert map_legacy_group_status("UNAUTH") == GroupStatus.UNAUTHORIZED
-    assert map_legacy_group_status("ENABLE") == GroupStatus.AUTHORIZED
+    assert map_legacy_group_status("BAN") is GroupStatus.BANNED
+    assert map_legacy_group_status("UNAUTH") is GroupStatus.UNAUTHORIZED
+    assert map_legacy_group_status("ENABLE") is GroupStatus.AUTHORIZED
 
 
 def test_map_legacy_invitation_status() -> None:
-    assert map_legacy_invitation_status("PENDING") == InvitationStatus.PENDING
-    assert map_legacy_invitation_status("ACCEPT") == InvitationStatus.APPROVED
-    assert map_legacy_invitation_status("REJECT") == InvitationStatus.REJECTED
+    assert map_legacy_invitation_status("PENDING") is InvitationStatus.PENDING
+    assert map_legacy_invitation_status("ACCEPT") is InvitationStatus.APPROVED
+    assert map_legacy_invitation_status("REJECT") is InvitationStatus.REJECTED
 
 
 def test_should_blacklist_legacy_user() -> None:

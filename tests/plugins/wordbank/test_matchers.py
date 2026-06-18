@@ -2,9 +2,11 @@ import sys
 from unittest.mock import AsyncMock, Mock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot, Message
+from nonebot.adapters.onebot.v11 import Bot
 from nonebug import App
 import pytest
+
+from src.lib.messages import text_message
 
 nonebot.init(
     SUPERUSERS={"1"},
@@ -81,7 +83,7 @@ async def test_wordbank_add_direct_success_records_submission(
         response_shape=shape_from_text("做个好梦"),
     )
     handle_add = AsyncMock(return_value=result)
-    build_result_message = AsyncMock(return_value=Message("词条已提交审核"))
+    build_result_message = AsyncMock(return_value=text_message("词条已提交审核"))
     record_submission = AsyncMock(return_value=None)
     schedule_pending = Mock()
 
@@ -129,7 +131,7 @@ async def test_wordbank_add_direct_success_records_submission(
         )
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, Message("词条已提交审核"), bot=bot)
+        ctx.should_call_send(event, text_message("词条已提交审核"), bot=bot)
         ctx.should_finished()
 
     handle_add.assert_awaited_once()
@@ -225,7 +227,7 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
         response_shape=shape_from_text("[图片:7]"),
     )
     handle_add = AsyncMock(return_value=result)
-    build_result_message = AsyncMock(return_value=Message("词条已提交审核"))
+    build_result_message = AsyncMock(return_value=text_message("词条已提交审核"))
     record_submission = AsyncMock(return_value=None)
     schedule_pending = Mock()
 
@@ -283,7 +285,7 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
             tr("zh-CN", "wordbank.add.processing_with_media"),
             bot=bot,
         )
-        ctx.should_call_send(event, Message("词条已提交审核"), bot=bot)
+        ctx.should_call_send(event, text_message("词条已提交审核"), bot=bot)
         ctx.should_finished()
 
     schedule_pending.assert_called_once()

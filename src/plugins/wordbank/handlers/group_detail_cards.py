@@ -8,7 +8,6 @@ from io import BytesIO
 from typing import Any
 
 import arrow
-from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw, ImageFont
 
@@ -16,6 +15,7 @@ from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.demo_theme import SENRIN_V3_WORDBANK_CARD_THEME
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.messages import image_message
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
@@ -956,4 +956,4 @@ def render_group_detail_card(
         locale=locale,
         preview_bytes=preview_bytes,
     )
-    return Message(MessageSegment.image(image_bytes))
+    return image_message(image_bytes)

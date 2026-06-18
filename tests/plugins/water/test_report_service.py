@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-from nonebot.adapters.onebot.v11 import Message
 import pytest
 
+from src.lib.messages import text_message
 from src.plugins.water.database.repo_models import (
     WaterDailyReportCandidate,
     WaterGroupDailyRankItem,
@@ -112,7 +112,7 @@ async def test_run_daily_group_report_push_renders_parallel_and_sends_serially(
     monkeypatch.setattr(
         report_module.water_report_service,
         "build_group_report_message",
-        AsyncMock(side_effect=[Message("R2"), Message("R1")]),
+        AsyncMock(side_effect=[text_message("R2"), text_message("R1")]),
     )
     sleep_mock = AsyncMock()
     monkeypatch.setattr(report_module.asyncio, "sleep", sleep_mock)

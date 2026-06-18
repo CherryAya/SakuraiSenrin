@@ -2,9 +2,11 @@ import sys
 from unittest.mock import AsyncMock, Mock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Bot, MessageSegment
 from nonebug import App
 import pytest
+
+from src.lib.messages import empty_message, text_message
 
 nonebot.init(
     SUPERUSERS={"1"},
@@ -108,7 +110,7 @@ async def test_study_guided_flow_submits_pending_entry(
         response_shape=shape_from_text("消息回复如下"),
     )
     handle_guided = AsyncMock(return_value=result)
-    build_result_message = AsyncMock(return_value=Message("词条已提交审核"))
+    build_result_message = AsyncMock(return_value=text_message("词条已提交审核"))
     record_submission = AsyncMock(return_value=None)
     schedule_pending = Mock()
 
@@ -194,7 +196,7 @@ async def test_study_guided_flow_submits_pending_entry(
         ctx.should_paused(study_plugin.study_command)
 
         ctx.receive_event(bot, sixth)
-        ctx.should_call_send(sixth, Message("词条已提交审核"), bot=bot)
+        ctx.should_call_send(sixth, text_message("词条已提交审核"), bot=bot)
         ctx.should_finished(study_plugin.study_command)
 
     handle_guided.assert_awaited_once()
@@ -226,7 +228,7 @@ async def test_study_direct_media_submission_sends_processing_hint_before_result
         response_shape=shape_from_text("[图片:7]"),
     )
     handle_with_media = AsyncMock(return_value=result)
-    build_result_message = AsyncMock(return_value=Message("词条已提交审核"))
+    build_result_message = AsyncMock(return_value=text_message("词条已提交审核"))
     record_submission = AsyncMock(return_value=None)
     schedule_pending = Mock()
 
@@ -274,11 +276,10 @@ async def test_study_direct_media_submission_sends_processing_hint_before_result
     async with app.test_matcher(study_plugin.study_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         event = build_group_message_event("#study 触发词 => 响应词", message_id=1)
-        event.message = Message(
-            [
-                MessageSegment.text("#study 触发词 => 响应词"),
-                MessageSegment.image("https://example.test/image.png"),
-            ]
+        event.message = (
+            empty_message()
+            + MessageSegment.text("#study 触发词 => 响应词")
+            + MessageSegment.image("https://example.test/image.png")
         )
         event.original_message = event.message
         event.raw_message = "#study 触发词 => 响应词 [image]"
@@ -289,7 +290,7 @@ async def test_study_direct_media_submission_sends_processing_hint_before_result
             tr("zh-CN", "wordbank.add.processing_with_media"),
             bot=bot,
         )
-        ctx.should_call_send(event, Message("词条已提交审核"), bot=bot)
+        ctx.should_call_send(event, text_message("词条已提交审核"), bot=bot)
         ctx.should_finished(study_plugin.study_command)
 
     schedule_pending.assert_called_once()

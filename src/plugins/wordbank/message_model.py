@@ -12,6 +12,7 @@ import unicodedata
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
+from src.lib.messages import empty_message
 
 MessageAtomKind = Literal["text", "image", "at", "event"]
 MessageAtomPayload = dict[str, int | str]
@@ -187,7 +188,7 @@ def shape_to_search_text(shape: MessageShape) -> str:
 
 
 def shape_to_message(shape: MessageShape) -> Message:
-    message = Message()
+    message = empty_message()
     for atom in shape.atoms:
         if atom.kind == "text" and atom.text:
             message += MessageSegment.text(atom.text)

@@ -27,6 +27,7 @@ from src.lib.cooldown import (
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.messages import text_message
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_doc_demo_message,
@@ -101,7 +102,7 @@ __plugin_meta__ = create_plugin_metadata(
     },
 )
 
-MULTI_IMAGE_PROMPT = Message(tr("zh-CN", "picsearch.index_prompt"))
+MULTI_IMAGE_PROMPT = text_message(tr("zh-CN", "picsearch.index_prompt"))
 _picsearch_cooldown = MemoryCooldown(
     30,
     isolate_level=CooldownIsolateLevel.USER,
@@ -267,7 +268,7 @@ def build_result_message(
         tr(locale, "picsearch.result.author", author=result.author),
         tr(locale, "picsearch.result.link", link=result.source_url),
     ]
-    message = Message("\n".join(lines))
+    message = text_message("\n".join(lines))
     if thumbnail_bytes is not None:
         message += MessageSegment.image(thumbnail_bytes)
     return message

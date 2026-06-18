@@ -1,5 +1,4 @@
-from nonebot.adapters.onebot.v11 import Message
-
+from src.lib.messages import text_message
 from src.plugins.wordbank.message_model import (
     is_valid_message_text,
     shape_from_message,
@@ -22,12 +21,12 @@ def test_shape_from_text_rejects_blank_text_without_mutation() -> None:
 
 
 def test_shape_from_message_preserves_text_segments_verbatim() -> None:
-    shape = shape_from_message(Message("第一行\n第二行  第三列"))
+    shape = shape_from_message(text_message("第一行\n第二行  第三列"))
 
     assert shape.atoms[0].text == "第一行\n第二行  第三列"
 
 
 def test_shape_from_message_rejects_blank_text_segments() -> None:
-    shape = shape_from_message(Message(" \n\t"))
+    shape = shape_from_message(text_message(" \n\t"))
 
     assert shape.is_empty()

@@ -2,9 +2,11 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock, call
 
+from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.message import Message
 import pytest
 
+from src.lib.messages import empty_message, text_message
 from src.plugins.wordbank.database.types import WordbankSearchItem, WordbankSearchPage
 from src.plugins.wordbank.handlers import commands as commands_module
 from src.plugins.wordbank.handlers.commands import (
@@ -135,7 +137,7 @@ def test_parse_rank_period_supports_default_and_aliases() -> None:
 async def test_dispatch_wordbank_command_routes_rank_to_leaderboard_handler(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    handle_rank = AsyncMock(return_value=Message("RANK_OK"))
+    handle_rank = AsyncMock(return_value=text_message("RANK_OK"))
     monkeypatch.setattr(
         commands_module,
         "handle_creator_leaderboard",
@@ -149,7 +151,7 @@ async def test_dispatch_wordbank_command_routes_rank_to_leaderboard_handler(
         locale="zh-CN",
     )
 
-    assert message == Message("RANK_OK")
+    assert message == text_message("RANK_OK")
     handle_rank.assert_awaited_once()
     await_args = handle_rank.await_args
     assert await_args is not None
@@ -524,7 +526,7 @@ async def test_handle_trigger_content_update_builds_shape_and_passes_context(
         event=event,
         trigger_group_id=18,
         text="新触发",
-        raw_message=Message("#wordbank trigger set 18 新触发"),
+        raw_message=text_message("#wordbank trigger set 18 新触发"),
         locale="zh-CN",
     )
 
@@ -605,7 +607,7 @@ async def test_handle_response_content_update_builds_shape_and_passes_context(
         event=event,
         response_item_id=18,
         text="新响应",
-        raw_message=Message("#wordbank response set 18 新响应"),
+        raw_message=text_message("#wordbank response set 18 新响应"),
         locale="zh-CN",
     )
 
@@ -634,7 +636,7 @@ async def test_dispatch_wordbank_command_routes_trigger_set_to_handler(
     event = build_group_message_event("#wordbank trigger set 18 新触发", user_id=1)
     service = cast(WordbankService, SimpleNamespace())
     media_service = cast(WordbankMediaService, SimpleNamespace())
-    raw_message = Message("#wordbank trigger set 18 新触发")
+    raw_message = text_message("#wordbank trigger set 18 新触发")
 
     message = await dispatch_wordbank_command(
         service,
@@ -672,7 +674,7 @@ async def test_dispatch_wordbank_command_routes_response_set_to_handler(
     event = build_group_message_event("#wordbank response set 18 新响应", user_id=10002)
     service = cast(WordbankService, SimpleNamespace())
     media_service = cast(WordbankMediaService, SimpleNamespace())
-    raw_message = Message("#wordbank response set 18 新响应")
+    raw_message = text_message("#wordbank response set 18 新响应")
 
     message = await dispatch_wordbank_command(
         service,
@@ -762,7 +764,7 @@ async def test_build_shape_from_text_and_images_combines_text_and_media(
     shape = await build_shape_from_text_and_images(
         media_service,
         text="新的响应",
-        message=Message("[CQ:image,url=https://example.test/a.png]"),
+        message=empty_message() + MessageSegment.image("https://example.test/a.png"),
     )
 
     assert shape_to_summary_text(shape) == "新的响应 [图片:9]"
@@ -780,8 +782,8 @@ async def test_handle_guided_add_shape_result_uses_scope_and_strict_mode() -> No
     await handle_guided_add_shape_result(
         service,
         event=event,
-        trigger_shape=shape_from_message(Message("晚安")),
-        response_shape=shape_from_message(Message("做个好梦")),
+        trigger_shape=shape_from_message(text_message("晚安")),
+        response_shape=shape_from_message(text_message("做个好梦")),
         scope_text="1",
         advanced_text="跳过",
     )
@@ -820,7 +822,10 @@ async def test_build_message_shape_from_message_preserves_mixed_segments(
 
     shape = await build_message_shape_from_message(
         media_service,
-        Message("[CQ:at,qq=10002]早安[CQ:image,url=https://example.test/a.png]"),
+        empty_message()
+        + MessageSegment.at("10002")
+        + MessageSegment.text("早安")
+        + MessageSegment.image("https://example.test/a.png"),
     )
 
     assert shape_to_summary_text(shape) == "[@:10002] 早安 [图片:7]"
@@ -837,7 +842,7 @@ async def test_build_message_shape_from_message_preserves_single_space_text() ->
 
     shape = await build_message_shape_from_message(
         media_service,
-        Message(" "),
+        text_message(" "),
     )
 
     assert shape.is_empty()
@@ -854,7 +859,7 @@ async def test_build_message_shape_from_message_preserves_user_text_verbatim() -
 
     shape = await build_message_shape_from_message(
         media_service,
-        Message("第一行\n第二行  第三列"),
+        text_message("第一行\n第二行  第三列"),
     )
 
     assert shape.atoms[0].text == "第一行\n第二行  第三列"
@@ -872,8 +877,10 @@ async def test_handle_guided_add_shape_result_accepts_message_shapes() -> None:
     await handle_guided_add_shape_result(
         service,
         event=event,
-        trigger_shape=shape_from_message(Message("[CQ:at,qq=10002]早安")),
-        response_shape=shape_from_message(Message("做个好梦")),
+        trigger_shape=shape_from_message(
+            empty_message() + MessageSegment.at("10002") + MessageSegment.text("早安")
+        ),
+        response_shape=shape_from_message(text_message("做个好梦")),
         scope_text="1",
         advanced_text="跳过",
     )
@@ -898,8 +905,8 @@ async def test_handle_guided_study_shape_result_builds_rules_and_shapes() -> Non
         event=event,
         trig_mode_text="a",
         group_block_text="t",
-        trigger_shape=shape_from_message(Message("晚安")),
-        response_shape=shape_from_message(Message("做个好梦")),
+        trigger_shape=shape_from_message(text_message("晚安")),
+        response_shape=shape_from_message(text_message("做个好梦")),
         weight_text="4",
     )
 

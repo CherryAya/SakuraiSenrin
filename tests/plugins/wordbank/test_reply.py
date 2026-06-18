@@ -6,6 +6,7 @@ from nonebot.adapters.onebot.v11.event import GroupMessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 import pytest
 
+from src.lib.messages import text_message
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
     WordbankMessageRefRecord,
@@ -305,7 +306,7 @@ async def test_reply_trigger_set_uses_trigger_group_id(
     message = await handle_reply_command(
         service,
         event=event,
-        message=Message("trigger set 新触发"),
+        message=text_message("trigger set 新触发"),
         text="trigger set 新触发",
         locale="zh-CN",
         media_service=cast(WordbankMediaService, SimpleNamespace()),
@@ -333,7 +334,7 @@ async def test_reply_trigger_set_returns_permission_error_when_denied() -> None:
     message = await handle_reply_command(
         service,
         event=event,
-        message=Message("trigger set 新触发"),
+        message=text_message("trigger set 新触发"),
         text="trigger set 新触发",
         locale="zh-CN",
         media_service=cast(WordbankMediaService, SimpleNamespace()),
@@ -376,7 +377,7 @@ async def test_reply_response_set_uses_response_item_id(
     message = await handle_reply_command(
         service,
         event=event,
-        message=Message("response set 新响应"),
+        message=text_message("response set 新响应"),
         text="response set 新响应",
         locale="zh-CN",
         media_service=cast(WordbankMediaService, SimpleNamespace()),
@@ -404,7 +405,7 @@ async def test_reply_response_set_returns_permission_error_when_denied() -> None
     message = await handle_reply_command(
         service,
         event=event,
-        message=Message("response set 新响应"),
+        message=text_message("response set 新响应"),
         text="response set 新响应",
         locale="zh-CN",
         media_service=cast(WordbankMediaService, SimpleNamespace()),

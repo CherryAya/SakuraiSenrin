@@ -27,6 +27,7 @@ from src.lib.interactive_recall import (
     rebuild_temp_matcher,
     register_root_message,
 )
+from src.lib.messages import empty_message
 from src.logger import logger
 
 from .database.types import WordbankMessageRefRecord
@@ -277,7 +278,7 @@ def register_wordbank_runtime_handlers(
         approval_message: WordbankMessageRefRecord,
         message: str,
     ) -> None:
-        source = Message()
+        source = empty_message()
         if approval_message.source_message_id.isdigit():
             source += MessageSegment.reply(int(approval_message.source_message_id))
         source += MessageSegment.text(message)

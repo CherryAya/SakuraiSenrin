@@ -7,11 +7,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from math import ceil
-from typing import Any
+from typing import Any, ClassVar
 
 from PIL import Image, ImageDraw
 
 from src.lib.demo_theme import SENRIN_V3_THEME, get_demo_theme
+from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs.command_layout import (
     CommandLayout,
@@ -92,6 +93,17 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     GUIDE_SECTION_PADDING_X = 48
     GUIDE_SECTION_PADDING_Y = 40
     GUIDE_SECTION_RADIUS = 32
+    DASHBOARD_SECTION_TOP_BAR_HEIGHT = 4
+    DASHBOARD_SECTION_TITLE_GAP = 32
+    DASHBOARD_SECTION_ITEM_GAP = 32
+    DASHBOARD_SECTION_SUMMARY_GAP = 18
+    DASHBOARD_SECTION_COMMAND_GAP = 20
+
+    _DASHBOARD_MARKER_SIZE: ClassVar[dict[str, int]] = {
+        "square": 12,
+        "diamond": 14,
+        "ring": 14,
+    }
 
     def render_dashboard(
         self,
@@ -100,14 +112,18 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         locale: LocaleCode,
         generated_at: datetime | None = None,
     ) -> bytes:
-        _ = locale
         generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
             microsecond=0
         )
         side = self.theme.hero_side_padding
         all_nodes = tuple(node for section in sections for node in section.nodes)
-        header_title = "Help Center"
-        header_summary = "以下是当前可用帮助入口，按分区完整列出。"
+        header_title = tr(locale, "help.dashboard.title")
+        header_summary = " ".join(
+            (
+                tr(locale, "help.dashboard.lead.line1"),
+                tr(locale, "help.dashboard.lead.line2"),
+            )
+        )
         header_title_lines = tuple(
             self._wrap_inline_text(
                 header_title,
@@ -134,19 +150,27 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + self.theme.hero_bottom_padding
         )
 
-        cursor_y = header_height
-        section_width = self.WIDTH - side * 2
+        content_width = self.WIDTH - side * 2
+        section_width = (
+            content_width - self.DASHBOARD_CARD_GAP_X
+            if any(section.column == 1 for section in sections)
+            else content_width
+        )
+        if section_width != content_width:
+            section_width //= 2
+        section_positions: list[tuple[HelpDashboardSection, int, int, int]] = []
+        column_bottoms = [header_height, header_height]
         for section in sections:
-            section_rect = (
-                side,
-                cursor_y,
-                self.WIDTH - side,
-                cursor_y
-                + self._measure_dashboard_section_height(section, section_width),
-            )
-            cursor_y = section_rect[3] + self.DASHBOARD_CARD_GAP_Y
+            column = 0 if section.column not in {0, 1} else section.column
+            left = side + column * (section_width + self.DASHBOARD_CARD_GAP_X)
+            top = column_bottoms[column]
+            height = self._measure_dashboard_section_height(section, section_width)
+            section_positions.append((section, left, top, height))
+            column_bottoms[column] = top + height + self.DASHBOARD_CARD_GAP_Y
         content_bottom = (
-            cursor_y - self.DASHBOARD_CARD_GAP_Y if sections else header_height
+            max(column_bottoms) - self.DASHBOARD_CARD_GAP_Y
+            if section_positions
+            else header_height
         )
         footer_rect = (
             side,
@@ -157,7 +181,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         total_height = footer_rect[3] + self.theme.outer_margin
 
         image = Image.new("RGBA", (self.WIDTH, total_height), self.theme.page_bg)
-        self._paint_background(image)
+        self._paint_dashboard_background(image)
         draw = ImageDraw.Draw(image)
         self._draw_multiline_text(
             draw,
@@ -193,33 +217,114 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         self._draw_standee(image, draw, standee_rect)
 
-        cursor_y = header_height
-        for section in sections:
+        for section, left, top, _height in section_positions:
             self._draw_dashboard_section(
                 image,
                 draw,
                 section=section,
-                top=cursor_y,
-                left=side,
+                top=top,
+                left=left,
                 width=section_width,
-            )
-            cursor_y += (
-                self._measure_dashboard_section_height(section, section_width)
-                + self.DASHBOARD_CARD_GAP_Y
             )
 
         self._draw_trace_footer(
             draw,
             footer_rect=footer_rect,
-            left_text=(
-                f"Help Center · Sectioned Index · {len(all_nodes)} entries "
-                "· By SakuraiSenrin"
-            ),
+            left_text=(tr(locale, "help.dashboard.footer.left", count=len(all_nodes))),
             right_text=f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin",
         )
         buffer = BytesIO()
         image.convert("RGB").save(buffer, format="PNG", optimize=True)
         return buffer.getvalue()
+
+    def _paint_dashboard_background(self, image: Image.Image) -> None:
+        draw = ImageDraw.Draw(image)
+        width, height = image.size
+        draw.rectangle((0, 0, width, height), fill=self.theme.page_bg)
+        self._draw_dashboard_grid(draw, width=width, height=height)
+        self._draw_dashboard_corner_accents(draw, width=width, height=height)
+
+    def _draw_dashboard_grid(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        width: int,
+        height: int,
+    ) -> None:
+        line_fill = self._rgba(self.theme.grid_color, 24)
+        spacing = self.theme.grid_spacing
+        max_height = min(height, max(height // 2 + 220, 560))
+        for y in range(self.theme.hero_top // 2, max_height, spacing):
+            draw.line(
+                (
+                    self.theme.hero_side_padding // 3,
+                    y,
+                    width - self.theme.hero_side_padding // 3,
+                    y,
+                ),
+                fill=line_fill,
+                width=1,
+            )
+        for x in range(
+            self.theme.hero_side_padding // 3,
+            width - self.theme.hero_side_padding // 3,
+            spacing,
+        ):
+            draw.line(
+                (x, self.theme.hero_top // 2, x, max_height),
+                fill=line_fill,
+                width=1,
+            )
+
+    def _draw_dashboard_corner_accents(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        width: int,
+        height: int,
+    ) -> None:
+        accent = self._rgba(self.theme.accent, 88)
+        support = self._rgba(self.theme.grid_color, 96)
+        draw.line(
+            (
+                self.theme.hero_side_padding - 12,
+                self.theme.hero_top + 8,
+                self.theme.hero_side_padding + 28,
+                self.theme.hero_top + 8,
+            ),
+            fill=accent,
+            width=2,
+        )
+        draw.line(
+            (
+                self.theme.hero_side_padding + 8,
+                self.theme.hero_top - 12,
+                self.theme.hero_side_padding + 8,
+                self.theme.hero_top + 28,
+            ),
+            fill=accent,
+            width=2,
+        )
+        draw.line(
+            (
+                width - self.theme.hero_side_padding - 24,
+                height - self.theme.footer_height - 28,
+                width - self.theme.hero_side_padding + 8,
+                height - self.theme.footer_height - 28,
+            ),
+            fill=support,
+            width=2,
+        )
+        draw.line(
+            (
+                width - self.theme.hero_side_padding + 24,
+                height - self.theme.footer_height - 44,
+                width - self.theme.hero_side_padding + 24,
+                height - self.theme.footer_height - 12,
+            ),
+            fill=accent,
+            width=2,
+        )
 
     def render_plugin_guide(
         self,
@@ -708,18 +813,37 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             summary_lines = tuple(
                 self._wrap_inline_text(
                     node.summary or node.bundle.summary,
-                    max_width=content_width - 36,
+                    max_width=content_width - 40,
                     font=self.note_font,
                 )
             )[:2]
-            item_height += 28
             item_height += self._line_height_for_font(self.instruction_font)
+            item_height += self.DASHBOARD_CARD_TEXT_SPACING
+            item_height += self._line_height_for_font(self.instruction_font)
+            item_height += self.DASHBOARD_SECTION_SUMMARY_GAP
             item_height += len(summary_lines) * line_height
-            item_height += 26
+            item_height += self.DASHBOARD_SECTION_COMMAND_GAP
+            command_layout = build_command_layout(
+                f"#help {node.title}",
+                max_width=content_width - 32,
+                line_height=self._line_height_for_font(self.note_font),
+                indent_px=self.COMMAND_INDENT_PX,
+                measure_text=lambda value: self._text_width(value, self.note_font),
+                palette=self._command_palette(
+                    root=section.command_text or section.text or self.theme.deep,
+                    text=section.command_text or section.text or self.theme.deep,
+                    param=section.command_text or section.text or self.theme.deep,
+                    flag=section.command_text or section.text or self.theme.deep,
+                ),
+            )
+            item_height += (
+                command_layout.total_height + self.DASHBOARD_CARD_COMMAND_PADDING_Y * 2
+            )
+            item_height += self.DASHBOARD_SECTION_ITEM_GAP
         return (
             self.GUIDE_SECTION_PADDING_Y * 2
             + len(title_lines) * self._line_height_for_font(self.summary_font)
-            + 24
+            + self.DASHBOARD_SECTION_TITLE_GAP
             + item_height
         )
 
@@ -742,7 +866,17 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             shadow_color=self.theme.card_shadow,
             shadow_offset_y=self.theme.instruction_shadow_offset_y,
             shadow_blur=self.theme.instruction_shadow_blur,
-            fill=self.theme.panel_bg,
+            fill=section.panel_bg or self.theme.panel_bg,
+        )
+        draw.rounded_rectangle(
+            (
+                rect[0],
+                rect[1],
+                rect[2],
+                rect[1] + self.DASHBOARD_SECTION_TOP_BAR_HEIGHT,
+            ),
+            radius=self.GUIDE_SECTION_RADIUS,
+            fill=section.accent or self.theme.accent,
         )
         content_left = rect[0] + self.GUIDE_SECTION_PADDING_X
         content_width = width - self.GUIDE_SECTION_PADDING_X * 2
@@ -760,37 +894,42 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             y=cursor_y,
             lines=title_lines,
             font=self.summary_font,
-            fill=self.theme.deep,
+            fill=section.text or self.theme.deep,
             line_height=self._line_height_for_font(self.summary_font),
             render_code_chip=False,
         )
         cursor_y += (
-            len(title_lines) * self._line_height_for_font(self.summary_font) + 24
+            len(title_lines) * self._line_height_for_font(self.summary_font)
+            + self.DASHBOARD_SECTION_TITLE_GAP
         )
         for node in section.nodes:
             command_layout = build_command_layout(
                 f"#help {node.title}",
-                max_width=content_width - 40,
+                max_width=content_width - 32,
                 line_height=self._line_height_for_font(self.note_font),
                 indent_px=self.COMMAND_INDENT_PX,
                 measure_text=lambda value: self._text_width(value, self.note_font),
-                palette=self._command_palette(),
+                palette=self._command_palette(
+                    root=section.command_text or section.text or self.theme.deep,
+                    text=section.command_text or section.text or self.theme.deep,
+                    param=section.command_text or section.text or self.theme.deep,
+                    flag=section.command_text or section.text or self.theme.deep,
+                ),
             )
             summary_lines = tuple(
                 self._wrap_inline_text(
                     node.summary or node.bundle.summary,
-                    max_width=content_width - 36,
+                    max_width=content_width - 40,
                     font=self.note_font,
                 )
             )[:2]
-            draw.ellipse(
-                (
-                    content_left,
-                    cursor_y + 10,
-                    content_left + 12,
-                    cursor_y + 22,
-                ),
-                fill=self.theme.accent,
+            self._draw_dashboard_marker(
+                draw,
+                marker=section.marker,
+                left=content_left,
+                center_y=cursor_y
+                + self._line_height_for_font(self.instruction_font) // 2,
+                color=section.accent or self.theme.accent,
             )
             self._draw_multiline_text(
                 draw,
@@ -802,19 +941,23 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 line_height=self._line_height_for_font(self.instruction_font),
                 render_code_chip=False,
             )
-            cursor_y += self._line_height_for_font(self.instruction_font) + 8
+            cursor_y += (
+                self._line_height_for_font(self.instruction_font)
+                + self.DASHBOARD_SECTION_SUMMARY_GAP
+            )
             self._draw_multiline_text(
                 draw,
                 x=content_left + 24,
                 y=cursor_y,
                 lines=summary_lines,
                 font=self.note_font,
-                fill=self.theme.hint,
+                fill=section.hint or self.theme.hint,
                 line_height=self._line_height_for_font(self.note_font),
                 render_code_chip=False,
             )
             cursor_y += (
-                len(summary_lines) * self._line_height_for_font(self.note_font) + 10
+                len(summary_lines) * self._line_height_for_font(self.note_font)
+                + self.DASHBOARD_SECTION_COMMAND_GAP
             )
             command_rect = (
                 content_left + 24,
@@ -826,8 +969,12 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             )
             draw.rounded_rectangle(
                 command_rect,
-                radius=20,
-                fill=self.theme.panel_soft_bg,
+                radius=(command_rect[3] - command_rect[1]) // 2,
+                fill=section.command_bg
+                or section.panel_soft_bg
+                or self.theme.panel_soft_bg,
+                outline=self._rgba(section.accent or self.theme.accent, 64),
+                width=1,
             )
             self._draw_command_layout(
                 draw,
@@ -835,10 +982,45 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 y=command_rect[1] + self.DASHBOARD_CARD_COMMAND_PADDING_Y,
                 layout=command_layout,
                 font=self.note_font,
-                default_fill=self.theme.deep,
-                guide_fill=self.theme.line,
+                default_fill=section.command_text or section.text or self.theme.deep,
+                guide_fill=section.accent or self.theme.line,
             )
-            cursor_y = command_rect[3] + 26
+            cursor_y = command_rect[3] + self.DASHBOARD_SECTION_ITEM_GAP
+
+    def _draw_dashboard_marker(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        marker: str,
+        left: int,
+        center_y: int,
+        color: str,
+    ) -> None:
+        size = self._DASHBOARD_MARKER_SIZE.get(marker, 12)
+        half = size // 2
+        if marker == "square":
+            draw.rectangle(
+                (left, center_y - half, left + size, center_y + half),
+                fill=color,
+            )
+            return
+        if marker == "diamond":
+            center_x = left + half + 1
+            draw.polygon(
+                (
+                    (center_x, center_y - half),
+                    (center_x + half, center_y),
+                    (center_x, center_y + half),
+                    (center_x - half, center_y),
+                ),
+                fill=color,
+            )
+            return
+        draw.ellipse(
+            (left, center_y - half, left + size, center_y + half),
+            outline=color,
+            width=3,
+        )
 
     def _measure_plugin_guide_section(
         self,

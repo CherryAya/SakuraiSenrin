@@ -8,13 +8,14 @@ from time import perf_counter
 from typing import Literal
 
 import arrow
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.bot import Bot
 from pil_utils import BuildImage
 
 from src.lib.cooldown import CooldownIsolateLevel, MemoryCooldown
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.messages import image_message, text_message
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.water.database import water_repo
@@ -80,12 +81,12 @@ class WaterReportService:
             now_ts=now_ts,
         )
         if snapshot is None or snapshot.total_msg_count <= 0:
-            return Message(tr(locale, "water.report.empty"))
+            return text_message(tr(locale, "water.report.empty"))
         data = await self._build_card_data(window, snapshot, locale)
         image = await build_water_group_report_image(data, locale)
         if image is None:
-            return Message(tr(locale, "water.report.empty"))
-        return Message(MessageSegment.image(image))
+            return text_message(tr(locale, "water.report.empty"))
+        return image_message(image)
 
     async def run_daily_group_report_push(
         self,

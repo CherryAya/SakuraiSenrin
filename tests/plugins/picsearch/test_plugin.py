@@ -4,9 +4,11 @@ import sys
 from unittest.mock import AsyncMock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Bot, MessageSegment
 from nonebug import App
 import pytest
+
+from src.lib.messages import text_message
 
 nonebot.init(
     SUPERUSERS={"1"},
@@ -36,9 +38,13 @@ from src.plugins.picsearch import (
     _build_error_demo,
     picsearch_matcher,
 )
-from tests.plugins.water.helpers import attach_reply_message, build_group_message_event
+from tests.plugins.water.helpers import (
+    attach_reply_message,
+    build_group_message_event,
+    build_message,
+)
 
-MULTI_IMAGE_PROMPT = Message(
+MULTI_IMAGE_PROMPT = text_message(
     "检测到有多张图片，请输入对应的序号，最多允许 3 张，可以使用空格进行分割："
 )
 
@@ -127,18 +133,16 @@ async def test_picsearch_single_image_uses_default_saucenao(
         )
         ctx.should_call_send(
             event,
-            Message(
-                [
-                    MessageSegment.text(
-                        "第 1 张图片搜索结果：\n"
-                        "引擎：saucenao\n"
-                        "相似度：91.2\n"
-                        "标题：标题\n"
-                        "作者：作者\n"
-                        "链接：https://example.com/source"
-                    ),
-                    MessageSegment.image(b"thumb"),
-                ]
+            build_message(
+                MessageSegment.text(
+                    "第 1 张图片搜索结果：\n"
+                    "引擎：saucenao\n"
+                    "相似度：91.2\n"
+                    "标题：标题\n"
+                    "作者：作者\n"
+                    "链接：https://example.com/source"
+                ),
+                MessageSegment.image(b"thumb"),
             ),
             bot=bot,
         )
@@ -228,7 +232,7 @@ async def test_picsearch_multi_image_ascii2d_success(
         )
         ctx.should_call_send(
             second,
-            Message(
+            text_message(
                 "第 2 张图片搜索结果：\n"
                 "引擎：ascii2d\n"
                 "相似度：N/A\n"

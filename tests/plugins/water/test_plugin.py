@@ -4,9 +4,11 @@ import sys
 from unittest.mock import AsyncMock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot, Message
+from nonebot.adapters.onebot.v11 import Bot
 from nonebug import App
 import pytest
+
+from src.lib.messages import text_message
 
 nonebot.init(
     SUPERUSERS={"1"},
@@ -34,7 +36,7 @@ async def test_water_query_guides_empty_command_step_by_step(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
-    build_rank_message = AsyncMock(return_value=Message("RANK_OK"))
+    build_rank_message = AsyncMock(return_value=text_message("RANK_OK"))
     monkeypatch.setattr(
         water_plugin.water_rank_query_service,
         "build_rank_message",
@@ -83,7 +85,7 @@ async def test_water_query_guides_empty_command_step_by_step(
             bot=bot,
         )
         ctx.should_call_send(fourth, "凛凛统计中，请稍后喔……", bot=bot)
-        ctx.should_call_send(fourth, Message("RANK_OK"), bot=bot)
+        ctx.should_call_send(fourth, text_message("RANK_OK"), bot=bot)
         ctx.should_finished()
 
     build_rank_message.assert_awaited_once_with(
@@ -104,7 +106,7 @@ async def test_water_query_guided_scope_retry_and_cancel(
     monkeypatch.setattr(
         water_plugin.water_rank_query_service,
         "build_rank_message",
-        AsyncMock(return_value=Message("SHOULD_NOT_RUN")),
+        AsyncMock(return_value=text_message("SHOULD_NOT_RUN")),
     )
 
     first = build_group_message_event("#水王", message_id=1)
@@ -153,7 +155,7 @@ async def test_water_query_direct_rank_still_runs_without_guided_flow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
-    build_rank_message = AsyncMock(return_value=Message("DIRECT_OK"))
+    build_rank_message = AsyncMock(return_value=text_message("DIRECT_OK"))
     monkeypatch.setattr(
         water_plugin.water_rank_query_service,
         "build_rank_message",
@@ -166,7 +168,7 @@ async def test_water_query_direct_rank_still_runs_without_guided_flow(
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, "凛凛统计中，请稍后喔……", bot=bot)
-        ctx.should_call_send(event, Message("DIRECT_OK"), bot=bot)
+        ctx.should_call_send(event, text_message("DIRECT_OK"), bot=bot)
         ctx.should_finished()
 
     build_rank_message.assert_awaited_once_with(
@@ -184,7 +186,7 @@ async def test_water_query_shortcut_alias_runs_direct_rank(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
-    build_rank_message = AsyncMock(return_value=Message("SHORTCUT_OK"))
+    build_rank_message = AsyncMock(return_value=text_message("SHORTCUT_OK"))
     monkeypatch.setattr(
         water_plugin.water_rank_query_service,
         "build_rank_message",
@@ -197,7 +199,7 @@ async def test_water_query_shortcut_alias_runs_direct_rank(
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, "凛凛统计中，请稍后喔……", bot=bot)
-        ctx.should_call_send(event, Message("SHORTCUT_OK"), bot=bot)
+        ctx.should_call_send(event, text_message("SHORTCUT_OK"), bot=bot)
         ctx.should_finished()
 
     build_rank_message.assert_awaited_once_with(
@@ -218,7 +220,7 @@ async def test_water_query_shortcut_alias_with_args_shows_menu_error(
     monkeypatch.setattr(
         water_plugin.water_rank_query_service,
         "build_rank_message",
-        AsyncMock(return_value=Message("SHOULD_NOT_RUN")),
+        AsyncMock(return_value=text_message("SHOULD_NOT_RUN")),
     )
 
     event = build_group_message_event("#今日水王 多余参数", message_id=1)
@@ -228,7 +230,7 @@ async def test_water_query_shortcut_alias_with_args_shows_menu_error(
         ctx.receive_event(bot, event)
         ctx.should_call_send(
             event,
-            Message(
+            text_message(
                 water_plugin.water_query_router.build_rank_menu(
                     "zh-CN",
                     WaterRankQuerySpec(subject="user", scope="group", period="day"),
@@ -250,7 +252,7 @@ async def test_water_query_direct_restricted_period_requires_superuser(
     monkeypatch.setattr(
         water_plugin.water_rank_query_service,
         "build_rank_message",
-        AsyncMock(return_value=Message("SHOULD_NOT_RUN")),
+        AsyncMock(return_value=text_message("SHOULD_NOT_RUN")),
     )
 
     event = build_group_message_event("#水王 用户榜 本群 年榜", message_id=1)
@@ -264,7 +266,7 @@ async def test_water_query_direct_restricted_period_requires_superuser(
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, Message(expected_menu), bot=bot)
+        ctx.should_call_send(event, text_message(expected_menu), bot=bot)
         ctx.should_finished()
 
 
@@ -277,7 +279,7 @@ async def test_water_query_guided_restricted_period_retries_for_normal_user(
     monkeypatch.setattr(
         water_plugin.water_rank_query_service,
         "build_rank_message",
-        AsyncMock(return_value=Message("SHOULD_NOT_RUN")),
+        AsyncMock(return_value=text_message("SHOULD_NOT_RUN")),
     )
 
     first = build_group_message_event("#水王", message_id=1)
@@ -331,7 +333,7 @@ async def test_water_query_superuser_can_use_restricted_periods(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
-    build_rank_message = AsyncMock(return_value=Message("SUPERUSER_OK"))
+    build_rank_message = AsyncMock(return_value=text_message("SUPERUSER_OK"))
     monkeypatch.setattr(
         water_plugin.water_rank_query_service,
         "build_rank_message",
@@ -380,7 +382,7 @@ async def test_water_query_superuser_can_use_restricted_periods(
             bot=bot,
         )
         ctx.should_call_send(fourth, "凛凛统计中，请稍后喔……", bot=bot)
-        ctx.should_call_send(fourth, Message("SUPERUSER_OK"), bot=bot)
+        ctx.should_call_send(fourth, text_message("SUPERUSER_OK"), bot=bot)
         ctx.should_finished()
 
     build_rank_message.assert_awaited_once_with(
@@ -427,7 +429,7 @@ async def test_water_query_guided_three_errors_abort(
     monkeypatch.setattr(
         water_plugin.water_rank_query_service,
         "build_rank_message",
-        AsyncMock(return_value=Message("SHOULD_NOT_RUN")),
+        AsyncMock(return_value=text_message("SHOULD_NOT_RUN")),
     )
 
     first = build_group_message_event("#水王", message_id=1)
@@ -479,7 +481,7 @@ async def test_water_query_guided_revoke_aborts(
     monkeypatch.setattr(
         water_plugin.water_rank_query_service,
         "build_rank_message",
-        AsyncMock(return_value=Message("SHOULD_NOT_RUN")),
+        AsyncMock(return_value=text_message("SHOULD_NOT_RUN")),
     )
 
     first = build_group_message_event("#水王", message_id=1)
@@ -512,7 +514,7 @@ async def test_water_today_report_requires_group_admin(
     monkeypatch.setattr(
         water_plugin.water_report_service,
         "build_group_report_message",
-        AsyncMock(return_value=Message("SHOULD_NOT_RUN")),
+        AsyncMock(return_value=text_message("SHOULD_NOT_RUN")),
     )
 
     event = build_group_message_event("#水王 今日报告", role="member", message_id=1)
@@ -531,7 +533,7 @@ async def test_water_today_report_runs_for_group_admin(
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
     water_plugin.water_report_service.clear_today_report_cooldowns()
-    build_report_message = AsyncMock(return_value=Message("REPORT_OK"))
+    build_report_message = AsyncMock(return_value=text_message("REPORT_OK"))
     monkeypatch.setattr(
         water_plugin.water_report_service,
         "build_group_report_message",
@@ -544,7 +546,7 @@ async def test_water_today_report_runs_for_group_admin(
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, "凛凛统计中，请稍后喔……", bot=bot)
-        ctx.should_call_send(event, Message("REPORT_OK"), bot=bot)
+        ctx.should_call_send(event, text_message("REPORT_OK"), bot=bot)
         ctx.should_finished()
 
     build_report_message.assert_awaited_once_with(
@@ -561,7 +563,7 @@ async def test_water_today_report_alias_runs(
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
     water_plugin.water_report_service.clear_today_report_cooldowns()
-    build_report_message = AsyncMock(return_value=Message("REPORT_ALIAS_OK"))
+    build_report_message = AsyncMock(return_value=text_message("REPORT_ALIAS_OK"))
     monkeypatch.setattr(
         water_plugin.water_report_service,
         "build_group_report_message",
@@ -574,7 +576,7 @@ async def test_water_today_report_alias_runs(
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, "凛凛统计中，请稍后喔……", bot=bot)
-        ctx.should_call_send(event, Message("REPORT_ALIAS_OK"), bot=bot)
+        ctx.should_call_send(event, text_message("REPORT_ALIAS_OK"), bot=bot)
         ctx.should_finished()
 
 
@@ -585,7 +587,7 @@ async def test_water_today_report_group_shared_cooldown(
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
     water_plugin.water_report_service.clear_today_report_cooldowns()
-    build_report_message = AsyncMock(return_value=Message("REPORT_OK"))
+    build_report_message = AsyncMock(return_value=text_message("REPORT_OK"))
     monkeypatch.setattr(
         water_plugin.water_report_service,
         "build_group_report_message",
@@ -604,7 +606,7 @@ async def test_water_today_report_group_shared_cooldown(
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, first)
         ctx.should_call_send(first, "凛凛统计中，请稍后喔……", bot=bot)
-        ctx.should_call_send(first, Message("REPORT_OK"), bot=bot)
+        ctx.should_call_send(first, text_message("REPORT_OK"), bot=bot)
         ctx.should_finished()
 
     async with app.test_matcher(water_plugin.water_query) as ctx:
@@ -625,8 +627,8 @@ async def test_water_today_report_skips_user_query_cooldown(
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
     water_plugin.water_report_service.clear_today_report_cooldowns()
-    build_rank_message = AsyncMock(return_value=Message("RANK_OK"))
-    build_report_message = AsyncMock(return_value=Message("REPORT_OK"))
+    build_rank_message = AsyncMock(return_value=text_message("RANK_OK"))
+    build_report_message = AsyncMock(return_value=text_message("REPORT_OK"))
     monkeypatch.setattr(
         water_plugin.water_rank_query_service,
         "build_rank_message",
@@ -649,12 +651,12 @@ async def test_water_today_report_skips_user_query_cooldown(
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, first)
         ctx.should_call_send(first, "凛凛统计中，请稍后喔……", bot=bot)
-        ctx.should_call_send(first, Message("RANK_OK"), bot=bot)
+        ctx.should_call_send(first, text_message("RANK_OK"), bot=bot)
         ctx.should_finished()
 
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, second)
         ctx.should_call_send(second, "凛凛统计中，请稍后喔……", bot=bot)
-        ctx.should_call_send(second, Message("REPORT_OK"), bot=bot)
+        ctx.should_call_send(second, text_message("REPORT_OK"), bot=bot)
         ctx.should_finished()

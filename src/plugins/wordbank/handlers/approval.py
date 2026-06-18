@@ -12,6 +12,7 @@ from nonebot.adapters.onebot.v11.event import MessageEvent
 from src.config import config
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.messages import text_message
 from src.logger import logger
 from src.plugins.wordbank.services import (
     format_add_result,
@@ -104,9 +105,9 @@ async def _append_response_image(
 ) -> Message:
     response_shape = result.response_shape
     if response_shape is None or response_shape.is_empty():
-        return Message(text)
+        return text_message(text)
     if all(atom.kind == "text" for atom in response_shape.atoms):
-        return Message(text)
+        return text_message(text)
     summary = format_response_summary(result.response_text, shape=response_shape)
     return _embed_response_shape(
         text=text,
@@ -130,12 +131,12 @@ def _embed_response_shape(
     response_label = tr(locale, "wordbank.approval.response_label")
     marker = f"{response_label} {summary}"
     if marker not in text:
-        return Message(text) + rendered_response
+        return text_message(text) + rendered_response
 
     prefix, _, suffix = text.partition(marker)
-    message = Message(prefix + f"{response_label}\n")
+    message = text_message(prefix + f"{response_label}\n")
     message += rendered_response
-    message += Message(suffix)
+    message += text_message(suffix)
     return message
 
 
@@ -159,7 +160,9 @@ async def send_pending_approval_notice(
             media_service=media_service,
         )
         if media_service is not None
-        else Message(format_pending_approval_notice(result, event=event, locale=locale))
+        else text_message(
+            format_pending_approval_notice(result, event=event, locale=locale)
+        )
     )
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")

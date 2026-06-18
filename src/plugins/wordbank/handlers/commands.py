@@ -12,6 +12,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.messages import text_message
 from src.logger import logger
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
@@ -541,7 +542,7 @@ async def render_search_page_message(
             limit=parsed.limit,
             has_more=page.has_more,
         )
-        return Message(text)
+        return text_message(text)
 
 
 async def build_group_detail_message(
@@ -625,7 +626,7 @@ async def handle_creator_leaderboard(
         )
     except Exception:
         logger.exception("[Wordbank] creator leaderboard render failed")
-        return Message(format_creator_leaderboard(data, locale=locale))
+        return text_message(format_creator_leaderboard(data, locale=locale))
 
 
 async def handle_trigger_probability_update(

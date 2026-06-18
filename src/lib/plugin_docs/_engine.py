@@ -21,6 +21,7 @@ from src.lib.demo_theme import (
 )
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.messages import image_message, text_message
 
 from .command_layout import (
     CommandLayout,
@@ -287,7 +288,7 @@ def build_static_docs(
         else (description or "").strip()
     ) or tr(locale, "docs.default.no_description")
     title = tr(locale, name_key) if name_key is not None else (name or "")
-    return Message(
+    return text_message(
         (
             f"===== {title} =====\n"
             f"{tr(locale, 'docs.default.trigger')}: {trigger}\n"
@@ -330,7 +331,7 @@ def build_readme_docs(
                 include_demo=ctx.include_demo,
             )
         if match.status == "ambiguous":
-            return Message(
+            return text_message(
                 "\n".join(
                     [
                         tr(
@@ -347,7 +348,7 @@ def build_readme_docs(
                     ]
                 ).strip()
             )
-        return Message(
+        return text_message(
             tr(
                 locale,
                 "docs.feature.not_found",
@@ -478,7 +479,7 @@ def render_doc_node_overview(
             f"2. {_support_note(locale)}",
         ]
     )
-    message = Message("\n".join(lines).strip())
+    message = text_message("\n".join(lines).strip())
     if not include_demo:
         return message
     demo_bytes = load_representative_demo_bytes(
@@ -564,7 +565,7 @@ def render_doc_feature(
         start=1,
     ):
         lines.append(f"{index}. {note}")
-    message = Message("\n".join(lines).strip())
+    message = text_message("\n".join(lines).strip())
     if not include_demo:
         return message
     demo_bytes = load_demo_bytes(node.bundle, feature)
@@ -1110,8 +1111,10 @@ def build_doc_demo_message(
 
     text = (prefix_text or "").strip()
     if not text:
-        return Message(MessageSegment.image(image_bytes))
-    return Message(f"{text}\n参考示例如下：\n") + MessageSegment.image(image_bytes)
+        return image_message(image_bytes)
+    message = text_message(f"{text}\n参考示例如下：\n")
+    message += MessageSegment.image(image_bytes)
+    return message
 
 
 def build_feature_copy_text(

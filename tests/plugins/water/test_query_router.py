@@ -1,8 +1,8 @@
 from unittest.mock import AsyncMock
 
-from nonebot.adapters.onebot.v11 import Message
 import pytest
 
+from src.lib.messages import text_message
 from src.plugins.water.database.repo import WaterActivitySeasonRecord
 from src.plugins.water.services.query_router import WaterQueryRouter, WaterQuerySpec
 from src.plugins.water.services.rank_types import RANK_SHORTCUTS, WaterRankQuerySpec
@@ -195,7 +195,7 @@ async def test_execute_rank_menu_and_invalid_combo(
     monkeypatch.setattr(
         router_module.water_rank_query_service,
         "build_rank_message",
-        AsyncMock(return_value=Message("RANK_OK")),
+        AsyncMock(return_value=text_message("RANK_OK")),
     )
     rank_message = await router.execute(
         spec=router.parse("用户榜 本群 日榜"),
@@ -231,7 +231,7 @@ async def test_execute_rank_restricted_period_requires_superuser(
 
     from src.plugins.water.services import query_router as router_module
 
-    build_rank_mock = AsyncMock(return_value=Message("SHOULD_NOT_RUN"))
+    build_rank_mock = AsyncMock(return_value=text_message("SHOULD_NOT_RUN"))
     monkeypatch.setattr(
         router_module.water_rank_query_service,
         "build_rank_message",

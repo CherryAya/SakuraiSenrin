@@ -6,7 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 import arrow
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Message
 from PIL import Image, ImageDraw, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
@@ -14,6 +14,7 @@ from src.lib.demo_theme import SENRIN_V3_WORDBANK_LEADERBOARD_THEME
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.messages import image_message
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.services.core import (
     WordbankLeaderboardCardData,
@@ -640,8 +641,6 @@ def render_wordbank_leaderboard_card(
     data: WordbankLeaderboardCardData,
     locale: LocaleCode,
 ) -> Message:
-    return Message(
-        MessageSegment.image(
-            render_wordbank_leaderboard_card_bytes(data=data, locale=locale)
-        )
+    return image_message(
+        render_wordbank_leaderboard_card_bytes(data=data, locale=locale)
     )

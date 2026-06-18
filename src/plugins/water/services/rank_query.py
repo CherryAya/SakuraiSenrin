@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from time import perf_counter
 
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Message
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.messages import image_message, text_message
 from src.logger import logger
 from src.plugins.water.database import water_repo
 from src.plugins.water.img import build_water_day_rank_image
@@ -39,7 +40,7 @@ class WaterRankQueryService:
         combo = f"{subject}/{scope}/{period}"
         total_started = perf_counter()
         if not is_valid_rank_combo(subject, scope):
-            return Message(tr(locale, "water.query.unsupported"))
+            return text_message(tr(locale, "water.query.unsupported"))
         if period == "day":
             data_started = perf_counter()
             data = await self._build_day_rank_data(
@@ -57,7 +58,7 @@ class WaterRankQueryService:
                     combo,
                     data_elapsed,
                 )
-                return Message(tr(locale, "water.rank.empty"))
+                return text_message(tr(locale, "water.rank.empty"))
             render_started = perf_counter()
             image = await build_water_day_rank_image(data, locale)
             render_elapsed = (perf_counter() - render_started) * 1000
@@ -68,7 +69,7 @@ class WaterRankQueryService:
                     combo,
                     render_elapsed,
                 )
-                return Message(tr(locale, "water.rank.empty"))
+                return text_message(tr(locale, "water.rank.empty"))
             total_elapsed = (perf_counter() - total_started) * 1000
             logger.debug(
                 "[Water][RankQuery] combo={} type=day data_ms={:.2f} "
@@ -79,7 +80,7 @@ class WaterRankQueryService:
                 total_elapsed,
                 len(image),
             )
-            return Message(MessageSegment.image(image))
+            return image_message(image)
         else:
             data_started = perf_counter()
             data = await water_rank_service.build_natural_period_rank_data(
@@ -98,7 +99,7 @@ class WaterRankQueryService:
                     combo,
                     data_elapsed,
                 )
-                return Message(tr(locale, "water.rank.empty"))
+                return text_message(tr(locale, "water.rank.empty"))
             render_started = perf_counter()
             image = await build_water_period_rank_image(data, locale)
             render_elapsed = (perf_counter() - render_started) * 1000
@@ -109,7 +110,7 @@ class WaterRankQueryService:
                     combo,
                     render_elapsed,
                 )
-                return Message(tr(locale, "water.rank.empty"))
+                return text_message(tr(locale, "water.rank.empty"))
             total_elapsed = (perf_counter() - total_started) * 1000
             logger.debug(
                 "[Water][RankQuery] combo={} type=period data_ms={:.2f} "
@@ -120,7 +121,7 @@ class WaterRankQueryService:
                 total_elapsed,
                 len(image),
             )
-            return Message(MessageSegment.image(image))
+            return image_message(image)
 
     async def _build_day_rank_data(
         self,

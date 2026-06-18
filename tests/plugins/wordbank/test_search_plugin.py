@@ -26,6 +26,7 @@ if nonebot.get_plugin("wordbank") is None:
     nonebot.load_plugin("src.plugins.wordbank")
 
 from src.lib.i18n.runtime import tr
+from src.lib.messages import text_message
 from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank import wordbank_search_command
 from src.plugins.wordbank.database.types import (
@@ -52,10 +53,15 @@ class _FinishMatcher:
         self.paused: list[str] = []
 
     async def send(self, message: Message | str) -> None:
-        self.sent.append(Message(message))
+        self.sent.append(text_message(message) if isinstance(message, str) else message)
 
     async def finish(self, message: Message | str | None = None) -> None:
-        self.finished = Message(message or "")
+        if isinstance(message, str):
+            self.finished = text_message(message)
+        elif message is None:
+            self.finished = text_message("")
+        else:
+            self.finished = message
 
     async def pause(self, message: str) -> None:
         self.paused.append(message)
@@ -264,7 +270,7 @@ async def test_finish_guided_search_finishes_with_rendered_card(
     monkeypatch.setattr(
         wordbank_plugin,
         "render_search_page_message",
-        AsyncMock(return_value=Message("CARD")),
+        AsyncMock(return_value=text_message("CARD")),
     )
 
     state = {
@@ -284,8 +290,8 @@ async def test_finish_guided_search_finishes_with_rendered_card(
         page_number=1,
     )
 
-    assert matcher.sent == [Message("CARD")]
-    assert matcher.finished == Message("")
+    assert matcher.sent == [text_message("CARD")]
+    assert matcher.finished == text_message("")
 
 
 @pytest.mark.asyncio
@@ -321,7 +327,7 @@ async def test_finish_guided_search_keeps_search_session_when_results_exist(
     monkeypatch.setattr(
         wordbank_plugin,
         "render_search_page_message",
-        AsyncMock(return_value=Message("CARD")),
+        AsyncMock(return_value=text_message("CARD")),
     )
     monkeypatch.setattr(
         wordbank_plugin,
@@ -351,7 +357,7 @@ async def test_finish_guided_search_keeps_search_session_when_results_exist(
         page_number=1,
     )
 
-    assert matcher.sent == [Message("CARD")]
+    assert matcher.sent == [text_message("CARD")]
     assert matcher.finished is None
     assert matcher.paused == [_SEARCH_SESSION_PROMPT]
     assert state["wordbank_guided_search_current_page"] == 1
@@ -399,7 +405,7 @@ async def test_handle_search_session_delete_refreshes_current_page(
         "zh-CN",
     )
 
-    assert matcher.sent == [Message("词条 #12 已删除。")]
+    assert matcher.sent == [text_message("词条 #12 已删除。")]
     assert isinstance(wordbank_plugin.handle_delete, AsyncMock)
     wordbank_plugin.handle_delete.assert_awaited_once()
     assert isinstance(wordbank_plugin._finish_guided_search, AsyncMock)

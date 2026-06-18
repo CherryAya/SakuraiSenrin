@@ -8,6 +8,7 @@ from nonebot.adapters.onebot.v11.event import Event
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 
+from src.lib.messages import text_message
 from src.locales.lzh import CATALOG as LZH_CATALOG
 from src.locales.x_meme import CATALOG as X_MEME_CATALOG
 from src.locales.zh_cn import CATALOG as ZH_CATALOG
@@ -110,7 +111,7 @@ def tr_template(locale_code: LocaleCode, key: MessageKey) -> str:
 
 
 def msg(locale_code: LocaleCode, key: MessageKey, **params: object) -> Message:
-    return Message(tr(locale_code, key, **params))
+    return text_message(tr(locale_code, key, **params))
 
 
 def format_duration(locale_code: LocaleCode, seconds: int) -> str:

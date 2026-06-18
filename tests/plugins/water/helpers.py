@@ -10,6 +10,8 @@ from nonebot.adapters.onebot.v11.event import (
 )
 from nonebot.adapters.onebot.v11.message import MessageSegment
 
+from src.lib.messages import empty_message, text_message
+
 
 class MatcherFinished(Exception):
     pass
@@ -26,6 +28,17 @@ class DummyMatcher:
     async def finish(self, message: str) -> None:
         self.finished = message
         raise MatcherFinished
+
+
+def build_message(*segments: MessageSegment) -> Message:
+    message = empty_message()
+    for segment in segments:
+        message += segment
+    return message
+
+
+def build_text_message(text: str) -> Message:
+    return text_message(text)
 
 
 def build_group_message_event(
@@ -47,8 +60,8 @@ def build_group_message_event(
             "user_id": user_id,
             "message_type": "group",
             "message_id": message_id,
-            "message": Message(message),
-            "original_message": Message(message),
+            "message": text_message(message),
+            "original_message": text_message(message),
             "raw_message": message,
             "font": 0,
             "sender": {
@@ -80,8 +93,8 @@ def build_private_message_event(
             "user_id": user_id,
             "message_type": "private",
             "message_id": message_id,
-            "message": Message(message),
-            "original_message": Message(message),
+            "message": text_message(message),
+            "original_message": text_message(message),
             "raw_message": message,
             "font": 0,
             "sender": {
@@ -120,7 +133,7 @@ def attach_reply_message(
                 "card": "",
                 "role": "member",
             },
-            "message": Message(list(segments)),
+            "message": build_message(*segments),
         }
     )
     return event

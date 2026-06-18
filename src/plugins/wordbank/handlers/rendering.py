@@ -12,6 +12,7 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.messages import empty_message, image_message, text_message
 from src.lib.utils.img import QQAvatar
 from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
 from src.plugins.wordbank.debug import log_perf, perf_start
@@ -47,7 +48,7 @@ async def render_shape_message(
             **cast(Any, payload_stats),
             **cast(Any, dict(trace_fields)),
         )
-    message = Message()
+    message = empty_message()
     image_segments = 0
     for atom in shape.atoms:
         if atom.kind == "text" and atom.text:
@@ -98,7 +99,7 @@ async def render_search_results_card_message(
         locale=locale,
         preview_bytes=preview_bytes,
     )
-    return Message(MessageSegment.image(image_bytes))
+    return image_message(image_bytes)
 
 
 async def render_group_detail_page_message(
@@ -138,7 +139,7 @@ async def render_group_detail_page_message(
             locale=locale,
             preview_bytes=preview_bytes,
         )
-        return Message(MessageSegment.image(image_bytes)), total_pages
+        return image_message(image_bytes), total_pages
     except Exception:
         log_perf(
             "plugin.render_group_detail_page_message.fallback_text",
@@ -147,7 +148,7 @@ async def render_group_detail_page_message(
             total_pages=total_pages,
         )
 
-    message = Message(
+    message = text_message(
         tr(
             locale,
             "wordbank.group.page_header",
@@ -234,7 +235,7 @@ async def render_creator_leaderboard_card_message(
         data=data,
         locale=locale,
     )
-    return Message(MessageSegment.image(image_bytes))
+    return image_message(image_bytes)
 
 
 def _format_enabled(enabled: int) -> str:

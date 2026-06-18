@@ -24,6 +24,7 @@ from src.lib.consts import TriggerType
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.messages import image_message, text_message
 from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
@@ -76,12 +77,55 @@ class MatchResult:
 
 type RootSection = Literal["system", "developer", "community"]
 
-SECTION_TITLES: dict[RootSection, str] = {
-    "system": "⚙️ 系统预置",
-    "developer": "🧩 开发者插件",
-    "community": "🌟 社区创作",
-}
 
+@dataclass(slots=True, frozen=True)
+class SectionStyle:
+    accent: str
+    panel_bg: str
+    panel_soft_bg: str
+    text: str
+    hint: str
+    command_bg: str
+    command_text: str
+    marker: str
+    column: int
+
+
+SECTION_STYLES: dict[RootSection, SectionStyle] = {
+    "system": SectionStyle(
+        accent="#8AB4F8",
+        panel_bg="#F4F8FF",
+        panel_soft_bg="#EAF2FF",
+        text="#2F5E9E",
+        hint="#5F7EA8",
+        command_bg="#EAF2FF",
+        command_text="#315F9D",
+        marker="square",
+        column=0,
+    ),
+    "developer": SectionStyle(
+        accent="#FFB067",
+        panel_bg="#FFF9F2",
+        panel_soft_bg="#FFF1DE",
+        text="#9A5B1D",
+        hint="#8C7254",
+        command_bg="#FFF0DE",
+        command_text="#8A531F",
+        marker="diamond",
+        column=1,
+    ),
+    "community": SectionStyle(
+        accent="#FF9EBB",
+        panel_bg="#FFF5F8",
+        panel_soft_bg="#FFE8EF",
+        text="#A24E6A",
+        hint="#946476",
+        command_bg="#FFE7EF",
+        command_text="#9A4B68",
+        marker="ring",
+        column=1,
+    ),
+}
 
 __plugin_meta__ = create_plugin_metadata(
     name=name,
@@ -117,6 +161,15 @@ help_matcher = on_command(
 
 def _is_project_plugin(plugin: Plugin) -> bool:
     return plugin.module_name.startswith("src.")
+
+
+def _section_title(section: RootSection, locale: LocaleCode) -> str:
+    key = {
+        "system": "help.dashboard.section.system",
+        "developer": "help.dashboard.section.developer",
+        "community": "help.dashboard.section.community",
+    }[section]
+    return tr(locale, key)
 
 
 def _normalize_text(value: object) -> str:
@@ -234,8 +287,8 @@ def _iter_docs_entries(locale: LocaleCode) -> list[DocsEntry]:
                     plugin=plugin,
                     metadata=metadata,
                     docs=docs,
-                    display_name=display_name,
-                    summary=summary,
+                    display_name=node.title,
+                    summary=node.summary,
                     permission=permission,
                     node=node,
                 )
@@ -439,27 +492,35 @@ def _build_index_message(
 ) -> Message:
     grouped_sections = _build_index_sections(entries, actor_permission)
     if not grouped_sections:
-        return Message(tr(locale, "help.index.empty"))
+        return text_message(tr(locale, "help.index.empty"))
 
     dashboard_bytes = render_help_dashboard(
         tuple(
             HelpDashboardSection(
                 kind=section,
-                title=SECTION_TITLES[section],
+                title=_section_title(section, locale),
                 nodes=tuple(entry.node for entry in section_entries),
-                column=0 if section == "system" else 1,
+                accent=SECTION_STYLES[section].accent,
+                panel_bg=SECTION_STYLES[section].panel_bg,
+                panel_soft_bg=SECTION_STYLES[section].panel_soft_bg,
+                text=SECTION_STYLES[section].text,
+                hint=SECTION_STYLES[section].hint,
+                command_bg=SECTION_STYLES[section].command_bg,
+                command_text=SECTION_STYLES[section].command_text,
+                marker=SECTION_STYLES[section].marker,
+                column=SECTION_STYLES[section].column,
             )
             for section, section_entries in grouped_sections
         ),
         locale=locale,
     )
     lines = [
-        "欢迎来到 SakuraiSenrin 帮助中心。",
-        "以下是当前可用帮助入口：",
+        tr(locale, "help.dashboard.lead.line1"),
+        tr(locale, "help.dashboard.lead.line2"),
         "",
     ]
     for section, section_entries in grouped_sections:
-        lines.append(SECTION_TITLES[section])
+        lines.append(_section_title(section, locale))
         for entry in section_entries:
             lines.append(f"#help {entry.node.title}")
         lines.append("")
@@ -479,11 +540,11 @@ def _build_ambiguous_message(
     ]
     for entry in candidates:
         lines.append(f"{entry.display_name} ({entry.node.slug})")
-    return Message("\n".join(lines))
+    return text_message("\n".join(lines))
 
 
 def _build_permission_denied_message(entry: DocsEntry, locale: LocaleCode) -> Message:
-    return Message(
+    return text_message(
         tr(
             locale,
             "help.query.permission_denied",
@@ -504,7 +565,9 @@ def _split_query(query: str) -> tuple[str, str | None]:
 
 
 def _compose_help_reply(image_bytes: bytes, text: str) -> Message:
-    return Message(MessageSegment.image(image_bytes)) + Message(f"\n{text.strip()}")
+    message = image_message(image_bytes)
+    message += MessageSegment.text(f"\n{text.strip()}")
+    return message
 
 
 async def _resolve_docs_message(
@@ -594,7 +657,7 @@ async def _resolve_docs_message(
                     ),
                 )
         if match.status == "ambiguous":
-            return Message(
+            return text_message(
                 "\n".join(
                     [
                         tr(
@@ -611,7 +674,7 @@ async def _resolve_docs_message(
                     ]
                 ).strip()
             )
-        return Message(tr(locale, "help.query.not_found", query=feature_query))
+        return text_message(tr(locale, "help.query.not_found", query=feature_query))
     features = filter_features_by_permission(
         entry.node.features,
         actor_permission=actor_permission,
@@ -710,7 +773,9 @@ async def _(
             await matcher.finish(
                 _build_permission_denied_message(denied_match.entry, locale)
             )
-        await matcher.finish(Message(tr(locale, "help.query.not_found", query=query)))
+        await matcher.finish(
+            text_message(tr(locale, "help.query.not_found", query=query))
+        )
 
     if match_result.status == "ambiguous":
         await matcher.finish(
