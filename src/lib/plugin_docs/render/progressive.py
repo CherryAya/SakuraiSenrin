@@ -253,7 +253,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     ) -> None:
         line_fill = self._rgba(self.theme.grid_color, 24)
         spacing = self.theme.grid_spacing
-        max_height = min(height, max(height // 2 + 220, 560))
+        max_height = height
         for y in range(self.theme.hero_top // 2, max_height, spacing):
             draw.line(
                 (

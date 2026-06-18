@@ -273,7 +273,7 @@ def test_render_help_dashboard_returns_showcase_canvas() -> None:
                 (
                     HelpDashboardSection(
                         kind="developer",
-                        title="开发者插件",
+                        title="官方功能扩展",
                         nodes=(node,),
                     ),
                 ),
@@ -283,6 +283,91 @@ def test_render_help_dashboard_returns_showcase_canvas() -> None:
     )
     assert image.width == 1280
     assert image.height > 500
+
+
+def test_render_help_dashboard_uses_localized_header_and_footer_copy() -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    renderer = ProgressiveDisclosureRenderer(
+        impression_color=node.bundle.impression_color
+    )
+
+    image_bytes = renderer.render_dashboard(
+        sections=(
+            HelpDashboardSection(
+                kind="developer",
+                title="官方功能扩展",
+                nodes=(node,),
+                column=1,
+            ),
+        ),
+        locale="zh-CN",
+        generated_at=datetime(2026, 6, 18, 22, 0, 0),
+    )
+
+    image = Image.open(BytesIO(image_bytes))
+    assert image.width == 1280
+    assert image.height > 500
+
+
+def test_render_help_dashboard_grid_extends_to_footer_region() -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    renderer = ProgressiveDisclosureRenderer(
+        impression_color=node.bundle.impression_color
+    )
+
+    image = Image.open(
+        BytesIO(
+            renderer.render_dashboard(
+                sections=(
+                    HelpDashboardSection(
+                        kind="system",
+                        title="系统核心预置",
+                        nodes=(node,) * 8,
+                        column=0,
+                    ),
+                    HelpDashboardSection(
+                        kind="developer",
+                        title="官方功能扩展",
+                        nodes=(node,) * 5,
+                        column=1,
+                    ),
+                    HelpDashboardSection(
+                        kind="community",
+                        title="社区衍生工坊",
+                        nodes=(node,) * 3,
+                        column=1,
+                    ),
+                ),
+                locale="zh-CN",
+                generated_at=datetime(2026, 6, 18, 22, 0, 0),
+            )
+        )
+    ).convert("RGBA")
+
+    sample_x = renderer.theme.hero_side_padding // 3
+    sample_y = (
+        image.height
+        - renderer.theme.footer_height
+        - renderer.theme.outer_margin
+        - (renderer.theme.grid_spacing // 2)
+    )
+
+    assert sample_y > image.height // 2
+    assert image.getpixel((sample_x, sample_y)) != Image.new(
+        "RGBA", (1, 1), renderer.theme.page_bg
+    ).getpixel((0, 0))
 
 
 def test_dashboard_section_height_includes_command_block() -> None:
@@ -296,11 +381,16 @@ def test_dashboard_section_height_includes_command_block() -> None:
     renderer = ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
     )
-    section_width = renderer.WIDTH - renderer.theme.hero_side_padding * 2
+    section_width = (
+        renderer.WIDTH
+        - renderer.theme.hero_side_padding * 2
+        - renderer.DASHBOARD_CARD_GAP_X
+    ) // 2
     section = HelpDashboardSection(
         kind="developer",
-        title="开发者插件",
+        title="官方功能扩展",
         nodes=(node,),
+        column=1,
     )
 
     measured = renderer._measure_dashboard_section_height(section, section_width)
@@ -312,20 +402,31 @@ def test_dashboard_section_height_includes_command_block() -> None:
             tuple(
                 renderer._wrap_inline_text(
                     node.summary or node.bundle.summary,
-                    max_width=content_width - 36,
+                    max_width=content_width - 40,
                     font=renderer.note_font,
                 )
             )
         ),
     ) * renderer._line_height_for_font(renderer.note_font)
+    command_layout = build_command_layout(
+        f"#help {node.title}",
+        max_width=content_width - 32,
+        line_height=renderer._line_height_for_font(renderer.note_font),
+        indent_px=renderer.COMMAND_INDENT_PX,
+        measure_text=lambda value: renderer._text_width(value, renderer.note_font),
+        palette=renderer._command_palette(),
+    )
     naive = (
         renderer.GUIDE_SECTION_PADDING_Y * 2
         + title_height
-        + 24
-        + 28
+        + renderer.DASHBOARD_SECTION_TITLE_GAP
         + renderer._line_height_for_font(renderer.instruction_font)
+        + renderer.DASHBOARD_SECTION_SUMMARY_GAP
         + summary_height
-        + 26
+        + renderer.DASHBOARD_SECTION_COMMAND_GAP
+        + command_layout.total_height
+        + renderer.DASHBOARD_CARD_COMMAND_PADDING_Y * 2
+        + renderer.DASHBOARD_SECTION_ITEM_GAP
     )
 
     assert measured >= naive
@@ -335,24 +436,28 @@ def test_dashboard_layout_places_system_left_and_other_sections_right() -> None:
     renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")
     system = HelpDashboardSection(
         kind="system",
-        title="⚙️ 核心系统",
+        title="系统核心预置",
         nodes=(),
         column=0,
     )
     developer = HelpDashboardSection(
         kind="developer",
-        title="🧩 扩展能力",
+        title="官方功能扩展",
         nodes=(),
         column=1,
     )
     community = HelpDashboardSection(
         kind="community",
-        title="🌟 创意工坊",
+        title="社区衍生工坊",
         nodes=(),
         column=1,
     )
 
-    section_width = renderer.WIDTH - renderer.theme.hero_side_padding * 2
+    section_width = (
+        renderer.WIDTH
+        - renderer.theme.hero_side_padding * 2
+        - renderer.DASHBOARD_CARD_GAP_X
+    ) // 2
     system_height = renderer._measure_dashboard_section_height(system, section_width)
     developer_height = renderer._measure_dashboard_section_height(
         developer, section_width
