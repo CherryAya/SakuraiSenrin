@@ -216,6 +216,15 @@ README 仍是首要文档内容载体，但它已经从“最终协议”降级�
    - 幂等控制
    - 失败日志可追踪
 
+### 7.1 OneBot Message 注入约束（强制）
+
+1. 禁止使用 `Message(...)` 直接包裹文本消息，避免将用户输入或插值字符串按 CQ 码重新解析，造成 message 注入。
+2. 纯文本消息必须使用 `MessageSegment.text(...)` 手动组装；若项目已有统一辅助函数，应优先复用。
+3. 图片、艾特、回复等复合消息必须显式逐段拼装 `MessageSegment.image(...)`、`MessageSegment.at(...)`、`MessageSegment.reply(...)` 等，不得把整段 CQ 文本塞进 `Message(...)`。
+4. `Message()` 空构造仅允许用于“先建空消息、再逐段 append segment”的场景；禁止后续再通过 `Message(raw_text)` 回退到不安全构造。
+5. 若文件导入 `Message` 仅用于 type hint、返回类型标注、`CommandArg()` / `Arg()` 参数声明、`isinstance` 判断或消息对象遍历，可保留，不视为违规。
+6. 若消息内容来自用户输入、README、i18n、数据库或任何外部数据源，默认按“不可信文本”处理，必须走显式 `MessageSegment` 拼装。
+
 ---
 
 ## 8. 数据与审计规范
@@ -255,6 +264,10 @@ tests/plugins/<plugin_name>/
 
 1. 使用 `AsyncMock` 隔离外部 I/O。
 2. 对包含启动副作用的包入口做隔离（参照 `tests/conftest.py` 对 `src.plugins.water` 的处理方式）。
+3. 测试代码同样遵守 Message 注入约束：
+   - 纯文本测试消息使用安全 helper 或 `MessageSegment.text(...)` 组装。
+   - 需要图片、艾特、回复段时，显式构造对应 `MessageSegment`。
+   - 仅作类型标注的 `Message` 导入允许保留。
 
 ---
 

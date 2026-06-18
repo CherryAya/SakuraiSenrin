@@ -439,9 +439,7 @@ class WaterRepositoryAdminMixin:
         **values: object,
     ) -> bool:
         async with water_core_db.session(commit=True) as session:
-            affected = await WaterActivitySeasonOps(session).update(
-                season_id, **values
-            )
+            affected = await WaterActivitySeasonOps(session).update(season_id, **values)
         return affected > 0
 
     async def delete_activity_season(self, season_id: str) -> bool:
@@ -599,9 +597,7 @@ class WaterRepositoryAdminMixin:
 
     async def get_user_matrix_rank(self, user_id: str, matrix_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_user_matrix_rank(
-                matrix_id, user_id
-            )
+            return await WaterLevelOps(session).get_user_matrix_rank(matrix_id, user_id)
 
     async def get_group_user_rank(self, group_id: str, user_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:

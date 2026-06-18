@@ -308,11 +308,11 @@ def test_build_index_message_only_lists_root_nodes() -> None:
     )
 
     rendered = str(message)
-    assert "欢迎来到 SakuraiSenrin 帮助中心" in rendered
-    assert "以下是当前可用帮助入口" in rendered
-    assert "系统预置" in rendered
-    assert "开发者插件" in rendered
-    assert "社区创作" in rendered
+    assert "当前全域功能入口已就绪" in rendered
+    assert "请按分区查阅，或直接输入对应指令进行交互" in rendered
+    assert "系统核心预置" in rendered
+    assert "官方功能扩展" in rendered
+    assert "社区衍生工坊" in rendered
     assert "#help 帮助中心" in rendered
     assert "#help 吹水记录" in rendered
     assert "#help 凛凛的妙妙小工具目录" in rendered
@@ -360,7 +360,7 @@ def test_build_index_message_superuser_sees_system_hooks_and_admin() -> None:
     )
 
     rendered = str(message)
-    assert "系统预置" in rendered
+    assert "系统核心预置" in rendered
     assert "#help 管理模块总览" in rendered
     assert "#help 检测服务" in rendered
     assert "#help 插件钩子扩展点" in rendered

@@ -1163,12 +1163,19 @@ class DemoImageRenderer:
             fill=text_fill,
         )
 
-    def _command_palette(self) -> CommandPalette:
+    def _command_palette(
+        self,
+        *,
+        root: str | None = None,
+        text: str | None = None,
+        param: str | None = None,
+        flag: str | None = None,
+    ) -> CommandPalette:
         return CommandPalette(
-            root=self.theme.indigo_text,
-            text=self.theme.terminal_text,
-            param=self.theme.terminal_param,
-            flag=self.theme.terminal_flag,
+            root=root or self.theme.indigo_text,
+            text=text or self.theme.terminal_text,
+            param=param or self.theme.terminal_param,
+            flag=flag or self.theme.terminal_flag,
         )
 
     def _draw_command_layout(
