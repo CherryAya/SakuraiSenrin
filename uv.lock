@@ -1806,6 +1806,8 @@ dependencies = [
     { name = "sentry-sdk" },
     { name = "sqlalchemy" },
     { name = "squarify" },
+    { name = "starlette" },
+    { name = "urllib3" },
     { name = "zstandard" },
 ]
 
@@ -1840,6 +1842,8 @@ requires-dist = [
     { name = "sentry-sdk", specifier = ">=2.50.0" },
     { name = "sqlalchemy", specifier = ">=2.0.46" },
     { name = "squarify", specifier = ">=0.4.4" },
+    { name = "starlette", specifier = ">=1.3.1" },
+    { name = "urllib3", specifier = ">=2.7.0" },
     { name = "zstandard", specifier = ">=0.25.0" },
 ]
 
