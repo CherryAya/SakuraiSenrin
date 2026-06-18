@@ -865,6 +865,7 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         ):
             await self.map_group_to_matrix(group_id, resolved_target_matrix_id)
             merge_applied = True
+
         return True, {
             "action": action,
             "target_matrix_id": resolved_target_matrix_id,
