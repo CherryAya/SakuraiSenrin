@@ -32,17 +32,17 @@ from src.services.info import resolve_group_name
 
 PeriodType = Literal["week", "month", "season", "year"]
 
-RANK_SUBJECT_LABEL_KEYS: dict[WaterRankSubject, MessageKey] = {
+RANK_SUBJECT_LABEL_KEYS: dict[str, str] = {
     "user": "water.rank.subject.user",
     "group": "water.rank.subject.group",
     "matrix": "water.rank.subject.matrix",
 }
-RANK_SCOPE_LABEL_KEYS: dict[WaterRankScope, MessageKey] = {
+RANK_SCOPE_LABEL_KEYS: dict[str, str] = {
     "group": "water.rank.scope.group",
     "matrix": "water.rank.scope.matrix",
     "global": "water.rank.scope.global",
 }
-RANK_PERIOD_LABEL_KEYS: dict[WaterRankPeriod, MessageKey] = {
+RANK_PERIOD_LABEL_KEYS: dict[str, str] = {
     "day": "water.rank.period.day",
     "week": "water.rank.period.week",
     "month": "water.rank.period.month",
@@ -50,7 +50,7 @@ RANK_PERIOD_LABEL_KEYS: dict[WaterRankPeriod, MessageKey] = {
     "year": "water.rank.period.year",
     "total": "water.rank.period.total",
 }
-RANK_DISPLAY_META_KEYS: dict[WaterRankSubject, dict[str, MessageKey]] = {
+RANK_DISPLAY_META_KEYS: dict[str, dict[str, str]] = {
     "user": {
         "entity_label": "water.rank.display.user.entity_label",
         "champion_summary_label": "water.rank.display.user.champion_summary",
@@ -124,7 +124,7 @@ class RankWindow:
 
 
 class WaterRankService:
-    PERIOD_TITLE_KEYS: ClassVar[dict[PeriodType, MessageKey]] = {
+    PERIOD_TITLE_KEYS: ClassVar[dict[str, str]] = {
         "week": "water.rank.title.week",
         "month": "water.rank.title.month",
         "season": "water.rank.title.season",
@@ -503,8 +503,8 @@ class WaterRankService:
         group_count: int,
         locale: LocaleCode,
     ) -> str:
-        if subject == "group":
-            return tr(locale, "water.rank.secondary.group", entity_id=entity_id)
+        # if subject == "group":
+        # return tr(locale, "water.rank.secondary.group", entity_id=entity_id)
         if subject == "matrix":
             return tr(
                 locale,
@@ -512,7 +512,10 @@ class WaterRankService:
                 entity_id=entity_id,
                 group_count=group_count,
             )
-        return tr(locale, "water.image.day_rank.member_fallback", tail=entity_id[-4:])
+        else:
+            # return entity_id
+            return ""
+        # return tr(locale, "water.image.day_rank.member_fallback", tail=entity_id[-4:])
 
     @staticmethod
     async def _resolve_avatar(

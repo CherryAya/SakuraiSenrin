@@ -27,7 +27,7 @@ from src.repositories import member_repo
 from src.services.info import resolve_group_card, resolve_group_name
 
 from .database import water_repo
-from .image_models import (
+from .renderers.models import (
     WaterDayRankCardData,
     WaterGroupDailyRankCardItem,
     WaterGroupReportImageData,
@@ -36,7 +36,7 @@ from .image_models import (
     WaterProfileCardData,
     WaterRankCardItem,
 )
-from .image_primitives import (
+from .renderers.common import (
     SYS_FONT_NAME,
     WATER_THEME,
     build_avatar_fallback,
@@ -52,13 +52,13 @@ from .image_primitives import (
     short_exp,
     water_podium_themes,
 )
-from .rank_renderer import WaterRankRenderer
-from .profile_renderers import (
+from .renderers.rank import WaterRankRenderer
+from .renderers.profile import (
     build_my_water_fallback_text,
     build_my_water_image,
     build_my_water_simple_image,
 )
-from .report_renderers import (
+from .renderers.report import (
     build_water_group_report_image,
     build_water_period_rank_image,
 )
@@ -665,4 +665,3 @@ def _build_avatar_fallback(size: int, label: str, bg: str, fg: str) -> BuildImag
         font_families=[SYS_FONT_NAME],
     )
     return avatar
-
