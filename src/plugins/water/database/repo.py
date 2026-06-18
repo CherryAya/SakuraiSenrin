@@ -4,7 +4,6 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 import os
-from types import ModuleType
 import unicodedata
 
 import arrow
@@ -62,12 +61,6 @@ from .writers import water_writer
 SETTLEMENT_STALE_SECONDS = 60 * 30
 GLOBAL_EXP_DECAY_WEIGHTS = (1.0, 0.5, 0.2)
 SUMMARY_HOT_WINDOW_DAYS = 90
-
-
-def _repo_module() -> ModuleType:
-    from . import repo as repo_module
-
-    return repo_module
 
 
 class WaterRepository(
@@ -169,7 +162,6 @@ class WaterRepository(
         user_id: str | None = None,
         preserve_order: bool = True,
     ) -> list[WaterSummaryRecord]:
-        repo_module = _repo_module()
         month_keys = self._iter_month_keys(start_date, end_date)
 
         async def _query_for_key(shard_key: str) -> list[WaterSummaryRecord]:
@@ -178,9 +170,7 @@ class WaterRepository(
                 time_ctx=time_ctx,
                 cold_policy=ColdPolicy.HYDRATE,
             ) as session:
-                return await repo_module.WaterArchivedSummaryOps(
-                    session
-                ).get_summaries_in_window(
+                return await WaterArchivedSummaryOps(session).get_summaries_in_window(
                     start_date=start_date,
                     end_date=end_date,
                     group_ids=group_ids,
@@ -197,7 +187,6 @@ class WaterRepository(
         end_date: int,
         group_ids: list[str] | None = None,
     ) -> int | None:
-        repo_module = _repo_module()
         if end_date < 19000101:
             return None
         month_keys = self._iter_month_keys(19000101, end_date)
@@ -207,7 +196,7 @@ class WaterRepository(
                 time_ctx=time_ctx,
                 cold_policy=ColdPolicy.HYDRATE,
             ) as session:
-                first_date = await repo_module.WaterArchivedSummaryOps(
+                first_date = await WaterArchivedSummaryOps(
                     session
                 ).get_first_summary_record_date(group_ids=group_ids)
             if first_date is not None:

@@ -4,23 +4,25 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Sequence
 from heapq import nsmallest
 from time import perf_counter
-from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import arrow
 from sqlalchemy.engine.row import Row
 
+from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.water.services.rank_types import WaterRankScope, WaterRankSubject
 
 from .instances import water_core_db, water_message
+from .ops import WaterMessageOps, WaterSummaryOps
 from .types import WaterSummaryRecord
 from .writers import water_writer
 
 if TYPE_CHECKING:
+    from .repo import WaterRepository
     from .repo_models import (
         GlobalPeriodOverview,
         GlobalPeriodRankItem,
@@ -39,102 +41,22 @@ from .repo_models import (
 )
 
 
-def _repo_module() -> ModuleType:
-    from . import repo as repo_module
-
-    return repo_module
-
-
-class _WaterRepositoryRanksSupport:
-    async def get_summaries_in_window(
-        self,
-        start_date: int,
-        end_date: int,
-        *,
-        group_ids: list[str] | None = None,
-        user_id: str | None = None,
-        preserve_order: bool = True,
-    ) -> list["WaterSummaryRecord"]: ...
-
-    @staticmethod
-    def _build_period_aggregates(
-        summaries: Sequence["WaterSummaryRecord"],
-    ) -> dict[str, tuple[int, int, int, list[int]]]: ...
-
-    @staticmethod
-    def _sum_hourly(items: Sequence["WaterSummaryRecord"]) -> list[int]: ...
-
-    async def get_or_create_group_matrix_id(self, group_id: str) -> str: ...
-
-    async def get_or_create_group_matrix_ids(
-        self,
-        group_ids: list[str],
-    ) -> dict[str, str]: ...
-
-    async def get_groups_by_matrix_id(self, matrix_id: str) -> list[str]: ...
-
-    @staticmethod
-    def _hot_summary_start_date(today_ts: int | None = None) -> int: ...
-
-    async def _get_archived_first_summary_record_date(
-        self,
-        *,
-        end_date: int,
-        group_ids: list[str] | None = None,
-    ) -> int | None: ...
-
-    @staticmethod
-    def _previous_date(record_date: int) -> int: ...
-
-    @staticmethod
-    def _natural_rank_sort_key(
-        item: tuple[str, int, int, int, list[int], int] | tuple[str, int, int, int],
-    ) -> tuple[int, int, int, str]: ...
-
-    @classmethod
-    def _build_previous_rank_map(
-        cls,
-        aggregates: Mapping[str, tuple[int, int, int, list[int], int]]
-        | Mapping[str, tuple[int, int, int, list[int]]],
-        target_entity_ids: Sequence[str],
-    ) -> dict[str, int]: ...
-
-    @staticmethod
-    def _build_natural_overview_from_aggregates(
-        current_aggregates: Mapping[str, tuple[int, int, int, list[int], int]],
-        previous_aggregates: Mapping[str, tuple[int, int, int, list[int], int]],
-    ) -> "NaturalRankOverview": ...
-
-    @staticmethod
-    def _build_entity_period_aggregates(
-        summaries: Sequence["WaterSummaryRecord"],
-        entity_key_resolver: Callable[["WaterSummaryRecord"], str],
-    ) -> dict[str, tuple[int, int, int, list[int], int]]: ...
-
-
-if TYPE_CHECKING:
-    _WaterRepositoryRanksMixinBase = _WaterRepositoryRanksSupport
-else:
-    _WaterRepositoryRanksMixinBase = object
-
-
-class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
+class WaterRepositoryRanksMixin:
     async def get_today_leaderboard(
         self,
         group_id: str,
         limit: int = 20,
     ) -> list["RankItem"]:
-        repo_module = _repo_module()
         await water_writer.flush_now()
 
-        now = arrow.get(repo_module.get_current_time()).to("Asia/Shanghai")
+        now = arrow.get(get_current_time()).to("Asia/Shanghai")
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
         yesterday_int = int(now.shift(days=-1).format("YYYYMMDD"))
 
         async def _fetch_today() -> Sequence[Row[tuple[str, int]]]:
             async with water_message.read_session(time_ctx=now.datetime) as session:
-                return await repo_module.WaterMessageOps(session).get_top_users(
+                return await WaterMessageOps(session).get_top_users(
                     group_id,
                     start_ts,
                     end_ts,
@@ -143,7 +65,7 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
 
         async def _fetch_yesterday() -> dict[str, int]:
             async with water_core_db.session(commit=False) as session:
-                return await repo_module.WaterSummaryOps(session).get_ranks_by_date(
+                return await WaterSummaryOps(session).get_ranks_by_date(
                     group_id,
                     yesterday_int,
                 )
@@ -165,15 +87,14 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
         ]
 
     async def get_today_group_rank(self, group_id: str) -> int:
-        repo_module = _repo_module()
         await water_writer.flush_now()
 
-        now = arrow.get(repo_module.get_current_time()).to("Asia/Shanghai")
+        now = arrow.get(get_current_time()).to("Asia/Shanghai")
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 
         async with water_message.read_session(time_ctx=now.datetime) as session:
-            return await repo_module.WaterMessageOps(session).get_today_group_rank(
+            return await WaterMessageOps(session).get_today_group_rank(
                 group_id, start_ts, end_ts
             )
 
@@ -182,20 +103,19 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
         group_id: str,
         user_ids: list[str],
     ) -> dict[str, list[int]]:
-        repo_module = _repo_module()
         if not user_ids:
             return {}
 
         await water_writer.flush_now()
 
-        now = arrow.get(repo_module.get_current_time()).to("Asia/Shanghai")
+        now = arrow.get(get_current_time()).to("Asia/Shanghai")
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 
         async with water_message.read_session(time_ctx=now.datetime) as session:
-            raw_timestamps = await repo_module.WaterMessageOps(
-                session
-            ).get_users_timestamps(group_id, user_ids, start_ts, end_ts)
+            raw_timestamps = await WaterMessageOps(session).get_users_timestamps(
+                group_id, user_ids, start_ts, end_ts
+            )
 
         user_hourly: dict[str, list[int]] = defaultdict(lambda: [0] * 24)
         for uid, hour, msg_count in raw_timestamps:
@@ -214,13 +134,14 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
         previous_end_date: int,
         limit: int = 10,
     ) -> list["GlobalPeriodRankItem"]:
-        current_rows = await self.get_summaries_in_window(start_date, end_date)
-        previous_rows = await self.get_summaries_in_window(
+        repo_self = cast("WaterRepository", self)
+        current_rows = await repo_self.get_summaries_in_window(start_date, end_date)
+        previous_rows = await repo_self.get_summaries_in_window(
             previous_start_date,
             previous_end_date,
         )
-        current_aggregates = self._build_period_aggregates(current_rows)
-        previous_aggregates = self._build_period_aggregates(previous_rows)
+        current_aggregates = repo_self._build_period_aggregates(current_rows)
+        previous_aggregates = repo_self._build_period_aggregates(previous_rows)
         ordered_current = sorted(
             (
                 (
@@ -285,11 +206,12 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
         previous_start_date: int,
         previous_end_date: int,
     ) -> "GlobalPeriodOverview":
+        repo_self = cast("WaterRepository", self)
         current_rows, previous_rows = await asyncio.gather(
-            self.get_summaries_in_window(start_date, end_date),
-            self.get_summaries_in_window(previous_start_date, previous_end_date),
+            repo_self.get_summaries_in_window(start_date, end_date),
+            repo_self.get_summaries_in_window(previous_start_date, previous_end_date),
         )
-        current_hourly = self._sum_hourly(current_rows)
+        current_hourly = repo_self._sum_hourly(current_rows)
         previous_total = sum(int(row.msg_count) for row in previous_rows)
         return GlobalPeriodOverview(
             total_msg_count=sum(int(row.msg_count) for row in current_rows),
@@ -305,27 +227,27 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
         scope: WaterRankScope,
         group_id: str,
     ) -> int | None:
-        repo_module = _repo_module()
+        repo_self = cast("WaterRepository", self)
         group_ids: list[str] | None = None
         if scope == "group":
             group_ids = [group_id]
         elif scope == "matrix":
-            matrix_id = await self.get_or_create_group_matrix_id(group_id)
-            matrix_group_ids = await self.get_groups_by_matrix_id(matrix_id)
+            matrix_id = await repo_self.get_or_create_group_matrix_id(group_id)
+            matrix_group_ids = await repo_self.get_groups_by_matrix_id(matrix_id)
             group_ids = matrix_group_ids or [group_id]
 
-        hot_start_date = self._hot_summary_start_date()
-        first_archived_date = await self._get_archived_first_summary_record_date(
-            end_date=self._previous_date(hot_start_date),
+        hot_start_date = repo_self._hot_summary_start_date()
+        first_archived_date = await repo_self._get_archived_first_summary_record_date(
+            end_date=repo_self._previous_date(hot_start_date),
             group_ids=group_ids,
         )
         if first_archived_date is not None:
             return first_archived_date
 
         async with water_core_db.session(commit=False) as session:
-            return await repo_module.WaterSummaryOps(
-                session
-            ).get_first_summary_record_date(group_ids=group_ids)
+            return await WaterSummaryOps(session).get_first_summary_record_date(
+                group_ids=group_ids
+            )
 
     async def get_natural_period_leaderboard(
         self,
@@ -363,16 +285,17 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
         previous_end_date: int,
         limit: int = 10,
     ) -> "NaturalPeriodRankSnapshot":
+        repo_self = cast("WaterRepository", self)
         started = perf_counter()
         current_rows, previous_rows = await asyncio.gather(
-            self._resolve_rank_scope_summaries(
+            repo_self._resolve_rank_scope_summaries(
                 subject=subject,
                 scope=scope,
                 group_id=group_id,
                 start_date=start_date,
                 end_date=end_date,
             ),
-            self._resolve_rank_scope_summaries(
+            repo_self._resolve_rank_scope_summaries(
                 subject=subject,
                 scope=scope,
                 group_id=group_id,
@@ -380,7 +303,7 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
                 end_date=previous_end_date,
             ),
         )
-        snapshot = await self._build_natural_period_snapshot_from_rows(
+        snapshot = await repo_self._build_natural_period_snapshot_from_rows(
             subject=subject,
             current_rows=current_rows,
             previous_rows=previous_rows,
@@ -407,10 +330,11 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
         previous_rows: Sequence[WaterSummaryRecord],
         limit: int,
     ) -> "NaturalPeriodRankSnapshot":
-        current_aggregates = await self._build_rank_entity_aggregates(
+        repo_self = cast("WaterRepository", self)
+        current_aggregates = await repo_self._build_rank_entity_aggregates(
             subject, current_rows
         )
-        previous_aggregates = await self._build_rank_entity_aggregates(
+        previous_aggregates = await repo_self._build_rank_entity_aggregates(
             subject, previous_rows
         )
         ordered_current = nsmallest(
@@ -432,9 +356,9 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
                     group_count,
                 ) in current_aggregates.items()
             ),
-            key=self._natural_rank_sort_key,
+            key=repo_self._natural_rank_sort_key,
         )
-        previous_ranks = self._build_previous_rank_map(
+        previous_ranks = repo_self._build_previous_rank_map(
             previous_aggregates,
             [entity_id for entity_id, *_rest in ordered_current],
         )
@@ -462,7 +386,7 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
                 group_count,
             ) in enumerate(ordered_current, 1)
         ]
-        overview = self._build_natural_overview_from_aggregates(
+        overview = repo_self._build_natural_overview_from_aggregates(
             current_aggregates,
             previous_aggregates,
         )
@@ -498,21 +422,22 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
         subject: WaterRankSubject,
         summaries: Sequence[WaterSummaryRecord],
     ) -> dict[str, tuple[int, int, int, list[int], int]]:
+        repo_self = cast("WaterRepository", self)
         if subject == "user":
-            return self._build_entity_period_aggregates(
+            return repo_self._build_entity_period_aggregates(
                 summaries,
                 lambda item: item.user_id,
             )
         if subject == "group":
-            return self._build_entity_period_aggregates(
+            return repo_self._build_entity_period_aggregates(
                 summaries, lambda item: item.group_id
             )
         if not summaries:
             return {}
-        group_map = await self.get_or_create_group_matrix_ids(
+        group_map = await repo_self.get_or_create_group_matrix_ids(
             sorted({item.group_id for item in summaries})
         )
-        return self._build_entity_period_aggregates(
+        return repo_self._build_entity_period_aggregates(
             summaries, lambda item: group_map.get(item.group_id, item.group_id)
         )
 
@@ -525,10 +450,11 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
         start_date: int,
         end_date: int,
     ) -> list[WaterSummaryRecord]:
+        repo_self = cast("WaterRepository", self)
         started = perf_counter()
         _ = subject
         if scope == "global":
-            rows = await self.get_summaries_in_window(
+            rows = await repo_self.get_summaries_in_window(
                 start_date,
                 end_date,
                 preserve_order=False,
@@ -544,7 +470,7 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
             )
             return rows
         if scope == "group":
-            rows = await self.get_summaries_in_window(
+            rows = await repo_self.get_summaries_in_window(
                 start_date,
                 end_date,
                 group_ids=[group_id],
@@ -561,11 +487,11 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
                 (perf_counter() - started) * 1000,
             )
             return rows
-        matrix_id = await self.get_or_create_group_matrix_id(group_id)
-        matrix_group_ids = await self.get_groups_by_matrix_id(matrix_id)
+        matrix_id = await repo_self.get_or_create_group_matrix_id(group_id)
+        matrix_group_ids = await repo_self.get_groups_by_matrix_id(matrix_id)
         if not matrix_group_ids:
             matrix_group_ids = [group_id]
-        rows = await self.get_summaries_in_window(
+        rows = await repo_self.get_summaries_in_window(
             start_date,
             end_date,
             group_ids=matrix_group_ids,

@@ -4,25 +4,27 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Sequence
 from heapq import nsmallest
 from time import perf_counter
-from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import arrow
 from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.connectors import ColdPolicy
+from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.water.services.rank_types import WaterRankScope, WaterRankSubject
 
 from .instances import water_message
+from .ops import WaterMessageOps
 from .types import WaterSummaryRecord
 from .writers import water_writer
 
 if TYPE_CHECKING:
+    from .repo import WaterRepository
     from .repo_models import (
         NaturalPeriodRankSnapshot,
         NaturalRankOverview,
@@ -41,79 +43,7 @@ from .repo_models import (
 )
 
 
-def _repo_module() -> ModuleType:
-    from . import repo as repo_module
-
-    return repo_module
-
-
-class _WaterRepositoryReportsSupport:
-    async def get_summaries_in_window(
-        self,
-        start_date: int,
-        end_date: int,
-        *,
-        group_ids: list[str] | None = None,
-        user_id: str | None = None,
-        preserve_order: bool = True,
-    ) -> list[WaterSummaryRecord]: ...
-
-    async def get_or_create_group_matrix_id(self, group_id: str) -> str: ...
-
-    async def get_groups_by_matrix_id(self, matrix_id: str) -> list[str]: ...
-
-    @staticmethod
-    def _previous_date(record_date: int) -> int: ...
-
-    @staticmethod
-    def _natural_rank_sort_key(
-        item: tuple[str, int, int, int, list[int], int] | tuple[str, int, int, int],
-    ) -> tuple[int, int, int, str]: ...
-
-    @classmethod
-    def _build_previous_rank_map(
-        cls,
-        aggregates: Mapping[str, tuple[int, int, int, list[int], int]]
-        | Mapping[str, tuple[int, int, int, list[int]]],
-        target_entity_ids: Sequence[str],
-    ) -> dict[str, int]: ...
-
-    @staticmethod
-    def _build_entity_period_aggregates(
-        summaries: Sequence[WaterSummaryRecord],
-        entity_key_resolver: Callable[[WaterSummaryRecord], str],
-    ) -> dict[str, tuple[int, int, int, list[int], int]]: ...
-
-    @staticmethod
-    def _sum_hourly(items: Sequence[WaterSummaryRecord]) -> list[int]: ...
-
-    async def _build_natural_period_snapshot_from_rows(
-        self,
-        *,
-        subject: WaterRankSubject,
-        current_rows: Sequence[WaterSummaryRecord],
-        previous_rows: Sequence[WaterSummaryRecord],
-        limit: int,
-    ) -> "NaturalPeriodRankSnapshot": ...
-
-    async def _resolve_rank_scope_summaries(
-        self,
-        *,
-        subject: WaterRankSubject,
-        scope: WaterRankScope,
-        group_id: str,
-        start_date: int,
-        end_date: int,
-    ) -> list[WaterSummaryRecord]: ...
-
-
-if TYPE_CHECKING:
-    _WaterRepositoryReportsMixinBase = _WaterRepositoryReportsSupport
-else:
-    _WaterRepositoryReportsMixinBase = object
-
-
-class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
+class WaterRepositoryReportsMixin:
     async def get_natural_day_snapshot(
         self,
         *,
@@ -122,24 +52,24 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         group_id: str,
         limit: int = 10,
     ) -> "NaturalPeriodRankSnapshot":
-        repo_module = _repo_module()
+        repo_self = cast("WaterRepository", self)
         started = perf_counter()
         await water_writer.flush_now()
-        now = arrow.get(repo_module.get_current_time()).to("Asia/Shanghai")
+        now = arrow.get(get_current_time()).to("Asia/Shanghai")
         record_date = int(now.format("YYYYMMDD"))
         current_rows, previous_rows = await asyncio.gather(
-            self._collect_realtime_daily_rows(
+            repo_self._collect_realtime_daily_rows(
                 scope=scope,
                 group_id=group_id,
                 record_date=record_date,
             ),
-            self._resolve_previous_day_rows(
+            repo_self._resolve_previous_day_rows(
                 scope=scope,
                 group_id=group_id,
                 record_date=record_date,
             ),
         )
-        snapshot = await self._build_natural_period_snapshot_from_rows(
+        snapshot = await repo_self._build_natural_period_snapshot_from_rows(
             subject=subject,
             current_rows=current_rows,
             previous_rows=previous_rows,
@@ -196,14 +126,15 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         min_activity_score: int,
         working_group_ids: Sequence[str],
     ) -> list["WaterDailyReportCandidate"]:
+        repo_self = cast("WaterRepository", self)
         if not working_group_ids:
             return []
-        rows = await self.get_summaries_in_window(
+        rows = await repo_self.get_summaries_in_window(
             record_date,
             record_date,
             group_ids=list(working_group_ids),
         )
-        aggregates = self._build_entity_period_aggregates(
+        aggregates = repo_self._build_entity_period_aggregates(
             rows,
             lambda item: item.group_id,
         )
@@ -248,17 +179,18 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         record_date: int,
         limit: int = 10,
     ) -> "WaterGroupReportSnapshot | None":
+        repo_self = cast("WaterRepository", self)
         current_rows, previous_rows = await asyncio.gather(
-            self.get_summaries_in_window(
+            repo_self.get_summaries_in_window(
                 record_date, record_date, group_ids=[group_id]
             ),
-            self.get_summaries_in_window(
-                self._previous_date(record_date),
-                self._previous_date(record_date),
+            repo_self.get_summaries_in_window(
+                repo_self._previous_date(record_date),
+                repo_self._previous_date(record_date),
                 group_ids=[group_id],
             ),
         )
-        return self._build_group_report_snapshot_from_rows(
+        return repo_self._build_group_report_snapshot_from_rows(
             group_id=group_id,
             record_date=record_date,
             current_rows=current_rows,
@@ -273,23 +205,23 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         now_ts: int | None = None,
         limit: int = 10,
     ) -> "WaterGroupReportSnapshot | None":
+        repo_self = cast("WaterRepository", self)
         await water_writer.flush_now()
-        repo_module = _repo_module()
-        now = arrow.get(now_ts or repo_module.get_current_time()).to("Asia/Shanghai")
+        now = arrow.get(now_ts or get_current_time()).to("Asia/Shanghai")
         record_date = int(now.format("YYYYMMDD"))
         current_rows, previous_rows = await asyncio.gather(
-            self._collect_realtime_daily_rows(
+            repo_self._collect_realtime_daily_rows(
                 scope="group",
                 group_id=group_id,
                 record_date=record_date,
             ),
-            self.get_summaries_in_window(
-                self._previous_date(record_date),
-                self._previous_date(record_date),
+            repo_self.get_summaries_in_window(
+                repo_self._previous_date(record_date),
+                repo_self._previous_date(record_date),
                 group_ids=[group_id],
             ),
         )
-        return self._build_group_report_snapshot_from_rows(
+        return repo_self._build_group_report_snapshot_from_rows(
             group_id=group_id,
             record_date=record_date,
             current_rows=current_rows,
@@ -304,12 +236,13 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         record_date: int,
         radius: int = 2,
     ) -> "WaterGroupDailyRankSnapshot | None":
-        previous_date = self._previous_date(record_date)
+        repo_self = cast("WaterRepository", self)
+        previous_date = repo_self._previous_date(record_date)
         current_rows, previous_rows = await asyncio.gather(
-            self.get_summaries_in_window(record_date, record_date),
-            self.get_summaries_in_window(previous_date, previous_date),
+            repo_self.get_summaries_in_window(record_date, record_date),
+            repo_self.get_summaries_in_window(previous_date, previous_date),
         )
-        return self._build_group_daily_rank_snapshot_from_rows(
+        return repo_self._build_group_daily_rank_snapshot_from_rows(
             focus_group_id=group_id,
             record_date=record_date,
             current_rows=current_rows,
@@ -326,13 +259,14 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         previous_rows: Sequence[WaterSummaryRecord],
         limit: int,
     ) -> "WaterGroupReportSnapshot | None":
+        repo_self = cast("WaterRepository", self)
         if not current_rows:
             return None
-        current_aggregates = self._build_entity_period_aggregates(
+        current_aggregates = repo_self._build_entity_period_aggregates(
             current_rows,
             lambda item: item.user_id,
         )
-        previous_aggregates = self._build_entity_period_aggregates(
+        previous_aggregates = repo_self._build_entity_period_aggregates(
             previous_rows,
             lambda item: item.user_id,
         )
@@ -355,9 +289,9 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
                     group_count,
                 ) in current_aggregates.items()
             ),
-            key=self._natural_rank_sort_key,
+            key=repo_self._natural_rank_sort_key,
         )
-        previous_ranks = self._build_previous_rank_map(
+        previous_ranks = repo_self._build_previous_rank_map(
             previous_aggregates,
             [user_id for user_id, *_rest in ordered_current],
         )
@@ -383,8 +317,8 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
                 _group_count,
             ) in enumerate(ordered_current, 1)
         ]
-        current_hourly = self._sum_hourly(current_rows)
-        previous_hourly = self._sum_hourly(previous_rows)
+        current_hourly = repo_self._sum_hourly(current_rows)
+        previous_hourly = repo_self._sum_hourly(previous_rows)
         return WaterGroupReportSnapshot(
             group_id=group_id,
             record_date=record_date,
@@ -408,10 +342,11 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         previous_rows: Sequence[WaterSummaryRecord],
         radius: int,
     ) -> "WaterGroupDailyRankSnapshot | None":
+        repo_self = cast("WaterRepository", self)
         if not current_rows:
             return None
 
-        current_aggregates = self._build_entity_period_aggregates(
+        current_aggregates = repo_self._build_entity_period_aggregates(
             current_rows,
             lambda item: item.group_id,
         )
@@ -427,7 +362,7 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
             for hour, count in enumerate(row.hourly_counts):
                 hourly_counts[hour] += int(count)
 
-        previous_aggregates = self._build_entity_period_aggregates(
+        previous_aggregates = repo_self._build_entity_period_aggregates(
             previous_rows,
             lambda item: item.group_id,
         )
@@ -450,37 +385,39 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
                     group_count,
                 ) in current_aggregates.items()
             ),
-            key=self._natural_rank_sort_key,
+            key=repo_self._natural_rank_sort_key,
         )
-        previous_ranks = self._build_previous_rank_map(
+        previous_ranks = repo_self._build_previous_rank_map(
             previous_aggregates,
             [entity_id for entity_id, *_rest in ordered_current],
         )
-        items = [
-            WaterGroupDailyRankItem(
-                group_id=entity_id,
-                msg_count=msg_count,
-                active_user_count=len(group_active_users.get(entity_id, set())),
-                active_hours=sum(
-                    1 for count in group_hourly_counts.get(entity_id, [0] * 24) if count
-                ),
-                hourly_counts=group_hourly_counts.get(entity_id, hourly_counts),
-                current_rank=current_rank,
-                trend=(
-                    previous_ranks[entity_id] - current_rank
-                    if entity_id in previous_ranks
-                    else None
-                ),
+        items: list[WaterGroupDailyRankItem] = []
+        for current_rank, (
+            entity_id,
+            msg_count,
+            _active_days,
+            _active_hours,
+            aggregate_hourly_counts,
+            _group_count,
+        ) in enumerate(ordered_current, 1):
+            entity_hourly_counts = group_hourly_counts.get(
+                entity_id, aggregate_hourly_counts
             )
-            for current_rank, (
-                entity_id,
-                msg_count,
-                _active_days,
-                _active_hours,
-                hourly_counts,
-                _group_count,
-            ) in enumerate(ordered_current, 1)
-        ]
+            items.append(
+                WaterGroupDailyRankItem(
+                    group_id=entity_id,
+                    msg_count=msg_count,
+                    active_user_count=len(group_active_users.get(entity_id, set())),
+                    active_hours=sum(1 for count in entity_hourly_counts if count),
+                    hourly_counts=entity_hourly_counts,
+                    current_rank=current_rank,
+                    trend=(
+                        previous_ranks[entity_id] - current_rank
+                        if entity_id in previous_ranks
+                        else None
+                    ),
+                )
+            )
         focus_index = next(
             (
                 index
@@ -513,7 +450,7 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         group_id: str,
         record_date: int,
     ) -> list[WaterSummaryRecord]:
-        repo_module = _repo_module()
+        repo_self = cast("WaterRepository", self)
         started = perf_counter()
         now = arrow.get(str(record_date), "YYYYMMDD").to("Asia/Shanghai")
         start_ts = now.floor("day").int_timestamp
@@ -522,16 +459,16 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         async def _stats_in_shard(
             session: AsyncSession,
         ) -> Sequence[Row[tuple[str, str, int, int]]]:
-            return await repo_module.WaterMessageOps(session).aggregate_daily_stats(
+            return await WaterMessageOps(session).aggregate_daily_stats(
                 start_ts, end_ts
             )
 
         async def _hourly_in_shard(
             session: AsyncSession,
         ) -> Sequence[tuple[str, str, int, int]]:
-            return await repo_module.WaterMessageOps(
-                session
-            ).aggregate_daily_hourly_stats(start_ts, end_ts)
+            return await WaterMessageOps(session).aggregate_daily_hourly_stats(
+                start_ts, end_ts
+            )
 
         stats_per_shard = await water_message.map_reduce(
             now.datetime,
@@ -549,8 +486,8 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         if scope == "group":
             allowed_group_ids = {group_id}
         elif scope == "matrix":
-            matrix_id = await self.get_or_create_group_matrix_id(group_id)
-            group_ids = await self.get_groups_by_matrix_id(matrix_id)
+            matrix_id = await repo_self.get_or_create_group_matrix_id(group_id)
+            group_ids = await repo_self.get_groups_by_matrix_id(matrix_id)
             allowed_group_ids = set(group_ids or [group_id])
 
         merged_stats: dict[tuple[str, str], tuple[int, int]] = {}
@@ -615,8 +552,9 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         group_id: str,
         record_date: int,
     ) -> list[WaterSummaryRecord]:
-        previous_date = self._previous_date(record_date)
-        return await self._resolve_rank_scope_summaries(
+        repo_self = cast("WaterRepository", self)
+        previous_date = repo_self._previous_date(record_date)
+        return await repo_self._resolve_rank_scope_summaries(
             subject="user",
             scope=scope,
             group_id=group_id,
