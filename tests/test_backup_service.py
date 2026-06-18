@@ -382,8 +382,7 @@ async def test_backup_service_streams_restic_output_in_real_time(
     assert result.restic_snapshot_id == "snap123"
     assert sum("progress=50.0%" in chunk for chunk in stdout_writes) == 1
     assert any(
-        chunk.startswith("\r\033[2K[Backup] restic status")
-        for chunk in stdout_writes
+        chunk.startswith("\r\033[2K[Backup] restic status") for chunk in stdout_writes
     )
     assert any("snapshot=snap123" in message for message in info_logs)
     assert warning_logs == ["[Backup] pruning old snapshots"]

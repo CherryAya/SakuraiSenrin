@@ -6,9 +6,8 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from importlib import import_module
-from pathlib import Path
 import os
-import re
+from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
 from markdown_it.token import Token
@@ -17,8 +16,6 @@ from nonebot.plugin import PluginMetadata
 from src.database.core.consts import Permission
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-
-from src.lib.consts import TriggerType
 
 DEFAULT_HELP_CATEGORY = "general"
 

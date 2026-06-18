@@ -16,7 +16,6 @@ from src.plugins.wordbank.database.types import WordbankImageRecord
 from src.plugins.wordbank.debug import log_perf, perf_start
 
 from .media_models import (
-    CanonicalImageMatch,
     DEFAULT_CACHE_MAX_BYTES,
     DEFAULT_CACHE_MAX_FILES,
     DEFAULT_CACHE_TRIM_TO_BYTES,
@@ -25,11 +24,12 @@ from .media_models import (
     DEFAULT_MEDIA_ROOT,
     IMAGE_HASH_VERSION,
     IMAGE_SEARCH_DISTANCE_THRESHOLD,
-    MediaError,
-    PreparedImage,
     REMOTE_SYNC_FAILED,
     REMOTE_SYNC_PENDING,
     REMOTE_SYNC_SYNCED,
+    CanonicalImageMatch,
+    MediaError,
+    PreparedImage,
     content_type_from_extension,
     default_cache_root_for,
     extension_from_storage_path,
@@ -68,7 +68,11 @@ class WordbankMediaService(WordbankMediaRuntimeMixin):
         similarity_threshold: int = 8,
         candidate_limit: int = 128,
     ) -> None:
-        if storage is not None and remote_storage is None and hasattr(storage, "save_prepared_image"):
+        if (
+            storage is not None
+            and remote_storage is None
+            and hasattr(storage, "save_prepared_image")
+        ):
             remote_storage = cast(ObjectStorageWordbankMediaStorage, storage)
             fallback = getattr(storage, "fallback", None)
             if legacy_storage is None and fallback is not None:
@@ -132,7 +136,10 @@ class WordbankMediaService(WordbankMediaRuntimeMixin):
         )
         candidate_lookup_ms = perf_start() - candidate_lookup_start
         for candidate in candidates:
-            if hamming_distance(fingerprint.dhash, candidate.dhash) <= self.similarity_threshold:
+            if (
+                hamming_distance(fingerprint.dhash, candidate.dhash)
+                <= self.similarity_threshold
+            ):
                 canonical_id = candidate.canonical_id
                 break
 
@@ -236,9 +243,13 @@ class WordbankMediaService(WordbankMediaRuntimeMixin):
         create_ms = (perf_start() - create_start) * 1000
         self._cache_image(image)
         if self.prewarm_local_cache and self.cache_storage.enabled:
-            image = await self._store_cache_bytes(image, prepared.stored_media.data, mark_as_hit=False)
+            image = await self._store_cache_bytes(
+                image, prepared.stored_media.data, mark_as_hit=False
+            )
         if remote_sync_deferred:
-            self._schedule_background_remote_sync(image, prepared=prepared, keep_original=keep_original)
+            self._schedule_background_remote_sync(
+                image, prepared=prepared, keep_original=keep_original
+            )
         log_perf(
             "media.ingest_image_bytes.done",
             start=start,
@@ -321,7 +332,11 @@ class WordbankMediaService(WordbankMediaRuntimeMixin):
             )
             return
 
-        storage_path = image.storage_path if image.storage_path and not is_remote_uri(image.storage_path) else stored.uri
+        storage_path = (
+            image.storage_path
+            if image.storage_path and not is_remote_uri(image.storage_path)
+            else stored.uri
+        )
         updated = await self.repository.update_image_remote_sync(
             image.id,
             remote_storage_path=stored.uri,
@@ -346,7 +361,6 @@ class WordbankMediaService(WordbankMediaRuntimeMixin):
 
 
 __all__ = [
-    "CanonicalImageMatch",
     "DEFAULT_CACHE_MAX_BYTES",
     "DEFAULT_CACHE_MAX_FILES",
     "DEFAULT_CACHE_TRIM_TO_BYTES",
@@ -355,6 +369,7 @@ __all__ = [
     "DEFAULT_MEDIA_ROOT",
     "IMAGE_HASH_VERSION",
     "IMAGE_SEARCH_DISTANCE_THRESHOLD",
+    "CanonicalImageMatch",
     "LocalCacheEntry",
     "LocalLruCacheWordbankMediaStorage",
     "LocalWordbankMediaStorage",

@@ -4,15 +4,14 @@ from __future__ import annotations
 
 from src.database.core.consts import Permission
 from src.lib.i18n.types import LocaleCode
-
-from ..copy import (
+from src.lib.plugin_docs.command_layout import normalize_inline_text
+from src.lib.plugin_docs.copy import (
     build_static_entry_copy_text,
     feature_command_for_display,
     feature_demo_help_command,
 )
-from ..meta import support_note
-from ..models import DocNode, FeatureDoc, PluginDocBundle
-from ..command_layout import normalize_inline_text
+from src.lib.plugin_docs.meta import support_note
+from src.lib.plugin_docs.models import DocNode, FeatureDoc, PluginDocBundle
 
 
 def permission_label(permission: Permission) -> str:

@@ -6,7 +6,11 @@ from sqlalchemy import text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.utils.common import get_current_time
-from src.plugins.wordbank.message_model import MessageShape, fingerprint_shape, shape_to_payload
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    fingerprint_shape,
+    shape_to_payload,
+)
 
 from .instances import (
     wordbank_log_db,

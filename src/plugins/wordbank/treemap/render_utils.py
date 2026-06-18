@@ -45,7 +45,9 @@ class SearchTreemapRenderUtilsMixin:
         has_image_preview: bool,
     ) -> str:
         candidate = _IMAGE_PLACEHOLDER_RE.sub(" ", text) if has_image_preview else text
-        cleaned = " ".join(part.strip() for part in candidate.splitlines() if part.strip())
+        cleaned = " ".join(
+            part.strip() for part in candidate.splitlines() if part.strip()
+        )
         if cleaned:
             return cleaned
         if has_image_preview:
@@ -98,16 +100,22 @@ class SearchTreemapRenderUtilsMixin:
         return f"{candidate}..." if candidate else "..."
 
     def _line_height(self, font: Any) -> int:
-        bbox = ImageDraw.Draw(Image.new("RGB", (10, 10))).textbbox((0, 0), "Ag", font=font)
+        bbox = ImageDraw.Draw(Image.new("RGB", (10, 10))).textbbox(
+            (0, 0), "Ag", font=font
+        )
         return int(bbox[3] - bbox[1] + 4)
 
     def _text_width(self, text: str, font: Any) -> int:
-        return int(ImageDraw.Draw(Image.new("RGB", (10, 10))).textlength(text, font=font))
+        return int(
+            ImageDraw.Draw(Image.new("RGB", (10, 10))).textlength(text, font=font)
+        )
 
     def _load_maple_font(self: Any, size: int) -> Any:
         if size not in self._maple_font_cache:
             try:
-                self._maple_font_cache[size] = ImageFont.truetype(self._maple_font_path, size)
+                self._maple_font_cache[size] = ImageFont.truetype(
+                    self._maple_font_path, size
+                )
             except Exception:
                 self._maple_font_cache[size] = ImageFont.load_default()
         return self._maple_font_cache[size]
@@ -115,7 +123,9 @@ class SearchTreemapRenderUtilsMixin:
     def _load_lxgw_font(self: Any, size: int) -> Any:
         if size not in self._lxgw_font_cache:
             try:
-                self._lxgw_font_cache[size] = ImageFont.truetype(self._lxgw_font_path, size)
+                self._lxgw_font_cache[size] = ImageFont.truetype(
+                    self._lxgw_font_path, size
+                )
             except Exception:
                 self._lxgw_font_cache[size] = ImageFont.load_default()
         return self._lxgw_font_cache[size]

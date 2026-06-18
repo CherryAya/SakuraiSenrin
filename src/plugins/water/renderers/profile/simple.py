@@ -14,11 +14,16 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
 from src.logger import logger
+from src.plugins.water.renderers.common import (
+    SYS_FONT_NAME,
+    WATER_THEME,
+    draw_gloss_lines,
+    draw_progress_bar,
+)
+from src.plugins.water.renderers.models import WaterProfileCardData
 from src.repositories import member_repo
 from src.services.info import resolve_group_card
 
-from ..models import WaterProfileCardData
-from ..common import SYS_FONT_NAME, WATER_THEME, draw_gloss_lines, draw_progress_bar
 from .shared import (
     build_copyright_text,
     format_profile_exp,
@@ -260,8 +265,12 @@ async def build_my_water_simple_image(
             if data.matrix_level is not None
             else 0.0
         )
-        global_text = format_profile_exp(global_exp) if data.global_level is not None else "-"
-        matrix_text = format_profile_exp(matrix_exp) if data.matrix_level is not None else "-"
+        global_text = (
+            format_profile_exp(global_exp) if data.global_level is not None else "-"
+        )
+        matrix_text = (
+            format_profile_exp(matrix_exp) if data.matrix_level is not None else "-"
+        )
 
         for idx, (label, value, ratio, bg, fg) in enumerate(
             [

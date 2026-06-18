@@ -14,6 +14,16 @@ from src.plugins.wordbank.services.media import (
     R2WordbankMediaStorage,
     WordbankMediaService,
 )
+from src.plugins.wordbank.services.presentation import (
+    WordbankAddResult,
+    WordbankLeaderboardCardData,
+    WordbankLeaderboardCardItem,
+    format_add_result,
+    format_creator_leaderboard,
+    format_pending_items,
+    format_response_summary,
+    format_search_items,
+)
 
 
 def _build_wordbank_media_service() -> WordbankMediaService:
@@ -56,8 +66,16 @@ __all__ = [
     "LocalWordbankMediaStorage",
     "ObjectStorageWordbankMediaStorage",
     "R2WordbankMediaStorage",
+    "WordbankAddResult",
+    "WordbankLeaderboardCardData",
+    "WordbankLeaderboardCardItem",
     "WordbankMediaService",
     "WordbankService",
+    "format_add_result",
+    "format_creator_leaderboard",
+    "format_pending_items",
+    "format_response_summary",
+    "format_search_items",
     "wordbank_media_service",
     "wordbank_service",
 ]

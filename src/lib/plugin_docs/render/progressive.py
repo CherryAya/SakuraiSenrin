@@ -13,16 +13,16 @@ from PIL import Image, ImageDraw
 
 from src.lib.demo_theme import SENRIN_V3_THEME, get_demo_theme
 from src.lib.i18n.types import LocaleCode
-from src.lib.utils.common import get_current_time
-
-from ..command_layout import (
+from src.lib.plugin_docs.command_layout import (
     CommandLayout,
     CommandPalette,
     InlineTextSpan,
     build_command_layout,
     split_inline_text_spans,
 )
-from ..models import DocNode, FeatureDoc, HelpDashboardSection
+from src.lib.plugin_docs.models import DocNode, FeatureDoc, HelpDashboardSection
+from src.lib.utils.common import get_current_time
+
 from .demo import DemoImageRenderer, _ShowcaseNoteItem, _ShowcaseTurnPlacement
 from .helpers import (
     build_static_entry_copy,
@@ -30,6 +30,7 @@ from .helpers import (
     feature_demo_help_command,
     permission_label,
 )
+
 
 @dataclass(slots=True, frozen=True)
 class _DashboardCardLayout:

@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from nonebot.adapters.onebot.v11.message import Message
-from src.lib.i18n.runtime import tr
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 
@@ -52,7 +52,10 @@ def wordbank_error_feature(exc: Exception, default_feature: str | None) -> str |
         return "search"
     if key == "wordbank.reply.group_command_invalid":
         return default_feature or "reply-shortcut"
-    if key.startswith("wordbank.error.scope_") or key == "wordbank.error.guided_scope_invalid":
+    if (
+        key.startswith("wordbank.error.scope_")
+        or key == "wordbank.error.guided_scope_invalid"
+    ):
         return "add-scope"
     if "probability" in key:
         return "add-prob"

@@ -75,6 +75,7 @@ extend-select = ["TID251"]
 "datetime.date.today".msg = "禁止直接获取日期，请统一使用 get_current_time()"
 "time.time".msg = "禁止直接获取时间戳，请统一使用 get_current_time()"
 "arrow.now".msg = "禁止直接调用 arrow.now，请统一使用 get_current_time()"
+"arrow.utcnow".msg = "禁止直接调用 arrow.utcnow，请统一使用 get_current_time()"
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
@@ -83,6 +84,11 @@ extra-standard-library = ["typing_extensions"]
 [tool.ruff.lint.per-file-ignores]
 "src/locales/*.py" = ["E501"]
 "src/lib/i18n/keys.py" = ["E501"]
+"tests/test_plugin_docs_*.py" = ["F403", "F405"]
+"tests/plugins/wordbank/test_media_*.py" = ["F403", "F405"]
+"tests/plugins/wordbank/test_migration_*.py" = ["F403", "F405"]
+"tests/plugins/wordbank/test_repository_*.py" = ["F403", "F405"]
+"tests/plugins/water/test_repository_edges_part*.py" = ["F403", "F405", "PYI036"]
 
 [tool.ruff.lint.flake8-pytest-style]
 fixture-parentheses = false

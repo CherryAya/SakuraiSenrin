@@ -1,55 +1,52 @@
 """Stable public facade for plugin docs helpers."""
 
-from .collection import (
-    DemoCollectionJob,
-    DemoCollectionRenderer,
-    DemoCollectionTile,
-    render_collection_png,
-)
-from ._engine import (
-    DemoImageRenderer,
-    DocNode,
-    DocsDemoTurn,
-    DocsMeta,
-    DocsRenderContext,
-    FeatureDoc,
-    HelpDashboardSection,
-    InlineTextSpan,
-    PluginDocBundle,
-    ProgressiveDisclosureRenderer,
-    VirtualFeatureDocSpec,
-    VirtualPluginDocSpec,
-    _support_note,
-    audit_demo_layout,
-    build_command_layout,
-    build_doc_demo_message,
-    build_doc_tree,
-    build_feature_copy_text,
-    build_plugin_guide_copy_text,
-    build_readme_docs,
-    build_simple_leaf_copy_text,
-    build_static_entry_copy_text,
-    build_virtual_plugin_doc_bundle,
-    can_view_node,
-    collection_demo_filename,
-    create_docs_meta,
-    feature_demo_help_command,
-    filter_features_by_permission,
-    load_doc_node,
-    load_plugin_doc_bundle,
-    load_representative_demo_bytes,
-    load_virtual_doc_node,
-    match_doc_node,
-    match_feature,
-    read_docs_metas,
-    render_demo_png,
-    render_doc_node_overview,
-    render_feature_deep_dive,
-    render_help_dashboard,
-    render_plugin_guide,
-    render_static_entry,
-    resolve_help_entry_shape,
-    should_prefer_collection_demo,
-    split_features_for_disclosure,
-    split_inline_text_spans,
-)
+from ._engine import DemoImageRenderer as DemoImageRenderer
+from ._engine import DocNode as DocNode
+from ._engine import DocsDemoTurn as DocsDemoTurn
+from ._engine import DocsMeta as DocsMeta
+from ._engine import DocsRenderContext as DocsRenderContext
+from ._engine import FeatureDoc as FeatureDoc
+from ._engine import HelpDashboardSection as HelpDashboardSection
+from ._engine import InlineTextSpan as InlineTextSpan
+from ._engine import PluginDocBundle as PluginDocBundle
+from ._engine import ProgressiveDisclosureRenderer as ProgressiveDisclosureRenderer
+from ._engine import VirtualPluginDocSpec as VirtualPluginDocSpec
+from ._engine import _support_note as _support_note
+from ._engine import audit_demo_layout as audit_demo_layout
+from ._engine import build_command_layout as build_command_layout
+from ._engine import build_doc_demo_message as build_doc_demo_message
+from ._engine import build_doc_tree as build_doc_tree
+from ._engine import build_feature_copy_text as build_feature_copy_text
+from ._engine import build_plugin_guide_copy_text as build_plugin_guide_copy_text
+from ._engine import build_readme_docs as build_readme_docs
+from ._engine import build_simple_leaf_copy_text as build_simple_leaf_copy_text
+from ._engine import build_static_entry_copy_text as build_static_entry_copy_text
+from ._engine import build_virtual_plugin_doc_bundle as build_virtual_plugin_doc_bundle
+from ._engine import can_view_node as can_view_node
+from ._engine import collection_demo_filename as collection_demo_filename
+from ._engine import create_docs_meta as create_docs_meta
+from ._engine import filter_features_by_permission as filter_features_by_permission
+from ._engine import load_doc_node as load_doc_node
+from ._engine import load_plugin_doc_bundle as load_plugin_doc_bundle
+from ._engine import load_representative_demo_bytes as load_representative_demo_bytes
+from ._engine import load_virtual_doc_node as load_virtual_doc_node
+from ._engine import match_doc_node as match_doc_node
+from ._engine import match_feature as match_feature
+from ._engine import read_docs_metas as read_docs_metas
+from ._engine import render_demo_png as render_demo_png
+from ._engine import render_doc_node_overview as render_doc_node_overview
+from ._engine import render_feature_deep_dive as render_feature_deep_dive
+from ._engine import render_help_dashboard as render_help_dashboard
+from ._engine import render_plugin_guide as render_plugin_guide
+from ._engine import render_static_entry as render_static_entry
+from ._engine import resolve_help_entry_shape as resolve_help_entry_shape
+from ._engine import should_prefer_collection_demo as should_prefer_collection_demo
+from ._engine import split_features_for_disclosure as split_features_for_disclosure
+from ._engine import split_inline_text_spans as split_inline_text_spans
+from .collection import DemoCollectionJob as DemoCollectionJob
+from .collection import DemoCollectionRenderer as DemoCollectionRenderer
+from .collection import DemoCollectionTile as DemoCollectionTile
+from .collection import render_collection_png as render_collection_png
+from .command_layout import CommandPalette as CommandPalette
+from .copy import feature_demo_help_command as feature_demo_help_command
+from .models import VirtualFeatureDocSpec as VirtualFeatureDocSpec

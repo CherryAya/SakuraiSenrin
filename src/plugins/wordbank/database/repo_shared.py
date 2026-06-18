@@ -148,10 +148,10 @@ def search_preview_responses(
 
 
 __all__ = [
-    "GroupBundle",
     "_SEARCH_PREVIEW_LIMIT",
     "_SEARCH_RESULT_CANDIDATE_MULTIPLIER",
     "_SEARCH_RESULT_MIN_CANDIDATES",
+    "GroupBundle",
     "build_fts_query",
     "condensed_search_text",
     "decode_group_ids",

@@ -34,9 +34,7 @@ _ensure_pkg(
 )
 _ensure_pkg("src.lib.object_storage", ROOT / "src" / "lib" / "object_storage")
 
-from src.logger import logger
-from src.plugins.wordbank.database.repo import WordbankRepository
-from src.plugins.wordbank.migration import (
+from scripts.migrations.wordbank import (
     LegacyImageCatalog,
     LegacyMigrationProgressCallback,
     LegacyPgConfig,
@@ -48,6 +46,8 @@ from src.plugins.wordbank.migration import (
     migrate_legacy_wordbank,
     rebuild_legacy_rows_from_failure_details,
 )
+from src.logger import logger
+from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.services.media import WordbankMediaService
 
 
@@ -362,7 +362,7 @@ def _build_append_image_catalog(
     image_root: Path,
     mapping_path: Path | None,
 ) -> LegacyImageCatalog:
-    from src.plugins.wordbank.migration import build_legacy_image_catalog
+    from scripts.migrations.wordbank import build_legacy_image_catalog
 
     return build_legacy_image_catalog(image_root, mapping_path)
 

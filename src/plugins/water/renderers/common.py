@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from math import ceil
-from typing import Any
-
 import arrow
-from PIL import Image, ImageChops, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw
 from pil_utils import BuildImage
 
 from src.lib.consts import MAPLE_FONT_NAME
@@ -53,7 +50,9 @@ def short_exp(exp: int | str) -> str:
             value=f"{exp / 100000000:.1f}",
         )
     if exp >= 10000:
-        return tr("zh-CN", "water.image.exp.short.ten_thousand", value=f"{exp / 10000:.1f}")
+        return tr(
+            "zh-CN", "water.image.exp.short.ten_thousand", value=f"{exp / 10000:.1f}"
+        )
     return str(exp)
 
 
@@ -193,7 +192,9 @@ def draw_progress_bar(
     stripe_span = max(10, int(h * 1.3))
     stripe_width = max(1, int(h * 0.22))
     for sx in range(-h, fill_w + h, stripe_step):
-        texture.draw.line((sx, h - 2, sx + stripe_span, 2), fill=stripe_color, width=stripe_width)
+        texture.draw.line(
+            (sx, h - 2, sx + stripe_span, 2), fill=stripe_color, width=stripe_width
+        )
     bubble_color = mix_hex(fg, WATER_THEME.white, 0.72)
     bubble_r = max(2, int(h * 0.2))
     bubble_y = h // 2
@@ -233,7 +234,9 @@ def draw_gloss_lines(
     mid_y = y + max(4, int(h * 0.23))
     start_x = x + max(8, int(w * 0.05))
     end_x = x + w - max(8, int(w * 0.08))
-    card.draw.line((start_x, top_y, end_x, top_y), fill=gloss, width=max(1, int(h * 0.03)))
+    card.draw.line(
+        (start_x, top_y, end_x, top_y), fill=gloss, width=max(1, int(h * 0.03))
+    )
     card.draw.line(
         (start_x + int(w * 0.04), mid_y, end_x - int(w * 0.08), mid_y),
         fill=gloss,
@@ -259,16 +262,35 @@ def draw_hourly_histogram(
     max_count = max(hourly) or 1
     bar_gap = max(2, int(2 * scale))
     bar_w = max(4, int((w - bar_gap * 23) / 24))
-    card.draw.line((x, y + chart_h, x + w, y + chart_h), fill=axis_color, width=max(1, int(1 * scale)))
+    card.draw.line(
+        (x, y + chart_h, x + w, y + chart_h),
+        fill=axis_color,
+        width=max(1, int(1 * scale)),
+    )
     for hour, count in enumerate(hourly):
         bx = x + hour * (bar_w + bar_gap)
-        bh = max(2, int((count / max_count) * (chart_h - int(6 * scale)))) if count > 0 else 2
+        bh = (
+            max(2, int((count / max_count) * (chart_h - int(6 * scale))))
+            if count > 0
+            else 2
+        )
         by = y + chart_h - bh
-        fill = bar_color if hour != max(range(24), key=lambda idx: hourly[idx]) else WATER_THEME.overview_highlight_bar
-        card.draw_rounded_rectangle((bx, by, bx + bar_w, y + chart_h), radius=max(2, int(3 * scale)), fill=fill)
+        fill = (
+            bar_color
+            if hour != max(range(24), key=lambda idx: hourly[idx])
+            else WATER_THEME.overview_highlight_bar
+        )
+        card.draw_rounded_rectangle(
+            (bx, by, bx + bar_w, y + chart_h), radius=max(2, int(3 * scale)), fill=fill
+        )
         if hour in {0, 6, 12, 18, 23}:
             card.draw_text(
-                (bx - int(6 * scale), y + chart_h + int(4 * scale), bx + bar_w + int(6 * scale), y + h),
+                (
+                    bx - int(6 * scale),
+                    y + chart_h + int(4 * scale),
+                    bx + bar_w + int(6 * scale),
+                    y + h,
+                ),
                 f"{hour:02d}",
                 max_fontsize=int(9 * scale),
                 min_fontsize=int(7 * scale),

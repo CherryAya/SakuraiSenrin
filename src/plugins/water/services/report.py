@@ -18,15 +18,17 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.water.database import water_repo
-from src.plugins.water.database.repo import (
+from src.plugins.water.database.repo_models import (
     WaterDailyReportCandidate,
     WaterGroupDailyRankSnapshot,
     WaterGroupReportSnapshot,
 )
-from src.plugins.water.img import (
+from src.plugins.water.renderers.models import (
     WaterGroupDailyRankCardItem,
     WaterGroupReportImageData,
     WaterRankCardItem,
+)
+from src.plugins.water.renderers.report import (
     build_water_group_report_image,
 )
 from src.plugins.water.services.rank import water_rank_service

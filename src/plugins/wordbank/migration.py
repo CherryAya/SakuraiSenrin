@@ -14,6 +14,7 @@ from scripts.migrations.wordbank import (
     LegacyPgConfig,
     MigrationError,
     WordbankMigrationReport,
+    _resolve_legacy_call_window_seconds,
     build_legacy_image_catalog,
     extract_failure_details_from_categorized_report,
     fetch_legacy_addition_log_rows,
@@ -23,12 +24,10 @@ from scripts.migrations.wordbank import (
     fetch_legacy_trigger_log_rows,
     infer_report_response_available,
     legacy_message_to_shape,
-    load_legacy_pg_config,
     migrate_legacy_approval_message_refs,
     migrate_legacy_response_logs,
     migrate_legacy_rows,
     migrate_legacy_trigger_logs,
-    migrate_legacy_wordbank,
     normalize_legacy_rules,
     normalize_legacy_scope,
     normalize_legacy_state,
@@ -36,7 +35,6 @@ from scripts.migrations.wordbank import (
     rebuild_legacy_row_from_failure_detail,
     rebuild_legacy_rows_from_failure_details,
 )
-from scripts.migrations.wordbank import _resolve_legacy_call_window_seconds
 
 
 async def migrate_legacy_wordbank(
@@ -100,6 +98,7 @@ __all__ = [
     "LegacyPgConfig",
     "MigrationError",
     "WordbankMigrationReport",
+    "_resolve_legacy_call_window_seconds",
     "build_legacy_image_catalog",
     "extract_failure_details_from_categorized_report",
     "fetch_legacy_addition_log_rows",
@@ -121,5 +120,4 @@ __all__ = [
     "parse_legacy_env_file",
     "rebuild_legacy_row_from_failure_detail",
     "rebuild_legacy_rows_from_failure_details",
-    "_resolve_legacy_call_window_seconds",
 ]

@@ -201,7 +201,10 @@ def _encode_animated_webp(
 ) -> bytes | None:
     try:
         image.seek(0)
-        frames = [_normalize_static_image(frame.copy()) for frame in ImageSequence.Iterator(image)]
+        frames = [
+            _normalize_static_image(frame.copy())
+            for frame in ImageSequence.Iterator(image)
+        ]
         if not frames:
             return None
         if resize_to_limit:
@@ -229,7 +232,9 @@ def _encode_animated_webp(
 def _collect_frame_durations(image: Image.Image, frame_count: int) -> list[int]:
     durations: list[int] = []
     for frame in ImageSequence.Iterator(image):
-        duration = int(frame.info.get("duration", image.info.get("duration", 100)) or 100)
+        duration = int(
+            frame.info.get("duration", image.info.get("duration", 100)) or 100
+        )
         durations.append(max(duration, 1))
     if len(durations) < frame_count:
         durations.extend([100] * (frame_count - len(durations)))
@@ -237,7 +242,9 @@ def _collect_frame_durations(image: Image.Image, frame_count: int) -> list[int]:
 
 
 def _is_animated(image: Image.Image) -> bool:
-    return bool(getattr(image, "is_animated", False) or getattr(image, "n_frames", 1) > 1)
+    return bool(
+        getattr(image, "is_animated", False) or getattr(image, "n_frames", 1) > 1
+    )
 
 
 def _resize_image_to_webp_limit(image: Image.Image) -> Image.Image:
@@ -275,7 +282,9 @@ def _detect_extension(image: Image.Image) -> str:
 
 
 def _detect_content_type(image: Image.Image) -> str:
-    return EXTENSION_TO_CONTENT_TYPE.get(_detect_extension(image), "application/octet-stream")
+    return EXTENSION_TO_CONTENT_TYPE.get(
+        _detect_extension(image), "application/octet-stream"
+    )
 
 
 def default_cache_root_for(media_root: Path) -> Path:

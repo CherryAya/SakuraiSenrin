@@ -8,21 +8,19 @@ from typing import Any
 from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw
+
 from src.lib.consts import LXGW_FONG_PATH, MAPLE_FONT_PATH
 from src.lib.demo_theme import SENRIN_V3_WORDBANK_TREEMAP_THEME
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+
 from .fitters import SearchTreemapFittersMixin
 from .models import (
     SearchTreemapPage,
     SearchTreemapQuery,
-    SearchTreemapItem,
-    SearchTreemapResponseCard,
-    SearchTreemapResponseSegment,
     SearchTreemapTile,
     TreemapRect,
     build_search_treemap_layout,
-    load_search_treemap_fixture,
 )
 from .render_utils import SearchTreemapRenderUtilsMixin
 from .response_draw import SearchTreemapResponseDrawMixin

@@ -28,7 +28,11 @@ from src.plugins.wordbank.database.types import (
     WordbankTriggerGroupRecord,
 )
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
-from src.plugins.wordbank.message_model import MessageShape, fingerprint_shape, shape_to_summary_text
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    fingerprint_shape,
+    shape_to_summary_text,
+)
 from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.services.matching import (
     MatchCandidate,
@@ -36,25 +40,21 @@ from src.plugins.wordbank.services.matching import (
     RuntimeResponseItem,
     SelectedMatch,
 )
-from src.plugins.wordbank.services.rules import (
-    MAX_CALL_COUNT_WINDOW_SECONDS,
-    RuleContext,
-    canonicalize_rule,
-)
 from src.plugins.wordbank.services.presentation import (
     WordbankAddResult,
     WordbankDeleteVoteResult,
     WordbankLeaderboardCardData,
     WordbankLeaderboardCardItem,
-    format_add_result,
-    format_creator_leaderboard,
-    format_pending_items,
-    format_response_summary,
-    format_search_items,
     rank_period_label,
     rank_range_text,
 )
+from src.plugins.wordbank.services.rules import (
+    MAX_CALL_COUNT_WINDOW_SECONDS,
+    RuleContext,
+    canonicalize_rule,
+)
 from src.repositories import user_repo
+
 
 @dataclass(slots=True)
 class _CallCountCacheEntry:
@@ -982,7 +982,9 @@ class WordbankService:
         self,
         response_item_id: int,
     ) -> WordbankResponseItemRecord | None:
-        return await self.repository.get_response_item_record(response_item_id, include_deleted=True)
+        return await self.repository.get_response_item_record(
+            response_item_id, include_deleted=True
+        )
 
     async def _get_trigger_group_for_mutation(
         self,

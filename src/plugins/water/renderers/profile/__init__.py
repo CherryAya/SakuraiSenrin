@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from src.lib.i18n.types import LocaleCode
+from src.plugins.water.renderers.models import WaterProfileCardData
 
-from ..models import WaterProfileCardData
-from .full import build_my_water_image
+from .full import build_my_water_image as build_my_water_image
 from .shared import build_my_water_text_fallback
-from .simple import build_my_water_simple_image
+from .simple import build_my_water_simple_image as build_my_water_simple_image
 
 
 async def build_my_water_fallback_text(

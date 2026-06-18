@@ -7,8 +7,10 @@ import math
 from typing import Any
 
 from PIL import Image, ImageDraw
+
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+
 from .models import (
     SearchTreemapResponseCard,
     SearchTreemapResponseSegment,

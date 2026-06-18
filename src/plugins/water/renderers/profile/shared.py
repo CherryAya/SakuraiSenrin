@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import arrow
 from dataclasses import dataclass
 from math import floor, sqrt
 
+import arrow
+
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-
-from ..models import WaterProfileCardData
-from ..common import format_rank, short_exp
-from ...services.achievement import ACHIEVEMENT_RULES
+from src.plugins.water.renderers.common import format_rank, short_exp
+from src.plugins.water.renderers.models import WaterProfileCardData
+from src.plugins.water.services.achievement import ACHIEVEMENT_RULES
 
 SEASONAL_ACHIEVEMENT_CAP = 10
 

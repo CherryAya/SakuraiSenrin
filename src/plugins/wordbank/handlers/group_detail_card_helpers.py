@@ -44,9 +44,7 @@ def line_height(font: Any) -> int:
 
 
 def text_width(text: str, font: Any) -> int:
-    return int(
-        ImageDraw.Draw(Image.new("RGB", (10, 10))).textlength(text, font=font)
-    )
+    return int(ImageDraw.Draw(Image.new("RGB", (10, 10))).textlength(text, font=font))
 
 
 def centered_text_origin(
@@ -88,10 +86,7 @@ def summary_chips(
         ),
     )
     return tuple(
-        part.strip()
-        for line in raw_lines
-        for part in line.split("  ")
-        if part.strip()
+        part.strip() for line in raw_lines for part in line.split("  ") if part.strip()
     )
 
 

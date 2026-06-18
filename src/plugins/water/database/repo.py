@@ -3,63 +3,38 @@
 import asyncio
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from heapq import nsmallest
 import os
-from time import perf_counter
+from types import ModuleType
 import unicodedata
 
 import arrow
 from sqlalchemy import delete
-from sqlalchemy.engine.row import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.consts import WritePolicy
 from src.lib.db.connectors import ColdPolicy
 from src.lib.db.manager import db_manager
-from src.lib.utils.common import get_current_time, split_list
-from src.logger import logger
-from src.plugins.water.services.rank_types import WaterRankScope, WaterRankSubject
+from src.lib.utils.common import get_current_time
 
 from .instances import water_core_db, water_message, water_summary
 from .ops import (
-    WaterAchievementOps,
-    WaterActivitySeasonOps,
     WaterArchivedSummaryOps,
     WaterGroupMatrixMapOps,
-    WaterGroupStatsOps,
-    WaterLevelOps,
-    WaterMatrixMergeStateOps,
     WaterMessageOps,
-    WaterPenaltyOps,
-    WaterSettlementJobOps,
     WaterSummaryOps,
 )
+from .repo_admin import WaterRepositoryAdminMixin
 from .repo_models import (
-    DailyAggregateItem,
-    GlobalPeriodOverview,
-    GlobalPeriodRankItem,
-    NaturalPeriodRankSnapshot,
-    NaturalRankItem,
     NaturalRankOverview,
-    RankItem,
     SeasonGroupAggregate,
     SeasonMatrixAggregate,
     SeasonUserAggregate,
     WaterActivitySeasonRecord,
-    WaterDailyReportCandidate,
-    WaterGroupDailyRankItem,
-    WaterGroupDailyRankSnapshot,
-    WaterGroupReportMember,
-    WaterGroupReportSnapshot,
     WaterMessageContext,
     _PeriodAggregateBucket,
-    calc_personal_delta_exp,
-    calc_weighted_global_exp,
     gen_matrix_id,
 )
-from .repo_admin import WaterRepositoryAdminMixin
-from .repo_reports import WaterRepositoryReportsMixin
 from .repo_ranks import WaterRepositoryRanksMixin
+from .repo_reports import WaterRepositoryReportsMixin
 from .tables import (
     WaterActivitySeason,
     WaterCoreBase,
@@ -78,17 +53,9 @@ from .tables import (
     WaterUserAchievement,
 )
 from .types import (
-    WaterAchievementPayload,
-    WaterActivitySeasonPayload,
-    WaterGroupTotalPayload,
-    WaterGroupUserTotalPayload,
-    WaterMatrixExpPayload,
     WaterMessagePayload,
-    WaterMessageWritePayload,
-    WaterPenaltyPayload,
     WaterSummaryPayload,
     WaterSummaryRecord,
-    WaterUserExpPayload,
 )
 from .writers import water_writer
 
@@ -97,7 +64,7 @@ GLOBAL_EXP_DECAY_WEIGHTS = (1.0, 0.5, 0.2)
 SUMMARY_HOT_WINDOW_DAYS = 90
 
 
-def _repo_module():
+def _repo_module() -> ModuleType:
     from . import repo as repo_module
 
     return repo_module

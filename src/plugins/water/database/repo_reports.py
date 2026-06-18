@@ -7,6 +7,7 @@ from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from heapq import nsmallest
 from time import perf_counter
+from types import ModuleType
 from typing import TYPE_CHECKING
 
 import arrow
@@ -14,17 +15,15 @@ from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.connectors import ColdPolicy
-from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.water.services.rank_types import WaterRankScope, WaterRankSubject
 
 from .instances import water_message
-from .ops import WaterMessageOps
 from .types import WaterSummaryRecord
 from .writers import water_writer
 
 if TYPE_CHECKING:
-    from .repo import (
+    from .repo_models import (
         NaturalPeriodRankSnapshot,
         NaturalRankOverview,
         WaterDailyReportCandidate,
@@ -32,8 +31,17 @@ if TYPE_CHECKING:
         WaterGroupReportSnapshot,
     )
 
+from .repo_models import (
+    NaturalPeriodRankSnapshot,
+    WaterDailyReportCandidate,
+    WaterGroupDailyRankItem,
+    WaterGroupDailyRankSnapshot,
+    WaterGroupReportMember,
+    WaterGroupReportSnapshot,
+)
 
-def _repo_module():
+
+def _repo_module() -> ModuleType:
     from . import repo as repo_module
 
     return repo_module
@@ -158,7 +166,7 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         scope: WaterRankScope,
         group_id: str,
         limit: int = 10,
-    ):
+    ) -> Sequence[object]:
         snapshot = await self.get_natural_day_snapshot(
             subject=subject,
             scope=scope,
@@ -199,8 +207,6 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
             rows,
             lambda item: item.group_id,
         )
-        from .repo import WaterDailyReportCandidate
-
         ordered = sorted(
             (
                 WaterDailyReportCandidate(
@@ -220,7 +226,11 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
                 ) in aggregates.items()
                 if msg_count + 20 * active_users >= min_activity_score
             ),
-            key=lambda item: (-item.activity_score, -item.total_msg_count, item.group_id),
+            key=lambda item: (
+                -item.activity_score,
+                -item.total_msg_count,
+                item.group_id,
+            ),
         )
         logger.debug(
             "[Water][ReportRepo] date={} working_groups={} candidates={} threshold={}",
@@ -239,7 +249,9 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         limit: int = 10,
     ) -> "WaterGroupReportSnapshot | None":
         current_rows, previous_rows = await asyncio.gather(
-            self.get_summaries_in_window(record_date, record_date, group_ids=[group_id]),
+            self.get_summaries_in_window(
+                record_date, record_date, group_ids=[group_id]
+            ),
             self.get_summaries_in_window(
                 self._previous_date(record_date),
                 self._previous_date(record_date),
@@ -349,8 +361,6 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
             previous_aggregates,
             [user_id for user_id, *_rest in ordered_current],
         )
-        from .repo import WaterGroupReportMember, WaterGroupReportSnapshot
-
         leaderboard = [
             WaterGroupReportMember(
                 user_id=user_id,
@@ -446,8 +456,6 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
             previous_aggregates,
             [entity_id for entity_id, *_rest in ordered_current],
         )
-        from .repo import WaterGroupDailyRankItem, WaterGroupDailyRankSnapshot
-
         items = [
             WaterGroupDailyRankItem(
                 group_id=entity_id,
@@ -474,7 +482,11 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
             ) in enumerate(ordered_current, 1)
         ]
         focus_index = next(
-            (index for index, item in enumerate(items) if item.group_id == focus_group_id),
+            (
+                index
+                for index, item in enumerate(items)
+                if item.group_id == focus_group_id
+            ),
             None,
         )
         if focus_index is None:
@@ -517,9 +529,9 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         async def _hourly_in_shard(
             session: AsyncSession,
         ) -> Sequence[tuple[str, str, int, int]]:
-            return await repo_module.WaterMessageOps(session).aggregate_daily_hourly_stats(
-                start_ts, end_ts
-            )
+            return await repo_module.WaterMessageOps(
+                session
+            ).aggregate_daily_hourly_stats(start_ts, end_ts)
 
         stats_per_shard = await water_message.map_reduce(
             now.datetime,
@@ -544,7 +556,10 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         merged_stats: dict[tuple[str, str], tuple[int, int]] = {}
         for shard_rows in stats_per_shard:
             for row_group_id, user_id, msg_count, active_hours in shard_rows:
-                if allowed_group_ids is not None and row_group_id not in allowed_group_ids:
+                if (
+                    allowed_group_ids is not None
+                    and row_group_id not in allowed_group_ids
+                ):
                     continue
                 key = (str(row_group_id), str(user_id))
                 old_msg, old_hours = merged_stats.get(key, (0, 0))
@@ -556,9 +571,14 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
         merged_hourly: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0] * 24)
         for shard_rows in hourly_per_shard:
             for row_group_id, user_id, hour, count in shard_rows:
-                if allowed_group_ids is not None and row_group_id not in allowed_group_ids:
+                if (
+                    allowed_group_ids is not None
+                    and row_group_id not in allowed_group_ids
+                ):
                     continue
-                merged_hourly[(str(row_group_id), str(user_id))][int(hour)] += int(count)
+                merged_hourly[(str(row_group_id), str(user_id))][int(hour)] += int(
+                    count
+                )
 
         rows = [
             WaterSummaryRecord(
@@ -571,7 +591,10 @@ class WaterRepositoryReportsMixin(_WaterRepositoryReportsMixinBase):
                 created_at=0,
                 updated_at=0,
             )
-            for (row_group_id, user_id), (msg_count, active_hours) in merged_stats.items()
+            for (row_group_id, user_id), (
+                msg_count,
+                active_hours,
+            ) in merged_stats.items()
         ]
         logger.debug(
             "[Water][RankRepo] realtime scope={} group_id={} record_date={} rows={} "

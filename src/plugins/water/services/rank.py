@@ -10,16 +10,17 @@ from typing import ClassVar, Literal, cast
 import arrow
 from pil_utils import BuildImage
 
-from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr, tr_template
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.water.database import water_repo
-from src.plugins.water.database.repo import NaturalRankItem
-from src.plugins.water.img import (
+from src.plugins.water.database.repo_models import NaturalRankItem
+from src.plugins.water.renderers.models import (
     WaterPeriodRankCardData,
     WaterRankCardItem,
+)
+from src.plugins.water.renderers.report import (
     build_water_period_rank_image,
 )
 from src.plugins.water.services.rank_types import (

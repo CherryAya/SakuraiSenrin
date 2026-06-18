@@ -307,6 +307,8 @@ def _coerce_int(value: object, *, field: str) -> int:
 
 
 __all__ = [
+    "_default_legacy_image_mapping_path",
+    "_default_legacy_image_root",
     "build_legacy_image_catalog",
     "fetch_legacy_addition_log_rows",
     "fetch_legacy_message_approval_rows",
@@ -315,6 +317,4 @@ __all__ = [
     "fetch_legacy_trigger_log_rows",
     "load_legacy_pg_config",
     "parse_legacy_env_file",
-    "_default_legacy_image_mapping_path",
-    "_default_legacy_image_root",
 ]

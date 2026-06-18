@@ -2,46 +2,38 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from functools import lru_cache
-from io import BytesIO
-from math import ceil
 from pathlib import Path
-import re
-from typing import Any, ClassVar, Literal
+from typing import Any, Literal
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.plugin import PluginMetadata
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
-from pil_utils import BuildImage
-from pil_utils.text2image import Text2Image
 
 from src.database.core.consts import Permission
-from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
+from src.lib.consts import TriggerType
 from src.lib.demo_theme import (
-    DEFAULT_DEMO_THEME,
     DEFAULT_IMPRESSION_COLOR,
-    SENRIN_V3_THEME,
-    get_demo_theme,
     normalize_hex_color,
 )
-from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.utils.common import get_current_time
 
-from src.lib.consts import TriggerType
 from .command_layout import (
     CommandLayout,
-    CommandLayoutLine,
     CommandPalette,
     InlineTextSpan,
+)
+from .command_layout import (
     build_command_layout as build_command_layout_impl,
+)
+from .command_layout import (
     normalize_inline_text as normalize_inline_text_impl,
+)
+from .command_layout import (
     split_inline_text_spans as split_inline_text_spans_impl,
 )
 
@@ -61,82 +53,163 @@ HelpEntryShape = Literal[
 
 from .copy import (
     build_feature_copy_text as build_feature_copy_text_impl,
+)
+from .copy import (
     build_plugin_guide_copy_text as build_plugin_guide_copy_text_impl,
+)
+from .copy import (
     build_simple_leaf_copy_text as build_simple_leaf_copy_text_impl,
+)
+from .copy import (
     build_static_entry_copy_text as build_static_entry_copy_text_impl,
+)
+from .copy import (
     feature_command_for_display as feature_command_for_display_impl,
+)
+from .copy import (
     feature_command_sections as feature_command_sections_impl,
-    feature_demo_help_command,
+)
+from .copy import (
     feature_notice_items as feature_notice_items_impl,
+)
+from .copy import (
     format_feature_command_lines as format_feature_command_lines_impl,
+)
+from .meta import (
+    coerce_permission as coerce_permission_impl,
+)
+from .meta import (
+    create_docs_meta as create_docs_meta_impl,
+)
+from .meta import (
+    derive_tree_identity_from_source as derive_tree_identity_from_source_impl,
+)
+from .meta import (
+    extract_metadata_field as extract_metadata_field_impl,
+)
+from .meta import (
+    normalize_docs_meta as normalize_docs_meta_impl,
+)
+from .meta import (
+    read_docs_meta as read_docs_meta_impl,
+)
+from .meta import (
+    read_docs_metas as read_docs_metas_impl,
+)
+from .meta import (
+    resolve_doc_impression_color as resolve_doc_impression_color_impl,
+)
+from .meta import (
+    resolve_doc_owner_module_path as resolve_doc_owner_module_path_impl,
+)
+from .meta import (
+    resolve_doc_signature as resolve_doc_signature_impl,
+)
+from .meta import (
+    resolve_main_group_id as resolve_main_group_id_impl,
+)
+from .meta import (
+    support_note as support_note_impl,
 )
 from .models import (
     DocNode,
     DocNodeKind,
-    DocRenderView,
-    DocTree,
     DocsDemoTurn,
     DocsMeta,
-    DocsMetaValue,
     DocsRenderContext,
+    DocTree,
     FeatureDoc,
     FeatureMatchResult,
     HelpDashboardSection,
     MarkdownSection,
     NodeMatchResult,
     PluginDocBundle,
-    VirtualFeatureDocSpec,
     VirtualPluginDocSpec,
-)
-from .meta import (
-    coerce_permission as coerce_permission_impl,
-    create_docs_meta as create_docs_meta_impl,
-    derive_tree_identity_from_source as derive_tree_identity_from_source_impl,
-    extract_metadata_field as extract_metadata_field_impl,
-    normalize_docs_meta as normalize_docs_meta_impl,
-    read_docs_meta as read_docs_meta_impl,
-    read_docs_metas as read_docs_metas_impl,
-    resolve_doc_impression_color as resolve_doc_impression_color_impl,
-    resolve_doc_owner_module_path as resolve_doc_owner_module_path_impl,
-    resolve_doc_signature as resolve_doc_signature_impl,
-    resolve_main_group_id as resolve_main_group_id_impl,
-    support_note as support_note_impl,
 )
 from .query import (
     build_doc_tree as build_doc_tree_impl,
+)
+from .query import (
     build_virtual_plugin_doc_bundle as build_virtual_plugin_doc_bundle_impl,
+)
+from .query import (
     can_view_node as can_view_node_impl,
+)
+from .query import (
     filter_features_by_permission as filter_features_by_permission_impl,
+)
+from .query import (
     load_virtual_doc_node as load_virtual_doc_node_impl,
+)
+from .query import (
     match_doc_node as match_doc_node_impl,
+)
+from .query import (
     match_feature as match_feature_impl,
+)
+from .query import (
     permission_allows as permission_allows_impl,
+)
+from .query import (
     rank_features_for_disclosure as rank_features_for_disclosure_impl,
+)
+from .query import (
     split_features_for_disclosure as split_features_for_disclosure_impl,
 )
 from .readme import (
     extract_heading_sections as extract_heading_sections_impl,
+)
+from .readme import (
     extract_title as extract_title_impl,
+)
+from .readme import (
     merge_features as merge_features_impl,
+)
+from .readme import (
     normalize_heading as normalize_heading_impl,
+)
+from .readme import (
     parse_bool_meta as parse_bool_meta_impl,
+)
+from .readme import (
     parse_demo_turns as parse_demo_turns_impl,
+)
+from .readme import (
     parse_feature_details_tokens as parse_feature_details_tokens_impl,
+)
+from .readme import (
     parse_feature_heading as parse_feature_heading_impl,
+)
+from .readme import (
     parse_feature_index_tokens as parse_feature_index_tokens_impl,
+)
+from .readme import (
     parse_flow_section_tokens as parse_flow_section_tokens_impl,
+)
+from .readme import (
     parse_int_meta as parse_int_meta_impl,
+)
+from .readme import (
     parse_meta_block_tokens as parse_meta_block_tokens_impl,
+)
+from .readme import (
     parse_permission as parse_permission_impl,
+)
+from .readme import (
     render_inline_markdown as render_inline_markdown_impl,
+)
+from .readme import (
     render_markdown_blocks as render_markdown_blocks_impl,
+)
+from .readme import (
     split_csv as split_csv_impl,
+)
+from .readme import (
     split_tokens_before_heading as split_tokens_before_heading_impl,
 )
-
 from .render.demo import DemoImageRenderer
-from .render.legacy import LegacyDemoImageRenderer
 from .render.progressive import ProgressiveDisclosureRenderer
+
 
 def _support_note(locale: LocaleCode) -> str:
     return support_note_impl(locale)
@@ -957,10 +1030,6 @@ def _feature_command_for_display(
     )
 
 
-def feature_demo_help_command(node: DocNode, feature: FeatureDoc) -> str:
-    return f"#help {node.title} {feature.slug}"
-
-
 def _format_feature_command_lines(
     bundle: PluginDocBundle,
     feature: FeatureDoc,
@@ -1159,7 +1228,9 @@ def _extract_list_item_tokens(tokens: Sequence[Token]) -> tuple[tuple[Token, ...
 
 
 def _parse_meta_block_tokens(tokens: Sequence[Token]) -> dict[str, str]:
-    return parse_meta_block_tokens_impl(tokens, parse_inline_tokens=_parse_inline_tokens)
+    return parse_meta_block_tokens_impl(
+        tokens, parse_inline_tokens=_parse_inline_tokens
+    )
 
 
 def _split_key_value(value: str) -> tuple[str, str]:

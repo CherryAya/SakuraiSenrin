@@ -11,7 +11,6 @@ from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import RuleError
 
-from .media_helpers import build_shape_from_text_and_images
 from .parsers import (
     MutationActor,
     actor_can_review,
@@ -159,7 +158,9 @@ async def handle_trigger_content_update(
     text: str,
     raw_message: Message,
 ) -> str:
-    from .commands import build_shape_from_text_and_images as _build_shape_from_text_and_images
+    from .commands import (
+        build_shape_from_text_and_images as _build_shape_from_text_and_images,
+    )
 
     actor = build_mutation_actor(event)
     trigger_shape = await _build_shape_from_text_and_images(
@@ -175,7 +176,10 @@ async def handle_trigger_content_update(
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return f"trigger group #{trigger_group_id} 的触发词已更新，该组响应已重新进入待审核。"
+        return (
+            f"trigger group #{trigger_group_id} 的触发词已更新，"
+            "该组响应已重新进入待审核。"
+        )
     return f"未找到可修改的 trigger group #{trigger_group_id}，或你没有操作权限。"
 
 
@@ -208,7 +212,9 @@ async def handle_response_content_update(
     text: str,
     raw_message: Message,
 ) -> str:
-    from .commands import build_shape_from_text_and_images as _build_shape_from_text_and_images
+    from .commands import (
+        build_shape_from_text_and_images as _build_shape_from_text_and_images,
+    )
 
     actor = build_mutation_actor(event)
     response_shape = await _build_shape_from_text_and_images(

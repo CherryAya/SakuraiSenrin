@@ -111,7 +111,9 @@ class WaterLevelOps:
         return (row[0], row[1], row[2])
 
     async def get_user_global_rank(self, user_id: str) -> int | None:
-        own_stmt = select(WaterGlobalLevel.exp).where(WaterGlobalLevel.user_id == user_id)
+        own_stmt = select(WaterGlobalLevel.exp).where(
+            WaterGlobalLevel.user_id == user_id
+        )
         own_result = await self.session.execute(own_stmt)
         own_exp = own_result.scalar()
         if own_exp is None:

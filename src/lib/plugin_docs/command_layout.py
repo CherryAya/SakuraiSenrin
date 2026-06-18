@@ -63,7 +63,9 @@ class CommandPalette:
 def split_inline_text_spans(
     text: str,
     *,
-    parse_inline_tokens: Callable[[str], tuple[Token, ...]] = _default_parse_inline_tokens,
+    parse_inline_tokens: Callable[
+        [str], tuple[Token, ...]
+    ] = _default_parse_inline_tokens,
 ) -> tuple[InlineTextSpan, ...]:
     if not text:
         return ()
@@ -87,10 +89,15 @@ def split_inline_text_spans(
 def normalize_inline_text(
     value: str,
     *,
-    parse_inline_tokens: Callable[[str], tuple[Token, ...]] = _default_parse_inline_tokens,
+    parse_inline_tokens: Callable[
+        [str], tuple[Token, ...]
+    ] = _default_parse_inline_tokens,
 ) -> str:
     text = "".join(
-        span.text for span in split_inline_text_spans(value.strip(), parse_inline_tokens=parse_inline_tokens)
+        span.text
+        for span in split_inline_text_spans(
+            value.strip(), parse_inline_tokens=parse_inline_tokens
+        )
     )
     return re.sub(r"\s+", " ", text).strip()
 
@@ -103,7 +110,9 @@ def build_command_layout(
     indent_px: int,
     measure_text: Callable[[str], int],
     palette: CommandPalette,
-    parse_inline_tokens: Callable[[str], tuple[Token, ...]] = _default_parse_inline_tokens,
+    parse_inline_tokens: Callable[
+        [str], tuple[Token, ...]
+    ] = _default_parse_inline_tokens,
 ) -> CommandLayout:
     inline_code_variants = _split_inline_code_command_variants(
         text,

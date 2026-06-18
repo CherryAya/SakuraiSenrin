@@ -16,23 +16,28 @@ from pil_utils import BuildImage
 from pil_utils.text2image import Text2Image
 
 from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
-from src.lib.demo_theme import DEFAULT_DEMO_THEME, SENRIN_V3_THEME, get_demo_theme, normalize_hex_color
+from src.lib.demo_theme import (
+    DEFAULT_DEMO_THEME,
+    SENRIN_V3_THEME,
+    get_demo_theme,
+    normalize_hex_color,
+)
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.utils.common import get_current_time
-
-from ..command_layout import (
+from src.lib.plugin_docs.command_layout import (
     CommandLayout,
     CommandPalette,
     InlineTextSpan,
     build_command_layout,
     split_inline_text_spans,
 )
-from ..models import DocsDemoTurn
+from src.lib.plugin_docs.models import DocsDemoTurn
+from src.lib.utils.common import get_current_time
 
 DEMO_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 DEMO_AVATAR_PATH = DEMO_ASSETS_DIR / "senrin-demo-avatar.png"
 DEMO_STANDEE_PATH = DEMO_ASSETS_DIR / "senrin-demo-standee.png"
+
 
 @dataclass(slots=True, frozen=True)
 class _TurnSpec:

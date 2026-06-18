@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
+import json
 from typing import cast
 
 from src.plugins.wordbank.message_model import shape_from_payload

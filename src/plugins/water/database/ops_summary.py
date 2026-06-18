@@ -6,6 +6,7 @@ from typing import ClassVar, cast
 from sqlalchemy import CursorResult, and_, func, or_, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine.row import Row
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.ops import BaseOps
 from src.lib.utils.common import split_list
@@ -314,7 +315,7 @@ class WaterGroupMatrixMapOps(BaseOps[WaterGroupMatrixMap]):
 
 
 class WaterGroupStatsOps:
-    def __init__(self, session) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_group_user_total(

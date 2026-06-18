@@ -141,7 +141,9 @@ def parse_meta_block_tokens(
         key, value = split_key_value(payload)
         if not key:
             continue
-        meta[key] = strip_wrapping_backticks(value, parse_inline_tokens=parse_inline_tokens)
+        meta[key] = strip_wrapping_backticks(
+            value, parse_inline_tokens=parse_inline_tokens
+        )
     return meta
 
 
@@ -251,7 +253,9 @@ def parse_feature_details_tokens(
                 render_inline_markdown=render_inline_markdown,
             )
         }
-        flow_notes, demo_turns = parse_flow_section_tokens(subsections.get("完整流程", ()))
+        flow_notes, demo_turns = parse_flow_section_tokens(
+            subsections.get("完整流程", ())
+        )
         demo_filename = meta.get("Demo", f"{doc_asset_prefix(source_path)}-{slug}.png")
         demo_filename = demo_filename.strip("`")
         features[slug] = FeatureDoc(
@@ -262,7 +266,9 @@ def parse_feature_details_tokens(
             trigger=meta.get("指令", "").strip() or meta.get("触发", "").strip(),
             permission=parse_permission(meta.get("权限", "")),
             demo_filename=demo_filename,
-            hero=parse_bool_meta(meta.get("Hero", "").strip() or meta.get("主推", "").strip()),
+            hero=parse_bool_meta(
+                meta.get("Hero", "").strip() or meta.get("主推", "").strip()
+            ),
             priority=parse_int_meta(
                 meta.get("Priority", "").strip() or meta.get("优先级", "").strip()
             ),
@@ -270,7 +276,9 @@ def parse_feature_details_tokens(
                 meta.get("Advanced", "").strip() or meta.get("高级", "").strip()
             ),
             overview=render_markdown_blocks(subsections.get("说明", ())).strip(),
-            preconditions=render_markdown_blocks(subsections.get("前置条件", ())).strip(),
+            preconditions=render_markdown_blocks(
+                subsections.get("前置条件", ())
+            ).strip(),
             flow_notes=flow_notes.strip(),
             failures=render_markdown_blocks(subsections.get("失败情况", ())).strip(),
             demo_turns=demo_turns,

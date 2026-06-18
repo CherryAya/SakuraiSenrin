@@ -38,8 +38,8 @@ _ensure_pkg(
 )
 _ensure_pkg("src.lib.object_storage", ROOT / "src" / "lib" / "object_storage")
 
-from src.lib.i18n.types import LocaleCode
 from scripts.migrations.wordbank import LegacyPgConfig, load_legacy_pg_config
+from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.treemap import (
     SearchTreemapItem,
     SearchTreemapPage,

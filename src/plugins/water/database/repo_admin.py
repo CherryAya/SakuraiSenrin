@@ -3,45 +3,25 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from collections import defaultdict
 from collections.abc import Sequence
+from types import ModuleType
 from typing import TYPE_CHECKING
 
 import arrow
 from sqlalchemy import delete
+from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.lib.db.manager import db_manager
-from src.lib.utils.common import get_current_time, split_list
+from src.lib.utils.common import split_list
 
 from .instances import water_core_db, water_message, water_summary
 from .ops import (
-    WaterAchievementOps,
-    WaterActivitySeasonOps,
-    WaterGroupMatrixMapOps,
-    WaterGroupStatsOps,
-    WaterLevelOps,
-    WaterMatrixMergeStateOps,
     WaterMessageOps,
-    WaterPenaltyOps,
-    WaterSettlementJobOps,
-    WaterSummaryOps,
 )
 from .tables import (
     WaterActivitySeason,
-    WaterCoreBase,
     WaterDailySummary,
-    WaterGlobalLevel,
-    WaterGroupMatrixMap,
-    WaterGroupTotal,
-    WaterGroupUserTotal,
-    WaterMatrixLevel,
-    WaterMatrixMergeState,
-    WaterMatrixTotalLevel,
-    WaterPenaltyLog,
-    WaterSettlementJob,
-    WaterUserAchievement,
 )
 from .types import (
     WaterAchievementPayload,
@@ -56,11 +36,24 @@ from .types import (
 )
 
 if TYPE_CHECKING:
-    from .repo import DailyAggregateItem, SeasonGroupAggregate, SeasonMatrixAggregate, SeasonUserAggregate, WaterActivitySeasonRecord
+    from .repo_models import (
+        DailyAggregateItem,
+        SeasonGroupAggregate,
+        SeasonMatrixAggregate,
+        SeasonUserAggregate,
+        WaterActivitySeasonRecord,
+    )
+
+from .repo_models import (
+    DailyAggregateItem,
+    calc_personal_delta_exp,
+    calc_weighted_global_exp,
+)
 
 
-def _repo_module():
+def _repo_module() -> ModuleType:
     from . import repo as repo_module
+
     return repo_module
 
 
@@ -139,7 +132,7 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
 
         async def _stats_in_shard(
             session: AsyncSession,
-        ):
+        ) -> Sequence[Row[tuple[str, str, int, int]]]:
             return await WaterMessageOps(session).aggregate_daily_stats(
                 start_ts,
                 end_ts,
@@ -147,7 +140,7 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
 
         async def _hourly_in_shard(
             session: AsyncSession,
-        ):
+        ) -> Sequence[tuple[str, str, int, int]]:
             return await WaterMessageOps(session).aggregate_daily_hourly_stats(
                 start_ts,
                 end_ts,
@@ -180,8 +173,6 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
 
         group_ids = sorted({group_id for group_id, _ in merged_stats})
         group_matrix_map = await self.get_or_create_group_matrix_ids(group_ids)
-
-        from .repo import DailyAggregateItem
 
         return [
             DailyAggregateItem(
@@ -259,8 +250,6 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         _ = prune_after_settlement
         if not aggregates:
             return
-
-        from .repo import calc_personal_delta_exp, calc_weighted_global_exp
 
         repo_module = _repo_module()
         now_ts = repo_module.get_current_time()
@@ -485,15 +474,19 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         if not payloads:
             return 0
         async with water_core_db.session(commit=True) as session:
-            return await _repo_module().WaterAchievementOps(session).bulk_unlock(payloads)
+            return (
+                await _repo_module().WaterAchievementOps(session).bulk_unlock(payloads)
+            )
 
     async def get_user_achievement_items(
         self,
         user_id: str,
     ) -> list[tuple[str, str, str, int]]:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterAchievementOps(session).get_unlocked_items(
-                user_id
+            return (
+                await _repo_module()
+                .WaterAchievementOps(session)
+                .get_unlocked_items(user_id)
             )
 
     async def create_activity_season(
@@ -508,8 +501,10 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         season_id: str,
     ) -> "WaterActivitySeasonRecord | None":
         async with water_core_db.session(commit=False) as session:
-            row = await _repo_module().WaterActivitySeasonOps(session).get_by_season_id(
-                season_id
+            row = (
+                await _repo_module()
+                .WaterActivitySeasonOps(session)
+                .get_by_season_id(season_id)
             )
         if row is None:
             return None
@@ -521,15 +516,17 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         **values: object,
     ) -> bool:
         async with water_core_db.session(commit=True) as session:
-            affected = await _repo_module().WaterActivitySeasonOps(session).update(
-                season_id, **values
+            affected = (
+                await _repo_module()
+                .WaterActivitySeasonOps(session)
+                .update(season_id, **values)
             )
         return affected > 0
 
     async def delete_activity_season(self, season_id: str) -> bool:
         async with water_core_db.session(commit=True) as session:
-            affected = await _repo_module().WaterActivitySeasonOps(session).delete(
-                season_id
+            affected = (
+                await _repo_module().WaterActivitySeasonOps(session).delete(season_id)
             )
         return affected > 0
 
@@ -538,8 +535,10 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         statuses: list[str] | None = None,
     ) -> list["WaterActivitySeasonRecord"]:
         async with water_core_db.session(commit=False) as session:
-            rows = await _repo_module().WaterActivitySeasonOps(session).list_by_status(
-                statuses
+            rows = (
+                await _repo_module()
+                .WaterActivitySeasonOps(session)
+                .list_by_status(statuses)
             )
         return [self._to_season_record(row) for row in rows]
 
@@ -548,9 +547,11 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         today: int,
     ) -> list["WaterActivitySeasonRecord"]:
         async with water_core_db.session(commit=False) as session:
-            rows = await _repo_module().WaterActivitySeasonOps(
-                session
-            ).list_current_published(today)
+            rows = (
+                await _repo_module()
+                .WaterActivitySeasonOps(session)
+                .list_current_published(today)
+            )
         return [self._to_season_record(row) for row in rows]
 
     async def search_published_activity_seasons(
@@ -558,15 +559,19 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         keyword: str,
     ) -> list["WaterActivitySeasonRecord"]:
         async with water_core_db.session(commit=False) as session:
-            rows = await _repo_module().WaterActivitySeasonOps(
-                session
-            ).search_published_candidates(keyword)
+            rows = (
+                await _repo_module()
+                .WaterActivitySeasonOps(session)
+                .search_published_candidates(keyword)
+            )
         return [self._to_season_record(row) for row in rows]
 
-    async def get_penalty_log(self, penalty_id: int):
+    async def get_penalty_log(self, penalty_id: int) -> object | None:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterPenaltyOps(session).get_penalty_by_id(
-                penalty_id
+            return (
+                await _repo_module()
+                .WaterPenaltyOps(session)
+                .get_penalty_by_id(penalty_id)
             )
 
     async def get_user_recent_summaries(
@@ -579,15 +584,17 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         repo_module = _repo_module()
         hot_start_date = self._hot_summary_start_date()
         async with water_core_db.session(commit=False) as session:
-            group_ids = await repo_module.WaterGroupMatrixMapOps(session).get_groups_by_matrix(
-                matrix_id
-            )
+            group_ids = await repo_module.WaterGroupMatrixMapOps(
+                session
+            ).get_groups_by_matrix(matrix_id)
             if not group_ids:
                 return []
 
             hot_rows: list[WaterSummaryRecord] = []
             if end_date >= hot_start_date:
-                hot_rows = await repo_module.WaterSummaryOps(session).get_user_recent_summaries(
+                hot_rows = await repo_module.WaterSummaryOps(
+                    session
+                ).get_user_recent_summaries(
                     user_id=user_id,
                     group_ids=group_ids,
                     start_date=max(start_date, hot_start_date),
@@ -618,7 +625,9 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         hot_rows: list[WaterSummaryRecord] = []
         async with water_core_db.session(commit=False) as session:
             if end_date >= hot_start_date:
-                hot_rows = await repo_module.WaterSummaryOps(session).get_summaries_in_window(
+                hot_rows = await repo_module.WaterSummaryOps(
+                    session
+                ).get_summaries_in_window(
                     start_date=max(start_date, hot_start_date),
                     end_date=end_date,
                     group_ids=group_ids,
@@ -667,15 +676,19 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
 
     async def get_user_global_rank(self, user_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterLevelOps(session).get_user_global_rank(
-                user_id
+            return (
+                await _repo_module()
+                .WaterLevelOps(session)
+                .get_user_global_rank(user_id)
             )
 
     async def get_groups_by_matrix_id(self, matrix_id: str) -> list[str]:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterGroupMatrixMapOps(
-                session
-            ).get_groups_by_matrix(matrix_id)
+            return (
+                await _repo_module()
+                .WaterGroupMatrixMapOps(session)
+                .get_groups_by_matrix(matrix_id)
+            )
 
     async def get_user_matrix_level(
         self,
@@ -683,28 +696,38 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         matrix_id: str,
     ) -> tuple[int, int, int] | None:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterLevelOps(session).get_matrix_level(
-                matrix_id, user_id
+            return (
+                await _repo_module()
+                .WaterLevelOps(session)
+                .get_matrix_level(matrix_id, user_id)
             )
 
     async def get_user_matrix_rank(self, user_id: str, matrix_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterLevelOps(session).get_user_matrix_rank(
-                matrix_id, user_id
+            return (
+                await _repo_module()
+                .WaterLevelOps(session)
+                .get_user_matrix_rank(matrix_id, user_id)
             )
 
     async def get_group_user_rank(self, group_id: str, user_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterGroupStatsOps(session).get_group_user_rank(
-                group_id,
-                user_id,
+            return (
+                await _repo_module()
+                .WaterGroupStatsOps(session)
+                .get_group_user_rank(
+                    group_id,
+                    user_id,
+                )
             )
 
     async def get_group_activity_rank(self, group_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterGroupStatsOps(
-                session
-            ).get_group_activity_rank(group_id)
+            return (
+                await _repo_module()
+                .WaterGroupStatsOps(session)
+                .get_group_activity_rank(group_id)
+            )
 
     async def archive_summary_shards(self) -> None:
         await water_summary.run_archiver_task()
@@ -721,19 +744,25 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
 
     async def get_matrix_rank(self, matrix_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterLevelOps(session).get_matrix_rank(matrix_id)
+            return (
+                await _repo_module().WaterLevelOps(session).get_matrix_rank(matrix_id)
+            )
 
     async def get_matrix_total_level(
         self, matrix_id: str
     ) -> tuple[int, int, int] | None:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterLevelOps(session).get_matrix_total(matrix_id)
+            return (
+                await _repo_module().WaterLevelOps(session).get_matrix_total(matrix_id)
+            )
 
     async def exists_other_global_lv10(self, user_id: str) -> bool:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterLevelOps(
-                session
-            ).exists_other_global_lv10(user_id)
+            return (
+                await _repo_module()
+                .WaterLevelOps(session)
+                .exists_other_global_lv10(user_id)
+            )
 
     async def ignore_matrix_suggestion(self, group_id: str) -> bool:
         repo_module = _repo_module()
@@ -745,9 +774,11 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
 
     async def get_ignored_matrix_suggestions(self) -> set[str]:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterMatrixMergeStateOps(
-                session
-            ).get_ignored_groups()
+            return (
+                await _repo_module()
+                .WaterMatrixMergeStateOps(session)
+                .get_ignored_groups()
+            )
 
     async def mark_group_first_record_seen(self, group_id: str) -> bool:
         repo_module = _repo_module()
@@ -760,14 +791,18 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
 
     async def get_marked_first_record_groups(self) -> set[str]:
         async with water_core_db.session(commit=False) as session:
-            return await _repo_module().WaterMatrixMergeStateOps(
-                session
-            ).get_first_seen_groups()
+            return (
+                await _repo_module()
+                .WaterMatrixMergeStateOps(session)
+                .get_first_seen_groups()
+            )
 
     async def has_matrix_merge_decision(self, group_id: str) -> bool:
         async with water_core_db.session(commit=False) as session:
-            state = await _repo_module().WaterMatrixMergeStateOps(session).get_state(
-                group_id
+            state = (
+                await _repo_module()
+                .WaterMatrixMergeStateOps(session)
+                .get_state(group_id)
             )
             if state is None:
                 return False
@@ -775,8 +810,10 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
 
     async def get_pending_matrix_suggestion(self, group_id: str) -> dict | None:
         async with water_core_db.session(commit=False) as session:
-            state = await _repo_module().WaterMatrixMergeStateOps(session).get_state(
-                group_id
+            state = (
+                await _repo_module()
+                .WaterMatrixMergeStateOps(session)
+                .get_state(group_id)
             )
             if state is None:
                 return None
@@ -895,8 +932,6 @@ class WaterRepositoryAdminMixin(_WaterRepositoryAdminMixinBase):
         }
 
     async def pardon_penalty(self, penalty_id: int) -> bool:
-        from .repo import calc_personal_delta_exp, calc_weighted_global_exp
-
         repo_module = _repo_module()
         now_ts = repo_module.get_current_time()
         async with water_core_db.session(commit=True) as session:

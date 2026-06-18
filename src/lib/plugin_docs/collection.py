@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 # pyright: reportAttributeAccessIssue=false
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from io import BytesIO
@@ -17,6 +16,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.demo_theme import DEFAULT_DEMO_THEME, SENRIN_V3_THEME, get_demo_theme
+
 from .command_layout import (
     CommandLayout,
     CommandPalette,

@@ -6,8 +6,8 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 from io import BytesIO
 import json
-import re
 from pathlib import Path
+import re
 from typing import Any
 
 from PIL import Image, UnidentifiedImageError
@@ -513,7 +513,7 @@ def extract_md5_candidates(value: str) -> list[str]:
     return candidates
 
 
-def shape_from_legacy_extra_info(extra_info: object):
+def shape_from_legacy_extra_info(extra_info: object) -> object | None:
     from src.plugins.wordbank.message_model import shape_from_event
 
     if extra_info in (None, ""):
@@ -631,7 +631,9 @@ def extract_failure_details_from_categorized_report(
         if not isinstance(bucket, Mapping):
             continue
         items = bucket.get("items")
-        if not isinstance(items, Sequence) or isinstance(items, (str, bytes, bytearray)):
+        if not isinstance(items, Sequence) or isinstance(
+            items, (str, bytes, bytearray)
+        ):
             continue
         for item in items:
             if isinstance(item, Mapping):
@@ -676,16 +678,16 @@ def summarize_legacy_message_payload(
             )
             continue
         if segment_type == "at":
-            summary_segments.append(
-                {"type": "at", "qq": str(segment.get("qq") or "")}
-            )
+            summary_segments.append({"type": "at", "qq": str(segment.get("qq") or "")})
             continue
         if segment_type == "face":
             summary_segments.append(
                 {"type": "face", "id": str(segment.get("id") or "")}
             )
             continue
-        summary_segments.append({"type": segment_type or "unknown", "data": dict(segment)})
+        summary_segments.append(
+            {"type": segment_type or "unknown", "data": dict(segment)}
+        )
 
     return {
         "kind": "message",
@@ -751,14 +753,14 @@ def categorize_failure_reason(reason: str) -> str:
 
 __all__ = [
     "MigrationError",
+    "_coerce_int",
+    "_optional_coerce_int",
+    "_resolve_legacy_call_window_seconds",
     "categorize_failure_reason",
     "extract_failure_details_from_categorized_report",
     "extract_md5_candidates",
     "infer_report_response_available",
     "load_legacy_json",
-    "_coerce_int",
-    "_optional_coerce_int",
-    "_resolve_legacy_call_window_seconds",
     "message_ref_shard_key",
     "normalize_legacy_message_text_preserving_newlines",
     "normalize_legacy_probability",

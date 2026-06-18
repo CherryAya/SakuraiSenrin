@@ -1,5 +1,5 @@
-from tests.test_plugin_docs_support import *
 import src.lib.plugin_docs.meta as plugin_docs_meta_module
+from tests.test_plugin_docs_support import *
 
 
 def test_load_plugin_doc_bundle_parses_real_readme() -> None:

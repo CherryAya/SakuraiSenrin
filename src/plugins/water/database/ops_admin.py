@@ -315,9 +315,7 @@ class WaterMatrixMergeStateOps(BaseOps[WaterMatrixMergeState]):
 
 
 class WaterAchievementOps(BaseOps[WaterUserAchievement]):
-    async def get_unlocked_items(
-        self, user_id: str
-    ) -> list[tuple[str, str, str, int]]:
+    async def get_unlocked_items(self, user_id: str) -> list[tuple[str, str, str, int]]:
         stmt = (
             select(
                 WaterUserAchievement.achievement_id,

@@ -206,7 +206,9 @@ def split_add_pair(source: str) -> tuple[str, str] | None:
     return None
 
 
-def _parse_positive_int(value: str, *, fallback: str, key: MessageKey, **params: object) -> int:
+def _parse_positive_int(
+    value: str, *, fallback: str, key: MessageKey, **params: object
+) -> int:
     try:
         parsed = int(value)
     except ValueError as exc:
@@ -486,17 +488,31 @@ def parse_guided_scope_choice(text: str, *, is_group: bool) -> str:
         return "self_in_current_group" if is_group else "self"
     if choice in {"4", "private", "private_only", "私聊"}:
         return "private_only"
-    raise RuleError(_default_i18n_text("wordbank.error.guided_scope_invalid"), key="wordbank.error.guided_scope_invalid")
+    raise RuleError(
+        _default_i18n_text("wordbank.error.guided_scope_invalid"),
+        key="wordbank.error.guided_scope_invalid",
+    )
 
 
 def parse_guided_advanced_options(text: str) -> GuidedAdvancedOptions:
     choice = text.strip()
-    if not choice or choice.casefold() in {"n", "no", "否", "不", "不用", "不需要", "无", "跳过"}:
+    if not choice or choice.casefold() in {
+        "n",
+        "no",
+        "否",
+        "不",
+        "不用",
+        "不需要",
+        "无",
+        "跳过",
+    }:
         return GuidedAdvancedOptions(raw_rule={})
     source, raw_rule = _parse_flags(choice)
     if has_meaningful_text(source):
         raise RuleError(
-            _default_i18n_text("wordbank.error.guided_advanced_unknown", options=source),
+            _default_i18n_text(
+                "wordbank.error.guided_advanced_unknown", options=source
+            ),
             key="wordbank.error.guided_advanced_unknown",
             options=source,
         )
@@ -514,7 +530,10 @@ def parse_study_mode_choice(text: str) -> str:
         return "a"
     if choice in {"m", "me", "self", "自己", "仅自己"}:
         return "m"
-    raise RuleError(_default_i18n_text("wordbank.error.study_mode_invalid"), key="wordbank.error.study_mode_invalid")
+    raise RuleError(
+        _default_i18n_text("wordbank.error.study_mode_invalid"),
+        key="wordbank.error.study_mode_invalid",
+    )
 
 
 def parse_study_group_block_choice(text: str) -> str:
@@ -523,7 +542,10 @@ def parse_study_group_block_choice(text: str) -> str:
         return "t"
     if choice in {"f", "false", "no", "n", "关", "关闭", "全群"}:
         return "f"
-    raise RuleError(_default_i18n_text("wordbank.error.study_group_block_invalid"), key="wordbank.error.study_group_block_invalid")
+    raise RuleError(
+        _default_i18n_text("wordbank.error.study_group_block_invalid"),
+        key="wordbank.error.study_group_block_invalid",
+    )
 
 
 def parse_guided_weight(text: str) -> int:
@@ -533,9 +555,15 @@ def parse_guided_weight(text: str) -> int:
     try:
         weight = int(choice)
     except ValueError as exc:
-        raise RuleError(_default_i18n_text("wordbank.error.weight_invalid"), key="wordbank.error.weight_invalid") from exc
+        raise RuleError(
+            _default_i18n_text("wordbank.error.weight_invalid"),
+            key="wordbank.error.weight_invalid",
+        ) from exc
     if weight < 1 or weight > 5:
-        raise RuleError(_default_i18n_text("wordbank.error.weight_invalid"), key="wordbank.error.weight_invalid")
+        raise RuleError(
+            _default_i18n_text("wordbank.error.weight_invalid"),
+            key="wordbank.error.weight_invalid",
+        )
     return weight
 
 
@@ -560,30 +588,96 @@ def parse_search_args(text: str) -> ParsedSearch:
         if token in {"--page", "-p"}:
             idx += 1
             if idx >= len(tokens):
-                raise RuleError(_default_i18n_text("wordbank.error.flag_missing", flag="--page", expected=_label("page")), key="wordbank.error.flag_missing", flag="--page", expected=_label("page"))
-            page = _parse_positive_int(tokens[idx].value, fallback=_default_i18n_text("wordbank.error.search_page_invalid"), key="wordbank.error.search_page_invalid")
+                raise RuleError(
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--page",
+                        expected=_label("page"),
+                    ),
+                    key="wordbank.error.flag_missing",
+                    flag="--page",
+                    expected=_label("page"),
+                )
+            page = _parse_positive_int(
+                tokens[idx].value,
+                fallback=_default_i18n_text("wordbank.error.search_page_invalid"),
+                key="wordbank.error.search_page_invalid",
+            )
         elif token in {"--limit", "-n"}:
             idx += 1
             if idx >= len(tokens):
-                raise RuleError(_default_i18n_text("wordbank.error.flag_missing", flag="--limit", expected=_label("limit")), key="wordbank.error.flag_missing", flag="--limit", expected=_label("limit"))
-            limit = _parse_positive_int(tokens[idx].value, fallback=_default_i18n_text("wordbank.error.search_limit_invalid", max_limit=MAX_SEARCH_LIMIT), key="wordbank.error.search_limit_invalid", max_limit=MAX_SEARCH_LIMIT)
+                raise RuleError(
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--limit",
+                        expected=_label("limit"),
+                    ),
+                    key="wordbank.error.flag_missing",
+                    flag="--limit",
+                    expected=_label("limit"),
+                )
+            limit = _parse_positive_int(
+                tokens[idx].value,
+                fallback=_default_i18n_text(
+                    "wordbank.error.search_limit_invalid", max_limit=MAX_SEARCH_LIMIT
+                ),
+                key="wordbank.error.search_limit_invalid",
+                max_limit=MAX_SEARCH_LIMIT,
+            )
             if limit > MAX_SEARCH_LIMIT:
-                raise RuleError(_default_i18n_text("wordbank.error.search_limit_invalid", max_limit=MAX_SEARCH_LIMIT), key="wordbank.error.search_limit_invalid", max_limit=MAX_SEARCH_LIMIT)
+                raise RuleError(
+                    _default_i18n_text(
+                        "wordbank.error.search_limit_invalid",
+                        max_limit=MAX_SEARCH_LIMIT,
+                    ),
+                    key="wordbank.error.search_limit_invalid",
+                    max_limit=MAX_SEARCH_LIMIT,
+                )
         elif token in {"--field", "-f"}:
             idx += 1
             if idx >= len(tokens):
-                raise RuleError(_default_i18n_text("wordbank.error.flag_missing", flag="--field", expected=_label("search_field")), key="wordbank.error.flag_missing", flag="--field", expected=_label("search_field"))
+                raise RuleError(
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--field",
+                        expected=_label("search_field"),
+                    ),
+                    key="wordbank.error.flag_missing",
+                    flag="--field",
+                    expected=_label("search_field"),
+                )
             normalized_field = SEARCH_FIELD_ALIASES.get(tokens[idx].value.casefold())
             if normalized_field is None:
-                raise RuleError(_default_i18n_text("wordbank.error.search_field_invalid"), key="wordbank.error.search_field_invalid")
+                raise RuleError(
+                    _default_i18n_text("wordbank.error.search_field_invalid"),
+                    key="wordbank.error.search_field_invalid",
+                )
             field = normalized_field
         elif token in {"--creator", "-c"}:
             idx += 1
             if idx >= len(tokens):
-                raise RuleError(_default_i18n_text("wordbank.error.flag_missing", flag="--creator", expected=_label("creator_id")), key="wordbank.error.flag_missing", flag="--creator", expected=_label("creator_id"))
+                raise RuleError(
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--creator",
+                        expected=_label("creator_id"),
+                    ),
+                    key="wordbank.error.flag_missing",
+                    flag="--creator",
+                    expected=_label("creator_id"),
+                )
             creator_id = tokens[idx].value.strip()
             if not creator_id:
-                raise RuleError(_default_i18n_text("wordbank.error.flag_missing", flag="--creator", expected=_label("creator_id")), key="wordbank.error.flag_missing", flag="--creator", expected=_label("creator_id"))
+                raise RuleError(
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--creator",
+                        expected=_label("creator_id"),
+                    ),
+                    key="wordbank.error.flag_missing",
+                    flag="--creator",
+                    expected=_label("creator_id"),
+                )
         else:
             keyword_tokens.append(tokens[idx])
         idx += 1
@@ -601,7 +695,11 @@ def parse_group_view_args(text: str) -> ParsedGroupView:
     try:
         tokens = tokenize_shell_like(text)
     except ValueError as exc:
-        raise RuleError(_default_i18n_text("wordbank.error.parse_flags", reason=str(exc)), key="wordbank.error.parse_flags", reason=str(exc)) from exc
+        raise RuleError(
+            _default_i18n_text("wordbank.error.parse_flags", reason=str(exc)),
+            key="wordbank.error.parse_flags",
+            reason=str(exc),
+        ) from exc
 
     positional: list[str] = []
     page = 1
@@ -611,31 +709,67 @@ def parse_group_view_args(text: str) -> ParsedGroupView:
         if token in {"--page", "-p"}:
             idx += 1
             if idx >= len(tokens):
-                raise RuleError(_default_i18n_text("wordbank.error.flag_missing", flag="--page", expected=_label("page")), key="wordbank.error.flag_missing", flag="--page", expected=_label("page"))
-            page = _parse_positive_int(tokens[idx].value, fallback=_default_i18n_text("wordbank.error.group_page_invalid"), key="wordbank.error.group_page_invalid")
+                raise RuleError(
+                    _default_i18n_text(
+                        "wordbank.error.flag_missing",
+                        flag="--page",
+                        expected=_label("page"),
+                    ),
+                    key="wordbank.error.flag_missing",
+                    flag="--page",
+                    expected=_label("page"),
+                )
+            page = _parse_positive_int(
+                tokens[idx].value,
+                fallback=_default_i18n_text("wordbank.error.group_page_invalid"),
+                key="wordbank.error.group_page_invalid",
+            )
         else:
             positional.append(token)
         idx += 1
 
     if not positional:
-        raise RuleError(_default_i18n_text("wordbank.error.group_id_numeric"), key="wordbank.error.group_id_numeric")
+        raise RuleError(
+            _default_i18n_text("wordbank.error.group_id_numeric"),
+            key="wordbank.error.group_id_numeric",
+        )
 
-    trigger_group_id = _parse_positive_int(positional[0], fallback=_default_i18n_text("wordbank.error.group_id_numeric"), key="wordbank.error.group_id_numeric")
+    trigger_group_id = _parse_positive_int(
+        positional[0],
+        fallback=_default_i18n_text("wordbank.error.group_id_numeric"),
+        key="wordbank.error.group_id_numeric",
+    )
     if len(positional) >= 2:
-        page = _parse_positive_int(positional[1], fallback=_default_i18n_text("wordbank.error.group_page_invalid"), key="wordbank.error.group_page_invalid")
+        page = _parse_positive_int(
+            positional[1],
+            fallback=_default_i18n_text("wordbank.error.group_page_invalid"),
+            key="wordbank.error.group_page_invalid",
+        )
     if len(positional) > 2:
-        raise RuleError(_default_i18n_text("wordbank.reply.group_command_invalid"), key="wordbank.reply.group_command_invalid")
+        raise RuleError(
+            _default_i18n_text("wordbank.reply.group_command_invalid"),
+            key="wordbank.reply.group_command_invalid",
+        )
     return ParsedGroupView(trigger_group_id=trigger_group_id, page=page)
 
 
 def parse_guided_search_mode_choice(text: str) -> GuidedSearchSelection:
     choice = "".join(text.strip().split())
     if not choice:
-        raise RuleError(_default_i18n_text("wordbank.error.guided_search_mode_invalid"), key="wordbank.error.guided_search_mode_invalid")
+        raise RuleError(
+            _default_i18n_text("wordbank.error.guided_search_mode_invalid"),
+            key="wordbank.error.guided_search_mode_invalid",
+        )
     if any(char not in {"1", "2", "3"} for char in choice):
-        raise RuleError(_default_i18n_text("wordbank.error.guided_search_mode_invalid"), key="wordbank.error.guided_search_mode_invalid")
+        raise RuleError(
+            _default_i18n_text("wordbank.error.guided_search_mode_invalid"),
+            key="wordbank.error.guided_search_mode_invalid",
+        )
     if len(set(choice)) != len(choice):
-        raise RuleError(_default_i18n_text("wordbank.error.guided_search_mode_invalid"), key="wordbank.error.guided_search_mode_invalid")
+        raise RuleError(
+            _default_i18n_text("wordbank.error.guided_search_mode_invalid"),
+            key="wordbank.error.guided_search_mode_invalid",
+        )
     includes_trigger = "1" in choice
     includes_response = "2" in choice
     includes_creator = "3" in choice
@@ -647,7 +781,11 @@ def parse_guided_search_mode_choice(text: str) -> GuidedSearchSelection:
         field = "response"
     else:
         field = "all"
-    return GuidedSearchSelection(field=field, requires_query=includes_trigger or includes_response, requires_creator=includes_creator)
+    return GuidedSearchSelection(
+        field=field,
+        requires_query=includes_trigger or includes_response,
+        requires_creator=includes_creator,
+    )
 
 
 def parse_guided_search_creator_filter(text: str) -> str:
@@ -663,7 +801,11 @@ def parse_guided_search_page_choice(text: str) -> int | None:
         return None
     if choice.startswith("page "):
         choice = choice.removeprefix("page ").strip()
-    return _parse_positive_int(choice, fallback=_default_i18n_text("wordbank.error.search_page_invalid"), key="wordbank.error.search_page_invalid")
+    return _parse_positive_int(
+        choice,
+        fallback=_default_i18n_text("wordbank.error.search_page_invalid"),
+        key="wordbank.error.search_page_invalid",
+    )
 
 
 def parse_search_session_command(text: str) -> ParsedSearchSessionCommand:
@@ -672,29 +814,48 @@ def parse_search_session_command(text: str) -> ParsedSearchSessionCommand:
         return ParsedSearchSessionCommand(action="exit")
     compact_detail = _parse_compact_group_view_command(source)
     if compact_detail is not None:
-        return ParsedSearchSessionCommand(action="detail", page=compact_detail.page, trigger_group_id=compact_detail.trigger_group_id)
+        return ParsedSearchSessionCommand(
+            action="detail",
+            page=compact_detail.page,
+            trigger_group_id=compact_detail.trigger_group_id,
+        )
     action, _, rest = source.partition(" ")
     normalized = action.casefold()
     if normalized in {"exit", "q", "quit"} or source == "结束":
         return ParsedSearchSessionCommand(action="exit")
     if action in {"详情", "group", "grp", "展开"}:
         parsed = parse_group_view_args(rest)
-        return ParsedSearchSessionCommand(action="detail", page=parsed.page, trigger_group_id=parsed.trigger_group_id)
+        return ParsedSearchSessionCommand(
+            action="detail", page=parsed.page, trigger_group_id=parsed.trigger_group_id
+        )
     if action in {"delete", "del", "remove", "删除"}:
         raw_indexes = tuple(part for part in rest.split() if part)
         if not raw_indexes:
-            raise RuleError(_default_i18n_text("wordbank.error.search_delete_index_invalid"), key="wordbank.error.search_delete_index_invalid")
+            raise RuleError(
+                _default_i18n_text("wordbank.error.search_delete_index_invalid"),
+                key="wordbank.error.search_delete_index_invalid",
+            )
         indexes: list[int] = []
         for raw_index in raw_indexes:
             if not raw_index.isdigit() or int(raw_index) <= 0:
-                raise RuleError(_default_i18n_text("wordbank.error.search_delete_index_invalid"), key="wordbank.error.search_delete_index_invalid")
+                raise RuleError(
+                    _default_i18n_text("wordbank.error.search_delete_index_invalid"),
+                    key="wordbank.error.search_delete_index_invalid",
+                )
             value = int(raw_index)
             if value not in indexes:
                 indexes.append(value)
-        return ParsedSearchSessionCommand(action="delete", delete_indexes=tuple(indexes))
+        return ParsedSearchSessionCommand(
+            action="delete", delete_indexes=tuple(indexes)
+        )
     if source.isdigit() or normalized == "page":
-        return ParsedSearchSessionCommand(action="page", page=parse_guided_search_page_choice(source))
-    raise RuleError(_default_i18n_text("wordbank.error.search_session_command_invalid"), key="wordbank.error.search_session_command_invalid")
+        return ParsedSearchSessionCommand(
+            action="page", page=parse_guided_search_page_choice(source)
+        )
+    raise RuleError(
+        _default_i18n_text("wordbank.error.search_session_command_invalid"),
+        key="wordbank.error.search_session_command_invalid",
+    )
 
 
 def _parse_compact_group_view_command(text: str) -> ParsedGroupView | None:
@@ -723,8 +884,15 @@ def parse_study_media_prefix(text: str, *, is_group: bool) -> ParsedStudyMediaPr
     try:
         tokens = tokenize_shell_like(text)
     except ValueError as exc:
-        raise RuleError(_default_i18n_text("wordbank.error.study_format"), key="wordbank.error.study_format") from exc
-    if len(tokens) >= 2 and tokens[0].value.casefold() in {"a", "m"} and tokens[1].value.casefold() in {"t", "f"}:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.study_format"),
+            key="wordbank.error.study_format",
+        ) from exc
+    if (
+        len(tokens) >= 2
+        and tokens[0].value.casefold() in {"a", "m"}
+        and tokens[1].value.casefold() in {"t", "f"}
+    ):
         from src.plugins.wordbank.services.rules import build_legacy_study_shortcut_rule
 
         return ParsedStudyMediaPrefix(
@@ -736,7 +904,10 @@ def parse_study_media_prefix(text: str, *, is_group: bool) -> ParsedStudyMediaPr
             ),
         )
     if tokens and tokens[0].value.casefold() in {"a", "m"}:
-        raise RuleError(_default_i18n_text("wordbank.error.study_format"), key="wordbank.error.study_format")
+        raise RuleError(
+            _default_i18n_text("wordbank.error.study_format"),
+            key="wordbank.error.study_format",
+        )
     return ParsedStudyMediaPrefix(source=text, raw_rule={})
 
 

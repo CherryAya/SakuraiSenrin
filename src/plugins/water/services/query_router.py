@@ -9,12 +9,12 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.plugins.water.img import (
+from src.plugins.water.renderers import render_season_list
+from src.plugins.water.renderers.profile import (
     build_my_water_fallback_text,
     build_my_water_image,
     build_my_water_simple_image,
 )
-from src.plugins.water.renderers import render_season_list
 from src.plugins.water.services.profile import profile_service
 from src.plugins.water.services.rank_query import water_rank_query_service
 from src.plugins.water.services.rank_season import season_rank_service

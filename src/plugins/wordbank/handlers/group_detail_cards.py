@@ -788,9 +788,7 @@ class GroupDetailCardRenderer:
             fill=self.MUTED,
         )
         stats_y = (
-            generated_y
-            + line_height(self.footer_minor_font)
-            + CARD_FOOTER_LINE_GAP
+            generated_y + line_height(self.footer_minor_font) + CARD_FOOTER_LINE_GAP
         )
         draw.text(
             centered_text_origin(

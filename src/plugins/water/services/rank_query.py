@@ -10,9 +10,9 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.logger import logger
 from src.plugins.water.database import water_repo
-from src.plugins.water.img import (
-    WaterDayRankCardData,
-    build_water_day_rank_image,
+from src.plugins.water.img import build_water_day_rank_image
+from src.plugins.water.renderers.models import WaterDayRankCardData
+from src.plugins.water.renderers.report import (
     build_water_period_rank_image,
 )
 from src.plugins.water.services.rank import water_rank_service

@@ -180,9 +180,14 @@ class SearchTreemapFittersMixin:
             for size in candidate_sizes:
                 font = self._load_lxgw_font(size)
                 line_height = self._line_height(font)
-                if any(self._text_width(line, font) > max_width for line in manual_lines):
+                if any(
+                    self._text_width(line, font) > max_width for line in manual_lines
+                ):
                     continue
-                total_height = len(manual_lines) * line_height + max(0, len(manual_lines) - 1) * manual_gap
+                total_height = (
+                    len(manual_lines) * line_height
+                    + max(0, len(manual_lines) - 1) * manual_gap
+                )
                 if total_height <= max_height:
                     return font, list(manual_lines)
         for size in candidate_sizes:

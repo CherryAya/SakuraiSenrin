@@ -17,11 +17,11 @@ from src.plugins.wordbank.database.types import WordbankImageRecord
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 
 from .media_models import (
-    CanonicalImageMatch,
     IMAGE_HASH_VERSION,
     IMAGE_SEARCH_DISTANCE_THRESHOLD,
     REMOTE_SYNC_FAILED,
     REMOTE_SYNC_SYNCED,
+    CanonicalImageMatch,
     content_type_from_extension,
     extension_from_storage_path,
     fingerprint_image,
@@ -72,7 +72,9 @@ class WordbankMediaRuntimeMixin:
             dhash_nodes=len(self._canonical_ids_by_dhash),
         )
 
-    def load_cache(self: _MediaRuntimeHost, images: Sequence[WordbankImageRecord]) -> None:
+    def load_cache(
+        self: _MediaRuntimeHost, images: Sequence[WordbankImageRecord]
+    ) -> None:
         by_id: dict[int, WordbankImageRecord] = {}
         by_prefix: dict[str, list[WordbankImageRecord]] = defaultdict(list)
         by_md5: dict[str, WordbankImageRecord] = {}
@@ -136,7 +138,8 @@ class WordbankMediaRuntimeMixin:
                 self._dhash_tree.add(image.dhash)
         if (
             existing is not None
-            and existing.id == self._by_canonical_id.get(existing.canonical_id, existing).id
+            and existing.id
+            == self._by_canonical_id.get(existing.canonical_id, existing).id
             and existing.canonical_id != image.canonical_id
         ):
             self._by_canonical_id.pop(existing.canonical_id, None)
@@ -154,8 +157,13 @@ class WordbankMediaRuntimeMixin:
         if existing is not None:
             return existing.canonical_id
         fingerprint = fingerprint_image(data)
-        for candidate in self._by_dhash_prefix.get(fingerprint.dhash[:4], [])[: self.candidate_limit]:
-            if hamming_distance(fingerprint.dhash, candidate.dhash) <= self.similarity_threshold:
+        for candidate in self._by_dhash_prefix.get(fingerprint.dhash[:4], [])[
+            : self.candidate_limit
+        ]:
+            if (
+                hamming_distance(fingerprint.dhash, candidate.dhash)
+                <= self.similarity_threshold
+            ):
                 return candidate.canonical_id
         return None
 
@@ -194,7 +202,9 @@ class WordbankMediaRuntimeMixin:
             )
             return []
         matches: list[CanonicalImageMatch] = []
-        for dhash_distance, matched_dhash in self._dhash_tree.find(fingerprint.dhash, distance_threshold):
+        for dhash_distance, matched_dhash in self._dhash_tree.find(
+            fingerprint.dhash, distance_threshold
+        ):
             for canonical_id in self._canonical_ids_by_dhash.get(matched_dhash, ()):
                 image = self._canonical_hash_image.get(canonical_id)
                 if image is None:
@@ -206,7 +216,10 @@ class WordbankMediaRuntimeMixin:
                     score = min(
                         1.0,
                         score
-                        + max(0.0, 1.0 - (phash_distance / max(distance_threshold * 2, 1))) * 0.25,
+                        + max(
+                            0.0, 1.0 - (phash_distance / max(distance_threshold * 2, 1))
+                        )
+                        * 0.25,
                     )
                 matches.append(
                     CanonicalImageMatch(
@@ -217,7 +230,12 @@ class WordbankMediaRuntimeMixin:
                     )
                 )
         matches.sort(
-            key=lambda item: (item.score, -(item.phash_distance or 0), -item.dhash_distance, -item.canonical_id),
+            key=lambda item: (
+                item.score,
+                -(item.phash_distance or 0),
+                -item.dhash_distance,
+                -item.canonical_id,
+            ),
             reverse=True,
         )
         limited = matches[:limit]
@@ -231,22 +249,30 @@ class WordbankMediaRuntimeMixin:
         )
         return limited
 
-    def resolve_canonical_id_from_hints(self: _MediaRuntimeHost, hints: Sequence[str]) -> int | None:
+    def resolve_canonical_id_from_hints(
+        self: _MediaRuntimeHost, hints: Sequence[str]
+    ) -> int | None:
         for md5_candidate in iter_md5_candidates(hints):
             existing = self._by_md5.get(md5_candidate)
             if existing is not None:
                 return existing.canonical_id
         return None
 
-    async def load_storage_bytes(self: _MediaRuntimeHost, image: WordbankImageRecord) -> bytes | None:
+    async def load_storage_bytes(
+        self: _MediaRuntimeHost, image: WordbankImageRecord
+    ) -> bytes | None:
         return await self.load_canonical_storage_bytes(image.canonical_id)
 
-    def _get_remote_load_lock(self: _MediaRuntimeHost, canonical_image_id: int) -> asyncio.Lock:
+    def _get_remote_load_lock(
+        self: _MediaRuntimeHost, canonical_image_id: int
+    ) -> asyncio.Lock:
         if canonical_image_id not in self._remote_load_locks:
             self._remote_load_locks[canonical_image_id] = asyncio.Lock()
         return self._remote_load_locks[canonical_image_id]
 
-    async def load_canonical_storage_bytes(self: _MediaRuntimeHost, canonical_image_id: int) -> bytes | None:
+    async def load_canonical_storage_bytes(
+        self: _MediaRuntimeHost, canonical_image_id: int
+    ) -> bytes | None:
         start = perf_start()
         image = self._by_canonical_id.get(canonical_image_id)
         if image is None:
@@ -296,7 +322,9 @@ class WordbankMediaRuntimeMixin:
         )
         try:
             refreshed = self._by_canonical_id.get(canonical_image_id, image)
-            refreshed_fields = image_log_fields(refreshed, canonical_image_id=canonical_image_id)
+            refreshed_fields = image_log_fields(
+                refreshed, canonical_image_id=canonical_image_id
+            )
             local_probe_start = perf_start()
             cached = await self._load_from_local_cache(refreshed)
             log_perf(
@@ -347,13 +375,27 @@ class WordbankMediaRuntimeMixin:
         finally:
             lock.release()
 
-    async def _load_from_local_cache(self: _MediaRuntimeHost, image: WordbankImageRecord) -> bytes | None:
+    async def _load_from_local_cache(
+        self: _MediaRuntimeHost, image: WordbankImageRecord
+    ) -> bytes | None:
         fields = image_log_fields(image)
         if not self.cache_storage.enabled:
-            log_perf("media.local_cache.read", hit=False, cache_enabled=False, reason="cache_disabled", **fields)
+            log_perf(
+                "media.local_cache.read",
+                hit=False,
+                cache_enabled=False,
+                reason="cache_disabled",
+                **fields,
+            )
             return None
         if not image.local_cache_path:
-            log_perf("media.local_cache.read", hit=False, cache_enabled=True, reason="empty_cache_path", **fields)
+            log_perf(
+                "media.local_cache.read",
+                hit=False,
+                cache_enabled=True,
+                reason="empty_cache_path",
+                **fields,
+            )
             return None
         read_start = perf_start()
         cached = await self.cache_storage.load_cached_bytes(image.local_cache_path)
@@ -366,10 +408,22 @@ class WordbankMediaRuntimeMixin:
             **fields,
         )
         if cached is None:
-            log_perf("media.local_cache.path_missing", cache_enabled=True, reason="cache_file_missing", **fields)
+            log_perf(
+                "media.local_cache.path_missing",
+                cache_enabled=True,
+                reason="cache_file_missing",
+                **fields,
+            )
             metadata_start = perf_start()
-            updated = await self.repository.update_image_cache_metadata(image.id, local_cache_path="", cache_file_size=0)
-            log_perf("media.local_cache.stale_metadata_cleared", start=metadata_start, updated=updated is not None, **fields)
+            updated = await self.repository.update_image_cache_metadata(
+                image.id, local_cache_path="", cache_file_size=0
+            )
+            log_perf(
+                "media.local_cache.stale_metadata_cleared",
+                start=metadata_start,
+                updated=updated is not None,
+                **fields,
+            )
             if updated is not None:
                 self._cache_image(updated)
             return None
@@ -396,7 +450,9 @@ class WordbankMediaRuntimeMixin:
             self._cache_image(updated)
         return cached
 
-    async def _load_from_remote_storage(self: _MediaRuntimeHost, image: WordbankImageRecord) -> bytes | None:
+    async def _load_from_remote_storage(
+        self: _MediaRuntimeHost, image: WordbankImageRecord
+    ) -> bytes | None:
         if self.remote_storage is None or not image.remote_storage_path:
             return None
         fetch_start = perf_start()
@@ -421,7 +477,9 @@ class WordbankMediaRuntimeMixin:
         updated_image = self._by_id.get(image.id, image)
         if self.cache_storage.enabled:
             cache_store_start = perf_start()
-            updated_image = await self._store_cache_bytes(updated_image, remote_bytes, mark_as_hit=False)
+            updated_image = await self._store_cache_bytes(
+                updated_image, remote_bytes, mark_as_hit=False
+            )
             log_perf(
                 "media.load_canonical_storage_bytes.cache_store_after_remote",
                 start=cache_store_start,
@@ -440,7 +498,9 @@ class WordbankMediaRuntimeMixin:
             )
         return remote_bytes
 
-    async def _load_from_legacy_storage(self: _MediaRuntimeHost, image: WordbankImageRecord) -> bytes | None:
+    async def _load_from_legacy_storage(
+        self: _MediaRuntimeHost, image: WordbankImageRecord
+    ) -> bytes | None:
         if not image.storage_path or is_remote_uri(image.storage_path):
             return None
         legacy_start = perf_start()
@@ -455,9 +515,11 @@ class WordbankMediaRuntimeMixin:
         if legacy_bytes is None:
             return None
         updated = await self._touch_last_access(image.id)
-        return updated and legacy_bytes or legacy_bytes
+        return (updated and legacy_bytes) or legacy_bytes
 
-    async def _touch_last_access(self: _MediaRuntimeHost, image_id: int) -> WordbankImageRecord | None:
+    async def _touch_last_access(
+        self: _MediaRuntimeHost, image_id: int
+    ) -> WordbankImageRecord | None:
         current = self._by_id.get(image_id)
         if current is None:
             return None
@@ -469,7 +531,12 @@ class WordbankMediaRuntimeMixin:
             last_accessed_at=get_current_time(),
             cache_last_hit_at=current.cache_last_hit_at,
         )
-        log_perf("media.image_last_access_update", start=start, updated=updated is not None, **image_log_fields(current))
+        log_perf(
+            "media.image_last_access_update",
+            start=start,
+            updated=updated is not None,
+            **image_log_fields(current),
+        )
         if updated is not None:
             self._cache_image(updated)
         return updated
@@ -495,7 +562,9 @@ class WordbankMediaRuntimeMixin:
         cached = await self.cache_storage.store_cached_bytes(
             data,
             md5_hex=image.md5,
-            extension=extension_from_storage_path(image.remote_storage_path or image.storage_path),
+            extension=extension_from_storage_path(
+                image.remote_storage_path or image.storage_path
+            ),
         )
         log_perf(
             "media.local_cache.store",
@@ -533,7 +602,9 @@ class WordbankMediaRuntimeMixin:
 
     async def evict_local_cache_if_needed(self: _MediaRuntimeHost) -> int:
         if not self.cache_storage.enabled:
-            log_perf("media.local_cache.evict_if_needed", removed=0, cache_enabled=False)
+            log_perf(
+                "media.local_cache.evict_if_needed", removed=0, cache_enabled=False
+            )
             return 0
         start = perf_start()
         async with self._cache_maintenance_lock:
@@ -573,7 +644,9 @@ class WordbankMediaRuntimeMixin:
             for image in cached_images:
                 if not image.local_cache_path:
                     continue
-                path_exists = await asyncio.to_thread(Path(image.local_cache_path).is_file)
+                path_exists = await asyncio.to_thread(
+                    Path(image.local_cache_path).is_file
+                )
                 if path_exists:
                     known_paths.add(image.local_cache_path)
                     continue
@@ -589,7 +662,11 @@ class WordbankMediaRuntimeMixin:
                 cleared_metadata += 1
             removed_orphans = len(await self.cache_storage.prune_orphans(known_paths))
         evicted = await self.evict_local_cache_if_needed()
-        return {"cleared_metadata": cleared_metadata, "removed_orphans": removed_orphans, "evicted": evicted}
+        return {
+            "cleared_metadata": cleared_metadata,
+            "removed_orphans": removed_orphans,
+            "evicted": evicted,
+        }
 
     async def backfill_local_cache_metadata(
         self: _MediaRuntimeHost,
@@ -609,7 +686,9 @@ class WordbankMediaRuntimeMixin:
             if remaining > 0 and scanned >= remaining:
                 break
             scanned += 1
-            extension = extension_from_storage_path(image.remote_storage_path or image.storage_path)
+            extension = extension_from_storage_path(
+                image.remote_storage_path or image.storage_path
+            )
             expected_path = self.cache_storage.cache_root / f"{image.md5}{extension}"
             row: dict[str, Any] = {
                 "id": image.id,
@@ -633,7 +712,10 @@ class WordbankMediaRuntimeMixin:
             file_size = await asyncio.to_thread(lambda: expected_path.stat().st_size)
             normalized_path = str(expected_path)
             row["cache_file_size_detected"] = file_size
-            if image.local_cache_path == normalized_path and image.cache_file_size == file_size:
+            if (
+                image.local_cache_path == normalized_path
+                and image.cache_file_size == file_size
+            ):
                 unchanged += 1
                 row["action"] = "unchanged"
                 rows.append(row)
@@ -686,7 +768,9 @@ class WordbankMediaRuntimeMixin:
         )
         return report
 
-    async def rebuild_cache_metadata(self: _MediaRuntimeHost, image: WordbankImageRecord) -> WordbankImageRecord:
+    async def rebuild_cache_metadata(
+        self: _MediaRuntimeHost, image: WordbankImageRecord
+    ) -> WordbankImageRecord:
         if not image.local_cache_path:
             return image
         path = Path(image.local_cache_path)
@@ -730,7 +814,9 @@ class WordbankMediaRuntimeMixin:
             if updated is not None:
                 self._cache_image(updated)
             return updated
-        extension = extension_from_storage_path(image.remote_storage_path or image.storage_path)
+        extension = extension_from_storage_path(
+            image.remote_storage_path or image.storage_path
+        )
         content_type = content_type_from_extension(extension)
         try:
             stored = await self.remote_storage.save_bytes(
@@ -747,7 +833,11 @@ class WordbankMediaRuntimeMixin:
             if updated is not None:
                 self._cache_image(updated)
             return updated
-        storage_path = image.storage_path if image.storage_path and not is_remote_uri(image.storage_path) else stored.uri
+        storage_path = (
+            image.storage_path
+            if image.storage_path and not is_remote_uri(image.storage_path)
+            else stored.uri
+        )
         updated = await self.repository.update_image_remote_sync(
             image.id,
             remote_storage_path=stored.uri,
@@ -761,16 +851,22 @@ class WordbankMediaRuntimeMixin:
             self._cache_image(updated)
         return updated
 
-    async def list_remote_objects_by_key(self: _MediaRuntimeHost) -> dict[str, StorageObject]:
+    async def list_remote_objects_by_key(
+        self: _MediaRuntimeHost,
+    ) -> dict[str, StorageObject]:
         if self.remote_storage is None:
             return {}
         objects = await self.remote_storage.list_objects()
         return {item.key: item for item in objects}
 
-    def build_expected_remote_key(self: _MediaRuntimeHost, image: WordbankImageRecord) -> str | None:
+    def build_expected_remote_key(
+        self: _MediaRuntimeHost, image: WordbankImageRecord
+    ) -> str | None:
         if self.remote_storage is None:
             return None
-        extension = extension_from_storage_path(image.remote_storage_path or image.storage_path)
+        extension = extension_from_storage_path(
+            image.remote_storage_path or image.storage_path
+        )
         return self.remote_storage.build_key(image.md5, extension)
 
     async def mark_image_remote_synced(
@@ -780,7 +876,11 @@ class WordbankMediaRuntimeMixin:
         *,
         synced_at: int | None = None,
     ) -> WordbankImageRecord | None:
-        storage_path = image.storage_path if image.storage_path and not is_remote_uri(image.storage_path) else remote_object.uri
+        storage_path = (
+            image.storage_path
+            if image.storage_path and not is_remote_uri(image.storage_path)
+            else remote_object.uri
+        )
         updated = await self.repository.update_image_remote_sync(
             image.id,
             remote_storage_path=remote_object.uri,
@@ -807,7 +907,9 @@ class WordbankMediaRuntimeMixin:
         remote_object = remote_objects_by_key.get(expected_key)
         if remote_object is None:
             return None
-        return await self.mark_image_remote_synced(image, remote_object, synced_at=synced_at)
+        return await self.mark_image_remote_synced(
+            image, remote_object, synced_at=synced_at
+        )
 
     async def retry_remote_sync(
         self: _MediaRuntimeHost,
@@ -825,8 +927,14 @@ class WordbankMediaRuntimeMixin:
         )
         synced = failed = skipped = 0
         for image in images:
-            working_image = await self.rebuild_cache_metadata(image) if rebuild_cache_metadata else image
-            updated = await self.sync_image_to_remote(working_image, verify_remote=verify_remote)
+            working_image = (
+                await self.rebuild_cache_metadata(image)
+                if rebuild_cache_metadata
+                else image
+            )
+            updated = await self.sync_image_to_remote(
+                working_image, verify_remote=verify_remote
+            )
             if updated is None:
                 skipped += 1
                 continue
@@ -834,9 +942,16 @@ class WordbankMediaRuntimeMixin:
                 synced += 1
             else:
                 failed += 1
-        return {"scanned": len(images), "synced": synced, "failed": failed, "skipped": skipped}
+        return {
+            "scanned": len(images),
+            "synced": synced,
+            "failed": failed,
+            "skipped": skipped,
+        }
 
-    async def run_scheduled_maintenance(self: _MediaRuntimeHost, *, batch_size: int = 200) -> dict[str, int]:
+    async def run_scheduled_maintenance(
+        self: _MediaRuntimeHost, *, batch_size: int = 200
+    ) -> dict[str, int]:
         cache_report = await self.reconcile_local_cache()
         sync_report = await self.retry_remote_sync(limit=batch_size)
         return {**cache_report, **sync_report}
@@ -912,11 +1027,15 @@ class _MediaRuntimeHost(Protocol):
     def _cache_image(self, image: WordbankImageRecord) -> None: ...
     def load_cache(self, images: Sequence[WordbankImageRecord]) -> None: ...
     def resolve_canonical_id_from_hints(self, hints: Sequence[str]) -> int | None: ...
-    async def load_canonical_storage_bytes(self, canonical_image_id: int) -> bytes | None: ...
+    async def load_canonical_storage_bytes(
+        self, canonical_image_id: int
+    ) -> bytes | None: ...
     def _get_remote_load_lock(self, canonical_image_id: int) -> asyncio.Lock: ...
     async def evict_local_cache_if_needed(self) -> int: ...
     async def reconcile_local_cache(self) -> dict[str, int]: ...
-    async def rebuild_cache_metadata(self, image: WordbankImageRecord) -> WordbankImageRecord: ...
+    async def rebuild_cache_metadata(
+        self, image: WordbankImageRecord
+    ) -> WordbankImageRecord: ...
     async def retry_remote_sync(
         self,
         *,
@@ -940,10 +1059,18 @@ class _MediaRuntimeHost(Protocol):
         *,
         synced_at: int | None = None,
     ) -> WordbankImageRecord | None: ...
-    async def _load_from_local_cache(self, image: WordbankImageRecord) -> bytes | None: ...
-    async def _load_from_legacy_storage(self, image: WordbankImageRecord) -> bytes | None: ...
-    async def _load_from_remote_storage(self, image: WordbankImageRecord) -> bytes | None: ...
-    async def _load_source_bytes_for_remote_sync(self, image: WordbankImageRecord) -> bytes | None: ...
+    async def _load_from_local_cache(
+        self, image: WordbankImageRecord
+    ) -> bytes | None: ...
+    async def _load_from_legacy_storage(
+        self, image: WordbankImageRecord
+    ) -> bytes | None: ...
+    async def _load_from_remote_storage(
+        self, image: WordbankImageRecord
+    ) -> bytes | None: ...
+    async def _load_source_bytes_for_remote_sync(
+        self, image: WordbankImageRecord
+    ) -> bytes | None: ...
     async def _touch_last_access(self, image_id: int) -> WordbankImageRecord | None: ...
     async def _store_cache_bytes(
         self,

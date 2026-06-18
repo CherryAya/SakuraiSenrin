@@ -1,0 +1,787 @@
+from tests.test_plugin_docs_support import *
+
+
+def test_audit_demo_layout_accepts_all_project_readmes() -> None:
+    readmes = [
+        path
+        for root in (Path("src/plugins"), Path("src/hooks"))
+        for path in sorted(root.glob("**/README.MD"))
+        if "/docs/" in path.as_posix()
+    ]
+    errors: list[str] = []
+
+    for source in readmes:
+        bundle = load_plugin_doc_bundle(
+            source=source,
+            default_name=source.parent.name,
+            default_description="desc",
+            trigger=TriggerType.COMMAND,
+            permission=Permission.NORMAL,
+        )
+        for feature in bundle.index:
+            errors.extend(
+                f"{source}: {feature.slug}: {message}"
+                for message in audit_demo_layout(bundle, feature)
+            )
+
+    assert errors == []
+
+
+def test_demo_theme_has_required_tokens() -> None:
+    assert DEFAULT_DEMO_THEME.theme_name == SENRIN_V3_THEME.name
+    assert DEFAULT_DEMO_THEME.impression_color == DEFAULT_IMPRESSION_COLOR
+    assert DEFAULT_DEMO_THEME.page_bg
+    assert DEFAULT_DEMO_THEME.panel_bg
+    assert DEFAULT_DEMO_THEME.accent
+    assert DEFAULT_DEMO_THEME.strong
+    assert DEFAULT_DEMO_THEME.deep
+    assert DEFAULT_DEMO_THEME.hint
+    assert DEFAULT_DEMO_THEME.line
+    assert DEFAULT_DEMO_THEME.shell_bg
+    assert DEFAULT_DEMO_THEME.shell_border
+    assert DEFAULT_DEMO_THEME.user_bubble
+    assert DEFAULT_DEMO_THEME.bot_bubble
+    assert DEFAULT_DEMO_THEME.system_bubble
+    assert DEFAULT_DEMO_THEME.inline_code_bg
+    assert DEFAULT_DEMO_THEME.inline_code_text
+    assert DEFAULT_DEMO_THEME.avatar_text
+    assert DEFAULT_DEMO_THEME.bot_avatar_bg
+    assert DEFAULT_DEMO_THEME.bot_avatar_border
+    assert DEFAULT_DEMO_THEME.terminal_flag
+    assert DEFAULT_DEMO_THEME.grid_color
+    assert DEFAULT_DEMO_THEME.decor_color
+    assert DEFAULT_DEMO_THEME.footer_divider
+    assert DEFAULT_DEMO_THEME.standee_anchor_fill
+    assert DEFAULT_DEMO_THEME.showcase_accent_rail_bg
+    assert DEFAULT_DEMO_THEME.showcase_support_rail_bg
+
+
+def test_build_demo_theme_uses_dynamic_impression_color_palette() -> None:
+    theme = get_demo_theme(impression_color="#3BC9DB")
+
+    assert theme.theme_name == SENRIN_V3_THEME.name
+    assert theme.impression_color == "#3BC9DB"
+    assert theme.accent == "#3BC9DB"
+    assert theme.page_bg != theme.accent
+    assert theme.bot_bubble == theme.panel_soft_bg
+    assert theme.deep != theme.hint
+    assert theme.grid_color != theme.accent
+    assert theme.standee_anchor_fill != theme.accent
+
+
+def test_normalize_hex_color_falls_back_to_default() -> None:
+    assert normalize_hex_color("not-a-color") == DEFAULT_IMPRESSION_COLOR
+    assert normalize_hex_color("#abc") == "#AABBCC"
+
+
+def test_build_demo_theme_keeps_backward_compatible_alias() -> None:
+    assert build_demo_theme("#3BC9DB") == get_demo_theme(impression_color="#3BC9DB")
+
+
+def test_load_plugin_doc_bundle_uses_explicit_impression_color_override(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "README.MD"
+    source.write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试颜色透传。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一条说明。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一条说明。
+- 指令: `#alpha`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="测试插件",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        impression_color="#3BC9DB",
+    )
+
+    assert bundle.impression_color == "#3BC9DB"
+
+
+def test_demo_image_renderer_uses_theme() -> None:
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+
+    assert renderer.theme_name == SENRIN_V3_THEME.name
+    assert renderer.theme == get_demo_theme(impression_color="#3BC9DB")
+    assert not hasattr(renderer, "PAGE_BG")
+    assert not hasattr(renderer, "ACCENT")
+    assert not hasattr(renderer, "SHELL_BG")
+
+
+def test_demo_collection_renderer_uses_theme() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
+
+    assert renderer.theme_name == SENRIN_V3_THEME.name
+    assert hasattr(renderer, "theme")
+    assert renderer.theme == DEFAULT_DEMO_THEME
+    assert not hasattr(renderer, "PAGE_BG")
+    assert not hasattr(renderer, "CARD_BG")
+    assert not hasattr(renderer, "TITLE")
+
+
+def test_demo_collection_renderer_resolves_impression_color_on_render() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
+
+    renderer.render(
+        title="测试插件",
+        summary="用于测试 collection 是否走印象色。",
+        impression_color="#3BC9DB",
+        tiles=(),
+    )
+
+    assert renderer.theme.theme_name == SENRIN_V3_THEME.name
+    assert renderer.theme.impression_color == "#3BC9DB"
+    assert renderer.theme.accent == "#3BC9DB"
+
+
+def test_demo_theme_layout_constants() -> None:
+    assert DEFAULT_DEMO_THEME.outer_margin == 40
+    assert DEFAULT_DEMO_THEME.shell_radius == 32
+    assert DEFAULT_DEMO_THEME.panel_radius == 28
+    assert DEFAULT_DEMO_THEME.card_radius == 32
+    assert DEFAULT_DEMO_THEME.chip_radius == 20
+    assert DEFAULT_DEMO_THEME.inline_code_radius == 12
+    assert DEFAULT_DEMO_THEME.inline_code_pad_x == 8
+    assert DEFAULT_DEMO_THEME.inline_code_pad_y == 4
+
+
+def test_demo_theme_showcase_tokens_follow_expected_scale() -> None:
+    assert DEFAULT_DEMO_THEME.canvas_width == 1280
+    assert DEFAULT_DEMO_THEME.hero_top == 64
+    assert DEFAULT_DEMO_THEME.hero_side_padding % 8 == 0
+    assert DEFAULT_DEMO_THEME.hero_bottom_padding % 8 == 0
+    assert DEFAULT_DEMO_THEME.hero_standee_size == 304
+    assert DEFAULT_DEMO_THEME.pill_height == 40
+    assert DEFAULT_DEMO_THEME.section_gap % 8 == 0
+    assert DEFAULT_DEMO_THEME.instruction_padding_x % 8 == 0
+    assert DEFAULT_DEMO_THEME.instruction_padding_y % 8 == 0
+    assert DEFAULT_DEMO_THEME.trigger_padding_x % 8 == 0
+    assert DEFAULT_DEMO_THEME.trigger_padding_y % 8 == 0
+    assert DEFAULT_DEMO_THEME.avatar_size % 8 == 0
+    assert DEFAULT_DEMO_THEME.bubble_padding_x % 8 == 0
+    assert DEFAULT_DEMO_THEME.bubble_padding_y % 8 == 0
+    assert DEFAULT_DEMO_THEME.hero_summary_line_height >= 56
+    assert DEFAULT_DEMO_THEME.bubble_line_height >= 48
+    assert DEFAULT_DEMO_THEME.grid_spacing % 8 == 0
+    assert DEFAULT_DEMO_THEME.footer_height >= 72
+
+
+def test_demo_image_renderer_measure_layout_includes_footer_traceability() -> None:
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+    generated_at = datetime(2026, 6, 16, 21, 30, 45)
+
+    layout = renderer._measure_layout(
+        plugin_title="测试插件",
+        feature_title="查询功能",
+        feature_summary="用于查询状态。",
+        feature_trigger="#query",
+        feature_overview="输入命令后即可查看状态。",
+        feature_preconditions="需要在群聊中调用。",
+        feature_failures="参数错误时会提示原因。",
+        feature_flow_notes="支持直接回复触发。",
+        plugin_trigger="指令触发",
+        feature_permission="普通用户",
+        plugin_version="v1.2.3",
+        plugin_author="SakuraiCora",
+        turns=(),
+        locale="zh-CN",
+        generated_at=generated_at,
+    )
+
+    assert layout.footer_left_text == "测试插件 · 查询功能 · v1.2.3 · By SakuraiCora"
+    assert (
+        layout.footer_right_text == "Generated at 2026-06-16 21:30:45 | © SakuraiSenrin"
+    )
+    assert (
+        layout.footer_rect[3] - layout.footer_rect[1]
+        == DEFAULT_DEMO_THEME.footer_height
+    )
+
+
+def test_demo_image_renderer_measure_layout_uses_structured_trigger_layout() -> None:
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+
+    layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
+        plugin_title="测试插件",
+        feature_title="复杂命令",
+        feature_summary="测试结构化命令布局。",
+        feature_trigger=(
+            "wordbank search [关键词] [图片] --field all|trigger|response "
+            "--creator 账号 --page 页码 --limit 每页数量"
+        ),
+        feature_overview="测试说明。",
+        feature_preconditions="无",
+        feature_failures="无",
+        feature_flow_notes="",
+        plugin_trigger="指令触发",
+        feature_permission="普通用户",
+        plugin_version="v1.2.3",
+        plugin_author="SakuraiCora",
+        turns=(),
+        locale="zh-CN",
+        generated_at=datetime(2026, 6, 16, 21, 30, 45),
+    )
+
+    assert layout.trigger_layout.lines[0].kind == "root"
+    assert any(line.kind == "flag" for line in layout.trigger_layout.lines[1:])
+    assert layout.trigger_layout.total_height > renderer._line_height_for_font(
+        renderer.body_font
+    )  # pyright: ignore[reportPrivateUsage]
+
+
+def test_render_help_dashboard_returns_showcase_canvas() -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    image = Image.open(
+        BytesIO(
+            render_help_dashboard(
+                (
+                    HelpDashboardSection(
+                        kind="developer",
+                        title="开发者插件",
+                        nodes=(node,),
+                    ),
+                ),
+                locale="zh-CN",
+            )
+        )
+    )
+    assert image.width == 1280
+    assert image.height > 500
+
+
+def test_dashboard_section_height_includes_command_block() -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    renderer = ProgressiveDisclosureRenderer(
+        impression_color=node.bundle.impression_color
+    )
+    section_width = renderer.WIDTH - renderer.theme.hero_side_padding * 2
+    section = HelpDashboardSection(
+        kind="developer",
+        title="开发者插件",
+        nodes=(node,),
+    )
+
+    measured = renderer._measure_dashboard_section_height(section, section_width)
+    content_width = section_width - renderer.GUIDE_SECTION_PADDING_X * 2
+    title_height = renderer._line_height_for_font(renderer.summary_font)
+    summary_height = min(
+        2,
+        len(
+            tuple(
+                renderer._wrap_inline_text(
+                    node.summary or node.bundle.summary,
+                    max_width=content_width - 36,
+                    font=renderer.note_font,
+                )
+            )
+        ),
+    ) * renderer._line_height_for_font(renderer.note_font)
+    naive = (
+        renderer.GUIDE_SECTION_PADDING_Y * 2
+        + title_height
+        + 24
+        + 28
+        + renderer._line_height_for_font(renderer.instruction_font)
+        + summary_height
+        + 26
+    )
+
+    assert measured >= naive
+
+
+def test_dashboard_layout_places_system_left_and_other_sections_right() -> None:
+    renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")
+    system = HelpDashboardSection(
+        kind="system",
+        title="⚙️ 核心系统",
+        nodes=(),
+        column=0,
+    )
+    developer = HelpDashboardSection(
+        kind="developer",
+        title="🧩 扩展能力",
+        nodes=(),
+        column=1,
+    )
+    community = HelpDashboardSection(
+        kind="community",
+        title="🌟 创意工坊",
+        nodes=(),
+        column=1,
+    )
+
+    section_width = renderer.WIDTH - renderer.theme.hero_side_padding * 2
+    system_height = renderer._measure_dashboard_section_height(system, section_width)
+    developer_height = renderer._measure_dashboard_section_height(
+        developer, section_width
+    )
+    community_height = renderer._measure_dashboard_section_height(
+        community, section_width
+    )
+
+    assert system.column == 0
+    assert developer.column == 1
+    assert community.column == 1
+    assert system_height > 0
+    assert developer_height > 0
+    assert community_height > 0
+
+
+def test_dashboard_pixel_truncation_reserves_ellipsis_width() -> None:
+    renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")
+
+    text = "A very long mixed 文本 description for dashboard card rendering"
+    max_width = renderer._pixel_text_width(
+        "A very long mixed 文本 desc",
+        renderer.note_font,
+    )
+    fitted = renderer._truncate_text_to_width_pixels(
+        text,
+        renderer.note_font,
+        max_width=max_width,
+    )
+
+    assert fitted.endswith("...")
+    assert renderer._pixel_text_width(fitted, renderer.note_font) <= max_width
+
+
+def test_dashboard_card_layout_bottom_anchors_command_and_limits_summary_height() -> (
+    None
+):
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    renderer = ProgressiveDisclosureRenderer(
+        impression_color=node.bundle.impression_color
+    )
+    card_width = (
+        renderer.WIDTH
+        - renderer.theme.hero_side_padding * 2
+        - renderer.DASHBOARD_CARD_GAP_X
+    ) // 2
+    verbose_node = DocNode(
+        kind=node.kind,
+        slug=node.slug,
+        parent_slug=node.parent_slug,
+        category=node.category,
+        order=node.order,
+        visible=node.visible,
+        hidden=node.hidden,
+        internal=node.internal,
+        permission=node.permission,
+        title=node.title,
+        summary=(
+            "这是一个非常长的 Bot Dashboard 描述，"
+            "用来验证中英 mixed text 在固定卡片高度里会按像素换行，"
+            "并且在触底前安全截断，"
+            "不会压到底部的 #help 指令块，也不会因为字符数估算错误导致遮挡。 "
+            "Visit https://example.com/really/long/path/for/layout/check if needed."
+        ),
+        description=node.description,
+        aliases=node.aliases,
+        source_path=node.source_path,
+        bundle=node.bundle,
+        module_name=node.module_name,
+        plugin_name=node.plugin_name,
+    )
+
+    card = renderer._measure_dashboard_card(verbose_node, card_width)
+
+    assert card.command_rect[3] == card.height - renderer.DASHBOARD_CARD_PADDING_Y
+    assert card.command_rect[1] > card.summary_top + card.summary_block_height
+    assert len(card.summary_lines) <= renderer.DASHBOARD_CARD_SUMMARY_VISIBLE_LINES
+    if card.summary_lines:
+        last_line = "".join(span.text for span in card.summary_lines[-1])
+        assert last_line.endswith("...") or (
+            len(card.summary_lines) < renderer.DASHBOARD_CARD_SUMMARY_VISIBLE_LINES
+        )
+
+
+def test_dashboard_footer_left_text_preserves_plugins_when_pixels_allow() -> None:
+    renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")
+    left_text = "Help Center · Global Dashboard · 5 plugins · By SakuraiSenrin"
+    max_width = renderer._pixel_text_width(left_text, renderer.footer_font)
+
+    fitted = renderer._truncate_text_to_width_pixels(
+        left_text,
+        renderer.footer_font,
+        max_width=max_width,
+    )
+
+    assert fitted == left_text
+    assert "5 plugins" in fitted
+
+
+def test_render_plugin_guide_and_copy_text_list_all_visible_features() -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    visible_features = plugin_docs_module.filter_features_by_permission(
+        node.features,
+        actor_permission=Permission.NORMAL,
+    )
+    assert "add" in {feature.slug for feature in visible_features}
+    assert "add-scope" in {feature.slug for feature in visible_features}
+
+    image = Image.open(
+        BytesIO(
+            render_plugin_guide(
+                node,
+                actor_permission=Permission.NORMAL,
+                locale="zh-CN",
+            )
+        )
+    )
+    assert image.width == 1280
+    assert image.height > 1200
+
+    copy_text = build_plugin_guide_copy_text(
+        node,
+        features=visible_features,
+        locale="zh-CN",
+    )
+    assert "基础添加" in copy_text
+    assert "wordbank add 触发词 => 响应词" in copy_text
+    assert "查看 demo：" not in copy_text
+    assert "wordbank add 触发词 => 响应词 --scope current_group" in copy_text
+    assert "#help 词库模块 add-scope" not in copy_text
+
+
+def test_resolve_help_entry_shape_distinguishes_simple_leaf_and_grouped_nodes() -> None:
+    picsearch = load_doc_node(
+        source="src/plugins/picsearch/docs/README.MD",
+        default_name="图片搜索",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    wordbank = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    admin_meta = create_docs_meta(
+        visible=False,
+        category="admin",
+        order=10,
+        source="src/plugins/admin/docs/README.MD",
+        slug="admin",
+        kind="overview",
+    )
+    admin = load_doc_node(
+        source=admin_meta["source"]["readme_path"],
+        default_name="管理模块总览",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        docs_meta=admin_meta,
+    )
+
+    assert resolve_help_entry_shape(picsearch) == "simple_leaf"
+    assert resolve_help_entry_shape(wordbank) == "plugin_guide"
+    assert resolve_help_entry_shape(admin) == "overview_group"
+
+
+def test_virtual_doc_node_without_features_is_static_entry() -> None:
+    node = load_virtual_doc_node(
+        VirtualPluginDocSpec(
+            slug="derived.wordbank.miaomiao-toolkit",
+            title="凛凛的妙妙小工具目录",
+            summary="目录摘要",
+            description="目录描述",
+            trigger="词条触发 / #help 查询",
+            author="SakuraiSenrin",
+            version="0.1.0",
+            impression_color="#74C0FC",
+            plugin_name="wordbank",
+            module_name="src.plugins.wordbank",
+            origin_plugin_slug="wordbank",
+            features=(),
+        )
+    )
+
+    assert resolve_help_entry_shape(node) == "static_entry"
+
+
+def test_wordbank_derived_directory_is_classified_as_static_entry() -> None:
+    from src.plugins.wordbank.derived_help import build_wordbank_derived_help
+
+    spec = build_wordbank_derived_help("zh-CN")[0]
+    node = load_virtual_doc_node(spec)
+
+    assert resolve_help_entry_shape(node) == "static_entry"
+
+
+def test_render_static_entry_returns_showcase_canvas() -> None:
+    from src.plugins.wordbank.derived_help import build_wordbank_derived_help
+
+    node = load_virtual_doc_node(build_wordbank_derived_help("zh-CN")[0])
+
+    image = Image.open(BytesIO(render_static_entry(node, locale="zh-CN")))
+
+    assert image.width == 1280
+    assert image.height > 500
+
+
+def test_build_simple_leaf_copy_text_includes_direct_demo_command() -> None:
+    node = load_doc_node(
+        source="src/plugins/picsearch/docs/README.MD",
+        default_name="图片搜索",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    feature = node.features[0]
+
+    copy_text = build_simple_leaf_copy_text(node, feature, locale="zh-CN")
+
+    assert "图片搜索" in copy_text
+    assert "搜图 [saucenao|ascii2d]" in copy_text
+    assert "查看 demo：" not in copy_text
+
+
+def test_build_feature_copy_text_returns_command_skeleton() -> None:
+    node = load_doc_node(
+        source="src/plugins/water/docs/README.MD",
+        default_name="吹水记录",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    ranking = next(feature for feature in node.features if feature.slug == "ranking")
+
+    copy_text = build_feature_copy_text(node, ranking, locale="zh-CN")
+
+    assert "查看周期榜单" in copy_text
+    assert "#水王" in copy_text
+
+
+def test_feature_demo_help_command_uses_plugin_title_and_slug() -> None:
+    node = load_doc_node(
+        source="src/plugins/water/docs/README.MD",
+        default_name="吹水记录",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    ranking = next(feature for feature in node.features if feature.slug == "ranking")
+
+    assert feature_demo_help_command(node, ranking) == "#help 吹水记录 ranking"
+
+
+def test_build_doc_demo_message_prefers_feature_demo(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        plugin_docs_module,
+        "render_feature_deep_dive",
+        lambda *args, **kwargs: b"feature-demo",
+    )
+    monkeypatch.setattr(
+        plugin_docs_module,
+        "render_plugin_guide",
+        lambda *args, **kwargs: b"guide-demo",
+    )
+
+    message = build_doc_demo_message(
+        source="src/plugins/wordbank/docs/README.MD",
+        name="词库模块",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        locale="zh-CN",
+        feature_query="add-scope",
+        prefix_text="参数错误",
+    )
+
+    assert str(message).startswith("参数错误")
+    assert any(segment.type == "image" for segment in message)
+    assert message[-1].data["file"] == "base64://ZmVhdHVyZS1kZW1v"
+
+
+def test_build_doc_demo_message_falls_back_to_plugin_guide(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        plugin_docs_module,
+        "render_feature_deep_dive",
+        lambda *args, **kwargs: b"feature-demo",
+    )
+    monkeypatch.setattr(
+        plugin_docs_module,
+        "render_plugin_guide",
+        lambda *args, **kwargs: b"guide-demo",
+    )
+
+    message = build_doc_demo_message(
+        source="src/plugins/wordbank/docs/README.MD",
+        name="词库模块",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        locale="zh-CN",
+        feature_query="missing-feature",
+        prefix_text="参数错误",
+    )
+
+    assert any(segment.type == "image" for segment in message)
+    assert message[-1].data["file"] == "base64://Z3VpZGUtZGVtbw=="
+
+
+def test_plugin_docs_generate_reuses_one_build_timestamp(
+    monkeypatch: Any,
+) -> None:
+    dummy_bundle = plugin_docs_module.PluginDocBundle(
+        title="测试插件",
+        description="",
+        summary="",
+        trigger="",
+        permission="",
+        author="",
+        version="",
+        impression_color=DEFAULT_IMPRESSION_COLOR,
+        index=(),
+        source_path=Path("test"),
+    )
+    jobs = (
+        plugin_docs_script.DemoRenderJob(
+            bundle=dummy_bundle,
+            feature_index=0,
+            output=plugin_docs_script.ROOT / "tmp-demo-a.png",
+        ),
+        plugin_docs_script.DemoRenderJob(
+            bundle=dummy_bundle,
+            feature_index=1,
+            output=plugin_docs_script.ROOT / "tmp-demo-b.png",
+        ),
+    )
+    seen_times: list[datetime | None] = []
+
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "collect_demo_jobs",
+        lambda: (1, jobs),
+    )
+
+    def fake_render_demo_job(
+        job: plugin_docs_script.DemoRenderJob,
+        *,
+        generated_at: datetime | None = None,
+    ) -> tuple[Path, bytes]:
+        seen_times.append(generated_at)
+        return job.output, b"demo"
+
+    monkeypatch.setattr(plugin_docs_script, "render_demo_job", fake_render_demo_job)
+    monkeypatch.setattr(
+        plugin_docs_script, "write_demo_result", lambda result: result[0]
+    )
+    monkeypatch.setattr(plugin_docs_script, "_write_line", lambda message: None)
+
+    assert plugin_docs_script.generate(workers=1) == 0
+    assert len(seen_times) == 2
+    assert seen_times[0] == seen_times[1]
+    assert seen_times[0] is not None
+    assert seen_times[0].microsecond == 0
+
+
+def test_demo_image_renderer_handles_features_without_demo_turns() -> None:
+    renderer = DemoImageRenderer()
+    image = Image.open(
+        BytesIO(
+            renderer.render(
+                plugin_title="测试插件",
+                feature_title="无 Demo 功能",
+                feature_summary="仅展示说明内容。",
+                feature_trigger="#noop",
+                feature_overview="这个功能只有概览和说明。",
+                feature_preconditions="需要在群聊中调用。",
+                feature_failures="参数错误时会提示原因。",
+                feature_flow_notes="不会附带完整流程演示。",
+                plugin_trigger="指令触发",
+                feature_permission="普通用户",
+                plugin_version="0.1.0",
+                plugin_author="SakuraiCora",
+                turns=(),
+                locale="zh-CN",
+            )
+        )
+    )
+    assert image.width == 1280
+    assert image.height < 1200
+    assert (
+        renderer.audit(
+            plugin_title="测试插件",
+            feature_title="无 Demo 功能",
+            feature_summary="仅展示说明内容。",
+            feature_trigger="#noop",
+            feature_overview="这个功能只有概览和说明。",
+            feature_preconditions="需要在群聊中调用。",
+            feature_failures="参数错误时会提示原因。",
+            feature_flow_notes="不会附带完整流程演示。",
+            plugin_trigger="指令触发",
+            feature_permission="普通用户",
+            plugin_version="0.1.0",
+            plugin_author="SakuraiCora",
+            turns=(),
+            locale="zh-CN",
+        )
+        == ()
+    )
+
+
+def test_demo_collection_renderer_uses_showcase_canvas_width() -> None:
+    renderer = plugin_docs_script.DemoCollectionRenderer(columns=2)
+
+    assert renderer.CANVAS_WIDTH == 1280
+    assert renderer.OUTER_MARGIN == 88
+    assert renderer.GRID_GAP_X % 8 == 0
+    assert renderer.GRID_GAP_Y % 8 == 0

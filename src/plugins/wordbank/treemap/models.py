@@ -56,7 +56,9 @@ class SearchTreemapResponseCard:
         if self.text.strip():
             built.append(SearchTreemapResponseSegment(kind="text", text=self.text))
         if self.image_path:
-            built.append(SearchTreemapResponseSegment(kind="image", image_path=self.image_path))
+            built.append(
+                SearchTreemapResponseSegment(kind="image", image_path=self.image_path)
+            )
         return tuple(built)
 
     @property
@@ -95,7 +97,8 @@ class SearchTreemapItem:
 
     @property
     def hidden_response_count(self) -> int:
-        return max(0, self.response_count - len(self.responses))
+        hidden_count = self.response_count - len(self.responses)
+        return max(0, hidden_count)
 
 
 @dataclass(slots=True, frozen=True)
@@ -151,7 +154,9 @@ def load_search_treemap_fixture(path: str | Path) -> SearchTreemapPage:
         total_count=_require_int(query_payload, "total_count", min_value=0),
         limit=_require_int(query_payload, "limit", min_value=1),
     )
-    items = tuple(_parse_treemap_item(item, index) for index, item in enumerate(items_payload))
+    items = tuple(
+        _parse_treemap_item(item, index) for index, item in enumerate(items_payload)
+    )
     return SearchTreemapPage(query=query, items=items)
 
 
@@ -169,11 +174,17 @@ def build_search_treemap_layout(
     normalized = [_layout_weight_from_response_count(weight) for weight in weights]
     sizes = squarify.normalize_sizes(normalized, content_width, content_height)
     rects = _build_rects_from_squarify(
-        squarify.padded_squarify(sizes, content_x, content_y, content_width, content_height)
+        squarify.padded_squarify(
+            sizes, content_x, content_y, content_width, content_height
+        )
     )
     return tuple(
-        SearchTreemapTile(item=item, rect=rect, raw_weight=weight, normalized_weight=normalized_weight)
-        for item, rect, weight, normalized_weight in zip(page.items, rects, weights, normalized, strict=True)
+        SearchTreemapTile(
+            item=item, rect=rect, raw_weight=weight, normalized_weight=normalized_weight
+        )
+        for item, rect, weight, normalized_weight in zip(
+            page.items, rects, weights, normalized, strict=True
+        )
     )
 
 
@@ -183,13 +194,18 @@ def _parse_treemap_item(payload: object, index: int) -> SearchTreemapItem:
     response_count = _require_int(payload, "response_count", min_value=1)
     raw_responses = payload.get("responses")
     if not isinstance(raw_responses, list):
-        raise ValueError(f"Search treemap item at index {index} is missing array field: responses")
+        raise ValueError(
+            f"Search treemap item at index {index} is missing array field: responses"
+        )
     responses = tuple(
         _parse_response_card(item, item_index, parent_index=index)
         for item_index, item in enumerate(raw_responses)
     )
     if len(responses) > response_count:
-        raise ValueError(f"Search treemap item at index {index} has more response cards than response_count")
+        raise ValueError(
+            "Search treemap item at index "
+            f"{index} has more response cards than response_count"
+        )
     remaining = payload.get("remaining_response_count")
     remaining_count = (
         _coerce_int(remaining, field_name="remaining_response_count", min_value=0)
@@ -208,7 +224,9 @@ def _parse_treemap_item(payload: object, index: int) -> SearchTreemapItem:
     )
 
 
-def _parse_response_card(payload: object, index: int, *, parent_index: int) -> SearchTreemapResponseCard:
+def _parse_response_card(
+    payload: object, index: int, *, parent_index: int
+) -> SearchTreemapResponseCard:
     if not isinstance(payload, dict):
         raise ValueError(
             "Search treemap response card at item index "
@@ -233,7 +251,9 @@ def _parse_response_card(payload: object, index: int, *, parent_index: int) -> S
     )
 
 
-def _parse_response_segment(payload: object, index: int, *, parent_index: int) -> SearchTreemapResponseSegment:
+def _parse_response_segment(
+    payload: object, index: int, *, parent_index: int
+) -> SearchTreemapResponseSegment:
     if not isinstance(payload, dict):
         raise ValueError(
             "Search treemap response segment at item index "
@@ -271,7 +291,9 @@ def _coerce_int(value: object, *, field_name: str, min_value: int) -> int:
     if not isinstance(value, int):
         raise ValueError(f"Search treemap fixture field must be int: {field_name}")
     if value < min_value:
-        raise ValueError(f"Search treemap fixture field must be >= {min_value}: {field_name}")
+        raise ValueError(
+            f"Search treemap fixture field must be >= {min_value}: {field_name}"
+        )
     return value
 
 

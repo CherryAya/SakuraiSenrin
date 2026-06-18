@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 from src.lib.object_storage.types import ObjectStorageClient, StorageObject
-from src.lib.utils.common import get_current_time
 from src.logger import logger
-from src.plugins.wordbank.database.types import WordbankImagePayload, WordbankImageRecord
-from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
+from src.plugins.wordbank.database.types import (
+    WordbankImagePayload,
+    WordbankImageRecord,
+)
+from src.plugins.wordbank.debug import log_perf, perf_start
 
 from .media_models import (
     DEFAULT_CACHE_MAX_BYTES,
@@ -34,7 +36,9 @@ class MediaRepository(Protocol):
         *,
         limit: int = 128,
     ) -> list[WordbankImageRecord]: ...
-    async def create_image(self, payload: WordbankImagePayload) -> WordbankImageRecord: ...
+    async def create_image(
+        self, payload: WordbankImagePayload
+    ) -> WordbankImageRecord: ...
     async def update_image_remote_sync(
         self,
         image_id: int,
@@ -155,7 +159,9 @@ class ObjectStorageWordbankMediaStorage:
             prefix = f"{self.object_storage.provider}://{self.bucket}/"
             if storage_path.startswith(prefix):
                 return storage_path.removeprefix(prefix)
-        return storage_path.removeprefix(f"{self.object_storage.provider}://").split("/", 1)[-1]
+        return storage_path.removeprefix(f"{self.object_storage.provider}://").split(
+            "/", 1
+        )[-1]
 
     async def save_prepared_image(
         self,
@@ -403,7 +409,11 @@ class LocalLruCacheWordbankMediaStorage:
     ) -> tuple[WordbankImageRecord, ...]:
         if not self.enabled:
             return ()
-        candidates = [image for image in images if image.local_cache_path and image.cache_file_size > 0]
+        candidates = [
+            image
+            for image in images
+            if image.local_cache_path and image.cache_file_size > 0
+        ]
         current_bytes = sum(image.cache_file_size for image in candidates)
         current_files = len(candidates)
         if current_bytes <= self.max_bytes and current_files <= self.max_files:

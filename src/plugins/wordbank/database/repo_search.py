@@ -10,13 +10,17 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
-from src.plugins.wordbank.message_model import MessageShape, fingerprint_shape, shape_to_payload
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    fingerprint_shape,
+    shape_to_payload,
+)
 
 from .instances import wordbank_main_db
 from .repo_shared import (
-    GroupBundle,
     _SEARCH_RESULT_CANDIDATE_MULTIPLIER,
     _SEARCH_RESULT_MIN_CANDIDATES,
+    GroupBundle,
     build_fts_query,
     normalize_search_text,
 )
@@ -473,13 +477,15 @@ class WordbankRepositorySearchMixin:
             normalize_search_text(request.keyword) if request.keyword else ""
         )
         if normalized_keyword:
-            if request.field in {"all", "trigger"} and normalized_keyword in normalize_search_text(
-                document.trigger_text
-            ):
+            if request.field in {
+                "all",
+                "trigger",
+            } and normalized_keyword in normalize_search_text(document.trigger_text):
                 final_score += 0.25
-            if request.field in {"all", "response"} and normalized_keyword in normalize_search_text(
-                document.response_text
-            ):
+            if request.field in {
+                "all",
+                "response",
+            } and normalized_keyword in normalize_search_text(document.response_text):
                 final_score += 0.25
             if len(text_sources) > 1:
                 final_score += 0.08

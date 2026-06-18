@@ -142,9 +142,9 @@ async def backfill_archived_summaries(*, batch_size: int) -> dict[str, Any]:
     async with water_core_db.session(commit=False) as session:
         total_rows = int(
             await session.scalar(
-                select(func.count()).select_from(WaterDailySummary).where(
-                    WaterDailySummary.record_date < hot_start_date
-                )
+                select(func.count())
+                .select_from(WaterDailySummary)
+                .where(WaterDailySummary.record_date < hot_start_date)
             )
             or 0
         )

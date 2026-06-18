@@ -9,12 +9,11 @@ Description: 图片渲染组件，AI 神力！
 from __future__ import annotations
 
 import asyncio
-from math import floor, sqrt
 from time import perf_counter
 from typing import Any
 
 import arrow
-from PIL import Image, ImageChops, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw
 from pil_utils import BuildImage
 
 from src.lib.consts import MAPLE_FONT_PATH
@@ -27,41 +26,16 @@ from src.repositories import member_repo
 from src.services.info import resolve_group_card, resolve_group_name
 
 from .database import water_repo
-from .renderers.models import (
-    WaterDayRankCardData,
-    WaterGroupDailyRankCardItem,
-    WaterGroupReportImageData,
-    WaterInfo,
-    WaterPeriodRankCardData,
-    WaterProfileCardData,
-    WaterRankCardItem,
-)
 from .renderers.common import (
     SYS_FONT_NAME,
     WATER_THEME,
-    build_avatar_fallback,
-    draw_gloss_lines,
-    draw_hourly_histogram,
-    draw_progress_bar,
-    draw_report_footer,
-    format_delta,
-    format_rank,
-    format_trend,
-    mix_hex,
-    safe_hourly_counts,
-    short_exp,
     water_podium_themes,
 )
+from .renderers.models import (
+    WaterDayRankCardData,
+    WaterProfileCardData,
+)
 from .renderers.rank import WaterRankRenderer
-from .renderers.profile import (
-    build_my_water_fallback_text,
-    build_my_water_image,
-    build_my_water_simple_image,
-)
-from .renderers.report import (
-    build_water_group_report_image,
-    build_water_period_rank_image,
-)
 from .services.achievement import ACHIEVEMENT_RULES
 
 FALLBACK_FONT_PATH = MAPLE_FONT_PATH

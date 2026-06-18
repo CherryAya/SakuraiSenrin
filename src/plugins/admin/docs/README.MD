@@ -21,15 +21,15 @@
 - 指令: `#help 群组管理模块`
 - Demo: admin-overview-group.png
 #### 说明
-这是 `#admin.group` 的总入口说明，用于告诉管理员去哪里查看详细子功能文档。
+这是群组管理的聚合入口，用于先确认模块范围，再进入具体动作 demo。
 #### 前置条件
 需要具备超级管理员权限。
 #### 完整流程
-先定位到具体子模块，再看该子模块里的完整流程。
+先进入群组管理模块，再按动作查看 demo。
 ```demo
 USER: #help 管理模块总览 group
 BOT: 群组管理负责处理群授权、封禁、退群和状态查询。
-继续发送 #help 群组管理模块 <子功能名> 查看 demo。
+SYSTEM: 继续发送 #help 群组管理模块 ban 查看封禁流程 demo。
 ```
 #### 失败情况
 如果直接把所有管理动作塞进总览文档，帮助消息会过长且不利于维护。
@@ -40,15 +40,15 @@ BOT: 群组管理负责处理群授权、封禁、退群和状态查询。
 - 指令: `#help 用户管理模块`
 - Demo: admin-overview-user.png
 #### 说明
-这是 `#admin.user` 的总入口说明。
+这是用户管理的聚合入口。
 #### 前置条件
 需要具备超级管理员权限。
 #### 完整流程
-先查总览，再进入具体动作。
+先进入用户管理模块，再按动作查看 demo。
 ```demo
 USER: #help 管理模块总览 user
 BOT: 用户管理支持 ban / unban / status 三类操作。
-继续发送 #help 用户管理模块 ban 查看完整流程。
+SYSTEM: 继续发送 #help 用户管理模块 ban 查看完整流程。
 ```
 #### 失败情况
 若后续新增动作，记得同步更新本总览和子模块 README。
@@ -59,15 +59,15 @@ BOT: 用户管理支持 ban / unban / status 三类操作。
 - 指令: `#help 邀请管理模块`
 - Demo: admin-overview-invite.png
 #### 说明
-这是 `#admin.invite` 的总入口说明。
+这是邀请管理的聚合入口。
 #### 前置条件
 需要具备超级管理员权限，并且项目正在接收邀请事件。
 #### 完整流程
-先看概览，再进入具体审批动作。
+先进入邀请管理模块，再按动作查看 demo。
 ```demo
 USER: #help 管理模块总览 invite
 BOT: 邀请管理支持 list / approve / reject / ignore / log。
-继续发送 #help 邀请管理模块 approve 查看完整流程。
+SYSTEM: 继续发送 #help 邀请管理模块 approve 查看完整流程。
 ```
 #### 失败情况
 如果项目当前没有邀请记录，详情页会说明如何用 list 或日志功能排查。
@@ -78,15 +78,15 @@ BOT: 邀请管理支持 list / approve / reject / ignore / log。
 - 指令: `#help 语言管理模块`
 - Demo: admin-overview-i18n.png
 #### 说明
-这是 `#admin.i18n` 的总入口说明。
+这是语言管理的聚合入口。
 #### 前置条件
 需要具备超级管理员权限。
 #### 完整流程
-先看概览，再进入查看、设置、清除等动作。
+先进入语言管理模块，再按动作查看 demo。
 ```demo
 USER: #help 管理模块总览 i18n
 BOT: 语言管理支持 show / default / set / clear / list。
-继续发送 #help 语言管理模块 set 查看完整流程。
+SYSTEM: 继续发送 #help 语言管理模块 set 查看完整流程。
 ```
 #### 失败情况
 如果没有精确定位到子模块，帮助中心会先返回歧义或插件详情页。
@@ -97,15 +97,15 @@ BOT: 语言管理支持 show / default / set / clear / list。
 - 指令: `#help 备份管理模块`
 - Demo: admin-overview-backup.png
 #### 说明
-这是 `#admin.backup` 的总入口说明。
+这是备份管理的聚合入口。
 #### 前置条件
 需要具备超级管理员权限，并且当前环境已经配置好 restic 与远端仓库。
 #### 完整流程
-先执行健康检查，再决定是否查看快照或手动触发备份。
+先进入备份管理模块，再按动作查看 demo。
 ```demo
 USER: #help 管理模块总览 backup
 BOT: 备份管理支持 check / snapshots / run。
-继续发送 #help 备份管理模块 run 查看完整流程。
+SYSTEM: 继续发送 #help 备份管理模块 run 查看完整流程。
 ```
 #### 失败情况
 如果备份仓库配置错误或 AK/SK 失效，模块详情页会提示先执行健康检查排障。

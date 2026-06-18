@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .instances import wordbank_message_ref_db, wordbank_message_route_db
 from .repo_shared import message_ref_time_ctx
 from .tables import WordbankMessageRef, WordbankMessageRoute
-from .types import WordbankMessageRefKind, WordbankMessageRefPayload, WordbankMessageRouteRecord, WordbankMessageRefRecord
+from .types import (
+    WordbankMessageRefKind,
+    WordbankMessageRefPayload,
+    WordbankMessageRefRecord,
+    WordbankMessageRouteRecord,
+)
 
 
 class WordbankRepositoryMessageRefsMixin:

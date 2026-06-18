@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
+import math
 from typing import Any
 
 from src.lib.i18n.types import LocaleCode
+
 from .models import (
     ResponseCardVerticalLayout,
     SearchTreemapResponseCard,
-    SearchTreemapResponseSegment,
     TreemapRect,
 )
 
@@ -108,8 +108,12 @@ class SearchTreemapResponseLayoutMixin:
             shown = len(placements)
             if shown <= 0:
                 continue
-            used_heights = [placement[1].y + placement[1].height for placement in placements]
-            card_height = sum(rect.height for _, rect in placements) // max(len(placements), 1)
+            used_heights = [
+                placement[1].y + placement[1].height for placement in placements
+            ]
+            card_height = sum(rect.height for _, rect in placements) // max(
+                len(placements), 1
+            )
             if card_height < min_card_height:
                 continue
             column_bottom = max(used_heights, default=0)
@@ -173,7 +177,9 @@ class SearchTreemapResponseLayoutMixin:
     ) -> list[tuple[int, TreemapRect]]:
         if not placements or cols <= 0 or height <= 0:
             return list(placements)
-        column_map: dict[int, list[tuple[int, TreemapRect]]] = {index: [] for index in range(cols)}
+        column_map: dict[int, list[tuple[int, TreemapRect]]] = {
+            index: [] for index in range(cols)
+        }
         for item_index, rect in placements:
             column = max(0, round((rect.x - x) / max(rect.width + 8, 1)))
             column_map[min(cols - 1, column)].append((item_index, rect))
@@ -190,7 +196,10 @@ class SearchTreemapResponseLayoutMixin:
                 expanded.extend(entries)
                 continue
             weights = [
-                max(1, self._estimate_card_flex_weight(responses[item_index], rect.height))
+                max(
+                    1,
+                    self._estimate_card_flex_weight(responses[item_index], rect.height),
+                )
                 for item_index, rect in entries
             ]
             total_weight = sum(weights)
@@ -200,7 +209,9 @@ class SearchTreemapResponseLayoutMixin:
             cursor_y = entries[0][1].y
             consumed = 0
             column_expanded: list[tuple[int, TreemapRect]] = []
-            for entry_index, ((item_index, rect), weight) in enumerate(zip(entries, weights)):
+            for entry_index, ((item_index, rect), weight) in enumerate(
+                zip(entries, weights)
+            ):
                 extra = (
                     leftover - consumed
                     if entry_index == len(entries) - 1
@@ -284,7 +295,9 @@ class SearchTreemapResponseLayoutMixin:
             max_width=max(1, width - pad * 2),
         )
         meta_line_height = self._line_height(meta_font)
-        meta_height = len(meta_lines) * meta_line_height + max(0, len(meta_lines) - 1) * 2
+        meta_height = (
+            len(meta_lines) * meta_line_height + max(0, len(meta_lines) - 1) * 2
+        )
         content_height = self._measure_response_content_height_for_layout(
             response,
             locale,
@@ -294,11 +307,15 @@ class SearchTreemapResponseLayoutMixin:
         meta_gap = 0 if narrow_text_card else (6 if compact_card else 8)
         base_height = pad * 2 + content_height + meta_gap + meta_height
         if response.has_image:
-            minimum_content = max(58 if len(response.ordered_segments) <= 1 else 72, content_height)
+            minimum_content = max(
+                58 if len(response.ordered_segments) <= 1 else 72, content_height
+            )
         elif single_text is not None:
             minimum_content = max(title_line_height + 6, content_height)
         else:
-            minimum_content = max(title_line_height + (6 if compact_card else 10), content_height)
+            minimum_content = max(
+                title_line_height + (6 if compact_card else 10), content_height
+            )
         minimum = pad * 2 + meta_gap + meta_height + minimum_content
         maximum = 248 if response.has_image else 212
         return max(minimum, min(maximum, base_height))
@@ -385,7 +402,10 @@ class SearchTreemapResponseLayoutMixin:
                 text=single_text,
                 line_count=len(lines),
             )
-            return len(lines) * self._line_height(layout_font) + max(0, len(lines) - 1) * line_gap
+            return (
+                len(lines) * self._line_height(layout_font)
+                + max(0, len(lines) - 1) * line_gap
+            )
         segments = tuple(
             segment
             for segment in response.ordered_segments
@@ -431,7 +451,9 @@ class SearchTreemapResponseLayoutMixin:
         fitted_font, lines = self._fit_lxgw_text_block_layout(
             text,
             max_width=width,
-            max_height=self._layout_text_height_cap(width, has_image=has_image, text=text),
+            max_height=self._layout_text_height_cap(
+                width, has_image=has_image, text=text
+            ),
             preferred_size=preferred_size,
         )
         return len(lines) * self._line_height(fitted_font)
@@ -473,14 +495,18 @@ class SearchTreemapResponseLayoutMixin:
         image_path: str,
         mixed_content: bool,
     ) -> int:
-        natural_height = self._preferred_sequence_image_height(width, image_path=image_path)
+        natural_height = self._preferred_sequence_image_height(
+            width, image_path=image_path
+        )
         if not mixed_content:
             return natural_height
         mixed_floor = max(40, int(width * 0.24))
         mixed_ceiling = max(72, int(width * 0.72))
         return max(mixed_floor, min(mixed_ceiling, natural_height))
 
-    def _preferred_sequence_image_height(self: Any, width: int, *, image_path: str) -> int:
+    def _preferred_sequence_image_height(
+        self: Any, width: int, *, image_path: str
+    ) -> int:
         if width <= 0:
             return 0
         image_size = self._load_image_size(image_path)
@@ -488,7 +514,9 @@ class SearchTreemapResponseLayoutMixin:
             natural_height = int(width * 0.62)
         else:
             image_width, image_height = image_size
-            natural_height = max(36, round(width * (image_height / max(image_width, 1))))
+            natural_height = max(
+                36, round(width * (image_height / max(image_width, 1)))
+            )
         soft_floor = max(52, int(width * 0.26))
         if natural_height < soft_floor:
             natural_height = (natural_height + soft_floor) // 2
@@ -629,6 +657,11 @@ class SearchTreemapResponseLayoutMixin:
         text: str,
         line_count: int,
     ) -> int:
-        if width < 220 and height_cap >= 220 and len(text.strip()) >= 6 and line_count >= 2:
+        if (
+            width < 220
+            and height_cap >= 220
+            and len(text.strip()) >= 6
+            and line_count >= 2
+        ):
             return 4
         return 0

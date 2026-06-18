@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from datetime import datetime
 from io import BytesIO
 from math import ceil
 from pathlib import Path
@@ -17,10 +16,11 @@ from src.lib.consts import MAPLE_FONT_NAME, MAPLE_FONT_PATH
 from src.lib.demo_theme import DEFAULT_DEMO_THEME, SENRIN_V3_THEME
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.plugin_docs.command_layout import InlineTextSpan, split_inline_text_spans
+from src.lib.plugin_docs.models import DocsDemoTurn
 
-from ..command_layout import InlineTextSpan, split_inline_text_spans
-from ..models import DocsDemoTurn
 from .demo import DEMO_AVATAR_PATH, DEMO_STANDEE_PATH, _TurnSpec
+
 
 class LegacyDemoImageRenderer:
     """Render a compact plugin docs demo card."""

@@ -9,7 +9,11 @@ import arrow
 from sqlalchemy import case, delete, func, or_, select, text
 
 from src.lib.utils.common import get_current_time
-from src.plugins.wordbank.message_model import MessageShape, fingerprint_shape, shape_to_payload
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    fingerprint_shape,
+    shape_to_payload,
+)
 
 from .instances import (
     wordbank_log_db,
@@ -389,7 +393,9 @@ class WordbankRepositoryEntriesMixin:
                 is_superuser=is_superuser,
             ):
                 return False
-            variants = await self._load_variants_by_group_ids(session, [trigger_group_id])
+            variants = await self._load_variants_by_group_ids(
+                session, [trigger_group_id]
+            )
             if not variants:
                 return False
             for variant in variants:

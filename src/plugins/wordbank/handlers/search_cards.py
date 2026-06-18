@@ -19,13 +19,14 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.types import WordbankSearchItem
+
 from .search_card_helpers import (
     build_search_card_footer_text,
     fallback_match_label,
     folded_preview_note,
     has_folded_preview,
-    response_preview,
     line_height,
+    response_preview,
     safe_field_label,
     safe_meta_label,
     summary_chips,
@@ -385,12 +386,15 @@ class SearchResultCardRenderer:
             y=cursor_y_body,
             text=(
                 f"{tr(locale, 'wordbank.search_card.label.matched_by')}: "
-                f"{item.matched_by or fallback_match_label(
-                    has_image=query.has_image,
-                    keyword=query.keyword,
-                    creator_id=query.creator_id,
-                    locale=locale,
-                )}"
+                f"{
+                    item.matched_by
+                    or fallback_match_label(
+                        has_image=query.has_image,
+                        keyword=query.keyword,
+                        creator_id=query.creator_id,
+                        locale=locale,
+                    )
+                }"
             ),
             align="left",
         )
@@ -656,9 +660,13 @@ class SearchResultCardRenderer:
         )
         footer = tr(locale, "wordbank.search_card.total", total=query.total_count)
         if query.page < query.total_pages:
-            footer += "  " + tr(locale, "wordbank.search_card.next_page", next_page=query.page + 1)
+            footer += "  " + tr(
+                locale, "wordbank.search_card.next_page", next_page=query.page + 1
+            )
         draw.text(
-            self._centered_text_origin(draw, copyright_text, self.footer_minor_font, y=cursor_y),
+            self._centered_text_origin(
+                draw, copyright_text, self.footer_minor_font, y=cursor_y
+            ),
             copyright_text,
             font=self.footer_minor_font,
             fill=self.MUTED,
@@ -670,7 +678,9 @@ class SearchResultCardRenderer:
             font=self.footer_minor_font,
             fill=self.MUTED,
         )
-        footer_y = generated_y + line_height(self.footer_minor_font) + CARD_FOOTER_LINE_GAP
+        footer_y = (
+            generated_y + line_height(self.footer_minor_font) + CARD_FOOTER_LINE_GAP
+        )
         draw.text(
             self._centered_text_origin(draw, footer, self.footer_font, y=footer_y),
             footer,

@@ -41,7 +41,12 @@ from .handlers import (
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
 )
-from .handlers.commands import ParsedSearch, execute_search_page, parse_search_args, render_search_page_message
+from .handlers.commands import (
+    ParsedSearch,
+    execute_search_page,
+    parse_search_args,
+    render_search_page_message,
+)
 from .handlers.rendering import render_shape_message
 from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError
@@ -66,6 +71,7 @@ def register_wordbank_runtime_handlers(
         from src.plugins import wordbank as wordbank_plugin
 
         return getattr(wordbank_plugin, name)
+
     def _extract_sent_message_id(result: Any) -> str | None:
         if isinstance(result, dict):
             value = result.get("message_id")

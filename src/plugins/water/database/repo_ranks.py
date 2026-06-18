@@ -7,37 +7,39 @@ from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from heapq import nsmallest
 from time import perf_counter
+from types import ModuleType
 from typing import TYPE_CHECKING
 
 import arrow
 from sqlalchemy.engine.row import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.lib.db.connectors import ColdPolicy
-from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.water.services.rank_types import WaterRankScope, WaterRankSubject
 
 from .instances import water_core_db, water_message
-from .ops import WaterMessageOps, WaterSummaryOps
 from .types import WaterSummaryRecord
 from .writers import water_writer
 
 if TYPE_CHECKING:
-    from .repo import (
+    from .repo_models import (
         GlobalPeriodOverview,
         GlobalPeriodRankItem,
         NaturalPeriodRankSnapshot,
         NaturalRankItem,
         NaturalRankOverview,
         RankItem,
-        WaterDailyReportCandidate,
-        WaterGroupDailyRankSnapshot,
-        WaterGroupReportSnapshot,
     )
 
+from .repo_models import (
+    GlobalPeriodOverview,
+    GlobalPeriodRankItem,
+    NaturalPeriodRankSnapshot,
+    NaturalRankItem,
+    RankItem,
+)
 
-def _repo_module():
+
+def _repo_module() -> ModuleType:
     from . import repo as repo_module
 
     return repo_module
@@ -150,8 +152,6 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
             _fetch_today(), _fetch_yesterday()
         )
 
-        from .repo import RankItem
-
         return [
             RankItem(
                 user_id=user_id,
@@ -193,9 +193,9 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
         end_ts = now.ceil("day").int_timestamp
 
         async with water_message.read_session(time_ctx=now.datetime) as session:
-            raw_timestamps = await repo_module.WaterMessageOps(session).get_users_timestamps(
-                group_id, user_ids, start_ts, end_ts
-            )
+            raw_timestamps = await repo_module.WaterMessageOps(
+                session
+            ).get_users_timestamps(group_id, user_ids, start_ts, end_ts)
 
         user_hourly: dict[str, list[int]] = defaultdict(lambda: [0] * 24)
         for uid, hour, msg_count in raw_timestamps:
@@ -255,8 +255,6 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
             user_id: rank for rank, (user_id, *_rest) in enumerate(ordered_previous, 1)
         }
 
-        from .repo import GlobalPeriodRankItem
-
         return [
             GlobalPeriodRankItem(
                 user_id=user_id,
@@ -291,8 +289,6 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
             self.get_summaries_in_window(start_date, end_date),
             self.get_summaries_in_window(previous_start_date, previous_end_date),
         )
-        from .repo import GlobalPeriodOverview
-
         current_hourly = self._sum_hourly(current_rows)
         previous_total = sum(int(row.msg_count) for row in previous_rows)
         return GlobalPeriodOverview(
@@ -327,9 +323,9 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
             return first_archived_date
 
         async with water_core_db.session(commit=False) as session:
-            return await repo_module.WaterSummaryOps(session).get_first_summary_record_date(
-                group_ids=group_ids
-            )
+            return await repo_module.WaterSummaryOps(
+                session
+            ).get_first_summary_record_date(group_ids=group_ids)
 
     async def get_natural_period_leaderboard(
         self,
@@ -442,8 +438,6 @@ class WaterRepositoryRanksMixin(_WaterRepositoryRanksMixinBase):
             previous_aggregates,
             [entity_id for entity_id, *_rest in ordered_current],
         )
-        from .repo import NaturalPeriodRankSnapshot, NaturalRankItem
-
         leaderboard = [
             NaturalRankItem(
                 entity_id=entity_id,
