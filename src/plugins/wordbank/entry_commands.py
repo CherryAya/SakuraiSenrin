@@ -107,7 +107,15 @@ def register_wordbank_command_handlers(
     copy_guided_state: Callable[..., dict[str, Any]],
     send_group_detail_view: Callable[..., Awaitable[None]],
     send_search_result_view: Callable[..., Awaitable[None]],
+    resolve_locale_fn: Callable[[str | None], Awaitable[LocaleCode]] = resolve_locale,
+    handle_wordbank_command_message_fn: Callable[..., Awaitable[None]] | None = None,
 ) -> None:
+    async def _call_dynamic(name: str, *args: Any, **kwargs: Any) -> Any:
+        from src.plugins import wordbank as wordbank_plugin
+
+        target = getattr(wordbank_plugin, name)
+        return await target(*args, **kwargs)
+
     async def handle_wordbank_command_message(
         bot: Bot,
         matcher: Matcher,
@@ -118,7 +126,7 @@ def register_wordbank_command_handlers(
         state: T_State | None = None,
     ) -> None:
         await initialize_plugin()
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+        locale = await resolve_locale_fn(str(getattr(event, "group_id", "")) or None)
         text = build_forced_command_text(forced_action, arg.extract_plain_text())
         action, rest = split_command_text(text)
         search_image_scores: dict[int, float] | None = None
@@ -227,6 +235,8 @@ def register_wordbank_command_handlers(
             return
         await matcher.finish(msg)
 
+    setattr(register_wordbank_command_handlers, "_handle_wordbank_command_message", handle_wordbank_command_message)
+
     @wordbank_command.handle()
     async def _wordbank_root(
         bot: Bot,
@@ -235,7 +245,7 @@ def register_wordbank_command_handlers(
         state: T_State,
         arg: Message = CommandArg(),
     ) -> None:
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+        locale = await resolve_locale_fn(str(getattr(event, "group_id", "")) or None)
         await _abort_guided_on_revoke(matcher, event, locale)
         text = arg.extract_plain_text()
         if has_meaningful_text(text):
@@ -250,10 +260,11 @@ def register_wordbank_command_handlers(
                         arg,
                     )
                 else:
-                    await start_guided_add(matcher, event, state, locale)
+                    await _call_dynamic("_start_guided_add", matcher, event, state, locale)
                 return
         await initialize_plugin()
-        await handle_wordbank_command_message(bot, matcher, event, arg, state=state)
+        handler = handle_wordbank_command_message_fn or handle_wordbank_command_message
+        await handler(bot, matcher, event, arg, state=state)
 
     @wordbank_command.handle()
     async def _wordbank_guided_trigger(
@@ -396,7 +407,7 @@ def register_wordbank_command_handlers(
         arg: Message = CommandArg(),
     ) -> None:
         await initialize_plugin()
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+        locale = await resolve_locale_fn(str(getattr(event, "group_id", "")) or None)
         await _abort_guided_on_revoke(matcher, event, locale)
         plain_text = arg.extract_plain_text()
         if not has_meaningful_text(plain_text) and not extract_image_urls(arg):
@@ -411,7 +422,8 @@ def register_wordbank_command_handlers(
                 arg,
             )
             return
-        await handle_wordbank_command_message(
+        handler = handle_wordbank_command_message_fn or handle_wordbank_command_message
+        await handler(
             bot,
             matcher,
             event,
@@ -470,12 +482,13 @@ def register_wordbank_command_handlers(
         arg: Message = CommandArg(),
     ) -> None:
         await initialize_plugin()
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+        locale = await resolve_locale_fn(str(getattr(event, "group_id", "")) or None)
         await _abort_guided_on_revoke(matcher, event, locale)
         if not has_meaningful_text(arg.extract_plain_text()) and not extract_image_urls(arg):
-            await start_guided_search(matcher, event, state, locale)
+            await _call_dynamic("_start_guided_search", matcher, event, state, locale)
             return
-        await handle_wordbank_command_message(
+        handler = handle_wordbank_command_message_fn or handle_wordbank_command_message
+        await handler(
             bot,
             matcher,
             event,
@@ -515,7 +528,8 @@ def register_wordbank_command_handlers(
             state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_CREATOR
             await matcher.pause(tr(locale, "wordbank.guided.search.creator_prompt"))
             return
-        await finish_guided_search(
+        await _call_dynamic(
+            "_finish_guided_search",
             matcher,
             state,
             event,
@@ -562,7 +576,8 @@ def register_wordbank_command_handlers(
             state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_CREATOR
             await matcher.pause(tr(locale, "wordbank.guided.search.creator_prompt"))
             return
-        await finish_guided_search(
+        await _call_dynamic(
+            "_finish_guided_search",
             matcher,
             state,
             event,
@@ -602,7 +617,8 @@ def register_wordbank_command_handlers(
                 tr(locale, "wordbank.error.guided_search_creator_empty"),
             )
             return
-        await finish_guided_search(
+        await _call_dynamic(
+            "_finish_guided_search",
             matcher,
             state,
             event,
@@ -618,7 +634,7 @@ def register_wordbank_command_handlers(
     ) -> None:
         locale = state.get("wordbank_locale", "zh-CN")
         await _abort_guided_on_revoke(matcher, event, locale)
-        await handle_search_session_event(matcher, event, state, locale)
+        await _call_dynamic("_handle_search_session_event", matcher, event, state, locale)
 
     def _register_forced_command(matcher_obj: Any, action: str) -> None:
         @matcher_obj.handle()

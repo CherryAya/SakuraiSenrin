@@ -19,6 +19,18 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.types import WordbankSearchItem
+from .search_card_helpers import (
+    build_search_card_footer_text,
+    fallback_match_label,
+    folded_preview_note,
+    has_folded_preview,
+    response_preview,
+    line_height,
+    safe_field_label,
+    safe_meta_label,
+    summary_chips,
+    text_width,
+)
 
 CARD_WIDTH = 1320
 CARD_PADDING_X = 56
@@ -141,7 +153,7 @@ class SearchResultCardRenderer:
         locale: LocaleCode,
     ) -> int:
         height = CARD_PADDING_Y
-        height += self._line_height(self.title_font) + 12
+        height += line_height(self.title_font) + 12
         height += self._summary_block_height(query, locale) + 22
         if items:
             for index, item in enumerate(items, start=1):
@@ -200,7 +212,7 @@ class SearchResultCardRenderer:
             font=self.summary_font,
             fill=self.MUTED,
         )
-        return cursor_y + self._line_height(self.title_font)
+        return cursor_y + line_height(self.title_font)
 
     def _draw_summary(
         self,
@@ -226,9 +238,16 @@ class SearchResultCardRenderer:
         chip_x = CARD_PADDING_X + 22
         chip_y = cursor_y + 18
         max_x = CARD_WIDTH - CARD_PADDING_X - 22
-        for chip_text in self._summary_chips(query, locale):
-            chip_width = self._text_width(chip_text, self.summary_font) + 28
-            chip_height = self._line_height(self.summary_font) + 6
+        for chip_text in summary_chips(
+            keyword=query.keyword,
+            field=query.field,
+            creator_id=query.creator_id,
+            has_image=query.has_image,
+            locale=locale,
+            field_label=self._field_label(query.field, locale),
+        ):
+            chip_width = text_width(chip_text, self.summary_font) + 28
+            chip_height = line_height(self.summary_font) + 6
             if chip_x + chip_width > max_x:
                 chip_x = CARD_PADDING_X + 22
                 chip_y += chip_height + 10
@@ -290,9 +309,8 @@ class SearchResultCardRenderer:
             ),
             fill=self.ACCENT,
         )
-        badge_bbox = draw.textbbox((0, 0), badge, font=self.item_title_font)
-        badge_width = int(badge_bbox[2] - badge_bbox[0])
-        badge_height = int(badge_bbox[3] - badge_bbox[1])
+        badge_width = text_width(badge, self.item_title_font)
+        badge_height = line_height(self.item_title_font) - 8
         draw.text(
             (
                 inner_x + (badge_size - badge_width) / 2,
@@ -341,7 +359,7 @@ class SearchResultCardRenderer:
             image,
             draw,
             title=tr(locale, "wordbank.search_card.label.response_summary"),
-            text=self._response_preview(item, locale),
+            text=response_preview(item, locale),
             image_id=item.response_preview_image_id,
             x=inner_x,
             y=cursor_y_body,
@@ -349,7 +367,7 @@ class SearchResultCardRenderer:
             fill=self.RESPONSE_PANEL,
             outline=self.RESPONSE_BORDER,
         )
-        if self._has_folded_preview(item):
+        if has_folded_preview(item):
             cursor_y_body += CARD_FLOW_GAP
             cursor_y_body = self._draw_folded_preview_block(
                 image,
@@ -367,16 +385,21 @@ class SearchResultCardRenderer:
             y=cursor_y_body,
             text=(
                 f"{tr(locale, 'wordbank.search_card.label.matched_by')}: "
-                f"{item.matched_by or self._fallback_match_label(query, locale)}"
+                f"{item.matched_by or fallback_match_label(
+                    has_image=query.has_image,
+                    keyword=query.keyword,
+                    creator_id=query.creator_id,
+                    locale=locale,
+                )}"
             ),
             align="left",
         )
         cursor_y_body += 6
         config_text = (
-            f"{_safe_meta_label(locale)}  "
-            f"{_safe_field_label(locale, 'scope')}: {item.scope}  "
-            f"{_safe_field_label(locale, 'probability')}: {item.probability:g}  "
-            f"{_safe_field_label(locale, 'weight')}: {item.weight}"
+            f"{safe_meta_label(locale)}  "
+            f"{safe_field_label(locale, 'scope')}: {item.scope}  "
+            f"{safe_field_label(locale, 'probability')}: {item.probability:g}  "
+            f"{safe_field_label(locale, 'weight')}: {item.weight}"
         )
         self._draw_meta_line(
             draw,
@@ -421,7 +444,7 @@ class SearchResultCardRenderer:
 
         inner_x = x + 24
         inner_y = y + 18
-        label_width = self._text_width(title, self.item_meta_font) + 28
+        label_width = text_width(title, self.item_meta_font) + 28
         draw.rounded_rectangle(
             (
                 inner_x,
@@ -504,7 +527,7 @@ class SearchResultCardRenderer:
         locale: LocaleCode,
     ) -> int:
         _ = image
-        hint = f"💬 {self._fold_hint(item, locale)}"
+        hint = folded_preview_note(item, locale)
         text_height = self._wrapped_text_height(
             hint,
             self.item_meta_font,
@@ -541,17 +564,17 @@ class SearchResultCardRenderer:
             max_lines=3,
         )
         cursor_y = y + int(
-            (block_height - len(lines) * self._line_height(self.item_meta_font)) / 2
+            (block_height - len(lines) * line_height(self.item_meta_font)) / 2
         )
         for line in lines:
-            line_width = self._text_width(line, self.item_meta_font)
+            line_width = text_width(line, self.item_meta_font)
             draw.text(
                 (x + (width - line_width) / 2, cursor_y),
                 line,
                 font=self.item_meta_font,
                 fill=self.ACCENT_DEEP,
             )
-            cursor_y += self._line_height(self.item_meta_font)
+            cursor_y += line_height(self.item_meta_font)
         return y + block_height
 
     def _draw_meta_line(
@@ -571,7 +594,7 @@ class SearchResultCardRenderer:
         )
         cursor_y = y
         for line in lines:
-            line_width = self._text_width(line, self.item_meta_font)
+            line_width = text_width(line, self.item_meta_font)
             line_x = x
             if align == "right":
                 line_x = x + CARD_MAX_TEXT_WIDTH - line_width
@@ -581,7 +604,7 @@ class SearchResultCardRenderer:
                 font=self.item_meta_font,
                 fill=self.MUTED,
             )
-            cursor_y += self._line_height(self.item_meta_font)
+            cursor_y += line_height(self.item_meta_font)
         return cursor_y
 
     def _draw_empty_state(
@@ -625,7 +648,7 @@ class SearchResultCardRenderer:
         cursor_y: int,
     ) -> None:
         footer_time = arrow.get(get_current_time()).to("Asia/Shanghai")
-        copyright_text = _build_copyright_text(footer_time.year)
+        copyright_text = build_search_card_footer_text(footer_time.year)
         generated_at_text = tr(
             locale,
             "water.image.generated_at",
@@ -633,34 +656,21 @@ class SearchResultCardRenderer:
         )
         footer = tr(locale, "wordbank.search_card.total", total=query.total_count)
         if query.page < query.total_pages:
-            footer += "  " + tr(
-                locale,
-                "wordbank.search_card.next_page",
-                next_page=query.page + 1,
-            )
+            footer += "  " + tr(locale, "wordbank.search_card.next_page", next_page=query.page + 1)
         draw.text(
-            self._centered_text_origin(
-                draw,
-                copyright_text,
-                self.footer_minor_font,
-                y=cursor_y,
-            ),
+            self._centered_text_origin(draw, copyright_text, self.footer_minor_font, y=cursor_y),
             copyright_text,
             font=self.footer_minor_font,
             fill=self.MUTED,
         )
-        generated_y = cursor_y + self._line_height(self.footer_minor_font)
+        generated_y = cursor_y + line_height(self.footer_minor_font)
         draw.text(
             (CARD_PADDING_X, generated_y),
             generated_at_text,
             font=self.footer_minor_font,
             fill=self.MUTED,
         )
-        footer_y = (
-            generated_y
-            + self._line_height(self.footer_minor_font)
-            + CARD_FOOTER_LINE_GAP
-        )
+        footer_y = generated_y + line_height(self.footer_minor_font) + CARD_FOOTER_LINE_GAP
         draw.text(
             self._centered_text_origin(draw, footer, self.footer_font, y=footer_y),
             footer,
@@ -668,49 +678,21 @@ class SearchResultCardRenderer:
             fill=self.MUTED,
         )
 
-    def _summary_chips(
-        self,
-        query: SearchCardQuery,
-        locale: LocaleCode,
-    ) -> tuple[str, ...]:
-        return (
-            tr(
-                locale,
-                "wordbank.search_card.summary.field",
-                field=self._field_label(query.field, locale),
-            ),
-            tr(
-                locale,
-                "wordbank.search_card.summary.keyword",
-                keyword=query.keyword or tr(locale, "wordbank.search_card.none"),
-            ),
-            tr(
-                locale,
-                "wordbank.search_card.summary.has_image",
-                has_image=tr(
-                    locale,
-                    (
-                        "wordbank.search_card.boolean.yes"
-                        if query.has_image
-                        else "wordbank.search_card.boolean.no"
-                    ),
-                ),
-            ),
-            tr(
-                locale,
-                "wordbank.search_card.summary.creator",
-                creator_id=query.creator_id or tr(locale, "wordbank.search_card.none"),
-            ),
-        )
-
     def _summary_block_height(self, query: SearchCardQuery, locale: LocaleCode) -> int:
-        chips = self._summary_chips(query, locale)
-        chip_height = self._line_height(self.summary_font) + 6
+        chips = summary_chips(
+            keyword=query.keyword,
+            field=query.field,
+            creator_id=query.creator_id,
+            has_image=query.has_image,
+            locale=locale,
+            field_label=self._field_label(query.field, locale),
+        )
+        chip_height = line_height(self.summary_font) + 6
         current_x = CARD_PADDING_X + 22
         max_x = CARD_WIDTH - CARD_PADDING_X - 22
         rows = 1
         for chip_text in chips:
-            chip_width = self._text_width(chip_text, self.summary_font) + 28
+            chip_width = text_width(chip_text, self.summary_font) + 28
             if current_x + chip_width > max_x:
                 rows += 1
                 current_x = CARD_PADDING_X + 22 + chip_width + 10
@@ -734,11 +716,11 @@ class SearchResultCardRenderer:
         )
         total += CARD_SECTION_GAP
         total += self._flow_panel_height(
-            text=self._response_preview(item, locale),
+            text=response_preview(item, locale),
             image_id=item.response_preview_image_id,
             width=CARD_MAX_TEXT_WIDTH,
         )
-        if self._has_folded_preview(item):
+        if has_folded_preview(item):
             total += CARD_FLOW_GAP + self._folded_block_height(item, locale)
         total += CARD_SECTION_GAP
         total += self._wrapped_text_height(
@@ -753,10 +735,10 @@ class SearchResultCardRenderer:
         total += 6
         total += self._wrapped_text_height(
             (
-                f"{_safe_meta_label(locale)}  "
-                f"{_safe_field_label(locale, 'scope')}: {item.scope}  "
-                f"{_safe_field_label(locale, 'probability')}: {item.probability:g}  "
-                f"{_safe_field_label(locale, 'weight')}: {item.weight}"
+                f"{safe_meta_label(locale)}  "
+                f"{safe_field_label(locale, 'scope')}: {item.scope}  "
+                f"{safe_field_label(locale, 'probability')}: {item.probability:g}  "
+                f"{safe_field_label(locale, 'weight')}: {item.weight}"
             ),
             self.item_meta_font,
             max_width=CARD_MAX_TEXT_WIDTH,
@@ -766,62 +748,12 @@ class SearchResultCardRenderer:
 
     def _folded_block_height(self, item: WordbankSearchItem, locale: LocaleCode) -> int:
         text_height = self._wrapped_text_height(
-            f"💬 {self._fold_hint(item, locale)}",
+            folded_preview_note(item, locale),
             self.item_meta_font,
             max_width=CARD_MAX_TEXT_WIDTH - 48,
             max_lines=3,
         )
         return max(CARD_FOLDED_BLOCK_MIN_HEIGHT, text_height + 28)
-
-    def _folded_preview_block_height(self) -> int:
-        return CARD_FOLDED_BLOCK_MIN_HEIGHT
-
-    def _fallback_match_label(self, query: SearchCardQuery, locale: LocaleCode) -> str:
-        if query.has_image and query.keyword:
-            return tr(locale, "wordbank.search_card.match.text_image")
-        if query.has_image:
-            return tr(locale, "wordbank.search_card.match.image")
-        if query.keyword:
-            return tr(locale, "wordbank.search_card.match.text")
-        if query.creator_id:
-            return tr(locale, "wordbank.search_card.match.creator")
-        return tr(locale, "wordbank.search_card.match.recent")
-
-    def _response_preview(self, item: WordbankSearchItem, locale: LocaleCode) -> str:
-        summaries = list(item.response_summaries[:3]) or (
-            [item.response_text] if item.response_text else []
-        )
-        preview = "\n".join(summary for summary in summaries if summary)
-        if item.remaining_response_count > 0:
-            suffix = tr(
-                locale,
-                "wordbank.search_card.more_responses",
-                count=item.remaining_response_count,
-            )
-            preview = f"{preview}\n{suffix}".strip() if preview else suffix.strip()
-        return preview or tr(locale, "wordbank.search_card.none")
-
-    def _fold_hint(self, item: WordbankSearchItem, locale: LocaleCode) -> str:
-        shown_count = self._preview_summary_count(item)
-        if item.response_count <= max(1, shown_count):
-            return ""
-        return tr(
-            locale,
-            "wordbank.search_card.folded_hint",
-            total=item.response_count,
-            shown=max(1, shown_count),
-            group_id=item.trigger_group_id,
-        )
-
-    def _has_folded_preview(self, item: WordbankSearchItem) -> bool:
-        shown_count = self._preview_summary_count(item)
-        return item.response_count > max(1, shown_count)
-
-    def _preview_summary_count(self, item: WordbankSearchItem) -> int:
-        summaries = [summary for summary in item.response_summaries[:3] if summary]
-        if summaries:
-            return len(summaries)
-        return 1 if item.response_text else 0
 
     def _draw_wrapped_text(
         self,
@@ -844,7 +776,7 @@ class SearchResultCardRenderer:
         cursor_y = int(y)
         for line in lines:
             draw.text((x, cursor_y), line, font=font, fill=fill)
-            cursor_y += self._line_height(font)
+            cursor_y += line_height(font)
         return cursor_y
 
     def _wrapped_text_height(
@@ -861,7 +793,7 @@ class SearchResultCardRenderer:
             max_width=max_width,
             max_lines=max_lines,
         )
-        return len(lines) * self._line_height(font)
+        return len(lines) * line_height(font)
 
     def _wrap_text(
         self,
@@ -881,7 +813,7 @@ class SearchResultCardRenderer:
             current = ""
             for char in raw_line:
                 candidate = f"{current}{char}"
-                if self._text_width(candidate, font) <= max_width:
+                if text_width(candidate, font) <= max_width:
                     current = candidate
                     continue
                 if current:
@@ -902,10 +834,10 @@ class SearchResultCardRenderer:
         return truncated
 
     def _truncate_line(self, text: str, font: Any, max_width: int) -> str:
-        if self._text_width(text, font) <= max_width:
+        if text_width(text, font) <= max_width:
             return text
         candidate = text
-        while candidate and self._text_width(f"{candidate}...", font) > max_width:
+        while candidate and text_width(f"{candidate}...", font) > max_width:
             candidate = candidate[:-1]
         return f"{candidate}..."
 
@@ -1017,22 +949,6 @@ class SearchResultCardRenderer:
             "response": tr(locale, "wordbank.search_card.field.response"),
         }.get(field, field)
 
-    def _line_height(self, font: Any) -> int:
-        bbox = ImageDraw.Draw(Image.new("RGB", (10, 10))).textbbox(
-            (0, 0),
-            "Ag",
-            font=font,
-        )
-        return int(bbox[3] - bbox[1] + 8)
-
-    def _text_width(self, text: str, font: Any) -> int:
-        return int(
-            ImageDraw.Draw(Image.new("RGB", (10, 10))).textlength(
-                text,
-                font=font,
-            )
-        )
-
     def _centered_text_origin(
         self,
         draw: ImageDraw.ImageDraw,
@@ -1041,18 +957,14 @@ class SearchResultCardRenderer:
         *,
         y: int,
     ) -> tuple[int, int]:
-        text_width = int(draw.textlength(text, font=font))
-        return (int((CARD_WIDTH - text_width) / 2), y)
+        rendered_width = int(draw.textlength(text, font=font))
+        return (int((CARD_WIDTH - rendered_width) / 2), y)
 
     def _load_font(self, size: int) -> Any:
         try:
             return ImageFont.truetype(MAPLE_FONT_PATH, size)
         except Exception:
             return ImageFont.load_default()
-
-
-def _build_copyright_text(year: int) -> str:
-    return f"© 2020-{year} SakuraiSenrin"
 
 
 def render_search_results_card_bytes(
@@ -1064,36 +976,6 @@ def render_search_results_card_bytes(
 ) -> bytes:
     renderer = SearchResultCardRenderer(preview_bytes=preview_bytes)
     return renderer.render(items=items, query=query, locale=locale)
-
-
-def _safe_field_label(locale: LocaleCode, key: str) -> str:
-    labels = {
-        "scope": {
-            "zh-CN": "范围",
-            "lzh": "範圍",
-            "x-meme": "范围",
-        },
-        "probability": {
-            "zh-CN": "概率",
-            "lzh": "概率",
-            "x-meme": "概率",
-        },
-        "weight": {
-            "zh-CN": "权重",
-            "lzh": "權重",
-            "x-meme": "权重",
-        },
-    }
-    locale_labels = labels.get(key, {})
-    return locale_labels.get(locale, locale_labels.get("zh-CN", key))
-
-
-def _safe_meta_label(locale: LocaleCode) -> str:
-    return {
-        "zh-CN": "配置",
-        "lzh": "配置",
-        "x-meme": "配置",
-    }.get(locale, "配置")
 
 
 def render_search_results_card(

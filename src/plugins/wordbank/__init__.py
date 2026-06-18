@@ -22,7 +22,7 @@ from nonebot.typing import T_State
 from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -39,6 +39,7 @@ from .entry_commands import register_wordbank_command_handlers
 from .entry_runtime import register_wordbank_runtime_handlers
 from .guided_flow import (
     WORDBANK_GUIDED_RECALL_PENDING_KEYS,
+    WORDBANK_GUIDED_SEARCH_STAGE_PAGE,
     cancel_guided_resources,
     collect_search_query_content,
     copy_guided_state,
@@ -46,6 +47,7 @@ from .guided_flow import (
     finish_guided_search,
     guided_search_stage,
     handle_search_session_event,
+    resolve_search_delete_target_ids,
     record_guided_response,
     record_guided_trigger,
     register_guided_checkpoint,
@@ -58,6 +60,8 @@ from .guided_flow import (
 from .handlers import (
     APPROVAL_REPLY_ALIASES,
     build_add_result_message,
+    fetch_first_image_bytes_from_message,
+    handle_delete,
     is_reply,
     localize_command_error,
     record_submission_approval_message,
@@ -65,6 +69,7 @@ from .handlers import (
 )
 from .services import wordbank_media_service, wordbank_service
 from .services.core import WordbankAddResult
+from .handlers.commands import execute_search_page, render_search_page_message
 
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
@@ -124,6 +129,17 @@ async def _collect_search_query_content(
         allow_image=allow_image,
         media_service=wordbank_media_service,
     )
+
+
+async def _handle_wordbank_command_message(*args: Any, **kwargs: Any) -> None:
+    handler = getattr(
+        register_wordbank_command_handlers,
+        "_handle_wordbank_command_message",
+        None,
+    )
+    if handler is None:
+        raise RuntimeError("wordbank command handler is not registered")
+    await handler(*args, **kwargs)
 
 
 async def initialize_wordbank_plugin() -> None:
@@ -448,7 +464,7 @@ async def _finish_guided_search(
         clamp_page=clamp_page,
         wordbank_service=wordbank_service,
         media_service=wordbank_media_service,
-        record_search_result_view_message=runtime_exports["record_search_result_view_message"],
+        record_search_result_view_message=_record_search_result_view_message,
     )
 
 
@@ -464,7 +480,7 @@ async def _handle_search_session_event(
         state,
         locale,
         wordbank_service=wordbank_service,
-        send_group_detail_view=runtime_exports["send_group_detail_view"],
+        send_group_detail_view=_send_group_detail_view,
         finish_guided_search_fn=_finish_guided_search,
         build_error_message=_wordbank_error_message,
     )
@@ -521,6 +537,31 @@ async def _send_search_result_view(
     )
 
 
+async def _send_group_detail_view(
+    matcher: Matcher,
+    event: MessageEvent,
+    locale: LocaleCode,
+    *,
+    trigger_group_id: int,
+    page: int,
+) -> None:
+    await runtime_exports["send_group_detail_view"](
+        matcher,
+        event,
+        locale,
+        trigger_group_id=trigger_group_id,
+        page=page,
+    )
+
+
+async def _record_search_result_view_message(*args: Any, **kwargs: Any) -> None:
+    await runtime_exports["record_search_result_view_message"](*args, **kwargs)
+
+
+async def _resolve_search_delete_target_ids(*args: Any, **kwargs: Any) -> tuple[int, ...]:
+    return await resolve_search_delete_target_ids(*args, **kwargs)
+
+
 register_wordbank_command_handlers(
     wordbank_command=wordbank_command,
     wordbank_add_command=wordbank_add_command,
@@ -548,6 +589,8 @@ register_wordbank_command_handlers(
     register_guided_checkpoint=register_guided_checkpoint,
     guided_locale=wordbank_guided_locale,
     copy_guided_state=copy_guided_state,
-    send_group_detail_view=runtime_exports["send_group_detail_view"],
+    send_group_detail_view=_send_group_detail_view,
     send_search_result_view=_send_search_result_view,
+    resolve_locale_fn=resolve_locale,
+    handle_wordbank_command_message_fn=lambda *args, **kwargs: _handle_wordbank_command_message(*args, **kwargs),
 )

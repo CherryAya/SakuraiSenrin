@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Sequence
-from dataclasses import dataclass
 import math
-import re
-import shlex
+from collections.abc import Sequence
 from typing import Any
 
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
@@ -25,13 +21,45 @@ from src.plugins.wordbank.database.types import (
     WordbankSearchRequest,
 )
 from src.plugins.wordbank.handlers.search_cards import SearchCardQuery
-from src.plugins.wordbank.message_model import (
-    MessageShape,
-    combine_shapes,
-    shape_from_image,
-    shape_from_message,
-    shape_from_text,
+from src.plugins.wordbank.handlers.parsers import (
+    GuidedAdvancedOptions,
+    GuidedSearchSelection,
+    MutationActor,
+    ParsedAddMedia,
+    ParsedGroupView,
+    ParsedResponseSet,
+    ParsedResponseWeight,
+    ParsedSearch,
+    ParsedSearchSessionCommand,
+    ParsedStudyMediaPrefix,
+    ParsedTextAdd,
+    ParsedTriggerProbability,
+    ParsedTriggerSet,
+    build_forced_command_text,
+    actor_can_review,
+    localize_wordbank_error,
+    parse_add_media_args,
+    parse_group_view_args,
+    parse_guided_advanced_options,
+    parse_guided_scope_choice,
+    parse_guided_search_creator_filter,
+    parse_guided_search_mode_choice,
+    parse_guided_search_page_choice,
+    parse_guided_weight,
+    parse_rank_period,
+    parse_response_set_args,
+    parse_response_weight_args,
+    parse_search_args,
+    parse_search_session_command,
+    parse_study_group_block_choice,
+    parse_study_media_prefix,
+    parse_study_mode_choice,
+    parse_text_add_args,
+    parse_trigger_probability_args,
+    parse_trigger_set_args,
+    split_add_pair,
 )
+from src.plugins.wordbank.message_model import MessageShape, shape_from_image
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
@@ -47,15 +75,32 @@ from src.plugins.wordbank.services.rules import (
     build_legacy_study_shortcut_rule,
     parse_legacy_study_text,
 )
-from src.plugins.wordbank.text_parsing import (
-    TokenSpan,
-    has_meaningful_text,
-    join_tokens_with_original_spacing,
-    rest_after_token,
-    split_command_text,
-    tokenize_shell_like,
-)
+from src.plugins.wordbank.text_parsing import has_meaningful_text, split_command_text
 
+from .media_helpers import (
+    build_message_shape_from_message,
+    build_shape_from_text_and_images,
+    extract_image_urls,
+    fetch_first_image_bytes_from_message,
+    fetch_image_bytes_from_message,
+    fetch_image_bytes_with_retry,
+    shape_from_response_parts,
+    shape_from_text_value,
+)
+from .passive import fetch_image_bytes
+from .mutation import (
+    build_mutation_actor,
+    handle_approve,
+    handle_delete,
+    handle_reject,
+    handle_response_command as _handle_response_command,
+    handle_response_content_update as _handle_response_content_update,
+    handle_response_weight_update as _handle_response_weight_update,
+    handle_restore,
+    handle_trigger_command as _handle_trigger_command,
+    handle_trigger_content_update as _handle_trigger_content_update,
+    handle_trigger_probability_update as _handle_trigger_probability_update,
+)
 from .rendering import (
     GROUP_PAGE_SIZE,
     render_creator_leaderboard_card_message,
@@ -77,56 +122,6 @@ RESPONSE_ALIASES = {"response", "响应", "响应词"}
 SET_ALIASES = {"set", "edit", "修改"}
 PROBABILITY_ALIASES = {"prob", "probability", "概率"}
 WEIGHT_ALIASES = {"weight", "权重"}
-ADD_SEPARATORS = ("=>", "->", "回答", "回复")
-DEFAULT_SEARCH_LIMIT = 10
-MAX_SEARCH_LIMIT = 20
-IMAGE_DOWNLOAD_RETRY_ATTEMPTS = 3
-IMAGE_DOWNLOAD_RETRY_DELAY_SECONDS = 0.8
-GUIDED_MESSAGE_IMAGE_LIMIT = 4
-SEARCH_FIELD_ALIASES = {
-    "all": "all",
-    "a": "all",
-    "全部": "all",
-    "全量": "all",
-    "trigger": "trigger",
-    "t": "trigger",
-    "触发": "trigger",
-    "触发词": "trigger",
-    "response": "response",
-    "r": "response",
-    "响应": "response",
-    "响应词": "response",
-}
-RANK_PERIOD_ALIASES: dict[str, WordbankRankPeriod] = {
-    "week": "week",
-    "w": "week",
-    "周": "week",
-    "周榜": "week",
-    "本周": "week",
-    "month": "month",
-    "m": "month",
-    "月": "month",
-    "月榜": "month",
-    "本月": "month",
-    "season": "season",
-    "quarter": "season",
-    "q": "season",
-    "季": "season",
-    "季榜": "season",
-    "本季": "season",
-    "quarterly": "season",
-    "total": "total",
-    "all": "total",
-    "总": "total",
-    "总榜": "total",
-    "累计": "total",
-}
-_COMPACT_GROUP_VIEW_RE = re.compile(
-    r"^(?P<action>详情|展开|group|grp)(?P<group_id>\d+)(?:\s+(?P<page>\d+))?$",
-    re.IGNORECASE,
-)
-
-
 def _default_i18n_text(key: MessageKey, **params: object) -> str:
     return tr("zh-CN", key, **params)
 
@@ -147,946 +142,8 @@ def _label(name: str) -> str:
     return tr("zh-CN", WORD_BANK_LABEL_KEYS[name])
 
 
-@dataclass(slots=True, frozen=True)
-class ParsedTextAdd:
-    trigger_text: str
-    response_text: str
-    raw_rule: dict[str, Any]
-
-
-@dataclass(slots=True, frozen=True)
-class ParsedSearch:
-    keyword: str
-    page: int
-    limit: int
-    field: str
-    creator_id: str
-
-
-@dataclass(slots=True, frozen=True)
-class ParsedGroupView:
-    trigger_group_id: int
-    page: int
-
-
-@dataclass(slots=True, frozen=True)
-class ParsedTriggerProbability:
-    trigger_group_id: int
-    probability: float
-
-
-@dataclass(slots=True, frozen=True)
-class ParsedResponseWeight:
-    response_item_id: int
-    weight: int
-
-
-@dataclass(slots=True, frozen=True)
-class ParsedTriggerSet:
-    trigger_group_id: int
-    text: str
-
-
-@dataclass(slots=True, frozen=True)
-class ParsedResponseSet:
-    response_item_id: int
-    text: str
-
-
-@dataclass(slots=True, frozen=True)
-class MutationActor:
-    user_id: str
-    group_id: str
-    can_moderate_group: bool
-    is_superuser: bool
-
-
-@dataclass(slots=True, frozen=True)
-class GuidedAdvancedOptions:
-    raw_rule: dict[str, Any]
-
-
-@dataclass(slots=True, frozen=True)
-class ParsedStudyMediaPrefix:
-    source: str
-    raw_rule: dict[str, Any]
-
-
-@dataclass(slots=True, frozen=True)
-class GuidedSearchSelection:
-    field: str
-    requires_query: bool = True
-    requires_creator: bool = False
-
-
-@dataclass(slots=True, frozen=True)
-class ParsedSearchSessionCommand:
-    action: str
-    page: int | None = None
-    trigger_group_id: int | None = None
-    delete_indexes: tuple[int, ...] = ()
-
-
-def parse_rank_period(text: str) -> WordbankRankPeriod:
-    normalized = text.strip()
-    if not normalized:
-        return "month"
-    token, rest = split_command_text(normalized)
-    if rest.strip():
-        raise RuleError(
-            _default_i18n_text(
-                "wordbank.rank.invalid_period",
-                value=normalized,
-            ),
-            key="wordbank.rank.invalid_period",
-            value=normalized,
-        )
-    period = RANK_PERIOD_ALIASES.get(token.casefold()) or RANK_PERIOD_ALIASES.get(token)
-    if period is None:
-        raise RuleError(
-            _default_i18n_text(
-                "wordbank.rank.invalid_period",
-                value=normalized,
-            ),
-            key="wordbank.rank.invalid_period",
-            value=normalized,
-        )
-    return period
-
-
 def _split_command(text: str) -> tuple[str, str]:
     return split_command_text(text)
-
-
-def build_forced_command_text(action: str | None, raw_text: str) -> str:
-    if action is None:
-        return raw_text
-    return f"{action} {raw_text}" if raw_text else action
-
-
-def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
-    try:
-        tokens = tokenize_shell_like(text)
-    except ValueError as exc:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.parse_flags", reason=str(exc)),
-            key="wordbank.error.parse_flags",
-            reason=str(exc),
-        ) from exc
-    consumed_ranges: list[tuple[int, int]] = []
-    raw_rule: dict[str, Any] = {}
-    idx = 0
-    while idx < len(tokens):
-        token = tokens[idx].value
-        if token in {"--mode", "-m"}:
-            raise RuleError(
-                _default_i18n_text("wordbank.error.mode_unsupported"),
-                key="wordbank.error.mode_unsupported",
-            )
-        elif token in {"--scope", "-s"}:
-            flag_token = tokens[idx]
-            idx += 1
-            if idx >= len(tokens):
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.flag_missing",
-                        flag="--scope",
-                        expected=_label("scope"),
-                    ),
-                    key="wordbank.error.flag_missing",
-                    flag="--scope",
-                    expected=_label("scope"),
-                )
-            raw_rule["scope"] = tokens[idx].value
-            consumed_ranges.append((flag_token.start, tokens[idx].end))
-        elif token in {"--prob", "--probability", "-p"}:
-            flag_token = tokens[idx]
-            idx += 1
-            if idx >= len(tokens):
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.flag_missing",
-                        flag="--prob",
-                        expected=_label("probability"),
-                    ),
-                    key="wordbank.error.flag_missing",
-                    flag="--prob",
-                    expected=_label("probability"),
-                )
-            raw_rule["probability"] = tokens[idx].value
-            consumed_ranges.append((flag_token.start, tokens[idx].end))
-        elif token in {"--weight", "-w"}:
-            flag_token = tokens[idx]
-            idx += 1
-            if idx >= len(tokens):
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.flag_missing",
-                        flag="--weight",
-                        expected=_label("weight"),
-                    ),
-                    key="wordbank.error.flag_missing",
-                    flag="--weight",
-                    expected=_label("weight"),
-                )
-            raw_rule["weight"] = tokens[idx].value
-            consumed_ranges.append((flag_token.start, tokens[idx].end))
-        elif token in {"--role", "--roles", "-r"}:
-            flag_token = tokens[idx]
-            idx += 1
-            if idx >= len(tokens):
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.flag_missing",
-                        flag="--role",
-                        expected=_label("role"),
-                    ),
-                    key="wordbank.error.flag_missing",
-                    flag="--role",
-                    expected=_label("role"),
-                )
-            raw_rule["roles"] = tokens[idx].value
-            consumed_ranges.append((flag_token.start, tokens[idx].end))
-        elif token == "--call":
-            flag_token = tokens[idx]
-            idx += 1
-            if idx >= len(tokens):
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.flag_missing",
-                        flag="--call",
-                        expected="window:min:max",
-                    ),
-                    key="wordbank.error.flag_missing",
-                    flag="--call",
-                    expected="window:min:max",
-                )
-            parts = tokens[idx].value.split(":")
-            if len(parts) != 3:
-                raise RuleError(
-                    _default_i18n_text("wordbank.error.call_flag_format"),
-                    key="wordbank.error.call_flag_format",
-                )
-            raw_rule["call_count"] = {
-                "window_seconds": parts[0],
-                "min": parts[1],
-                "max": parts[2],
-            }
-            consumed_ranges.append((flag_token.start, tokens[idx].end))
-        idx += 1
-
-    source = text
-    for start, end in sorted(consumed_ranges, reverse=True):
-        source = source[:start] + source[end:]
-    return source, raw_rule
-
-
-def _parse_positive_int(
-    value: str,
-    *,
-    fallback: str,
-    key: MessageKey,
-    **params: object,
-) -> int:
-    try:
-        parsed = int(value)
-    except ValueError as exc:
-        raise RuleError(fallback, key=key, **params) from exc
-    if parsed <= 0:
-        raise RuleError(fallback, key=key, **params)
-    return parsed
-
-
-def _parse_probability_value(value: str) -> float:
-    try:
-        probability = float(value)
-    except ValueError as exc:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.probability_invalid"),
-            key="wordbank.error.probability_invalid",
-        ) from exc
-    if probability < 0 or probability > 1:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.probability_invalid"),
-            key="wordbank.error.probability_invalid",
-        )
-    return probability
-
-
-def _parse_weight_value(value: str) -> int:
-    try:
-        weight = int(value)
-    except ValueError as exc:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.weight_invalid"),
-            key="wordbank.error.weight_invalid",
-        ) from exc
-    if weight < 1 or weight > 5:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.weight_invalid"),
-            key="wordbank.error.weight_invalid",
-        )
-    return weight
-
-
-def parse_trigger_probability_args(text: str) -> ParsedTriggerProbability:
-    tokens = tokenize_shell_like(text)
-    if len(tokens) != 2:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.group_id_numeric"),
-            key="wordbank.error.group_id_numeric",
-        )
-    trigger_group_id = _parse_positive_int(
-        tokens[0].value,
-        fallback=_default_i18n_text("wordbank.error.group_id_numeric"),
-        key="wordbank.error.group_id_numeric",
-    )
-    return ParsedTriggerProbability(
-        trigger_group_id=trigger_group_id,
-        probability=_parse_probability_value(tokens[1].value),
-    )
-
-
-def parse_response_weight_args(text: str) -> ParsedResponseWeight:
-    tokens = tokenize_shell_like(text)
-    if len(tokens) != 2:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.entry_id_numeric"),
-            key="wordbank.error.entry_id_numeric",
-        )
-    response_item_id = _parse_positive_int(
-        tokens[0].value,
-        fallback=_default_i18n_text("wordbank.error.entry_id_numeric"),
-        key="wordbank.error.entry_id_numeric",
-    )
-    return ParsedResponseWeight(
-        response_item_id=response_item_id,
-        weight=_parse_weight_value(tokens[1].value),
-    )
-
-
-def parse_trigger_set_args(text: str) -> ParsedTriggerSet:
-    tokens = tokenize_shell_like(text)
-    if not tokens:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.group_id_numeric"),
-            key="wordbank.error.group_id_numeric",
-        )
-    trigger_group_id = _parse_positive_int(
-        tokens[0].value,
-        fallback=_default_i18n_text("wordbank.error.group_id_numeric"),
-        key="wordbank.error.group_id_numeric",
-    )
-    return ParsedTriggerSet(
-        trigger_group_id=trigger_group_id,
-        text=rest_after_token(text, tokens[0]),
-    )
-
-
-def parse_response_set_args(text: str) -> ParsedResponseSet:
-    tokens = tokenize_shell_like(text)
-    if not tokens:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.entry_id_numeric"),
-            key="wordbank.error.entry_id_numeric",
-        )
-    response_item_id = _parse_positive_int(
-        tokens[0].value,
-        fallback=_default_i18n_text("wordbank.error.entry_id_numeric"),
-        key="wordbank.error.entry_id_numeric",
-    )
-    return ParsedResponseSet(
-        response_item_id=response_item_id,
-        text=rest_after_token(text, tokens[0]),
-    )
-
-
-def parse_text_add_args(text: str) -> ParsedTextAdd:
-    source, raw_rule = _parse_flags(text)
-    pair = split_add_pair(source)
-    if pair is not None:
-        trigger, response = pair
-        if not trigger or not response:
-            raise RuleError(
-                _default_i18n_text("wordbank.error.add_pair_required"),
-                key="wordbank.error.add_pair_required",
-            )
-        return ParsedTextAdd(trigger, response, raw_rule)
-    raise RuleError(
-        _default_i18n_text("wordbank.error.add_format"),
-        key="wordbank.error.add_format",
-    )
-
-
-def split_add_pair(source: str) -> tuple[str, str] | None:
-    for sep in ADD_SEPARATORS:
-        if sep in source:
-            trigger, response = source.split(sep, 1)
-            return trigger.rstrip(), response.lstrip()
-    return None
-
-
-def parse_guided_scope_choice(text: str, *, is_group: bool) -> str:
-    choice = text.strip().casefold()
-    if choice in {"", "1", "default", "默认", "本群", "当前群", "current_group"}:
-        return "current_group" if is_group else "self"
-    if choice in {"2", "all", "all_groups", "全群", "所有群"}:
-        return "all_groups"
-    if choice in {"3", "self", "only_me", "仅自己", "自己"}:
-        return "self_in_current_group" if is_group else "self"
-    if choice in {"4", "private", "private_only", "私聊"}:
-        return "private_only"
-    raise RuleError(
-        _default_i18n_text("wordbank.error.guided_scope_invalid"),
-        key="wordbank.error.guided_scope_invalid",
-    )
-
-
-def parse_guided_advanced_options(text: str) -> GuidedAdvancedOptions:
-    choice = text.strip()
-    if not choice or choice.casefold() in {
-        "n",
-        "no",
-        "否",
-        "不",
-        "不用",
-        "不需要",
-        "无",
-        "跳过",
-    }:
-        return GuidedAdvancedOptions(raw_rule={})
-    source, raw_rule = _parse_flags(choice)
-    if has_meaningful_text(source):
-        raise RuleError(
-            _default_i18n_text(
-                "wordbank.error.guided_advanced_unknown",
-                options=source,
-            ),
-            key="wordbank.error.guided_advanced_unknown",
-            options=source,
-        )
-    if "scope" in raw_rule:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.guided_scope_in_advanced"),
-            key="wordbank.error.guided_scope_in_advanced",
-        )
-    return GuidedAdvancedOptions(raw_rule=raw_rule)
-
-
-def parse_study_mode_choice(text: str) -> str:
-    choice = text.strip().casefold()
-    if choice in {"a", "all", "所有人", "所有"}:
-        return "a"
-    if choice in {"m", "me", "self", "自己", "仅自己"}:
-        return "m"
-    raise RuleError(
-        _default_i18n_text("wordbank.error.study_mode_invalid"),
-        key="wordbank.error.study_mode_invalid",
-    )
-
-
-def parse_study_group_block_choice(text: str) -> str:
-    choice = text.strip().casefold()
-    if choice in {"t", "true", "yes", "y", "开", "开启", "本群"}:
-        return "t"
-    if choice in {"f", "false", "no", "n", "关", "关闭", "全群"}:
-        return "f"
-    raise RuleError(
-        _default_i18n_text("wordbank.error.study_group_block_invalid"),
-        key="wordbank.error.study_group_block_invalid",
-    )
-
-
-def parse_guided_weight(text: str) -> int:
-    choice = text.strip()
-    if not choice or choice.casefold() in {"default", "默认"}:
-        return 3
-    try:
-        weight = int(choice)
-    except ValueError as exc:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.weight_invalid"),
-            key="wordbank.error.weight_invalid",
-        ) from exc
-    if weight < 1 or weight > 5:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.weight_invalid"),
-            key="wordbank.error.weight_invalid",
-        )
-    return weight
-
-
-def parse_search_args(text: str) -> ParsedSearch:
-    try:
-        tokens = tokenize_shell_like(text)
-    except ValueError as exc:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.parse_flags", reason=str(exc)),
-            key="wordbank.error.parse_flags",
-            reason=str(exc),
-        ) from exc
-
-    keyword_tokens: list[TokenSpan] = []
-    page = 1
-    limit = DEFAULT_SEARCH_LIMIT
-    field = "all"
-    creator_id = ""
-    idx = 0
-    while idx < len(tokens):
-        token = tokens[idx].value
-        if token in {"--page", "-p"}:
-            idx += 1
-            if idx >= len(tokens):
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.flag_missing",
-                        flag="--page",
-                        expected=_label("page"),
-                    ),
-                    key="wordbank.error.flag_missing",
-                    flag="--page",
-                    expected=_label("page"),
-                )
-            page = _parse_positive_int(
-                tokens[idx].value,
-                fallback=_default_i18n_text("wordbank.error.search_page_invalid"),
-                key="wordbank.error.search_page_invalid",
-            )
-        elif token in {"--limit", "-n"}:
-            idx += 1
-            if idx >= len(tokens):
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.flag_missing",
-                        flag="--limit",
-                        expected=_label("limit"),
-                    ),
-                    key="wordbank.error.flag_missing",
-                    flag="--limit",
-                    expected=_label("limit"),
-                )
-            limit = _parse_positive_int(
-                tokens[idx].value,
-                fallback=_default_i18n_text(
-                    "wordbank.error.search_limit_invalid",
-                    max_limit=MAX_SEARCH_LIMIT,
-                ),
-                key="wordbank.error.search_limit_invalid",
-                max_limit=MAX_SEARCH_LIMIT,
-            )
-            if limit > MAX_SEARCH_LIMIT:
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.search_limit_invalid",
-                        max_limit=MAX_SEARCH_LIMIT,
-                    ),
-                    key="wordbank.error.search_limit_invalid",
-                    max_limit=MAX_SEARCH_LIMIT,
-                )
-        elif token in {"--field", "-f"}:
-            idx += 1
-            if idx >= len(tokens):
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.flag_missing",
-                        flag="--field",
-                        expected=_label("search_field"),
-                    ),
-                    key="wordbank.error.flag_missing",
-                    flag="--field",
-                    expected=_label("search_field"),
-                )
-            normalized_field = SEARCH_FIELD_ALIASES.get(tokens[idx].value.casefold())
-            if normalized_field is None:
-                raise RuleError(
-                    _default_i18n_text("wordbank.error.search_field_invalid"),
-                    key="wordbank.error.search_field_invalid",
-                )
-            field = normalized_field
-        elif token in {"--creator", "-c"}:
-            idx += 1
-            if idx >= len(tokens):
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.flag_missing",
-                        flag="--creator",
-                        expected=_label("creator_id"),
-                    ),
-                    key="wordbank.error.flag_missing",
-                    flag="--creator",
-                    expected=_label("creator_id"),
-                )
-            creator_id = tokens[idx].value.strip()
-            if not creator_id:
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.flag_missing",
-                        flag="--creator",
-                        expected=_label("creator_id"),
-                    ),
-                    key="wordbank.error.flag_missing",
-                    flag="--creator",
-                    expected=_label("creator_id"),
-                )
-        else:
-            keyword_tokens.append(tokens[idx])
-        idx += 1
-
-    keyword = join_tokens_with_original_spacing(text, keyword_tokens)
-
-    return ParsedSearch(
-        keyword=keyword,
-        page=page,
-        limit=limit,
-        field=field,
-        creator_id=creator_id,
-    )
-
-
-def parse_group_view_args(text: str) -> ParsedGroupView:
-    try:
-        tokens = shlex.split(text)
-    except ValueError as exc:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.parse_flags", reason=str(exc)),
-            key="wordbank.error.parse_flags",
-            reason=str(exc),
-        ) from exc
-
-    positional: list[str] = []
-    page = 1
-    idx = 0
-    while idx < len(tokens):
-        token = tokens[idx]
-        if token in {"--page", "-p"}:
-            idx += 1
-            if idx >= len(tokens):
-                raise RuleError(
-                    _default_i18n_text(
-                        "wordbank.error.flag_missing",
-                        flag="--page",
-                        expected=_label("page"),
-                    ),
-                    key="wordbank.error.flag_missing",
-                    flag="--page",
-                    expected=_label("page"),
-                )
-            page = _parse_positive_int(
-                tokens[idx],
-                fallback=_default_i18n_text("wordbank.error.group_page_invalid"),
-                key="wordbank.error.group_page_invalid",
-            )
-        else:
-            positional.append(token)
-        idx += 1
-
-    if not positional:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.group_id_numeric"),
-            key="wordbank.error.group_id_numeric",
-        )
-
-    trigger_group_id = _parse_positive_int(
-        positional[0],
-        fallback=_default_i18n_text("wordbank.error.group_id_numeric"),
-        key="wordbank.error.group_id_numeric",
-    )
-    if len(positional) >= 2:
-        page = _parse_positive_int(
-            positional[1],
-            fallback=_default_i18n_text("wordbank.error.group_page_invalid"),
-            key="wordbank.error.group_page_invalid",
-        )
-    if len(positional) > 2:
-        raise RuleError(
-            _default_i18n_text("wordbank.reply.group_command_invalid"),
-            key="wordbank.reply.group_command_invalid",
-        )
-    return ParsedGroupView(trigger_group_id=trigger_group_id, page=page)
-
-
-def parse_guided_search_mode_choice(text: str) -> GuidedSearchSelection:
-    choice = "".join(text.strip().split())
-    if not choice:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.guided_search_mode_invalid"),
-            key="wordbank.error.guided_search_mode_invalid",
-        )
-    if any(char not in {"1", "2", "3"} for char in choice):
-        raise RuleError(
-            _default_i18n_text("wordbank.error.guided_search_mode_invalid"),
-            key="wordbank.error.guided_search_mode_invalid",
-        )
-    if len(set(choice)) != len(choice):
-        raise RuleError(
-            _default_i18n_text("wordbank.error.guided_search_mode_invalid"),
-            key="wordbank.error.guided_search_mode_invalid",
-        )
-
-    includes_trigger = "1" in choice
-    includes_response = "2" in choice
-    includes_creator = "3" in choice
-
-    if includes_trigger and includes_response:
-        field = "all"
-    elif includes_trigger:
-        field = "trigger"
-    elif includes_response:
-        field = "response"
-    else:
-        field = "all"
-
-    return GuidedSearchSelection(
-        field=field,
-        requires_query=includes_trigger or includes_response,
-        requires_creator=includes_creator,
-    )
-
-
-def parse_guided_search_creator_filter(text: str) -> str:
-    choice = text.strip()
-    if not choice or choice.casefold() in {
-        "n",
-        "no",
-        "否",
-        "不",
-        "跳过",
-        "none",
-        "无",
-    }:
-        return ""
-    return choice
-
-
-def parse_guided_search_page_choice(text: str) -> int | None:
-    choice = text.strip().casefold()
-    if choice in {"", "exit", "q", "quit", "结束"}:
-        return None
-    if choice.startswith("page "):
-        choice = choice.removeprefix("page ").strip()
-    return _parse_positive_int(
-        choice,
-        fallback=_default_i18n_text("wordbank.error.search_page_invalid"),
-        key="wordbank.error.search_page_invalid",
-    )
-
-
-def parse_search_session_command(text: str) -> ParsedSearchSessionCommand:
-    source = text.strip()
-    if not source:
-        return ParsedSearchSessionCommand(action="exit")
-
-    compact_detail = _parse_compact_group_view_command(source)
-    if compact_detail is not None:
-        return ParsedSearchSessionCommand(
-            action="detail",
-            page=compact_detail.page,
-            trigger_group_id=compact_detail.trigger_group_id,
-        )
-
-    action, _, rest = source.partition(" ")
-    normalized = action.casefold()
-
-    if normalized in {"exit", "q", "quit"} or source == "结束":
-        return ParsedSearchSessionCommand(action="exit")
-
-    if action in {"详情", *GROUP_ALIASES}:
-        parsed = parse_group_view_args(rest)
-        return ParsedSearchSessionCommand(
-            action="detail",
-            page=parsed.page,
-            trigger_group_id=parsed.trigger_group_id,
-        )
-
-    if action in DELETE_ALIASES:
-        raw_indexes = tuple(part for part in rest.split() if part)
-        if not raw_indexes:
-            raise RuleError(
-                _default_i18n_text("wordbank.error.search_delete_index_invalid"),
-                key="wordbank.error.search_delete_index_invalid",
-            )
-        indexes: list[int] = []
-        for raw_index in raw_indexes:
-            if not raw_index.isdigit() or int(raw_index) <= 0:
-                raise RuleError(
-                    _default_i18n_text("wordbank.error.search_delete_index_invalid"),
-                    key="wordbank.error.search_delete_index_invalid",
-                )
-            value = int(raw_index)
-            if value not in indexes:
-                indexes.append(value)
-        return ParsedSearchSessionCommand(
-            action="delete",
-            delete_indexes=tuple(indexes),
-        )
-
-    if source.isdigit() or normalized == "page":
-        return ParsedSearchSessionCommand(
-            action="page",
-            page=parse_guided_search_page_choice(source),
-        )
-
-    raise RuleError(
-        _default_i18n_text("wordbank.error.search_session_command_invalid"),
-        key="wordbank.error.search_session_command_invalid",
-    )
-
-
-def _parse_compact_group_view_command(text: str) -> ParsedGroupView | None:
-    match = _COMPACT_GROUP_VIEW_RE.fullmatch(text.strip())
-    if match is None:
-        return None
-    group_id = _parse_positive_int(
-        match.group("group_id"),
-        fallback=_default_i18n_text("wordbank.error.group_id_numeric"),
-        key="wordbank.error.group_id_numeric",
-    )
-    page_value = match.group("page")
-    page = (
-        _parse_positive_int(
-            page_value,
-            fallback=_default_i18n_text("wordbank.error.group_page_invalid"),
-            key="wordbank.error.group_page_invalid",
-        )
-        if page_value
-        else 1
-    )
-    return ParsedGroupView(trigger_group_id=group_id, page=page)
-
-
-def build_mutation_actor(event: MessageEvent) -> MutationActor:
-    user_id = str(event.user_id)
-    group_id = str(getattr(event, "group_id", ""))
-    sender = getattr(event, "sender", None)
-    role = str(getattr(sender, "role", "") or "")
-    return MutationActor(
-        user_id=user_id,
-        group_id=group_id,
-        can_moderate_group=isinstance(event, GroupMessageEvent)
-        and role in {"owner", "admin"},
-        is_superuser=user_id in config.SUPERUSERS,
-    )
-
-
-def actor_can_review(actor: MutationActor) -> bool:
-    return actor.is_superuser or actor.can_moderate_group
-
-
-def extract_image_urls(message: Message) -> list[str]:
-    urls: list[str] = []
-    for segment in message:
-        if segment.type != "image":
-            continue
-        url = str(segment.data.get("url") or "").strip()
-        if url:
-            urls.append(url)
-    return urls
-
-
-async def fetch_image_bytes_with_retry(
-    url: str,
-    *,
-    attempts: int = IMAGE_DOWNLOAD_RETRY_ATTEMPTS,
-    retry_delay_seconds: float = IMAGE_DOWNLOAD_RETRY_DELAY_SECONDS,
-) -> bytes | None:
-    from .passive import fetch_image_bytes
-
-    for attempt_index in range(max(1, attempts)):
-        data = await fetch_image_bytes(url)
-        if data is not None:
-            return data
-        if attempt_index < attempts - 1:
-            await asyncio.sleep(retry_delay_seconds)
-    return None
-
-
-async def fetch_first_image_bytes_from_message(message: Message) -> bytes | None:
-    items = await fetch_image_bytes_from_message(message, limit=1)
-    return items[0] if items else None
-
-
-async def fetch_image_bytes_from_message(
-    message: Message,
-    *,
-    limit: int = 2,
-) -> tuple[bytes, ...]:
-    urls = extract_image_urls(message)
-    if not urls:
-        return ()
-
-    items: list[bytes] = []
-    for url in urls[: max(1, limit)]:
-        data = await fetch_image_bytes_with_retry(url)
-        if data is None:
-            raise WordbankUserError(
-                _default_i18n_text("wordbank.error.image_download_failed"),
-                key="wordbank.error.image_download_failed",
-            )
-        items.append(data)
-    return tuple(items)
-
-
-def _shape_from_text_value(text: str) -> MessageShape:
-    return shape_from_text(text)
-
-
-def _shape_from_response_parts(
-    text: str,
-    *,
-    image_id: int | None = None,
-) -> MessageShape:
-    parts = [_shape_from_text_value(text)]
-    if image_id is not None:
-        parts.append(shape_from_image(image_id))
-    return combine_shapes(*parts)
-
-
-def _shape_from_trigger_parts(
-    text: str,
-    *,
-    image_id: int | None = None,
-) -> MessageShape:
-    parts = [_shape_from_text_value(text)]
-    if image_id is not None:
-        parts.append(shape_from_image(image_id))
-    return combine_shapes(*parts)
-
-
-async def build_message_shape_from_message(
-    media_service: WordbankMediaService,
-    message: Message,
-    *,
-    image_limit: int = GUIDED_MESSAGE_IMAGE_LIMIT,
-) -> MessageShape:
-    image_bytes_items = await fetch_image_bytes_from_message(
-        message,
-        limit=image_limit,
-    )
-    image_ids: dict[int, int] = {}
-    for index, image_bytes in enumerate(image_bytes_items):
-        image = await media_service.ingest_image_bytes(image_bytes)
-        image_ids[index] = image.canonical_id
-    return shape_from_message(message, image_ids=image_ids)
-
-
-async def build_shape_from_text_and_images(
-    media_service: WordbankMediaService,
-    *,
-    text: str,
-    message: Message,
-    image_limit: int = GUIDED_MESSAGE_IMAGE_LIMIT,
-) -> MessageShape:
-    image_bytes_items = await fetch_image_bytes_from_message(
-        message,
-        limit=image_limit,
-    )
-    parts: list[MessageShape] = []
-    if has_meaningful_text(text):
-        parts.append(shape_from_text(text))
-    for image_bytes in image_bytes_items:
-        image = await media_service.ingest_image_bytes(image_bytes)
-        parts.append(shape_from_image(image.canonical_id))
-    return combine_shapes(*parts)
 
 
 async def handle_add_text(
@@ -1108,8 +165,8 @@ async def handle_add_text_result(
 ) -> WordbankAddResult:
     parsed = parse_text_add_args(text)
     return await service.add_message_entry(
-        trigger_shape=_shape_from_text_value(parsed.trigger_text),
-        response_shape=_shape_from_response_parts(parsed.response_text),
+        trigger_shape=shape_from_text_value(parsed.trigger_text),
+        response_shape=shape_from_response_parts(parsed.response_text),
         raw_rule=parsed.raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),
@@ -1147,14 +204,14 @@ async def handle_add_with_media_result(
     if image_bytes is None:
         return await handle_add_text_result(service, event=event, text=text)
 
-    source, raw_rule = _parse_flags(text)
-    pair = split_add_pair(source)
+    parsed = parse_add_media_args(text)
+    pair = parsed.pair
     is_group = isinstance(event, GroupMessageEvent)
     group_id = str(getattr(event, "group_id", ""))
     user_id = str(event.user_id)
 
     if pair is None:
-        trigger_text = source
+        trigger_text = parsed.source
         if not has_meaningful_text(trigger_text):
             raise RuleError(
                 _default_i18n_text("wordbank.error.trigger_empty"),
@@ -1162,9 +219,9 @@ async def handle_add_with_media_result(
             )
         image = await media_service.ingest_image_bytes(image_bytes)
         return await service.add_message_entry(
-            trigger_shape=_shape_from_text_value(trigger_text),
+            trigger_shape=shape_from_text_value(trigger_text),
             response_shape=shape_from_image(image.canonical_id),
-            raw_rule=raw_rule,
+            raw_rule=parsed.raw_rule,
             group_id=group_id,
             user_id=user_id,
             is_group=is_group,
@@ -1174,12 +231,12 @@ async def handle_add_with_media_result(
     if trigger_text:
         image = await media_service.ingest_image_bytes(image_bytes)
         return await service.add_message_entry(
-            trigger_shape=_shape_from_text_value(trigger_text),
-            response_shape=_shape_from_response_parts(
+            trigger_shape=shape_from_text_value(trigger_text),
+            response_shape=shape_from_response_parts(
                 response_text,
                 image_id=image.canonical_id,
             ),
-            raw_rule=raw_rule,
+            raw_rule=parsed.raw_rule,
             group_id=group_id,
             user_id=user_id,
             is_group=is_group,
@@ -1189,8 +246,8 @@ async def handle_add_with_media_result(
         image = await media_service.ingest_image_bytes(image_bytes)
         return await service.add_message_entry(
             trigger_shape=shape_from_image(image.canonical_id),
-            response_shape=_shape_from_response_parts(response_text),
-            raw_rule=raw_rule,
+            response_shape=shape_from_response_parts(response_text),
+            raw_rule=parsed.raw_rule,
             group_id=group_id,
             user_id=user_id,
             is_group=is_group,
@@ -1245,8 +302,8 @@ async def handle_study_shortcut_result(
     is_group = isinstance(event, GroupMessageEvent)
     trigger, response, raw_rule = parse_legacy_study_text(text, is_group=is_group)
     return await service.add_message_entry(
-        trigger_shape=_shape_from_text_value(trigger),
-        response_shape=_shape_from_response_parts(response),
+        trigger_shape=shape_from_text_value(trigger),
+        response_shape=shape_from_response_parts(response),
         raw_rule=raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),
@@ -1312,36 +369,6 @@ async def handle_study_with_media_result(
         image_bytes=image_items[0],
     )
 
-
-def parse_study_media_prefix(text: str, *, is_group: bool) -> ParsedStudyMediaPrefix:
-    try:
-        tokens = tokenize_shell_like(text)
-    except ValueError as exc:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.study_format"),
-            key="wordbank.error.study_format",
-        ) from exc
-    if (
-        len(tokens) >= 2
-        and tokens[0].value.casefold() in {"a", "m"}
-        and tokens[1].value.casefold() in {"t", "f"}
-    ):
-        return ParsedStudyMediaPrefix(
-            source=rest_after_token(text, tokens[1]),
-            raw_rule=build_legacy_study_shortcut_rule(
-                tokens[0].value.casefold(),
-                tokens[1].value.casefold(),
-                is_group=is_group,
-            ),
-        )
-    if tokens and tokens[0].value.casefold() in {"a", "m"}:
-        raise RuleError(
-            _default_i18n_text("wordbank.error.study_format"),
-            key="wordbank.error.study_format",
-        )
-    return ParsedStudyMediaPrefix(source=text, raw_rule={})
-
-
 async def handle_study_media_with_rule_result(
     service: WordbankService,
     media_service: WordbankMediaService,
@@ -1386,7 +413,7 @@ async def handle_study_media_with_rule_result(
     if pair is None:
         response_image = await media_service.ingest_image_bytes(image_bytes[0])
         return await service.add_message_entry(
-            trigger_shape=_shape_from_text_value(source),
+            trigger_shape=shape_from_text_value(source),
             response_shape=shape_from_image(response_image.canonical_id),
             raw_rule=raw_rule,
             group_id=group_id,
@@ -1398,8 +425,8 @@ async def handle_study_media_with_rule_result(
     if trigger_text:
         response_image = await media_service.ingest_image_bytes(image_bytes[0])
         return await service.add_message_entry(
-            trigger_shape=_shape_from_text_value(trigger_text),
-            response_shape=_shape_from_response_parts(
+            trigger_shape=shape_from_text_value(trigger_text),
+            response_shape=shape_from_response_parts(
                 response_text,
                 image_id=response_image.canonical_id,
             ),
@@ -1416,7 +443,7 @@ async def handle_study_media_with_rule_result(
         response_image_id = response_image.canonical_id
     return await service.add_message_entry(
         trigger_shape=shape_from_image(trigger_image.canonical_id),
-        response_shape=_shape_from_response_parts(
+        response_shape=shape_from_response_parts(
             response_text,
             image_id=response_image_id,
         ),
@@ -1623,99 +650,6 @@ async def handle_creator_leaderboard(
         return Message(format_creator_leaderboard(data, locale=locale))
 
 
-async def handle_approve(
-    service: WordbankService,
-    *,
-    event: MessageEvent,
-    response_item_id_text: str,
-    locale: LocaleCode,
-) -> str:
-    if not response_item_id_text.isdigit():
-        return tr(locale, "wordbank.error.entry_id_numeric")
-    actor = build_mutation_actor(event)
-    if not actor_can_review(actor):
-        return tr(locale, "wordbank.approval.permission_denied")
-    response_item_id = int(response_item_id_text)
-    if await service.approve_response_item(
-        response_item_id,
-        actor_user_id=actor.user_id,
-        actor_group_id=actor.group_id,
-        can_moderate_group=actor.can_moderate_group,
-        is_superuser=actor.is_superuser,
-    ):
-        return tr(locale, "wordbank.approval.approved", entry_id=response_item_id)
-    return tr(locale, "wordbank.approval.not_found", entry_id=response_item_id)
-
-
-async def handle_reject(
-    service: WordbankService,
-    *,
-    event: MessageEvent,
-    response_item_id_text: str,
-    locale: LocaleCode,
-) -> str:
-    if not response_item_id_text.isdigit():
-        return tr(locale, "wordbank.error.entry_id_numeric")
-    actor = build_mutation_actor(event)
-    if not actor_can_review(actor):
-        return tr(locale, "wordbank.approval.permission_denied")
-    response_item_id = int(response_item_id_text)
-    if await service.reject_response_item(
-        response_item_id,
-        actor_user_id=actor.user_id,
-        actor_group_id=actor.group_id,
-        can_moderate_group=actor.can_moderate_group,
-        is_superuser=actor.is_superuser,
-    ):
-        return tr(locale, "wordbank.approval.rejected", entry_id=response_item_id)
-    return tr(locale, "wordbank.approval.not_found", entry_id=response_item_id)
-
-
-async def handle_delete(
-    service: WordbankService,
-    *,
-    event: MessageEvent,
-    response_item_id_text: str,
-    locale: LocaleCode,
-) -> str:
-    if not response_item_id_text.isdigit():
-        return tr(locale, "wordbank.error.entry_id_numeric")
-    response_item_id = int(response_item_id_text)
-    actor = build_mutation_actor(event)
-    if await service.delete_response_item(
-        response_item_id,
-        actor_user_id=actor.user_id,
-        actor_group_id=actor.group_id,
-        can_moderate_group=actor.can_moderate_group,
-        is_superuser=actor.is_superuser,
-    ):
-        return tr(locale, "wordbank.delete.success", entry_id=response_item_id)
-
-    return tr(locale, "wordbank.delete.not_found", entry_id=response_item_id)
-
-
-async def handle_restore(
-    service: WordbankService,
-    *,
-    event: MessageEvent,
-    response_item_id_text: str,
-    locale: LocaleCode,
-) -> str:
-    if not response_item_id_text.isdigit():
-        return tr(locale, "wordbank.error.entry_id_numeric")
-    response_item_id = int(response_item_id_text)
-    actor = build_mutation_actor(event)
-    if await service.restore_response_item(
-        response_item_id,
-        actor_user_id=actor.user_id,
-        actor_group_id=actor.group_id,
-        can_moderate_group=actor.can_moderate_group,
-        is_superuser=actor.is_superuser,
-    ):
-        return tr(locale, "wordbank.restore.success", entry_id=response_item_id)
-    return tr(locale, "wordbank.restore.not_found", entry_id=response_item_id)
-
-
 async def handle_trigger_probability_update(
     service: WordbankService,
     *,
@@ -1724,17 +658,13 @@ async def handle_trigger_probability_update(
     probability: float,
     locale: LocaleCode,
 ) -> str:
-    actor = build_mutation_actor(event)
-    if await service.update_trigger_probability(
-        trigger_group_id,
+    _ = locale
+    return await _handle_trigger_probability_update(
+        service,
+        event=event,
+        trigger_group_id=trigger_group_id,
         probability=probability,
-        actor_user_id=actor.user_id,
-        actor_group_id=actor.group_id,
-        can_moderate_group=actor.can_moderate_group,
-        is_superuser=actor.is_superuser,
-    ):
-        return f"trigger group #{trigger_group_id} 的触发概率已更新为 {probability:g}。"
-    return f"未找到可修改的 trigger group #{trigger_group_id}，或你没有操作权限。"
+    )
 
 
 async def handle_trigger_content_update(
@@ -1747,6 +677,7 @@ async def handle_trigger_content_update(
     raw_message: Message,
     locale: LocaleCode,
 ) -> str:
+    _ = locale
     actor = build_mutation_actor(event)
     trigger_shape = await build_shape_from_text_and_images(
         media_service,
@@ -1761,10 +692,7 @@ async def handle_trigger_content_update(
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return (
-            f"trigger group #{trigger_group_id} 的触发词已更新，"
-            "该组响应已重新进入待审核。"
-        )
+        return f"trigger group #{trigger_group_id} 的触发词已更新，该组响应已重新进入待审核。"
     return f"未找到可修改的 trigger group #{trigger_group_id}，或你没有操作权限。"
 
 
@@ -1776,17 +704,13 @@ async def handle_response_weight_update(
     weight: int,
     locale: LocaleCode,
 ) -> str:
-    actor = build_mutation_actor(event)
-    if await service.update_response_weight(
-        response_item_id,
+    _ = locale
+    return await _handle_response_weight_update(
+        service,
+        event=event,
+        response_item_id=response_item_id,
         weight=weight,
-        actor_user_id=actor.user_id,
-        actor_group_id=actor.group_id,
-        can_moderate_group=actor.can_moderate_group,
-        is_superuser=actor.is_superuser,
-    ):
-        return f"词条 #{response_item_id} 的响应权重已更新为 {weight}。"
-    return f"未找到可修改的词条 #{response_item_id}，或你没有操作权限。"
+    )
 
 
 async def handle_response_content_update(
@@ -1799,6 +723,7 @@ async def handle_response_content_update(
     raw_message: Message,
     locale: LocaleCode,
 ) -> str:
+    _ = locale
     actor = build_mutation_actor(event)
     response_shape = await build_shape_from_text_and_images(
         media_service,
@@ -2002,6 +927,4 @@ async def dispatch_wordbank_command(
 
 
 def localize_command_error(exc: Exception, locale: LocaleCode) -> str:
-    if isinstance(exc, WordbankUserError):
-        return exc.localize(locale)
-    return str(exc)
+    return localize_wordbank_error(exc, locale)

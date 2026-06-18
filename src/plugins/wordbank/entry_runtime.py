@@ -62,6 +62,10 @@ def register_wordbank_runtime_handlers(
     cancel_guided_resources: Callable[..., Awaitable[None]],
     guided_locale: Callable[[Mapping[str, Any]], LocaleCode],
 ) -> dict[str, Callable[..., Awaitable[None]]]:
+    async def _get_plugin_attr(name: str) -> Any:
+        from src.plugins import wordbank as wordbank_plugin
+
+        return getattr(wordbank_plugin, name)
     def _extract_sent_message_id(result: Any) -> str | None:
         if isinstance(result, dict):
             value = result.get("message_id")
@@ -449,7 +453,7 @@ def register_wordbank_runtime_handlers(
                     trigger_group_id=view_message.trigger_group_id,
                     current_page=view_message.current_page,
                 )
-            await send_group_detail_view(
+            await (await _get_plugin_attr("_send_group_detail_view"))(
                 matcher,
                 event,
                 locale,
