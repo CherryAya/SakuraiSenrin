@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.lib.wordbank_search_treemap import (
+from src.plugins.wordbank.treemap import (
     load_search_treemap_fixture,
     render_search_results_treemap_bytes,
 )

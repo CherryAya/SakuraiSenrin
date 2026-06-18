@@ -39,7 +39,8 @@ _ensure_pkg(
 _ensure_pkg("src.lib.object_storage", ROOT / "src" / "lib" / "object_storage")
 
 from src.lib.i18n.types import LocaleCode
-from src.lib.wordbank_search_treemap import (
+from scripts.migrations.wordbank import LegacyPgConfig, load_legacy_pg_config
+from src.plugins.wordbank.treemap import (
     SearchTreemapItem,
     SearchTreemapPage,
     SearchTreemapQuery,
@@ -47,7 +48,6 @@ from src.lib.wordbank_search_treemap import (
     SearchTreemapResponseSegment,
     render_search_results_treemap_bytes,
 )
-from src.plugins.wordbank.migration import LegacyPgConfig, load_legacy_pg_config
 
 _NON_FILENAME_RE = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._-]+")
 _MEDIA_CACHE_ROOT = ROOT / "data" / "wordbank" / "media_cache"

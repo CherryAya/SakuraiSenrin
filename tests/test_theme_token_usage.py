@@ -13,7 +13,7 @@ THEMED_RENDERERS = (
     "src/plugins/wordbank/handlers/search_cards.py",
     "src/plugins/wordbank/handlers/group_detail_cards.py",
     "src/plugins/wordbank/handlers/leaderboard_cards.py",
-    "src/plugins/wordbank/wordbank_search_treemap.py",
+    "src/plugins/wordbank/treemap/service.py",
 )
 
 

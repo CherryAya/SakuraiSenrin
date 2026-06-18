@@ -5,7 +5,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw
 import pytest
 
-from src.plugins.wordbank.wordbank_search_treemap import (
+from src.plugins.wordbank.treemap import (
     TREEMAP_HEIGHT,
     TREEMAP_WIDTH,
     SearchTreemapItem,
