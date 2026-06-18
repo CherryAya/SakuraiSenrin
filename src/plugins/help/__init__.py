@@ -77,9 +77,9 @@ class MatchResult:
 type RootSection = Literal["system", "developer", "community"]
 
 SECTION_TITLES: dict[RootSection, str] = {
-    "system": "系统预置",
-    "developer": "开发者插件",
-    "community": "社区创作",
+    "system": "⚙️ 系统预置",
+    "developer": "🧩 开发者插件",
+    "community": "🌟 社区创作",
 }
 
 
@@ -444,8 +444,10 @@ def _build_index_message(
     dashboard_bytes = render_help_dashboard(
         tuple(
             HelpDashboardSection(
+                kind=section,
                 title=SECTION_TITLES[section],
                 nodes=tuple(entry.node for entry in section_entries),
+                column=0 if section == "system" else 1,
             )
             for section, section_entries in grouped_sections
         ),

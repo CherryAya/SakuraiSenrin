@@ -18,7 +18,7 @@ from src.database.core.consts import Permission
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 
-from .consts import TriggerType
+from src.lib.consts import TriggerType
 
 DEFAULT_HELP_CATEGORY = "general"
 
