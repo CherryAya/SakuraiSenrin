@@ -55,26 +55,9 @@ description = tr("zh-CN", "plugin.study.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
-def _study_error_feature(exc: Exception, default_feature: str | None) -> str | None:
-    key = str(getattr(exc, "key", "")).strip()
-    if not key:
-        return default_feature
-    if key == "wordbank.error.study_mode_invalid":
-        return "guided-flow"
-    if key == "wordbank.error.study_group_block_invalid":
-        return "guided-flow"
-    if "weight" in key:
-        return default_feature or "guided-flow"
-    if key in {"wordbank.error.trigger_empty", "wordbank.error.response_empty"}:
-        return default_feature or "shortcut"
-    return default_feature
-
-
 def _study_error_message(
     exc: Exception,
     locale: LocaleCode,
-    *,
-    default_feature: str | None = None,
 ) -> Message:
     from src.plugins.wordbank.handlers.commands import localize_command_error
 
@@ -85,7 +68,6 @@ def _study_error_message(
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
         locale=locale,
-        feature_query=_study_error_feature(exc, default_feature),
         prefix_text=localize_command_error(exc, locale),
     )
 
@@ -104,7 +86,7 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.study.description",
         },
         "docs": create_docs_meta(
-            visible=False,
+            visible=True,
             category="fun",
             order=85,
             source=DOCS_SOURCE,
@@ -266,9 +248,7 @@ async def _start_guided_study_from_partial_args(
     try:
         group_block = parse_study_group_block_choice(tokens[1].value)
     except RuleError as exc:
-        await matcher.pause(
-            _study_error_message(exc, locale, default_feature="guided-flow")
-        )
+        await matcher.pause(_study_error_message(exc, locale))
         return True
 
     state["study_group_block"] = group_block
@@ -413,7 +393,7 @@ async def _record_study_weight_and_finish(
             matcher,
             state,
             locale,
-            _study_error_message(exc, locale, default_feature="guided-flow"),
+            _study_error_message(exc, locale),
         )
         return
     clear_interaction_errors(state)
@@ -481,7 +461,7 @@ async def _finish_guided_study(
             matcher,
             state,
             locale,
-            _study_error_message(exc, locale, default_feature="guided-flow"),
+            _study_error_message(exc, locale),
         )
         return
     send_result = await matcher.send(
@@ -592,9 +572,7 @@ async def _(
             extra_image_bytes=image_items[1:],
         )
     except (RuleError, ValueError) as exc:
-        await matcher.finish(
-            _study_error_message(exc, locale, default_feature="shortcut")
-        )
+        await matcher.finish(_study_error_message(exc, locale))
         return
     send_result = await matcher.send(
         await build_add_result_message(
@@ -640,7 +618,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
             matcher,
             state,
             locale,
-            _study_error_message(exc, locale, default_feature="guided-flow"),
+            _study_error_message(exc, locale),
         )
         return
     clear_interaction_errors(state)
@@ -683,7 +661,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
             matcher,
             state,
             locale,
-            _study_error_message(exc, locale, default_feature="guided-flow"),
+            _study_error_message(exc, locale),
         )
         return
     clear_interaction_errors(state)

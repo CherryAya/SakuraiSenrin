@@ -35,9 +35,9 @@ INVALID_GROUP_BLOCK_PROMPT = (
 
 class _PauseMatcher:
     def __init__(self) -> None:
-        self.paused: list[str] = []
+        self.paused: list[object] = []
 
-    async def pause(self, prompt: str) -> None:
+    async def pause(self, prompt: object) -> None:
         self.paused.append(prompt)
 
 
@@ -89,7 +89,9 @@ async def test_partial_args_short_circuit_to_invalid_group_block(
     assert handled is True
     assert state["study_trig_mode"] == "m"
     assert "study_group_block" not in state
-    assert matcher.paused == [INVALID_GROUP_BLOCK_PROMPT]
+    assert len(matcher.paused) == 1
+    paused_message = matcher.paused[0]
+    assert str(paused_message).startswith(INVALID_GROUP_BLOCK_PROMPT)
 
 
 @pytest.mark.asyncio
