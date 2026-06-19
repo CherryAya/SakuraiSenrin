@@ -32,8 +32,11 @@ class DemoTheme:
     user_bubble: str
     bot_bubble: str
     system_bubble: str
+    system_border: str
     system_text: str
     system_label: str
+    system_label_bg: str
+    system_label_text: str
     footer_bg: str
     inline_code_bg: str
     inline_code_text: str
@@ -352,9 +355,12 @@ _SENRIN_V3_BASE_THEME = DemoTheme(
     shell_border="#EFE9ED",
     user_bubble="#FFFFFF",
     bot_bubble="#FFF0F6",
-    system_bubble="#FAFAFC",
-    system_text="#ADB5BD",
-    system_label="#ADB5BD",
+    system_bubble="#FFF8FA",
+    system_border="#D4EEF6",
+    system_text="#6B7280",
+    system_label="#6B7280",
+    system_label_bg="#3BC9DB",
+    system_label_text="#FFFFFF",
     footer_bg="#FAFAFC",
     inline_code_bg="#FFF7FA",
     inline_code_text="#7D3653",
@@ -380,17 +386,17 @@ _SENRIN_V3_BASE_THEME = DemoTheme(
     terminal_text="#1C1E26",
     terminal_param="#E64980",
     terminal_flag="#2F9E44",
-    note_text="#868E96",
+    note_text="#6B7280",
     note_success="#40C057",
     note_danger="#FA5252",
-    demo_heading="#868E96",
+    demo_heading="#5F6670",
     bot_text="#A61E4D",
     system_line="#ADB5BD",
     showcase_accent_rail_bg="#FFF4F7",
     showcase_support_rail_bg="#F1F4FF",
-    standee_anchor_shadow=(0, 0, 0, 16),
-    bubble_shadow=(0, 0, 0, 24),
-    card_shadow=(0, 0, 0, 24),
+    standee_anchor_shadow=(240, 98, 146, 18),
+    bubble_shadow=(135, 142, 216, 16),
+    card_shadow=(135, 142, 216, 20),
     outer_margin=40,
     shell_radius=32,
     panel_radius=28,
@@ -414,10 +420,10 @@ _SENRIN_V3_BASE_THEME = DemoTheme(
     pill_gap=16,
     section_gap=48,
     instruction_padding_x=48,
-    instruction_padding_y=40,
+    instruction_padding_y=48,
     instruction_radius=32,
     instruction_shadow_blur=24,
-    instruction_shadow_offset_y=8,
+    instruction_shadow_offset_y=2,
     trigger_radius=12,
     trigger_padding_x=24,
     trigger_padding_y=16,
@@ -730,7 +736,24 @@ def _resolve_senrin_v3_theme(impression_color: str | None = None) -> DemoTheme:
         saturation=0.24,
     )
     neutral_hint = "#ADB5BD"
-    shadow_alpha = 24
+    canvas_shadow_rgb = _shifted_rgb(
+        base_rgb,
+        hue_shift=0.04,
+        lightness=0.68,
+        saturation=0.22,
+    )
+    block_shadow_rgb = _shifted_rgb(
+        base_rgb,
+        hue_shift=0.04,
+        lightness=0.74,
+        saturation=0.18,
+    )
+    badge_shadow_rgb = _shifted_rgb(
+        base_rgb,
+        hue_shift=0.02,
+        lightness=0.62,
+        saturation=0.30,
+    )
 
     return replace(
         _SENRIN_V3_BASE_THEME,
@@ -745,8 +768,13 @@ def _resolve_senrin_v3_theme(impression_color: str | None = None) -> DemoTheme:
         shell_border=_rgb_to_hex(shell_border_rgb),
         bot_bubble=_rgb_to_hex(soft_fill_rgb),
         system_bubble=_rgb_to_hex(softer_fill_rgb),
+        system_border=_rgb_to_hex(_mix(base_rgb, (221, 244, 248), 0.84)),
         system_text=neutral_hint,
         system_label=neutral_hint,
+        system_label_bg=_rgb_to_hex(
+            _tune_hls(base_rgb, lightness=0.54, saturation=0.68)
+        ),
+        system_label_text="#FFFFFF",
         footer_bg=_rgb_to_hex(softer_fill_rgb),
         inline_code_bg=_rgb_to_hex(soft_fill_rgb),
         inline_code_text=_rgb_to_hex(strong_rgb),
@@ -776,9 +804,9 @@ def _resolve_senrin_v3_theme(impression_color: str | None = None) -> DemoTheme:
         system_line=neutral_hint,
         showcase_accent_rail_bg=_rgb_to_hex(showcase_accent_rail_rgb),
         showcase_support_rail_bg=_rgb_to_hex(showcase_support_rail_rgb),
-        standee_anchor_shadow=(*base_rgb, 18),
-        bubble_shadow=(*base_rgb, shadow_alpha),
-        card_shadow=(*base_rgb, shadow_alpha),
+        standee_anchor_shadow=(*badge_shadow_rgb, 16),
+        bubble_shadow=(*block_shadow_rgb, 15),
+        card_shadow=(*canvas_shadow_rgb, 20),
     )
 
 

@@ -1,4 +1,5 @@
 from tests.test_plugin_docs_support import *
+from src.lib.plugin_docs.models import DocsDemoTurn
 
 
 def test_audit_demo_layout_accepts_all_project_readmes() -> None:
@@ -42,11 +43,14 @@ def test_demo_theme_has_required_tokens() -> None:
     assert DEFAULT_DEMO_THEME.user_bubble
     assert DEFAULT_DEMO_THEME.bot_bubble
     assert DEFAULT_DEMO_THEME.system_bubble
+    assert DEFAULT_DEMO_THEME.system_border
     assert DEFAULT_DEMO_THEME.inline_code_bg
     assert DEFAULT_DEMO_THEME.inline_code_text
     assert DEFAULT_DEMO_THEME.avatar_text
     assert DEFAULT_DEMO_THEME.bot_avatar_bg
     assert DEFAULT_DEMO_THEME.bot_avatar_border
+    assert DEFAULT_DEMO_THEME.system_label_bg
+    assert DEFAULT_DEMO_THEME.system_label_text
     assert DEFAULT_DEMO_THEME.terminal_flag
     assert DEFAULT_DEMO_THEME.grid_color
     assert DEFAULT_DEMO_THEME.decor_color
@@ -258,6 +262,104 @@ def test_demo_image_renderer_measure_layout_uses_structured_trigger_layout() -> 
     )  # pyright: ignore[reportPrivateUsage]
 
 
+def test_demo_image_renderer_hides_duplicate_plugin_kicker_for_simple_leaf() -> None:
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+
+    layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
+        plugin_title="凛凛的妙妙小工具",
+        feature_title="凛凛的妙妙小工具",
+        feature_summary="用于测试 simple-leaf 同名标题去重。",
+        feature_trigger="词条触发 / #help 查询",
+        feature_overview="目录说明。",
+        feature_preconditions="无",
+        feature_failures="无",
+        feature_flow_notes="",
+        plugin_trigger="词条触发",
+        feature_permission="普通用户",
+        plugin_version="v0.1.0",
+        plugin_author="SakuraiCora",
+        turns=(),
+        locale="zh-CN",
+        generated_at=datetime(2026, 6, 19, 9, 31, 24),
+    )
+
+    assert layout.plugin_lines == ()
+    assert layout.title_rect[1] == layout.pill_rects[-1][3] + 24
+    assert layout.footer_left_text == "凛凛的妙妙小工具 · v0.1.0 · By SakuraiCora"
+
+
+def test_demo_image_renderer_builds_full_section_bands_for_study_demo() -> None:
+    node = load_doc_node(
+        source="src/plugins/study/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    feature = next(item for item in node.bundle.index if item.slug == "main")
+    renderer = DemoImageRenderer(impression_color=node.bundle.impression_color)
+
+    layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
+        plugin_title=node.bundle.title,
+        feature_title=feature.title,
+        feature_summary=feature.summary,
+        feature_trigger=feature.trigger,
+        feature_overview=feature.overview,
+        feature_preconditions=feature.preconditions,
+        feature_failures=feature.failures,
+        feature_flow_notes=feature.flow_notes,
+        plugin_trigger=node.bundle.trigger,
+        feature_permission=str(feature.permission),
+        plugin_version=node.bundle.version,
+        plugin_author=node.bundle.author,
+        turns=feature.demo_turns,
+        locale="zh-CN",
+        generated_at=datetime(2026, 6, 19, 16, 44, 50),
+    )
+
+    assert layout.demo_heading_rect is not None
+    assert layout.demo_rect[1] - layout.demo_heading_rect[3] <= 24
+    assert len(layout.demo_section_bands) == 4
+    assert [band.index for band in layout.demo_section_bands] == [1, 2, 3, 4]
+    assert [band.title for band in layout.demo_section_bands] == [
+        "传统参数式",
+        "引导模式",
+        "图片快捷写法",
+        "取消与回退",
+    ]
+    for band in layout.demo_section_bands:
+        assert band.header_rect[0] >= band.rect[0]
+        assert band.header_rect[2] <= band.rect[2]
+        assert band.content_rect[3] <= band.rect[3]
+        assert band.divider_rect[0] > band.tag_rect[2]
+
+
+def test_demo_image_renderer_uses_card_style_for_system_turn() -> None:
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+    spec = renderer._measure_turn(  # pyright: ignore[reportPrivateUsage]
+        DocsDemoTurn(
+            speaker="SYSTEM",
+            text="`a` 表示对所有人有效，`f` 表示关闭群组隔离，因此会映射到更宽范围。",
+            section="传统参数式",
+        ),
+        960,
+    )
+
+    placement = renderer._place_turn(  # pyright: ignore[reportPrivateUsage]
+        spec,
+        top=120,
+        left=120,
+        right=1080,
+    )
+
+    assert placement.bubble_rect is not None
+    assert placement.label_rect is not None
+    assert placement.label_rect[0] >= placement.bubble_rect[0]
+    assert placement.label_rect[1] >= placement.bubble_rect[1]
+    assert placement.text_rect[1] > placement.label_rect[3]
+    assert placement.bubble_rect[3] > placement.text_rect[3]
+
+
 def test_render_help_dashboard_returns_showcase_canvas() -> None:
     node = load_doc_node(
         source="src/plugins/wordbank/docs/README.MD",
@@ -421,36 +523,32 @@ def test_dashboard_section_height_includes_command_block() -> None:
         + title_height
         + renderer.DASHBOARD_SECTION_TITLE_GAP
         + renderer._line_height_for_font(renderer.instruction_font)
-        + renderer.DASHBOARD_SECTION_SUMMARY_GAP
         + summary_height
+        + renderer.DASHBOARD_SECTION_SUMMARY_GAP
         + renderer.DASHBOARD_SECTION_COMMAND_GAP
         + command_layout.total_height
         + renderer.DASHBOARD_CARD_COMMAND_PADDING_Y * 2
-        + renderer.DASHBOARD_SECTION_ITEM_GAP
     )
 
     assert measured >= naive
 
 
-def test_dashboard_layout_places_system_left_and_other_sections_right() -> None:
+def test_dashboard_layout_measures_sections_for_dynamic_masonry() -> None:
     renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")
     system = HelpDashboardSection(
         kind="system",
         title="系统核心预置",
         nodes=(),
-        column=0,
     )
     developer = HelpDashboardSection(
         kind="developer",
         title="官方功能扩展",
         nodes=(),
-        column=1,
     )
     community = HelpDashboardSection(
         kind="community",
         title="社区衍生工坊",
         nodes=(),
-        column=1,
     )
 
     section_width = (
@@ -466,9 +564,6 @@ def test_dashboard_layout_places_system_left_and_other_sections_right() -> None:
         community, section_width
     )
 
-    assert system.column == 0
-    assert developer.column == 1
-    assert community.column == 1
     assert system_height > 0
     assert developer_height > 0
     assert community_height > 0
@@ -643,7 +738,7 @@ def test_resolve_help_entry_shape_distinguishes_simple_leaf_and_grouped_nodes() 
 def test_virtual_doc_node_without_features_is_static_entry() -> None:
     node = load_virtual_doc_node(
         VirtualPluginDocSpec(
-            slug="derived.wordbank.miaomiao-toolkit",
+            slug="community.miaomiao-toolkit",
             title="凛凛的妙妙小工具目录",
             summary="目录摘要",
             description="目录描述",
@@ -651,29 +746,58 @@ def test_virtual_doc_node_without_features_is_static_entry() -> None:
             author="SakuraiSenrin",
             version="0.1.0",
             impression_color="#74C0FC",
-            plugin_name="wordbank",
-            module_name="src.plugins.wordbank",
-            origin_plugin_slug="wordbank",
-            features=(),
+            plugin_name="community_miaomiao",
+            module_name="src.plugins.community_miaomiao",
+            origin_plugin_slug="community_miaomiao",
+            features=(
+                VirtualFeatureDocSpec(
+                    slug="main",
+                    title="凛凛的妙妙小工具",
+                    summary="目录摘要",
+                    trigger="词条触发 / #help 查询",
+                    overview="目录描述",
+                    preconditions="无",
+                    failures="无",
+                    demo_turns=(
+                        plugin_docs_module.DocsDemoTurn("USER", "凛凛的妙妙小工具"),
+                    ),
+                ),
+            ),
         )
     )
 
-    assert resolve_help_entry_shape(node) == "static_entry"
+    assert resolve_help_entry_shape(node) == "simple_leaf"
+
+
+def _load_wordbank_community_doc_node() -> DocNode:
+    meta = create_docs_meta(
+        visible=True,
+        category="community",
+        order=85,
+        source="src/plugins/community_miaomiao/docs/README.MD",
+        slug="community.miaomiao-toolkit",
+        aliases=("凛凛的妙妙小工具", "妙妙小工具", "妙妙小工具目录", "小工具"),
+    )
+    return load_doc_node(
+        source=meta["source"]["readme_path"],
+        default_name="凛凛的妙妙小工具",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        docs_meta=meta,
+        module_name="src.plugins.community_miaomiao",
+        plugin_name="community_miaomiao",
+    )
 
 
 def test_wordbank_derived_directory_is_classified_as_static_entry() -> None:
-    from src.plugins.wordbank.derived_help import build_wordbank_derived_help
+    node = _load_wordbank_community_doc_node()
 
-    spec = build_wordbank_derived_help("zh-CN")[0]
-    node = load_virtual_doc_node(spec)
-
-    assert resolve_help_entry_shape(node) == "static_entry"
+    assert resolve_help_entry_shape(node) == "simple_leaf"
 
 
 def test_render_static_entry_returns_showcase_canvas() -> None:
-    from src.plugins.wordbank.derived_help import build_wordbank_derived_help
-
-    node = load_virtual_doc_node(build_wordbank_derived_help("zh-CN")[0])
+    node = _load_wordbank_community_doc_node()
 
     image = Image.open(BytesIO(render_static_entry(node, locale="zh-CN")))
 

@@ -31,6 +31,11 @@ from src.lib.plugin_docs.command_layout import (
     build_command_layout,
     split_inline_text_spans,
 )
+from src.lib.plugin_docs.markdown_layout import (
+    MarkdownLayout,
+    MarkdownLayoutLine,
+    build_markdown_layout,
+)
 from src.lib.plugin_docs.models import DocsDemoTurn
 from src.lib.utils.common import get_current_time
 
@@ -50,7 +55,7 @@ class _TurnSpec:
 @dataclass(slots=True, frozen=True)
 class _ShowcaseNoteItem:
     rect: tuple[int, int, int, int]
-    lines: tuple[tuple[InlineTextSpan, ...], ...]
+    layout: MarkdownLayout
     line_height: int
     dot_color: str
 
@@ -62,6 +67,7 @@ class _ShowcaseTurnSpec:
     width: int
     height: int
     line_height: int
+    detail_lines: tuple[tuple[InlineTextSpan, ...], ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
@@ -71,6 +77,20 @@ class _ShowcaseTurnPlacement:
     avatar_rect: tuple[int, int, int, int] | None
     bubble_rect: tuple[int, int, int, int] | None
     text_rect: tuple[int, int, int, int]
+    label_rect: tuple[int, int, int, int] | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class _DemoSectionBand:
+    index: int
+    title: str
+    rect: tuple[int, int, int, int]
+    content_rect: tuple[int, int, int, int]
+    tag_rect: tuple[int, int, int, int]
+    header_rect: tuple[int, int, int, int]
+    divider_rect: tuple[int, int, int, int]
+    fill: str
+    accent: str
 
 
 @dataclass(slots=True, frozen=True)
@@ -84,8 +104,10 @@ class _ShowcaseLayout:
     pill_rects: tuple[tuple[int, int, int, int], ...]
     plugin_rect: tuple[int, int, int, int]
     plugin_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    title_compact: bool
     title_rect: tuple[int, int, int, int]
     title_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    summary_compact: bool
     summary_rect: tuple[int, int, int, int]
     summary_lines: tuple[tuple[InlineTextSpan, ...], ...]
     hero_rect: tuple[int, int, int, int]
@@ -94,11 +116,12 @@ class _ShowcaseLayout:
     trigger_rect: tuple[int, int, int, int]
     trigger_layout: CommandLayout
     overview_rect: tuple[int, int, int, int]
-    overview_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    overview_layout: MarkdownLayout
     note_items: tuple[_ShowcaseNoteItem, ...]
     instruction_content_rects: tuple[tuple[int, int, int, int], ...]
     demo_heading_rect: tuple[int, int, int, int] | None
     demo_rect: tuple[int, int, int, int]
+    demo_section_bands: tuple[_DemoSectionBand, ...]
     turn_placements: tuple[_ShowcaseTurnPlacement, ...]
     footer_rect: tuple[int, int, int, int]
     footer_left_text: str
@@ -113,6 +136,7 @@ class DemoImageRenderer:
     OUTER_MARGIN = DEFAULT_DEMO_THEME.outer_margin
     FONT_FAMILIES: ClassVar[list[str]] = [MAPLE_FONT_NAME]
     COMMAND_INDENT_PX = 48
+    DEFAULT_SECTION_TITLE = "流程演示"
 
     def __init__(self, *, impression_color: str | None = None) -> None:
         self.theme_name = SENRIN_V3_THEME.name
@@ -125,7 +149,9 @@ class DemoImageRenderer:
             self.kicker_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
             self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)
             self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 64)
+            self.title_font_compact = ImageFont.truetype(MAPLE_FONT_PATH, 56)
             self.summary_font = ImageFont.truetype(MAPLE_FONT_PATH, 36)
+            self.summary_font_compact = ImageFont.truetype(MAPLE_FONT_PATH, 32)
             self.instruction_font = ImageFont.truetype(MAPLE_FONT_PATH, 28)
             self.body_font = ImageFont.truetype(MAPLE_FONT_PATH, 32)
             self.note_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
@@ -136,7 +162,9 @@ class DemoImageRenderer:
             self.kicker_font = ImageFont.load_default()
             self.eyebrow_font = ImageFont.load_default()
             self.title_font = ImageFont.load_default()
+            self.title_font_compact = ImageFont.load_default()
             self.summary_font = ImageFont.load_default()
+            self.summary_font_compact = ImageFont.load_default()
             self.instruction_font = ImageFont.load_default()
             self.body_font = ImageFont.load_default()
             self.note_font = ImageFont.load_default()
@@ -330,8 +358,9 @@ class DemoImageRenderer:
         )
         side = self.theme.hero_side_padding
         standee_size = self.theme.hero_standee_size
-        text_max_width = (
-            self.WIDTH - side * 2 - standee_size - self.theme.hero_content_gap
+        text_max_width = min(
+            self.WIDTH - side * 2 - standee_size - self.theme.hero_content_gap - 36,
+            int((self.WIDTH - side * 2) * 0.62),
         )
         pills_list = [
             ("PLUGIN DOCS", self.theme.pill_blue_bg, self.theme.pill_blue_text),
@@ -366,12 +395,21 @@ class DemoImageRenderer:
             x += pill_width + self.theme.pill_gap
             row_bottom = max(row_bottom, rect[3])
 
-        plugin_lines = tuple(
-            self._wrap_inline_text(
-                plugin_title.strip() or "插件文档",
-                max_width=text_max_width,
-                font=self.kicker_font,
-            )[:1]
+        normalized_plugin_title = plugin_title.strip()
+        normalized_feature_title = feature_title.strip()
+        show_plugin_kicker = bool(normalized_plugin_title) and (
+            normalized_plugin_title != normalized_feature_title
+        )
+        plugin_lines = (
+            tuple(
+                self._wrap_inline_text(
+                    normalized_plugin_title or "插件文档",
+                    max_width=text_max_width,
+                    font=self.kicker_font,
+                )[:1]
+            )
+            if show_plugin_kicker
+            else ()
         )
         plugin_y = row_bottom + 24
         plugin_rect = (
@@ -385,22 +423,36 @@ class DemoImageRenderer:
             ),
         )
 
+        title_text = feature_title.strip() or plugin_title.strip() or "功能说明"
         title_lines = tuple(
             self._wrap_inline_text(
-                feature_title.strip() or plugin_title.strip() or "功能说明",
+                title_text,
                 max_width=text_max_width,
                 font=self.title_font,
             )[:2]
         )
-        title_y = plugin_rect[3] + 24
+        title_compact = False
+        if len(title_lines) > 1:
+            title_lines = tuple(
+                self._wrap_inline_text(
+                    title_text,
+                    max_width=text_max_width,
+                    font=self.title_font_compact,
+                )[:2]
+            )
+            title_compact = True
+        active_title_font = (
+            self.title_font_compact if title_compact else self.title_font
+        )
+        title_y = plugin_rect[3] + (24 if plugin_lines else 0)
         title_rect = (
             side,
             title_y,
-            side + self._max_inline_line_width(title_lines, self.title_font),
+            side + self._max_inline_line_width(title_lines, active_title_font),
             title_y
             + self._line_block_height(
                 title_lines,
-                self._line_height_for_font(self.title_font),
+                self._line_height_for_font(active_title_font),
             ),
         )
 
@@ -416,16 +468,29 @@ class DemoImageRenderer:
                 font=self.summary_font,
             )[:4]
         )
+        summary_compact = False
+        if len(summary_lines) > 2:
+            summary_lines = tuple(
+                self._wrap_inline_text(
+                    summary_source,
+                    max_width=text_max_width,
+                    font=self.summary_font_compact,
+                )[:3]
+            )
+            summary_compact = True
+        active_summary_font = (
+            self.summary_font_compact if summary_compact else self.summary_font
+        )
         summary_y = title_rect[3] + self.theme.hero_text_gap
         summary_rect = (
             side,
             summary_y,
-            side + self._max_inline_line_width(summary_lines, self.summary_font),
+            side + self._max_inline_line_width(summary_lines, active_summary_font),
             summary_y
             + self._line_block_height(
                 summary_lines,
                 self._line_height_for_font(
-                    self.summary_font,
+                    active_summary_font,
                     minimum=self.theme.hero_summary_line_height,
                 ),
             ),
@@ -478,23 +543,22 @@ class DemoImageRenderer:
         instruction_y = trigger_rect[3] + self.theme.trigger_gap
 
         instruction_content_rects: list[tuple[int, int, int, int]] = [trigger_rect]
-        overview_lines = tuple(
-            self._wrap_inline_text(
-                feature_overview.strip() or summary_source,
-                max_width=content_width,
-                font=self.instruction_font,
-            )
+        overview_layout = build_markdown_layout(
+            feature_overview.strip() or summary_source,
+            max_width=content_width,
+            line_height=self._line_height_for_font(self.instruction_font),
+            indent_px=self.COMMAND_INDENT_PX,
+            measure_text=lambda value, code: self._measure_markdown_text_width(
+                value,
+                self.instruction_font,
+                code=code,
+            ),
         )
         overview_rect = (
             content_left,
             instruction_y,
-            content_left
-            + self._max_inline_line_width(overview_lines, self.instruction_font),
-            instruction_y
-            + self._line_block_height(
-                overview_lines,
-                self._line_height_for_font(self.instruction_font),
-            ),
+            content_right,
+            instruction_y + overview_layout.total_height,
         )
         instruction_content_rects.append(overview_rect)
         instruction_y = overview_rect[3]
@@ -543,11 +607,14 @@ class DemoImageRenderer:
 
         demo_heading_rect: tuple[int, int, int, int] | None = None
         demo_rect: tuple[int, int, int, int] | None = None
+        demo_section_bands: list[_DemoSectionBand] = []
         turn_placements: list[_ShowcaseTurnPlacement] = []
         current_bottom = instruction_bottom
         if turns:
             heading_text = "看看它是怎么工作的"
-            heading_top = instruction_bottom + self.theme.demo_heading_gap_top
+            heading_top = instruction_bottom + max(
+                20, self.theme.demo_heading_gap_top - 20
+            )
             heading_box = self._text_size(heading_text, self.note_font)
             demo_heading_rect = (
                 side,
@@ -555,25 +622,126 @@ class DemoImageRenderer:
                 side + heading_box[2] - heading_box[0],
                 heading_top + (heading_box[3] - heading_box[1]),
             )
-            demo_top = demo_heading_rect[3] + self.theme.demo_heading_gap_bottom
-            demo_left = side
-            demo_right = self.WIDTH - side
-            y_cursor = demo_top
-            for turn in turns:
-                spec = self._measure_turn(turn, demo_right - demo_left)
-                placement = self._place_turn(
-                    spec,
-                    top=y_cursor,
-                    left=demo_left,
-                    right=demo_right,
-                )
-                turn_placements.append(placement)
-                y_cursor = placement.rect[3] + self.theme.bubble_gap
-            demo_bottom = (
-                y_cursor - self.theme.bubble_gap if turn_placements else demo_top
+            demo_panel_top = demo_heading_rect[3] + max(
+                16, self.theme.demo_heading_gap_bottom - 8
             )
-            demo_rect = (demo_left, demo_top, demo_right, demo_bottom)
-            current_bottom = demo_bottom
+            demo_left = side + 8
+            demo_right = self.WIDTH - side - 8
+            demo_top = demo_panel_top + 16
+            grouped_turns: list[tuple[str, list[DocsDemoTurn]]] = []
+            for turn in turns:
+                section_title = turn.section.strip()
+                if not grouped_turns or grouped_turns[-1][0] != section_title:
+                    grouped_turns.append((section_title, [turn]))
+                else:
+                    grouped_turns[-1][1].append(turn)
+
+            y_cursor = demo_top
+            section_gap = 28
+            outer_pad_x = 0
+            inner_pad_left = 30
+            inner_pad_right = 30
+            inner_pad_top = 26
+            inner_pad_bottom = 22
+            title_gap = 14
+            title_height = 70
+            section_tag_width = min(
+                340,
+                max(
+                    184,
+                    max(
+                        self._text_width(
+                            title or self.DEFAULT_SECTION_TITLE, self.meta_font
+                        )
+                        + 110
+                        for title, _ in grouped_turns
+                    ),
+                ),
+            )
+            for section_index, (section_title, section_turns) in enumerate(
+                grouped_turns
+            ):
+                section_left = demo_left + outer_pad_x
+                section_right = demo_right - outer_pad_x
+                content_left = section_left + inner_pad_left
+                content_right = section_right - inner_pad_right
+                section_top = y_cursor
+                turn_top = section_top + inner_pad_top
+                normalized_title = section_title or self.DEFAULT_SECTION_TITLE
+                turn_top += title_height + title_gap
+                section_turn_placements: list[_ShowcaseTurnPlacement] = []
+                for turn in section_turns:
+                    spec = self._measure_turn(turn, content_right - content_left)
+                    placement = self._place_turn(
+                        spec,
+                        top=turn_top,
+                        left=content_left,
+                        right=content_right,
+                    )
+                    section_turn_placements.append(placement)
+                    turn_placements.append(placement)
+                    turn_top = placement.rect[3] + self.theme.bubble_gap
+                section_last_bottom = (
+                    section_turn_placements[-1].rect[3]
+                    if section_turn_placements
+                    else turn_top
+                )
+                section_bottom = section_last_bottom + inner_pad_bottom
+                fill = (
+                    self.theme.showcase_accent_rail_bg
+                    if section_index % 2 == 0
+                    else self.theme.showcase_support_rail_bg
+                )
+                accent = (
+                    self.theme.accent if section_index % 2 == 0 else self.theme.indigo
+                )
+                header_rect = (
+                    section_left + 28,
+                    section_top + 18,
+                    section_right - 28,
+                    section_top + 18 + title_height,
+                )
+                tag_rect = (
+                    header_rect[0] + 14,
+                    header_rect[1] + 12,
+                    header_rect[0] + 14 + section_tag_width,
+                    header_rect[1] + 12 + 48,
+                )
+                divider_rect = (
+                    tag_rect[2] + 20,
+                    tag_rect[1] + 23,
+                    header_rect[2] - 18,
+                    tag_rect[1] + 25,
+                )
+                demo_section_bands.append(
+                    _DemoSectionBand(
+                        index=section_index + 1,
+                        title=normalized_title,
+                        rect=(section_left, section_top, section_right, section_bottom),
+                        content_rect=(
+                            content_left,
+                            turn_top - title_gap,
+                            content_right,
+                            section_bottom - inner_pad_bottom,
+                        ),
+                        tag_rect=tag_rect,
+                        header_rect=header_rect,
+                        divider_rect=divider_rect,
+                        fill=fill,
+                        accent=accent,
+                    )
+                )
+                y_cursor = section_bottom + section_gap
+            demo_content_bottom = (
+                y_cursor - section_gap if demo_section_bands else demo_top
+            )
+            demo_rect = (
+                demo_left,
+                demo_panel_top,
+                demo_right,
+                demo_content_bottom + 16,
+            )
+            current_bottom = demo_rect[3]
 
         footer_top = current_bottom + self.theme.footer_gap_top
         footer_rect = (
@@ -582,10 +750,14 @@ class DemoImageRenderer:
             self.WIDTH - side,
             footer_top + self.theme.footer_height,
         )
-        footer_left_text = (
-            f"{plugin_title} · {feature_title} · "
-            f"v{plugin_version.lstrip('v')} · By {plugin_author}"
-        )
+        footer_parts = [normalized_plugin_title or "插件文档"]
+        if (
+            normalized_feature_title
+            and normalized_feature_title != normalized_plugin_title
+        ):
+            footer_parts.append(normalized_feature_title)
+        footer_parts.extend([f"v{plugin_version.lstrip('v')}", f"By {plugin_author}"])
+        footer_left_text = " · ".join(footer_parts)
         footer_right_text = (
             f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
         )
@@ -599,8 +771,10 @@ class DemoImageRenderer:
             pill_rects=tuple(pill_rects),
             plugin_rect=plugin_rect,
             plugin_lines=plugin_lines,
+            title_compact=title_compact,
             title_rect=title_rect,
             title_lines=title_lines,
+            summary_compact=summary_compact,
             summary_rect=summary_rect,
             summary_lines=summary_lines,
             hero_rect=hero_rect,
@@ -609,7 +783,7 @@ class DemoImageRenderer:
             trigger_rect=trigger_rect,
             trigger_layout=trigger_layout,
             overview_rect=overview_rect,
-            overview_lines=overview_lines,
+            overview_layout=overview_layout,
             note_items=tuple(note_items),
             instruction_content_rects=tuple(instruction_content_rects),
             demo_heading_rect=demo_heading_rect,
@@ -620,6 +794,7 @@ class DemoImageRenderer:
                 self.WIDTH - side,
                 instruction_bottom,
             ),
+            demo_section_bands=tuple(demo_section_bands),
             turn_placements=tuple(turn_placements),
             footer_rect=footer_rect,
             footer_left_text=footer_left_text,
@@ -662,28 +837,38 @@ class DemoImageRenderer:
             x=layout.title_rect[0],
             y=layout.title_rect[1] + self.theme.hero_title_shadow_offset_y,
             lines=layout.title_lines,
-            font=self.title_font,
+            font=self.title_font_compact if layout.title_compact else self.title_font,
             fill=self.theme.hero_title_shadow,
-            line_height=self._line_height_for_font(self.title_font),
+            line_height=self._line_height_for_font(
+                self.title_font_compact if layout.title_compact else self.title_font
+            ),
         )
         self._draw_multiline_text(
             draw,
             x=layout.title_rect[0],
             y=layout.title_rect[1],
             lines=layout.title_lines,
-            font=self.title_font,
+            font=self.title_font_compact if layout.title_compact else self.title_font,
             fill=self.theme.hero_title,
-            line_height=self._line_height_for_font(self.title_font),
+            line_height=self._line_height_for_font(
+                self.title_font_compact if layout.title_compact else self.title_font
+            ),
         )
         self._draw_multiline_text(
             draw,
             x=layout.summary_rect[0],
             y=layout.summary_rect[1],
             lines=layout.summary_lines,
-            font=self.summary_font,
+            font=(
+                self.summary_font_compact
+                if layout.summary_compact
+                else self.summary_font
+            ),
             fill=self.theme.hero_summary,
             line_height=self._line_height_for_font(
-                self.summary_font,
+                self.summary_font_compact
+                if layout.summary_compact
+                else self.summary_font,
                 minimum=self.theme.hero_summary_line_height,
             ),
         )
@@ -718,20 +903,19 @@ class DemoImageRenderer:
             default_fill=self.theme.terminal_text,
             guide_fill=self.theme.line,
         )
-        self._draw_multiline_text(
+        self._draw_markdown_layout(
             draw,
             x=layout.overview_rect[0],
             y=layout.overview_rect[1],
-            lines=layout.overview_lines,
+            layout=layout.overview_layout,
             font=self.instruction_font,
             fill=self.theme.deep,
-            line_height=self._line_height_for_font(self.instruction_font),
-            render_code_chip=False,
+            max_width=layout.overview_rect[2] - layout.overview_rect[0],
         )
         for item in layout.note_items:
             dot_y = item.rect[1] + max(
                 0,
-                (item.line_height - self.theme.note_dot_size) // 2,
+                ((item.line_height - self.theme.note_dot_size) // 2) + 2,
             )
             draw.ellipse(
                 (
@@ -742,14 +926,13 @@ class DemoImageRenderer:
                 ),
                 fill=item.dot_color,
             )
-            self._draw_multiline_text(
+            self._draw_markdown_layout(
                 draw,
                 x=item.rect[0] + 24,
                 y=item.rect[1],
-                lines=item.lines,
+                layout=item.layout,
                 font=self.note_font,
                 fill=self.theme.note_text,
-                line_height=item.line_height,
             )
 
     def _draw_demo(
@@ -770,6 +953,83 @@ class DemoImageRenderer:
             font=self.note_font,
             fill=self.theme.demo_heading,
         )
+        self._draw_shadowed_rect(
+            image,
+            rect=layout.demo_rect,
+            radius=34,
+            shadow_color=self.theme.card_shadow,
+            shadow_offset_y=24,
+            shadow_blur=44,
+            fill="#FFFFFF",
+        )
+        for band in layout.demo_section_bands:
+            self._draw_shadowed_rect(
+                image,
+                rect=band.rect,
+                radius=24,
+                shadow_color=self.theme.bubble_shadow,
+                shadow_offset_y=8,
+                shadow_blur=24,
+                fill=band.fill,
+            )
+            draw.rounded_rectangle(
+                band.header_rect,
+                radius=20,
+                fill=self._rgba(band.accent, 18),
+            )
+            top_accent_rect = (
+                band.header_rect[0] + 4,
+                band.header_rect[1] + 4,
+                band.header_rect[2] - 4,
+                band.header_rect[1] + 14,
+            )
+            draw.rounded_rectangle(
+                top_accent_rect,
+                radius=999,
+                fill=self._rgba(band.accent, 118),
+            )
+            self._draw_shadowed_rect(
+                image,
+                rect=band.tag_rect,
+                radius=18,
+                shadow_color=self.theme.standee_anchor_shadow,
+                shadow_offset_y=4,
+                shadow_blur=8,
+                fill="#FFFFFF",
+            )
+            index_text = f"{band.index:02d}"
+            index_rect = (
+                band.tag_rect[0] + 12,
+                band.tag_rect[1] + 8,
+                band.tag_rect[0] + 50,
+                band.tag_rect[3] - 8,
+            )
+            draw.rounded_rectangle(
+                index_rect,
+                radius=999,
+                fill=band.accent,
+            )
+            self._draw_text(
+                draw,
+                x=index_rect[0] + 10,
+                y=index_rect[1] + 1,
+                text=index_text,
+                font=self.meta_font,
+                fill="#FFFFFF",
+            )
+            self._draw_text(
+                draw,
+                x=index_rect[2] + 12,
+                y=band.tag_rect[1] + 6,
+                text=band.title,
+                font=self.meta_font,
+                fill=band.accent,
+            )
+            draw.rounded_rectangle(
+                band.divider_rect,
+                radius=999,
+                fill=self._rgba(band.accent, 52),
+            )
         for placement in layout.turn_placements:
             self._draw_turn(image, draw, placement, locale=locale)
 
@@ -783,26 +1043,26 @@ class DemoImageRenderer:
     ) -> None:
         spec = placement.spec
         if spec.turn.speaker == "SYSTEM":
-            line_y = placement.text_rect[1] + 16
-            draw.line(
-                (
-                    placement.rect[0],
-                    line_y,
-                    placement.text_rect[0] - self.theme.system_line_gap,
-                    line_y,
-                ),
-                fill=self.theme.system_line,
+            if placement.bubble_rect is None or placement.label_rect is None:
+                return
+            draw.rounded_rectangle(
+                placement.bubble_rect,
+                radius=self.theme.bubble_radius,
+                fill=self.theme.system_bubble,
+                outline=self.theme.system_border,
                 width=2,
             )
-            draw.line(
-                (
-                    placement.text_rect[2] + self.theme.system_line_gap,
-                    line_y,
-                    placement.rect[2],
-                    line_y,
-                ),
-                fill=self.theme.system_line,
-                width=2,
+            draw.rounded_rectangle(
+                placement.label_rect,
+                radius=(placement.label_rect[3] - placement.label_rect[1]) // 2,
+                fill=self.theme.system_label_bg,
+            )
+            self._draw_text_centered(
+                draw,
+                placement.label_rect,
+                "SYSTEM",
+                font=self.meta_font,
+                fill=self.theme.system_label_text,
             )
             self._draw_multiline_text(
                 draw,
@@ -836,6 +1096,13 @@ class DemoImageRenderer:
                 shadow_blur=18,
                 fill=self.theme.user_bubble,
             )
+            self._draw_message_bubble_shape(
+                draw,
+                rect=placement.bubble_rect,
+                fill=self.theme.user_bubble,
+                top_left_radius=12,
+                other_radius=self.theme.bubble_radius,
+            )
             bubble_fill = self.theme.deep
         else:
             self._draw_bot_avatar(
@@ -844,10 +1111,12 @@ class DemoImageRenderer:
                 rect=placement.avatar_rect,
                 locale=locale,
             )
-            draw.rounded_rectangle(
-                placement.bubble_rect,
-                radius=self.theme.bubble_radius,
+            self._draw_message_bubble_shape(
+                draw,
+                rect=placement.bubble_rect,
                 fill=self.theme.bot_bubble,
+                top_left_radius=12,
+                other_radius=self.theme.bubble_radius,
             )
             bubble_fill = self.theme.bot_text
 
@@ -863,6 +1132,35 @@ class DemoImageRenderer:
                 minimum=self.theme.bubble_line_height,
             ),
         )
+        if spec.detail_lines:
+            detail_top = (
+                placement.text_rect[1]
+                + self._line_block_height(
+                    spec.lines,
+                    spec.line_height,
+                )
+                + 18
+            )
+            detail_rect = (
+                placement.text_rect[0],
+                detail_top,
+                placement.text_rect[2],
+                placement.bubble_rect[3] - self.theme.bubble_padding_y,
+            )
+            draw.rounded_rectangle(
+                detail_rect,
+                radius=16,
+                fill="#1F2937",
+            )
+            self._draw_multiline_text(
+                draw,
+                x=detail_rect[0] + 18,
+                y=detail_rect[1] + 16,
+                lines=spec.detail_lines,
+                font=self.meta_font,
+                fill="#E5E7EB",
+                line_height=self._line_height_for_font(self.meta_font, minimum=28),
+            )
 
     def _draw_standee(
         self,
@@ -954,7 +1252,7 @@ class DemoImageRenderer:
             y=footer_y,
             text=left_text,
             font=self.footer_font,
-            fill=self.theme.system_text,
+            fill=self.theme.note_text,
         )
         self._draw_text(
             draw,
@@ -962,7 +1260,7 @@ class DemoImageRenderer:
             y=footer_y,
             text=layout.footer_right_text,
             font=self.footer_font,
-            fill=self.theme.system_text,
+            fill=self.theme.note_text,
         )
 
     def _draw_shadowed_rect(
@@ -1189,9 +1487,15 @@ class DemoImageRenderer:
         default_fill: str,
         guide_fill: str,
     ) -> None:
+        sample_bbox = self._text_size("Ag", font)
+        sample_height = max(sample_bbox[3] - sample_bbox[1], 0)
+        line_offset_y = max(
+            (layout.line_height - sample_height) / 2 - sample_bbox[1], 0
+        )
+        base_y = y + line_offset_y
         if layout.has_guide:
-            top = y + layout.line_height
-            bottom = y + layout.total_height - max(layout.line_height // 4, 4)
+            top = base_y + layout.line_height
+            bottom = base_y + layout.total_height - max(layout.line_height // 4, 4)
             if bottom > top:
                 guide_x = x + layout.indent_px - 18
                 draw.line((guide_x, top, guide_x, bottom), fill=guide_fill, width=2)
@@ -1199,7 +1503,7 @@ class DemoImageRenderer:
             self._draw_inline_text_line(
                 draw,
                 x=x + line.indent_level * layout.indent_px,
-                y=y + index * layout.line_height,
+                y=base_y + index * layout.line_height,
                 line=line.segments,
                 font=font,
                 fill=default_fill,
@@ -1230,20 +1534,24 @@ class DemoImageRenderer:
             for text in self._split_note_lines(feature_failures)
         )
         for text, color in source_items:
-            lines = tuple(
-                self._wrap_inline_text(
-                    text,
-                    max_width=width - 24,
-                    font=self.note_font,
-                )
+            layout = build_markdown_layout(
+                text,
+                max_width=width - 24,
+                line_height=self._line_height_for_font(self.note_font),
+                indent_px=self.COMMAND_INDENT_PX,
+                measure_text=lambda value, code: self._measure_markdown_text_width(
+                    value,
+                    self.note_font,
+                    code=code,
+                ),
             )
             line_height = self._line_height_for_font(self.note_font)
-            height = self._line_block_height(lines, line_height)
+            height = layout.total_height
             rect = (x, cursor_y, x + width, cursor_y + height)
             items.append(
                 _ShowcaseNoteItem(
                     rect=rect,
-                    lines=lines,
+                    layout=layout,
                     line_height=line_height,
                     dot_color=color,
                 )
@@ -1254,6 +1562,189 @@ class DemoImageRenderer:
     def _split_note_lines(self, text: str) -> tuple[str, ...]:
         raw_lines = [line.strip(" -") for line in text.splitlines()]
         return tuple(line for line in raw_lines if line)
+
+    def _split_bot_detail_text(self, text: str) -> tuple[str, str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        if len(lines) <= 1:
+            return text, ""
+        detail_start = next(
+            (
+                index
+                for index, line in enumerate(lines[1:], start=1)
+                if line.startswith(("Type:", "Value:", "Traceback:", "File:"))
+            ),
+            -1,
+        )
+        if detail_start <= 0:
+            return text, ""
+        summary = "\n".join(lines[:detail_start]).strip()
+        detail = "\n".join(lines[detail_start:]).strip()
+        return summary or text, detail
+
+    def _measure_markdown_text_width(self, text: str, font: Any, *, code: bool) -> int:
+        width = self._text_width(text, font)
+        if code and text:
+            width += self.theme.inline_code_pad_x * 2
+        return width
+
+    def _draw_markdown_layout(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        y: int,
+        layout: MarkdownLayout,
+        font: Any,
+        fill: str,
+        max_width: int | None = None,
+    ) -> None:
+        cursor_y = y
+        tip_group: list[tuple[int, MarkdownLayoutLine]] = []
+        tip_width = max_width or 980
+
+        def flush_tip_group() -> None:
+            nonlocal cursor_y, tip_group
+            if not tip_group:
+                return
+            tip_top = tip_group[0][0] - 10
+            tip_bottom = tip_group[-1][0] + layout.line_height + 10
+            draw.rounded_rectangle(
+                (
+                    x,
+                    tip_top,
+                    x + tip_width,
+                    tip_bottom,
+                ),
+                radius=18,
+                fill=self.theme.panel_soft_bg,
+                outline=self.theme.line,
+                width=1,
+            )
+            for line_y, tip_line in tip_group:
+                line_x = x + 24 + max(tip_line.indent_level, 0) * layout.indent_px
+                self._draw_markdown_inline_code_backgrounds(
+                    draw,
+                    x=line_x,
+                    y=line_y,
+                    line=tip_line.segments,
+                    font=font,
+                )
+                self._draw_inline_text_line(
+                    draw,
+                    x=line_x,
+                    y=line_y,
+                    line=tip_line.segments,
+                    font=font,
+                    fill=fill,
+                    render_code_chip=False,
+                    render_inline_code_text=False,
+                )
+            tip_group = []
+
+        for line in layout.lines:
+            if line.kind == "spacer":
+                flush_tip_group()
+                cursor_y += line.indent_level
+                continue
+            if line.kind == "tip":
+                tip_group.append((cursor_y, line))
+                cursor_y += layout.line_height
+                continue
+            flush_tip_group()
+            line_x = x + max(line.indent_level, 0) * layout.indent_px
+            if line.bullet:
+                bullet_text = f"{line.bullet} "
+                self._draw_text(
+                    draw,
+                    x=line_x,
+                    y=cursor_y,
+                    text=bullet_text,
+                    font=font,
+                    fill=fill,
+                )
+                line_x += self._text_width(bullet_text, font)
+            self._draw_markdown_inline_code_backgrounds(
+                draw,
+                x=line_x,
+                y=cursor_y,
+                line=line.segments,
+                font=font,
+            )
+            self._draw_inline_text_line(
+                draw,
+                x=line_x,
+                y=cursor_y,
+                line=line.segments,
+                font=font,
+                fill=fill,
+                render_code_chip=False,
+                render_inline_code_text=False,
+            )
+            cursor_y += layout.line_height
+        flush_tip_group()
+
+    def _draw_markdown_inline_code_backgrounds(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: float,
+        y: float,
+        line: Sequence[InlineTextSpan],
+        font: Any,
+    ) -> None:
+        cursor_x = x
+        line_height = self._font_line_height(font)
+        for span in line:
+            if not span.text:
+                continue
+            text_width = self._text_width(span.text, font)
+            if not span.code:
+                cursor_x += text_width
+                continue
+            text_bbox = self._text_size(span.text, font)
+            text_height = int(text_bbox[3] - text_bbox[1])
+            pad_x = max(4, self.theme.inline_code_pad_x - 3)
+            pad_y = max(2, self.theme.inline_code_pad_y - 2)
+            chip_height = max(text_height + pad_y * 2, 18)
+            chip_y = y + max((line_height - chip_height) / 2, 0)
+            chip_width = text_width + pad_x * 2
+            draw.rounded_rectangle(
+                (
+                    cursor_x - pad_x,
+                    chip_y,
+                    cursor_x - pad_x + chip_width,
+                    chip_y + chip_height,
+                ),
+                radius=max(6, self.theme.inline_code_radius - 2),
+                fill=self.theme.inline_code_bg,
+            )
+            self._draw_text(
+                draw,
+                x=cursor_x,
+                y=chip_y + (chip_height - text_height) / 2 - text_bbox[1],
+                text=span.text,
+                font=font,
+                fill=span.fill or self.theme.inline_code_text,
+            )
+            cursor_x += text_width
+
+    def _draw_message_bubble_shape(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        rect: tuple[int, int, int, int],
+        fill: str,
+        top_left_radius: int,
+        other_radius: int,
+    ) -> None:
+        left, top, right, bottom = rect
+        draw.rounded_rectangle(rect, radius=other_radius, fill=fill)
+        cap = min(other_radius + 10, (right - left) // 3, (bottom - top) // 3)
+        draw.rounded_rectangle(
+            (left, top, left + cap, top + cap),
+            radius=top_left_radius,
+            fill=fill,
+        )
 
     def _place_turn(
         self,
@@ -1269,14 +1760,39 @@ class DemoImageRenderer:
                 self.system_font,
                 code_padding=False,
             )
-            text_left = (left + right - text_width) // 2
-            text_bottom = top + self._line_block_height(spec.lines, spec.line_height)
+            content_width = min(max(text_width + 96, 420), right - left - 120)
+            text_left = left + (right - left - content_width) // 2
+            text_block_height = self._line_block_height(
+                spec.lines,
+                spec.line_height,
+            )
+            label_height = 36
+            label_width = 116
+            bubble_height = max(text_block_height + label_height + 58, 112)
+            bubble_rect = (
+                text_left - 28,
+                top,
+                text_left + content_width + 28,
+                top + bubble_height,
+            )
+            label_rect = (
+                bubble_rect[0] + 20,
+                bubble_rect[1] + 18,
+                bubble_rect[0] + 20 + label_width,
+                bubble_rect[1] + 18 + label_height,
+            )
+            content_top = label_rect[3] + 20
+            content_bottom = bubble_rect[3] - 20
+            available_height = max(content_bottom - content_top, text_block_height)
+            text_top = content_top + max(0, (available_height - text_block_height) // 2)
+            text_bottom = text_top + text_block_height
             return _ShowcaseTurnPlacement(
                 spec=spec,
-                rect=(left + 24, top, right - 24, text_bottom + 8),
+                rect=bubble_rect,
                 avatar_rect=None,
-                bubble_rect=None,
-                text_rect=(text_left, top, text_left + text_width, text_bottom),
+                bubble_rect=bubble_rect,
+                text_rect=(text_left, text_top, text_left + content_width, text_bottom),
+                label_rect=label_rect,
             )
 
         avatar_size = self.theme.avatar_size
@@ -1322,7 +1838,7 @@ class DemoImageRenderer:
             lines = tuple(
                 self._wrap_inline_text(
                     self._normalize_demo_text(turn.text),
-                    max_width=min(content_width - 160, 720),
+                    max_width=min(content_width - 120, 760),
                     font=self.system_font,
                 )
             )
@@ -1330,6 +1846,7 @@ class DemoImageRenderer:
             return _ShowcaseTurnSpec(
                 turn=turn,
                 lines=lines,
+                detail_lines=(),
                 width=0,
                 height=self._line_block_height(lines, line_height),
                 line_height=line_height,
@@ -1339,9 +1856,22 @@ class DemoImageRenderer:
             760,
             content_width - self.theme.avatar_size - self.theme.avatar_gap - 80,
         )
+        normalized_text = self._normalize_demo_text(turn.text)
+        summary_text = normalized_text
+        detail_lines: tuple[tuple[InlineTextSpan, ...], ...] = ()
+        if turn.speaker == "BOT":
+            summary_text, detail_payload = self._split_bot_detail_text(normalized_text)
+            if detail_payload:
+                detail_lines = tuple(
+                    self._wrap_inline_text(
+                        detail_payload,
+                        max_width=bubble_max - self.theme.bubble_padding_x * 2 - 36,
+                        font=self.meta_font,
+                    )
+                )
         lines = tuple(
             self._wrap_inline_text(
-                self._normalize_demo_text(turn.text),
+                summary_text,
                 max_width=bubble_max - self.theme.bubble_padding_x * 2,
                 font=self.body_font,
             )
@@ -1351,7 +1881,17 @@ class DemoImageRenderer:
             minimum=self.theme.bubble_line_height,
         )
         text_height = self._line_block_height(lines, line_height)
-        bubble_height = text_height + self.theme.bubble_padding_y * 2
+        detail_height = 0
+        if detail_lines:
+            detail_height = (
+                self._line_block_height(
+                    detail_lines,
+                    self._line_height_for_font(self.meta_font, minimum=28),
+                )
+                + 32
+                + 18
+            )
+        bubble_height = text_height + self.theme.bubble_padding_y * 2 + detail_height
         bubble_width = (
             self._max_inline_line_width(lines, self.body_font)
             + self.theme.bubble_padding_x * 2
@@ -1359,6 +1899,7 @@ class DemoImageRenderer:
         return _ShowcaseTurnSpec(
             turn=turn,
             lines=lines,
+            detail_lines=detail_lines,
             width=max(280, min(bubble_width, bubble_max)),
             height=max(bubble_height, self.theme.avatar_size),
             line_height=line_height,
@@ -1368,7 +1909,9 @@ class DemoImageRenderer:
         self,
         placement: _ShowcaseTurnPlacement,
     ) -> list[tuple[str, tuple[int, int, int, int]]]:
-        if placement.avatar_rect is None and placement.bubble_rect is None:
+        if placement.avatar_rect is None:
+            if placement.bubble_rect is not None:
+                return [("system bubble", placement.bubble_rect)]
             return [("system text", placement.text_rect)]
         rects: list[tuple[str, tuple[int, int, int, int]]] = []
         if placement.avatar_rect is not None:
@@ -1617,6 +2160,7 @@ class DemoImageRenderer:
         font: Any,
         fill: str,
         render_code_chip: bool = True,
+        render_inline_code_text: bool = True,
     ) -> None:
         cursor_x = x
         line_height = self._font_line_height(font)
@@ -1624,6 +2168,9 @@ class DemoImageRenderer:
             if not span.text:
                 continue
             span_fill = span.fill or fill
+            if span.code and not render_code_chip and not render_inline_code_text:
+                cursor_x += self._text_width(span.text, font)
+                continue
             if not span.code or not render_code_chip:
                 self._draw_text(
                     draw,
