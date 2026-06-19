@@ -65,6 +65,20 @@ class WaterQuerySpec:
     errors: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class WaterRankInputDraft:
+    subject: WaterRankSubject | None = None
+    scope: WaterRankScope | None = None
+    period: WaterRankPeriod | None = None
+    errors: tuple[str, ...] = ()
+
+    @property
+    def has_any_dimension(self) -> bool:
+        return any(
+            value is not None for value in (self.subject, self.scope, self.period)
+        )
+
+
 class WaterQueryRouter:
     _CANCEL_TOKENS: tuple[str, ...] = ("取消", "退出", "算了", "q", "quit", "exit")
     _COMMAND_PREFIXES: tuple[str, ...] = ("#", "/", "＃", "井")
@@ -74,6 +88,15 @@ class WaterQueryRouter:
         return " / ".join(
             subject_label(subject) for subject in ("user", "group", "matrix")
         )
+
+    @staticmethod
+    def _scope_choices_text(subject: WaterRankSubject | None = None) -> str:
+        scopes = (
+            WaterQueryRouter.valid_scopes_for_subject(subject)
+            if subject is not None
+            else ("group", "matrix", "global")
+        )
+        return " / ".join(scope_label(scope) for scope in scopes)
 
     @staticmethod
     def _period_choices_text(*, is_superuser: bool) -> str:
@@ -166,29 +189,32 @@ class WaterQueryRouter:
     def build_guided_footer(locale: LocaleCode) -> str:
         return tr(locale, "water.query.rank.guided.footer")
 
-    def build_guided_intro(self, locale: LocaleCode) -> str:
-        return "\n".join(
-            [
-                tr(
-                    locale,
-                    "water.query.rank.guided.subject_prompt",
-                    choices=self._subject_choices_text(),
-                ),
-                self.build_guided_footer(locale),
-            ]
+    def build_guided_intro(
+        self,
+        locale: LocaleCode,
+        *,
+        is_superuser: bool = False,
+    ) -> str:
+        return self.build_guided_progress_prompt(
+            locale,
+            subject=None,
+            scope=None,
+            period=None,
+            is_superuser=is_superuser,
         )
 
     def build_scope_prompt(
         self,
         locale: LocaleCode,
-        subject: WaterRankSubject,
+        subject: WaterRankSubject | None,
     ) -> str:
-        labels = " / ".join(
-            scope_label(scope) for scope in self.valid_scopes_for_subject(subject)
-        )
         return "\n".join(
             [
-                tr(locale, "water.query.rank.guided.scope_prompt", choices=labels),
+                tr(
+                    locale,
+                    "water.query.rank.guided.scope_prompt",
+                    choices=self._scope_choices_text(subject),
+                ),
                 self.build_guided_footer(locale),
             ]
         )
@@ -222,6 +248,43 @@ class WaterQueryRouter:
             ]
         )
 
+    def build_guided_progress_prompt(
+        self,
+        locale: LocaleCode,
+        *,
+        subject: WaterRankSubject | None,
+        scope: WaterRankScope | None,
+        period: WaterRankPeriod | None,
+        is_superuser: bool,
+    ) -> str:
+        lines: list[str] = []
+        if subject is None:
+            lines.append(
+                tr(
+                    locale,
+                    "water.query.rank.guided.subject_prompt",
+                    choices=self._subject_choices_text(),
+                )
+            )
+        if scope is None:
+            lines.append(
+                tr(
+                    locale,
+                    "water.query.rank.guided.scope_prompt",
+                    choices=self._scope_choices_text(subject),
+                )
+            )
+        if period is None:
+            lines.append(
+                tr(
+                    locale,
+                    "water.query.rank.guided.period_prompt",
+                    choices=self._period_choices_text(is_superuser=is_superuser),
+                )
+            )
+        lines.append(self.build_guided_footer(locale))
+        return "\n".join(lines)
+
     @staticmethod
     def build_guided_cancel_message(locale: LocaleCode) -> str:
         return tr(locale, "interaction.cancelled")
@@ -250,6 +313,61 @@ class WaterQueryRouter:
     @staticmethod
     def parse_period_choice(raw_text: str) -> WaterRankPeriod | None:
         return PERIOD_TOKENS.get(raw_text.strip())
+
+    def parse_rank_input(self, raw_text: str) -> WaterRankInputDraft:
+        text = raw_text.strip()
+        if not text:
+            return WaterRankInputDraft()
+
+        subject: WaterRankSubject | None = None
+        scope: WaterRankScope | None = None
+        period: WaterRankPeriod | None = None
+        unknown_tokens: list[str] = []
+
+        for token in text.split():
+            if token in SUBJECT_TOKENS:
+                mapped_subject = SUBJECT_TOKENS[token]
+                if subject is not None and subject != mapped_subject:
+                    return WaterRankInputDraft(
+                        subject=subject,
+                        scope=scope,
+                        period=period,
+                        errors=("duplicate_subject",),
+                    )
+                subject = mapped_subject
+                continue
+            if token in SCOPE_TOKENS:
+                mapped_scope = SCOPE_TOKENS[token]
+                if scope is not None and scope != mapped_scope:
+                    return WaterRankInputDraft(
+                        subject=subject,
+                        scope=scope,
+                        period=period,
+                        errors=("duplicate_scope",),
+                    )
+                scope = mapped_scope
+                continue
+            if token in PERIOD_TOKENS:
+                mapped_period = PERIOD_TOKENS[token]
+                if period is not None and period != mapped_period:
+                    return WaterRankInputDraft(
+                        subject=subject,
+                        scope=scope,
+                        period=period,
+                        errors=("duplicate_period",),
+                    )
+                period = mapped_period
+                continue
+            unknown_tokens.append(token)
+
+        if unknown_tokens:
+            return WaterRankInputDraft(
+                subject=subject,
+                scope=scope,
+                period=period,
+                errors=("unknown_tokens", *unknown_tokens),
+            )
+        return WaterRankInputDraft(subject=subject, scope=scope, period=period)
 
     @classmethod
     def parse_shortcut_command(
@@ -331,6 +449,28 @@ class WaterQueryRouter:
                 ),
                 self.build_guided_footer(locale),
             ]
+        )
+
+    def build_invalid_combo_error_text(
+        self,
+        locale: LocaleCode,
+        *,
+        subject: WaterRankSubject,
+        period: WaterRankPeriod | None,
+    ) -> str:
+        suggested_scope = suggest_scope_for_subject(subject)
+        suggestion = (
+            f"#水王 {subject_label(subject, locale)} "
+            f"{scope_label(suggested_scope, locale)} "
+            f"{period_label(period, locale)}"
+            if period is not None
+            else f"#水王 {subject_label(subject, locale)} "
+            f"{scope_label(suggested_scope, locale)} <时间>"
+        )
+        return tr(
+            locale,
+            "water.query.rank.error.invalid_combo",
+            suggestion=suggestion,
         )
 
     @staticmethod
@@ -653,15 +793,41 @@ class WaterQueryRouter:
             tr(locale, "water.query.rank.menu.legal.matrix", periods=period_text),
         ]
         if errors:
-            lines.insert(0, self._build_rank_error_text(locale, spec, errors))
+            lines.insert(0, self.build_rank_error_text(locale, errors, spec=spec))
             lines.insert(1, "")
         return "\n".join(lines)
 
-    def _build_rank_error_text(
+    def build_guided_error_prompt(
         self,
         locale: LocaleCode,
-        spec: WaterRankQuerySpec | None,
         errors: tuple[str, ...],
+        *,
+        subject: WaterRankSubject | None,
+        scope: WaterRankScope | None,
+        period: WaterRankPeriod | None,
+        is_superuser: bool,
+        spec: WaterRankQuerySpec | None = None,
+    ) -> str:
+        missing_prompt = self.build_guided_progress_prompt(
+            locale,
+            subject=subject,
+            scope=scope,
+            period=period,
+            is_superuser=is_superuser,
+        )
+        return "\n".join(
+            [
+                self.build_rank_error_text(locale, errors, spec=spec),
+                missing_prompt,
+            ]
+        )
+
+    def build_rank_error_text(
+        self,
+        locale: LocaleCode,
+        errors: tuple[str, ...],
+        *,
+        spec: WaterRankQuerySpec | None = None,
     ) -> str:
         head = errors[0]
         if head == "missing_dimensions":

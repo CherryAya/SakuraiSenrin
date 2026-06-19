@@ -55,6 +55,8 @@ async def test_water_query_guides_empty_command_step_by_step(
         ctx.should_call_send(
             first,
             "请选择榜单主体：用户榜 / 群聊榜 / 矩阵榜\n"
+            "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -64,6 +66,7 @@ async def test_water_query_guides_empty_command_step_by_step(
         ctx.should_call_send(
             second,
             "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -120,7 +123,10 @@ async def test_water_query_guided_scope_retry_and_cancel(
         ctx.receive_event(bot, first)
         ctx.should_call_send(
             first,
-            water_plugin.water_query_router.build_guided_intro("zh-CN"),
+            "请选择榜单主体：用户榜 / 群聊榜 / 矩阵榜\n"
+            "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
+            "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
         ctx.should_rejected()
@@ -129,6 +135,7 @@ async def test_water_query_guided_scope_retry_and_cancel(
         ctx.should_call_send(
             second,
             "请选择范围：本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -139,6 +146,7 @@ async def test_water_query_guided_scope_retry_and_cancel(
             third,
             "这个主体和范围组合不成立。推荐改成 #水王 群聊榜 本矩阵 <时间>\n"
             "请选择范围：本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -294,6 +302,8 @@ async def test_water_query_guided_restricted_period_retries_for_normal_user(
         ctx.should_call_send(
             first,
             "请选择榜单主体：用户榜 / 群聊榜 / 矩阵榜\n"
+            "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -303,6 +313,7 @@ async def test_water_query_guided_restricted_period_retries_for_normal_user(
         ctx.should_call_send(
             second,
             "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -320,7 +331,8 @@ async def test_water_query_guided_restricted_period_retries_for_normal_user(
         ctx.receive_event(bot, fourth)
         ctx.should_call_send(
             fourth,
-            "时间输入无效，请发送：日榜 / 周榜 / 月榜 / 季榜\n"
+            "时间不合法。可用时间：日榜/周榜/月榜/季榜\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -352,6 +364,8 @@ async def test_water_query_superuser_can_use_restricted_periods(
         ctx.should_call_send(
             first,
             "请选择榜单主体：用户榜 / 群聊榜 / 矩阵榜\n"
+            "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜 / 年榜 / 总榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -361,6 +375,7 @@ async def test_water_query_superuser_can_use_restricted_periods(
         ctx.should_call_send(
             second,
             "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜 / 年榜 / 总榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -414,6 +429,8 @@ async def test_water_query_guided_intro_uses_resolved_locale(
         ctx.should_call_send(
             event,
             "請擇榜單主體：用户榜 / 群聊榜 / 矩阵榜\n"
+            "請擇範圍：本群 / 本矩阵 / 全局\n"
+            "請擇時間：日榜 / 周榜 / 月榜 / 季榜\n"
             "發 revoke / recall 可止之，連錯 3 次則自動退出。",
             bot=bot,
         )
@@ -444,6 +461,8 @@ async def test_water_query_guided_three_errors_abort(
         ctx.should_call_send(
             first,
             "请选择榜单主体：用户榜 / 群聊榜 / 矩阵榜\n"
+            "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -452,7 +471,10 @@ async def test_water_query_guided_three_errors_abort(
         ctx.receive_event(bot, second)
         ctx.should_call_send(
             second,
-            "主体输入无效，请发送：用户榜 / 群聊榜 / 矩阵榜\n"
+            "有未识别的关键词: 乱写。\n"
+            "请选择榜单主体：用户榜 / 群聊榜 / 矩阵榜\n"
+            "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -461,7 +483,10 @@ async def test_water_query_guided_three_errors_abort(
         ctx.receive_event(bot, third)
         ctx.should_call_send(
             third,
-            "主体输入无效，请发送：用户榜 / 群聊榜 / 矩阵榜\n"
+            "有未识别的关键词: 还是乱写。\n"
+            "请选择榜单主体：用户榜 / 群聊榜 / 矩阵榜\n"
+            "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -494,6 +519,8 @@ async def test_water_query_guided_revoke_aborts(
         ctx.should_call_send(
             first,
             "请选择榜单主体：用户榜 / 群聊榜 / 矩阵榜\n"
+            "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
             "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
             bot=bot,
         )
@@ -502,6 +529,51 @@ async def test_water_query_guided_revoke_aborts(
         ctx.receive_event(bot, second)
         ctx.should_call_send(second, "本次操作已被取消。", bot=bot)
         ctx.should_finished()
+
+
+@pytest.mark.asyncio
+async def test_water_query_guided_accepts_all_dimensions_in_one_reply(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    water_plugin.clear_water_query_cooldowns()
+    build_rank_message = AsyncMock(return_value=text_message("ONE_SHOT_OK"))
+    monkeypatch.setattr(
+        water_plugin.water_rank_query_service,
+        "build_rank_message",
+        build_rank_message,
+    )
+
+    first = build_group_message_event("#水王", message_id=1)
+    second = build_group_message_event("用户榜 本群 月榜", message_id=2)
+
+    async with app.test_matcher(water_plugin.water_query) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            "请选择榜单主体：用户榜 / 群聊榜 / 矩阵榜\n"
+            "请选择范围：本群 / 本矩阵 / 全局\n"
+            "请选择时间：日榜 / 周榜 / 月榜 / 季榜\n"
+            "发送 revoke / recall 可取消，连续输错 3 次会自动退出。",
+            bot=bot,
+        )
+        ctx.should_rejected()
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(second, "已选择：用户榜 / 本群 / 月榜", bot=bot)
+        ctx.should_call_send(second, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_send(second, text_message("ONE_SHOT_OK"), bot=bot)
+        ctx.should_finished()
+
+    build_rank_message.assert_awaited_once_with(
+        subject="user",
+        scope="group",
+        period="month",
+        group_id="20001",
+        locale="zh-CN",
+    )
 
 
 @pytest.mark.asyncio

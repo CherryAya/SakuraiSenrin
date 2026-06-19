@@ -78,7 +78,13 @@ from .handlers import (
 from .services.matrix_suggestion import matrix_suggestion_service
 from .services.query_router import WaterQuerySpec, water_query_router
 from .services.rank_query import water_rank_query_service
-from .services.rank_types import RANK_SHORTCUT_ALIASES, WaterRankQuerySpec
+from .services.rank_types import (
+    RANK_SHORTCUT_ALIASES,
+    WaterRankPeriod,
+    WaterRankQuerySpec,
+    WaterRankScope,
+    WaterRankSubject,
+)
 from .services.report import water_report_service
 from .services.settlement import water_settlement_service
 
@@ -119,9 +125,7 @@ _water_query_cooldown = MemoryCooldown(
     isolate_level=CooldownIsolateLevel.USER,
 )
 GUIDED_MAX_ERRORS = 3
-WATER_STEP_SUBJECT = 1
-WATER_STEP_SCOPE = 2
-WATER_STEP_PERIOD = 3
+WATER_STEP_GUIDED_INPUT = 1
 
 
 def _build_water_demo_message(
@@ -250,6 +254,43 @@ def _copy_water_state(
 def _water_rank_locale(state: T_State) -> LocaleCode:
     locale = state.get("water_rank_locale", "zh-CN")
     return locale if locale in {"zh-CN", "lzh", "x-meme"} else "zh-CN"
+
+
+def _water_rank_subject(state: T_State) -> WaterRankSubject | None:
+    subject = state.get("water_rank_subject_value")
+    return subject if subject in {"user", "group", "matrix"} else None
+
+
+def _water_rank_scope(state: T_State) -> WaterRankScope | None:
+    scope = state.get("water_rank_scope_value")
+    return scope if scope in {"group", "matrix", "global"} else None
+
+
+def _water_rank_period(state: T_State) -> WaterRankPeriod | None:
+    period = state.get("water_rank_period_value")
+    return (
+        period
+        if period in {"day", "week", "month", "season", "year", "total"}
+        else None
+    )
+
+
+def _build_water_guided_prompt(state: T_State) -> str:
+    locale = _water_rank_locale(state)
+    is_superuser = bool(state.get("water_rank_is_superuser", False))
+    return water_query_router.build_guided_progress_prompt(
+        locale,
+        subject=_water_rank_subject(state),
+        scope=_water_rank_scope(state),
+        period=_water_rank_period(state),
+        is_superuser=is_superuser,
+    )
+
+
+def _store_water_guided_prompt(state: T_State) -> str:
+    prompt = _build_water_guided_prompt(state)
+    state["water_rank_guided_prompt"] = prompt
+    return prompt
 
 
 def _register_water_checkpoint(
@@ -493,8 +534,12 @@ async def _(
         state["water_rank_locale"] = locale
         state["water_rank_is_superuser"] = is_superuser
         register_root_message(state, event)
-        state["water_rank_subject_prompt"] = water_query_router.build_guided_intro(
-            locale
+        state.pop("water_rank_subject_value", None)
+        state.pop("water_rank_scope_value", None)
+        state.pop("water_rank_period_value", None)
+        state["water_rank_guided_prompt"] = water_query_router.build_guided_intro(
+            locale,
+            is_superuser=is_superuser,
         )
         return
     else:
@@ -528,160 +573,154 @@ async def _(
 
 
 @water_query.got(
-    "water_rank_subject",
-    prompt=MessageTemplate("{water_rank_subject_prompt}"),
+    "water_rank_guided_input",
+    prompt=MessageTemplate("{water_rank_guided_prompt}"),
 )
-async def _water_query_subject_step(
+async def _water_query_guided_step(
     matcher: Matcher,
     event: GroupMessageEvent,
     state: T_State,
-    subject_arg: Message = Arg("water_rank_subject"),
-) -> None:
-    locale = _water_rank_locale(state)
-    await _abort_water_on_revoke(matcher, event, locale)
-    text = subject_arg.extract_plain_text().strip()
-    if water_query_router.is_guided_cancel(text):
-        await matcher.finish(water_query_router.build_guided_cancel_message(locale))
-    subject = water_query_router.parse_subject_choice(text)
-    if subject is None:
-        await _reject_water_error(
-            matcher,
-            state,
-            locale,
-            water_query_router.build_subject_retry_prompt(locale),
-        )
-        return
-    clear_interaction_errors(state)
-    state["water_rank_subject_value"] = subject
-    state["water_rank_scope_prompt"] = water_query_router.build_scope_prompt(
-        locale, subject
-    )
-    _register_water_checkpoint(
-        state,
-        event,
-        step_index=WATER_STEP_SCOPE,
-        prompt=str(state["water_rank_scope_prompt"]),
-        snapshot=_copy_water_state(
-            state,
-            keep_keys=(
-                "water_rank_subject_value",
-                "water_rank_scope_prompt",
-            ),
-        ),
-    )
-
-
-@water_query.got(
-    "water_rank_scope",
-    prompt=MessageTemplate("{water_rank_scope_prompt}"),
-)
-async def _water_query_scope_step(
-    matcher: Matcher,
-    event: GroupMessageEvent,
-    state: T_State,
-    scope_arg: Message = Arg("water_rank_scope"),
+    guided_arg: Message = Arg("water_rank_guided_input"),
 ) -> None:
     locale = _water_rank_locale(state)
     is_superuser = bool(state.get("water_rank_is_superuser", False))
     await _abort_water_on_revoke(matcher, event, locale)
-    subject_value = state.get("water_rank_subject_value")
-    subject = subject_value if subject_value in {"user", "group", "matrix"} else None
-    if subject is None:
-        await matcher.finish(
-            water_query_router.build_rank_menu(locale, is_superuser=is_superuser)
-        )
-    text = scope_arg.extract_plain_text().strip()
+    text = guided_arg.extract_plain_text().strip()
     if water_query_router.is_guided_cancel(text):
         await matcher.finish(water_query_router.build_guided_cancel_message(locale))
-    scope = water_query_router.parse_scope_choice(text)
-    if scope is None:
-        await _reject_water_error(
-            matcher,
-            state,
+    draft = water_query_router.parse_rank_input(text)
+
+    if draft.errors:
+        prompt = water_query_router.build_guided_error_prompt(
             locale,
-            water_query_router.build_scope_retry_prompt(locale, subject),
+            draft.errors,
+            subject=_water_rank_subject(state),
+            scope=_water_rank_scope(state),
+            period=_water_rank_period(state),
+            is_superuser=is_superuser,
         )
-        return
-    if scope not in water_query_router.valid_scopes_for_subject(subject):
-        await _reject_water_error(
-            matcher,
+        state["water_rank_guided_prompt"] = prompt
+        _register_water_checkpoint(
             state,
-            locale,
-            water_query_router.build_scope_retry_prompt(locale, subject, scope),
-        )
-        return
-    clear_interaction_errors(state)
-    state["water_rank_scope_value"] = scope
-    state["water_rank_period_prompt"] = water_query_router.build_period_prompt_for_role(
-        locale,
-        is_superuser=is_superuser,
-    )
-    _register_water_checkpoint(
-        state,
-        event,
-        step_index=WATER_STEP_PERIOD,
-        prompt=str(state["water_rank_period_prompt"]),
-        snapshot=_copy_water_state(
-            state,
-            keep_keys=(
-                "water_rank_subject_value",
-                "water_rank_scope_value",
-                "water_rank_period_prompt",
+            event,
+            step_index=WATER_STEP_GUIDED_INPUT,
+            prompt=prompt,
+            snapshot=_copy_water_state(
+                state,
+                keep_keys=(
+                    "water_rank_subject_value",
+                    "water_rank_scope_value",
+                    "water_rank_period_value",
+                    "water_rank_guided_prompt",
+                ),
             ),
-        ),
-    )
-
-
-@water_query.got(
-    "water_rank_period",
-    prompt=MessageTemplate("{water_rank_period_prompt}"),
-)
-async def _water_query_period_step(
-    matcher: Matcher,
-    event: GroupMessageEvent,
-    state: T_State,
-    period_arg: Message = Arg("water_rank_period"),
-) -> None:
-    locale = _water_rank_locale(state)
-    is_superuser = bool(state.get("water_rank_is_superuser", False))
-    await _abort_water_on_revoke(matcher, event, locale)
-    subject_value = state.get("water_rank_subject_value")
-    subject = subject_value if subject_value in {"user", "group", "matrix"} else None
-    scope_value = state.get("water_rank_scope_value")
-    scope = scope_value if scope_value in {"group", "matrix", "global"} else None
-    if subject is None or scope is None:
-        await matcher.finish(
-            water_query_router.build_rank_menu(locale, is_superuser=is_superuser)
         )
-    text = period_arg.extract_plain_text().strip()
-    if water_query_router.is_guided_cancel(text):
-        await matcher.finish(water_query_router.build_guided_cancel_message(locale))
-    period = water_query_router.parse_period_choice(text)
-    if period is None:
-        await _reject_water_error(
-            matcher,
-            state,
-            locale,
-            water_query_router.build_period_retry_prompt(
+        await _reject_water_error(matcher, state, locale, prompt)
+        return
+
+    subject = _water_rank_subject(state) or draft.subject
+    scope = _water_rank_scope(state) or draft.scope
+    period = _water_rank_period(state) or draft.period
+
+    if subject is not None:
+        state["water_rank_subject_value"] = subject
+    if scope is not None:
+        state["water_rank_scope_value"] = scope
+    if period is not None:
+        state["water_rank_period_value"] = period
+
+    if subject is not None and scope is not None:
+        if scope not in water_query_router.valid_scopes_for_subject(subject):
+            error_text = water_query_router.build_invalid_combo_error_text(
                 locale,
-                is_superuser=is_superuser,
-            ),
-        )
-        return
-    if not water_query_router.is_rank_period_allowed(
+                subject=subject,
+                period=period,
+            )
+            prompt = "\n".join(
+                [
+                    error_text,
+                    water_query_router.build_guided_progress_prompt(
+                        locale,
+                        subject=subject,
+                        scope=None,
+                        period=period,
+                        is_superuser=is_superuser,
+                    ),
+                ]
+            )
+            state["water_rank_scope_value"] = None
+            state["water_rank_guided_prompt"] = prompt
+            _register_water_checkpoint(
+                state,
+                event,
+                step_index=WATER_STEP_GUIDED_INPUT,
+                prompt=prompt,
+                snapshot=_copy_water_state(
+                    state,
+                    keep_keys=(
+                        "water_rank_subject_value",
+                        "water_rank_scope_value",
+                        "water_rank_period_value",
+                        "water_rank_guided_prompt",
+                    ),
+                ),
+            )
+            await _reject_water_error(matcher, state, locale, prompt)
+            return
+
+    if period is not None and not water_query_router.is_rank_period_allowed(
         period,
         is_superuser=is_superuser,
     ):
-        await _reject_water_error(
-            matcher,
-            state,
+        state["water_rank_period_value"] = None
+        prompt = water_query_router.build_guided_error_prompt(
             locale,
-            water_query_router.build_period_retry_prompt(
-                locale,
-                is_superuser=is_superuser,
+            ("invalid_period",),
+            subject=subject,
+            scope=scope,
+            period=None,
+            is_superuser=is_superuser,
+        )
+        state["water_rank_guided_prompt"] = prompt
+        _register_water_checkpoint(
+            state,
+            event,
+            step_index=WATER_STEP_GUIDED_INPUT,
+            prompt=prompt,
+            snapshot=_copy_water_state(
+                state,
+                keep_keys=(
+                    "water_rank_subject_value",
+                    "water_rank_scope_value",
+                    "water_rank_period_value",
+                    "water_rank_guided_prompt",
+                ),
             ),
         )
+        await _reject_water_error(matcher, state, locale, prompt)
         return
+
+    if subject is None or scope is None or period is None:
+        clear_interaction_errors(state)
+        prompt = _store_water_guided_prompt(state)
+        _register_water_checkpoint(
+            state,
+            event,
+            step_index=WATER_STEP_GUIDED_INPUT,
+            prompt=prompt,
+            snapshot=_copy_water_state(
+                state,
+                keep_keys=(
+                    "water_rank_subject_value",
+                    "water_rank_scope_value",
+                    "water_rank_period_value",
+                    "water_rank_guided_prompt",
+                ),
+            ),
+        )
+        await matcher.reject(prompt)
+        return
+
     clear_interaction_errors(state)
     rank_spec = WaterRankQuerySpec(subject=subject, scope=scope, period=period)
     await matcher.send(water_query_router.build_guided_summary(locale, rank_spec))

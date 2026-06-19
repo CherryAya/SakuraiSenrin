@@ -4,7 +4,11 @@ import pytest
 
 from src.lib.messages import text_message
 from src.plugins.water.database.repo import WaterActivitySeasonRecord
-from src.plugins.water.services.query_router import WaterQueryRouter, WaterQuerySpec
+from src.plugins.water.services.query_router import (
+    WaterQueryRouter,
+    WaterQuerySpec,
+    WaterRankInputDraft,
+)
 from src.plugins.water.services.rank_types import RANK_SHORTCUTS, WaterRankQuerySpec
 from src.plugins.water.services.season import SeasonLookupAmbiguous
 
@@ -81,6 +85,8 @@ def test_rank_guided_prompts_follow_locale_catalog() -> None:
     )
 
     assert "請擇榜單主體" in intro
+    assert "請擇範圍" in intro
+    assert "請擇時間" in intro
     assert "revoke / recall" in intro
     assert "合法之組" in menu
     assert "捷徑入口" in menu
@@ -133,6 +139,23 @@ def test_parse_rank_errors() -> None:
     assert shortcut_with_args == (
         WaterRankQuerySpec(subject="user", scope="group", period="day"),
         ("shortcut_with_args", "今日水王"),
+    )
+
+
+def test_parse_rank_input_supports_partial_fill_and_error_reporting() -> None:
+    router = WaterQueryRouter()
+
+    assert router.parse_rank_input("用户榜 月榜") == WaterRankInputDraft(
+        subject="user",
+        period="month",
+    )
+    assert router.parse_rank_input("本群") == WaterRankInputDraft(scope="group")
+    assert router.parse_rank_input("用户榜 群聊榜") == WaterRankInputDraft(
+        subject="user",
+        errors=("duplicate_subject",),
+    )
+    assert router.parse_rank_input("火星榜") == WaterRankInputDraft(
+        errors=("unknown_tokens", "火星榜"),
     )
 
 
