@@ -28,7 +28,12 @@ def feature_command_for_display(
 
 
 def feature_demo_help_command(node: DocNode, feature: FeatureDoc) -> str:
-    return f"#help {node.title} {feature.slug}"
+    return f"{node_help_command(node)} {feature.slug}"
+
+
+def node_help_command(node: DocNode) -> str:
+    target = node.help_query.strip() or node.title
+    return f"#help {target}"
 
 
 def format_feature_command_lines(

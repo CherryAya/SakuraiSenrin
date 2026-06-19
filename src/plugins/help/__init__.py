@@ -13,7 +13,7 @@ from typing import Any, Literal, cast
 import nonebot
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
@@ -42,6 +42,7 @@ from src.lib.plugin_docs import (
     load_virtual_doc_node,
     match_doc_node,
     match_feature,
+    node_help_command,
     read_docs_metas,
     render_doc_node_overview,
     render_feature_deep_dive,
@@ -88,7 +89,6 @@ class SectionStyle:
     command_bg: str
     command_text: str
     marker: str
-    column: int
 
 
 SECTION_STYLES: dict[RootSection, SectionStyle] = {
@@ -101,7 +101,6 @@ SECTION_STYLES: dict[RootSection, SectionStyle] = {
         command_bg="#EAF2FF",
         command_text="#315F9D",
         marker="square",
-        column=0,
     ),
     "developer": SectionStyle(
         accent="#FFB067",
@@ -112,7 +111,6 @@ SECTION_STYLES: dict[RootSection, SectionStyle] = {
         command_bg="#FFF0DE",
         command_text="#8A531F",
         marker="diamond",
-        column=1,
     ),
     "community": SectionStyle(
         accent="#FF9EBB",
@@ -123,7 +121,6 @@ SECTION_STYLES: dict[RootSection, SectionStyle] = {
         command_bg="#FFE7EF",
         command_text="#9A4B68",
         marker="ring",
-        column=1,
     ),
 }
 
@@ -428,7 +425,7 @@ def _root_entries_for_index(
 def _classify_root_section(entry: DocsEntry) -> RootSection:
     slug = entry.node.slug
     module_name = entry.node.module_name
-    if slug.startswith("derived."):
+    if entry.node.category == "community" or slug.startswith("derived."):
         return "community"
     if module_name.startswith("src.hooks.") or slug.startswith("hook."):
         return "system"
@@ -508,22 +505,23 @@ def _build_index_message(
                 command_bg=SECTION_STYLES[section].command_bg,
                 command_text=SECTION_STYLES[section].command_text,
                 marker=SECTION_STYLES[section].marker,
-                column=SECTION_STYLES[section].column,
             )
             for section, section_entries in grouped_sections
         ),
         locale=locale,
     )
     lines = [
+        tr(locale, "help.dashboard.title"),
+        "----------",
         tr(locale, "help.dashboard.lead.line1"),
         tr(locale, "help.dashboard.lead.line2"),
-        "",
+        "----------",
     ]
     for section, section_entries in grouped_sections:
         lines.append(_section_title(section, locale))
         for entry in section_entries:
-            lines.append(f"#help {entry.node.title}")
-        lines.append("")
+            lines.append(node_help_command(entry.node))
+        lines.append("----------")
     return _compose_help_reply(dashboard_bytes, "\n".join(lines).strip())
 
 
@@ -565,8 +563,8 @@ def _split_query(query: str) -> tuple[str, str | None]:
 
 
 def _compose_help_reply(image_bytes: bytes, text: str) -> Message:
-    message = image_message(image_bytes)
-    message += MessageSegment.text(f"\n{text.strip()}")
+    message = text_message(f"{text.strip()}")
+    message += image_message(image_bytes)
     return message
 
 

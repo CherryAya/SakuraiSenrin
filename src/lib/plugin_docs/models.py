@@ -11,7 +11,7 @@ from markdown_it.token import Token
 from src.database.core.consts import Permission
 from src.lib.i18n.types import LocaleCode
 
-type DocNodeKind = Literal["plugin", "overview", "internal"]
+type DocNodeKind = Literal["plugin", "overview", "internal", "static"]
 type DocRenderView = Literal["text", "index", "plugin", "feature"]
 
 
@@ -58,6 +58,7 @@ type DocsMetaValue = DocsMeta | tuple[DocsMeta, ...]
 class DocsDemoTurn:
     speaker: Literal["USER", "BOT", "SYSTEM"]
     text: str
+    section: str = ""
 
 
 @dataclass(slots=True, frozen=True)
@@ -118,6 +119,7 @@ class PluginDocBundle:
     description: str
     summary: str
     trigger: str
+    help_query: str
     permission: str
     author: str
     version: str
@@ -172,6 +174,7 @@ class DocNode:
     title: str
     summary: str
     description: str
+    help_query: str
     aliases: tuple[str, ...]
     source_path: Path
     bundle: PluginDocBundle

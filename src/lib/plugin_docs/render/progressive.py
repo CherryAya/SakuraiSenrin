@@ -21,6 +21,7 @@ from src.lib.plugin_docs.command_layout import (
     build_command_layout,
     split_inline_text_spans,
 )
+from src.lib.plugin_docs.markdown_layout import MarkdownLayout, build_markdown_layout
 from src.lib.plugin_docs.models import DocNode, FeatureDoc, HelpDashboardSection
 from src.lib.utils.common import get_current_time
 
@@ -29,6 +30,7 @@ from .helpers import (
     build_static_entry_copy,
     feature_command_for_display_text,
     feature_demo_help_command,
+    node_help_command,
     permission_label,
 )
 
@@ -60,7 +62,7 @@ class _GuideSectionLayout:
     summary_lines: tuple[tuple[InlineTextSpan, ...], ...]
     trigger_layout: CommandLayout
     demo_layout: CommandLayout
-    overview_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    overview_layout: MarkdownLayout
     note_items: tuple[_ShowcaseNoteItem, ...]
     turn_placements: tuple[_ShowcaseTurnPlacement, ...]
     height: int
@@ -118,7 +120,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         side = self.theme.hero_side_padding
         all_nodes = tuple(node for section in sections for node in section.nodes)
         header_title = tr(locale, "help.dashboard.title")
-        header_summary = " ".join(
+        header_summary = "\n".join(
             (
                 tr(locale, "help.dashboard.lead.line1"),
                 tr(locale, "help.dashboard.lead.line2"),
@@ -151,17 +153,17 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
 
         content_width = self.WIDTH - side * 2
-        section_width = (
-            content_width - self.DASHBOARD_CARD_GAP_X
-            if any(section.column == 1 for section in sections)
-            else content_width
-        )
-        if section_width != content_width:
-            section_width //= 2
+        use_two_columns = len(sections) > 1
+        section_width = content_width
+        if use_two_columns:
+            section_width = (content_width - self.DASHBOARD_CARD_GAP_X) // 2
         section_positions: list[tuple[HelpDashboardSection, int, int, int]] = []
         column_bottoms = [header_height, header_height]
         for section in sections:
-            column = 0 if section.column not in {0, 1} else section.column
+            if use_two_columns:
+                column = 0 if column_bottoms[0] <= column_bottoms[1] else 1
+            else:
+                column = 0
             left = side + column * (section_width + self.DASHBOARD_CARD_GAP_X)
             top = column_bottoms[column]
             height = self._measure_dashboard_section_height(section, section_width)
@@ -647,7 +649,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         summary_top = title_top + title_block_height + self.DASHBOARD_CARD_SUMMARY_GAP
         command_layout = build_command_layout(
-            f"#help {node.title}",
+            node_help_command(node),
             max_width=content_width - self.DASHBOARD_CARD_COMMAND_PADDING_X * 2,
             line_height=self._line_height_for_font(self.note_font),
             indent_px=self.COMMAND_INDENT_PX,
@@ -809,7 +811,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         line_height = self._line_height_for_font(self.note_font)
         item_height = 0
-        for node in section.nodes:
+        for index, node in enumerate(section.nodes):
             summary_lines = tuple(
                 self._wrap_inline_text(
                     node.summary or node.bundle.summary,
@@ -818,13 +820,11 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 )
             )[:2]
             item_height += self._line_height_for_font(self.instruction_font)
-            item_height += self.DASHBOARD_CARD_TEXT_SPACING
-            item_height += self._line_height_for_font(self.instruction_font)
             item_height += self.DASHBOARD_SECTION_SUMMARY_GAP
             item_height += len(summary_lines) * line_height
             item_height += self.DASHBOARD_SECTION_COMMAND_GAP
             command_layout = build_command_layout(
-                f"#help {node.title}",
+                node_help_command(node),
                 max_width=content_width - 32,
                 line_height=self._line_height_for_font(self.note_font),
                 indent_px=self.COMMAND_INDENT_PX,
@@ -839,7 +839,8 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             item_height += (
                 command_layout.total_height + self.DASHBOARD_CARD_COMMAND_PADDING_Y * 2
             )
-            item_height += self.DASHBOARD_SECTION_ITEM_GAP
+            if index < len(section.nodes) - 1:
+                item_height += self.DASHBOARD_SECTION_ITEM_GAP
         return (
             self.GUIDE_SECTION_PADDING_Y * 2
             + len(title_lines) * self._line_height_for_font(self.summary_font)
@@ -904,7 +905,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         for node in section.nodes:
             command_layout = build_command_layout(
-                f"#help {node.title}",
+                node_help_command(node),
                 max_width=content_width - 32,
                 line_height=self._line_height_for_font(self.note_font),
                 indent_px=self.COMMAND_INDENT_PX,
@@ -1060,13 +1061,17 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             measure_text=lambda value: self._text_width(value, self.note_font),
             palette=self._command_palette(),
         )
-        overview_lines = tuple(
-            self._wrap_inline_text(
-                feature.overview or feature.summary,
-                max_width=content_width,
-                font=self.instruction_font,
-            )
-        )[:5]
+        overview_layout = build_markdown_layout(
+            feature.overview or feature.summary,
+            max_width=content_width,
+            line_height=self._line_height_for_font(self.instruction_font),
+            indent_px=self.COMMAND_INDENT_PX,
+            measure_text=lambda value, code: self._measure_markdown_text_width(
+                value,
+                self.instruction_font,
+                code=code,
+            ),
+        )
         note_items = tuple(
             self._measure_note_items(
                 feature_preconditions=feature.preconditions,
@@ -1101,7 +1106,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + len(summary_lines) * self._line_height_for_font(self.instruction_font)
             + trigger_layout.total_height
             + demo_layout.total_height
-            + len(overview_lines) * self._line_height_for_font(self.instruction_font)
+            + overview_layout.total_height
             + note_height
             + demo_height
             + 220
@@ -1112,7 +1117,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             summary_lines=summary_lines,
             trigger_layout=trigger_layout,
             demo_layout=demo_layout,
-            overview_lines=overview_lines,
+            overview_layout=overview_layout,
             note_items=note_items,
             turn_placements=tuple(turn_placements),
             height=height,
@@ -1226,21 +1231,15 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             guide_fill=self.theme.line,
         )
         cursor_y = demo_rect[3] + 24
-        self._draw_multiline_text(
+        self._draw_markdown_layout(
             draw,
             x=content_left,
             y=cursor_y,
-            lines=layout.overview_lines,
+            layout=layout.overview_layout,
             font=self.instruction_font,
             fill=self.theme.deep,
-            line_height=self._line_height_for_font(self.instruction_font),
-            render_code_chip=False,
         )
-        cursor_y += (
-            len(layout.overview_lines)
-            * self._line_height_for_font(self.instruction_font)
-            + 24
-        )
+        cursor_y += layout.overview_layout.total_height + 24
 
         if layout.note_items:
             for item in layout.note_items:
@@ -1262,15 +1261,13 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                     ),
                     fill=item.dot_color,
                 )
-                self._draw_multiline_text(
+                self._draw_markdown_layout(
                     draw,
                     x=actual_rect[0] + 24,
                     y=actual_rect[1],
-                    lines=item.lines,
+                    layout=item.layout,
                     font=self.note_font,
                     fill=self.theme.note_text,
-                    line_height=item.line_height,
-                    render_code_chip=False,
                 )
                 cursor_y = actual_rect[3] + self.theme.note_gap
             cursor_y += 8

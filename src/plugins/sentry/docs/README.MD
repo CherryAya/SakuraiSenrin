@@ -1,27 +1,25 @@
 # Sentry 监控
 
 ## 概览
-Sentry 监控插件负责捕获运行时异常，并把精简后的错误摘要主动推送给超级管理员，方便第一时间排查。
+Sentry 主动推送运行时异常
 
 ## 权限与触发
 - 触发方式: 被动触发
 - 权限: 超级管理员
 
 ## 用法
+- Help: `sentry`
 - 别名: sentry, 告警
 - 指令: 被动触发
 - Demo: sentry-alert.png
 ## 说明
-插件初始化时注册 Sentry SDK，并在异常进入 `before_send` 时异步通知所有超级管理员。
+插件初始化时会先注册 Sentry SDK，等异常进入 `before_send` 后，再异步通知所有超级管理员。
 ## 前置条件
-需要配置有效的 `SENTRY_DSN`，并且当前进程已经成功初始化该插件。
+需要先配好有效的 `SENTRY_DSN`。
 ## 完整流程
-异常发生后自动进入 Sentry 和超管告警链路。
 ```demo
 SYSTEM: 某个插件抛出了未捕获异常。
 BOT: [私聊超管] Sentry 异常告警
 Type: ValueError
 Value: invalid season id
 ```
-## 失败情况
-如果当前没有可用 Bot 实例，或私聊发送失败，插件只会写错误日志，不会阻塞原始异常上报。

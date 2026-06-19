@@ -199,10 +199,89 @@ BOT: OK
     assert feature.demo_turns[0].text == "#simple"
 
 
+def test_load_plugin_doc_bundle_preserves_markdown_block_structure(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "README.MD"
+    source.write_text(
+        """
+# Markdown 插件
+
+## 概览
+测试正文 markdown 渲染。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 用法
+- 指令: `#md`
+
+## 说明
+第一段说明。
+
+1. 第一步
+2. 第二步，带 `inline code`
+
+```bash
+echo hello
+echo world
+```
+
+## 前置条件
+- 需要管理员
+- 需要配置项
+
+## 失败情况
+- 参数错误
+- 网络错误
+""".strip(),
+        encoding="utf-8",
+    )
+
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="Markdown 插件",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    feature = bundle.index[0]
+    assert "1. 第一步" in feature.overview
+    assert "2. 第二步，带 `inline code`" in feature.overview
+    assert "```bash" in feature.overview
+    assert "- 需要管理员" in feature.preconditions
+    assert "- 参数错误" in feature.failures
+
+
+def test_markdown_layout_supports_lists_and_code_blocks() -> None:
+    renderer = DemoImageRenderer()
+    layout = build_markdown_layout(
+        "第一段\n\n1. 第一步\n2. 第二步 `code`\n\n```bash\necho hello\n```",
+        max_width=600,
+        line_height=renderer._line_height_for_font(renderer.instruction_font),
+        indent_px=renderer.COMMAND_INDENT_PX,
+        measure_text=lambda value, code: renderer._measure_markdown_text_width(
+            value,
+            renderer.instruction_font,
+            code=code,
+        ),
+    )
+
+    assert layout.total_height > 0
+    assert any(line.bullet == "1." for line in layout.lines if line.kind == "text")
+    assert any(line.code for line in layout.lines if line.kind == "code")
+
+
 def test_real_simple_plugin_readmes_parse_as_single_feature() -> None:
     for source, expected_trigger in (
         (Path("src/plugins/remove/docs/README.MD"), "#remove"),
         (Path("src/plugins/picsearch/docs/README.MD"), "搜图 [saucenao|ascii2d]"),
+        (
+            Path("src/plugins/community_miaomiao/docs/README.MD"),
+            "词条触发",
+        ),
         (Path("src/plugins/sentry/docs/README.MD"), "被动触发"),
         (Path("src/plugins/test/docs/README.MD"), "被动触发"),
         (Path("src/hooks/docs/processor/README.MD"), "被动触发"),
@@ -220,6 +299,18 @@ def test_real_simple_plugin_readmes_parse_as_single_feature() -> None:
         feature = bundle.index[0]
         assert feature.slug == "main", source
         assert feature.trigger == expected_trigger, source
+
+
+def test_simple_plugin_readme_can_define_help_query() -> None:
+    bundle = load_plugin_doc_bundle(
+        source=Path("src/plugins/study/docs/README.MD"),
+        default_name="词库模块（传统版）",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    assert bundle.help_query == "study"
 
 
 def test_split_features_for_disclosure_prefers_hero_then_non_advanced() -> None:
@@ -551,7 +642,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     )
     study = load_plugin_doc_bundle(
         source=study_source,
-        default_name="学习模块",
+        default_name="词库模块（传统版）",
         default_description="desc",
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
@@ -576,13 +667,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     approval_reply = next(
         feature for feature in approval.index if feature.slug == "approval-reply"
     )
-    shortcut = next(feature for feature in study.index if feature.slug == "shortcut")
-    legacy_args = next(
-        feature for feature in study.index if feature.slug == "legacy-args"
-    )
-    recall_rewind = next(
-        feature for feature in study.index if feature.slug == "recall-rewind"
-    )
+    study_main = next(feature for feature in study.index if feature.slug == "main")
 
     assert add.demo_filename == "wordbank-add.png"
     assert len(add.demo_turns) == 15
@@ -597,8 +682,8 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert "revoke" in add.failures
     assert "发送取消提示并中止" in add.failures
     assert "连续输错 3 次" in add.failures
-    assert "#help 词库审核" in wordbank.summary
     assert "ID: 12" in add.demo_turns[9].text
+    assert "#help 词库审核" in add.demo_turns[10].text
     assert rank.demo_filename == "wordbank-rank.png"
     assert rank.demo_turns[0].text == "#苦瓜榜"
     assert "[发送苦瓜榜海报]" in rank.demo_turns[1].text
@@ -616,14 +701,14 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert "词条 #12 已通过审核" in approve.demo_turns[1].text
     assert approval_reply.demo_filename == "wordbank-approval-approval-reply.png"
     assert "[回复审批通知] @机器人 y" in approval_reply.demo_turns[1].text
-    assert shortcut.demo_filename == "study-shortcut.png"
-    assert shortcut.demo_turns[0].text == "#study 晚安 => 做个好梦"
-    assert "审核流程请查看 #help 词库审核" in shortcut.demo_turns[2].text
-    assert legacy_args.demo_filename == "study-legacy-args.png"
-    assert "a f 群公告" in legacy_args.demo_turns[0].text
-    assert recall_rewind.demo_filename == "study-recall-rewind.png"
-    assert recall_rewind.demo_turns[-1].speaker == "SYSTEM"
-    assert "不会起作用" in recall_rewind.demo_turns[-1].text
+    assert study_main.demo_filename == "study-collection.png"
+    assert study_main.demo_turns[0].text == "#study a f 群公告 大家记得看"
+    assert "管理员通过前不会触发。" in study_main.demo_turns[2].text
+    assert any(
+        turn.text == "#study [图片] => 这张图我记住了" for turn in study_main.demo_turns
+    )
+    assert study_main.demo_turns[-1].speaker == "SYSTEM"
+    assert "重做当前步骤" in study_main.demo_turns[-1].text
     for source, bundle in (
         (wordbank_source, wordbank),
         (study_source, study),

@@ -37,6 +37,7 @@ def wordbank_docs_meta() -> list[object]:
         aliases=("词库审核", "wordbank approval"),
     )
     approval_docs["permission"] = Permission.GROUP_ADMIN
+
     return [main_docs, approval_docs]
 
 

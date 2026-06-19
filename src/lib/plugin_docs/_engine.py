@@ -76,6 +76,9 @@ from .copy import (
 from .copy import (
     format_feature_command_lines as format_feature_command_lines_impl,
 )
+from .copy import (
+    node_help_command as node_help_command_impl,
+)
 from .meta import (
     coerce_permission as coerce_permission_impl,
 )
@@ -401,6 +404,20 @@ def load_doc_node(
         permission=permission,
         impression_color=impression_color,
     )
+    if meta["kind"] == "static":
+        bundle = type(bundle)(
+            title=bundle.title,
+            description=bundle.description,
+            summary=bundle.summary,
+            trigger=bundle.trigger,
+            help_query=bundle.help_query,
+            permission=bundle.permission,
+            author=bundle.author,
+            version=bundle.version,
+            impression_color=bundle.impression_color,
+            index=(),
+            source_path=bundle.source_path,
+        )
     slug = meta["tree"]["slug"]
     return DocNode(
         kind=meta["kind"],
@@ -417,6 +434,7 @@ def load_doc_node(
         title=bundle.title or default_name,
         summary=bundle.summary or default_description,
         description=default_description,
+        help_query=bundle.help_query,
         aliases=meta["aliases"],
         source_path=source_path,
         bundle=bundle,
@@ -507,6 +525,8 @@ def resolve_help_entry_shape(
     )
     if node.kind == "overview" or visible_children:
         return "overview_group"
+    if node.kind == "static":
+        return "static_entry"
 
     if not node.features:
         return "static_entry"
@@ -661,6 +681,7 @@ def _load_plugin_doc_bundle_cached(
         source_path,
     )
     features = _merge_features(feature_index, details)
+    simple_meta = _parse_meta_block_tokens(sections.get("用法", _EMPTY_SECTION).tokens)
     if not features:
         features = _parse_single_feature_bundle(
             source_path=source_path,
@@ -676,6 +697,10 @@ def _load_plugin_doc_bundle_cached(
         description=default_description,
         summary=summary or default_description,
         trigger=meta.get("触发方式", trigger.label),
+        help_query=_normalize_inline_text(
+            simple_meta.get("Help", "").strip()
+            or simple_meta.get("帮助命令", "").strip()
+        ),
         permission=meta.get("权限", permission.label),
         author=author,
         version=version,
@@ -955,6 +980,10 @@ def render_help_dashboard(
 
 def collection_demo_filename(source_path: Path) -> str:
     return f"{doc_asset_prefix(source_path)}-collection.png"
+
+
+def node_help_command(node: DocNode) -> str:
+    return node_help_command_impl(node)
 
 
 def doc_asset_prefix(source_path: Path) -> str:

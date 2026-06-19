@@ -1,5 +1,5 @@
-from tests.test_plugin_docs_support import *
 from src.lib.plugin_docs.models import DocsDemoTurn
+from tests.test_plugin_docs_support import *
 
 
 def test_audit_demo_layout_accepts_all_project_readmes() -> None:

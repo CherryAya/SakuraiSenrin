@@ -32,6 +32,7 @@ from ._engine import load_representative_demo_bytes as load_representative_demo_
 from ._engine import load_virtual_doc_node as load_virtual_doc_node
 from ._engine import match_doc_node as match_doc_node
 from ._engine import match_feature as match_feature
+from ._engine import node_help_command as node_help_command
 from ._engine import read_docs_metas as read_docs_metas
 from ._engine import render_demo_png as render_demo_png
 from ._engine import render_doc_node_overview as render_doc_node_overview
@@ -49,4 +50,5 @@ from .collection import DemoCollectionTile as DemoCollectionTile
 from .collection import render_collection_png as render_collection_png
 from .command_layout import CommandPalette as CommandPalette
 from .copy import feature_demo_help_command as feature_demo_help_command
+from .markdown_layout import build_markdown_layout as build_markdown_layout
 from .models import VirtualFeatureDocSpec as VirtualFeatureDocSpec

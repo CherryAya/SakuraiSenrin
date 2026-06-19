@@ -95,19 +95,81 @@ def render_inline_markdown(tokens: Sequence[Token]) -> str:
 
 def render_markdown_blocks(tokens: Sequence[Token]) -> str:
     blocks: list[str] = []
-    for token in tokens:
-        if token.type == "inline":
-            text = render_inline_markdown(token.children or ()).strip()
+    index = 0
+    ordered_stack: list[int | None] = []
+    while index < len(tokens):
+        token = tokens[index]
+        if token.type == "ordered_list_open":
+            ordered_stack.append(int(token.attrGet("start") or "1"))
+            index += 1
+            continue
+        if token.type == "bullet_list_open":
+            ordered_stack.append(None)
+            index += 1
+            continue
+        if token.type in {"ordered_list_close", "bullet_list_close"}:
+            if ordered_stack:
+                ordered_stack.pop()
+            index += 1
+            continue
+        if token.type == "paragraph_open":
+            inline = tokens[index + 1] if index + 1 < len(tokens) else None
+            text = (
+                render_inline_markdown(inline.children or ()).strip()
+                if inline is not None
+                else ""
+            )
             if text:
                 blocks.append(text)
+            index += 3
             continue
-        if token.type != "fence":
+        if token.type == "list_item_open":
+            depth = 1
+            cursor = index + 1
+            while cursor < len(tokens) and depth > 0:
+                if tokens[cursor].type == "list_item_open":
+                    depth += 1
+                elif tokens[cursor].type == "list_item_close":
+                    depth -= 1
+                cursor += 1
+            item_payload = render_markdown_blocks(
+                tokens[index + 1 : cursor - 1]
+            ).strip()
+            if item_payload:
+                marker = "-"
+                if ordered_stack and ordered_stack[-1] is not None:
+                    marker = f"{ordered_stack[-1]}."
+                    ordered_stack[-1] += 1
+                item_lines = item_payload.splitlines()
+                blocks.append(f"{marker} {item_lines[0]}".rstrip())
+                blocks.extend(f"  {line}" for line in item_lines[1:])
+            index = cursor
             continue
-        info = token.info.strip()
-        opening = f"```{info}" if info else "```"
-        content = token.content.rstrip("\n")
-        blocks.append(f"{opening}\n{content}\n```".strip())
-    return "\n".join(blocks).strip()
+        if token.type == "fence":
+            info = token.info.strip()
+            opening = f"```{info}" if info else "```"
+            content = token.content.rstrip("\n")
+            blocks.append(f"{opening}\n{content}\n```".strip())
+            index += 1
+            continue
+        if token.type == "heading_open":
+            inline = tokens[index + 1] if index + 1 < len(tokens) else None
+            text = (
+                render_inline_markdown(inline.children or ()).strip()
+                if inline is not None
+                else ""
+            )
+            if text:
+                if token.tag == "h3":
+                    blocks.append(f"### {text}")
+                elif token.tag == "h4":
+                    blocks.append(f"#### {text}")
+                else:
+                    blocks.append(text)
+            index += 3
+            continue
+        index += 1
+    return "\n\n".join(blocks).strip()
 
 
 def extract_list_item_tokens(tokens: Sequence[Token]) -> tuple[tuple[Token, ...], ...]:
@@ -330,10 +392,17 @@ def parse_flow_section_tokens(
 
 def parse_demo_turns(content: str) -> list[DocsDemoTurn]:
     demo_turns: list[DocsDemoTurn] = []
+    current_section = ""
     for line in content.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
+        if ":" in stripped:
+            speaker, text = stripped.split(":", 1)
+            normalized = speaker.strip().upper()
+            if normalized == "SECTION":
+                current_section = text.strip()
+                continue
         if ":" in stripped:
             speaker, text = stripped.split(":", 1)
             normalized = speaker.strip().upper()
@@ -342,6 +411,7 @@ def parse_demo_turns(content: str) -> list[DocsDemoTurn]:
                     DocsDemoTurn(
                         cast(Literal["USER", "BOT", "SYSTEM"], normalized),
                         text.strip(),
+                        current_section,
                     )
                 )
                 continue
@@ -350,6 +420,7 @@ def parse_demo_turns(content: str) -> list[DocsDemoTurn]:
             demo_turns[-1] = DocsDemoTurn(
                 previous.speaker,
                 f"{previous.text}\n{stripped}",
+                previous.section,
             )
     return demo_turns
 

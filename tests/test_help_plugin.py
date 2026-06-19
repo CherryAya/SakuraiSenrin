@@ -15,6 +15,7 @@ from src.lib.plugin_docs import (
     build_doc_tree,
     create_docs_meta,
     load_doc_node,
+    node_help_command,
 )
 
 nonebot.init()
@@ -27,6 +28,12 @@ if nonebot.get_plugin("water") is None:
 if nonebot.get_plugin("wordbank") is None:
     sys.modules.pop("src.plugins.wordbank", None)
     nonebot.load_plugin("src.plugins.wordbank")
+if nonebot.get_plugin("community_miaomiao") is None:
+    sys.modules.pop("src.plugins.community_miaomiao", None)
+    nonebot.load_plugin("src.plugins.community_miaomiao")
+if nonebot.get_plugin("study") is None:
+    sys.modules.pop("src.plugins.study", None)
+    nonebot.load_plugin("src.plugins.study")
 
 from src.plugins.help import (
     DocsEntry,
@@ -102,6 +109,7 @@ def _make_entry(
         title=display_name,
         summary=summary,
         description=summary,
+        help_query="",
         aliases=(display_name,),
         source_path=node.source_path,
         bundle=node.bundle,
@@ -127,6 +135,19 @@ def test_split_query_supports_optional_feature_name() -> None:
         "吹水记录",
         "ranking detail",
     )
+
+
+def test_node_help_command_prefers_readme_defined_help_query() -> None:
+    node = load_doc_node(
+        source="src/plugins/study/docs/README.MD",
+        default_name="词库模块（传统版）",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    assert node.help_query == "study"
+    assert node_help_command(node) == "#help study"
 
 
 def test_match_entry_supports_exact_fuzzy_and_ambiguous() -> None:
@@ -285,10 +306,11 @@ def test_build_index_message_only_lists_root_nodes() -> None:
     )
     community_root = _make_entry(
         display_name="凛凛的妙妙小工具目录",
-        plugin_name="wordbank",
-        module_name="src.plugins.wordbank",
-        slug="derived.wordbank.miaomiao-toolkit",
+        plugin_name="community_miaomiao",
+        module_name="src.plugins.community_miaomiao",
+        slug="community.miaomiao-toolkit",
         visible=True,
+        category="community",
     )
     child = _make_entry(
         display_name="群组管理模块",
@@ -308,11 +330,10 @@ def test_build_index_message_only_lists_root_nodes() -> None:
     )
 
     rendered = str(message)
-    assert "当前全域功能入口已就绪" in rendered
-    assert "请按分区查阅，或直接输入对应指令进行交互" in rendered
-    assert "系统核心预置" in rendered
-    assert "官方功能扩展" in rendered
-    assert "社区衍生工坊" in rendered
+    assert "今天想要做些什么呢" in rendered
+    assert "凛凛的系统" in rendered
+    assert "有趣的功能" in rendered
+    assert "爱来自社区" in rendered
     assert "#help 帮助中心" in rendered
     assert "#help 吹水记录" in rendered
     assert "#help 凛凛的妙妙小工具目录" in rendered
@@ -332,8 +353,9 @@ def test_build_index_message_lists_full_root_entries_without_demo_hint() -> None
 
     rendered = str(message)
     assert "#help 运行时处理器" not in rendered
-    assert "#help 吹水记录" in rendered
-    assert "#help 凛凛的妙妙小工具目录" in rendered
+    assert "#help water" in rendered
+    assert "#help study" in rendered
+    assert "#help miaomiao" in rendered
     assert "查看 demo：" not in rendered
 
 
@@ -360,10 +382,10 @@ def test_build_index_message_superuser_sees_system_hooks_and_admin() -> None:
     )
 
     rendered = str(message)
-    assert "系统核心预置" in rendered
-    assert "#help 管理模块总览" in rendered
-    assert "#help 检测服务" in rendered
-    assert "#help 插件钩子扩展点" in rendered
+    assert "凛凛的系统" in rendered
+    assert "#help admin" in rendered
+    assert "#help processor" in rendered
+    assert "#help plugin" in rendered
 
 
 def test_build_index_message_normal_user_hides_admin_and_hooks() -> None:
@@ -372,23 +394,21 @@ def test_build_index_message_normal_user_hides_admin_and_hooks() -> None:
     message = _build_index_message(entries, "zh-CN", Permission.NORMAL)
 
     rendered = str(message)
-    assert "#help 管理模块总览" not in rendered
-    assert "#help 检测服务" not in rendered
-    assert "#help 插件钩子扩展点" not in rendered
+    assert "#help admin" not in rendered
+    assert "#help processor" not in rendered
+    assert "#help plugin" not in rendered
 
 
 def test_iter_docs_entries_includes_wordbank_derived_root_entry() -> None:
     entries = _iter_docs_entries("zh-CN")
 
     derived = next(
-        entry
-        for entry in entries
-        if entry.node.slug == "derived.wordbank.miaomiao-toolkit"
+        entry for entry in entries if entry.node.slug == "community.miaomiao-toolkit"
     )
 
-    assert derived.display_name == "凛凛的妙妙小工具目录"
-    assert derived.node.plugin_name == "wordbank"
-    assert not derived.node.bundle.index
+    assert derived.display_name == "凛凛的妙妙小工具"
+    assert derived.node.plugin_name == "community_miaomiao"
+    assert [feature.slug for feature in derived.node.bundle.index] == ["main"]
 
 
 def test_iter_docs_entries_no_longer_exposes_wordbank_derived_feature_nodes() -> None:
@@ -396,10 +416,8 @@ def test_iter_docs_entries_no_longer_exposes_wordbank_derived_feature_nodes() ->
 
     slugs = {entry.node.slug for entry in entries}
 
-    assert "derived.wordbank.miaomiao-toolkit" in slugs
-    assert all(
-        not slug.startswith("derived.wordbank.miaomiao-toolkit.") for slug in slugs
-    )
+    assert "community.miaomiao-toolkit" in slugs
+    assert all(not slug.startswith("community.miaomiao-toolkit.") for slug in slugs)
 
 
 def test_build_index_message_filters_invisible_and_unauthorized_root_entries() -> None:
@@ -503,9 +521,7 @@ async def test_resolve_docs_message_feature_query_returns_deep_dive_reply() -> N
 async def test_resolve_docs_message_supports_wordbank_derived_static_entry() -> None:
     entries = _iter_docs_entries("zh-CN")
     derived_entry = next(
-        entry
-        for entry in entries
-        if entry.node.slug == "derived.wordbank.miaomiao-toolkit"
+        entry for entry in entries if entry.node.slug == "community.miaomiao-toolkit"
     )
 
     root_message = await _resolve_docs_message(
@@ -516,16 +532,14 @@ async def test_resolve_docs_message_supports_wordbank_derived_static_entry() -> 
     )
 
     assert any(segment.type == "image" for segment in root_message)
-    assert "凛凛的妙妙小工具目录" in str(root_message)
-    assert "不提供子功能级 help" in str(root_message)
+    assert "凛凛的妙妙小工具" in str(root_message)
+    assert "词条触发" in str(root_message)
 
 
 async def test_derived_static_entry_feature_query_is_not_found() -> None:
     entries = _iter_docs_entries("zh-CN")
     derived_entry = next(
-        entry
-        for entry in entries
-        if entry.node.slug == "derived.wordbank.miaomiao-toolkit"
+        entry for entry in entries if entry.node.slug == "community.miaomiao-toolkit"
     )
 
     message = await _resolve_docs_message(

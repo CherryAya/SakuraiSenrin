@@ -8,6 +8,7 @@
 - 权限: 超级管理员
 
 ## 用法
+- Help: `notice.user`
 - 别名: 好友申请
 - 指令: 被动触发
 - Demo: notice-user-main.png

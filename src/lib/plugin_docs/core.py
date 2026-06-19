@@ -20,7 +20,7 @@ from src.lib.i18n.types import LocaleCode
 DEFAULT_HELP_CATEGORY = "general"
 
 
-type DocNodeKind = Literal["plugin", "overview", "internal"]
+type DocNodeKind = Literal["plugin", "overview", "internal", "static"]
 
 
 class DocSourceMeta(TypedDict):

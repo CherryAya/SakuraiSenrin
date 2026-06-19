@@ -29,7 +29,6 @@ from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 
-from .derived_help import build_wordbank_derived_help
 from .docs_support import (
     APPROVAL_DOCS_SOURCE,
     DOCS_SOURCE,
@@ -118,7 +117,6 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.wordbank.description",
         },
         "docs": wordbank_docs_meta(),
-        "derived_help_provider": build_wordbank_derived_help,
     },
 )
 

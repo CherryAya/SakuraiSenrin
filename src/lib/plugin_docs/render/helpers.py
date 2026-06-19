@@ -9,6 +9,7 @@ from src.lib.plugin_docs.copy import (
     build_static_entry_copy_text,
     feature_command_for_display,
     feature_demo_help_command,
+    node_help_command,
 )
 from src.lib.plugin_docs.meta import support_note
 from src.lib.plugin_docs.models import DocNode, FeatureDoc, PluginDocBundle
@@ -50,5 +51,6 @@ __all__ = [
     "build_static_entry_copy",
     "feature_command_for_display_text",
     "feature_demo_help_command",
+    "node_help_command",
     "permission_label",
 ]

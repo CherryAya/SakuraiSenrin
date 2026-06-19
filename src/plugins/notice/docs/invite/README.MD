@@ -7,6 +7,9 @@
 - 触发方式: 被动触发
 - 权限: 超级管理员
 
+## 用法
+- Help: `notice.invite`
+
 ## 子功能目录
 - `auto-approve-authorized` 已授权群自动放行: 已授权群的邀请直接放过，不再重复打断。
 - `auto-reject-banned` 封禁群自动拒绝: 黑名单群的邀请自动拒绝并通知相关人。
