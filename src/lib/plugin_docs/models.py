@@ -119,13 +119,13 @@ class PluginDocBundle:
     description: str
     summary: str
     trigger: str
-    help_query: str
     permission: str
     author: str
     version: str
     impression_color: str
     index: tuple[FeatureDoc, ...]
     source_path: Path
+    help_query: str = ""
 
 
 @dataclass(slots=True, frozen=True)
@@ -174,10 +174,10 @@ class DocNode:
     title: str
     summary: str
     description: str
-    help_query: str
     aliases: tuple[str, ...]
     source_path: Path
     bundle: PluginDocBundle
+    help_query: str = ""
     module_name: str = ""
     plugin_name: str = ""
 

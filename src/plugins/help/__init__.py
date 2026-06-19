@@ -509,6 +509,7 @@ def _build_index_message(
             for section, section_entries in grouped_sections
         ),
         locale=locale,
+        actor_permission=actor_permission,
     )
     lines = [
         tr(locale, "help.dashboard.title"),
@@ -633,6 +634,7 @@ async def _resolve_docs_message(
                     image_bytes = render_static_entry(
                         child_entry.node,
                         locale=locale,
+                        actor_permission=actor_permission,
                     )
                     return _compose_help_reply(
                         image_bytes,
@@ -681,6 +683,7 @@ async def _resolve_docs_message(
         image_bytes = render_static_entry(
             entry.node,
             locale=locale,
+            actor_permission=actor_permission,
         )
         return _compose_help_reply(
             image_bytes,
@@ -711,6 +714,7 @@ async def _resolve_docs_message(
             entry.node,
             feature,
             locale=locale,
+            actor_permission=actor_permission,
         )
         return _compose_help_reply(
             image_bytes,

@@ -5,7 +5,6 @@ from __future__ import annotations
 # pyright: reportAttributeAccessIssue=false
 from collections.abc import Sequence
 from dataclasses import dataclass
-from io import BytesIO
 from math import ceil
 from pathlib import Path
 import re
@@ -25,6 +24,7 @@ from .command_layout import (
     split_inline_text_spans,
 )
 from .models import PluginDocBundle
+from .render.encoding import encode_docs_image
 
 
 def _markdown_parser() -> MarkdownIt:
@@ -153,9 +153,7 @@ class DemoCollectionRenderer:
         for tile, x, y in placements:
             self._draw_tile(image, draw, tile=tile, x=x, y=y, width=card_width)
 
-        buffer = BytesIO()
-        image.convert("RGB").save(buffer, format="PNG", optimize=True)
-        return buffer.getvalue()
+        return encode_docs_image(image, webp_quality=88, webp_method=6)
 
     def _paint_background(self, image: Image.Image) -> None:
         draw = ImageDraw.Draw(image)

@@ -213,6 +213,13 @@ from .readme import (
 )
 from .render.demo import DemoImageRenderer
 from .render.progressive import ProgressiveDisclosureRenderer
+from .static_assets import (
+    dashboard_target_key,
+    feature_target_key,
+    guide_target_key,
+    load_static_asset_bytes,
+    static_target_key,
+)
 
 
 def _support_note(locale: LocaleCode) -> str:
@@ -841,6 +848,9 @@ def load_demo_bytes(bundle: PluginDocBundle, feature: FeatureDoc) -> bytes | Non
         demo_path = bundle.source_path.parent / "demos" / feature.demo_filename
         if demo_path.is_file():
             return demo_path.read_bytes()
+        legacy_path = demo_path.with_suffix(".png")
+        if legacy_path.is_file():
+            return legacy_path.read_bytes()
     if not feature.demo_turns:
         return None
     return render_demo_png(bundle, feature)
@@ -854,6 +864,9 @@ def load_collection_demo_bytes(bundle: PluginDocBundle) -> bytes | None:
     )
     if demo_path.is_file():
         return demo_path.read_bytes()
+    legacy_path = demo_path.with_suffix(".png")
+    if legacy_path.is_file():
+        return legacy_path.read_bytes()
     return None
 
 
@@ -918,8 +931,18 @@ def render_feature_deep_dive(
     *,
     locale: LocaleCode = "zh-CN",
     generated_at: datetime | None = None,
+    actor_permission: Permission = Permission.NORMAL,
+    prefer_static: bool = True,
 ) -> bytes:
     _ = locale
+    if prefer_static:
+        static_bytes = load_static_asset_bytes(
+            node.source_path,
+            target_key=feature_target_key(node, feature),
+            actor_permission=actor_permission,
+        )
+        if static_bytes is not None:
+            return static_bytes
     return render_demo_png(node.bundle, feature, generated_at=generated_at)
 
 
@@ -929,7 +952,16 @@ def render_plugin_guide(
     actor_permission: Permission,
     locale: LocaleCode = "zh-CN",
     generated_at: datetime | None = None,
+    prefer_static: bool = True,
 ) -> bytes:
+    if prefer_static:
+        static_bytes = load_static_asset_bytes(
+            node.source_path,
+            target_key=guide_target_key(node),
+            actor_permission=actor_permission,
+        )
+        if static_bytes is not None:
+            return static_bytes
     visible_features = filter_features_by_permission(node.features, actor_permission)
     return ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
@@ -946,7 +978,17 @@ def render_static_entry(
     *,
     locale: LocaleCode = "zh-CN",
     generated_at: datetime | None = None,
+    actor_permission: Permission = Permission.NORMAL,
+    prefer_static: bool = True,
 ) -> bytes:
+    if prefer_static:
+        static_bytes = load_static_asset_bytes(
+            node.source_path,
+            target_key=static_target_key(node),
+            actor_permission=actor_permission,
+        )
+        if static_bytes is not None:
+            return static_bytes
     return ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
     ).render_static_entry(
@@ -961,11 +1003,21 @@ def render_help_dashboard(
     *,
     locale: LocaleCode = "zh-CN",
     generated_at: datetime | None = None,
+    actor_permission: Permission = Permission.NORMAL,
+    prefer_static: bool = True,
 ) -> bytes:
     first_node = next(
         (node for section in sections for node in section.nodes),
         None,
     )
+    if prefer_static and first_node is not None:
+        static_bytes = load_static_asset_bytes(
+            first_node.source_path,
+            target_key=dashboard_target_key(),
+            actor_permission=actor_permission,
+        )
+        if static_bytes is not None:
+            return static_bytes
     theme_color = (
         first_node.bundle.impression_color
         if first_node is not None
@@ -979,7 +1031,7 @@ def render_help_dashboard(
 
 
 def collection_demo_filename(source_path: Path) -> str:
-    return f"{doc_asset_prefix(source_path)}-collection.png"
+    return f"{doc_asset_prefix(source_path)}-collection.webp"
 
 
 def node_help_command(node: DocNode) -> str:
@@ -1110,6 +1162,8 @@ def build_doc_demo_message(
     feature_query: str | None = None,
     prefix_text: str | None = None,
 ) -> Message:
+    from src.lib import plugin_docs as plugin_docs_module
+
     node = load_doc_node(
         source=source,
         default_name=name,
@@ -1126,13 +1180,13 @@ def build_doc_demo_message(
         )
         match = match_feature(visible_features, feature_query)
         if match.status == "matched" and match.feature is not None:
-            image_bytes = render_feature_deep_dive(
+            image_bytes = plugin_docs_module.render_feature_deep_dive(
                 node,
                 match.feature,
                 locale=locale,
             )
     if image_bytes is None:
-        image_bytes = render_plugin_guide(
+        image_bytes = plugin_docs_module.render_plugin_guide(
             node,
             actor_permission=viewer_permission,
             locale=locale,

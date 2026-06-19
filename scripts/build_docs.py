@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache, partial
+import json
 import os
 from pathlib import Path
 import re
@@ -26,21 +27,35 @@ from src.lib.plugin_docs import (
     DemoCollectionTile,
     DocNode,
     DocsMeta,
+    HelpDashboardSection,
     PluginDocBundle,
     audit_demo_layout,
     build_doc_tree,
     collection_demo_filename,
     create_docs_meta,
+    dashboard_signature,
+    dashboard_target_key,
+    feature_signature,
+    feature_target_key,
+    guide_signature,
+    guide_target_key,
     load_doc_node,
     load_plugin_doc_bundle,
     render_collection_png,
     render_demo_png,
+    render_feature_deep_dive,
+    render_help_dashboard,
+    render_plugin_guide,
+    render_static_entry,
     resolve_help_entry_shape,
     should_prefer_collection_demo,
+    static_signature,
+    static_target_key,
 )
 from src.lib.plugin_docs import (
     DemoCollectionRenderer as _DemoCollectionRenderer,
 )
+from src.lib.plugin_docs.query import can_view_node, filter_features_by_permission
 from src.lib.utils.common import get_current_time
 
 DemoCollectionRenderer = _DemoCollectionRenderer
@@ -64,6 +79,14 @@ class DocBuildContext:
     bundle: PluginDocBundle
     docs_meta: DocsMeta
     node: DocNode
+
+
+PERMISSION_VARIANTS: tuple[tuple[str, Permission], ...] = (
+    ("normal", Permission.NORMAL),
+    ("group_admin", Permission.GROUP_ADMIN),
+    ("group_owner", Permission.GROUP_OWNER),
+    ("superuser", Permission.SUPERUSER),
+)
 
 
 @lru_cache(maxsize=1)
@@ -231,7 +254,11 @@ def load_doc_context(path: Path) -> DocBuildContext:
 
 
 def _progress(stage: str, index: int, total: int, path: Path) -> None:
-    _write_line(f"[{stage} {index}/{total}] {path.relative_to(ROOT)}")
+    try:
+        relative = path.relative_to(ROOT)
+    except ValueError:
+        relative = path
+    _write_line(f"[{stage} {index}/{total}] {relative}")
 
 
 def positive_int(value: str) -> int:
@@ -276,9 +303,269 @@ def write_demo_result(result: tuple[Path, bytes]) -> Path:
     return output
 
 
+def _encoded_image_suffix(data: bytes) -> str:
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return ".webp"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    return ".png"
+
+
+def _hash_filename(base_name: str, signature: str) -> str:
+    stem = Path(base_name).stem
+    suffix = Path(base_name).suffix or ".png"
+    return f"{stem}--{signature}{suffix}"
+
+
+def _output_static_asset(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
+def _cleanup_generated_assets(
+    *,
+    context: DocBuildContext,
+    target_map: dict[str, dict[str, str]],
+) -> None:
+    demos_dir = context.path.parent / "demos"
+    if not demos_dir.is_dir():
+        return
+    keep_files = {"manifest.json"}
+    keep_files.update(feature.demo_filename for feature in context.bundle.index)
+    if should_prefer_collection_demo(
+        context.node,
+        actor_permission=Permission.NORMAL,
+    ):
+        keep_files.add(collection_demo_filename(context.path))
+    for variants in target_map.values():
+        keep_files.update(variants.values())
+    for asset in demos_dir.iterdir():
+        if not asset.is_file():
+            continue
+        if asset.name in keep_files:
+            continue
+        if asset.suffix not in {".png", ".webp", ".json"}:
+            continue
+        if asset.name == "manifest.json":
+            continue
+        asset.unlink()
+
+
+def _all_doc_contexts() -> tuple[DocBuildContext, ...]:
+    return tuple(load_doc_context(path) for path in iter_readmes())
+
+
+def _reset_caches() -> None:
+    iter_readmes.cache_clear()
+    load_bundle.cache_clear()
+    load_doc_context.cache_clear()
+
+
+def _build_tree(contexts: tuple[DocBuildContext, ...]) -> tuple[DocNode, ...]:
+    return tuple(context.node for context in contexts)
+
+
+def _index_sections_for_permission(
+    nodes: tuple[DocNode, ...],
+    actor_permission: Permission,
+) -> tuple[HelpDashboardSection, ...]:
+    roots = [
+        node
+        for node in build_doc_tree(nodes).roots()
+        if node.visible
+        and not node.hidden
+        and not node.internal
+        and can_view_node(node, actor_permission)
+    ]
+    buckets: dict[str, list[DocNode]] = {
+        "system": [],
+        "developer": [],
+        "community": [],
+    }
+    for node in roots:
+        if node.category == "community" or node.slug.startswith("derived."):
+            buckets["community"].append(node)
+        elif node.module_name.startswith("src.hooks.") or node.slug.startswith("hook."):
+            buckets["system"].append(node)
+        elif node.slug in {"help", "notice", "admin"}:
+            buckets["system"].append(node)
+        else:
+            buckets["developer"].append(node)
+    titles = {
+        "system": "系统核心预置",
+        "developer": "官方功能扩展",
+        "community": "社区衍生工坊",
+    }
+    sections: list[HelpDashboardSection] = []
+    for kind in ("system", "developer", "community"):
+        if not buckets[kind]:
+            continue
+        sections.append(
+            HelpDashboardSection(
+                kind=kind,
+                title=titles[kind],
+                nodes=tuple(buckets[kind]),
+            )
+        )
+    return tuple(sections)
+
+
+def build_help_assets() -> int:
+    _reset_caches()
+    contexts = _all_doc_contexts()
+    nodes = _build_tree(contexts)
+    tree = build_doc_tree(nodes)
+    build_time = datetime.fromtimestamp(get_current_time()).replace(microsecond=0)
+    dashboard_outputs: dict[str, tuple[str, bytes]] = {}
+    manifest_by_source: dict[Path, dict[str, dict[str, str]]] = {}
+    first_dashboard_signature: str | None = None
+
+    help_context = next(
+        (context for context in contexts if context.node.slug == "help"),
+        None,
+    )
+    if help_context is None:
+        _write_line("help-assets: help docs not found, skipping")
+        return 0
+
+    for profile, permission in PERMISSION_VARIANTS:
+        sections = _index_sections_for_permission(nodes, permission)
+        if not sections:
+            continue
+        signature = dashboard_signature(sections)
+        if first_dashboard_signature is None:
+            first_dashboard_signature = signature
+        rendered = render_help_dashboard(
+            sections,
+            locale="zh-CN",
+            generated_at=build_time,
+            prefer_static=False,
+        )
+        suffix = _encoded_image_suffix(rendered)
+        dashboard_outputs.setdefault(
+            signature,
+            (
+                f"help-index{suffix}"
+                if signature == first_dashboard_signature
+                else _hash_filename(f"help-index{suffix}", signature),
+                rendered,
+            ),
+        )
+        manifest_by_source.setdefault(help_context.path, {})[dashboard_target_key()] = (
+            manifest_by_source.setdefault(help_context.path, {}).get(
+                dashboard_target_key(),
+                {},
+            )
+        )
+        manifest_by_source[help_context.path][dashboard_target_key()][profile] = (
+            dashboard_outputs[signature][0]
+            if signature == first_dashboard_signature
+            else dashboard_outputs[signature][0]
+        )
+
+    for signature, (filename, data) in dashboard_outputs.items():
+        output_name = filename
+        _output_static_asset(help_context.path.parent / "demos" / output_name, data)
+
+    for context in contexts:
+        source = context.path
+        demos_dir = source.parent / "demos"
+        demos_dir.mkdir(parents=True, exist_ok=True)
+        target_map = manifest_by_source.setdefault(source, {})
+        children = tuple(tree.children_of(context.node.slug))
+        for profile, permission in PERMISSION_VARIANTS:
+            features = filter_features_by_permission(context.node.features, permission)
+            visible_children = tuple(
+                child for child in children if can_view_node(child, permission)
+            )
+            shape = resolve_help_entry_shape(
+                context.node,
+                actor_permission=permission,
+                children=visible_children,
+            )
+            if shape == "plugin_guide" or shape == "overview_group":
+                rendered = render_plugin_guide(
+                    context.node,
+                    actor_permission=permission,
+                    locale="zh-CN",
+                    generated_at=build_time,
+                    prefer_static=False,
+                )
+                signature = guide_signature(
+                    context.node,
+                    feature_slugs=tuple(feature.slug for feature in features),
+                    child_slugs=tuple(child.slug for child in visible_children),
+                )
+                suffix = _encoded_image_suffix(rendered)
+                target_key = guide_target_key(context.node)
+                filename = _hash_filename(
+                    f"{context.path.stem}-guide{suffix}", signature
+                )
+                target_map.setdefault(target_key, {})[profile] = filename
+                path = demos_dir / filename
+                if not path.exists():
+                    _output_static_asset(path, rendered)
+            elif shape == "static_entry":
+                rendered = render_static_entry(
+                    context.node,
+                    actor_permission=permission,
+                    locale="zh-CN",
+                    generated_at=build_time,
+                    prefer_static=False,
+                )
+                signature = static_signature(context.node)
+                suffix = _encoded_image_suffix(rendered)
+                target_key = static_target_key(context.node)
+                filename = _hash_filename(
+                    f"{context.path.stem}-static{suffix}",
+                    signature,
+                )
+                target_map.setdefault(target_key, {})[profile] = filename
+                path = demos_dir / filename
+                if not path.exists():
+                    _output_static_asset(path, rendered)
+
+            for feature in features:
+                target_key = feature_target_key(context.node, feature)
+                signature = feature_signature(context.node, feature)
+                filename = (
+                    feature.demo_filename
+                    if profile == "normal"
+                    else _hash_filename(feature.demo_filename, signature)
+                )
+                target_map.setdefault(target_key, {})[profile] = filename
+                path = demos_dir / filename
+                if not path.exists():
+                    _output_static_asset(
+                        path,
+                        render_feature_deep_dive(
+                            context.node,
+                            feature,
+                            locale="zh-CN",
+                            generated_at=build_time,
+                            actor_permission=permission,
+                            prefer_static=False,
+                        ),
+                    )
+
+        manifest_payload = {
+            "version": 1,
+            "locale": "zh-CN",
+            "targets": target_map,
+        }
+        (demos_dir / "manifest.json").write_text(
+            json.dumps(manifest_payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        _cleanup_generated_assets(context=context, target_map=target_map)
+        _write_line(f"help-assets {source.relative_to(ROOT)}")
+    return 0
+
+
 def collect_collection_jobs(
     *, columns: int
 ) -> tuple[int, tuple[DemoCollectionJob, ...]]:
+    _reset_caches()
     readmes = iter_readmes()
     jobs: list[DemoCollectionJob] = []
     for path in readmes:
@@ -289,7 +576,10 @@ def collect_collection_jobs(
         if not bundle.index:
             continue
         node = context.node
-        if not should_prefer_collection_demo(node):
+        if not should_prefer_collection_demo(
+            node,
+            actor_permission=Permission.NORMAL,
+        ):
             continue
         tiles = tuple(
             DemoCollectionTile(
@@ -342,6 +632,7 @@ def compose(*, workers: int | None = None, columns: int = 2) -> int:
 
 
 def build(*, workers: int | None = None, columns: int = 2) -> int:
+    _reset_caches()
     generated = generate(workers=workers)
     if generated != 0:
         return generated
@@ -351,11 +642,14 @@ def build(*, workers: int | None = None, columns: int = 2) -> int:
     )
     if composed != 0:
         return composed
-    return 0
+    assets = build_help_assets()
+    if assets != 0:
+        return assets
     return validate()
 
 
 def generate(*, workers: int | None = None) -> int:
+    _reset_caches()
     worker_count = workers if workers is not None else default_worker_count()
     total_files, jobs = collect_demo_jobs()
     build_time = datetime.fromtimestamp(get_current_time()).replace(microsecond=0)
@@ -382,6 +676,7 @@ def generate(*, workers: int | None = None) -> int:
 
 
 def validate() -> int:
+    _reset_caches()
     errors: list[str] = []
     nodes: list[DocNode] = []
     slugs_seen: dict[str, Path] = {}

@@ -23,3 +23,6 @@ BOT: [私聊超管] Sentry 异常告警
 Type: ValueError
 Value: invalid season id
 ```
+
+## 失败情况
+未配置有效 `SENTRY_DSN`、告警发送失败或通知目标为空时，会记录日志并跳过通知，不阻塞主流程。

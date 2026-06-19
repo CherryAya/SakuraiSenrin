@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from io import BytesIO
 from math import ceil
 from typing import Any, ClassVar
 
@@ -26,6 +25,7 @@ from src.lib.plugin_docs.models import DocNode, FeatureDoc, HelpDashboardSection
 from src.lib.utils.common import get_current_time
 
 from .demo import DemoImageRenderer, _ShowcaseNoteItem, _ShowcaseTurnPlacement
+from .encoding import encode_docs_image
 from .helpers import (
     build_static_entry_copy,
     feature_command_for_display_text,
@@ -235,9 +235,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             left_text=(tr(locale, "help.dashboard.footer.left", count=len(all_nodes))),
             right_text=f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin",
         )
-        buffer = BytesIO()
-        image.convert("RGB").save(buffer, format="PNG", optimize=True)
-        return buffer.getvalue()
+        return encode_docs_image(image, webp_quality=88, webp_method=6)
 
     def _paint_dashboard_background(self, image: Image.Image) -> None:
         draw = ImageDraw.Draw(image)
@@ -448,9 +446,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             ),
             right_text=f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin",
         )
-        buffer = BytesIO()
-        image.convert("RGB").save(buffer, format="PNG", optimize=True)
-        return buffer.getvalue()
+        return encode_docs_image(image, webp_quality=88, webp_method=6)
 
     def render_static_entry(
         self,
@@ -572,9 +568,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             left_text=f"{node.title} · Static Entry · By {node.bundle.author}",
             right_text=f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin",
         )
-        buffer = BytesIO()
-        image.convert("RGB").save(buffer, format="PNG", optimize=True)
-        return buffer.getvalue()
+        return encode_docs_image(image, webp_quality=88, webp_method=6)
 
     def _measure_dashboard_card(
         self,

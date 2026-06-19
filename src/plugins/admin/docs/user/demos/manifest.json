@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:admin.user": {
+      "normal": "README-guide--e07509f111.webp",
+      "group_admin": "README-guide--e07509f111.webp",
+      "group_owner": "README-guide--e07509f111.webp",
+      "superuser": "README-guide--e07509f111.webp"
+    },
+    "feature:admin.user:ban": {
+      "normal": "admin-user-ban.png",
+      "group_admin": "admin-user-ban--993c117173.png",
+      "group_owner": "admin-user-ban--993c117173.png",
+      "superuser": "admin-user-ban--993c117173.png"
+    },
+    "feature:admin.user:unban": {
+      "normal": "admin-user-unban.png",
+      "group_admin": "admin-user-unban--3b9bf0a160.png",
+      "group_owner": "admin-user-unban--3b9bf0a160.png",
+      "superuser": "admin-user-unban--3b9bf0a160.png"
+    },
+    "feature:admin.user:status": {
+      "normal": "admin-user-status.png",
+      "group_admin": "admin-user-status--c387927ae1.png",
+      "group_owner": "admin-user-status--c387927ae1.png",
+      "superuser": "admin-user-status--c387927ae1.png"
+    }
+  }
+}

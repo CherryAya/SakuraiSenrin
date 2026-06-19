@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:admin.invite": {
+      "normal": "README-guide--cf575a0c19.webp",
+      "group_admin": "README-guide--cf575a0c19.webp",
+      "group_owner": "README-guide--cf575a0c19.webp",
+      "superuser": "README-guide--cf575a0c19.webp"
+    },
+    "feature:admin.invite:list": {
+      "normal": "admin-invite-list.png",
+      "group_admin": "admin-invite-list--05033b799f.png",
+      "group_owner": "admin-invite-list--05033b799f.png",
+      "superuser": "admin-invite-list--05033b799f.png"
+    },
+    "feature:admin.invite:approve": {
+      "normal": "admin-invite-approve.png",
+      "group_admin": "admin-invite-approve--30260a154e.png",
+      "group_owner": "admin-invite-approve--30260a154e.png",
+      "superuser": "admin-invite-approve--30260a154e.png"
+    },
+    "feature:admin.invite:reject": {
+      "normal": "admin-invite-reject.png",
+      "group_admin": "admin-invite-reject--e9ff1a8907.png",
+      "group_owner": "admin-invite-reject--e9ff1a8907.png",
+      "superuser": "admin-invite-reject--e9ff1a8907.png"
+    },
+    "feature:admin.invite:ignore": {
+      "normal": "admin-invite-ignore.png",
+      "group_admin": "admin-invite-ignore--405190f400.png",
+      "group_owner": "admin-invite-ignore--405190f400.png",
+      "superuser": "admin-invite-ignore--405190f400.png"
+    },
+    "feature:admin.invite:reply-shortcut": {
+      "normal": "admin-invite-reply-shortcut.png",
+      "group_admin": "admin-invite-reply-shortcut--d7c9e9f687.png",
+      "group_owner": "admin-invite-reply-shortcut--d7c9e9f687.png",
+      "superuser": "admin-invite-reply-shortcut--d7c9e9f687.png"
+    },
+    "feature:admin.invite:log": {
+      "normal": "admin-invite-log.png",
+      "group_admin": "admin-invite-log--6865a5c4aa.png",
+      "group_owner": "admin-invite-log--6865a5c4aa.png",
+      "superuser": "admin-invite-log--6865a5c4aa.png"
+    }
+  }
+}

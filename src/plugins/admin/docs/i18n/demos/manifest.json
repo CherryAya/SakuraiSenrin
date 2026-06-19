@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:admin.i18n": {
+      "normal": "README-guide--b8f61815f3.webp",
+      "group_admin": "README-guide--b8f61815f3.webp",
+      "group_owner": "README-guide--b8f61815f3.webp",
+      "superuser": "README-guide--b8f61815f3.webp"
+    },
+    "feature:admin.i18n:show": {
+      "normal": "admin-i18n-show.png",
+      "group_admin": "admin-i18n-show--5bb68e090b.png",
+      "group_owner": "admin-i18n-show--5bb68e090b.png",
+      "superuser": "admin-i18n-show--5bb68e090b.png"
+    },
+    "feature:admin.i18n:default": {
+      "normal": "admin-i18n-default.png",
+      "group_admin": "admin-i18n-default--7eee0b2c96.png",
+      "group_owner": "admin-i18n-default--7eee0b2c96.png",
+      "superuser": "admin-i18n-default--7eee0b2c96.png"
+    },
+    "feature:admin.i18n:set": {
+      "normal": "admin-i18n-set.png",
+      "group_admin": "admin-i18n-set--83fbeecfc2.png",
+      "group_owner": "admin-i18n-set--83fbeecfc2.png",
+      "superuser": "admin-i18n-set--83fbeecfc2.png"
+    },
+    "feature:admin.i18n:clear": {
+      "normal": "admin-i18n-clear.png",
+      "group_admin": "admin-i18n-clear--57a3f1de04.png",
+      "group_owner": "admin-i18n-clear--57a3f1de04.png",
+      "superuser": "admin-i18n-clear--57a3f1de04.png"
+    },
+    "feature:admin.i18n:list": {
+      "normal": "admin-i18n-list.png",
+      "group_admin": "admin-i18n-list--b4460a847b.png",
+      "group_owner": "admin-i18n-list--b4460a847b.png",
+      "superuser": "admin-i18n-list--b4460a847b.png"
+    }
+  }
+}

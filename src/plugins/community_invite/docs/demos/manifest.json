@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:community_invite:main": {
+      "normal": "community-invite-main.png",
+      "group_admin": "community-invite-main--e975d13e61.png",
+      "group_owner": "community-invite-main--e975d13e61.png",
+      "superuser": "community-invite-main--e975d13e61.png"
+    }
+  }
+}

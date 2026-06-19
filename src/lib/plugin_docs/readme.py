@@ -318,7 +318,10 @@ def parse_feature_details_tokens(
         flow_notes, demo_turns = parse_flow_section_tokens(
             subsections.get("完整流程", ())
         )
-        demo_filename = meta.get("Demo", f"{doc_asset_prefix(source_path)}-{slug}.png")
+        demo_filename = meta.get(
+            "Demo",
+            f"{doc_asset_prefix(source_path)}-{slug}.png",
+        )
         demo_filename = demo_filename.strip("`")
         features[slug] = FeatureDoc(
             slug=slug,

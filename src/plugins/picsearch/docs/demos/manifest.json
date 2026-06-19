@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:picsearch:main": {
+      "normal": "picsearch-search.png",
+      "group_admin": "picsearch-search--6111090833.png",
+      "group_owner": "picsearch-search--6111090833.png",
+      "superuser": "picsearch-search--6111090833.png"
+    }
+  }
+}

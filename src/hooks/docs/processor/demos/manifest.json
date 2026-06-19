@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:hook.processor": {
+      "normal": "README-guide--641629acaa.webp",
+      "group_admin": "README-guide--641629acaa.webp",
+      "group_owner": "README-guide--641629acaa.webp",
+      "superuser": "README-guide--641629acaa.webp"
+    },
+    "feature:hook.processor:main": {
+      "normal": "hook-processor-main.png",
+      "group_admin": "hook-processor-main--ef0dfad8df.png",
+      "group_owner": "hook-processor-main--ef0dfad8df.png",
+      "superuser": "hook-processor-main--ef0dfad8df.png"
+    }
+  }
+}

@@ -848,7 +848,7 @@ def test_feature_demo_help_command_uses_plugin_title_and_slug() -> None:
     )
     ranking = next(feature for feature in node.features if feature.slug == "ranking")
 
-    assert feature_demo_help_command(node, ranking) == "#help 吹水记录 ranking"
+    assert feature_demo_help_command(node, ranking) == "#help water ranking"
 
 
 def test_build_doc_demo_message_prefers_feature_demo(monkeypatch: Any) -> None:

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:notice.user:main": {
+      "normal": "notice-user-main.png",
+      "group_admin": "notice-user-main--80c9cc72c2.png",
+      "group_owner": "notice-user-main--80c9cc72c2.png",
+      "superuser": "notice-user-main--80c9cc72c2.png"
+    }
+  }
+}

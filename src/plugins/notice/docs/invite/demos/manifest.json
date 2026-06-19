@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:notice.invite": {
+      "normal": "README-guide--eb0ad27153.webp",
+      "group_admin": "README-guide--eb0ad27153.webp",
+      "group_owner": "README-guide--eb0ad27153.webp",
+      "superuser": "README-guide--eb0ad27153.webp"
+    },
+    "feature:notice.invite:auto-approve-authorized": {
+      "normal": "notice-invite-auto-approve-authorized.png",
+      "group_admin": "notice-invite-auto-approve-authorized--6cbee4337e.png",
+      "group_owner": "notice-invite-auto-approve-authorized--6cbee4337e.png",
+      "superuser": "notice-invite-auto-approve-authorized--6cbee4337e.png"
+    },
+    "feature:notice.invite:auto-reject-banned": {
+      "normal": "notice-invite-auto-reject-banned.png",
+      "group_admin": "notice-invite-auto-reject-banned--63e86bd2bf.png",
+      "group_owner": "notice-invite-auto-reject-banned--63e86bd2bf.png",
+      "superuser": "notice-invite-auto-reject-banned--63e86bd2bf.png"
+    },
+    "feature:notice.invite:report-pending": {
+      "normal": "notice-invite-report-pending.png",
+      "group_admin": "notice-invite-report-pending--96aeaf8ea8.png",
+      "group_owner": "notice-invite-report-pending--96aeaf8ea8.png",
+      "superuser": "notice-invite-report-pending--96aeaf8ea8.png"
+    }
+  }
+}

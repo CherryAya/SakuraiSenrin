@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:notice": {
+      "normal": "README-guide--698ae662b5.webp",
+      "group_admin": "README-guide--698ae662b5.webp",
+      "group_owner": "README-guide--698ae662b5.webp",
+      "superuser": "README-guide--698ae662b5.webp"
+    },
+    "feature:notice:group": {
+      "normal": "notice-overview-group.png",
+      "group_admin": "notice-overview-group--72a1c16daa.png",
+      "group_owner": "notice-overview-group--72a1c16daa.png",
+      "superuser": "notice-overview-group--72a1c16daa.png"
+    },
+    "feature:notice:invite": {
+      "normal": "notice-overview-invite.png",
+      "group_admin": "notice-overview-invite--31f2372b58.png",
+      "group_owner": "notice-overview-invite--31f2372b58.png",
+      "superuser": "notice-overview-invite--31f2372b58.png"
+    },
+    "feature:notice:user": {
+      "normal": "notice-overview-user.png",
+      "group_admin": "notice-overview-user--0f3e7dc4b7.png",
+      "group_owner": "notice-overview-user--0f3e7dc4b7.png",
+      "superuser": "notice-overview-user--0f3e7dc4b7.png"
+    }
+  }
+}

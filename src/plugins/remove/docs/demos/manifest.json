@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:remove:main": {
+      "normal": "remove-guide.png",
+      "group_admin": "remove-guide--b70c33c1e7.png",
+      "group_owner": "remove-guide--b70c33c1e7.png",
+      "superuser": "remove-guide--b70c33c1e7.png"
+    }
+  }
+}

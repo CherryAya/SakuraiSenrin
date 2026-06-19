@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:water": {
+      "normal": "README-guide--ee90af5a53.webp",
+      "group_admin": "README-guide--3108648349.webp",
+      "group_owner": "README-guide--3108648349.webp",
+      "superuser": "README-guide--332aa6b685.webp"
+    },
+    "feature:water:profile": {
+      "normal": "water-profile.png",
+      "group_admin": "water-profile--b528957b71.png",
+      "group_owner": "water-profile--b528957b71.png",
+      "superuser": "water-profile--b528957b71.png"
+    },
+    "feature:water:profile-full": {
+      "normal": "water-profile-full.png",
+      "group_admin": "water-profile-full--e0a9443cf0.png",
+      "group_owner": "water-profile-full--e0a9443cf0.png",
+      "superuser": "water-profile-full--e0a9443cf0.png"
+    },
+    "feature:water:ranking": {
+      "normal": "water-ranking.png",
+      "group_admin": "water-ranking--254a4015f9.png",
+      "group_owner": "water-ranking--254a4015f9.png",
+      "superuser": "water-ranking--254a4015f9.png"
+    },
+    "feature:water:today-report": {
+      "normal": "water-ranking.png",
+      "group_admin": "water-ranking--9d9196a711.png",
+      "group_owner": "water-ranking--9d9196a711.png",
+      "superuser": "water-ranking--9d9196a711.png"
+    },
+    "feature:water:achievement": {
+      "normal": "water-achievement.png",
+      "group_admin": "water-achievement--87333ca554.png",
+      "group_owner": "water-achievement--87333ca554.png",
+      "superuser": "water-achievement--87333ca554.png"
+    },
+    "feature:water:season-query": {
+      "normal": "water-season-query.png",
+      "group_admin": "water-season-query--8162882ffc.png",
+      "group_owner": "water-season-query--8162882ffc.png",
+      "superuser": "water-season-query--8162882ffc.png"
+    },
+    "feature:water:merge-confirm": {
+      "group_admin": "water-merge-confirm--6c9bd00d5e.png",
+      "group_owner": "water-merge-confirm--6c9bd00d5e.png",
+      "superuser": "water-merge-confirm--6c9bd00d5e.png"
+    },
+    "feature:water:admin-maintenance": {
+      "superuser": "water-admin-maintenance--e803231c3e.png"
+    }
+  }
+}

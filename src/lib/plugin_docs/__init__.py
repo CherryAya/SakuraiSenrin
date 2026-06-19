@@ -52,3 +52,17 @@ from .command_layout import CommandPalette as CommandPalette
 from .copy import feature_demo_help_command as feature_demo_help_command
 from .markdown_layout import build_markdown_layout as build_markdown_layout
 from .models import VirtualFeatureDocSpec as VirtualFeatureDocSpec
+from .static_assets import dashboard_signature as dashboard_signature
+from .static_assets import dashboard_target_key as dashboard_target_key
+from .static_assets import feature_signature as feature_signature
+from .static_assets import feature_target_key as feature_target_key
+from .static_assets import guide_signature as guide_signature
+from .static_assets import guide_target_key as guide_target_key
+from .static_assets import load_manifest as load_manifest
+from .static_assets import load_static_asset_bytes as load_static_asset_bytes
+from .static_assets import manifest_path_for as manifest_path_for
+from .static_assets import permission_profile as permission_profile
+from .static_assets import resolve_static_asset_path as resolve_static_asset_path
+from .static_assets import short_signature as short_signature
+from .static_assets import static_signature as static_signature
+from .static_assets import static_target_key as static_target_key

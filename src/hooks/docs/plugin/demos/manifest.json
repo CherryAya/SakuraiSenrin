@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:hook.plugin": {
+      "normal": "README-guide--3ddec434cb.webp",
+      "group_admin": "README-guide--3ddec434cb.webp",
+      "group_owner": "README-guide--3ddec434cb.webp",
+      "superuser": "README-guide--3ddec434cb.webp"
+    },
+    "feature:hook.plugin:main": {
+      "normal": "hook-plugin-placeholder.png",
+      "group_admin": "hook-plugin-placeholder--2d28523c12.png",
+      "group_owner": "hook-plugin-placeholder--2d28523c12.png",
+      "superuser": "hook-plugin-placeholder--2d28523c12.png"
+    }
+  }
+}
