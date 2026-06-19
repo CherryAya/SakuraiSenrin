@@ -34,7 +34,7 @@ __plugin_meta__ = create_plugin_metadata(
     extra={
         "author": "SakuraiCora",
         "version": "0.1.0",
-        "impression_color": "#F08C00",
+        "impression_color": "#8D2CBD",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
         "i18n": {
@@ -42,7 +42,7 @@ __plugin_meta__ = create_plugin_metadata(
             "description_key": "plugin.sentry.description",
         },
         "docs": create_docs_meta(
-            visible=False,
+            visible=True,
             category="system",
             order=30,
             source=DOCS_SOURCE,
@@ -51,6 +51,30 @@ __plugin_meta__ = create_plugin_metadata(
 )
 
 background_tasks: set[asyncio.Task] = set()
+
+
+def _should_drop_event(hint: Hint) -> bool:
+    exc_info = hint.get("exc_info")
+    if not exc_info:
+        return False
+
+    exc_type, exc_value, exc_traceback = exc_info
+    if exc_type is not AssertionError:
+        return False
+    if exc_traceback is None:
+        return False
+    if str(exc_value):
+        return False
+
+    while exc_traceback is not None:
+        frame = exc_traceback.tb_frame
+        if (
+            frame.f_code.co_name == "_drain_helper"
+            and frame.f_globals.get("__name__") == "websockets.legacy.protocol"
+        ):
+            return True
+        exc_traceback = exc_traceback.tb_next
+    return False
 
 
 async def notify_admin(error_message: str) -> None:
@@ -67,7 +91,11 @@ async def notify_admin(error_message: str) -> None:
         logger.error(f"Sentry 报警发送失败: {e}")
 
 
-def before_send_handler(event: Event, hint: Hint) -> Event:
+def before_send_handler(event: Event, hint: Hint) -> Event | None:
+    if _should_drop_event(hint):
+        logger.debug("Skip reporting websocket keepalive AssertionError noise.")
+        return None
+
     if "exc_info" in hint:
         exc_type, exc_value, _ = hint["exc_info"]
         error_msg = f"Type: {exc_type.__name__}\nValue: {exc_value}"
