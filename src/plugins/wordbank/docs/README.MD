@@ -67,9 +67,41 @@ USER: 1
 BOT: 是否需要高级选项？发送 n 跳过；需要请直接输入参数，例如 --prob 0.5 --weight 3 --role admin --call 60:0:3
 USER: n
 BOT: 词条已提交审核
+ID: 12
+状态: pending
+触发: 晚安
+响应: 做个好梦
+模式: contains
+范围: current_group
+概率: 1
+权重: 3
+管理员通过前不会触发。
+SYSTEM: 审核完成前，这条词条不会参与被动匹配；审核文档请查看 #help 词库审核。
+USER: #wordbank add 是这张图喔 [图片]
+BOT: 词条已提交审核
+ID: 13
+状态: pending
+触发: 是这张图喔
+响应: [图片:7]
+模式: contains
+范围: current_group
+概率: 1
+权重: 3
+管理员通过前不会触发。
+USER: #wordbank add [图片] => 是这张图喔
+BOT: 词条已提交审核
+ID: 14
+状态: pending
+触发: [图片:7]
+响应: 是这张图喔
+模式: fullmatch
+范围: current_group
+概率: 1
+权重: 3
+管理员通过前不会触发。
 ```
 #### 失败情况
-触发词或响应词为空、图片失败、规则冲突、参数越界，或引导中输入 `revoke` / `recall` 时会提示并终止。
+触发词或响应词为空、图片失败、规则冲突、参数越界时会提示。引导中输入 `revoke` / `recall` 会发送取消提示并中止；连续输错 3 次会强制终止对话。
 
 ### `add-scope` 生效范围选项
 - 摘要: 选择词条在哪些对象和场景上生效。
@@ -87,6 +119,21 @@ BOT: 词条已提交审核
 - `#wordbank add 私聊一下 => 收到 --scope private_only`
 #### 前置条件
 需要明确词条是群内通用、跨群、仅自己还是仅私聊。
+#### 完整流程
+```demo
+USER: #wordbank add 私聊一下 => 收到 --scope private_only
+BOT: 词条已提交审核
+ID: 16
+状态: pending
+触发: 私聊一下
+响应: 收到
+模式: contains
+范围: private_only
+概率: 1
+权重: 3
+管理员通过前不会触发。
+SYSTEM: `private_only` 仅在私聊里生效；如果需要群内通用词条，请改用 `current_group` 或 `all_groups`。
+```
 #### 失败情况
 scope 拼写错误或重复设置时会返回说明。
 
@@ -104,6 +151,21 @@ scope 拼写错误或重复设置时会返回说明。
 - `#wordbank add 哈哈 => 笑死 --prob 0.2`
 #### 前置条件
 建议只用于容易高频误触的词条。
+#### 完整流程
+```demo
+USER: #wordbank add 早 => 早安呀 --prob 0.5
+BOT: 词条已提交审核
+ID: 17
+状态: pending
+触发: 早
+响应: 早安呀
+模式: fullmatch
+范围: current_group
+概率: 0.5
+权重: 3
+管理员通过前不会触发。
+SYSTEM: `--prob 0.5` 表示命中 trigger group 后大约只有一半概率真正回复，适合给高频短词降噪。
+```
 #### 失败情况
 概率不是数字或不在 `0-1` 范围内时会提示。
 
@@ -121,6 +183,21 @@ scope 拼写错误或重复设置时会返回说明。
 - `#wordbank add 晚安 => 晚安晚安 --weight 1`
 #### 前置条件
 适合同一触发词下存在多条候选响应的场景。
+#### 完整流程
+```demo
+USER: #wordbank add 晚安 => 做个好梦 --weight 5
+BOT: 词条已提交审核
+ID: 18
+状态: pending
+触发: 晚安
+响应: 做个好梦
+模式: contains
+范围: current_group
+概率: 1
+权重: 5
+管理员通过前不会触发。
+SYSTEM: `--weight 5` 不会提高 trigger 本身的命中率，只会让这条响应在同组候选里更容易被抽中。
+```
 #### 失败情况
 权重不是 `1-5` 的整数时会提示。
 
@@ -139,6 +216,21 @@ scope 拼写错误或重复设置时会返回说明。
 - `#wordbank add 萌新报道 => 欢迎加入 --role member`
 #### 前置条件
 只在群聊里有实际区分意义。
+#### 完整流程
+```demo
+USER: #wordbank add 管理员集合 => 管理员请看这里 --role admin
+BOT: 词条已提交审核
+ID: 19
+状态: pending
+触发: 管理员集合
+响应: 管理员请看这里
+模式: contains
+范围: current_group
+概率: 1
+权重: 3
+管理员通过前不会触发。
+SYSTEM: `--role admin` 只允许群管理员触发；普通成员发送同样内容时不会命中这条词条。
+```
 #### 失败情况
 角色值非法时会提示。
 
@@ -156,6 +248,21 @@ scope 拼写错误或重复设置时会返回说明。
 - `#wordbank add 又来了 => 欢迎回来 --call 60:2:5`
 #### 前置条件
 适合限制高频触发词的回复节奏。
+#### 完整流程
+```demo
+USER: #wordbank add 又来了 => 欢迎回来 --call 60:2:5
+BOT: 词条已提交审核
+ID: 20
+状态: pending
+触发: 又来了
+响应: 欢迎回来
+模式: contains
+范围: current_group
+概率: 1
+权重: 3
+管理员通过前不会触发。
+SYSTEM: `--call 60:2:5` 表示 60 秒窗口内从第 2 次开始触发，第 5 次之后静默，适合限制刷屏词条。
+```
 #### 失败情况
 结构错误、数字非法、窗口超限或 `min > max` 时会提示。
 
@@ -268,31 +375,57 @@ ID 非法、词条不存在或权限不足时会提示。
 
 ### `trigger` 修改触发词与触发概率
 - 摘要: 修改 trigger group 的整体概率或触发内容。
+- Advanced: true
+- Priority: 70
+- 别名: trigger, 触发, 触发词, trigger prob, trigger set
 - 指令:
   - `wordbank trigger prob <group_id> <0.0-1.0>`
   - `wordbank trigger set <group_id> <新触发内容>`
+- Demo: wordbank-trigger.png
 #### 说明
-`trigger prob` 改整组命中概率；`trigger set` 改触发内容。修改触发内容后，该组会重新进入 `pending`，需要重新审核。
+`trigger prob` 修改整组触发概率，不改动已有响应内容；`trigger set` 修改触发内容本身，支持纯文本、图片触发或图文混排。触发内容变更后，该组下已有响应会重新进入 `pending`，需要重新审核后才会重新参与被动匹配。
 #### 常用示例命令
 - `#wordbank trigger prob 271 0.3`
 - `#wordbank trigger set 271 晚安啦`
+- `#wordbank trigger set 271 [图片]`
 #### 前置条件
-仅超级用户可执行。
+`trigger prob` 与 `trigger set` 都要求当前用户对目标 trigger group 有修改权限；实际使用里通常由超级用户统一维护。
+#### 完整流程
+```demo
+USER: #wordbank trigger prob 271 0.3
+BOT: trigger group #271 的触发概率已更新为 0.3。
+USER: #wordbank trigger set 271 晚安啦
+BOT: trigger group #271 的触发词已更新，该组响应已重新进入待审核。
+SYSTEM: `trigger prob` 只更新整组命中率；`trigger set` 修改触发内容后会让整组重新进入 pending，等待管理员重新审核。
+```
 #### 失败情况
-group 不存在、内容冲突、参数非法或权限不足时会提示。
+group 不存在、触发词冲突、概率不在 `0-1` 范围内、图片无法识别或权限不足时会提示。
 
 ### `response` 修改响应词与响应权重
 - 摘要: 修改某条响应内容或权重。
+- Advanced: true
+- Priority: 80
+- 别名: response, 响应, 响应词, response weight, response set
 - 指令:
   - `wordbank response weight <id> <1-5>`
   - `wordbank response set <id> <新响应内容>`
+- Demo: wordbank-response.png
 #### 说明
-`response weight` 只影响同组内抽样；`response set` 修改内容后会重新进入 `pending`。
+`response weight` 只影响同一 trigger group 内多条响应的抽样权重；`response set` 用于改正文案、图片或图文混排响应。修改响应内容后，这一条响应会重新进入 `pending`，不会立刻生效。
 #### 常用示例命令
 - `#wordbank response weight 12 5`
 - `#wordbank response set 12 做个好梦`
+- `#wordbank response set 12 做个好梦 [图片]`
 #### 前置条件
 超级用户可修改任意响应；普通用户仅可改自己创建的响应。
+#### 完整流程
+```demo
+USER: #wordbank response weight 12 5
+BOT: 词条 #12 的响应权重已更新为 5。
+USER: #wordbank response set 12 做个好梦
+BOT: 词条 #12 的响应内容已更新，并重新进入待审核。
+SYSTEM: `response weight` 只改变组内抽样倾向；`response set` 会改动响应内容本身，因此该条响应会重新进入 pending。
+```
 #### 失败情况
 ID 非法、对象不存在、参数越界或权限不足时会提示。
 
@@ -321,6 +454,7 @@ ID 非法、对象不存在、参数越界或权限不足时会提示。
 ```demo
 USER: [戳一戳机器人]
 BOT: 别戳啦
+SYSTEM: 如果命中的是 `group_recall` / `friend_recall` 一类撤回信号，词库会直接跳过，不发送回复。
 ```
 #### 失败情况
 未命中、规则不通过、概率未命中、图片失败或命中撤回信号时不回复。
@@ -339,10 +473,18 @@ BOT: 别戳啦
 必须回复一条由词库系统记录过上下文的机器人消息，且当前用户满足对应权限。
 #### 完整流程
 ```demo
+USER: [回复机器人词库消息] @机器人 info
+BOT: 词条 #300 状态摘要
+管理员审核通过后才变为 approved。
 USER: [回复机器人词库消息] @机器人 详情
 BOT: 词条详情 #12
-USER: [回复机器人词库消息] @机器人 删除
-BOT: 词条 #12 已删除。
+触发: 晚安
+响应: 做个好梦
+USER: [回复机器人词库消息] @机器人 trigger prob 0.3
+BOT: trigger group #12 的触发概率已更新为 0.3。
+USER: [回复机器人词库消息] @机器人 response weight 5
+BOT: 词条 #300 的响应权重已更新为 5。
+SYSTEM: 回复快捷修改会自动从上下文里拿到对应的 trigger group 或 response item，不需要再次手填完整 ID。
 ```
 #### 失败情况
-未回复有效上下文、对象已清理或权限不足时会提示。
+未回复有效上下文、对象已清理、命令不受支持或权限不足时会提示。
