@@ -9,34 +9,34 @@
       "superuser": "README-guide--b8f61815f3.webp"
     },
     "feature:admin.i18n:show": {
-      "normal": "admin-i18n-show.png",
-      "group_admin": "admin-i18n-show--5bb68e090b.png",
-      "group_owner": "admin-i18n-show--5bb68e090b.png",
-      "superuser": "admin-i18n-show--5bb68e090b.png"
+      "normal": "admin-i18n-show.webp",
+      "group_admin": "admin-i18n-show.webp",
+      "group_owner": "admin-i18n-show.webp",
+      "superuser": "admin-i18n-show.webp"
     },
     "feature:admin.i18n:default": {
-      "normal": "admin-i18n-default.png",
-      "group_admin": "admin-i18n-default--7eee0b2c96.png",
-      "group_owner": "admin-i18n-default--7eee0b2c96.png",
-      "superuser": "admin-i18n-default--7eee0b2c96.png"
+      "normal": "admin-i18n-default.webp",
+      "group_admin": "admin-i18n-default.webp",
+      "group_owner": "admin-i18n-default.webp",
+      "superuser": "admin-i18n-default.webp"
     },
     "feature:admin.i18n:set": {
-      "normal": "admin-i18n-set.png",
-      "group_admin": "admin-i18n-set--83fbeecfc2.png",
-      "group_owner": "admin-i18n-set--83fbeecfc2.png",
-      "superuser": "admin-i18n-set--83fbeecfc2.png"
+      "normal": "admin-i18n-set.webp",
+      "group_admin": "admin-i18n-set.webp",
+      "group_owner": "admin-i18n-set.webp",
+      "superuser": "admin-i18n-set.webp"
     },
     "feature:admin.i18n:clear": {
-      "normal": "admin-i18n-clear.png",
-      "group_admin": "admin-i18n-clear--57a3f1de04.png",
-      "group_owner": "admin-i18n-clear--57a3f1de04.png",
-      "superuser": "admin-i18n-clear--57a3f1de04.png"
+      "normal": "admin-i18n-clear.webp",
+      "group_admin": "admin-i18n-clear.webp",
+      "group_owner": "admin-i18n-clear.webp",
+      "superuser": "admin-i18n-clear.webp"
     },
     "feature:admin.i18n:list": {
-      "normal": "admin-i18n-list.png",
-      "group_admin": "admin-i18n-list--b4460a847b.png",
-      "group_owner": "admin-i18n-list--b4460a847b.png",
-      "superuser": "admin-i18n-list--b4460a847b.png"
+      "normal": "admin-i18n-list.webp",
+      "group_admin": "admin-i18n-list.webp",
+      "group_owner": "admin-i18n-list.webp",
+      "superuser": "admin-i18n-list.webp"
     }
   }
 }

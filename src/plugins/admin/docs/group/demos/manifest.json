@@ -9,40 +9,40 @@
       "superuser": "README-guide--667e4adb10.webp"
     },
     "feature:admin.group:ban": {
-      "normal": "admin-group-ban.png",
-      "group_admin": "admin-group-ban--1d47394881.png",
-      "group_owner": "admin-group-ban--1d47394881.png",
-      "superuser": "admin-group-ban--1d47394881.png"
+      "normal": "admin-group-ban.webp",
+      "group_admin": "admin-group-ban.webp",
+      "group_owner": "admin-group-ban.webp",
+      "superuser": "admin-group-ban.webp"
     },
     "feature:admin.group:unban": {
-      "normal": "admin-group-unban.png",
-      "group_admin": "admin-group-unban--000a0db286.png",
-      "group_owner": "admin-group-unban--000a0db286.png",
-      "superuser": "admin-group-unban--000a0db286.png"
+      "normal": "admin-group-unban.webp",
+      "group_admin": "admin-group-unban.webp",
+      "group_owner": "admin-group-unban.webp",
+      "superuser": "admin-group-unban.webp"
     },
     "feature:admin.group:auth": {
-      "normal": "admin-group-auth.png",
-      "group_admin": "admin-group-auth--adcee91c98.png",
-      "group_owner": "admin-group-auth--adcee91c98.png",
-      "superuser": "admin-group-auth--adcee91c98.png"
+      "normal": "admin-group-auth.webp",
+      "group_admin": "admin-group-auth.webp",
+      "group_owner": "admin-group-auth.webp",
+      "superuser": "admin-group-auth.webp"
     },
     "feature:admin.group:unauth": {
-      "normal": "admin-group-unauth.png",
-      "group_admin": "admin-group-unauth--2b516a237b.png",
-      "group_owner": "admin-group-unauth--2b516a237b.png",
-      "superuser": "admin-group-unauth--2b516a237b.png"
+      "normal": "admin-group-unauth.webp",
+      "group_admin": "admin-group-unauth.webp",
+      "group_owner": "admin-group-unauth.webp",
+      "superuser": "admin-group-unauth.webp"
     },
     "feature:admin.group:status": {
-      "normal": "admin-group-status.png",
-      "group_admin": "admin-group-status--eb34546e67.png",
-      "group_owner": "admin-group-status--eb34546e67.png",
-      "superuser": "admin-group-status--eb34546e67.png"
+      "normal": "admin-group-status.webp",
+      "group_admin": "admin-group-status.webp",
+      "group_owner": "admin-group-status.webp",
+      "superuser": "admin-group-status.webp"
     },
     "feature:admin.group:leave": {
-      "normal": "admin-group-leave.png",
-      "group_admin": "admin-group-leave--8b3cafefb7.png",
-      "group_owner": "admin-group-leave--8b3cafefb7.png",
-      "superuser": "admin-group-leave--8b3cafefb7.png"
+      "normal": "admin-group-leave.webp",
+      "group_admin": "admin-group-leave.webp",
+      "group_owner": "admin-group-leave.webp",
+      "superuser": "admin-group-leave.webp"
     }
   }
 }

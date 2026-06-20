@@ -3,100 +3,100 @@
   "locale": "zh-CN",
   "targets": {
     "guide:wordbank": {
-      "normal": "README-guide--f19b52fc90.png",
-      "group_admin": "README-guide--f19b52fc90.png",
-      "group_owner": "README-guide--f19b52fc90.png",
-      "superuser": "README-guide--f19b52fc90.png"
+      "normal": "README-guide--f19b52fc90.webp",
+      "group_admin": "README-guide--f19b52fc90.webp",
+      "group_owner": "README-guide--f19b52fc90.webp",
+      "superuser": "README-guide--f19b52fc90.webp"
     },
     "feature:wordbank:add-scope": {
-      "normal": "wordbank-add-scope.png",
-      "group_admin": "wordbank-add-scope--83f508d421.png",
-      "group_owner": "wordbank-add-scope--83f508d421.png",
-      "superuser": "wordbank-add-scope--83f508d421.png"
+      "normal": "wordbank-add-scope.webp",
+      "group_admin": "wordbank-add-scope.webp",
+      "group_owner": "wordbank-add-scope.webp",
+      "superuser": "wordbank-add-scope.webp"
     },
     "feature:wordbank:search": {
-      "normal": "wordbank-search.png",
-      "group_admin": "wordbank-search--8afdcd8334.png",
-      "group_owner": "wordbank-search--8afdcd8334.png",
-      "superuser": "wordbank-search--8afdcd8334.png"
+      "normal": "wordbank-search.webp",
+      "group_admin": "wordbank-search.webp",
+      "group_owner": "wordbank-search.webp",
+      "superuser": "wordbank-search.webp"
     },
     "feature:wordbank:delete": {
-      "normal": "wordbank-delete.png",
-      "group_admin": "wordbank-delete--1eb80fba43.png",
-      "group_owner": "wordbank-delete--1eb80fba43.png",
-      "superuser": "wordbank-delete--1eb80fba43.png"
+      "normal": "wordbank-delete.webp",
+      "group_admin": "wordbank-delete.webp",
+      "group_owner": "wordbank-delete.webp",
+      "superuser": "wordbank-delete.webp"
     },
     "feature:wordbank:trigger": {
-      "normal": "wordbank-trigger.png",
-      "group_admin": "wordbank-trigger--0e6da17f1d.png",
-      "group_owner": "wordbank-trigger--0e6da17f1d.png",
-      "superuser": "wordbank-trigger--0e6da17f1d.png"
+      "normal": "wordbank-trigger.webp",
+      "group_admin": "wordbank-trigger.webp",
+      "group_owner": "wordbank-trigger.webp",
+      "superuser": "wordbank-trigger.webp"
     },
     "feature:wordbank:add": {
-      "normal": "wordbank-add.png",
-      "group_admin": "wordbank-add--2e067084c8.png",
-      "group_owner": "wordbank-add--2e067084c8.png",
-      "superuser": "wordbank-add--2e067084c8.png"
+      "normal": "wordbank-add.webp",
+      "group_admin": "wordbank-add.webp",
+      "group_owner": "wordbank-add.webp",
+      "superuser": "wordbank-add.webp"
     },
     "feature:wordbank:add-prob": {
-      "normal": "wordbank-add-prob.png",
-      "group_admin": "wordbank-add-prob--a297b937ec.png",
-      "group_owner": "wordbank-add-prob--a297b937ec.png",
-      "superuser": "wordbank-add-prob--a297b937ec.png"
+      "normal": "wordbank-add-prob.webp",
+      "group_admin": "wordbank-add-prob.webp",
+      "group_owner": "wordbank-add-prob.webp",
+      "superuser": "wordbank-add-prob.webp"
     },
     "feature:wordbank:add-weight": {
-      "normal": "wordbank-add-weight.png",
-      "group_admin": "wordbank-add-weight--ac8b228f36.png",
-      "group_owner": "wordbank-add-weight--ac8b228f36.png",
-      "superuser": "wordbank-add-weight--ac8b228f36.png"
+      "normal": "wordbank-add-weight.webp",
+      "group_admin": "wordbank-add-weight.webp",
+      "group_owner": "wordbank-add-weight.webp",
+      "superuser": "wordbank-add-weight.webp"
     },
     "feature:wordbank:add-role": {
-      "normal": "wordbank-add-role.png",
-      "group_admin": "wordbank-add-role--3b2ca5bb97.png",
-      "group_owner": "wordbank-add-role--3b2ca5bb97.png",
-      "superuser": "wordbank-add-role--3b2ca5bb97.png"
+      "normal": "wordbank-add-role.webp",
+      "group_admin": "wordbank-add-role.webp",
+      "group_owner": "wordbank-add-role.webp",
+      "superuser": "wordbank-add-role.webp"
     },
     "feature:wordbank:add-call": {
-      "normal": "wordbank-add-call.png",
-      "group_admin": "wordbank-add-call--28f5012bf4.png",
-      "group_owner": "wordbank-add-call--28f5012bf4.png",
-      "superuser": "wordbank-add-call--28f5012bf4.png"
+      "normal": "wordbank-add-call.webp",
+      "group_admin": "wordbank-add-call.webp",
+      "group_owner": "wordbank-add-call.webp",
+      "superuser": "wordbank-add-call.webp"
     },
     "feature:wordbank:rank": {
-      "normal": "wordbank-rank.png",
-      "group_admin": "wordbank-rank--a4530ca0ac.png",
-      "group_owner": "wordbank-rank--a4530ca0ac.png",
-      "superuser": "wordbank-rank--a4530ca0ac.png"
+      "normal": "wordbank-rank.webp",
+      "group_admin": "wordbank-rank.webp",
+      "group_owner": "wordbank-rank.webp",
+      "superuser": "wordbank-rank.webp"
     },
     "feature:wordbank:group": {
-      "normal": "wordbank-search.png",
-      "group_admin": "wordbank-search--f725c0a55e.png",
-      "group_owner": "wordbank-search--f725c0a55e.png",
-      "superuser": "wordbank-search--f725c0a55e.png"
+      "normal": "wordbank-search.webp",
+      "group_admin": "wordbank-search.webp",
+      "group_owner": "wordbank-search.webp",
+      "superuser": "wordbank-search.webp"
     },
     "feature:wordbank:restore": {
-      "normal": "wordbank-restore.png",
-      "group_admin": "wordbank-restore--6480d98b12.png",
-      "group_owner": "wordbank-restore--6480d98b12.png",
-      "superuser": "wordbank-restore--6480d98b12.png"
+      "normal": "wordbank-restore.webp",
+      "group_admin": "wordbank-restore.webp",
+      "group_owner": "wordbank-restore.webp",
+      "superuser": "wordbank-restore.webp"
     },
     "feature:wordbank:response": {
-      "normal": "wordbank-response.png",
-      "group_admin": "wordbank-response--0b646694ec.png",
-      "group_owner": "wordbank-response--0b646694ec.png",
-      "superuser": "wordbank-response--0b646694ec.png"
+      "normal": "wordbank-response.webp",
+      "group_admin": "wordbank-response.webp",
+      "group_owner": "wordbank-response.webp",
+      "superuser": "wordbank-response.webp"
     },
     "feature:wordbank:passive": {
-      "normal": "wordbank-passive.png",
-      "group_admin": "wordbank-passive--d259f62126.png",
-      "group_owner": "wordbank-passive--d259f62126.png",
-      "superuser": "wordbank-passive--d259f62126.png"
+      "normal": "wordbank-passive.webp",
+      "group_admin": "wordbank-passive.webp",
+      "group_owner": "wordbank-passive.webp",
+      "superuser": "wordbank-passive.webp"
     },
     "feature:wordbank:reply-shortcut": {
-      "normal": "wordbank-reply-shortcut.png",
-      "group_admin": "wordbank-reply-shortcut--ecdcfed630.png",
-      "group_owner": "wordbank-reply-shortcut--ecdcfed630.png",
-      "superuser": "wordbank-reply-shortcut--ecdcfed630.png"
+      "normal": "wordbank-reply-shortcut.webp",
+      "group_admin": "wordbank-reply-shortcut.webp",
+      "group_owner": "wordbank-reply-shortcut.webp",
+      "superuser": "wordbank-reply-shortcut.webp"
     }
   }
 }

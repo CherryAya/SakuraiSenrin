@@ -3,10 +3,10 @@
   "locale": "zh-CN",
   "targets": {
     "feature:sentry:main": {
-      "normal": "sentry-alert.png",
-      "group_admin": "sentry-alert--4d4ad7f57a.png",
-      "group_owner": "sentry-alert--4d4ad7f57a.png",
-      "superuser": "sentry-alert--4d4ad7f57a.png"
+      "normal": "sentry-alert.webp",
+      "group_admin": "sentry-alert.webp",
+      "group_owner": "sentry-alert.webp",
+      "superuser": "sentry-alert.webp"
     }
   }
 }

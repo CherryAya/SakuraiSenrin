@@ -6,13 +6,13 @@
       "normal": "help-index.webp",
       "group_admin": "help-index.webp",
       "group_owner": "help-index.webp",
-      "superuser": "help-index.webp"
+      "superuser": "help-index--b538e415df.webp"
     },
     "feature:help:main": {
-      "normal": "help-index.png",
-      "group_admin": "help-index--cbcf13c8e8.png",
-      "group_owner": "help-index--cbcf13c8e8.png",
-      "superuser": "help-index--cbcf13c8e8.png"
+      "normal": "help-main.webp",
+      "group_admin": "help-main.webp",
+      "group_owner": "help-main.webp",
+      "superuser": "help-main.webp"
     }
   }
 }

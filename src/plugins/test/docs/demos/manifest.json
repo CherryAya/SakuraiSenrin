@@ -3,10 +3,10 @@
   "locale": "zh-CN",
   "targets": {
     "feature:test:main": {
-      "normal": "test-listener.png",
-      "group_admin": "test-listener--446d7529e4.png",
-      "group_owner": "test-listener--446d7529e4.png",
-      "superuser": "test-listener--446d7529e4.png"
+      "normal": "test-listener.webp",
+      "group_admin": "test-listener.webp",
+      "group_owner": "test-listener.webp",
+      "superuser": "test-listener.webp"
     }
   }
 }

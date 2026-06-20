@@ -2,11 +2,11 @@
   "version": 1,
   "locale": "zh-CN",
   "targets": {
-    "feature:community_mima:main": {
-      "normal": "community-mima-main.png",
-      "group_admin": "community-mima-main--0edb20947a.png",
-      "group_owner": "community-mima-main--0edb20947a.png",
-      "superuser": "community-mima-main--0edb20947a.png"
+    "feature:community.feedback-password:main": {
+      "normal": "community-mima-main.webp",
+      "group_admin": "community-mima-main.webp",
+      "group_owner": "community-mima-main.webp",
+      "superuser": "community-mima-main.webp"
     }
   }
 }

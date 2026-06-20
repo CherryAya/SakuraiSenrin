@@ -3,10 +3,10 @@
   "locale": "zh-CN",
   "targets": {
     "feature:study:main": {
-      "normal": "study-collection.png",
-      "group_admin": "study-collection--2ac2a7d8ab.png",
-      "group_owner": "study-collection--2ac2a7d8ab.png",
-      "superuser": "study-collection--2ac2a7d8ab.png"
+      "normal": "study-main.webp",
+      "group_admin": "study-main.webp",
+      "group_owner": "study-main.webp",
+      "superuser": "study-main.webp"
     }
   }
 }

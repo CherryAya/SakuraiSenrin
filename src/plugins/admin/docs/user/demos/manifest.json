@@ -9,22 +9,22 @@
       "superuser": "README-guide--e07509f111.webp"
     },
     "feature:admin.user:ban": {
-      "normal": "admin-user-ban.png",
-      "group_admin": "admin-user-ban--993c117173.png",
-      "group_owner": "admin-user-ban--993c117173.png",
-      "superuser": "admin-user-ban--993c117173.png"
+      "normal": "admin-user-ban.webp",
+      "group_admin": "admin-user-ban.webp",
+      "group_owner": "admin-user-ban.webp",
+      "superuser": "admin-user-ban.webp"
     },
     "feature:admin.user:unban": {
-      "normal": "admin-user-unban.png",
-      "group_admin": "admin-user-unban--3b9bf0a160.png",
-      "group_owner": "admin-user-unban--3b9bf0a160.png",
-      "superuser": "admin-user-unban--3b9bf0a160.png"
+      "normal": "admin-user-unban.webp",
+      "group_admin": "admin-user-unban.webp",
+      "group_owner": "admin-user-unban.webp",
+      "superuser": "admin-user-unban.webp"
     },
     "feature:admin.user:status": {
-      "normal": "admin-user-status.png",
-      "group_admin": "admin-user-status--c387927ae1.png",
-      "group_owner": "admin-user-status--c387927ae1.png",
-      "superuser": "admin-user-status--c387927ae1.png"
+      "normal": "admin-user-status.webp",
+      "group_admin": "admin-user-status.webp",
+      "group_owner": "admin-user-status.webp",
+      "superuser": "admin-user-status.webp"
     }
   }
 }

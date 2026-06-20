@@ -850,8 +850,7 @@ def build_help_assets(
                 )
                 signature_to_filename[plan.signature] = filename
             path = plan.source_path.parent / "demos" / filename
-            if not path.exists():
-                _output_static_asset(path, result.data)
+            _output_static_asset(path, result.data)
         elif plan.kind == "static":
             filename = signature_to_filename.get(plan.signature)
             if filename is None:
@@ -861,8 +860,7 @@ def build_help_assets(
                 )
                 signature_to_filename[plan.signature] = filename
             path = plan.source_path.parent / "demos" / filename
-            if not path.exists():
-                _output_static_asset(path, result.data)
+            _output_static_asset(path, result.data)
         else:
             assert plan.feature is not None
             base_filename = _with_suffix(plan.feature.demo_filename, suffix)
@@ -875,8 +873,7 @@ def build_help_assets(
                 )
                 signature_to_filename[plan.signature] = filename
             path = plan.source_path.parent / "demos" / filename
-            if not path.exists():
-                _output_static_asset(path, result.data)
+            _output_static_asset(path, result.data)
 
         target_map.setdefault(plan.target_key, {})[plan.profile] = filename
 

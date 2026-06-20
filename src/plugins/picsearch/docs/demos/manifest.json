@@ -3,10 +3,10 @@
   "locale": "zh-CN",
   "targets": {
     "feature:picsearch:main": {
-      "normal": "picsearch-search.png",
-      "group_admin": "picsearch-search--6111090833.png",
-      "group_owner": "picsearch-search--6111090833.png",
-      "superuser": "picsearch-search--6111090833.png"
+      "normal": "picsearch-search.webp",
+      "group_admin": "picsearch-search.webp",
+      "group_owner": "picsearch-search.webp",
+      "superuser": "picsearch-search.webp"
     }
   }
 }

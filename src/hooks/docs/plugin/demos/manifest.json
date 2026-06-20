@@ -9,10 +9,10 @@
       "superuser": "README-guide--3ddec434cb.webp"
     },
     "feature:hook.plugin:main": {
-      "normal": "hook-plugin-placeholder.png",
-      "group_admin": "hook-plugin-placeholder--2d28523c12.png",
-      "group_owner": "hook-plugin-placeholder--2d28523c12.png",
-      "superuser": "hook-plugin-placeholder--2d28523c12.png"
+      "normal": "hook-plugin-placeholder.webp",
+      "group_admin": "hook-plugin-placeholder.webp",
+      "group_owner": "hook-plugin-placeholder.webp",
+      "superuser": "hook-plugin-placeholder.webp"
     }
   }
 }

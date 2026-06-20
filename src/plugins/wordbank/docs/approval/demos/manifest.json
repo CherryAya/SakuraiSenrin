@@ -8,24 +8,24 @@
       "superuser": "README-guide--44ce17112b.webp"
     },
     "feature:wordbank.approval:pending": {
-      "group_admin": "wordbank-approval-pending--7e288e3870.png",
-      "group_owner": "wordbank-approval-pending--7e288e3870.png",
-      "superuser": "wordbank-approval-pending--7e288e3870.png"
+      "group_admin": "wordbank-approval-pending.webp",
+      "group_owner": "wordbank-approval-pending.webp",
+      "superuser": "wordbank-approval-pending.webp"
     },
     "feature:wordbank.approval:approve": {
-      "group_admin": "wordbank-approval-approve--945727d502.png",
-      "group_owner": "wordbank-approval-approve--945727d502.png",
-      "superuser": "wordbank-approval-approve--945727d502.png"
+      "group_admin": "wordbank-approval-approve.webp",
+      "group_owner": "wordbank-approval-approve.webp",
+      "superuser": "wordbank-approval-approve.webp"
     },
     "feature:wordbank.approval:reject": {
-      "group_admin": "wordbank-approval-reject--84aa3350d1.png",
-      "group_owner": "wordbank-approval-reject--84aa3350d1.png",
-      "superuser": "wordbank-approval-reject--84aa3350d1.png"
+      "group_admin": "wordbank-approval-reject.webp",
+      "group_owner": "wordbank-approval-reject.webp",
+      "superuser": "wordbank-approval-reject.webp"
     },
     "feature:wordbank.approval:approval-reply": {
-      "group_admin": "wordbank-approval-approval-reply--aec1c3450c.png",
-      "group_owner": "wordbank-approval-approval-reply--aec1c3450c.png",
-      "superuser": "wordbank-approval-approval-reply--aec1c3450c.png"
+      "group_admin": "wordbank-approval-approval-reply.webp",
+      "group_owner": "wordbank-approval-approval-reply.webp",
+      "superuser": "wordbank-approval-approval-reply.webp"
     }
   }
 }

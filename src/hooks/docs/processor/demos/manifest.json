@@ -9,10 +9,10 @@
       "superuser": "README-guide--641629acaa.webp"
     },
     "feature:hook.processor:main": {
-      "normal": "hook-processor-main.png",
-      "group_admin": "hook-processor-main--ef0dfad8df.png",
-      "group_owner": "hook-processor-main--ef0dfad8df.png",
-      "superuser": "hook-processor-main--ef0dfad8df.png"
+      "normal": "hook-processor-main.webp",
+      "group_admin": "hook-processor-main.webp",
+      "group_owner": "hook-processor-main.webp",
+      "superuser": "hook-processor-main.webp"
     }
   }
 }

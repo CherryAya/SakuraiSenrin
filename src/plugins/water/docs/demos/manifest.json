@@ -9,48 +9,48 @@
       "superuser": "README-guide--332aa6b685.webp"
     },
     "feature:water:profile": {
-      "normal": "water-profile.png",
-      "group_admin": "water-profile--b528957b71.png",
-      "group_owner": "water-profile--b528957b71.png",
-      "superuser": "water-profile--b528957b71.png"
+      "normal": "water-profile.webp",
+      "group_admin": "water-profile.webp",
+      "group_owner": "water-profile.webp",
+      "superuser": "water-profile.webp"
     },
     "feature:water:profile-full": {
-      "normal": "water-profile-full.png",
-      "group_admin": "water-profile-full--e0a9443cf0.png",
-      "group_owner": "water-profile-full--e0a9443cf0.png",
-      "superuser": "water-profile-full--e0a9443cf0.png"
+      "normal": "water-profile-full.webp",
+      "group_admin": "water-profile-full.webp",
+      "group_owner": "water-profile-full.webp",
+      "superuser": "water-profile-full.webp"
     },
     "feature:water:ranking": {
-      "normal": "water-ranking.png",
-      "group_admin": "water-ranking--254a4015f9.png",
-      "group_owner": "water-ranking--254a4015f9.png",
-      "superuser": "water-ranking--254a4015f9.png"
+      "normal": "water-ranking.webp",
+      "group_admin": "water-ranking.webp",
+      "group_owner": "water-ranking.webp",
+      "superuser": "water-ranking.webp"
     },
     "feature:water:today-report": {
-      "normal": "water-ranking.png",
-      "group_admin": "water-ranking--9d9196a711.png",
-      "group_owner": "water-ranking--9d9196a711.png",
-      "superuser": "water-ranking--9d9196a711.png"
+      "normal": "water-ranking.webp",
+      "group_admin": "water-ranking.webp",
+      "group_owner": "water-ranking.webp",
+      "superuser": "water-ranking.webp"
     },
     "feature:water:achievement": {
-      "normal": "water-achievement.png",
-      "group_admin": "water-achievement--87333ca554.png",
-      "group_owner": "water-achievement--87333ca554.png",
-      "superuser": "water-achievement--87333ca554.png"
+      "normal": "water-achievement.webp",
+      "group_admin": "water-achievement.webp",
+      "group_owner": "water-achievement.webp",
+      "superuser": "water-achievement.webp"
     },
     "feature:water:season-query": {
-      "normal": "water-season-query.png",
-      "group_admin": "water-season-query--8162882ffc.png",
-      "group_owner": "water-season-query--8162882ffc.png",
-      "superuser": "water-season-query--8162882ffc.png"
+      "normal": "water-season-query.webp",
+      "group_admin": "water-season-query.webp",
+      "group_owner": "water-season-query.webp",
+      "superuser": "water-season-query.webp"
     },
     "feature:water:merge-confirm": {
-      "group_admin": "water-merge-confirm--6c9bd00d5e.png",
-      "group_owner": "water-merge-confirm--6c9bd00d5e.png",
-      "superuser": "water-merge-confirm--6c9bd00d5e.png"
+      "group_admin": "water-merge-confirm.webp",
+      "group_owner": "water-merge-confirm.webp",
+      "superuser": "water-merge-confirm.webp"
     },
     "feature:water:admin-maintenance": {
-      "superuser": "water-admin-maintenance--e803231c3e.png"
+      "superuser": "water-admin-maintenance.webp"
     }
   }
 }

@@ -2,11 +2,11 @@
   "version": 1,
   "locale": "zh-CN",
   "targets": {
-    "feature:community_invite:main": {
-      "normal": "community-invite-main.png",
-      "group_admin": "community-invite-main--e975d13e61.png",
-      "group_owner": "community-invite-main--e975d13e61.png",
-      "superuser": "community-invite-main--e975d13e61.png"
+    "feature:community.invite-guide:main": {
+      "normal": "community-invite-main.webp",
+      "group_admin": "community-invite-main.webp",
+      "group_owner": "community-invite-main.webp",
+      "superuser": "community-invite-main.webp"
     }
   }
 }

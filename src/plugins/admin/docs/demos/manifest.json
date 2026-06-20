@@ -3,40 +3,40 @@
   "locale": "zh-CN",
   "targets": {
     "guide:admin": {
-      "normal": "README-guide--e2c7186e4f.webp",
-      "group_admin": "README-guide--e2c7186e4f.webp",
-      "group_owner": "README-guide--e2c7186e4f.webp",
-      "superuser": "README-guide--e2c7186e4f.webp"
+      "normal": "README-guide--f1c9d53765.webp",
+      "group_admin": "README-guide--f1c9d53765.webp",
+      "group_owner": "README-guide--f1c9d53765.webp",
+      "superuser": "README-guide--bbca3d9148.webp"
     },
     "feature:admin:group": {
-      "normal": "admin-overview-group.png",
-      "group_admin": "admin-overview-group--7e419da900.png",
-      "group_owner": "admin-overview-group--7e419da900.png",
-      "superuser": "admin-overview-group--7e419da900.png"
+      "normal": "admin-overview-group.webp",
+      "group_admin": "admin-overview-group.webp",
+      "group_owner": "admin-overview-group.webp",
+      "superuser": "admin-overview-group.webp"
     },
     "feature:admin:user": {
-      "normal": "admin-overview-user.png",
-      "group_admin": "admin-overview-user--c52ce5216b.png",
-      "group_owner": "admin-overview-user--c52ce5216b.png",
-      "superuser": "admin-overview-user--c52ce5216b.png"
+      "normal": "admin-overview-user.webp",
+      "group_admin": "admin-overview-user.webp",
+      "group_owner": "admin-overview-user.webp",
+      "superuser": "admin-overview-user.webp"
     },
     "feature:admin:invite": {
-      "normal": "admin-overview-invite.png",
-      "group_admin": "admin-overview-invite--d76786b81a.png",
-      "group_owner": "admin-overview-invite--d76786b81a.png",
-      "superuser": "admin-overview-invite--d76786b81a.png"
+      "normal": "admin-overview-invite.webp",
+      "group_admin": "admin-overview-invite.webp",
+      "group_owner": "admin-overview-invite.webp",
+      "superuser": "admin-overview-invite.webp"
     },
     "feature:admin:i18n": {
-      "normal": "admin-overview-i18n.png",
-      "group_admin": "admin-overview-i18n--90afe9cba5.png",
-      "group_owner": "admin-overview-i18n--90afe9cba5.png",
-      "superuser": "admin-overview-i18n--90afe9cba5.png"
+      "normal": "admin-overview-i18n.webp",
+      "group_admin": "admin-overview-i18n.webp",
+      "group_owner": "admin-overview-i18n.webp",
+      "superuser": "admin-overview-i18n.webp"
     },
     "feature:admin:backup": {
-      "normal": "admin-overview-backup.png",
-      "group_admin": "admin-overview-backup--b93c6d05e5.png",
-      "group_owner": "admin-overview-backup--b93c6d05e5.png",
-      "superuser": "admin-overview-backup--b93c6d05e5.png"
+      "normal": "admin-overview-backup.webp",
+      "group_admin": "admin-overview-backup.webp",
+      "group_owner": "admin-overview-backup.webp",
+      "superuser": "admin-overview-backup.webp"
     }
   }
 }

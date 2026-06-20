@@ -2,11 +2,11 @@
   "version": 1,
   "locale": "zh-CN",
   "targets": {
-    "feature:community_miaomiao:main": {
-      "normal": "community-miaomiao-main.png",
-      "group_admin": "community-miaomiao-main--b7818d5e05.png",
-      "group_owner": "community-miaomiao-main--b7818d5e05.png",
-      "superuser": "community-miaomiao-main--b7818d5e05.png"
+    "feature:community.miaomiao-toolkit:main": {
+      "normal": "community-miaomiao-main.webp",
+      "group_admin": "community-miaomiao-main.webp",
+      "group_owner": "community-miaomiao-main.webp",
+      "superuser": "community-miaomiao-main.webp"
     }
   }
 }
