@@ -684,14 +684,33 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
 ) -> None:
     calls: list[tuple[str, dict[str, int | None]]] = []
 
-    def fake_generate(*, workers: int | None = None) -> int:
-        calls.append(("generate", {"workers": workers}))
+    def fake_generate(
+        *,
+        workers: int | None = None,
+        profile: bool = False,
+        profile_top: int = 10,
+        reset_caches: bool = True,
+    ) -> int:
+        calls.append(
+            (
+                "generate",
+                {
+                    "workers": workers,
+                    "profile": int(profile),
+                    "profile_top": profile_top,
+                    "reset_caches": int(reset_caches),
+                },
+            )
+        )
         return 0
 
     def fake_compose(
         *,
         workers: int | None = None,
         columns: int = 2,
+        profile: bool = False,
+        profile_top: int = 10,
+        reset_caches: bool = True,
     ) -> int:
         calls.append(
             (
@@ -699,17 +718,50 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
                 {
                     "workers": workers,
                     "columns": columns,
+                    "profile": int(profile),
+                    "profile_top": profile_top,
+                    "reset_caches": int(reset_caches),
                 },
             )
         )
         return 0
 
-    def fake_validate() -> int:
-        calls.append(("validate", {}))
+    def fake_validate(
+        *,
+        profile: bool = False,
+        profile_top: int = 10,
+        reset_caches: bool = True,
+    ) -> int:
+        calls.append(
+            (
+                "validate",
+                {
+                    "profile": int(profile),
+                    "profile_top": profile_top,
+                    "reset_caches": int(reset_caches),
+                },
+            )
+        )
         return 0
 
-    def fake_build_help_assets() -> int:
-        calls.append(("build_help_assets", {}))
+    def fake_build_help_assets(
+        *,
+        workers: int | None = None,
+        profile: bool = False,
+        profile_top: int = 10,
+        reset_caches: bool = True,
+    ) -> int:
+        calls.append(
+            (
+                "build_help_assets",
+                {
+                    "workers": workers,
+                    "profile": int(profile),
+                    "profile_top": profile_top,
+                    "reset_caches": int(reset_caches),
+                },
+            )
+        )
         return 0
 
     monkeypatch.setattr(plugin_docs_script, "generate", fake_generate)
@@ -717,12 +769,52 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
     monkeypatch.setattr(plugin_docs_script, "build_help_assets", fake_build_help_assets)
     monkeypatch.setattr(plugin_docs_script, "validate", fake_validate)
 
-    assert plugin_docs_script.build(workers=3, columns=4) == 0
+    assert (
+        plugin_docs_script.build(
+            workers=3,
+            columns=4,
+            profile=True,
+            profile_top=7,
+        )
+        == 0
+    )
     assert calls == [
-        ("generate", {"workers": 3}),
-        ("compose", {"workers": 3, "columns": 4}),
-        ("build_help_assets", {}),
-        ("validate", {}),
+        (
+            "generate",
+            {
+                "workers": 3,
+                "profile": 1,
+                "profile_top": 7,
+                "reset_caches": 0,
+            },
+        ),
+        (
+            "compose",
+            {
+                "workers": 3,
+                "columns": 4,
+                "profile": 1,
+                "profile_top": 7,
+                "reset_caches": 0,
+            },
+        ),
+        (
+            "build_help_assets",
+            {
+                "workers": 3,
+                "profile": 1,
+                "profile_top": 7,
+                "reset_caches": 0,
+            },
+        ),
+        (
+            "validate",
+            {
+                "profile": 1,
+                "profile_top": 7,
+                "reset_caches": 0,
+            },
+        ),
     ]
 
 
@@ -803,6 +895,97 @@ BOT: Alpha 完成
         plugin_docs_module.render_feature_deep_dive(node, feature, locale="zh-CN")
         == b"local-static"
     )
+
+
+def test_build_help_assets_dedupes_identical_profile_renders(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    help_docs = tmp_path / "src" / "plugins" / "help" / "docs"
+    help_docs.mkdir(parents=True)
+    (help_docs / "README.MD").write_text(
+        """
+# 帮助中心
+
+## 概览
+帮助首页。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+""".strip(),
+        encoding="utf-8",
+    )
+    sample_docs = tmp_path / "src" / "plugins" / "sample" / "docs"
+    sample_docs.mkdir(parents=True)
+    (sample_docs / "README.MD").write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试 help-assets 去重。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一个功能。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一个功能。
+- 指令: `#alpha`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    plugin_docs_script._reset_caches()
+    render_counts = {
+        "dashboard": 0,
+        "sample_feature": 0,
+    }
+
+    def fake_render_help_dashboard(*args: Any, **kwargs: Any) -> bytes:
+        render_counts["dashboard"] += 1
+        return b"RIFFfakeWEBP"
+
+    def fake_render_feature_deep_dive(*args: Any, **kwargs: Any) -> bytes:
+        node = args[0]
+        if getattr(node, "slug", "") == "sample":
+            render_counts["sample_feature"] += 1
+        return b"RIFFfakeWEBP"
+
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "render_help_dashboard",
+        fake_render_help_dashboard,
+    )
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "render_feature_deep_dive",
+        fake_render_feature_deep_dive,
+    )
+
+    assert plugin_docs_script.build_help_assets(workers=4) == 0
+    assert render_counts["dashboard"] == 1
+    assert render_counts["sample_feature"] == 1
 
 
 def test_render_help_dashboard_prefers_manifest_backed_help_asset_from_explicit_source(

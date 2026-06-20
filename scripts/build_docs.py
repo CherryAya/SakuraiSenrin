@@ -4,15 +4,17 @@ from __future__ import annotations
 
 # pyright: reportAttributeAccessIssue=false
 import argparse
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from datetime import datetime
-from functools import lru_cache, partial
+from functools import lru_cache
 import json
 import os
 from pathlib import Path
 import re
 import sys
+from time import perf_counter
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -27,6 +29,8 @@ from src.lib.plugin_docs import (
     DemoCollectionTile,
     DocNode,
     DocsMeta,
+    FeatureDoc,
+    HelpDashboardSection,
     PluginDocBundle,
     audit_demo_layout,
     build_doc_tree,
@@ -81,6 +85,74 @@ class DocBuildContext:
     node: DocNode
 
 
+type HelpAssetKind = Literal["dashboard", "guide", "static", "feature"]
+
+
+@dataclass(slots=True, frozen=True)
+class HelpAssetRenderPlan:
+    kind: HelpAssetKind
+    render_key: str
+    signature: str
+    profile: str
+    source_path: Path
+    target_key: str
+    actor_permission: Permission
+    generated_at: datetime
+    node: DocNode | None = None
+    feature: FeatureDoc | None = None
+    sections: tuple[HelpDashboardSection, ...] = ()
+
+
+@dataclass(slots=True, frozen=True)
+class HelpAssetRenderResult:
+    plan: HelpAssetRenderPlan
+    data: bytes
+    elapsed_ms: float
+
+
+@dataclass(slots=True, frozen=True)
+class ProfileRecord:
+    stage: str
+    label: str
+    elapsed_ms: float
+
+
+@dataclass(slots=True)
+class Profiler:
+    enabled: bool = False
+    top_n: int = 10
+    records: list[ProfileRecord] = field(default_factory=list)
+
+    def record(self, stage: str, label: str, elapsed_ms: float) -> None:
+        if not self.enabled:
+            return
+        self.records.append(
+            ProfileRecord(stage=stage, label=label, elapsed_ms=elapsed_ms)
+        )
+        _write_line(f"[profile:{stage}] {elapsed_ms:.1f} ms {label}")
+
+    def report_stage(self, stage: str) -> None:
+        if not self.enabled:
+            return
+        stage_records = [record for record in self.records if record.stage == stage]
+        if not stage_records:
+            return
+        total_ms = sum(record.elapsed_ms for record in stage_records)
+        avg_ms = total_ms / len(stage_records)
+        _write_line(
+            f"[profile:{stage}:summary] count={len(stage_records)} "
+            f"total={total_ms:.1f} ms avg={avg_ms:.1f} ms"
+        )
+        for record in sorted(
+            stage_records,
+            key=lambda item: item.elapsed_ms,
+            reverse=True,
+        )[: self.top_n]:
+            _write_line(
+                f"[profile:{stage}:top] {record.elapsed_ms:.1f} ms {record.label}"
+            )
+
+
 PERMISSION_VARIANTS: tuple[tuple[str, Permission], ...] = (
     ("normal", Permission.NORMAL),
     ("group_admin", Permission.GROUP_ADMIN),
@@ -99,6 +171,23 @@ def iter_readmes() -> list[Path]:
 
 def _write_line(message: str) -> None:
     sys.stdout.write(f"{message}\n")
+
+
+def _relative_display(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _timed_call[T](
+    func: Callable[..., T],
+    *args: object,
+    **kwargs: object,
+) -> tuple[T, float]:
+    started_at = perf_counter()
+    result = func(*args, **kwargs)
+    return result, (perf_counter() - started_at) * 1000
 
 
 @lru_cache(maxsize=256)
@@ -268,6 +357,22 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def _add_profile_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="emit detailed stage timing and slow-task summaries",
+    )
+    parser.add_argument(
+        "--profile-top",
+        type=positive_int,
+        default=10,
+        help=(
+            "number of slowest timing records to print per stage (default: %(default)s)"
+        ),
+    )
+
+
 def collect_demo_jobs() -> tuple[int, tuple[DemoRenderJob, ...]]:
     readmes = iter_readmes()
     jobs: list[DemoRenderJob] = []
@@ -304,6 +409,14 @@ def render_demo_job(
     return output, rendered
 
 
+def _timed_render_demo_job(
+    job: DemoRenderJob,
+    *,
+    generated_at: datetime | None = None,
+) -> tuple[tuple[Path, bytes], float]:
+    return _timed_call(render_demo_job, job, generated_at=generated_at)
+
+
 def write_demo_result(result: tuple[Path, bytes]) -> Path:
     output, demo_bytes = result
     output.write_bytes(demo_bytes)
@@ -324,9 +437,60 @@ def _hash_filename(base_name: str, signature: str) -> str:
     return f"{stem}--{signature}{suffix}"
 
 
+def _with_suffix(base_name: str, suffix: str) -> str:
+    return str(Path(base_name).with_suffix(suffix))
+
+
 def _output_static_asset(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
+
+
+def _render_help_asset_plan(plan: HelpAssetRenderPlan) -> HelpAssetRenderResult:
+    started_at = perf_counter()
+    if plan.kind == "dashboard":
+        data = render_help_dashboard(
+            plan.sections,
+            locale="zh-CN",
+            generated_at=plan.generated_at,
+            actor_permission=plan.actor_permission,
+            prefer_static=False,
+            source_path=plan.source_path,
+        )
+    elif plan.kind == "guide":
+        assert plan.node is not None
+        data = render_plugin_guide(
+            plan.node,
+            actor_permission=plan.actor_permission,
+            locale="zh-CN",
+            generated_at=plan.generated_at,
+            prefer_static=False,
+        )
+    elif plan.kind == "static":
+        assert plan.node is not None
+        data = render_static_entry(
+            plan.node,
+            actor_permission=plan.actor_permission,
+            locale="zh-CN",
+            generated_at=plan.generated_at,
+            prefer_static=False,
+        )
+    else:
+        assert plan.node is not None
+        assert plan.feature is not None
+        data = render_feature_deep_dive(
+            plan.node,
+            plan.feature,
+            locale="zh-CN",
+            generated_at=plan.generated_at,
+            actor_permission=plan.actor_permission,
+            prefer_static=False,
+        )
+    return HelpAssetRenderResult(
+        plan=plan,
+        data=data,
+        elapsed_ms=(perf_counter() - started_at) * 1000,
+    )
 
 
 def _cleanup_generated_assets(
@@ -372,8 +536,67 @@ def _build_tree(contexts: tuple[DocBuildContext, ...]) -> tuple[DocNode, ...]:
     return tuple(context.node for context in contexts)
 
 
-def build_help_assets() -> int:
-    _reset_caches()
+def _help_asset_label(plan: HelpAssetRenderPlan) -> str:
+    base = f"{plan.kind}:{plan.profile}"
+    if plan.kind == "dashboard":
+        return f"{base} dashboard:index"
+    if plan.node is None:
+        return base
+    owner = _relative_display(plan.source_path)
+    if plan.kind == "feature" and plan.feature is not None:
+        return f"{base} {owner}#{plan.feature.slug}"
+    return f"{base} {owner}"
+
+
+def _render_plans(
+    plans: list[HelpAssetRenderPlan],
+    *,
+    workers: int,
+    profiler: Profiler,
+) -> dict[str, HelpAssetRenderResult]:
+    if not plans:
+        return {}
+    unique_plans = list({plan.render_key: plan for plan in plans}.values())
+    results: dict[str, HelpAssetRenderResult] = {}
+    if workers <= 1 or len(unique_plans) <= 1:
+        for plan in unique_plans:
+            result = _render_help_asset_plan(plan)
+            profiler.record(
+                "help-assets.render",
+                _help_asset_label(plan),
+                result.elapsed_ms,
+            )
+            results[plan.render_key] = result
+        return results
+
+    with ThreadPoolExecutor(max_workers=min(workers, len(unique_plans))) as executor:
+        future_map: dict[Future[HelpAssetRenderResult], HelpAssetRenderPlan] = {
+            executor.submit(_render_help_asset_plan, plan): plan
+            for plan in unique_plans
+        }
+        for future in as_completed(future_map):
+            plan = future_map[future]
+            result = future.result()
+            profiler.record(
+                "help-assets.render",
+                _help_asset_label(plan),
+                result.elapsed_ms,
+            )
+            results[plan.render_key] = result
+    return results
+
+
+def build_help_assets(
+    *,
+    workers: int | None = None,
+    profile: bool = False,
+    profile_top: int = 10,
+    reset_caches: bool = True,
+) -> int:
+    if reset_caches:
+        _reset_caches()
+    worker_count = workers if workers is not None else default_worker_count()
+    profiler = Profiler(enabled=profile, top_n=profile_top)
     contexts = _all_doc_contexts()
     nodes = _build_tree(contexts)
     tree = build_doc_tree(nodes)
@@ -390,7 +613,8 @@ def build_help_assets() -> int:
         _write_line("help-assets: help docs not found, skipping")
         return 0
 
-    for profile, permission in PERMISSION_VARIANTS:
+    plans: list[HelpAssetRenderPlan] = []
+    for profile_name, permission in PERMISSION_VARIANTS:
         sections = build_help_home_sections(
             nodes,
             locale="zh-CN",
@@ -401,44 +625,24 @@ def build_help_assets() -> int:
         signature = dashboard_signature(sections)
         if first_dashboard_signature is None:
             first_dashboard_signature = signature
-        rendered = render_help_dashboard(
-            sections,
-            locale="zh-CN",
-            generated_at=build_time,
-            prefer_static=False,
-            source_path=help_context.path,
-        )
-        suffix = _encoded_image_suffix(rendered)
-        dashboard_outputs.setdefault(
-            signature,
-            (
-                f"help-index{suffix}"
-                if signature == first_dashboard_signature
-                else _hash_filename(f"help-index{suffix}", signature),
-                rendered,
-            ),
-        )
-        manifest_by_source.setdefault(help_context.path, {})[dashboard_target_key()] = (
-            manifest_by_source.setdefault(help_context.path, {}).get(
-                dashboard_target_key(),
-                {},
+        plans.append(
+            HelpAssetRenderPlan(
+                kind="dashboard",
+                render_key=f"dashboard:{signature}",
+                signature=signature,
+                profile=profile_name,
+                source_path=help_context.path,
+                target_key=dashboard_target_key(),
+                actor_permission=permission,
+                generated_at=build_time,
+                sections=sections,
             )
         )
-        manifest_by_source[help_context.path][dashboard_target_key()][profile] = (
-            dashboard_outputs[signature][0]
-        )
-
-    for signature, (filename, data) in dashboard_outputs.items():
-        output_name = filename
-        _output_static_asset(help_context.path.parent / "demos" / output_name, data)
 
     for context in contexts:
         source = context.path
-        demos_dir = source.parent / "demos"
-        demos_dir.mkdir(parents=True, exist_ok=True)
-        target_map = manifest_by_source.setdefault(source, {})
         children = tuple(tree.children_of(context.node.slug))
-        for profile, permission in PERMISSION_VARIANTS:
+        for profile_name, permission in PERMISSION_VARIANTS:
             features = filter_features_by_permission(context.node.features, permission)
             visible_children = tuple(
                 child for child in children if can_view_node(child, permission)
@@ -449,70 +653,124 @@ def build_help_assets() -> int:
                 children=visible_children,
             )
             if shape == "plugin_guide" or shape == "overview_group":
-                rendered = render_plugin_guide(
-                    context.node,
-                    actor_permission=permission,
-                    locale="zh-CN",
-                    generated_at=build_time,
-                    prefer_static=False,
-                )
                 signature = guide_signature(
                     context.node,
                     feature_slugs=tuple(feature.slug for feature in features),
                     child_slugs=tuple(child.slug for child in visible_children),
                 )
-                suffix = _encoded_image_suffix(rendered)
-                target_key = guide_target_key(context.node)
-                filename = _hash_filename(
-                    f"{context.path.stem}-guide{suffix}", signature
+                plans.append(
+                    HelpAssetRenderPlan(
+                        kind="guide",
+                        render_key=f"guide:{signature}",
+                        signature=signature,
+                        profile=profile_name,
+                        source_path=source,
+                        target_key=guide_target_key(context.node),
+                        actor_permission=permission,
+                        generated_at=build_time,
+                        node=context.node,
+                    )
                 )
-                target_map.setdefault(target_key, {})[profile] = filename
-                path = demos_dir / filename
-                if not path.exists():
-                    _output_static_asset(path, rendered)
             elif shape == "static_entry":
-                rendered = render_static_entry(
-                    context.node,
-                    actor_permission=permission,
-                    locale="zh-CN",
-                    generated_at=build_time,
-                    prefer_static=False,
-                )
                 signature = static_signature(context.node)
-                suffix = _encoded_image_suffix(rendered)
-                target_key = static_target_key(context.node)
-                filename = _hash_filename(
-                    f"{context.path.stem}-static{suffix}",
-                    signature,
+                plans.append(
+                    HelpAssetRenderPlan(
+                        kind="static",
+                        render_key=f"static:{signature}",
+                        signature=signature,
+                        profile=profile_name,
+                        source_path=source,
+                        target_key=static_target_key(context.node),
+                        actor_permission=permission,
+                        generated_at=build_time,
+                        node=context.node,
+                    )
                 )
-                target_map.setdefault(target_key, {})[profile] = filename
-                path = demos_dir / filename
-                if not path.exists():
-                    _output_static_asset(path, rendered)
 
             for feature in features:
-                target_key = feature_target_key(context.node, feature)
                 signature = feature_signature(context.node, feature)
-                filename = (
-                    feature.demo_filename
-                    if profile == "normal"
-                    else _hash_filename(feature.demo_filename, signature)
-                )
-                target_map.setdefault(target_key, {})[profile] = filename
-                path = demos_dir / filename
-                if not path.exists():
-                    _output_static_asset(
-                        path,
-                        render_feature_deep_dive(
-                            context.node,
-                            feature,
-                            locale="zh-CN",
-                            generated_at=build_time,
-                            actor_permission=permission,
-                            prefer_static=False,
-                        ),
+                plans.append(
+                    HelpAssetRenderPlan(
+                        kind="feature",
+                        render_key=f"feature:{signature}",
+                        signature=signature,
+                        profile=profile_name,
+                        source_path=source,
+                        target_key=feature_target_key(context.node, feature),
+                        actor_permission=permission,
+                        generated_at=build_time,
+                        node=context.node,
+                        feature=feature,
                     )
+                )
 
+    unique_render_count = len({plan.render_key for plan in plans})
+    _write_line(
+        "help-assets: "
+        f"{len(contexts)} contexts, {len(plans)} manifest mappings, "
+        f"{unique_render_count} unique renders, "
+        f"{min(worker_count, unique_render_count) if unique_render_count else 1} "
+        "workers"
+    )
+    rendered_by_key = _render_plans(
+        plans,
+        workers=worker_count,
+        profiler=profiler,
+    )
+
+    for plan in plans:
+        result = rendered_by_key[plan.render_key]
+        suffix = _encoded_image_suffix(result.data)
+        target_map = manifest_by_source.setdefault(plan.source_path, {})
+        if plan.kind == "dashboard":
+            filename = (
+                f"help-index{suffix}"
+                if plan.signature == first_dashboard_signature
+                else _hash_filename(f"help-index{suffix}", plan.signature)
+            )
+            dashboard_outputs.setdefault(plan.signature, (filename, result.data))
+        elif plan.kind == "guide":
+            filename = _hash_filename(
+                f"{plan.source_path.stem}-guide{suffix}",
+                plan.signature,
+            )
+            path = plan.source_path.parent / "demos" / filename
+            if not path.exists():
+                _output_static_asset(path, result.data)
+        elif plan.kind == "static":
+            filename = _hash_filename(
+                f"{plan.source_path.stem}-static{suffix}",
+                plan.signature,
+            )
+            path = plan.source_path.parent / "demos" / filename
+            if not path.exists():
+                _output_static_asset(path, result.data)
+        else:
+            assert plan.feature is not None
+            base_filename = _with_suffix(plan.feature.demo_filename, suffix)
+            filename = (
+                base_filename
+                if plan.profile == "normal"
+                else _hash_filename(base_filename, plan.signature)
+            )
+            path = plan.source_path.parent / "demos" / filename
+            if not path.exists():
+                _output_static_asset(path, result.data)
+
+        target_map.setdefault(plan.target_key, {})[plan.profile] = filename
+
+    for _, (filename, data) in dashboard_outputs.items():
+        _output_static_asset(help_context.path.parent / "demos" / filename, data)
+        manifest_by_source.setdefault(help_context.path, {}).setdefault(
+            dashboard_target_key(),
+            {},
+        )
+
+    for context in contexts:
+        source = context.path
+        demos_dir = source.parent / "demos"
+        demos_dir.mkdir(parents=True, exist_ok=True)
+        target_map = manifest_by_source.setdefault(source, {})
         manifest_payload = {
             "version": 1,
             "locale": "zh-CN",
@@ -523,14 +781,18 @@ def build_help_assets() -> int:
             encoding="utf-8",
         )
         _cleanup_generated_assets(context=context, target_map=target_map)
-        _write_line(f"help-assets {source.relative_to(ROOT)}")
+        _write_line(f"help-assets {_relative_display(source)}")
+    profiler.report_stage("help-assets.render")
     return 0
 
 
 def collect_collection_jobs(
-    *, columns: int
+    *,
+    columns: int,
+    reset_caches: bool = True,
 ) -> tuple[int, tuple[DemoCollectionJob, ...]]:
-    _reset_caches()
+    if reset_caches:
+        _reset_caches()
     readmes = iter_readmes()
     jobs: list[DemoCollectionJob] = []
     for path in readmes:
@@ -572,76 +834,184 @@ def render_collection_job(job: DemoCollectionJob) -> tuple[Path, bytes]:
     return job.output, render_collection_png(job)
 
 
-def compose(*, workers: int | None = None, columns: int = 2) -> int:
+def _timed_render_collection_job(
+    job: DemoCollectionJob,
+) -> tuple[tuple[Path, bytes], float]:
+    return _timed_call(render_collection_job, job)
+
+
+def compose(
+    *,
+    workers: int | None = None,
+    columns: int = 2,
+    profile: bool = False,
+    profile_top: int = 10,
+    reset_caches: bool = True,
+) -> int:
     worker_count = workers if workers is not None else default_worker_count()
-    total_files, jobs = collect_collection_jobs(columns=columns)
+    profiler = Profiler(enabled=profile, top_n=profile_top)
+    total_files, jobs = collect_collection_jobs(
+        columns=columns,
+        reset_caches=reset_caches,
+    )
     _write_line(
         f"compose: discovered {total_files} README files, {len(jobs)} collection jobs"
     )
     if worker_count == 1 or len(jobs) <= 1:
         for index, job in enumerate(jobs, start=1):
             _progress("compose", index, len(jobs), job.output)
-            output = write_demo_result(render_collection_job(job))
+            result, render_ms = _timed_render_collection_job(job)
+            profiler.record("compose.render", _relative_display(job.output), render_ms)
+            output, write_ms = _timed_call(write_demo_result, result)
+            profiler.record("compose.write", _relative_display(output), write_ms)
             _write_line(f"composed {output.relative_to(ROOT)}")
     else:
         max_workers = min(worker_count, len(jobs))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for result in executor.map(render_collection_job, jobs):
-                output = write_demo_result(result)
+            future_map: dict[
+                Future[tuple[tuple[Path, bytes], float]],
+                DemoCollectionJob,
+            ] = {
+                executor.submit(_timed_render_collection_job, job): job for job in jobs
+            }
+            for future in as_completed(future_map):
+                job = future_map[future]
+                result, render_ms = future.result()
+                profiler.record(
+                    "compose.render",
+                    _relative_display(job.output),
+                    render_ms,
+                )
+                output, write_ms = _timed_call(write_demo_result, result)
+                profiler.record("compose.write", _relative_display(output), write_ms)
                 _write_line(f"composed {output.relative_to(ROOT)}")
 
     _write_line(
         f"processed {total_files} README files, composed {len(jobs)} collection images"
     )
+    profiler.report_stage("compose.render")
+    profiler.report_stage("compose.write")
     return 0
 
 
-def build(*, workers: int | None = None, columns: int = 2) -> int:
+def build(
+    *,
+    workers: int | None = None,
+    columns: int = 2,
+    profile: bool = False,
+    profile_top: int = 10,
+) -> int:
+    phase_profiler = Profiler(enabled=profile, top_n=profile_top)
     _reset_caches()
-    generated = generate(workers=workers)
+    generated, generated_ms = _timed_call(
+        generate,
+        workers=workers,
+        profile=profile,
+        profile_top=profile_top,
+        reset_caches=False,
+    )
+    phase_profiler.record("build.phase", "generate", generated_ms)
     if generated != 0:
         return generated
-    composed = compose(
+    composed, composed_ms = _timed_call(
+        compose,
         workers=workers,
         columns=columns,
+        profile=profile,
+        profile_top=profile_top,
+        reset_caches=False,
     )
+    phase_profiler.record("build.phase", "compose", composed_ms)
     if composed != 0:
         return composed
-    assets = build_help_assets()
+    assets, assets_ms = _timed_call(
+        build_help_assets,
+        workers=workers,
+        profile=profile,
+        profile_top=profile_top,
+        reset_caches=False,
+    )
+    phase_profiler.record("build.phase", "help-assets", assets_ms)
     if assets != 0:
         return assets
-    return validate()
+    validated, validate_ms = _timed_call(
+        validate,
+        profile=profile,
+        profile_top=profile_top,
+        reset_caches=False,
+    )
+    phase_profiler.record("build.phase", "validate", validate_ms)
+    phase_profiler.report_stage("build.phase")
+    return validated
 
 
-def generate(*, workers: int | None = None) -> int:
-    _reset_caches()
+def generate(
+    *,
+    workers: int | None = None,
+    profile: bool = False,
+    profile_top: int = 10,
+    reset_caches: bool = True,
+) -> int:
+    if reset_caches:
+        _reset_caches()
     worker_count = workers if workers is not None else default_worker_count()
+    profiler = Profiler(enabled=profile, top_n=profile_top)
     total_files, jobs = collect_demo_jobs()
     build_time = datetime.fromtimestamp(get_current_time()).replace(microsecond=0)
-    render_job = partial(render_demo_job, generated_at=build_time)
     _write_line(
         f"generate: discovered {total_files} README files, {len(jobs)} demo jobs"
     )
     if worker_count == 1 or len(jobs) <= 1:
         for index, job in enumerate(jobs, start=1):
             _progress("generate", index, len(jobs), job.output)
-            output = write_demo_result(render_job(job))
+            result, render_ms = _timed_render_demo_job(job, generated_at=build_time)
+            profiler.record("generate.render", _relative_display(job.output), render_ms)
+            output, write_ms = _timed_call(write_demo_result, result)
+            profiler.record("generate.write", _relative_display(output), write_ms)
             _write_line(f"generated {output.relative_to(ROOT)}")
     else:
         max_workers = min(worker_count, len(jobs))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for result in executor.map(render_job, jobs):
-                output = write_demo_result(result)
+            future_map: dict[
+                Future[tuple[tuple[Path, bytes], float]],
+                DemoRenderJob,
+            ] = {
+                executor.submit(
+                    _timed_render_demo_job,
+                    job,
+                    generated_at=build_time,
+                ): job
+                for job in jobs
+            }
+            for future in as_completed(future_map):
+                job = future_map[future]
+                result, render_ms = future.result()
+                profiler.record(
+                    "generate.render",
+                    _relative_display(job.output),
+                    render_ms,
+                )
+                output, write_ms = _timed_call(write_demo_result, result)
+                profiler.record("generate.write", _relative_display(output), write_ms)
                 _write_line(f"generated {output.relative_to(ROOT)}")
 
     _write_line(
         f"processed {total_files} README files, generated {len(jobs)} demo images"
     )
+    profiler.report_stage("generate.render")
+    profiler.report_stage("generate.write")
     return 0
 
 
-def validate() -> int:
-    _reset_caches()
+def validate(
+    *,
+    profile: bool = False,
+    profile_top: int = 10,
+    reset_caches: bool = True,
+) -> int:
+    if reset_caches:
+        _reset_caches()
+    profiler = Profiler(enabled=profile, top_n=profile_top)
     errors: list[str] = []
     nodes: list[DocNode] = []
     slugs_seen: dict[str, Path] = {}
@@ -649,6 +1019,7 @@ def validate() -> int:
     _write_line(f"validate: checking {len(readmes)} README files")
     for index, path in enumerate(readmes, start=1):
         _progress("validate", index, len(readmes), path)
+        started_at = perf_counter()
         try:
             context = load_doc_context(path)
         except Exception as exc:
@@ -675,6 +1046,11 @@ def validate() -> int:
             errors.append(f"{path.relative_to(ROOT)}: missing feature entries")
 
         if node.kind == "static":
+            profiler.record(
+                "validate.readme",
+                _relative_display(path),
+                (perf_counter() - started_at) * 1000,
+            )
             continue
 
         for feature in bundle.index:
@@ -749,6 +1125,12 @@ def validate() -> int:
                         f"{type(exc).__name__}: {exc}"
                     )
 
+        profiler.record(
+            "validate.readme",
+            _relative_display(path),
+            (perf_counter() - started_at) * 1000,
+        )
+
     if not errors:
         tree = build_doc_tree(nodes)
         known_slugs = {node.slug for node in tree.nodes}
@@ -764,6 +1146,7 @@ def validate() -> int:
         return 1
 
     _write_line(f"validated {len(readmes)} README files")
+    profiler.report_stage("validate.readme")
     return 0
 
 
@@ -793,6 +1176,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=2,
         help="number of columns in each collection image (default: %(default)s)",
     )
+    _add_profile_args(build_parser)
     compose_parser = subparsers.add_parser(
         "compose",
         help="compose per-README collection PNG assets from README feature data",
@@ -813,6 +1197,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=2,
         help="number of columns in each collection image (default: %(default)s)",
     )
+    _add_profile_args(compose_parser)
     generate_parser = subparsers.add_parser(
         "generate",
         help="generate demo PNG assets from README specs",
@@ -826,7 +1211,12 @@ def build_parser() -> argparse.ArgumentParser:
             "parallel render workers; use 1 for serial rendering (default: %(default)s)"
         ),
     )
-    subparsers.add_parser("validate", help="validate README structure and demo assets")
+    _add_profile_args(generate_parser)
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="validate README structure and demo assets",
+    )
+    _add_profile_args(validate_parser)
     return parser
 
 
@@ -838,16 +1228,27 @@ def main() -> int:
             return build(
                 workers=args.workers,
                 columns=args.columns,
+                profile=args.profile,
+                profile_top=args.profile_top,
             )
         case "compose":
             return compose(
                 workers=args.workers,
                 columns=args.columns,
+                profile=args.profile,
+                profile_top=args.profile_top,
             )
         case "generate":
-            return generate(workers=args.workers)
+            return generate(
+                workers=args.workers,
+                profile=args.profile,
+                profile_top=args.profile_top,
+            )
         case "validate":
-            return validate()
+            return validate(
+                profile=args.profile,
+                profile_top=args.profile_top,
+            )
         case _:
             parser.error("unknown action")
             return 2
