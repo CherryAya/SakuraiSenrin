@@ -695,6 +695,7 @@ def build_help_assets(
     build_time = datetime.fromtimestamp(get_current_time()).replace(microsecond=0)
     dashboard_outputs: dict[str, tuple[str, bytes]] = {}
     manifest_by_source: dict[Path, dict[str, dict[str, str]]] = {}
+    target_filenames: dict[tuple[Path, str, str], dict[str, str]] = {}
     first_dashboard_signature: str | None = None
 
     help_context = next(
@@ -814,37 +815,53 @@ def build_help_assets(
         result = rendered_by_key[plan.render_key]
         suffix = _encoded_image_suffix(result.data)
         target_map = manifest_by_source.setdefault(plan.source_path, {})
+        signature_to_filename = target_filenames.setdefault(
+            (plan.source_path, plan.target_key, plan.kind),
+            {},
+        )
         if plan.kind == "dashboard":
-            filename = (
-                f"help-index{suffix}"
-                if plan.signature == first_dashboard_signature
-                else _hash_filename(f"help-index{suffix}", plan.signature)
-            )
+            filename = signature_to_filename.get(plan.signature)
+            if filename is None:
+                filename = (
+                    f"help-index{suffix}"
+                    if plan.signature == first_dashboard_signature
+                    else _hash_filename(f"help-index{suffix}", plan.signature)
+                )
+                signature_to_filename[plan.signature] = filename
             dashboard_outputs.setdefault(plan.signature, (filename, result.data))
         elif plan.kind == "guide":
-            filename = _hash_filename(
-                f"{plan.source_path.stem}-guide{suffix}",
-                plan.signature,
-            )
+            filename = signature_to_filename.get(plan.signature)
+            if filename is None:
+                filename = _hash_filename(
+                    f"{plan.source_path.stem}-guide{suffix}",
+                    plan.signature,
+                )
+                signature_to_filename[plan.signature] = filename
             path = plan.source_path.parent / "demos" / filename
             if not path.exists():
                 _output_static_asset(path, result.data)
         elif plan.kind == "static":
-            filename = _hash_filename(
-                f"{plan.source_path.stem}-static{suffix}",
-                plan.signature,
-            )
+            filename = signature_to_filename.get(plan.signature)
+            if filename is None:
+                filename = _hash_filename(
+                    f"{plan.source_path.stem}-static{suffix}",
+                    plan.signature,
+                )
+                signature_to_filename[plan.signature] = filename
             path = plan.source_path.parent / "demos" / filename
             if not path.exists():
                 _output_static_asset(path, result.data)
         else:
             assert plan.feature is not None
             base_filename = _with_suffix(plan.feature.demo_filename, suffix)
-            filename = (
-                base_filename
-                if plan.profile == "normal"
-                else _hash_filename(base_filename, plan.signature)
-            )
+            filename = signature_to_filename.get(plan.signature)
+            if filename is None:
+                filename = (
+                    base_filename
+                    if not signature_to_filename
+                    else _hash_filename(base_filename, plan.signature)
+                )
+                signature_to_filename[plan.signature] = filename
             path = plan.source_path.parent / "demos" / filename
             if not path.exists():
                 _output_static_asset(path, result.data)

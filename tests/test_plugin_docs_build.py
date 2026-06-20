@@ -1199,6 +1199,88 @@ __plugin_meta__ = create_plugin_metadata(
     assert dashboard_variants["superuser"] != dashboard_variants["normal"]
 
 
+def test_build_help_assets_reuses_feature_filename_when_signatures_match(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    help_root = tmp_path / "src" / "plugins" / "help" / "docs"
+    help_root.mkdir(parents=True)
+    (help_root / "README.MD").write_text(
+        """
+# 帮助中心
+
+## 概览
+帮助首页。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 用法
+- 别名: 首页说明
+- 指令: `#help`
+- Demo: help-main.webp
+## 说明
+首页说明。
+## 前置条件
+无
+## 完整流程
+```demo
+USER: #help
+BOT: 帮助首页
+```
+## 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "plugins" / "help" / "__init__.py").write_text(
+        """
+from pathlib import Path
+
+from src.database.core.consts import Permission
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
+
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+
+__plugin_meta__ = create_plugin_metadata(
+    name="帮助中心",
+    description="desc",
+    extra={
+        "permission": Permission.NORMAL,
+        "docs": create_docs_meta(
+            visible=True,
+            category="system",
+            order=10,
+            source=DOCS_SOURCE,
+            slug="help",
+        ),
+    },
+)
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    plugin_docs_script._reset_caches()
+
+    assert plugin_docs_script.build_help_assets(workers=1) == 0
+
+    manifest = json.loads((help_root / "demos" / "manifest.json").read_text("utf-8"))
+    feature_variants = manifest["targets"]["feature:help:main"]
+
+    assert feature_variants["normal"] == "help-main.webp"
+    assert feature_variants["group_admin"] == "help-main.webp"
+    assert feature_variants["group_owner"] == "help-main.webp"
+    assert feature_variants["superuser"] == "help-main.webp"
+
+
 def test_render_help_dashboard_prefers_manifest_backed_help_asset_from_explicit_source(
     tmp_path: Path,
 ) -> None:
