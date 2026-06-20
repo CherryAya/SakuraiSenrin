@@ -818,6 +818,44 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
     ]
 
 
+def test_build_parser_accepts_profile_options() -> None:
+    args = plugin_docs_script.build_parser().parse_args(
+        [
+            "build",
+            "-j",
+            "4",
+            "--columns",
+            "3",
+            "--profile",
+            "--profile-top",
+            "6",
+        ]
+    )
+
+    assert args.action == "build"
+    assert args.workers == 4
+    assert args.columns == 3
+    assert args.profile is True
+    assert args.profile_top == 6
+
+
+def test_build_profile_emits_phase_summary(
+    monkeypatch: Any,
+    capsys: Any,
+) -> None:
+    monkeypatch.setattr(plugin_docs_script, "generate", lambda **kwargs: 0)
+    monkeypatch.setattr(plugin_docs_script, "compose", lambda **kwargs: 0)
+    monkeypatch.setattr(plugin_docs_script, "build_help_assets", lambda **kwargs: 0)
+    monkeypatch.setattr(plugin_docs_script, "validate", lambda **kwargs: 0)
+
+    assert plugin_docs_script.build(profile=True, profile_top=3) == 0
+
+    captured = capsys.readouterr().out
+    assert "[profile:build.phase] " in captured
+    assert "[profile:build.phase:summary]" in captured
+    assert "[profile:build.phase:top]" in captured
+
+
 def test_render_feature_deep_dive_prefers_manifest_backed_local_asset(
     tmp_path: Path,
 ) -> None:
