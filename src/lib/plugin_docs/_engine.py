@@ -226,6 +226,56 @@ def _support_note(locale: LocaleCode) -> str:
     return support_note_impl(locale)
 
 
+type HelpHomeSectionKind = Literal["system", "developer", "community"]
+
+
+def _help_home_section_title(
+    section: HelpHomeSectionKind,
+    locale: LocaleCode,
+) -> str:
+    key = {
+        "system": "help.dashboard.section.system",
+        "developer": "help.dashboard.section.developer",
+        "community": "help.dashboard.section.community",
+    }[section]
+    return tr(locale, key)
+
+
+def _help_home_section_style(section: HelpHomeSectionKind) -> dict[str, str]:
+    return {
+        "system": {
+            "accent": "#8AB4F8",
+            "panel_bg": "#F4F8FF",
+            "panel_soft_bg": "#EAF2FF",
+            "text": "#2F5E9E",
+            "hint": "#5F7EA8",
+            "command_bg": "#EAF2FF",
+            "command_text": "#315F9D",
+            "marker": "square",
+        },
+        "developer": {
+            "accent": "#FFB067",
+            "panel_bg": "#FFF9F2",
+            "panel_soft_bg": "#FFF1DE",
+            "text": "#9A5B1D",
+            "hint": "#8C7254",
+            "command_bg": "#FFF0DE",
+            "command_text": "#8A531F",
+            "marker": "diamond",
+        },
+        "community": {
+            "accent": "#FF9EBB",
+            "panel_bg": "#FFF5F8",
+            "panel_soft_bg": "#FFE8EF",
+            "text": "#A24E6A",
+            "hint": "#946476",
+            "command_bg": "#FFE7EF",
+            "command_text": "#9A4B68",
+            "marker": "ring",
+        },
+    }[section]
+
+
 def _resolve_main_group_id() -> str:
     return resolve_main_group_id_impl()
 
@@ -382,6 +432,82 @@ def build_doc_tree(nodes: Sequence[DocNode]) -> DocTree:
 
 def match_doc_node(nodes: Sequence[DocNode], query: str) -> NodeMatchResult:
     return match_doc_node_impl(nodes, query)
+
+
+def build_help_home_sections(
+    nodes: Sequence[DocNode],
+    *,
+    locale: LocaleCode,
+    actor_permission: Permission = Permission.NORMAL,
+) -> tuple[HelpDashboardSection, ...]:
+    roots = [
+        node
+        for node in build_doc_tree(nodes).roots()
+        if node.visible
+        and not node.hidden
+        and not node.internal
+        and can_view_node(node, actor_permission)
+    ]
+    buckets: dict[HelpHomeSectionKind, list[DocNode]] = {
+        "system": [],
+        "developer": [],
+        "community": [],
+    }
+    for node in roots:
+        if node.category == "community" or node.slug.startswith("derived."):
+            buckets["community"].append(node)
+        elif node.module_name.startswith("src.hooks.") or node.slug.startswith("hook."):
+            buckets["system"].append(node)
+        elif node.slug in {"help", "notice", "admin"}:
+            buckets["system"].append(node)
+        else:
+            buckets["developer"].append(node)
+
+    sections: list[HelpDashboardSection] = []
+    for kind in ("system", "developer", "community"):
+        section_nodes = buckets[kind]
+        if not section_nodes:
+            continue
+        style = _help_home_section_style(kind)
+        sections.append(
+            HelpDashboardSection(
+                kind=kind,
+                title=_help_home_section_title(kind, locale),
+                nodes=tuple(section_nodes),
+                accent=style["accent"],
+                panel_bg=style["panel_bg"],
+                panel_soft_bg=style["panel_soft_bg"],
+                text=style["text"],
+                hint=style["hint"],
+                command_bg=style["command_bg"],
+                command_text=style["command_text"],
+                marker=style["marker"],
+            )
+        )
+    return tuple(sections)
+
+
+def build_help_home_text(
+    sections: Sequence[HelpDashboardSection],
+    *,
+    locale: LocaleCode,
+) -> str:
+    if not sections:
+        return tr(locale, "help.index.empty")
+
+    lines = [
+        tr(locale, "help.dashboard.title"),
+        "----------",
+        tr(locale, "help.dashboard.lead.line1"),
+        tr(locale, "help.dashboard.lead.line2"),
+        "----------",
+    ]
+    for section in sections:
+        lines.append(section.title)
+        for node in section.nodes:
+            lines.append(node_help_command(node))
+        lines.append("----------")
+    return "\n".join(lines).strip()
 
 
 def load_doc_node(
@@ -734,7 +860,7 @@ def _parse_single_feature_bundle(
     )
     demo_filename = meta.get(
         "Demo",
-        f"{doc_asset_prefix(source_path)}-{feature_slug}.png",
+        f"{doc_asset_prefix(source_path)}-{feature_slug}.webp",
     )
     demo_filename = demo_filename.strip("`")
     feature = FeatureDoc(
@@ -1005,14 +1131,18 @@ def render_help_dashboard(
     generated_at: datetime | None = None,
     actor_permission: Permission = Permission.NORMAL,
     prefer_static: bool = True,
+    source_path: str | Path | None = None,
 ) -> bytes:
     first_node = next(
         (node for section in sections for node in section.nodes),
         None,
     )
-    if prefer_static and first_node is not None:
+    dashboard_source = Path(source_path).resolve() if source_path is not None else None
+    if dashboard_source is None and first_node is not None:
+        dashboard_source = first_node.source_path
+    if prefer_static and dashboard_source is not None:
         static_bytes = load_static_asset_bytes(
-            first_node.source_path,
+            dashboard_source,
             target_key=dashboard_target_key(),
             actor_permission=actor_permission,
         )

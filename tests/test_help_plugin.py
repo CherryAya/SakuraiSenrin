@@ -13,6 +13,8 @@ from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
     build_doc_tree,
+    build_help_home_sections,
+    build_help_home_text,
     create_docs_meta,
     load_doc_node,
     node_help_command,
@@ -456,6 +458,92 @@ def test_build_index_message_filters_invisible_and_unauthorized_root_entries() -
     assert "#help 可见普通插件" in rendered
     assert "#help 不可见插件" not in rendered
     assert "#help 超管插件" not in rendered
+
+
+def test_build_help_home_sections_applies_runtime_grouping_and_styles() -> None:
+    nodes = [
+        _make_entry(
+            display_name="帮助中心",
+            plugin_name="help",
+            module_name="src.plugins.help",
+            slug="help",
+        ).node,
+        _make_entry(
+            display_name="运行时处理器",
+            plugin_name="processor",
+            module_name="src.hooks.processor",
+            slug="hook.processor",
+            permission=Permission.SUPERUSER,
+        ).node,
+        _make_entry(
+            display_name="吹水记录",
+            plugin_name="water",
+            module_name="src.plugins.water",
+            slug="water",
+        ).node,
+        _make_entry(
+            display_name="妙妙小工具",
+            plugin_name="miaomiao",
+            module_name="src.plugins.community_miaomiao",
+            slug="community.miaomiao-toolkit",
+            category="community",
+        ).node,
+    ]
+
+    sections = build_help_home_sections(
+        nodes,
+        locale="zh-CN",
+        actor_permission=Permission.NORMAL,
+    )
+
+    assert [section.kind for section in sections] == [
+        "system",
+        "developer",
+        "community",
+    ]
+    assert [section.title for section in sections] == [
+        "凛凛的系统😇",
+        "有趣的功能😮",
+        "爱来自社区🥰",
+    ]
+    assert [node.slug for node in sections[0].nodes] == ["help"]
+    assert [node.slug for node in sections[1].nodes] == ["water"]
+    assert [node.slug for node in sections[2].nodes] == ["community.miaomiao-toolkit"]
+    assert sections[0].accent == "#8AB4F8"
+    assert sections[1].marker == "diamond"
+    assert sections[2].command_text == "#9A4B68"
+
+
+def test_build_help_home_text_uses_shared_sections() -> None:
+    nodes = [
+        _make_entry(
+            display_name="帮助中心",
+            plugin_name="help",
+            module_name="src.plugins.help",
+            slug="help",
+        ).node,
+        _make_entry(
+            display_name="吹水记录",
+            plugin_name="water",
+            module_name="src.plugins.water",
+            slug="water",
+        ).node,
+    ]
+
+    text = build_help_home_text(
+        build_help_home_sections(
+            nodes,
+            locale="zh-CN",
+            actor_permission=Permission.NORMAL,
+        ),
+        locale="zh-CN",
+    )
+
+    assert "今天想要做些什么呢" in text
+    assert "凛凛的系统" in text
+    assert "有趣的功能" in text
+    assert "#help 帮助中心" in text
+    assert "#help 吹水记录" in text
 
 
 async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:

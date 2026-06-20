@@ -67,12 +67,18 @@ BOT: Beta 完成
     monkeypatch.setattr(
         plugin_docs_script,
         "render_demo_png",
-        lambda _bundle, feature, *, generated_at=None: f"demo:{feature.slug}".encode(),
+        lambda _bundle, feature, *, generated_at=None: (
+            b"RIFFdemoWEBP" + feature.slug.encode()
+        ),
     )
 
     assert plugin_docs_script.generate(workers=2) == 0
-    assert (docs_root / "demos" / "sample-alpha.png").read_bytes() == b"demo:alpha"
-    assert (docs_root / "demos" / "sample-beta.png").read_bytes() == b"demo:beta"
+    assert (docs_root / "demos" / "sample-alpha.webp").read_bytes() == (
+        b"RIFFdemoWEBPalpha"
+    )
+    assert (docs_root / "demos" / "sample-beta.webp").read_bytes() == (
+        b"RIFFdemoWEBPbeta"
+    )
 
 
 def test_representative_demo_prefers_collection_image(tmp_path: Path) -> None:
@@ -112,7 +118,7 @@ BOT: Alpha 完成
     )
     demos_dir = source.parent / "demos"
     demos_dir.mkdir()
-    (demos_dir / "sample-alpha.png").write_bytes(b"feature-demo")
+    (demos_dir / "sample-alpha.webp").write_bytes(b"feature-demo")
     (demos_dir / "sample-collection.webp").write_bytes(b"collection-demo")
     bundle = load_plugin_doc_bundle(
         source=source,
@@ -164,7 +170,7 @@ BOT: Alpha 完成
     )
     demos_dir = source.parent / "demos"
     demos_dir.mkdir()
-    (demos_dir / "sample-alpha.png").write_bytes(b"feature-demo")
+    (demos_dir / "sample-alpha.webp").write_bytes(b"feature-demo")
     (demos_dir / "sample-collection.webp").write_bytes(b"collection-demo")
     bundle = load_plugin_doc_bundle(
         source=source,
@@ -796,4 +802,89 @@ BOT: Alpha 完成
     assert (
         plugin_docs_module.render_feature_deep_dive(node, feature, locale="zh-CN")
         == b"local-static"
+    )
+
+
+def test_render_help_dashboard_prefers_manifest_backed_help_asset_from_explicit_source(
+    tmp_path: Path,
+) -> None:
+    help_source = tmp_path / "src" / "plugins" / "help" / "docs" / "README.MD"
+    help_demos_dir = help_source.parent / "demos"
+    help_demos_dir.mkdir(parents=True)
+    help_source.write_text("# 帮助中心\n", encoding="utf-8")
+
+    other_source = tmp_path / "src" / "plugins" / "sample" / "docs" / "README.MD"
+    other_source.parent.mkdir(parents=True)
+    other_source.write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试首页静态图优先。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一个功能。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一个功能。
+- 指令: `#alpha`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    node = load_doc_node(
+        source=other_source,
+        default_name="测试插件",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    (help_demos_dir / "help-index.webp").write_bytes(b"help-static")
+    (help_demos_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "locale": "zh-CN",
+                "targets": {
+                    "dashboard:index": {
+                        "normal": "help-index.webp",
+                        "group_admin": "help-index.webp",
+                        "group_owner": "help-index.webp",
+                        "superuser": "help-index.webp",
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        plugin_docs_module.render_help_dashboard(
+            (
+                plugin_docs_module.HelpDashboardSection(
+                    kind="developer",
+                    title="官方功能扩展",
+                    nodes=(node,),
+                ),
+            ),
+            locale="zh-CN",
+            source_path=help_source,
+        )
+        == b"help-static"
     )

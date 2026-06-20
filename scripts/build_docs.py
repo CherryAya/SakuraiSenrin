@@ -27,10 +27,10 @@ from src.lib.plugin_docs import (
     DemoCollectionTile,
     DocNode,
     DocsMeta,
-    HelpDashboardSection,
     PluginDocBundle,
     audit_demo_layout,
     build_doc_tree,
+    build_help_home_sections,
     collection_demo_filename,
     create_docs_meta,
     dashboard_signature,
@@ -294,7 +294,14 @@ def render_demo_job(
     generated_at: datetime | None = None,
 ) -> tuple[Path, bytes]:
     feature = job.bundle.index[job.feature_index]
-    return job.output, render_demo_png(job.bundle, feature, generated_at=generated_at)
+    rendered = render_demo_png(job.bundle, feature, generated_at=generated_at)
+    suffix = _encoded_image_suffix(rendered)
+    output = (
+        job.output
+        if job.output.suffix.lower() == suffix
+        else job.output.with_suffix(suffix)
+    )
+    return output, rendered
 
 
 def write_demo_result(result: tuple[Path, bytes]) -> Path:
@@ -365,51 +372,6 @@ def _build_tree(contexts: tuple[DocBuildContext, ...]) -> tuple[DocNode, ...]:
     return tuple(context.node for context in contexts)
 
 
-def _index_sections_for_permission(
-    nodes: tuple[DocNode, ...],
-    actor_permission: Permission,
-) -> tuple[HelpDashboardSection, ...]:
-    roots = [
-        node
-        for node in build_doc_tree(nodes).roots()
-        if node.visible
-        and not node.hidden
-        and not node.internal
-        and can_view_node(node, actor_permission)
-    ]
-    buckets: dict[str, list[DocNode]] = {
-        "system": [],
-        "developer": [],
-        "community": [],
-    }
-    for node in roots:
-        if node.category == "community" or node.slug.startswith("derived."):
-            buckets["community"].append(node)
-        elif node.module_name.startswith("src.hooks.") or node.slug.startswith("hook."):
-            buckets["system"].append(node)
-        elif node.slug in {"help", "notice", "admin"}:
-            buckets["system"].append(node)
-        else:
-            buckets["developer"].append(node)
-    titles = {
-        "system": "系统核心预置",
-        "developer": "官方功能扩展",
-        "community": "社区衍生工坊",
-    }
-    sections: list[HelpDashboardSection] = []
-    for kind in ("system", "developer", "community"):
-        if not buckets[kind]:
-            continue
-        sections.append(
-            HelpDashboardSection(
-                kind=kind,
-                title=titles[kind],
-                nodes=tuple(buckets[kind]),
-            )
-        )
-    return tuple(sections)
-
-
 def build_help_assets() -> int:
     _reset_caches()
     contexts = _all_doc_contexts()
@@ -429,7 +391,11 @@ def build_help_assets() -> int:
         return 0
 
     for profile, permission in PERMISSION_VARIANTS:
-        sections = _index_sections_for_permission(nodes, permission)
+        sections = build_help_home_sections(
+            nodes,
+            locale="zh-CN",
+            actor_permission=permission,
+        )
         if not sections:
             continue
         signature = dashboard_signature(sections)
@@ -440,6 +406,7 @@ def build_help_assets() -> int:
             locale="zh-CN",
             generated_at=build_time,
             prefer_static=False,
+            source_path=help_context.path,
         )
         suffix = _encoded_image_suffix(rendered)
         dashboard_outputs.setdefault(
@@ -459,8 +426,6 @@ def build_help_assets() -> int:
         )
         manifest_by_source[help_context.path][dashboard_target_key()][profile] = (
             dashboard_outputs[signature][0]
-            if signature == first_dashboard_signature
-            else dashboard_outputs[signature][0]
         )
 
     for signature, (filename, data) in dashboard_outputs.items():

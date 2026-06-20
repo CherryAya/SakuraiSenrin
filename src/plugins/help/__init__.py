@@ -28,10 +28,11 @@ from src.lib.messages import image_message, text_message
 from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
-    HelpDashboardSection,
     VirtualPluginDocSpec,
     build_doc_tree,
     build_feature_copy_text,
+    build_help_home_sections,
+    build_help_home_text,
     build_plugin_guide_copy_text,
     build_simple_leaf_copy_text,
     build_static_entry_copy_text,
@@ -42,7 +43,6 @@ from src.lib.plugin_docs import (
     load_virtual_doc_node,
     match_doc_node,
     match_feature,
-    node_help_command,
     read_docs_metas,
     render_doc_node_overview,
     render_feature_deep_dive,
@@ -78,52 +78,6 @@ class MatchResult:
 
 type RootSection = Literal["system", "developer", "community"]
 
-
-@dataclass(slots=True, frozen=True)
-class SectionStyle:
-    accent: str
-    panel_bg: str
-    panel_soft_bg: str
-    text: str
-    hint: str
-    command_bg: str
-    command_text: str
-    marker: str
-
-
-SECTION_STYLES: dict[RootSection, SectionStyle] = {
-    "system": SectionStyle(
-        accent="#8AB4F8",
-        panel_bg="#F4F8FF",
-        panel_soft_bg="#EAF2FF",
-        text="#2F5E9E",
-        hint="#5F7EA8",
-        command_bg="#EAF2FF",
-        command_text="#315F9D",
-        marker="square",
-    ),
-    "developer": SectionStyle(
-        accent="#FFB067",
-        panel_bg="#FFF9F2",
-        panel_soft_bg="#FFF1DE",
-        text="#9A5B1D",
-        hint="#8C7254",
-        command_bg="#FFF0DE",
-        command_text="#8A531F",
-        marker="diamond",
-    ),
-    "community": SectionStyle(
-        accent="#FF9EBB",
-        panel_bg="#FFF5F8",
-        panel_soft_bg="#FFE8EF",
-        text="#A24E6A",
-        hint="#946476",
-        command_bg="#FFE7EF",
-        command_text="#9A4B68",
-        marker="ring",
-    ),
-}
-
 __plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
@@ -158,15 +112,6 @@ help_matcher = on_command(
 
 def _is_project_plugin(plugin: Plugin) -> bool:
     return plugin.module_name.startswith("src.")
-
-
-def _section_title(section: RootSection, locale: LocaleCode) -> str:
-    key = {
-        "system": "help.dashboard.section.system",
-        "developer": "help.dashboard.section.developer",
-        "community": "help.dashboard.section.community",
-    }[section]
-    return tr(locale, key)
 
 
 def _normalize_text(value: object) -> str:
@@ -405,53 +350,6 @@ def _unique_entries(entries: list[DocsEntry]) -> list[DocsEntry]:
     return unique
 
 
-def _root_entries_for_index(
-    entries: list[DocsEntry],
-    actor_permission: Permission,
-) -> list[DocsEntry]:
-    tree = build_doc_tree([entry.node for entry in entries])
-    root_slugs = {node.slug for node in tree.roots()}
-    return [
-        entry
-        for entry in entries
-        if entry.node.slug in root_slugs
-        and entry.node.visible
-        and not entry.node.hidden
-        and not entry.node.internal
-        and _can_view_entry(entry, actor_permission)
-    ]
-
-
-def _classify_root_section(entry: DocsEntry) -> RootSection:
-    slug = entry.node.slug
-    module_name = entry.node.module_name
-    if entry.node.category == "community" or slug.startswith("derived."):
-        return "community"
-    if module_name.startswith("src.hooks.") or slug.startswith("hook."):
-        return "system"
-    if slug in {"help", "notice", "admin"}:
-        return "system"
-    return "developer"
-
-
-def _build_index_sections(
-    entries: list[DocsEntry],
-    actor_permission: Permission,
-) -> list[tuple[RootSection, list[DocsEntry]]]:
-    buckets: dict[RootSection, list[DocsEntry]] = {
-        "system": [],
-        "developer": [],
-        "community": [],
-    }
-    for entry in _root_entries_for_index(entries, actor_permission):
-        buckets[_classify_root_section(entry)].append(entry)
-    return [
-        (section, buckets[section])
-        for section in ("system", "developer", "community")
-        if buckets[section]
-    ]
-
-
 def _match_entry(entries: list[DocsEntry], query: str) -> MatchResult:
     result = match_doc_node([entry.node for entry in entries], query)
     if result.status == "matched" and result.node is not None:
@@ -487,43 +385,24 @@ def _build_index_message(
     locale: LocaleCode,
     actor_permission: Permission = Permission.NORMAL,
 ) -> Message:
-    grouped_sections = _build_index_sections(entries, actor_permission)
-    if not grouped_sections:
-        return text_message(tr(locale, "help.index.empty"))
-
-    dashboard_bytes = render_help_dashboard(
-        tuple(
-            HelpDashboardSection(
-                kind=section,
-                title=_section_title(section, locale),
-                nodes=tuple(entry.node for entry in section_entries),
-                accent=SECTION_STYLES[section].accent,
-                panel_bg=SECTION_STYLES[section].panel_bg,
-                panel_soft_bg=SECTION_STYLES[section].panel_soft_bg,
-                text=SECTION_STYLES[section].text,
-                hint=SECTION_STYLES[section].hint,
-                command_bg=SECTION_STYLES[section].command_bg,
-                command_text=SECTION_STYLES[section].command_text,
-                marker=SECTION_STYLES[section].marker,
-            )
-            for section, section_entries in grouped_sections
-        ),
+    sections = build_help_home_sections(
+        [entry.node for entry in entries],
         locale=locale,
         actor_permission=actor_permission,
     )
-    lines = [
-        tr(locale, "help.dashboard.title"),
-        "----------",
-        tr(locale, "help.dashboard.lead.line1"),
-        tr(locale, "help.dashboard.lead.line2"),
-        "----------",
-    ]
-    for section, section_entries in grouped_sections:
-        lines.append(_section_title(section, locale))
-        for entry in section_entries:
-            lines.append(node_help_command(entry.node))
-        lines.append("----------")
-    return _compose_help_reply(dashboard_bytes, "\n".join(lines).strip())
+    if not sections:
+        return text_message(tr(locale, "help.index.empty"))
+
+    dashboard_bytes = render_help_dashboard(
+        sections,
+        locale=locale,
+        actor_permission=actor_permission,
+        source_path=DOCS_SOURCE,
+    )
+    return _compose_help_reply(
+        dashboard_bytes,
+        build_help_home_text(sections, locale=locale),
+    )
 
 
 def _build_ambiguous_message(

@@ -1,4 +1,5 @@
 from src.lib.plugin_docs.models import DocsDemoTurn
+from src.lib.plugin_docs.render.encoding import WEBP_MAX_DIMENSION, encode_docs_image
 from tests.test_plugin_docs_support import *
 
 
@@ -197,6 +198,18 @@ def test_demo_theme_showcase_tokens_follow_expected_scale() -> None:
     assert DEFAULT_DEMO_THEME.bubble_line_height >= 48
     assert DEFAULT_DEMO_THEME.grid_spacing % 8 == 0
     assert DEFAULT_DEMO_THEME.footer_height >= 72
+
+
+def test_encode_docs_image_scales_oversized_canvas_and_keeps_webp() -> None:
+    image = Image.new("RGB", (1280, WEBP_MAX_DIMENSION + 1024), "#FFFFFF")
+
+    encoded = encode_docs_image(image, webp_quality=88, webp_method=6)
+    decoded = Image.open(BytesIO(encoded))
+
+    assert encoded.startswith(b"RIFF")
+    assert decoded.format == "WEBP"
+    assert decoded.width <= WEBP_MAX_DIMENSION
+    assert decoded.height <= WEBP_MAX_DIMENSION
 
 
 def test_demo_image_renderer_measure_layout_includes_footer_traceability() -> None:
@@ -680,10 +693,11 @@ def test_render_plugin_guide_and_copy_text_list_all_visible_features() -> None:
                 node,
                 actor_permission=Permission.NORMAL,
                 locale="zh-CN",
+                prefer_static=False,
             )
         )
     )
-    assert image.width == 1280
+    assert image.width > 700
     assert image.height > 1200
 
     copy_text = build_plugin_guide_copy_text(

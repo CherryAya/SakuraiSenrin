@@ -17,6 +17,8 @@ from ._engine import build_command_layout as build_command_layout
 from ._engine import build_doc_demo_message as build_doc_demo_message
 from ._engine import build_doc_tree as build_doc_tree
 from ._engine import build_feature_copy_text as build_feature_copy_text
+from ._engine import build_help_home_sections as build_help_home_sections
+from ._engine import build_help_home_text as build_help_home_text
 from ._engine import build_plugin_guide_copy_text as build_plugin_guide_copy_text
 from ._engine import build_readme_docs as build_readme_docs
 from ._engine import build_simple_leaf_copy_text as build_simple_leaf_copy_text
