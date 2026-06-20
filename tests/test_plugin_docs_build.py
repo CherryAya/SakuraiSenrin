@@ -1026,6 +1026,179 @@ BOT: Alpha 完成
     assert render_counts["sample_feature"] == 1
 
 
+def test_load_doc_context_preserves_declared_docs_category_and_permission(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    plugin_root = tmp_path / "src" / "plugins" / "community_sample"
+    docs_root = plugin_root / "docs"
+    docs_root.mkdir(parents=True)
+    (docs_root / "README.MD").write_text(
+        """
+# 社区样例
+
+## 概览
+用于测试静态构建读取声明元数据。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 超级用户
+""".strip(),
+        encoding="utf-8",
+    )
+    (plugin_root / "__init__.py").write_text(
+        """
+from pathlib import Path
+
+from src.database.core.consts import Permission
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
+
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+
+__plugin_meta__ = create_plugin_metadata(
+    name="社区样例",
+    description="desc",
+    extra={
+        "permission": Permission.SUPERUSER,
+        "docs": create_docs_meta(
+            visible=True,
+            category="community",
+            order=86,
+            source=DOCS_SOURCE,
+            slug="community.sample",
+        ),
+    },
+)
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    plugin_docs_script._reset_caches()
+
+    context = plugin_docs_script.load_doc_context(docs_root / "README.MD")
+
+    assert context.node.slug == "community.sample"
+    assert context.node.category == "community"
+    assert context.node.permission == Permission.SUPERUSER
+    assert context.node.module_name == "src.plugins.community_sample"
+    assert context.node.plugin_name == "community_sample"
+
+
+def test_build_help_assets_keeps_distinct_dashboard_variants_per_permission(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    help_root = tmp_path / "src" / "plugins" / "help" / "docs"
+    help_root.mkdir(parents=True)
+    (help_root / "README.MD").write_text(
+        """
+# 帮助中心
+
+## 概览
+帮助首页。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "plugins" / "help" / "__init__.py").write_text(
+        """
+from pathlib import Path
+
+from src.database.core.consts import Permission
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
+
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+
+__plugin_meta__ = create_plugin_metadata(
+    name="帮助中心",
+    description="desc",
+    extra={
+        "permission": Permission.NORMAL,
+        "docs": create_docs_meta(
+            visible=True,
+            category="system",
+            order=10,
+            source=DOCS_SOURCE,
+            slug="help",
+        ),
+    },
+)
+""".strip(),
+        encoding="utf-8",
+    )
+
+    admin_root = tmp_path / "src" / "plugins" / "admin" / "docs"
+    admin_root.mkdir(parents=True)
+    (admin_root / "README.MD").write_text(
+        """
+# 管理总览
+
+## 概览
+仅超级用户可见。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 超级用户
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "plugins" / "admin" / "__init__.py").write_text(
+        """
+from pathlib import Path
+
+from src.database.core.consts import Permission
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
+
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+
+__plugin_meta__ = create_plugin_metadata(
+    name="管理总览",
+    description="desc",
+    extra={
+        "permission": Permission.SUPERUSER,
+        "docs": create_docs_meta(
+            visible=True,
+            category="admin",
+            order=10,
+            source=DOCS_SOURCE,
+            slug="admin",
+            kind="overview",
+        ),
+    },
+)
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    plugin_docs_script._reset_caches()
+
+    assert plugin_docs_script.build_help_assets(workers=1) == 0
+
+    manifest = json.loads((help_root / "demos" / "manifest.json").read_text("utf-8"))
+    dashboard_variants = manifest["targets"]["dashboard:index"]
+
+    assert dashboard_variants["normal"] == "help-index.webp"
+    assert dashboard_variants["superuser"] != dashboard_variants["normal"]
+
+
 def test_render_help_dashboard_prefers_manifest_backed_help_asset_from_explicit_source(
     tmp_path: Path,
 ) -> None:

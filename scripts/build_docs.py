@@ -85,6 +85,14 @@ class DocBuildContext:
     node: DocNode
 
 
+@dataclass(slots=True, frozen=True)
+class DeclaredDocContext:
+    docs_meta: DocsMeta
+    permission: Permission
+    module_name: str = ""
+    plugin_name: str = ""
+
+
 type HelpAssetKind = Literal["dashboard", "guide", "static", "feature"]
 
 
@@ -201,15 +209,68 @@ def load_bundle(path: Path) -> PluginDocBundle:
     )
 
 
+def _coerce_permission_literal(raw: str) -> Permission:
+    normalized = raw.strip()
+    if not normalized:
+        return Permission.NORMAL
+    try:
+        return Permission[normalized]
+    except KeyError:
+        pass
+    try:
+        return Permission(int(normalized))
+    except ValueError:
+        return Permission.NORMAL
+
+
+def _module_name_for_path(module_path: Path) -> str:
+    try:
+        rel = module_path.resolve().relative_to(ROOT / "src")
+    except ValueError:
+        return ""
+    parts = list(rel.parts)
+    if not parts:
+        return ""
+    if parts[-1] == "__init__.py":
+        parts = parts[:-1]
+    else:
+        parts[-1] = module_path.stem
+    return f"src.{'.'.join(parts)}" if parts else ""
+
+
+def _plugin_name_for_path(module_path: Path) -> str:
+    module_name = _module_name_for_path(module_path)
+    if not module_name:
+        return ""
+    parts = module_name.split(".")
+    if len(parts) >= 3 and parts[1] in {"plugins", "hooks"}:
+        return parts[2]
+    return ""
+
+
+def _permission_for_module_raw(raw: str) -> Permission:
+    patterns = (
+        r'"permission"\s*:\s*Permission\.([A-Z_]+)',
+        r'"permission"\s*:\s*"([A-Z_]+)"',
+        r'"permission"\s*:\s*(\d+)',
+    )
+    for pattern in patterns:
+        match = re.search(pattern, raw)
+        if match is None:
+            continue
+        return _coerce_permission_literal(match.group(1))
+    return Permission.NORMAL
+
+
 @lru_cache(maxsize=256)
-def _declared_docs_meta_for_path(path: Path) -> DocsMeta | None:
+def _declared_doc_context_for_path(path: Path) -> DeclaredDocContext | None:
     target = path.resolve()
     try:
         rel = target.relative_to(ROOT / "src")
     except ValueError:
         rel = None
     if rel is not None and rel.parts[:3] == ("hooks", "docs", "processor"):
-        return create_docs_meta(
+        docs_meta = create_docs_meta(
             visible=True,
             category="system",
             order=10,
@@ -217,14 +278,26 @@ def _declared_docs_meta_for_path(path: Path) -> DocsMeta | None:
             slug="hook.processor",
             kind="overview",
         )
+        return DeclaredDocContext(
+            docs_meta=docs_meta,
+            permission=Permission.NORMAL,
+            module_name="src.hooks.processor",
+            plugin_name="processor",
+        )
     if rel is not None and rel.parts[:3] == ("hooks", "docs", "plugin"):
-        return create_docs_meta(
+        docs_meta = create_docs_meta(
             visible=True,
             category="system",
             order=20,
             source=path,
             slug="hook.plugin",
             kind="overview",
+        )
+        return DeclaredDocContext(
+            docs_meta=docs_meta,
+            permission=Permission.NORMAL,
+            module_name="src.hooks.plugin",
+            plugin_name="plugin",
         )
     candidates: list[Path] = []
     if rel is not None and len(rel.parts) >= 3:
@@ -243,7 +316,7 @@ def _declared_docs_meta_for_path(path: Path) -> DocsMeta | None:
             continue
         source_vars: dict[str, Path] = {}
         for match in re.finditer(
-            r"([A-Z_]+DOCS_SOURCE)\s*=\s*(?P<expr>[^\n]+)",
+            r"([A-Z_]*DOCS_SOURCE)\s*=\s*(?P<expr>[^\n]+)",
             raw,
         ):
             var_name = match.group(1)
@@ -278,7 +351,7 @@ def _declared_docs_meta_for_path(path: Path) -> DocsMeta | None:
                 if raw_kind in {"plugin", "overview", "internal", "static"}
                 else "plugin",
             )
-            return create_docs_meta(
+            docs_meta = create_docs_meta(
                 visible=(visible_match.group(1) == "True") if visible_match else True,
                 hidden=(hidden_match.group(1) == "True") if hidden_match else False,
                 internal=(
@@ -290,6 +363,12 @@ def _declared_docs_meta_for_path(path: Path) -> DocsMeta | None:
                 slug=slug_match.group(1),
                 parent_slug=parent_match.group(1) if parent_match else None,
                 kind=kind,
+            )
+            return DeclaredDocContext(
+                docs_meta=docs_meta,
+                permission=_permission_for_module_raw(raw),
+                module_name=_module_name_for_path(module_path),
+                plugin_name=_plugin_name_for_path(module_path),
             )
     return None
 
@@ -324,20 +403,32 @@ def default_worker_count() -> int:
 @lru_cache(maxsize=256)
 def load_doc_context(path: Path) -> DocBuildContext:
     bundle = load_bundle(path)
-    docs_meta = _declared_docs_meta_for_path(path) or create_docs_meta(
-        visible=True,
-        category="general",
-        order=100,
-        source=path,
-    )
+    declared = _declared_doc_context_for_path(path)
+    if declared is None:
+        docs_meta = create_docs_meta(
+            visible=True,
+            category="general",
+            order=100,
+            source=path,
+        )
+        permission = Permission.NORMAL
+        module_name = ""
+        plugin_name = ""
+    else:
+        docs_meta = declared.docs_meta
+        permission = declared.permission
+        module_name = declared.module_name
+        plugin_name = declared.plugin_name
     node = load_doc_node(
         source=path,
         default_name=bundle.title,
         default_description=bundle.description,
         trigger=TriggerType.COMMAND,
-        permission=Permission.NORMAL,
+        permission=permission,
         docs_meta=docs_meta,
         impression_color=bundle.impression_color,
+        module_name=module_name,
+        plugin_name=plugin_name,
     )
     return DocBuildContext(path=path, bundle=bundle, docs_meta=docs_meta, node=node)
 
@@ -529,6 +620,7 @@ def _all_doc_contexts() -> tuple[DocBuildContext, ...]:
 def _reset_caches() -> None:
     iter_readmes.cache_clear()
     load_bundle.cache_clear()
+    _declared_doc_context_for_path.cache_clear()
     load_doc_context.cache_clear()
 
 
