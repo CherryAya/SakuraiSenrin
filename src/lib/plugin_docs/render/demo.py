@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from io import BytesIO
 from math import ceil
 from pathlib import Path
 import re
@@ -37,6 +36,7 @@ from src.lib.plugin_docs.markdown_layout import (
     build_markdown_layout,
 )
 from src.lib.plugin_docs.models import DocsDemoTurn
+from src.lib.plugin_docs.render.encoding import encode_docs_image
 from src.lib.utils.common import get_current_time
 
 DEMO_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
@@ -129,6 +129,12 @@ class _ShowcaseLayout:
     total_height: int
 
 
+@dataclass(slots=True, frozen=True)
+class DemoRenderAuditResult:
+    data: bytes
+    errors: tuple[str, ...]
+
+
 class DemoImageRenderer:
     """Render plugin docs feature demos as a single-canvas showcase infographic."""
 
@@ -197,6 +203,82 @@ class DemoImageRenderer:
         locale: LocaleCode = "zh-CN",
         generated_at: datetime | None = None,
     ) -> bytes:
+        result = self.render_with_audit(
+            plugin_title=plugin_title,
+            feature_title=feature_title,
+            feature_summary=feature_summary,
+            feature_trigger=feature_trigger,
+            feature_overview=feature_overview,
+            feature_preconditions=feature_preconditions,
+            feature_failures=feature_failures,
+            feature_flow_notes=feature_flow_notes,
+            plugin_trigger=plugin_trigger,
+            feature_permission=feature_permission,
+            plugin_version=plugin_version,
+            plugin_author=plugin_author,
+            turns=turns,
+            locale=locale,
+            generated_at=generated_at,
+        )
+        return result.data
+
+    def audit(
+        self,
+        *,
+        plugin_title: str,
+        feature_title: str,
+        feature_summary: str,
+        feature_trigger: str,
+        feature_overview: str,
+        feature_preconditions: str,
+        feature_failures: str,
+        feature_flow_notes: str,
+        plugin_trigger: str,
+        feature_permission: str,
+        plugin_version: str,
+        plugin_author: str,
+        turns: Sequence[DocsDemoTurn],
+        locale: LocaleCode = "zh-CN",
+        generated_at: datetime | None = None,
+    ) -> tuple[str, ...]:
+        result = self.render_with_audit(
+            plugin_title=plugin_title,
+            feature_title=feature_title,
+            feature_summary=feature_summary,
+            feature_trigger=feature_trigger,
+            feature_overview=feature_overview,
+            feature_preconditions=feature_preconditions,
+            feature_failures=feature_failures,
+            feature_flow_notes=feature_flow_notes,
+            plugin_trigger=plugin_trigger,
+            feature_permission=feature_permission,
+            plugin_version=plugin_version,
+            plugin_author=plugin_author,
+            turns=turns,
+            locale=locale,
+            generated_at=generated_at,
+        )
+        return result.errors
+
+    def render_with_audit(
+        self,
+        *,
+        plugin_title: str,
+        feature_title: str,
+        feature_summary: str,
+        feature_trigger: str,
+        feature_overview: str,
+        feature_preconditions: str,
+        feature_failures: str,
+        feature_flow_notes: str,
+        plugin_trigger: str,
+        feature_permission: str,
+        plugin_version: str,
+        plugin_author: str,
+        turns: Sequence[DocsDemoTurn],
+        locale: LocaleCode = "zh-CN",
+        generated_at: datetime | None = None,
+    ) -> DemoRenderAuditResult:
         layout = self._measure_layout(
             plugin_title=plugin_title,
             feature_title=feature_title,
@@ -221,47 +303,6 @@ class DemoImageRenderer:
         self._draw_instruction_card(image, draw, layout)
         self._draw_demo(image, draw, layout, locale=locale)
         self._draw_footer(draw, layout)
-
-        buffer = BytesIO()
-        image.convert("RGB").save(buffer, format="PNG", optimize=True)
-        return buffer.getvalue()
-
-    def audit(
-        self,
-        *,
-        plugin_title: str,
-        feature_title: str,
-        feature_summary: str,
-        feature_trigger: str,
-        feature_overview: str,
-        feature_preconditions: str,
-        feature_failures: str,
-        feature_flow_notes: str,
-        plugin_trigger: str,
-        feature_permission: str,
-        plugin_version: str,
-        plugin_author: str,
-        turns: Sequence[DocsDemoTurn],
-        locale: LocaleCode = "zh-CN",
-        generated_at: datetime | None = None,
-    ) -> tuple[str, ...]:
-        layout = self._measure_layout(
-            plugin_title=plugin_title,
-            feature_title=feature_title,
-            feature_summary=feature_summary,
-            feature_trigger=feature_trigger,
-            feature_overview=feature_overview,
-            feature_preconditions=feature_preconditions,
-            feature_failures=feature_failures,
-            feature_flow_notes=feature_flow_notes,
-            plugin_trigger=plugin_trigger,
-            feature_permission=feature_permission,
-            plugin_version=plugin_version,
-            plugin_author=plugin_author,
-            turns=turns,
-            locale=locale,
-            generated_at=generated_at,
-        )
         errors: list[str] = []
         canvas = (0, 0, self.WIDTH, layout.total_height)
         hero_safe = (
@@ -314,7 +355,10 @@ class DemoImageRenderer:
                         padding=4,
                     )
                 prior_rects.append((f"turn {index} {name}", rect))
-        return tuple(errors)
+        return DemoRenderAuditResult(
+            data=encode_docs_image(image, webp_quality=88, webp_method=6),
+            errors=tuple(errors),
+        )
 
     def preview_crop_box(
         self, image_size: tuple[int, int]

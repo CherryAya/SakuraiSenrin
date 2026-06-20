@@ -679,6 +679,80 @@ BOT: Beta 完成
     assert plugin_docs_script.validate() == 0
 
 
+def test_validate_reuses_single_feature_render_pass(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    docs_root = tmp_path / "src" / "plugins" / "sample" / "docs"
+    docs_root.mkdir(parents=True)
+    (docs_root / "README.MD").write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试 validate 不再重复走 feature render/audit。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一条说明。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一条说明。
+- 指令: `#alpha run`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha run
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    plugin_docs_script._reset_caches()
+
+    render_calls = {"with_audit": 0, "render": 0}
+
+    def fake_render_with_audit(
+        bundle: Any,
+        feature: Any,
+        *,
+        generated_at: Any = None,
+    ) -> tuple[bytes, tuple[str, ...]]:
+        _ = (bundle, feature, generated_at)
+        render_calls["with_audit"] += 1
+        return b"RIFFfakeWEBP", ()
+
+    def fail_render(*args: Any, **kwargs: Any) -> bytes:
+        _ = (args, kwargs)
+        render_calls["render"] += 1
+        raise AssertionError("validate should not call render_demo_png directly")
+
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "render_demo_png_with_audit",
+        fake_render_with_audit,
+    )
+    monkeypatch.setattr(plugin_docs_script, "render_demo_png", fail_render)
+
+    assert plugin_docs_script.validate(workers=1) == 0
+    assert render_calls == {"with_audit": 1, "render": 0}
+
+
 def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
     monkeypatch: Any,
 ) -> None:
@@ -728,6 +802,7 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
 
     def fake_validate(
         *,
+        workers: int | None = None,
         profile: bool = False,
         profile_top: int = 10,
         reset_caches: bool = True,
@@ -736,6 +811,7 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
             (
                 "validate",
                 {
+                    "workers": workers,
                     "profile": int(profile),
                     "profile_top": profile_top,
                     "reset_caches": int(reset_caches),
@@ -810,6 +886,7 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
         (
             "validate",
             {
+                "workers": 3,
                 "profile": 1,
                 "profile_top": 7,
                 "reset_caches": 0,
@@ -837,6 +914,24 @@ def test_build_parser_accepts_profile_options() -> None:
     assert args.columns == 3
     assert args.profile is True
     assert args.profile_top == 6
+
+
+def test_validate_parser_accepts_worker_and_profile_options() -> None:
+    args = plugin_docs_script.build_parser().parse_args(
+        [
+            "validate",
+            "-j",
+            "5",
+            "--profile",
+            "--profile-top",
+            "4",
+        ]
+    )
+
+    assert args.action == "validate"
+    assert args.workers == 5
+    assert args.profile is True
+    assert args.profile_top == 4
 
 
 def test_build_profile_emits_phase_summary(

@@ -37,6 +37,7 @@ from ._engine import match_feature as match_feature
 from ._engine import node_help_command as node_help_command
 from ._engine import read_docs_metas as read_docs_metas
 from ._engine import render_demo_png as render_demo_png
+from ._engine import render_demo_png_with_audit as render_demo_png_with_audit
 from ._engine import render_doc_node_overview as render_doc_node_overview
 from ._engine import render_feature_deep_dive as render_feature_deep_dive
 from ._engine import render_help_dashboard as render_help_dashboard

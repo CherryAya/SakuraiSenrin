@@ -32,7 +32,6 @@ from src.lib.plugin_docs import (
     FeatureDoc,
     HelpDashboardSection,
     PluginDocBundle,
-    audit_demo_layout,
     build_doc_tree,
     build_help_home_sections,
     collection_demo_filename,
@@ -47,6 +46,7 @@ from src.lib.plugin_docs import (
     load_plugin_doc_bundle,
     render_collection_png,
     render_demo_png,
+    render_demo_png_with_audit,
     render_feature_deep_dive,
     render_help_dashboard,
     render_plugin_guide,
@@ -125,6 +125,14 @@ class ProfileRecord:
     elapsed_ms: float
 
 
+@dataclass(slots=True, frozen=True)
+class ValidateReadmeResult:
+    path: Path
+    node: DocNode | None
+    errors: tuple[str, ...]
+    elapsed_ms: float
+
+
 @dataclass(slots=True)
 class Profiler:
     enabled: bool = False
@@ -196,6 +204,10 @@ def _timed_call[T](
     started_at = perf_counter()
     result = func(*args, **kwargs)
     return result, (perf_counter() - started_at) * 1000
+
+
+def _relative_root(path: Path) -> str:
+    return str(path.relative_to(ROOT))
 
 
 @lru_cache(maxsize=256)
@@ -1045,6 +1057,7 @@ def build(
         return assets
     validated, validate_ms = _timed_call(
         validate,
+        workers=workers,
         profile=profile,
         profile_top=profile_top,
         reset_caches=False,
@@ -1112,133 +1125,160 @@ def generate(
     return 0
 
 
+def _validate_readme(path: Path) -> ValidateReadmeResult:
+    started_at = perf_counter()
+    errors: list[str] = []
+    try:
+        context = load_doc_context(path)
+    except Exception as exc:
+        return ValidateReadmeResult(
+            path=path,
+            node=None,
+            errors=(
+                f"{_relative_root(path)}: parse failed: {type(exc).__name__}: {exc}",
+            ),
+            elapsed_ms=(perf_counter() - started_at) * 1000,
+        )
+
+    bundle = context.bundle
+    node = context.node
+
+    if not bundle.summary.strip():
+        errors.append(f"{_relative_root(path)}: missing 概览 section content")
+    if node.kind != "static" and not bundle.index:
+        errors.append(f"{_relative_root(path)}: missing feature entries")
+
+    if node.kind != "static":
+        for feature in bundle.index:
+            if not feature.overview.strip():
+                errors.append(
+                    f"{_relative_root(path)}: feature {feature.slug} "
+                    "missing 说明 section"
+                )
+            if not feature.preconditions.strip():
+                errors.append(
+                    f"{_relative_root(path)}: feature {feature.slug} "
+                    "missing 前置条件 section"
+                )
+            if not feature.failures.strip():
+                errors.append(
+                    f"{_relative_root(path)}: feature {feature.slug} "
+                    "missing 失败情况 section"
+                )
+            if not feature.demo_turns:
+                errors.append(
+                    f"{_relative_root(path)}: feature {feature.slug} missing demo turns"
+                )
+                continue
+            try:
+                _, layout_errors = render_demo_png_with_audit(bundle, feature)
+            except Exception as exc:
+                errors.append(
+                    f"{_relative_root(path)}: feature {feature.slug} "
+                    f"demo render failed: {type(exc).__name__}: {exc}"
+                )
+                continue
+            if layout_errors:
+                errors.extend(
+                    f"{_relative_root(path)}: feature {feature.slug} {message}"
+                    for message in layout_errors
+                )
+
+        if bundle.index and (
+            resolve_help_entry_shape(
+                node,
+                actor_permission=Permission.NORMAL,
+            )
+            != "simple_leaf"
+        ):
+            tiles = tuple(
+                DemoCollectionTile(
+                    index=feature_index + 1,
+                    title=feature.title,
+                    slug=feature.slug,
+                    summary=feature.summary,
+                    trigger=feature.trigger,
+                    demo_help=f"#help {bundle.title} {feature.slug}",
+                )
+                for feature_index, feature in enumerate(bundle.index)
+            )
+            try:
+                render_collection_png(
+                    DemoCollectionJob(
+                        bundle=bundle,
+                        output=path.parent / "demos" / collection_demo_filename(path),
+                        tiles=tiles,
+                        columns=2,
+                    )
+                )
+            except Exception as exc:
+                errors.append(
+                    f"{_relative_root(path)}: collection demo render failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+
+    return ValidateReadmeResult(
+        path=path,
+        node=node,
+        errors=tuple(errors),
+        elapsed_ms=(perf_counter() - started_at) * 1000,
+    )
+
+
 def validate(
     *,
+    workers: int | None = None,
     profile: bool = False,
     profile_top: int = 10,
     reset_caches: bool = True,
 ) -> int:
     if reset_caches:
         _reset_caches()
+    worker_count = workers if workers is not None else default_worker_count()
     profiler = Profiler(enabled=profile, top_n=profile_top)
     errors: list[str] = []
     nodes: list[DocNode] = []
     slugs_seen: dict[str, Path] = {}
     readmes = iter_readmes()
     _write_line(f"validate: checking {len(readmes)} README files")
-    for index, path in enumerate(readmes, start=1):
-        _progress("validate", index, len(readmes), path)
-        started_at = perf_counter()
-        try:
-            context = load_doc_context(path)
-        except Exception as exc:
-            errors.append(
-                f"{path.relative_to(ROOT)}: parse failed: {type(exc).__name__}: {exc}"
-            )
-            continue
+    ordered_results: list[ValidateReadmeResult]
+    if worker_count <= 1 or len(readmes) <= 1:
+        ordered_results = []
+        for index, path in enumerate(readmes, start=1):
+            _progress("validate", index, len(readmes), path)
+            ordered_results.append(_validate_readme(path))
+    else:
+        ordered_results = [None] * len(readmes)  # type: ignore[list-item]
+        with ThreadPoolExecutor(
+            max_workers=min(worker_count, len(readmes))
+        ) as executor:
+            future_map: dict[Future[ValidateReadmeResult], tuple[int, Path]] = {}
+            for index, path in enumerate(readmes):
+                _progress("validate", index + 1, len(readmes), path)
+                future_map[executor.submit(_validate_readme, path)] = (index, path)
+            for future in as_completed(future_map):
+                index, _ = future_map[future]
+                ordered_results[index] = future.result()
 
-        bundle = context.bundle
-        node = context.node
-        nodes.append(node)
-        prior = slugs_seen.get(node.slug)
+    for result in ordered_results:
+        profiler.record(
+            "validate.readme",
+            _relative_display(result.path),
+            result.elapsed_ms,
+        )
+        errors.extend(result.errors)
+        if result.node is None:
+            continue
+        nodes.append(result.node)
+        prior = slugs_seen.get(result.node.slug)
         if prior is not None:
             errors.append(
-                f"{path.relative_to(ROOT)}: duplicate doc slug {node.slug} "
+                f"{result.path.relative_to(ROOT)}: duplicate doc slug "
+                f"{result.node.slug} "
                 f"(first seen in {prior.relative_to(ROOT)})"
             )
         else:
-            slugs_seen[node.slug] = path
-
-        if not bundle.summary.strip():
-            errors.append(f"{path.relative_to(ROOT)}: missing 概览 section content")
-        if node.kind != "static" and not bundle.index:
-            errors.append(f"{path.relative_to(ROOT)}: missing feature entries")
-
-        if node.kind == "static":
-            profiler.record(
-                "validate.readme",
-                _relative_display(path),
-                (perf_counter() - started_at) * 1000,
-            )
-            continue
-
-        for feature in bundle.index:
-            if not feature.overview.strip():
-                errors.append(
-                    f"{path.relative_to(ROOT)}: feature {feature.slug} "
-                    "missing 说明 section"
-                )
-            if not feature.preconditions.strip():
-                errors.append(
-                    f"{path.relative_to(ROOT)}: feature {feature.slug} "
-                    "missing 前置条件 section"
-                )
-            if not feature.failures.strip():
-                errors.append(
-                    f"{path.relative_to(ROOT)}: feature {feature.slug} "
-                    "missing 失败情况 section"
-                )
-            if not feature.demo_turns:
-                errors.append(
-                    f"{path.relative_to(ROOT)}: feature {feature.slug} "
-                    "missing demo turns"
-                )
-                continue
-            try:
-                render_demo_png(bundle, feature)
-            except Exception as exc:
-                errors.append(
-                    f"{path.relative_to(ROOT)}: feature {feature.slug} "
-                    f"demo render failed: {type(exc).__name__}: {exc}"
-                )
-            layout_errors = audit_demo_layout(bundle, feature)
-            if layout_errors:
-                errors.extend(
-                    f"{path.relative_to(ROOT)}: feature {feature.slug} {message}"
-                    for message in layout_errors
-                )
-
-        if bundle.index:
-            if (
-                resolve_help_entry_shape(
-                    node,
-                    actor_permission=Permission.NORMAL,
-                )
-                != "simple_leaf"
-            ):
-                tiles = tuple(
-                    DemoCollectionTile(
-                        index=feature_index + 1,
-                        title=feature.title,
-                        slug=feature.slug,
-                        summary=feature.summary,
-                        trigger=feature.trigger,
-                        demo_help=f"#help {bundle.title} {feature.slug}",
-                    )
-                    for feature_index, feature in enumerate(bundle.index)
-                )
-                try:
-                    render_collection_png(
-                        DemoCollectionJob(
-                            bundle=bundle,
-                            output=path.parent
-                            / "demos"
-                            / collection_demo_filename(path),
-                            tiles=tiles,
-                            columns=2,
-                        )
-                    )
-                except Exception as exc:
-                    errors.append(
-                        f"{path.relative_to(ROOT)}: collection demo render failed: "
-                        f"{type(exc).__name__}: {exc}"
-                    )
-
-        profiler.record(
-            "validate.readme",
-            _relative_display(path),
-            (perf_counter() - started_at) * 1000,
-        )
+            slugs_seen[result.node.slug] = result.path
 
     if not errors:
         tree = build_doc_tree(nodes)
@@ -1325,6 +1365,16 @@ def build_parser() -> argparse.ArgumentParser:
         "validate",
         help="validate README structure and demo assets",
     )
+    validate_parser.add_argument(
+        "-j",
+        "--workers",
+        type=positive_int,
+        default=default_worker_count(),
+        help=(
+            "parallel validation workers; use 1 for serial validation "
+            "(default: %(default)s)"
+        ),
+    )
     _add_profile_args(validate_parser)
     return parser
 
@@ -1355,6 +1405,7 @@ def main() -> int:
             )
         case "validate":
             return validate(
+                workers=args.workers,
                 profile=args.profile,
                 profile_top=args.profile_top,
             )

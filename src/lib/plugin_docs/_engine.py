@@ -1051,6 +1051,34 @@ def render_demo_png(
     )
 
 
+def render_demo_png_with_audit(
+    bundle: PluginDocBundle,
+    feature: FeatureDoc,
+    *,
+    generated_at: datetime | None = None,
+) -> tuple[bytes, tuple[str, ...]]:
+    result = DemoImageRenderer(
+        impression_color=bundle.impression_color
+    ).render_with_audit(
+        plugin_title=bundle.title,
+        feature_title=feature.title,
+        feature_summary=feature.summary,
+        feature_trigger=feature.trigger,
+        feature_overview=feature.overview,
+        feature_preconditions=feature.preconditions,
+        feature_failures=feature.failures,
+        feature_flow_notes=feature.flow_notes,
+        plugin_trigger=bundle.trigger,
+        feature_permission=_permission_label(feature.permission),
+        plugin_version=bundle.version,
+        plugin_author=bundle.author,
+        turns=feature.demo_turns,
+        locale="zh-CN",
+        generated_at=generated_at,
+    )
+    return result.data, result.errors
+
+
 def render_feature_deep_dive(
     node: DocNode,
     feature: FeatureDoc,
@@ -1210,23 +1238,12 @@ def audit_demo_layout(
     *,
     generated_at: datetime | None = None,
 ) -> tuple[str, ...]:
-    return DemoImageRenderer(impression_color=bundle.impression_color).audit(
-        plugin_title=bundle.title,
-        feature_title=feature.title,
-        feature_summary=feature.summary,
-        feature_trigger=feature.trigger,
-        feature_overview=feature.overview,
-        feature_preconditions=feature.preconditions,
-        feature_failures=feature.failures,
-        feature_flow_notes=feature.flow_notes,
-        plugin_trigger=bundle.trigger,
-        feature_permission=_permission_label(feature.permission),
-        plugin_version=bundle.version,
-        plugin_author=bundle.author,
-        turns=feature.demo_turns,
-        locale="zh-CN",
+    _, errors = render_demo_png_with_audit(
+        bundle,
+        feature,
         generated_at=generated_at,
     )
+    return errors
 
 
 def _feature_command_for_display(
