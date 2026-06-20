@@ -119,6 +119,9 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     SUPPORT_STRIP_RADIUS = 28
     SUPPORT_STRIP_QR_WIDTH = 300
     SUPPORT_STRIP_QR_MAX_HEIGHT = 180
+    SUPPORT_STRIP_QR_FRAME_PADDING_X = 16
+    SUPPORT_STRIP_QR_FRAME_PADDING_Y = 16
+    SUPPORT_STRIP_QR_FRAME_RADIUS = 18
 
     _DASHBOARD_MARKER_SIZE: ClassVar[dict[str, int]] = {
         "square": 12,
@@ -1583,6 +1586,9 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             image = Image.open(asset_path).convert("RGBA")
         except OSError:
             return None
+        bbox = image.getbbox()
+        if bbox is not None:
+            image = image.crop(bbox)
         scale = min(
             self.SUPPORT_STRIP_QR_WIDTH / max(1, image.width),
             self.SUPPORT_STRIP_QR_MAX_HEIGHT / max(1, image.height),
@@ -1601,11 +1607,21 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         side = self.theme.hero_side_padding
         qr_image = self._load_support_qr_image(bundle.qr_asset_path)
         qr_width = qr_image.width if qr_image is not None else 0
+        qr_frame_width = (
+            qr_width + self.SUPPORT_STRIP_QR_FRAME_PADDING_X * 2
+            if qr_image is not None
+            else 0
+        )
+        qr_frame_height = (
+            qr_image.height + self.SUPPORT_STRIP_QR_FRAME_PADDING_Y * 2
+            if qr_image is not None
+            else 0
+        )
         text_width = (
             self.WIDTH
             - side * 2
             - self.SUPPORT_STRIP_PADDING_X * 2
-            - (qr_width + 24 if qr_image is not None else 0)
+            - (qr_frame_width + 24 if qr_image is not None else 0)
         )
         title_lines = tuple(
             self._wrap_inline_text(
@@ -1640,14 +1656,16 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         text_height = title_height + 16 + tip_height + 16 + groups_height
         strip_height = max(
             text_height + self.SUPPORT_STRIP_PADDING_Y * 2,
-            (qr_image.height if qr_image is not None else 0)
+            qr_frame_height
             + self.SUPPORT_STRIP_PADDING_Y * 2,
         )
         rect = (side, top, self.WIDTH - side, top + strip_height)
         qr_rect = None
         if qr_image is not None:
-            qr_left = rect[2] - self.SUPPORT_STRIP_PADDING_X - qr_image.width
-            qr_top = rect[1] + (strip_height - qr_image.height) // 2
+            qr_frame_left = rect[2] - self.SUPPORT_STRIP_PADDING_X - qr_frame_width
+            qr_frame_top = rect[1] + (strip_height - qr_frame_height) // 2
+            qr_left = qr_frame_left + self.SUPPORT_STRIP_QR_FRAME_PADDING_X
+            qr_top = qr_frame_top + self.SUPPORT_STRIP_QR_FRAME_PADDING_Y
             qr_rect = (
                 qr_left,
                 qr_top,
@@ -1730,6 +1748,18 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             )
             text_y += len(lines) * self._line_height_for_font(self.note_font) + 8
         if layout.qr_image is not None and layout.qr_rect is not None:
+            draw.rounded_rectangle(
+                (
+                    layout.qr_rect[0] - self.SUPPORT_STRIP_QR_FRAME_PADDING_X,
+                    layout.qr_rect[1] - self.SUPPORT_STRIP_QR_FRAME_PADDING_Y,
+                    layout.qr_rect[2] + self.SUPPORT_STRIP_QR_FRAME_PADDING_X,
+                    layout.qr_rect[3] + self.SUPPORT_STRIP_QR_FRAME_PADDING_Y,
+                ),
+                radius=self.SUPPORT_STRIP_QR_FRAME_RADIUS,
+                fill=(255, 250, 252, 235),
+                outline=(240, 214, 225, 255),
+                width=2,
+            )
             image.alpha_composite(
                 layout.qr_image,
                 (layout.qr_rect[0], layout.qr_rect[1]),

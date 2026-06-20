@@ -40,7 +40,7 @@ CATALOG: Final[dict[str, str]] = {
     "help.index.example.feature": "  示例: #help <節點名> <子功能名>",
     "help.index.notice": "⚠️ 注意事項:",
     "help.index.notice.item1": "1. 請確保所輸插件名或節點名存在。",
-    "help.index.notice.item2": "2. 如需更進一步支持，請聯絡管理員，或入反饋群「{main_group_id}」💬。",
+    "help.index.notice.item2": "2. 如需更進一步支持，請聯絡管理員，或自下方反饋群入口擇一而入 💬。",
     "help.index.available": "🔧 今可用模塊如下:",
     "help.index.empty": "今無可示之插件文檔。",
     "help.dashboard.lead.line1": "今全域功能入口皆已就緒。",

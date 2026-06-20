@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from importlib import import_module
 import os
@@ -24,29 +25,26 @@ HELP_SUPPORT_QR_ASSET = (
 HELP_SUPPORT_GROUPS: tuple[SupportGroupLink, ...] = (
     SupportGroupLink(
         title="❄️凛雪列車｜描摹重日冷影❄️",
+        group_id="1107576103",
         url="https://qm.qq.com/q/rnNzj9thG8",
     ),
     SupportGroupLink(
         title="❄️No Senrin No Life❄️｜原来你也喜欢凛凛？",
+        group_id="729530250",
         url="https://qm.qq.com/q/JrIxb24HsI",
     ),
 )
 
 
 def support_note(locale: LocaleCode) -> str:
-    main_group_id = resolve_main_group_id()
-    return (
-        tr(locale, "help.index.notice.item2", main_group_id=main_group_id)
-        .removeprefix("2. ")
-        .strip()
-    )
+    return tr(locale, "help.index.notice.item2").removeprefix("2. ").strip()
 
 
 def support_bundle(locale: LocaleCode) -> HelpSupportBundle:
     return HelpSupportBundle(
         title="反馈与交流群",
         tip_text=support_note(locale),
-        groups=HELP_SUPPORT_GROUPS,
+        groups=resolve_support_groups(),
         qr_asset_path=HELP_SUPPORT_QR_ASSET,
     )
 
@@ -54,19 +52,64 @@ def support_bundle(locale: LocaleCode) -> HelpSupportBundle:
 def support_text_block(locale: LocaleCode) -> str:
     bundle = support_bundle(locale)
     lines = [bundle.title, bundle.tip_text, ""]
-    lines.extend(f"{group.title}：{group.url}" for group in bundle.groups)
+    lines.extend(
+        f"{group.title}（群号 {group.group_id}）：{group.url}" for group in bundle.groups
+    )
     return "\n".join(lines).strip()
 
 
-def resolve_main_group_id() -> str:
-    env_main_group_id = os.getenv("MAIN_GROUP_ID", "").strip()
+def resolve_support_groups() -> tuple[SupportGroupLink, ...]:
+    raw_env = os.getenv("HELP_SUPPORT_GROUPS", "").strip()
+    if raw_env:
+        parsed = _parse_support_groups_json(raw_env)
+        if parsed:
+            return parsed
+
     try:
         config_module = import_module("src.config")
     except Exception:
-        return env_main_group_id or "未配置"
+        return HELP_SUPPORT_GROUPS
+
     runtime_config = getattr(config_module, "config", None)
-    config_main_group_id = str(getattr(runtime_config, "MAIN_GROUP_ID", "")).strip()
-    return config_main_group_id or env_main_group_id or "未配置"
+    raw_config = getattr(runtime_config, "HELP_SUPPORT_GROUPS", "")
+    parsed = _parse_support_groups_json(str(raw_config).strip())
+    return parsed or HELP_SUPPORT_GROUPS
+
+
+def resolve_main_group_id() -> str:
+    groups = resolve_support_groups()
+    if not groups:
+        return "未配置"
+    return groups[0].group_id or "未配置"
+
+
+def _parse_support_groups_json(raw: str) -> tuple[SupportGroupLink, ...]:
+    if not raw:
+        return ()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return ()
+    if not isinstance(payload, list):
+        return ()
+
+    groups: list[SupportGroupLink] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()
+        group_id = str(item.get("group_id", "")).strip()
+        url = str(item.get("url", "")).strip()
+        if not title or not url:
+            continue
+        groups.append(
+            SupportGroupLink(
+                title=title,
+                group_id=group_id or "未配置",
+                url=url,
+            )
+        )
+    return tuple(groups)
 
 
 def create_docs_meta(

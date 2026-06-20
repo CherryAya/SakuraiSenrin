@@ -57,6 +57,7 @@ type DocsMetaValue = DocsMeta | tuple[DocsMeta, ...]
 @dataclass(slots=True, frozen=True)
 class SupportGroupLink:
     title: str
+    group_id: str
     url: str
 
 

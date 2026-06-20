@@ -14,6 +14,7 @@ class GlobalConfig(BaseModel):
     SUPERUSERS: set[str]
     IGNORED_USERS: set[str]
     MAIN_GROUP_ID: str
+    HELP_SUPPORT_GROUPS: str = ""
     DEBUG: bool = False
     DEV_TEST_GROUPS: set[str] = set()
     DEV_TEST_USERS: set[str] = set()

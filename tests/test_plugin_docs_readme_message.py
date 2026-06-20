@@ -56,7 +56,7 @@ BOT: 操作完成
     assert "这里是前置条件。" in rendered
     assert "这里是说明。" not in rendered
     assert "先发指令，再看返回。" not in rendered
-    assert "反馈群「10001」" in rendered
+    assert "从下方反馈群入口中任选其一加入" in rendered
     assert any(segment.type == "image" for segment in message)
 
 
@@ -162,7 +162,9 @@ BOT: 操作完成
     assert "触发方式" not in str(with_demo)
     assert "权限" not in str(with_demo)
     assert "子功能目录" not in str(with_demo)
-    assert "反馈群「10001」" in str(with_demo)
+    assert "反馈与交流群" in str(with_demo)
+    assert "No Senrin No Life" in str(with_demo)
+    assert "群号 729530250" in str(with_demo)
     assert any(segment.type == "image" for segment in with_demo)
 
 

@@ -470,7 +470,13 @@ def test_split_inline_text_spans_supports_adjacent_short_code_segments() -> None
     ]
 
 
-def test_support_note_falls_back_to_env_when_runtime_config_is_unavailable(
+def test_support_note_uses_generic_multi_group_copy() -> None:
+    assert plugin_docs_module._support_note("zh-CN") == (
+        "如需进一步支持，请联系管理员，或从下方反馈群入口中任选其一加入 💬。"
+    )
+
+
+def test_resolve_support_groups_falls_back_to_env_when_runtime_config_is_unavailable(
     monkeypatch: Any,
 ) -> None:
     def _raise_config_import(name: str) -> Any:
@@ -478,12 +484,18 @@ def test_support_note_falls_back_to_env_when_runtime_config_is_unavailable(
             raise ValueError("NoneBot has not been initialized.")
         raise AssertionError(f"unexpected import: {name}")
 
-    monkeypatch.setenv("MAIN_GROUP_ID", "20002")
+    monkeypatch.setenv(
+        "HELP_SUPPORT_GROUPS",
+        '[{"title":"测试群","group_id":"20002","url":"https://example.com/group"}]',
+    )
     monkeypatch.setattr(plugin_docs_meta_module, "import_module", _raise_config_import)
 
-    assert plugin_docs_module._support_note("zh-CN") == (
-        "如需进一步支持，请联系管理员，或加入反馈群「20002」💬。"
-    )
+    groups = plugin_docs_meta_module.resolve_support_groups()
+
+    assert len(groups) == 1
+    assert groups[0].title == "测试群"
+    assert groups[0].group_id == "20002"
+    assert groups[0].url == "https://example.com/group"
 
 
 def test_support_text_block_contains_both_group_links() -> None:
@@ -492,6 +504,8 @@ def test_support_text_block_contains_both_group_links() -> None:
     assert "反馈与交流群" in block
     assert "凛雪列車" in block
     assert "No Senrin No Life" in block
+    assert "群号 1107576103" in block
+    assert "群号 729530250" in block
     assert "https://qm.qq.com/q/rnNzj9thG8" in block
     assert "https://qm.qq.com/q/JrIxb24HsI" in block
 

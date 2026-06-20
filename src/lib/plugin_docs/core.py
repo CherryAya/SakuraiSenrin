@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from importlib import import_module
-import os
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
@@ -252,27 +250,7 @@ class NodeMatchResult:
 
 
 def _support_note(locale: LocaleCode) -> str:
-    main_group_id = _resolve_main_group_id()
-    return (
-        tr(
-            locale,
-            "help.index.notice.item2",
-            main_group_id=main_group_id,
-        )
-        .removeprefix("2. ")
-        .strip()
-    )
-
-
-def _resolve_main_group_id() -> str:
-    env_main_group_id = os.getenv("MAIN_GROUP_ID", "").strip()
-    try:
-        config_module = import_module("src.config")
-    except Exception:
-        return env_main_group_id or "未配置"
-    runtime_config = getattr(config_module, "config", None)
-    config_main_group_id = str(getattr(runtime_config, "MAIN_GROUP_ID", "")).strip()
-    return config_main_group_id or env_main_group_id or "未配置"
+    return tr(locale, "help.index.notice.item2").removeprefix("2. ").strip()
 
 
 def _derive_tree_identity_from_source(source_path: Path) -> tuple[str, str | None]:

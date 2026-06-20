@@ -35,7 +35,7 @@ CATALOG: Final[dict[str, str]] = {
     "help.index.example.feature": "  示例: #help <节点名> <子功能名>",
     "help.index.notice": "⚠️ 注意事项:",
     "help.index.notice.item1": "1. 先确认你输的插件名或节点名真存在。",
-    "help.index.notice.item2": "2. 还不明白就摇管理员，或者直接进反馈群「{main_group_id}」💬。",
+    "help.index.notice.item2": "2. 还不明白就摇管理员，或者直接从下面两个反馈群入口里挑一个进 💬。",
     "help.index.available": "🔧 现在能看的模块如下:",
     "help.dashboard.lead.line1": "全域功能入口已经摆好了。",
     "help.dashboard.lead.line2": "按分区翻，或者直接敲对应指令开整。",
