@@ -22,6 +22,7 @@ from src.lib.demo_theme import (
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.messages import image_message, text_message
+from src.lib.utils.common import get_current_time
 
 from .command_layout import (
     CommandLayout,
@@ -114,6 +115,9 @@ from .meta import (
 )
 from .meta import (
     support_note as support_note_impl,
+)
+from .meta import (
+    support_text_block as support_text_block_impl,
 )
 from .models import (
     DocNode,
@@ -224,6 +228,10 @@ from .static_assets import (
 
 def _support_note(locale: LocaleCode) -> str:
     return support_note_impl(locale)
+
+
+def _support_text_block(locale: LocaleCode) -> str:
+    return support_text_block_impl(locale)
 
 
 type HelpHomeSectionKind = Literal["system", "developer", "community"]
@@ -507,6 +515,7 @@ def build_help_home_text(
         for node in section.nodes:
             lines.append(node_help_command(node))
         lines.append("----------")
+    lines.extend(["", _support_text_block(locale)])
     return "\n".join(lines).strip()
 
 
@@ -628,6 +637,8 @@ def render_doc_node_overview(
             tr(locale, "docs.node.notice"),
             tr(locale, "docs.node.notice.item1"),
             f"2. {_support_note(locale)}",
+            "",
+            _support_text_block(locale),
         ]
     )
     message = text_message("\n".join(lines).strip())
@@ -1088,7 +1099,9 @@ def render_feature_deep_dive(
     actor_permission: Permission = Permission.NORMAL,
     prefer_static: bool = True,
 ) -> bytes:
-    _ = locale
+    generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
+        microsecond=0
+    )
     if prefer_static:
         static_bytes = load_static_asset_bytes(
             node.source_path,
@@ -1096,8 +1109,33 @@ def render_feature_deep_dive(
             actor_permission=actor_permission,
         )
         if static_bytes is not None:
-            return static_bytes
-    return render_demo_png(node.bundle, feature, generated_at=generated_at)
+            return ProgressiveDisclosureRenderer(
+                impression_color=node.bundle.impression_color
+            ).render_with_support_strip(
+                static_bytes,
+                locale=locale,
+                footer_left_text=(
+                    f"{node.title} · {feature.title} · "
+                    f"v{node.bundle.version.lstrip('v')} · By {node.bundle.author}"
+                ),
+                footer_right_text=(
+                    f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
+                ),
+            )
+    demo_bytes = render_demo_png(node.bundle, feature, generated_at=generated_at)
+    return ProgressiveDisclosureRenderer(
+        impression_color=node.bundle.impression_color
+    ).render_with_support_strip(
+        demo_bytes,
+        locale=locale,
+        footer_left_text=(
+            f"{node.title} · {feature.title} · "
+            f"v{node.bundle.version.lstrip('v')} · By {node.bundle.author}"
+        ),
+        footer_right_text=(
+            f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
+        ),
+    )
 
 
 def render_plugin_guide(
@@ -1108,6 +1146,9 @@ def render_plugin_guide(
     generated_at: datetime | None = None,
     prefer_static: bool = True,
 ) -> bytes:
+    generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
+        microsecond=0
+    )
     if prefer_static:
         static_bytes = load_static_asset_bytes(
             node.source_path,
@@ -1115,15 +1156,40 @@ def render_plugin_guide(
             actor_permission=actor_permission,
         )
         if static_bytes is not None:
-            return static_bytes
+            return ProgressiveDisclosureRenderer(
+                impression_color=node.bundle.impression_color
+            ).render_with_support_strip(
+                static_bytes,
+                locale=locale,
+                footer_left_text=(
+                    f"{node.title} · Guide · "
+                    f"v{node.bundle.version.lstrip('v')} · By {node.bundle.author}"
+                ),
+                footer_right_text=(
+                    f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
+                ),
+            )
     visible_features = filter_features_by_permission(node.features, actor_permission)
-    return ProgressiveDisclosureRenderer(
+    rendered = ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
     ).render_plugin_guide(
         node=node,
         features=visible_features,
         locale=locale,
         generated_at=generated_at,
+    )
+    return ProgressiveDisclosureRenderer(
+        impression_color=node.bundle.impression_color
+    ).render_with_support_strip(
+        rendered,
+        locale=locale,
+        footer_left_text=(
+            f"{node.title} · Guide · "
+            f"v{node.bundle.version.lstrip('v')} · By {node.bundle.author}"
+        ),
+        footer_right_text=(
+            f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
+        ),
     )
 
 
@@ -1135,6 +1201,9 @@ def render_static_entry(
     actor_permission: Permission = Permission.NORMAL,
     prefer_static: bool = True,
 ) -> bytes:
+    generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
+        microsecond=0
+    )
     if prefer_static:
         static_bytes = load_static_asset_bytes(
             node.source_path,
@@ -1142,13 +1211,34 @@ def render_static_entry(
             actor_permission=actor_permission,
         )
         if static_bytes is not None:
-            return static_bytes
-    return ProgressiveDisclosureRenderer(
+            return ProgressiveDisclosureRenderer(
+                impression_color=node.bundle.impression_color
+            ).render_with_support_strip(
+                static_bytes,
+                locale=locale,
+                footer_left_text=(
+                    f"{node.title} · Static Entry · By {node.bundle.author}"
+                ),
+                footer_right_text=(
+                    f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
+                ),
+            )
+    rendered = ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
     ).render_static_entry(
         node=node,
         locale=locale,
         generated_at=generated_at,
+    )
+    return ProgressiveDisclosureRenderer(
+        impression_color=node.bundle.impression_color
+    ).render_with_support_strip(
+        rendered,
+        locale=locale,
+        footer_left_text=(f"{node.title} · Static Entry · By {node.bundle.author}"),
+        footer_right_text=(
+            f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
+        ),
     )
 
 
@@ -1161,6 +1251,15 @@ def render_help_dashboard(
     prefer_static: bool = True,
     source_path: str | Path | None = None,
 ) -> bytes:
+    generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
+        microsecond=0
+    )
+    dashboard_count = sum(len(section.nodes) for section in sections)
+    dashboard_footer_left = tr(
+        locale,
+        "help.dashboard.footer.left",
+        count=dashboard_count,
+    )
     first_node = next(
         (node for section in sections for node in section.nodes),
         None,
@@ -1175,16 +1274,42 @@ def render_help_dashboard(
             actor_permission=actor_permission,
         )
         if static_bytes is not None:
-            return static_bytes
+            theme_color = (
+                first_node.bundle.impression_color
+                if first_node is not None
+                else DEFAULT_IMPRESSION_COLOR
+            )
+            return ProgressiveDisclosureRenderer(
+                impression_color=theme_color
+            ).render_with_support_strip(
+                static_bytes,
+                locale=locale,
+                footer_left_text=dashboard_footer_left,
+                footer_right_text=(
+                    f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
+                ),
+            )
     theme_color = (
         first_node.bundle.impression_color
         if first_node is not None
         else DEFAULT_IMPRESSION_COLOR
     )
-    return ProgressiveDisclosureRenderer(impression_color=theme_color).render_dashboard(
+    rendered = ProgressiveDisclosureRenderer(
+        impression_color=theme_color
+    ).render_dashboard(
         sections=sections,
         locale=locale,
         generated_at=generated_at,
+    )
+    return ProgressiveDisclosureRenderer(
+        impression_color=theme_color
+    ).render_with_support_strip(
+        rendered,
+        locale=locale,
+        footer_left_text=dashboard_footer_left,
+        footer_right_text=(
+            f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
+        ),
     )
 
 
@@ -1359,6 +1484,7 @@ def build_feature_copy_text(
         locale=locale,
         normalize_inline_text=_normalize_inline_text,
         support_note=_support_note,
+        support_text_block=_support_text_block,
     )
 
 
@@ -1368,11 +1494,12 @@ def build_plugin_guide_copy_text(
     features: Sequence[FeatureDoc],
     locale: LocaleCode,
 ) -> str:
-    del locale
     return build_plugin_guide_copy_text_impl(
         node,
         features=features,
         normalize_inline_text=_normalize_inline_text,
+        support_text_block=_support_text_block,
+        locale=locale,
     )
 
 
@@ -1388,6 +1515,7 @@ def build_simple_leaf_copy_text(
         locale=locale,
         normalize_inline_text=_normalize_inline_text,
         support_note=_support_note,
+        support_text_block=_support_text_block,
     )
 
 
@@ -1400,6 +1528,7 @@ def build_static_entry_copy_text(
         node,
         locale=locale,
         support_note=_support_note,
+        support_text_block=_support_text_block,
     )
 
 

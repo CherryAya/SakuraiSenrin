@@ -55,6 +55,20 @@ type DocsMetaValue = DocsMeta | tuple[DocsMeta, ...]
 
 
 @dataclass(slots=True, frozen=True)
+class SupportGroupLink:
+    title: str
+    url: str
+
+
+@dataclass(slots=True, frozen=True)
+class HelpSupportBundle:
+    title: str
+    tip_text: str
+    groups: tuple[SupportGroupLink, ...]
+    qr_asset_path: Path
+
+
+@dataclass(slots=True, frozen=True)
 class DocsDemoTurn:
     speaker: Literal["USER", "BOT", "SYSTEM"]
     text: str

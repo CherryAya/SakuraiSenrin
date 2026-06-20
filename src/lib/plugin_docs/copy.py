@@ -11,6 +11,7 @@ from src.lib.i18n.types import LocaleCode
 from .models import DocNode, FeatureDoc, PluginDocBundle
 
 type SupportNoteProvider = Callable[[LocaleCode], str]
+type SupportTextBlockProvider = Callable[[LocaleCode], str]
 type NormalizeInlineText = Callable[[str], str]
 
 
@@ -158,6 +159,7 @@ def build_feature_copy_text(
     locale: LocaleCode,
     normalize_inline_text: NormalizeInlineText,
     support_note: SupportNoteProvider,
+    support_text_block: SupportTextBlockProvider,
 ) -> str:
     lines = [
         node.title,
@@ -182,6 +184,7 @@ def build_feature_copy_text(
     )
     if note_items:
         lines.extend(["", f"说明：{note_items[0]}"])
+    lines.extend(["", support_text_block(locale)])
     return "\n".join(lines).strip()
 
 
@@ -190,6 +193,8 @@ def build_plugin_guide_copy_text(
     *,
     features: Sequence[FeatureDoc],
     normalize_inline_text: NormalizeInlineText,
+    support_text_block: SupportTextBlockProvider,
+    locale: LocaleCode,
 ) -> str:
     lines = [
         node.title,
@@ -207,6 +212,7 @@ def build_plugin_guide_copy_text(
             )
         )
         lines.append("")
+    lines.append(support_text_block(locale))
     return "\n".join(line for line in lines if line is not None).strip()
 
 
@@ -217,6 +223,7 @@ def build_simple_leaf_copy_text(
     locale: LocaleCode,
     normalize_inline_text: NormalizeInlineText,
     support_note: SupportNoteProvider,
+    support_text_block: SupportTextBlockProvider,
 ) -> str:
     lines = [
         node.title,
@@ -237,6 +244,7 @@ def build_simple_leaf_copy_text(
     )
     if note_items:
         lines.extend(["", f"说明：{note_items[0]}"])
+    lines.extend(["", support_text_block(locale)])
     return "\n".join(lines).strip()
 
 
@@ -245,6 +253,7 @@ def build_static_entry_copy_text(
     *,
     locale: LocaleCode,
     support_note: SupportNoteProvider,
+    support_text_block: SupportTextBlockProvider,
 ) -> str:
     lines = [node.title]
     if node.summary:
@@ -259,6 +268,8 @@ def build_static_entry_copy_text(
             "help 只负责暴露这个入口本身，不为每个社区词条派生独立命令说明。",
             "",
             f"说明：{support_note(locale)}",
+            "",
+            support_text_block(locale),
         ]
     )
     return "\n".join(lines).strip()

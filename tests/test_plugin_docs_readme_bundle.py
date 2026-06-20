@@ -24,7 +24,7 @@ def test_load_plugin_doc_bundle_parses_real_readme() -> None:
     assert profile.trigger == "#我有多水"
     assert ranking.title == "查看周期榜单"
     assert "榜单" in ranking.aliases
-    assert ranking.demo_filename == "water-ranking.png"
+    assert ranking.demo_filename == "water-ranking.webp"
     assert ranking.demo_turns[0].speaker == "USER"
     assert ranking.demo_turns[0].text == "#水王"
 
@@ -157,7 +157,7 @@ def test_load_plugin_doc_bundle_supports_single_page_simple_plugin(
 ## 用法
 - 别名: 简单, demo
 - 指令: `#simple`
-- Demo: simple-main.png
+- Demo: simple-main.webp
 
 ## 说明
 直接展示最终说明。
@@ -193,7 +193,7 @@ BOT: OK
     assert feature.title == "简单插件"
     assert feature.trigger == "#simple"
     assert feature.aliases == ("简单", "demo")
-    assert feature.demo_filename == "simple-main.png"
+    assert feature.demo_filename == "simple-main.webp"
     assert feature.hero is True
     assert feature.overview == "直接展示最终说明。"
     assert feature.demo_turns[0].text == "#simple"
@@ -486,6 +486,16 @@ def test_support_note_falls_back_to_env_when_runtime_config_is_unavailable(
     )
 
 
+def test_support_text_block_contains_both_group_links() -> None:
+    block = plugin_docs_meta_module.support_text_block("zh-CN")
+
+    assert "反馈与交流群" in block
+    assert "凛雪列車" in block
+    assert "No Senrin No Life" in block
+    assert "https://qm.qq.com/q/rnNzj9thG8" in block
+    assert "https://qm.qq.com/q/JrIxb24HsI" in block
+
+
 def test_load_plugin_doc_bundle_preserves_inline_backticks_in_meta_value() -> None:
     source = Path("src/plugins/wordbank/docs/README.MD")
 
@@ -669,7 +679,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     )
     study_main = next(feature for feature in study.index if feature.slug == "main")
 
-    assert add.demo_filename == "wordbank-add.png"
+    assert add.demo_filename == "wordbank-add.webp"
     assert len(add.demo_turns) == 15
     assert add.demo_turns[0].text == "#wordbank.add"
     assert "审核文档请查看 #help 词库审核" in add.demo_turns[10].text
@@ -684,24 +694,24 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert "连续输错 3 次" in add.failures
     assert "ID: 12" in add.demo_turns[9].text
     assert "#help 词库审核" in add.demo_turns[10].text
-    assert rank.demo_filename == "wordbank-rank.png"
+    assert rank.demo_filename == "wordbank-rank.webp"
     assert rank.demo_turns[0].text == "#苦瓜榜"
     assert "[发送苦瓜榜海报]" in rank.demo_turns[1].text
-    assert trigger.demo_filename == "wordbank-trigger.png"
+    assert trigger.demo_filename == "wordbank-trigger.webp"
     assert trigger.demo_turns[0].text == "#wordbank trigger prob 271 0.3"
     assert "重新进入 pending" in trigger.demo_turns[4].text
-    assert response.demo_filename == "wordbank-response.png"
+    assert response.demo_filename == "wordbank-response.webp"
     assert response.demo_turns[0].text == "#wordbank response weight 12 5"
     assert "重新进入 pending" in response.demo_turns[4].text
     assert passive.demo_turns[-1].speaker == "SYSTEM"
     assert "group_recall" in passive.demo_turns[-1].text
-    assert reply.demo_filename == "wordbank-reply-shortcut.png"
+    assert reply.demo_filename == "wordbank-reply-shortcut.webp"
     assert "词条详情 #12" in reply.demo_turns[3].text
-    assert approve.demo_filename == "wordbank-approval-approve.png"
+    assert approve.demo_filename == "wordbank-approval-approve.webp"
     assert "词条 #12 已通过审核" in approve.demo_turns[1].text
-    assert approval_reply.demo_filename == "wordbank-approval-approval-reply.png"
+    assert approval_reply.demo_filename == "wordbank-approval-approval-reply.webp"
     assert "[回复审批通知] @机器人 y" in approval_reply.demo_turns[1].text
-    assert study_main.demo_filename == "study-collection.png"
+    assert study_main.demo_filename == "study-main.webp"
     assert study_main.demo_turns[0].text == "#study a f 群公告 大家记得看"
     assert "管理员通过前不会触发。" in study_main.demo_turns[2].text
     assert any(

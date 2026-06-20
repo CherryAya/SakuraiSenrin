@@ -11,8 +11,13 @@ from src.lib.plugin_docs.copy import (
     feature_demo_help_command,
     node_help_command,
 )
-from src.lib.plugin_docs.meta import support_note
-from src.lib.plugin_docs.models import DocNode, FeatureDoc, PluginDocBundle
+from src.lib.plugin_docs.meta import support_bundle, support_note, support_text_block
+from src.lib.plugin_docs.models import (
+    DocNode,
+    FeatureDoc,
+    HelpSupportBundle,
+    PluginDocBundle,
+)
 
 
 def permission_label(permission: Permission) -> str:
@@ -44,10 +49,16 @@ def build_static_entry_copy(node: DocNode, *, locale: LocaleCode) -> str:
         node,
         locale=locale,
         support_note=support_note,
+        support_text_block=support_text_block,
     )
 
 
+def build_help_support_bundle(*, locale: LocaleCode) -> HelpSupportBundle:
+    return support_bundle(locale)
+
+
 __all__ = [
+    "build_help_support_bundle",
     "build_static_entry_copy",
     "feature_command_for_display_text",
     "feature_demo_help_command",

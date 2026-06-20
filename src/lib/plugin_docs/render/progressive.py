@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from io import BytesIO
 from math import ceil
+from pathlib import Path
 from typing import Any, ClassVar
 
 from PIL import Image, ImageDraw
@@ -27,6 +29,7 @@ from src.lib.utils.common import get_current_time
 from .demo import DemoImageRenderer, _ShowcaseNoteItem, _ShowcaseTurnPlacement
 from .encoding import encode_docs_image
 from .helpers import (
+    build_help_support_bundle,
     build_static_entry_copy,
     feature_command_for_display_text,
     feature_demo_help_command,
@@ -78,6 +81,16 @@ class _GuideAdvancedItemLayout:
     height: int
 
 
+@dataclass(slots=True, frozen=True)
+class _SupportStripLayout:
+    rect: tuple[int, int, int, int]
+    title_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    tip_lines: tuple[tuple[InlineTextSpan, ...], ...]
+    group_lines: tuple[tuple[tuple[InlineTextSpan, ...], ...], ...]
+    qr_image: Image.Image | None
+    qr_rect: tuple[int, int, int, int] | None
+
+
 class ProgressiveDisclosureRenderer(DemoImageRenderer):
     DASHBOARD_CARD_GAP_X = 32
     DASHBOARD_CARD_GAP_Y = 32
@@ -100,6 +113,12 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     DASHBOARD_SECTION_ITEM_GAP = 32
     DASHBOARD_SECTION_SUMMARY_GAP = 18
     DASHBOARD_SECTION_COMMAND_GAP = 20
+    SUPPORT_STRIP_GAP = 24
+    SUPPORT_STRIP_PADDING_X = 40
+    SUPPORT_STRIP_PADDING_Y = 28
+    SUPPORT_STRIP_RADIUS = 28
+    SUPPORT_STRIP_QR_WIDTH = 300
+    SUPPORT_STRIP_QR_MAX_HEIGHT = 180
 
     _DASHBOARD_MARKER_SIZE: ClassVar[dict[str, int]] = {
         "square": 12,
@@ -1522,6 +1541,199 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             font=self.footer_font,
             fill=self.theme.system_text,
         )
+
+    def render_with_support_strip(
+        self,
+        image_bytes: bytes,
+        *,
+        locale: LocaleCode,
+        footer_left_text: str,
+        footer_right_text: str,
+    ) -> bytes:
+        source = Image.open(BytesIO(image_bytes)).convert("RGBA")
+        support_layout = self._measure_support_strip(
+            locale=locale,
+            top=source.height + self.SUPPORT_STRIP_GAP,
+        )
+        footer_rect = (
+            self.theme.hero_side_padding,
+            support_layout.rect[3] + self.theme.footer_gap_top,
+            self.WIDTH - self.theme.hero_side_padding,
+            support_layout.rect[3]
+            + self.theme.footer_gap_top
+            + self.theme.footer_height,
+        )
+        total_height = footer_rect[3] + self.theme.outer_margin
+        canvas = Image.new("RGBA", (self.WIDTH, total_height), self.theme.page_bg)
+        canvas.paste(source, (0, 0))
+        draw = ImageDraw.Draw(canvas)
+        self._draw_support_strip(canvas, draw, layout=support_layout)
+        self._draw_trace_footer(
+            draw,
+            footer_rect=footer_rect,
+            left_text=footer_left_text,
+            right_text=footer_right_text,
+        )
+        return encode_docs_image(canvas, webp_quality=88, webp_method=6)
+
+    def _load_support_qr_image(self, asset_path: Path) -> Image.Image | None:
+        if not asset_path.exists():
+            return None
+        try:
+            image = Image.open(asset_path).convert("RGBA")
+        except OSError:
+            return None
+        scale = min(
+            self.SUPPORT_STRIP_QR_WIDTH / max(1, image.width),
+            self.SUPPORT_STRIP_QR_MAX_HEIGHT / max(1, image.height),
+        )
+        width = max(1, int(image.width * scale))
+        height = max(1, int(image.height * scale))
+        return image.resize((width, height), Image.Resampling.LANCZOS)
+
+    def _measure_support_strip(
+        self,
+        *,
+        locale: LocaleCode,
+        top: int,
+    ) -> _SupportStripLayout:
+        bundle = build_help_support_bundle(locale=locale)
+        side = self.theme.hero_side_padding
+        qr_image = self._load_support_qr_image(bundle.qr_asset_path)
+        qr_width = qr_image.width if qr_image is not None else 0
+        text_width = (
+            self.WIDTH
+            - side * 2
+            - self.SUPPORT_STRIP_PADDING_X * 2
+            - (qr_width + 24 if qr_image is not None else 0)
+        )
+        title_lines = tuple(
+            self._wrap_inline_text(
+                bundle.title,
+                max_width=text_width,
+                font=self.summary_font,
+            )
+        )
+        tip_lines = tuple(
+            self._wrap_inline_text(
+                bundle.tip_text,
+                max_width=text_width,
+                font=self.note_font,
+            )
+        )
+        group_lines = tuple(
+            tuple(
+                self._wrap_inline_text(
+                    group.title,
+                    max_width=text_width,
+                    font=self.note_font,
+                )
+            )
+            for group in bundle.groups
+        )
+        title_height = len(title_lines) * self._line_height_for_font(self.summary_font)
+        tip_height = len(tip_lines) * self._line_height_for_font(self.note_font)
+        groups_height = sum(
+            len(lines) * self._line_height_for_font(self.note_font) + 8
+            for lines in group_lines
+        )
+        text_height = title_height + 16 + tip_height + 16 + groups_height
+        strip_height = max(
+            text_height + self.SUPPORT_STRIP_PADDING_Y * 2,
+            (qr_image.height if qr_image is not None else 0)
+            + self.SUPPORT_STRIP_PADDING_Y * 2,
+        )
+        rect = (side, top, self.WIDTH - side, top + strip_height)
+        qr_rect = None
+        if qr_image is not None:
+            qr_left = rect[2] - self.SUPPORT_STRIP_PADDING_X - qr_image.width
+            qr_top = rect[1] + (strip_height - qr_image.height) // 2
+            qr_rect = (
+                qr_left,
+                qr_top,
+                qr_left + qr_image.width,
+                qr_top + qr_image.height,
+            )
+        return _SupportStripLayout(
+            rect=rect,
+            title_lines=title_lines,
+            tip_lines=tip_lines,
+            group_lines=group_lines,
+            qr_image=qr_image,
+            qr_rect=qr_rect,
+        )
+
+    def _draw_support_strip(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        layout: _SupportStripLayout,
+    ) -> None:
+        self._draw_shadowed_rect(
+            image,
+            rect=layout.rect,
+            radius=self.SUPPORT_STRIP_RADIUS,
+            shadow_color=self.theme.card_shadow,
+            shadow_offset_y=self.theme.instruction_shadow_offset_y,
+            shadow_blur=self.theme.instruction_shadow_blur,
+            fill=self.theme.panel_bg,
+        )
+        draw.rounded_rectangle(
+            (
+                layout.rect[0],
+                layout.rect[1],
+                layout.rect[0] + 10,
+                layout.rect[3],
+            ),
+            radius=10,
+            fill=self.theme.accent,
+        )
+        text_x = layout.rect[0] + self.SUPPORT_STRIP_PADDING_X
+        text_y = layout.rect[1] + self.SUPPORT_STRIP_PADDING_Y
+        self._draw_multiline_text(
+            draw,
+            x=text_x,
+            y=text_y,
+            lines=layout.title_lines,
+            font=self.summary_font,
+            fill=self.theme.deep,
+            line_height=self._line_height_for_font(self.summary_font),
+            render_code_chip=False,
+        )
+        text_y += (
+            len(layout.title_lines) * self._line_height_for_font(self.summary_font) + 16
+        )
+        self._draw_multiline_text(
+            draw,
+            x=text_x,
+            y=text_y,
+            lines=layout.tip_lines,
+            font=self.note_font,
+            fill=self.theme.hint,
+            line_height=self._line_height_for_font(self.note_font),
+            render_code_chip=False,
+        )
+        text_y += (
+            len(layout.tip_lines) * self._line_height_for_font(self.note_font) + 16
+        )
+        for lines in layout.group_lines:
+            self._draw_multiline_text(
+                draw,
+                x=text_x,
+                y=text_y,
+                lines=lines,
+                font=self.note_font,
+                fill=self.theme.deep,
+                line_height=self._line_height_for_font(self.note_font),
+                render_code_chip=False,
+            )
+            text_y += len(lines) * self._line_height_for_font(self.note_font) + 8
+        if layout.qr_image is not None and layout.qr_rect is not None:
+            image.alpha_composite(
+                layout.qr_image,
+                (layout.qr_rect[0], layout.qr_rect[1]),
+            )
 
     def _wrap_plain_text_for_height(
         self,

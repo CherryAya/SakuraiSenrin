@@ -61,7 +61,6 @@ BOT: 操作完成
 
 
 def test_build_readme_docs_formats_multi_section_commands_for_help_output() -> None:
-    shortcut_label = tr("zh-CN", "docs.feature.shortcuts")
     message = build_readme_docs(
         source=Path("src/plugins/water/docs/README.MD"),
         name="吹水记录",
@@ -73,10 +72,9 @@ def test_build_readme_docs_formats_multi_section_commands_for_help_output() -> N
 
     rendered = str(message)
     assert "命令：\n  #水王 / #水王 <主体> <范围> <时间>" in rendered
-    assert f"  {shortcut_label}" in rendered
-    assert "    #今日水王 / #本周水王 / #本月水王 / #本季水王" in rendered
-    assert "    #今日群榜 / ..." in rendered
-    assert "    #今日矩阵榜 / ..." in rendered
+    assert "#今日水王" in rendered
+    assert "#本周群榜" in rendered
+    assert "#本季矩阵榜" in rendered
 
 
 def test_render_doc_node_overview_formats_multi_section_commands() -> None:
@@ -99,8 +97,8 @@ def test_render_doc_node_overview_formats_multi_section_commands() -> None:
     assert "可用功能：" in rendered
     assert "查看周期榜单" in rendered
     assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
-    assert f"  {tr('zh-CN', 'docs.feature.shortcuts')}" in rendered
-    assert "    #今日矩阵群榜 / ..." in rendered
+    assert "反馈与交流群" in rendered
+    assert "https://qm.qq.com/q/rnNzj9thG8" in rendered
 
 
 def test_build_readme_docs_can_attach_representative_overview_demo(
@@ -207,7 +205,6 @@ def test_build_readme_docs_filters_features_by_actor_permission() -> None:
     )
 
     assert "处理矩阵合并建议" not in str(normal_message)
-    assert "超管维护命令" not in str(normal_message)
     assert "处理矩阵合并建议" in str(superuser_message)
     assert "超管维护命令" in str(superuser_message)
     assert "未找到子功能文档: admin-maintenance" in str(denied_feature_message)

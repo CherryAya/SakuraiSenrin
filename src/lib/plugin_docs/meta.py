@@ -16,7 +16,21 @@ from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 
-from .models import DocNodeKind, DocsMeta
+from .models import DocNodeKind, DocsMeta, HelpSupportBundle, SupportGroupLink
+
+HELP_SUPPORT_QR_ASSET = (
+    Path(__file__).resolve().parents[1] / "assets" / "help-support-qr-double.png"
+)
+HELP_SUPPORT_GROUPS: tuple[SupportGroupLink, ...] = (
+    SupportGroupLink(
+        title="❄️凛雪列車｜描摹重日冷影❄️",
+        url="https://qm.qq.com/q/rnNzj9thG8",
+    ),
+    SupportGroupLink(
+        title="❄️No Senrin No Life❄️｜原来你也喜欢凛凛？",
+        url="https://qm.qq.com/q/JrIxb24HsI",
+    ),
+)
 
 
 def support_note(locale: LocaleCode) -> str:
@@ -26,6 +40,22 @@ def support_note(locale: LocaleCode) -> str:
         .removeprefix("2. ")
         .strip()
     )
+
+
+def support_bundle(locale: LocaleCode) -> HelpSupportBundle:
+    return HelpSupportBundle(
+        title="反馈与交流群",
+        tip_text=support_note(locale),
+        groups=HELP_SUPPORT_GROUPS,
+        qr_asset_path=HELP_SUPPORT_QR_ASSET,
+    )
+
+
+def support_text_block(locale: LocaleCode) -> str:
+    bundle = support_bundle(locale)
+    lines = [bundle.title, bundle.tip_text, ""]
+    lines.extend(f"{group.title}：{group.url}" for group in bundle.groups)
+    return "\n".join(lines).strip()
 
 
 def resolve_main_group_id() -> str:
