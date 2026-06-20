@@ -23,7 +23,7 @@
 - 摘要: 把群标记为封禁状态。
 - 别名: 封禁, 拉黑
 - 指令: `#admin.group ban <gid>`
-- Demo: admin-group-ban.png
+- Demo: admin-group-ban.webp
 #### 说明
 `ban` 会把群状态改为 `BANNED`，后续运行时检查会阻止该群继续使用机器人。
 #### 前置条件
@@ -41,7 +41,7 @@ BOT: [114514|测试群] 已封禁
 - 摘要: 解除封禁并回到未授权状态。
 - 别名: 解封, 加白
 - 指令: `#admin.group unban <gid>`
-- Demo: admin-group-unban.png
+- Demo: admin-group-unban.webp
 #### 说明
 `unban` 会解除封禁，并把群状态改回 `UNAUTHORIZED`，后续仍需显式授权。
 #### 前置条件
@@ -59,7 +59,7 @@ BOT: [114514|测试群] 已解封，状态变更为未授权
 - 摘要: 允许机器人在群内工作。
 - 别名: 授权
 - 指令: `#admin.group auth <gid>`
-- Demo: admin-group-auth.png
+- Demo: admin-group-auth.webp
 #### 说明
 `auth` 会把群状态改为 `AUTHORIZED`，运行时检查链会允许该群继续使用机器人。
 #### 前置条件
@@ -77,7 +77,7 @@ BOT: [114514|测试群] 授权成功
 - 摘要: 把群改回未授权状态。
 - 别名: 取消授权
 - 指令: `#admin.group unauth <gid>`
-- Demo: admin-group-unauth.png
+- Demo: admin-group-unauth.webp
 #### 说明
 `unauth` 用于暂停机器人在某个群工作，但不把它加入封禁名单。
 #### 前置条件
@@ -95,7 +95,7 @@ BOT: [114514|测试群] 已取消授权
 - 摘要: 查看当前群状态。
 - 别名: 状态
 - 指令: `#admin.group status <gid>`
-- Demo: admin-group-status.png
+- Demo: admin-group-status.webp
 #### 说明
 `status` 只读，不会修改数据库。
 #### 前置条件
@@ -113,7 +113,7 @@ BOT: [114514|测试群] 当前状态: 已授权
 - 摘要: 更新状态后尝试让机器人退群。
 - 别名: 退群
 - 指令: `#admin.group leave <gid>`
-- Demo: admin-group-leave.png
+- Demo: admin-group-leave.webp
 #### 说明
 `leave` 会先把群状态写成 `LEFT`，再调用 OneBot API 请求机器人退出群聊。
 #### 前置条件

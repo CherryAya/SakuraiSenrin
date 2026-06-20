@@ -11,7 +11,7 @@
 - Help: `remove`
 - 别名: remove, 退群
 - 指令: `#remove`
-- Demo: remove-guide.png
+- Demo: remove-guide.webp
 ## 说明
 如需退群，还请使用 `#remove` 指令。
 

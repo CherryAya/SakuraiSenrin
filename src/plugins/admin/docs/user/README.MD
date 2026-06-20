@@ -20,7 +20,7 @@
 - 摘要: 把用户加入全局或群级黑名单。
 - 别名: 拉黑
 - 指令: `#admin.user ban <uid...> [-g <group>] [-r <reason>] [-t <duration>]`
-- Demo: admin-user-ban.png
+- Demo: admin-user-ban.webp
 #### 说明
 `ban` 支持一次处理多个用户，可选指定群范围、操作原因和封禁时长。不传 `-g` 时默认作用于全局黑名单。
 #### 前置条件
@@ -38,7 +38,7 @@ BOT: [12345|测试用户] 已封禁 (时长: 1天 范围: GLOBAL_GROUP)
 - 摘要: 从黑名单中移除用户。
 - 别名: 加白
 - 指令: `#admin.user unban <uid...> [-g <group>] [-r <reason>]`
-- Demo: admin-user-unban.png
+- Demo: admin-user-unban.webp
 #### 说明
 `unban` 会按给定范围解除黑名单记录。
 #### 前置条件
@@ -56,7 +56,7 @@ BOT: [12345|测试用户] 已解封
 - 摘要: 查看用户当前是否被封禁。
 - 别名: 状态
 - 指令: `#admin.user status <uid...>`
-- Demo: admin-user-status.png
+- Demo: admin-user-status.webp
 #### 说明
 `status` 不修改数据，只用于检查用户当前的封禁状态。
 #### 前置条件

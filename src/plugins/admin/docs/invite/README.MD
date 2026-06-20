@@ -23,7 +23,7 @@
 - 摘要: 以图片形式展示当前待处理邀请。
 - 别名: show, ls, 列表
 - 指令: `#admin.invite list`
-- Demo: admin-invite-list.png
+- Demo: admin-invite-list.webp
 #### 说明
 `list` 会把当前待处理邀请渲染成列表图，适合在私聊里快速浏览。
 #### 前置条件
@@ -41,7 +41,7 @@ BOT: [发送一张待处理邀请列表图片]
 - 摘要: 按群号或 flag 同意单个邀请。
 - 别名: 同意
 - 指令: `#admin.invite approve -g <gid>` / `#admin.invite approve -f <flag>`
-- Demo: admin-invite-approve.png
+- Demo: admin-invite-approve.webp
 #### 说明
 `approve` 会定位对应邀请并调用 OneBot 审批接口，同步更新记录状态。
 #### 前置条件
@@ -60,7 +60,7 @@ BOT: 已同意群聊邀请 17
 - 摘要: 按群号、flag 或全部拒绝邀请。
 - 别名: 拒绝
 - 指令: `#admin.invite reject -g <gid>` / `#admin.invite reject -f <flag>` / `#admin.invite reject --all`
-- Demo: admin-invite-reject.png
+- Demo: admin-invite-reject.webp
 #### 说明
 `reject` 可用于单条拒绝，也可通过 `--all` 批量清理全部待处理邀请。
 #### 前置条件
@@ -79,7 +79,7 @@ BOT: ========== 批量拒绝 ==========
 - 摘要: 按群号、flag 或全部忽略邀请。
 - 别名: 忽略
 - 指令: `#admin.invite ignore -g <gid>` / `#admin.invite ignore -f <flag>` / `#admin.invite ignore --all`
-- Demo: admin-invite-ignore.png
+- Demo: admin-invite-ignore.webp
 #### 说明
 `ignore` 会把邀请标记为已忽略，不执行同意或拒绝动作。
 #### 前置条件
@@ -98,7 +98,7 @@ BOT: ======= 操作成功: 已忽略 =======
 - 摘要: 直接回复邀请通知消息进行同意或拒绝。
 - 别名: y, n
 - 指令: 回复通知消息发送 `y` / `n`
-- Demo: admin-invite-reply-shortcut.png
+- Demo: admin-invite-reply-shortcut.webp
 #### 说明
 当超管直接回复机器人推送的邀请通知消息时，可以用 `y`、`approve`、`n`、`reject` 等短指令完成处理。
 #### 前置条件
@@ -117,7 +117,7 @@ BOT: 已同意群聊邀请 18
 - 摘要: 查询已处理邀请记录。
 - 别名: 日志
 - 指令: `#admin.invite log [-g <gid>]`
-- Demo: admin-invite-log.png
+- Demo: admin-invite-log.webp
 #### 说明
 `log` 用于查看最近处理过的邀请记录，可按群号过滤。
 #### 前置条件

@@ -11,7 +11,7 @@
 - Help: `processor`
 - 别名: 缓存回填, 拦截链, sync, check
 - 指令: 被动触发
-- Demo: hook-processor-main.png
+- Demo: hook-processor-main.webp
 ## 说明
 运行时同步、检查工作，在配置 `no_check=True` 的插件中，会跳过所有检查链。
 

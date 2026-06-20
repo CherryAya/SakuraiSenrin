@@ -22,7 +22,7 @@
 - 摘要: 管理群授权、封禁、退群和状态查询。
 - 别名: admin.group, 群组管理
 - 指令: `#help 群组管理模块`
-- Demo: admin-overview-group.png
+- Demo: admin-overview-group.webp
 #### 说明
 这是群组管理的聚合入口，用于先确认模块范围，再进入具体动作 demo。
 #### 前置条件
@@ -41,7 +41,7 @@ SYSTEM: 继续发送 #help 群组管理模块 ban 查看封禁流程 demo。
 - 摘要: 管理用户封禁、解封和状态查询。
 - 别名: admin.user, 用户管理
 - 指令: `#help 用户管理模块`
-- Demo: admin-overview-user.png
+- Demo: admin-overview-user.webp
 #### 说明
 这是用户管理的聚合入口。
 #### 前置条件
@@ -60,7 +60,7 @@ SYSTEM: 继续发送 #help 用户管理模块 ban 查看完整流程。
 - 摘要: 处理待审批邀请、批量拒绝/忽略，并查看日志。
 - 别名: admin.invite, 邀请管理
 - 指令: `#help 邀请管理模块`
-- Demo: admin-overview-invite.png
+- Demo: admin-overview-invite.webp
 #### 说明
 这是邀请管理的聚合入口。
 #### 前置条件
@@ -79,7 +79,7 @@ SYSTEM: 继续发送 #help 邀请管理模块 approve 查看完整流程。
 - 摘要: 调整全局默认语言和群级覆盖。
 - 别名: admin.i18n, 语言管理
 - 指令: `#help 语言管理模块`
-- Demo: admin-overview-i18n.png
+- Demo: admin-overview-i18n.webp
 #### 说明
 这是语言管理的聚合入口。
 #### 前置条件
@@ -98,7 +98,7 @@ SYSTEM: 继续发送 #help 语言管理模块 set 查看完整流程。
 - 摘要: 检查远端仓库、查看快照并手动触发数据库备份。
 - 别名: admin.backup, 备份管理
 - 指令: `#help 备份管理模块`
-- Demo: admin-overview-backup.png
+- Demo: admin-overview-backup.webp
 #### 说明
 这是备份管理的聚合入口。
 #### 前置条件

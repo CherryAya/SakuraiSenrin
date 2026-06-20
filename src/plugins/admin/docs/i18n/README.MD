@@ -22,7 +22,7 @@
 - 摘要: 查看全局默认语言和目标群的生效语言。
 - 别名: 查看
 - 指令: `#admin.i18n show [gid]`
-- Demo: admin-i18n-show.png
+- Demo: admin-i18n-show.webp
 #### 说明
 `show` 会展示全局默认语言、群级覆盖以及最终生效结果。
 #### 前置条件
@@ -42,7 +42,7 @@ BOT: ===== i18n 状态 =====
 - 摘要: 修改项目默认语言。
 - 别名: 默认语言
 - 指令: `#admin.i18n default <locale>`
-- Demo: admin-i18n-default.png
+- Demo: admin-i18n-default.webp
 #### 说明
 该操作会更新全局默认语言，影响没有群级覆盖的场景。
 #### 前置条件
@@ -60,7 +60,7 @@ BOT: 已更新全局默认语言: x-meme
 - 摘要: 为某个群单独指定语言。
 - 别名: 设定
 - 指令: `#admin.i18n set <locale> [gid]`
-- Demo: admin-i18n-set.png
+- Demo: admin-i18n-set.webp
 #### 说明
 群级覆盖优先级高于全局默认语言。
 #### 前置条件
@@ -78,7 +78,7 @@ BOT: 已更新群 114514 的语言覆盖: lzh
 - 摘要: 移除指定群的语言覆盖。
 - 别名: 清除
 - 指令: `#admin.i18n clear [gid]`
-- Demo: admin-i18n-clear.png
+- Demo: admin-i18n-clear.webp
 #### 说明
 清除后该群会重新继承全局默认语言。
 #### 前置条件
@@ -96,7 +96,7 @@ BOT: 已清除群 114514 的语言覆盖。
 - 摘要: 查看所有群级语言覆盖记录。
 - 别名: 列表
 - 指令: `#admin.i18n list`
-- Demo: admin-i18n-list.png
+- Demo: admin-i18n-list.webp
 #### 说明
 用于全局排查目前有哪些群配置了特殊语言。
 #### 前置条件

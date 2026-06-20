@@ -11,7 +11,7 @@
 - Help: `notice.user`
 - 别名: 好友申请
 - 指令: 被动触发
-- Demo: notice-user-main.png
+- Demo: notice-user-main.webp
 ## 说明
 模块收到好友请求后会延迟一段随机时间再同意，以减轻行为模式过于机械的问题。随后会补充用户库记录并通知超管。
 ## 前置条件

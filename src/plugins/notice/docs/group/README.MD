@@ -21,7 +21,7 @@
 - 摘要: 机器人被踢后更新群状态并通知超管。
 - 别名: 被踢, kick
 - 指令: 被动触发
-- Demo: notice-group-kick-cleanup.png
+- Demo: notice-group-kick-cleanup.webp
 #### 说明
 当机器人被管理员踢出群聊时，模块会更新群状态，并把事件摘要上报给超管。
 #### 前置条件
@@ -40,7 +40,7 @@ BOT: [私聊超管] 群组被踢出
 - 摘要: 机器人被禁言后自动退群并拉黑操作者。
 - 别名: 禁言清理, ban
 - 指令: 被动触发
-- Demo: notice-group-ban-cleanup.png
+- Demo: notice-group-ban-cleanup.webp
 #### 说明
 当机器人在群内被禁言时，模块会把群设为封禁状态、拉黑操作者，并自动退出相关群。
 #### 前置条件
@@ -59,7 +59,7 @@ BOT: [私聊超管] 群组禁言
 - 摘要: 机器人入群后同步群成员缓存。
 - 别名: 入群同步
 - 指令: 被动触发
-- Demo: notice-group-member-sync.png
+- Demo: notice-group-member-sync.webp
 #### 说明
 当机器人被邀请进群并成功加入后，模块会触发一次群成员同步，避免缓存缺失。
 #### 前置条件
@@ -77,7 +77,7 @@ SYSTEM: 机器人加入新群 114514。
 - 摘要: 监听群名变更并更新缓存。
 - 别名: 改名同步
 - 指令: 被动触发
-- Demo: notice-group-rename-sync.png
+- Demo: notice-group-rename-sync.webp
 #### 说明
 当群名变化时，模块会更新群缓存，保证后续文案和日志使用新群名。
 #### 前置条件

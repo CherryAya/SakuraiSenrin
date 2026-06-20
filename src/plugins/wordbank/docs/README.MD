@@ -34,7 +34,7 @@
 - 别名: 添加, 学习, wordbank.add, 添加词条
 - 指令: `wordbank add 触发词 => 响应词`
 - 兼容指令: `wordbank.add 触发词 => 响应词`、`添加词条 触发词 => 响应词`
-- Demo: wordbank-add.png
+- Demo: wordbank-add.webp
 #### 说明
 支持四类常见写法:
 - `文本 => 文本`
@@ -109,7 +109,7 @@ ID: 14
 - Priority: 110
 - 别名: scope, 范围, 生效范围
 - 指令: `wordbank add 触发词 => 响应词 --scope current_group|all_groups|self|private_only`
-- Demo: wordbank-add-scope.png
+- Demo: wordbank-add-scope.webp
 #### 说明
 `current_group` 当前群，`all_groups` 所有群，`self` 仅创建者，`private_only` 仅私聊。引导模式里会单独询问范围，因此通常不需要重复写 `--scope`。
 #### 常用示例命令
@@ -143,7 +143,7 @@ scope 拼写错误或重复设置时会返回说明。
 - Priority: 120
 - 别名: prob, 概率, 触发概率
 - 指令: `wordbank add 触发词 => 响应词 --prob 0.0-1.0`
-- Demo: wordbank-add-prob.png
+- Demo: wordbank-add-prob.webp
 #### 说明
 `--prob` 控制整组 trigger 的触发概率，适合给高频短词降噪；通过后再按响应权重选具体回复。
 #### 常用示例命令
@@ -175,7 +175,7 @@ SYSTEM: `--prob 0.5` 表示命中 trigger group 后大约只有一半概率真�
 - Priority: 130
 - 别名: weight, 权重
 - 指令: `wordbank add 触发词 => 响应词 --weight 1-5`
-- Demo: wordbank-add-weight.png
+- Demo: wordbank-add-weight.webp
 #### 说明
 权重越高，被选中的概率越大；不影响 trigger 本身是否触发。
 #### 常用示例命令
@@ -207,7 +207,7 @@ SYSTEM: `--weight 5` 不会提高 trigger 本身的命中率，只会让这条�
 - Priority: 140
 - 别名: role, roles, 角色限制
 - 指令: `wordbank add 触发词 => 响应词 --role owner|admin|member`
-- Demo: wordbank-add-role.png
+- Demo: wordbank-add-role.webp
 #### 说明
 常用于把提醒或彩蛋限定给群主、管理员或普通成员。
 #### 常用示例命令
@@ -240,7 +240,7 @@ SYSTEM: `--role admin` 只允许群管理员触发；普通成员发送同样内
 - Priority: 150
 - 别名: call, 调用次数窗口
 - 指令: `wordbank add 触发词 => 响应词 --call window:min:max`
-- Demo: wordbank-add-call.png
+- Demo: wordbank-add-call.webp
 #### 说明
 `window:min:max` 表示在指定秒数窗口内，只在第 `min` 到第 `max` 次之间允许触发；适合做“第几次才回复”或“过多后静默”的规则。
 #### 常用示例命令
@@ -273,7 +273,7 @@ SYSTEM: `--call 60:2:5` 表示 60 秒窗口内从第 2 次开始触发，第 5 �
 - 别名: 查询, 搜索, wordbank.search, 搜索词条
 - 指令: `wordbank search [关键词] [图片] [--field all|trigger|response] [--creator 账号] [--page 页码] [--limit 每页数量]`
 - 兼容指令: `wordbank.search [关键词]`、`搜索词条 [关键词]`
-- Demo: wordbank-search.png
+- Demo: wordbank-search.webp
 #### 说明
 默认同时搜触发词和响应词，也支持按图片相似度搜索。结果会以卡片展示，可继续发送 `page <页码>`、`详情 <group_id>`、`del <序号...>` 或 `exit` 管理当前搜索会话。
 #### 前置条件
@@ -295,7 +295,7 @@ BOT: [展开 trigger group 271]
 - 别名: 苦瓜榜, rank, 排行, 榜
 - 指令: `wordbank rank [周榜|月榜|季榜|总榜]`
 - 兼容指令: `苦瓜榜`
-- Demo: wordbank-rank.png
+- Demo: wordbank-rank.webp
 #### 说明
 默认返回月榜，也支持周榜、季榜和总榜；海报展示 Top 10、冠军占比、覆盖群数等信息。
 #### 常用示例命令
@@ -318,7 +318,7 @@ BOT: [发送苦瓜榜海报]
 - Priority: 160
 - 别名: group, 展开
 - 指令: `wordbank group <group_id> [--page 页码]`
-- Demo: wordbank-search.png
+- Demo: wordbank-search.webp
 #### 说明
 适合从搜索结果继续展开，查看 trigger、本组状态和各条响应详情；详情页内可继续翻页。
 #### 常用示例命令
@@ -341,7 +341,7 @@ group 不存在、页码越界或参数非法时会提示。
 - 别名: 删除, remove, wordbank.delete, wordbank.del, 删除词条
 - 指令: `wordbank delete <id>`
 - 兼容指令: `wordbank.delete <id>`、`wordbank.del <id>`、`删除词条 <id>`
-- Demo: wordbank-delete.png
+- Demo: wordbank-delete.webp
 #### 说明
 删除后不再参与匹配，但数据仍保留，可后续恢复。
 #### 前置条件
@@ -360,7 +360,7 @@ ID 非法、词条不存在或权限不足时会提示。
 - 别名: 恢复, wordbank.restore, 恢复词条
 - 指令: `wordbank restore <id>`
 - 兼容指令: `wordbank.restore <id>`、`恢复词条 <id>`
-- Demo: wordbank-restore.png
+- Demo: wordbank-restore.webp
 #### 说明
 恢复后会重新加入运行时索引。
 #### 前置条件
@@ -381,7 +381,7 @@ ID 非法、词条不存在或权限不足时会提示。
 - 指令:
   - `wordbank trigger prob <group_id> <0.0-1.0>`
   - `wordbank trigger set <group_id> <新触发内容>`
-- Demo: wordbank-trigger.png
+- Demo: wordbank-trigger.webp
 #### 说明
 `trigger prob` 修改整组触发概率，不改动已有响应内容；`trigger set` 修改触发内容本身，支持纯文本、图片触发或图文混排。触发内容变更后，该组下已有响应会重新进入 `pending`，需要重新审核后才会重新参与被动匹配。
 #### 常用示例命令
@@ -409,7 +409,7 @@ group 不存在、触发词冲突、概率不在 `0-1` 范围内、图片无法�
 - 指令:
   - `wordbank response weight <id> <1-5>`
   - `wordbank response set <id> <新响应内容>`
-- Demo: wordbank-response.png
+- Demo: wordbank-response.webp
 #### 说明
 `response weight` 只影响同一 trigger group 内多条响应的抽样权重；`response set` 用于改正文案、图片或图文混排响应。修改响应内容后，这一条响应会重新进入 `pending`，不会立刻生效。
 #### 常用示例命令
@@ -435,7 +435,7 @@ ID 非法、对象不存在、参数越界或权限不足时会提示。
 - Priority: 30
 - 别名: 被动, 自动回复
 - 指令: 无
-- Demo: wordbank-passive.png
+- Demo: wordbank-passive.webp
 #### 说明
 文本优先走内存索引，图片只在消息含图时下载并匹配。除普通文本外，也支持事件触发词，例如:
 - `event:at`
@@ -466,7 +466,7 @@ SYSTEM: 如果命中的是 `group_recall` / `friend_recall` 一类撤回信号�
 - 别名: info, 详情, history, 摘要, del, delete, 删除, rst, restore, 恢复, trigger prob, trigger set, response weight, response set
 - 指令: 回复机器人词库自动回复并发送 `info` / `history` / `del` / `rst` / `trigger prob` / `trigger set` / `response weight` / `response set`
 - 兼容指令: `详情`、`history`、`删除`、`恢复`
-- Demo: wordbank-reply-shortcut.png
+- Demo: wordbank-reply-shortcut.webp
 #### 说明
 回复词库自动回复后，可以直接查看详情、摘要、删除、恢复，或做 `trigger` / `response` 快捷修改。搜索结果卡片和 group 详情页的上下文展开也复用这套记录。审批通知里的 `y / n` 不在这里，见 `#help 词库审核`。
 #### 前置条件

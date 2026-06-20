@@ -20,7 +20,7 @@
 - 摘要: 处理被踢、被禁言、入群同步和群名变更。
 - 别名: notice.group
 - 指令: `#help 群组事件处理`
-- Demo: notice-overview-group.png
+- Demo: notice-overview-group.webp
 #### 说明
 这是群组事件处理的聚合入口。
 #### 前置条件
@@ -39,7 +39,7 @@ SYSTEM: 继续发送 #help 群组事件处理 ban-cleanup 查看完整流程。
 - 摘要: 记录并上报群邀请，同时对已授权或封禁群做自动处理。
 - 别名: notice.invite
 - 指令: `#help 群组邀请处理`
-- Demo: notice-overview-invite.png
+- Demo: notice-overview-invite.webp
 #### 说明
 这是群邀请处理的聚合入口。
 #### 前置条件
@@ -57,7 +57,7 @@ BOT: 群组邀请处理会记录邀请、自动拒绝黑名单群，并向超管
 - 摘要: 自动同意好友请求并通知超管。
 - 别名: notice.user
 - 指令: `#help 用户事件处理`
-- Demo: notice-overview-user.png
+- Demo: notice-overview-user.webp
 #### 说明
 这是好友请求处理的聚合入口。
 #### 前置条件

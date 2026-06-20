@@ -11,7 +11,7 @@
 - Help: `test`
 - 别名: 调试, matcher
 - 指令: 被动触发
-- Demo: test-listener.png
+- Demo: test-listener.webp
 ## 说明
 这个 matcher 本身不负责业务处理，主要就是在开发或测试阶段先占住一个事件入口。
 ## 前置条件

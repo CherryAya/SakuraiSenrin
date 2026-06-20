@@ -11,7 +11,7 @@
 - Help: `study`
 - 别名: study, 学习
 - 指令: `#study <a|m> <t|f> 触发词 响应词`
-- Demo: study-collection.png
+- Demo: study-main.webp
 
 ## 说明
 > [!TIP]

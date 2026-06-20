@@ -32,7 +32,7 @@
 - Priority: 10
 - 别名: 我有多水, 画像
 - 指令: `#我有多水`
-- Demo: water-profile.png
+- Demo: water-profile.webp
 #### 说明
 默认返回简版画像，适合日常快速查看。
 #### 前置条件
@@ -50,7 +50,7 @@ BOT: [发送个人画像图片]
 - Priority: 20
 - 别名: 完整画像, full
 - 指令: `#我有多水 完整`
-- Demo: water-profile-full.png
+- Demo: water-profile-full.webp
 #### 说明
 在默认画像后追加 `完整` 即可切换到完整版。
 #### 前置条件
@@ -69,7 +69,7 @@ BOT: [发送完整版个人画像图片]
 - Priority: 30
 - 别名: 榜单
 - 指令: `#水王` / `#水王 <主体> <范围> <时间>` / `#今日水王` / `#本周群榜` / `#本季矩阵榜`
-- Demo: water-ranking.png
+- Demo: water-ranking.webp
 #### 说明
 榜单使用三维模型:
 - 主体: `用户榜 / 群聊榜 / 矩阵榜`
@@ -104,7 +104,7 @@ BOT: [发送用户榜 · 本群日榜图片]
 - Priority: 130
 - 别名: 水王日报, 今日报告
 - 指令: `#水王 今日报告` / `#水王日报`
-- Demo: water-ranking.png
+- Demo: water-ranking.webp
 #### 说明
 报告窗口固定为今日 `00:00` 到当前时刻，同群共享 1 分钟冷却。
 #### 前置条件
@@ -124,7 +124,7 @@ BOT: [发送今日群报告图片]
 - Priority: 40
 - 别名: 成就
 - 指令: `#水王 成就`
-- Demo: water-achievement.png
+- Demo: water-achievement.webp
 #### 说明
 适合快速查看当前成就进度。
 #### 前置条件
@@ -143,7 +143,7 @@ BOT: [发送成就概览]
 - Priority: 140
 - 别名: 赛季
 - 指令: `#水王 赛季` / `#水王 赛季 列表` / `#水王 赛季 <season_id|名称> [个人|群聊|矩阵] [概览|积分|排名|成就]`
-- Demo: water-season-query.png
+- Demo: water-season-query.webp
 #### 说明
 可先看赛季列表，再查询指定赛季的个人、群聊或矩阵视图。
 #### 前置条件
@@ -165,7 +165,7 @@ BOT: [发送赛季积分图]
 - 别名: merge, 合并建议
 - 指令: `#water.merge yes` / `#water.merge no`
 - 权限: 群管理员
-- Demo: water-merge-confirm.png
+- Demo: water-merge-confirm.webp
 #### 说明
 系统给出矩阵合并建议后，管理员只需做一次确认。
 #### 前置条件
@@ -186,7 +186,7 @@ BOT: 已记录为“同意合并”啦
 - 别名: water 管理, 超管命令
 - 指令: `#water help` / `#water settle [YYYYMMDD] [-f|--force]` / `#water pardon <penalty_id>` / `#water ignore <group_id>` / `#water ignored` / `#water state` / `#water season create <season_id> <YYYYMMDD> <YYYYMMDD> <name>` / `#water season publish <season_id>` / `#water season archive <season_id>` / `#water season show <season_id>` / `#water season list [current|published|archived|draft]` / `#water season delete <season_id>`
 - 权限: 超级管理员
-- Demo: water-admin-maintenance.png
+- Demo: water-admin-maintenance.webp
 #### 说明
 这里只保留维护入口；具体参数以 `#water help` 为准。
 #### 前置条件

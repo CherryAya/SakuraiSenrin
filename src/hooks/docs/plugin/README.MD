@@ -11,7 +11,7 @@
 - Help: `plugin`
 - 别名: hook, 扩展点
 - 指令: 被动触发
-- Demo: hook-plugin-placeholder.png
+- Demo: hook-plugin-placeholder.webp
 ## 说明
 全局插件 hook 能力，暂未启用
 

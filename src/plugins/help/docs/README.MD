@@ -11,7 +11,7 @@
 - Help: `help`
 - 别名: 总表, 列表
 - 指令: `#help [插件名] [子功能名]`
-- Demo: help-index.png
+- Demo: help-main.webp
 ## 说明
 什么？！那就让凛凛手把手教你怎么用吧！要跟上哦？
 

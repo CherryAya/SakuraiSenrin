@@ -11,7 +11,7 @@
 - Help: `picsearch`
 - 别名: 搜图
 - 指令: `搜图 [saucenao|ascii2d]`
-- Demo: picsearch-search.png
+- Demo: picsearch-search.webp
 
 ## 说明
 回复一条带图片的消息，并发送 `搜图` 即可。

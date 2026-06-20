@@ -20,7 +20,7 @@
 - 摘要: 已授权群的邀请直接放过，不再重复打断。
 - 别名: 自动放行
 - 指令: 被动触发
-- Demo: notice-invite-auto-approve-authorized.png
+- Demo: notice-invite-auto-approve-authorized.webp
 #### 说明
 如果被邀请的群已经在数据库里处于工作状态，模块不会重复让超管审批。
 #### 前置条件
@@ -38,7 +38,7 @@ SYSTEM: 已授权群 114514 再次发来邀请。
 - 摘要: 黑名单群的邀请自动拒绝并通知相关人。
 - 别名: 自动拒绝, 黑名单邀请
 - 指令: 被动触发
-- Demo: notice-invite-auto-reject-banned.png
+- Demo: notice-invite-auto-reject-banned.webp
 #### 说明
 如果群已被标记为封禁状态，模块会自动拒绝邀请，并通知邀请者与超级管理员。
 #### 前置条件
@@ -57,7 +57,7 @@ BOT: [私聊超管] 黑名单群组发起邀请，已自动拒绝。
 - 摘要: 普通邀请写入记录并通知超管审批。
 - 别名: 邀请上报
 - 指令: 被动触发
-- Demo: notice-invite-report-pending.png
+- Demo: notice-invite-report-pending.webp
 #### 说明
 对于既未授权也未封禁的普通群，模块会记录邀请，并把通知发给超管等待处理。
 #### 前置条件
