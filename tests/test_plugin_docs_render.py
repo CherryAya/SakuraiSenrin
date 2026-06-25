@@ -579,7 +579,7 @@ def test_render_help_dashboard_grid_extends_to_footer_region() -> None:
     ).getpixel((0, 0))
 
 
-def test_support_strip_qr_layout_applies_upward_vertical_offset(
+def test_support_strip_qr_layout_applies_optical_vertical_offset(
     monkeypatch: Any,
 ) -> None:
     renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")

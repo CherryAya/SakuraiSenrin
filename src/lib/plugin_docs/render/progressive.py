@@ -122,7 +122,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     SUPPORT_STRIP_QR_FRAME_PADDING_X = 16
     SUPPORT_STRIP_QR_FRAME_PADDING_Y = 16
     SUPPORT_STRIP_QR_FRAME_RADIUS = 18
-    SUPPORT_STRIP_QR_VERTICAL_OFFSET_Y = -12
+    SUPPORT_STRIP_QR_VERTICAL_OFFSET_Y = -6
 
     _DASHBOARD_MARKER_SIZE: ClassVar[dict[str, int]] = {
         "square": 12,
