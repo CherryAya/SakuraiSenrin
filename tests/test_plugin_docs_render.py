@@ -1,3 +1,5 @@
+from PIL import ImageDraw
+
 from src.lib.plugin_docs.models import DocsDemoTurn
 from src.lib.plugin_docs.render.encoding import WEBP_MAX_DIMENSION, encode_docs_image
 from tests.test_plugin_docs_support import *
@@ -345,6 +347,98 @@ def test_demo_image_renderer_builds_full_section_bands_for_study_demo() -> None:
         assert band.header_rect[2] <= band.rect[2]
         assert band.content_rect[3] <= band.rect[3]
         assert band.divider_rect[0] > band.tag_rect[2]
+
+
+def test_demo_image_renderer_aligns_section_title_and_index_optically() -> None:
+    node = load_doc_node(
+        source="src/plugins/study/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    feature = next(item for item in node.bundle.index if item.slug == "main")
+    renderer = DemoImageRenderer(impression_color=node.bundle.impression_color)
+
+    layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
+        plugin_title=node.bundle.title,
+        feature_title=feature.title,
+        feature_summary=feature.summary,
+        feature_trigger=feature.trigger,
+        feature_overview=feature.overview,
+        feature_preconditions=feature.preconditions,
+        feature_failures=feature.failures,
+        feature_flow_notes=feature.flow_notes,
+        plugin_trigger=node.bundle.trigger,
+        feature_permission=str(feature.permission),
+        plugin_version=node.bundle.version,
+        plugin_author=node.bundle.author,
+        turns=feature.demo_turns,
+        locale="zh-CN",
+        generated_at=datetime(2026, 6, 19, 16, 44, 50),
+    )
+    band = layout.demo_section_bands[0]
+    index_text = f"{band.index:02d}"
+    captured: dict[str, tuple[float, float]] = {}
+
+    def capture_draw_text(
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: float,
+        y: float,
+        text: str,
+        font: Any,
+        fill: str,
+    ) -> None:
+        if text in {index_text, band.title}:
+            captured[text] = (x, y)
+
+    renderer._draw_text = capture_draw_text  # pyright: ignore[reportMethodAssignment]
+
+    image = Image.new("RGBA", (renderer.WIDTH, layout.total_height), "#FFFFFF")
+    draw = ImageDraw.Draw(image)
+    renderer._draw_demo(  # pyright: ignore[reportPrivateUsage]
+        image,
+        draw,
+        layout,
+        locale="zh-CN",
+    )
+
+    index_bbox = renderer._text_size(index_text, renderer.meta_font)  # pyright: ignore[reportPrivateUsage]
+    index_width = int(index_bbox[2] - index_bbox[0])
+    index_height = int(index_bbox[3] - index_bbox[1])
+    index_rect = (
+        band.tag_rect[0] + 12,
+        band.tag_rect[1] + 8,
+        band.tag_rect[0] + 50,
+        band.tag_rect[3] - 8,
+    )
+    expected_index_x = (
+        index_rect[0]
+        + renderer.DEMO_SECTION_INDEX_OPTICAL_OFFSET_X
+        + (
+            (index_rect[2] + renderer.DEMO_SECTION_INDEX_OPTICAL_OFFSET_X)
+            - (index_rect[0] + renderer.DEMO_SECTION_INDEX_OPTICAL_OFFSET_X)
+            - index_width
+        )
+        / 2
+    )
+    expected_index_y = (
+        index_rect[1]
+        + (index_rect[3] - index_rect[1] - index_height) / 2
+        - index_bbox[1]
+    )
+    title_bbox = renderer._text_size(band.title, renderer.meta_font)  # pyright: ignore[reportPrivateUsage]
+    title_height = int(title_bbox[3] - title_bbox[1])
+    expected_title_y = (
+        band.tag_rect[1]
+        + (band.tag_rect[3] - band.tag_rect[1] - title_height) / 2
+        - title_bbox[1]
+        + renderer.DEMO_SECTION_TITLE_OPTICAL_OFFSET_Y
+    )
+
+    assert captured[index_text] == (expected_index_x, expected_index_y)
+    assert captured[band.title][1] == expected_title_y
 
 
 def test_demo_image_renderer_uses_card_style_for_system_turn() -> None:

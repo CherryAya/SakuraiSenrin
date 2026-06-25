@@ -143,6 +143,8 @@ class DemoImageRenderer:
     FONT_FAMILIES: ClassVar[list[str]] = [MAPLE_FONT_NAME]
     COMMAND_INDENT_PX = 48
     DEFAULT_SECTION_TITLE = "流程演示"
+    DEMO_SECTION_INDEX_OPTICAL_OFFSET_X = -2
+    DEMO_SECTION_TITLE_OPTICAL_OFFSET_Y = 3
 
     def __init__(self, *, impression_color: str | None = None) -> None:
         self.theme_name = SENRIN_V3_THEME.name
@@ -1053,18 +1055,30 @@ class DemoImageRenderer:
                 radius=999,
                 fill=band.accent,
             )
-            self._draw_text(
+            self._draw_text_centered(
                 draw,
-                x=index_rect[0] + 10,
-                y=index_rect[1] + 1,
-                text=index_text,
+                (
+                    index_rect[0] + self.DEMO_SECTION_INDEX_OPTICAL_OFFSET_X,
+                    index_rect[1],
+                    index_rect[2] + self.DEMO_SECTION_INDEX_OPTICAL_OFFSET_X,
+                    index_rect[3],
+                ),
+                index_text,
                 font=self.meta_font,
                 fill="#FFFFFF",
+            )
+            title_bbox = self._text_size(band.title, self.meta_font)
+            title_height = int(title_bbox[3] - title_bbox[1])
+            title_y = (
+                band.tag_rect[1]
+                + (band.tag_rect[3] - band.tag_rect[1] - title_height) / 2
+                - title_bbox[1]
+                + self.DEMO_SECTION_TITLE_OPTICAL_OFFSET_Y
             )
             self._draw_text(
                 draw,
                 x=index_rect[2] + 12,
-                y=band.tag_rect[1] + 6,
+                y=title_y,
                 text=band.title,
                 font=self.meta_font,
                 fill=band.accent,
