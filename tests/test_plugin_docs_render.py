@@ -277,6 +277,34 @@ def test_demo_image_renderer_measure_layout_uses_structured_trigger_layout() -> 
     )  # pyright: ignore[reportPrivateUsage]
 
 
+def test_demo_image_renderer_measures_short_bubbles_without_min_width() -> None:
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+
+    spec = renderer._measure_turn(  # pyright: ignore[reportPrivateUsage]
+        DocsDemoTurn(
+            speaker="USER",
+            text="hi",
+        ),
+        content_width=900,
+    )
+
+    expected_width = (
+        renderer._max_inline_line_width(spec.lines, renderer.body_font)  # pyright: ignore[reportPrivateUsage]
+        + renderer.theme.bubble_padding_x * 2
+    )
+    assert spec.width == expected_width
+    assert spec.width < 280
+
+
+def test_demo_image_renderer_ignores_wu_placeholder_in_note_lines() -> None:
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+
+    assert renderer._split_note_lines("无") == ()  # pyright: ignore[reportPrivateUsage]
+    assert renderer._split_note_lines("- 需要管理员\n无") == (  # pyright: ignore[reportPrivateUsage]
+        "需要管理员",
+    )
+
+
 def test_demo_image_renderer_hides_duplicate_plugin_kicker_for_simple_leaf() -> None:
     renderer = DemoImageRenderer(impression_color="#3BC9DB")
 

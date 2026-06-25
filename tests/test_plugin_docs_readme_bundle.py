@@ -274,6 +274,53 @@ def test_markdown_layout_supports_lists_and_code_blocks() -> None:
     assert any(line.code for line in layout.lines if line.kind == "code")
 
 
+def test_feature_optional_sections_can_be_omitted(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "README.MD"
+    source.write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试可选 section。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` 省略可选项: 不写前置条件和失败情况。
+
+## 子功能详情
+### `alpha` 省略可选项
+- 摘要: 不写前置条件和失败情况。
+- 指令: `#alpha`
+#### 说明
+alpha
+#### 完整流程
+```demo
+USER: #alpha
+BOT: Alpha 完成
+```
+""".strip(),
+        encoding="utf-8",
+    )
+
+    bundle = load_plugin_doc_bundle(
+        source=source,
+        default_name="测试插件",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    alpha = bundle.index[0]
+
+    assert alpha.preconditions == ""
+    assert alpha.failures == ""
+
+
 def test_real_simple_plugin_readmes_parse_as_single_feature() -> None:
     for source, expected_trigger in (
         (Path("src/plugins/remove/docs/README.MD"), "#remove"),

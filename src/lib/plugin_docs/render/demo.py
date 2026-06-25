@@ -1619,7 +1619,7 @@ class DemoImageRenderer:
 
     def _split_note_lines(self, text: str) -> tuple[str, ...]:
         raw_lines = [line.strip(" -") for line in text.splitlines()]
-        return tuple(line for line in raw_lines if line)
+        return tuple(line for line in raw_lines if line and line != "无")
 
     def _split_bot_detail_text(self, text: str) -> tuple[str, str]:
         lines = [line.rstrip() for line in text.splitlines()]
@@ -1958,7 +1958,7 @@ class DemoImageRenderer:
             turn=turn,
             lines=lines,
             detail_lines=detail_lines,
-            width=max(280, min(bubble_width, bubble_max)),
+            width=min(bubble_width, bubble_max),
             height=max(bubble_height, self.theme.avatar_size),
             line_height=line_height,
         )
