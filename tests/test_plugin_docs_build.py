@@ -953,13 +953,7 @@ def test_build_profile_emits_phase_summary(
 
 def test_render_feature_deep_dive_prefers_manifest_backed_local_asset(
     tmp_path: Path,
-    monkeypatch: Any,
 ) -> None:
-    monkeypatch.setattr(
-        plugin_docs_module.ProgressiveDisclosureRenderer,
-        "render_with_support_strip",
-        lambda self, image_bytes, **kwargs: image_bytes,
-    )
     source = tmp_path / "src" / "plugins" / "sample" / "docs" / "README.MD"
     demos_dir = source.parent / "demos"
     demos_dir.mkdir(parents=True)
@@ -1520,13 +1514,7 @@ __plugin_meta__ = create_plugin_metadata(
 
 def test_render_help_dashboard_prefers_manifest_backed_help_asset_from_explicit_source(
     tmp_path: Path,
-    monkeypatch: Any,
 ) -> None:
-    monkeypatch.setattr(
-        plugin_docs_module.ProgressiveDisclosureRenderer,
-        "render_with_support_strip",
-        lambda self, image_bytes, **kwargs: image_bytes,
-    )
     help_source = tmp_path / "src" / "plugins" / "help" / "docs" / "README.MD"
     help_demos_dir = help_source.parent / "demos"
     help_demos_dir.mkdir(parents=True)

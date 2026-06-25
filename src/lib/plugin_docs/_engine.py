@@ -1109,19 +1109,7 @@ def render_feature_deep_dive(
             actor_permission=actor_permission,
         )
         if static_bytes is not None:
-            return ProgressiveDisclosureRenderer(
-                impression_color=node.bundle.impression_color
-            ).render_with_support_strip(
-                static_bytes,
-                locale=locale,
-                footer_left_text=(
-                    f"{node.title} · {feature.title} · "
-                    f"v{node.bundle.version.lstrip('v')} · By {node.bundle.author}"
-                ),
-                footer_right_text=(
-                    f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
-                ),
-            )
+            return static_bytes
     demo_bytes = render_demo_png(node.bundle, feature, generated_at=generated_at)
     return ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
@@ -1156,19 +1144,7 @@ def render_plugin_guide(
             actor_permission=actor_permission,
         )
         if static_bytes is not None:
-            return ProgressiveDisclosureRenderer(
-                impression_color=node.bundle.impression_color
-            ).render_with_support_strip(
-                static_bytes,
-                locale=locale,
-                footer_left_text=(
-                    f"{node.title} · Guide · "
-                    f"v{node.bundle.version.lstrip('v')} · By {node.bundle.author}"
-                ),
-                footer_right_text=(
-                    f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
-                ),
-            )
+            return static_bytes
     visible_features = filter_features_by_permission(node.features, actor_permission)
     rendered = ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
@@ -1211,18 +1187,7 @@ def render_static_entry(
             actor_permission=actor_permission,
         )
         if static_bytes is not None:
-            return ProgressiveDisclosureRenderer(
-                impression_color=node.bundle.impression_color
-            ).render_with_support_strip(
-                static_bytes,
-                locale=locale,
-                footer_left_text=(
-                    f"{node.title} · Static Entry · By {node.bundle.author}"
-                ),
-                footer_right_text=(
-                    f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
-                ),
-            )
+            return static_bytes
     rendered = ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
     ).render_static_entry(
@@ -1274,21 +1239,7 @@ def render_help_dashboard(
             actor_permission=actor_permission,
         )
         if static_bytes is not None:
-            theme_color = (
-                first_node.bundle.impression_color
-                if first_node is not None
-                else DEFAULT_IMPRESSION_COLOR
-            )
-            return ProgressiveDisclosureRenderer(
-                impression_color=theme_color
-            ).render_with_support_strip(
-                static_bytes,
-                locale=locale,
-                footer_left_text=dashboard_footer_left,
-                footer_right_text=(
-                    f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
-                ),
-            )
+            return static_bytes
     theme_color = (
         first_node.bundle.impression_color
         if first_node is not None
