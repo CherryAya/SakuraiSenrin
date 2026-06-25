@@ -13,7 +13,10 @@ Sentry 主动推送运行时异常
 - 指令: 被动触发
 - Demo: sentry-alert.webp
 ## 说明
-插件初始化时会先注册 Sentry SDK，等异常进入 `before_send` 后，再异步通知所有超级管理员。
+> [!TIP]
+> 插件初始化时会先注册 Sentry SDK。
+>
+> 只有异常进入 `before_send` 后，才会继续异步通知所有超级管理员。
 ## 前置条件
 需要先配好有效的 `SENTRY_DSN`。
 ## 完整流程

@@ -25,7 +25,10 @@
 - 指令: `#admin.invite list`
 - Demo: admin-invite-list.webp
 #### 说明
-`list` 会把当前待处理邀请渲染成列表图，适合在私聊里快速浏览。
+> [!TIP]
+> `list` 会把当前待处理邀请渲染成列表图。
+>
+> 适合先在私聊里快速浏览，再决定后续是批准、拒绝还是忽略。
 #### 前置条件
 系统中已经记录了待处理邀请。
 #### 完整流程
@@ -43,7 +46,10 @@ BOT: [发送一张待处理邀请列表图片]
 - 指令: `#admin.invite approve -g <gid>` / `#admin.invite approve -f <flag>`
 - Demo: admin-invite-approve.webp
 #### 说明
-`approve` 会定位对应邀请并调用 OneBot 审批接口，同步更新记录状态。
+> [!TIP]
+> `approve` 会先定位对应邀请，再调用 OneBot 审批接口。
+>
+> 审批成功后，邀请记录状态也会一起同步更新。
 #### 前置条件
 必须能通过群号或 flag 精确定位到一个待处理邀请。
 #### 完整流程
@@ -62,7 +68,10 @@ BOT: 已同意群聊邀请 17
 - 指令: `#admin.invite reject -g <gid>` / `#admin.invite reject -f <flag>` / `#admin.invite reject --all`
 - Demo: admin-invite-reject.webp
 #### 说明
-`reject` 可用于单条拒绝，也可通过 `--all` 批量清理全部待处理邀请。
+> [!TIP]
+> `reject` 既能处理单条邀请，也能用 `--all` 批量清理。
+>
+> 适合待处理邀请已经堆积很多、准备一次性清空的时候使用。
 #### 前置条件
 需要存在至少一条待处理邀请。
 #### 完整流程
@@ -81,7 +90,10 @@ BOT: ========== 批量拒绝 ==========
 - 指令: `#admin.invite ignore -g <gid>` / `#admin.invite ignore -f <flag>` / `#admin.invite ignore --all`
 - Demo: admin-invite-ignore.webp
 #### 说明
-`ignore` 会把邀请标记为已忽略，不执行同意或拒绝动作。
+> [!TIP]
+> `ignore` 只会把邀请标记为已忽略。
+>
+> 它不会真的同意或拒绝，只是把这条记录从待处理列表里移开。
 #### 前置条件
 需要存在至少一条待处理邀请。
 #### 完整流程
@@ -100,7 +112,10 @@ BOT: ======= 操作成功: 已忽略 =======
 - 指令: 回复通知消息发送 `y` / `n`
 - Demo: admin-invite-reply-shortcut.webp
 #### 说明
-当超管直接回复机器人推送的邀请通知消息时，可以用 `y`、`approve`、`n`、`reject` 等短指令完成处理。
+> [!TIP]
+> 如果你正回复机器人推送的邀请通知消息，就可以直接用短指令处理。
+>
+> 常见写法是 `y` / `approve` 代表同意，`n` / `reject` 代表拒绝。
 #### 前置条件
 必须是“回复机器人推送的邀请通知消息”，且发送者具备超级管理员权限。
 #### 完整流程
@@ -119,7 +134,10 @@ BOT: 已同意群聊邀请 18
 - 指令: `#admin.invite log [-g <gid>]`
 - Demo: admin-invite-log.webp
 #### 说明
-`log` 用于查看最近处理过的邀请记录，可按群号过滤。
+> [!TIP]
+> `log` 用于查看最近处理过的邀请记录。
+>
+> 需要排查某个群近期被怎么处理过时，可以补 `-g <gid>` 精确过滤。
 #### 前置条件
 系统中需要已经存在处理日志。
 #### 完整流程

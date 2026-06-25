@@ -25,7 +25,10 @@
 - 指令: `#admin.group ban <gid>`
 - Demo: admin-group-ban.webp
 #### 说明
-`ban` 会把群状态改为 `BANNED`，后续运行时检查会阻止该群继续使用机器人。
+> [!TIP]
+> `ban` 会把群状态改为 `BANNED`。
+>
+> 后续运行时检查会直接拦住这个群，不再继续正常使用机器人。
 #### 前置条件
 目标群必须已在数据库中存在，且执行者拥有超级管理员权限。
 #### 完整流程
@@ -43,7 +46,10 @@ BOT: [114514|测试群] 已封禁
 - 指令: `#admin.group unban <gid>`
 - Demo: admin-group-unban.webp
 #### 说明
-`unban` 会解除封禁，并把群状态改回 `UNAUTHORIZED`，后续仍需显式授权。
+> [!TIP]
+> `unban` 只负责解除封禁。
+>
+> 解封后群状态会回到 `UNAUTHORIZED`，还需要后续再执行一次显式授权。
 #### 前置条件
 目标群当前应处于封禁状态。
 #### 完整流程
@@ -61,7 +67,10 @@ BOT: [114514|测试群] 已解封，状态变更为未授权
 - 指令: `#admin.group auth <gid>`
 - Demo: admin-group-auth.webp
 #### 说明
-`auth` 会把群状态改为 `AUTHORIZED`，运行时检查链会允许该群继续使用机器人。
+> [!TIP]
+> `auth` 会把群状态改为 `AUTHORIZED`。
+>
+> 从这一刻起，运行时检查链才会允许该群继续正常使用机器人。
 #### 前置条件
 目标群不能处于封禁状态。
 #### 完整流程
@@ -79,7 +88,10 @@ BOT: [114514|测试群] 授权成功
 - 指令: `#admin.group unauth <gid>`
 - Demo: admin-group-unauth.webp
 #### 说明
-`unauth` 用于暂停机器人在某个群工作，但不把它加入封禁名单。
+> [!TIP]
+> `unauth` 用于暂停机器人在某个群工作。
+>
+> 它不会把群加入封禁名单，只是把状态改回未授权。
 #### 前置条件
 目标群当前最好处于授权状态。
 #### 完整流程
@@ -97,7 +109,10 @@ BOT: [114514|测试群] 已取消授权
 - 指令: `#admin.group status <gid>`
 - Demo: admin-group-status.webp
 #### 说明
-`status` 只读，不会修改数据库。
+> [!TIP]
+> `status` 是纯查询动作。
+>
+> 它只读，不会修改数据库里的群状态。
 #### 前置条件
 目标群应存在于数据库中。
 #### 完整流程
@@ -115,7 +130,10 @@ BOT: [114514|测试群] 当前状态: 已授权
 - 指令: `#admin.group leave <gid>`
 - Demo: admin-group-leave.webp
 #### 说明
-`leave` 会先把群状态写成 `LEFT`，再调用 OneBot API 请求机器人退出群聊。
+> [!TIP]
+> `leave` 会先把群状态写成 `LEFT`，再调用 OneBot API 退群。
+>
+> 所以即使退群接口失败，数据库状态也可能已经先被更新。
 #### 前置条件
 机器人当前仍在该群内。
 #### 完整流程

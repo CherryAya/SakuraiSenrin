@@ -12,9 +12,20 @@
 - 常用入口: `#wordbank add`、`#wordbank search`、`#wordbank delete`、`#wordbank restore`、`#苦瓜榜`
 
 ## 说明
-- 日常最常用的是 `add`、`search`、`delete`、`restore` 和被动触发。
-- 添加后默认进入 `pending`，审核通过前不会参与自动回复；审核流程单独见 `#help 词库审核`。
-- 文本与图文触发统一按严格匹配处理；图片优先走 `MD5` 精确命中，未命中再做相似图匹配。
+> [!TIP]
+> 日常最常用的是 `add`、`search`、`delete`、`restore` 和被动触发。
+>
+> 如果只是正常教词条或查词条，通常不需要先读完整个目录。
+
+> [!TIP]
+> 新增词条提交后会先进入 `pending`。
+>
+> 审核通过前不会参与自动回复；审核流程请单独查看 `#help 词库审核`。
+
+> [!TIP]
+> 文本与图文触发统一按严格匹配处理。
+>
+> 图片会先走 `MD5` 精确命中，未命中时才继续做相似图匹配。
 
 ## 子功能目录
 - `add`: 添加文本、图片或图文混排词条。
@@ -36,13 +47,23 @@
 - 兼容指令: `wordbank.add 触发词 => 响应词`、`添加词条 触发词 => 响应词`
 - Demo: wordbank-add.webp
 #### 说明
-支持四类常见写法:
-- `文本 => 文本`
-- `文本 + 图片回复`
-- `图片触发 => 文本`
-- `文本 => 图文混排回复`
+> [!TIP]
+> `add` 支持四类常见写法：
+>
+> - `文本 => 文本`
+> - `文本 + 图片回复`
+> - `图片触发 => 文本`
+> - `文本 => 图文混排回复`
 
-不带参数发送 `wordbank add` 会进入引导模式，顺序是 `触发词 -> 响应词 -> 生效范围 -> 高级选项`。图片会在后台下载处理；最终无法下载或识别时不会写入词库。提交成功后状态为 `pending`，审核通过前不参与被动匹配。
+> [!TIP]
+> 不带参数发送 `wordbank add` 会进入引导模式。
+>
+> 顺序是 `触发词 -> 响应词 -> 生效范围 -> 高级选项`；图片会在后台下载处理，最终无法下载或识别时不会写入词库。
+
+> [!TIP]
+> 提交成功后，词条状态会先是 `pending`。
+>
+> 在审核通过前，它不会参与被动匹配。
 #### 常用示例命令
 - `#wordbank add 晚安 => 做个好梦`
 - `#wordbank add 晚安 [图片]`
@@ -111,7 +132,15 @@ ID: 14
 - 指令: `wordbank add 触发词 => 响应词 --scope current_group|all_groups|self|private_only`
 - Demo: wordbank-add-scope.webp
 #### 说明
-`current_group` 当前群，`all_groups` 所有群，`self` 仅创建者，`private_only` 仅私聊。引导模式里会单独询问范围，因此通常不需要重复写 `--scope`。
+> [!TIP]
+> `current_group` 表示当前群，`all_groups` 表示所有群，`self` 表示仅创建者，`private_only` 表示仅私聊。
+>
+> 这四种范围决定了词条最终能在哪些上下文里生效。
+
+> [!TIP]
+> 如果你走的是引导模式，系统本来就会单独询问范围。
+>
+> 这种情况下通常不需要再额外重复写 `--scope`。
 #### 常用示例命令
 - `#wordbank add 大家好 => 大家好呀 --scope current_group`
 - `#wordbank add 早上好 => 早安 --scope all_groups`
@@ -145,7 +174,10 @@ scope 拼写错误或重复设置时会返回说明。
 - 指令: `wordbank add 触发词 => 响应词 --prob 0.0-1.0`
 - Demo: wordbank-add-prob.webp
 #### 说明
-`--prob` 控制整组 trigger 的触发概率，适合给高频短词降噪；通过后再按响应权重选具体回复。
+> [!TIP]
+> `--prob` 控制的是整组 trigger 的触发概率。
+>
+> 它适合给高频短词降噪，真正通过后才会继续按响应权重选具体回复。
 #### 常用示例命令
 - `#wordbank add 早 => 早安呀 --prob 0.5`
 - `#wordbank add 哈哈 => 笑死 --prob 0.2`
@@ -177,7 +209,10 @@ SYSTEM: `--prob 0.5` 表示命中 trigger group 后大约只有一半概率真�
 - 指令: `wordbank add 触发词 => 响应词 --weight 1-5`
 - Demo: wordbank-add-weight.webp
 #### 说明
-权重越高，被选中的概率越大；不影响 trigger 本身是否触发。
+> [!TIP]
+> 权重越高，这条响应在同组候选里越容易被抽中。
+>
+> 它不会影响 trigger 本身是否触发。
 #### 常用示例命令
 - `#wordbank add 晚安 => 做个好梦 --weight 5`
 - `#wordbank add 晚安 => 晚安晚安 --weight 1`
@@ -209,7 +244,10 @@ SYSTEM: `--weight 5` 不会提高 trigger 本身的命中率，只会让这条�
 - 指令: `wordbank add 触发词 => 响应词 --role owner|admin|member`
 - Demo: wordbank-add-role.webp
 #### 说明
-常用于把提醒或彩蛋限定给群主、管理员或普通成员。
+> [!TIP]
+> `--role` 常用于把提醒或彩蛋限定给群主、管理员或普通成员。
+>
+> 这类限制只在群聊上下文里才有实际区分意义。
 #### 常用示例命令
 - `#wordbank add 管理员集合 => 管理员请看这里 --role admin`
 - `#wordbank add 群主确认 => 已收到 --role owner`
@@ -242,7 +280,10 @@ SYSTEM: `--role admin` 只允许群管理员触发；普通成员发送同样内
 - 指令: `wordbank add 触发词 => 响应词 --call window:min:max`
 - Demo: wordbank-add-call.webp
 #### 说明
-`window:min:max` 表示在指定秒数窗口内，只在第 `min` 到第 `max` 次之间允许触发；适合做“第几次才回复”或“过多后静默”的规则。
+> [!TIP]
+> `window:min:max` 表示在指定秒数窗口内，只允许第 `min` 到第 `max` 次触发。
+>
+> 适合做“第几次才回复”或者“超过一定次数后静默”的规则。
 #### 常用示例命令
 - `#wordbank add 连续打卡 => 你今天很活跃 --call 3600:3:10`
 - `#wordbank add 又来了 => 欢迎回来 --call 60:2:5`
