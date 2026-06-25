@@ -1030,6 +1030,40 @@ BOT: Alpha 完成
     )
 
 
+def test_render_feature_deep_dive_composes_support_strip_without_reopening_bytes(
+    monkeypatch: Any,
+) -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+    feature = node.features[0]
+
+    def fail_post_compose(*args: Any, **kwargs: Any) -> bytes:
+        _ = (args, kwargs)
+        raise AssertionError(
+            "feature deep dive should not call render_with_support_strip"
+        )
+
+    monkeypatch.setattr(
+        plugin_docs_module.ProgressiveDisclosureRenderer,
+        "render_with_support_strip",
+        fail_post_compose,
+    )
+
+    rendered = plugin_docs_module.render_feature_deep_dive(
+        node,
+        feature,
+        locale="zh-CN",
+        prefer_static=False,
+    )
+
+    assert rendered.startswith(b"RIFF")
+
+
 def test_build_help_assets_dedupes_identical_profile_renders(
     tmp_path: Path,
     monkeypatch: Any,

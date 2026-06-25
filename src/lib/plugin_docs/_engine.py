@@ -1110,11 +1110,29 @@ def render_feature_deep_dive(
         )
         if static_bytes is not None:
             return static_bytes
-    demo_bytes = render_demo_png(node.bundle, feature, generated_at=generated_at)
+    demo_result = DemoImageRenderer(
+        impression_color=node.bundle.impression_color
+    ).render_with_audit(
+        plugin_title=node.bundle.title,
+        feature_title=feature.title,
+        feature_summary=feature.summary,
+        feature_trigger=feature.trigger,
+        feature_overview=feature.overview,
+        feature_preconditions=feature.preconditions,
+        feature_failures=feature.failures,
+        feature_flow_notes=feature.flow_notes,
+        plugin_trigger=node.bundle.trigger,
+        feature_permission=_permission_label(feature.permission),
+        plugin_version=node.bundle.version,
+        plugin_author=node.bundle.author,
+        turns=feature.demo_turns,
+        locale=locale,
+        generated_at=generated_at,
+    )
     return ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
-    ).render_with_support_strip(
-        demo_bytes,
+    ).compose_with_support_strip(
+        demo_result.image,
         locale=locale,
         footer_left_text=build_trace_footer_left_text(
             plugin_title=node.title,
@@ -1125,6 +1143,7 @@ def render_feature_deep_dive(
         footer_right_text=(
             f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
         ),
+        trim_source_footer=True,
     )
 
 
@@ -1148,28 +1167,13 @@ def render_plugin_guide(
         if static_bytes is not None:
             return static_bytes
     visible_features = filter_features_by_permission(node.features, actor_permission)
-    rendered = ProgressiveDisclosureRenderer(
+    return ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
     ).render_plugin_guide(
         node=node,
         features=visible_features,
         locale=locale,
         generated_at=generated_at,
-    )
-    return ProgressiveDisclosureRenderer(
-        impression_color=node.bundle.impression_color
-    ).render_with_support_strip(
-        rendered,
-        locale=locale,
-        footer_left_text=build_trace_footer_left_text(
-            plugin_title=node.title,
-            feature_title="Guide",
-            plugin_version=node.bundle.version,
-            plugin_author=node.bundle.author,
-        ),
-        footer_right_text=(
-            f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
-        ),
     )
 
 
@@ -1192,26 +1196,12 @@ def render_static_entry(
         )
         if static_bytes is not None:
             return static_bytes
-    rendered = ProgressiveDisclosureRenderer(
+    return ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
     ).render_static_entry(
         node=node,
         locale=locale,
         generated_at=generated_at,
-    )
-    return ProgressiveDisclosureRenderer(
-        impression_color=node.bundle.impression_color
-    ).render_with_support_strip(
-        rendered,
-        locale=locale,
-        footer_left_text=build_trace_footer_left_text(
-            plugin_title=node.title,
-            feature_title="Static Entry",
-            plugin_author=node.bundle.author,
-        ),
-        footer_right_text=(
-            f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
-        ),
     )
 
 
@@ -1253,22 +1243,12 @@ def render_help_dashboard(
         if first_node is not None
         else DEFAULT_IMPRESSION_COLOR
     )
-    rendered = ProgressiveDisclosureRenderer(
+    return ProgressiveDisclosureRenderer(
         impression_color=theme_color
     ).render_dashboard(
         sections=sections,
         locale=locale,
         generated_at=generated_at,
-    )
-    return ProgressiveDisclosureRenderer(
-        impression_color=theme_color
-    ).render_with_support_strip(
-        rendered,
-        locale=locale,
-        footer_left_text=dashboard_footer_left,
-        footer_right_text=(
-            f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
-        ),
     )
 
 

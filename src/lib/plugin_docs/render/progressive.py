@@ -197,11 +197,17 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             if section_positions
             else header_height
         )
+        support_layout = self._measure_support_strip(
+            locale=locale,
+            top=content_bottom + self.SUPPORT_STRIP_GAP,
+        )
         footer_rect = (
             side,
-            content_bottom + self.theme.footer_gap_top,
+            support_layout.rect[3] + self.theme.footer_gap_top,
             self.WIDTH - side,
-            content_bottom + self.theme.footer_gap_top + self.theme.footer_height,
+            support_layout.rect[3]
+            + self.theme.footer_gap_top
+            + self.theme.footer_height,
         )
         total_height = footer_rect[3] + self.theme.outer_margin
 
@@ -252,6 +258,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 width=section_width,
             )
 
+        self._draw_support_strip(image, draw, layout=support_layout)
         self._draw_trace_footer(
             draw,
             footer_rect=footer_rect,
@@ -404,11 +411,17 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             section_positions.append((layout, cursor_y))
             cursor_y += layout.height + self.GUIDE_SECTION_GAP
 
+        support_layout = self._measure_support_strip(
+            locale=locale,
+            top=cursor_y + self.SUPPORT_STRIP_GAP,
+        )
         footer_rect = (
             side,
-            cursor_y + self.theme.footer_gap_top,
+            support_layout.rect[3] + self.theme.footer_gap_top,
             self.WIDTH - side,
-            cursor_y + self.theme.footer_gap_top + self.theme.footer_height,
+            support_layout.rect[3]
+            + self.theme.footer_gap_top
+            + self.theme.footer_height,
         )
         total_height = footer_rect[3] + self.theme.outer_margin
         image = Image.new("RGBA", (self.WIDTH, total_height), self.theme.page_bg)
@@ -460,6 +473,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 locale=locale,
             )
 
+        self._draw_support_strip(image, draw, layout=support_layout)
         self._draw_trace_footer(
             draw,
             footer_rect=footer_rect,
@@ -519,12 +533,15 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         section_height = (
             self.GUIDE_SECTION_PADDING_Y * 2 + len(body_lines) * body_line_height + 24
         )
+        support_layout = self._measure_support_strip(
+            locale=locale,
+            top=hero_bottom + section_height + self.SUPPORT_STRIP_GAP,
+        )
         footer_rect = (
             side,
-            hero_bottom + section_height + self.theme.footer_gap_top,
+            support_layout.rect[3] + self.theme.footer_gap_top,
             self.WIDTH - side,
-            hero_bottom
-            + section_height
+            support_layout.rect[3]
             + self.theme.footer_gap_top
             + self.theme.footer_height,
         )
@@ -585,6 +602,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             line_height=body_line_height,
             render_code_chip=False,
         )
+        self._draw_support_strip(image, draw, layout=support_layout)
         self._draw_trace_footer(
             draw,
             footer_rect=footer_rect,
@@ -1579,6 +1597,50 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         total_height = footer_rect[3] + self.theme.outer_margin
         canvas = Image.new("RGBA", (self.WIDTH, total_height), self.theme.page_bg)
         canvas.paste(source, (0, 0))
+        draw = ImageDraw.Draw(canvas)
+        self._draw_support_strip(canvas, draw, layout=support_layout)
+        self._draw_trace_footer(
+            draw,
+            footer_rect=footer_rect,
+            left_text=footer_left_text,
+            right_text=footer_right_text,
+        )
+        return encode_docs_image(canvas, webp_quality=88, webp_method=6)
+
+    def compose_with_support_strip(
+        self,
+        source: Image.Image,
+        *,
+        locale: LocaleCode,
+        footer_left_text: str,
+        footer_right_text: str,
+        trim_source_footer: bool = True,
+    ) -> bytes:
+        source_rgba = source.convert("RGBA")
+        footer_trim_height = (
+            self.theme.footer_gap_top
+            + self.theme.footer_height
+            + self.theme.outer_margin
+        )
+        if trim_source_footer and source_rgba.height > footer_trim_height:
+            source_rgba = source_rgba.crop(
+                (0, 0, source_rgba.width, source_rgba.height - footer_trim_height)
+            )
+        support_layout = self._measure_support_strip(
+            locale=locale,
+            top=source_rgba.height + self.SUPPORT_STRIP_GAP,
+        )
+        footer_rect = (
+            self.theme.hero_side_padding,
+            support_layout.rect[3] + self.theme.footer_gap_top,
+            self.WIDTH - self.theme.hero_side_padding,
+            support_layout.rect[3]
+            + self.theme.footer_gap_top
+            + self.theme.footer_height,
+        )
+        total_height = footer_rect[3] + self.theme.outer_margin
+        canvas = Image.new("RGBA", (self.WIDTH, total_height), self.theme.page_bg)
+        canvas.paste(source_rgba, (0, 0))
         draw = ImageDraw.Draw(canvas)
         self._draw_support_strip(canvas, draw, layout=support_layout)
         self._draw_trace_footer(

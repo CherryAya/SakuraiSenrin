@@ -151,6 +151,7 @@ class _ShowcaseLayout:
 @dataclass(slots=True, frozen=True)
 class DemoRenderAuditResult:
     data: bytes
+    image: Image.Image
     errors: tuple[str, ...]
 
 
@@ -378,6 +379,7 @@ class DemoImageRenderer:
                 prior_rects.append((f"turn {index} {name}", rect))
         return DemoRenderAuditResult(
             data=encode_docs_image(image, webp_quality=88, webp_method=6),
+            image=image,
             errors=tuple(errors),
         )
 
