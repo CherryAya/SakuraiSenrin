@@ -2106,7 +2106,7 @@ class DemoImageRenderer:
         return ellipsis
 
     def _normalize_demo_text(self, text: str) -> str:
-        return text
+        return "\n".join(line.rstrip() for line in text.split("\n"))
 
     def _wrap_inline_text(
         self,

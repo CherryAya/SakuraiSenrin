@@ -309,6 +309,16 @@ def test_demo_image_renderer_measures_short_bubbles_without_min_width() -> None:
     assert spec.width < 280
 
 
+def test_demo_image_renderer_normalizes_trailing_whitespace_only() -> None:
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+
+    normalized = renderer._normalize_demo_text(  # pyright: ignore[reportPrivateUsage]
+        "  keep-leading  \nline two\t \n   \n"
+    )
+
+    assert normalized == "  keep-leading\nline two\n\n"
+
+
 def test_demo_image_renderer_ignores_wu_placeholder_in_note_lines() -> None:
     renderer = DemoImageRenderer(impression_color="#3BC9DB")
 
