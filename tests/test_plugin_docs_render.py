@@ -485,6 +485,31 @@ def test_render_help_dashboard_grid_extends_to_footer_region() -> None:
     ).getpixel((0, 0))
 
 
+def test_support_strip_qr_layout_applies_upward_vertical_offset(
+    monkeypatch: Any,
+) -> None:
+    renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")
+    qr_image = Image.new("RGBA", (160, 160), (255, 255, 255, 255))
+    monkeypatch.setattr(renderer, "_load_support_qr_image", lambda _path: qr_image)
+
+    layout = renderer._measure_support_strip(  # pyright: ignore[reportPrivateUsage]
+        locale="zh-CN",
+        top=240,
+    )
+
+    assert layout.qr_rect is not None
+    qr_frame_top = layout.qr_rect[1] - renderer.SUPPORT_STRIP_QR_FRAME_PADDING_Y
+    qr_frame_height = qr_image.height + renderer.SUPPORT_STRIP_QR_FRAME_PADDING_Y * 2
+    centered_top = (
+        layout.rect[1] + ((layout.rect[3] - layout.rect[1]) - qr_frame_height) // 2
+    )
+
+    assert qr_frame_top == max(
+        layout.rect[1],
+        centered_top + renderer.SUPPORT_STRIP_QR_VERTICAL_OFFSET_Y,
+    )
+
+
 def test_dashboard_section_height_includes_command_block() -> None:
     node = load_doc_node(
         source="src/plugins/wordbank/docs/README.MD",

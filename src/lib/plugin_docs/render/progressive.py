@@ -122,6 +122,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     SUPPORT_STRIP_QR_FRAME_PADDING_X = 16
     SUPPORT_STRIP_QR_FRAME_PADDING_Y = 16
     SUPPORT_STRIP_QR_FRAME_RADIUS = 18
+    SUPPORT_STRIP_QR_VERTICAL_OFFSET_Y = -12
 
     _DASHBOARD_MARKER_SIZE: ClassVar[dict[str, int]] = {
         "square": 12,
@@ -1656,14 +1657,18 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         text_height = title_height + 16 + tip_height + 16 + groups_height
         strip_height = max(
             text_height + self.SUPPORT_STRIP_PADDING_Y * 2,
-            qr_frame_height
-            + self.SUPPORT_STRIP_PADDING_Y * 2,
+            qr_frame_height + self.SUPPORT_STRIP_PADDING_Y * 2,
         )
         rect = (side, top, self.WIDTH - side, top + strip_height)
         qr_rect = None
         if qr_image is not None:
             qr_frame_left = rect[2] - self.SUPPORT_STRIP_PADDING_X - qr_frame_width
-            qr_frame_top = rect[1] + (strip_height - qr_frame_height) // 2
+            qr_frame_top = (
+                rect[1]
+                + (strip_height - qr_frame_height) // 2
+                + self.SUPPORT_STRIP_QR_VERTICAL_OFFSET_Y
+            )
+            qr_frame_top = max(rect[1], qr_frame_top)
             qr_left = qr_frame_left + self.SUPPORT_STRIP_QR_FRAME_PADDING_X
             qr_top = qr_frame_top + self.SUPPORT_STRIP_QR_FRAME_PADDING_Y
             qr_rect = (

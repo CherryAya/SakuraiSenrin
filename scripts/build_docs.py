@@ -9,10 +9,13 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import lru_cache
+from importlib import import_module
+from io import BytesIO
 import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 from time import perf_counter
 
@@ -20,7 +23,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from typing import Literal, cast
+from typing import Any, Literal, cast
+
+from PIL import Image
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
@@ -59,6 +64,7 @@ from src.lib.plugin_docs import (
 from src.lib.plugin_docs import (
     DemoCollectionRenderer as _DemoCollectionRenderer,
 )
+from src.lib.plugin_docs.meta import HELP_SUPPORT_QR_ASSET, resolve_support_groups
 from src.lib.plugin_docs.query import can_view_node, filter_features_by_permission
 from src.lib.utils.common import get_current_time
 
@@ -175,6 +181,9 @@ PERMISSION_VARIANTS: tuple[tuple[str, Permission], ...] = (
     ("group_owner", Permission.GROUP_OWNER),
     ("superuser", Permission.SUPERUSER),
 )
+SUPPORT_QR_MAX_GROUPS = 2
+SUPPORT_QR_IMAGE_SIZE = 216
+SUPPORT_QR_IMAGE_GAP = 20
 
 
 @lru_cache(maxsize=1)
@@ -549,6 +558,137 @@ def _output_static_asset(path: Path, data: bytes) -> None:
     path.write_bytes(data)
 
 
+def _support_qr_asset_path(*, root: Path | None = None) -> Path:
+    base_root = root or ROOT
+    return base_root / "src" / "lib" / "assets" / HELP_SUPPORT_QR_ASSET.name
+
+
+def _render_qr_image_with_swift(
+    payload: str,
+    *,
+    pixels: int = SUPPORT_QR_IMAGE_SIZE,
+) -> Image.Image:
+    if sys.platform != "darwin":
+        raise RuntimeError(
+            "native QR generation is only available on macOS when the qrcode "
+            "package is not installed"
+        )
+    script = """
+import AppKit
+import CoreImage
+import Foundation
+
+let payload = CommandLine.arguments[1]
+let targetPixels = max(1, Int(CommandLine.arguments[2]) ?? 216)
+guard let data = payload.data(using: .utf8) else {
+    fputs("failed to encode QR payload\\n", stderr)
+    exit(1)
+}
+guard let filter = CIFilter(name: "CIQRCodeGenerator") else {
+    fputs("CIQRCodeGenerator is unavailable\\n", stderr)
+    exit(2)
+}
+filter.setValue(data, forKey: "inputMessage")
+filter.setValue("M", forKey: "inputCorrectionLevel")
+guard let outputImage = filter.outputImage else {
+    fputs("failed to build QR image\\n", stderr)
+    exit(3)
+}
+let extent = outputImage.extent.integral
+let scale = max(
+    1,
+    Int(floor(Double(targetPixels) / max(extent.width, extent.height)))
+)
+let scaledImage = outputImage.transformed(
+    by: CGAffineTransform(scaleX: CGFloat(scale), y: CGFloat(scale))
+)
+let context = CIContext()
+guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
+    fputs("failed to rasterize QR image\\n", stderr)
+    exit(4)
+}
+let bitmap = NSBitmapImageRep(cgImage: cgImage)
+guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
+    fputs("failed to encode PNG\\n", stderr)
+    exit(5)
+}
+FileHandle.standardOutput.write(pngData)
+"""
+    result = subprocess.run(
+        ["swift", "-e", script, payload, str(pixels)],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(stderr or "swift QR generator failed")
+    image = Image.open(BytesIO(result.stdout)).convert("RGBA")
+    if image.size != (pixels, pixels):
+        image = image.resize((pixels, pixels), Image.Resampling.NEAREST)
+    return image
+
+
+def _render_support_qr_image(
+    payload: str,
+    *,
+    pixels: int = SUPPORT_QR_IMAGE_SIZE,
+) -> Image.Image:
+    try:
+        qrcode = cast(Any, import_module("qrcode"))
+    except ModuleNotFoundError:
+        return _render_qr_image_with_swift(payload, pixels=pixels)
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=4,
+    )
+    qr.add_data(payload)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="black", back_color="white").convert("RGBA")
+    if image.size != (pixels, pixels):
+        image = image.resize((pixels, pixels), Image.Resampling.NEAREST)
+    return image
+
+
+def _build_support_qr_asset_image() -> Image.Image | None:
+    groups = tuple(
+        group
+        for group in resolve_support_groups()[:SUPPORT_QR_MAX_GROUPS]
+        if group.url.strip()
+    )
+    if not groups:
+        return None
+    qr_images = tuple(_render_support_qr_image(group.url.strip()) for group in groups)
+    width = sum(image.width for image in qr_images) + SUPPORT_QR_IMAGE_GAP * (
+        len(qr_images) - 1
+    )
+    height = max(image.height for image in qr_images)
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    cursor_x = 0
+    for image in qr_images:
+        top = (height - image.height) // 2
+        canvas.alpha_composite(image, (cursor_x, top))
+        cursor_x += image.width + SUPPORT_QR_IMAGE_GAP
+    return canvas
+
+
+def ensure_help_support_qr_asset(*, root: Path | None = None) -> tuple[Path, bool]:
+    asset_path = _support_qr_asset_path(root=root)
+    image = _build_support_qr_asset_image()
+    if image is None:
+        return asset_path, False
+    asset_path.parent.mkdir(parents=True, exist_ok=True)
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    data = buffer.getvalue()
+    changed = not asset_path.exists() or asset_path.read_bytes() != data
+    if changed:
+        asset_path.write_bytes(data)
+    return asset_path, changed
+
+
 def _render_help_asset_plan(plan: HelpAssetRenderPlan) -> HelpAssetRenderResult:
     started_at = perf_counter()
     if plan.kind == "dashboard":
@@ -717,6 +857,24 @@ def build_help_assets(
     if help_context is None:
         _write_line("help-assets: help docs not found, skipping")
         return 0
+    try:
+        support_asset_path, support_asset_changed = ensure_help_support_qr_asset(
+            root=ROOT
+        )
+    except RuntimeError as exc:
+        support_asset_path = _support_qr_asset_path(root=ROOT)
+        if not support_asset_path.exists():
+            _write_line(f"help-assets: failed to refresh support QR asset: {exc}")
+            return 1
+        _write_line(
+            "help-assets: failed to refresh support QR asset, "
+            f"using existing file {_relative_display(support_asset_path)}: {exc}"
+        )
+    else:
+        if support_asset_changed:
+            _write_line(
+                f"help-assets support-qr {_relative_display(support_asset_path)}"
+            )
 
     plans: list[HelpAssetRenderPlan] = []
     for profile_name, permission in PERMISSION_VARIANTS:

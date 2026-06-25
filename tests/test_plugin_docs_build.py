@@ -953,7 +953,13 @@ def test_build_profile_emits_phase_summary(
 
 def test_render_feature_deep_dive_prefers_manifest_backed_local_asset(
     tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
+    monkeypatch.setattr(
+        plugin_docs_module.ProgressiveDisclosureRenderer,
+        "render_with_support_strip",
+        lambda self, image_bytes, **kwargs: image_bytes,
+    )
     source = tmp_path / "src" / "plugins" / "sample" / "docs" / "README.MD"
     demos_dir = source.parent / "demos"
     demos_dir.mkdir(parents=True)
@@ -1119,6 +1125,142 @@ BOT: Alpha 完成
     assert plugin_docs_script.build_help_assets(workers=4) == 0
     assert render_counts["dashboard"] == 1
     assert render_counts["sample_feature"] == 1
+
+
+def test_ensure_help_support_qr_asset_writes_double_qr_png_from_support_groups(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    rendered_payloads: list[str] = []
+
+    class _Group:
+        def __init__(self, *, title: str, group_id: str, url: str) -> None:
+            self.title = title
+            self.group_id = group_id
+            self.url = url
+
+    groups = (
+        _Group(title="群一", group_id="10001", url="https://example.com/one"),
+        _Group(title="群二", group_id="10002", url="https://example.com/two"),
+        _Group(title="群三", group_id="10003", url="https://example.com/three"),
+    )
+
+    def fake_render_support_qr_image(
+        payload: str,
+        *,
+        pixels: int = plugin_docs_script.SUPPORT_QR_IMAGE_SIZE,
+    ) -> Image.Image:
+        rendered_payloads.append(payload)
+        color = (255, 0, 0, 255) if payload.endswith("/one") else (0, 128, 255, 255)
+        return Image.new("RGBA", (pixels, pixels), color)
+
+    monkeypatch.setattr(plugin_docs_script, "resolve_support_groups", lambda: groups)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "_render_support_qr_image",
+        fake_render_support_qr_image,
+    )
+
+    asset_path, changed = plugin_docs_script.ensure_help_support_qr_asset(root=tmp_path)
+
+    image = Image.open(asset_path).convert("RGBA")
+
+    assert changed is True
+    assert asset_path == (
+        tmp_path / "src" / "lib" / "assets" / "help-support-qr-double.png"
+    )
+    assert rendered_payloads == [
+        "https://example.com/one",
+        "https://example.com/two",
+    ]
+    assert image.size == (
+        plugin_docs_script.SUPPORT_QR_IMAGE_SIZE * 2
+        + plugin_docs_script.SUPPORT_QR_IMAGE_GAP,
+        plugin_docs_script.SUPPORT_QR_IMAGE_SIZE,
+    )
+    assert image.getpixel((8, 8)) == (255, 0, 0, 255)
+    assert image.getpixel((image.width - 8, 8)) == (0, 128, 255, 255)
+
+
+def test_build_help_assets_refreshes_support_qr_asset_before_rendering(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    help_root = tmp_path / "src" / "plugins" / "help" / "docs"
+    help_root.mkdir(parents=True)
+    (help_root / "README.MD").write_text(
+        """
+# 帮助中心
+
+## 概览
+帮助首页。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "plugins" / "help" / "__init__.py").write_text(
+        """
+from pathlib import Path
+
+from src.database.core.consts import Permission
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
+
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+
+__plugin_meta__ = create_plugin_metadata(
+    name="帮助中心",
+    description="desc",
+    extra={
+        "permission": Permission.NORMAL,
+        "docs": create_docs_meta(
+            visible=True,
+            category="system",
+            order=10,
+            source=DOCS_SOURCE,
+            slug="help",
+        ),
+    },
+)
+""".strip(),
+        encoding="utf-8",
+    )
+
+    refresh_calls: list[Path | None] = []
+
+    def fake_ensure_help_support_qr_asset(
+        *,
+        root: Path | None = None,
+    ) -> tuple[Path, bool]:
+        refresh_calls.append(root)
+        return (
+            tmp_path / "src" / "lib" / "assets" / "help-support-qr-double.png",
+            False,
+        )
+
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "ensure_help_support_qr_asset",
+        fake_ensure_help_support_qr_asset,
+    )
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "render_help_dashboard",
+        lambda *args, **kwargs: b"RIFFfakeWEBP",
+    )
+    plugin_docs_script._reset_caches()
+
+    assert plugin_docs_script.build_help_assets(workers=1) == 0
+    assert refresh_calls == [tmp_path]
 
 
 def test_load_doc_context_preserves_declared_docs_category_and_permission(
@@ -1378,7 +1520,13 @@ __plugin_meta__ = create_plugin_metadata(
 
 def test_render_help_dashboard_prefers_manifest_backed_help_asset_from_explicit_source(
     tmp_path: Path,
+    monkeypatch: Any,
 ) -> None:
+    monkeypatch.setattr(
+        plugin_docs_module.ProgressiveDisclosureRenderer,
+        "render_with_support_strip",
+        lambda self, image_bytes, **kwargs: image_bytes,
+    )
     help_source = tmp_path / "src" / "plugins" / "help" / "docs" / "README.MD"
     help_demos_dir = help_source.parent / "demos"
     help_demos_dir.mkdir(parents=True)
