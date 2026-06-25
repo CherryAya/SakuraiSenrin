@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from importlib import import_module
+import json
 import os
 from pathlib import Path
 import re
@@ -52,9 +52,7 @@ def support_bundle(locale: LocaleCode) -> HelpSupportBundle:
 def support_text_block(locale: LocaleCode) -> str:
     bundle = support_bundle(locale)
     lines = [bundle.title, bundle.tip_text, ""]
-    lines.extend(
-        f"{group.title}（群号 {group.group_id}）：{group.url}" for group in bundle.groups
-    )
+    lines.extend(f"群号 {group.group_id}" for group in bundle.groups)
     return "\n".join(lines).strip()
 
 

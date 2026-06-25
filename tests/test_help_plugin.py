@@ -545,7 +545,7 @@ def test_build_help_home_text_uses_shared_sections() -> None:
     assert "#help 帮助中心" in text
     assert "#help 吹水记录" in text
     assert "反馈与交流群" in text
-    assert "https://qm.qq.com/q/rnNzj9thG8" in text
+    assert "群号 1107576103" in text
 
 
 async def test_resolve_docs_message_supports_tree_and_feature_queries() -> None:

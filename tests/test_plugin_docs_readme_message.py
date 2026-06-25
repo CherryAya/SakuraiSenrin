@@ -98,7 +98,7 @@ def test_render_doc_node_overview_formats_multi_section_commands() -> None:
     assert "查看周期榜单" in rendered
     assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
     assert "反馈与交流群" in rendered
-    assert "https://qm.qq.com/q/rnNzj9thG8" in rendered
+    assert "群号 1107576103" in rendered
 
 
 def test_build_readme_docs_can_attach_representative_overview_demo(
@@ -163,7 +163,6 @@ BOT: 操作完成
     assert "权限" not in str(with_demo)
     assert "子功能目录" not in str(with_demo)
     assert "反馈与交流群" in str(with_demo)
-    assert "No Senrin No Life" in str(with_demo)
     assert "群号 729530250" in str(with_demo)
     assert any(segment.type == "image" for segment in with_demo)
 

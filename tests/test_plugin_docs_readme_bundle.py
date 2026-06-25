@@ -545,16 +545,12 @@ def test_resolve_support_groups_falls_back_to_env_when_runtime_config_is_unavail
     assert groups[0].url == "https://example.com/group"
 
 
-def test_support_text_block_contains_both_group_links() -> None:
+def test_support_text_block_contains_group_ids_only() -> None:
     block = plugin_docs_meta_module.support_text_block("zh-CN")
 
     assert "反馈与交流群" in block
-    assert "凛雪列車" in block
-    assert "No Senrin No Life" in block
     assert "群号 1107576103" in block
     assert "群号 729530250" in block
-    assert "https://qm.qq.com/q/rnNzj9thG8" in block
-    assert "https://qm.qq.com/q/JrIxb24HsI" in block
 
 
 def test_load_plugin_doc_bundle_preserves_inline_backticks_in_meta_value() -> None:
