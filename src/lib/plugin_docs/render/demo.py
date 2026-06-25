@@ -44,6 +44,25 @@ DEMO_AVATAR_PATH = DEMO_ASSETS_DIR / "senrin-demo-avatar.png"
 DEMO_STANDEE_PATH = DEMO_ASSETS_DIR / "senrin-demo-standee.png"
 
 
+def build_trace_footer_left_text(
+    *,
+    plugin_title: str,
+    feature_title: str,
+    plugin_version: str = "",
+    plugin_author: str,
+) -> str:
+    normalized_plugin_title = plugin_title.strip() or "插件文档"
+    normalized_feature_title = feature_title.strip()
+    footer_parts = [normalized_plugin_title]
+    if normalized_feature_title and normalized_feature_title != normalized_plugin_title:
+        footer_parts.append(normalized_feature_title)
+    normalized_version = plugin_version.lstrip("v").strip()
+    if normalized_version:
+        footer_parts.append(f"v{normalized_version}")
+    footer_parts.append(f"By {plugin_author}")
+    return " · ".join(footer_parts)
+
+
 @dataclass(slots=True, frozen=True)
 class _TurnSpec:
     turn: DocsDemoTurn
@@ -796,14 +815,12 @@ class DemoImageRenderer:
             self.WIDTH - side,
             footer_top + self.theme.footer_height,
         )
-        footer_parts = [normalized_plugin_title or "插件文档"]
-        if (
-            normalized_feature_title
-            and normalized_feature_title != normalized_plugin_title
-        ):
-            footer_parts.append(normalized_feature_title)
-        footer_parts.extend([f"v{plugin_version.lstrip('v')}", f"By {plugin_author}"])
-        footer_left_text = " · ".join(footer_parts)
+        footer_left_text = build_trace_footer_left_text(
+            plugin_title=normalized_plugin_title,
+            feature_title=normalized_feature_title,
+            plugin_version=plugin_version,
+            plugin_author=plugin_author,
+        )
         footer_right_text = (
             f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
         )

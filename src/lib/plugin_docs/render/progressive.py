@@ -1555,6 +1555,15 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         footer_right_text: str,
     ) -> bytes:
         source = Image.open(BytesIO(image_bytes)).convert("RGBA")
+        footer_trim_height = (
+            self.theme.footer_gap_top
+            + self.theme.footer_height
+            + self.theme.outer_margin
+        )
+        if source.height > footer_trim_height:
+            source = source.crop(
+                (0, 0, source.width, source.height - footer_trim_height)
+            )
         support_layout = self._measure_support_strip(
             locale=locale,
             top=source.height + self.SUPPORT_STRIP_GAP,

@@ -215,7 +215,7 @@ from .readme import (
 from .readme import (
     split_tokens_before_heading as split_tokens_before_heading_impl,
 )
-from .render.demo import DemoImageRenderer
+from .render.demo import DemoImageRenderer, build_trace_footer_left_text
 from .render.progressive import ProgressiveDisclosureRenderer
 from .static_assets import (
     dashboard_target_key,
@@ -1116,9 +1116,11 @@ def render_feature_deep_dive(
     ).render_with_support_strip(
         demo_bytes,
         locale=locale,
-        footer_left_text=(
-            f"{node.title} · {feature.title} · "
-            f"v{node.bundle.version.lstrip('v')} · By {node.bundle.author}"
+        footer_left_text=build_trace_footer_left_text(
+            plugin_title=node.title,
+            feature_title=feature.title,
+            plugin_version=node.bundle.version,
+            plugin_author=node.bundle.author,
         ),
         footer_right_text=(
             f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
@@ -1159,9 +1161,11 @@ def render_plugin_guide(
     ).render_with_support_strip(
         rendered,
         locale=locale,
-        footer_left_text=(
-            f"{node.title} · Guide · "
-            f"v{node.bundle.version.lstrip('v')} · By {node.bundle.author}"
+        footer_left_text=build_trace_footer_left_text(
+            plugin_title=node.title,
+            feature_title="Guide",
+            plugin_version=node.bundle.version,
+            plugin_author=node.bundle.author,
         ),
         footer_right_text=(
             f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
@@ -1200,7 +1204,11 @@ def render_static_entry(
     ).render_with_support_strip(
         rendered,
         locale=locale,
-        footer_left_text=(f"{node.title} · Static Entry · By {node.bundle.author}"),
+        footer_left_text=build_trace_footer_left_text(
+            plugin_title=node.title,
+            feature_title="Static Entry",
+            plugin_author=node.bundle.author,
+        ),
         footer_right_text=(
             f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
         ),

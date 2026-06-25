@@ -1,6 +1,7 @@
 from PIL import ImageDraw
 
 from src.lib.plugin_docs.models import DocsDemoTurn
+from src.lib.plugin_docs.render.demo import build_trace_footer_left_text
 from src.lib.plugin_docs.render.encoding import WEBP_MAX_DIMENSION, encode_docs_image
 from tests.test_plugin_docs_support import *
 
@@ -243,6 +244,18 @@ def test_demo_image_renderer_measure_layout_includes_footer_traceability() -> No
     assert (
         layout.footer_rect[3] - layout.footer_rect[1]
         == DEFAULT_DEMO_THEME.footer_height
+    )
+
+
+def test_build_trace_footer_left_text_dedupes_same_plugin_and_feature_title() -> None:
+    assert (
+        build_trace_footer_left_text(
+            plugin_title="帮助文档",
+            feature_title="帮助文档",
+            plugin_version="v3.0.0",
+            plugin_author="SakuraiSenrin",
+        )
+        == "帮助文档 · v3.0.0 · By SakuraiSenrin"
     )
 
 
@@ -630,6 +643,45 @@ def test_support_strip_qr_layout_applies_optical_vertical_offset(
         layout.rect[1],
         centered_top + renderer.SUPPORT_STRIP_QR_VERTICAL_OFFSET_Y,
     )
+
+
+def test_render_with_support_strip_trims_existing_source_footer() -> None:
+    renderer = ProgressiveDisclosureRenderer(impression_color="#74C0FC")
+    source_height = 720
+    source = Image.new("RGBA", (renderer.WIDTH, source_height), "#FFFFFF")
+    buffer = BytesIO()
+    source.save(buffer, format="PNG")
+    source_bytes = buffer.getvalue()
+
+    trimmed_source_height = (
+        source_height
+        - renderer.theme.footer_gap_top
+        - renderer.theme.footer_height
+        - renderer.theme.outer_margin
+    )
+    support_layout = renderer._measure_support_strip(  # pyright: ignore[reportPrivateUsage]
+        locale="zh-CN",
+        top=trimmed_source_height + renderer.SUPPORT_STRIP_GAP,
+    )
+    expected_height = (
+        support_layout.rect[3]
+        + renderer.theme.footer_gap_top
+        + renderer.theme.footer_height
+        + renderer.theme.outer_margin
+    )
+
+    rendered = Image.open(
+        BytesIO(
+            renderer.render_with_support_strip(
+                source_bytes,
+                locale="zh-CN",
+                footer_left_text="帮助文档 · v3.0.0 · By SakuraiSenrin",
+                footer_right_text="Generated at 2026-06-25 18:00:00 | © SakuraiSenrin",
+            )
+        )
+    )
+
+    assert rendered.height == expected_height
 
 
 def test_dashboard_section_height_includes_command_block() -> None:
