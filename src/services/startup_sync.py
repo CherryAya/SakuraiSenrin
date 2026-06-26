@@ -15,7 +15,6 @@ from src.lib.db.manager import db_manager
 from src.logger import logger
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.services.backup import (
-    BackupService,
     ResticSnapshotInfo,
     build_backup_service_from_config,
 )
@@ -140,8 +139,9 @@ async def restore_latest_remote_snapshot_into_local(*, snapshot_id: str) -> None
         if restore_root.exists():
             await asyncio.to_thread(shutil.rmtree, restore_root, True)
         await service.restore(snapshot=snapshot_id, target=restore_root)
-        manifest = _load_restore_manifest(restore_root / "manifest.json")
-        await _apply_restore_manifest(manifest, restore_root)
+        manifest_path = _find_restore_manifest_path(restore_root)
+        manifest = _load_restore_manifest(manifest_path)
+        await _apply_restore_manifest(manifest, manifest_path.parent)
         await _warm_up_core_repositories()
 
 
@@ -227,6 +227,16 @@ async def _apply_restore_manifest(manifest: dict[str, object], restore_root: Pat
         target = Path(source_path)
         await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
         await asyncio.to_thread(shutil.copy2, restored_file, target)
+
+
+def _find_restore_manifest_path(restore_root: Path) -> Path:
+    direct = restore_root / "manifest.json"
+    if direct.is_file():
+        return direct
+    matches = sorted(restore_root.rglob("manifest.json"))
+    if matches:
+        return matches[0]
+    raise RuntimeError(f"restore manifest not found under: {restore_root}")
 
 
 def _load_restore_manifest(path: Path) -> dict[str, object]:

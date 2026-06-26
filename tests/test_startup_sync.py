@@ -136,3 +136,14 @@ async def test_startup_sync_reply_yes_runs_restore(monkeypatch: pytest.MonkeyPat
     assert restored == ["snap-123"]
     assert result is not None
     assert "已恢复到本地" in result
+
+
+def test_find_restore_manifest_path_supports_nested_restore_layout(tmp_path: Path) -> None:
+    nested = tmp_path / "host" / "tmp" / "staging"
+    nested.mkdir(parents=True)
+    manifest = nested / "manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+
+    resolved = startup_sync_module._find_restore_manifest_path(tmp_path)
+
+    assert resolved == manifest
