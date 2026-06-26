@@ -149,6 +149,16 @@ def test_find_restore_manifest_path_supports_nested_restore_layout(tmp_path: Pat
     assert resolved == manifest
 
 
+def test_ensure_restore_not_in_progress_raises_when_restore_is_running() -> None:
+    original = startup_sync_module._restore_in_progress
+    startup_sync_module._restore_in_progress = True
+    try:
+        with pytest.raises(RuntimeError, match="restore in progress: test-source"):
+            startup_sync_module.ensure_restore_not_in_progress(source="test-source")
+    finally:
+        startup_sync_module._restore_in_progress = original
+
+
 @pytest.mark.asyncio
 async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_water(
     monkeypatch: pytest.MonkeyPatch,
@@ -175,15 +185,31 @@ async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_wate
     setattr(fake_water, "matrix_suggestion_service", types.SimpleNamespace(
         _first_record_seen_cache={"20001"}
     ))
+    fake_water_services = types.ModuleType("src.plugins.water.services")
+    fake_water_services.__path__ = []  # type: ignore[attr-defined]
+    fake_water_report = types.ModuleType("src.plugins.water.services.report")
+    setattr(
+        fake_water_report,
+        "water_report_service",
+        types.SimpleNamespace(
+            clear_today_report_cooldowns=lambda: events.append("water-report-cooldown-clear")
+        ),
+    )
     setattr(fake_water, "water_repo", types.SimpleNamespace(
         _group_matrix_cache={"20001": "mtx_1"},
         _group_matrix_locks={},
         _merge_state_locks={},
     ))
 
-    sys.modules["src.plugins"] = fake_plugins
-    sys.modules["src.plugins.wordbank"] = fake_wordbank
-    sys.modules["src.plugins.water"] = fake_water
+    monkeypatch.setitem(sys.modules, "src.plugins", fake_plugins)
+    monkeypatch.setitem(sys.modules, "src.plugins.wordbank", fake_wordbank)
+    monkeypatch.setitem(sys.modules, "src.plugins.water", fake_water)
+    monkeypatch.setitem(sys.modules, "src.plugins.water.services", fake_water_services)
+    monkeypatch.setitem(
+        sys.modules,
+        "src.plugins.water.services.report",
+        fake_water_report,
+    )
 
     async def _warm_user() -> None:
         events.append("user")
@@ -225,6 +251,7 @@ async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_wate
         "wordbank",
         "wordbank-media",
         "water-cooldown-clear",
+        "water-report-cooldown-clear",
         "water",
     ]
     assert fake_wordbank.wordbank_service._dirty_group_ids == set()

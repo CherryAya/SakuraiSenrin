@@ -72,6 +72,7 @@ def _stub_runtime_dependencies(
         "is_banned",
         AsyncMock(return_value=False),
     )
+    monkeypatch.setattr(processor_module, "is_restore_in_progress", lambda: False)
 
 
 @pytest.mark.asyncio
@@ -135,3 +136,28 @@ async def test_debug_runtime_check_allows_dev_test_user(
         ctx.receive_event(bot, event)
 
     handler_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_runtime_check_blocks_events_while_restore_is_in_progress(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+    _isolated_processor_module: ModuleType,
+) -> None:
+    processor_module = _isolated_processor_module
+    monkeypatch.setattr(processor_module, "is_restore_in_progress", lambda: True)
+
+    matcher = on_message(priority=1, block=True)
+    handler_mock = AsyncMock()
+
+    @matcher.handle()
+    async def _() -> None:
+        await handler_mock()
+
+    event = build_group_message_event("#ping", user_id=10002, group_id=20001)
+
+    async with app.test_matcher(matcher) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+
+    handler_mock.assert_not_awaited()

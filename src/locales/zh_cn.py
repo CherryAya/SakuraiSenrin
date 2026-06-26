@@ -20,6 +20,7 @@ CATALOG: Final[dict[str, str]] = {
     "hook.processor.user_ignored": "用户已被全局配置忽略",
     "hook.processor.user_global_banned": "用户已被全局黑名单",
     "hook.processor.user_self_ignored": "用户已启用 self_ignore",
+    "hook.processor.restore_in_progress": "系统正在执行数据恢复，暂时不处理新的事件。",
     "hook.processor.group_cache_miss": "未命中群缓存，默认阻止",
     "hook.processor.group_banned": "群聊已封禁",
     "hook.processor.group_unauthorized": "群聊未授权",

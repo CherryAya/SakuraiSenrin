@@ -27,6 +27,7 @@ from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
+from src.services.startup_sync import ensure_restore_not_in_progress
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 
 from .docs_support import (
@@ -289,6 +290,7 @@ async def _initialize_wordbank_plugin() -> None:
 )
 async def _wordbank_event_archive_job() -> None:
     try:
+        ensure_restore_not_in_progress(source="wordbank_event_archive")
         await wordbank_service.repository.archive_event_shards()
         logger.success("[Wordbank] cron archive done")
     except Exception as exc:
@@ -306,6 +308,7 @@ async def _wordbank_event_archive_job() -> None:
 )
 async def _wordbank_media_maintenance_job() -> None:
     try:
+        ensure_restore_not_in_progress(source="wordbank_media_maintenance")
         report = await wordbank_media_service.run_scheduled_maintenance(
             batch_size=config.WORDBANK_MEDIA_MIGRATION_BATCH_SIZE
         )

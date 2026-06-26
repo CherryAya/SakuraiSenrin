@@ -53,6 +53,7 @@ from src.lib.interactive_recall import (
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
+from src.services.startup_sync import ensure_restore_not_in_progress
 
 from .database import water_repo
 from .handlers import (
@@ -364,6 +365,7 @@ water_notice = on_notice(priority=5, block=False)
 )
 async def _water_daily_settlement_job() -> None:
     try:
+        ensure_restore_not_in_progress(source="water_daily_settlement")
         result = await water_settlement_service.run_daily_settlement()
         if result.success:
             logger.success(
@@ -392,6 +394,7 @@ async def _water_daily_settlement_job() -> None:
 )
 async def _water_message_archive_job() -> None:
     try:
+        ensure_restore_not_in_progress(source="water_message_archive")
         await water_repo.archive_message_shards()
         logger.success("[Water] cron archive done")
     except Exception as e:
@@ -409,6 +412,7 @@ async def _water_message_archive_job() -> None:
 )
 async def _water_summary_archive_job() -> None:
     try:
+        ensure_restore_not_in_progress(source="water_summary_archive")
         await water_repo.archive_summary_shards()
         pruned = await water_repo.prune_hot_summaries()
         logger.success(f"[Water] cron summary archive done: pruned={pruned}")
@@ -427,6 +431,7 @@ async def _water_summary_archive_job() -> None:
 )
 async def _water_daily_report_push_job() -> None:
     try:
+        ensure_restore_not_in_progress(source="water_daily_report_push")
         bots = list(get_bots().values())
         if not bots:
             logger.warning("[Water][ReportPush] skipped: no bot connected")

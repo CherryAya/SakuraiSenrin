@@ -238,6 +238,7 @@ MESSAGE_KEY_NAMES = (
     "hook.processor.group_all_shut",
     "hook.processor.group_banned",
     "hook.processor.group_cache_miss",
+    "hook.processor.restore_in_progress",
     "hook.processor.group_unauthorized",
     "hook.processor.user_global_banned",
     "hook.processor.user_group_banned",

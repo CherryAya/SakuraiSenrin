@@ -25,6 +25,7 @@ from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, is_set
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
+from src.services.startup_sync import is_restore_in_progress
 from src.services.runtime_policy import get_group_block_reason
 from src.services.sync import (
     sync_group_runtime,
@@ -171,5 +172,10 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
 
 @run_preprocessor
 async def _runtime_action(bot: Bot, event: Event, matcher: Matcher) -> None:
+    if is_restore_in_progress():
+        group_id = str(getattr(event, "group_id", "")) or None
+        raise IgnoredException(
+            tr(_runtime_locale(group_id), "hook.processor.restore_in_progress")
+        )
     await _runtime_sync(bot, event)
     await _runtime_check(bot, event, matcher)

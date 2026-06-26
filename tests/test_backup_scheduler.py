@@ -100,6 +100,12 @@ async def test_install_backup_scheduler_registers_and_runs_job(
         "build_backup_service_from_config",
         lambda: _Service(),
     )
+    guard_calls: list[str] = []
+    monkeypatch.setattr(
+        scheduler_module,
+        "ensure_restore_not_in_progress",
+        lambda *, source: guard_calls.append(source),
+    )
 
     scheduler_module.install_backup_scheduler()
 
@@ -116,5 +122,6 @@ async def test_install_backup_scheduler_registers_and_runs_job(
 
     await captured["job"]()
 
+    assert guard_calls == ["backup_scheduler"]
     assert captured["plan_run"].cron_hour == 5
     assert captured["plan_run"].cron_minute == 40

@@ -47,6 +47,15 @@ _startup_check_completed = False
 _restore_in_progress = False
 
 
+def is_restore_in_progress() -> bool:
+    return _restore_in_progress
+
+
+def ensure_restore_not_in_progress(*, source: str) -> None:
+    if _restore_in_progress:
+        raise RuntimeError(f"restore in progress: {source}")
+
+
 def is_startup_sync_reply_text(text: str) -> bool:
     normalized = text.strip().lower()
     return normalized in {"y", "yes", "n", "no", "同步", "取消", "恢复", "跳过"}
@@ -307,9 +316,11 @@ async def _reload_water_runtime_state() -> None:
         matrix_suggestion_service as water_matrix_suggestion_service,
         water_repo,
     )
+    from src.plugins.water.services.report import water_report_service
 
     water_plugin._water_plugin_initialized = False
     clear_water_query_cooldowns()
+    water_report_service.clear_today_report_cooldowns()
     water_repo._group_matrix_cache.clear()
     water_repo._group_matrix_locks.clear()
     water_repo._merge_state_locks.clear()
@@ -350,8 +361,10 @@ def _parse_restic_snapshot_time(raw_time: str | None) -> int | None:
 
 
 __all__ = [
+    "ensure_restore_not_in_progress",
     "handle_startup_sync_reply",
     "is_startup_sync_reply_text",
+    "is_restore_in_progress",
     "restore_remote_snapshot_into_local",
     "resolve_startup_sync_reply_decision",
     "restore_latest_remote_snapshot_into_local",
