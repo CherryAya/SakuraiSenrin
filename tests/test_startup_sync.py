@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from nonebot.adapters.onebot.v11 import Bot
 import pytest
@@ -147,3 +147,88 @@ def test_find_restore_manifest_path_supports_nested_restore_layout(tmp_path: Pat
     resolved = startup_sync_module._find_restore_manifest_path(tmp_path)
 
     assert resolved == manifest
+
+
+@pytest.mark.asyncio
+async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_water(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    import types
+    import sys
+
+    fake_plugins = types.ModuleType("src.plugins")
+    fake_plugins.__path__ = []  # type: ignore[attr-defined]
+
+    fake_wordbank = types.ModuleType("src.plugins.wordbank")
+    fake_wordbank._wordbank_initialized = True  # type: ignore[attr-defined]
+    setattr(fake_wordbank, "wordbank_service", types.SimpleNamespace(
+        _rebuild_task=None,
+        _dirty_group_ids={1, 2},
+        _call_count_cache={(1, 60): object()},
+        _initialized=True,
+    ))
+    setattr(fake_wordbank, "wordbank_media_service", types.SimpleNamespace())
+
+    fake_water = types.ModuleType("src.plugins.water")
+    fake_water._water_plugin_initialized = True  # type: ignore[attr-defined]
+    setattr(fake_water, "matrix_suggestion_service", types.SimpleNamespace(
+        _first_record_seen_cache={"20001"}
+    ))
+    setattr(fake_water, "water_repo", types.SimpleNamespace(
+        _group_matrix_cache={"20001": "mtx_1"},
+        _group_matrix_locks={},
+        _merge_state_locks={},
+    ))
+
+    sys.modules["src.plugins"] = fake_plugins
+    sys.modules["src.plugins.wordbank"] = fake_wordbank
+    sys.modules["src.plugins.water"] = fake_water
+
+    async def _warm_user() -> None:
+        events.append("user")
+
+    async def _warm_group() -> None:
+        events.append("group")
+
+    async def _warm_member() -> None:
+        events.append("member")
+
+    async def _warm_blacklist() -> None:
+        events.append("blacklist")
+
+    async def _init_wordbank() -> None:
+        events.append("wordbank")
+
+    async def _media_rebuild() -> None:
+        events.append("wordbank-media")
+
+    async def _init_water() -> None:
+        events.append("water")
+
+    monkeypatch.setattr(startup_sync_module.user_repo, "warm_up", _warm_user)
+    monkeypatch.setattr(startup_sync_module.group_repo, "warm_up", _warm_group)
+    monkeypatch.setattr(startup_sync_module.member_repo, "warm_up", _warm_member)
+    monkeypatch.setattr(startup_sync_module.blacklist_repo, "warm_up", _warm_blacklist)
+    setattr(fake_wordbank, "initialize_wordbank_plugin", _init_wordbank)
+    cast(Any, fake_wordbank.wordbank_media_service).rebuild_cache = _media_rebuild  # type: ignore[attr-defined]
+    setattr(fake_water, "initialize_water_plugin", _init_water)
+    setattr(fake_water, "clear_water_query_cooldowns", lambda: events.append("water-cooldown-clear"))
+
+    await startup_sync_module._reload_runtime_state_after_restore()
+
+    assert events == [
+        "user",
+        "group",
+        "member",
+        "blacklist",
+        "wordbank",
+        "wordbank-media",
+        "water-cooldown-clear",
+        "water",
+    ]
+    assert fake_wordbank.wordbank_service._dirty_group_ids == set()
+    assert fake_wordbank.wordbank_service._call_count_cache == {}
+    assert fake_wordbank.wordbank_service._initialized is False
+    assert fake_water.matrix_suggestion_service._first_record_seen_cache == set()
+    assert fake_water.water_repo._group_matrix_cache == {}

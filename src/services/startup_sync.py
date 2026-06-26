@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import shutil
+from typing import Any, cast
 
 from nonebot.adapters.onebot.v11 import Bot
 
@@ -43,6 +44,7 @@ _pending_restore_by_prompt: dict[str, PendingStartupRestore] = {}
 _startup_check_lock = asyncio.Lock()
 _restore_lock = asyncio.Lock()
 _startup_check_completed = False
+_restore_in_progress = False
 
 
 def is_startup_sync_reply_text(text: str) -> bool:
@@ -109,6 +111,7 @@ async def run_startup_backup_freshness_check(bot: Bot) -> None:
 
 
 async def handle_startup_sync_reply(bot: Bot, *, reply_message_id: str, text: str) -> str | None:
+    _ = bot
     decision = resolve_startup_sync_reply_decision(text)
     if decision is None:
         return None
@@ -127,22 +130,27 @@ async def handle_startup_sync_reply(bot: Bot, *, reply_message_id: str, text: st
         logger.exception(f"[StartupSync] restore failed: {exc}")
         return f"启动同步失败: {exc}"
     return (
-        "远端快照已恢复到本地，并已刷新核心缓存。"
+        "远端快照已恢复到本地，并已刷新运行时状态。"
         "建议确认业务数据后再继续高风险写入操作。"
     )
 
 
 async def restore_latest_remote_snapshot_into_local(*, snapshot_id: str) -> None:
+    global _restore_in_progress
     async with _restore_lock:
+        _restore_in_progress = True
         service = build_backup_service_from_config()
         restore_root = service.local_root / "restore" / snapshot_id
         if restore_root.exists():
             await asyncio.to_thread(shutil.rmtree, restore_root, True)
-        await service.restore(snapshot=snapshot_id, target=restore_root)
-        manifest_path = _find_restore_manifest_path(restore_root)
-        manifest = _load_restore_manifest(manifest_path)
-        await _apply_restore_manifest(manifest, manifest_path.parent)
-        await _warm_up_core_repositories()
+        try:
+            await service.restore(snapshot=snapshot_id, target=restore_root)
+            manifest_path = _find_restore_manifest_path(restore_root)
+            manifest = _load_restore_manifest(manifest_path)
+            await _apply_restore_manifest(manifest, manifest_path.parent)
+            await _reload_runtime_state_after_restore()
+        finally:
+            _restore_in_progress = False
 
 
 async def _collect_startup_sync_status() -> StartupSyncStatus:
@@ -250,6 +258,59 @@ async def _warm_up_core_repositories() -> None:
     await group_repo.warm_up()
     await member_repo.warm_up()
     await blacklist_repo.warm_up()
+
+
+async def _reload_runtime_state_after_restore() -> None:
+    await _warm_up_core_repositories()
+    await _reload_wordbank_runtime_state()
+    await _reload_water_runtime_state()
+
+
+async def _reload_wordbank_runtime_state() -> None:
+    import src.plugins.wordbank as wordbank_plugin
+    from src.plugins.wordbank import (
+        initialize_wordbank_plugin,
+        wordbank_media_service,
+        wordbank_service,
+    )
+    try:
+        from src.plugins.wordbank.services.matching import RuntimeIndex
+
+        empty_index = RuntimeIndex()
+    except Exception:
+        empty_index = None
+
+    wordbank_plugin._wordbank_initialized = False
+    if wordbank_service._rebuild_task is not None and not wordbank_service._rebuild_task.done():
+        wordbank_service._rebuild_task.cancel()
+    wordbank_service._rebuild_task = None
+    wordbank_service._dirty_group_ids.clear()
+    wordbank_service._call_count_cache.clear()
+    if empty_index is not None:
+        wordbank_service._index = empty_index
+    else:
+        setattr(cast(Any, wordbank_service), "_index", None)
+    wordbank_service._initialized = False
+    await initialize_wordbank_plugin()
+    await wordbank_media_service.rebuild_cache()
+
+
+async def _reload_water_runtime_state() -> None:
+    import src.plugins.water as water_plugin
+    from src.plugins.water import (
+        clear_water_query_cooldowns,
+        initialize_water_plugin,
+        matrix_suggestion_service as water_matrix_suggestion_service,
+        water_repo,
+    )
+
+    water_plugin._water_plugin_initialized = False
+    clear_water_query_cooldowns()
+    water_repo._group_matrix_cache.clear()
+    water_repo._group_matrix_locks.clear()
+    water_repo._merge_state_locks.clear()
+    water_matrix_suggestion_service._first_record_seen_cache.clear()
+    await initialize_water_plugin()
 
 
 async def _get_local_latest_data_mtime() -> int:
