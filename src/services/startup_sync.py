@@ -97,7 +97,8 @@ async def run_startup_backup_freshness_check(bot: Bot) -> None:
         if local_latest_at > remote_latest_at:
             logger.warning(
                 "[StartupSync] local data is newer than remote snapshot; "
-                f"local_latest_at={local_latest_at} remote_latest_at={remote_latest_at}. "
+                f"local_latest_at={local_latest_at} "
+                f"remote_latest_at={remote_latest_at}. "
                 "Please run a backup soon."
             )
             _startup_check_completed = True
@@ -119,7 +120,9 @@ async def run_startup_backup_freshness_check(bot: Bot) -> None:
         _startup_check_completed = True
 
 
-async def handle_startup_sync_reply(bot: Bot, *, reply_message_id: str, text: str) -> str | None:
+async def handle_startup_sync_reply(
+    bot: Bot, *, reply_message_id: str, text: str
+) -> str | None:
     _ = bot
     decision = resolve_startup_sync_reply_decision(text)
     if decision is None:
@@ -230,7 +233,9 @@ async def _notify_superusers_for_remote_restore(
         )
 
 
-async def _apply_restore_manifest(manifest: dict[str, object], restore_root: Path) -> None:
+async def _apply_restore_manifest(
+    manifest: dict[str, object], restore_root: Path
+) -> None:
     files = manifest.get("files")
     if not isinstance(files, list):
         raise RuntimeError("restore manifest is invalid: missing files")
@@ -286,6 +291,7 @@ async def _reload_wordbank_runtime_state() -> None:
         wordbank_media_service,
         wordbank_service,
     )
+
     try:
         from src.plugins.wordbank.services.matching import RuntimeIndex
 
@@ -294,7 +300,10 @@ async def _reload_wordbank_runtime_state() -> None:
         empty_index = None
 
     wordbank_plugin._wordbank_initialized = False
-    if wordbank_service._rebuild_task is not None and not wordbank_service._rebuild_task.done():
+    if (
+        wordbank_service._rebuild_task is not None
+        and not wordbank_service._rebuild_task.done()
+    ):
         wordbank_service._rebuild_task.cancel()
     wordbank_service._rebuild_task = None
     wordbank_service._dirty_group_ids.clear()
@@ -313,8 +322,10 @@ async def _reload_water_runtime_state() -> None:
     from src.plugins.water import (
         clear_water_query_cooldowns,
         initialize_water_plugin,
-        matrix_suggestion_service as water_matrix_suggestion_service,
         water_repo,
+    )
+    from src.plugins.water import (
+        matrix_suggestion_service as water_matrix_suggestion_service,
     )
     from src.plugins.water.services.report import water_report_service
 
@@ -330,10 +341,10 @@ async def _reload_water_runtime_state() -> None:
 
 async def _get_local_latest_data_mtime() -> int:
     data_root = Path("data")
-    if not data_root.exists():
-        return 0
 
     def _scan() -> int:
+        if not data_root.exists():
+            return 0
         latest = 0
         for path in data_root.rglob("*"):
             if not path.is_file():
@@ -363,10 +374,10 @@ def _parse_restic_snapshot_time(raw_time: str | None) -> int | None:
 __all__ = [
     "ensure_restore_not_in_progress",
     "handle_startup_sync_reply",
-    "is_startup_sync_reply_text",
     "is_restore_in_progress",
-    "restore_remote_snapshot_into_local",
+    "is_startup_sync_reply_text",
     "resolve_startup_sync_reply_decision",
     "restore_latest_remote_snapshot_into_local",
+    "restore_remote_snapshot_into_local",
     "run_startup_backup_freshness_check",
 ]

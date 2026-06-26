@@ -245,7 +245,11 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
                 "\n".join(
                     [
                         tr(locale, "admin.backup.restore.completed"),
-                        tr(locale, "admin.backup.restore.snapshot", snapshot_id=snapshot),
+                        tr(
+                            locale,
+                            "admin.backup.restore.snapshot",
+                            snapshot_id=snapshot,
+                        ),
                     ]
                 )
             )

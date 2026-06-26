@@ -27,8 +27,8 @@ from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
-from src.services.startup_sync import ensure_restore_not_in_progress
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
+from src.services.startup_sync import ensure_restore_not_in_progress
 
 from .docs_support import (
     APPROVAL_DOCS_SOURCE,

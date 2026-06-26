@@ -182,6 +182,4 @@ async def test_run_restore_main_can_apply_local_restore(
     await run_restore_script.main()
 
     assert captured["restore"] == {"snapshot": "latest"}
-    assert "restore completed and applied locally: latest" in str(
-        captured["success"]
-    )
+    assert "restore completed and applied locally: latest" in str(captured["success"])

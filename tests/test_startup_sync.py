@@ -23,7 +23,9 @@ async def test_startup_sync_notifies_superuser_when_remote_is_newer(
     sent: list[tuple[int, str]] = []
 
     class _Bot:
-        async def send_private_msg(self, *, user_id: int, message: str) -> dict[str, int]:
+        async def send_private_msg(
+            self, *, user_id: int, message: str
+        ) -> dict[str, int]:
             sent.append((user_id, message))
             return {"message_id": 9001}
 
@@ -45,10 +47,13 @@ async def test_startup_sync_notifies_superuser_when_remote_is_newer(
         "build_backup_service_from_config",
         lambda: _Service(),
     )
+
     async def _local_latest() -> int:
         return 1_700_000_000
 
-    monkeypatch.setattr(startup_sync_module, "_get_local_latest_data_mtime", _local_latest)
+    monkeypatch.setattr(
+        startup_sync_module, "_get_local_latest_data_mtime", _local_latest
+    )
     monkeypatch.setattr(startup_sync_module, "_startup_check_completed", False)
     startup_sync_module._pending_restore_by_prompt.clear()
 
@@ -69,7 +74,9 @@ async def test_startup_sync_logs_when_local_is_newer(
     warnings: list[str] = []
 
     class _Bot:
-        async def send_private_msg(self, *, user_id: int, message: str) -> dict[str, int]:
+        async def send_private_msg(
+            self, *, user_id: int, message: str
+        ) -> dict[str, int]:
             _ = (user_id, message)
             raise AssertionError("should not notify when local is newer")
 
@@ -91,10 +98,13 @@ async def test_startup_sync_logs_when_local_is_newer(
         "build_backup_service_from_config",
         lambda: _Service(),
     )
+
     async def _local_latest() -> int:
         return 1_900_000_000
 
-    monkeypatch.setattr(startup_sync_module, "_get_local_latest_data_mtime", _local_latest)
+    monkeypatch.setattr(
+        startup_sync_module, "_get_local_latest_data_mtime", _local_latest
+    )
     monkeypatch.setattr(startup_sync_module.logger, "warning", warnings.append)
     monkeypatch.setattr(startup_sync_module, "_startup_check_completed", False)
 
@@ -105,11 +115,15 @@ async def test_startup_sync_logs_when_local_is_newer(
 
 
 @pytest.mark.asyncio
-async def test_startup_sync_reply_yes_runs_restore(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_startup_sync_reply_yes_runs_restore(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     restored: list[str] = []
 
     class _Bot:
-        async def send_private_msg(self, *, user_id: int, message: str) -> dict[str, int]:
+        async def send_private_msg(
+            self, *, user_id: int, message: str
+        ) -> dict[str, int]:
             _ = (user_id, message)
             return {"message_id": 1}
 
@@ -122,10 +136,13 @@ async def test_startup_sync_reply_yes_runs_restore(monkeypatch: pytest.MonkeyPat
             prompt_message_id="123",
         )
     )
+
     async def _restore(*, snapshot_id: str) -> None:
         restored.append(snapshot_id)
 
-    monkeypatch.setattr(startup_sync_module, "restore_latest_remote_snapshot_into_local", _restore)
+    monkeypatch.setattr(
+        startup_sync_module, "restore_latest_remote_snapshot_into_local", _restore
+    )
 
     result = await startup_sync_module.handle_startup_sync_reply(
         cast(Bot, _Bot()),
@@ -138,7 +155,9 @@ async def test_startup_sync_reply_yes_runs_restore(monkeypatch: pytest.MonkeyPat
     assert "已恢复到本地" in result
 
 
-def test_find_restore_manifest_path_supports_nested_restore_layout(tmp_path: Path) -> None:
+def test_find_restore_manifest_path_supports_nested_restore_layout(
+    tmp_path: Path,
+) -> None:
     nested = tmp_path / "host" / "tmp" / "staging"
     nested.mkdir(parents=True)
     manifest = nested / "manifest.json"
@@ -164,27 +183,33 @@ async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_wate
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
-    import types
     import sys
+    import types
 
     fake_plugins = types.ModuleType("src.plugins")
     fake_plugins.__path__ = []  # type: ignore[attr-defined]
 
     fake_wordbank = types.ModuleType("src.plugins.wordbank")
     fake_wordbank._wordbank_initialized = True  # type: ignore[attr-defined]
-    setattr(fake_wordbank, "wordbank_service", types.SimpleNamespace(
-        _rebuild_task=None,
-        _dirty_group_ids={1, 2},
-        _call_count_cache={(1, 60): object()},
-        _initialized=True,
-    ))
+    setattr(
+        fake_wordbank,
+        "wordbank_service",
+        types.SimpleNamespace(
+            _rebuild_task=None,
+            _dirty_group_ids={1, 2},
+            _call_count_cache={(1, 60): object()},
+            _initialized=True,
+        ),
+    )
     setattr(fake_wordbank, "wordbank_media_service", types.SimpleNamespace())
 
     fake_water = types.ModuleType("src.plugins.water")
     fake_water._water_plugin_initialized = True  # type: ignore[attr-defined]
-    setattr(fake_water, "matrix_suggestion_service", types.SimpleNamespace(
-        _first_record_seen_cache={"20001"}
-    ))
+    setattr(
+        fake_water,
+        "matrix_suggestion_service",
+        types.SimpleNamespace(_first_record_seen_cache={"20001"}),
+    )
     fake_water_services = types.ModuleType("src.plugins.water.services")
     fake_water_services.__path__ = []  # type: ignore[attr-defined]
     fake_water_report = types.ModuleType("src.plugins.water.services.report")
@@ -192,14 +217,20 @@ async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_wate
         fake_water_report,
         "water_report_service",
         types.SimpleNamespace(
-            clear_today_report_cooldowns=lambda: events.append("water-report-cooldown-clear")
+            clear_today_report_cooldowns=lambda: events.append(
+                "water-report-cooldown-clear"
+            )
         ),
     )
-    setattr(fake_water, "water_repo", types.SimpleNamespace(
-        _group_matrix_cache={"20001": "mtx_1"},
-        _group_matrix_locks={},
-        _merge_state_locks={},
-    ))
+    setattr(
+        fake_water,
+        "water_repo",
+        types.SimpleNamespace(
+            _group_matrix_cache={"20001": "mtx_1"},
+            _group_matrix_locks={},
+            _merge_state_locks={},
+        ),
+    )
 
     monkeypatch.setitem(sys.modules, "src.plugins", fake_plugins)
     monkeypatch.setitem(sys.modules, "src.plugins.wordbank", fake_wordbank)
@@ -239,7 +270,11 @@ async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_wate
     setattr(fake_wordbank, "initialize_wordbank_plugin", _init_wordbank)
     cast(Any, fake_wordbank.wordbank_media_service).rebuild_cache = _media_rebuild  # type: ignore[attr-defined]
     setattr(fake_water, "initialize_water_plugin", _init_water)
-    setattr(fake_water, "clear_water_query_cooldowns", lambda: events.append("water-cooldown-clear"))
+    setattr(
+        fake_water,
+        "clear_water_query_cooldowns",
+        lambda: events.append("water-cooldown-clear"),
+    )
 
     await startup_sync_module._reload_runtime_state_after_restore()
 

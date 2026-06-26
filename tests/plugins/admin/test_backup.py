@@ -217,7 +217,9 @@ async def test_admin_backup_restore_reloads_local_runtime_state(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    event = build_private_message_event("#admin.backup restore latest", user_id=SUPERUSER_ID)
+    event = build_private_message_event(
+        "#admin.backup restore latest", user_id=SUPERUSER_ID
+    )
 
     from src.plugins.admin import backup as backup_plugin
 

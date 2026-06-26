@@ -25,8 +25,8 @@ from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, is_set
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
-from src.services.startup_sync import is_restore_in_progress
 from src.services.runtime_policy import get_group_block_reason
+from src.services.startup_sync import is_restore_in_progress
 from src.services.sync import (
     sync_group_runtime,
     sync_member_runtime,

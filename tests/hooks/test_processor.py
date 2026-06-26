@@ -138,13 +138,13 @@ async def test_debug_runtime_check_allows_dev_test_user(
     handler_mock.assert_awaited_once()
 
 
+@pytest.mark.usefixtures("_isolated_processor_module")
 @pytest.mark.asyncio
 async def test_runtime_check_blocks_events_while_restore_is_in_progress(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
-    _isolated_processor_module: ModuleType,
 ) -> None:
-    processor_module = _isolated_processor_module
+    processor_module = importlib.import_module("src.hooks.processor")
     monkeypatch.setattr(processor_module, "is_restore_in_progress", lambda: True)
 
     matcher = on_message(priority=1, block=True)
