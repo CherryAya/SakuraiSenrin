@@ -20,7 +20,7 @@
 ### `pending` 待审核词条
 - 摘要: 查看当前群或全局可审核的待审词条。
 - 别名: 待审, 待审核, review, wordbank.pending, 待审核词条
-- 指令: `wordbank pending [关键词] [--page 页码] [--limit 每页数量]`
+- 指令: `待审核词条 [关键词] [--page 页码] [--limit 每页数量]`
 - 权限: 群管理员
 #### 说明
 > [!TIP]
@@ -31,17 +31,17 @@
 > [!TIP]
 > 分页规则和 `wordbank search` 保持一致。
 #### 常用示例命令
-- `#wordbank pending`
-- `#wordbank pending 晚安`
-- `#wordbank pending event:poke --page 2 --limit 10`
+- `#待审核词条`
+- `#待审核词条 晚安`
+- `#待审核词条 event:poke --page 2 --limit 10`
 #### 前置条件
 需要当前群管理员/群主或超级用户权限。
 #### 完整流程
 ```demo
-USER: #wordbank pending 晚安
+USER: #待审核词条 晚安
 BOT: 待审核词条 (第 1 页):
 #12 [current_group] 晚安 => 做个好梦  提交者: 10001
-USER: #wordbank pending --page 2 --limit 10
+USER: #待审核词条 --page 2 --limit 10
 BOT: 待审核词条 (第 2 页):
 #26 [all_groups] 早 => 早安呀  提交者: 10002
 ```
@@ -51,7 +51,7 @@ BOT: 待审核词条 (第 2 页):
 ### `approve` 通过审核
 - 摘要: 通过指定待审核词条。
 - 别名: pass, 通过, 审核通过, wordbank.approve, 通过词条, 审核通过词条
-- 指令: `wordbank approve <id>`
+- 指令: `通过词条 <id>`
 - 权限: 群管理员
 #### 说明
 > [!TIP]
@@ -59,14 +59,13 @@ BOT: 待审核词条 (第 2 页):
 >
 > 随后它会通过延迟重建加入运行时索引，并开始参与被动匹配。
 #### 常用示例命令
-- `#wordbank approve 12`
 - `#通过词条 12`
 - `#审核通过词条 12`
 #### 前置条件
 需要当前群管理员/群主或超级用户权限；群管理员只能审核当前群提交的词条。
 #### 完整流程
 ```demo
-USER: #wordbank approve 12
+USER: #通过词条 12
 BOT: 词条 #12 已通过审核，稍后会参与被动匹配。
 SYSTEM: 索引延迟重建完成后，普通消息就可以命中这条词条。
 ```
@@ -76,7 +75,7 @@ ID 非数字、词条不存在、词条不是待审核状态或当前用户没�
 ### `reject` 拒绝审核
 - 摘要: 拒绝指定待审核词条。
 - 别名: deny, 拒绝, 驳回, wordbank.reject, 拒绝词条, 驳回词条
-- 指令: `wordbank reject <id>`
+- 指令: `拒绝词条 <id>`
 - 权限: 群管理员
 #### 说明
 > [!TIP]
@@ -84,14 +83,13 @@ ID 非数字、词条不存在、词条不是待审核状态或当前用户没�
 >
 > 被拒绝的词条不会参与被动匹配。
 #### 常用示例命令
-- `#wordbank reject 13`
 - `#拒绝词条 13`
 - `#驳回词条 13`
 #### 前置条件
 需要当前群管理员/群主或超级用户权限；群管理员只能审核当前群提交的词条。
 #### 完整流程
 ```demo
-USER: #wordbank reject 13
+USER: #拒绝词条 13
 BOT: 词条 #13 已拒绝，不会参与被动匹配。
 SYSTEM: 被拒绝的词条不会进入运行时索引。
 ```

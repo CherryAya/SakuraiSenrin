@@ -1,7 +1,7 @@
 # 词库模块
 
 ## 概览
-低资源优先的群聊词库系统，覆盖词条添加、搜索、删除恢复、运行时自动回复，以及图片指纹和审核前待生效流程。
+添加、删除、管理词条，都在这里啦！
 
 ## 权限与触发
 - 触发方式: 指令触发 / 被动触发
@@ -9,11 +9,11 @@
 
 ## 用法
 - Help: `wordbank`
-- 常用入口: `#wordbank add`、`#wordbank search`、`#wordbank delete`、`#wordbank restore`、`#苦瓜榜`
+- 常用入口: `#添加词条`、`#搜索词条`、`#删除词条`、`#苦瓜榜`
 
 ## 说明
 > [!TIP]
-> 日常最常用的是 `add`、`search`、`delete`、`restore` 和被动触发。
+> 最常用的是 `add`、`search`、`delete`、`restore` 和被动触发。
 >
 > 如果只是正常教词条或查词条，通常不需要先读完整个目录。
 
@@ -43,8 +43,8 @@
 - Hero: true
 - Priority: 10
 - 别名: 添加, 学习, wordbank.add, 添加词条
-- 指令: `wordbank add 触发词 => 响应词`
-- 兼容指令: `wordbank.add 触发词 => 响应词`、`添加词条 触发词 => 响应词`
+- 指令: `添加词条 触发词 => 响应词`
+- 兼容指令: `wordbank add 触发词 => 响应词`、`wordbank.add 触发词 => 响应词`
 - Demo: wordbank-add.webp
 #### 说明
 > [!TIP]
@@ -56,7 +56,7 @@
 > - `文本 => 图文混排回复`
 
 > [!TIP]
-> 不带参数发送 `wordbank add` 会进入引导模式。
+> 不带参数发送 `添加词条` 会进入引导模式。
 >
 > 顺序是 `触发词 -> 响应词 -> 生效范围 -> 高级选项`；图片会在后台下载处理，最终无法下载或识别时不会写入词库。
 
@@ -65,16 +65,16 @@
 >
 > 在审核通过前，它不会参与被动匹配。
 #### 常用示例命令
-- `#wordbank add 晚安 => 做个好梦`
-- `#wordbank add 晚安 [图片]`
-- `#wordbank add [图片] => 这张图我记住了`
-- `#wordbank add 晚安 => 做个好梦 [图片]`
-- `#wordbank.add`
+- `#添加词条 晚安 => 做个好梦`
+- `#添加词条 晚安 [图片]`
+- `#添加词条 [图片] => 这张图我记住了`
+- `#添加词条 晚安 => 做个好梦 [图片]`
+- `#添加词条`
 #### 前置条件
 当前消息需要通过运行时检查。
 #### 完整流程
 ```demo
-USER: #wordbank.add
+USER: #添加词条
 BOT: 请输入触发词，或直接发送图片作为图片触发：
 USER: 晚安
 BOT: 请输入响应词，或发送图片作为图片回复：
@@ -98,7 +98,7 @@ ID: 12
 权重: 3
 管理员通过前不会触发。
 SYSTEM: 审核完成前，这条词条不会参与被动匹配；审核文档请查看 #help 词库审核。
-USER: #wordbank add 是这张图喔 [图片]
+USER: #添加词条 是这张图喔 [图片]
 BOT: 词条已提交审核
 ID: 13
 状态: pending
@@ -109,7 +109,7 @@ ID: 13
 概率: 1
 权重: 3
 管理员通过前不会触发。
-USER: #wordbank add [图片] => 是这张图喔
+USER: #添加词条 [图片] => 是这张图喔
 BOT: 词条已提交审核
 ID: 14
 状态: pending
@@ -129,7 +129,7 @@ ID: 14
 - Advanced: true
 - Priority: 110
 - 别名: scope, 范围, 生效范围
-- 指令: `wordbank add 触发词 => 响应词 --scope current_group|all_groups|self|private_only`
+- 指令: `添加词条 触发词 => 响应词 --scope current_group|all_groups|self|private_only`
 - Demo: wordbank-add-scope.webp
 #### 说明
 > [!TIP]
@@ -142,15 +142,15 @@ ID: 14
 >
 > 这种情况下通常不需要再额外重复写 `--scope`。
 #### 常用示例命令
-- `#wordbank add 大家好 => 大家好呀 --scope current_group`
-- `#wordbank add 早上好 => 早安 --scope all_groups`
-- `#wordbank add 个人提醒 => 别忘记喝水 --scope self`
-- `#wordbank add 私聊一下 => 收到 --scope private_only`
+- `#添加词条 大家好 => 大家好呀 --scope current_group`
+- `#添加词条 早上好 => 早安 --scope all_groups`
+- `#添加词条 个人提醒 => 别忘记喝水 --scope self`
+- `#添加词条 私聊一下 => 收到 --scope private_only`
 #### 前置条件
 需要明确词条是群内通用、跨群、仅自己还是仅私聊。
 #### 完整流程
 ```demo
-USER: #wordbank add 私聊一下 => 收到 --scope private_only
+USER: #添加词条 私聊一下 => 收到 --scope private_only
 BOT: 词条已提交审核
 ID: 16
 状态: pending
@@ -171,7 +171,7 @@ scope 拼写错误或重复设置时会返回说明。
 - Advanced: true
 - Priority: 120
 - 别名: prob, 概率, 触发概率
-- 指令: `wordbank add 触发词 => 响应词 --prob 0.0-1.0`
+- 指令: `添加词条 触发词 => 响应词 --prob 0.0-1.0`
 - Demo: wordbank-add-prob.webp
 #### 说明
 > [!TIP]
@@ -179,13 +179,13 @@ scope 拼写错误或重复设置时会返回说明。
 >
 > 它适合给高频短词降噪，真正通过后才会继续按响应权重选具体回复。
 #### 常用示例命令
-- `#wordbank add 早 => 早安呀 --prob 0.5`
-- `#wordbank add 哈哈 => 笑死 --prob 0.2`
+- `#添加词条 早 => 早安呀 --prob 0.5`
+- `#添加词条 哈哈 => 笑死 --prob 0.2`
 #### 前置条件
 建议只用于容易高频误触的词条。
 #### 完整流程
 ```demo
-USER: #wordbank add 早 => 早安呀 --prob 0.5
+USER: #添加词条 早 => 早安呀 --prob 0.5
 BOT: 词条已提交审核
 ID: 17
 状态: pending
@@ -206,7 +206,7 @@ SYSTEM: `--prob 0.5` 表示命中 trigger group 后大约只有一半概率真�
 - Advanced: true
 - Priority: 130
 - 别名: weight, 权重
-- 指令: `wordbank add 触发词 => 响应词 --weight 1-5`
+- 指令: `添加词条 触发词 => 响应词 --weight 1-5`
 - Demo: wordbank-add-weight.webp
 #### 说明
 > [!TIP]
@@ -214,13 +214,13 @@ SYSTEM: `--prob 0.5` 表示命中 trigger group 后大约只有一半概率真�
 >
 > 它不会影响 trigger 本身是否触发。
 #### 常用示例命令
-- `#wordbank add 晚安 => 做个好梦 --weight 5`
-- `#wordbank add 晚安 => 晚安晚安 --weight 1`
+- `#添加词条 晚安 => 做个好梦 --weight 5`
+- `#添加词条 晚安 => 晚安晚安 --weight 1`
 #### 前置条件
 适合同一触发词下存在多条候选响应的场景。
 #### 完整流程
 ```demo
-USER: #wordbank add 晚安 => 做个好梦 --weight 5
+USER: #添加词条 晚安 => 做个好梦 --weight 5
 BOT: 词条已提交审核
 ID: 18
 状态: pending
@@ -241,7 +241,7 @@ SYSTEM: `--weight 5` 不会提高 trigger 本身的命中率，只会让这条�
 - Advanced: true
 - Priority: 140
 - 别名: role, roles, 角色限制
-- 指令: `wordbank add 触发词 => 响应词 --role owner|admin|member`
+- 指令: `添加词条 触发词 => 响应词 --role owner|admin|member`
 - Demo: wordbank-add-role.webp
 #### 说明
 > [!TIP]
@@ -249,14 +249,14 @@ SYSTEM: `--weight 5` 不会提高 trigger 本身的命中率，只会让这条�
 >
 > 这类限制只在群聊上下文里才有实际区分意义。
 #### 常用示例命令
-- `#wordbank add 管理员集合 => 管理员请看这里 --role admin`
-- `#wordbank add 群主确认 => 已收到 --role owner`
-- `#wordbank add 萌新报道 => 欢迎加入 --role member`
+- `#添加词条 管理员集合 => 管理员请看这里 --role admin`
+- `#添加词条 群主确认 => 已收到 --role owner`
+- `#添加词条 萌新报道 => 欢迎加入 --role member`
 #### 前置条件
 只在群聊里有实际区分意义。
 #### 完整流程
 ```demo
-USER: #wordbank add 管理员集合 => 管理员请看这里 --role admin
+USER: #添加词条 管理员集合 => 管理员请看这里 --role admin
 BOT: 词条已提交审核
 ID: 19
 状态: pending
@@ -277,7 +277,7 @@ SYSTEM: `--role admin` 只允许群管理员触发；普通成员发送同样内
 - Advanced: true
 - Priority: 150
 - 别名: call, 调用次数窗口
-- 指令: `wordbank add 触发词 => 响应词 --call window:min:max`
+- 指令: `添加词条 触发词 => 响应词 --call window:min:max`
 - Demo: wordbank-add-call.webp
 #### 说明
 > [!TIP]
@@ -285,13 +285,13 @@ SYSTEM: `--role admin` 只允许群管理员触发；普通成员发送同样内
 >
 > 适合做“第几次才回复”或者“超过一定次数后静默”的规则。
 #### 常用示例命令
-- `#wordbank add 连续打卡 => 你今天很活跃 --call 3600:3:10`
-- `#wordbank add 又来了 => 欢迎回来 --call 60:2:5`
+- `#添加词条 连续打卡 => 你今天很活跃 --call 3600:3:10`
+- `#添加词条 又来了 => 欢迎回来 --call 60:2:5`
 #### 前置条件
 适合限制高频触发词的回复节奏。
 #### 完整流程
 ```demo
-USER: #wordbank add 又来了 => 欢迎回来 --call 60:2:5
+USER: #添加词条 又来了 => 欢迎回来 --call 60:2:5
 BOT: 词条已提交审核
 ID: 20
 状态: pending
@@ -312,8 +312,8 @@ SYSTEM: `--call 60:2:5` 表示 60 秒窗口内从第 2 次开始触发，第 5 �
 - Hero: true
 - Priority: 20
 - 别名: 查询, 搜索, wordbank.search, 搜索词条
-- 指令: `wordbank search [关键词] [图片] [--field all|trigger|response] [--creator 账号] [--page 页码] [--limit 每页数量]`
-- 兼容指令: `wordbank.search [关键词]`、`搜索词条 [关键词]`
+- 指令: `搜索词条 [关键词] [图片] [--field all|trigger|response] [--creator 账号] [--page 页码] [--limit 每页数量]`
+- 兼容指令: `wordbank search [关键词]`、`wordbank.search [关键词]`
 - Demo: wordbank-search.webp
 #### 说明
 默认同时搜触发词和响应词，也支持按图片相似度搜索。结果会以卡片展示，可继续发送 `page <页码>`、`详情 <group_id>`、`del <序号...>` 或 `exit` 管理当前搜索会话。
@@ -321,7 +321,7 @@ SYSTEM: `--call 60:2:5` 表示 60 秒窗口内从第 2 次开始触发，第 5 �
 无。
 #### 完整流程
 ```demo
-USER: #wordbank search 晚安
+USER: #搜索词条 晚安
 BOT: [词库搜索结果卡片]
 BOT: 可发送 `page 页码`、`详情 组号`、`del 序号...` 或 `exit`
 USER: 详情 271
@@ -334,8 +334,8 @@ BOT: [展开 trigger group 271]
 - 摘要: 查看全局已通过审核词条创建排行海报。
 - Priority: 40
 - 别名: 苦瓜榜, rank, 排行, 榜
-- 指令: `wordbank rank [周榜|月榜|季榜|总榜]`
-- 兼容指令: `苦瓜榜`
+- 指令: `苦瓜榜 [周榜|月榜|季榜|总榜]`
+- 兼容指令: `wordbank rank [周榜|月榜|季榜|总榜]`
 - Demo: wordbank-rank.webp
 #### 说明
 默认返回月榜，也支持周榜、季榜和总榜；海报展示 Top 10、冠军占比、覆盖群数等信息。
@@ -380,8 +380,8 @@ group 不存在、页码越界或参数非法时会提示。
 - 摘要: 软删除指定词条。
 - Priority: 50
 - 别名: 删除, remove, wordbank.delete, wordbank.del, 删除词条
-- 指令: `wordbank delete <id>`
-- 兼容指令: `wordbank.delete <id>`、`wordbank.del <id>`、`删除词条 <id>`
+- 指令: `删除词条 <id>`
+- 兼容指令: `wordbank delete <id>`、`wordbank.delete <id>`、`wordbank.del <id>`
 - Demo: wordbank-delete.webp
 #### 说明
 删除后不再参与匹配，但数据仍保留，可后续恢复。
@@ -389,7 +389,7 @@ group 不存在、页码越界或参数非法时会提示。
 需要提供数字词条 ID，且当前用户有对应操作权限。
 #### 完整流程
 ```demo
-USER: #wordbank delete 12
+USER: #删除词条 12
 BOT: 词条 #12 已删除。
 ```
 #### 失败情况
@@ -399,8 +399,8 @@ ID 非法、词条不存在或权限不足时会提示。
 - 摘要: 恢复已删除词条。
 - Priority: 60
 - 别名: 恢复, wordbank.restore, 恢复词条
-- 指令: `wordbank restore <id>`
-- 兼容指令: `wordbank.restore <id>`、`恢复词条 <id>`
+- 指令: `恢复词条 <id>`
+- 兼容指令: `wordbank restore <id>`、`wordbank.restore <id>`
 - Demo: wordbank-restore.webp
 #### 说明
 恢复后会重新加入运行时索引。
@@ -408,7 +408,7 @@ ID 非法、词条不存在或权限不足时会提示。
 目标词条已被删除，且当前用户符合恢复权限。
 #### 完整流程
 ```demo
-USER: #wordbank restore 12
+USER: #恢复词条 12
 BOT: 词条 #12 已恢复。
 ```
 #### 失败情况
@@ -486,9 +486,9 @@ ID 非法、对象不存在、参数越界或权限不足时会提示。
 
 检测到撤回类信号或规则不通过时会直接跳过，不回复。
 #### 常用示例命令
-- `#wordbank add event:at => 我在`
-- `#wordbank add event:poke => 别戳啦`
-- `#wordbank add event:join => 欢迎加入`
+- `#添加词条 event:at => 我在`
+- `#添加词条 event:poke => 别戳啦`
+- `#添加词条 event:join => 欢迎加入`
 #### 前置条件
 词条已启用，且当前消息通过运行时检查。
 #### 完整流程

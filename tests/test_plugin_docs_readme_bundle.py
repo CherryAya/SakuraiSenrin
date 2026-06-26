@@ -739,11 +739,11 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
 
     assert add.demo_filename == "wordbank-add.webp"
     assert len(add.demo_turns) == 15
-    assert add.demo_turns[0].text == "#wordbank.add"
+    assert add.demo_turns[0].text == "#添加词条"
     assert "审核文档请查看 #help 词库审核" in add.demo_turns[10].text
-    assert "#wordbank add 是这张图喔 [图片]" in add.demo_turns[11].text
+    assert "#添加词条 是这张图喔 [图片]" in add.demo_turns[11].text
     assert "响应: [图片:7]" in add.demo_turns[12].text
-    assert "#wordbank add [图片] => 是这张图喔" in add.demo_turns[13].text
+    assert "#添加词条 [图片] => 是这张图喔" in add.demo_turns[13].text
     assert "触发: [图片:7]" in add.demo_turns[14].text
     assert all(feature.slug != "add-mode" for feature in wordbank.index)
     assert all(feature.slug != "image" for feature in wordbank.index)
