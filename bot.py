@@ -14,6 +14,7 @@ from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.scripts.install import init_fonts
 from src.services.backup_scheduler import install_backup_scheduler
 from src.services.db import init_db
+from src.services.startup_sync import run_startup_backup_freshness_check
 from src.services.sync import (
     sync_groups_from_api,
     sync_users_from_api,
@@ -38,6 +39,8 @@ async def _on_bot_connect(bot: Bot) -> None:
     await group_repo.warm_up()
     await member_repo.warm_up()
     await blacklist_repo.warm_up()
+
+    await run_startup_backup_freshness_check(bot)
 
     await sync_users_from_api(bot)
     await sync_groups_from_api(bot)
