@@ -701,6 +701,7 @@ MESSAGE_KEY_NAMES = (
     "wordbank.approval.reply_approved",
     "wordbank.approval.reply_rejected",
     "wordbank.approval.reply_target_not_found",
+    "wordbank.approval.trigger_label",
     "wordbank.approval.response_label",
     "wordbank.delete.not_found",
     "wordbank.delete.success",

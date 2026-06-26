@@ -24,6 +24,8 @@ from tests.plugins.water.helpers import build_group_message_event
 
 def _result(
     *,
+    trigger_text: str = "晚安",
+    trigger_shape: MessageShape | None = None,
     response_text: str = "做个好梦",
     response_shape: MessageShape | None = None,
 ) -> WordbankAddResult:
@@ -31,11 +33,12 @@ def _result(
         trigger_group_id=10,
         trigger_variant_id=11,
         response_item_id=12,
-        trigger_text="晚安",
+        trigger_text=trigger_text,
         response_text=response_text,
         scope="current_group",
         probability=1.0,
         weight=3,
+        trigger_shape=trigger_shape,
         response_shape=response_shape,
     )
 
@@ -64,11 +67,54 @@ async def test_build_add_result_message_rebuilds_shape_with_image() -> None:
 
     segments = list(message)
     text_values = [str(segment) for segment in segments if segment.type == "text"]
-    assert text_values[0].endswith("触发: 晚安\n响应:\n")
-    assert text_values[-1].startswith("\n范围: current_group\n概率: 1\n权重: 3\n")
+    full_text = "".join(text_values)
+    assert full_text.startswith(
+        "词条已提交审核\nID: 12\n状态: pending\n触发: 晚安\n响应:\n"
+    )
+    assert (
+        "\n范围: current_group\n概率: 1\n权重: 3\n管理员通过前不会触发。" in full_text
+    )
+    assert "做个好梦" in full_text
     assert any(segment.type == "image" for segment in segments)
     assert "消息回复如下" not in str(message)
     load_canonical_storage_bytes.assert_awaited_once_with(7)
+
+
+@pytest.mark.asyncio
+async def test_build_add_result_message_rebuilds_trigger_and_response_shapes() -> None:
+    load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    result = _result(
+        trigger_text="[图片:8]",
+        trigger_shape=shape_from_image(8),
+        response_text="[图片:7]",
+        response_shape=shape_from_image(7),
+    )
+
+    message = await build_add_result_message(
+        result,
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    segments = list(message)
+    text_values = [str(segment) for segment in segments if segment.type == "text"]
+    full_text = "".join(text_values)
+    assert full_text.startswith("词条已提交审核\nID: 12\n状态: pending\n触发:\n")
+    assert "\n响应:\n" in full_text
+    assert (
+        "\n范围: current_group\n概率: 1\n权重: 3\n管理员通过前不会触发。" in full_text
+    )
+    assert sum(1 for segment in segments if segment.type == "image") == 2
+    assert "[图片:8]" not in str(message)
+    assert "[图片:7]" not in str(message)
+    assert [call.args for call in load_canonical_storage_bytes.await_args_list] == [
+        (8,),
+        (7,),
+    ]
 
 
 @pytest.mark.asyncio
@@ -140,13 +186,46 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
 
     segments = list(message)
     text_values = [str(segment) for segment in segments if segment.type == "text"]
-    assert text_values[0].endswith("触发: 晚安\n响应:\n")
-    assert text_values[-1].startswith(
+    full_text = "".join(text_values)
+    assert full_text.startswith("新增词条待审核\nID: 12\n触发: 晚安\n响应:\n")
+    assert (
         "\n范围: current_group\n概率: 1\n权重: 3\n提交者: 10001\n来源群: 20001"
+        in full_text
     )
     assert any(segment.type == "image" for segment in segments)
     assert "消息回复如下" not in str(message)
     load_canonical_storage_bytes.assert_awaited_once_with(7)
+
+
+@pytest.mark.asyncio
+async def test_build_pending_approval_notice_message_rebuilds_image_trigger() -> None:
+    load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    result = _result(
+        trigger_text="[图片:8]",
+        trigger_shape=shape_from_image(8),
+        response_text="做个好梦",
+        response_shape=shape_from_text("做个好梦"),
+    )
+
+    message = await build_pending_approval_notice_message(
+        result,
+        event=_event(),
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    segments = list(message)
+    text_values = [str(segment) for segment in segments if segment.type == "text"]
+    full_text = "".join(text_values)
+    assert full_text.startswith("新增词条待审核\nID: 12\n触发:\n")
+    assert "\n响应: 做个好梦\n" in full_text
+    assert sum(1 for segment in segments if segment.type == "image") == 1
+    assert "[图片:8]" not in str(message)
+    load_canonical_storage_bytes.assert_awaited_once_with(8)
 
 
 @pytest.mark.asyncio

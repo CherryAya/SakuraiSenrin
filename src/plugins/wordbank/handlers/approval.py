@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any
 
-from nonebot.adapters.onebot.v11 import Message
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 
 from src.config import config
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.messages import text_message
+from src.lib.messages import empty_message, text_message
 from src.logger import logger
+from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services import (
     format_add_result,
     format_response_summary,
@@ -30,6 +32,13 @@ APPROVAL_APPROVE_ALIASES = {"y", "approve", "通过", "同意", "批准"}
 APPROVAL_REJECT_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
 APPROVAL_REPLY_ALIASES = APPROVAL_APPROVE_ALIASES | APPROVAL_REJECT_ALIASES
 _background_tasks: set[asyncio.Task[None]] = set()
+
+
+@dataclass(slots=True, frozen=True)
+class _RenderedShapeField:
+    label: str
+    summary: str
+    rendered_message: Message
 
 
 def extract_sent_message_id(result: Any) -> str | None:
@@ -103,40 +112,87 @@ async def _append_response_image(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> Message:
-    response_shape = result.response_shape
-    if response_shape is None or response_shape.is_empty():
-        return text_message(text)
-    if all(atom.kind == "text" for atom in response_shape.atoms):
-        return text_message(text)
-    summary = format_response_summary(result.response_text, shape=response_shape)
-    return _embed_response_shape(
-        text=text,
-        summary=summary,
-        rendered_response=await render_shape_message(
-            response_shape,
-            media_service,
-            locale=locale,
-        ),
+    rendered_fields = await _collect_rendered_shape_fields(
+        result,
         locale=locale,
+        media_service=media_service,
+    )
+    return _embed_rendered_shapes(
+        text=text,
+        rendered_fields=rendered_fields,
     )
 
 
-def _embed_response_shape(
+async def _collect_rendered_shape_fields(
+    result: WordbankAddResult,
+    *,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> tuple[_RenderedShapeField, ...]:
+    fields: list[_RenderedShapeField] = []
+    for label_key, summary_text, shape in (
+        ("wordbank.approval.trigger_label", result.trigger_text, result.trigger_shape),
+        (
+            "wordbank.approval.response_label",
+            result.response_text,
+            result.response_shape,
+        ),
+    ):
+        if not _should_render_shape(shape):
+            continue
+        assert shape is not None
+        fields.append(
+            _RenderedShapeField(
+                label=tr(locale, label_key),
+                summary=format_response_summary(summary_text, shape=shape),
+                rendered_message=await render_shape_message(
+                    shape,
+                    media_service,
+                    locale=locale,
+                ),
+            )
+        )
+    return tuple(fields)
+
+
+def _should_render_shape(shape: MessageShape | None) -> bool:
+    return (
+        shape is not None
+        and not shape.is_empty()
+        and not all(atom.kind == "text" for atom in shape.atoms)
+    )
+
+
+def _embed_rendered_shapes(
     *,
     text: str,
-    summary: str,
-    rendered_response: Message,
-    locale: LocaleCode = "zh-CN",
+    rendered_fields: tuple[_RenderedShapeField, ...],
 ) -> Message:
-    response_label = tr(locale, "wordbank.approval.response_label")
-    marker = f"{response_label} {summary}"
-    if marker not in text:
-        return text_message(text) + rendered_response
+    if not rendered_fields:
+        return text_message(text)
 
-    prefix, _, suffix = text.partition(marker)
-    message = text_message(prefix + f"{response_label}\n")
-    message += rendered_response
-    message += text_message(suffix)
+    fields_by_marker = {
+        f"{field.label} {field.summary}": field for field in rendered_fields
+    }
+    used_markers: set[str] = set()
+    message = empty_message()
+    for line in text.splitlines(keepends=True):
+        line_body = line.rstrip("\r\n")
+        line_ending = line[len(line_body) :]
+        field = fields_by_marker.get(line_body)
+        if field is None:
+            message += MessageSegment.text(line)
+            continue
+        used_markers.add(line_body)
+        message += MessageSegment.text(f"{field.label}\n")
+        message += field.rendered_message
+        if line_ending:
+            message += MessageSegment.text(line_ending)
+
+    for marker, field in fields_by_marker.items():
+        if marker in used_markers:
+            continue
+        message += field.rendered_message
     return message
 
 

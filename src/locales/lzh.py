@@ -31,6 +31,7 @@ CATALOG: Final[dict[str, str]] = {
     "docs.feature.shortcuts": "快捷入口:",
     "docs.feature.trigger_example": "指令示例: {command}",
     "docs.feature.not_found": "未得子功能文檔: {query}",
+    "wordbank.approval.trigger_label": "觸發:",
     "wordbank.approval.response_label": "響應:",
     "help.index.hint": "發 #help <插件名> 以觀詳文。",
     "help.index.header": "📖 ===== 幫助文檔 =====",
