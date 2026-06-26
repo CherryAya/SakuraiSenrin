@@ -62,7 +62,7 @@ from src.plugins.wordbank.text_parsing import has_meaningful_text, split_command
 from .media_helpers import (
     build_shape_from_text_and_images,
     shape_from_response_parts,
-    shape_from_text_value,
+    shape_from_trigger_text_value,
 )
 from .mutation import (
     build_mutation_actor,
@@ -143,7 +143,7 @@ async def handle_add_text_result(
 ) -> WordbankAddResult:
     parsed = parse_text_add_args(text)
     return await service.add_message_entry(
-        trigger_shape=shape_from_text_value(parsed.trigger_text),
+        trigger_shape=shape_from_trigger_text_value(parsed.trigger_text),
         response_shape=shape_from_response_parts(parsed.response_text),
         raw_rule=parsed.raw_rule,
         group_id=str(getattr(event, "group_id", "")),
@@ -197,7 +197,7 @@ async def handle_add_with_media_result(
             )
         image = await media_service.ingest_image_bytes(image_bytes)
         return await service.add_message_entry(
-            trigger_shape=shape_from_text_value(trigger_text),
+            trigger_shape=shape_from_trigger_text_value(trigger_text),
             response_shape=shape_from_image(image.canonical_id),
             raw_rule=parsed.raw_rule,
             group_id=group_id,
@@ -209,7 +209,7 @@ async def handle_add_with_media_result(
     if trigger_text:
         image = await media_service.ingest_image_bytes(image_bytes)
         return await service.add_message_entry(
-            trigger_shape=shape_from_text_value(trigger_text),
+            trigger_shape=shape_from_trigger_text_value(trigger_text),
             response_shape=shape_from_response_parts(
                 response_text,
                 image_id=image.canonical_id,
@@ -280,7 +280,7 @@ async def handle_study_shortcut_result(
     is_group = isinstance(event, GroupMessageEvent)
     trigger, response, raw_rule = parse_legacy_study_text(text, is_group=is_group)
     return await service.add_message_entry(
-        trigger_shape=shape_from_text_value(trigger),
+        trigger_shape=shape_from_trigger_text_value(trigger),
         response_shape=shape_from_response_parts(response),
         raw_rule=raw_rule,
         group_id=str(getattr(event, "group_id", "")),
@@ -392,7 +392,7 @@ async def handle_study_media_with_rule_result(
     if pair is None:
         response_image = await media_service.ingest_image_bytes(image_bytes[0])
         return await service.add_message_entry(
-            trigger_shape=shape_from_text_value(source),
+            trigger_shape=shape_from_trigger_text_value(source),
             response_shape=shape_from_image(response_image.canonical_id),
             raw_rule=raw_rule,
             group_id=group_id,
@@ -404,7 +404,7 @@ async def handle_study_media_with_rule_result(
     if trigger_text:
         response_image = await media_service.ingest_image_bytes(image_bytes[0])
         return await service.add_message_entry(
-            trigger_shape=shape_from_text_value(trigger_text),
+            trigger_shape=shape_from_trigger_text_value(trigger_text),
             response_shape=shape_from_response_parts(
                 response_text,
                 image_id=response_image.canonical_id,
@@ -662,6 +662,7 @@ async def handle_trigger_content_update(
         media_service,
         text=text,
         message=raw_message,
+        parse_trigger_text=True,
     )
     if await service.update_trigger_content(
         trigger_group_id,

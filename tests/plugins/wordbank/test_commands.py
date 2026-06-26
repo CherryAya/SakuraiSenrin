@@ -36,6 +36,7 @@ from src.plugins.wordbank.handlers.parsers import (
 from src.plugins.wordbank.message_model import (
     MessageShape,
     combine_shapes,
+    shape_from_event,
     shape_from_image,
     shape_from_message,
     shape_from_text,
@@ -316,6 +317,50 @@ async def test_handle_add_text_result_calls_add_message_entry_with_text_shapes()
 
 
 @pytest.mark.asyncio
+async def test_handle_add_text_result_parses_event_trigger_shape() -> None:
+    add_message_entry = AsyncMock(
+        return_value=_add_result(trigger_text="[事件:event:poke]")
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add event:poke => 别戳啦")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="event:poke => 别戳啦",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_event("event:poke")
+    assert shape_to_summary_text(kwargs["response_shape"]) == "别戳啦"
+
+
+@pytest.mark.asyncio
+async def test_handle_add_text_result_allows_escaped_event_literal_trigger() -> None:
+    add_message_entry = AsyncMock(return_value=_add_result(trigger_text="event:poke"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add \\event:poke => 当文本处理")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="\\event:poke => 当文本处理",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_text("event:poke")
+    assert shape_to_summary_text(kwargs["response_shape"]) == "当文本处理"
+
+
+@pytest.mark.asyncio
 async def test_handle_add_text_result_preserves_response_whitespace_verbatim() -> None:
     add_message_entry = AsyncMock(return_value=_add_result())
     service = cast(
@@ -509,9 +554,11 @@ async def test_handle_trigger_content_update_builds_shape_and_passes_context(
         *,
         text: str,
         message: Message,
+        parse_trigger_text: bool = False,
     ) -> MessageShape:
         assert text == "新触发"
         assert str(message) == "#wordbank trigger set 18 新触发"
+        assert parse_trigger_text is True
         return shape_from_text(f"{text} [图片:9]")
 
     monkeypatch.setattr(
@@ -739,7 +786,7 @@ async def test_dispatch_wordbank_command_requires_raw_message_for_response_set()
 async def test_build_shape_from_text_and_images_combines_text_and_media(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src.plugins.wordbank.handlers import commands as commands_module
+    from src.plugins.wordbank.handlers import media_helpers
 
     async def _fetch_image_bytes(
         _message: Message,
@@ -750,7 +797,7 @@ async def test_build_shape_from_text_and_images_combines_text_and_media(
         return (b"image-bytes",)
 
     monkeypatch.setattr(
-        commands_module,
+        media_helpers,
         "fetch_image_bytes_from_message",
         _fetch_image_bytes,
     )
@@ -768,6 +815,36 @@ async def test_build_shape_from_text_and_images_combines_text_and_media(
     )
 
     assert shape_to_summary_text(shape) == "新的响应 [图片:9]"
+
+
+@pytest.mark.asyncio
+async def test_build_shape_from_text_and_images_keeps_event_literal_for_response_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.wordbank.handlers import media_helpers
+
+    async def _fetch_image_bytes(
+        _message: Message,
+        *,
+        limit: int = 4,
+    ) -> tuple[bytes, ...]:
+        _ = limit
+        return ()
+
+    monkeypatch.setattr(
+        media_helpers,
+        "fetch_image_bytes_from_message",
+        _fetch_image_bytes,
+    )
+    media_service = cast(WordbankMediaService, SimpleNamespace())
+
+    shape = await build_shape_from_text_and_images(
+        media_service,
+        text="event:poke",
+        message=empty_message(),
+    )
+
+    assert shape == shape_from_text("event:poke")
 
 
 @pytest.mark.asyncio
@@ -797,7 +874,7 @@ async def test_handle_guided_add_shape_result_uses_scope_and_strict_mode() -> No
 async def test_build_message_shape_from_message_preserves_mixed_segments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src.plugins.wordbank.handlers import commands as commands_module
+    from src.plugins.wordbank.handlers import media_helpers
 
     async def _fetch_image_bytes(
         _url: str,
@@ -809,7 +886,7 @@ async def test_build_message_shape_from_message_preserves_mixed_segments(
         return b"image-bytes"
 
     monkeypatch.setattr(
-        commands_module,
+        media_helpers,
         "fetch_image_bytes_with_retry",
         _fetch_image_bytes,
     )
@@ -825,7 +902,7 @@ async def test_build_message_shape_from_message_preserves_mixed_segments(
         empty_message()
         + MessageSegment.at("10002")
         + MessageSegment.text("早安")
-        + MessageSegment.image("https://example.test/a.png"),
+        + MessageSegment("image", {"url": "https://example.test/a.png"}),
     )
 
     assert shape_to_summary_text(shape) == "[@:10002] 早安 [图片:7]"
@@ -915,6 +992,52 @@ async def test_handle_guided_study_shape_result_builds_rules_and_shapes() -> Non
     assert kwargs["raw_rule"]["weight"] == 4
     assert shape_to_summary_text(kwargs["trigger_shape"]) == "晚安"
     assert shape_to_summary_text(kwargs["response_shape"]) == "做个好梦"
+
+
+@pytest.mark.asyncio
+async def test_handle_study_shortcut_result_parses_event_trigger_shape() -> None:
+    add_message_entry = AsyncMock(
+        return_value=_add_result(trigger_text="[事件:event:join]")
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#study event:join => 欢迎加入")
+
+    await commands_module.handle_study_shortcut_result(
+        service,
+        event=event,
+        text="event:join => 欢迎加入",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_event("event:join")
+    assert shape_to_summary_text(kwargs["response_shape"]) == "欢迎加入"
+
+
+@pytest.mark.asyncio
+async def test_handle_add_text_result_keeps_event_literal_in_response_plain_text() -> (
+    None
+):
+    add_message_entry = AsyncMock(return_value=_add_result(response_text="event:poke"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add 晚安 => event:poke")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="晚安 => event:poke",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_text("晚安")
+    assert kwargs["response_shape"] == shape_from_text("event:poke")
 
 
 @pytest.mark.asyncio

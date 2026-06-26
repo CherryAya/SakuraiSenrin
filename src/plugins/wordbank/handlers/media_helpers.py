@@ -13,6 +13,7 @@ from src.plugins.wordbank.message_model import (
     shape_from_image,
     shape_from_message,
     shape_from_text,
+    shape_from_trigger_text,
 )
 from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.services.media import WordbankMediaService
@@ -81,6 +82,10 @@ def shape_from_text_value(text: str) -> MessageShape:
     return shape_from_text(text)
 
 
+def shape_from_trigger_text_value(text: str) -> MessageShape:
+    return shape_from_trigger_text(text)
+
+
 def shape_from_response_parts(
     text: str, *, image_id: int | None = None
 ) -> MessageShape:
@@ -91,7 +96,7 @@ def shape_from_response_parts(
 
 
 def shape_from_trigger_parts(text: str, *, image_id: int | None = None) -> MessageShape:
-    parts = [shape_from_text_value(text)]
+    parts = [shape_from_trigger_text_value(text)]
     if image_id is not None:
         parts.append(shape_from_image(image_id))
     return combine_shapes(*parts)
@@ -120,6 +125,7 @@ async def build_shape_from_text_and_images(
     text: str,
     message: Message,
     image_limit: int = GUIDED_MESSAGE_IMAGE_LIMIT,
+    parse_trigger_text: bool = False,
 ) -> MessageShape:
     image_bytes_items = await fetch_image_bytes_from_message(
         message,
@@ -127,7 +133,12 @@ async def build_shape_from_text_and_images(
     )
     parts: list[MessageShape] = []
     if has_meaningful_text(text):
-        parts.append(shape_from_text(text))
+        text_shape = (
+            shape_from_trigger_text_value(text)
+            if parse_trigger_text
+            else shape_from_text_value(text)
+        )
+        parts.append(text_shape)
     for image_bytes in image_bytes_items:
         image = await media_service.ingest_image_bytes(image_bytes)
         parts.append(shape_from_image(image.canonical_id))

@@ -47,7 +47,7 @@ from src.lib.interactive_recall import (
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.plugins.wordbank.handlers.commands import _default_i18n_text
-from src.plugins.wordbank.message_model import MessageShape, shape_from_text
+from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.text_parsing import has_meaningful_text
 
 name = tr("zh-CN", "plugin.study.name")
@@ -216,6 +216,9 @@ async def _start_guided_study_from_partial_args(
         parse_study_group_block_choice,
         parse_study_mode_choice,
     )
+    from src.plugins.wordbank.handlers.media_helpers import (
+        shape_from_trigger_text_value,
+    )
     from src.plugins.wordbank.services import wordbank_service
     from src.plugins.wordbank.services.rules import RuleError
     from src.plugins.wordbank.text_parsing import rest_after_token, tokenize_shell_like
@@ -266,7 +269,7 @@ async def _start_guided_study_from_partial_args(
         return True
 
     if len(tokens) == 3 and not has_images:
-        state["study_trigger_shape"] = shape_from_text(trigger_text)
+        state["study_trigger_shape"] = shape_from_trigger_text_value(trigger_text)
         state["study_trigger_preloaded"] = True
         state["study_response_after_preloaded_trigger"] = True
         await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
@@ -293,12 +296,19 @@ async def _record_study_trigger(
     locale: LocaleCode,
 ) -> None:
     from src.plugins.wordbank.handlers import build_message_shape_from_message
+    from src.plugins.wordbank.handlers.media_helpers import (
+        shape_from_trigger_text_value,
+    )
     from src.plugins.wordbank.services import wordbank_media_service
 
-    shape = await build_message_shape_from_message(
-        wordbank_media_service,
-        event.message,
-    )
+    plain_text = event.message.extract_plain_text()
+    if has_meaningful_text(plain_text) and len(event.message) == 1:
+        shape = shape_from_trigger_text_value(plain_text)
+    else:
+        shape = await build_message_shape_from_message(
+            wordbank_media_service,
+            event.message,
+        )
     if shape.is_empty():
         await _reject_study_error(
             matcher,

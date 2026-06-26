@@ -32,6 +32,13 @@
 > 如果你还想控制生效范围，就回到上面的传统参数式。
 
 > [!TIP]
+> 触发词也支持事件写法，例如 `event:at`、`event:poke`、`event:join`、`event:leave`。
+>
+> 事件解析只作用于触发词；响应词中的 `event:*` 会按普通文本原样保存和发送。
+>
+> 如果你要录入字面量文本 `event:poke`，请写成 `\event:poke`；如果要录入字面量 `\event:poke`，请写成 `\\event:poke`。
+
+> [!TIP]
 > 引导模式：`study` / `学习`
 >
 > 不带参数直接发送时，凛凛会按顺序一步一步问你，适合不想记参数、或者准备慢慢确认配置的时候使用。
@@ -77,7 +84,7 @@ BOT: 是否开启群组隔离？
 t. 开启，仅当前群聊有效
 f. 关闭，按触发方式跨群或私聊生效
 USER: t
-BOT: 请输入触发词，或直接发送图片作为图片触发：
+BOT: 请输入触发词，或直接发送图片作为图片触发；也可用 event:poke / event:at 等事件触发，若要录入字面量 event:* 请在前面加 \：
 USER: 晚安
 BOT: 请输入响应词，或发送图片作为图片回复：
 USER: 做个好梦
@@ -100,6 +107,18 @@ ID: 18
 状态: pending
 触发: [图片:8]
 响应: 这张图我记住了
+模式: fullmatch
+范围: current_group
+概率: 1
+权重: 3
+管理员通过前不会触发。
+SECTION: 事件触发词
+USER: #study event:poke => 别戳啦
+BOT: 词条已提交审核
+ID: 19
+状态: pending
+触发: [事件:event:poke]
+响应: 别戳啦
 模式: fullmatch
 范围: current_group
 概率: 1

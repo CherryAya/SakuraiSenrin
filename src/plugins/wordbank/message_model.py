@@ -17,6 +17,20 @@ from src.lib.messages import empty_message
 MessageAtomKind = Literal["text", "image", "at", "event"]
 MessageAtomPayload = dict[str, int | str]
 _SPACE_RE = re.compile(r"\s+")
+EVENT_TRIGGER_ESCAPED_PREFIX = "\\"
+EVENT_TRIGGER_NAMES = frozenset(
+    {
+        "event:at",
+        "event:mention",
+        "event:poke",
+        "event:join",
+        "event:group_join",
+        "event:group_increase",
+        "event:leave",
+        "event:group_leave",
+        "event:group_decrease",
+    }
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -61,6 +75,28 @@ def shape_from_image(canonical_image_id: int) -> MessageShape:
 def shape_from_event(event_name: str) -> MessageShape:
     normalized = normalize_text(event_name, casefold=False)
     return MessageShape((MessageAtom(kind="event", event_name=normalized),))
+
+
+def shape_from_trigger_text(text: str) -> MessageShape:
+    event_name = extract_event_trigger_name(text)
+    if event_name is not None:
+        return shape_from_event(event_name)
+    return shape_from_text(unescape_trigger_text_literal(text))
+
+
+def extract_event_trigger_name(text: str) -> str | None:
+    normalized = normalize_text(text, casefold=True)
+    if normalized.startswith(EVENT_TRIGGER_ESCAPED_PREFIX):
+        return None
+    return normalized if normalized in EVENT_TRIGGER_NAMES else None
+
+
+def unescape_trigger_text_literal(text: str) -> str:
+    if not text.startswith(EVENT_TRIGGER_ESCAPED_PREFIX):
+        return text
+    if len(text) >= 2 and text[1] == EVENT_TRIGGER_ESCAPED_PREFIX:
+        return text[1:]
+    return text[1:]
 
 
 def combine_shapes(*shapes: MessageShape) -> MessageShape:

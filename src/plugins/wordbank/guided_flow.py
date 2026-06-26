@@ -30,12 +30,14 @@ from src.plugins.wordbank.handlers.commands import (
     ParsedSearch,
     _default_i18n_text,
 )
+from src.plugins.wordbank.handlers.media_helpers import shape_from_trigger_text_value
 from src.plugins.wordbank.handlers.parsers import (
     parse_search_session_command,
 )
 from src.plugins.wordbank.handlers.reply import parse_view_reply_for_search_result
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services.rules import RuleError
+from src.plugins.wordbank.text_parsing import has_meaningful_text
 
 GUIDED_MAX_ERRORS = 3
 WORDBANK_GUIDED_STEP_TRIGGER = 1
@@ -161,10 +163,14 @@ async def record_guided_trigger(
     *,
     media_service: Any,
 ) -> None:
-    shape = await build_message_shape_from_message(
-        media_service,
-        event.message,
-    )
+    plain_text = event.message.extract_plain_text()
+    if has_meaningful_text(plain_text) and len(event.message) == 1:
+        shape = shape_from_trigger_text_value(plain_text)
+    else:
+        shape = await build_message_shape_from_message(
+            media_service,
+            event.message,
+        )
     if shape.is_empty():
         await reject_guided_error(
             matcher,
