@@ -213,11 +213,49 @@ async def test_admin_backup_run_returns_backup_result(
 
 
 @pytest.mark.asyncio
+async def test_admin_backup_restore_reloads_local_runtime_state(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = build_private_message_event("#admin.backup restore latest", user_id=SUPERUSER_ID)
+
+    from src.plugins.admin import backup as backup_plugin
+
+    restored: list[str] = []
+
+    async def _restore_remote_snapshot_into_local(*, snapshot: str) -> None:
+        restored.append(snapshot)
+
+    monkeypatch.setattr(
+        backup_plugin,
+        "restore_remote_snapshot_into_local",
+        _restore_remote_snapshot_into_local,
+    )
+    expected = "\n".join(
+        [
+            tr("zh-CN", "admin.backup.restore.completed"),
+            tr("zh-CN", "admin.backup.restore.snapshot", snapshot_id="latest"),
+        ]
+    )
+
+    async with app.test_matcher(admin_backup) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            expected,
+            bot=bot,
+        )
+
+    assert restored == ["latest"]
+
+
+@pytest.mark.asyncio
 async def test_help_can_find_admin_backup_docs(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    event = build_group_message_event("#help 备份管理模块")
+    event = build_group_message_event("#help 备份管理模块", user_id=SUPERUSER_ID)
     entries = _iter_docs_entries("zh-CN")
     backup_entry = next(
         entry for entry in entries if entry.display_name == "备份管理模块"

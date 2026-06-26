@@ -32,6 +32,20 @@ def test_run_restore_parse_args_requires_target(
     assert args.target == "./data/restore-check"
 
 
+def test_run_restore_parse_args_supports_apply_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        ["run_restore.py", "latest", "--apply-local"],
+    )
+
+    args = run_restore_script.parse_args()
+
+    assert args.snapshot == "latest"
+    assert args.apply_local is True
+
+
 @pytest.mark.asyncio
 async def test_run_backup_main_executes_force_flow(
     monkeypatch: pytest.MonkeyPatch,
@@ -135,5 +149,39 @@ async def test_run_restore_main_executes_restore(
         "target": Path("./data/restore-check"),
     }
     assert "restore completed: latest -> ./data/restore-check" in str(
+        captured["success"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_restore_main_can_apply_local_restore(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = argparse.Namespace(snapshot="latest", target=None, apply_local=True)
+    captured: dict[str, Any] = {}
+
+    async def _restore_remote_snapshot_into_local(*, snapshot: str) -> None:
+        captured["restore"] = {"snapshot": snapshot}
+
+    monkeypatch.setattr(run_restore_script.nonebot, "init", lambda: None)
+    monkeypatch.setattr(run_restore_script, "parse_args", lambda: args)
+    monkeypatch.setattr(
+        run_restore_script.logger,
+        "success",
+        lambda message: captured.__setitem__("success", message),
+    )
+
+    from src.services import startup_sync as startup_sync_module
+
+    monkeypatch.setattr(
+        startup_sync_module,
+        "restore_remote_snapshot_into_local",
+        _restore_remote_snapshot_into_local,
+    )
+
+    await run_restore_script.main()
+
+    assert captured["restore"] == {"snapshot": "latest"}
+    assert "restore completed and applied locally: latest" in str(
         captured["success"]
     )

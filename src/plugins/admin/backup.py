@@ -27,6 +27,7 @@ from src.services.backup import (
     build_backup_service_from_config,
     build_default_backup_plan,
 )
+from src.services.startup_sync import restore_remote_snapshot_into_local
 
 name = tr("zh-CN", "plugin.admin_backup.name")
 description = tr("zh-CN", "plugin.admin_backup.description")
@@ -149,6 +150,13 @@ def _parse_limit(raw: str | None) -> int:
     return limit
 
 
+def _parse_restore_snapshot(raw: str | None) -> str:
+    snapshot = (raw or "").strip()
+    if not snapshot:
+        raise ValueError("admin.backup.restore.snapshot_required")
+    return snapshot
+
+
 @admin_backup.handle()
 async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
@@ -218,6 +226,29 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
                 await matcher.finish(tr(locale, "admin.backup.run.skipped"))
                 return
             await matcher.finish(_format_run_result(locale, result))
+            return
+
+        if action == "restore":
+            try:
+                snapshot = _parse_restore_snapshot(args[1] if len(args) > 1 else None)
+            except ValueError:
+                await matcher.finish(
+                    _build_error_demo(
+                        locale,
+                        tr(locale, "admin.backup.restore.snapshot_required"),
+                        "restore",
+                    )
+                )
+                return
+            await restore_remote_snapshot_into_local(snapshot=snapshot)
+            await matcher.finish(
+                "\n".join(
+                    [
+                        tr(locale, "admin.backup.restore.completed"),
+                        tr(locale, "admin.backup.restore.snapshot", snapshot_id=snapshot),
+                    ]
+                )
+            )
             return
 
         await matcher.finish(

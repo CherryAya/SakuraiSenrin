@@ -136,15 +136,19 @@ async def handle_startup_sync_reply(bot: Bot, *, reply_message_id: str, text: st
 
 
 async def restore_latest_remote_snapshot_into_local(*, snapshot_id: str) -> None:
+    await restore_remote_snapshot_into_local(snapshot=snapshot_id)
+
+
+async def restore_remote_snapshot_into_local(*, snapshot: str) -> None:
     global _restore_in_progress
     async with _restore_lock:
         _restore_in_progress = True
         service = build_backup_service_from_config()
-        restore_root = service.local_root / "restore" / snapshot_id
+        restore_root = service.local_root / "restore" / snapshot
         if restore_root.exists():
             await asyncio.to_thread(shutil.rmtree, restore_root, True)
         try:
-            await service.restore(snapshot=snapshot_id, target=restore_root)
+            await service.restore(snapshot=snapshot, target=restore_root)
             manifest_path = _find_restore_manifest_path(restore_root)
             manifest = _load_restore_manifest(manifest_path)
             await _apply_restore_manifest(manifest, manifest_path.parent)
@@ -348,6 +352,7 @@ def _parse_restic_snapshot_time(raw_time: str | None) -> int | None:
 __all__ = [
     "handle_startup_sync_reply",
     "is_startup_sync_reply_text",
+    "restore_remote_snapshot_into_local",
     "resolve_startup_sync_reply_decision",
     "restore_latest_remote_snapshot_into_local",
     "run_startup_backup_freshness_check",
