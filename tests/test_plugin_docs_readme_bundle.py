@@ -549,6 +549,7 @@ def test_support_text_block_contains_group_ids_only() -> None:
     block = plugin_docs_meta_module.support_text_block("zh-CN")
 
     assert "反馈与交流群" in block
+    assert "如需进一步支持" not in block
     assert "群号 1107576103" in block
     assert "群号 729530250" in block
 

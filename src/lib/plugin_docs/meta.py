@@ -51,7 +51,7 @@ def support_bundle(locale: LocaleCode) -> HelpSupportBundle:
 
 def support_text_block(locale: LocaleCode) -> str:
     bundle = support_bundle(locale)
-    lines = [bundle.title, bundle.tip_text, ""]
+    lines = [bundle.title, ""]
     lines.extend(f"群号 {group.group_id}" for group in bundle.groups)
     return "\n".join(lines).strip()
 

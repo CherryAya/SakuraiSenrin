@@ -98,6 +98,7 @@ def test_render_doc_node_overview_formats_multi_section_commands() -> None:
     assert "查看周期榜单" in rendered
     assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
     assert "反馈与交流群" in rendered
+    assert rendered.count("如需进一步支持，请联系管理员，或从下方反馈群入口中任选其一加入 💬。") == 1
     assert "群号 1107576103" in rendered
 
 
