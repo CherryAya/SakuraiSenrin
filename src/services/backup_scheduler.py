@@ -5,7 +5,6 @@ from __future__ import annotations
 from nonebot import require
 
 from src.logger import logger
-from src.services.startup_sync import ensure_restore_not_in_progress
 
 
 def install_backup_scheduler() -> None:
@@ -14,6 +13,7 @@ def install_backup_scheduler() -> None:
         build_backup_service_from_config,
         build_default_backup_plan,
     )
+    from src.services.startup_sync import ensure_restore_not_in_progress
 
     if not config.BACKUP_ENABLED:
         return

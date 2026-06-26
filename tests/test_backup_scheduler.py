@@ -101,8 +101,10 @@ async def test_install_backup_scheduler_registers_and_runs_job(
         lambda: _Service(),
     )
     guard_calls: list[str] = []
+    from src.services import startup_sync as startup_sync_module
+
     monkeypatch.setattr(
-        scheduler_module,
+        startup_sync_module,
         "ensure_restore_not_in_progress",
         lambda *, source: guard_calls.append(source),
     )

@@ -12,9 +12,7 @@ from nonebot.adapters.onebot.v11 import Bot
 
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.scripts.install import init_fonts
-from src.services.backup_scheduler import install_backup_scheduler
 from src.services.db import init_db
-from src.services.startup_sync import run_startup_backup_freshness_check
 from src.services.sync import (
     sync_groups_from_api,
     sync_users_from_api,
@@ -22,6 +20,9 @@ from src.services.sync import (
 
 init_fonts()
 nonebot.init()
+
+from src.services.backup_scheduler import install_backup_scheduler
+from src.services.startup_sync import run_startup_backup_freshness_check
 
 driver = nonebot.get_driver()
 driver.register_adapter(OneBotV11Adapter)
