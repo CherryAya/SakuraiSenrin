@@ -32,7 +32,17 @@
 > 如果你还想控制生效范围，就回到上面的传统参数式。
 
 > [!TIP]
-> 触发词也支持事件写法，例如 `event:at`、`event:poke`、`event:join`、`event:leave`。
+> 触发词支持以下事件写法：
+>
+> - `event:at` -> `@` 到机器人
+> - `event:mention` -> 提及机器人
+> - `event:poke` -> 戳一戳
+> - `event:join` -> 入群
+> - `event:group_join` -> 入群
+> - `event:group_increase` -> 群成员增加
+> - `event:leave` -> 离群
+> - `event:group_leave` -> 离群
+> - `event:group_decrease` -> 群成员减少
 >
 > 事件解析只作用于触发词；响应词中的 `event:*` 会按普通文本原样保存和发送。
 >
@@ -43,7 +53,7 @@
 >
 > 不带参数直接发送时，凛凛会按顺序一步一步问你，适合不想记参数、或者准备慢慢确认配置的时候使用。
 >
-> 引导过程中输入 `revoke` 或 `recall` 会直接取消当前会话。
+> 引导过程中输入 `revoke` / `recall` / `exit` 会直接取消当前会话。
 
 > [!TIP]
 > 撤回规则
@@ -54,7 +64,7 @@
 > - 撤回最近一步成功输入：回退到当前步骤重做
 > - 撤回更早的旧步骤消息：无效
 >
-> 手动输入 `revoke/recall` 是“整段取消”，真实撤回最近一步消息才是“只回退当前步骤”。
+> 手动输入 `revoke/recall/exit` 是“整段取消”，真实撤回最近一步消息才是“只回退当前步骤”。
 
 ## 前置条件
 词条需要通过审核后才会触发
@@ -79,16 +89,33 @@ USER: #study
 BOT: 请选择触发方式：
 a. 对所有人有效
 m. 仅对自己有效
+输入 revoke / recall / exit 可取消本次操作。
 USER: a
 BOT: 是否开启群组隔离？
 t. 开启，仅当前群聊有效
 f. 关闭，按触发方式跨群或私聊生效
+输入 revoke / recall / exit 可取消本次操作。
 USER: t
-BOT: 请输入触发词，或直接发送图片作为图片触发；也可用 event:poke / event:at 等事件触发，若要录入字面量 event:* 请在前面加 \：
+BOT: 请输入触发词，或直接发送图片作为图片触发。
+支持的事件触发词：
+- event:at -> @到机器人
+- event:mention -> 提及机器人
+- event:poke -> 戳一戳
+- event:join -> 入群
+- event:group_join -> 入群
+- event:group_increase -> 群成员增加
+- event:leave -> 离群
+- event:group_leave -> 离群
+- event:group_decrease -> 群成员减少
+如果要录入字面量 event:*，请在前面加 \\，例如 \event:poke。
+输入 revoke / recall / exit 可取消本次操作。
 USER: 晚安
-BOT: 请输入响应词，或发送图片作为图片回复：
+BOT: 请输入响应词，或发送图片作为图片回复。
+响应词里的 event:* 会按普通文本原样发送。
+输入 revoke / recall / exit 可取消本次操作。
 USER: 做个好梦
-BOT: 请输入响应词权重，1-5 之间的数字；直接发送 3 可用默认权重：
+BOT: 请输入响应词权重，1-5 之间的数字；直接发送 3 可用默认权重。
+输入 revoke / recall / exit 可取消本次操作。
 USER: 3
 BOT: 词条已提交审核
 ID: 17
@@ -129,7 +156,8 @@ USER: #study
 BOT: 请选择触发方式：
 a. 对所有人有效
 m. 仅对自己有效
-USER: revoke
+输入 revoke / recall / exit 可取消本次操作。
+USER: exit
 BOT: 本次操作已被取消。
 SYSTEM: 撤回最初发送的 `#study` 也会直接取消整段会话；撤回最近一步成功输入则只会重做当前步骤。
 ```

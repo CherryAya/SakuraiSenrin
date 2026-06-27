@@ -63,6 +63,44 @@ async def test_study_without_args_enters_guided_mode_prompt(
 
 
 @pytest.mark.asyncio
+async def test_study_guided_exit_cancels_session(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        wordbank_service,
+        "initialize",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        study_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+
+    async with app.test_matcher(study_plugin.study_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        first = build_group_message_event("#study", message_id=1)
+        second = build_group_message_event("exit", message_id=2)
+
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            tr("zh-CN", "wordbank.guided.study.mode_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(
+            second,
+            tr("zh-CN", "interaction.cancelled"),
+            bot=bot,
+        )
+        ctx.should_finished(study_plugin.study_command)
+
+
+@pytest.mark.asyncio
 async def test_study_partial_args_jump_to_response_prompt(
     app: App,
     monkeypatch: pytest.MonkeyPatch,

@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from src.lib.i18n.runtime import tr
 
-REVOKE_MARKERS = ("revoke", "recall")
+REVOKE_MARKERS = ("revoke", "recall", "exit")
 DEFAULT_ABORT_MESSAGE = tr("zh-CN", "interaction.cancelled")
 DEFAULT_TOO_MANY_ERRORS_MESSAGE = tr("zh-CN", "interaction.too_many_errors")
 INTERACTION_ERROR_COUNT_KEY = "__interaction_error_count__"

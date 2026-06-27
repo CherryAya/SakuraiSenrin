@@ -59,6 +59,8 @@
 > 不带参数发送 `添加词条` 会进入引导模式。
 >
 > 顺序是 `触发词 -> 响应词 -> 生效范围 -> 高级选项`；图片会在后台下载处理，最终无法下载或识别时不会写入词库。
+>
+> 任一步都可以输入 `revoke` / `recall` / `exit` 直接取消当前会话。
 
 > [!TIP]
 > 提交成功后，词条状态会先是 `pending`。
@@ -66,7 +68,17 @@
 > 在审核通过前，它不会参与被动匹配。
 
 > [!TIP]
-> 触发词支持事件写法，例如 `event:at`、`event:poke`、`event:join`、`event:leave`。
+> 触发词支持以下事件写法：
+>
+> - `event:at` -> `@` 到机器人
+> - `event:mention` -> 提及机器人
+> - `event:poke` -> 戳一戳
+> - `event:join` -> 入群
+> - `event:group_join` -> 入群
+> - `event:group_increase` -> 群成员增加
+> - `event:leave` -> 离群
+> - `event:group_leave` -> 离群
+> - `event:group_decrease` -> 群成员减少
 >
 > 这类特殊解析只作用于“触发词”一侧；响应词里的 `event:*` 会按普通文本原样发送。
 >
@@ -82,17 +94,33 @@
 #### 完整流程
 ```demo
 USER: #添加词条
-BOT: 请输入触发词，或直接发送图片作为图片触发：
+BOT: 请输入触发词，或直接发送图片作为图片触发。
+支持的事件触发词：
+- event:at -> @到机器人
+- event:mention -> 提及机器人
+- event:poke -> 戳一戳
+- event:join -> 入群
+- event:group_join -> 入群
+- event:group_increase -> 群成员增加
+- event:leave -> 离群
+- event:group_leave -> 离群
+- event:group_decrease -> 群成员减少
+如果要录入字面量 event:*，请在前面加 \\，例如 \event:poke。
+输入 revoke / recall / exit 可取消本次操作。
 USER: 晚安
-BOT: 请输入响应词，或发送图片作为图片回复：
+BOT: 请输入响应词，或发送图片作为图片回复。
+响应词里的 event:* 会按普通文本原样发送。
+输入 revoke / recall / exit 可取消本次操作。
 USER: 做个好梦
 BOT: 请选择生效范围：
 1. 当前群（默认）
 2. 所有群
 3. 仅自己
 4. 仅私聊
+输入 revoke / recall / exit 可取消本次操作。
 USER: 1
 BOT: 是否需要高级选项？发送 n 跳过；需要请直接输入参数，例如 --prob 0.5 --weight 3 --role admin --call 60:0:3
+输入 revoke / recall / exit 可取消本次操作。
 USER: n
 BOT: 词条已提交审核
 ID: 12
@@ -129,7 +157,7 @@ ID: 14
 管理员通过前不会触发。
 ```
 #### 失败情况
-触发词或响应词为空、图片失败、规则冲突、参数越界时会提示。引导中输入 `revoke` / `recall` 会发送取消提示并中止；连续输错 3 次会强制终止对话。
+触发词或响应词为空、图片失败、规则冲突、参数越界时会提示。引导中输入 `revoke` / `recall` / `exit` 会发送取消提示并中止；连续输错 3 次会强制终止对话。
 
 ### `add-scope` 生效范围选项
 - 摘要: 选择词条在哪些对象和场景上生效。

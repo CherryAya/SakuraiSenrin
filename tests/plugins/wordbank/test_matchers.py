@@ -65,6 +65,44 @@ async def test_wordbank_add_without_args_enters_guided_trigger_prompt(
 
 
 @pytest.mark.asyncio
+async def test_wordbank_add_guided_exit_cancels_session(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "initialize_wordbank_plugin",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_add_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        first = build_group_message_event("#wordbank.add", message_id=1)
+        second = build_group_message_event("exit", message_id=2)
+
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            tr("zh-CN", "wordbank.guided.add.trigger_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused()
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(
+            second,
+            tr("zh-CN", "interaction.cancelled"),
+            bot=bot,
+        )
+        ctx.should_finished()
+
+
+@pytest.mark.asyncio
 async def test_wordbank_add_direct_success_records_submission(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
