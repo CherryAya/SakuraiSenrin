@@ -37,22 +37,26 @@
 > - `[@]`：凛凛被 `@`
 > - `[提及]`：凛凛被提及
 > - `[戳一戳]`：凛凛被戳一戳
-> - `[新人加入]`：有人进群
-> - `[成员退群]`：有人退群
+> - `[bot加群]`：凛凛自己进群
+> - `[新人加入]`：其他成员进群
+> - `[bot退群]`：凛凛自己退群
+> - `[成员退群]`：其他成员退群
 >
-> 上面这些入口也支持把中括号写成中文全角，例如 `【戳一戳】`、`【新人加入】`。另外像 `[at]`、`[新成员加入]`、`[有人加群]`、`[有人退群]` 这些等效说法也同样可用，不需要全部记住。
+> 上面这些入口也支持把中括号写成中文全角，例如 `【戳一戳】`、`【bot加群】`。另外像 `[at]`、`[新成员加入]`、`[有人加群]`、`[成员加群]`、`[有人退群]`、`[成员离群]` 这些等效说法也同样可用，不需要全部记住。
 >
 > 如果你已经熟悉结构化写法，也兼容标准事件名：
 >
 > - `event:at`
 > - `event:mention`
 > - `event:poke`
+> - `event:bot_join` / `event:member_join`
+> - `event:bot_leave` / `event:member_leave`
 > - `event:join` / `event:group_join` / `event:group_increase`
 > - `event:leave` / `event:group_leave` / `event:group_decrease`
 >
 > 事件解析只作用于触发词；响应词中的 `event:*` 会按普通文本原样保存和发送。
 >
-> 如果你要录入字面量文本 `[戳一戳]`、`【新人加入】` 或 `event:poke`，请在前面加 `\`，例如 `\[戳一戳]`、`\event:poke`；如果要保留开头那个反斜杠本身，再写成 `\\[戳一戳]`、`\\event:poke`。
+> 如果你要录入字面量文本 `[戳一戳]`、`【bot加群】` 或 `event:poke`，请在前面加 `\`，例如 `\[戳一戳]`、`\event:poke`；如果要保留开头那个反斜杠本身，再写成 `\\[戳一戳]`、`\\event:poke`。
 
 > [!TIP]
 > 引导模式：`study` / `学习`
@@ -107,11 +111,13 @@ BOT: 请输入触发词，或直接发送图片作为图片触发。
 - [@] -> 凛凛被 @
 - [提及] -> 凛凛被提及
 - [戳一戳] -> 凛凛被戳一戳
-- [新人加入] -> 有人进群
-- [成员退群] -> 有人退群
+- [bot加群] -> 凛凛自己进群
+- [新人加入] -> 其他成员进群
+- [bot退群] -> 凛凛自己退群
+- [成员退群] -> 其他成员退群
 也支持把中括号写成中文全角，例如【戳一戳】；
-也兼容 event:at / event:mention / event:poke / event:join / event:leave 等标准写法。
-如果要录入字面量 [戳一戳]、【新人加入】 或 event:poke，请在前面加 \\，例如 \[戳一戳]、\event:poke。
+也兼容 event:at / event:mention / event:poke / event:bot_join / event:member_join / event:bot_leave / event:member_leave 等标准写法。
+如果要录入字面量 [戳一戳]、【bot加群】 或 event:poke，请在前面加 \\，例如 \[戳一戳]、\event:poke。
 输入 revoke / recall / exit 可取消本次操作。
 USER: 晚安
 BOT: 请输入响应词，或发送图片作为图片回复。
@@ -144,12 +150,12 @@ ID: 18
 权重: 3
 管理员通过前不会触发。
 SECTION: 事件触发词
-USER: #study [@] => 我在
+USER: #study [bot加群] => 凛凛来啦
 BOT: 词条已提交审核
 ID: 19
 状态: pending
-触发: [事件:event:at]
-响应: 我在
+触发: [事件:event:bot_join]
+响应: 凛凛来啦
 模式: fullmatch
 范围: current_group
 概率: 1

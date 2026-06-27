@@ -167,9 +167,33 @@ def build_event_triggers(
             return ()
         return ("event:poke",)
     if notice_type == "group_increase":
-        return ("event:join", "event:group_join", "event:group_increase")
+        if str(getattr(event, "user_id", "")) == str(bot.self_id):
+            return (
+                "event:bot_join",
+                "event:join",
+                "event:group_join",
+                "event:group_increase",
+            )
+        return (
+            "event:member_join",
+            "event:join",
+            "event:group_join",
+            "event:group_increase",
+        )
     if notice_type == "group_decrease":
-        return ("event:leave", "event:group_leave", "event:group_decrease")
+        if str(getattr(event, "user_id", "")) == str(bot.self_id):
+            return (
+                "event:bot_leave",
+                "event:leave",
+                "event:group_leave",
+                "event:group_decrease",
+            )
+        return (
+            "event:member_leave",
+            "event:leave",
+            "event:group_leave",
+            "event:group_decrease",
+        )
     return ()
 
 

@@ -29,6 +29,7 @@ from src.plugins.wordbank.services.matching import (
 )
 from src.plugins.wordbank.services.media import WordbankMediaService
 from tests.plugins.water.helpers import (
+    build_group_decrease_event,
     build_group_increase_event,
     build_group_message_event,
     build_group_poke_event,
@@ -326,3 +327,77 @@ async def test_handle_passive_notice_matches_group_join_event() -> None:
 
     assert response is not None
     assert response.message_type == "event"
+
+
+@pytest.mark.asyncio
+async def test_handle_passive_notice_uses_bot_join_event_for_self_join() -> None:
+    bot = cast(Bot, SimpleNamespace(self_id="99999"))
+    event = build_group_increase_event(user_id=99999)
+    match_message = AsyncMock(return_value=_selected(response_text="凛凛来啦"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(match_message=match_message),
+    )
+
+    response = await handle_passive_notice(bot, event, service)
+
+    assert response is not None
+    assert response.message_type == "event"
+    first_shape = match_message.await_args_list[0].args[0]
+    assert first_shape == shape_from_event("event:bot_join")
+
+
+@pytest.mark.asyncio
+async def test_handle_passive_notice_uses_member_join_event_for_other_join() -> None:
+    bot = cast(Bot, SimpleNamespace(self_id="99999"))
+    event = build_group_increase_event(user_id=10002)
+    match_message = AsyncMock(return_value=_selected(response_text="欢迎加入"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(match_message=match_message),
+    )
+
+    response = await handle_passive_notice(bot, event, service)
+
+    assert response is not None
+    assert response.message_type == "event"
+    first_shape = match_message.await_args_list[0].args[0]
+    assert first_shape == shape_from_event("event:member_join")
+
+
+@pytest.mark.asyncio
+async def test_handle_passive_notice_uses_bot_leave_event_for_self_leave() -> None:
+    bot = cast(Bot, SimpleNamespace(self_id="99999"))
+    event = build_group_decrease_event(user_id=99999)
+    match_message = AsyncMock(return_value=_selected(response_text="凛凛先走啦"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(match_message=match_message),
+    )
+
+    response = await handle_passive_notice(bot, event, service)
+
+    assert response is not None
+    assert response.message_type == "event"
+    first_shape = match_message.await_args_list[0].args[0]
+    assert first_shape == shape_from_event("event:bot_leave")
+
+
+@pytest.mark.asyncio
+async def test_handle_passive_notice_uses_member_leave_event_for_other_leave() -> (
+    None
+):
+    bot = cast(Bot, SimpleNamespace(self_id="99999"))
+    event = build_group_decrease_event(user_id=10002)
+    match_message = AsyncMock(return_value=_selected(response_text="下次见"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(match_message=match_message),
+    )
+
+    response = await handle_passive_notice(bot, event, service)
+
+    assert response is not None
+    assert response.message_type == "event"
+    first_shape = match_message.await_args_list[0].args[0]
+    assert first_shape == shape_from_event("event:member_leave")

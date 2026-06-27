@@ -531,6 +531,54 @@ async def test_handle_add_text_result_parses_chinese_bracket_event_alias_trigger
 
 
 @pytest.mark.asyncio
+async def test_handle_add_text_result_parses_bot_join_alias_trigger_shape() -> None:
+    add_message_entry = AsyncMock(
+        return_value=_add_result(trigger_text="[事件:event:bot_join]")
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add [bot加群] => 凛凛来啦")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="[bot加群] => 凛凛来啦",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_event("event:bot_join")
+    assert shape_to_summary_text(kwargs["response_shape"]) == "凛凛来啦"
+
+
+@pytest.mark.asyncio
+async def test_handle_add_text_result_parses_member_leave_alias_trigger_shape() -> (
+    None
+):
+    add_message_entry = AsyncMock(
+        return_value=_add_result(trigger_text="[事件:event:member_leave]")
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add [成员退群] => 下次见")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="[成员退群] => 下次见",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_event("event:member_leave")
+    assert shape_to_summary_text(kwargs["response_shape"]) == "下次见"
+
+
+@pytest.mark.asyncio
 async def test_handle_add_text_result_allows_escaped_event_literal_trigger() -> None:
     add_message_entry = AsyncMock(return_value=_add_result(trigger_text="event:poke"))
     service = cast(
@@ -1234,7 +1282,7 @@ async def test_handle_study_shortcut_result_parses_event_trigger_shape() -> None
 async def test_handle_study_shortcut_result_parses_bracket_event_alias_trigger_shape(
 ) -> None:
     add_message_entry = AsyncMock(
-        return_value=_add_result(trigger_text="[事件:event:leave]")
+        return_value=_add_result(trigger_text="[事件:event:member_leave]")
     )
     service = cast(
         WordbankService,
@@ -1250,7 +1298,7 @@ async def test_handle_study_shortcut_result_parses_bracket_event_alias_trigger_s
 
     assert add_message_entry.await_args is not None
     kwargs = add_message_entry.await_args.kwargs
-    assert kwargs["trigger_shape"] == shape_from_event("event:leave")
+    assert kwargs["trigger_shape"] == shape_from_event("event:member_leave")
     assert shape_to_summary_text(kwargs["response_shape"]) == "下次见"
 
 
