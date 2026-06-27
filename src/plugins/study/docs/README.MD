@@ -32,21 +32,25 @@
 > 如果你还想控制生效范围，就回到上面的传统参数式。
 
 > [!TIP]
-> 触发词支持以下事件写法：
+> 如果你是第一次用事件词条，优先记这些更直观的入口就够了：
 >
-> - `event:at` -> `@` 到机器人
-> - `event:mention` -> 提及机器人
-> - `event:poke` -> 戳一戳
-> - `event:join` -> 入群
-> - `event:group_join` -> 入群
-> - `event:group_increase` -> 群成员增加
-> - `event:leave` -> 离群
-> - `event:group_leave` -> 离群
-> - `event:group_decrease` -> 群成员减少
+> - `[@]` / `【@】` / `[at]` / `【at】`：凛凛被 `@`
+> - `[提及]` / `【提及】`：凛凛被提及
+> - `[戳一戳]` / `【戳一戳】`：凛凛被戳一戳
+> - `[新人加入]` / `【新人加入】` / `[新成员加入]` / `【新成员加入】` / `[有人加群]` / `【有人加群】`：有人进群
+> - `[成员退群]` / `【成员退群】` / `[有人退群]` / `【有人退群】` / `[离群]` / `【离群】`：有人退群
+>
+> 如果你已经熟悉结构化写法，也兼容标准事件名：
+>
+> - `event:at`
+> - `event:mention`
+> - `event:poke`
+> - `event:join` / `event:group_join` / `event:group_increase`
+> - `event:leave` / `event:group_leave` / `event:group_decrease`
 >
 > 事件解析只作用于触发词；响应词中的 `event:*` 会按普通文本原样保存和发送。
 >
-> 如果你要录入字面量文本 `event:poke`，请写成 `\event:poke`；如果要录入字面量 `\event:poke`，请写成 `\\event:poke`。
+> 如果你要录入字面量文本 `[戳一戳]`、`【新人加入】` 或 `event:poke`，请在前面加 `\`，例如 `\[戳一戳]`、`\event:poke`；如果要保留开头那个反斜杠本身，再写成 `\\[戳一戳]`、`\\event:poke`。
 
 > [!TIP]
 > 引导模式：`study` / `学习`
@@ -97,17 +101,14 @@ f. 关闭，按触发方式跨群或私聊生效
 输入 revoke / recall / exit 可取消本次操作。
 USER: t
 BOT: 请输入触发词，或直接发送图片作为图片触发。
-支持的事件触发词：
-- event:at -> @到机器人
-- event:mention -> 提及机器人
-- event:poke -> 戳一戳
-- event:join -> 入群
-- event:group_join -> 入群
-- event:group_increase -> 群成员增加
-- event:leave -> 离群
-- event:group_leave -> 离群
-- event:group_decrease -> 群成员减少
-如果要录入字面量 event:*，请在前面加 \\，例如 \event:poke。
+如果你要添加事件词条，也可以直接输入这些更好懂的写法：
+- [@] / 【@】 / [at] / 【at】 -> 凛凛被 @
+- [提及] / 【提及】 -> 凛凛被提及
+- [戳一戳] / 【戳一戳】 -> 凛凛被戳一戳
+- [新人加入] / 【新人加入】 / [新成员加入] / 【新成员加入】 / [有人加群] / 【有人加群】 -> 有人进群
+- [成员退群] / 【成员退群】 / [有人退群] / 【有人退群】 / [离群] / 【离群】 -> 有人退群
+也兼容 event:at / event:mention / event:poke / event:join / event:leave 等标准写法。
+如果要录入字面量 [戳一戳]、【新人加入】 或 event:poke，请在前面加 \\，例如 \[戳一戳]、\event:poke。
 输入 revoke / recall / exit 可取消本次操作。
 USER: 晚安
 BOT: 请输入响应词，或发送图片作为图片回复。
@@ -140,12 +141,12 @@ ID: 18
 权重: 3
 管理员通过前不会触发。
 SECTION: 事件触发词
-USER: #study event:poke => 别戳啦
+USER: #study [@] => 我在
 BOT: 词条已提交审核
 ID: 19
 状态: pending
-触发: [事件:event:poke]
-响应: 别戳啦
+触发: [事件:event:at]
+响应: 我在
 模式: fullmatch
 范围: current_group
 概率: 1

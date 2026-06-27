@@ -18,6 +18,7 @@ MessageAtomKind = Literal["text", "image", "at", "event"]
 MessageAtomPayload = dict[str, int | str]
 _SPACE_RE = re.compile(r"\s+")
 EVENT_TRIGGER_ESCAPED_PREFIX = "\\"
+EVENT_TRIGGER_BRACKET_PAIRS = (("[", "]"), ("【", "】"))
 EVENT_TRIGGER_NAMES = frozenset(
     {
         "event:at",
@@ -30,6 +31,31 @@ EVENT_TRIGGER_NAMES = frozenset(
         "event:group_leave",
         "event:group_decrease",
     }
+)
+EVENT_TRIGGER_ALIASES = {
+    "@": "event:at",
+    "at": "event:at",
+    "戳一戳": "event:poke",
+    "提及": "event:mention",
+    "新人加入": "event:join",
+    "新成员加入": "event:join",
+    "有人加群": "event:join",
+    "成员退群": "event:leave",
+    "有人退群": "event:leave",
+    "离群": "event:leave",
+}
+EVENT_TRIGGER_DISPLAY_LINES = (
+    "event:at / [@] / 【@】 / [at] / 【at】 -> @到机器人",
+    "event:mention / [提及] / 【提及】 -> 提及机器人",
+    "event:poke / [戳一戳] / 【戳一戳】 -> 戳一戳",
+    "event:join / [新人加入] / 【新人加入】 / [新成员加入]",
+    " / 【新成员加入】 / [有人加群] / 【有人加群】 -> 入群",
+    "event:group_join -> 入群",
+    "event:group_increase -> 群成员增加",
+    "event:leave / [成员退群] / 【成员退群】 / [有人退群]",
+    " / 【有人退群】 / [离群] / 【离群】 -> 离群",
+    "event:group_leave -> 离群",
+    "event:group_decrease -> 群成员减少",
 )
 
 
@@ -88,6 +114,9 @@ def extract_event_trigger_name(text: str) -> str | None:
     normalized = normalize_text(text, casefold=True)
     if normalized.startswith(EVENT_TRIGGER_ESCAPED_PREFIX):
         return None
+    alias_event = _resolve_event_trigger_alias(normalized)
+    if alias_event is not None:
+        return alias_event
     return normalized if normalized in EVENT_TRIGGER_NAMES else None
 
 
@@ -97,6 +126,26 @@ def unescape_trigger_text_literal(text: str) -> str:
     if len(text) >= 2 and text[1] == EVENT_TRIGGER_ESCAPED_PREFIX:
         return text[1:]
     return text[1:]
+
+
+def event_trigger_display_lines() -> tuple[str, ...]:
+    return EVENT_TRIGGER_DISPLAY_LINES
+
+
+def _resolve_event_trigger_alias(normalized: str) -> str | None:
+    if normalized in EVENT_TRIGGER_ALIASES:
+        return EVENT_TRIGGER_ALIASES[normalized]
+    bracket_content = _extract_bracket_content(normalized)
+    if bracket_content is None:
+        return None
+    return EVENT_TRIGGER_ALIASES.get(bracket_content)
+
+
+def _extract_bracket_content(text: str) -> str | None:
+    for left, right in EVENT_TRIGGER_BRACKET_PAIRS:
+        if text.startswith(left) and text.endswith(right) and len(text) > 2:
+            return text[len(left) : -len(right)].strip()
+    return None
 
 
 def combine_shapes(*shapes: MessageShape) -> MessageShape:

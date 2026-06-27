@@ -13,13 +13,16 @@ from src.plugins.wordbank.handlers.commands import (
     build_group_detail_message,
     build_shape_from_text_and_images,
     dispatch_wordbank_command,
+    execute_search_page,
     handle_add_text_result,
     handle_add_with_media_result,
     handle_delete,
     handle_guided_add_shape_result,
     handle_guided_study_shape_result,
+    handle_pending_entries,
     handle_response_content_update,
     handle_response_weight_update,
+    render_search_page_message,
     handle_study_media_with_rule_result,
     handle_study_with_media_result,
     handle_trigger_content_update,
@@ -160,6 +163,54 @@ async def test_dispatch_wordbank_command_routes_rank_to_leaderboard_handler(
 
 
 @pytest.mark.asyncio
+async def test_handle_pending_entries_renders_image_shapes() -> None:
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            list_pending_entries=AsyncMock(
+                return_value=[
+                    WordbankSearchItem(
+                        trigger_group_id=12,
+                        status="pending",
+                        trigger_text="[图片:8]",
+                        response_text="做个好梦 [图片:7]",
+                        trigger_shape=shape_from_image(8),
+                        response_shape=combine_shapes(
+                            shape_from_text("做个好梦"),
+                            shape_from_image(7),
+                        ),
+                        scope="current_group",
+                        probability=1.0,
+                        weight=3,
+                        created_by="10001",
+                        response_item_ids=(300,),
+                    )
+                ]
+            )
+        ),
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=b"bytes")),
+    )
+    event = build_group_message_event("#待审核词条", role="admin", user_id=10002)
+
+    message = await handle_pending_entries(
+        service,
+        event=event,
+        text="",
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    assert not isinstance(message, str)
+    assert "待审核词条 (第 1 页):" in str(message)
+    assert "[图片:8]" not in str(message)
+    assert "[图片:7]" not in str(message)
+    assert sum(1 for segment in message if segment.type == "image") == 2
+
+
+@pytest.mark.asyncio
 async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
     event = build_group_message_event("#wordbank search 晚安")
     service = cast(
@@ -190,6 +241,56 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
     assert isinstance(message, Message)
     assert len(message) == 1
     assert message[0].type == "image"
+
+
+@pytest.mark.asyncio
+async def test_render_search_page_message_fallback_renders_image_shapes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        commands_module,
+        "render_search_results_card_message",
+        AsyncMock(side_effect=RuntimeError("boom")),
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=b"bytes")),
+    )
+    page = WordbankSearchPage(
+        items=(
+            WordbankSearchItem(
+                trigger_group_id=12,
+                status="approved",
+                trigger_text="[图片:8]",
+                response_text="做个好梦 [图片:7]",
+                trigger_shape=shape_from_image(8),
+                response_shape=combine_shapes(
+                    shape_from_text("做个好梦"),
+                    shape_from_image(7),
+                ),
+                response_summaries=("做个好梦 [图片:7]",),
+                scope="current_group",
+                probability=1.0,
+                weight=3,
+                created_by="10001",
+            ),
+        ),
+        total_count=1,
+        offset=0,
+        limit=10,
+    )
+
+    message = await render_search_page_message(
+        page,
+        parsed=parse_search_args("晚安"),
+        locale="zh-CN",
+        has_image=False,
+        media_service=media_service,
+    )
+
+    assert "[图片:8]" not in str(message)
+    assert "[图片:7]" not in str(message)
+    assert sum(1 for segment in message if segment.type == "image") == 2
 
 
 @pytest.mark.asyncio
@@ -340,6 +441,55 @@ async def test_handle_add_text_result_parses_event_trigger_shape() -> None:
 
 
 @pytest.mark.asyncio
+async def test_handle_add_text_result_parses_bracket_event_alias_trigger_shape() -> (
+    None
+):
+    add_message_entry = AsyncMock(
+        return_value=_add_result(trigger_text="[事件:event:at]")
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add [@] => 我在")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="[@] => 我在",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_event("event:at")
+    assert shape_to_summary_text(kwargs["response_shape"]) == "我在"
+
+
+@pytest.mark.asyncio
+async def test_handle_add_text_result_parses_chinese_bracket_event_alias_trigger_shape(
+) -> None:
+    add_message_entry = AsyncMock(
+        return_value=_add_result(trigger_text="[事件:event:join]")
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add 【新人加入】 => 欢迎来到凛凛这里")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="【新人加入】 => 欢迎来到凛凛这里",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_event("event:join")
+    assert shape_to_summary_text(kwargs["response_shape"]) == "欢迎来到凛凛这里"
+
+
+@pytest.mark.asyncio
 async def test_handle_add_text_result_allows_escaped_event_literal_trigger() -> None:
     add_message_entry = AsyncMock(return_value=_add_result(trigger_text="event:poke"))
     service = cast(
@@ -357,6 +507,28 @@ async def test_handle_add_text_result_allows_escaped_event_literal_trigger() -> 
     assert add_message_entry.await_args is not None
     kwargs = add_message_entry.await_args.kwargs
     assert kwargs["trigger_shape"] == shape_from_text("event:poke")
+    assert shape_to_summary_text(kwargs["response_shape"]) == "当文本处理"
+
+
+@pytest.mark.asyncio
+async def test_handle_add_text_result_allows_escaped_bracket_event_literal_trigger(
+) -> None:
+    add_message_entry = AsyncMock(return_value=_add_result(trigger_text="【戳一戳】"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add \\【戳一戳】 => 当文本处理")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="\\【戳一戳】 => 当文本处理",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_text("【戳一戳】")
     assert shape_to_summary_text(kwargs["response_shape"]) == "当文本处理"
 
 
@@ -1018,6 +1190,30 @@ async def test_handle_study_shortcut_result_parses_event_trigger_shape() -> None
 
 
 @pytest.mark.asyncio
+async def test_handle_study_shortcut_result_parses_bracket_event_alias_trigger_shape(
+) -> None:
+    add_message_entry = AsyncMock(
+        return_value=_add_result(trigger_text="[事件:event:leave]")
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#study [成员退群] => 下次见")
+
+    await commands_module.handle_study_shortcut_result(
+        service,
+        event=event,
+        text="[成员退群] => 下次见",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_event("event:leave")
+    assert shape_to_summary_text(kwargs["response_shape"]) == "下次见"
+
+
+@pytest.mark.asyncio
 async def test_handle_add_text_result_keeps_event_literal_in_response_plain_text() -> (
     None
 ):
@@ -1038,6 +1234,28 @@ async def test_handle_add_text_result_keeps_event_literal_in_response_plain_text
     kwargs = add_message_entry.await_args.kwargs
     assert kwargs["trigger_shape"] == shape_from_text("晚安")
     assert kwargs["response_shape"] == shape_from_text("event:poke")
+
+
+@pytest.mark.asyncio
+async def test_handle_add_text_result_keeps_bracket_literal_in_response_plain_text(
+) -> None:
+    add_message_entry = AsyncMock(return_value=_add_result(response_text="【戳一戳】"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add 晚安 => 【戳一戳】")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="晚安 => 【戳一戳】",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_text("晚安")
+    assert kwargs["response_shape"] == shape_from_text("【戳一戳】")
 
 
 @pytest.mark.asyncio

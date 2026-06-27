@@ -361,6 +361,119 @@ async def test_study_guided_flow_accepts_event_trigger_text(
 
 
 @pytest.mark.asyncio
+async def test_study_guided_flow_accepts_bracket_event_trigger_text(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = WordbankAddResult(
+        trigger_group_id=12,
+        trigger_variant_id=21,
+        response_item_id=22,
+        trigger_text="[事件:event:at]",
+        response_text="我在",
+        scope="all_groups",
+        probability=1.0,
+        weight=3,
+        status="pending",
+        trigger_shape=shape_from_event("event:at"),
+        response_shape=shape_from_text("我在"),
+    )
+    handle_guided = AsyncMock(return_value=result)
+    build_result_message = AsyncMock(return_value=text_message("词条已提交审核"))
+    record_submission = AsyncMock(return_value=None)
+    schedule_pending = Mock()
+
+    monkeypatch.setattr(
+        wordbank_service,
+        "initialize",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        study_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+    monkeypatch.setattr(
+        wordbank_handlers,
+        "handle_guided_study_shape_result",
+        handle_guided,
+    )
+    monkeypatch.setattr(
+        wordbank_handlers,
+        "build_add_result_message",
+        build_result_message,
+    )
+    monkeypatch.setattr(
+        wordbank_handlers,
+        "record_submission_approval_message",
+        record_submission,
+    )
+    monkeypatch.setattr(
+        wordbank_handlers,
+        "schedule_pending_approval_notice",
+        schedule_pending,
+    )
+
+    async with app.test_matcher(study_plugin.study_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        first = build_group_message_event("#study", message_id=1)
+        second = build_group_message_event("M", message_id=2)
+        third = build_group_message_event("F", message_id=3)
+        fourth = build_group_message_event("[@]", message_id=4)
+        fifth = build_group_message_event("我在", message_id=5)
+        sixth = build_group_message_event("3", message_id=6)
+
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            tr("zh-CN", "wordbank.guided.study.mode_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(
+            second,
+            tr("zh-CN", "wordbank.guided.study.group_block_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        ctx.receive_event(bot, third)
+        ctx.should_call_send(
+            third,
+            tr("zh-CN", "wordbank.guided.study.trigger_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        ctx.receive_event(bot, fourth)
+        ctx.should_call_send(
+            fourth,
+            tr("zh-CN", "wordbank.guided.study.response_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        ctx.receive_event(bot, fifth)
+        ctx.should_call_send(
+            fifth,
+            tr("zh-CN", "wordbank.guided.study.weight_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        ctx.receive_event(bot, sixth)
+        ctx.should_call_send(sixth, text_message("词条已提交审核"), bot=bot)
+        ctx.should_finished(study_plugin.study_command)
+
+    handle_guided.assert_awaited_once()
+    guided_kwargs = handle_guided.await_args_list[0].kwargs
+    assert guided_kwargs["trigger_shape"] == shape_from_event("event:at")
+
+
+@pytest.mark.asyncio
 async def test_study_prefilled_trigger_parses_event_shape(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
