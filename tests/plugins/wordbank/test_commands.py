@@ -57,6 +57,8 @@ def _add_result(
     response_item_id: int = 12,
     trigger_text: str = "晚安",
     response_text: str = "做个好梦",
+    trigger_shape: MessageShape | None = None,
+    response_shape: MessageShape | None = None,
 ) -> WordbankAddResult:
     return WordbankAddResult(
         trigger_group_id=trigger_group_id,
@@ -67,6 +69,8 @@ def _add_result(
         scope="current_group",
         probability=1.0,
         weight=3,
+        trigger_shape=trigger_shape,
+        response_shape=response_shape,
     )
 
 
@@ -293,6 +297,44 @@ async def test_render_search_page_message_fallback_renders_image_shapes(
 
 
 @pytest.mark.asyncio
+async def test_dispatch_wordbank_command_add_renders_image_shapes() -> None:
+    event = build_group_message_event("#wordbank add 晚安 => 做个好梦")
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            add_message_entry=AsyncMock(
+                return_value=_add_result(
+                    trigger_text="[图片:8]",
+                    response_text="做个好梦 [图片:7]",
+                    trigger_shape=shape_from_image(8),
+                    response_shape=combine_shapes(
+                        shape_from_text("做个好梦"),
+                        shape_from_image(7),
+                    ),
+                )
+            )
+        ),
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=b"bytes")),
+    )
+
+    message = await dispatch_wordbank_command(
+        service,
+        event=event,
+        text="add [图片触发] => 做个好梦",
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    assert isinstance(message, Message)
+    assert "[图片:8]" not in str(message)
+    assert "[图片:7]" not in str(message)
+    assert sum(1 for segment in message if segment.type == "image") == 2
+
+
+@pytest.mark.asyncio
 async def test_dispatch_wordbank_command_rejects_disabled_vote_subcommand() -> None:
     event = build_group_message_event("#wordbank support 3")
     service = cast(WordbankService, SimpleNamespace())
@@ -465,9 +507,8 @@ async def test_handle_add_text_result_parses_bracket_event_alias_trigger_shape()
 
 
 @pytest.mark.asyncio
-async def test_handle_add_text_result_parses_chinese_bracket_event_alias_trigger_shape() -> (
-    None
-):
+async def test_handle_add_text_result_parses_chinese_bracket_event_alias_trigger_shape(
+) -> None:
     add_message_entry = AsyncMock(
         return_value=_add_result(trigger_text="[事件:event:join]")
     )
@@ -511,9 +552,8 @@ async def test_handle_add_text_result_allows_escaped_event_literal_trigger() -> 
 
 
 @pytest.mark.asyncio
-async def test_handle_add_text_result_allows_escaped_bracket_event_literal_trigger() -> (
-    None
-):
+async def test_handle_add_text_result_allows_escaped_bracket_event_literal_trigger(
+) -> None:
     add_message_entry = AsyncMock(return_value=_add_result(trigger_text="【戳一戳】"))
     service = cast(
         WordbankService,
@@ -1191,9 +1231,8 @@ async def test_handle_study_shortcut_result_parses_event_trigger_shape() -> None
 
 
 @pytest.mark.asyncio
-async def test_handle_study_shortcut_result_parses_bracket_event_alias_trigger_shape() -> (
-    None
-):
+async def test_handle_study_shortcut_result_parses_bracket_event_alias_trigger_shape(
+) -> None:
     add_message_entry = AsyncMock(
         return_value=_add_result(trigger_text="[事件:event:leave]")
     )
@@ -1239,9 +1278,8 @@ async def test_handle_add_text_result_keeps_event_literal_in_response_plain_text
 
 
 @pytest.mark.asyncio
-async def test_handle_add_text_result_keeps_bracket_literal_in_response_plain_text() -> (
-    None
-):
+async def test_handle_add_text_result_keeps_bracket_literal_in_response_plain_text(
+) -> None:
     add_message_entry = AsyncMock(return_value=_add_result(response_text="【戳一戳】"))
     service = cast(
         WordbankService,

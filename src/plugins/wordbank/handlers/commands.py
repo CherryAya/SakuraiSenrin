@@ -54,6 +54,7 @@ from src.plugins.wordbank.services.rules import (
 )
 from src.plugins.wordbank.text_parsing import has_meaningful_text, split_command_text
 
+from .approval import build_add_result_message
 from .media_helpers import (
     build_shape_from_text_and_images,
     shape_from_response_parts,
@@ -127,9 +128,9 @@ async def handle_add_text(
     event: MessageEvent,
     text: str,
     locale: LocaleCode,
-) -> str:
+) -> WordbankAddResult:
     result = await handle_add_text_result(service, event=event, text=text)
-    return format_add_result(result, locale=locale)
+    return result
 
 
 async def handle_add_text_result(
@@ -157,7 +158,7 @@ async def handle_add_with_media(
     text: str,
     image_bytes: bytes | None,
     locale: LocaleCode,
-) -> str:
+) -> WordbankAddResult:
     result = await handle_add_with_media_result(
         service,
         media_service,
@@ -165,7 +166,7 @@ async def handle_add_with_media(
         text=text,
         image_bytes=image_bytes,
     )
-    return format_add_result(result, locale=locale)
+    return result
 
 
 async def handle_add_with_media_result(
@@ -263,9 +264,9 @@ async def handle_study_shortcut(
     event: MessageEvent,
     text: str,
     locale: LocaleCode,
-) -> str:
+) -> WordbankAddResult:
     result = await handle_study_shortcut_result(service, event=event, text=text)
-    return format_add_result(result, locale=locale)
+    return result
 
 
 async def handle_study_shortcut_result(
@@ -294,7 +295,7 @@ async def handle_study_with_media(
     text: str,
     image_bytes: bytes | None,
     locale: LocaleCode,
-) -> str:
+) -> WordbankAddResult:
     result = await handle_study_with_media_result(
         service,
         media_service,
@@ -302,7 +303,7 @@ async def handle_study_with_media(
         text=text,
         image_bytes=image_bytes,
     )
-    return format_add_result(result, locale=locale)
+    return result
 
 
 async def handle_study_with_media_result(
@@ -822,7 +823,14 @@ async def dispatch_wordbank_command(
     if not action or action in {"help", "帮助"}:
         return wordbank_help_text(locale)
     if action in ADD_ALIASES:
-        return await handle_add_text(service, event=event, text=rest, locale=locale)
+        result = await handle_add_text(service, event=event, text=rest, locale=locale)
+        if media_service is None:
+            return format_add_result(result, locale=locale)
+        return await build_add_result_message(
+            result,
+            locale=locale,
+            media_service=media_service,
+        )
     if action in SEARCH_ALIASES:
         if media_service is None:
             raise RuntimeError(
