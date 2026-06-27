@@ -37,7 +37,10 @@ from src.plugins.wordbank.handlers.parsers import (
 from src.plugins.wordbank.handlers.reply import parse_view_reply_for_search_result
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services.rules import RuleError
-from src.plugins.wordbank.text_parsing import has_meaningful_text
+from src.plugins.wordbank.text_parsing import (
+    has_meaningful_text,
+    normalize_cq_plain_text,
+)
 
 GUIDED_MAX_ERRORS = 3
 WORDBANK_GUIDED_STEP_TRIGGER = 1
@@ -332,7 +335,11 @@ async def collect_search_query_content(
     from src.plugins import wordbank as wordbank_plugin
     from src.plugins.wordbank.text_parsing import has_meaningful_text
 
-    keyword = keyword_text if has_meaningful_text(keyword_text) else ""
+    normalized_keyword = normalize_cq_plain_text(
+        keyword_text,
+        collapse_cq_only_text=True,
+    )
+    keyword = normalized_keyword if has_meaningful_text(normalized_keyword) else ""
     if not allow_image:
         return keyword, False, {}
     data = await wordbank_plugin.fetch_first_image_bytes_from_message(message)

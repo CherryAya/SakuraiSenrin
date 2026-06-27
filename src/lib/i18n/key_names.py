@@ -819,6 +819,7 @@ MESSAGE_KEY_NAMES = (
     "wordbank.reply.group_command_invalid",
     "wordbank.reply.group_not_in_search_page",
     "wordbank.reply.history",
+    "wordbank.reply.info_header",
     "wordbank.reply.info",
     "wordbank.reply.target_missing",
     "wordbank.reply.target_not_found",

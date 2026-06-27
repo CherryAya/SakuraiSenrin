@@ -13,6 +13,7 @@ from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.plugins.wordbank.message_model import (
     MessageShape,
     fingerprint_shape,
+    shape_from_payload,
     shape_to_payload,
 )
 
@@ -41,6 +42,50 @@ from .types import (
 
 
 class WordbankRepositorySearchMixin:
+    async def _load_group_bundles_by_ids(
+        self: Any,
+        session: AsyncSession,
+        group_ids: list[int],
+        *,
+        include_deleted: bool = False,
+        active_only: bool = False,
+    ) -> list[GroupBundle]:
+        if not group_ids:
+            return []
+        unique_group_ids = list(dict.fromkeys(group_ids))
+        group_rows = (
+            (
+                await session.execute(
+                    select(WordbankTriggerGroup).where(
+                        WordbankTriggerGroup.id.in_(unique_group_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        variants = await self._load_variants_by_group_ids(session, unique_group_ids)
+        responses = await self._load_responses_by_group_ids(
+            session,
+            unique_group_ids,
+            include_deleted=include_deleted,
+            active_only=active_only,
+        )
+        variants_by_group: dict[int, list[WordbankTriggerVariant]] = defaultdict(list)
+        for variant in variants:
+            variants_by_group[variant.trigger_group_id].append(variant)
+        responses_by_group: dict[int, list[WordbankResponseItem]] = defaultdict(list)
+        for response in responses:
+            responses_by_group[response.trigger_group_id].append(response)
+        return [
+            GroupBundle(
+                group=group,
+                variants=variants_by_group.get(group.id, []),
+                responses=responses_by_group.get(group.id, []),
+            )
+            for group in group_rows
+        ]
+
     async def ensure_search_index(self: Any) -> None:
         start = perf_start()
         await self._ensure_main_fts_tables()
@@ -370,6 +415,13 @@ class WordbankRepositorySearchMixin:
                     count_stmt = count_stmt.where(creator_filter)
                     stmt = stmt.where(creator_filter)
                 documents = (await session.execute(stmt)).scalars().all()
+                bundles = await self._load_group_bundles_by_ids(
+                    session,
+                    [document.trigger_group_id for document in documents],
+                    include_deleted=False,
+                    active_only=True,
+                )
+                bundles_by_group_id = {bundle.group.id: bundle for bundle in bundles}
                 total_count = int(await session.scalar(count_stmt) or 0)
                 log_perf(
                     "repo.search_page.list_recent",
@@ -386,7 +438,35 @@ class WordbankRepositorySearchMixin:
                 )
                 return WordbankSearchPage(
                     items=tuple(
-                        self._search_item_from_document(document)
+                        self._search_item_from_document(
+                            document,
+                            trigger_shape=(
+                                shape_from_payload(bundle.variants[0].message_json)
+                                if (
+                                    (
+                                        bundle := bundles_by_group_id.get(
+                                            document.trigger_group_id
+                                        )
+                                    )
+                                    is not None
+                                    and bundle.variants
+                                )
+                                else None
+                            ),
+                            response_shape=(
+                                shape_from_payload(bundle.responses[0].message_json)
+                                if (
+                                    (
+                                        bundle := bundles_by_group_id.get(
+                                            document.trigger_group_id
+                                        )
+                                    )
+                                    is not None
+                                    and bundle.responses
+                                )
+                                else None
+                            ),
+                        )
                         for document in documents
                     ),
                     total_count=total_count,
@@ -403,6 +483,13 @@ class WordbankRepositorySearchMixin:
                     WordbankSearchDocument.created_by == request.creator_id
                 )
             documents = (await session.execute(stmt)).scalars().all()
+            bundles = await self._load_group_bundles_by_ids(
+                session,
+                [document.trigger_group_id for document in documents],
+                include_deleted=False,
+                active_only=True,
+            )
+            bundles_by_group_id = {bundle.group.id: bundle for bundle in bundles}
 
         ranked: list[tuple[float, int, str, WordbankSearchDocument]] = []
         for document in documents:
@@ -433,7 +520,35 @@ class WordbankRepositorySearchMixin:
         page = WordbankSearchPage(
             items=tuple(
                 self._search_item_from_document(
-                    document, score=score, matched_by=matched_by
+                    document,
+                    score=score,
+                    matched_by=matched_by,
+                    trigger_shape=(
+                        shape_from_payload(bundle.variants[0].message_json)
+                        if (
+                            (
+                                bundle := bundles_by_group_id.get(
+                                    document.trigger_group_id
+                                )
+                            )
+                            is not None
+                            and bundle.variants
+                        )
+                        else None
+                    ),
+                    response_shape=(
+                        shape_from_payload(bundle.responses[0].message_json)
+                        if (
+                            (
+                                bundle := bundles_by_group_id.get(
+                                    document.trigger_group_id
+                                )
+                            )
+                            is not None
+                            and bundle.responses
+                        )
+                        else None
+                    ),
                 )
                 for score, _, matched_by, document in paged
             ),

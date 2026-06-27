@@ -13,7 +13,6 @@ from src.plugins.wordbank.handlers.commands import (
     build_group_detail_message,
     build_shape_from_text_and_images,
     dispatch_wordbank_command,
-    execute_search_page,
     handle_add_text_result,
     handle_add_with_media_result,
     handle_delete,
@@ -22,13 +21,13 @@ from src.plugins.wordbank.handlers.commands import (
     handle_pending_entries,
     handle_response_content_update,
     handle_response_weight_update,
-    render_search_page_message,
     handle_study_media_with_rule_result,
     handle_study_with_media_result,
     handle_trigger_content_update,
     handle_trigger_probability_update,
     parse_rank_period,
     parse_search_args,
+    render_search_page_message,
 )
 from src.plugins.wordbank.handlers.media_helpers import build_message_shape_from_message
 from src.plugins.wordbank.handlers.parsers import (
@@ -466,8 +465,9 @@ async def test_handle_add_text_result_parses_bracket_event_alias_trigger_shape()
 
 
 @pytest.mark.asyncio
-async def test_handle_add_text_result_parses_chinese_bracket_event_alias_trigger_shape(
-) -> None:
+async def test_handle_add_text_result_parses_chinese_bracket_event_alias_trigger_shape() -> (
+    None
+):
     add_message_entry = AsyncMock(
         return_value=_add_result(trigger_text="[事件:event:join]")
     )
@@ -511,8 +511,9 @@ async def test_handle_add_text_result_allows_escaped_event_literal_trigger() -> 
 
 
 @pytest.mark.asyncio
-async def test_handle_add_text_result_allows_escaped_bracket_event_literal_trigger(
-) -> None:
+async def test_handle_add_text_result_allows_escaped_bracket_event_literal_trigger() -> (
+    None
+):
     add_message_entry = AsyncMock(return_value=_add_result(trigger_text="【戳一戳】"))
     service = cast(
         WordbankService,
@@ -1190,8 +1191,9 @@ async def test_handle_study_shortcut_result_parses_event_trigger_shape() -> None
 
 
 @pytest.mark.asyncio
-async def test_handle_study_shortcut_result_parses_bracket_event_alias_trigger_shape(
-) -> None:
+async def test_handle_study_shortcut_result_parses_bracket_event_alias_trigger_shape() -> (
+    None
+):
     add_message_entry = AsyncMock(
         return_value=_add_result(trigger_text="[事件:event:leave]")
     )
@@ -1237,8 +1239,9 @@ async def test_handle_add_text_result_keeps_event_literal_in_response_plain_text
 
 
 @pytest.mark.asyncio
-async def test_handle_add_text_result_keeps_bracket_literal_in_response_plain_text(
-) -> None:
+async def test_handle_add_text_result_keeps_bracket_literal_in_response_plain_text() -> (
+    None
+):
     add_message_entry = AsyncMock(return_value=_add_result(response_text="【戳一戳】"))
     service = cast(
         WordbankService,

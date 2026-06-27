@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+
+_CQ_CODE_RE = re.compile(r"\[CQ:[^\]]+\]")
+_LEADING_CQ_AT_RE = re.compile(r"^(?:\s*\[CQ:at,[^\]]+\])+\s*")
 
 
 @dataclass(slots=True, frozen=True)
@@ -80,6 +84,22 @@ def split_command_text(text: str) -> tuple[str, str]:
 
 def has_meaningful_text(text: str) -> bool:
     return any(not char.isspace() for char in text)
+
+
+def normalize_cq_plain_text(
+    text: str,
+    *,
+    strip_leading_at: bool = False,
+    collapse_cq_only_text: bool = False,
+) -> str:
+    normalized = text.strip()
+    if strip_leading_at:
+        normalized = _LEADING_CQ_AT_RE.sub("", normalized).strip()
+    if collapse_cq_only_text and normalized:
+        without_cq = _CQ_CODE_RE.sub("", normalized)
+        if not has_meaningful_text(without_cq):
+            return ""
+    return normalized
 
 
 def join_tokens_with_original_spacing(

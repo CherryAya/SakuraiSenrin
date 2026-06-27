@@ -41,12 +41,7 @@ from src.plugins.wordbank.handlers.parsers import (
 )
 from src.plugins.wordbank.handlers.search_cards import SearchCardQuery
 from src.plugins.wordbank.message_model import MessageShape, shape_from_image
-from src.plugins.wordbank.services import (
-    format_add_result,
-    format_creator_leaderboard,
-    format_pending_items,
-    format_search_items,
-)
+from src.plugins.wordbank.services import format_add_result, format_creator_leaderboard
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
@@ -81,6 +76,8 @@ from .rendering import (
     GROUP_PAGE_SIZE,
     render_creator_leaderboard_card_message,
     render_group_detail_page_message,
+    render_pending_items_message,
+    render_search_items_text_message,
     render_search_results_card_message,
 )
 
@@ -535,14 +532,14 @@ async def render_search_page_message(
             f"keyword={parsed.keyword!r} page={parsed.page} field={parsed.field} "
             f"has_image={has_image} total_count={page.total_count}"
         )
-        text = format_search_items(
-            list(page.items),
+        return await render_search_items_text_message(
+            items=list(page.items),
             locale=locale,
+            media_service=media_service,
             page=parsed.page,
             limit=parsed.limit,
             has_more=page.has_more,
         )
-        return text_message(text)
 
 
 async def build_group_detail_message(
@@ -587,7 +584,8 @@ async def handle_pending_entries(
     event: MessageEvent,
     text: str,
     locale: LocaleCode,
-) -> str:
+    media_service: WordbankMediaService,
+) -> Message | str:
     actor = build_mutation_actor(event)
     if not actor_can_review(actor):
         return tr(locale, "wordbank.approval.permission_denied")
@@ -602,9 +600,10 @@ async def handle_pending_entries(
         is_superuser=actor.is_superuser,
     )
     has_more = len(items) > parsed.limit
-    return format_pending_items(
-        items[: parsed.limit],
+    return await render_pending_items_message(
+        items=items[: parsed.limit],
         locale=locale,
+        media_service=media_service,
         page=parsed.page,
         limit=parsed.limit,
         has_more=has_more,
@@ -837,11 +836,16 @@ async def dispatch_wordbank_command(
             media_service=media_service,
         )
     if action in PENDING_ALIASES:
+        if media_service is None:
+            raise RuntimeError(
+                "wordbank media service is required for pending rendering"
+            )
         return await handle_pending_entries(
             service,
             event=event,
             text=rest,
             locale=locale,
+            media_service=media_service,
         )
     if action in RANK_ALIASES:
         return await handle_creator_leaderboard(

@@ -75,6 +75,182 @@ async def render_shape_message(
     return message
 
 
+async def render_search_items_text_message(
+    *,
+    items: tuple[WordbankSearchItem, ...] | list[WordbankSearchItem],
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+    page: int = 1,
+    limit: int = 10,
+    has_more: bool = False,
+) -> Message:
+    if not items:
+        return text_message(tr(locale, "wordbank.search.empty", page=page))
+
+    message = text_message(tr(locale, "wordbank.search.title", page=page))
+    for item in items:
+        response_preview = " / ".join(item.response_summaries[:3]) or item.response_text
+        if item.has_more_responses:
+            response_preview = f"{response_preview} (+{item.remaining_response_count})"
+        message += MessageSegment.text(
+            "\n"
+            + tr(
+                locale,
+                "wordbank.search.item",
+                entry_id=item.trigger_group_id,
+                status=item.status,
+                scope=item.scope,
+                trigger_text=item.trigger_text,
+                response_text=response_preview,
+            )
+        )
+        if _has_non_text_shape(item.trigger_shape):
+            assert item.trigger_shape is not None
+            message += MessageSegment.text(
+                "\n" + tr(locale, "wordbank.group.trigger_label") + "\n"
+            )
+            message += await render_shape_message(
+                item.trigger_shape,
+                media_service,
+                locale=locale,
+            )
+        if _has_non_text_shape(item.response_shape):
+            assert item.response_shape is not None
+            message += MessageSegment.text(
+                "\n" + tr(locale, "wordbank.approval.response_label") + "\n"
+            )
+            message += await render_shape_message(
+                item.response_shape,
+                media_service,
+                locale=locale,
+            )
+    if has_more:
+        message += MessageSegment.text(
+            "\n" + tr(locale, "wordbank.search.more", next_page=page + 1, limit=limit)
+        )
+    return message
+
+
+async def render_pending_items_message(
+    *,
+    items: tuple[WordbankSearchItem, ...] | list[WordbankSearchItem],
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+    page: int = 1,
+    limit: int = 10,
+    has_more: bool = False,
+) -> Message:
+    if not items:
+        return text_message(tr(locale, "wordbank.approval.pending_empty", page=page))
+
+    message = text_message(tr(locale, "wordbank.approval.pending_title", page=page))
+    for item in items:
+        response_item_id = (
+            item.response_item_ids[0]
+            if item.response_item_ids
+            else item.trigger_group_id
+        )
+        message += MessageSegment.text(
+            "\n"
+            + tr(
+                locale,
+                "wordbank.approval.pending_item",
+                entry_id=response_item_id,
+                scope=item.scope,
+                trigger_text=item.trigger_text,
+                response_text=item.response_text,
+                created_by=item.created_by,
+            )
+        )
+        if _has_non_text_shape(item.trigger_shape):
+            assert item.trigger_shape is not None
+            message += MessageSegment.text(
+                "\n" + tr(locale, "wordbank.group.trigger_label") + "\n"
+            )
+            message += await render_shape_message(
+                item.trigger_shape,
+                media_service,
+                locale=locale,
+            )
+        if _has_non_text_shape(item.response_shape):
+            assert item.response_shape is not None
+            message += MessageSegment.text(
+                "\n" + tr(locale, "wordbank.approval.response_label") + "\n"
+            )
+            message += await render_shape_message(
+                item.response_shape,
+                media_service,
+                locale=locale,
+            )
+    if has_more:
+        message += MessageSegment.text(
+            "\n"
+            + tr(
+                locale,
+                "wordbank.approval.pending_more",
+                next_page=page + 1,
+                limit=limit,
+            )
+        )
+    return message
+
+
+async def render_reply_detail_message(
+    *,
+    detail: WordbankGroupDetail,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+    message_id: str,
+    message_type: str,
+) -> Message:
+    selected = detail.selected_response
+    if selected is None:
+        return text_message(tr(locale, "wordbank.reply.entry_not_found", entry_id=0))
+
+    message = text_message(
+        tr(
+            locale,
+            "wordbank.reply.info_header",
+            entry_id=selected.response_item_id,
+            status=selected.status,
+            enabled=_format_enabled(selected.enabled),
+            deleted_at=str(selected.deleted_at) if selected.deleted_at else "0",
+            scope=selected.scope,
+            group_id=selected.group_id or "-",
+            created_by=selected.created_by,
+            probability=f"{detail.probability:g}",
+            weight=selected.weight,
+            message_id=message_id,
+            message_type=message_type,
+        )
+    )
+    message += MessageSegment.text(
+        "\n" + tr(locale, "wordbank.group.trigger_label") + "\n"
+    )
+    message += await render_shape_message(
+        detail.trigger_shape,
+        media_service,
+        locale=locale,
+    )
+    message += MessageSegment.text(
+        "\n" + tr(locale, "wordbank.approval.response_label") + "\n"
+    )
+    message += await render_shape_message(
+        selected.response_shape,
+        media_service,
+        locale=locale,
+    )
+    return message
+
+
+def _has_non_text_shape(shape: MessageShape | None) -> bool:
+    return (
+        shape is not None
+        and not shape.is_empty()
+        and any(atom.kind != "text" for atom in shape.atoms)
+    )
+
+
 async def render_search_results_card_message(
     *,
     items: tuple[WordbankSearchItem, ...],

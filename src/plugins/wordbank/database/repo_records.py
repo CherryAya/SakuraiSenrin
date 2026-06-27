@@ -6,7 +6,7 @@ from collections.abc import Sequence
 import json
 from typing import cast
 
-from src.plugins.wordbank.message_model import shape_from_payload
+from src.plugins.wordbank.message_model import MessageShape, shape_from_payload
 
 from .repo_shared import (
     GroupBundle,
@@ -191,6 +191,8 @@ class WordbankRepositoryRecordsMixin:
         *,
         score: float = 0.0,
         matched_by: str = "",
+        trigger_shape: MessageShape | None = None,
+        response_shape: MessageShape | None = None,
     ) -> WordbankSearchItem:
         raw_summaries = json.loads(document.response_preview_json or "[]")
         response_summaries = tuple(str(item) for item in raw_summaries if str(item))
@@ -199,6 +201,8 @@ class WordbankRepositoryRecordsMixin:
             status=document.status,
             trigger_text=document.trigger_text,
             response_text=document.response_text,
+            trigger_shape=trigger_shape,
+            response_shape=response_shape,
             response_summaries=response_summaries
             or ((document.response_text,) if document.response_text else ()),
             response_count=document.response_count,
@@ -224,6 +228,8 @@ class WordbankRepositoryRecordsMixin:
             status=response.status,
             trigger_text=variant.trigger_text,
             response_text=response.text,
+            trigger_shape=shape_from_payload(variant.message_json),
+            response_shape=shape_from_payload(response.message_json),
             response_summaries=(response.text,),
             response_count=1,
             active_response_count=1

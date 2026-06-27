@@ -18,6 +18,7 @@ from src.plugins.wordbank.database.types import (
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import RuleError
+from src.plugins.wordbank.text_parsing import normalize_cq_plain_text
 
 from .approval import APPROVAL_APPROVE_ALIASES, APPROVAL_REJECT_ALIASES
 from .mutation import (
@@ -38,6 +39,7 @@ from .parsers import (
     parse_response_set_args,
     parse_trigger_set_args,
 )
+from .rendering import render_reply_detail_message
 
 INFO_ALIASES = {"info", "详情"}
 HISTORY_ALIASES = {"history", "历史", "历史记录", "审批记录", "审批历史"}
@@ -123,7 +125,7 @@ async def handle_reply_command(
     text: str,
     locale: LocaleCode,
     media_service: WordbankMediaService,
-) -> str:
+) -> Message | str:
     message_id = get_reply_message_id(event)
     if message_id is None:
         return tr(locale, "wordbank.reply.target_missing")
@@ -144,7 +146,13 @@ async def handle_reply_command(
                 "wordbank.reply.entry_not_found",
                 entry_id=response_message.response_item_id,
             )
-        return format_entry_detail(detail, response_message, locale=locale)
+        return await render_reply_detail_message(
+            detail=detail,
+            locale=locale,
+            media_service=media_service,
+            message_id=response_message.message_id,
+            message_type=response_message.message_type,
+        )
 
     if action in HISTORY_ALIASES:
         detail = await _load_group_detail(service, response_message)
@@ -338,7 +346,8 @@ async def handle_approval_reply_result(
 
 
 def normalize_reply_command(text: str) -> str:
-    return " ".join(text.casefold().strip().split())
+    normalized = normalize_cq_plain_text(text, strip_leading_at=True)
+    return " ".join(normalized.casefold().strip().split())
 
 
 def parse_view_reply_for_search_result(
@@ -408,7 +417,7 @@ def _parse_explicit_group_view_command(
     *,
     required: bool = True,
 ) -> ParsedViewReplyCommand | None:
-    source = text.strip()
+    source = normalize_cq_plain_text(text, strip_leading_at=True)
     compact_match = _COMPACT_GROUP_VIEW_RE.fullmatch(source)
     if compact_match is not None:
         parsed = parse_group_view_args(

@@ -259,6 +259,8 @@ class WordbankSearchItem:
     status: str
     trigger_text: str
     response_text: str
+    trigger_shape: MessageShape | None = None
+    response_shape: MessageShape | None = None
     response_summaries: tuple[str, ...] = dataclass_field(default_factory=tuple)
     response_count: int = 1
     active_response_count: int = 1

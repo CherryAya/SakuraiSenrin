@@ -20,6 +20,8 @@ from src.plugins.wordbank.handlers.reply import (
 )
 from src.plugins.wordbank.message_model import (
     MessageShape,
+    combine_shapes,
+    shape_from_image,
     shape_from_text,
     shape_to_summary_text,
 )
@@ -131,11 +133,77 @@ async def test_reply_info_formats_selected_response_item_detail() -> None:
         media_service=cast(WordbankMediaService, SimpleNamespace()),
     )
 
-    assert "词条详情 #300" in message
-    assert "触发: 晚安" in message
-    assert "响应: 做个好梦" in message
+    assert not isinstance(message, str)
+    assert "词条详情 #300" in str(message)
+    assert "触发:\n晚安" in str(message)
+    assert "响应:\n做个好梦" in str(message)
     get_message_ref.assert_awaited_once_with("90001", expected_kind="response")
     get_group_detail.assert_awaited_once_with(12, response_item_id=300)
+
+
+async def test_reply_info_renders_image_trigger_and_response() -> None:
+    event = _event_with_reply()
+    get_message_ref = AsyncMock(return_value=_response_message())
+    get_group_detail = AsyncMock(
+        return_value=WordbankGroupDetail(
+            trigger_group_id=12,
+            status="approved",
+            enabled=1,
+            probability=1.0,
+            group_id="20001",
+            created_by="10001",
+            deleted_at=0,
+            trigger_text="[图片:8]",
+            trigger_shape=shape_from_image(8),
+            trigger_variant_id=120,
+            responses=(
+                WordbankResponseItemDetail(
+                    response_item_id=300,
+                    status="approved",
+                    enabled=1,
+                    scope="current_group",
+                    weight=3,
+                    rule={},
+                    group_id="20001",
+                    created_by="10001",
+                    approved_by="10002",
+                    deleted_at=0,
+                    response_text="做个好梦 [图片:7]",
+                    response_shape=combine_shapes(
+                        shape_from_text("做个好梦"),
+                        shape_from_image(7),
+                    ),
+                ),
+            ),
+            selected_response_item_id=300,
+        )
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=b"bytes")),
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=get_message_ref,
+            get_group_detail=get_group_detail,
+        ),
+    )
+
+    message = await handle_reply_command(
+        service,
+        event=event,
+        message=event.message,
+        text="详情",
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    assert not isinstance(message, str)
+    assert "词条详情 #300" in str(message)
+    assert "[图片:8]" not in str(message)
+    assert "[图片:7]" not in str(message)
+    assert sum(1 for segment in message if segment.type == "image") == 2
 
 
 async def test_reply_history_returns_status_summary() -> None:
