@@ -32,31 +32,17 @@
 > 如果你还想控制生效范围，就回到上面的传统参数式。
 
 > [!TIP]
-> 如果你是第一次用事件词条，优先记这些更直观的入口就够了：
+> `study` 也支持“事件触发词”，直接这样写就行：
 >
-> - `[@]`：凛凛被 `@`
-> - `[提及]`：凛凛被提及
-> - `[戳一戳]`：凛凛被戳一戳
-> - `[bot加群]`：凛凛自己进群
-> - `[新人加入]`：其他成员进群
-> - `[bot退群]`：凛凛自己退群
-> - `[成员退群]`：其他成员退群
+> - `[@]`
+> - `[提及]`
+> - `[戳一戳]`
+> - `[bot加群]`
+> - `[新人加入]`
+> - `[bot退群]`
+> - `[成员退群]`
 >
-> 上面这些入口也支持把中括号写成中文全角，例如 `【戳一戳】`、`【bot加群】`。另外像 `[at]`、`[新成员加入]`、`[有人加群]`、`[成员加群]`、`[有人退群]`、`[成员离群]` 这些等效说法也同样可用，不需要全部记住。
->
-> 如果你已经熟悉结构化写法，也兼容标准事件名：
->
-> - `event:at`
-> - `event:mention`
-> - `event:poke`
-> - `event:bot_join` / `event:member_join`
-> - `event:bot_leave` / `event:member_leave`
-> - `event:join` / `event:group_join` / `event:group_increase`
-> - `event:leave` / `event:group_leave` / `event:group_decrease`
->
-> 事件解析只作用于触发词；响应词中的 `event:*` 会按普通文本原样保存和发送。
->
-> 如果你要录入字面量文本 `[戳一戳]`、`【bot加群】` 或 `event:poke`，请在前面加 `\`，例如 `\[戳一戳]`、`\event:poke`；如果要保留开头那个反斜杠本身，再写成 `\\[戳一戳]`、`\\event:poke`。
+> 也支持中文全角写法，例如 `【戳一戳】`、`【bot加群】`。如果要录入字面量 `[戳一戳]` 或 `event:poke`，请在前面加 `\`，例如 `\[戳一戳]`、`\event:poke`。
 
 > [!TIP]
 > 引导模式：`study` / `学习`
@@ -94,39 +80,8 @@ ID: 15
 概率: 1
 权重: 3
 管理员通过前不会触发。
-SECTION: 引导模式
-USER: #study
-BOT: 请选择触发方式：
-a. 对所有人有效
-m. 仅对自己有效
-输入 revoke / recall / exit 可取消本次操作。
-USER: a
-BOT: 是否开启群组隔离？
-t. 开启，仅当前群聊有效
-f. 关闭，按触发方式跨群或私聊生效
-输入 revoke / recall / exit 可取消本次操作。
-USER: t
-BOT: 请输入触发词，或直接发送图片作为图片触发。
-如果你要添加事件词条，记这几个最常用入口就够了：
-- [@] -> 凛凛被 @
-- [提及] -> 凛凛被提及
-- [戳一戳] -> 凛凛被戳一戳
-- [bot加群] -> 凛凛自己进群
-- [新人加入] -> 其他成员进群
-- [bot退群] -> 凛凛自己退群
-- [成员退群] -> 其他成员退群
-也支持把中括号写成中文全角，例如【戳一戳】；
-也兼容 event:at / event:mention / event:poke / event:bot_join / event:member_join / event:bot_leave / event:member_leave 等标准写法。
-如果要录入字面量 [戳一戳]、【bot加群】 或 event:poke，请在前面加 \\，例如 \[戳一戳]、\event:poke。
-输入 revoke / recall / exit 可取消本次操作。
-USER: 晚安
-BOT: 请输入响应词，或发送图片作为图片回复。
-响应词里的 event:* 会按普通文本原样发送。
-输入 revoke / recall / exit 可取消本次操作。
-USER: 做个好梦
-BOT: 请输入响应词权重，1-5 之间的数字；直接发送 3 可用默认权重。
-输入 revoke / recall / exit 可取消本次操作。
-USER: 3
+SECTION: 文本词条
+USER: #study 晚安 => 做个好梦
 BOT: 词条已提交审核
 ID: 17
 状态: pending
@@ -150,9 +105,20 @@ ID: 18
 权重: 3
 管理员通过前不会触发。
 SECTION: 事件触发词
-USER: #study [bot加群] => 凛凛来啦
+USER: #study [@] => 我在
 BOT: 词条已提交审核
 ID: 19
+状态: pending
+触发: [事件:event:at]
+响应: 我在
+模式: fullmatch
+范围: current_group
+概率: 1
+权重: 3
+管理员通过前不会触发。
+USER: #study [bot加群] => 凛凛来啦
+BOT: 词条已提交审核
+ID: 20
 状态: pending
 触发: [事件:event:bot_join]
 响应: 凛凛来啦
