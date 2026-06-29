@@ -106,10 +106,9 @@ class _DemoSectionBand:
     rect: tuple[int, int, int, int]
     content_rect: tuple[int, int, int, int]
     tag_rect: tuple[int, int, int, int]
-    header_rect: tuple[int, int, int, int]
-    divider_rect: tuple[int, int, int, int]
     fill: str
     accent: str
+    text_fill: str
 
 
 @dataclass(slots=True, frozen=True)
@@ -163,8 +162,8 @@ class DemoImageRenderer:
     FONT_FAMILIES: ClassVar[list[str]] = [MAPLE_FONT_NAME]
     COMMAND_INDENT_PX = 48
     DEFAULT_SECTION_TITLE = "流程演示"
-    DEMO_SECTION_INDEX_OPTICAL_OFFSET_X = -2
-    DEMO_SECTION_TITLE_OPTICAL_OFFSET_Y = 3
+    DEMO_SECTION_TITLE_PAD_X = 26
+    DEMO_SECTION_TITLE_PAD_Y = 16
 
     def __init__(self, *, impression_color: str | None = None) -> None:
         self.theme_name = SENRIN_V3_THEME.name
@@ -708,23 +707,10 @@ class DemoImageRenderer:
             outer_pad_x = 0
             inner_pad_left = 30
             inner_pad_right = 30
-            inner_pad_top = 26
+            inner_pad_top = 24
             inner_pad_bottom = 22
-            title_gap = 14
-            title_height = 70
-            section_tag_width = min(
-                340,
-                max(
-                    184,
-                    max(
-                        self._text_width(
-                            title or self.DEFAULT_SECTION_TITLE, self.meta_font
-                        )
-                        + 110
-                        for title, _ in grouped_turns
-                    ),
-                ),
-            )
+            title_gap = 18
+            title_height = 56
             for section_index, (section_title, section_turns) in enumerate(
                 grouped_turns
             ):
@@ -735,6 +721,21 @@ class DemoImageRenderer:
                 section_top = y_cursor
                 turn_top = section_top + inner_pad_top
                 normalized_title = section_title or self.DEFAULT_SECTION_TITLE
+                section_label_text = f"{section_index + 1:02d} · {normalized_title}"
+                section_label_width = min(
+                    content_right - content_left,
+                    max(
+                        220,
+                        self._text_width(section_label_text, self.meta_font)
+                        + self.DEMO_SECTION_TITLE_PAD_X * 2,
+                    ),
+                )
+                tag_rect = (
+                    content_left,
+                    section_top + 16,
+                    content_right,
+                    section_top + 16 + title_height,
+                )
                 turn_top += title_height + title_gap
                 section_turn_placements: list[_ShowcaseTurnPlacement] = []
                 for turn in section_turns:
@@ -754,31 +755,11 @@ class DemoImageRenderer:
                     else turn_top
                 )
                 section_bottom = section_last_bottom + inner_pad_bottom
-                fill = (
-                    self.theme.showcase_accent_rail_bg
-                    if section_index % 2 == 0
-                    else self.theme.showcase_support_rail_bg
-                )
-                accent = (
-                    self.theme.accent if section_index % 2 == 0 else self.theme.indigo
-                )
-                header_rect = (
-                    section_left + 28,
-                    section_top + 18,
-                    section_right - 28,
-                    section_top + 18 + title_height,
-                )
-                tag_rect = (
-                    header_rect[0] + 14,
-                    header_rect[1] + 12,
-                    header_rect[0] + 14 + section_tag_width,
-                    header_rect[1] + 12 + 48,
-                )
-                divider_rect = (
-                    tag_rect[2] + 20,
-                    tag_rect[1] + 23,
-                    header_rect[2] - 18,
-                    tag_rect[1] + 25,
+                fill = self.theme.accent
+                text_fill = (
+                    "#FFFFFF"
+                    if self._preferred_text_on_color(fill) == "light"
+                    else self.theme.deep
                 )
                 demo_section_bands.append(
                     _DemoSectionBand(
@@ -792,10 +773,9 @@ class DemoImageRenderer:
                             section_bottom - inner_pad_bottom,
                         ),
                         tag_rect=tag_rect,
-                        header_rect=header_rect,
-                        divider_rect=divider_rect,
                         fill=fill,
-                        accent=accent,
+                        accent=fill,
+                        text_fill=text_fill,
                     )
                 )
                 y_cursor = section_bottom + section_gap
@@ -1028,84 +1008,31 @@ class DemoImageRenderer:
             fill="#FFFFFF",
         )
         for band in layout.demo_section_bands:
-            self._draw_shadowed_rect(
-                image,
-                rect=band.rect,
-                radius=24,
-                shadow_color=self.theme.bubble_shadow,
-                shadow_offset_y=8,
-                shadow_blur=24,
-                fill=band.fill,
-            )
             draw.rounded_rectangle(
-                band.header_rect,
-                radius=20,
-                fill=self._rgba(band.accent, 18),
-            )
-            top_accent_rect = (
-                band.header_rect[0] + 4,
-                band.header_rect[1] + 4,
-                band.header_rect[2] - 4,
-                band.header_rect[1] + 14,
-            )
-            draw.rounded_rectangle(
-                top_accent_rect,
-                radius=999,
-                fill=self._rgba(band.accent, 118),
-            )
-            self._draw_shadowed_rect(
-                image,
-                rect=band.tag_rect,
-                radius=18,
-                shadow_color=self.theme.standee_anchor_shadow,
-                shadow_offset_y=4,
-                shadow_blur=8,
-                fill="#FFFFFF",
-            )
-            index_text = f"{band.index:02d}"
-            index_rect = (
-                band.tag_rect[0] + 12,
-                band.tag_rect[1] + 8,
-                band.tag_rect[0] + 50,
-                band.tag_rect[3] - 8,
-            )
-            draw.rounded_rectangle(
-                index_rect,
-                radius=999,
+                band.tag_rect,
+                radius=(band.tag_rect[3] - band.tag_rect[1]) // 2,
                 fill=band.accent,
+            )
+            section_label_text = f"{band.index:02d} · {band.title}"
+            max_text_width = (
+                band.tag_rect[2]
+                - band.tag_rect[0]
+                - self.DEMO_SECTION_TITLE_PAD_X * 2
+            )
+            fitted_text = self._fit_text(
+                draw,
+                section_label_text,
+                self.meta_font,
+                max_width=max_text_width,
             )
             self._draw_text_centered(
                 draw,
-                (
-                    index_rect[0] + self.DEMO_SECTION_INDEX_OPTICAL_OFFSET_X,
-                    index_rect[1],
-                    index_rect[2] + self.DEMO_SECTION_INDEX_OPTICAL_OFFSET_X,
-                    index_rect[3],
-                ),
-                index_text,
+                band.tag_rect,
+                fitted_text,
                 font=self.meta_font,
-                fill="#FFFFFF",
-            )
-            title_bbox = self._text_size(band.title, self.meta_font)
-            title_height = int(title_bbox[3] - title_bbox[1])
-            title_y = (
-                band.tag_rect[1]
-                + (band.tag_rect[3] - band.tag_rect[1] - title_height) / 2
-                - title_bbox[1]
-                + self.DEMO_SECTION_TITLE_OPTICAL_OFFSET_Y
-            )
-            self._draw_text(
-                draw,
-                x=index_rect[2] + 12,
-                y=title_y,
-                text=band.title,
-                font=self.meta_font,
-                fill=band.accent,
-            )
-            draw.rounded_rectangle(
-                band.divider_rect,
-                radius=999,
-                fill=self._rgba(band.accent, 52),
+                fill=band.text_fill,
+                align="left",
+                padding_x=self.DEMO_SECTION_TITLE_PAD_X,
             )
         for placement in layout.turn_placements:
             self._draw_turn(image, draw, placement, locale=locale)
@@ -2446,3 +2373,11 @@ class DemoImageRenderer:
             int(color[4:6], 16),
             alpha,
         )
+
+    def _preferred_text_on_color(self, color: str) -> Literal["light", "dark"]:
+        color = color.lstrip("#")
+        red = int(color[0:2], 16)
+        green = int(color[2:4], 16)
+        blue = int(color[4:6], 16)
+        luminance = (red * 299 + green * 587 + blue * 114) / 1000
+        return "light" if luminance < 148 else "dark"

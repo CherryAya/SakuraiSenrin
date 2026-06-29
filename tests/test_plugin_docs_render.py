@@ -385,22 +385,23 @@ def test_demo_image_renderer_builds_full_section_bands_for_study_demo() -> None:
 
     assert layout.demo_heading_rect is not None
     assert layout.demo_rect[1] - layout.demo_heading_rect[3] <= 24
-    assert len(layout.demo_section_bands) == 4
-    assert [band.index for band in layout.demo_section_bands] == [1, 2, 3, 4]
+    assert len(layout.demo_section_bands) == 5
+    assert [band.index for band in layout.demo_section_bands] == [1, 2, 3, 4, 5]
     assert [band.title for band in layout.demo_section_bands] == [
-        "传统参数式",
-        "引导模式",
-        "图片快捷写法",
-        "取消与回退",
+        "引导式",
+        "传统模式",
+        "=> 语法糖",
+        "事件类例子",
+        "高级选项",
     ]
     for band in layout.demo_section_bands:
-        assert band.header_rect[0] >= band.rect[0]
-        assert band.header_rect[2] <= band.rect[2]
+        assert band.tag_rect[0] == band.content_rect[0]
+        assert band.tag_rect[2] == band.content_rect[2]
         assert band.content_rect[3] <= band.rect[3]
-        assert band.divider_rect[0] > band.tag_rect[2]
+        assert band.tag_rect[1] >= band.rect[1]
 
 
-def test_demo_image_renderer_aligns_section_title_and_index_optically() -> None:
+def test_demo_image_renderer_left_aligns_block_section_title_text() -> None:
     node = load_doc_node(
         source="src/plugins/study/docs/README.MD",
         default_name="词库模块",
@@ -429,7 +430,7 @@ def test_demo_image_renderer_aligns_section_title_and_index_optically() -> None:
         generated_at=datetime(2026, 6, 19, 16, 44, 50),
     )
     band = layout.demo_section_bands[0]
-    index_text = f"{band.index:02d}"
+    label_text = f"{band.index:02d} · {band.title}"
     captured: dict[str, tuple[float, float]] = {}
 
     def capture_draw_text(
@@ -441,7 +442,7 @@ def test_demo_image_renderer_aligns_section_title_and_index_optically() -> None:
         font: Any,
         fill: str,
     ) -> None:
-        if text in {index_text, band.title}:
+        if text == label_text:
             captured[text] = (x, y)
 
     renderer._draw_text = capture_draw_text  # pyright: ignore[reportMethodAssignment]
@@ -455,41 +456,9 @@ def test_demo_image_renderer_aligns_section_title_and_index_optically() -> None:
         locale="zh-CN",
     )
 
-    index_bbox = renderer._text_size(index_text, renderer.meta_font)  # pyright: ignore[reportPrivateUsage]
-    index_width = int(index_bbox[2] - index_bbox[0])
-    index_height = int(index_bbox[3] - index_bbox[1])
-    index_rect = (
-        band.tag_rect[0] + 12,
-        band.tag_rect[1] + 8,
-        band.tag_rect[0] + 50,
-        band.tag_rect[3] - 8,
-    )
-    expected_index_x = (
-        index_rect[0]
-        + renderer.DEMO_SECTION_INDEX_OPTICAL_OFFSET_X
-        + (
-            (index_rect[2] + renderer.DEMO_SECTION_INDEX_OPTICAL_OFFSET_X)
-            - (index_rect[0] + renderer.DEMO_SECTION_INDEX_OPTICAL_OFFSET_X)
-            - index_width
-        )
-        / 2
-    )
-    expected_index_y = (
-        index_rect[1]
-        + (index_rect[3] - index_rect[1] - index_height) / 2
-        - index_bbox[1]
-    )
-    title_bbox = renderer._text_size(band.title, renderer.meta_font)  # pyright: ignore[reportPrivateUsage]
-    title_height = int(title_bbox[3] - title_bbox[1])
-    expected_title_y = (
-        band.tag_rect[1]
-        + (band.tag_rect[3] - band.tag_rect[1] - title_height) / 2
-        - title_bbox[1]
-        + renderer.DEMO_SECTION_TITLE_OPTICAL_OFFSET_Y
-    )
-
-    assert captured[index_text] == (expected_index_x, expected_index_y)
-    assert captured[band.title][1] == expected_title_y
+    label_bbox = renderer._text_size(label_text, renderer.meta_font)  # pyright: ignore[reportPrivateUsage]
+    assert captured[label_text][0] == band.tag_rect[0] + renderer.DEMO_SECTION_TITLE_PAD_X
+    assert captured[label_text][1] >= band.tag_rect[1]
 
 
 def test_demo_image_renderer_uses_card_style_for_system_turn() -> None:
