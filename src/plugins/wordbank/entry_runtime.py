@@ -64,7 +64,6 @@ def register_wordbank_runtime_handlers(
     wordbank_command: Any,
     initialize_plugin: Callable[[], Awaitable[None]],
     build_error_message: Callable[..., Message | str],
-    approval_docs_source: Any,
     cancel_guided_resources: Callable[..., Awaitable[None]],
     guided_locale: Callable[[Mapping[str, Any]], LocaleCode],
 ) -> dict[str, Callable[..., Awaitable[None]]]:
@@ -414,7 +413,6 @@ def register_wordbank_runtime_handlers(
                     exc,
                     locale,
                     default_feature="approval-reply",
-                    source=approval_docs_source,
                     actor_permission=Permission.GROUP_ADMIN,
                 )
             )

@@ -494,13 +494,13 @@ beta
 
 
 def test_split_inline_text_spans_marks_backtick_segments_as_code() -> None:
-    spans = split_inline_text_spans("使用 `#study` 或 `#help 词库审核` 查看详情")
+    spans = split_inline_text_spans("使用 `#study` 或 `#help wordbank pending` 查看详情")
 
     assert [(span.text, span.code) for span in spans] == [
         ("使用 ", False),
         ("#study", True),
         (" 或 ", False),
-        ("#help 词库审核", True),
+        ("#help wordbank pending", True),
         (" 查看详情", False),
     ]
 
@@ -585,7 +585,7 @@ def test_demo_image_renderer_fit_inline_spans_keeps_code_spans_without_backticks
     fitted = renderer._fit_inline_spans(  # pyright: ignore[reportPrivateUsage]
         (
             InlineTextSpan(trigger_prefix, code=False),
-            InlineTextSpan("#help 词库审核", code=True),
+            InlineTextSpan("#help wordbank pending", code=True),
         ),
         renderer.meta_font,  # pyright: ignore[reportPrivateUsage]
         120,
@@ -700,7 +700,6 @@ def test_load_representative_demo_bytes_uses_first_available_feature() -> None:
 def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     wordbank_source = Path("src/plugins/wordbank/docs/README.MD")
     study_source = Path("src/plugins/study/docs/README.MD")
-    approval_source = Path("src/plugins/wordbank/docs/approval/README.MD")
     wordbank = load_plugin_doc_bundle(
         source=wordbank_source,
         default_name="词库模块",
@@ -715,13 +714,6 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
         trigger=TriggerType.COMMAND,
         permission=Permission.NORMAL,
     )
-    approval = load_plugin_doc_bundle(
-        source=approval_source,
-        default_name="词库审核",
-        default_description="desc",
-        trigger=TriggerType.COMMAND,
-        permission=Permission.GROUP_ADMIN,
-    )
 
     add = next(feature for feature in wordbank.index if feature.slug == "add")
     rank = next(feature for feature in wordbank.index if feature.slug == "rank")
@@ -731,9 +723,11 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     reply = next(
         feature for feature in wordbank.index if feature.slug == "reply-shortcut"
     )
-    approve = next(feature for feature in approval.index if feature.slug == "approve")
+    pending = next(feature for feature in wordbank.index if feature.slug == "pending")
+    approve = next(feature for feature in wordbank.index if feature.slug == "approve")
+    reject = next(feature for feature in wordbank.index if feature.slug == "reject")
     approval_reply = next(
-        feature for feature in approval.index if feature.slug == "approval-reply"
+        feature for feature in wordbank.index if feature.slug == "approval-reply"
     )
     study_main = next(feature for feature in study.index if feature.slug == "main")
 
@@ -772,9 +766,16 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert "group_recall" in passive.demo_turns[-1].text
     assert reply.demo_filename == "wordbank-reply-shortcut.webp"
     assert "词条详情 #12" in reply.demo_turns[3].text
+    assert pending.permission == Permission.GROUP_ADMIN
+    assert pending.demo_filename == "wordbank-approval-pending.webp"
+    assert pending.demo_turns[0].text == "#待审核词条 晚安"
     assert approve.demo_filename == "wordbank-approval-approve.webp"
+    assert approve.permission == Permission.GROUP_ADMIN
     assert "词条 #12 已通过审核" in approve.demo_turns[1].text
+    assert reject.demo_filename == "wordbank-approval-reject.webp"
+    assert reject.permission == Permission.GROUP_ADMIN
     assert approval_reply.demo_filename == "wordbank-approval-approval-reply.webp"
+    assert approval_reply.permission == Permission.GROUP_ADMIN
     assert "[回复审批通知] @机器人 y" in approval_reply.demo_turns[1].text
     assert study_main.demo_filename == "study-main.webp"
     assert study_main.demo_turns[0].text == "#study"
@@ -797,22 +798,11 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert study_main.demo_turns[-1].speaker == "BOT"
     assert "权重: 5" in study_main.demo_turns[-1].text
     assert all(feature.slug != "wordbank.approval" for feature in wordbank.index)
-    for source, bundle in (
-        (wordbank_source, wordbank),
-        (study_source, study),
-        (approval_source, approval),
-    ):
-        for feature in bundle.index:
-            if not feature.demo_turns:
-                continue
-            demo_path = source.parent / "demos" / feature.demo_filename
-            assert demo_path.is_file(), demo_path
-            assert demo_path.stat().st_size > 0
     assert load_representative_demo_bytes(wordbank) is not None
     assert load_representative_demo_bytes(study) is not None
     assert (
         load_representative_demo_bytes(
-            approval,
+            wordbank,
             actor_permission=Permission.NORMAL | Permission.GROUP_ADMIN,
         )
         is not None

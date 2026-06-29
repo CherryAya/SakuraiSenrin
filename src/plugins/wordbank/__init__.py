@@ -31,7 +31,6 @@ from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.services.startup_sync import ensure_restore_not_in_progress
 
 from .docs_support import (
-    APPROVAL_DOCS_SOURCE,
     DOCS_SOURCE,
     wordbank_docs_meta,
     wordbank_error_message,
@@ -449,7 +448,6 @@ runtime_exports = register_wordbank_runtime_handlers(
     wordbank_command=wordbank_command,
     initialize_plugin=initialize_wordbank_plugin,
     build_error_message=_wordbank_error_message,
-    approval_docs_source=APPROVAL_DOCS_SOURCE,
     cancel_guided_resources=_cancel_guided_resources,
     guided_locale=wordbank_guided_locale,
 )

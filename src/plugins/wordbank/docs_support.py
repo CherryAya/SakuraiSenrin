@@ -13,7 +13,6 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
-APPROVAL_DOCS_SOURCE = Path(__file__).parent / "docs" / "approval" / "README.MD"
 
 
 def wordbank_docs_meta() -> list[object]:
@@ -27,18 +26,7 @@ def wordbank_docs_meta() -> list[object]:
     )
     main_docs["permission"] = Permission.NORMAL
 
-    approval_docs = create_docs_meta(
-        visible=False,
-        category="fun",
-        order=180,
-        source=APPROVAL_DOCS_SOURCE,
-        slug="wordbank.approval",
-        parent_slug="wordbank",
-        aliases=("词库审核", "wordbank approval", "wordbank.approval"),
-    )
-    approval_docs["permission"] = Permission.GROUP_ADMIN
-
-    return [main_docs, approval_docs]
+    return [main_docs]
 
 
 def wordbank_error_feature(exc: Exception, default_feature: str | None) -> str | None:

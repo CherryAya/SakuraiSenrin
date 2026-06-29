@@ -98,7 +98,12 @@ def test_render_doc_node_overview_formats_multi_section_commands() -> None:
     assert "查看周期榜单" in rendered
     assert "  #水王 / #水王 <主体> <范围> <时间>" in rendered
     assert "反馈与交流群" in rendered
-    assert rendered.count("如需进一步支持，请联系管理员，或从下方反馈群入口中任选其一加入 💬。") == 1
+    assert (
+        rendered.count(
+            "如需进一步支持，请联系管理员，或从下方反馈群入口中任选其一加入 💬。"
+        )
+        == 1
+    )
     assert "群号 1107576103" in rendered
 
 
@@ -212,9 +217,8 @@ def test_build_readme_docs_filters_features_by_actor_permission() -> None:
     assert "未找到子功能文档: admin-maintenance" in str(denied_feature_message)
 
 
-def test_build_readme_docs_supports_wordbank_and_approval_docs() -> None:
+def test_build_readme_docs_filters_wordbank_admin_features_by_permission() -> None:
     wordbank_source = Path("src/plugins/wordbank/docs/README.MD")
-    approval_source = Path("src/plugins/wordbank/docs/approval/README.MD")
 
     normal_wordbank_message = build_readme_docs(
         source=wordbank_source,
@@ -224,26 +228,26 @@ def test_build_readme_docs_supports_wordbank_and_approval_docs() -> None:
         permission=Permission.NORMAL,
         ctx=DocsRenderContext(locale="zh-CN", actor_permission=Permission.NORMAL),
     )
-    admin_approval_message = build_readme_docs(
-        source=approval_source,
-        name="词库审核",
+    admin_wordbank_message = build_readme_docs(
+        source=wordbank_source,
+        name="词库模块",
         description="desc",
         trigger=TriggerType.COMMAND,
-        permission=Permission.GROUP_ADMIN,
+        permission=Permission.NORMAL,
         ctx=DocsRenderContext(
             locale="zh-CN",
             actor_permission=Permission.NORMAL | Permission.GROUP_ADMIN,
         ),
     )
     denied_approval_feature_message = build_readme_docs(
-        source=approval_source,
-        name="词库审核",
+        source=wordbank_source,
+        name="词库模块",
         description="desc",
         trigger=TriggerType.COMMAND,
-        permission=Permission.GROUP_ADMIN,
+        permission=Permission.NORMAL,
         ctx=DocsRenderContext(
             locale="zh-CN",
-            feature_query="approve",
+            feature_query="pending",
             actor_permission=Permission.NORMAL,
         ),
     )
@@ -252,11 +256,10 @@ def test_build_readme_docs_supports_wordbank_and_approval_docs() -> None:
     assert "待审核词条" not in str(normal_wordbank_message)
     assert "通过审核" not in str(normal_wordbank_message)
     assert "拒绝审核" not in str(normal_wordbank_message)
-    assert "词库审核" in str(admin_approval_message)
-    assert "待审核词条" in str(admin_approval_message)
-    assert "通过审核" in str(admin_approval_message)
-    assert "拒绝审核" in str(admin_approval_message)
-    assert "未找到子功能文档: approve" in str(denied_approval_feature_message)
+    assert "待审核词条" in str(admin_wordbank_message)
+    assert "通过审核" in str(admin_wordbank_message)
+    assert "拒绝审核" in str(admin_wordbank_message)
+    assert "未找到子功能文档: pending" in str(denied_approval_feature_message)
 
 
 def test_build_readme_docs_returns_ambiguous_hint(tmp_path: Path) -> None:
