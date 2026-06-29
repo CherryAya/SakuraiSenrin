@@ -459,6 +459,43 @@ async def test_handle_add_text_result_calls_add_message_entry_with_text_shapes()
 
 
 @pytest.mark.asyncio
+async def test_handle_add_text_result_supports_chinese_scope_and_role_flags() -> None:
+    add_message_entry = AsyncMock(return_value=_add_result())
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add 晚安 => 做个好梦 -s 本群 -r 管理")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="晚安 => 做个好梦 -s 本群 -r 管理",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["raw_rule"]["scope"] == "current_group"
+    assert kwargs["raw_rule"]["roles"] == "admin"
+
+
+@pytest.mark.asyncio
+async def test_handle_add_text_result_rejects_numeric_scope_shortcut() -> None:
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=AsyncMock(return_value=_add_result())),
+    )
+    event = build_group_message_event("#wordbank add 晚安 => 做个好梦 -s 1")
+
+    with pytest.raises(RuleError, match="不支持的生效范围"):
+        await handle_add_text_result(
+            service,
+            event=event,
+            text="晚安 => 做个好梦 -s 1",
+        )
+
+
+@pytest.mark.asyncio
 async def test_handle_add_text_result_parses_event_trigger_shape() -> None:
     add_message_entry = AsyncMock(
         return_value=_add_result(trigger_text="[事件:event:poke]")
@@ -507,8 +544,9 @@ async def test_handle_add_text_result_parses_bracket_event_alias_trigger_shape()
 
 
 @pytest.mark.asyncio
-async def test_handle_add_text_result_parses_chinese_bracket_event_alias_trigger_shape(
-) -> None:
+async def test_handle_add_text_result_parses_chinese_bracket_event_alias_trigger_shape() -> (
+    None
+):
     add_message_entry = AsyncMock(
         return_value=_add_result(trigger_text="[事件:event:join]")
     )
@@ -554,9 +592,7 @@ async def test_handle_add_text_result_parses_bot_join_alias_trigger_shape() -> N
 
 
 @pytest.mark.asyncio
-async def test_handle_add_text_result_parses_member_leave_alias_trigger_shape() -> (
-    None
-):
+async def test_handle_add_text_result_parses_member_leave_alias_trigger_shape() -> None:
     add_message_entry = AsyncMock(
         return_value=_add_result(trigger_text="[事件:event:member_leave]")
     )
@@ -600,8 +636,9 @@ async def test_handle_add_text_result_allows_escaped_event_literal_trigger() -> 
 
 
 @pytest.mark.asyncio
-async def test_handle_add_text_result_allows_escaped_bracket_event_literal_trigger(
-) -> None:
+async def test_handle_add_text_result_allows_escaped_bracket_event_literal_trigger() -> (
+    None
+):
     add_message_entry = AsyncMock(return_value=_add_result(trigger_text="【戳一戳】"))
     service = cast(
         WordbankService,
@@ -1279,8 +1316,9 @@ async def test_handle_study_shortcut_result_parses_event_trigger_shape() -> None
 
 
 @pytest.mark.asyncio
-async def test_handle_study_shortcut_result_parses_bracket_event_alias_trigger_shape(
-) -> None:
+async def test_handle_study_shortcut_result_parses_bracket_event_alias_trigger_shape() -> (
+    None
+):
     add_message_entry = AsyncMock(
         return_value=_add_result(trigger_text="[事件:event:member_leave]")
     )
@@ -1326,8 +1364,9 @@ async def test_handle_add_text_result_keeps_event_literal_in_response_plain_text
 
 
 @pytest.mark.asyncio
-async def test_handle_add_text_result_keeps_bracket_literal_in_response_plain_text(
-) -> None:
+async def test_handle_add_text_result_keeps_bracket_literal_in_response_plain_text() -> (
+    None
+):
     add_message_entry = AsyncMock(return_value=_add_result(response_text="【戳一戳】"))
     service = cast(
         WordbankService,

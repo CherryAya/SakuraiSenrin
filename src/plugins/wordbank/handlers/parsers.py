@@ -11,7 +11,11 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import WordbankRankPeriod
 from src.plugins.wordbank.services.errors import WordbankUserError
-from src.plugins.wordbank.services.rules import RuleError
+from src.plugins.wordbank.services.rules import (
+    RuleError,
+    normalize_role_alias,
+    normalize_scope_alias,
+)
 from src.plugins.wordbank.text_parsing import (
     TokenSpan,
     has_meaningful_text,
@@ -84,6 +88,28 @@ def _label(name: str) -> str:
         "creator_id": "wordbank.label.creator_id",
     }
     return tr("zh-CN", labels[name])
+
+
+def _normalize_inline_scope_value(value: str) -> str:
+    normalized = normalize_scope_alias(value)
+    if normalized is None or value.strip() in {"1", "2", "3", "4"}:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.scope_unsupported", scope=value),
+            key="wordbank.error.scope_unsupported",
+            scope=value,
+        )
+    return normalized
+
+
+def _normalize_inline_role_value(value: str) -> str:
+    normalized = normalize_role_alias(value)
+    if normalized is None:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.role_unsupported", role=value),
+            key="wordbank.error.role_unsupported",
+            role=value,
+        )
+    return normalized
 
 
 @dataclass(slots=True, frozen=True)
@@ -379,7 +405,7 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                     flag="--scope",
                     expected=_label("scope"),
                 )
-            raw_rule["scope"] = tokens[idx].value
+            raw_rule["scope"] = _normalize_inline_scope_value(tokens[idx].value)
             consumed_ranges.append((flag_token.start, tokens[idx].end))
         elif token in {"--prob", "--probability", "-p"}:
             flag_token = tokens[idx]
@@ -427,7 +453,7 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
                     flag="--role",
                     expected=_label("role"),
                 )
-            raw_rule["roles"] = tokens[idx].value
+            raw_rule["roles"] = _normalize_inline_role_value(tokens[idx].value)
             consumed_ranges.append((flag_token.start, tokens[idx].end))
         elif token == "--call":
             flag_token = tokens[idx]

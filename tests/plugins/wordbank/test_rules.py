@@ -6,6 +6,8 @@ from src.plugins.wordbank.services.rules import (
     RuleError,
     build_legacy_study_shortcut_rule,
     canonicalize_rule,
+    normalize_role_alias,
+    normalize_scope_alias,
     parse_legacy_study_text,
     rule_allows,
 )
@@ -42,6 +44,31 @@ def test_self_current_group_scope_is_internalized() -> None:
 
     assert rule.scope == "self_in_current_group"
     assert rule.priority == 50
+    assert rule.rule == {"roles": "admin"}
+
+
+def test_scope_and_role_aliases_are_normalized() -> None:
+    assert normalize_scope_alias("本群") == "current_group"
+    assert normalize_scope_alias("所有群") == "all_groups"
+    assert normalize_scope_alias("仅自己") == "self"
+    assert normalize_scope_alias("私聊") == "private_only"
+
+    assert normalize_role_alias("群主") == "owner"
+    assert normalize_role_alias("管理") == "admin"
+    assert normalize_role_alias("成员") == "member"
+    assert normalize_role_alias("o") == "owner"
+    assert normalize_role_alias("a") == "admin"
+    assert normalize_role_alias("m") == "member"
+
+
+def test_canonicalize_rule_accepts_chinese_scope_and_role_aliases() -> None:
+    rule = canonicalize_rule(
+        {"scope": "本群", "roles": "管理"},
+        is_group=True,
+        short_trigger=False,
+    )
+
+    assert rule.scope == "current_group"
     assert rule.rule == {"roles": "admin"}
 
 

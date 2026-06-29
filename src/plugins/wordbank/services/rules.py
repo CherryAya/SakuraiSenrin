@@ -30,6 +30,34 @@ VALID_SCOPES: set[str] = {
     "self_in_current_group",
 }
 VALID_ROLES: set[str] = {"any", "owner", "admin", "member"}
+SCOPE_ALIASES: dict[str, str] = {
+    "current_group": "current_group",
+    "本群": "current_group",
+    "当前群": "current_group",
+    "all_groups": "all_groups",
+    "全群": "all_groups",
+    "所有群": "all_groups",
+    "self": "self",
+    "自己": "self",
+    "仅自己": "self",
+    "private_only": "private_only",
+    "private": "private_only",
+    "私聊": "private_only",
+    "仅私聊": "private_only",
+}
+ROLE_ALIASES: dict[str, str] = {
+    "any": "any",
+    "owner": "owner",
+    "群主": "owner",
+    "o": "owner",
+    "admin": "admin",
+    "管理": "admin",
+    "管理员": "admin",
+    "a": "admin",
+    "member": "member",
+    "成员": "member",
+    "m": "member",
+}
 ROLE_LEVELS: dict[Role, int] = {
     "any": 0,
     "member": 1,
@@ -105,6 +133,16 @@ def _single_value(value: Any, field: str) -> Any:
     return value
 
 
+def normalize_scope_alias(value: str) -> str | None:
+    return SCOPE_ALIASES.get(value.strip().casefold()) or SCOPE_ALIASES.get(
+        value.strip()
+    )
+
+
+def normalize_role_alias(value: str) -> str | None:
+    return ROLE_ALIASES.get(value.strip().casefold()) or ROLE_ALIASES.get(value.strip())
+
+
 def _normalize_scope(value: Any, *, is_group: bool) -> Scope:
     if value is None or value == "":
         return "current_group" if is_group else "self"
@@ -118,7 +156,7 @@ def _normalize_scope(value: Any, *, is_group: bool) -> Scope:
                 "wordbank.error.scope_single",
             )
         value = next(iter(values))
-    scope = str(value).strip()
+    scope = normalize_scope_alias(str(value).strip()) or str(value).strip()
     if scope not in VALID_SCOPES:
         raise _rule_error(
             _default_i18n_text(
@@ -135,7 +173,7 @@ def _normalize_role(value: Any) -> Role:
     value = _single_value(value, "roles")
     if value is None or value == "":
         return "any"
-    role = str(value).strip()
+    role = normalize_role_alias(str(value).strip()) or str(value).strip()
     if role not in VALID_ROLES:
         raise _rule_error(
             _default_i18n_text(
