@@ -5,6 +5,7 @@ import sys
 
 import nonebot
 from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11.message import MessageSegment
 from nonebug import App
 import pytest
 
@@ -28,15 +29,17 @@ if nonebot.get_plugin("help") is None:
 SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 
 from src.lib.i18n.runtime import tr
+from src.lib.messages import text_message
 from src.plugins.admin.backup import _build_error_demo, admin_backup
 from src.plugins.help import (
+    HELP_FORWARD_WAIT_PROMPT,
     _iter_docs_entries,
     _resolve_actor_permission,
+    _resolve_docs_delivery_plan,
     _resolve_docs_message,
     help_matcher,
 )
 from tests.plugins.water.helpers import (
-    build_group_message_event,
     build_private_message_event,
 )
 
@@ -257,7 +260,7 @@ async def test_help_can_find_admin_backup_docs(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    event = build_group_message_event("#help 备份管理模块", user_id=SUPERUSER_ID)
+    event = build_private_message_event("#help 备份管理模块", user_id=SUPERUSER_ID)
     entries = _iter_docs_entries("zh-CN")
     backup_entry = next(
         entry for entry in entries if entry.display_name == "备份管理模块"
@@ -275,6 +278,39 @@ async def test_help_can_find_admin_backup_docs(
             actor_permission=actor_permission,
             all_entries=entries,
         )
+        plan = await _resolve_docs_delivery_plan(
+            backup_entry,
+            "zh-CN",
+            actor_permission=actor_permission,
+            all_entries=entries,
+        )
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, expected, bot=bot)
-        ctx.should_finished(help_matcher)
+        if plan.should_forward:
+            ctx.should_call_send(
+                event,
+                text_message(HELP_FORWARD_WAIT_PROMPT),
+                bot=bot,
+            )
+            ctx.should_call_api(
+                "get_login_info",
+                {},
+                result={"nickname": "SakuraiSenrin"},
+            )
+            ctx.should_call_api(
+                "send_private_forward_msg",
+                {
+                    "user_id": SUPERUSER_ID,
+                    "messages": [
+                        MessageSegment.node_custom(
+                            user_id=99999,
+                            nickname="SakuraiSenrin",
+                            content=message,
+                        )
+                        for message in plan.messages
+                    ],
+                },
+                result=None,
+            )
+        else:
+            ctx.should_call_send(event, expected, bot=bot)
+        ctx.should_finished()

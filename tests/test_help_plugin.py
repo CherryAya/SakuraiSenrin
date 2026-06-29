@@ -1,6 +1,7 @@
 import sys
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import nonebot
 from nonebot.plugin import PluginMetadata
@@ -9,6 +10,7 @@ import pytest
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR
+from src.lib.messages import text_message
 from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
@@ -38,17 +40,26 @@ if nonebot.get_plugin("study") is None:
     nonebot.load_plugin("src.plugins.study")
 
 from src.plugins.help import (
+    HELP_FORWARD_WAIT_PROMPT,
     DocsEntry,
+    HelpDeliveryPlan,
     _build_index_message,
     _build_permission_denied_message,
     _can_view_entry,
+    _deliver_help_plan,
     _filter_authorized_entries,
     _iter_docs_entries,
     _match_entry,
     _read_plugin_permission,
+    _resolve_docs_delivery_plan,
     _resolve_docs_message,
-    _resolve_child_entry,
+    _resolve_forward_sender,
+    _send_help_forward,
     _split_query,
+)
+from tests.plugins.water.helpers import (
+    build_group_message_event,
+    build_private_message_event,
 )
 
 
@@ -711,7 +722,8 @@ async def test_resolve_docs_message_formats_water_overview_shortcuts(
     entries = _iter_docs_entries("zh-CN")
     water_entry = next(entry for entry in entries if entry.display_name == "吹水记录")
     monkeypatch.setattr(
-        "src.plugins.help.render_plugin_summary", lambda *args, **kwargs: b"summary-demo"
+        "src.plugins.help.render_plugin_summary",
+        lambda *args, **kwargs: b"summary-demo",
     )
     message = await _resolve_docs_message(
         water_entry,
@@ -741,7 +753,8 @@ async def test_resolve_docs_message_wordbank_guide_hides_admin_features_for_norm
     entries = _iter_docs_entries("zh-CN")
     wordbank_entry = next(entry for entry in entries if entry.node.slug == "wordbank")
     monkeypatch.setattr(
-        "src.plugins.help.render_plugin_summary", lambda *args, **kwargs: b"summary-demo"
+        "src.plugins.help.render_plugin_summary",
+        lambda *args, **kwargs: b"summary-demo",
     )
 
     message = await _resolve_docs_message(
@@ -769,7 +782,8 @@ async def test_resolve_docs_message_wordbank_guide_shows_admin_features_for_admi
     entries = _iter_docs_entries("zh-CN")
     wordbank_entry = next(entry for entry in entries if entry.node.slug == "wordbank")
     monkeypatch.setattr(
-        "src.plugins.help.render_plugin_summary", lambda *args, **kwargs: b"summary-demo"
+        "src.plugins.help.render_plugin_summary",
+        lambda *args, **kwargs: b"summary-demo",
     )
 
     message = await _resolve_docs_message(
@@ -809,7 +823,8 @@ async def test_resolve_docs_message_wordbank_supports_admin_feature_query() -> N
 
 
 @pytest.mark.asyncio
-async def test_resolve_docs_message_wordbank_denies_admin_feature_query_for_normal_user() -> None:
+async def test_resolve_docs_message_wordbank_denies_admin_feature_query_for_normal_user(
+) -> None:
     entries = _iter_docs_entries("zh-CN")
     wordbank_entry = next(entry for entry in entries if entry.node.slug == "wordbank")
 
@@ -822,6 +837,154 @@ async def test_resolve_docs_message_wordbank_denies_admin_feature_query_for_norm
     )
 
     assert "未找到" in str(message)
+
+
+@pytest.mark.asyncio
+async def test_resolve_docs_delivery_plan_wordbank_guide_splits_into_forward_nodes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entries = _iter_docs_entries("zh-CN")
+    wordbank_entry = next(entry for entry in entries if entry.node.slug == "wordbank")
+    monkeypatch.setattr(
+        "src.plugins.help.render_plugin_summary",
+        lambda *args, **kwargs: b"summary-demo",
+    )
+
+    plan = await _resolve_docs_delivery_plan(
+        wordbank_entry,
+        "zh-CN",
+        actor_permission=Permission.NORMAL,
+        all_entries=entries,
+    )
+
+    assert plan.should_forward is True
+    assert len(plan.messages) > 1
+    assert "👉 基础添加" in str(plan.messages[0])
+    assert plan.messages[-1][-1].data["file"] == "base64://c3VtbWFyeS1kZW1v"
+
+
+@pytest.mark.asyncio
+async def test_resolve_docs_delivery_plan_simple_leaf_stays_single_message() -> None:
+    if nonebot.get_plugin("picsearch") is None:
+        nonebot.load_plugin("src.plugins.picsearch")
+    entries = _iter_docs_entries("zh-CN")
+    picsearch_entry = next(
+        entry for entry in entries if entry.display_name == "图片搜索"
+    )
+
+    plan = await _resolve_docs_delivery_plan(
+        picsearch_entry,
+        "zh-CN",
+        actor_permission=Permission.NORMAL,
+        all_entries=entries,
+    )
+
+    assert plan.should_forward is False
+    assert len(plan.messages) == 1
+    assert "图片搜索" in str(plan.messages[0])
+
+
+@pytest.mark.asyncio
+async def test_resolve_forward_sender_prefers_login_nickname() -> None:
+    bot = cast(
+        Any,
+        SimpleNamespace(
+            self_id="99999",
+            call_api=AsyncMock(return_value={"nickname": "测试机器人"}),
+        ),
+    )
+
+    sender = await _resolve_forward_sender(bot)
+
+    assert sender == (99999, "测试机器人")
+
+
+@pytest.mark.asyncio
+async def test_send_help_forward_uses_group_forward_api() -> None:
+    bot = cast(
+        Any,
+        SimpleNamespace(
+            self_id="99999",
+            call_api=AsyncMock(side_effect=[{"nickname": "测试机器人"}, None]),
+        ),
+    )
+    event = build_group_message_event("#help wordbank")
+    plan = HelpDeliveryPlan(messages=(text_message("A"), text_message("B")))
+
+    await _send_help_forward(bot, event, plan)
+
+    assert bot.call_api.await_count == 2
+    assert bot.call_api.await_args_list[1].args[0] == "send_group_forward_msg"
+    assert bot.call_api.await_args_list[1].kwargs["group_id"] == 20001
+    nodes = bot.call_api.await_args_list[1].kwargs["messages"]
+    assert len(nodes) == 2
+    assert all(node.type == "node" for node in nodes)
+    assert nodes[0].data["nickname"] == "测试机器人"
+
+
+@pytest.mark.asyncio
+async def test_send_help_forward_uses_private_forward_api_with_fallback_nickname() -> (
+    None
+):
+    async def fake_call_api(api: str, **kwargs: Any) -> None:
+        if api == "get_login_info":
+            raise RuntimeError("boom")
+        return None
+
+    bot = cast(
+        Any,
+        SimpleNamespace(self_id="99999", call_api=AsyncMock(side_effect=fake_call_api)),
+    )
+    event = build_private_message_event("#help wordbank")
+    plan = HelpDeliveryPlan(messages=(text_message("A"), text_message("B")))
+
+    await _send_help_forward(bot, event, plan)
+
+    assert bot.call_api.await_count == 2
+    assert bot.call_api.await_args_list[1].args[0] == "send_private_forward_msg"
+    assert bot.call_api.await_args_list[1].kwargs["user_id"] == 10001
+    nodes = bot.call_api.await_args_list[1].kwargs["messages"]
+    assert nodes[0].data["nickname"]
+
+
+@pytest.mark.asyncio
+async def test_deliver_help_plan_sends_wait_prompt_before_forward() -> None:
+    bot = cast(
+        Any,
+        SimpleNamespace(
+            self_id="99999",
+            call_api=AsyncMock(side_effect=[{"nickname": "测试机器人"}, None]),
+        ),
+    )
+    matcher = cast(Any, SimpleNamespace(send=AsyncMock(), finish=AsyncMock()))
+    event = build_group_message_event("#help wordbank")
+    plan = HelpDeliveryPlan(messages=(text_message("A"), text_message("B")))
+
+    await _deliver_help_plan(bot, matcher, event, plan)
+
+    matcher.send.assert_awaited_once()
+    sent_message = matcher.send.await_args.args[0]
+    assert str(sent_message) == HELP_FORWARD_WAIT_PROMPT
+    matcher.finish.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_deliver_help_plan_finishes_directly_for_single_message() -> None:
+    bot = cast(Any, SimpleNamespace(self_id="99999", call_api=AsyncMock()))
+    matcher = cast(Any, SimpleNamespace(send=AsyncMock(), finish=AsyncMock()))
+    event = build_group_message_event("#help picsearch")
+    message = text_message("single")
+
+    await _deliver_help_plan(
+        bot,
+        matcher,
+        event,
+        HelpDeliveryPlan(messages=(message,)),
+    )
+
+    matcher.send.assert_not_awaited()
+    matcher.finish.assert_awaited_once_with(message)
+    bot.call_api.assert_not_awaited()
 
 
 def test_iter_docs_entries_resolves_explicit_or_inherited_impression_colors() -> None:

@@ -13,7 +13,7 @@ from typing import Any, Literal, cast
 import nonebot
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
-from nonebot.adapters.onebot.v11.message import Message
+from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
@@ -33,17 +33,20 @@ from src.lib.plugin_docs import (
     build_feature_copy_text,
     build_help_home_sections,
     build_help_home_text,
+    build_plugin_summary_copy_text,
     build_simple_leaf_copy_text,
     build_static_entry_copy_text,
     can_view_node,
     create_docs_meta,
     feature_command_sections,
     filter_features_by_permission,
+    load_demo_bytes,
     load_doc_node,
     load_virtual_doc_node,
     match_doc_node,
     match_feature,
     read_docs_metas,
+    render_demo_png,
     render_doc_node_overview,
     render_feature_deep_dive,
     render_help_dashboard,
@@ -51,11 +54,16 @@ from src.lib.plugin_docs import (
     render_static_entry,
     resolve_help_entry_shape,
 )
+from src.lib.plugin_docs import (
+    render_plugin_guide as render_plugin_guide,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 
 name = tr("zh-CN", "plugin.help.name")
 description = tr("zh-CN", "plugin.help.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+HELP_FORWARD_WAIT_PROMPT = "正在整理帮助内容，请稍等一下。"
+HELP_FORWARD_FALLBACK_NICKNAME = "SakuraiSenrin"
 
 
 @dataclass(slots=True)
@@ -74,6 +82,15 @@ class MatchResult:
     status: Literal["matched", "not_found", "ambiguous"]
     entry: DocsEntry | None = None
     candidates: list[DocsEntry] | None = None
+
+
+@dataclass(slots=True)
+class HelpDeliveryPlan:
+    messages: tuple[Message, ...]
+
+    @property
+    def should_forward(self) -> bool:
+        return len(self.messages) > 1
 
 
 type RootSection = Literal["system", "developer", "community"]
@@ -405,6 +422,10 @@ def _build_index_message(
     )
 
 
+def _single_message_plan(message: Message) -> HelpDeliveryPlan:
+    return HelpDeliveryPlan(messages=(message,))
+
+
 def _build_ambiguous_message(
     query: str,
     candidates: list[DocsEntry],
@@ -504,17 +525,14 @@ def _compose_help_reply(image_bytes: bytes, text: str) -> Message:
     return message
 
 
-def _compose_plugin_guide_message(
+def _compose_plugin_guide_messages(
     entry: DocsEntry,
     *,
     features: tuple[Any, ...],
     child_entries: list[DocsEntry],
     locale: LocaleCode,
-    actor_permission: Permission,
-) -> Message:
-    from src.lib import plugin_docs as plugin_docs_module
-
-    message = Message()
+) -> tuple[Message, ...]:
+    messages: list[Message] = []
     for feature in features:
         lines = [f"👉 {feature.title}"]
         for trigger in feature_command_sections(
@@ -526,11 +544,12 @@ def _compose_plugin_guide_message(
             if normalized and not normalized.startswith("#"):
                 normalized = f"#{normalized}"
             lines.append(normalized)
-        message += text_message("\n".join(lines).strip())
-        message += image_message(
-            plugin_docs_module.load_demo_bytes(entry.node.bundle, feature)
-            or plugin_docs_module.render_demo_png(entry.node.bundle, feature)
+        feature_message = text_message("\n".join(lines).strip())
+        feature_message += image_message(
+            load_demo_bytes(entry.node.bundle, feature)
+            or render_demo_png(entry.node.bundle, feature)
         )
+        messages.append(feature_message)
 
     if child_entries:
         child_lines = ["子模块"]
@@ -540,26 +559,83 @@ def _compose_plugin_guide_message(
             child_summary = child_entry.node.summary.strip()
             if child_summary:
                 child_lines.append(child_summary)
-        message += text_message("\n".join(child_lines).strip())
+        messages.append(text_message("\n".join(child_lines).strip()))
 
-    message += image_message(
+    summary_text = build_plugin_summary_copy_text(entry.node)
+    summary_message = Message()
+    if summary_text:
+        summary_message += text_message(summary_text)
+    summary_message += image_message(
         render_plugin_summary(
             entry.node,
             locale=locale,
         )
     )
-    return message
+    messages.append(summary_message)
+    return tuple(messages)
 
 
-async def _resolve_docs_message(
+async def _resolve_forward_sender(bot: Bot) -> tuple[int, str]:
+    user_id = int(str(bot.self_id))
+    try:
+        login_info = await bot.call_api("get_login_info")
+    except Exception:
+        return user_id, HELP_FORWARD_FALLBACK_NICKNAME
+    if isinstance(login_info, dict):
+        nickname = str(login_info.get("nickname", "")).strip()
+        if nickname:
+            return user_id, nickname
+    return user_id, HELP_FORWARD_FALLBACK_NICKNAME
+
+
+async def _send_help_forward(
+    bot: Bot,
+    event: MessageEvent,
+    plan: HelpDeliveryPlan,
+) -> None:
+    user_id, nickname = await _resolve_forward_sender(bot)
+    nodes = [
+        MessageSegment.node_custom(user_id=user_id, nickname=nickname, content=message)
+        for message in plan.messages
+    ]
+    if isinstance(event, GroupMessageEvent):
+        await bot.call_api(
+            "send_group_forward_msg",
+            group_id=event.group_id,
+            messages=nodes,
+        )
+        return
+    await bot.call_api(
+        "send_private_forward_msg",
+        user_id=event.user_id,
+        messages=nodes,
+    )
+
+
+async def _deliver_help_plan(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    plan: HelpDeliveryPlan,
+) -> None:
+    if not plan.should_forward:
+        await matcher.finish(plan.messages[0])
+        return
+    await matcher.send(text_message(HELP_FORWARD_WAIT_PROMPT))
+    await _send_help_forward(bot, event, plan)
+    await matcher.finish()
+
+
+async def _resolve_docs_delivery_plan(
     entry: DocsEntry,
     locale: LocaleCode,
     *,
     feature_query: str | None = None,
     actor_permission: Permission = Permission.NORMAL,
     all_entries: list[DocsEntry] | None = None,
-) -> Message:
-    tree = build_doc_tree([item.node for item in (all_entries or [entry])])
+) -> HelpDeliveryPlan:
+    scoped_entries = all_entries or [entry]
+    tree = build_doc_tree([item.node for item in scoped_entries])
     children = tuple(
         child
         for child in tree.children_of(entry.node.slug)
@@ -567,7 +643,7 @@ async def _resolve_docs_message(
     )
     child_entries = [
         item
-        for item in (all_entries or [])
+        for item in scoped_entries
         if item.node.parent_slug == entry.node.slug
         and can_view_node(item.node, actor_permission)
     ]
@@ -584,12 +660,12 @@ async def _resolve_docs_message(
             all_entries=all_entries or [entry],
         )
         if child_entry is not None:
-            return await _resolve_docs_message(
+            return await _resolve_docs_delivery_plan(
                 child_entry,
                 locale,
                 feature_query=child_feature_query,
                 actor_permission=actor_permission,
-                all_entries=all_entries,
+                all_entries=scoped_entries,
             )
         visible_features = tuple(
             feature
@@ -604,20 +680,22 @@ async def _resolve_docs_message(
                 match.feature,
                 locale=locale,
             )
-            return _compose_help_reply(
-                image_bytes,
-                build_feature_copy_text(
-                    entry.node,
-                    match.feature,
-                    locale=locale,
-                ),
+            return _single_message_plan(
+                _compose_help_reply(
+                    image_bytes,
+                    build_feature_copy_text(
+                        entry.node,
+                        match.feature,
+                        locale=locale,
+                    ),
+                )
             )
         child_match = match_doc_node(children, feature_query)
         if child_match.status == "matched" and child_match.node is not None:
             child_entry = next(
                 (
                     item
-                    for item in (all_entries or [])
+                    for item in scoped_entries
                     if item.node.slug == child_match.node.slug
                 ),
                 None,
@@ -638,39 +716,46 @@ async def _resolve_docs_message(
                         locale=locale,
                         actor_permission=actor_permission,
                     )
-                    return _compose_help_reply(
-                        image_bytes,
-                        build_static_entry_copy_text(
-                            child_entry.node,
-                            locale=locale,
-                        ),
+                    return _single_message_plan(
+                        _compose_help_reply(
+                            image_bytes,
+                            build_static_entry_copy_text(
+                                child_entry.node,
+                                locale=locale,
+                            ),
+                        )
                     )
-                return _compose_plugin_guide_message(
-                    child_entry,
-                    features=tuple(features),
-                    child_entries=[],
-                    locale=locale,
-                    actor_permission=actor_permission,
+                return HelpDeliveryPlan(
+                    messages=_compose_plugin_guide_messages(
+                        child_entry,
+                        features=tuple(features),
+                        child_entries=[],
+                        locale=locale,
+                    )
                 )
         if match.status == "ambiguous":
-            return text_message(
-                "\n".join(
-                    [
-                        tr(
-                            locale,
-                            "help.query.feature_ambiguous.title",
-                            query=feature_query,
-                        ),
-                        tr(locale, "help.query.feature_ambiguous.hint"),
-                        "",
-                        *(
-                            f"- {feature.title} ({feature.slug})"
-                            for feature in match.candidates
-                        ),
-                    ]
-                ).strip()
+            return _single_message_plan(
+                text_message(
+                    "\n".join(
+                        [
+                            tr(
+                                locale,
+                                "help.query.feature_ambiguous.title",
+                                query=feature_query,
+                            ),
+                            tr(locale, "help.query.feature_ambiguous.hint"),
+                            "",
+                            *(
+                                f"- {feature.title} ({feature.slug})"
+                                for feature in match.candidates
+                            ),
+                        ]
+                    ).strip()
+                )
             )
-        return text_message(tr(locale, "help.query.not_found", query=feature_query))
+        return _single_message_plan(
+            text_message(tr(locale, "help.query.not_found", query=feature_query))
+        )
     features = filter_features_by_permission(
         entry.node.features,
         actor_permission=actor_permission,
@@ -681,21 +766,24 @@ async def _resolve_docs_message(
             locale=locale,
             actor_permission=actor_permission,
         )
-        return _compose_help_reply(
-            image_bytes,
-            build_static_entry_copy_text(
-                entry.node,
-                locale=locale,
-            ),
+        return _single_message_plan(
+            _compose_help_reply(
+                image_bytes,
+                build_static_entry_copy_text(
+                    entry.node,
+                    locale=locale,
+                ),
+            )
         )
     if entry_shape == "overview_group":
         if features:
-            return _compose_plugin_guide_message(
-                entry,
-                features=features,
-                child_entries=child_entries,
-                locale=locale,
-                actor_permission=actor_permission,
+            return HelpDeliveryPlan(
+                messages=_compose_plugin_guide_messages(
+                    entry,
+                    features=features,
+                    child_entries=child_entries,
+                    locale=locale,
+                )
             )
         overview_text = str(
             render_doc_node_overview(
@@ -706,7 +794,7 @@ async def _resolve_docs_message(
                 children=children,
             )
         )
-        return text_message(overview_text)
+        return _single_message_plan(text_message(overview_text))
     if entry_shape == "simple_leaf" and features:
         feature = features[0]
         image_bytes = render_feature_deep_dive(
@@ -715,21 +803,47 @@ async def _resolve_docs_message(
             locale=locale,
             actor_permission=actor_permission,
         )
-        return _compose_help_reply(
-            image_bytes,
-            build_simple_leaf_copy_text(
-                entry.node,
-                feature,
-                locale=locale,
-            ),
+        return _single_message_plan(
+            _compose_help_reply(
+                image_bytes,
+                build_simple_leaf_copy_text(
+                    entry.node,
+                    feature,
+                    locale=locale,
+                ),
+            )
         )
-    return _compose_plugin_guide_message(
-        entry,
-        features=features,
-        child_entries=child_entries,
-        locale=locale,
-        actor_permission=actor_permission,
+    return HelpDeliveryPlan(
+        messages=_compose_plugin_guide_messages(
+            entry,
+            features=features,
+            child_entries=child_entries,
+            locale=locale,
+        )
     )
+
+
+async def _resolve_docs_message(
+    entry: DocsEntry,
+    locale: LocaleCode,
+    *,
+    feature_query: str | None = None,
+    actor_permission: Permission = Permission.NORMAL,
+    all_entries: list[DocsEntry] | None = None,
+) -> Message:
+    plan = await _resolve_docs_delivery_plan(
+        entry,
+        locale,
+        feature_query=feature_query,
+        actor_permission=actor_permission,
+        all_entries=all_entries,
+    )
+    if len(plan.messages) == 1:
+        return plan.messages[0]
+    merged = Message()
+    for message in plan.messages:
+        merged += message
+    return merged
 
 
 @help_matcher.handle()
@@ -745,9 +859,15 @@ async def _(
     authorized_entries = _filter_authorized_entries(entries, actor_permission)
     query = arg.extract_plain_text().strip()
     if not query:
-        await matcher.finish(
-            _build_index_message(authorized_entries, locale, actor_permission)
+        await _deliver_help_plan(
+            bot,
+            matcher,
+            event,
+            _single_message_plan(
+                _build_index_message(authorized_entries, locale, actor_permission)
+            ),
         )
+        return
 
     match_result = _match_entry(authorized_entries, query)
     feature_query: str | None = None
@@ -783,11 +903,11 @@ async def _(
             _build_permission_denied_message(match_result.entry, locale)
         )
 
-    docs_message = await _resolve_docs_message(
+    docs_plan = await _resolve_docs_delivery_plan(
         match_result.entry,
         locale,
         feature_query=feature_query,
         actor_permission=actor_permission,
         all_entries=entries,
     )
-    await matcher.finish(docs_message)
+    await _deliver_help_plan(bot, matcher, event, docs_plan)
