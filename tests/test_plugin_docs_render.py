@@ -887,7 +887,7 @@ def test_render_plugin_guide_and_copy_text_list_all_visible_features() -> None:
     assert "基础添加" in copy_text
     assert "添加词条 触发词 => 响应词" in copy_text
     assert "查看 demo：" not in copy_text
-    assert "添加词条 触发词 => 响应词 --scope current_group" in copy_text
+    assert "添加词条 触发词 => 响应词 -s 本群|全群|自己|私聊" in copy_text
     assert "#help 词库模块 add-scope" not in copy_text
     assert "主功能" in copy_text
     assert "高级功能" in copy_text
