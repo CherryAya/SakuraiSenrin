@@ -472,7 +472,8 @@ def test_build_command_layout_splits_root_level_alternatives() -> None:
         for line in layout.lines[1:]
     )
     assert any(line.kind == "alternative" for line in layout.lines[1:])
-    assert layout.lines[1].indent_level >= 1
+    alternative_line = next(line for line in layout.lines if line.kind == "alternative")
+    assert alternative_line.indent_level == 0
 
 
 def test_build_command_layout_splits_consecutive_inline_code_variants() -> None:
@@ -497,7 +498,7 @@ def test_build_command_layout_splits_consecutive_inline_code_variants() -> None:
     assert layout.lines[0].kind == "root"
     assert any(line.kind == "alternative" for line in layout.lines)
     alternative_line = next(line for line in layout.lines if line.kind == "alternative")
-    assert alternative_line.indent_level == 1
+    assert alternative_line.indent_level == 0
 
 
 def test_collection_jobs_do_not_require_demo_png_files(

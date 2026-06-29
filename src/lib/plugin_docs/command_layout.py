@@ -124,7 +124,7 @@ def build_command_layout(
             raw_lines.extend(
                 _format_command_tokens(
                     group,
-                    base_indent=0 if index == 0 else 1,
+                    base_indent=0,
                     first_kind="root" if index == 0 else "alternative",
                     max_width=max_width,
                     indent_px=indent_px,
@@ -174,7 +174,7 @@ def build_command_layout(
             raw_lines.extend(
                 _format_command_tokens(
                     group,
-                    base_indent=0 if index == 0 else 1,
+                    base_indent=0,
                     first_kind="root" if index == 0 else "alternative",
                     max_width=max_width,
                     indent_px=indent_px,

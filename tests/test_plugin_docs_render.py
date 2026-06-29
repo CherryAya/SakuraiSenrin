@@ -318,6 +318,11 @@ def test_demo_image_renderer_measure_layout_uses_alternative_lines_for_multi_com
 
     assert layout.trigger_layout.lines[0].kind == "root"
     assert any(line.kind == "alternative" for line in layout.trigger_layout.lines[1:])
+    assert all(
+        line.indent_level == 0
+        for line in layout.trigger_layout.lines
+        if line.kind in {"root", "alternative"}
+    )
 
 
 def test_demo_image_renderer_measures_short_bubbles_without_min_width() -> None:
@@ -486,8 +491,9 @@ def test_demo_image_renderer_left_aligns_block_section_title_text() -> None:
         locale="zh-CN",
     )
 
-    label_bbox = renderer._text_size(label_text, renderer.meta_font)  # pyright: ignore[reportPrivateUsage]
-    assert captured[label_text][0] == band.tag_rect[0] + renderer.DEMO_SECTION_TITLE_PAD_X
+    assert (
+        captured[label_text][0] == band.tag_rect[0] + renderer.DEMO_SECTION_TITLE_PAD_X
+    )
     assert captured[label_text][1] >= band.tag_rect[1]
 
 
@@ -1145,7 +1151,9 @@ def test_render_plugin_summary_returns_showcase_canvas() -> None:
         permission=Permission.NORMAL,
     )
 
-    image = Image.open(BytesIO(plugin_docs_module.render_plugin_summary(node, locale="zh-CN")))
+    image = Image.open(
+        BytesIO(plugin_docs_module.render_plugin_summary(node, locale="zh-CN"))
+    )
 
     assert image.width == 1280
     assert image.height > 500
