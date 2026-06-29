@@ -787,9 +787,11 @@ async def test_resolve_docs_message_wordbank_guide_lists_child_modules(
     )
 
     rendered = str(message)
-    assert "主功能" in rendered
-    assert "高级功能" in rendered
+    assert "主功能" not in rendered
+    assert "高级功能" not in rendered
     assert "子模块" in rendered
+    assert "👉 基础添加" in rendered
+    assert "#添加词条 触发词 => 响应词" in rendered
     assert "词库审核" in rendered
     assert "#help wordbank.approval" in rendered
 

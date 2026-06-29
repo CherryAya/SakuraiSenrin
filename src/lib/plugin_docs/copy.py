@@ -203,45 +203,28 @@ def build_plugin_guide_copy_text(
         "",
     ]
 
-    regular_features = [feature for feature in features if not feature.advanced]
-    advanced_features = [feature for feature in features if feature.advanced]
-
-    if regular_features:
-        lines.append("主功能")
-        for feature in regular_features:
-            lines.append(feature.title)
-            lines.extend(
-                feature_command_sections(
-                    node.bundle,
-                    feature,
-                    node.title,
-                    normalize_inline_text=normalize_inline_text,
-                )
-            )
-            lines.append("")
-
-    if advanced_features:
-        lines.append("高级功能")
-        for feature in advanced_features:
-            lines.append(feature.title)
-            lines.extend(
-                feature_command_sections(
-                    node.bundle,
-                    feature,
-                    node.title,
-                    normalize_inline_text=normalize_inline_text,
-                )
-            )
-            lines.append("")
+    for feature in features:
+        lines.append(f"👉 {feature.title}")
+        for command in feature_command_sections(
+            node.bundle,
+            feature,
+            node.title,
+            normalize_inline_text=normalize_inline_text,
+        ):
+            normalized_command = command.strip()
+            if normalized_command and not normalized_command.startswith("#"):
+                normalized_command = f"#{normalized_command}"
+            lines.append(f"  {normalized_command}")
+        lines.append("")
 
     if child_nodes:
         lines.append("子模块")
         for child in child_nodes:
-            lines.append(child.title)
-            lines.append(node_help_command(child))
+            lines.append(f"👉 {child.title}")
+            lines.append(f"  {node_help_command(child)}")
             summary = normalize_inline_text(child.summary)
             if summary:
-                lines.append(summary)
+                lines.append(f"  {summary}")
             lines.append("")
 
     lines.append(support_text_block(locale))
