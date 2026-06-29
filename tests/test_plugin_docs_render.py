@@ -290,6 +290,36 @@ def test_demo_image_renderer_measure_layout_uses_structured_trigger_layout() -> 
     )  # pyright: ignore[reportPrivateUsage]
 
 
+def test_demo_image_renderer_measure_layout_uses_alternative_lines_for_multi_commands() -> (
+    None
+):
+    renderer = DemoImageRenderer(impression_color="#3BC9DB")
+
+    layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
+        plugin_title="测试插件",
+        feature_title="多指令命令",
+        feature_summary="测试多指令布局。",
+        feature_trigger=(
+            "wordbank trigger prob <group_id> <0.0-1.0>；"
+            "wordbank trigger set <group_id> <新触发内容>"
+        ),
+        feature_overview="测试说明。",
+        feature_preconditions="无",
+        feature_failures="无",
+        feature_flow_notes="",
+        plugin_trigger="指令触发",
+        feature_permission="普通用户",
+        plugin_version="v1.2.3",
+        plugin_author="SakuraiCora",
+        turns=(),
+        locale="zh-CN",
+        generated_at=datetime(2026, 6, 16, 21, 30, 45),
+    )
+
+    assert layout.trigger_layout.lines[0].kind == "root"
+    assert any(line.kind == "alternative" for line in layout.trigger_layout.lines[1:])
+
+
 def test_demo_image_renderer_measures_short_bubbles_without_min_width() -> None:
     renderer = DemoImageRenderer(impression_color="#3BC9DB")
 

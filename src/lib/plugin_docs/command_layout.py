@@ -167,6 +167,8 @@ def build_command_layout(
     tokens = _split_command_tokens(normalized)
     raw_lines: list[CommandLayoutLine] = []
     alternative_groups = _split_command_alternatives(tokens)
+    if alternative_groups is None:
+        alternative_groups = _split_command_semicolon_groups(tokens)
     if alternative_groups is not None:
         for index, group in enumerate(alternative_groups):
             raw_lines.extend(
@@ -289,6 +291,29 @@ def _split_command_alternatives(
     saw_separator = False
     for token in tokens:
         if token in {"/", "|"}:
+            if current:
+                groups.append(tuple(current))
+                current = []
+            saw_separator = True
+            continue
+        current.append(token)
+    if current:
+        groups.append(tuple(current))
+    if not saw_separator or len(groups) < 2:
+        return None
+    return tuple(group for group in groups if group)
+
+
+def _split_command_semicolon_groups(
+    tokens: Sequence[str],
+) -> tuple[tuple[str, ...], ...] | None:
+    if not tokens:
+        return None
+    groups: list[tuple[str, ...]] = []
+    current: list[str] = []
+    saw_separator = False
+    for token in tokens:
+        if token in {"；", ";"}:
             if current:
                 groups.append(tuple(current))
                 current = []

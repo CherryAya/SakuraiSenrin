@@ -757,9 +757,19 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert rank.demo_turns[0].text == "#苦瓜榜"
     assert "[发送苦瓜榜海报]" in rank.demo_turns[1].text
     assert trigger.demo_filename == "wordbank-trigger.webp"
+    assert (
+        trigger.trigger
+        == "`wordbank trigger prob <group_id> <0.0-1.0>`；"
+        "`wordbank trigger set <group_id> <新触发内容>`"
+    )
     assert trigger.demo_turns[0].text == "#wordbank trigger prob 271 0.3"
     assert "重新进入 pending" in trigger.demo_turns[4].text
     assert response.demo_filename == "wordbank-response.webp"
+    assert (
+        response.trigger
+        == "`wordbank response weight <id> <1-5>`；"
+        "`wordbank response set <id> <新响应内容>`"
+    )
     assert response.demo_turns[0].text == "#wordbank response weight 12 5"
     assert "重新进入 pending" in response.demo_turns[4].text
     assert passive.demo_turns[-1].speaker == "SYSTEM"

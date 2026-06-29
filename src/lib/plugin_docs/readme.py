@@ -199,14 +199,66 @@ def parse_meta_block_tokens(
 ) -> dict[str, str]:
     meta: dict[str, str] = {}
     for item_tokens in extract_list_item_tokens(tokens):
-        payload = render_markdown_blocks(item_tokens).replace("\n", " ").strip()
-        key, value = split_key_value(payload)
+        key, value_tokens = _split_meta_item_tokens(
+            item_tokens,
+            parse_inline_tokens=parse_inline_tokens,
+        )
         if not key:
+            continue
+        value = _render_meta_value_tokens(value_tokens).strip()
+        if not value:
+            value = render_markdown_blocks(value_tokens).replace("\n", " ").strip()
+        if not value:
             continue
         meta[key] = strip_wrapping_backticks(
             value, parse_inline_tokens=parse_inline_tokens
         )
     return meta
+
+
+def _split_meta_item_tokens(
+    tokens: Sequence[Token],
+    *,
+    parse_inline_tokens: ParseInlineTokens,
+) -> tuple[str, tuple[Token, ...]]:
+    inline_index = next(
+        (index for index, token in enumerate(tokens) if token.type == "inline"),
+        None,
+    )
+    if inline_index is None:
+        return "", ()
+    inline = tokens[inline_index]
+    rendered = render_inline_markdown(inline.children or ()).strip()
+    key, value = split_key_value(rendered)
+    if not key:
+        return "", ()
+    trailing = value
+    remaining = tuple(tokens[inline_index + 1 :])
+    if trailing:
+        synthetic = Token("inline", "", 0)
+        synthetic.children = list(parse_inline_tokens(trailing))
+        return key, (synthetic, *remaining)
+    return key, remaining
+
+
+def _render_meta_value_tokens(tokens: Sequence[Token]) -> str:
+    parts: list[str] = []
+    for item_tokens in extract_list_item_tokens(tokens):
+        value = render_markdown_blocks(item_tokens).strip()
+        if value:
+            parts.append(value)
+    if parts:
+        return "；".join(parts)
+    blocks = render_markdown_blocks(tokens).strip()
+    if blocks:
+        return blocks
+    inline_values: list[str] = []
+    for token in tokens:
+        if token.type == "inline":
+            value = render_inline_markdown(token.children or ()).strip()
+            if value:
+                inline_values.append(value)
+    return " ".join(inline_values).strip()
 
 
 def split_key_value(value: str) -> tuple[str, str]:
