@@ -20,6 +20,7 @@ from ._engine import build_feature_copy_text as build_feature_copy_text
 from ._engine import build_help_home_sections as build_help_home_sections
 from ._engine import build_help_home_text as build_help_home_text
 from ._engine import build_plugin_guide_copy_text as build_plugin_guide_copy_text
+from ._engine import build_plugin_summary_copy_text as build_plugin_summary_copy_text
 from ._engine import build_readme_docs as build_readme_docs
 from ._engine import build_simple_leaf_copy_text as build_simple_leaf_copy_text
 from ._engine import build_static_entry_copy_text as build_static_entry_copy_text
@@ -28,7 +29,9 @@ from ._engine import can_view_node as can_view_node
 from ._engine import collection_demo_filename as collection_demo_filename
 from ._engine import create_docs_meta as create_docs_meta
 from ._engine import filter_features_by_permission as filter_features_by_permission
+from ._engine import feature_command_sections as feature_command_sections
 from ._engine import load_doc_node as load_doc_node
+from ._engine import load_demo_bytes as load_demo_bytes
 from ._engine import load_plugin_doc_bundle as load_plugin_doc_bundle
 from ._engine import load_representative_demo_bytes as load_representative_demo_bytes
 from ._engine import load_virtual_doc_node as load_virtual_doc_node
@@ -42,6 +45,7 @@ from ._engine import render_doc_node_overview as render_doc_node_overview
 from ._engine import render_feature_deep_dive as render_feature_deep_dive
 from ._engine import render_help_dashboard as render_help_dashboard
 from ._engine import render_plugin_guide as render_plugin_guide
+from ._engine import render_plugin_summary as render_plugin_summary
 from ._engine import render_static_entry as render_static_entry
 from ._engine import resolve_help_entry_shape as resolve_help_entry_shape
 from ._engine import should_prefer_collection_demo as should_prefer_collection_demo

@@ -33,11 +33,11 @@ from src.lib.plugin_docs import (
     build_feature_copy_text,
     build_help_home_sections,
     build_help_home_text,
-    build_plugin_guide_copy_text,
     build_simple_leaf_copy_text,
     build_static_entry_copy_text,
     can_view_node,
     create_docs_meta,
+    feature_command_sections,
     filter_features_by_permission,
     load_doc_node,
     load_virtual_doc_node,
@@ -47,7 +47,7 @@ from src.lib.plugin_docs import (
     render_doc_node_overview,
     render_feature_deep_dive,
     render_help_dashboard,
-    render_plugin_guide,
+    render_plugin_summary,
     render_static_entry,
     resolve_help_entry_shape,
 )
@@ -504,6 +504,53 @@ def _compose_help_reply(image_bytes: bytes, text: str) -> Message:
     return message
 
 
+def _compose_plugin_guide_message(
+    entry: DocsEntry,
+    *,
+    features: tuple[Any, ...],
+    child_entries: list[DocsEntry],
+    locale: LocaleCode,
+    actor_permission: Permission,
+) -> Message:
+    from src.lib import plugin_docs as plugin_docs_module
+
+    message = Message()
+    for feature in features:
+        lines = [f"👉 {feature.title}"]
+        for trigger in feature_command_sections(
+            entry.node.bundle,
+            feature,
+            entry.node.title,
+        ):
+            normalized = trigger.strip()
+            if normalized and not normalized.startswith("#"):
+                normalized = f"#{normalized}"
+            lines.append(normalized)
+        message += text_message("\n".join(lines).strip())
+        message += image_message(
+            plugin_docs_module.load_demo_bytes(entry.node.bundle, feature)
+            or plugin_docs_module.render_demo_png(entry.node.bundle, feature)
+        )
+
+    if child_entries:
+        child_lines = ["子模块"]
+        for child_entry in child_entries:
+            child_lines.append(f"👉 {child_entry.node.title}")
+            child_lines.append(f"#help {child_entry.node.slug}")
+            child_summary = child_entry.node.summary.strip()
+            if child_summary:
+                child_lines.append(child_summary)
+        message += text_message("\n".join(child_lines).strip())
+
+    message += image_message(
+        render_plugin_summary(
+            entry.node,
+            locale=locale,
+        )
+    )
+    return message
+
+
 async def _resolve_docs_message(
     entry: DocsEntry,
     locale: LocaleCode,
@@ -598,19 +645,12 @@ async def _resolve_docs_message(
                             locale=locale,
                         ),
                     )
-                image_bytes = render_plugin_guide(
-                    child_entry.node,
+                return _compose_plugin_guide_message(
+                    child_entry,
+                    features=tuple(features),
+                    child_entries=[],
                     locale=locale,
                     actor_permission=actor_permission,
-                )
-                return _compose_help_reply(
-                    image_bytes,
-                    build_plugin_guide_copy_text(
-                        child_entry.node,
-                        features=features,
-                        child_nodes=(),
-                        locale=locale,
-                    ),
                 )
         if match.status == "ambiguous":
             return text_message(
@@ -649,29 +689,24 @@ async def _resolve_docs_message(
             ),
         )
     if entry_shape == "overview_group":
-        image_bytes = render_plugin_guide(
-            entry.node,
-            locale=locale,
-            actor_permission=actor_permission,
-        )
         if features:
-            overview_text = build_plugin_guide_copy_text(
-                entry.node,
+            return _compose_plugin_guide_message(
+                entry,
                 features=features,
-                child_nodes=tuple(item.node for item in child_entries),
+                child_entries=child_entries,
                 locale=locale,
+                actor_permission=actor_permission,
             )
-        else:
-            overview_text = str(
-                render_doc_node_overview(
-                    entry.node,
-                    locale=locale,
-                    include_demo=False,
-                    actor_permission=actor_permission,
-                    children=children,
-                )
+        overview_text = str(
+            render_doc_node_overview(
+                entry.node,
+                locale=locale,
+                include_demo=False,
+                actor_permission=actor_permission,
+                children=children,
             )
-        return _compose_help_reply(image_bytes, overview_text)
+        )
+        return text_message(overview_text)
     if entry_shape == "simple_leaf" and features:
         feature = features[0]
         image_bytes = render_feature_deep_dive(
@@ -688,19 +723,12 @@ async def _resolve_docs_message(
                 locale=locale,
             ),
         )
-    image_bytes = render_plugin_guide(
-        entry.node,
+    return _compose_plugin_guide_message(
+        entry,
+        features=features,
+        child_entries=child_entries,
         locale=locale,
         actor_permission=actor_permission,
-    )
-    return _compose_help_reply(
-        image_bytes,
-        build_plugin_guide_copy_text(
-            entry.node,
-            features=features,
-            child_nodes=tuple(item.node for item in child_entries),
-            locale=locale,
-        ),
     )
 
 

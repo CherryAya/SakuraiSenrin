@@ -197,11 +197,7 @@ def build_plugin_guide_copy_text(
     support_text_block: SupportTextBlockProvider,
     locale: LocaleCode,
 ) -> str:
-    lines = [
-        node.title,
-        "下面这些命令可以直接复制发送：",
-        "",
-    ]
+    lines = [node.title, ""]
 
     for feature in features:
         lines.append(f"👉 {feature.title}")
@@ -229,6 +225,21 @@ def build_plugin_guide_copy_text(
 
     lines.append(support_text_block(locale))
     return "\n".join(line for line in lines if line is not None).strip()
+
+
+def build_plugin_summary_copy_text(
+    node: DocNode,
+    *,
+    normalize_inline_text: NormalizeInlineText,
+) -> str:
+    summary = normalize_inline_text(node.summary)
+    description = normalize_inline_text(node.description)
+    lines: list[str] = []
+    if summary:
+        lines.append(summary)
+    if description and description != summary:
+        lines.extend(["", description])
+    return "\n".join(lines).strip()
 
 
 def build_simple_leaf_copy_text(

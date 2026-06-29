@@ -1106,6 +1106,37 @@ def test_render_static_entry_returns_showcase_canvas() -> None:
     assert image.height > 500
 
 
+def test_render_plugin_summary_returns_showcase_canvas() -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    image = Image.open(BytesIO(plugin_docs_module.render_plugin_summary(node, locale="zh-CN")))
+
+    assert image.width == 1280
+    assert image.height > 500
+
+
+def test_build_plugin_summary_copy_text_excludes_static_entry_wording() -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    copy_text = plugin_docs_module.build_plugin_summary_copy_text(node)
+
+    assert "添加、删除、管理词条，都在这里啦！" in copy_text
+    assert "静态社区入口说明页" not in copy_text
+    assert "反馈与交流群" not in copy_text
+
+
 def test_build_simple_leaf_copy_text_includes_direct_demo_command() -> None:
     node = load_doc_node(
         source="src/plugins/picsearch/docs/README.MD",

@@ -30,6 +30,7 @@ from .demo import DemoImageRenderer, _ShowcaseNoteItem, _ShowcaseTurnPlacement
 from .encoding import encode_docs_image
 from .helpers import (
     build_help_support_bundle,
+    build_plugin_summary_copy,
     build_static_entry_copy,
     feature_command_for_display_text,
     feature_demo_help_command,
@@ -607,6 +608,140 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             draw,
             footer_rect=footer_rect,
             left_text=f"{node.title} · Static Entry · By {node.bundle.author}",
+            right_text=f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin",
+        )
+        return encode_docs_image(image, webp_quality=88, webp_method=6)
+
+    def render_plugin_summary(
+        self,
+        *,
+        node: DocNode,
+        locale: LocaleCode,
+        generated_at: datetime | None = None,
+    ) -> bytes:
+        generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
+            microsecond=0
+        )
+        side = self.theme.hero_side_padding
+        width = self.WIDTH - side * 2
+        header_title_lines = tuple(
+            self._wrap_inline_text(
+                node.title,
+                max_width=self.WIDTH - side * 2 - self.theme.hero_standee_size,
+                font=self.title_font,
+            )
+        )
+        header_summary_lines = tuple(
+            self._wrap_inline_text(
+                node.summary or node.bundle.summary,
+                max_width=self.WIDTH - side * 2 - self.theme.hero_standee_size,
+                font=self.summary_font,
+            )
+        )
+        hero_bottom = (
+            self.theme.hero_top
+            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + self.theme.hero_text_gap
+            + len(header_summary_lines)
+            * self._line_height_for_font(
+                self.summary_font,
+                minimum=self.theme.hero_summary_line_height,
+            )
+            + self.theme.hero_bottom_padding
+        )
+        body_text = build_plugin_summary_copy(node).strip()
+        body_lines = tuple(
+            self._wrap_inline_text(
+                body_text,
+                max_width=width - self.GUIDE_SECTION_PADDING_X * 2,
+                font=self.instruction_font,
+            )
+        )
+        body_line_height = self._line_height_for_font(self.instruction_font)
+        body_content_height = len(body_lines) * body_line_height if body_lines else 0
+        section_height = (
+            self.GUIDE_SECTION_PADDING_Y * 2 + body_content_height + 24
+            if body_lines
+            else self.GUIDE_SECTION_PADDING_Y * 2 + 24
+        )
+        support_layout = self._measure_support_strip(
+            locale=locale,
+            top=hero_bottom + section_height + self.SUPPORT_STRIP_GAP,
+        )
+        footer_rect = (
+            side,
+            support_layout.rect[3] + self.theme.footer_gap_top,
+            self.WIDTH - side,
+            support_layout.rect[3]
+            + self.theme.footer_gap_top
+            + self.theme.footer_height,
+        )
+        total_height = footer_rect[3] + self.theme.outer_margin
+        image = Image.new("RGBA", (self.WIDTH, total_height), self.theme.page_bg)
+        self._paint_background(image)
+        draw = ImageDraw.Draw(image)
+        self._draw_multiline_text(
+            draw,
+            x=side,
+            y=self.theme.hero_top,
+            lines=header_title_lines,
+            font=self.title_font,
+            fill=self.theme.hero_title,
+            line_height=self._line_height_for_font(self.title_font),
+        )
+        summary_top = (
+            self.theme.hero_top
+            + len(header_title_lines) * self._line_height_for_font(self.title_font)
+            + self.theme.hero_text_gap
+        )
+        self._draw_multiline_text(
+            draw,
+            x=side,
+            y=summary_top,
+            lines=header_summary_lines,
+            font=self.summary_font,
+            fill=self.theme.hero_summary,
+            line_height=self._line_height_for_font(
+                self.summary_font,
+                minimum=self.theme.hero_summary_line_height,
+            ),
+        )
+        standee_rect = (
+            self.WIDTH - side - self.theme.hero_standee_size,
+            self.theme.hero_top + 8,
+            self.WIDTH - side,
+            self.theme.hero_top + 8 + self.theme.hero_standee_size,
+        )
+        self._draw_standee(image, draw, standee_rect)
+        if body_lines:
+            rect = (side, hero_bottom, side + width, hero_bottom + section_height)
+            self._draw_shadowed_rect(
+                image,
+                rect=rect,
+                radius=self.GUIDE_SECTION_RADIUS,
+                shadow_color=self.theme.card_shadow,
+                shadow_offset_y=self.theme.instruction_shadow_offset_y,
+                shadow_blur=self.theme.instruction_shadow_blur,
+                fill=self.theme.panel_bg,
+            )
+            self._draw_multiline_text(
+                draw,
+                x=rect[0] + self.GUIDE_SECTION_PADDING_X,
+                y=rect[1] + self.GUIDE_SECTION_PADDING_Y,
+                lines=body_lines,
+                font=self.instruction_font,
+                fill=self.theme.deep,
+                line_height=body_line_height,
+                render_code_chip=False,
+            )
+        self._draw_support_strip(image, draw, layout=support_layout)
+        self._draw_trace_footer(
+            draw,
+            footer_rect=footer_rect,
+            left_text=(
+                f"{node.title} · Summary · "
+                f"v{node.bundle.version.lstrip('v')} · By {node.bundle.author}"
+            ),
             right_text=f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin",
         )
         return encode_docs_image(image, webp_quality=88, webp_method=6)

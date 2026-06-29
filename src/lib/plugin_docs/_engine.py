@@ -57,6 +57,9 @@ from .copy import (
     build_feature_copy_text as build_feature_copy_text_impl,
 )
 from .copy import (
+    build_plugin_summary_copy_text as build_plugin_summary_copy_text_impl,
+)
+from .copy import (
     build_plugin_guide_copy_text as build_plugin_guide_copy_text_impl,
 )
 from .copy import (
@@ -1205,6 +1208,21 @@ def render_static_entry(
     )
 
 
+def render_plugin_summary(
+    node: DocNode,
+    *,
+    locale: LocaleCode = "zh-CN",
+    generated_at: datetime | None = None,
+) -> bytes:
+    return ProgressiveDisclosureRenderer(
+        impression_color=node.bundle.impression_color
+    ).render_plugin_summary(
+        node=node,
+        locale=locale,
+        generated_at=generated_at,
+    )
+
+
 def render_help_dashboard(
     sections: Sequence[HelpDashboardSection],
     *,
@@ -1439,6 +1457,15 @@ def build_plugin_guide_copy_text(
         normalize_inline_text=_normalize_inline_text,
         support_text_block=_support_text_block,
         locale=locale,
+    )
+
+
+def build_plugin_summary_copy_text(
+    node: DocNode,
+) -> str:
+    return build_plugin_summary_copy_text_impl(
+        node,
+        normalize_inline_text=_normalize_inline_text,
     )
 
 

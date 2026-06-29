@@ -6,6 +6,7 @@ from src.database.core.consts import Permission
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs.command_layout import normalize_inline_text
 from src.lib.plugin_docs.copy import (
+    build_plugin_summary_copy_text,
     build_static_entry_copy_text,
     feature_command_for_display,
     feature_demo_help_command,
@@ -53,12 +54,20 @@ def build_static_entry_copy(node: DocNode, *, locale: LocaleCode) -> str:
     )
 
 
+def build_plugin_summary_copy(node: DocNode) -> str:
+    return build_plugin_summary_copy_text(
+        node,
+        normalize_inline_text=normalize_inline_text,
+    )
+
+
 def build_help_support_bundle(*, locale: LocaleCode) -> HelpSupportBundle:
     return support_bundle(locale)
 
 
 __all__ = [
     "build_help_support_bundle",
+    "build_plugin_summary_copy",
     "build_static_entry_copy",
     "feature_command_for_display_text",
     "feature_demo_help_command",

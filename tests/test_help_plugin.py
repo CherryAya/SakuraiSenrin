@@ -748,7 +748,7 @@ async def test_resolve_docs_message_formats_water_overview_shortcuts(
     entries = _iter_docs_entries("zh-CN")
     water_entry = next(entry for entry in entries if entry.display_name == "吹水记录")
     monkeypatch.setattr(
-        "src.plugins.help.render_plugin_guide", lambda *args, **kwargs: b"guide-demo"
+        "src.plugins.help.render_plugin_summary", lambda *args, **kwargs: b"summary-demo"
     )
     message = await _resolve_docs_message(
         water_entry,
@@ -759,14 +759,16 @@ async def test_resolve_docs_message_formats_water_overview_shortcuts(
     rendered = str(message)
 
     assert any(segment.type == "image" for segment in message)
-    assert "下面这些命令可以直接复制发送" in rendered
     assert "查看个人画像" in rendered
     assert "#我有多水" in rendered
     assert "查看周期榜单" in rendered
     assert "#水王" in rendered
+    assert "👉 查看个人画像" in rendered
+    assert "👉 查看周期榜单" in rendered
     assert "更多高级功能" not in rendered
-    assert "👉" not in rendered
     assert "📖" not in rendered
+    assert message[-1].data["file"] == "base64://c3VtbWFyeS1kZW1v"
+    assert sum(1 for segment in message if segment.type == "image") >= 3
 
 
 @pytest.mark.asyncio
@@ -776,7 +778,7 @@ async def test_resolve_docs_message_wordbank_guide_lists_child_modules(
     entries = _iter_docs_entries("zh-CN")
     wordbank_entry = next(entry for entry in entries if entry.node.slug == "wordbank")
     monkeypatch.setattr(
-        "src.plugins.help.render_plugin_guide", lambda *args, **kwargs: b"guide-demo"
+        "src.plugins.help.render_plugin_summary", lambda *args, **kwargs: b"summary-demo"
     )
 
     message = await _resolve_docs_message(
@@ -794,6 +796,8 @@ async def test_resolve_docs_message_wordbank_guide_lists_child_modules(
     assert "#添加词条 触发词 => 响应词" in rendered
     assert "词库审核" in rendered
     assert "#help wordbank.approval" in rendered
+    assert "本模块单独收纳 `wordbank` 的管理员审核相关能力" in rendered
+    assert message[-1].data["file"] == "base64://c3VtbWFyeS1kZW1v"
 
 
 @pytest.mark.asyncio
