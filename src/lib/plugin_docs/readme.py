@@ -440,6 +440,8 @@ def merge_features(
     ordered: list[FeatureDoc] = []
     seen: set[str] = set()
     for slug, (title, summary) in feature_index.items():
+        if "." in slug and slug not in details:
+            continue
         detail = details.get(slug)
         if detail is None:
             ordered.append(

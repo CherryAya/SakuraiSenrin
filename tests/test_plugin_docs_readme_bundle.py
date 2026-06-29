@@ -738,20 +738,27 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     study_main = next(feature for feature in study.index if feature.slug == "main")
 
     assert add.demo_filename == "wordbank-add.webp"
-    assert len(add.demo_turns) == 15
+    assert len(add.demo_turns) == 22
+    assert {turn.section for turn in add.demo_turns if turn.section} == {
+        "1. 引导式",
+        "2. 基础添加",
+        "3. => 常见写法",
+        "4. 事件类例子",
+        "5. 高级选项",
+    }
     assert add.demo_turns[0].text == "#添加词条"
-    assert "审核文档请查看 #help 词库审核" in add.demo_turns[10].text
-    assert "#添加词条 是这张图喔 [图片]" in add.demo_turns[11].text
-    assert "响应: [图片:7]" in add.demo_turns[12].text
-    assert "#添加词条 [图片] => 是这张图喔" in add.demo_turns[13].text
-    assert "触发: [图片:7]" in add.demo_turns[14].text
     assert all(feature.slug != "add-mode" for feature in wordbank.index)
     assert all(feature.slug != "image" for feature in wordbank.index)
     assert "revoke" in add.failures
     assert "发送取消提示并中止" in add.failures
     assert "连续输错 3 次" in add.failures
     assert "ID: 12" in add.demo_turns[9].text
-    assert "#help 词库审核" in add.demo_turns[10].text
+    assert add.demo_turns[10].text == "#添加词条 晚安 => 做个好梦"
+    assert add.demo_turns[12].text == "#添加词条 晚安呀 宝宝 => 做个好梦"
+    assert "[事件:event:at]" in add.demo_turns[15].text
+    assert "[事件:event:bot_join]" in add.demo_turns[17].text
+    assert "[事件:event:poke]" in add.demo_turns[19].text
+    assert "-s 本群 -r 管理 -w 5" in add.demo_turns[20].text
     assert rank.demo_filename == "wordbank-rank.webp"
     assert rank.demo_turns[0].text == "#苦瓜榜"
     assert "[发送苦瓜榜海报]" in rank.demo_turns[1].text
@@ -770,13 +777,26 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert approval_reply.demo_filename == "wordbank-approval-approval-reply.webp"
     assert "[回复审批通知] @机器人 y" in approval_reply.demo_turns[1].text
     assert study_main.demo_filename == "study-main.webp"
-    assert study_main.demo_turns[0].text == "#study a f 群公告 大家记得看"
-    assert "管理员通过前不会触发。" in study_main.demo_turns[2].text
+    assert study_main.demo_turns[0].text == "#study"
+    assert {turn.section for turn in study_main.demo_turns if turn.section} == {
+        "引导式",
+        "传统模式",
+        "=> 语法糖",
+        "事件类例子",
+        "高级选项",
+    }
+    assert study_main.demo_turns[12].text == "#study a f 群公告 大家记得看"
+    assert "管理员通过前不会触发。" in study_main.demo_turns[13].text
     assert any(
-        turn.text == "#study [图片] => 这张图我记住了" for turn in study_main.demo_turns
+        turn.text == "#study 晚安呀 宝宝 => 做个好梦"
+        for turn in study_main.demo_turns
     )
-    assert study_main.demo_turns[-1].speaker == "SYSTEM"
-    assert "重做当前步骤" in study_main.demo_turns[-1].text
+    assert any(
+        "[事件:event:bot_join]" in turn.text for turn in study_main.demo_turns
+    )
+    assert study_main.demo_turns[-1].speaker == "BOT"
+    assert "权重: 5" in study_main.demo_turns[-1].text
+    assert all(feature.slug != "wordbank.approval" for feature in wordbank.index)
     for source, bundle in (
         (wordbank_source, wordbank),
         (study_source, study),
