@@ -442,6 +442,62 @@ def _split_query(query: str) -> tuple[str, str | None]:
     return plugin_query.strip(), feature_query.strip() or None
 
 
+def _resolve_child_entry(
+    parent_entry: DocsEntry,
+    query: str,
+    *,
+    actor_permission: Permission,
+    all_entries: list[DocsEntry],
+) -> tuple[DocsEntry | None, str | None]:
+    tree = build_doc_tree([item.node for item in all_entries])
+    children = tuple(
+        child
+        for child in tree.children_of(parent_entry.node.slug)
+        if can_view_node(child, actor_permission)
+    )
+    normalized = query.strip()
+    if not normalized or not children:
+        return None, None
+
+    if " " in normalized:
+        child_query, feature_query = normalized.split(maxsplit=1)
+    else:
+        child_query, feature_query = normalized, None
+    child_query = child_query.strip()
+    feature_query = feature_query.strip() if feature_query else None
+
+    direct_child = next(
+        (
+            item
+            for item in all_entries
+            if item.node.parent_slug == parent_entry.node.slug
+            and (
+                item.node.slug == child_query
+                or item.node.slug.endswith(f".{child_query}")
+                or child_query in item.node.search_tokens
+            )
+            and can_view_node(item.node, actor_permission)
+        ),
+        None,
+    )
+    if direct_child is not None:
+        return direct_child, feature_query
+
+    child_match = match_doc_node(children, child_query)
+    if child_match.status != "matched" or child_match.node is None:
+        return None, None
+    child_entry = next(
+        (
+            item
+            for item in all_entries
+            if item.node.slug == child_match.node.slug
+            and can_view_node(item.node, actor_permission)
+        ),
+        None,
+    )
+    return child_entry, feature_query
+
+
 def _compose_help_reply(image_bytes: bytes, text: str) -> Message:
     message = text_message(f"{text.strip()}")
     message += image_message(image_bytes)
@@ -462,12 +518,32 @@ async def _resolve_docs_message(
         for child in tree.children_of(entry.node.slug)
         if can_view_node(child, actor_permission)
     )
+    child_entries = [
+        item
+        for item in (all_entries or [])
+        if item.node.parent_slug == entry.node.slug
+        and can_view_node(item.node, actor_permission)
+    ]
     entry_shape = resolve_help_entry_shape(
         entry.node,
         actor_permission=actor_permission,
         children=children,
     )
     if feature_query:
+        child_entry, child_feature_query = _resolve_child_entry(
+            entry,
+            feature_query,
+            actor_permission=actor_permission,
+            all_entries=all_entries or [entry],
+        )
+        if child_entry is not None:
+            return await _resolve_docs_message(
+                child_entry,
+                locale,
+                feature_query=child_feature_query,
+                actor_permission=actor_permission,
+                all_entries=all_entries,
+            )
         visible_features = tuple(
             feature
             for feature in entry.node.features
@@ -532,6 +608,7 @@ async def _resolve_docs_message(
                     build_plugin_guide_copy_text(
                         child_entry.node,
                         features=features,
+                        child_nodes=(),
                         locale=locale,
                     ),
                 )
@@ -577,15 +654,23 @@ async def _resolve_docs_message(
             locale=locale,
             actor_permission=actor_permission,
         )
-        overview_text = str(
-            render_doc_node_overview(
+        if features:
+            overview_text = build_plugin_guide_copy_text(
                 entry.node,
+                features=features,
+                child_nodes=tuple(item.node for item in child_entries),
                 locale=locale,
-                include_demo=False,
-                actor_permission=actor_permission,
-                children=children,
             )
-        )
+        else:
+            overview_text = str(
+                render_doc_node_overview(
+                    entry.node,
+                    locale=locale,
+                    include_demo=False,
+                    actor_permission=actor_permission,
+                    children=children,
+                )
+            )
         return _compose_help_reply(image_bytes, overview_text)
     if entry_shape == "simple_leaf" and features:
         feature = features[0]
@@ -613,6 +698,7 @@ async def _resolve_docs_message(
         build_plugin_guide_copy_text(
             entry.node,
             features=features,
+            child_nodes=tuple(item.node for item in child_entries),
             locale=locale,
         ),
     )
@@ -637,7 +723,7 @@ async def _(
 
     match_result = _match_entry(authorized_entries, query)
     feature_query: str | None = None
-    if match_result.status == "not_found" and " " in query:
+    if match_result.status != "matched" and " " in query:
         plugin_query, feature_query = _split_query(query)
         match_result = _match_entry(authorized_entries, plugin_query)
 

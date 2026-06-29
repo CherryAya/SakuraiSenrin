@@ -277,7 +277,12 @@ def parse_feature_index_tokens(tokens: Sequence[Token]) -> dict[str, tuple[str, 
         if not children or children[0].type != "code_inline":
             continue
         slug = children[0].content.strip()
-        title, summary = split_key_value(render_inline_markdown(children[1:]).strip())
+        payload = render_inline_markdown(children[1:]).strip()
+        title, summary = split_key_value(payload)
+        if not title and payload:
+            normalized_payload = payload.lstrip(":/：").strip()
+            title = normalized_payload
+            summary = normalized_payload
         if not slug or not title:
             continue
         entries[slug] = (title, summary)
@@ -320,7 +325,7 @@ def parse_feature_details_tokens(
         )
         demo_filename = meta.get(
             "Demo",
-            f"{doc_asset_prefix(source_path)}-{slug}.png",
+            f"{doc_asset_prefix(source_path)}-{slug}.webp",
         )
         demo_filename = demo_filename.strip("`")
         features[slug] = FeatureDoc(

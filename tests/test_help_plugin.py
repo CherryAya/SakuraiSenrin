@@ -47,6 +47,7 @@ from src.plugins.help import (
     _match_entry,
     _read_plugin_permission,
     _resolve_docs_message,
+    _resolve_child_entry,
     _split_query,
 )
 
@@ -683,6 +684,63 @@ def test_match_entry_supports_manual_aliases() -> None:
     assert picsearch_slug.entry.node.slug == "picsearch"
 
 
+def test_match_entry_prefers_direct_root_slug_over_child_fuzzy_match() -> None:
+    root = _make_entry(
+        display_name="词库模块",
+        plugin_name="wordbank",
+        module_name="src.plugins.wordbank",
+        slug="wordbank",
+    )
+    child = _make_entry(
+        display_name="词库审核",
+        plugin_name="wordbank-approval",
+        module_name="src.plugins.wordbank.approval",
+        slug="wordbank.approval",
+        parent_slug="wordbank",
+    )
+
+    result = _match_entry([root, child], "wordbank")
+
+    assert result.status == "matched"
+    assert result.entry is root
+
+
+def test_resolve_child_entry_supports_leaf_and_full_slug_queries() -> None:
+    root = _make_entry(
+        display_name="词库模块",
+        plugin_name="wordbank",
+        module_name="src.plugins.wordbank",
+        slug="wordbank",
+    )
+    child = _make_entry(
+        display_name="词库审核",
+        plugin_name="wordbank-approval",
+        module_name="src.plugins.wordbank.approval",
+        slug="wordbank.approval",
+        parent_slug="wordbank",
+    )
+    entries = [root, child]
+    permission = Permission.NORMAL | Permission.GROUP_ADMIN
+
+    by_leaf, leaf_feature = _resolve_child_entry(
+        root,
+        "approval pending",
+        actor_permission=permission,
+        all_entries=entries,
+    )
+    by_slug, slug_feature = _resolve_child_entry(
+        root,
+        "wordbank.approval pending",
+        actor_permission=permission,
+        all_entries=entries,
+    )
+
+    assert by_leaf is child
+    assert leaf_feature == "pending"
+    assert by_slug is child
+    assert slug_feature == "pending"
+
+
 @pytest.mark.asyncio
 async def test_resolve_docs_message_formats_water_overview_shortcuts(
     monkeypatch: pytest.MonkeyPatch,
@@ -709,6 +767,70 @@ async def test_resolve_docs_message_formats_water_overview_shortcuts(
     assert "更多高级功能" not in rendered
     assert "👉" not in rendered
     assert "📖" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_resolve_docs_message_wordbank_guide_lists_child_modules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entries = _iter_docs_entries("zh-CN")
+    wordbank_entry = next(entry for entry in entries if entry.node.slug == "wordbank")
+    monkeypatch.setattr(
+        "src.plugins.help.render_plugin_guide", lambda *args, **kwargs: b"guide-demo"
+    )
+
+    message = await _resolve_docs_message(
+        wordbank_entry,
+        "zh-CN",
+        actor_permission=Permission.NORMAL | Permission.GROUP_ADMIN,
+        all_entries=entries,
+    )
+
+    rendered = str(message)
+    assert "主功能" in rendered
+    assert "高级功能" in rendered
+    assert "子模块" in rendered
+    assert "词库审核" in rendered
+    assert "#help wordbank.approval" in rendered
+
+
+@pytest.mark.asyncio
+async def test_resolve_docs_message_wordbank_supports_child_node_feature_query() -> None:
+    entries = _iter_docs_entries("zh-CN")
+    wordbank_entry = next(entry for entry in entries if entry.node.slug == "wordbank")
+    permission = Permission.NORMAL | Permission.GROUP_ADMIN
+
+    message = await _resolve_docs_message(
+        wordbank_entry,
+        "zh-CN",
+        feature_query="approval pending",
+        actor_permission=permission,
+        all_entries=entries,
+    )
+
+    rendered = str(message)
+    assert "词库审核" in rendered
+    assert "待审核词条" in rendered
+    assert "待审核词条 &#91;关键词&#93;" in rendered
+
+
+@pytest.mark.asyncio
+async def test_resolve_docs_message_wordbank_supports_full_child_slug_feature_query() -> None:
+    entries = _iter_docs_entries("zh-CN")
+    wordbank_entry = next(entry for entry in entries if entry.node.slug == "wordbank")
+    permission = Permission.NORMAL | Permission.GROUP_ADMIN
+
+    message = await _resolve_docs_message(
+        wordbank_entry,
+        "zh-CN",
+        feature_query="wordbank.approval pending",
+        actor_permission=permission,
+        all_entries=entries,
+    )
+
+    rendered = str(message)
+    assert "词库审核" in rendered
+    assert "待审核词条" in rendered
 
 
 def test_iter_docs_entries_resolves_explicit_or_inherited_impression_colors() -> None:

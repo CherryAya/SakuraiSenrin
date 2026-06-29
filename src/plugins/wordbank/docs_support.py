@@ -34,7 +34,7 @@ def wordbank_docs_meta() -> list[object]:
         source=APPROVAL_DOCS_SOURCE,
         slug="wordbank.approval",
         parent_slug="wordbank",
-        aliases=("词库审核", "wordbank approval"),
+        aliases=("词库审核", "wordbank approval", "wordbank.approval"),
     )
     approval_docs["permission"] = Permission.GROUP_ADMIN
 

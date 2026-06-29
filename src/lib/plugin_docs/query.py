@@ -49,6 +49,26 @@ def match_doc_node(nodes: Sequence[DocNode], query: str) -> NodeMatchResult:
     if not normalized:
         return NodeMatchResult(status="not_found")
 
+    direct_slug_matches = [
+        node for node in nodes if normalized == node.slug.strip().lower()
+    ]
+    if len(direct_slug_matches) == 1:
+        return NodeMatchResult(status="matched", node=direct_slug_matches[0])
+    if direct_slug_matches:
+        return NodeMatchResult(
+            status="ambiguous", candidates=unique_nodes(direct_slug_matches)
+        )
+
+    direct_help_matches = [
+        node for node in nodes if normalized == node.help_query.strip().lower()
+    ]
+    if len(direct_help_matches) == 1:
+        return NodeMatchResult(status="matched", node=direct_help_matches[0])
+    if direct_help_matches:
+        return NodeMatchResult(
+            status="ambiguous", candidates=unique_nodes(direct_help_matches)
+        )
+
     exact: list[DocNode] = []
     fuzzy: list[DocNode] = []
     for node in nodes:

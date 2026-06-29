@@ -192,6 +192,7 @@ def build_plugin_guide_copy_text(
     node: DocNode,
     *,
     features: Sequence[FeatureDoc],
+    child_nodes: Sequence[DocNode] = (),
     normalize_inline_text: NormalizeInlineText,
     support_text_block: SupportTextBlockProvider,
     locale: LocaleCode,
@@ -201,17 +202,48 @@ def build_plugin_guide_copy_text(
         "下面这些命令可以直接复制发送：",
         "",
     ]
-    for feature in features:
-        lines.append(feature.title)
-        lines.extend(
-            feature_command_sections(
-                node.bundle,
-                feature,
-                node.title,
-                normalize_inline_text=normalize_inline_text,
+
+    regular_features = [feature for feature in features if not feature.advanced]
+    advanced_features = [feature for feature in features if feature.advanced]
+
+    if regular_features:
+        lines.append("主功能")
+        for feature in regular_features:
+            lines.append(feature.title)
+            lines.extend(
+                feature_command_sections(
+                    node.bundle,
+                    feature,
+                    node.title,
+                    normalize_inline_text=normalize_inline_text,
+                )
             )
-        )
-        lines.append("")
+            lines.append("")
+
+    if advanced_features:
+        lines.append("高级功能")
+        for feature in advanced_features:
+            lines.append(feature.title)
+            lines.extend(
+                feature_command_sections(
+                    node.bundle,
+                    feature,
+                    node.title,
+                    normalize_inline_text=normalize_inline_text,
+                )
+            )
+            lines.append("")
+
+    if child_nodes:
+        lines.append("子模块")
+        for child in child_nodes:
+            lines.append(child.title)
+            lines.append(node_help_command(child))
+            summary = normalize_inline_text(child.summary)
+            if summary:
+                lines.append(summary)
+            lines.append("")
+
     lines.append(support_text_block(locale))
     return "\n".join(line for line in lines if line is not None).strip()
 

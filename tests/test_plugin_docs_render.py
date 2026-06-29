@@ -881,6 +881,7 @@ def test_render_plugin_guide_and_copy_text_list_all_visible_features() -> None:
     copy_text = build_plugin_guide_copy_text(
         node,
         features=visible_features,
+        child_nodes=(),
         locale="zh-CN",
     )
     assert "基础添加" in copy_text
@@ -888,6 +889,8 @@ def test_render_plugin_guide_and_copy_text_list_all_visible_features() -> None:
     assert "查看 demo：" not in copy_text
     assert "添加词条 触发词 => 响应词 --scope current_group" in copy_text
     assert "#help 词库模块 add-scope" not in copy_text
+    assert "主功能" in copy_text
+    assert "高级功能" in copy_text
     assert "反馈与交流群" in copy_text
 
 

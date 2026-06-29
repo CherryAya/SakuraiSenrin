@@ -8,7 +8,7 @@
 - 权限: 群管理员
 
 ## 用法
-- Help: `approval`
+- Help: `wordbank.approval`
 
 ## 子功能目录
 - `pending` 待审核词条: 查看当前可审核的待审词条。

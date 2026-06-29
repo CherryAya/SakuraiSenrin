@@ -1243,9 +1243,7 @@ def render_help_dashboard(
         if first_node is not None
         else DEFAULT_IMPRESSION_COLOR
     )
-    return ProgressiveDisclosureRenderer(
-        impression_color=theme_color
-    ).render_dashboard(
+    return ProgressiveDisclosureRenderer(impression_color=theme_color).render_dashboard(
         sections=sections,
         locale=locale,
         generated_at=generated_at,
@@ -1431,11 +1429,13 @@ def build_plugin_guide_copy_text(
     node: DocNode,
     *,
     features: Sequence[FeatureDoc],
+    child_nodes: Sequence[DocNode] = (),
     locale: LocaleCode,
 ) -> str:
     return build_plugin_guide_copy_text_impl(
         node,
         features=features,
+        child_nodes=child_nodes,
         normalize_inline_text=_normalize_inline_text,
         support_text_block=_support_text_block,
         locale=locale,
