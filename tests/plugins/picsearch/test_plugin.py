@@ -8,6 +8,7 @@ from nonebot.adapters.onebot.v11 import Bot, MessageSegment
 from nonebug import App
 import pytest
 
+from src.lib.message_assets import message_asset_repo
 from src.lib.messages import text_message
 
 nonebot.init(
@@ -122,29 +123,40 @@ async def test_picsearch_single_image_uses_default_saucenao(
         "load_thumbnail_bytes",
         AsyncMock(return_value=b"thumb"),
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(picsearch_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_send(
-            event,
-            "正在搜索第 1 张图片，请稍后...（引擎：saucenao）",
-            bot=bot,
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "正在搜索第 1 张图片，请稍后...（引擎：saucenao）",
+            },
+            result={"message_id": 1},
         )
-        ctx.should_call_send(
-            event,
-            build_message(
-                MessageSegment.text(
-                    "第 1 张图片搜索结果：\n"
-                    "引擎：saucenao\n"
-                    "相似度：91.2\n"
-                    "标题：标题\n"
-                    "作者：作者\n"
-                    "链接：https://example.com/source"
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": build_message(
+                    MessageSegment.text(
+                        "第 1 张图片搜索结果：\n"
+                        "引擎：saucenao\n"
+                        "相似度：91.2\n"
+                        "标题：标题\n"
+                        "作者：作者\n"
+                        "链接：https://example.com/source"
+                    ),
+                    MessageSegment.image(b"thumb"),
                 ),
-                MessageSegment.image(b"thumb"),
-            ),
-            bot=bot,
+            },
+            result={"message_id": 1},
         )
         ctx.should_finished(picsearch_matcher)
 
@@ -212,6 +224,11 @@ async def test_picsearch_multi_image_ascii2d_success(
             )
         ),
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(picsearch_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -225,22 +242,28 @@ async def test_picsearch_multi_image_ascii2d_success(
         ctx.should_rejected(picsearch_matcher)
 
         ctx.receive_event(bot, second)
-        ctx.should_call_send(
-            second,
-            "正在搜索第 2 张图片，请稍后...（引擎：ascii2d）",
-            bot=bot,
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "正在搜索第 2 张图片，请稍后...（引擎：ascii2d）",
+            },
+            result={"message_id": 1},
         )
-        ctx.should_call_send(
-            second,
-            text_message(
-                "第 2 张图片搜索结果：\n"
-                "引擎：ascii2d\n"
-                "相似度：N/A\n"
-                "标题：ASCII 标题\n"
-                "作者：ASCII 作者\n"
-                "链接：https://example.com/ascii"
-            ),
-            bot=bot,
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": text_message(
+                    "第 2 张图片搜索结果：\n"
+                    "引擎：ascii2d\n"
+                    "相似度：N/A\n"
+                    "标题：ASCII 标题\n"
+                    "作者：ASCII 作者\n"
+                    "链接：https://example.com/ascii"
+                ),
+            },
+            result={"message_id": 1},
         )
         ctx.should_finished(picsearch_matcher)
 
@@ -310,19 +333,30 @@ async def test_picsearch_handles_no_result(
         "search_image",
         AsyncMock(return_value=None),
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(picsearch_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_send(
-            event,
-            "正在搜索第 1 张图片，请稍后...（引擎：saucenao）",
-            bot=bot,
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "正在搜索第 1 张图片，请稍后...（引擎：saucenao）",
+            },
+            result={"message_id": 1},
         )
-        ctx.should_call_send(
-            event,
-            "第 1 张图片没有找到结果。当前引擎：saucenao",
-            bot=bot,
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "第 1 张图片没有找到结果。当前引擎：saucenao",
+            },
+            result={"message_id": 1},
         )
         ctx.should_finished(picsearch_matcher)
 

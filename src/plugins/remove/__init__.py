@@ -16,6 +16,7 @@ from src.database.core.consts import GroupStatus, Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_delivery import DeliveryTarget, deliver_single_message
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -91,7 +92,12 @@ async def notify_superusers(
         reason=reason,
     )
     for superuser in config.SUPERUSERS:
-        await bot.send_private_msg(user_id=int(superuser), message=message)
+        await deliver_single_message(
+            bot,
+            target=DeliveryTarget(kind="private", target_id=str(superuser)),
+            message=message,
+            source_kind="remove_notice",
+        )
 
 
 async def perform_remove(

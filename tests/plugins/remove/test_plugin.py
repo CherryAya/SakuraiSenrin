@@ -9,6 +9,8 @@ from nonebot.exception import ActionFailed
 from nonebug import App
 import pytest
 
+from src.lib.message_assets import message_asset_repo
+
 nonebot.init(
     SUPERUSERS={"1"},
     IGNORED_USERS=set(),
@@ -126,6 +128,11 @@ async def test_remove_succeeds_for_admin(
     update_status = AsyncMock()
     monkeypatch.setattr(remove_plugin.group_repo, "update_status", update_status)
     monkeypatch.setattr(remove_plugin.config, "SUPERUSERS", {"2"})
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(remove_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -186,6 +193,11 @@ async def test_remove_handles_leave_failure(
     )
     update_status = AsyncMock()
     monkeypatch.setattr(remove_plugin.group_repo, "update_status", update_status)
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(remove_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
