@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
 from src.lib.i18n.runtime import normalize_locale, send_private_i18n, tr
+from src.lib.message_assets import message_asset_repo
 from src.repositories.i18n import I18nRepository
 
 
@@ -48,14 +50,12 @@ async def test_send_private_i18n_keeps_template_params(
     sent: dict[str, Any] = {}
 
     class _FakeBot:
-        async def send_private_msg(
-            self,
-            *,
-            user_id: int,
-            message: object,
-        ) -> dict[str, Any]:
-            sent["user_id"] = user_id
-            sent["message"] = str(message)
+        self_id = "99999"
+
+        async def call_api(self, api: str, **data: object) -> dict[str, Any]:
+            sent["api"] = api
+            sent.update(data)
+            sent["message"] = str(data["message"])
             return {"message_id": 1}
 
     async def fake_resolve_locale(group_id: str | None = None) -> str:
@@ -63,6 +63,11 @@ async def test_send_private_i18n_keeps_template_params(
         return "zh-CN"
 
     monkeypatch.setattr("src.lib.i18n.runtime.resolve_locale", fake_resolve_locale)
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     await send_private_i18n(
         _FakeBot(),  # type: ignore[arg-type]
@@ -75,6 +80,7 @@ async def test_send_private_i18n_keeps_template_params(
         main_group_id="10086",
     )
 
+    assert sent["api"] == "send_private_msg"
     assert sent["user_id"] == 42
     assert "群号：20001" in sent["message"]
     assert "测试群" in sent["message"]

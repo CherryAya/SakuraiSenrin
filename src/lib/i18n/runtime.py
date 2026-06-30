@@ -8,6 +8,7 @@ from nonebot.adapters.onebot.v11.event import Event
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 
+from src.lib.message_delivery import DeliveryTarget, deliver_single_message
 from src.lib.messages import text_message
 from src.locales.lzh import CATALOG as LZH_CATALOG
 from src.locales.x_meme import CATALOG as X_MEME_CATALOG
@@ -178,10 +179,13 @@ async def send_private_i18n(
     **params: object,
 ) -> dict[str, Any]:
     locale = await resolve_locale(locale_group_id)
-    return await bot.send_private_msg(
-        user_id=target_user_id,
+    result = await deliver_single_message(
+        bot,
+        target=DeliveryTarget(kind="private", target_id=str(target_user_id)),
         message=msg(locale, key, **params),
+        source_kind="i18n_private",
     )
+    return {"message_id": result.message_id}
 
 
 async def send_group_i18n(
@@ -191,7 +195,10 @@ async def send_group_i18n(
     **params: object,
 ) -> dict[str, Any]:
     locale = await resolve_locale(str(group_id))
-    return await bot.send_group_msg(
-        group_id=group_id,
+    result = await deliver_single_message(
+        bot,
+        target=DeliveryTarget(kind="group", target_id=str(group_id)),
         message=msg(locale, key, **params),
+        source_kind="i18n_group",
     )
+    return {"message_id": result.message_id}

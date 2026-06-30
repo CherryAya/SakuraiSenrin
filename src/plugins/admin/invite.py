@@ -600,7 +600,12 @@ async def handle_list(ctx: AdminInviteContext) -> None:
 
     img_bytes = await generate_invitation_image_bytes(render_data, ctx.locale)
 
-    await ctx.matcher.send(MessageSegment.image(img_bytes))
+    await deliver_single_message(
+        ctx.bot,
+        target=resolve_delivery_target(ctx.event),
+        message=empty_message() + MessageSegment.image(img_bytes),
+        source_kind="admin_invite_list",
+    )
 
 
 async def handle_approve(ctx: AdminInviteContext) -> None:

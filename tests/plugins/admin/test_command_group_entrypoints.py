@@ -4,7 +4,7 @@ import sys
 from unittest.mock import AsyncMock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import Bot, MessageSegment
 from nonebug import App
 import pytest
 
@@ -28,6 +28,7 @@ SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 from src.database.core.consts import Permission as CorePermission
 from src.lib.i18n.runtime import tr
 from src.lib.message_assets import message_asset_repo
+from src.lib.messages import empty_message
 from src.plugins.admin.backup import admin_backup
 from src.plugins.admin.group import admin_group
 from src.plugins.admin.i18n import admin_i18n
@@ -203,6 +204,67 @@ async def test_admin_invite_dot_form_hits_matcher(
     async with app.test_matcher(admin_invite) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
+        ctx.should_finished(admin_invite)
+
+
+@pytest.mark.asyncio
+async def test_admin_invite_list_sends_image_via_delivery(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = build_private_message_event("#admin.invite list", user_id=SUPERUSER_ID)
+
+    from src.plugins.admin import invite as invite_plugin
+
+    monkeypatch.setattr(
+        invite_plugin.invite_repo,
+        "get_by_status",
+        AsyncMock(
+            return_value=[
+                type(
+                    "_Invite",
+                    (),
+                    {
+                        "id": 1,
+                        "created_at": 1700000000,
+                        "flag": "flag-1",
+                        "group": type(
+                            "_Group",
+                            (),
+                            {"group_name": "测试群", "group_id": "20001"},
+                        )(),
+                        "inviter": type(
+                            "_Inviter",
+                            (),
+                            {"user_name": "测试用户", "user_id": "12345"},
+                        )(),
+                    },
+                )()
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        invite_plugin,
+        "generate_invitation_image_bytes",
+        AsyncMock(return_value=b"fake-image"),
+    )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
+
+    async with app.test_matcher(admin_invite) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_api(
+            "send_private_msg",
+            {
+                "user_id": SUPERUSER_ID,
+                "message": empty_message() + MessageSegment.image(b"fake-image"),
+            },
+            result={"message_id": 1},
+        )
         ctx.should_finished(admin_invite)
 
 
