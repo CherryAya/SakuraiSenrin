@@ -44,6 +44,11 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
+from src.lib.message_delivery import (
+    deliver_single_message,
+    resolve_delivery_target,
+    resolve_notice_delivery_target,
+)
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.plugins.wordbank.handlers.commands import _default_i18n_text
@@ -474,12 +479,16 @@ async def _finish_guided_study(
             _study_error_message(exc, locale),
         )
         return
-    send_result = await matcher.send(
-        await build_add_result_message(
-            result,
-            locale=locale,
-            media_service=wordbank_media_service,
-        )
+    message = await build_add_result_message(
+        result,
+        locale=locale,
+        media_service=wordbank_media_service,
+    )
+    send_result = await deliver_single_message(
+        bot,
+        target=resolve_delivery_target(event),
+        message=message,
+        source_kind="study_submission",
     )
     await record_submission_approval_message(
         wordbank_service,
@@ -571,7 +580,12 @@ async def _(
     await wordbank_service.initialize()
     try:
         if has_images:
-            await matcher.send(tr(locale, "wordbank.add.processing_with_media"))
+            await deliver_single_message(
+                bot,
+                target=resolve_delivery_target(event),
+                message=tr(locale, "wordbank.add.processing_with_media"),
+                source_kind="study_command",
+            )
         image_items = await fetch_image_bytes_from_message(arg, limit=2)
         result = await handle_study_with_media_result(
             wordbank_service,
@@ -584,12 +598,16 @@ async def _(
     except (RuleError, ValueError) as exc:
         await matcher.finish(_study_error_message(exc, locale))
         return
-    send_result = await matcher.send(
-        await build_add_result_message(
-            result,
-            locale=locale,
-            media_service=wordbank_media_service,
-        )
+    message = await build_add_result_message(
+        result,
+        locale=locale,
+        media_service=wordbank_media_service,
+    )
+    send_result = await deliver_single_message(
+        bot,
+        target=resolve_delivery_target(event),
+        message=message,
+        source_kind="study_submission",
     )
     await record_submission_approval_message(
         wordbank_service,
@@ -765,7 +783,12 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
     session.matcher_cls.destroy()
 
     if session.is_root_message or checkpoint is None:
-        await matcher.send(tr(locale, "interaction.cancelled"))
+        await deliver_single_message(
+            bot,
+            target=resolve_notice_delivery_target(event),
+            message=tr(locale, "interaction.cancelled"),
+            source_kind="study_notice",
+        )
         return
 
     rebuild_temp_matcher(
@@ -774,4 +797,9 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
         step_index=checkpoint.step_index,
         state=checkpoint.state_snapshot,
     )
-    await matcher.send(checkpoint.prompt)
+    await deliver_single_message(
+        bot,
+        target=resolve_notice_delivery_target(event),
+        message=checkpoint.prompt,
+        source_kind="study_notice",
+    )

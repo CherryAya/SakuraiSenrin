@@ -25,6 +25,7 @@ if nonebot.get_plugin("study") is None:
     nonebot.load_plugin("src.plugins.study")
 
 from src.lib.i18n.runtime import tr
+from src.lib.message_assets import message_asset_repo
 from src.plugins import study as study_plugin
 from src.plugins.wordbank import handlers as wordbank_handlers
 from src.plugins.wordbank.message_model import shape_from_event, shape_from_text
@@ -47,6 +48,11 @@ async def test_study_without_args_enters_guided_mode_prompt(
         study_plugin,
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
+    )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
     )
 
     async with app.test_matcher(study_plugin.study_command) as ctx:
@@ -182,6 +188,11 @@ async def test_study_guided_flow_submits_pending_entry(
         "schedule_pending_approval_notice",
         schedule_pending,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(study_plugin.study_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -234,7 +245,14 @@ async def test_study_guided_flow_submits_pending_entry(
         ctx.should_paused(study_plugin.study_command)
 
         ctx.receive_event(bot, sixth)
-        ctx.should_call_send(sixth, text_message("词条已提交审核"), bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": text_message("词条已提交审核"),
+            },
+            result={"message_id": 1},
+        )
         ctx.should_finished(study_plugin.study_command)
 
     handle_guided.assert_awaited_once()
@@ -300,6 +318,11 @@ async def test_study_guided_flow_accepts_event_trigger_text(
         "schedule_pending_approval_notice",
         schedule_pending,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(study_plugin.study_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -352,7 +375,14 @@ async def test_study_guided_flow_accepts_event_trigger_text(
         ctx.should_paused(study_plugin.study_command)
 
         ctx.receive_event(bot, sixth)
-        ctx.should_call_send(sixth, text_message("词条已提交审核"), bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": text_message("词条已提交审核"),
+            },
+            result={"message_id": 1},
+        )
         ctx.should_finished(study_plugin.study_command)
 
     handle_guided.assert_awaited_once()
@@ -413,6 +443,11 @@ async def test_study_guided_flow_accepts_bracket_event_trigger_text(
         "schedule_pending_approval_notice",
         schedule_pending,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(study_plugin.study_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -465,7 +500,14 @@ async def test_study_guided_flow_accepts_bracket_event_trigger_text(
         ctx.should_paused(study_plugin.study_command)
 
         ctx.receive_event(bot, sixth)
-        ctx.should_call_send(sixth, text_message("词条已提交审核"), bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": text_message("词条已提交审核"),
+            },
+            result={"message_id": 1},
+        )
         ctx.should_finished(study_plugin.study_command)
 
     handle_guided.assert_awaited_once()
@@ -526,6 +568,11 @@ async def test_study_prefilled_trigger_parses_event_shape(
         "schedule_pending_approval_notice",
         schedule_pending,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(study_plugin.study_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -551,7 +598,14 @@ async def test_study_prefilled_trigger_parses_event_shape(
         ctx.should_paused(study_plugin.study_command)
 
         ctx.receive_event(bot, third)
-        ctx.should_call_send(third, text_message("词条已提交审核"), bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": text_message("词条已提交审核"),
+            },
+            result={"message_id": 1},
+        )
         ctx.should_finished(study_plugin.study_command)
 
     handle_guided.assert_awaited_once()
@@ -622,6 +676,11 @@ async def test_study_direct_media_submission_sends_processing_hint_before_result
         "schedule_pending_approval_notice",
         schedule_pending,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(study_plugin.study_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -635,12 +694,22 @@ async def test_study_direct_media_submission_sends_processing_hint_before_result
         event.raw_message = "#study 触发词 => 响应词 [image]"
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(
-            event,
-            tr("zh-CN", "wordbank.add.processing_with_media"),
-            bot=bot,
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": tr("zh-CN", "wordbank.add.processing_with_media"),
+            },
+            result={"message_id": 1},
         )
-        ctx.should_call_send(event, text_message("词条已提交审核"), bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": text_message("词条已提交审核"),
+            },
+            result={"message_id": 1},
+        )
         ctx.should_finished(study_plugin.study_command)
 
     schedule_pending.assert_called_once()

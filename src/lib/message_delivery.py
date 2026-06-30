@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from nonebot.adapters.onebot.v11.bot import Bot
-from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
+from nonebot.adapters.onebot.v11.event import (
+    GroupMessageEvent,
+    MessageEvent,
+    NoticeEvent,
+)
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
 from src.lib.message_assets import describe_message_asset, message_asset_repo
@@ -37,6 +41,16 @@ def resolve_delivery_target(event: MessageEvent) -> DeliveryTarget:
     if isinstance(event, GroupMessageEvent):
         return DeliveryTarget(kind="group", target_id=str(event.group_id))
     return DeliveryTarget(kind="private", target_id=str(event.user_id))
+
+
+def resolve_notice_delivery_target(event: NoticeEvent) -> DeliveryTarget:
+    group_id = str(getattr(event, "group_id", "") or "")
+    if group_id:
+        return DeliveryTarget(kind="group", target_id=group_id)
+    return DeliveryTarget(
+        kind="private",
+        target_id=str(getattr(event, "user_id", "")),
+    )
 
 
 def _extract_message_id(result: Any) -> str | None:
