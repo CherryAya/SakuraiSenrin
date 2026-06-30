@@ -150,6 +150,18 @@ async def resolve_locale(group_id: str | None = None) -> LocaleCode:
     return await i18n_repo.resolve_locale(group_id)
 
 
+def _resolve_event_delivery_target(event: Event | None) -> DeliveryTarget | None:
+    if event is None:
+        return None
+    group_id = getattr(event, "group_id", None)
+    if group_id is not None:
+        return DeliveryTarget(kind="group", target_id=str(group_id))
+    user_id = getattr(event, "user_id", None)
+    if user_id is not None:
+        return DeliveryTarget(kind="private", target_id=str(user_id))
+    return None
+
+
 async def send_i18n(
     matcher: Matcher,
     event: Event | None,
@@ -157,7 +169,17 @@ async def send_i18n(
     **params: object,
 ) -> Any:
     locale = await resolve_locale(get_group_locale(event))
-    return await matcher.send(msg(locale, key, **params))
+    bot = getattr(matcher, "bot", None)
+    target = _resolve_event_delivery_target(event)
+    message = msg(locale, key, **params)
+    if bot is not None and hasattr(bot, "call_api") and hasattr(bot, "self_id") and target is not None:
+        return await deliver_single_message(
+            bot,
+            target=target,
+            message=message,
+            source_kind="i18n_matcher_send",
+        )
+    return await matcher.send(message)
 
 
 async def finish_i18n(
@@ -167,7 +189,19 @@ async def finish_i18n(
     **params: object,
 ) -> None:
     locale = await resolve_locale(get_group_locale(event))
-    await matcher.finish(msg(locale, key, **params))
+    bot = getattr(matcher, "bot", None)
+    target = _resolve_event_delivery_target(event)
+    message = msg(locale, key, **params)
+    if bot is not None and hasattr(bot, "call_api") and hasattr(bot, "self_id") and target is not None:
+        await deliver_single_message(
+            bot,
+            target=target,
+            message=message,
+            source_kind="i18n_matcher_finish",
+        )
+        await matcher.finish()
+        return
+    await matcher.finish(message)
 
 
 async def send_private_i18n(

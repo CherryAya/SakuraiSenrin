@@ -65,6 +65,18 @@ WORDBANK_GUIDED_RECALL_PENDING_KEYS = (
 )
 
 
+def _resolve_guided_bot(bot: Bot | None, matcher: Matcher) -> Bot | None:
+    if bot is not None and hasattr(bot, "call_api") and hasattr(bot, "self_id"):
+        return bot
+    fallback = getattr(matcher, "bot", None)
+    if fallback is not None and hasattr(fallback, "call_api") and hasattr(
+        fallback,
+        "self_id",
+    ):
+        return fallback
+    return None
+
+
 def state_message_shape(state: Mapping[str, Any], key: str) -> MessageShape | None:
     value = state.get(key)
     return value if isinstance(value, MessageShape) else None
@@ -522,11 +534,12 @@ async def finish_guided_search(
         page,
         wordbank_service=wordbank_service,
     )
-    if bot is None:
+    delivery_bot = _resolve_guided_bot(bot, matcher)
+    if delivery_bot is None:
         send_result = await matcher.send(message)
     else:
         send_result = await deliver_single_message(
-            bot,
+            delivery_bot,
             target=resolve_delivery_target(event),
             message=message,
             source_kind="wordbank_view",
@@ -637,11 +650,15 @@ async def handle_search_session_event(
         ]
         if messages:
             merged_message = "\n".join(messages)
-            if bot is None:
+            delivery_bot = _resolve_guided_bot(
+                bot if bot is not None else None,
+                matcher,
+            )
+            if delivery_bot is None:
                 await matcher.send(merged_message)
             else:
                 await deliver_single_message(
-                    bot,
+                    delivery_bot,
                     target=resolve_delivery_target(event),
                     message=merged_message,
                     source_kind="wordbank_command",

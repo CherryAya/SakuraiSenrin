@@ -5,9 +5,19 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.lib.i18n.runtime import normalize_locale, send_private_i18n, tr
+from types import SimpleNamespace
+
+from src.lib.i18n.runtime import (
+    finish_i18n,
+    normalize_locale,
+    send_i18n,
+    send_private_i18n,
+    tr,
+)
+from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_assets import message_asset_repo
 from src.repositories.i18n import I18nRepository
+from tests.plugins.water.helpers import build_group_message_event
 
 
 def test_normalize_locale_aliases() -> None:
@@ -84,3 +94,71 @@ async def test_send_private_i18n_keeps_template_params(
     assert sent["user_id"] == 42
     assert "群号：20001" in sent["message"]
     assert "测试群" in sent["message"]
+
+
+@pytest.mark.asyncio
+async def test_send_i18n_prefers_delivery_when_matcher_has_bot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matcher = SimpleNamespace(
+        bot=SimpleNamespace(self_id="99999", call_api=AsyncMock()),
+        send=AsyncMock(),
+        finish=AsyncMock(),
+    )
+    event = build_group_message_event("test")
+    delivered: dict[str, Any] = {}
+
+    async def fake_resolve_locale(group_id: str | None = None) -> str:
+        assert group_id == "20001"
+        return "zh-CN"
+
+    async def fake_deliver_single_message(bot: object, **kwargs: Any) -> dict[str, Any]:
+        delivered["bot"] = bot
+        delivered.update(kwargs)
+        return {"message_id": "1"}
+
+    monkeypatch.setattr("src.lib.i18n.runtime.resolve_locale", fake_resolve_locale)
+    monkeypatch.setattr(
+        "src.lib.i18n.runtime.deliver_single_message",
+        fake_deliver_single_message,
+    )
+
+    await send_i18n(matcher, event, "remove.leave_success", group_name="测试群")
+
+    assert delivered["target"] == DeliveryTarget(kind="group", target_id="20001")
+    assert "测试群" in str(delivered["message"])
+    matcher.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_finish_i18n_prefers_delivery_when_matcher_has_bot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matcher = SimpleNamespace(
+        bot=SimpleNamespace(self_id="99999", call_api=AsyncMock()),
+        send=AsyncMock(),
+        finish=AsyncMock(),
+    )
+    event = build_group_message_event("test")
+    delivered: dict[str, Any] = {}
+
+    async def fake_resolve_locale(group_id: str | None = None) -> str:
+        assert group_id == "20001"
+        return "zh-CN"
+
+    async def fake_deliver_single_message(bot: object, **kwargs: Any) -> dict[str, Any]:
+        delivered["bot"] = bot
+        delivered.update(kwargs)
+        return {"message_id": "1"}
+
+    monkeypatch.setattr("src.lib.i18n.runtime.resolve_locale", fake_resolve_locale)
+    monkeypatch.setattr(
+        "src.lib.i18n.runtime.deliver_single_message",
+        fake_deliver_single_message,
+    )
+
+    await finish_i18n(matcher, event, "remove.leave_success", group_name="测试群")
+
+    assert delivered["target"] == DeliveryTarget(kind="group", target_id="20001")
+    assert "测试群" in str(delivered["message"])
+    matcher.finish.assert_awaited_once_with()
