@@ -13,6 +13,7 @@ from nonebot.adapters.onebot.v11 import Bot
 
 from src.config import config
 from src.lib.db.manager import db_manager
+from src.lib.message_delivery import DeliveryTarget, deliver_single_message
 from src.logger import logger
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.services.backup import (
@@ -213,16 +214,18 @@ async def _notify_superusers_for_remote_restore(
     )
     for superuser_id in config.SUPERUSERS:
         try:
-            send_result = await bot.send_private_msg(
-                user_id=int(superuser_id),
+            send_result = await deliver_single_message(
+                bot,
+                target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
                 message=prompt,
+                source_kind="startup_sync",
             )
         except Exception as exc:
             logger.warning(
                 f"[StartupSync] failed to notify superuser {superuser_id}: {exc}"
             )
             continue
-        message_id = str(send_result.get("message_id", ""))
+        message_id = send_result.message_id
         if not message_id:
             continue
         _pending_restore_by_prompt[message_id] = PendingStartupRestore(

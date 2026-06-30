@@ -23,10 +23,11 @@ async def test_startup_sync_notifies_superuser_when_remote_is_newer(
     sent: list[tuple[int, str]] = []
 
     class _Bot:
-        async def send_private_msg(
-            self, *, user_id: int, message: str
-        ) -> dict[str, int]:
-            sent.append((user_id, message))
+        self_id = "99999"
+
+        async def call_api(self, api: str, **kwargs: Any) -> dict[str, int]:
+            assert api == "send_private_msg"
+            sent.append((int(kwargs["user_id"]), str(kwargs["message"])))
             return {"message_id": 9001}
 
     class _Service:
@@ -74,10 +75,10 @@ async def test_startup_sync_logs_when_local_is_newer(
     warnings: list[str] = []
 
     class _Bot:
-        async def send_private_msg(
-            self, *, user_id: int, message: str
-        ) -> dict[str, int]:
-            _ = (user_id, message)
+        self_id = "99999"
+
+        async def call_api(self, api: str, **kwargs: Any) -> dict[str, int]:
+            _ = (api, kwargs)
             raise AssertionError("should not notify when local is newer")
 
     class _Service:
@@ -121,10 +122,10 @@ async def test_startup_sync_reply_yes_runs_restore(
     restored: list[str] = []
 
     class _Bot:
-        async def send_private_msg(
-            self, *, user_id: int, message: str
-        ) -> dict[str, int]:
-            _ = (user_id, message)
+        self_id = "99999"
+
+        async def call_api(self, api: str, **kwargs: Any) -> dict[str, int]:
+            _ = (api, kwargs)
             return {"message_id": 1}
 
     startup_sync_module._pending_restore_by_prompt.clear()
