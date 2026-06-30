@@ -27,7 +27,11 @@ from src.lib.interactive_recall import (
     rebuild_temp_matcher,
     register_root_message,
 )
-from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
+from src.lib.message_delivery import (
+    DeliveryTarget,
+    deliver_single_message,
+    resolve_delivery_target,
+)
 from src.lib.messages import empty_message
 from src.logger import logger
 
@@ -103,6 +107,15 @@ def register_wordbank_runtime_handlers(
 
     def _event_message_type(event: MessageEvent) -> str:
         return "group" if isinstance(event, GroupMessageEvent) else "private"
+
+    def _notice_delivery_target(event: NoticeEvent) -> DeliveryTarget:
+        group_id = str(getattr(event, "group_id", "") or "")
+        if group_id:
+            return DeliveryTarget(kind="group", target_id=group_id)
+        return DeliveryTarget(
+            kind="private",
+            target_id=str(getattr(event, "user_id", "")),
+        )
 
     async def _record_view_message(
         *,
@@ -590,7 +603,12 @@ def register_wordbank_runtime_handlers(
                 )
                 session.matcher_cls.destroy()
                 if session.is_root_message or checkpoint is None:
-                    await wordbank_notice.send(tr(locale, "interaction.cancelled"))
+                    await deliver_single_message(
+                        bot,
+                        target=_notice_delivery_target(recall_event),
+                        message=tr(locale, "interaction.cancelled"),
+                        source_kind="wordbank_notice",
+                    )
                     return
                 rebuild_temp_matcher(
                     session.matcher_cls,
@@ -598,7 +616,12 @@ def register_wordbank_runtime_handlers(
                     step_index=checkpoint.step_index,
                     state=checkpoint.state_snapshot,
                 )
-                await wordbank_notice.send(checkpoint.prompt)
+                await deliver_single_message(
+                    bot,
+                    target=_notice_delivery_target(recall_event),
+                    message=checkpoint.prompt,
+                    source_kind="wordbank_notice",
+                )
                 return
 
         start = perf_start()
@@ -638,7 +661,12 @@ def register_wordbank_runtime_handlers(
             **cast(Any, image_trace_fields),
         )
         send_start = perf_start()
-        send_result = await wordbank_notice.send(message)
+        send_result = await deliver_single_message(
+            bot,
+            target=_notice_delivery_target(event),
+            message=message,
+            source_kind="wordbank_response",
+        )
         send_ms = elapsed_ms(send_start)
         log_perf(
             "plugin.notice.handle.send.done",

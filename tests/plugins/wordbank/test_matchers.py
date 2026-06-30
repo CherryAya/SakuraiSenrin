@@ -25,6 +25,7 @@ if nonebot.get_plugin("wordbank") is None:
     nonebot.load_plugin("src.plugins.wordbank")
 
 from src.lib.i18n.runtime import tr
+from src.lib.message_assets import message_asset_repo
 from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.message_model import shape_from_text
@@ -160,6 +161,11 @@ async def test_wordbank_add_direct_success_records_submission(
         "fetch_first_image_bytes_from_message",
         AsyncMock(return_value=None),
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(wordbank_plugin.wordbank_add_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -169,7 +175,14 @@ async def test_wordbank_add_direct_success_records_submission(
         )
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, text_message("词条已提交审核"), bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": text_message("词条已提交审核"),
+            },
+            result={"message_id": 1},
+        )
         ctx.should_finished()
 
     handle_add.assert_awaited_once()
@@ -309,6 +322,11 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
         "fetch_first_image_bytes_from_message",
         AsyncMock(return_value=b"image-bytes"),
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(wordbank_plugin.wordbank_add_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -323,7 +341,14 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
             tr("zh-CN", "wordbank.add.processing_with_media"),
             bot=bot,
         )
-        ctx.should_call_send(event, text_message("词条已提交审核"), bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": text_message("词条已提交审核"),
+            },
+            result={"message_id": 1},
+        )
         ctx.should_finished()
 
     schedule_pending.assert_called_once()
@@ -418,6 +443,13 @@ async def test_wordbank_notice_matcher_sends_response(
         event = build_group_poke_event(target_id=99999)
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, "别戳了", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "别戳了",
+            },
+            result={"message_id": 1},
+        )
 
     record_message.assert_awaited_once()

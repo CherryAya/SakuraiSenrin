@@ -22,6 +22,7 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
+from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
 from src.plugins.wordbank.handlers import (
     build_message_shape_from_message,
     handle_guided_add_shape_result,
@@ -459,6 +460,7 @@ async def start_guided_search(
 
 
 async def finish_guided_search(
+    bot: Bot | None,
     matcher: Matcher,
     state: T_State,
     event: MessageEvent,
@@ -520,7 +522,15 @@ async def finish_guided_search(
         page,
         wordbank_service=wordbank_service,
     )
-    send_result = await matcher.send(message)
+    if bot is None:
+        send_result = await matcher.send(message)
+    else:
+        send_result = await deliver_single_message(
+            bot,
+            target=resolve_delivery_target(event),
+            message=message,
+            source_kind="wordbank_view",
+        )
     await record_search_result_view_message(
         send_result=send_result,
         event=event,
@@ -626,9 +636,19 @@ async def handle_search_session_event(
             for index in parsed.delete_indexes
         ]
         if messages:
-            await matcher.send("\n".join(messages))
+            merged_message = "\n".join(messages)
+            if bot is None:
+                await matcher.send(merged_message)
+            else:
+                await deliver_single_message(
+                    bot,
+                    target=resolve_delivery_target(event),
+                    message=merged_message,
+                    source_kind="wordbank_command",
+                )
         clear_interaction_errors(state)
         await finish_guided_search_fn(
+            bot,
             matcher,
             state,
             event,
@@ -644,6 +664,7 @@ async def handle_search_session_event(
         return
     clear_interaction_errors(state)
     await finish_guided_search_fn(
+        bot,
         matcher,
         state,
         event,

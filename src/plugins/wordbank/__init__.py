@@ -25,6 +25,7 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
@@ -261,12 +262,16 @@ async def _finish_add_result(
     result: WordbankAddResult,
     locale: LocaleCode,
 ) -> None:
-    send_result = await matcher.send(
-        await build_add_result_message(
-            result,
-            locale=locale,
-            media_service=wordbank_media_service,
-        )
+    message = await build_add_result_message(
+        result,
+        locale=locale,
+        media_service=wordbank_media_service,
+    )
+    send_result = await deliver_single_message(
+        bot,
+        target=resolve_delivery_target(event),
+        message=message,
+        source_kind="wordbank_submission",
     )
     await record_submission_approval_message(
         wordbank_service,
@@ -469,15 +474,19 @@ runtime_exports = register_wordbank_runtime_handlers(
 
 
 async def _finish_guided_search(
-    matcher: Matcher,
-    state: T_State,
-    event: MessageEvent,
-    locale: LocaleCode,
-    *,
+    *args: Any,
     page_number: int,
     clamp_page: bool = False,
 ) -> None:
+    if len(args) == 4:
+        matcher, state, event, locale = args
+        bot = None
+    elif len(args) == 5:
+        bot, matcher, state, event, locale = args
+    else:
+        raise TypeError("_finish_guided_search expects 4 or 5 arguments")
     await finish_guided_search(
+        bot,
         matcher,
         state,
         event,

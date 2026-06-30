@@ -68,6 +68,17 @@ class _FinishMatcher:
         return None
 
 
+def _fallback_send_group_side_effect() -> AsyncMock:
+    async def _call(api: str, **kwargs: object) -> object:
+        if api in {"forward_group_single_msg", "forward_friend_single_msg"}:
+            raise RuntimeError("stale asset")
+        if api == "send_group_msg":
+            return {"message_id": 1, **kwargs}
+        raise AssertionError(f"unexpected api: {api}")
+
+    return AsyncMock(side_effect=_call)
+
+
 @pytest.mark.asyncio
 async def test_wordbank_search_without_args_routes_to_guided_entry(
     app: App,
@@ -255,6 +266,8 @@ async def test_finish_guided_search_finishes_with_rendered_card(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     matcher = _FinishMatcher()
+    call_api = _fallback_send_group_side_effect()
+    bot = cast(Bot, SimpleNamespace(self_id="99999", call_api=call_api))
     monkeypatch.setattr(
         wordbank_plugin,
         "execute_search_page",
@@ -283,6 +296,7 @@ async def test_finish_guided_search_finishes_with_rendered_card(
     event = build_group_message_event("#搜索词条 晚安")
 
     await wordbank_plugin._finish_guided_search(
+        bot,
         cast(Matcher, matcher),
         state,
         event,
@@ -290,7 +304,12 @@ async def test_finish_guided_search_finishes_with_rendered_card(
         page_number=1,
     )
 
-    assert matcher.sent == [text_message("CARD")]
+    assert call_api.await_args_list[-1].args == ("send_group_msg",)
+    assert call_api.await_args_list[-1].kwargs == {
+        "group_id": 20001,
+        "message": text_message("CARD"),
+    }
+    assert matcher.sent == []
     assert matcher.finished == text_message("")
 
 
@@ -299,6 +318,8 @@ async def test_finish_guided_search_keeps_search_session_when_results_exist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     matcher = _FinishMatcher()
+    call_api = _fallback_send_group_side_effect()
+    bot = cast(Bot, SimpleNamespace(self_id="99999", call_api=call_api))
     monkeypatch.setattr(
         wordbank_plugin,
         "execute_search_page",
@@ -350,6 +371,7 @@ async def test_finish_guided_search_keeps_search_session_when_results_exist(
     event = build_group_message_event("#搜索词条 晚安")
 
     await wordbank_plugin._finish_guided_search(
+        bot,
         cast(Matcher, matcher),
         state,
         event,
@@ -357,7 +379,12 @@ async def test_finish_guided_search_keeps_search_session_when_results_exist(
         page_number=1,
     )
 
-    assert matcher.sent == [text_message("CARD")]
+    assert call_api.await_args_list[-1].args == ("send_group_msg",)
+    assert call_api.await_args_list[-1].kwargs == {
+        "group_id": 20001,
+        "message": text_message("CARD"),
+    }
+    assert matcher.sent == []
     assert matcher.finished is None
     assert matcher.paused == [_SEARCH_SESSION_PROMPT]
     assert state["wordbank_guided_search_current_page"] == 1
@@ -371,6 +398,8 @@ async def test_handle_search_session_delete_refreshes_current_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     matcher = _FinishMatcher()
+    call_api = _fallback_send_group_side_effect()
+    bot = cast(Bot, SimpleNamespace(self_id="99999", call_api=call_api))
     monkeypatch.setattr(
         wordbank_plugin,
         "handle_delete",
@@ -399,13 +428,19 @@ async def test_handle_search_session_delete_refreshes_current_page(
     event = build_group_message_event("del 1")
 
     await wordbank_plugin._handle_search_session_event(
+        bot,
         cast(Matcher, matcher),
         event,
         state,
         "zh-CN",
     )
 
-    assert matcher.sent == [text_message("词条 #12 已删除。")]
+    assert call_api.await_args_list[-1].args == ("send_group_msg",)
+    assert call_api.await_args_list[-1].kwargs == {
+        "group_id": 20001,
+        "message": "词条 #12 已删除。",
+    }
+    assert matcher.sent == []
     assert isinstance(wordbank_plugin.handle_delete, AsyncMock)
     wordbank_plugin.handle_delete.assert_awaited_once()
     assert isinstance(wordbank_plugin._finish_guided_search, AsyncMock)
