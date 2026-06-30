@@ -24,8 +24,9 @@ from src.lib.consts import TriggerType
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_delivery import deliver_forward_messages
 from src.lib.messages import image_message, text_message
-from src.lib.onebot_forward import resolve_forward_sender, send_custom_forward
+from src.lib.onebot_forward import resolve_forward_sender
 from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
@@ -588,10 +589,11 @@ async def _send_help_forward(
     event: MessageEvent,
     plan: HelpDeliveryPlan,
 ) -> None:
-    await send_custom_forward(
+    await deliver_forward_messages(
         bot,
         event,
         plan.messages,
+        source_kind="help",
         fallback_nickname=HELP_FORWARD_FALLBACK_NICKNAME,
     )
 

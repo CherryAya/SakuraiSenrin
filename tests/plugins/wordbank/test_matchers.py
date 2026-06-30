@@ -368,7 +368,14 @@ async def test_wordbank_passive_matcher_sends_response(
         event = build_group_message_event("晚安", message_id=1)
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, "被动回复", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "被动回复",
+            },
+            result={"message_id": 1},
+        )
 
     record_message.assert_awaited_once()
 

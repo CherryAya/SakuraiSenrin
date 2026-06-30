@@ -823,8 +823,7 @@ async def test_resolve_docs_message_wordbank_supports_admin_feature_query() -> N
 
 
 @pytest.mark.asyncio
-async def test_resolve_docs_message_wordbank_denies_admin_feature_query_for_normal_user(
-) -> None:
+async def test_wordbank_admin_feature_query_denied_for_normal_user() -> None:
     entries = _iter_docs_entries("zh-CN")
     wordbank_entry = next(entry for entry in entries if entry.node.slug == "wordbank")
 
@@ -905,7 +904,13 @@ async def test_send_help_forward_uses_group_forward_api() -> None:
         Any,
         SimpleNamespace(
             self_id="99999",
-            call_api=AsyncMock(side_effect=[{"nickname": "测试机器人"}, None]),
+            call_api=AsyncMock(
+                side_effect=[
+                    {"message_id": 101},
+                    {"message_id": 102},
+                    None,
+                ]
+            ),
         ),
     )
     event = build_group_message_event("#help wordbank")
@@ -913,22 +918,23 @@ async def test_send_help_forward_uses_group_forward_api() -> None:
 
     await _send_help_forward(bot, event, plan)
 
-    assert bot.call_api.await_count == 2
-    assert bot.call_api.await_args_list[1].args[0] == "send_group_forward_msg"
-    assert bot.call_api.await_args_list[1].kwargs["group_id"] == 20001
-    nodes = bot.call_api.await_args_list[1].kwargs["messages"]
+    assert bot.call_api.await_args_list[-1].args[0] == "send_group_forward_msg"
+    assert bot.call_api.await_args_list[-1].kwargs["group_id"] == 20001
+    nodes = bot.call_api.await_args_list[-1].kwargs["messages"]
     assert len(nodes) == 2
     assert all(node.type == "node" for node in nodes)
-    assert nodes[0].data["nickname"] == "测试机器人"
+    assert "id" in nodes[0].data
 
 
 @pytest.mark.asyncio
 async def test_send_help_forward_uses_private_forward_api_with_fallback_nickname() -> (
     None
 ):
-    async def fake_call_api(api: str, **kwargs: Any) -> None:
-        if api == "get_login_info":
-            raise RuntimeError("boom")
+    sent_message_ids = iter((201, 202))
+
+    async def fake_call_api(api: str, **kwargs: Any) -> Any:
+        if api == "send_private_msg":
+            return {"message_id": next(sent_message_ids)}
         return None
 
     bot = cast(
@@ -940,11 +946,10 @@ async def test_send_help_forward_uses_private_forward_api_with_fallback_nickname
 
     await _send_help_forward(bot, event, plan)
 
-    assert bot.call_api.await_count == 2
-    assert bot.call_api.await_args_list[1].args[0] == "send_private_forward_msg"
-    assert bot.call_api.await_args_list[1].kwargs["user_id"] == 10001
-    nodes = bot.call_api.await_args_list[1].kwargs["messages"]
-    assert nodes[0].data["nickname"]
+    assert bot.call_api.await_args_list[-1].args[0] == "send_private_forward_msg"
+    assert bot.call_api.await_args_list[-1].kwargs["user_id"] == 10001
+    nodes = bot.call_api.await_args_list[-1].kwargs["messages"]
+    assert "id" in nodes[0].data
 
 
 @pytest.mark.asyncio
@@ -953,7 +958,13 @@ async def test_deliver_help_plan_sends_wait_prompt_before_forward() -> None:
         Any,
         SimpleNamespace(
             self_id="99999",
-            call_api=AsyncMock(side_effect=[{"nickname": "测试机器人"}, None]),
+            call_api=AsyncMock(
+                side_effect=[
+                    {"message_id": 101},
+                    {"message_id": 102},
+                    None,
+                ]
+            ),
         ),
     )
     matcher = cast(Any, SimpleNamespace(send=AsyncMock(), finish=AsyncMock()))

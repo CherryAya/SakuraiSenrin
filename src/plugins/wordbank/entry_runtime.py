@@ -27,6 +27,7 @@ from src.lib.interactive_recall import (
     rebuild_temp_matcher,
     register_root_message,
 )
+from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
 from src.lib.messages import empty_message
 from src.logger import logger
 
@@ -36,8 +37,6 @@ from .handlers import (
     PassiveResponse,
     build_group_detail_message,
     handle_approval_reply_result,
-    handle_passive_message,
-    handle_passive_notice,
     handle_reply_command,
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
@@ -66,7 +65,7 @@ def register_wordbank_runtime_handlers(
     build_error_message: Callable[..., Message | str],
     cancel_guided_resources: Callable[..., Awaitable[None]],
     guided_locale: Callable[[Mapping[str, Any]], LocaleCode],
-) -> dict[str, Callable[..., Awaitable[None]]]:
+) -> dict[str, Any]:
     async def _get_plugin_attr(name: str) -> Any:
         from src.plugins import wordbank as wordbank_plugin
 
@@ -192,6 +191,7 @@ def register_wordbank_runtime_handlers(
         )
 
     async def send_search_result_view(
+        bot: Bot,
         matcher: Matcher,
         event: MessageEvent,
         locale: LocaleCode,
@@ -215,7 +215,12 @@ def register_wordbank_runtime_handlers(
                 has_image=image_scores is not None,
                 media_service=wordbank_media_service,
             )
-            send_result = await matcher.send(message)
+            send_result = await deliver_single_message(
+                bot,
+                target=resolve_delivery_target(event),
+                message=message,
+                source_kind="wordbank_view",
+            )
             await _record_search_result_view_message(
                 send_result=send_result,
                 event=event,
@@ -246,6 +251,7 @@ def register_wordbank_runtime_handlers(
         )
 
     async def send_group_detail_view(
+        bot: Bot,
         matcher: Matcher,
         event: MessageEvent,
         locale: LocaleCode,
@@ -261,7 +267,12 @@ def register_wordbank_runtime_handlers(
             locale=locale,
             media_service=wordbank_media_service,
         )
-        send_result = await matcher.send(message)
+        send_result = await deliver_single_message(
+            bot,
+            target=resolve_delivery_target(event),
+            message=message,
+            source_kind="wordbank_view",
+        )
         await _record_group_detail_view_message(
             send_result=send_result,
             event=event,
@@ -422,7 +433,11 @@ def register_wordbank_runtime_handlers(
         await matcher.finish(outcome.message)
 
     @wordbank_view_reply_command.handle()
-    async def _wordbank_view_reply(matcher: Matcher, event: MessageEvent) -> None:
+    async def _wordbank_view_reply(
+        bot: Bot,
+        matcher: Matcher,
+        event: MessageEvent,
+    ) -> None:
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         reply = event.reply
@@ -459,6 +474,7 @@ def register_wordbank_runtime_handlers(
                     current_page=view_message.current_page,
                 )
             await (await _get_plugin_attr("_send_group_detail_view"))(
+                bot,
                 matcher,
                 event,
                 locale,
@@ -483,7 +499,7 @@ def register_wordbank_runtime_handlers(
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         try:
             handle_start = perf_start()
-            response = await handle_passive_message(
+            response = await (await _get_plugin_attr("handle_passive_message"))(
                 bot,
                 event,
                 wordbank_service,
@@ -516,7 +532,12 @@ def register_wordbank_runtime_handlers(
             **cast(Any, image_trace_fields),
         )
         send_start = perf_start()
-        send_result = await wordbank_passive.send(message)
+        send_result = await deliver_single_message(
+            bot,
+            target=resolve_delivery_target(event),
+            message=message,
+            source_kind="wordbank_response",
+        )
         send_ms = elapsed_ms(send_start)
         log_perf(
             "plugin.passive.handle.send.done",
@@ -528,7 +549,10 @@ def register_wordbank_runtime_handlers(
             **cast(Any, image_trace_fields),
         )
         record_start = perf_start()
-        await _record_passive_response_message(response, send_result)
+        await (await _get_plugin_attr("_record_passive_response_message"))(
+            response,
+            send_result,
+        )
         record_ms = elapsed_ms(record_start)
         log_perf(
             "plugin.passive.handle.sent",
@@ -582,7 +606,11 @@ def register_wordbank_runtime_handlers(
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         try:
             handle_start = perf_start()
-            response = await handle_passive_notice(bot, event, wordbank_service)
+            response = await (await _get_plugin_attr("handle_passive_notice"))(
+                bot,
+                event,
+                wordbank_service,
+            )
             handle_ms = elapsed_ms(handle_start)
         except Exception as exc:
             logger.warning(f"[Wordbank] passive notice skipped: {exc}")
@@ -622,7 +650,10 @@ def register_wordbank_runtime_handlers(
             **cast(Any, image_trace_fields),
         )
         record_start = perf_start()
-        await _record_passive_response_message(response, send_result)
+        await (await _get_plugin_attr("_record_passive_response_message"))(
+            response,
+            send_result,
+        )
         record_ms = elapsed_ms(record_start)
         log_perf(
             "plugin.notice.handle.sent",
@@ -643,5 +674,7 @@ def register_wordbank_runtime_handlers(
         "send_group_detail_view": send_group_detail_view,
         "send_search_result_view": send_search_result_view,
         "record_search_result_view_message": _record_search_result_view_message,
+        "record_passive_response_message": _record_passive_response_message,
         "notify_approval_source": notify_approval_source,
+        "_build_passive_message": _build_passive_message,
     }

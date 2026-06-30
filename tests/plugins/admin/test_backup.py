@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from unittest.mock import AsyncMock
 
 import nonebot
 from nonebot.adapters.onebot.v11 import Bot
-from nonebot.adapters.onebot.v11.message import MessageSegment
 from nonebug import App
 import pytest
 
@@ -268,6 +268,8 @@ async def test_help_can_find_admin_backup_docs(
     monkeypatch.setattr(
         "src.plugins.help.render_plugin_guide", lambda *args, **kwargs: b"guide-demo"
     )
+    deliver_forward = AsyncMock(return_value=None)
+    monkeypatch.setattr("src.plugins.help.deliver_forward_messages", deliver_forward)
 
     async with app.test_matcher(help_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -291,26 +293,9 @@ async def test_help_can_find_admin_backup_docs(
                 text_message(HELP_FORWARD_WAIT_PROMPT),
                 bot=bot,
             )
-            ctx.should_call_api(
-                "get_login_info",
-                {},
-                result={"nickname": "SakuraiSenrin"},
-            )
-            ctx.should_call_api(
-                "send_private_forward_msg",
-                {
-                    "user_id": event.user_id,
-                    "messages": [
-                        MessageSegment.node_custom(
-                            user_id=99999,
-                            nickname="SakuraiSenrin",
-                            content=message,
-                        )
-                        for message in plan.messages
-                    ],
-                },
-                result=None,
-            )
         else:
             ctx.should_call_send(event, expected, bot=bot)
         ctx.should_finished()
+
+    if plan.should_forward:
+        deliver_forward.assert_awaited_once()

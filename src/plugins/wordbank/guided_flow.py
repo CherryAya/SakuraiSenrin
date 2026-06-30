@@ -339,7 +339,7 @@ async def collect_search_query_content(
         keyword_text,
         collapse_cq_only_text=True,
     )
-    keyword = normalized_keyword if has_meaningful_text(normalized_keyword) else ""
+    keyword = keyword_text if has_meaningful_text(normalized_keyword) else ""
     if not allow_image:
         return keyword, False, {}
     data = await wordbank_plugin.fetch_first_image_bytes_from_message(message)
@@ -540,6 +540,7 @@ async def finish_guided_search(
 
 
 async def handle_search_session_event(
+    bot: Any,
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
@@ -585,6 +586,7 @@ async def handle_search_session_event(
             return
         clear_interaction_errors(state)
         await send_group_detail_view(
+            bot,
             matcher,
             event,
             locale,

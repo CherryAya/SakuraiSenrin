@@ -68,10 +68,25 @@ from .handlers import (
     schedule_pending_approval_notice,
 )
 from .handlers import (
+    extract_image_urls as extract_image_urls,
+)
+from .handlers import (
     fetch_first_image_bytes_from_message as fetch_first_image_bytes_from_message,
 )
 from .handlers import (
+    handle_add_text_result as handle_add_text_result,
+)
+from .handlers import (
+    handle_add_with_media_result as handle_add_with_media_result,
+)
+from .handlers import (
     handle_delete as handle_delete,
+)
+from .handlers import (
+    handle_passive_message as handle_passive_message,
+)
+from .handlers import (
+    handle_passive_notice as handle_passive_notice,
 )
 from .handlers.commands import execute_search_page as execute_search_page
 from .handlers.commands import render_search_page_message as render_search_page_message
@@ -476,12 +491,17 @@ async def _finish_guided_search(
 
 
 async def _handle_search_session_event(
-    matcher: Matcher,
-    event: MessageEvent,
-    state: T_State,
-    locale: LocaleCode,
+    *args: Any,
 ) -> None:
+    if len(args) == 4:
+        matcher, event, state, locale = args
+        bot = None
+    elif len(args) == 5:
+        bot, matcher, event, state, locale = args
+    else:
+        raise TypeError("_handle_search_session_event expects 4 or 5 arguments")
     await handle_search_session_event(
+        bot,
         matcher,
         event,
         state,
@@ -525,6 +545,7 @@ async def _finish_guided_add(
 
 
 async def _send_search_result_view(
+    bot: Any,
     matcher: Matcher,
     event: MessageEvent,
     locale: LocaleCode,
@@ -534,6 +555,7 @@ async def _send_search_result_view(
     state: T_State | None = None,
 ) -> None:
     await runtime_exports["send_search_result_view"](
+        bot,
         matcher,
         event,
         locale,
@@ -545,24 +567,32 @@ async def _send_search_result_view(
 
 
 async def _send_group_detail_view(
+    bot: Any,
     matcher: Matcher,
     event: MessageEvent,
     locale: LocaleCode,
     *,
     trigger_group_id: int,
     page: int,
+    finish_after_send: bool = True,
 ) -> None:
     await runtime_exports["send_group_detail_view"](
+        bot,
         matcher,
         event,
         locale,
         trigger_group_id=trigger_group_id,
         page=page,
+        finish_after_send=finish_after_send,
     )
 
 
 async def _record_search_result_view_message(*args: Any, **kwargs: Any) -> None:
     await runtime_exports["record_search_result_view_message"](*args, **kwargs)
+
+
+async def _record_passive_response_message(*args: Any, **kwargs: Any) -> None:
+    await runtime_exports["record_passive_response_message"](*args, **kwargs)
 
 
 async def _resolve_search_delete_target_ids(
