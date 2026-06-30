@@ -299,7 +299,7 @@ async def test_help_can_find_admin_backup_docs(
             ctx.should_call_api(
                 "send_private_forward_msg",
                 {
-                    "user_id": SUPERUSER_ID,
+                    "user_id": event.user_id,
                     "messages": [
                         MessageSegment.node_custom(
                             user_id=99999,

@@ -13,7 +13,7 @@ from typing import Any, Literal, cast
 import nonebot
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
@@ -25,6 +25,7 @@ from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.messages import image_message, text_message
+from src.lib.onebot_forward import resolve_forward_sender, send_custom_forward
 from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
@@ -576,16 +577,10 @@ def _compose_plugin_guide_messages(
 
 
 async def _resolve_forward_sender(bot: Bot) -> tuple[int, str]:
-    user_id = int(str(bot.self_id))
-    try:
-        login_info = await bot.call_api("get_login_info")
-    except Exception:
-        return user_id, HELP_FORWARD_FALLBACK_NICKNAME
-    if isinstance(login_info, dict):
-        nickname = str(login_info.get("nickname", "")).strip()
-        if nickname:
-            return user_id, nickname
-    return user_id, HELP_FORWARD_FALLBACK_NICKNAME
+    return await resolve_forward_sender(
+        bot,
+        fallback_nickname=HELP_FORWARD_FALLBACK_NICKNAME,
+    )
 
 
 async def _send_help_forward(
@@ -593,22 +588,11 @@ async def _send_help_forward(
     event: MessageEvent,
     plan: HelpDeliveryPlan,
 ) -> None:
-    user_id, nickname = await _resolve_forward_sender(bot)
-    nodes = [
-        MessageSegment.node_custom(user_id=user_id, nickname=nickname, content=message)
-        for message in plan.messages
-    ]
-    if isinstance(event, GroupMessageEvent):
-        await bot.call_api(
-            "send_group_forward_msg",
-            group_id=event.group_id,
-            messages=nodes,
-        )
-        return
-    await bot.call_api(
-        "send_private_forward_msg",
-        user_id=event.user_id,
-        messages=nodes,
+    await send_custom_forward(
+        bot,
+        event,
+        plan.messages,
+        fallback_nickname=HELP_FORWARD_FALLBACK_NICKNAME,
     )
 
 
