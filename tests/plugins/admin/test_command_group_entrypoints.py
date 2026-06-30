@@ -27,6 +27,7 @@ SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 
 from src.database.core.consts import Permission as CorePermission
 from src.lib.i18n.runtime import tr
+from src.lib.message_assets import message_asset_repo
 from src.plugins.admin.backup import admin_backup
 from src.plugins.admin.group import admin_group
 from src.plugins.admin.i18n import admin_i18n
@@ -206,16 +207,27 @@ async def test_admin_invite_dot_form_hits_matcher(
 
 
 @pytest.mark.asyncio
-async def test_admin_invite_log_returns_i18n_notice(app: App) -> None:
+async def test_admin_invite_log_returns_i18n_notice(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     event = build_private_message_event("#admin.invite log", user_id=SUPERUSER_ID)
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     async with app.test_matcher(admin_invite) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_send(
-            event,
-            tr("zh-CN", "admin.invite.log.unavailable"),
-            bot=bot,
+        ctx.should_call_api(
+            "send_private_msg",
+            {
+                "user_id": SUPERUSER_ID,
+                "message": tr("zh-CN", "admin.invite.log.unavailable"),
+            },
+            result={"message_id": 1},
         )
         ctx.should_finished(admin_invite)
 

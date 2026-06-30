@@ -33,6 +33,7 @@ from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.demo_theme import SENRIN_V3_ADMIN_INVITE_IMAGE_THEME
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_doc_demo_message,
@@ -167,6 +168,7 @@ reject_matcher = on_fullmatch(
 @dataclass
 class InviteContext:
     bot: Bot
+    event: MessageEvent
     matcher: Matcher
     approve: bool
     locale: LocaleCode
@@ -181,6 +183,7 @@ class InviteContext:
 @dataclass
 class AdminInviteContext:
     bot: Bot
+    event: MessageEvent
     matcher: Matcher
     operator_id: str
     locale: LocaleCode
@@ -188,6 +191,21 @@ class AdminInviteContext:
     flag: str | Unset = UNSET
     group_id: str | Unset = UNSET
     is_all: bool = False
+
+
+async def _send_reusable_text(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    *,
+    message: str,
+) -> None:
+    await deliver_single_message(
+        bot,
+        target=resolve_delivery_target(event),
+        message=message,
+        source_kind="admin_invite",
+    )
 
 
 class InvitationListRenderer:
@@ -465,14 +483,22 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         if not invitation:
             return False
     else:
-        await ctx.matcher.send(tr(ctx.locale, "admin.invite.lookup_failed"))
+        await _send_reusable_text(
+            ctx.bot,
+            ctx.matcher,
+            ctx.event,
+            message=tr(ctx.locale, "admin.invite.lookup_failed"),
+        )
         return False
 
     if invitation.status.is_processed:
         operator = invitation.operator
         if not ctx.silent:
-            await ctx.matcher.send(
-                tr(
+            await _send_reusable_text(
+                ctx.bot,
+                ctx.matcher,
+                ctx.event,
+                message=tr(
                     ctx.locale,
                     "admin.invite.processed",
                     operator_name=operator.user_name,
@@ -482,7 +508,7 @@ async def handle_invitation(ctx: InviteContext) -> bool:
                     group_name=invitation.group.group_name,
                     inviter_name=invitation.inviter.user_name,
                     flag=invitation.flag,
-                )
+                ),
             )
         return False
 
@@ -493,7 +519,12 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         )
     except ValueError:
         if not ctx.silent:
-            await ctx.matcher.send(tr(ctx.locale, "admin.invite.need_unban_first"))
+            await _send_reusable_text(
+                ctx.bot,
+                ctx.matcher,
+                ctx.event,
+                message=tr(ctx.locale, "admin.invite.need_unban_first"),
+            )
         return False
 
     if flag := invitation.flag:
@@ -564,6 +595,7 @@ async def handle_list(ctx: AdminInviteContext) -> None:
 async def handle_approve(ctx: AdminInviteContext) -> None:
     ic_ctx = InviteContext(
         bot=ctx.bot,
+        event=ctx.event,
         matcher=ctx.matcher,
         flag=ctx.flag,
         group_id=ctx.group_id,
@@ -577,6 +609,7 @@ async def handle_reject(ctx: AdminInviteContext) -> None:
     if not ctx.is_all:
         ic_ctx = InviteContext(
             bot=ctx.bot,
+            event=ctx.event,
             matcher=ctx.matcher,
             flag=ctx.flag,
             group_id=ctx.group_id,
@@ -595,6 +628,7 @@ async def handle_reject(ctx: AdminInviteContext) -> None:
     for inv in invs:
         ic_ctx = InviteContext(
             bot=ctx.bot,
+            event=ctx.event,
             matcher=ctx.matcher,
             invitation_id=inv.id,
             approve=False,
@@ -614,7 +648,7 @@ async def handle_reject(ctx: AdminInviteContext) -> None:
     msg += tr(ctx.locale, "admin.invite.bulk.separator") + "\n"
     msg += tr(ctx.locale, "admin.invite.bulk.reject.summary", count=success_count)
 
-    await ctx.matcher.send(msg)
+    await _send_reusable_text(ctx.bot, ctx.matcher, ctx.event, message=msg)
 
 
 async def handle_ignore(ctx: AdminInviteContext) -> None:
@@ -634,7 +668,7 @@ async def handle_ignore(ctx: AdminInviteContext) -> None:
             group_name=inv.group.group_name,
             group_id=inv.group_id,
         )
-        await ctx.matcher.send(msg)
+        await _send_reusable_text(ctx.bot, ctx.matcher, ctx.event, message=msg)
         return
     invs = await invite_repo.ignore_all_pending()
     if not invs:
@@ -649,11 +683,16 @@ async def handle_ignore(ctx: AdminInviteContext) -> None:
     msg += tr(ctx.locale, "admin.invite.bulk.separator") + "\n"
     msg += tr(ctx.locale, "admin.invite.bulk.ignore.summary", count=len(invs))
 
-    await ctx.matcher.send(msg)
+    await _send_reusable_text(ctx.bot, ctx.matcher, ctx.event, message=msg)
 
 
 async def handle_log(ctx: AdminInviteContext) -> None:
-    await ctx.matcher.finish(tr(ctx.locale, "admin.invite.log.unavailable"))
+    await _send_reusable_text(
+        ctx.bot,
+        ctx.matcher,
+        ctx.event,
+        message=tr(ctx.locale, "admin.invite.log.unavailable"),
+    )
 
 
 @approve_matcher.handle()
@@ -661,6 +700,7 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     msg_id = str(event.reply.message_id)  # type: ignore
     ctx = InviteContext(
         bot=bot,
+        event=event,
         matcher=matcher,
         approve=True,
         msg_id=msg_id,
@@ -674,6 +714,7 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     msg_id = str(event.reply.message_id)  # type: ignore
     ctx = InviteContext(
         bot=bot,
+        event=event,
         matcher=matcher,
         approve=False,
         msg_id=msg_id,
@@ -720,6 +761,7 @@ async def _(
 
     ctx = AdminInviteContext(
         bot=bot,
+        event=event,
         matcher=matcher,
         operator_id=str(event.user_id),
         locale=locale,
