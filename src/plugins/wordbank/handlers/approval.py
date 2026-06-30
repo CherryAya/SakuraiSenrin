@@ -13,6 +13,7 @@ from nonebot.adapters.onebot.v11.event import MessageEvent
 from src.config import config
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_delivery import DeliveryTarget, deliver_single_message
 from src.lib.messages import empty_message, text_message
 from src.logger import logger
 from src.plugins.wordbank.message_model import MessageShape
@@ -252,9 +253,11 @@ async def _send_single_pending_approval_notice(
     source_message_id: str,
 ) -> None:
     try:
-        send_result = await bot.send_private_msg(
-            user_id=int(superuser_id),
+        send_result = await deliver_single_message(
+            bot,
+            target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
             message=message,
+            source_kind="wordbank_pending_approval_notice",
         )
         message_id = extract_sent_message_id(send_result)
         if message_id is None:

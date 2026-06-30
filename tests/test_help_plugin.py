@@ -908,6 +908,7 @@ async def test_send_help_forward_uses_group_forward_api() -> None:
                 side_effect=[
                     {"message_id": 101},
                     {"message_id": 102},
+                    {"message_id": 103},
                     None,
                 ]
             ),
@@ -962,6 +963,7 @@ async def test_deliver_help_plan_sends_wait_prompt_before_forward() -> None:
                 side_effect=[
                     {"message_id": 101},
                     {"message_id": 102},
+                    {"message_id": 103},
                     None,
                 ]
             ),
@@ -973,9 +975,10 @@ async def test_deliver_help_plan_sends_wait_prompt_before_forward() -> None:
 
     await _deliver_help_plan(bot, matcher, event, plan)
 
-    matcher.send.assert_awaited_once()
-    sent_message = matcher.send.await_args.args[0]
-    assert str(sent_message) == HELP_FORWARD_WAIT_PROMPT
+    first_call = bot.call_api.await_args_list[0]
+    assert first_call.args[0] == "send_group_msg"
+    assert first_call.kwargs["group_id"] == 20001
+    assert str(first_call.kwargs["message"]) == HELP_FORWARD_WAIT_PROMPT
     matcher.finish.assert_awaited_once_with()
 
 

@@ -150,7 +150,14 @@ async def test_remove_succeeds_for_admin(
         ctx.should_rejected()
 
         ctx.receive_event(bot, third)
-        ctx.should_call_send(third, "走了走了，再见啦！原因：例行维护", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "走了走了，再见啦！原因：例行维护",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_api("set_group_leave", {"group_id": 20001}, result=None)
         ctx.should_call_api(
             "send_private_msg",
@@ -215,7 +222,14 @@ async def test_remove_handles_leave_failure(
         ctx.should_rejected()
 
         ctx.receive_event(bot, third)
-        ctx.should_call_send(third, "走了走了，再见啦！原因：例行维护", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "走了走了，再见啦！原因：例行维护",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_api(
             "set_group_leave",
             {"group_id": 20001},

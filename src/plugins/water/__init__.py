@@ -861,4 +861,12 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
                 )
             )
 
-    await handler(WaterAdminContext(matcher=matcher, args=args, locale=locale))
+    await handler(
+        WaterAdminContext(
+            bot=cast(Bot, matcher.bot),
+            event=event,
+            matcher=matcher,
+            args=args,
+            locale=locale,
+        )
+    )

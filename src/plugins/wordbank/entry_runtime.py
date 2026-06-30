@@ -307,15 +307,27 @@ def register_wordbank_runtime_handlers(
         source += MessageSegment.text(message)
         try:
             if approval_message.group_id:
-                await bot.send_group_msg(
-                    group_id=int(approval_message.group_id),
+                await deliver_single_message(
+                    bot,
+                    target=DeliveryTarget(
+                        kind="group",
+                        target_id=str(approval_message.group_id),
+                    ),
                     message=source,
+                    source_kind="wordbank_approval_source_notice",
+                    allow_asset_reuse=False,
                 )
                 return
             if approval_message.user_id:
-                await bot.send_private_msg(
-                    user_id=int(approval_message.user_id),
+                await deliver_single_message(
+                    bot,
+                    target=DeliveryTarget(
+                        kind="private",
+                        target_id=str(approval_message.user_id),
+                    ),
                     message=source,
+                    source_kind="wordbank_approval_source_notice",
+                    allow_asset_reuse=False,
                 )
         except Exception as exc:
             logger.warning(f"[Wordbank] approval source notice skipped: {exc}")

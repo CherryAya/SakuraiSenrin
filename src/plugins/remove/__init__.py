@@ -16,7 +16,11 @@ from src.database.core.consts import GroupStatus, Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import DeliveryTarget, deliver_single_message
+from src.lib.message_delivery import (
+    DeliveryTarget,
+    deliver_single_message,
+    resolve_delivery_target,
+)
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -115,7 +119,12 @@ async def perform_remove(
     group_id = str(event.group_id)
     group_name = await resolve_group_name(bot, group_id)
 
-    await matcher.send(tr(locale, "remove.farewell", reason=reason_text))
+    await deliver_single_message(
+        bot,
+        target=resolve_delivery_target(event),
+        message=tr(locale, "remove.farewell", reason=reason_text),
+        source_kind="remove_farewell",
+    )
     try:
         await bot.set_group_leave(group_id=event.group_id)
     except ActionFailed as exc:

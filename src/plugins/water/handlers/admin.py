@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import arrow
+from nonebot.adapters.onebot.v11.bot import Bot
+from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 
@@ -13,6 +15,7 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
 from src.lib.plugin_docs import build_doc_demo_message
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
@@ -35,6 +38,8 @@ PLUGIN_DESCRIPTION = tr("zh-CN", "plugin.water.description")
 
 @dataclass
 class WaterAdminContext:
+    bot: Bot
+    event: MessageEvent
     matcher: Matcher
     args: list[str]
     locale: LocaleCode
@@ -148,7 +153,12 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
                 )
             )
 
-    await ctx.matcher.send(tr(ctx.locale, "water.admin.settle.running"))
+    await deliver_single_message(
+        ctx.bot,
+        target=resolve_delivery_target(ctx.event),
+        message=tr(ctx.locale, "water.admin.settle.running"),
+        source_kind="water_admin_settle_running",
+    )
     result = await water_settlement_service.run_daily_settlement(
         target_day,
         force=force,

@@ -15,6 +15,7 @@ from pil_utils import BuildImage
 from src.lib.cooldown import CooldownIsolateLevel, MemoryCooldown
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_delivery import DeliveryTarget, deliver_single_message
 from src.lib.messages import image_message, text_message
 from src.lib.utils.common import get_current_time
 from src.logger import logger
@@ -183,9 +184,14 @@ class WaterReportService:
         for candidate, message in rendered_items:
             send_started = perf_counter()
             try:
-                await bot.send_group_msg(
-                    group_id=int(candidate.group_id),
+                await deliver_single_message(
+                    bot,
+                    target=DeliveryTarget(
+                        kind="group",
+                        target_id=str(candidate.group_id),
+                    ),
                     message=message,
+                    source_kind="water_daily_report_push",
                 )
                 sent_groups += 1
                 logger.debug(

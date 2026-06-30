@@ -24,7 +24,11 @@ from src.lib.consts import TriggerType
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import deliver_forward_messages
+from src.lib.message_delivery import (
+    deliver_forward_messages,
+    deliver_single_message,
+    resolve_delivery_target,
+)
 from src.lib.messages import image_message, text_message
 from src.lib.onebot_forward import resolve_forward_sender
 from src.lib.plugin_docs import (
@@ -607,7 +611,12 @@ async def _deliver_help_plan(
     if not plan.should_forward:
         await matcher.finish(plan.messages[0])
         return
-    await matcher.send(text_message(HELP_FORWARD_WAIT_PROMPT))
+    await deliver_single_message(
+        bot,
+        target=resolve_delivery_target(event),
+        message=text_message(HELP_FORWARD_WAIT_PROMPT),
+        source_kind="help_wait_prompt",
+    )
     await _send_help_forward(bot, event, plan)
     await matcher.finish()
 

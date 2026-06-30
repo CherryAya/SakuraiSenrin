@@ -34,6 +34,7 @@ from src.lib.demo_theme import SENRIN_V3_ADMIN_INVITE_IMAGE_THEME
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
+from src.lib.messages import empty_message
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_doc_demo_message,
@@ -551,7 +552,11 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         status=group_status,
     )
     if not ctx.silent:
-        await ctx.matcher.send(
+        reply_message = empty_message()
+        message_id = getattr(ctx.event, "message_id", None)
+        if message_id is not None:
+            reply_message += MessageSegment.reply(int(message_id))
+        reply_message += MessageSegment.text(
             tr(
                 ctx.locale,
                 "admin.invite.action_done",
@@ -561,8 +566,14 @@ async def handle_invitation(ctx: InviteContext) -> bool:
                 group_name=invitation.group.group_name,
                 inviter_name=invitation.inviter.user_name,
                 flag=invitation.flag,
-            ),
-            reply_message=True,
+            )
+        )
+        await deliver_single_message(
+            ctx.bot,
+            target=resolve_delivery_target(ctx.event),
+            message=reply_message,
+            source_kind="admin_invite_action_done",
+            allow_asset_reuse=False,
         )
     return True
 
