@@ -11,6 +11,7 @@ from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter
 from nonebot.adapters.onebot.v11 import Bot
 
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
+from src.lib.message_api_hooks import install_message_delivery_hooks
 from src.scripts.install import init_fonts
 from src.services.db import init_db
 from src.services.sync import (
@@ -20,6 +21,7 @@ from src.services.sync import (
 
 init_fonts()
 nonebot.init()
+install_message_delivery_hooks()
 
 from src.services.backup_scheduler import install_backup_scheduler
 from src.services.startup_sync import run_startup_backup_freshness_check
