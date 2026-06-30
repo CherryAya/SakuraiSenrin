@@ -8,6 +8,7 @@ from nonebot.adapters.onebot.v11 import Bot
 from nonebug import App
 import pytest
 
+from src.lib.message_assets import message_asset_repo
 from src.lib.messages import text_message
 
 nonebot.init(
@@ -41,6 +42,11 @@ async def test_water_query_guides_empty_command_step_by_step(
         water_plugin.water_rank_query_service,
         "build_rank_message",
         build_rank_message,
+    )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
     )
 
     first = build_group_message_event("#水王", message_id=1)
@@ -82,12 +88,22 @@ async def test_water_query_guides_empty_command_step_by_step(
         ctx.should_rejected()
 
         ctx.receive_event(bot, fourth)
-        ctx.should_call_send(
-            fourth,
-            "已选择：用户榜 / 本群 / 月榜",
-            bot=bot,
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "已选择：用户榜 / 本群 / 月榜",
+            },
+            result={"message_id": 1},
         )
-        ctx.should_call_send(fourth, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "凛凛统计中，请稍后喔……",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_send(fourth, text_message("RANK_OK"), bot=bot)
         ctx.should_finished()
 
@@ -169,13 +185,25 @@ async def test_water_query_direct_rank_still_runs_without_guided_flow(
         "build_rank_message",
         build_rank_message,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     event = build_group_message_event("#水王 用户榜 本群 日榜", message_id=1)
 
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "凛凛统计中，请稍后喔……",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_send(event, text_message("DIRECT_OK"), bot=bot)
         ctx.should_finished()
 
@@ -200,13 +228,25 @@ async def test_water_query_shortcut_alias_runs_direct_rank(
         "build_rank_message",
         build_rank_message,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     event = build_group_message_event("#今日水王", message_id=1)
 
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "凛凛统计中，请稍后喔……",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_send(event, text_message("SHORTCUT_OK"), bot=bot)
         ctx.should_finished()
 
@@ -351,6 +391,11 @@ async def test_water_query_superuser_can_use_restricted_periods(
         "build_rank_message",
         build_rank_message,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     first = build_group_message_event("#水王", user_id=1, message_id=1)
     second = build_group_message_event("用户榜", user_id=1, message_id=2)
@@ -391,12 +436,22 @@ async def test_water_query_superuser_can_use_restricted_periods(
         ctx.should_rejected()
 
         ctx.receive_event(bot, fourth)
-        ctx.should_call_send(
-            fourth,
-            "已选择：用户榜 / 本群 / 总榜",
-            bot=bot,
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "已选择：用户榜 / 本群 / 总榜",
+            },
+            result={"message_id": 1},
         )
-        ctx.should_call_send(fourth, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "凛凛统计中，请稍后喔……",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_send(fourth, text_message("SUPERUSER_OK"), bot=bot)
         ctx.should_finished()
 
@@ -543,6 +598,11 @@ async def test_water_query_guided_accepts_all_dimensions_in_one_reply(
         "build_rank_message",
         build_rank_message,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     first = build_group_message_event("#水王", message_id=1)
     second = build_group_message_event("用户榜 本群 月榜", message_id=2)
@@ -562,8 +622,22 @@ async def test_water_query_guided_accepts_all_dimensions_in_one_reply(
         ctx.should_rejected()
 
         ctx.receive_event(bot, second)
-        ctx.should_call_send(second, "已选择：用户榜 / 本群 / 月榜", bot=bot)
-        ctx.should_call_send(second, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "已选择：用户榜 / 本群 / 月榜",
+            },
+            result={"message_id": 1},
+        )
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "凛凛统计中，请稍后喔……",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_send(second, text_message("ONE_SHOT_OK"), bot=bot)
         ctx.should_finished()
 
@@ -611,13 +685,25 @@ async def test_water_today_report_runs_for_group_admin(
         "build_group_report_message",
         build_report_message,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     event = build_group_message_event("#水王 今日报告", role="admin", message_id=1)
 
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "凛凛统计中，请稍后喔……",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_send(event, text_message("REPORT_OK"), bot=bot)
         ctx.should_finished()
 
@@ -641,13 +727,25 @@ async def test_water_today_report_alias_runs(
         "build_group_report_message",
         build_report_message,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     event = build_group_message_event("#水王日报", role="owner", message_id=1)
 
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "凛凛统计中，请稍后喔……",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_send(event, text_message("REPORT_ALIAS_OK"), bot=bot)
         ctx.should_finished()
 
@@ -665,6 +763,11 @@ async def test_water_today_report_group_shared_cooldown(
         "build_group_report_message",
         build_report_message,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     first = build_group_message_event("#水王 今日报告", role="admin", message_id=1)
     second = build_group_message_event(
@@ -677,7 +780,14 @@ async def test_water_today_report_group_shared_cooldown(
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, first)
-        ctx.should_call_send(first, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "凛凛统计中，请稍后喔……",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_send(first, text_message("REPORT_OK"), bot=bot)
         ctx.should_finished()
 
@@ -711,6 +821,11 @@ async def test_water_today_report_skips_user_query_cooldown(
         "build_group_report_message",
         build_report_message,
     )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
 
     first = build_group_message_event(
         "#水王 用户榜 本群 日榜",
@@ -722,13 +837,27 @@ async def test_water_today_report_skips_user_query_cooldown(
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, first)
-        ctx.should_call_send(first, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "凛凛统计中，请稍后喔……",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_send(first, text_message("RANK_OK"), bot=bot)
         ctx.should_finished()
 
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, second)
-        ctx.should_call_send(second, "凛凛统计中，请稍后喔……", bot=bot)
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": "凛凛统计中，请稍后喔……",
+            },
+            result={"message_id": 1},
+        )
         ctx.should_call_send(second, text_message("REPORT_OK"), bot=bot)
         ctx.should_finished()

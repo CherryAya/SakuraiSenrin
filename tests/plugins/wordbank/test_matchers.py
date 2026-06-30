@@ -336,10 +336,13 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
         )
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(
-            event,
-            tr("zh-CN", "wordbank.add.processing_with_media"),
-            bot=bot,
+        ctx.should_call_api(
+            "send_group_msg",
+            {
+                "group_id": 20001,
+                "message": tr("zh-CN", "wordbank.add.processing_with_media"),
+            },
+            result={"message_id": 1},
         )
         ctx.should_call_api(
             "send_group_msg",

@@ -50,6 +50,11 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
+from src.lib.message_delivery import (
+    deliver_single_message,
+    resolve_delivery_target,
+    resolve_notice_delivery_target,
+)
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -460,7 +465,7 @@ async def _(bot: Bot, event: GroupIncreaseNoticeEvent) -> None:
 
 
 @water_notice.handle()
-async def _(matcher: Matcher, event: NoticeEvent) -> None:
+async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
     if not is_supported_recall_notice(event):
         return
 
@@ -477,7 +482,12 @@ async def _(matcher: Matcher, event: NoticeEvent) -> None:
     session.matcher_cls.destroy()
 
     if session.is_root_message or checkpoint is None:
-        await matcher.send(tr(locale, "interaction.cancelled"))
+        await deliver_single_message(
+            bot,
+            target=resolve_notice_delivery_target(event),
+            message=tr(locale, "interaction.cancelled"),
+            source_kind="water_notice",
+        )
         return
 
     rebuild_temp_matcher(
@@ -486,7 +496,12 @@ async def _(matcher: Matcher, event: NoticeEvent) -> None:
         step_index=checkpoint.step_index,
         state=checkpoint.state_snapshot,
     )
-    await matcher.send(checkpoint.prompt)
+    await deliver_single_message(
+        bot,
+        target=resolve_notice_delivery_target(event),
+        message=checkpoint.prompt,
+        source_kind="water_notice",
+    )
 
 
 @water_query.handle(
@@ -495,6 +510,7 @@ async def _(matcher: Matcher, event: NoticeEvent) -> None:
     ]
 )
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
@@ -566,7 +582,12 @@ async def _(
             is_superuser=is_superuser,
         )
     ):
-        await matcher.send(tr(locale, "water.common.working"))
+        await deliver_single_message(
+            bot,
+            target=resolve_delivery_target(event),
+            message=tr(locale, "water.common.working"),
+            source_kind="water_query",
+        )
     await handle_water_query(
         matcher,
         event,
@@ -582,6 +603,7 @@ async def _(
     prompt=MessageTemplate("{water_rank_guided_prompt}"),
 )
 async def _water_query_guided_step(
+    bot: Bot,
     matcher: Matcher,
     event: GroupMessageEvent,
     state: T_State,
@@ -728,8 +750,18 @@ async def _water_query_guided_step(
 
     clear_interaction_errors(state)
     rank_spec = WaterRankQuerySpec(subject=subject, scope=scope, period=period)
-    await matcher.send(water_query_router.build_guided_summary(locale, rank_spec))
-    await matcher.send(tr(locale, "water.common.working"))
+    await deliver_single_message(
+        bot,
+        target=resolve_delivery_target(event),
+        message=water_query_router.build_guided_summary(locale, rank_spec),
+        source_kind="water_query",
+    )
+    await deliver_single_message(
+        bot,
+        target=resolve_delivery_target(event),
+        message=tr(locale, "water.common.working"),
+        source_kind="water_query",
+    )
     message = await water_rank_query_service.build_rank_message(
         subject=rank_spec.subject,
         scope=rank_spec.scope,
@@ -745,11 +777,16 @@ async def _water_query_guided_step(
         water_query_cooldown(30),
     ]
 )
-async def _(matcher: Matcher, event: MessageEvent) -> None:
+async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
         await matcher.finish(tr(locale, "water.common.group_only"))
-    await matcher.send(tr(locale, "water.common.working"))
+    await deliver_single_message(
+        bot,
+        target=resolve_delivery_target(event),
+        message=tr(locale, "water.common.working"),
+        source_kind="water_query",
+    )
     await handle_my_water_profile(matcher, event, locale)
 
 
