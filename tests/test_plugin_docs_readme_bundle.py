@@ -494,7 +494,9 @@ beta
 
 
 def test_split_inline_text_spans_marks_backtick_segments_as_code() -> None:
-    spans = split_inline_text_spans("使用 `#study` 或 `#help wordbank pending` 查看详情")
+    spans = split_inline_text_spans(
+        "使用 `#study` 或 `#help wordbank pending` 查看详情"
+    )
 
     assert [(span.text, span.code) for span in spans] == [
         ("使用 ", False),
@@ -732,13 +734,14 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     study_main = next(feature for feature in study.index if feature.slug == "main")
 
     assert add.demo_filename == "wordbank-add.webp"
-    assert len(add.demo_turns) == 22
+    assert len(add.demo_turns) == 35
     assert {turn.section for turn in add.demo_turns if turn.section} == {
         "1. 引导式",
-        "2. 基础添加",
-        "3. => 常见写法",
-        "4. 事件类例子",
-        "5. 高级选项",
+        "2. 合并转发批量响应",
+        "3. 基础添加",
+        "4. => 常见写法",
+        "5. 事件类例子",
+        "6. 高级选项",
     }
     assert add.demo_turns[0].text == "#添加词条"
     assert all(feature.slug != "add-mode" for feature in wordbank.index)
@@ -747,27 +750,28 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert "发送取消提示并中止" in add.failures
     assert "连续输错 3 次" in add.failures
     assert "ID: 12" in add.demo_turns[9].text
-    assert add.demo_turns[10].text == "#添加词条 晚安 => 做个好梦"
-    assert add.demo_turns[12].text == "#添加词条 晚安呀 宝宝 => 做个好梦"
-    assert "[事件:event:at]" in add.demo_turns[15].text
-    assert "[事件:event:bot_join]" in add.demo_turns[17].text
-    assert "[事件:event:poke]" in add.demo_turns[19].text
-    assert "-s 本群 -r 管理 -w 5" in add.demo_turns[20].text
+    assert add.demo_turns[14].text == "[回复一条包含 20 条语录的合并转发]"
+    assert add.demo_turns[15].text == "检测到合并转发消息，请回复 1 作为整体响应，或回复 2 拆开成多条响应。"
+    assert add.demo_turns[21].text == "已处理合并转发响应导入\n总数: 20\n成功: 20\n失败: 0"
+    assert add.demo_turns[23].text == "#添加词条 晚安 => 做个好梦"
+    assert add.demo_turns[25].text == "#添加词条 晚安呀 宝宝 => 做个好梦"
+    assert "[事件:event:at]" in add.demo_turns[28].text
+    assert "[事件:event:bot_join]" in add.demo_turns[30].text
+    assert "[事件:event:poke]" in add.demo_turns[32].text
+    assert "-s 本群 -r 管理 -w 5" in add.demo_turns[33].text
     assert rank.demo_filename == "wordbank-rank.webp"
     assert rank.demo_turns[0].text == "#苦瓜榜"
     assert "[发送苦瓜榜海报]" in rank.demo_turns[1].text
     assert trigger.demo_filename == "wordbank-trigger.webp"
     assert (
-        trigger.trigger
-        == "`wordbank trigger prob <group_id> <0.0-1.0>`；"
+        trigger.trigger == "`wordbank trigger prob <group_id> <0.0-1.0>`；"
         "`wordbank trigger set <group_id> <新触发内容>`"
     )
     assert trigger.demo_turns[0].text == "#wordbank trigger prob 271 0.3"
     assert "重新进入 pending" in trigger.demo_turns[4].text
     assert response.demo_filename == "wordbank-response.webp"
     assert (
-        response.trigger
-        == "`wordbank response weight <id> <1-5>`；"
+        response.trigger == "`wordbank response weight <id> <1-5>`；"
         "`wordbank response set <id> <新响应内容>`"
     )
     assert response.demo_turns[0].text == "#wordbank response weight 12 5"
@@ -779,6 +783,8 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert pending.permission == Permission.GROUP_ADMIN
     assert pending.demo_filename == "wordbank-approval-pending.webp"
     assert pending.demo_turns[0].text == "#待审核词条 晚安"
+    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in pending.demo_turns[1].text
+    assert pending.demo_turns[3].text == "[回复摘要消息] @机器人 通过 1-2"
     assert approve.demo_filename == "wordbank-approval-approve.webp"
     assert approve.permission == Permission.GROUP_ADMIN
     assert "词条 #12 已通过审核" in approve.demo_turns[1].text
@@ -787,24 +793,27 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert approval_reply.demo_filename == "wordbank-approval-approval-reply.webp"
     assert approval_reply.permission == Permission.GROUP_ADMIN
     assert "[回复审批通知] @机器人 y" in approval_reply.demo_turns[1].text
+    assert approval_reply.demo_turns[5].text == "[回复待审核摘要消息] @机器人 通过 1 3-5"
+    assert "批量通过完成" in approval_reply.demo_turns[6].text
     assert study_main.demo_filename == "study-main.webp"
     assert study_main.demo_turns[0].text == "#study"
     assert {turn.section for turn in study_main.demo_turns if turn.section} == {
         "引导式",
         "传统模式",
         "=> 语法糖",
+        "合并转发批量导入",
         "事件类例子",
         "高级选项",
     }
     assert study_main.demo_turns[12].text == "#study a f 群公告 大家记得看"
     assert "管理员通过前不会触发。" in study_main.demo_turns[13].text
+    assert study_main.demo_turns[24].text == "[回复一条包含很多条 jrlp 文案的合并转发]"
+    assert study_main.demo_turns[25].text == "检测到合并转发消息，请回复 1 作为整体响应，或回复 2 拆开成多条响应。"
+    assert study_main.demo_turns[29].text == "已处理合并转发响应导入\n总数: 18\n成功: 18\n失败: 0"
     assert any(
-        turn.text == "#study 晚安呀 宝宝 => 做个好梦"
-        for turn in study_main.demo_turns
+        turn.text == "#study 晚安呀 宝宝 => 做个好梦" for turn in study_main.demo_turns
     )
-    assert any(
-        "[事件:event:bot_join]" in turn.text for turn in study_main.demo_turns
-    )
+    assert any("[事件:event:bot_join]" in turn.text for turn in study_main.demo_turns)
     assert study_main.demo_turns[-1].speaker == "BOT"
     assert "权重: 5" in study_main.demo_turns[-1].text
     assert all(feature.slug != "wordbank.approval" for feature in wordbank.index)

@@ -3,16 +3,22 @@
   "locale": "zh-CN",
   "targets": {
     "guide:wordbank": {
-      "normal": "README-guide--f19b52fc90.webp",
-      "group_admin": "README-guide--f19b52fc90.webp",
-      "group_owner": "README-guide--f19b52fc90.webp",
-      "superuser": "README-guide--f19b52fc90.webp"
+      "normal": "README-guide--46c7fbcd94.webp",
+      "group_admin": "README-guide--44590327a7.webp",
+      "group_owner": "README-guide--44590327a7.webp",
+      "superuser": "README-guide--44590327a7.webp"
     },
-    "feature:wordbank:add-scope": {
-      "normal": "wordbank-add-scope.webp",
-      "group_admin": "wordbank-add-scope.webp",
-      "group_owner": "wordbank-add-scope.webp",
-      "superuser": "wordbank-add-scope.webp"
+    "summary:wordbank": {
+      "normal": "README-summary--ff08c32e9a.webp",
+      "group_admin": "README-summary--ff08c32e9a.webp",
+      "group_owner": "README-summary--ff08c32e9a.webp",
+      "superuser": "README-summary--ff08c32e9a.webp"
+    },
+    "feature:wordbank:add": {
+      "normal": "wordbank-add.webp",
+      "group_admin": "wordbank-add.webp",
+      "group_owner": "wordbank-add.webp",
+      "superuser": "wordbank-add.webp"
     },
     "feature:wordbank:search": {
       "normal": "wordbank-search.webp",
@@ -20,11 +26,29 @@
       "group_owner": "wordbank-search.webp",
       "superuser": "wordbank-search.webp"
     },
+    "feature:wordbank:group": {
+      "normal": "wordbank-search.webp",
+      "group_admin": "wordbank-search.webp",
+      "group_owner": "wordbank-search.webp",
+      "superuser": "wordbank-search.webp"
+    },
+    "feature:wordbank:rank": {
+      "normal": "wordbank-rank.webp",
+      "group_admin": "wordbank-rank.webp",
+      "group_owner": "wordbank-rank.webp",
+      "superuser": "wordbank-rank.webp"
+    },
     "feature:wordbank:delete": {
       "normal": "wordbank-delete.webp",
       "group_admin": "wordbank-delete.webp",
       "group_owner": "wordbank-delete.webp",
       "superuser": "wordbank-delete.webp"
+    },
+    "feature:wordbank:restore": {
+      "normal": "wordbank-restore.webp",
+      "group_admin": "wordbank-restore.webp",
+      "group_owner": "wordbank-restore.webp",
+      "superuser": "wordbank-restore.webp"
     },
     "feature:wordbank:trigger": {
       "normal": "wordbank-trigger.webp",
@@ -32,11 +56,23 @@
       "group_owner": "wordbank-trigger.webp",
       "superuser": "wordbank-trigger.webp"
     },
-    "feature:wordbank:add": {
-      "normal": "wordbank-add.webp",
-      "group_admin": "wordbank-add.webp",
-      "group_owner": "wordbank-add.webp",
-      "superuser": "wordbank-add.webp"
+    "feature:wordbank:response": {
+      "normal": "wordbank-response.webp",
+      "group_admin": "wordbank-response.webp",
+      "group_owner": "wordbank-response.webp",
+      "superuser": "wordbank-response.webp"
+    },
+    "feature:wordbank:passive": {
+      "normal": "wordbank-passive.webp",
+      "group_admin": "wordbank-passive.webp",
+      "group_owner": "wordbank-passive.webp",
+      "superuser": "wordbank-passive.webp"
+    },
+    "feature:wordbank:add-scope": {
+      "normal": "wordbank-add-scope.webp",
+      "group_admin": "wordbank-add-scope.webp",
+      "group_owner": "wordbank-add-scope.webp",
+      "superuser": "wordbank-add-scope.webp"
     },
     "feature:wordbank:add-prob": {
       "normal": "wordbank-add-prob.webp",
@@ -62,41 +98,31 @@
       "group_owner": "wordbank-add-call.webp",
       "superuser": "wordbank-add-call.webp"
     },
-    "feature:wordbank:rank": {
-      "normal": "wordbank-rank.webp",
-      "group_admin": "wordbank-rank.webp",
-      "group_owner": "wordbank-rank.webp",
-      "superuser": "wordbank-rank.webp"
-    },
-    "feature:wordbank:group": {
-      "normal": "wordbank-search.webp",
-      "group_admin": "wordbank-search.webp",
-      "group_owner": "wordbank-search.webp",
-      "superuser": "wordbank-search.webp"
-    },
-    "feature:wordbank:restore": {
-      "normal": "wordbank-restore.webp",
-      "group_admin": "wordbank-restore.webp",
-      "group_owner": "wordbank-restore.webp",
-      "superuser": "wordbank-restore.webp"
-    },
-    "feature:wordbank:response": {
-      "normal": "wordbank-response.webp",
-      "group_admin": "wordbank-response.webp",
-      "group_owner": "wordbank-response.webp",
-      "superuser": "wordbank-response.webp"
-    },
-    "feature:wordbank:passive": {
-      "normal": "wordbank-passive.webp",
-      "group_admin": "wordbank-passive.webp",
-      "group_owner": "wordbank-passive.webp",
-      "superuser": "wordbank-passive.webp"
-    },
     "feature:wordbank:reply-shortcut": {
       "normal": "wordbank-reply-shortcut.webp",
       "group_admin": "wordbank-reply-shortcut.webp",
       "group_owner": "wordbank-reply-shortcut.webp",
       "superuser": "wordbank-reply-shortcut.webp"
+    },
+    "feature:wordbank:pending": {
+      "group_admin": "wordbank-approval-pending.webp",
+      "group_owner": "wordbank-approval-pending.webp",
+      "superuser": "wordbank-approval-pending.webp"
+    },
+    "feature:wordbank:approve": {
+      "group_admin": "wordbank-approval-approve.webp",
+      "group_owner": "wordbank-approval-approve.webp",
+      "superuser": "wordbank-approval-approve.webp"
+    },
+    "feature:wordbank:reject": {
+      "group_admin": "wordbank-approval-reject.webp",
+      "group_owner": "wordbank-approval-reject.webp",
+      "superuser": "wordbank-approval-reject.webp"
+    },
+    "feature:wordbank:approval-reply": {
+      "group_admin": "wordbank-approval-approval-reply.webp",
+      "group_owner": "wordbank-approval-approval-reply.webp",
+      "superuser": "wordbank-approval-approval-reply.webp"
     }
   }
 }
