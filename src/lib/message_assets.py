@@ -6,13 +6,15 @@ import json
 from typing import Literal
 
 from nonebot.adapters.onebot.v11.message import Message
-from sqlalchemy import Integer, String, Text, UniqueConstraint, select
+from sqlalchemy import Integer, String, Text, UniqueConstraint, select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.lib.backup import register_backup_database
 from src.lib.db.connectors import StateStore
 from src.lib.db.orm import TimeMixin
+from src.lib.db.schema import SchemaPatch
 from src.lib.utils.common import get_current_time
+from src.logger import logger
 
 
 class MessageAssetBase(DeclarativeBase):
@@ -45,6 +47,16 @@ class MessageAsset(MessageAssetBase, TimeMixin):
         nullable=False,
         default="plain",
     )
+    forward_context_key: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        default="",
+    )
+    forward_sort_key: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     last_verify_error: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
@@ -71,6 +83,8 @@ class MessageAssetRecord:
     origin_message_type: str
     origin_target_id: str
     message_shape_kind: MessageShapeKind
+    forward_context_key: str
+    forward_sort_key: int
     status: str
     last_verify_error: str
     created_at: int
@@ -85,6 +99,12 @@ class MessageAssetDescriptor:
     message_shape_kind: MessageShapeKind
     normalized_content: str
     disqualify_reason: str = ""
+
+
+def _short_key(value: str, *, length: int = 12) -> str:
+    if not value:
+        return "-"
+    return value[:length]
 
 
 def serialize_message(message: Message | str) -> str:
@@ -129,6 +149,12 @@ def describe_message_asset(message: Message | str) -> MessageAssetDescriptor:
             reusable = True
             reason = ""
     digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    logger.debug(
+        "[MessageAsset] described asset "
+        f"hash={_short_key(digest)} shape={shape_kind} reusable={reusable} "
+        f"reason={reason or '-'} serialized_len={len(serialized)} "
+        f"segment_count={1 if isinstance(message, str) else len(message)}"
+    )
     return MessageAssetDescriptor(
         asset_key=digest,
         content_hash=digest,
@@ -156,6 +182,8 @@ class MessageAssetRepository:
             origin_message_type=row.origin_message_type,
             origin_target_id=row.origin_target_id,
             message_shape_kind=row.message_shape_kind,  # type: ignore[arg-type]
+            forward_context_key=row.forward_context_key,
+            forward_sort_key=row.forward_sort_key,
             status=row.status,
             last_verify_error=row.last_verify_error,
             created_at=row.created_at,
@@ -169,6 +197,17 @@ class MessageAssetRepository:
                     select(MessageAsset).where(MessageAsset.asset_key == asset_key)
                 )
             ).scalar_one_or_none()
+        if row is None:
+            logger.debug(f"[MessageAsset] cache miss asset_key={_short_key(asset_key)}")
+        else:
+            logger.debug(
+                "[MessageAsset] cache hit "
+                f"asset_key={_short_key(asset_key)} message_id={row.message_id or '-'} "
+                f"kind={row.asset_kind} status={row.status} "
+                f"shape={row.message_shape_kind} "
+                f"forward_ctx={_short_key(row.forward_context_key)} "
+                f"sort={row.forward_sort_key}"
+            )
         return self._to_record(row) if row is not None else None
 
     async def upsert_asset(
@@ -183,6 +222,8 @@ class MessageAssetRepository:
         origin_message_type: str,
         origin_target_id: str,
         message_shape_kind: MessageShapeKind,
+        forward_context_key: str = "",
+        forward_sort_key: int = 0,
         status: str = "active",
         last_verify_error: str = "",
     ) -> MessageAssetRecord:
@@ -193,6 +234,7 @@ class MessageAssetRepository:
                     select(MessageAsset).where(MessageAsset.asset_key == asset_key)
                 )
             ).scalar_one_or_none()
+            action = "create" if row is None else "update"
             if row is None:
                 row = MessageAsset(
                     asset_key=asset_key,
@@ -204,6 +246,8 @@ class MessageAssetRepository:
                     origin_message_type=origin_message_type,
                     origin_target_id=origin_target_id,
                     message_shape_kind=message_shape_kind,
+                    forward_context_key=forward_context_key,
+                    forward_sort_key=forward_sort_key,
                     status=status,
                     last_verify_error=last_verify_error,
                     created_at=now,
@@ -219,10 +263,22 @@ class MessageAssetRepository:
                 row.origin_message_type = origin_message_type
                 row.origin_target_id = origin_target_id
                 row.message_shape_kind = message_shape_kind
+                row.forward_context_key = forward_context_key
+                row.forward_sort_key = forward_sort_key
                 row.status = status
                 row.last_verify_error = last_verify_error
                 row.updated_at = now
             await session.flush()
+            logger.debug(
+                "[MessageAsset] upsert asset "
+                f"action={action} asset_key={_short_key(asset_key)} "
+                f"content_hash={_short_key(content_hash)} kind={asset_kind} "
+                f"message_id={message_id or '-'} source={source_kind} "
+                f"origin={origin_message_type}:{origin_target_id or '-'} "
+                f"shape={message_shape_kind} "
+                f"forward_ctx={_short_key(forward_context_key)} "
+                f"sort={forward_sort_key} status={status}"
+            )
             return self._to_record(row)
 
     async def mark_stale(
@@ -239,10 +295,70 @@ class MessageAssetRepository:
                 )
             ).scalar_one_or_none()
             if row is None:
+                logger.debug(
+                    "[MessageAsset] mark stale skipped "
+                    f"asset_key={_short_key(asset_key)} reason=not_found"
+                )
                 return
             row.status = "stale"
             row.last_verify_error = last_verify_error
             row.updated_at = now
+            await session.flush()
+            logger.debug(
+                "[MessageAsset] marked stale "
+                f"asset_key={_short_key(asset_key)} "
+                f"message_id={row.message_id or '-'} error={last_verify_error or '-'}"
+            )
 
 
 message_asset_repo = MessageAssetRepository()
+
+
+async def _add_message_asset_forward_context_key(session: object) -> None:
+    pragma_result = await session.execute(text("PRAGMA table_info(message_asset)"))  # type: ignore[attr-defined]
+    columns = {
+        str(row[1])
+        for row in pragma_result.fetchall()  # type: ignore[attr-defined]
+    }
+    if "forward_context_key" in columns:
+        return
+    await session.execute(  # type: ignore[attr-defined]
+        text(
+            """
+            ALTER TABLE message_asset
+            ADD COLUMN forward_context_key VARCHAR(128) NOT NULL DEFAULT ''
+            """
+        )
+    )
+
+
+async def _add_message_asset_forward_sort_key(session: object) -> None:
+    pragma_result = await session.execute(text("PRAGMA table_info(message_asset)"))  # type: ignore[attr-defined]
+    columns = {
+        str(row[1])
+        for row in pragma_result.fetchall()  # type: ignore[attr-defined]
+    }
+    if "forward_sort_key" in columns:
+        return
+    await session.execute(  # type: ignore[attr-defined]
+        text(
+            """
+            ALTER TABLE message_asset
+            ADD COLUMN forward_sort_key INTEGER NOT NULL DEFAULT 0
+            """
+        )
+    )
+
+
+message_asset_db.patch_registry.register(
+    SchemaPatch(
+        patch_id="message_asset:add_forward_context_key:v1",
+        apply=_add_message_asset_forward_context_key,
+    )
+)
+message_asset_db.patch_registry.register(
+    SchemaPatch(
+        patch_id="message_asset:add_forward_sort_key:v1",
+        apply=_add_message_asset_forward_sort_key,
+    )
+)

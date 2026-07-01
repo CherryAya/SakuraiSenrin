@@ -290,9 +290,7 @@ def test_demo_image_renderer_measure_layout_uses_structured_trigger_layout() -> 
     )  # pyright: ignore[reportPrivateUsage]
 
 
-def test_demo_image_renderer_measure_layout_uses_alternative_lines_for_multi_commands() -> (
-    None
-):
+def test_demo_image_renderer_measure_layout_uses_alt_lines_for_multi_commands() -> None:
     renderer = DemoImageRenderer(impression_color="#3BC9DB")
 
     layout = renderer._measure_layout(  # pyright: ignore[reportPrivateUsage]
