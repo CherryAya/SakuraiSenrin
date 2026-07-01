@@ -103,6 +103,12 @@ class ParsedViewReplyCommand:
     page: int
 
 
+@dataclass(slots=True, frozen=True)
+class ParsedBatchApprovalCommand:
+    action: str
+    response_item_ids: tuple[int, ...]
+
+
 async def is_reply(event: MessageEvent) -> bool:
     return event.reply is not None
 
@@ -280,6 +286,15 @@ async def handle_approval_reply_result(
             approval_message=approval_message,
         )
 
+    if approval_message.context_type == "pending_batch" and approval_message.group_ids:
+        return await _handle_batch_approval_reply_result(
+            service,
+            approval_message=approval_message,
+            actor=actor,
+            text=text,
+            locale=locale,
+        )
+
     action = normalize_reply_command(text)
     if action in APPROVAL_APPROVE_ALIASES:
         ok = await service.approve_response_item(
@@ -345,9 +360,157 @@ async def handle_approval_reply_result(
     )
 
 
+async def _handle_batch_approval_reply_result(
+    service: WordbankService,
+    *,
+    approval_message: WordbankMessageRefRecord,
+    actor: object,
+    text: str,
+    locale: LocaleCode,
+) -> ApprovalReplyOutcome:
+    parsed = parse_batch_approval_reply(
+        text,
+        available_response_item_ids=approval_message.group_ids,
+    )
+    actor_user_id = str(getattr(actor, "user_id", ""))
+    actor_group_id = str(getattr(actor, "group_id", ""))
+    can_moderate_group = bool(getattr(actor, "can_moderate_group", False))
+    is_superuser = bool(getattr(actor, "is_superuser", False))
+
+    success_ids: list[int] = []
+    failed_ids: list[int] = []
+    for response_item_id in parsed.response_item_ids:
+        if parsed.action == "approve":
+            ok = await service.approve_response_item(
+                response_item_id,
+                actor_user_id=actor_user_id,
+                actor_group_id=actor_group_id,
+                can_moderate_group=can_moderate_group,
+                is_superuser=is_superuser,
+            )
+        else:
+            ok = await service.reject_response_item(
+                response_item_id,
+                actor_user_id=actor_user_id,
+                actor_group_id=actor_group_id,
+                can_moderate_group=can_moderate_group,
+                is_superuser=is_superuser,
+            )
+        if ok:
+            success_ids.append(response_item_id)
+        else:
+            failed_ids.append(response_item_id)
+
+    action_label = "通过" if parsed.action == "approve" else "拒绝"
+    lines = [
+        f"批量{action_label}完成",
+        f"总数: {len(parsed.response_item_ids)}",
+        f"成功: {len(success_ids)}",
+        f"失败: {len(failed_ids)}",
+    ]
+    if success_ids:
+        lines.append("成功条目: " + ", ".join(f"#{item_id}" for item_id in success_ids))
+    if failed_ids:
+        lines.append("失败条目: " + ", ".join(f"#{item_id}" for item_id in failed_ids))
+    return ApprovalReplyOutcome(
+        "\n".join(lines),
+        approval_message=None,
+        completed=bool(success_ids),
+        action=parsed.action,
+    )
+
+
 def normalize_reply_command(text: str) -> str:
     normalized = normalize_cq_plain_text(text, strip_leading_at=True)
     return " ".join(normalized.casefold().strip().split())
+
+
+def parse_batch_approval_reply(
+    text: str,
+    *,
+    available_response_item_ids: Sequence[int],
+) -> ParsedBatchApprovalCommand:
+    normalized = normalize_reply_command(text)
+    action, rest = _split_batch_approval_command(normalized)
+    if not rest:
+        raise RuleError(
+            "批量审批请发送：通过 1 2 5-8，或拒绝 all。",
+            key="wordbank.approval.batch.selection_required",
+        )
+
+    id_map = dict(enumerate(available_response_item_ids, start=1))
+    if rest in {"all", "全部", "所有"}:
+        return ParsedBatchApprovalCommand(
+            action=action,
+            response_item_ids=tuple(id_map.values()),
+        )
+
+    selected_indexes = _parse_batch_selection_indexes(rest, max_index=len(id_map))
+    return ParsedBatchApprovalCommand(
+        action=action,
+        response_item_ids=tuple(id_map[index] for index in selected_indexes),
+    )
+
+
+def _split_batch_approval_command(text: str) -> tuple[str, str]:
+    for alias in sorted(APPROVAL_APPROVE_ALIASES, key=len, reverse=True):
+        if text == alias or text.startswith(alias + " "):
+            return "approve", text[len(alias) :].strip()
+    for alias in sorted(APPROVAL_REJECT_ALIASES, key=len, reverse=True):
+        if text == alias or text.startswith(alias + " "):
+            return "reject", text[len(alias) :].strip()
+    raise RuleError(
+        "批量审批请以“通过”或“拒绝”开头。",
+        key="wordbank.approval.batch.action_required",
+    )
+
+
+def _parse_batch_selection_indexes(rest: str, *, max_index: int) -> tuple[int, ...]:
+    tokens = [token for token in re.split(r"[\s,，、]+", rest) if token]
+    if not tokens:
+        raise RuleError(
+            "批量审批请提供序号，例如 1 2 5-8。",
+            key="wordbank.approval.batch.selection_required",
+        )
+
+    values: list[int] = []
+    seen: set[int] = set()
+    for token in tokens:
+        if "-" in token:
+            start_text, end_text = token.split("-", maxsplit=1)
+            if not start_text.isdigit() or not end_text.isdigit():
+                raise RuleError(
+                    f"无效范围：{token}",
+                    key="wordbank.approval.batch.invalid_range",
+                )
+            start = int(start_text)
+            end = int(end_text)
+            if start <= 0 or end <= 0 or start > end or end > max_index:
+                raise RuleError(
+                    f"序号范围超出当前待审列表：{token}",
+                    key="wordbank.approval.batch.index_out_of_range",
+                )
+            for value in range(start, end + 1):
+                if value not in seen:
+                    seen.add(value)
+                    values.append(value)
+            continue
+
+        if not token.isdigit():
+            raise RuleError(
+                f"无效序号：{token}",
+                key="wordbank.approval.batch.invalid_index",
+            )
+        value = int(token)
+        if value <= 0 or value > max_index:
+            raise RuleError(
+                f"序号超出当前待审列表：{token}",
+                key="wordbank.approval.batch.index_out_of_range",
+            )
+        if value not in seen:
+            seen.add(value)
+            values.append(value)
+    return tuple(values)
 
 
 def parse_view_reply_for_search_result(

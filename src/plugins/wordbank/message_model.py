@@ -207,6 +207,29 @@ def shape_from_message(
     return MessageShape(tuple(atoms))
 
 
+def shape_from_forward_message(message: Message) -> MessageShape:
+    atoms: list[MessageAtom] = []
+    for segment in message:
+        if segment.type == "text":
+            raw_text = str(segment.data.get("text", ""))
+            if is_valid_message_text(raw_text, preserve_blank_text=False):
+                atoms.append(MessageAtom(kind="text", text=raw_text))
+        elif segment.type == "image":
+            atoms.append(MessageAtom(kind="image"))
+        elif segment.type == "at":
+            target_id = str(segment.data.get("qq", "") or "").strip()
+            if target_id:
+                atoms.append(MessageAtom(kind="at", target_id=target_id))
+        elif segment.type == "node":
+            content = segment.data.get("content")
+            if isinstance(content, Message):
+                nested = shape_from_forward_message(content)
+                atoms.extend(nested.atoms)
+            elif isinstance(content, str) and is_valid_message_text(content):
+                atoms.append(MessageAtom(kind="text", text=content))
+    return MessageShape(tuple(atoms))
+
+
 def shape_to_payload(shape: MessageShape) -> str:
     return json.dumps(
         [_atom_payload(atom) for atom in shape.atoms],

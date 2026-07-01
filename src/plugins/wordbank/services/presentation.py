@@ -45,6 +45,22 @@ class WordbankAddResult:
 
 
 @dataclass(slots=True, frozen=True)
+class WordbankBatchAddItemResult:
+    index: int
+    ok: bool
+    result: WordbankAddResult | None = None
+    error: str = ""
+
+
+@dataclass(slots=True, frozen=True)
+class WordbankBatchAddResult:
+    total: int
+    success: int
+    failed: int
+    items: tuple[WordbankBatchAddItemResult, ...]
+
+
+@dataclass(slots=True, frozen=True)
 class WordbankDeleteVoteResult:
     vote_id: int
     trigger_group_id: int

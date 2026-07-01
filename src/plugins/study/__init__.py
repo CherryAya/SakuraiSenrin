@@ -51,6 +51,12 @@ from src.lib.message_delivery import (
 )
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
+from src.plugins.wordbank.batch_feedback import send_batch_add_feedback
+from src.plugins.wordbank.forward_batch import (
+    build_forward_batch_payload,
+    extract_forward_source_message_id,
+    is_forward_reply,
+)
 from src.plugins.wordbank.handlers.commands import _default_i18n_text
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.text_parsing import has_meaningful_text
@@ -112,7 +118,11 @@ STUDY_STEP_GROUP_BLOCK = 2
 STUDY_STEP_TRIGGER = 3
 STUDY_STEP_RESPONSE = 4
 STUDY_STEP_WEIGHT = 5
-STUDY_RECALL_PENDING_KEYS: tuple[str, ...] = ()
+STUDY_RECALL_PENDING_KEYS: tuple[str, ...] = (
+    "study_forward_response_pending",
+    "study_forward_source_message_id",
+    "study_forward_split_shapes",
+)
 
 
 async def _abort_study_on_revoke(
@@ -345,6 +355,7 @@ async def _record_study_trigger(
 
 
 async def _record_study_response(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
@@ -353,6 +364,35 @@ async def _record_study_response(
     from src.plugins.wordbank.handlers import build_message_shape_from_message
     from src.plugins.wordbank.services import wordbank_media_service
 
+    if is_forward_reply(event):
+        state["study_forward_response_pending"] = True
+        source_message_id = extract_forward_source_message_id(event)
+        if source_message_id is not None:
+            state["study_forward_source_message_id"] = source_message_id
+        clear_interaction_errors(state)
+        locale = _study_locale(state)
+        snapshot = _copy_study_state(
+            state,
+            keep_keys=(
+                "study_trig_mode",
+                "study_group_block",
+                "study_trigger_shape",
+                "study_trigger_preloaded",
+                "study_response_after_preloaded_trigger",
+                "study_weight_after_preloaded_trigger",
+            ),
+        )
+        _register_study_checkpoint(
+            state,
+            event,
+            step_index=STUDY_STEP_RESPONSE,
+            locale=locale,
+            snapshot=snapshot,
+        )
+        await matcher.pause(
+            "检测到合并转发消息，请回复 1 作为整体响应，或回复 2 拆开成多条响应。"
+        )
+        return
     shape = await build_message_shape_from_message(
         wordbank_media_service,
         event.message,
@@ -379,6 +419,7 @@ async def _record_study_response(
         ),
     )
     state["study_response_shape"] = shape
+    state["study_weight_after_preloaded_trigger"] = True
     _register_study_checkpoint(
         state,
         event,
@@ -387,6 +428,58 @@ async def _record_study_response(
         snapshot=snapshot,
     )
     await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
+
+
+async def _record_study_forward_response_choice(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+) -> None:
+    from src.plugins.wordbank.services import wordbank_media_service
+
+    if not _is_truthy_state_flag(state, "study_forward_response_pending"):
+        return
+    choice = event.message.extract_plain_text().strip().lower()
+    if choice in {"1", "whole", "整体"}:
+        payload = await build_forward_batch_payload(
+            bot,
+            event,
+            media_service=wordbank_media_service,
+            source_message_id=int(state.get("study_forward_source_message_id", 0) or 0)
+            or None,
+        )
+        state["study_response_shape"] = payload.whole_shape
+        state["study_weight_after_preloaded_trigger"] = True
+        state.pop("study_forward_response_pending", None)
+        state.pop("study_forward_source_message_id", None)
+        state.pop("study_forward_split_shapes", None)
+        clear_interaction_errors(state)
+        await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
+        return
+    if choice in {"2", "split", "拆开"}:
+        payload = await build_forward_batch_payload(
+            bot,
+            event,
+            media_service=wordbank_media_service,
+            source_message_id=int(state.get("study_forward_source_message_id", 0) or 0)
+            or None,
+        )
+        state["study_response_shape"] = payload.split_shapes[0]
+        state["study_forward_split_shapes"] = payload.split_shapes
+        state["study_weight_after_preloaded_trigger"] = True
+        state.pop("study_forward_response_pending", None)
+        state.pop("study_forward_source_message_id", None)
+        clear_interaction_errors(state)
+        await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
+        return
+    await _reject_study_error(
+        matcher,
+        state,
+        locale,
+        "请输入 1 代表整体，或 2 代表拆开。",
+    )
 
 
 async def _record_study_weight_and_finish(
@@ -447,7 +540,10 @@ async def _finish_guided_study(
         schedule_pending_approval_notice,
     )
     from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
-    from src.plugins.wordbank.services.rules import RuleError
+    from src.plugins.wordbank.services.rules import (
+        RuleError,
+        build_legacy_study_shortcut_rule,
+    )
 
     try:
         trigger_shape = _state_message_shape(state, "study_trigger_shape")
@@ -457,6 +553,46 @@ async def _finish_guided_study(
                 _default_i18n_text("wordbank.error.trigger_empty"),
                 key="wordbank.error.trigger_empty",
             )
+        if "study_forward_split_shapes" in state:
+            split_shapes = tuple(
+                shape
+                for shape in state.get("study_forward_split_shapes", ())
+                if isinstance(shape, MessageShape)
+            )
+            if not split_shapes:
+                raise RuleError(
+                    _default_i18n_text("wordbank.error.response_empty"),
+                    key="wordbank.error.response_empty",
+                )
+            raw_rule = build_legacy_study_shortcut_rule(
+                str(state.get("study_trig_mode", "")),
+                str(state.get("study_group_block", "")),
+                is_group=bool(getattr(event, "group_id", "")),
+            )
+            raw_rule["weight"] = int(event.message.extract_plain_text().strip())
+            batch = await wordbank_service.add_message_entries(
+                trigger_shape=trigger_shape,
+                response_shapes=split_shapes,
+                raw_rule=raw_rule,
+                group_id=str(getattr(event, "group_id", "")),
+                user_id=str(event.user_id),
+                is_group=bool(getattr(event, "group_id", "")),
+            )
+            if batch.success <= 0:
+                raise RuleError(
+                    _default_i18n_text("wordbank.error.response_empty"),
+                    key="wordbank.error.response_empty",
+                )
+            await send_batch_add_feedback(
+                bot,
+                event,
+                batch=batch,
+                locale=locale,
+                source_kind="study_batch_submission",
+                fallback_nickname="学习词库",
+            )
+            await matcher.finish()
+            return
         if response_shape is None or response_shape.is_empty():
             raise RuleError(
                 _default_i18n_text("wordbank.error.response_empty"),
@@ -627,7 +763,7 @@ async def _(
 
 
 @study_command.handle()
-async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     from src.plugins.wordbank.handlers.commands import (
         parse_study_mode_choice,
     )
@@ -670,7 +806,7 @@ async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
 
 
 @study_command.handle()
-async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     from src.plugins.wordbank.handlers.commands import (
         parse_study_group_block_choice,
     )
@@ -726,15 +862,14 @@ def _study_locale(state: T_State) -> LocaleCode:
 
 
 @study_command.handle()
-async def _(matcher: Matcher, event: MessageEvent, state: T_State) -> None:
+async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
     if _is_truthy_state_flag(state, "study_weight_after_preloaded_trigger"):
         return
     if _is_truthy_state_flag(state, "study_response_after_preloaded_trigger"):
         state.pop("study_response_after_preloaded_trigger", None)
-        state["study_weight_after_preloaded_trigger"] = True
-        await _record_study_response(matcher, event, state, locale)
+        await _record_study_response(bot, matcher, event, state, locale)
         return
     await _record_study_trigger(matcher, event, state, locale)
 
@@ -746,7 +881,16 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
     if _is_truthy_state_flag(state, "study_weight_after_preloaded_trigger"):
         await _record_study_weight_and_finish(bot, matcher, event, state, locale)
         return
-    await _record_study_response(matcher, event, state, locale)
+    if _is_truthy_state_flag(state, "study_forward_response_pending"):
+        await _record_study_forward_response_choice(
+            bot,
+            matcher,
+            event,
+            state,
+            locale,
+        )
+        return
+    await _record_study_response(bot, matcher, event, state, locale)
 
 
 @study_command.handle()

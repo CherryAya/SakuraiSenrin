@@ -15,6 +15,7 @@ from src.plugins.wordbank.database.types import (
 from src.plugins.wordbank.handlers.reply import (
     handle_approval_reply_result,
     handle_reply_command,
+    parse_batch_approval_reply,
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
 )
@@ -80,6 +81,28 @@ def _approval_message() -> WordbankMessageRefRecord:
     )
 
 
+def _batch_approval_message() -> WordbankMessageRefRecord:
+    return WordbankMessageRefRecord(
+        message_id="90001",
+        ref_kind="approval",
+        shard_key="2026_06",
+        trigger_group_id=12,
+        trigger_variant_id=0,
+        response_item_id=301,
+        group_id="20001",
+        user_id="10001",
+        source_message_id="1",
+        message_type="approval_batch",
+        context_type="pending_batch",
+        current_page=1,
+        keyword="",
+        field="",
+        creator_id="",
+        has_image=False,
+        group_ids=(301, 302, 303, 304),
+    )
+
+
 def _group_detail() -> WordbankGroupDetail:
     return WordbankGroupDetail(
         trigger_group_id=12,
@@ -139,6 +162,42 @@ async def test_reply_info_formats_selected_response_item_detail() -> None:
     assert "响应:\n做个好梦" in str(message)
     get_message_ref.assert_awaited_once_with("90001", expected_kind="response")
     get_group_detail.assert_awaited_once_with(12, response_item_id=300)
+
+
+def test_parse_batch_approval_reply_supports_ranges() -> None:
+    parsed = parse_batch_approval_reply(
+        "通过 1 3-4",
+        available_response_item_ids=(101, 102, 103, 104),
+    )
+
+    assert parsed.action == "approve"
+    assert parsed.response_item_ids == (101, 103, 104)
+
+
+async def test_handle_approval_reply_result_supports_pending_batch_reply() -> None:
+    approve = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_batch_approval_message()),
+            approve_response_item=approve,
+        ),
+    )
+    event = _event_with_reply("通过 1 3-4")
+
+    outcome = await handle_approval_reply_result(
+        service,
+        event=event,
+        text="通过 1 3-4",
+        locale="zh-CN",
+    )
+
+    assert outcome.approval_message is None
+    assert outcome.completed is True
+    assert "批量通过完成" in outcome.message
+    assert "总数: 3" in outcome.message
+    assert "成功: 3" in outcome.message
+    assert [call.args[0] for call in approve.await_args_list] == [301, 303, 304]
 
 
 async def test_reply_info_renders_image_trigger_and_response() -> None:

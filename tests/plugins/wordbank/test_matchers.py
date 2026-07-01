@@ -2,7 +2,7 @@ import sys
 from unittest.mock import AsyncMock, Mock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import Bot, MessageSegment
 from nonebug import App
 import pytest
 
@@ -31,6 +31,7 @@ from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.message_model import shape_from_text
 from src.plugins.wordbank.services.core import WordbankAddResult
 from tests.plugins.water.helpers import (
+    attach_reply_message,
     build_group_message_event,
     build_group_poke_event,
 )
@@ -101,6 +102,56 @@ async def test_wordbank_add_guided_exit_cancels_session(
             bot=bot,
         )
         ctx.should_finished()
+
+
+@pytest.mark.asyncio
+async def test_wordbank_add_guided_forward_reply_prompts_import_mode(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "initialize_wordbank_plugin",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_add_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        first = build_group_message_event("#wordbank.add", message_id=1)
+        second = build_group_message_event("jrlp", message_id=2)
+        third = attach_reply_message(
+            build_group_message_event("", message_id=3),
+            MessageSegment.forward("54321"),
+        )
+
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            tr("zh-CN", "wordbank.guided.add.trigger_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused()
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(
+            second,
+            tr("zh-CN", "wordbank.guided.add.response_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused()
+
+        ctx.receive_event(bot, third)
+        ctx.should_call_send(
+            third,
+            "检测到合并转发消息，请回复 1 作为整体响应，或回复 2 拆开成多条响应。",
+            bot=bot,
+        )
+        ctx.should_paused()
 
 
 @pytest.mark.asyncio

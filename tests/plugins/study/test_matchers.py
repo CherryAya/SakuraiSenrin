@@ -31,7 +31,7 @@ from src.plugins.wordbank import handlers as wordbank_handlers
 from src.plugins.wordbank.message_model import shape_from_event, shape_from_text
 from src.plugins.wordbank.services import wordbank_service
 from src.plugins.wordbank.services.core import WordbankAddResult
-from tests.plugins.water.helpers import build_group_message_event
+from tests.plugins.water.helpers import attach_reply_message, build_group_message_event
 
 
 @pytest.mark.asyncio
@@ -130,6 +130,74 @@ async def test_study_partial_args_jump_to_response_prompt(
         ctx.should_call_send(
             event,
             tr("zh-CN", "wordbank.guided.study.response_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+
+@pytest.mark.asyncio
+async def test_study_guided_forward_reply_prompts_import_mode(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        wordbank_service,
+        "initialize",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        study_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+
+    async with app.test_matcher(study_plugin.study_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        first = build_group_message_event("#study", message_id=1)
+        second = build_group_message_event("a", message_id=2)
+        third = build_group_message_event("t", message_id=3)
+        fourth = build_group_message_event("jrlp", message_id=4)
+        fifth = attach_reply_message(
+            build_group_message_event("", message_id=5),
+            MessageSegment.forward("54321"),
+        )
+
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            tr("zh-CN", "wordbank.guided.study.mode_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(
+            second,
+            tr("zh-CN", "wordbank.guided.study.group_block_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        ctx.receive_event(bot, third)
+        ctx.should_call_send(
+            third,
+            tr("zh-CN", "wordbank.guided.study.trigger_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        ctx.receive_event(bot, fourth)
+        ctx.should_call_send(
+            fourth,
+            tr("zh-CN", "wordbank.guided.study.response_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused(study_plugin.study_command)
+
+        ctx.receive_event(bot, fifth)
+        ctx.should_call_send(
+            fifth,
+            "检测到合并转发消息，请回复 1 作为整体响应，或回复 2 拆开成多条响应。",
             bot=bot,
         )
         ctx.should_paused(study_plugin.study_command)

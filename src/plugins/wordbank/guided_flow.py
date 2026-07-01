@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from nonebot.adapters.onebot.v11.bot import Bot
-from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.typing import T_State
@@ -23,6 +23,11 @@ from src.lib.interactive_recall import (
     register_root_message,
 )
 from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
+from src.plugins.wordbank.forward_batch import (
+    build_forward_batch_payload,
+    extract_forward_source_message_id,
+    is_forward_reply,
+)
 from src.plugins.wordbank.handlers import (
     build_message_shape_from_message,
     handle_guided_add_shape_result,
@@ -55,6 +60,9 @@ WORDBANK_GUIDED_SEARCH_STAGE_PAGE = "search_page"
 WORDBANK_GUIDED_RECALL_PENDING_KEYS = (
     "wordbank_guided_trigger_shape",
     "wordbank_guided_response_shape",
+    "wordbank_guided_response_forward_pending",
+    "wordbank_guided_response_forward_source_message_id",
+    "wordbank_guided_response_split_shapes",
     "wordbank_guided_scope",
     "wordbank_guided_search_keyword",
     "wordbank_guided_search_field",
@@ -69,9 +77,13 @@ def _resolve_guided_bot(bot: Bot | None, matcher: Matcher) -> Bot | None:
     if bot is not None and hasattr(bot, "call_api") and hasattr(bot, "self_id"):
         return bot
     fallback = getattr(matcher, "bot", None)
-    if fallback is not None and hasattr(fallback, "call_api") and hasattr(
-        fallback,
-        "self_id",
+    if (
+        fallback is not None
+        and hasattr(fallback, "call_api")
+        and hasattr(
+            fallback,
+            "self_id",
+        )
     ):
         return fallback
     return None
@@ -217,10 +229,30 @@ async def record_guided_response(
     *,
     media_service: Any,
 ) -> None:
-    shape = await build_message_shape_from_message(
-        media_service,
-        event.message,
-    )
+    if is_forward_reply(event):
+        state["wordbank_guided_response_forward_pending"] = True
+        source_message_id = extract_forward_source_message_id(event)
+        if source_message_id is not None:
+            state["wordbank_guided_response_forward_source_message_id"] = (
+                source_message_id
+            )
+        clear_interaction_errors(state)
+        locale = wordbank_guided_locale(state)
+        register_guided_checkpoint(
+            state,
+            event,
+            step_index=WORDBANK_GUIDED_STEP_RESPONSE,
+            locale=locale,
+            snapshot=copy_guided_state(
+                state,
+                keep_keys=("wordbank_guided_trigger_shape",),
+            ),
+        )
+        await matcher.pause(
+            "检测到合并转发消息，请回复 1 作为整体响应，或回复 2 拆开成多条响应。"
+        )
+        return
+    shape = await build_message_shape_from_message(media_service, event.message)
     if shape.is_empty():
         await reject_guided_error(
             matcher,
@@ -244,6 +276,62 @@ async def record_guided_response(
         snapshot=snapshot,
     )
     await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
+
+
+async def record_guided_forward_response_choice(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+    *,
+    media_service: Any,
+    bot: Bot,
+) -> None:
+    if not bool(state.get("wordbank_guided_response_forward_pending", False)):
+        return
+    choice = event.message.extract_plain_text().strip().lower()
+    if choice in {"1", "whole", "整体"}:
+        state.pop("wordbank_guided_response_forward_pending", None)
+        payload = await build_forward_batch_payload(
+            bot,
+            event,
+            media_service=media_service,
+            source_message_id=int(
+                state.get("wordbank_guided_response_forward_source_message_id", 0) or 0
+            )
+            or None,
+        )
+        state["wordbank_guided_response_shape"] = payload.whole_shape
+        state["wordbank_guided_response_forward_source_message_id"] = (
+            payload.source_message_id
+        )
+        clear_interaction_errors(state)
+        await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
+        return
+    if choice in {"2", "split", "拆开"}:
+        state.pop("wordbank_guided_response_forward_pending", None)
+        payload = await build_forward_batch_payload(
+            bot,
+            event,
+            media_service=media_service,
+            source_message_id=int(
+                state.get("wordbank_guided_response_forward_source_message_id", 0) or 0
+            )
+            or None,
+        )
+        state["wordbank_guided_response_split_shapes"] = payload.split_shapes
+        state["wordbank_guided_response_forward_source_message_id"] = (
+            payload.source_message_id
+        )
+        clear_interaction_errors(state)
+        await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
+        return
+    await reject_guided_error(
+        matcher,
+        state,
+        locale,
+        "请输入 1 代表整体，或 2 代表拆开。",
+    )
 
 
 async def start_guided_add_with_trigger_image(
@@ -295,30 +383,71 @@ async def finish_guided_add(
     state: T_State,
     *,
     finish_add_result: Any,
+    finish_batch_add_result: Any,
     wordbank_service: Any,
 ) -> None:
     locale = wordbank_guided_locale(state)
     try:
         trigger_shape = state_message_shape(state, "wordbank_guided_trigger_shape")
-        response_shape = state_message_shape(state, "wordbank_guided_response_shape")
         if trigger_shape is None or trigger_shape.is_empty():
             raise RuleError(
                 _default_i18n_text("wordbank.error.trigger_empty"),
                 key="wordbank.error.trigger_empty",
             )
-        if response_shape is None or response_shape.is_empty():
-            raise RuleError(
-                _default_i18n_text("wordbank.error.response_empty"),
-                key="wordbank.error.response_empty",
+        if "wordbank_guided_response_split_shapes" in state:
+            split_shapes = tuple(
+                shape
+                for shape in state.get("wordbank_guided_response_split_shapes", ())
+                if isinstance(shape, MessageShape)
             )
-        result = await handle_guided_add_shape_result(
-            wordbank_service,
-            event=event,
-            trigger_shape=trigger_shape,
-            response_shape=response_shape,
-            scope_text=str(state.get("wordbank_guided_scope", "")),
-            advanced_text=event.message.extract_plain_text(),
-        )
+            if not split_shapes:
+                raise RuleError(
+                    _default_i18n_text("wordbank.error.response_empty"),
+                    key="wordbank.error.response_empty",
+                )
+            from src.plugins.wordbank.handlers.commands import (
+                parse_guided_advanced_options,
+                parse_guided_scope_choice,
+            )
+
+            scope = parse_guided_scope_choice(
+                str(state.get("wordbank_guided_scope", "")),
+                is_group=isinstance(event, GroupMessageEvent),
+            )
+            advanced = parse_guided_advanced_options(event.message.extract_plain_text())
+            raw_rule = {"scope": scope, **advanced.raw_rule}
+            batch = await wordbank_service.add_message_entries(
+                trigger_shape=trigger_shape,
+                response_shapes=split_shapes,
+                raw_rule=raw_rule,
+                group_id=str(getattr(event, "group_id", "")),
+                user_id=str(event.user_id),
+                is_group=isinstance(event, GroupMessageEvent),
+            )
+            if batch.success == 0:
+                raise RuleError(
+                    _default_i18n_text("wordbank.error.response_empty"),
+                    key="wordbank.error.response_empty",
+                )
+            await finish_batch_add_result(matcher, bot, event, batch, locale)
+            return
+        else:
+            response_shape = state_message_shape(
+                state, "wordbank_guided_response_shape"
+            )
+            if response_shape is None or response_shape.is_empty():
+                raise RuleError(
+                    _default_i18n_text("wordbank.error.response_empty"),
+                    key="wordbank.error.response_empty",
+                )
+            result = await handle_guided_add_shape_result(
+                wordbank_service,
+                event=event,
+                trigger_shape=trigger_shape,
+                response_shape=response_shape,
+                scope_text=str(state.get("wordbank_guided_scope", "")),
+                advanced_text=event.message.extract_plain_text(),
+            )
     except (RuleError, ValueError) as exc:
         raise exc
     await finish_add_result(matcher, bot, event, result, locale)

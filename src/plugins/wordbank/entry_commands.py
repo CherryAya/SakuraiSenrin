@@ -32,6 +32,7 @@ from .handlers import (
     parse_group_view_args,
 )
 from .handlers.commands import (
+    PENDING_ALIASES,
     parse_guided_advanced_options,
     parse_guided_scope_choice,
 )
@@ -129,6 +130,11 @@ def register_wordbank_command_handlers(
     send_search_result_view: Callable[..., Awaitable[None]],
     resolve_locale_fn: Callable[[str | None], Awaitable[LocaleCode]] = resolve_locale,
     handle_wordbank_command_message_fn: Callable[..., Awaitable[None]] | None = None,
+    send_pending_entries_view: Callable[
+        [Bot, MessageEvent, str, LocaleCode],
+        Awaitable[None],
+    ]
+    | None = None,
 ) -> None:
     async def _call_dynamic(name: str, *args: Any, **kwargs: Any) -> Any:
         from src.plugins import wordbank as wordbank_plugin
@@ -261,6 +267,10 @@ def register_wordbank_command_handlers(
                     )
                 )
             return
+        if action in PENDING_ALIASES and send_pending_entries_view is not None:
+            await send_pending_entries_view(bot, event, rest, locale)
+            await matcher.finish()
+            return
 
         try:
             msg = await dispatch_wordbank_command(
@@ -329,6 +339,7 @@ def register_wordbank_command_handlers(
 
     @wordbank_command.handle()
     async def _wordbank_guided_response(
+        bot: Bot,
         matcher: Matcher,
         event: MessageEvent,
         state: T_State,
@@ -337,6 +348,16 @@ def register_wordbank_command_handlers(
             return
         locale = state.get("wordbank_locale", "zh-CN")
         await _abort_guided_on_revoke(matcher, event, locale)
+        if state.get("wordbank_guided_response_forward_pending"):
+            await _call_dynamic(
+                "_record_guided_forward_response_choice",
+                matcher,
+                event,
+                state,
+                locale,
+                bot,
+            )
+            return
         await record_guided_response(matcher, event, state, locale)
 
     async def _handle_scope_step(
@@ -498,12 +519,23 @@ def register_wordbank_command_handlers(
 
     @wordbank_add_command.handle()
     async def _wordbank_add_response(
+        bot: Bot,
         matcher: Matcher,
         event: MessageEvent,
         state: T_State,
     ) -> None:
         locale = state.get("wordbank_locale", "zh-CN")
         await _abort_guided_on_revoke(matcher, event, locale)
+        if state.get("wordbank_guided_response_forward_pending"):
+            await _call_dynamic(
+                "_record_guided_forward_response_choice",
+                matcher,
+                event,
+                state,
+                locale,
+                bot,
+            )
+            return
         await record_guided_response(matcher, event, state, locale)
 
     @wordbank_add_command.handle()

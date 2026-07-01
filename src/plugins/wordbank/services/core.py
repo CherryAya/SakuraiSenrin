@@ -42,6 +42,8 @@ from src.plugins.wordbank.services.matching import (
 )
 from src.plugins.wordbank.services.presentation import (
     WordbankAddResult,
+    WordbankBatchAddItemResult,
+    WordbankBatchAddResult,
     WordbankDeleteVoteResult,
     WordbankLeaderboardCardData,
     WordbankLeaderboardCardItem,
@@ -286,6 +288,52 @@ class WordbankService:
             weight=rule.weight,
             trigger_shape=trigger_shape,
             response_shape=response_shape,
+        )
+
+    async def add_message_entries(
+        self,
+        *,
+        trigger_shape: MessageShape,
+        response_shapes: Sequence[MessageShape],
+        group_id: str,
+        user_id: str,
+        is_group: bool,
+        raw_rule: dict[str, Any] | None = None,
+    ) -> WordbankBatchAddResult:
+        items: list[WordbankBatchAddItemResult] = []
+        success = 0
+        for index, response_shape in enumerate(response_shapes, start=1):
+            try:
+                result = await self.add_message_entry(
+                    trigger_shape=trigger_shape,
+                    response_shape=response_shape,
+                    raw_rule=raw_rule,
+                    group_id=group_id,
+                    user_id=user_id,
+                    is_group=is_group,
+                )
+            except Exception as exc:
+                items.append(
+                    WordbankBatchAddItemResult(
+                        index=index,
+                        ok=False,
+                        error=str(exc),
+                    )
+                )
+                continue
+            success += 1
+            items.append(
+                WordbankBatchAddItemResult(
+                    index=index,
+                    ok=True,
+                    result=result,
+                )
+            )
+        return WordbankBatchAddResult(
+            total=len(response_shapes),
+            success=success,
+            failed=max(0, len(response_shapes) - success),
+            items=tuple(items),
         )
 
     async def delete_response_item(

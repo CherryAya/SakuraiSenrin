@@ -13,10 +13,11 @@ from pathlib import Path
 from typing import Any, cast
 
 from nonebot import get_driver, on_message, on_notice, require
+from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
-from nonebot.plugin import on_command, on_fullmatch
+from nonebot.plugin import on_command
 from nonebot.rule import to_me
 from nonebot.typing import T_State
 
@@ -31,6 +32,7 @@ from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.services.startup_sync import ensure_restore_not_in_progress
 
+from .batch_feedback import send_batch_add_feedback
 from .docs_support import (
     DOCS_SOURCE,
     wordbank_docs_meta,
@@ -47,6 +49,7 @@ from .guided_flow import (
     finish_guided_search,
     guided_search_stage,
     handle_search_session_event,
+    record_guided_forward_response_choice,
     record_guided_response,
     record_guided_trigger,
     register_guided_checkpoint,
@@ -61,7 +64,6 @@ from .guided_flow import (
     WORDBANK_GUIDED_SEARCH_STAGE_PAGE as WORDBANK_GUIDED_SEARCH_STAGE_PAGE,
 )
 from .handlers import (
-    APPROVAL_REPLY_ALIASES,
     build_add_result_message,
     is_reply,
     localize_command_error,
@@ -91,8 +93,10 @@ from .handlers import (
 )
 from .handlers.commands import execute_search_page as execute_search_page
 from .handlers.commands import render_search_page_message as render_search_page_message
+from .pending_batch import send_pending_entries_review
 from .services import wordbank_media_service, wordbank_service
 from .services.core import WordbankAddResult
+from .services.presentation import WordbankBatchAddResult
 
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
@@ -248,6 +252,23 @@ async def _record_guided_response(
     )
 
 
+async def _record_guided_forward_response_choice(
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
+    bot: Bot,
+) -> None:
+    await record_guided_forward_response_choice(
+        matcher,
+        event,
+        state,
+        locale,
+        media_service=wordbank_media_service,
+        bot=bot,
+    )
+
+
 async def _cancel_guided_resources(
     state: Mapping[str, Any],
     cleanup_keys: tuple[str, ...] = WORDBANK_GUIDED_RECALL_PENDING_KEYS,
@@ -288,6 +309,42 @@ async def _finish_add_result(
         media_service=wordbank_media_service,
     )
     await matcher.finish()
+
+
+async def _finish_batch_add_result(
+    matcher: Matcher,
+    bot: Bot,
+    event: MessageEvent,
+    batch: WordbankBatchAddResult,
+    locale: LocaleCode,
+) -> None:
+    await send_batch_add_feedback(
+        bot,
+        event,
+        batch=batch,
+        locale=locale,
+        source_kind="wordbank_batch_submission",
+        fallback_nickname="词库",
+    )
+    await matcher.finish()
+
+
+async def _send_pending_entries_view(
+    bot: Bot,
+    event: MessageEvent,
+    text: str,
+    locale: LocaleCode,
+) -> None:
+    await send_pending_entries_review(
+        bot,
+        event,
+        text=text,
+        locale=locale,
+        service=wordbank_service,
+        media_service=wordbank_media_service,
+        source_kind="wordbank_pending_batch",
+        fallback_nickname="待审核词条",
+    )
 
 
 driver = get_driver()
@@ -443,9 +500,7 @@ wordbank_reply_command = on_message(
     priority=5,
     block=True,
 )
-wordbank_approval_reply_command = on_fullmatch(
-    tuple(APPROVAL_REPLY_ALIASES),
-    ignorecase=True,
+wordbank_approval_reply_command = on_message(
     rule=to_me() & is_reply & is_wordbank_approval_reply,
     priority=5,
     block=True,
@@ -549,6 +604,7 @@ async def _finish_guided_add(
         event,
         state,
         finish_add_result=_finish_add_result,
+        finish_batch_add_result=_finish_batch_add_result,
         wordbank_service=wordbank_service,
     )
 
@@ -650,6 +706,7 @@ register_wordbank_command_handlers(
     copy_guided_state=copy_guided_state,
     send_group_detail_view=_send_group_detail_view,
     send_search_result_view=_send_search_result_view,
+    send_pending_entries_view=_send_pending_entries_view,
     resolve_locale_fn=resolve_locale,
     handle_wordbank_command_message_fn=lambda *args, **kwargs: (
         _handle_wordbank_command_message(*args, **kwargs)
