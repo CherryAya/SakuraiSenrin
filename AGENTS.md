@@ -2,9 +2,9 @@
 
 SakuraiSenrin 插件开发规范（Plugin Development Spec）
 
-版本：v1.1  
+版本：v1.2  
 适用范围：`src/plugins/**`、`src/hooks/**`、`tests/plugins/**`  
-最后更新：2026-04-04
+最后更新：2026-07-01
 
 ---
 
@@ -224,6 +224,31 @@ README 仍是首要文档内容载体，但它已经从“最终协议”降级�
 4. `Message()` 空构造仅允许用于“先建空消息、再逐段 append segment”的场景；禁止后续再通过 `Message(raw_text)` 回退到不安全构造。
 5. 若文件导入 `Message` 仅用于 type hint、返回类型标注、`CommandArg()` / `Arg()` 参数声明、`isinstance` 判断或消息对象遍历，可保留，不视为违规。
 6. 若消息内容来自用户输入、README、i18n、数据库或任何外部数据源，默认按“不可信文本”处理，必须走显式 `MessageSegment` 拼装。
+
+### 7.2 Message Delivery 与合并转发约束（强制）
+
+项目内所有“主动发消息”“复用历史消息”“发送合并转发”的能力，统一收敛到：
+
+- `src/lib/message_delivery.py`
+- `src/lib/message_assets.py`
+- `src/lib/message_api_hooks.py`
+- `src/lib/onebot_forward.py`
+
+详细开发规范见：
+
+- `docs/development/message-delivery.md`
+
+强制约束如下：
+
+1. 插件或 hook 不得自行实现一套“查缓存 -> 转发 -> 发送 -> 回写”的重复发送链路，必须优先复用 `deliver_single_message(...)` 或 `deliver_forward_messages(...)`。
+2. 插件层不得直接把 `send_group_forward_msg` / `send_private_forward_msg` 作为常规业务实现；自定义 forward 节点构造仅允许留在底层 fallback。
+3. 插件层不得显式保留“先发给自己，再转发出去”的业务路径；若平台限制导致必须 staging，只允许封装在 `ensure_forward_node(...)` 这一类底层实现中。
+4. `message_asset` 仅是发送资产缓存，不是业务数据库；插件不得直接依赖其表结构做业务查询或写入。
+5. 只要消息带 `reply`、`at` 或其他上下文绑定语义，就不能为了命中缓存而当作全局可复用消息。
+6. 合并转发复用必须顺序敏感；不得仅凭节点内容相同就整包复用，也不得做“跳过中间节点复用后缀”的稀疏复用。
+7. 对 help、guide、demo、批量列表这类多节点输出，若修改了节点顺序、summary 内容或首屏结构，必须同步检查 forward cache 语义是否仍然成立。
+8. 涉及 `message_delivery` 语义变更时，默认需要补测试，至少覆盖缓存命中、失效重建、前缀复用和 fallback 路径。
+9. 涉及消息复用与转发判定的新增分支，必须补 debug 日志，确保 hash、缓存命中、停止复用原因和 fallback 原因可追踪。
 
 ---
 
