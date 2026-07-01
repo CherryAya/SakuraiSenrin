@@ -2,7 +2,7 @@ import sys
 from unittest.mock import AsyncMock, Mock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot, MessageSegment
+from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 from nonebug import App
 import pytest
 
@@ -31,7 +31,7 @@ from src.plugins.wordbank import handlers as wordbank_handlers
 from src.plugins.wordbank.message_model import shape_from_event, shape_from_text
 from src.plugins.wordbank.services import wordbank_service
 from src.plugins.wordbank.services.core import WordbankAddResult
-from tests.plugins.water.helpers import attach_reply_message, build_group_message_event
+from tests.plugins.water.helpers import build_group_message_event
 
 
 @pytest.mark.asyncio
@@ -157,10 +157,8 @@ async def test_study_guided_forward_reply_prompts_import_mode(
         second = build_group_message_event("a", message_id=2)
         third = build_group_message_event("t", message_id=3)
         fourth = build_group_message_event("jrlp", message_id=4)
-        fifth = attach_reply_message(
-            build_group_message_event("", message_id=5),
-            MessageSegment.forward("54321"),
-        )
+        fifth = build_group_message_event("", message_id=5)
+        fifth.message = Message([MessageSegment.forward("54321")])
 
         ctx.receive_event(bot, first)
         ctx.should_call_send(

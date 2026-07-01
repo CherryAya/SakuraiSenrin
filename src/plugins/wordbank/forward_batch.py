@@ -22,6 +22,10 @@ class ForwardBatchPayload:
     split_shapes: tuple[MessageShape, ...]
 
 
+def is_forward_message(message: Message) -> bool:
+    return any(segment.type == "forward" for segment in message)
+
+
 def is_forward_reply(event: MessageEvent) -> bool:
     reply = getattr(event, "reply", None)
     if reply is None:
@@ -29,18 +33,30 @@ def is_forward_reply(event: MessageEvent) -> bool:
     message = getattr(reply, "message", None)
     if not isinstance(message, Message):
         return False
-    return any(segment.type == "forward" for segment in message)
+    return is_forward_message(message)
+
+
+def is_forward_input(event: MessageEvent) -> bool:
+    if is_forward_reply(event):
+        return True
+    message = getattr(event, "message", None)
+    return isinstance(message, Message) and is_forward_message(message)
 
 
 def extract_forward_source_message_id(event: MessageEvent) -> int | None:
+    candidates: list[Message] = []
     reply = getattr(event, "reply", None)
-    if reply is None:
-        return None
-    message = getattr(reply, "message", None)
-    if not isinstance(message, Message):
-        return None
-    for segment in message:
-        if segment.type == "forward":
+    if reply is not None:
+        reply_message = getattr(reply, "message", None)
+        if isinstance(reply_message, Message):
+            candidates.append(reply_message)
+    message = getattr(event, "message", None)
+    if isinstance(message, Message):
+        candidates.append(message)
+    for candidate in candidates:
+        for segment in candidate:
+            if segment.type != "forward":
+                continue
             message_id = segment.data.get("id")
             if message_id is None:
                 continue

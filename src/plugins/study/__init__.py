@@ -55,7 +55,7 @@ from src.plugins.wordbank.batch_feedback import send_batch_add_feedback
 from src.plugins.wordbank.forward_batch import (
     build_forward_batch_payload,
     extract_forward_source_message_id,
-    is_forward_reply,
+    is_forward_input,
 )
 from src.plugins.wordbank.handlers.commands import _default_i18n_text
 from src.plugins.wordbank.message_model import MessageShape
@@ -364,7 +364,7 @@ async def _record_study_response(
     from src.plugins.wordbank.handlers import build_message_shape_from_message
     from src.plugins.wordbank.services import wordbank_media_service
 
-    if is_forward_reply(event):
+    if is_forward_input(event):
         state["study_forward_response_pending"] = True
         source_message_id = extract_forward_source_message_id(event)
         if source_message_id is not None:
