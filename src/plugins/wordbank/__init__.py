@@ -26,7 +26,15 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.long_task import LoggerProgressSink, LongTaskRunner, LongTaskSpec
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSink,
+    LongTaskSpec,
+    MatcherProgressSink,
+    MessageEventProgressSink,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
@@ -289,16 +297,26 @@ async def _send_pending_entries_view(
     text: str,
     locale: LocaleCode,
 ) -> None:
-    await send_pending_entries_review(
-        bot,
-        event,
-        text=text,
-        locale=locale,
-        service=wordbank_service,
-        media_service=wordbank_media_service,
-        source_kind="wordbank_pending_batch",
-        fallback_nickname=tr(locale, "wordbank.approval.pending_forward_nickname"),
-    )
+    async with LongTaskRunner(
+        LongTaskSpec(
+            task_name="wordbank.pending.batch_view",
+            source_kind="wordbank_pending_batch",
+            prompt=tr(locale, "wordbank.view.processing"),
+            threshold_ms=800,
+        ),
+        sink=_build_wordbank_progress_sink(bot=bot, event=event),
+    ) as long_task:
+        await long_task.advance("rendering")
+        await send_pending_entries_review(
+            bot,
+            event,
+            text=text,
+            locale=locale,
+            service=wordbank_service,
+            media_service=wordbank_media_service,
+            source_kind="wordbank_pending_batch",
+            fallback_nickname=tr(locale, "wordbank.approval.pending_forward_nickname"),
+        )
 
 
 driver = get_driver()
@@ -512,18 +530,32 @@ async def _finish_guided_search(
         bot, matcher, state, event, locale = args
     else:
         raise TypeError("_finish_guided_search expects 4 or 5 arguments")
-    await finish_guided_search(
-        bot,
-        matcher,
-        state,
-        event,
-        locale,
-        page_number=page_number,
-        clamp_page=clamp_page,
-        wordbank_service=wordbank_service,
-        media_service=wordbank_media_service,
-        record_search_result_view_message=_record_search_result_view_message,
-    )
+    async with LongTaskRunner(
+        LongTaskSpec(
+            task_name="wordbank.search.guided_view",
+            source_kind="wordbank_view",
+            prompt=tr(locale, "wordbank.view.processing"),
+            threshold_ms=800,
+        ),
+        sink=_build_wordbank_progress_sink(
+            bot=bot,
+            event=event,
+            matcher=matcher,
+        ),
+    ) as long_task:
+        await long_task.advance("rendering")
+        await finish_guided_search(
+            bot,
+            matcher,
+            state,
+            event,
+            locale,
+            page_number=page_number,
+            clamp_page=clamp_page,
+            wordbank_service=wordbank_service,
+            media_service=wordbank_media_service,
+            record_search_result_view_message=_record_search_result_view_message,
+        )
 
 
 async def _handle_search_session_event(
@@ -564,6 +596,20 @@ async def _start_guided_search(
     )
 
 
+def _build_wordbank_progress_sink(
+    *,
+    bot: Bot | None,
+    event: MessageEvent,
+    matcher: Matcher | None = None,
+) -> CompositeProgressSink:
+    sinks: list[LongTaskSink] = [LoggerProgressSink()]
+    if bot is not None:
+        sinks.append(MessageEventProgressSink(bot, event))
+    elif matcher is not None:
+        sinks.append(MatcherProgressSink(matcher))
+    return CompositeProgressSink(*sinks)
+
+
 async def _finish_guided_add(
     bot: Any,
     matcher: Matcher,
@@ -590,16 +636,38 @@ async def _send_search_result_view(
     image_scores: dict[int, float] | None = None,
     state: T_State | None = None,
 ) -> None:
-    await runtime_exports["send_search_result_view"](
-        bot,
-        matcher,
-        event,
-        locale,
-        keyword=keyword,
-        image_scores=image_scores,
-        state=state,
-        finish_guided_search=_finish_guided_search,
-    )
+    if state is not None:
+        await runtime_exports["send_search_result_view"](
+            bot,
+            matcher,
+            event,
+            locale,
+            keyword=keyword,
+            image_scores=image_scores,
+            state=state,
+            finish_guided_search=_finish_guided_search,
+        )
+        return
+    async with LongTaskRunner(
+        LongTaskSpec(
+            task_name="wordbank.search.direct_view",
+            source_kind="wordbank_view",
+            prompt=tr(locale, "wordbank.view.processing"),
+            threshold_ms=800,
+        ),
+        sink=_build_wordbank_progress_sink(bot=bot, event=event, matcher=matcher),
+    ) as long_task:
+        await long_task.advance("rendering")
+        await runtime_exports["send_search_result_view"](
+            bot,
+            matcher,
+            event,
+            locale,
+            keyword=keyword,
+            image_scores=image_scores,
+            state=None,
+            finish_guided_search=_finish_guided_search,
+        )
 
 
 async def _send_group_detail_view(
@@ -612,15 +680,25 @@ async def _send_group_detail_view(
     page: int,
     finish_after_send: bool = True,
 ) -> None:
-    await runtime_exports["send_group_detail_view"](
-        bot,
-        matcher,
-        event,
-        locale,
-        trigger_group_id=trigger_group_id,
-        page=page,
-        finish_after_send=finish_after_send,
-    )
+    async with LongTaskRunner(
+        LongTaskSpec(
+            task_name="wordbank.group.detail_view",
+            source_kind="wordbank_view",
+            prompt=tr(locale, "wordbank.view.processing"),
+            threshold_ms=800,
+        ),
+        sink=_build_wordbank_progress_sink(bot=bot, event=event, matcher=matcher),
+    ) as long_task:
+        await long_task.advance("rendering")
+        await runtime_exports["send_group_detail_view"](
+            bot,
+            matcher,
+            event,
+            locale,
+            trigger_group_id=trigger_group_id,
+            page=page,
+            finish_after_send=finish_after_send,
+        )
 
 
 async def _record_search_result_view_message(*args: Any, **kwargs: Any) -> None:

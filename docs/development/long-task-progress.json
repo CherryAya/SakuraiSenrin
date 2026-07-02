@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "generated_at": "2026-07-03T00:33:21",
+  "generated_at": "2026-07-03T00:48:29",
   "root": "/Users/sakuraicora/Documents/Development/SakuraiSenrin/SakuraiSenrin",
   "summary": {
-    "total_targets": 13,
-    "complete_targets": 13,
+    "total_targets": 15,
+    "complete_targets": 15,
     "partial_targets": 0,
     "missing_file_targets": 0,
     "legacy_wait_candidates": 0
@@ -81,6 +81,20 @@
       "missing": []
     },
     {
+      "slug": "admin.invite.list",
+      "label": "Admin Invite List",
+      "path": "src/plugins/admin/invite.py",
+      "category": "plugin",
+      "description": "Pending invitation list avatar fetch and image rendering.",
+      "status": "complete",
+      "exists": true,
+      "has_runner": true,
+      "has_logger_sink": true,
+      "has_message_event_sink": true,
+      "has_matcher_sink": false,
+      "missing": []
+    },
+    {
       "slug": "admin.backup",
       "label": "Admin Backup",
       "path": "src/plugins/admin/backup.py",
@@ -148,6 +162,20 @@
       "has_logger_sink": true,
       "has_message_event_sink": false,
       "has_matcher_sink": false,
+      "missing": []
+    },
+    {
+      "slug": "wordbank.view_runtime",
+      "label": "Wordbank View Runtime",
+      "path": "src/plugins/wordbank/__init__.py",
+      "category": "plugin",
+      "description": "Direct and guided search/detail/pending heavy rendering flows.",
+      "status": "complete",
+      "exists": true,
+      "has_runner": true,
+      "has_logger_sink": true,
+      "has_message_event_sink": true,
+      "has_matcher_sink": true,
       "missing": []
     },
     {

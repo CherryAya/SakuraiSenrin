@@ -115,6 +115,19 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         expect_message_event_sink=True,
     ),
     LongTaskAuditTarget(
+        slug="admin.invite.list",
+        label="Admin Invite List",
+        path="src/plugins/admin/invite.py",
+        category="plugin",
+        description="Pending invitation list avatar fetch and image rendering.",
+        scope_terms=(
+            "async def generate_invitation_image_bytes",
+            "async def handle_list",
+        ),
+        expect_logger_sink=True,
+        expect_message_event_sink=True,
+    ),
+    LongTaskAuditTarget(
         slug="admin.backup",
         label="Admin Backup",
         path="src/plugins/admin/backup.py",
@@ -168,6 +181,23 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         description="Archive and media maintenance cron jobs.",
         scope_terms=("_wordbank_event_archive_job", "_wordbank_media_maintenance_job"),
         expect_logger_sink=True,
+    ),
+    LongTaskAuditTarget(
+        slug="wordbank.view_runtime",
+        label="Wordbank View Runtime",
+        path="src/plugins/wordbank/__init__.py",
+        category="plugin",
+        description="Direct and guided search/detail/pending heavy rendering flows.",
+        scope_terms=(
+            "async def _send_pending_entries_view",
+            "async def _finish_guided_search",
+            "def _build_wordbank_progress_sink",
+            "async def _send_search_result_view",
+            "async def _send_group_detail_view",
+        ),
+        expect_logger_sink=True,
+        expect_message_event_sink=True,
+        expect_matcher_sink=True,
     ),
     LongTaskAuditTarget(
         slug="water.jobs",

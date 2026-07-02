@@ -33,6 +33,13 @@ from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.demo_theme import SENRIN_V3_ADMIN_INVITE_IMAGE_THEME
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MessageEventProgressSink,
+)
 from src.lib.message_plan import (
     DeliveryPlan,
     ImageBytesBlock,
@@ -433,6 +440,8 @@ class InvitationListRenderer:
 async def generate_invitation_image_bytes(
     invitations_data: list[dict[str, Any]],
     locale: LocaleCode,
+    *,
+    task: LongTaskRunner | None = None,
 ) -> bytes:
     """
     提供给外部调用的异步门面函数。
@@ -444,17 +453,62 @@ async def generate_invitation_image_bytes(
     """
     avatar_limiter = asyncio.Semaphore(INVITATION_AVATAR_CONCURRENCY)
     avatar_tasks = [
-        _fetch_invitation_avatars(item, avatar_limiter) for item in invitations_data
+        asyncio.create_task(_load_invitation_avatar_pair(index, item, avatar_limiter))
+        for index, item in enumerate(invitations_data)
     ]
-    fetched_images = await asyncio.gather(*avatar_tasks)
-    for item, (group_avatar, user_avatar) in zip(
-        invitations_data, fetched_images, strict=True
+    fetched_images: list[tuple[Image.Image, Image.Image] | None] = [
+        None for _ in invitations_data
+    ]
+    total = len(avatar_tasks)
+    if task is not None and total > 0:
+        await task.advance(
+            "fetching_avatars",
+            current=0,
+            total=total,
+            metadata={"count": total},
+        )
+    for completed_count, avatar_task in enumerate(
+        asyncio.as_completed(avatar_tasks),
+        start=1,
     ):
+        index, images = await avatar_task
+        fetched_images[index] = images
+        if task is not None:
+            await task.advance(
+                "fetching_avatars",
+                current=completed_count,
+                total=total,
+                metadata={"count": total},
+            )
+    for item, images in zip(
+        invitations_data,
+        fetched_images,
+        strict=True,
+    ):
+        assert images is not None
+        group_avatar, user_avatar = images
+        assert group_avatar is not None
+        assert user_avatar is not None
         item["group_avatar_img"] = group_avatar
         item["user_avatar_img"] = user_avatar
 
+    if task is not None:
+        await task.advance(
+            "rendering",
+            current=total,
+            total=total,
+            metadata={"count": total},
+        )
     renderer = InvitationListRenderer(locale)
     return renderer.render(invitations_data)
+
+
+async def _load_invitation_avatar_pair(
+    index: int,
+    item: dict[str, Any],
+    limiter: asyncio.Semaphore,
+) -> tuple[int, tuple[Image.Image, Image.Image]]:
+    return index, await _fetch_invitation_avatars(item, limiter)
 
 
 async def _fetch_invitation_avatars(
@@ -590,36 +644,64 @@ async def handle_invitation(ctx: InviteContext) -> bool:
     return True
 
 
-async def handle_list(ctx: AdminInviteContext) -> None:
-    db_results = await invite_repo.get_by_status(InvitationStatus.PENDING)
-
-    if not db_results:
-        await ctx.matcher.finish(tr(ctx.locale, "admin.invite.pending.none"))
-
-    render_data = []
-    for inv in db_results:
-        render_data.append(
-            {
-                "invitation_id": inv.id,
-                "group_name": inv.group.group_name,
-                "group_id": inv.group.group_id,
-                "inviter_name": inv.inviter.user_name,
-                "inviter_id": inv.inviter.user_id,
-                "time": arrow.get(inv.created_at).strftime("%Y-%m-%d %H:%M"),
-                "flag": inv.flag or tr(ctx.locale, "admin.invite.image.flag.none"),
-            }
-        )
-
-    img_bytes = await generate_invitation_image_bytes(render_data, ctx.locale)
-
-    await deliver_message_plan(
-        ctx.bot,
-        plan=DeliveryPlan(
-            messages=(MessagePlanEntry(blocks=(ImageBytesBlock(img_bytes),)),),
-            source_kind="admin_invite_list",
-        ),
-        event=ctx.event,
+def _build_progress_sink(bot: Bot, event: MessageEvent) -> CompositeProgressSink:
+    return CompositeProgressSink(
+        LoggerProgressSink(),
+        MessageEventProgressSink(bot, event),
     )
+
+
+async def handle_list(ctx: AdminInviteContext) -> None:
+    empty_message: str | None = None
+    async with LongTaskRunner(
+        LongTaskSpec(
+            task_name="admin.invite.list",
+            source_kind="admin_invite_list",
+            prompt=tr(ctx.locale, "admin.invite.list.processing"),
+            threshold_ms=800,
+        ),
+        sink=_build_progress_sink(ctx.bot, ctx.event),
+    ) as long_task:
+        await long_task.advance("loading_records")
+        db_results = await invite_repo.get_by_status(InvitationStatus.PENDING)
+        if not db_results:
+            empty_message = tr(ctx.locale, "admin.invite.pending.none")
+        else:
+            render_data = []
+            for inv in db_results:
+                render_data.append(
+                    {
+                        "invitation_id": inv.id,
+                        "group_name": inv.group.group_name,
+                        "group_id": inv.group.group_id,
+                        "inviter_name": inv.inviter.user_name,
+                        "inviter_id": inv.inviter.user_id,
+                        "time": arrow.get(inv.created_at).strftime("%Y-%m-%d %H:%M"),
+                        "flag": (
+                            inv.flag or tr(ctx.locale, "admin.invite.image.flag.none")
+                        ),
+                    }
+                )
+            img_bytes = await generate_invitation_image_bytes(
+                render_data,
+                ctx.locale,
+                task=long_task,
+            )
+            await long_task.advance(
+                "delivering",
+                metadata={"count": len(render_data)},
+            )
+            await deliver_message_plan(
+                ctx.bot,
+                plan=DeliveryPlan(
+                    messages=(MessagePlanEntry(blocks=(ImageBytesBlock(img_bytes),)),),
+                    source_kind="admin_invite_list",
+                ),
+                event=ctx.event,
+            )
+
+    if empty_message is not None:
+        await ctx.matcher.finish(empty_message)
 
 
 async def handle_approve(ctx: AdminInviteContext) -> None:
