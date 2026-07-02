@@ -10,6 +10,7 @@ from typing import ClassVar, Literal, cast
 import arrow
 from pil_utils import BuildImage
 
+from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr, tr_template
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
@@ -33,17 +34,17 @@ from src.services.info import resolve_group_name
 
 PeriodType = Literal["week", "month", "season", "year"]
 
-RANK_SUBJECT_LABEL_KEYS: dict[str, str] = {
+RANK_SUBJECT_LABEL_KEYS: dict[WaterRankSubject, MessageKey] = {
     "user": "water.rank.subject.user",
     "group": "water.rank.subject.group",
     "matrix": "water.rank.subject.matrix",
 }
-RANK_SCOPE_LABEL_KEYS: dict[str, str] = {
+RANK_SCOPE_LABEL_KEYS: dict[WaterRankScope, MessageKey] = {
     "group": "water.rank.scope.group",
     "matrix": "water.rank.scope.matrix",
     "global": "water.rank.scope.global",
 }
-RANK_PERIOD_LABEL_KEYS: dict[str, str] = {
+RANK_PERIOD_LABEL_KEYS: dict[WaterRankPeriod, MessageKey] = {
     "day": "water.rank.period.day",
     "week": "water.rank.period.week",
     "month": "water.rank.period.month",
@@ -51,7 +52,7 @@ RANK_PERIOD_LABEL_KEYS: dict[str, str] = {
     "year": "water.rank.period.year",
     "total": "water.rank.period.total",
 }
-RANK_DISPLAY_META_KEYS: dict[str, dict[str, str]] = {
+RANK_DISPLAY_META_KEYS: dict[WaterRankSubject, dict[str, MessageKey]] = {
     "user": {
         "entity_label": "water.rank.display.user.entity_label",
         "champion_summary_label": "water.rank.display.user.champion_summary",

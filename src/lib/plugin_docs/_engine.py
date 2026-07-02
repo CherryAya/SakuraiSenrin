@@ -19,6 +19,7 @@ from src.lib.demo_theme import (
     DEFAULT_IMPRESSION_COLOR,
     normalize_hex_color,
 )
+from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.messages import image_message, text_message
@@ -57,10 +58,10 @@ from .copy import (
     build_feature_copy_text as build_feature_copy_text_impl,
 )
 from .copy import (
-    build_plugin_summary_copy_text as build_plugin_summary_copy_text_impl,
+    build_plugin_guide_copy_text as build_plugin_guide_copy_text_impl,
 )
 from .copy import (
-    build_plugin_guide_copy_text as build_plugin_guide_copy_text_impl,
+    build_plugin_summary_copy_text as build_plugin_summary_copy_text_impl,
 )
 from .copy import (
     build_simple_leaf_copy_text as build_simple_leaf_copy_text_impl,
@@ -226,6 +227,7 @@ from .static_assets import (
     guide_target_key,
     load_static_asset_bytes,
     static_target_key,
+    summary_target_key,
 )
 
 
@@ -239,16 +241,18 @@ def _support_text_block(locale: LocaleCode) -> str:
 
 type HelpHomeSectionKind = Literal["system", "developer", "community"]
 
+HELP_HOME_SECTION_TITLE_KEYS: dict[HelpHomeSectionKind, MessageKey] = {
+    "system": "help.dashboard.section.system",
+    "developer": "help.dashboard.section.developer",
+    "community": "help.dashboard.section.community",
+}
+
 
 def _help_home_section_title(
     section: HelpHomeSectionKind,
     locale: LocaleCode,
 ) -> str:
-    key = {
-        "system": "help.dashboard.section.system",
-        "developer": "help.dashboard.section.developer",
-        "community": "help.dashboard.section.community",
-    }[section]
+    key = HELP_HOME_SECTION_TITLE_KEYS[section]
     return tr(locale, key)
 
 
@@ -341,9 +345,9 @@ def build_static_docs(
     name: str | None = None,
     description: str | None = None,
     content: str | None = None,
-    name_key: str | None = None,
-    description_key: str | None = None,
-    content_key: str | None = None,
+    name_key: MessageKey | None = None,
+    description_key: MessageKey | None = None,
+    content_key: MessageKey | None = None,
     trigger: TriggerType,
     permission: Permission,
     locale: LocaleCode = "zh-CN",
@@ -1176,7 +1180,7 @@ def render_plugin_guide(
         node=node,
         features=visible_features,
         locale=locale,
-        generated_at=generated_at,
+        generated_at=generated,
     )
 
 
@@ -1204,7 +1208,7 @@ def render_static_entry(
     ).render_static_entry(
         node=node,
         locale=locale,
-        generated_at=generated_at,
+        generated_at=generated,
     )
 
 
@@ -1213,7 +1217,17 @@ def render_plugin_summary(
     *,
     locale: LocaleCode = "zh-CN",
     generated_at: datetime | None = None,
+    actor_permission: Permission = Permission.NORMAL,
+    prefer_static: bool = True,
 ) -> bytes:
+    if prefer_static:
+        static_bytes = load_static_asset_bytes(
+            node.source_path,
+            target_key=summary_target_key(node),
+            actor_permission=actor_permission,
+        )
+        if static_bytes is not None:
+            return static_bytes
     return ProgressiveDisclosureRenderer(
         impression_color=node.bundle.impression_color
     ).render_plugin_summary(
@@ -1234,12 +1248,6 @@ def render_help_dashboard(
 ) -> bytes:
     generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
         microsecond=0
-    )
-    dashboard_count = sum(len(section.nodes) for section in sections)
-    dashboard_footer_left = tr(
-        locale,
-        "help.dashboard.footer.left",
-        count=dashboard_count,
     )
     first_node = next(
         (node for section in sections for node in section.nodes),
@@ -1264,7 +1272,7 @@ def render_help_dashboard(
     return ProgressiveDisclosureRenderer(impression_color=theme_color).render_dashboard(
         sections=sections,
         locale=locale,
-        generated_at=generated_at,
+        generated_at=generated,
     )
 
 
