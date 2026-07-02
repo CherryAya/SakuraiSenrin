@@ -22,6 +22,13 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MatcherProgressSink,
+)
 from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.logger import logger
 from src.plugins.wordbank.debug import (
@@ -210,10 +217,24 @@ async def record_guided_trigger(
     if has_meaningful_text(plain_text) and len(event.message) == 1:
         shape = shape_from_trigger_text_value(plain_text)
     else:
-        shape = await build_message_shape_from_message(
-            media_service,
-            event.message,
+        long_task = LongTaskRunner(
+            LongTaskSpec(
+                task_name="wordbank.guided.trigger_shape",
+                source_kind="wordbank_guided",
+                prompt=tr(locale, "wordbank.add.processing_with_media"),
+                threshold_ms=800,
+            ),
+            sink=CompositeProgressSink(
+                LoggerProgressSink(),
+                MatcherProgressSink(matcher),
+            ),
         )
+        async with long_task:
+            shape = await build_message_shape_from_message(
+                media_service,
+                event.message,
+                task=long_task,
+            )
     if shape.is_empty():
         await reject_guided_error(
             matcher,
@@ -265,7 +286,24 @@ async def record_guided_response(
         )
         await matcher.pause(tr(locale, "wordbank.guided.forward_response_prompt"))
         return
-    shape = await build_message_shape_from_message(media_service, event.message)
+    long_task = LongTaskRunner(
+        LongTaskSpec(
+            task_name="wordbank.guided.response_shape",
+            source_kind="wordbank_guided",
+            prompt=tr(locale, "wordbank.add.processing_with_media"),
+            threshold_ms=800,
+        ),
+        sink=CompositeProgressSink(
+            LoggerProgressSink(),
+            MatcherProgressSink(matcher),
+        ),
+    )
+    async with long_task:
+        shape = await build_message_shape_from_message(
+            media_service,
+            event.message,
+            task=long_task,
+        )
     if shape.is_empty():
         await reject_guided_error(
             matcher,
@@ -323,11 +361,25 @@ async def record_guided_forward_response_choice(
         return
     if choice in {"1", "whole", "整体"}:
         state.pop("wordbank_guided_response_forward_pending", None)
-        payload = await build_response_input_payload(
-            bot,
-            response_event,
-            media_service=media_service,
+        long_task = LongTaskRunner(
+            LongTaskSpec(
+                task_name="wordbank.guided.forward_response_whole",
+                source_kind="wordbank_guided",
+                prompt=tr(locale, "wordbank.add.processing_with_media"),
+                threshold_ms=800,
+            ),
+            sink=CompositeProgressSink(
+                LoggerProgressSink(),
+                MatcherProgressSink(matcher),
+            ),
         )
+        async with long_task:
+            payload = await build_response_input_payload(
+                bot,
+                response_event,
+                media_service=media_service,
+                task=long_task,
+            )
         if payload.input_kind != "forward":
             await reject_guided_error(
                 matcher,
@@ -349,11 +401,25 @@ async def record_guided_forward_response_choice(
         return
     if choice in {"2", "split", "拆开"}:
         state.pop("wordbank_guided_response_forward_pending", None)
-        payload = await build_response_input_payload(
-            bot,
-            response_event,
-            media_service=media_service,
+        long_task = LongTaskRunner(
+            LongTaskSpec(
+                task_name="wordbank.guided.forward_response_split",
+                source_kind="wordbank_guided",
+                prompt=tr(locale, "wordbank.add.processing_with_media"),
+                threshold_ms=800,
+            ),
+            sink=CompositeProgressSink(
+                LoggerProgressSink(),
+                MatcherProgressSink(matcher),
+            ),
         )
+        async with long_task:
+            payload = await build_response_input_payload(
+                bot,
+                response_event,
+                media_service=media_service,
+                task=long_task,
+            )
         if payload.input_kind != "forward":
             await reject_guided_error(
                 matcher,

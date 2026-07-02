@@ -37,6 +37,17 @@ from tests.plugins.water.helpers import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _disable_runtime_processor(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.hooks.processor._runtime_sync", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        "src.hooks.processor._runtime_check",
+        AsyncMock(return_value=None),
+    )
+
+
 @pytest.mark.asyncio
 async def test_wordbank_add_without_args_enters_guided_trigger_prompt(
     app: App,
@@ -385,16 +396,6 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
         )
 
         ctx.receive_event(bot, event)
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message(
-                    tr("zh-CN", "wordbank.add.processing_with_media")
-                ),
-            },
-            result={"message_id": 1},
-        )
         ctx.should_call_api(
             "send_group_msg",
             {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from nonebot import require
 
+from src.lib.long_task import LoggerProgressSink, LongTaskRunner, LongTaskSpec
 from src.logger import logger
 
 
@@ -37,7 +38,16 @@ def install_backup_scheduler() -> None:
     async def _database_backup_default_job() -> None:
         service = build_backup_service_from_config()
         try:
-            ensure_restore_not_in_progress(source="backup_scheduler")
-            await service.run(plan)
+            async with LongTaskRunner(
+                LongTaskSpec(
+                    task_name="backup.scheduler.default",
+                    source_kind="backup_scheduler",
+                    threshold_ms=0,
+                ),
+                sink=LoggerProgressSink(),
+            ) as long_task:
+                ensure_restore_not_in_progress(source="backup_scheduler")
+                await long_task.advance("archiving")
+                await service.run(plan)
         except Exception as exc:
             logger.exception(f"[Backup] scheduled run failed: {exc}")

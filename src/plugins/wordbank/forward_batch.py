@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -9,6 +10,7 @@ from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import MessageSegment
 
 from src.lib.i18n.runtime import tr
+from src.lib.long_task import LongTaskRunner
 from src.logger import logger
 from src.plugins.wordbank.debug import describe_message_segments, describe_shape
 from src.plugins.wordbank.message_model import MessageShape, combine_shapes
@@ -16,6 +18,7 @@ from src.plugins.wordbank.services.errors import WordbankUserError
 
 FORWARD_BATCH_NODE_LIMIT = 50
 FORWARD_BATCH_MAX_DEPTH = 3
+FORWARD_NODE_BUILD_CONCURRENCY = 2
 
 
 @dataclass(slots=True, frozen=True)
@@ -84,6 +87,7 @@ async def build_forward_batch_payload(
     *,
     media_service: Any,
     max_depth: int = FORWARD_BATCH_MAX_DEPTH,
+    task: LongTaskRunner | None = None,
 ) -> ForwardBatchPayload:
     source_message_id = extract_forward_source_message_id(event)
     if source_message_id is None:
@@ -96,6 +100,7 @@ async def build_forward_batch_payload(
         media_service=media_service,
         source_message_id=source_message_id,
         max_depth=max_depth,
+        task=task,
     )
 
 
@@ -105,6 +110,7 @@ async def build_forward_batch_payload_by_source_message_id(
     media_service: Any,
     source_message_id: str,
     max_depth: int = FORWARD_BATCH_MAX_DEPTH,
+    task: LongTaskRunner | None = None,
 ) -> ForwardBatchPayload:
     from src.plugins.wordbank.handlers import build_message_shape_from_message
 
@@ -125,16 +131,56 @@ async def build_forward_batch_payload_by_source_message_id(
             key="wordbank.error.forward_message_too_many",
             limit=FORWARD_BATCH_NODE_LIMIT,
         )
-    shapes: list[MessageShape] = []
-    for index, message in enumerate(messages, start=1):
-        shape = await build_message_shape_from_message(media_service, message)
+    if task is not None:
+        await task.advance(
+            "processing_items",
+            current=0,
+            total=len(messages),
+            metadata={"source_message_id": source_message_id},
+        )
+    semaphore = asyncio.Semaphore(
+        max(1, min(FORWARD_NODE_BUILD_CONCURRENCY, len(messages)))
+    )
+
+    async def _build_node_shape(
+        index: int,
+        message: Message,
+    ) -> tuple[int, MessageShape]:
+        async with semaphore:
+            shape = await build_message_shape_from_message(
+                media_service,
+                message,
+                task=task,
+            )
         logger.debug(
             "[Wordbank][forward] node shape | "
             f"source_message_id={source_message_id} node_index={index} "
             f"{describe_shape(shape)}"
         )
-        if not shape.is_empty():
-            shapes.append(shape)
+        return index, shape
+
+    shaped = await asyncio.gather(
+        *(
+            _build_node_shape(index, message)
+            for index, message in enumerate(messages, start=1)
+        )
+    )
+    if task is not None:
+        await task.advance(
+            "processing_items",
+            current=len(shaped),
+            total=len(messages),
+            metadata={"source_message_id": source_message_id},
+        )
+        await task.advance(
+            "building_shape",
+            metadata={"source_message_id": source_message_id},
+        )
+    shapes = [
+        shape
+        for _, shape in sorted(shaped, key=lambda item: item[0])
+        if not shape.is_empty()
+    ]
     if not shapes:
         raise WordbankUserError(
             tr("zh-CN", "wordbank.error.forward_message_empty"),
@@ -160,6 +206,7 @@ async def build_response_input_payload(
     *,
     media_service: Any,
     max_forward_depth: int = FORWARD_BATCH_MAX_DEPTH,
+    task: LongTaskRunner | None = None,
 ) -> ResponseInputPayload:
     from src.plugins.wordbank.handlers import build_message_shape_from_message
 
@@ -169,6 +216,7 @@ async def build_response_input_payload(
             event,
             media_service=media_service,
             max_depth=max_forward_depth,
+            task=task,
         )
         return ResponseInputPayload(
             input_kind="forward",
@@ -176,7 +224,11 @@ async def build_response_input_payload(
             split_shapes=payload.split_shapes,
             source_message_id=payload.source_message_id,
         )
-    shape = await build_message_shape_from_message(media_service, event.message)
+    shape = await build_message_shape_from_message(
+        media_service,
+        event.message,
+        task=task,
+    )
     split_shapes = (shape,) if not shape.is_empty() else ()
     return ResponseInputPayload(
         input_kind="single",

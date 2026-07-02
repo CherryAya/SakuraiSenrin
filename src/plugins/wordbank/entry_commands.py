@@ -16,7 +16,13 @@ from nonebot.typing import T_State
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.interaction import abort_if_revoke_signal, clear_interaction_errors
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MessageEventProgressSink,
+)
 
 from .guided_flow import (
     WORDBANK_GUIDED_SEARCH_STAGE_CREATOR,
@@ -178,34 +184,50 @@ def register_wordbank_command_handlers(
         if action in {"add", "添加", "学习"}:
             try:
                 has_images = bool(await _call_dynamic("extract_image_urls", arg))
-                if has_images:
-                    await deliver_message_plan(
-                        bot,
-                        plan=DeliveryPlan(
-                            messages=(
-                                tr(locale, "wordbank.add.processing_with_media"),
-                            ),
-                            source_kind="wordbank_command",
-                        ),
-                        event=event,
-                    )
-                data = await _call_dynamic("fetch_first_image_bytes_from_message", arg)
-                if data is not None:
-                    result = await _call_dynamic(
-                        "handle_add_with_media_result",
-                        wordbank_service,
-                        wordbank_media_service,
-                        event=event,
-                        image_bytes=data,
-                        text=rest,
-                    )
-                else:
+                if not has_images:
                     result = await _call_dynamic(
                         "handle_add_text_result",
                         wordbank_service,
                         event=event,
                         text=rest,
                     )
+                else:
+                    long_task = LongTaskRunner(
+                        LongTaskSpec(
+                            task_name="wordbank.add.media_submission",
+                            source_kind="wordbank_command",
+                            prompt=tr(locale, "wordbank.add.processing_with_media"),
+                            threshold_ms=800,
+                        ),
+                        sink=CompositeProgressSink(
+                            LoggerProgressSink(),
+                            MessageEventProgressSink(bot, event),
+                        ),
+                    )
+                    async with long_task:
+                        data = await _call_dynamic(
+                            "fetch_first_image_bytes_from_message",
+                            arg,
+                            task=long_task,
+                        )
+                        if data is None:
+                            result = await _call_dynamic(
+                                "handle_add_text_result",
+                                wordbank_service,
+                                event=event,
+                                text=rest,
+                            )
+                        else:
+                            result = await _call_dynamic(
+                                "handle_add_with_media_result",
+                                wordbank_service,
+                                wordbank_media_service,
+                                event=event,
+                                image_bytes=data,
+                                text=rest,
+                                task=long_task,
+                            )
+                        await long_task.advance("submitting")
             except (RuleError, ValueError) as exc:
                 await matcher.finish(
                     build_error_message(exc, locale, default_feature="add")

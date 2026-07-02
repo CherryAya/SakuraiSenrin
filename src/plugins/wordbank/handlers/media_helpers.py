@@ -7,6 +7,7 @@ import asyncio
 from nonebot.adapters.onebot.v11.message import Message
 
 from src.lib.i18n.runtime import tr
+from src.lib.long_task import LongTaskRunner
 from src.plugins.wordbank.message_model import (
     MessageShape,
     combine_shapes,
@@ -22,6 +23,8 @@ from src.plugins.wordbank.text_parsing import has_meaningful_text
 IMAGE_DOWNLOAD_RETRY_ATTEMPTS = 3
 IMAGE_DOWNLOAD_RETRY_DELAY_SECONDS = 0.8
 GUIDED_MESSAGE_IMAGE_LIMIT = 4
+ACTIVE_IMAGE_DOWNLOAD_CONCURRENCY = 4
+ACTIVE_IMAGE_INGEST_CONCURRENCY = 2
 
 
 def extract_image_urls(message: Message) -> list[str]:
@@ -56,26 +59,98 @@ async def fetch_image_bytes_from_message(
     message: Message,
     *,
     limit: int = 2,
+    task: LongTaskRunner | None = None,
 ) -> tuple[bytes, ...]:
     urls = extract_image_urls(message)
     if not urls:
         return ()
 
-    items: list[bytes] = []
-    for url in urls[: max(1, limit)]:
-        data = await fetch_image_bytes_with_retry(url)
+    active_urls = tuple(urls[: max(1, limit)])
+    if task is not None:
+        await task.advance(
+            "downloading",
+            current=0,
+            total=len(active_urls),
+            metadata={"image_count": len(active_urls)},
+        )
+
+    semaphore = asyncio.Semaphore(
+        max(1, min(ACTIVE_IMAGE_DOWNLOAD_CONCURRENCY, len(active_urls)))
+    )
+
+    async def _download(index: int, url: str) -> tuple[int, bytes]:
+        async with semaphore:
+            data = await fetch_image_bytes_with_retry(url)
         if data is None:
             raise WordbankUserError(
                 tr("zh-CN", "wordbank.error.image_download_failed"),
                 key="wordbank.error.image_download_failed",
             )
-        items.append(data)
-    return tuple(items)
+        return index, data
+
+    downloaded = await asyncio.gather(
+        *(_download(index, url) for index, url in enumerate(active_urls))
+    )
+    if task is not None:
+        await task.advance(
+            "downloading",
+            current=len(downloaded),
+            total=len(active_urls),
+            metadata={"image_count": len(downloaded)},
+        )
+    return tuple(data for _, data in sorted(downloaded, key=lambda item: item[0]))
 
 
-async def fetch_first_image_bytes_from_message(message: Message) -> bytes | None:
-    items = await fetch_image_bytes_from_message(message, limit=1)
+async def fetch_first_image_bytes_from_message(
+    message: Message,
+    *,
+    task: LongTaskRunner | None = None,
+) -> bytes | None:
+    items = await fetch_image_bytes_from_message(message, limit=1, task=task)
     return items[0] if items else None
+
+
+async def ingest_image_bytes_items(
+    media_service: WordbankMediaService,
+    image_bytes_items: tuple[bytes, ...],
+    *,
+    task: LongTaskRunner | None = None,
+) -> tuple[int, ...]:
+    if not image_bytes_items:
+        return ()
+    if task is not None:
+        await task.advance(
+            "ingesting",
+            current=0,
+            total=len(image_bytes_items),
+            metadata={"image_count": len(image_bytes_items)},
+        )
+
+    semaphore = asyncio.Semaphore(
+        max(1, min(ACTIVE_IMAGE_INGEST_CONCURRENCY, len(image_bytes_items)))
+    )
+
+    async def _ingest(index: int, image_bytes: bytes) -> tuple[int, int]:
+        async with semaphore:
+            image = await media_service.ingest_image_bytes(image_bytes)
+        return index, image.canonical_id
+
+    ingested = await asyncio.gather(
+        *(
+            _ingest(index, image_bytes)
+            for index, image_bytes in enumerate(image_bytes_items)
+        )
+    )
+    if task is not None:
+        await task.advance(
+            "ingesting",
+            current=len(ingested),
+            total=len(image_bytes_items),
+            metadata={"image_count": len(ingested)},
+        )
+    return tuple(
+        canonical_id for _, canonical_id in sorted(ingested, key=lambda item: item[0])
+    )
 
 
 def shape_from_text_value(text: str) -> MessageShape:
@@ -107,15 +182,26 @@ async def build_message_shape_from_message(
     message: Message,
     *,
     image_limit: int = GUIDED_MESSAGE_IMAGE_LIMIT,
+    task: LongTaskRunner | None = None,
 ) -> MessageShape:
     image_bytes_items = await fetch_image_bytes_from_message(
         message,
         limit=image_limit,
+        task=task,
     )
     image_ids: dict[int, int] = {}
-    for index, image_bytes in enumerate(image_bytes_items):
-        image = await media_service.ingest_image_bytes(image_bytes)
-        image_ids[index] = image.canonical_id
+    canonical_ids = await ingest_image_bytes_items(
+        media_service,
+        image_bytes_items,
+        task=task,
+    )
+    if task is not None:
+        await task.advance(
+            "building_shape",
+            metadata={"image_count": len(canonical_ids)},
+        )
+    for index, canonical_id in enumerate(canonical_ids):
+        image_ids[index] = canonical_id
     return shape_from_message(message, image_ids=image_ids)
 
 
@@ -126,10 +212,12 @@ async def build_shape_from_text_and_images(
     message: Message,
     image_limit: int = GUIDED_MESSAGE_IMAGE_LIMIT,
     parse_trigger_text: bool = False,
+    task: LongTaskRunner | None = None,
 ) -> MessageShape:
     image_bytes_items = await fetch_image_bytes_from_message(
         message,
         limit=image_limit,
+        task=task,
     )
     parts: list[MessageShape] = []
     if has_meaningful_text(text):
@@ -139,7 +227,16 @@ async def build_shape_from_text_and_images(
             else shape_from_text_value(text)
         )
         parts.append(text_shape)
-    for image_bytes in image_bytes_items:
-        image = await media_service.ingest_image_bytes(image_bytes)
-        parts.append(shape_from_image(image.canonical_id))
+    canonical_ids = await ingest_image_bytes_items(
+        media_service,
+        image_bytes_items,
+        task=task,
+    )
+    if task is not None:
+        await task.advance(
+            "building_shape",
+            metadata={"image_count": len(canonical_ids)},
+        )
+    for canonical_id in canonical_ids:
+        parts.append(shape_from_image(canonical_id))
     return combine_shapes(*parts)

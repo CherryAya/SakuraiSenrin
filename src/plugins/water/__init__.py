@@ -50,6 +50,7 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
+from src.lib.long_task import LoggerProgressSink, LongTaskRunner, LongTaskSpec
 from src.lib.message_delivery import resolve_notice_delivery_target
 from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
@@ -367,8 +368,17 @@ water_notice = on_notice(priority=5, block=False)
 )
 async def _water_daily_settlement_job() -> None:
     try:
-        ensure_restore_not_in_progress(source="water_daily_settlement")
-        result = await water_settlement_service.run_daily_settlement()
+        async with LongTaskRunner(
+            LongTaskSpec(
+                task_name="water.daily_settlement",
+                source_kind="water_daily_settlement",
+                threshold_ms=0,
+            ),
+            sink=LoggerProgressSink(),
+        ) as long_task:
+            ensure_restore_not_in_progress(source="water_daily_settlement")
+            await long_task.advance("processing_items")
+            result = await water_settlement_service.run_daily_settlement()
         if result.success:
             logger.success(
                 "[Water] cron settlement done: "
@@ -396,8 +406,17 @@ async def _water_daily_settlement_job() -> None:
 )
 async def _water_message_archive_job() -> None:
     try:
-        ensure_restore_not_in_progress(source="water_message_archive")
-        await water_repo.archive_message_shards()
+        async with LongTaskRunner(
+            LongTaskSpec(
+                task_name="water.message_archive",
+                source_kind="water_message_archive",
+                threshold_ms=0,
+            ),
+            sink=LoggerProgressSink(),
+        ) as long_task:
+            ensure_restore_not_in_progress(source="water_message_archive")
+            await long_task.advance("archiving")
+            await water_repo.archive_message_shards()
         logger.success("[Water] cron archive done")
     except Exception as e:
         logger.exception(f"[Water] cron archive failed: {e}")
@@ -414,9 +433,19 @@ async def _water_message_archive_job() -> None:
 )
 async def _water_summary_archive_job() -> None:
     try:
-        ensure_restore_not_in_progress(source="water_summary_archive")
-        await water_repo.archive_summary_shards()
-        pruned = await water_repo.prune_hot_summaries()
+        async with LongTaskRunner(
+            LongTaskSpec(
+                task_name="water.summary_archive",
+                source_kind="water_summary_archive",
+                threshold_ms=0,
+            ),
+            sink=LoggerProgressSink(),
+        ) as long_task:
+            ensure_restore_not_in_progress(source="water_summary_archive")
+            await long_task.advance("archiving")
+            await water_repo.archive_summary_shards()
+            await long_task.advance("processing_items")
+            pruned = await water_repo.prune_hot_summaries()
         logger.success(f"[Water] cron summary archive done: pruned={pruned}")
     except Exception as e:
         logger.exception(f"[Water] cron summary archive failed: {e}")
@@ -433,15 +462,24 @@ async def _water_summary_archive_job() -> None:
 )
 async def _water_daily_report_push_job() -> None:
     try:
-        ensure_restore_not_in_progress(source="water_daily_report_push")
-        bots = list(get_bots().values())
-        if not bots:
-            logger.warning("[Water][ReportPush] skipped: no bot connected")
-            return
-        result = await water_report_service.run_daily_group_report_push(
-            bot=cast(Bot, bots[0]),
-            locale="zh-CN",
-        )
+        async with LongTaskRunner(
+            LongTaskSpec(
+                task_name="water.daily_report_push",
+                source_kind="water_daily_report_push",
+                threshold_ms=0,
+            ),
+            sink=LoggerProgressSink(),
+        ) as long_task:
+            ensure_restore_not_in_progress(source="water_daily_report_push")
+            bots = list(get_bots().values())
+            if not bots:
+                logger.warning("[Water][ReportPush] skipped: no bot connected")
+                return
+            await long_task.advance("sending")
+            result = await water_report_service.run_daily_group_report_push(
+                bot=cast(Bot, bots[0]),
+                locale="zh-CN",
+            )
         logger.success(
             "[Water][ReportPush] cron done: "
             f"date={result.record_date} candidates={result.candidate_groups} "

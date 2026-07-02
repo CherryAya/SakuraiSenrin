@@ -82,11 +82,12 @@ async def test_guided_forward_choice_uses_saved_response_event(
         bot=bot,
     )
 
-    build_payload.assert_awaited_once_with(
-        bot,
-        response_event,
-        media_service=wordbank_media_service,
-    )
+    build_payload.assert_awaited_once()
+    await_args = build_payload.await_args
+    assert await_args is not None
+    assert await_args.args == (bot, response_event)
+    assert await_args.kwargs["media_service"] is wordbank_media_service
+    assert await_args.kwargs["task"] is not None
     assert "wordbank_guided_response_forward_pending" not in state
     assert "wordbank_guided_response_forward_event" not in state
     assert matcher.paused == [tr("zh-CN", "wordbank.guided.add.scope_prompt")]

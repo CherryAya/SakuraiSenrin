@@ -45,6 +45,14 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MatcherProgressSink,
+    MessageEventProgressSink,
+)
 from src.lib.message_delivery import resolve_notice_delivery_target
 from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
@@ -364,10 +372,24 @@ async def _record_study_trigger(
     if has_meaningful_text(plain_text) and len(event.message) == 1:
         shape = shape_from_trigger_text_value(plain_text)
     else:
-        shape = await build_message_shape_from_message(
-            wordbank_media_service,
-            event.message,
+        long_task = LongTaskRunner(
+            LongTaskSpec(
+                task_name="study.guided.trigger_shape",
+                source_kind="study_guided",
+                prompt=tr(locale, "wordbank.add.processing_with_media"),
+                threshold_ms=800,
+            ),
+            sink=CompositeProgressSink(
+                LoggerProgressSink(),
+                MatcherProgressSink(matcher),
+            ),
         )
+        async with long_task:
+            shape = await build_message_shape_from_message(
+                wordbank_media_service,
+                event.message,
+                task=long_task,
+            )
     if shape.is_empty():
         await _reject_study_error(
             matcher,
@@ -436,11 +458,25 @@ async def _record_study_response(
         )
         await matcher.pause(tr(locale, "wordbank.guided.forward_response_prompt"))
         return
-    payload = await build_response_input_payload(
-        bot,
-        event,
-        media_service=wordbank_media_service,
+    long_task = LongTaskRunner(
+        LongTaskSpec(
+            task_name="study.guided.response_shape",
+            source_kind="study_guided",
+            prompt=tr(locale, "wordbank.add.processing_with_media"),
+            threshold_ms=800,
+        ),
+        sink=CompositeProgressSink(
+            LoggerProgressSink(),
+            MatcherProgressSink(matcher),
+        ),
     )
+    async with long_task:
+        payload = await build_response_input_payload(
+            bot,
+            event,
+            media_service=wordbank_media_service,
+            task=long_task,
+        )
     shape = payload.whole_shape
     if payload.input_kind != "single":
         await _reject_study_error(
@@ -514,11 +550,25 @@ async def _record_study_forward_response_choice(
         )
         return
     if choice in {"1", "whole", "整体"}:
-        payload = await build_response_input_payload(
-            bot,
-            response_event,
-            media_service=wordbank_media_service,
+        long_task = LongTaskRunner(
+            LongTaskSpec(
+                task_name="study.guided.forward_response_whole",
+                source_kind="study_guided",
+                prompt=tr(locale, "wordbank.add.processing_with_media"),
+                threshold_ms=800,
+            ),
+            sink=CompositeProgressSink(
+                LoggerProgressSink(),
+                MatcherProgressSink(matcher),
+            ),
         )
+        async with long_task:
+            payload = await build_response_input_payload(
+                bot,
+                response_event,
+                media_service=wordbank_media_service,
+                task=long_task,
+            )
         if payload.input_kind != "forward":
             await _reject_study_error(
                 matcher,
@@ -542,11 +592,25 @@ async def _record_study_forward_response_choice(
         await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
         return
     if choice in {"2", "split", "拆开"}:
-        payload = await build_response_input_payload(
-            bot,
-            response_event,
-            media_service=wordbank_media_service,
+        long_task = LongTaskRunner(
+            LongTaskSpec(
+                task_name="study.guided.forward_response_split",
+                source_kind="study_guided",
+                prompt=tr(locale, "wordbank.add.processing_with_media"),
+                threshold_ms=800,
+            ),
+            sink=CompositeProgressSink(
+                LoggerProgressSink(),
+                MatcherProgressSink(matcher),
+            ),
         )
+        async with long_task:
+            payload = await build_response_input_payload(
+                bot,
+                response_event,
+                media_service=wordbank_media_service,
+                task=long_task,
+            )
         if payload.input_kind != "forward":
             await _reject_study_error(
                 matcher,
@@ -804,24 +868,44 @@ async def _(
         return
     await wordbank_service.initialize()
     try:
-        if has_images:
-            await deliver_message_plan(
-                bot,
-                plan=DeliveryPlan(
-                    messages=(tr(locale, "wordbank.add.processing_with_media"),),
-                    source_kind="study_command",
-                ),
+        if not has_images:
+            result = await handle_study_with_media_result(
+                wordbank_service,
+                wordbank_media_service,
                 event=event,
+                text=arg.extract_plain_text(),
+                image_bytes=None,
+                extra_image_bytes=(),
             )
-        image_items = await fetch_image_bytes_from_message(arg, limit=2)
-        result = await handle_study_with_media_result(
-            wordbank_service,
-            wordbank_media_service,
-            event=event,
-            text=arg.extract_plain_text(),
-            image_bytes=image_items[0] if image_items else None,
-            extra_image_bytes=image_items[1:],
-        )
+        else:
+            long_task = LongTaskRunner(
+                LongTaskSpec(
+                    task_name="study.media_submission",
+                    source_kind="study_command",
+                    prompt=tr(locale, "wordbank.add.processing_with_media"),
+                    threshold_ms=800,
+                ),
+                sink=CompositeProgressSink(
+                    LoggerProgressSink(),
+                    MessageEventProgressSink(bot, event),
+                ),
+            )
+            async with long_task:
+                image_items = await fetch_image_bytes_from_message(
+                    arg,
+                    limit=2,
+                    task=long_task,
+                )
+                result = await handle_study_with_media_result(
+                    wordbank_service,
+                    wordbank_media_service,
+                    event=event,
+                    text=arg.extract_plain_text(),
+                    image_bytes=image_items[0] if image_items else None,
+                    extra_image_bytes=image_items[1:],
+                    task=long_task,
+                )
+                await long_task.advance("submitting")
     except (RuleError, ValueError) as exc:
         await matcher.finish(_study_error_message(exc, locale))
         return

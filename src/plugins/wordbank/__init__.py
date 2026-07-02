@@ -26,6 +26,7 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import LoggerProgressSink, LongTaskRunner, LongTaskSpec
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
@@ -319,8 +320,17 @@ async def _initialize_wordbank_plugin() -> None:
 )
 async def _wordbank_event_archive_job() -> None:
     try:
-        ensure_restore_not_in_progress(source="wordbank_event_archive")
-        await wordbank_service.repository.archive_event_shards()
+        async with LongTaskRunner(
+            LongTaskSpec(
+                task_name="wordbank.event_archive",
+                source_kind="wordbank_event_archive",
+                threshold_ms=0,
+            ),
+            sink=LoggerProgressSink(),
+        ) as long_task:
+            ensure_restore_not_in_progress(source="wordbank_event_archive")
+            await long_task.advance("archiving")
+            await wordbank_service.repository.archive_event_shards()
         logger.success("[Wordbank] cron archive done")
     except Exception as exc:
         logger.exception(f"[Wordbank] cron archive failed: {exc}")
@@ -337,10 +347,19 @@ async def _wordbank_event_archive_job() -> None:
 )
 async def _wordbank_media_maintenance_job() -> None:
     try:
-        ensure_restore_not_in_progress(source="wordbank_media_maintenance")
-        report = await wordbank_media_service.run_scheduled_maintenance(
-            batch_size=config.WORDBANK_MEDIA_MIGRATION_BATCH_SIZE
-        )
+        async with LongTaskRunner(
+            LongTaskSpec(
+                task_name="wordbank.media_maintenance",
+                source_kind="wordbank_media_maintenance",
+                threshold_ms=0,
+            ),
+            sink=LoggerProgressSink(),
+        ) as long_task:
+            ensure_restore_not_in_progress(source="wordbank_media_maintenance")
+            await long_task.advance("processing_items")
+            report = await wordbank_media_service.run_scheduled_maintenance(
+                batch_size=config.WORDBANK_MEDIA_MIGRATION_BATCH_SIZE
+            )
         logger.success(f"[Wordbank] media maintenance done: {report}")
     except Exception as exc:
         logger.exception(f"[Wordbank] media maintenance failed: {exc}")

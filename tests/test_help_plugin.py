@@ -43,7 +43,6 @@ if nonebot.get_plugin("study") is None:
 
 from src.plugins.help import (
     HELP_FORWARD_FALLBACK_NICKNAME,
-    HELP_FORWARD_WAIT_PROMPT,
     DocsEntry,
     HelpDeliveryPlan,
     _build_index_message,
@@ -1037,12 +1036,7 @@ async def test_deliver_help_plan_sends_wait_prompt_before_forward(
 
     await _deliver_help_plan(bot, matcher, event, plan)
 
-    first_call = bot.call_api.await_args_list[0]
-    assert first_call.args[0] == "send_group_msg"
-    assert first_call.kwargs["group_id"] == 20001
-    assert str(first_call.kwargs["message"]) == HELP_FORWARD_WAIT_PROMPT
     assert [call.args[0] for call in bot.call_api.await_args_list] == [
-        "send_group_msg",
         "send_private_msg",
         "send_private_msg",
         "get_login_info",

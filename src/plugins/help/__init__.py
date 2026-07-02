@@ -24,6 +24,13 @@ from src.lib.consts import TriggerType
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MessageEventProgressSink,
+)
 from src.lib.message_plan import (
     DeliveryPlan,
     ImageBytesBlock,
@@ -612,8 +619,7 @@ async def _send_help_forward(
         plan=DeliveryPlan(
             messages=plan.messages,
             source_kind=plan.source_kind or "help",
-            fallback_nickname=plan.fallback_nickname
-            or HELP_FORWARD_FALLBACK_NICKNAME,
+            fallback_nickname=plan.fallback_nickname or HELP_FORWARD_FALLBACK_NICKNAME,
             allow_asset_reuse=plan.allow_asset_reuse,
             force_forward=True,
         ),
@@ -630,18 +636,30 @@ async def _deliver_help_plan(
     if not plan.should_forward:
         await matcher.finish(render_message_plan_input(plan.messages[0]))
         return
-    await deliver_message_plan(
-        bot,
-        plan=DeliveryPlan(
-            messages=plan.messages,
+    async with LongTaskRunner(
+        LongTaskSpec(
+            task_name="help.forward_delivery",
             source_kind=plan.source_kind or "help",
-            fallback_nickname=plan.fallback_nickname or HELP_FORWARD_FALLBACK_NICKNAME,
-            wait_message=plan.wait_message or text_message(HELP_FORWARD_WAIT_PROMPT),
-            allow_asset_reuse=plan.allow_asset_reuse,
-            force_forward=True,
+            prompt=plan.wait_message or text_message(HELP_FORWARD_WAIT_PROMPT),
+            threshold_ms=800,
         ),
-        event=event,
-    )
+        sink=CompositeProgressSink(
+            LoggerProgressSink(),
+            MessageEventProgressSink(bot, event),
+        ),
+    ):
+        await deliver_message_plan(
+            bot,
+            plan=DeliveryPlan(
+                messages=plan.messages,
+                source_kind=plan.source_kind or "help",
+                fallback_nickname=plan.fallback_nickname
+                or HELP_FORWARD_FALLBACK_NICKNAME,
+                allow_asset_reuse=plan.allow_asset_reuse,
+                force_forward=True,
+            ),
+            event=event,
+        )
     await matcher.finish()
 
 

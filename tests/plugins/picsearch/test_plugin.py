@@ -136,16 +136,6 @@ async def test_picsearch_single_image_uses_default_saucenao(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": text_message(
-                    "正在搜索第 1 张图片，请稍后...（引擎：saucenao）"
-                ),
-            },
-            result={"message_id": 1},
-        )
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
                 "message": build_message(
                     MessageSegment.text(
                         "第 1 张图片搜索结果：\n"
@@ -249,16 +239,6 @@ async def test_picsearch_multi_image_ascii2d_success(
             {
                 "group_id": 20001,
                 "message": text_message(
-                    "正在搜索第 2 张图片，请稍后...（引擎：ascii2d）"
-                ),
-            },
-            result={"message_id": 1},
-        )
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message(
                     "第 2 张图片搜索结果：\n"
                     "引擎：ascii2d\n"
                     "相似度：N/A\n"
@@ -350,19 +330,7 @@ async def test_picsearch_handles_no_result(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": text_message(
-                    "正在搜索第 1 张图片，请稍后...（引擎：saucenao）"
-                ),
-            },
-            result={"message_id": 1},
-        )
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message(
-                    "第 1 张图片没有找到结果。当前引擎：saucenao"
-                ),
+                "message": text_message("第 1 张图片没有找到结果。当前引擎：saucenao"),
             },
             result={"message_id": 1},
         )

@@ -29,10 +29,8 @@ if nonebot.get_plugin("help") is None:
 SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 
 from src.lib.i18n.runtime import tr
-from src.lib.messages import text_message
 from src.plugins.admin.backup import _build_error_demo, admin_backup
 from src.plugins.help import (
-    HELP_FORWARD_WAIT_PROMPT,
     _iter_docs_entries,
     _resolve_actor_permission,
     _resolve_docs_delivery_plan,
@@ -268,8 +266,8 @@ async def test_help_can_find_admin_backup_docs(
     monkeypatch.setattr(
         "src.plugins.help.render_plugin_guide", lambda *args, **kwargs: b"guide-demo"
     )
-    deliver_forward = AsyncMock(return_value=None)
-    monkeypatch.setattr("src.plugins.help.deliver_forward_messages", deliver_forward)
+    deliver_help = AsyncMock(return_value=None)
+    monkeypatch.setattr("src.plugins.help.deliver_message_plan", deliver_help)
 
     async with app.test_matcher(help_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -288,14 +286,10 @@ async def test_help_can_find_admin_backup_docs(
         )
         ctx.receive_event(bot, event)
         if plan.should_forward:
-            ctx.should_call_send(
-                event,
-                text_message(HELP_FORWARD_WAIT_PROMPT),
-                bot=bot,
-            )
+            pass
         else:
             ctx.should_call_send(event, expected, bot=bot)
         ctx.should_finished()
 
     if plan.should_forward:
-        deliver_forward.assert_awaited_once()
+        deliver_help.assert_awaited_once()

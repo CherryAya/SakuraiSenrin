@@ -28,6 +28,13 @@ from src.lib.cooldown import (
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MessageEventProgressSink,
+)
 from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.messages import text_message
 from src.lib.plugin_docs import (
@@ -302,87 +309,95 @@ async def run_search(
         await matcher.finish(tr(locale, "picsearch.engine_key_missing", engine=engine))
 
     for selected in indexes:
-        await deliver_message_plan(
-            bot,
-            plan=DeliveryPlan(
-                messages=(
-                    tr(
-                        locale,
-                        "picsearch.searching",
-                        index=selected + 1,
-                        engine=engine.value,
-                    ),
-                ),
+        async with LongTaskRunner(
+            LongTaskSpec(
+                task_name=f"picsearch.search.{engine.value}.{selected + 1}",
                 source_kind="picsearch",
+                prompt=tr(
+                    locale,
+                    "picsearch.searching",
+                    index=selected + 1,
+                    engine=engine.value,
+                ),
+                threshold_ms=800,
             ),
-            event=event,
-        )
-        try:
-            result = await search_image(image_urls[selected], engine, locale=locale)
-        except Exception as exc:
-            logger.warning(
-                "[Picsearch] search failed: "
-                f"engine={engine.value} index={selected + 1}: {exc}"
-            )
+            sink=CompositeProgressSink(
+                LoggerProgressSink(),
+                MessageEventProgressSink(bot, event),
+            ),
+        ) as long_task:
+            try:
+                await long_task.advance(
+                    "searching",
+                    current=selected + 1,
+                    total=len(indexes),
+                )
+                result = await search_image(image_urls[selected], engine, locale=locale)
+            except Exception as exc:
+                logger.warning(
+                    "[Picsearch] search failed: "
+                    f"engine={engine.value} index={selected + 1}: {exc}"
+                )
+                await deliver_message_plan(
+                    bot,
+                    plan=DeliveryPlan(
+                        messages=(
+                            tr(
+                                locale,
+                                "picsearch.search_failed",
+                                index=selected + 1,
+                                engine=engine.value,
+                            ),
+                        ),
+                        source_kind="picsearch",
+                    ),
+                    event=event,
+                )
+                continue
+
+            if result is None:
+                await deliver_message_plan(
+                    bot,
+                    plan=DeliveryPlan(
+                        messages=(
+                            tr(
+                                locale,
+                                "picsearch.no_result",
+                                index=selected + 1,
+                                engine=engine.value,
+                            ),
+                        ),
+                        source_kind="picsearch",
+                    ),
+                    event=event,
+                )
+                continue
+
+            thumbnail_bytes: bytes | None = None
+            try:
+                await long_task.advance("rendering")
+                thumbnail_bytes = await load_thumbnail_bytes(result.thumbnail_url)
+            except Exception as exc:
+                logger.warning(
+                    "[Picsearch] thumbnail load failed: "
+                    f"engine={engine.value} index={selected + 1}: {exc}"
+                )
+
             await deliver_message_plan(
                 bot,
                 plan=DeliveryPlan(
                     messages=(
-                        tr(
-                            locale,
-                            "picsearch.search_failed",
-                            index=selected + 1,
-                            engine=engine.value,
+                        build_result_message(
+                            selected + 1,
+                            result,
+                            thumbnail_bytes,
+                            locale=locale,
                         ),
                     ),
                     source_kind="picsearch",
                 ),
                 event=event,
             )
-            continue
-
-        if result is None:
-            await deliver_message_plan(
-                bot,
-                plan=DeliveryPlan(
-                    messages=(
-                        tr(
-                            locale,
-                            "picsearch.no_result",
-                            index=selected + 1,
-                            engine=engine.value,
-                        ),
-                    ),
-                    source_kind="picsearch",
-                ),
-                event=event,
-            )
-            continue
-
-        thumbnail_bytes: bytes | None = None
-        try:
-            thumbnail_bytes = await load_thumbnail_bytes(result.thumbnail_url)
-        except Exception as exc:
-            logger.warning(
-                "[Picsearch] thumbnail load failed: "
-                f"engine={engine.value} index={selected + 1}: {exc}"
-            )
-
-        await deliver_message_plan(
-            bot,
-            plan=DeliveryPlan(
-                messages=(
-                    build_result_message(
-                        selected + 1,
-                        result,
-                        thumbnail_bytes,
-                        locale=locale,
-                    ),
-                ),
-                source_kind="picsearch",
-            ),
-            event=event,
-        )
 
     await matcher.finish()
 

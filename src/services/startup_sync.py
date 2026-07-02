@@ -13,6 +13,7 @@ from nonebot.adapters.onebot.v11 import Bot
 
 from src.config import config
 from src.lib.db.manager import db_manager
+from src.lib.long_task import LoggerProgressSink, LongTaskRunner, LongTaskSpec
 from src.lib.message_delivery import DeliveryTarget, deliver_single_message
 from src.logger import logger
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
@@ -161,11 +162,28 @@ async def restore_remote_snapshot_into_local(*, snapshot: str) -> None:
         if restore_root.exists():
             await asyncio.to_thread(shutil.rmtree, restore_root, True)
         try:
-            await service.restore(snapshot=snapshot, target=restore_root)
-            manifest_path = _find_restore_manifest_path(restore_root)
-            manifest = _load_restore_manifest(manifest_path)
-            await _apply_restore_manifest(manifest, manifest_path.parent)
-            await _reload_runtime_state_after_restore()
+            async with LongTaskRunner(
+                LongTaskSpec(
+                    task_name="startup_sync.remote_restore",
+                    source_kind="startup_sync",
+                    threshold_ms=0,
+                ),
+                sink=LoggerProgressSink(),
+            ) as long_task:
+                await long_task.advance("restoring", metadata={"snapshot": snapshot})
+                await service.restore(snapshot=snapshot, target=restore_root)
+                manifest_path = _find_restore_manifest_path(restore_root)
+                manifest = _load_restore_manifest(manifest_path)
+                await long_task.advance(
+                    "processing_items",
+                    metadata={"snapshot": snapshot},
+                )
+                await _apply_restore_manifest(manifest, manifest_path.parent)
+                await long_task.advance(
+                    "submitting",
+                    metadata={"snapshot": snapshot},
+                )
+                await _reload_runtime_state_after_restore()
         finally:
             _restore_in_progress = False
 

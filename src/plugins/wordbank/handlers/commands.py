@@ -12,6 +12,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import LongTaskRunner
 from src.lib.messages import text_message
 from src.logger import logger
 from src.plugins.wordbank.database.types import (
@@ -56,6 +57,7 @@ from src.plugins.wordbank.text_parsing import has_meaningful_text, split_command
 
 from .media_helpers import (
     build_shape_from_text_and_images,
+    ingest_image_bytes_items,
     shape_from_response_parts,
     shape_from_trigger_text_value,
 )
@@ -175,6 +177,7 @@ async def handle_add_with_media_result(
     event: MessageEvent,
     text: str,
     image_bytes: bytes | None,
+    task: LongTaskRunner | None = None,
 ) -> WordbankAddResult:
     if image_bytes is None:
         return await handle_add_text_result(service, event=event, text=text)
@@ -192,10 +195,16 @@ async def handle_add_with_media_result(
                 _default_i18n_text("wordbank.error.trigger_empty"),
                 key="wordbank.error.trigger_empty",
             )
-        image = await media_service.ingest_image_bytes(image_bytes)
+        image_id = (
+            await ingest_image_bytes_items(
+                media_service,
+                (image_bytes,),
+                task=task,
+            )
+        )[0]
         return await service.add_message_entry(
             trigger_shape=shape_from_trigger_text_value(trigger_text),
-            response_shape=shape_from_image(image.canonical_id),
+            response_shape=shape_from_image(image_id),
             raw_rule=parsed.raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -204,12 +213,18 @@ async def handle_add_with_media_result(
 
     trigger_text, response_text = pair
     if trigger_text:
-        image = await media_service.ingest_image_bytes(image_bytes)
+        image_id = (
+            await ingest_image_bytes_items(
+                media_service,
+                (image_bytes,),
+                task=task,
+            )
+        )[0]
         return await service.add_message_entry(
             trigger_shape=shape_from_trigger_text_value(trigger_text),
             response_shape=shape_from_response_parts(
                 response_text,
-                image_id=image.canonical_id,
+                image_id=image_id,
             ),
             raw_rule=parsed.raw_rule,
             group_id=group_id,
@@ -218,9 +233,15 @@ async def handle_add_with_media_result(
         )
 
     if response_text:
-        image = await media_service.ingest_image_bytes(image_bytes)
+        image_id = (
+            await ingest_image_bytes_items(
+                media_service,
+                (image_bytes,),
+                task=task,
+            )
+        )[0]
         return await service.add_message_entry(
-            trigger_shape=shape_from_image(image.canonical_id),
+            trigger_shape=shape_from_image(image_id),
             response_shape=shape_from_response_parts(response_text),
             raw_rule=parsed.raw_rule,
             group_id=group_id,
@@ -313,6 +334,7 @@ async def handle_study_with_media_result(
     text: str,
     image_bytes: bytes | None,
     extra_image_bytes: Sequence[bytes] = (),
+    task: LongTaskRunner | None = None,
 ) -> WordbankAddResult:
     image_items = ((image_bytes,) if image_bytes is not None else ()) + tuple(
         extra_image_bytes
@@ -334,6 +356,7 @@ async def handle_study_with_media_result(
             source=parsed.source,
             raw_rule=parsed.raw_rule,
             image_bytes=image_items,
+            task=task,
         )
 
     return await handle_add_with_media_result(
@@ -342,6 +365,7 @@ async def handle_study_with_media_result(
         event=event,
         text=text,
         image_bytes=image_items[0],
+        task=task,
     )
 
 
@@ -353,6 +377,7 @@ async def handle_study_media_with_rule_result(
     source: str,
     raw_rule: dict[str, Any],
     image_bytes: Sequence[bytes],
+    task: LongTaskRunner | None = None,
 ) -> WordbankAddResult:
     if not image_bytes:
         return await handle_study_shortcut_result(
@@ -375,11 +400,14 @@ async def handle_study_media_with_rule_result(
                 _default_i18n_text("wordbank.error.study_pair_required"),
                 key="wordbank.error.study_pair_required",
             )
-        trigger_image = await media_service.ingest_image_bytes(image_bytes[0])
-        response_image = await media_service.ingest_image_bytes(image_bytes[1])
+        trigger_image_id, response_image_id = await ingest_image_bytes_items(
+            media_service,
+            tuple(image_bytes[:2]),
+            task=task,
+        )
         return await service.add_message_entry(
-            trigger_shape=shape_from_image(trigger_image.canonical_id),
-            response_shape=shape_from_image(response_image.canonical_id),
+            trigger_shape=shape_from_image(trigger_image_id),
+            response_shape=shape_from_image(response_image_id),
             raw_rule=raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -387,10 +415,16 @@ async def handle_study_media_with_rule_result(
         )
 
     if pair is None:
-        response_image = await media_service.ingest_image_bytes(image_bytes[0])
+        response_image_id = (
+            await ingest_image_bytes_items(
+                media_service,
+                (image_bytes[0],),
+                task=task,
+            )
+        )[0]
         return await service.add_message_entry(
             trigger_shape=shape_from_trigger_text_value(source),
-            response_shape=shape_from_image(response_image.canonical_id),
+            response_shape=shape_from_image(response_image_id),
             raw_rule=raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -399,12 +433,18 @@ async def handle_study_media_with_rule_result(
 
     trigger_text, response_text = pair
     if trigger_text:
-        response_image = await media_service.ingest_image_bytes(image_bytes[0])
+        response_image_id = (
+            await ingest_image_bytes_items(
+                media_service,
+                (image_bytes[0],),
+                task=task,
+            )
+        )[0]
         return await service.add_message_entry(
             trigger_shape=shape_from_trigger_text_value(trigger_text),
             response_shape=shape_from_response_parts(
                 response_text,
-                image_id=response_image.canonical_id,
+                image_id=response_image_id,
             ),
             raw_rule=raw_rule,
             group_id=group_id,
@@ -412,13 +452,17 @@ async def handle_study_media_with_rule_result(
             is_group=is_group,
         )
 
-    trigger_image = await media_service.ingest_image_bytes(image_bytes[0])
+    image_ids = await ingest_image_bytes_items(
+        media_service,
+        tuple(image_bytes[:2]),
+        task=task,
+    )
+    trigger_image_id = image_ids[0]
     response_image_id: int | None = None
-    if len(image_bytes) >= 2:
-        response_image = await media_service.ingest_image_bytes(image_bytes[1])
-        response_image_id = response_image.canonical_id
+    if len(image_ids) >= 2:
+        response_image_id = image_ids[1]
     return await service.add_message_entry(
-        trigger_shape=shape_from_image(trigger_image.canonical_id),
+        trigger_shape=shape_from_image(trigger_image_id),
         response_shape=shape_from_response_parts(
             response_text,
             image_id=response_image_id,
