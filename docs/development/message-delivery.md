@@ -39,11 +39,13 @@ from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 
 - 插件层负责“表达要发什么内容”，不负责“最终如何发出去”。
 - 插件层不应自己决定 should_forward、前缀复用、fallback 或消息 staging。
-- 对正式输出路径，`DeliveryPlan` 是首选接口；`deliver_single_message(...)` 更适合作为底层或单步补充工具。
+- 对正式输出路径，`DeliveryPlan` 是插件 / hook 层唯一推荐接口。
+- 插件 / hook 层不应直接导入或调用 `deliver_single_message(...)`、`resolve_delivery_target(...)`。
+- `deliver_single_message(...)` 仅保留给基础设施层、兼容层或 `message_plan` 内部编排使用。
 
 ### 2.1 单条消息
 
-底层业务代码发送单条消息时，优先使用：
+底层基础设施代码在确实需要单条直发时，优先使用：
 
 ```python
 from src.lib.message_delivery import DeliveryTarget, deliver_single_message
@@ -54,6 +56,7 @@ from src.lib.message_delivery import DeliveryTarget, deliver_single_message
 - 不要在业务代码里手写“先查缓存、再转发、再发送、再回写”的重复逻辑。
 - 不要为不同插件各自维护一套消息复用策略。
 - 需要明确目标时，显式传 `DeliveryTarget`。
+- 该接口不应再作为插件正式输出入口暴露给业务层日常使用。
 
 ### 2.2 事件回复
 

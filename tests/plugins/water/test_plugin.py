@@ -92,7 +92,7 @@ async def test_water_query_guides_empty_command_step_by_step(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "已选择：用户榜 / 本群 / 月榜",
+                "message": text_message("已选择：用户榜 / 本群 / 月榜"),
             },
             result={"message_id": 1},
         )
@@ -100,7 +100,7 @@ async def test_water_query_guides_empty_command_step_by_step(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "凛凛统计中，请稍后喔……",
+                "message": text_message("凛凛统计中，请稍后喔……"),
             },
             result={"message_id": 1},
         )
@@ -200,7 +200,7 @@ async def test_water_query_direct_rank_still_runs_without_guided_flow(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "凛凛统计中，请稍后喔……",
+                "message": text_message("凛凛统计中，请稍后喔……"),
             },
             result={"message_id": 1},
         )
@@ -243,7 +243,7 @@ async def test_water_query_shortcut_alias_runs_direct_rank(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "凛凛统计中，请稍后喔……",
+                "message": text_message("凛凛统计中，请稍后喔……"),
             },
             result={"message_id": 1},
         )
@@ -440,7 +440,7 @@ async def test_water_query_superuser_can_use_restricted_periods(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "已选择：用户榜 / 本群 / 总榜",
+                "message": text_message("已选择：用户榜 / 本群 / 总榜"),
             },
             result={"message_id": 1},
         )
@@ -448,7 +448,7 @@ async def test_water_query_superuser_can_use_restricted_periods(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "凛凛统计中，请稍后喔……",
+                "message": text_message("凛凛统计中，请稍后喔……"),
             },
             result={"message_id": 1},
         )
@@ -626,7 +626,7 @@ async def test_water_query_guided_accepts_all_dimensions_in_one_reply(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "已选择：用户榜 / 本群 / 月榜",
+                "message": text_message("已选择：用户榜 / 本群 / 月榜"),
             },
             result={"message_id": 1},
         )
@@ -634,7 +634,7 @@ async def test_water_query_guided_accepts_all_dimensions_in_one_reply(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "凛凛统计中，请稍后喔……",
+                "message": text_message("凛凛统计中，请稍后喔……"),
             },
             result={"message_id": 1},
         )
@@ -700,7 +700,7 @@ async def test_water_today_report_runs_for_group_admin(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "凛凛统计中，请稍后喔……",
+                "message": text_message("凛凛统计中，请稍后喔……"),
             },
             result={"message_id": 1},
         )
@@ -742,7 +742,7 @@ async def test_water_today_report_alias_runs(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "凛凛统计中，请稍后喔……",
+                "message": text_message("凛凛统计中，请稍后喔……"),
             },
             result={"message_id": 1},
         )
@@ -784,7 +784,7 @@ async def test_water_today_report_group_shared_cooldown(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "凛凛统计中，请稍后喔……",
+                "message": text_message("凛凛统计中，请稍后喔……"),
             },
             result={"message_id": 1},
         )
@@ -841,7 +841,7 @@ async def test_water_today_report_skips_user_query_cooldown(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "凛凛统计中，请稍后喔……",
+                "message": text_message("凛凛统计中，请稍后喔……"),
             },
             result={"message_id": 1},
         )
@@ -855,7 +855,7 @@ async def test_water_today_report_skips_user_query_cooldown(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "凛凛统计中，请稍后喔……",
+                "message": text_message("凛凛统计中，请稍后喔……"),
             },
             result={"message_id": 1},
         )

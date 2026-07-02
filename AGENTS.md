@@ -225,6 +225,13 @@ README 仍是首要文档内容载体，但它已经从“最终协议”降级�
 5. 若文件导入 `Message` 仅用于 type hint、返回类型标注、`CommandArg()` / `Arg()` 参数声明、`isinstance` 判断或消息对象遍历，可保留，不视为违规。
 6. 若消息内容来自用户输入、README、i18n、数据库或任何外部数据源，默认按“不可信文本”处理，必须走显式 `MessageSegment` 拼装。
 
+### 7.2 统一消息计划层约束（强制）
+
+1. 插件与 hook 的正式输出路径必须优先构造 `DeliveryPlan`，并通过 `deliver_message_plan(...)` 投递。
+2. 插件与 hook 不得直接导入或调用 `deliver_single_message(...)`、`resolve_delivery_target(...)` 作为正式输出入口。
+3. 需要多条消息、等待提示、合并转发、回复段、图片段时，应先表达为 `MessagePlanEntry` / block，再交给统一投递层决定最终发送形态。
+4. `deliver_single_message(...)` 仅允许保留在基础设施、兼容层或统一消息计划层内部，不得在插件业务层扩散。
+
 ### 7.2 Message Delivery 与合并转发约束（强制）
 
 项目内所有“主动发消息”“复用历史消息”“发送合并转发”的能力，统一收敛到：

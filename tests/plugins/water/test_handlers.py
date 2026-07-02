@@ -10,6 +10,7 @@ from nonebug import App
 import pytest
 
 from src.database.consts import WritePolicy
+from src.lib.messages import text_message
 from src.plugins.water.handlers.admin import (
     WaterAdminContext,
     format_settlement_message,
@@ -36,6 +37,21 @@ from tests.plugins.water.helpers import (
     build_group_increase_event,
     build_group_message_event,
 )
+
+
+def _build_admin_ctx(
+    matcher: DummyMatcher,
+    args: list[str],
+    *,
+    event_text: str = "#water.admin",
+) -> WaterAdminContext:
+    return WaterAdminContext(
+        bot=cast(Bot, SimpleNamespace(self_id="99999", call_api=AsyncMock())),
+        event=build_group_message_event(event_text),
+        matcher=cast(Any, matcher),
+        args=args,
+        locale="zh-CN",
+    )
 
 
 @pytest.mark.asyncio
@@ -203,11 +219,7 @@ async def test_handle_ignore_param_validation_and_success(
     from src.plugins.water.handlers import admin as admin_module
 
     matcher = DummyMatcher()
-    ctx = WaterAdminContext(
-        matcher=cast(Any, matcher),
-        args=["ignore", "20001"],
-        locale="zh-CN",
-    )
+    ctx = _build_admin_ctx(matcher, ["ignore", "20001"])
 
     monkeypatch.setattr(
         admin_module.water_repo,
@@ -252,9 +264,9 @@ async def test_handle_season_create_and_list(
     from src.plugins.water.handlers import admin as admin_module
 
     create_matcher = DummyMatcher()
-    create_ctx = WaterAdminContext(
-        matcher=cast(Any, create_matcher),
-        args=[
+    create_ctx = _build_admin_ctx(
+        create_matcher,
+        [
             "season",
             "create",
             "spring_2026",
@@ -263,7 +275,7 @@ async def test_handle_season_create_and_list(
             "2026",
             "春日特别季",
         ],
-        locale="zh-CN",
+        event_text="#water.admin season create",
     )
 
     monkeypatch.setattr(
@@ -289,10 +301,10 @@ async def test_handle_season_create_and_list(
     assert "已创建 draft" in str(create_matcher.finished)
 
     list_matcher = DummyMatcher()
-    list_ctx = WaterAdminContext(
-        matcher=cast(Any, list_matcher),
-        args=["season", "list", "published"],
-        locale="zh-CN",
+    list_ctx = _build_admin_ctx(
+        list_matcher,
+        ["season", "list", "published"],
+        event_text="#water.admin season list",
     )
     monkeypatch.setattr(
         admin_module.season_service,
@@ -327,9 +339,9 @@ async def test_handle_season_create_surfaces_localized_service_error(
     from src.plugins.water.handlers import admin as admin_module
 
     matcher = DummyMatcher()
-    ctx = WaterAdminContext(
-        matcher=cast(Any, matcher),
-        args=[
+    ctx = _build_admin_ctx(
+        matcher,
+        [
             "season",
             "create",
             "spring_2026",
@@ -338,7 +350,7 @@ async def test_handle_season_create_surfaces_localized_service_error(
             "2026",
             "春日特别季",
         ],
-        locale="zh-CN",
+        event_text="#water.admin season create",
     )
 
     monkeypatch.setattr(
@@ -444,10 +456,10 @@ async def test_handle_settle_parses_force_flag(
     from src.plugins.water.handlers import admin as admin_module
 
     matcher = DummyMatcher()
-    ctx = WaterAdminContext(
-        matcher=cast(Any, matcher),
-        args=["settle", "-f"],
-        locale="zh-CN",
+    ctx = _build_admin_ctx(
+        matcher,
+        ["settle", "-f"],
+        event_text="#water.admin settle",
     )
     settle_mock = AsyncMock(
         return_value=SettlementResult(
@@ -474,3 +486,9 @@ async def test_handle_settle_parses_force_flag(
     assert awaited_call is not None
     kwargs = awaited_call.kwargs
     assert kwargs["force"] is True
+    call_api = cast(Any, ctx.bot.call_api)
+    assert call_api.await_args_list[0].args == ("send_group_msg",)
+    assert call_api.await_args_list[0].kwargs == {
+        "group_id": 20001,
+        "message": text_message("Water 结算任务执行中，请稍候..."),
+    }

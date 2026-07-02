@@ -15,7 +15,7 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_docs import build_doc_demo_message
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
@@ -153,11 +153,13 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
                 )
             )
 
-    await deliver_single_message(
+    await deliver_message_plan(
         ctx.bot,
-        target=resolve_delivery_target(ctx.event),
-        message=tr(ctx.locale, "water.admin.settle.running"),
-        source_kind="water_admin_settle_running",
+        plan=DeliveryPlan(
+            messages=(tr(ctx.locale, "water.admin.settle.running"),),
+            source_kind="water_admin_settle_running",
+        ),
+        event=ctx.event,
     )
     result = await water_settlement_service.run_daily_settlement(
         target_day,

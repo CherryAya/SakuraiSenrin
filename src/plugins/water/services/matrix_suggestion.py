@@ -8,7 +8,8 @@ from nonebot.adapters.onebot.v11.bot import Bot
 from src.config import config
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import DeliveryTarget, deliver_single_message
+from src.lib.message_delivery import DeliveryTarget
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.plugins.water.database import water_repo
 from src.repositories import group_repo, member_repo
 from src.services.info import resolve_group_name
@@ -95,16 +96,20 @@ class MatrixSuggestionService:
             target_matrix_id=candidate.matrix_id,
         )
         locale = await resolve_locale(group_id)
-        await deliver_single_message(
+        await deliver_message_plan(
             bot,
-            target=DeliveryTarget(kind="group", target_id=group_id),
-            message=await self._build_suggestion_message(
-                bot,
-                group_id,
-                candidate,
-                locale,
+            plan=DeliveryPlan(
+                messages=(
+                    await self._build_suggestion_message(
+                        bot,
+                        group_id,
+                        candidate,
+                        locale,
+                    ),
+                ),
+                source_kind="water_matrix_suggestion",
             ),
-            source_kind="water_matrix_suggestion",
+            target=DeliveryTarget(kind="group", target_id=group_id),
         )
 
     async def _find_best_candidate(

@@ -50,11 +50,8 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
-from src.lib.message_delivery import (
-    deliver_single_message,
-    resolve_delivery_target,
-    resolve_notice_delivery_target,
-)
+from src.lib.message_delivery import resolve_notice_delivery_target
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -482,11 +479,13 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
     session.matcher_cls.destroy()
 
     if session.is_root_message or checkpoint is None:
-        await deliver_single_message(
+        await deliver_message_plan(
             bot,
+            plan=DeliveryPlan(
+                messages=(tr(locale, "interaction.cancelled"),),
+                source_kind="water_notice",
+            ),
             target=resolve_notice_delivery_target(event),
-            message=tr(locale, "interaction.cancelled"),
-            source_kind="water_notice",
         )
         return
 
@@ -496,11 +495,13 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
         step_index=checkpoint.step_index,
         state=checkpoint.state_snapshot,
     )
-    await deliver_single_message(
+    await deliver_message_plan(
         bot,
+        plan=DeliveryPlan(
+            messages=(checkpoint.prompt,),
+            source_kind="water_notice",
+        ),
         target=resolve_notice_delivery_target(event),
-        message=checkpoint.prompt,
-        source_kind="water_notice",
     )
 
 
@@ -582,11 +583,13 @@ async def _(
             is_superuser=is_superuser,
         )
     ):
-        await deliver_single_message(
+        await deliver_message_plan(
             bot,
-            target=resolve_delivery_target(event),
-            message=tr(locale, "water.common.working"),
-            source_kind="water_query",
+            plan=DeliveryPlan(
+                messages=(tr(locale, "water.common.working"),),
+                source_kind="water_query",
+            ),
+            event=event,
         )
     await handle_water_query(
         matcher,
@@ -750,17 +753,21 @@ async def _water_query_guided_step(
 
     clear_interaction_errors(state)
     rank_spec = WaterRankQuerySpec(subject=subject, scope=scope, period=period)
-    await deliver_single_message(
+    await deliver_message_plan(
         bot,
-        target=resolve_delivery_target(event),
-        message=water_query_router.build_guided_summary(locale, rank_spec),
-        source_kind="water_query",
+        plan=DeliveryPlan(
+            messages=(water_query_router.build_guided_summary(locale, rank_spec),),
+            source_kind="water_query",
+        ),
+        event=event,
     )
-    await deliver_single_message(
+    await deliver_message_plan(
         bot,
-        target=resolve_delivery_target(event),
-        message=tr(locale, "water.common.working"),
-        source_kind="water_query",
+        plan=DeliveryPlan(
+            messages=(tr(locale, "water.common.working"),),
+            source_kind="water_query",
+        ),
+        event=event,
     )
     message = await water_rank_query_service.build_rank_message(
         subject=rank_spec.subject,
@@ -781,11 +788,13 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
         await matcher.finish(tr(locale, "water.common.group_only"))
-    await deliver_single_message(
+    await deliver_message_plan(
         bot,
-        target=resolve_delivery_target(event),
-        message=tr(locale, "water.common.working"),
-        source_kind="water_query",
+        plan=DeliveryPlan(
+            messages=(tr(locale, "water.common.working"),),
+            source_kind="water_query",
+        ),
+        event=event,
     )
     await handle_my_water_profile(matcher, event, locale)
 
@@ -863,7 +872,7 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
 
     await handler(
         WaterAdminContext(
-            bot=cast(Bot, matcher.bot),
+            bot=cast(Bot, getattr(matcher, "bot")),
             event=event,
             matcher=matcher,
             args=args,

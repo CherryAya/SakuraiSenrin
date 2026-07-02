@@ -4,6 +4,7 @@ from nonebot.adapters.onebot.v11 import Bot
 from nonebug import App
 import pytest
 
+from src.lib.messages import text_message
 from src.plugins.water.services.matrix_suggestion import (
     MatrixSuggestionService,
     MergeCandidate,
@@ -67,7 +68,7 @@ async def test_maybe_suggest_sends_group_prompt(
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.should_call_api(
             "send_group_msg",
-            {"group_id": 20001, "message": "SUGGEST"},
+            {"group_id": 20001, "message": text_message("SUGGEST")},
             result={"message_id": 1},
         )
         await service._maybe_suggest(bot, "20001", trigger="first_record")
