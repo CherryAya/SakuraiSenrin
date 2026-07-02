@@ -17,6 +17,8 @@ def test_plugin_layers_do_not_call_send_custom_forward_directly() -> None:
     banned_patterns = (
         "send_custom_forward(",
         "from src.lib.onebot_forward import send_custom_forward",
+        "deliver_forward_messages(",
+        "from src.lib.message_delivery import deliver_forward_messages",
     )
     violations: list[str] = []
 

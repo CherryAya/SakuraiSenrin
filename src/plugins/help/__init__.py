@@ -24,7 +24,6 @@ from src.lib.consts import TriggerType
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import deliver_forward_messages
 from src.lib.message_plan import (
     DeliveryPlan,
     deliver_message_plan,
@@ -592,12 +591,17 @@ async def _send_help_forward(
     event: MessageEvent,
     plan: DeliveryPlan,
 ) -> None:
-    await deliver_forward_messages(
+    await deliver_message_plan(
         bot,
-        event,
-        tuple(render_message_plan_input(entry) for entry in plan.messages),
-        source_kind=plan.source_kind or "help",
-        fallback_nickname=plan.fallback_nickname or HELP_FORWARD_FALLBACK_NICKNAME,
+        plan=DeliveryPlan(
+            messages=plan.messages,
+            source_kind=plan.source_kind or "help",
+            fallback_nickname=plan.fallback_nickname
+            or HELP_FORWARD_FALLBACK_NICKNAME,
+            allow_asset_reuse=plan.allow_asset_reuse,
+            force_forward=True,
+        ),
+        event=event,
     )
 
 

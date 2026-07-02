@@ -1,6 +1,6 @@
 # 消息发送与转发复用规范
 
-本规范描述项目内 `src/lib/message_delivery.py`、`src/lib/message_assets.py`、`src/lib/message_api_hooks.py` 与 `src/lib/onebot_forward.py` 的协作约束。
+本规范描述项目内 `src/lib/message_plan.py`、`src/lib/message_delivery.py`、`src/lib/message_assets.py`、`src/lib/message_api_hooks.py` 与 `src/lib/onebot_forward.py` 的协作约束。
 
 适用范围：
 
@@ -20,9 +20,30 @@
 
 ## 2. 统一入口
 
+### 2.0 消息计划层
+
+插件或 hook 在实现“主动发消息”“发送批量结果”“带等待提示的异步回复”时，优先产出：
+
+```python
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+```
+
+当前语义：
+
+- `DeliveryPlan.messages`：业务层要发出的逻辑消息节点。
+- `DeliveryPlan.wait_message`：在主体消息前额外发送的一条等待提示。
+- `DeliveryPlan.force_forward`：强制将多节点输出按合并转发处理。
+- `DeliveryPlan.source_kind` / `fallback_nickname`：发送链路的基础设施元数据。
+
+约束：
+
+- 插件层负责“表达要发什么内容”，不负责“最终如何发出去”。
+- 插件层不应自己决定 should_forward、前缀复用、fallback 或消息 staging。
+- 对正式输出路径，`DeliveryPlan` 是首选接口；`deliver_single_message(...)` 更适合作为底层或单步补充工具。
+
 ### 2.1 单条消息
 
-业务代码发送单条消息时，优先使用：
+底层业务代码发送单条消息时，优先使用：
 
 ```python
 from src.lib.message_delivery import DeliveryTarget, deliver_single_message
@@ -50,14 +71,15 @@ from src.lib.message_delivery import DeliveryTarget, deliver_single_message
 
 ### 2.3 合并转发
 
-需要输出多条 demo、多段帮助、多条批量结果时，统一使用：
+需要输出多条 demo、多段帮助、多条批量结果时，正式业务代码应优先构造 `DeliveryPlan`，再交给：
 
 ```python
-from src.lib.message_delivery import deliver_forward_messages
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 ```
 
 约束：
 
+- 插件层不要直接调用 `deliver_forward_messages(...)`。
 - 不要在插件里自行拼 `send_group_forward_msg` / `send_private_forward_msg`。
 - 不要再保留“先发给自己，再重新组整包转发”的业务层残留实现。
 - 自定义合并转发节点构造只允许留在 `src/lib/onebot_forward.py` 作为底层 fallback。
@@ -219,15 +241,16 @@ from src.lib.message_delivery import deliver_forward_messages
 
 ## 8. 测试要求
 
-涉及 `message_delivery` 语义变更时，至少应覆盖：
+涉及 `message_plan` / `message_delivery` 语义变更时，至少应覆盖：
 
-1. 单条消息缓存命中与 fallback。
-2. `reply` / `at` 消息不复用。
-3. 合并转发顺序敏感。
-4. `forward_context_key` 不匹配时从冲突点重建。
-5. 时间顺序冲突时从首个不安全节点重建。
-6. 前缀复用成功、后缀重建成功。
-7. fallback 到 `send_custom_forward(...)` 的路径。
+1. `DeliveryPlan` 单条输出、等待提示、强制 forward 输出。
+2. 单条消息缓存命中与 fallback。
+3. `reply` / `at` 消息不复用。
+4. 合并转发顺序敏感。
+5. `forward_context_key` 不匹配时从冲突点重建。
+6. 时间顺序冲突时从首个不安全节点重建。
+7. 前缀复用成功、后缀重建成功。
+8. fallback 到 `send_custom_forward(...)` 的路径。
 
 推荐测试文件：
 
@@ -240,15 +263,17 @@ from src.lib.message_delivery import deliver_forward_messages
 以下做法视为不合规：
 
 1. 插件自行调用 `send_group_forward_msg` / `send_private_forward_msg` 拼业务转发。
-2. 插件自行维护消息 hash、缓存表或消息复用数据库。
-3. 为了命中缓存而忽略 `reply`、`at`、顺序或上下文语义。
-4. 把“先发给自己”暴露成业务层策略。
-5. 修改 help/demo 输出顺序后，不同步考虑 forward cache 的顺序语义。
+2. 插件正式输出路径直接调用 `send_custom_forward(...)` 或 `deliver_forward_messages(...)`。
+3. 插件自行维护消息 hash、缓存表或消息复用数据库。
+4. 为了命中缓存而忽略 `reply`、`at`、顺序或上下文语义。
+5. 把“先发给自己”暴露成业务层策略。
+6. 修改 help/demo 输出顺序后，不同步考虑 forward cache 的顺序语义。
 
 ## 10. 代码定位
 
 当前关键实现位置：
 
+- `src/lib/message_plan.py`
 - `src/lib/message_delivery.py`
 - `src/lib/message_assets.py`
 - `src/lib/message_api_hooks.py`
@@ -256,7 +281,8 @@ from src.lib.message_delivery import deliver_forward_messages
 
 阅读顺序建议：
 
-1. `message_api_hooks.py`
-2. `message_delivery.py`
-3. `message_assets.py`
-4. `onebot_forward.py`
+1. `message_plan.py`
+2. `message_api_hooks.py`
+3. `message_delivery.py`
+4. `message_assets.py`
+5. `onebot_forward.py`
