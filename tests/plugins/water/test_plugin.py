@@ -96,14 +96,6 @@ async def test_water_query_guides_empty_command_step_by_step(
             },
             result={"message_id": 1},
         )
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message("凛凛统计中，请稍后喔……"),
-            },
-            result={"message_id": 1},
-        )
         ctx.should_call_send(fourth, text_message("RANK_OK"), bot=bot)
         ctx.should_finished()
 
@@ -196,14 +188,6 @@ async def test_water_query_direct_rank_still_runs_without_guided_flow(
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message("凛凛统计中，请稍后喔……"),
-            },
-            result={"message_id": 1},
-        )
         ctx.should_call_send(event, text_message("DIRECT_OK"), bot=bot)
         ctx.should_finished()
 
@@ -239,14 +223,6 @@ async def test_water_query_shortcut_alias_runs_direct_rank(
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message("凛凛统计中，请稍后喔……"),
-            },
-            result={"message_id": 1},
-        )
         ctx.should_call_send(event, text_message("SHORTCUT_OK"), bot=bot)
         ctx.should_finished()
 
@@ -444,14 +420,6 @@ async def test_water_query_superuser_can_use_restricted_periods(
             },
             result={"message_id": 1},
         )
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message("凛凛统计中，请稍后喔……"),
-            },
-            result={"message_id": 1},
-        )
         ctx.should_call_send(fourth, text_message("SUPERUSER_OK"), bot=bot)
         ctx.should_finished()
 
@@ -630,14 +598,6 @@ async def test_water_query_guided_accepts_all_dimensions_in_one_reply(
             },
             result={"message_id": 1},
         )
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message("凛凛统计中，请稍后喔……"),
-            },
-            result={"message_id": 1},
-        )
         ctx.should_call_send(second, text_message("ONE_SHOT_OK"), bot=bot)
         ctx.should_finished()
 
@@ -696,14 +656,6 @@ async def test_water_today_report_runs_for_group_admin(
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message("凛凛统计中，请稍后喔……"),
-            },
-            result={"message_id": 1},
-        )
         ctx.should_call_send(event, text_message("REPORT_OK"), bot=bot)
         ctx.should_finished()
 
@@ -738,14 +690,6 @@ async def test_water_today_report_alias_runs(
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message("凛凛统计中，请稍后喔……"),
-            },
-            result={"message_id": 1},
-        )
         ctx.should_call_send(event, text_message("REPORT_ALIAS_OK"), bot=bot)
         ctx.should_finished()
 
@@ -780,14 +724,6 @@ async def test_water_today_report_group_shared_cooldown(
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, first)
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message("凛凛统计中，请稍后喔……"),
-            },
-            result={"message_id": 1},
-        )
         ctx.should_call_send(first, text_message("REPORT_OK"), bot=bot)
         ctx.should_finished()
 
@@ -837,27 +773,11 @@ async def test_water_today_report_skips_user_query_cooldown(
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, first)
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message("凛凛统计中，请稍后喔……"),
-            },
-            result={"message_id": 1},
-        )
         ctx.should_call_send(first, text_message("RANK_OK"), bot=bot)
         ctx.should_finished()
 
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, second)
-        ctx.should_call_api(
-            "send_group_msg",
-            {
-                "group_id": 20001,
-                "message": text_message("凛凛统计中，请稍后喔……"),
-            },
-            result={"message_id": 1},
-        )
         ctx.should_call_send(second, text_message("REPORT_OK"), bot=bot)
         ctx.should_finished()

@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "generated_at": "2026-07-03T00:17:57",
+  "generated_at": "2026-07-03T00:33:21",
   "root": "/Users/sakuraicora/Documents/Development/SakuraiSenrin/SakuraiSenrin",
   "summary": {
-    "total_targets": 11,
-    "complete_targets": 11,
+    "total_targets": 13,
+    "complete_targets": 13,
     "partial_targets": 0,
     "missing_file_targets": 0,
     "legacy_wait_candidates": 0
@@ -100,6 +100,34 @@
       "path": "src/plugins/water/handlers/admin.py",
       "category": "plugin",
       "description": "Manual settlement command.",
+      "status": "complete",
+      "exists": true,
+      "has_runner": true,
+      "has_logger_sink": true,
+      "has_message_event_sink": true,
+      "has_matcher_sink": false,
+      "missing": []
+    },
+    {
+      "slug": "water.query_commands",
+      "label": "Water Query Commands",
+      "path": "src/plugins/water/__init__.py",
+      "category": "plugin",
+      "description": "Rank, report, and profile user query flows.",
+      "status": "complete",
+      "exists": true,
+      "has_runner": true,
+      "has_logger_sink": true,
+      "has_message_event_sink": true,
+      "has_matcher_sink": false,
+      "missing": []
+    },
+    {
+      "slug": "water.period_rank_handler",
+      "label": "Water Period Rank Handler",
+      "path": "src/plugins/water/handlers/rank.py",
+      "category": "plugin",
+      "description": "Legacy period-rank image handler.",
       "status": "complete",
       "exists": true,
       "has_runner": true,

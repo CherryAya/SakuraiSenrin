@@ -20,11 +20,18 @@ from .merge import (
     is_group_admin_event,
 )
 from .passive import handle_group_increase_notice, handle_water_record
-from .query import handle_my_water_profile, handle_water_query
+from .query import (
+    build_my_water_profile_message,
+    build_water_query_message,
+    handle_my_water_profile,
+    handle_water_query,
+)
 
 __all__ = [
     "WaterAdminContext",
     "WaterMergeContext",
+    "build_my_water_profile_message",
+    "build_water_query_message",
     "format_settlement_message",
     "handle_group_increase_notice",
     "handle_help",

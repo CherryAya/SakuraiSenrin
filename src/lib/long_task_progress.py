@@ -21,6 +21,15 @@ RUNTIME_SCAN_ROOTS = (
 WAIT_PROMPT_PATTERN = re.compile(
     r"(请稍候|请稍等|请稍后|处理中|执行中|整理中|搜索中|加载中)"
 )
+WAIT_I18N_KEYS = {
+    "admin.backup.restore.running",
+    "admin.backup.run.running",
+    "picsearch.searching",
+    "water.admin.settle.running",
+    "water.common.working",
+    "water.rank.working",
+    "wordbank.add.processing_with_media",
+}
 
 
 @dataclass(slots=True, frozen=True)
@@ -30,6 +39,8 @@ class LongTaskAuditTarget:
     path: str
     category: str
     description: str
+    scope_terms: tuple[str, ...] = ()
+    context_lines: int = 80
     expect_runner: bool = True
     expect_logger_sink: bool = False
     expect_message_event_sink: bool = False
@@ -50,6 +61,7 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         path="src/plugins/wordbank/entry_commands.py",
         category="plugin",
         description="Direct add command with media ingestion.",
+        scope_terms=("wordbank.add.media_submission",),
         expect_logger_sink=True,
         expect_message_event_sink=True,
     ),
@@ -59,6 +71,11 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         path="src/plugins/wordbank/guided_flow.py",
         category="plugin",
         description="Guided trigger/response collection and merged-forward import.",
+        scope_terms=(
+            "record_guided_trigger",
+            "record_guided_response",
+            "record_guided_forward_response_choice",
+        ),
         expect_matcher_sink=True,
     ),
     LongTaskAuditTarget(
@@ -67,6 +84,12 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         path="src/plugins/study/__init__.py",
         category="plugin",
         description="Study guided flow and direct submission path.",
+        scope_terms=(
+            "_record_study_trigger",
+            "_record_study_response",
+            "_record_study_forward_response_choice",
+            "@study_command.handle",
+        ),
         expect_matcher_sink=True,
         expect_logger_sink=True,
         expect_message_event_sink=True,
@@ -77,6 +100,7 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         path="src/plugins/help/__init__.py",
         category="plugin",
         description="Delayed wait prompt for heavy help rendering.",
+        scope_terms=("async def _deliver_help_plan",),
         expect_logger_sink=True,
         expect_message_event_sink=True,
     ),
@@ -86,6 +110,7 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         path="src/plugins/picsearch/__init__.py",
         category="plugin",
         description="Per-image delayed search prompt.",
+        scope_terms=("async def run_search",),
         expect_logger_sink=True,
         expect_message_event_sink=True,
     ),
@@ -95,6 +120,7 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         path="src/plugins/admin/backup.py",
         category="plugin",
         description="Manual backup and restore commands.",
+        scope_terms=('if action == "run"', 'if action == "restore"'),
         expect_logger_sink=True,
         expect_message_event_sink=True,
     ),
@@ -104,6 +130,33 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         path="src/plugins/water/handlers/admin.py",
         category="plugin",
         description="Manual settlement command.",
+        scope_terms=("async def handle_settle",),
+        expect_logger_sink=True,
+        expect_message_event_sink=True,
+    ),
+    LongTaskAuditTarget(
+        slug="water.query_commands",
+        label="Water Query Commands",
+        path="src/plugins/water/__init__.py",
+        category="plugin",
+        description="Rank, report, and profile user query flows.",
+        scope_terms=(
+            "def _build_water_progress_sink",
+            "async def _run_water_query_long_task",
+            "@water_query.handle",
+            "@water_query.got",
+            "@water_profile.handle",
+        ),
+        expect_logger_sink=True,
+        expect_message_event_sink=True,
+    ),
+    LongTaskAuditTarget(
+        slug="water.period_rank_handler",
+        label="Water Period Rank Handler",
+        path="src/plugins/water/handlers/rank.py",
+        category="plugin",
+        description="Legacy period-rank image handler.",
+        scope_terms=("async def handle_period_rank",),
         expect_logger_sink=True,
         expect_message_event_sink=True,
     ),
@@ -113,6 +166,7 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         path="src/plugins/wordbank/__init__.py",
         category="job",
         description="Archive and media maintenance cron jobs.",
+        scope_terms=("_wordbank_event_archive_job", "_wordbank_media_maintenance_job"),
         expect_logger_sink=True,
     ),
     LongTaskAuditTarget(
@@ -121,6 +175,12 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         path="src/plugins/water/__init__.py",
         category="job",
         description="Settlement/archive/report cron jobs.",
+        scope_terms=(
+            "_water_daily_settlement_job",
+            "_water_message_archive_job",
+            "_water_summary_archive_job",
+            "_water_daily_report_push_job",
+        ),
         expect_logger_sink=True,
     ),
     LongTaskAuditTarget(
@@ -129,6 +189,7 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         path="src/services/backup_scheduler.py",
         category="service",
         description="Scheduled backup runner.",
+        scope_terms=("async def _run_backup_job",),
         expect_logger_sink=True,
     ),
     LongTaskAuditTarget(
@@ -137,6 +198,7 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         path="src/services/startup_sync.py",
         category="service",
         description="Remote snapshot restore and runtime refresh.",
+        scope_terms=("async def restore_remote_snapshot_into_local",),
         expect_logger_sink=True,
     ),
 )
@@ -149,9 +211,32 @@ def _read_text(path: Path) -> str:
         return ""
 
 
+def _extract_scoped_source(source: str, target: LongTaskAuditTarget) -> str:
+    if not target.scope_terms:
+        return source
+
+    lines = source.splitlines()
+    matched_ranges: list[tuple[int, int]] = []
+    for index, line in enumerate(lines):
+        if any(term in line for term in target.scope_terms):
+            start = max(0, index - target.context_lines)
+            end = min(len(lines), index + target.context_lines + 1)
+            matched_ranges.append((start, end))
+    if not matched_ranges:
+        return source
+
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(matched_ranges):
+        if not merged or start > merged[-1][1]:
+            merged.append((start, end))
+            continue
+        merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+    return "\n".join("\n".join(lines[start:end]) for start, end in merged)
+
+
 def _target_status(root: Path, target: LongTaskAuditTarget) -> dict[str, Any]:
     path = root / target.path
-    source = _read_text(path)
+    source = _extract_scoped_source(_read_text(path), target)
     exists = path.is_file()
     has_runner = "LongTaskRunner" in source
     has_logger_sink = "LoggerProgressSink" in source
@@ -208,7 +293,9 @@ def _collect_legacy_wait_candidates(root: Path) -> list[LongTaskLegacyCandidate]
         if not source or "LongTaskRunner" in source:
             continue
         for line_number, line in enumerate(source.splitlines(), start=1):
-            if WAIT_PROMPT_PATTERN.search(line) is None:
+            has_wait_text = WAIT_PROMPT_PATTERN.search(line) is not None
+            has_wait_key = any(wait_key in line for wait_key in WAIT_I18N_KEYS)
+            if not has_wait_text and not has_wait_key:
                 continue
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):

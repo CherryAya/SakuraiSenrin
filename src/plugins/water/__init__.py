@@ -50,7 +50,13 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
-from src.lib.long_task import LoggerProgressSink, LongTaskRunner, LongTaskSpec
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MessageEventProgressSink,
+)
 from src.lib.message_delivery import resolve_notice_delivery_target
 from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
@@ -62,6 +68,8 @@ from .database import water_repo
 from .handlers import (
     WaterAdminContext,
     WaterMergeContext,
+    build_my_water_profile_message,
+    build_water_query_message,
     handle_group_increase_notice,
     handle_help,
     handle_ignore,
@@ -69,7 +77,6 @@ from .handlers import (
     handle_merge_no,
     handle_merge_yes,
     handle_my_achievements,
-    handle_my_water_profile,
     handle_pardon,
     handle_season,
     handle_settle,
@@ -312,6 +319,65 @@ def _register_water_checkpoint(
         prompt=prompt,
         state_snapshot=snapshot,
     )
+
+
+def _build_water_progress_sink(
+    bot: Bot,
+    event: MessageEvent,
+) -> CompositeProgressSink:
+    return CompositeProgressSink(
+        LoggerProgressSink(),
+        MessageEventProgressSink(bot, event),
+    )
+
+
+def _water_progress_task_name(spec: WaterQuerySpec) -> str:
+    if spec.view == "report":
+        return "water.query.report"
+    if spec.view == "profile":
+        return "water.query.profile"
+    if spec.view == "achievement":
+        return "water.query.achievement"
+    if spec.scope_type == "activity":
+        return "water.query.activity"
+    if spec.scope_type == "rank":
+        return "water.query.rank"
+    return "water.query.generic"
+
+
+def _water_progress_stage(spec: WaterQuerySpec) -> str:
+    if spec.view == "report":
+        return "building_report"
+    if spec.view == "profile":
+        return "building_profile"
+    if spec.view == "achievement":
+        return "building_achievement"
+    if spec.scope_type == "activity":
+        return "building_activity"
+    if spec.scope_type == "rank":
+        return "building_rank"
+    return "processing_items"
+
+
+async def _run_water_query_long_task(
+    bot: Bot,
+    event: MessageEvent,
+    locale: LocaleCode,
+    *,
+    spec: WaterQuerySpec,
+    build_message: Callable[[], Awaitable[Message]],
+) -> Message:
+    async with LongTaskRunner(
+        LongTaskSpec(
+            task_name=_water_progress_task_name(spec),
+            source_kind="water_query",
+            prompt=tr(locale, "water.common.working"),
+            threshold_ms=800,
+        ),
+        sink=_build_water_progress_sink(bot, event),
+    ) as long_task:
+        await long_task.advance(_water_progress_stage(spec))
+        return await build_message()
 
 
 async def initialize_water_plugin() -> None:
@@ -621,14 +687,21 @@ async def _(
             is_superuser=is_superuser,
         )
     ):
-        await deliver_message_plan(
+        message = await _run_water_query_long_task(
             bot,
-            plan=DeliveryPlan(
-                messages=(tr(locale, "water.common.working"),),
-                source_kind="water_query",
+            event,
+            locale,
+            spec=spec,
+            build_message=lambda: build_water_query_message(
+                event,
+                arg,
+                locale,
+                is_superuser=is_superuser,
+                spec=spec,
             ),
-            event=event,
         )
+        await matcher.finish(message)
+        return
     await handle_water_query(
         matcher,
         event,
@@ -799,20 +872,25 @@ async def _water_query_guided_step(
         ),
         event=event,
     )
-    await deliver_message_plan(
+    message = await _run_water_query_long_task(
         bot,
-        plan=DeliveryPlan(
-            messages=(tr(locale, "water.common.working"),),
-            source_kind="water_query",
+        event,
+        locale,
+        spec=WaterQuerySpec(
+            subject="personal",
+            scope_type="rank",
+            scope_value=rank_spec.period,
+            view="rank",
+            mode="simple",
+            rank_spec=rank_spec,
         ),
-        event=event,
-    )
-    message = await water_rank_query_service.build_rank_message(
-        subject=rank_spec.subject,
-        scope=rank_spec.scope,
-        period=rank_spec.period,
-        group_id=str(event.group_id),
-        locale=locale,
+        build_message=lambda: water_rank_query_service.build_rank_message(
+            subject=rank_spec.subject,
+            scope=rank_spec.scope,
+            period=rank_spec.period,
+            group_id=str(event.group_id),
+            locale=locale,
+        ),
     )
     await matcher.finish(message)
 
@@ -826,15 +904,20 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
         await matcher.finish(tr(locale, "water.common.group_only"))
-    await deliver_message_plan(
+    message = await _run_water_query_long_task(
         bot,
-        plan=DeliveryPlan(
-            messages=(tr(locale, "water.common.working"),),
-            source_kind="water_query",
+        event,
+        locale,
+        spec=WaterQuerySpec(
+            subject="personal",
+            scope_type="activity",
+            scope_value="profile",
+            view="profile",
+            mode="full",
         ),
-        event=event,
+        build_message=lambda: build_my_water_profile_message(event, locale),
     )
-    await handle_my_water_profile(matcher, event, locale)
+    await matcher.finish(message)
 
 
 @water_achievement.handle()
