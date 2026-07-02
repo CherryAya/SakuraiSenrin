@@ -9,6 +9,7 @@ MessageKey = Literal[
     "admin.backup.failed",
     "admin.backup.limit.invalid",
     "admin.backup.restore.completed",
+    "admin.backup.restore.running",
     "admin.backup.restore.snapshot",
     "admin.backup.restore.snapshot_required",
     "admin.backup.run.bytes",
@@ -16,6 +17,7 @@ MessageKey = Literal[
     "admin.backup.run.files",
     "admin.backup.run.manifest",
     "admin.backup.run.run_id",
+    "admin.backup.run.running",
     "admin.backup.run.skipped",
     "admin.backup.run.snapshot",
     "admin.backup.snapshot.bytes",
@@ -922,7 +924,7 @@ MessageKey = Literal[
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 ]
 
 ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
@@ -932,6 +934,7 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "admin.backup.failed",
     "admin.backup.limit.invalid",
     "admin.backup.restore.completed",
+    "admin.backup.restore.running",
     "admin.backup.restore.snapshot",
     "admin.backup.restore.snapshot_required",
     "admin.backup.run.bytes",
@@ -939,6 +942,7 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "admin.backup.run.files",
     "admin.backup.run.manifest",
     "admin.backup.run.run_id",
+    "admin.backup.run.running",
     "admin.backup.run.skipped",
     "admin.backup.run.snapshot",
     "admin.backup.snapshot.bytes",
@@ -1845,5 +1849,5 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 )

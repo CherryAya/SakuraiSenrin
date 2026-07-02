@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.exception import FinishedException
@@ -14,6 +15,13 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MessageEventProgressSink,
+)
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_doc_demo_message,
@@ -157,8 +165,20 @@ def _parse_restore_snapshot(raw: str | None) -> str:
     return snapshot
 
 
+def _build_progress_sink(bot: Bot, event: MessageEvent) -> CompositeProgressSink:
+    return CompositeProgressSink(
+        LoggerProgressSink(),
+        MessageEventProgressSink(bot, event),
+    )
+
+
 @admin_backup.handle()
-async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) -> None:
+async def _(
+    matcher: Matcher,
+    bot: Bot,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     docs = build_docs(DocsRenderContext(locale=locale))
     docs_text = str(docs)
@@ -221,7 +241,16 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
 
         if action == "run":
             plan = build_default_backup_plan()
-            result = await service.run(plan, force=True)
+            async with LongTaskRunner(
+                LongTaskSpec(
+                    task_name="admin.backup.run",
+                    source_kind="admin_backup_run",
+                    prompt=tr(locale, "admin.backup.run.running"),
+                ),
+                sink=_build_progress_sink(bot, event),
+            ) as long_task:
+                await long_task.advance("archiving")
+                result = await service.run(plan, force=True)
             if result is None:
                 await matcher.finish(tr(locale, "admin.backup.run.skipped"))
                 return
@@ -240,7 +269,16 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
                     )
                 )
                 return
-            await restore_remote_snapshot_into_local(snapshot=snapshot)
+            async with LongTaskRunner(
+                LongTaskSpec(
+                    task_name="admin.backup.restore",
+                    source_kind="admin_backup_restore",
+                    prompt=tr(locale, "admin.backup.restore.running"),
+                ),
+                sink=_build_progress_sink(bot, event),
+            ) as long_task:
+                await long_task.advance("restoring", metadata={"snapshot": snapshot})
+                await restore_remote_snapshot_into_local(snapshot=snapshot)
             await matcher.finish(
                 "\n".join(
                     [

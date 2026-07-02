@@ -1,4 +1,7 @@
 *
 !.gitignore
+!development/
+!development/long-task-progress.md
+!development/long-task-progress.json
 !user/
 !user/**

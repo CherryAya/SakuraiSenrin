@@ -15,7 +15,13 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MessageEventProgressSink,
+)
 from src.lib.plugin_docs import build_doc_demo_message
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
@@ -153,18 +159,22 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
                 )
             )
 
-    await deliver_message_plan(
-        ctx.bot,
-        plan=DeliveryPlan(
-            messages=(tr(ctx.locale, "water.admin.settle.running"),),
-            source_kind="water_admin_settle_running",
+    async with LongTaskRunner(
+        LongTaskSpec(
+            task_name="water.admin.settle",
+            source_kind="water_admin_settle",
+            prompt=tr(ctx.locale, "water.admin.settle.running"),
         ),
-        event=ctx.event,
-    )
-    result = await water_settlement_service.run_daily_settlement(
-        target_day,
-        force=force,
-    )
+        sink=CompositeProgressSink(
+            LoggerProgressSink(),
+            MessageEventProgressSink(ctx.bot, ctx.event),
+        ),
+    ) as long_task:
+        await long_task.advance("settling")
+        result = await water_settlement_service.run_daily_settlement(
+            target_day,
+            force=force,
+        )
     await ctx.matcher.finish(format_settlement_message(result, ctx.locale))
 
 

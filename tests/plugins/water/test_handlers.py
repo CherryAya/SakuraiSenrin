@@ -10,7 +10,6 @@ from nonebug import App
 import pytest
 
 from src.database.consts import WritePolicy
-from src.lib.messages import text_message
 from src.plugins.water.handlers.admin import (
     WaterAdminContext,
     format_settlement_message,
@@ -487,8 +486,4 @@ async def test_handle_settle_parses_force_flag(
     kwargs = awaited_call.kwargs
     assert kwargs["force"] is True
     call_api = cast(Any, ctx.bot.call_api)
-    assert call_api.await_args_list[0].args == ("send_group_msg",)
-    assert call_api.await_args_list[0].kwargs == {
-        "group_id": 20001,
-        "message": text_message("Water 结算任务执行中，请稍候..."),
-    }
+    call_api.assert_not_awaited()
