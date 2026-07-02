@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 
@@ -15,7 +15,13 @@ from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import DeliveryTarget, deliver_single_message
-from src.lib.messages import empty_message, text_message
+from src.lib.message_plan import (
+    MessagePlanBlock,
+    MessagePlanEntry,
+    TextBlock,
+    render_message_plan_entry,
+)
+from src.lib.messages import text_message
 from src.logger import logger
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services import (
@@ -28,7 +34,7 @@ from src.plugins.wordbank.services.core import (
 )
 from src.plugins.wordbank.services.media import WordbankMediaService
 
-from .rendering import render_shape_message
+from .rendering import build_shape_plan_entry
 
 APPROVAL_APPROVE_ALIASES = {"y", "approve", "通过", "同意", "批准"}
 APPROVAL_REJECT_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
@@ -40,7 +46,7 @@ _background_tasks: set[asyncio.Task[None]] = set()
 class _RenderedShapeField:
     label: str
     summary: str
-    rendered_message: Message
+    rendered_entry: MessagePlanEntry
 
 
 def extract_sent_message_id(result: Any) -> str | None:
@@ -82,8 +88,23 @@ async def build_add_result_message(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> Message:
+    return render_message_plan_entry(
+        await build_add_result_plan_entry(
+            result,
+            locale=locale,
+            media_service=media_service,
+        )
+    )
+
+
+async def build_add_result_plan_entry(
+    result: WordbankAddResult,
+    *,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> MessagePlanEntry:
     text = format_add_result(result, locale=locale)
-    return await _append_response_image(
+    return await _build_rendered_result_entry(
         result,
         text=text,
         locale=locale,
@@ -98,8 +119,25 @@ async def build_pending_approval_notice_message(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> Message:
+    return render_message_plan_entry(
+        await build_pending_approval_notice_plan_entry(
+            result,
+            event=event,
+            locale=locale,
+            media_service=media_service,
+        )
+    )
+
+
+async def build_pending_approval_notice_plan_entry(
+    result: WordbankAddResult,
+    *,
+    event: MessageEvent,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> MessagePlanEntry:
     text = format_pending_approval_notice(result, event=event, locale=locale)
-    return await _append_response_image(
+    return await _build_rendered_result_entry(
         result,
         text=text,
         locale=locale,
@@ -107,13 +145,13 @@ async def build_pending_approval_notice_message(
     )
 
 
-async def _append_response_image(
+async def _build_rendered_result_entry(
     result: WordbankAddResult,
     *,
     text: str,
     locale: LocaleCode,
     media_service: WordbankMediaService,
-) -> Message:
+) -> MessagePlanEntry:
     rendered_fields = await _collect_rendered_shape_fields(
         result,
         locale=locale,
@@ -148,7 +186,7 @@ async def _collect_rendered_shape_fields(
             _RenderedShapeField(
                 label=tr(locale, label_key),
                 summary=format_response_summary(summary_text, shape=shape),
-                rendered_message=await render_shape_message(
+                rendered_entry=await build_shape_plan_entry(
                     shape,
                     media_service,
                     locale=locale,
@@ -170,33 +208,33 @@ def _embed_rendered_shapes(
     *,
     text: str,
     rendered_fields: tuple[_RenderedShapeField, ...],
-) -> Message:
+) -> MessagePlanEntry:
     if not rendered_fields:
-        return text_message(text)
+        return MessagePlanEntry(blocks=(TextBlock(text),))
 
     fields_by_marker = {
         f"{field.label} {field.summary}": field for field in rendered_fields
     }
     used_markers: set[str] = set()
-    message = empty_message()
+    blocks: list[MessagePlanBlock] = []
     for line in text.splitlines(keepends=True):
         line_body = line.rstrip("\r\n")
         line_ending = line[len(line_body) :]
         field = fields_by_marker.get(line_body)
         if field is None:
-            message += MessageSegment.text(line)
+            blocks.append(TextBlock(line))
             continue
         used_markers.add(line_body)
-        message += MessageSegment.text(f"{field.label}\n")
-        message += field.rendered_message
+        blocks.append(TextBlock(f"{field.label}\n"))
+        blocks.extend(field.rendered_entry.blocks)
         if line_ending:
-            message += MessageSegment.text(line_ending)
+            blocks.append(TextBlock(line_ending))
 
     for marker, field in fields_by_marker.items():
         if marker in used_markers:
             continue
-        message += field.rendered_message
-    return message
+        blocks.extend(field.rendered_entry.blocks)
+    return MessagePlanEntry(blocks=tuple(blocks))
 
 
 async def send_pending_approval_notice(

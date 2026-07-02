@@ -5,9 +5,12 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11.event import MessageEvent
 import pytest
 
+from src.lib.message_plan import render_message_plan_input
 from src.plugins.wordbank.handlers.approval import (
     build_add_result_message,
+    build_add_result_plan_entry,
     build_pending_approval_notice_message,
+    build_pending_approval_notice_plan_entry,
     format_pending_approval_notice,
     send_pending_approval_notice,
 )
@@ -149,6 +152,29 @@ async def test_build_add_result_message_keeps_plain_text_response() -> None:
     load_canonical_storage_bytes.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_build_add_result_plan_entry_renders_image_response() -> None:
+    load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    result = _result(
+        response_text="[图片:7]",
+        response_shape=shape_from_image(7),
+    )
+
+    entry = await build_add_result_plan_entry(
+        result,
+        locale="zh-CN",
+        media_service=media_service,
+    )
+    message = render_message_plan_input(entry)
+
+    assert any(segment.type == "image" for segment in message)
+    assert "[图片:7]" not in str(message)
+
+
 def test_format_pending_approval_notice_uses_shape_summary() -> None:
     result = _result(
         response_text="原始文本",
@@ -229,28 +255,48 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
 
 
 @pytest.mark.asyncio
+async def test_build_pending_approval_notice_plan_entry_renders_image_trigger() -> None:
+    load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    result = _result(
+        trigger_text="[图片:8]",
+        trigger_shape=shape_from_image(8),
+    )
+
+    entry = await build_pending_approval_notice_plan_entry(
+        result,
+        event=_event(),
+        locale="zh-CN",
+        media_service=media_service,
+    )
+    message = render_message_plan_input(entry)
+
+    assert any(segment.type == "image" for segment in message)
+    assert "[图片:8]" not in str(message)
+
+
+@pytest.mark.asyncio
 async def test_send_pending_approval_notice_sends_all_superusers_concurrently() -> None:
-    calls: list[int] = []
-
-    class _Bot:
-        async def send_private_msg(
-            self, *, user_id: int, message: object
-        ) -> dict[str, int]:
-            calls.append(user_id)
-            return {"message_id": user_id}
-
     record_message_ref = AsyncMock(return_value=None)
+    deliver_message = AsyncMock(
+        side_effect=[{"message_id": 1}, {"message_id": 2}],
+    )
     service = cast(
         Any,
         SimpleNamespace(record_message_ref=record_message_ref),
     )
     result = _result(response_shape=shape_from_text("做个好梦"))
-    bot = cast(Any, _Bot())
+    bot = cast(Any, SimpleNamespace())
 
     from src.plugins.wordbank.handlers import approval as approval_module
 
     original_superusers = approval_module.config.SUPERUSERS
+    original_deliver = approval_module.deliver_single_message
     approval_module.config.SUPERUSERS = {"1", "2"}
+    approval_module.deliver_single_message = deliver_message
     try:
         await send_pending_approval_notice(
             bot,
@@ -262,6 +308,10 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently() 
         )
     finally:
         approval_module.config.SUPERUSERS = original_superusers
+        approval_module.deliver_single_message = original_deliver
 
-    assert sorted(calls) == [1, 2]
+    targets = [
+        call.kwargs["target"].target_id for call in deliver_message.await_args_list
+    ]
+    assert sorted(targets) == ["1", "2"]
     assert record_message_ref.await_count == 2

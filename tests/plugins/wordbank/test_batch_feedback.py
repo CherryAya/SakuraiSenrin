@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 import pytest
 
-from src.lib.message_plan import render_message_plan_input
+from src.lib.message_plan import (
+    MessagePlanEntry,
+    RawMessageBlock,
+    render_message_plan_input,
+)
 from src.plugins.wordbank import batch_feedback as batch_feedback_module
 from src.plugins.wordbank.batch_feedback import send_batch_add_feedback
 from src.plugins.wordbank.message_model import (
@@ -31,13 +35,15 @@ async def test_send_batch_add_feedback_uses_rich_result_messages(
             MessageSegment.image(b"image-bytes"),
         ]
     )
-    build_message = AsyncMock(return_value=rich_message)
+    build_message = AsyncMock(
+        return_value=MessagePlanEntry(blocks=(RawMessageBlock(rich_message),))
+    )
     deliver_message = AsyncMock(return_value={"message_id": 1})
     deliver_plan = AsyncMock(return_value=None)
 
     monkeypatch.setattr(
         batch_feedback_module,
-        "build_add_result_message",
+        "build_add_result_plan_entry",
         build_message,
     )
     monkeypatch.setattr(

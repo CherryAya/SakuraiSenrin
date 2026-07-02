@@ -9,12 +9,11 @@ from src.lib.message_delivery import deliver_single_message, resolve_delivery_ta
 from src.lib.message_plan import (
     DeliveryPlan,
     MessagePlanEntry,
-    RawMessageBlock,
     TextBlock,
     deliver_message_plan,
 )
 from src.lib.messages import text_message
-from src.plugins.wordbank.handlers.approval import build_add_result_message
+from src.plugins.wordbank.handlers.approval import build_add_result_plan_entry
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import WordbankBatchAddResult
 
@@ -47,14 +46,11 @@ async def send_batch_add_feedback(
     detail_messages = []
     for item in batch.items:
         if item.ok and item.result is not None:
-            rendered = await build_add_result_message(
-                item.result,
-                locale=locale,
-                media_service=media_service,
-            )
             detail_messages.append(
-                MessagePlanEntry(
-                    blocks=(RawMessageBlock(rendered),),
+                await build_add_result_plan_entry(
+                    item.result,
+                    locale=locale,
+                    media_service=media_service,
                 )
             )
         else:
