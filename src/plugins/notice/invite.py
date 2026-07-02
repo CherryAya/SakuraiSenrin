@@ -23,7 +23,8 @@ from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, send_private_i18n, tr
-from src.lib.message_delivery import DeliveryTarget, deliver_single_message
+from src.lib.message_delivery import DeliveryTarget
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import group_repo, invite_repo
@@ -161,12 +162,15 @@ async def _(
         flag=flag,
     )
     for super_user_id in config.SUPERUSERS:
-        send_result = await deliver_single_message(
+        plan_result = await deliver_message_plan(
             bot,
+            plan=DeliveryPlan(
+                messages=(report_message,),
+                source_kind="notice_invite",
+            ),
             target=DeliveryTarget(kind="private", target_id=str(super_user_id)),
-            message=report_message,
-            source_kind="notice_invite",
         )
+        send_result = plan_result.results[0]
         message_id = send_result.message_id
         if not message_id:
             continue

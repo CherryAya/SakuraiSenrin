@@ -10,6 +10,7 @@ from nonebug import App
 import pytest
 
 from src.lib.message_assets import message_asset_repo
+from src.lib.messages import text_message
 
 nonebot.init(
     SUPERUSERS={"1"},
@@ -154,7 +155,7 @@ async def test_remove_succeeds_for_admin(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "走了走了，再见啦！原因：例行维护",
+                "message": text_message("走了走了，再见啦！原因：例行维护"),
             },
             result={"message_id": 1},
         )
@@ -163,7 +164,7 @@ async def test_remove_succeeds_for_admin(
             "send_private_msg",
             {
                 "user_id": 2,
-                "message": (
+                "message": text_message(
                     "👋 退群提醒\n"
                     "群组 ID: 20001\n"
                     "群组名称: 测试群\n"
@@ -226,7 +227,7 @@ async def test_remove_handles_leave_failure(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "走了走了，再见啦！原因：例行维护",
+                "message": text_message("走了走了，再见啦！原因：例行维护"),
             },
             result={"message_id": 1},
         )

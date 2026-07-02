@@ -19,7 +19,7 @@ from typing import Any
 import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.exception import ParserExit
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
@@ -33,8 +33,14 @@ from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.demo_theme import SENRIN_V3_ADMIN_INVITE_IMAGE_THEME
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
-from src.lib.messages import empty_message
+from src.lib.message_plan import (
+    DeliveryPlan,
+    ImageBytesBlock,
+    MessagePlanEntry,
+    ReplyRefBlock,
+    TextBlock,
+    deliver_message_plan,
+)
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_doc_demo_message,
@@ -201,11 +207,13 @@ async def _send_reusable_text(
     *,
     message: str,
 ) -> None:
-    await deliver_single_message(
+    await deliver_message_plan(
         bot,
-        target=resolve_delivery_target(event),
-        message=message,
-        source_kind="admin_invite",
+        plan=DeliveryPlan(
+            messages=(message,),
+            source_kind="admin_invite",
+        ),
+        event=event,
     )
 
 
@@ -552,28 +560,32 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         status=group_status,
     )
     if not ctx.silent:
-        reply_message = empty_message()
         message_id = getattr(ctx.event, "message_id", None)
+        blocks: list[ReplyRefBlock | TextBlock] = []
         if message_id is not None:
-            reply_message += MessageSegment.reply(int(message_id))
-        reply_message += MessageSegment.text(
-            tr(
-                ctx.locale,
-                "admin.invite.action_done",
-                action=action,
-                invitation_id=invitation.id,
-                group_id=invitation.group_id,
-                group_name=invitation.group.group_name,
-                inviter_name=invitation.inviter.user_name,
-                flag=invitation.flag,
+            blocks.append(ReplyRefBlock(message_id=str(message_id)))
+        blocks.append(
+            TextBlock(
+                tr(
+                    ctx.locale,
+                    "admin.invite.action_done",
+                    action=action,
+                    invitation_id=invitation.id,
+                    group_id=invitation.group_id,
+                    group_name=invitation.group.group_name,
+                    inviter_name=invitation.inviter.user_name,
+                    flag=invitation.flag,
+                )
             )
         )
-        await deliver_single_message(
+        await deliver_message_plan(
             ctx.bot,
-            target=resolve_delivery_target(ctx.event),
-            message=reply_message,
-            source_kind="admin_invite_action_done",
-            allow_asset_reuse=False,
+            plan=DeliveryPlan(
+                messages=(MessagePlanEntry(blocks=tuple(blocks)),),
+                source_kind="admin_invite_action_done",
+                allow_asset_reuse=False,
+            ),
+            event=ctx.event,
         )
     return True
 
@@ -600,11 +612,13 @@ async def handle_list(ctx: AdminInviteContext) -> None:
 
     img_bytes = await generate_invitation_image_bytes(render_data, ctx.locale)
 
-    await deliver_single_message(
+    await deliver_message_plan(
         ctx.bot,
-        target=resolve_delivery_target(ctx.event),
-        message=empty_message() + MessageSegment.image(img_bytes),
-        source_kind="admin_invite_list",
+        plan=DeliveryPlan(
+            messages=(MessagePlanEntry(blocks=(ImageBytesBlock(img_bytes),)),),
+            source_kind="admin_invite_list",
+        ),
+        event=ctx.event,
     )
 
 

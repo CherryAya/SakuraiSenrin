@@ -28,7 +28,7 @@ SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 from src.database.core.consts import Permission as CorePermission
 from src.lib.i18n.runtime import tr
 from src.lib.message_assets import message_asset_repo
-from src.lib.messages import empty_message
+from src.lib.messages import empty_message, text_message
 from src.plugins.admin.backup import admin_backup
 from src.plugins.admin.group import admin_group
 from src.plugins.admin.i18n import admin_i18n
@@ -287,7 +287,9 @@ async def test_admin_invite_log_returns_i18n_notice(
             "send_private_msg",
             {
                 "user_id": SUPERUSER_ID,
-                "message": tr("zh-CN", "admin.invite.log.unavailable"),
+                "message": text_message(
+                    tr("zh-CN", "admin.invite.log.unavailable")
+                ),
             },
             result={"message_id": 1},
         )

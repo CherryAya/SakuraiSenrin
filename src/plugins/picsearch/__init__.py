@@ -28,7 +28,7 @@ from src.lib.cooldown import (
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.messages import text_message
 from src.lib.plugin_docs import (
     DocsRenderContext,
@@ -302,16 +302,20 @@ async def run_search(
         await matcher.finish(tr(locale, "picsearch.engine_key_missing", engine=engine))
 
     for selected in indexes:
-        await deliver_single_message(
+        await deliver_message_plan(
             bot,
-            target=resolve_delivery_target(event),
-            message=tr(
-                locale,
-                "picsearch.searching",
-                index=selected + 1,
-                engine=engine.value,
+            plan=DeliveryPlan(
+                messages=(
+                    tr(
+                        locale,
+                        "picsearch.searching",
+                        index=selected + 1,
+                        engine=engine.value,
+                    ),
+                ),
+                source_kind="picsearch",
             ),
-            source_kind="picsearch",
+            event=event,
         )
         try:
             result = await search_image(image_urls[selected], engine, locale=locale)
@@ -320,30 +324,38 @@ async def run_search(
                 "[Picsearch] search failed: "
                 f"engine={engine.value} index={selected + 1}: {exc}"
             )
-            await deliver_single_message(
+            await deliver_message_plan(
                 bot,
-                target=resolve_delivery_target(event),
-                message=tr(
-                    locale,
-                    "picsearch.search_failed",
-                    index=selected + 1,
-                    engine=engine.value,
+                plan=DeliveryPlan(
+                    messages=(
+                        tr(
+                            locale,
+                            "picsearch.search_failed",
+                            index=selected + 1,
+                            engine=engine.value,
+                        ),
+                    ),
+                    source_kind="picsearch",
                 ),
-                source_kind="picsearch",
+                event=event,
             )
             continue
 
         if result is None:
-            await deliver_single_message(
+            await deliver_message_plan(
                 bot,
-                target=resolve_delivery_target(event),
-                message=tr(
-                    locale,
-                    "picsearch.no_result",
-                    index=selected + 1,
-                    engine=engine.value,
+                plan=DeliveryPlan(
+                    messages=(
+                        tr(
+                            locale,
+                            "picsearch.no_result",
+                            index=selected + 1,
+                            engine=engine.value,
+                        ),
+                    ),
+                    source_kind="picsearch",
                 ),
-                source_kind="picsearch",
+                event=event,
             )
             continue
 
@@ -356,16 +368,20 @@ async def run_search(
                 f"engine={engine.value} index={selected + 1}: {exc}"
             )
 
-        await deliver_single_message(
+        await deliver_message_plan(
             bot,
-            target=resolve_delivery_target(event),
-            message=build_result_message(
-                selected + 1,
-                result,
-                thumbnail_bytes,
-                locale=locale,
+            plan=DeliveryPlan(
+                messages=(
+                    build_result_message(
+                        selected + 1,
+                        result,
+                        thumbnail_bytes,
+                        locale=locale,
+                    ),
+                ),
+                source_kind="picsearch",
             ),
-            source_kind="picsearch",
+            event=event,
         )
 
     await matcher.finish()

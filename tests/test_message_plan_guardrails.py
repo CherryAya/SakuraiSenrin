@@ -11,6 +11,12 @@ PLAN_FIRST_PLUGIN_ROOTS = (
     ROOT / "src" / "plugins" / "wordbank",
     ROOT / "src" / "plugins" / "study",
 )
+PLAN_FIRST_PLUGIN_FILES = (
+    ROOT / "src" / "plugins" / "remove" / "__init__.py",
+    ROOT / "src" / "plugins" / "notice" / "invite.py",
+    ROOT / "src" / "plugins" / "admin" / "invite.py",
+    ROOT / "src" / "plugins" / "picsearch" / "__init__.py",
+)
 
 
 def _iter_python_files(root: Path) -> list[Path]:
@@ -62,7 +68,31 @@ def test_wordbank_and_study_do_not_call_deliver_single_message_directly() -> Non
     )
 
 
-def test_wordbank_plan_builders_do_not_use_render_shape_wrapper_outside_rendering() -> None:
+def test_migrated_plugin_entrypoints_do_not_call_deliver_single_message_directly(
+) -> None:
+    banned_patterns = (
+        "deliver_single_message(",
+        "resolve_delivery_target(",
+        "from src.lib.message_delivery import deliver_single_message",
+        "from src.lib.message_delivery import resolve_delivery_target",
+    )
+    violations: list[str] = []
+
+    for path in PLAN_FIRST_PLUGIN_FILES:
+        content = path.read_text(encoding="utf-8")
+        hits = [pattern for pattern in banned_patterns if pattern in content]
+        if hits:
+            violations.append(f"{path.relative_to(ROOT)} -> {', '.join(hits)}")
+
+    assert not violations, (
+        "Migrated plugin entrypoints must keep routing through DeliveryPlan "
+        "instead of direct single-message delivery:\n"
+        + "\n".join(violations)
+    )
+
+
+def test_wordbank_plan_builders_do_not_use_render_shape_wrapper_outside_rendering(
+) -> None:
     rendering_path = ROOT / "src" / "plugins" / "wordbank" / "handlers" / "rendering.py"
     violations: list[str] = []
 
