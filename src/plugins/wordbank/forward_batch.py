@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -15,6 +15,15 @@ from src.plugins.wordbank.message_model import MessageShape, combine_shapes
 from src.plugins.wordbank.services.errors import WordbankUserError
 
 FORWARD_BATCH_NODE_LIMIT = 50
+FORWARD_BATCH_MAX_DEPTH = 3
+
+
+@dataclass(slots=True, frozen=True)
+class ResponseInputPayload:
+    input_kind: Literal["single", "forward"]
+    whole_shape: MessageShape
+    split_shapes: tuple[MessageShape, ...]
+    source_message_id: int | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -75,6 +84,7 @@ async def build_forward_batch_payload(
     event: MessageEvent,
     *,
     media_service: Any,
+    max_depth: int = FORWARD_BATCH_MAX_DEPTH,
 ) -> ForwardBatchPayload:
     source_message_id = extract_forward_source_message_id(event)
     if source_message_id is None:
@@ -86,6 +96,7 @@ async def build_forward_batch_payload(
         bot,
         media_service=media_service,
         source_message_id=source_message_id,
+        max_depth=max_depth,
     )
 
 
@@ -94,37 +105,17 @@ async def build_forward_batch_payload_by_source_message_id(
     *,
     media_service: Any,
     source_message_id: int,
+    max_depth: int = FORWARD_BATCH_MAX_DEPTH,
 ) -> ForwardBatchPayload:
     from src.plugins.wordbank.handlers import build_message_shape_from_message
 
-    detail = await bot.call_api("get_forward_msg", message_id=source_message_id)
-    raw_items = _extract_forward_raw_items(detail)
-    logger.debug(
-        "[Wordbank][forward] payload fetch | "
-        f"source_message_id={source_message_id} raw_node_count={len(raw_items)} "
-        f"detail_type={type(detail).__name__}"
+    messages = await _collect_forward_messages_from_source_message_id(
+        bot,
+        source_message_id=source_message_id,
+        max_depth=max_depth,
+        depth=0,
+        visited_ids=(),
     )
-    messages: list[Message] = []
-    for index, item in enumerate(raw_items, start=1):
-        message = _coerce_forward_message(item)
-        if message is None:
-            logger.debug(
-                "[Wordbank][forward] node skipped | "
-                f"source_message_id={source_message_id} node_index={index} "
-                f"raw_type={type(item).__name__} reason=coerce_failed"
-            )
-            continue
-        logger.debug(
-            "[Wordbank][forward] node parsed | "
-            f"source_message_id={source_message_id} node_index={index} "
-            f"{describe_message_segments(message)}"
-        )
-        messages.append(message)
-    if not messages:
-        raise WordbankUserError(
-            tr("zh-CN", "wordbank.error.forward_message_empty"),
-            key="wordbank.error.forward_message_empty",
-        )
     if len(messages) > FORWARD_BATCH_NODE_LIMIT:
         raise WordbankUserError(
             tr(
@@ -161,6 +152,38 @@ async def build_forward_batch_payload_by_source_message_id(
         node_count=len(shapes),
         whole_shape=whole,
         split_shapes=tuple(shapes),
+    )
+
+
+async def build_response_input_payload(
+    bot: Bot,
+    event: MessageEvent,
+    *,
+    media_service: Any,
+    max_forward_depth: int = FORWARD_BATCH_MAX_DEPTH,
+) -> ResponseInputPayload:
+    from src.plugins.wordbank.handlers import build_message_shape_from_message
+
+    if is_forward_input(event):
+        payload = await build_forward_batch_payload(
+            bot,
+            event,
+            media_service=media_service,
+            max_depth=max_forward_depth,
+        )
+        return ResponseInputPayload(
+            input_kind="forward",
+            whole_shape=payload.whole_shape,
+            split_shapes=payload.split_shapes,
+            source_message_id=payload.source_message_id,
+        )
+    shape = await build_message_shape_from_message(media_service, event.message)
+    split_shapes = (shape,) if not shape.is_empty() else ()
+    return ResponseInputPayload(
+        input_kind="single",
+        whole_shape=shape,
+        split_shapes=split_shapes,
+        source_message_id=None,
     )
 
 
@@ -254,3 +277,122 @@ def _coerce_forward_segment(raw: Any) -> MessageSegment | None:
         return MessageSegment(segment_type, data)
     except TypeError:
         return None
+
+
+async def _collect_forward_messages_from_source_message_id(
+    bot: Bot,
+    *,
+    source_message_id: int,
+    max_depth: int,
+    depth: int,
+    visited_ids: tuple[int, ...],
+) -> tuple[Message, ...]:
+    if depth >= max_depth:
+        raise WordbankUserError(
+            tr(
+                "zh-CN",
+                "wordbank.error.forward_message_too_deep",
+                limit=max_depth,
+            ),
+            key="wordbank.error.forward_message_too_deep",
+            limit=max_depth,
+        )
+    if source_message_id in visited_ids:
+        raise WordbankUserError(
+            tr(
+                "zh-CN",
+                "wordbank.error.forward_message_too_deep",
+                limit=max_depth,
+            ),
+            key="wordbank.error.forward_message_too_deep",
+            limit=max_depth,
+        )
+    detail = await bot.call_api("get_forward_msg", message_id=source_message_id)
+    raw_items = _extract_forward_raw_items(detail)
+    logger.debug(
+        "[Wordbank][forward] payload fetch | "
+        f"source_message_id={source_message_id} raw_node_count={len(raw_items)} "
+        f"detail_type={type(detail).__name__} depth={depth}"
+    )
+    messages: list[Message] = []
+    next_visited = (*visited_ids, source_message_id)
+    for index, item in enumerate(raw_items, start=1):
+        message = _coerce_forward_message(item)
+        if message is None:
+            logger.debug(
+                "[Wordbank][forward] node skipped | "
+                f"source_message_id={source_message_id} node_index={index} "
+                f"raw_type={type(item).__name__} reason=coerce_failed depth={depth}"
+            )
+            continue
+        logger.debug(
+            "[Wordbank][forward] node parsed | "
+            f"source_message_id={source_message_id} node_index={index} depth={depth} "
+            f"{describe_message_segments(message)}"
+        )
+        flattened = await _flatten_forward_message(
+            bot,
+            message=message,
+            max_depth=max_depth,
+            depth=depth,
+            visited_ids=next_visited,
+        )
+        messages.extend(flattened)
+    if not messages:
+        raise WordbankUserError(
+            tr("zh-CN", "wordbank.error.forward_message_empty"),
+            key="wordbank.error.forward_message_empty",
+        )
+    return tuple(messages)
+
+
+async def _flatten_forward_message(
+    bot: Bot,
+    *,
+    message: Message,
+    max_depth: int,
+    depth: int,
+    visited_ids: tuple[int, ...],
+) -> tuple[Message, ...]:
+    if not is_forward_message(message):
+        return (message,)
+    parts: list[Message] = []
+    buffer: list[MessageSegment] = []
+    for segment in message:
+        if segment.type != "forward":
+            buffer.append(segment)
+            continue
+        if buffer:
+            parts.append(Message(buffer.copy()))
+            buffer.clear()
+        nested_source_id = _coerce_forward_segment_message_id(segment)
+        if nested_source_id is None:
+            logger.debug(
+                "[Wordbank][forward] nested segment skipped | "
+                f"depth={depth} reason=missing_source_id"
+            )
+            continue
+        nested_messages = await _collect_forward_messages_from_source_message_id(
+            bot,
+            source_message_id=nested_source_id,
+            max_depth=max_depth,
+            depth=depth + 1,
+            visited_ids=visited_ids,
+        )
+        parts.extend(nested_messages)
+    if buffer:
+        parts.append(Message(buffer.copy()))
+    return tuple(part for part in parts if len(part) > 0)
+
+
+def _coerce_forward_segment_message_id(segment: MessageSegment) -> int | None:
+    if segment.type != "forward":
+        return None
+    raw_id = segment.data.get("id")
+    if raw_id is None:
+        return None
+    try:
+        parsed = int(str(raw_id))
+    except ValueError:
+        return None
+    return parsed if parsed > 0 else None

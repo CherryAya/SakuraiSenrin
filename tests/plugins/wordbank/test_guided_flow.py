@@ -4,7 +4,7 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 from nonebot.matcher import Matcher
 import pytest
 
@@ -27,7 +27,7 @@ if nonebot.get_plugin("wordbank") is None:
     sys.modules.pop("src.plugins.wordbank", None)
     nonebot.load_plugin("src.plugins.wordbank")
 
-from src.plugins.wordbank.forward_batch import ForwardBatchPayload
+from src.plugins.wordbank.forward_batch import ResponseInputPayload
 from src.plugins.wordbank.guided_flow import record_guided_forward_response_choice
 from src.plugins.wordbank.message_model import shape_from_text
 from src.plugins.wordbank.services import wordbank_media_service
@@ -46,28 +46,30 @@ class _PauseMatcher:
     [("1", False), ("2", True)],
 )
 @pytest.mark.asyncio
-async def test_guided_forward_choice_uses_saved_source_message_id(
+async def test_guided_forward_choice_uses_saved_response_event(
     monkeypatch: pytest.MonkeyPatch,
     choice_text: str,
     expect_split: bool,
 ) -> None:
     matcher = _PauseMatcher()
     bot = cast(Bot, SimpleNamespace())
+    response_event = build_group_message_event("", message_id=8)
+    response_event.message = Message([MessageSegment.forward("54321")])
     state: dict[str, object] = {
         "wordbank_guided_response_forward_pending": True,
-        "wordbank_guided_response_forward_source_message_id": 54321,
+        "wordbank_guided_response_forward_event": response_event,
     }
     event = build_group_message_event(choice_text, message_id=9)
-    payload = ForwardBatchPayload(
+    payload = ResponseInputPayload(
+        input_kind="forward",
         source_message_id=54321,
-        node_count=2,
         whole_shape=shape_from_text("整体响应"),
         split_shapes=(shape_from_text("第一条"), shape_from_text("第二条")),
     )
     build_payload = AsyncMock(return_value=payload)
 
     monkeypatch.setattr(
-        "src.plugins.wordbank.guided_flow.build_forward_batch_payload_by_source_message_id",
+        "src.plugins.wordbank.guided_flow.build_response_input_payload",
         build_payload,
     )
 
@@ -82,10 +84,11 @@ async def test_guided_forward_choice_uses_saved_source_message_id(
 
     build_payload.assert_awaited_once_with(
         bot,
+        response_event,
         media_service=wordbank_media_service,
-        source_message_id=54321,
     )
     assert "wordbank_guided_response_forward_pending" not in state
+    assert "wordbank_guided_response_forward_event" not in state
     assert matcher.paused == [tr("zh-CN", "wordbank.guided.add.scope_prompt")]
     if expect_split:
         assert state["wordbank_guided_response_split_shapes"] == payload.split_shapes

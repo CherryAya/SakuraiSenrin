@@ -250,6 +250,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.error.forward_message_not_found": "没找到能解析的合并转发消息。",
     "wordbank.error.forward_message_empty": "这条合并转发里没可用内容。",
     "wordbank.error.forward_message_too_many": "合并转发节点太多了，最多只支持 {limit} 个。",
+    "wordbank.error.forward_message_too_deep": "合并转发套得太深了，最多只支持 {limit} 层。",
     "wordbank.error.forward_response_choice_invalid": "请输入 1 表示整体，或者 2 表示拆开。",
     "wordbank.error.trigger_group_duplicate": "已经有同样触发词的 trigger group 了，直接改概率或者加响应词吧。",
     "wordbank.mutation.trigger_probability_updated": "trigger group #{group_id} 的触发概率已经改成 {probability} 了。",

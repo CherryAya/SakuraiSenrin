@@ -30,8 +30,7 @@ from src.plugins.wordbank.debug import (
     describe_shape,
 )
 from src.plugins.wordbank.forward_batch import (
-    build_forward_batch_payload_by_source_message_id,
-    extract_forward_source_message_id,
+    build_response_input_payload,
     is_forward_input,
 )
 from src.plugins.wordbank.handlers import (
@@ -67,7 +66,7 @@ WORDBANK_GUIDED_RECALL_PENDING_KEYS = (
     "wordbank_guided_trigger_shape",
     "wordbank_guided_response_shape",
     "wordbank_guided_response_forward_pending",
-    "wordbank_guided_response_forward_source_message_id",
+    "wordbank_guided_response_forward_event",
     "wordbank_guided_response_split_shapes",
     "wordbank_guided_scope",
     "wordbank_guided_search_keyword",
@@ -104,14 +103,9 @@ def _guided_state_keys(state: Mapping[str, Any]) -> list[str]:
     return sorted(str(key) for key in state.keys() if str(key).startswith("wordbank_"))
 
 
-def _guided_forward_source_message_id(state: Mapping[str, Any]) -> int | None:
-    value = state.get("wordbank_guided_response_forward_source_message_id")
-    if isinstance(value, int):
-        return value if value > 0 else None
-    if isinstance(value, str) and value.strip().isdigit():
-        parsed = int(value.strip())
-        return parsed if parsed > 0 else None
-    return None
+def _guided_forward_response_event(state: Mapping[str, Any]) -> MessageEvent | None:
+    value = state.get("wordbank_guided_response_forward_event")
+    return value if isinstance(value, MessageEvent) else None
 
 
 async def reject_guided_error(
@@ -251,23 +245,9 @@ async def record_guided_response(
 ) -> None:
     if is_forward_input(event):
         state["wordbank_guided_response_forward_pending"] = True
-        source_message_id = extract_forward_source_message_id(event)
-        if source_message_id is None:
-            logger.debug(
-                "[Wordbank][guided] forward response missing source_message_id | "
-                f"{describe_message_segments(event.message)}"
-            )
-            await reject_guided_error(
-                matcher,
-                state,
-                locale,
-                tr(locale, "wordbank.error.forward_message_not_found"),
-            )
-            return
-        state["wordbank_guided_response_forward_source_message_id"] = source_message_id
+        state["wordbank_guided_response_forward_event"] = event
         logger.debug(
             "[Wordbank][guided] forward response detected | "
-            f"source_message_id={source_message_id or '-'} "
             f"{describe_message_segments(event.message)}"
         )
         clear_interaction_errors(state)
@@ -327,10 +307,10 @@ async def record_guided_forward_response_choice(
         "[Wordbank][guided] forward response choice | "
         f"choice={choice or '-'} state_keys={state_keys}"
     )
-    source_message_id = _guided_forward_source_message_id(state)
-    if source_message_id is None:
+    response_event = _guided_forward_response_event(state)
+    if response_event is None:
         logger.debug(
-            "[Wordbank][guided] forward response choice missing source_message_id | "
+            "[Wordbank][guided] forward response choice missing response_event | "
             f"choice={choice or '-'}"
         )
         await reject_guided_error(
@@ -342,40 +322,52 @@ async def record_guided_forward_response_choice(
         return
     if choice in {"1", "whole", "整体"}:
         state.pop("wordbank_guided_response_forward_pending", None)
-        payload = await build_forward_batch_payload_by_source_message_id(
+        payload = await build_response_input_payload(
             bot,
+            response_event,
             media_service=media_service,
-            source_message_id=source_message_id,
         )
+        if payload.input_kind != "forward":
+            await reject_guided_error(
+                matcher,
+                state,
+                locale,
+                tr(locale, "wordbank.error.forward_message_not_found"),
+            )
+            return
         state["wordbank_guided_response_shape"] = payload.whole_shape
-        state["wordbank_guided_response_forward_source_message_id"] = (
-            payload.source_message_id
-        )
+        state.pop("wordbank_guided_response_forward_event", None)
         whole_description = describe_shape(payload.whole_shape)
         logger.debug(
             "[Wordbank][guided] forward response imported whole | "
-            f"source_message_id={payload.source_message_id} "
-            f"node_count={payload.node_count} whole={whole_description}"
+            f"source_message_id={payload.source_message_id or '-'} "
+            f"node_count={len(payload.split_shapes)} whole={whole_description}"
         )
         clear_interaction_errors(state)
         await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
         return
     if choice in {"2", "split", "拆开"}:
         state.pop("wordbank_guided_response_forward_pending", None)
-        payload = await build_forward_batch_payload_by_source_message_id(
+        payload = await build_response_input_payload(
             bot,
+            response_event,
             media_service=media_service,
-            source_message_id=source_message_id,
         )
+        if payload.input_kind != "forward":
+            await reject_guided_error(
+                matcher,
+                state,
+                locale,
+                tr(locale, "wordbank.error.forward_message_not_found"),
+            )
+            return
         state["wordbank_guided_response_split_shapes"] = payload.split_shapes
-        state["wordbank_guided_response_forward_source_message_id"] = (
-            payload.source_message_id
-        )
+        state.pop("wordbank_guided_response_forward_event", None)
         first_shape = payload.split_shapes[0] if payload.split_shapes else None
         logger.debug(
             "[Wordbank][guided] forward response imported split | "
-            f"source_message_id={payload.source_message_id} "
-            f"node_count={payload.node_count} "
+            f"source_message_id={payload.source_message_id or '-'} "
+            f"node_count={len(payload.split_shapes)} "
             f"split_count={len(payload.split_shapes)} "
             f"first={describe_shape(first_shape)}"
         )

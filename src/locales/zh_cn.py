@@ -448,6 +448,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.error.forward_message_not_found": "未找到可解析的合并转发消息。",
     "wordbank.error.forward_message_empty": "合并转发里没有可用内容。",
     "wordbank.error.forward_message_too_many": "合并转发节点过多，最多支持 {limit} 个节点。",
+    "wordbank.error.forward_message_too_deep": "合并转发嵌套层数过深，最多支持 {limit} 层。",
     "wordbank.error.forward_response_choice_invalid": "请输入 1 代表整体，或 2 代表拆开。",
     "wordbank.error.trigger_group_duplicate": "已存在相同触发词的 trigger group，请直接修改概率或新增响应词。",
     "wordbank.error.unknown_subcommand": "未知词库子命令: {action}\n\n{help}",

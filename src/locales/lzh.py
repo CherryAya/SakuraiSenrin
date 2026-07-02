@@ -269,6 +269,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.error.forward_message_not_found": "未得可析之合併轉發消息。",
     "wordbank.error.forward_message_empty": "合併轉發中無可用內容。",
     "wordbank.error.forward_message_too_many": "合併轉發節點過多，至多支 {limit} 節。",
+    "wordbank.error.forward_message_too_deep": "合併轉發層疊過深，至多支 {limit} 層。",
     "wordbank.error.forward_response_choice_invalid": "請輸 1 以表整體，或 2 以表拆開。",
     "wordbank.error.trigger_group_duplicate": "已有同觸發詞之 trigger group，請徑改概率或增響應詞。",
     "wordbank.mutation.trigger_probability_updated": "trigger group #{group_id} 之觸發概率已改為 {probability}。",

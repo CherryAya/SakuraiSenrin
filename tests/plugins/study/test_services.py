@@ -4,7 +4,7 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 from nonebot.matcher import Matcher
 import pytest
 
@@ -28,7 +28,7 @@ if nonebot.get_plugin("study") is None:
     nonebot.load_plugin("src.plugins.study")
 
 from src.plugins import study as study_plugin
-from src.plugins.wordbank.forward_batch import ForwardBatchPayload
+from src.plugins.wordbank.forward_batch import ResponseInputPayload
 from src.plugins.wordbank.message_model import shape_from_text
 from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
 
@@ -51,21 +51,23 @@ class _PauseMatcher:
     [("1", False), ("2", True)],
 )
 @pytest.mark.asyncio
-async def test_forward_choice_uses_saved_source_message_id(
+async def test_forward_choice_uses_saved_response_event(
     monkeypatch: pytest.MonkeyPatch,
     choice_text: str,
     expect_split: bool,
 ) -> None:
     matcher = _PauseMatcher()
     bot = cast(Bot, SimpleNamespace())
+    response_event = build_group_message_event("", message_id=8)
+    response_event.message = Message([MessageSegment.forward("54321")])
     state: dict[str, object] = {
         "study_forward_response_pending": True,
-        "study_forward_source_message_id": 54321,
+        "study_forward_response_event": response_event,
     }
     event = build_group_message_event(choice_text, message_id=9)
-    payload = ForwardBatchPayload(
+    payload = ResponseInputPayload(
+        input_kind="forward",
         source_message_id=54321,
-        node_count=2,
         whole_shape=shape_from_text("整体响应"),
         split_shapes=(shape_from_text("第一条"), shape_from_text("第二条")),
     )
@@ -73,7 +75,7 @@ async def test_forward_choice_uses_saved_source_message_id(
 
     monkeypatch.setattr(
         study_plugin,
-        "build_forward_batch_payload_by_source_message_id",
+        "build_response_input_payload",
         build_payload,
     )
 
@@ -87,10 +89,11 @@ async def test_forward_choice_uses_saved_source_message_id(
 
     build_payload.assert_awaited_once_with(
         bot,
+        response_event,
         media_service=wordbank_media_service,
-        source_message_id=54321,
     )
     assert "study_forward_response_pending" not in state
+    assert "study_forward_response_event" not in state
     assert state["study_weight_after_preloaded_trigger"] is True
     assert matcher.paused == [tr("zh-CN", "wordbank.guided.study.weight_prompt")]
     if expect_split:
