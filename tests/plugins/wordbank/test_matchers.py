@@ -388,7 +388,9 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": tr("zh-CN", "wordbank.add.processing_with_media"),
+                "message": text_message(
+                    tr("zh-CN", "wordbank.add.processing_with_media")
+                ),
             },
             result={"message_id": 1},
         )

@@ -438,7 +438,7 @@ async def test_handle_search_session_delete_refreshes_current_page(
     assert call_api.await_args_list[-1].args == ("send_group_msg",)
     assert call_api.await_args_list[-1].kwargs == {
         "group_id": 20001,
-        "message": "词条 #12 已删除。",
+        "message": text_message("词条 #12 已删除。"),
     }
     assert matcher.sent == []
     assert isinstance(wordbank_plugin.handle_delete, AsyncMock)

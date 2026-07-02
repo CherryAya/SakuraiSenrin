@@ -16,7 +16,7 @@ from nonebot.typing import T_State
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.interaction import abort_if_revoke_signal, clear_interaction_errors
-from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 
 from .guided_flow import (
     WORDBANK_GUIDED_SEARCH_STAGE_CREATOR,
@@ -181,11 +181,15 @@ def register_wordbank_command_handlers(
             try:
                 has_images = bool(await _call_dynamic("extract_image_urls", arg))
                 if has_images:
-                    await deliver_single_message(
+                    await deliver_message_plan(
                         bot,
-                        target=resolve_delivery_target(event),
-                        message=tr(locale, "wordbank.add.processing_with_media"),
-                        source_kind="wordbank_command",
+                        plan=DeliveryPlan(
+                            messages=(
+                                tr(locale, "wordbank.add.processing_with_media"),
+                            ),
+                            source_kind="wordbank_command",
+                        ),
+                        event=event,
                     )
                 data = await _call_dynamic("fetch_first_image_bytes_from_message", arg)
                 if data is not None:

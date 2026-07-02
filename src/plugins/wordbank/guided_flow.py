@@ -22,7 +22,7 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
-from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.logger import logger
 from src.plugins.wordbank.debug import (
     describe_batch_errors,
@@ -734,12 +734,15 @@ async def finish_guided_search(
     if delivery_bot is None:
         send_result = await matcher.send(message)
     else:
-        send_result = await deliver_single_message(
+        plan_result = await deliver_message_plan(
             delivery_bot,
-            target=resolve_delivery_target(event),
-            message=message,
-            source_kind="wordbank_view",
+            plan=DeliveryPlan(
+                messages=(message,),
+                source_kind="wordbank_view",
+            ),
+            event=event,
         )
+        send_result = plan_result.results[0]
     await record_search_result_view_message(
         send_result=send_result,
         event=event,
@@ -853,11 +856,13 @@ async def handle_search_session_event(
             if delivery_bot is None:
                 await matcher.send(merged_message)
             else:
-                await deliver_single_message(
+                await deliver_message_plan(
                     delivery_bot,
-                    target=resolve_delivery_target(event),
-                    message=merged_message,
-                    source_kind="wordbank_command",
+                    plan=DeliveryPlan(
+                        messages=(merged_message,),
+                        source_kind="wordbank_command",
+                    ),
+                    event=event,
                 )
         clear_interaction_errors(state)
         await finish_guided_search_fn(
