@@ -68,7 +68,7 @@ message_asset_db = StateStore(
 register_backup_database(message_asset_db)
 
 
-AssetKind = Literal["single_message", "forward_node"]
+AssetKind = Literal["single_message", "forward_node", "forward_bundle"]
 MessageShapeKind = Literal["plain", "rich", "contains_reply", "contains_at"]
 
 
@@ -217,6 +217,37 @@ class MessageAssetRepository:
         )
         return self._to_record(row)
 
+    async def get_asset_by_kind(
+        self,
+        asset_key: str,
+        *,
+        asset_kind: AssetKind,
+    ) -> MessageAssetRecord | None:
+        asset = await self.get_asset(asset_key)
+        if asset is None:
+            return None
+        if asset.asset_kind != asset_kind:
+            logger.debug(
+                "[MessageAsset] cache filtered "
+                f"asset_key={_short_key(asset_key)} "
+                f"reason=asset_kind_mismatch cached={asset.asset_kind} "
+                f"expected={asset_kind}"
+            )
+            return None
+        return asset
+
+    async def get_forward_bundle_asset(
+        self,
+        asset_key: str,
+    ) -> MessageAssetRecord | None:
+        return await self.get_asset_by_kind(asset_key, asset_kind="forward_bundle")
+
+    async def get_forward_node_asset(
+        self,
+        asset_key: str,
+    ) -> MessageAssetRecord | None:
+        return await self.get_asset_by_kind(asset_key, asset_kind="forward_node")
+
     async def upsert_asset(
         self,
         *,
@@ -287,6 +318,36 @@ class MessageAssetRepository:
                 f"sort={forward_sort_key} status={status}"
             )
             return self._to_record(row)
+
+    async def upsert_forward_bundle_asset(
+        self,
+        *,
+        asset_key: str,
+        content_hash: str,
+        source_kind: str,
+        message_id: str,
+        sender_bot_id: str,
+        origin_message_type: str,
+        origin_target_id: str,
+        forward_context_key: str = "",
+        status: str = "active",
+        last_verify_error: str = "",
+    ) -> MessageAssetRecord:
+        return await self.upsert_asset(
+            asset_key=asset_key,
+            content_hash=content_hash,
+            asset_kind="forward_bundle",
+            source_kind=source_kind,
+            message_id=message_id,
+            sender_bot_id=sender_bot_id,
+            origin_message_type=origin_message_type,
+            origin_target_id=origin_target_id,
+            message_shape_kind="rich",
+            forward_context_key=forward_context_key,
+            forward_sort_key=0,
+            status=status,
+            last_verify_error=last_verify_error,
+        )
 
     async def mark_stale(
         self,

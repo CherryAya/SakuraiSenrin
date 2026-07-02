@@ -430,7 +430,7 @@ async def ensure_forward_node(
         f"reason={descriptor.disqualify_reason or '-'}"
     )
     if descriptor.reusable_globally and allow_asset_reuse:
-        asset = await message_asset_repo.get_asset(node_asset_key)
+        asset = await message_asset_repo.get_forward_node_asset(node_asset_key)
         if (
             asset is not None
             and asset.message_id
@@ -473,7 +473,14 @@ async def ensure_forward_node(
         "[MessageDelivery] stage forward node "
         f"asset_key={_short_key(node_asset_key)} staging_target=private:{bot.self_id}"
     )
-    staged = await _send_message(bot, staging_target, node_message)
+    try:
+        staged = await _send_message(bot, staging_target, node_message)
+    except Exception as exc:
+        await message_asset_repo.mark_stale(
+            node_asset_key,
+            last_verify_error=str(exc),
+        )
+        raise
     message_id = _extract_message_id(staged) or ""
     if not message_id:
         raise RuntimeError("failed to stage forward node message")
@@ -517,7 +524,7 @@ async def _resolve_reusable_forward_prefix_length(
     previous_sort_tuple: tuple[int, int, int] | None = None
     reusable_count = 0
     for index, node_asset_key in enumerate(batch.node_asset_keys):
-        asset = await message_asset_repo.get_asset(node_asset_key)
+        asset = await message_asset_repo.get_forward_node_asset(node_asset_key)
         if asset is None:
             logger.debug(
                 "[MessageDelivery] forward prefix stop "
@@ -580,22 +587,90 @@ async def deliver_forward_messages(
 ) -> None:
     batch = build_forward_batch_descriptor(messages, policy=reuse_policy)
     target = resolve_delivery_target(event)
+    bundle_asset_key = batch.context_key
     logger.debug(
         "[MessageDelivery] deliver forward messages "
         f"source={source_kind} event={event.message_type} "
         f"target={target.kind}:{target.target_id} "
         f"nodes={len(messages)} batch_ctx={_short_key(batch.context_key)}"
     )
-    logger.debug(
-        "[MessageDelivery] merged forward path "
-        "mode=node_custom_direct "
-        "reason=napcat_send_group_forward_msg_requires_custom_nodes"
-    )
     from src.lib.onebot_forward import send_custom_forward
 
-    await send_custom_forward(
+    if bundle_asset_key:
+        bundle_asset = await message_asset_repo.get_forward_bundle_asset(
+            bundle_asset_key
+        )
+        if bundle_asset is not None and bundle_asset.message_id:
+            try:
+                bundle_origin = (
+                    f"{bundle_asset.origin_message_type}:"
+                    f"{bundle_asset.origin_target_id or '-'}"
+                )
+                logger.debug(
+                    "[MessageDelivery] forward bundle reuse hit "
+                    f"asset_key={_short_key(bundle_asset_key)} "
+                    f"message_id={bundle_asset.message_id} "
+                    f"origin={bundle_origin}"
+                )
+                await _try_forward_single_message(
+                    bot,
+                    target=target,
+                    message_id=bundle_asset.message_id,
+                    origin_message_type=bundle_asset.origin_message_type,
+                )
+                return
+            except Exception as exc:
+                logger.debug(
+                    "[MessageDelivery] forward bundle reuse invalidated "
+                    f"asset_key={_short_key(bundle_asset_key)} error={exc}"
+                )
+                await message_asset_repo.mark_stale(
+                    bundle_asset_key,
+                    last_verify_error=str(exc),
+                )
+
+    reusable_prefix_length = await _resolve_reusable_forward_prefix_length(batch)
+    reuse_mode = "prefix_hit" if reusable_prefix_length > 0 else "rebuild_all"
+    logger.debug(
+        "[MessageDelivery] merged forward path "
+        f"mode=node_custom_direct reuse_mode={reuse_mode} "
+        f"reusable_prefix={reusable_prefix_length}/{len(messages)} "
+        "reason=napcat_send_group_forward_msg_requires_custom_nodes"
+    )
+    for index in range(reusable_prefix_length, len(messages)):
+        await ensure_forward_node(
+            bot,
+            node_message=messages[index],
+            node_asset_key=batch.node_asset_keys[index],
+            source_kind=source_kind,
+            fallback_nickname=fallback_nickname,
+            forward_context_key=batch.node_context_keys[index],
+            forward_sort_key=index,
+            allow_asset_reuse=False,
+        )
+
+    send_result = await send_custom_forward(
         bot,
         event,
         messages,
         fallback_nickname=fallback_nickname,
+        bundle_asset_key=bundle_asset_key,
+        reuse_mode=reuse_mode,
     )
+    message_id = _extract_message_id(send_result) or ""
+    if bundle_asset_key and message_id:
+        await message_asset_repo.upsert_forward_bundle_asset(
+            asset_key=bundle_asset_key,
+            content_hash=bundle_asset_key,
+            source_kind=source_kind,
+            message_id=message_id,
+            sender_bot_id=str(bot.self_id),
+            origin_message_type=target.kind,
+            origin_target_id=target.target_id,
+            forward_context_key=batch.context_key,
+        )
+    elif bundle_asset_key:
+        logger.debug(
+            "[MessageDelivery] forward bundle asset not stored "
+            f"asset_key={_short_key(bundle_asset_key)} reason=empty_message_id"
+        )
