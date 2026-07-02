@@ -644,8 +644,14 @@ class SearchTreemapResponseDrawMixin:
                 ).strip(),
                 locale,
             ),
-            f"总响应 {tile.item.response_count}",
-            f"命中 {self._format_matched_by_label(tile.item.matched_by, locale)}",
+            tr(
+                locale,
+                "wordbank.search_card.response_count",
+                count=tile.item.response_count,
+            ),
+            tr(locale, "wordbank.search_card.label.matched_by")
+            + " "
+            + self._format_matched_by_label(tile.item.matched_by, locale),
         )
         cursor_y = y + pad
         for index, line in enumerate(lines):

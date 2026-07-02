@@ -389,9 +389,7 @@ async def _record_study_response(
             locale=locale,
             snapshot=snapshot,
         )
-        await matcher.pause(
-            "检测到合并转发消息，请回复 1 作为整体响应，或回复 2 拆开成多条响应。"
-        )
+        await matcher.pause(tr(locale, "wordbank.guided.forward_response_prompt"))
         return
     shape = await build_message_shape_from_message(
         wordbank_media_service,
@@ -478,7 +476,7 @@ async def _record_study_forward_response_choice(
         matcher,
         state,
         locale,
-        "请输入 1 代表整体，或 2 代表拆开。",
+        tr(locale, "wordbank.error.forward_response_choice_invalid"),
     )
 
 
@@ -589,7 +587,10 @@ async def _finish_guided_study(
                 batch=batch,
                 locale=locale,
                 source_kind="study_batch_submission",
-                fallback_nickname="学习词库",
+                fallback_nickname=tr(
+                    locale,
+                    "wordbank.batch_add.study_forward_nickname",
+                ),
             )
             await matcher.finish()
             return

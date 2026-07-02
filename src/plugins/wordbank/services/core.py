@@ -401,8 +401,9 @@ class WordbankService:
             include_deleted=True,
         )
         if existing is not None and existing.id != trigger_group_id:
-            raise ValueError(
-                "已存在相同触发词的 trigger group，请直接修改概率或新增响应词。"
+            raise WordbankUserError(
+                tr("zh-CN", "wordbank.error.trigger_group_duplicate"),
+                key="wordbank.error.trigger_group_duplicate",
             )
         group = await self._get_trigger_group_for_mutation(trigger_group_id)
         ok = await self.repository.update_trigger_content(
@@ -780,7 +781,7 @@ class WordbankService:
         )
         names = await asyncio.gather(
             *(
-                self._resolve_creator_display_name(item.created_by)
+                self._resolve_creator_display_name(item.created_by, locale=locale)
                 for item in snapshot.items
             )
         )
@@ -1042,9 +1043,16 @@ class WordbankService:
             trigger_group_id, include_deleted=True, active_only=False
         )
 
-    async def _resolve_creator_display_name(self, user_id: str) -> str:
+    async def _resolve_creator_display_name(
+        self,
+        user_id: str,
+        *,
+        locale: LocaleCode = "zh-CN",
+    ) -> str:
         name = await user_repo.get_name_by_uid(user_id)
         if name:
             return name
-        suffix = user_id[-4:] if user_id else "未知"
-        return f"用户_{suffix}"
+        suffix = (
+            user_id[-4:] if user_id else tr(locale, "wordbank.creator.unknown_suffix")
+        )
+        return tr(locale, "wordbank.creator.fallback", suffix=suffix)

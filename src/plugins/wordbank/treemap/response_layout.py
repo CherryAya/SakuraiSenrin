@@ -613,9 +613,25 @@ class SearchTreemapResponseLayoutMixin:
     ) -> list[str]:
         rule_text = self._normalize_text(response.rule, locale)
         return [
-            self._truncate_line(f"创建者 {response.created_by}", font, max_width),
-            self._truncate_line(f"权重 {response.weight}", font, max_width),
-            self._truncate_line(f"规则 {rule_text}", font, max_width),
+            self._truncate_line(
+                self._tr(
+                    locale,
+                    "wordbank.search_card.created_by",
+                    created_by=response.created_by,
+                ),
+                font,
+                max_width,
+            ),
+            self._truncate_line(
+                f"{self._tr(locale, 'wordbank.label.weight')}: {response.weight}",
+                font,
+                max_width,
+            ),
+            self._truncate_line(
+                f"{self._tr(locale, 'wordbank.group.card.rule_label')}: {rule_text}",
+                font,
+                max_width,
+            ),
         ]
 
     def _single_text_response_text(

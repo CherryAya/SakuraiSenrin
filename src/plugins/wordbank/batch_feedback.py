@@ -3,6 +3,7 @@ from __future__ import annotations
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 
+from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
 from src.lib.messages import text_message
@@ -21,10 +22,13 @@ async def send_batch_add_feedback(
     fallback_nickname: str,
 ) -> None:
     summary = text_message(
-        "已处理合并转发响应导入\n"
-        f"总数: {batch.total}\n"
-        f"成功: {batch.success}\n"
-        f"失败: {batch.failed}"
+        tr(
+            locale,
+            "wordbank.batch_add.summary",
+            total=batch.total,
+            success=batch.success,
+            failed=batch.failed,
+        )
     )
     await deliver_single_message(
         bot,
@@ -37,14 +41,21 @@ async def send_batch_add_feedback(
         if item.ok and item.result is not None:
             detail_messages.append(
                 text_message(
-                    f"序号 {item.index}\n"
+                    tr(locale, "wordbank.batch.index", index=item.index)
+                    + "\n"
                     + format_add_result(item.result, locale=locale)
                 )
             )
         else:
             detail_messages.append(
                 text_message(
-                    f"序号 {item.index}\n提交失败\n原因: {item.error or '未知错误'}"
+                    tr(
+                        locale,
+                        "wordbank.batch_add.detail_failed",
+                        index=item.index,
+                        error=item.error
+                        or tr(locale, "wordbank.batch_add.unknown_error"),
+                    )
                 )
             )
     if detail_messages:

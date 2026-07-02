@@ -41,7 +41,7 @@ def _build_pending_batch_summary(
 ) -> Message:
     lines = [
         tr(locale, "wordbank.approval.pending_title", page=page),
-        "回复我发送：通过 1 2 5-8，或拒绝 all",
+        tr(locale, "wordbank.approval.pending_batch_instruction"),
     ]
     for index, item in enumerate(items, start=1):
         lines.append(
@@ -69,7 +69,8 @@ async def _build_pending_detail_message(
 ) -> Message:
     message = empty_message()
     message += MessageSegment.text(
-        f"序号 {index}\n"
+        tr(locale, "wordbank.batch.index", index=index)
+        + "\n"
         + tr(
             locale,
             "wordbank.approval.pending_item",

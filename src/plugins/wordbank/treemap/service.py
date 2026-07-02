@@ -389,9 +389,17 @@ class SearchTreemapRenderer(
             + tr(locale, "wordbank.search_card.status", status=tile.item.status)
         )
         if tile.item.matched_by and rect.width >= 460:
-            meta_text += "  命中 " + self._format_matched_by_label(
-                tile.item.matched_by,
-                locale,
+            meta_text += (
+                "  "
+                + tr(
+                    locale,
+                    "wordbank.search_card.label.matched_by",
+                )
+                + " "
+                + self._format_matched_by_label(
+                    tile.item.matched_by,
+                    locale,
+                )
             )
         if not poster_tile and rect.width >= 260 and rect.height >= 152:
             draw.text(

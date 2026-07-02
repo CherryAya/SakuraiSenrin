@@ -135,6 +135,7 @@ async def handle_trigger_probability_update(
     event: MessageEvent,
     trigger_group_id: int,
     probability: float,
+    locale: LocaleCode,
 ) -> str:
     actor = build_mutation_actor(event)
     if await service.update_trigger_probability(
@@ -145,8 +146,13 @@ async def handle_trigger_probability_update(
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return f"trigger group #{trigger_group_id} 的触发概率已更新为 {probability:g}。"
-    return f"未找到可修改的 trigger group #{trigger_group_id}，或你没有操作权限。"
+        return tr(
+            locale,
+            "wordbank.mutation.trigger_probability_updated",
+            group_id=trigger_group_id,
+            probability=f"{probability:g}",
+        )
+    return tr(locale, "wordbank.mutation.trigger_not_found", group_id=trigger_group_id)
 
 
 async def handle_trigger_content_update(
@@ -157,6 +163,7 @@ async def handle_trigger_content_update(
     trigger_group_id: int,
     text: str,
     raw_message: Message,
+    locale: LocaleCode,
 ) -> str:
     from .commands import (
         build_shape_from_text_and_images as _build_shape_from_text_and_images,
@@ -176,11 +183,12 @@ async def handle_trigger_content_update(
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return (
-            f"trigger group #{trigger_group_id} 的触发词已更新，"
-            "该组响应已重新进入待审核。"
+        return tr(
+            locale,
+            "wordbank.mutation.trigger_content_updated",
+            group_id=trigger_group_id,
         )
-    return f"未找到可修改的 trigger group #{trigger_group_id}，或你没有操作权限。"
+    return tr(locale, "wordbank.mutation.trigger_not_found", group_id=trigger_group_id)
 
 
 async def handle_response_weight_update(
@@ -189,6 +197,7 @@ async def handle_response_weight_update(
     event: MessageEvent,
     response_item_id: int,
     weight: int,
+    locale: LocaleCode,
 ) -> str:
     actor = build_mutation_actor(event)
     if await service.update_response_weight(
@@ -199,8 +208,13 @@ async def handle_response_weight_update(
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return f"词条 #{response_item_id} 的响应权重已更新为 {weight}。"
-    return f"未找到可修改的词条 #{response_item_id}，或你没有操作权限。"
+        return tr(
+            locale,
+            "wordbank.mutation.response_weight_updated",
+            entry_id=response_item_id,
+            weight=weight,
+        )
+    return tr(locale, "wordbank.mutation.response_not_found", entry_id=response_item_id)
 
 
 async def handle_response_content_update(
@@ -211,6 +225,7 @@ async def handle_response_content_update(
     response_item_id: int,
     text: str,
     raw_message: Message,
+    locale: LocaleCode,
 ) -> str:
     from .commands import (
         build_shape_from_text_and_images as _build_shape_from_text_and_images,
@@ -230,8 +245,12 @@ async def handle_response_content_update(
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return f"词条 #{response_item_id} 的响应内容已更新，并重新进入待审核。"
-    return f"未找到可修改的词条 #{response_item_id}，或你没有操作权限。"
+        return tr(
+            locale,
+            "wordbank.mutation.response_content_updated",
+            entry_id=response_item_id,
+        )
+    return tr(locale, "wordbank.mutation.response_not_found", entry_id=response_item_id)
 
 
 async def handle_trigger_command(
@@ -253,6 +272,7 @@ async def handle_trigger_command(
             event=event,
             trigger_group_id=parsed.trigger_group_id,
             probability=parsed.probability,
+            locale=locale,
         )
     if action in {"set", "edit", "修改"}:
         if raw_message is None:
@@ -265,9 +285,15 @@ async def handle_trigger_command(
             trigger_group_id=parsed.trigger_group_id,
             text=parsed.text,
             raw_message=raw_message,
+            locale=locale,
         )
     raise RuleError(
-        "trigger 子命令仅支持 prob / set。",
+        tr(
+            "zh-CN",
+            "wordbank.error.unknown_subcommand",
+            action=f"trigger {action}".strip(),
+            help=help_text,
+        ),
         key="wordbank.error.unknown_subcommand",
         action=f"trigger {action}".strip(),
         help=help_text,
@@ -293,6 +319,7 @@ async def handle_response_command(
             event=event,
             response_item_id=parsed.response_item_id,
             weight=parsed.weight,
+            locale=locale,
         )
     if action in {"set", "edit", "修改"}:
         if raw_message is None:
@@ -305,9 +332,15 @@ async def handle_response_command(
             response_item_id=parsed.response_item_id,
             text=parsed.text,
             raw_message=raw_message,
+            locale=locale,
         )
     raise RuleError(
-        "response 子命令仅支持 weight / set。",
+        tr(
+            "zh-CN",
+            "wordbank.error.unknown_subcommand",
+            action=f"response {action}".strip(),
+            help=help_text,
+        ),
         key="wordbank.error.unknown_subcommand",
         action=f"response {action}".strip(),
         help=help_text,

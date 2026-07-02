@@ -195,6 +195,7 @@ async def handle_reply_command(
             event=event,
             trigger_group_id=response_message.trigger_group_id,
             probability=probability,
+            locale=locale,
         )
 
     if action.startswith("trigger set"):
@@ -209,6 +210,7 @@ async def handle_reply_command(
             trigger_group_id=parsed.trigger_group_id,
             text=parsed.text,
             raw_message=message,
+            locale=locale,
         )
 
     if action.startswith("response weight"):
@@ -220,6 +222,7 @@ async def handle_reply_command(
             event=event,
             response_item_id=response_message.response_item_id,
             weight=weight,
+            locale=locale,
         )
 
     if action.startswith("response set"):
@@ -234,6 +237,7 @@ async def handle_reply_command(
             response_item_id=parsed.response_item_id,
             text=parsed.text,
             raw_message=message,
+            locale=locale,
         )
 
     return tr(locale, "wordbank.reply.unknown_command", action=action)
@@ -401,17 +405,39 @@ async def _handle_batch_approval_reply_result(
         else:
             failed_ids.append(response_item_id)
 
-    action_label = "通过" if parsed.action == "approve" else "拒绝"
     lines = [
-        f"批量{action_label}完成",
-        f"总数: {len(parsed.response_item_ids)}",
-        f"成功: {len(success_ids)}",
-        f"失败: {len(failed_ids)}",
+        tr(
+            locale,
+            (
+                "wordbank.approval.batch.title.approve"
+                if parsed.action == "approve"
+                else "wordbank.approval.batch.title.reject"
+            ),
+        ),
+        tr(
+            locale,
+            "wordbank.approval.batch.total",
+            count=len(parsed.response_item_ids),
+        ),
+        tr(locale, "wordbank.approval.batch.success", count=len(success_ids)),
+        tr(locale, "wordbank.approval.batch.failed", count=len(failed_ids)),
     ]
     if success_ids:
-        lines.append("成功条目: " + ", ".join(f"#{item_id}" for item_id in success_ids))
+        lines.append(
+            tr(
+                locale,
+                "wordbank.approval.batch.success_entries",
+                entries=", ".join(f"#{item_id}" for item_id in success_ids),
+            )
+        )
     if failed_ids:
-        lines.append("失败条目: " + ", ".join(f"#{item_id}" for item_id in failed_ids))
+        lines.append(
+            tr(
+                locale,
+                "wordbank.approval.batch.failed_entries",
+                entries=", ".join(f"#{item_id}" for item_id in failed_ids),
+            )
+        )
     return ApprovalReplyOutcome(
         "\n".join(lines),
         approval_message=None,
@@ -434,7 +460,7 @@ def parse_batch_approval_reply(
     action, rest = _split_batch_approval_command(normalized)
     if not rest:
         raise RuleError(
-            "批量审批请发送：通过 1 2 5-8，或拒绝 all。",
+            _default_i18n_text("wordbank.approval.batch.selection_required"),
             key="wordbank.approval.batch.selection_required",
         )
 
@@ -460,7 +486,7 @@ def _split_batch_approval_command(text: str) -> tuple[str, str]:
         if text == alias or text.startswith(alias + " "):
             return "reject", text[len(alias) :].strip()
     raise RuleError(
-        "批量审批请以“通过”或“拒绝”开头。",
+        _default_i18n_text("wordbank.approval.batch.action_required"),
         key="wordbank.approval.batch.action_required",
     )
 
@@ -469,7 +495,7 @@ def _parse_batch_selection_indexes(rest: str, *, max_index: int) -> tuple[int, .
     tokens = [token for token in re.split(r"[\s,，、]+", rest) if token]
     if not tokens:
         raise RuleError(
-            "批量审批请提供序号，例如 1 2 5-8。",
+            _default_i18n_text("wordbank.approval.batch.selection_required"),
             key="wordbank.approval.batch.selection_required",
         )
 
@@ -480,15 +506,23 @@ def _parse_batch_selection_indexes(rest: str, *, max_index: int) -> tuple[int, .
             start_text, end_text = token.split("-", maxsplit=1)
             if not start_text.isdigit() or not end_text.isdigit():
                 raise RuleError(
-                    f"无效范围：{token}",
+                    _default_i18n_text(
+                        "wordbank.approval.batch.invalid_range",
+                        token=token,
+                    ),
                     key="wordbank.approval.batch.invalid_range",
+                    token=token,
                 )
             start = int(start_text)
             end = int(end_text)
             if start <= 0 or end <= 0 or start > end or end > max_index:
                 raise RuleError(
-                    f"序号范围超出当前待审列表：{token}",
+                    _default_i18n_text(
+                        "wordbank.approval.batch.index_out_of_range",
+                        token=token,
+                    ),
                     key="wordbank.approval.batch.index_out_of_range",
+                    token=token,
                 )
             for value in range(start, end + 1):
                 if value not in seen:
@@ -498,14 +532,22 @@ def _parse_batch_selection_indexes(rest: str, *, max_index: int) -> tuple[int, .
 
         if not token.isdigit():
             raise RuleError(
-                f"无效序号：{token}",
+                _default_i18n_text(
+                    "wordbank.approval.batch.invalid_index",
+                    token=token,
+                ),
                 key="wordbank.approval.batch.invalid_index",
+                token=token,
             )
         value = int(token)
         if value <= 0 or value > max_index:
             raise RuleError(
-                f"序号超出当前待审列表：{token}",
+                _default_i18n_text(
+                    "wordbank.approval.batch.index_out_of_range",
+                    token=token,
+                ),
                 key="wordbank.approval.batch.index_out_of_range",
+                token=token,
             )
         if value not in seen:
             seen.add(value)
@@ -640,7 +682,7 @@ def format_entry_detail(
         "wordbank.reply.info",
         entry_id=selected.response_item_id,
         status=selected.status,
-        enabled=_format_enabled(selected.enabled),
+        enabled=_format_enabled(selected.enabled, locale),
         deleted_at=_format_deleted_at(selected.deleted_at),
         scope=selected.scope,
         group_id=selected.group_id or "-",
@@ -666,7 +708,7 @@ def format_entry_history(
         "wordbank.reply.history",
         entry_id=selected.response_item_id,
         status=selected.status,
-        enabled=_format_enabled(selected.enabled),
+        enabled=_format_enabled(selected.enabled, locale),
         deleted_at=_format_deleted_at(selected.deleted_at),
         scope=selected.scope,
         probability=f"{detail.probability:g}",
@@ -674,8 +716,11 @@ def format_entry_history(
     )
 
 
-def _format_enabled(enabled: int) -> str:
-    return "yes" if enabled else "no"
+def _format_enabled(enabled: int, locale: LocaleCode = "zh-CN") -> str:
+    return tr(
+        locale,
+        "wordbank.state.enabled" if enabled else "wordbank.state.disabled",
+    )
 
 
 def _format_deleted_at(deleted_at: int) -> str:

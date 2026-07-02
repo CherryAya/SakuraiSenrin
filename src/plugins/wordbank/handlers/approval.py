@@ -11,6 +11,7 @@ from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 
 from src.config import config
+from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import DeliveryTarget, deliver_single_message
@@ -131,14 +132,15 @@ async def _collect_rendered_shape_fields(
     media_service: WordbankMediaService,
 ) -> tuple[_RenderedShapeField, ...]:
     fields: list[_RenderedShapeField] = []
-    for label_key, summary_text, shape in (
+    entries: tuple[tuple[MessageKey, str, MessageShape | None], ...] = (
         ("wordbank.approval.trigger_label", result.trigger_text, result.trigger_shape),
         (
             "wordbank.approval.response_label",
             result.response_text,
             result.response_shape,
         ),
-    ):
+    )
+    for label_key, summary_text, shape in entries:
         if not _should_render_shape(shape):
             continue
         assert shape is not None

@@ -213,7 +213,7 @@ async def render_reply_detail_message(
             "wordbank.reply.info_header",
             entry_id=selected.response_item_id,
             status=selected.status,
-            enabled=_format_enabled(selected.enabled),
+            enabled=_format_enabled(selected.enabled, locale),
             deleted_at=str(selected.deleted_at) if selected.deleted_at else "0",
             scope=selected.scope,
             group_id=selected.group_id or "-",
@@ -362,7 +362,7 @@ async def render_group_detail_page_message(
                 "wordbank.group.response_header",
                 response_item_id=response.response_item_id,
                 status=response.status,
-                enabled=_format_enabled(response.enabled),
+                enabled=_format_enabled(response.enabled, locale),
                 scope=response.scope,
                 weight=response.weight,
                 rule=_format_rule_text(response.rule),
@@ -414,8 +414,11 @@ async def render_creator_leaderboard_card_message(
     return image_message(image_bytes)
 
 
-def _format_enabled(enabled: int) -> str:
-    return "enabled" if enabled else "disabled"
+def _format_enabled(enabled: int, locale: LocaleCode) -> str:
+    return tr(
+        locale,
+        "wordbank.state.enabled" if enabled else "wordbank.state.disabled",
+    )
 
 
 def _format_rule_text(rule: dict[str, Any]) -> str:

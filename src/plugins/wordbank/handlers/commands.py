@@ -637,12 +637,12 @@ async def handle_trigger_probability_update(
     probability: float,
     locale: LocaleCode,
 ) -> str:
-    _ = locale
     return await _handle_trigger_probability_update(
         service,
         event=event,
         trigger_group_id=trigger_group_id,
         probability=probability,
+        locale=locale,
     )
 
 
@@ -656,7 +656,6 @@ async def handle_trigger_content_update(
     raw_message: Message,
     locale: LocaleCode,
 ) -> str:
-    _ = locale
     actor = build_mutation_actor(event)
     trigger_shape = await build_shape_from_text_and_images(
         media_service,
@@ -672,11 +671,12 @@ async def handle_trigger_content_update(
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return (
-            f"trigger group #{trigger_group_id} 的触发词已更新，"
-            "该组响应已重新进入待审核。"
+        return tr(
+            locale,
+            "wordbank.mutation.trigger_content_updated",
+            group_id=trigger_group_id,
         )
-    return f"未找到可修改的 trigger group #{trigger_group_id}，或你没有操作权限。"
+    return tr(locale, "wordbank.mutation.trigger_not_found", group_id=trigger_group_id)
 
 
 async def handle_response_weight_update(
@@ -687,12 +687,12 @@ async def handle_response_weight_update(
     weight: int,
     locale: LocaleCode,
 ) -> str:
-    _ = locale
     return await _handle_response_weight_update(
         service,
         event=event,
         response_item_id=response_item_id,
         weight=weight,
+        locale=locale,
     )
 
 
@@ -721,8 +721,12 @@ async def handle_response_content_update(
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return f"词条 #{response_item_id} 的响应内容已更新，并重新进入待审核。"
-    return f"未找到可修改的词条 #{response_item_id}，或你没有操作权限。"
+        return tr(
+            locale,
+            "wordbank.mutation.response_content_updated",
+            entry_id=response_item_id,
+        )
+    return tr(locale, "wordbank.mutation.response_not_found", entry_id=response_item_id)
 
 
 async def handle_trigger_command(
@@ -758,7 +762,11 @@ async def handle_trigger_command(
             locale=locale,
         )
     raise RuleError(
-        "trigger 子命令仅支持 prob / set。",
+        _default_i18n_text(
+            "wordbank.error.unknown_subcommand",
+            action=f"trigger {action}".strip(),
+            help=wordbank_help_text(locale),
+        ),
         key="wordbank.error.unknown_subcommand",
         action=f"trigger {action}".strip(),
         help=wordbank_help_text(locale),
@@ -798,7 +806,11 @@ async def handle_response_command(
             locale=locale,
         )
     raise RuleError(
-        "response 子命令仅支持 weight / set。",
+        _default_i18n_text(
+            "wordbank.error.unknown_subcommand",
+            action=f"response {action}".strip(),
+            help=wordbank_help_text(locale),
+        ),
         key="wordbank.error.unknown_subcommand",
         action=f"response {action}".strip(),
         help=wordbank_help_text(locale),

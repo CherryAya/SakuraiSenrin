@@ -8,6 +8,7 @@ from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import MessageSegment
 
+from src.lib.i18n.runtime import tr
 from src.plugins.wordbank.message_model import MessageShape, combine_shapes
 from src.plugins.wordbank.services.errors import WordbankUserError
 
@@ -79,19 +80,23 @@ async def build_forward_batch_payload(
     source_message_id = source_message_id or extract_forward_source_message_id(event)
     if source_message_id is None:
         raise WordbankUserError(
-            "未找到可解析的合并转发消息。",
+            tr("zh-CN", "wordbank.error.forward_message_not_found"),
             key="wordbank.error.forward_message_not_found",
         )
     detail = await bot.call_api("get_forward_msg", message_id=source_message_id)
     messages = _extract_forward_messages(detail)
     if not messages:
         raise WordbankUserError(
-            "合并转发里没有可用内容。",
+            tr("zh-CN", "wordbank.error.forward_message_empty"),
             key="wordbank.error.forward_message_empty",
         )
     if len(messages) > FORWARD_BATCH_NODE_LIMIT:
         raise WordbankUserError(
-            f"合并转发节点过多，最多支持 {FORWARD_BATCH_NODE_LIMIT} 个节点。",
+            tr(
+                "zh-CN",
+                "wordbank.error.forward_message_too_many",
+                limit=FORWARD_BATCH_NODE_LIMIT,
+            ),
             key="wordbank.error.forward_message_too_many",
             limit=FORWARD_BATCH_NODE_LIMIT,
         )
@@ -102,7 +107,7 @@ async def build_forward_batch_payload(
             shapes.append(shape)
     if not shapes:
         raise WordbankUserError(
-            "合并转发里没有可用内容。",
+            tr("zh-CN", "wordbank.error.forward_message_empty"),
             key="wordbank.error.forward_message_empty",
         )
     whole = combine_shapes(*_with_separators(tuple(shapes)))

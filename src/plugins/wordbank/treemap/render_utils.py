@@ -25,10 +25,12 @@ class SearchTreemapRenderUtilsMixin:
         if not value:
             return self._tr(locale, "wordbank.search_card.none")
         return {
-            "text:mixed": "触发+响应",
+            "text:mixed": self._tr(
+                locale, "wordbank.search_card.match.trigger_response"
+            ),
             "text:trigger": self._tr(locale, "wordbank.search_card.field.trigger"),
             "text:response": self._tr(locale, "wordbank.search_card.field.response"),
-            "text:group": "分组",
+            "text:group": self._tr(locale, "wordbank.search_card.match.group"),
             "image:trigger": self._tr(locale, "wordbank.search_card.preview.trigger"),
             "image:response": self._tr(locale, "wordbank.search_card.preview.response"),
         }.get(value, value)

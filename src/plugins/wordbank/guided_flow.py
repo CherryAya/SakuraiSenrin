@@ -248,9 +248,7 @@ async def record_guided_response(
                 keep_keys=("wordbank_guided_trigger_shape",),
             ),
         )
-        await matcher.pause(
-            "检测到合并转发消息，请回复 1 作为整体响应，或回复 2 拆开成多条响应。"
-        )
+        await matcher.pause(tr(locale, "wordbank.guided.forward_response_prompt"))
         return
     shape = await build_message_shape_from_message(media_service, event.message)
     if shape.is_empty():
@@ -330,7 +328,7 @@ async def record_guided_forward_response_choice(
         matcher,
         state,
         locale,
-        "请输入 1 代表整体，或 2 代表拆开。",
+        tr(locale, "wordbank.error.forward_response_choice_invalid"),
     )
 
 

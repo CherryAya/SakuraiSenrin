@@ -20,8 +20,11 @@ def build_copyright_text(year: int) -> str:
     return f"© 2020-{year} SakuraiSenrin"
 
 
-def format_enabled(enabled: int) -> str:
-    return "enabled" if enabled else "disabled"
+def format_enabled(enabled: int, locale: LocaleCode) -> str:
+    return tr(
+        locale,
+        "wordbank.state.enabled" if enabled else "wordbank.state.disabled",
+    )
 
 
 def format_rule_text(rule: dict[str, Any]) -> str:
@@ -187,7 +190,7 @@ def response_meta_text(
         "wordbank.group.card.response_label",
         response_item_id=response.response_item_id,
         status=response.status,
-        enabled=format_enabled(response.enabled),
+        enabled=format_enabled(response.enabled, locale),
         scope=response.scope,
         weight=response.weight,
     )
