@@ -26,7 +26,7 @@ def test_forward_input_accepts_direct_forward_message() -> None:
     event.message = Message([MessageSegment.forward("7657605421581295285")])
 
     assert is_forward_input(event) is True
-    assert extract_forward_source_message_id(event) == 7657605421581295285
+    assert extract_forward_source_message_id(event) == "7657605421581295285"
 
 
 def test_forward_input_accepts_direct_forward_message_in_private() -> None:
@@ -34,7 +34,7 @@ def test_forward_input_accepts_direct_forward_message_in_private() -> None:
     event.message = Message([MessageSegment.forward("7657605421581295285")])
 
     assert is_forward_input(event) is True
-    assert extract_forward_source_message_id(event) == 7657605421581295285
+    assert extract_forward_source_message_id(event) == "7657605421581295285"
 
 
 def test_forward_input_accepts_reply_forward_message() -> None:
@@ -42,7 +42,15 @@ def test_forward_input_accepts_reply_forward_message() -> None:
     attach_reply_message(event, MessageSegment.forward("7657605421581295285"))
 
     assert is_forward_input(event) is True
-    assert extract_forward_source_message_id(event) == 7657605421581295285
+    assert extract_forward_source_message_id(event) == "7657605421581295285"
+
+
+def test_forward_input_preserves_nondigit_forward_message_id() -> None:
+    event = build_group_message_event("", message_id=1)
+    event.message = Message([MessageSegment.forward("forward-msg-abc")])
+
+    assert is_forward_input(event) is True
+    assert extract_forward_source_message_id(event) == "forward-msg-abc"
 
 
 @pytest.mark.asyncio
@@ -67,9 +75,9 @@ async def test_build_forward_batch_payload_fetches_forward_msg_content() -> None
 
     call_api.assert_awaited_once_with(
         "get_forward_msg",
-        message_id=7657605421581295285,
+        message_id="7657605421581295285",
     )
-    assert payload.source_message_id == 7657605421581295285
+    assert payload.source_message_id == "7657605421581295285"
     assert payload.node_count == 2
     assert not payload.whole_shape.is_empty()
     assert len(payload.split_shapes) == 2
@@ -146,17 +154,17 @@ async def test_build_response_input_payload_flattens_nested_forward_messages() -
     )
 
     assert payload.input_kind == "forward"
-    assert payload.source_message_id == 111
+    assert payload.source_message_id == "111"
     assert [shape_to_summary_text(shape) for shape in payload.split_shapes] == [
         "外层一",
         "内层一",
         "内层二",
     ]
     assert call_api.await_args_list[0].kwargs == {
-        "message_id": 111,
+        "message_id": "111",
     }
     assert call_api.await_args_list[1].kwargs == {
-        "message_id": 222,
+        "message_id": "222",
     }
 
 

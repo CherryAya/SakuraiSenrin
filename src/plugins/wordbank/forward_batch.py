@@ -23,12 +23,12 @@ class ResponseInputPayload:
     input_kind: Literal["single", "forward"]
     whole_shape: MessageShape
     split_shapes: tuple[MessageShape, ...]
-    source_message_id: int | None = None
+    source_message_id: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
 class ForwardBatchPayload:
-    source_message_id: int
+    source_message_id: str
     node_count: int
     whole_shape: MessageShape
     split_shapes: tuple[MessageShape, ...]
@@ -55,7 +55,7 @@ def is_forward_input(event: MessageEvent) -> bool:
     return isinstance(message, Message) and is_forward_message(message)
 
 
-def extract_forward_source_message_id(event: MessageEvent) -> int | None:
+def extract_forward_source_message_id(event: MessageEvent) -> str | None:
     candidates: list[Message] = []
     reply = getattr(event, "reply", None)
     if reply is not None:
@@ -72,10 +72,9 @@ def extract_forward_source_message_id(event: MessageEvent) -> int | None:
             message_id = segment.data.get("id")
             if message_id is None:
                 continue
-            try:
-                return int(str(message_id))
-            except ValueError:
-                return None
+            if isinstance(message_id, str):
+                return message_id if message_id else None
+            return str(message_id)
     return None
 
 
@@ -104,7 +103,7 @@ async def build_forward_batch_payload_by_source_message_id(
     bot: Bot,
     *,
     media_service: Any,
-    source_message_id: int,
+    source_message_id: str,
     max_depth: int = FORWARD_BATCH_MAX_DEPTH,
 ) -> ForwardBatchPayload:
     from src.plugins.wordbank.handlers import build_message_shape_from_message
@@ -282,10 +281,10 @@ def _coerce_forward_segment(raw: Any) -> MessageSegment | None:
 async def _collect_forward_messages_from_source_message_id(
     bot: Bot,
     *,
-    source_message_id: int,
+    source_message_id: str,
     max_depth: int,
     depth: int,
-    visited_ids: tuple[int, ...],
+    visited_ids: tuple[str, ...],
 ) -> tuple[Message, ...]:
     if depth >= max_depth:
         raise WordbankUserError(
@@ -352,7 +351,7 @@ async def _flatten_forward_message(
     message: Message,
     max_depth: int,
     depth: int,
-    visited_ids: tuple[int, ...],
+    visited_ids: tuple[str, ...],
 ) -> tuple[Message, ...]:
     if not is_forward_message(message):
         return (message,)
@@ -385,14 +384,12 @@ async def _flatten_forward_message(
     return tuple(part for part in parts if len(part) > 0)
 
 
-def _coerce_forward_segment_message_id(segment: MessageSegment) -> int | None:
+def _coerce_forward_segment_message_id(segment: MessageSegment) -> str | None:
     if segment.type != "forward":
         return None
     raw_id = segment.data.get("id")
     if raw_id is None:
         return None
-    try:
-        parsed = int(str(raw_id))
-    except ValueError:
-        return None
-    return parsed if parsed > 0 else None
+    if isinstance(raw_id, str):
+        return raw_id if raw_id else None
+    return str(raw_id)

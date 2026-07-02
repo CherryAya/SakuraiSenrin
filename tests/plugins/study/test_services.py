@@ -67,7 +67,7 @@ async def test_forward_choice_uses_saved_response_event(
     event = build_group_message_event(choice_text, message_id=9)
     payload = ResponseInputPayload(
         input_kind="forward",
-        source_message_id=54321,
+        source_message_id="54321",
         whole_shape=shape_from_text("整体响应"),
         split_shapes=(shape_from_text("第一条"), shape_from_text("第二条")),
     )
