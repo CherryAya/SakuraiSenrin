@@ -7,6 +7,7 @@ Description: 学习词库-传统版
 """
 
 from collections.abc import Mapping
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
 
@@ -59,6 +60,7 @@ from src.plugins.wordbank.forward_batch import (
     is_forward_input,
 )
 from src.plugins.wordbank.handlers.commands import _default_i18n_text
+from src.plugins.wordbank.handlers.submission import SubmissionLifecycle
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.text_parsing import has_meaningful_text
 
@@ -124,6 +126,38 @@ STUDY_RECALL_PENDING_KEYS: tuple[str, ...] = (
     "study_forward_response_event",
     "study_forward_split_shapes",
 )
+
+
+@lru_cache(maxsize=1)
+def _build_study_submission_lifecycle() -> SubmissionLifecycle:
+    from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
+
+    return SubmissionLifecycle(
+        service=wordbank_service,
+        media_service=wordbank_media_service,
+        submission_source_kind="study_submission",
+        batch_submission_source_kind="study_batch_submission",
+        batch_feedback_nickname_builder=lambda locale: tr(
+            locale,
+            "wordbank.batch_add.study_forward_nickname",
+        ),
+    )
+
+
+async def _finalize_study_submission(
+    matcher: Matcher,
+    bot: Bot,
+    event: MessageEvent,
+    submission: Any,
+    locale: LocaleCode,
+) -> None:
+    await _build_study_submission_lifecycle().finalize(
+        matcher,
+        bot,
+        event,
+        submission,
+        locale,
+    )
 
 
 async def _abort_study_on_revoke(
@@ -597,10 +631,9 @@ async def _finish_guided_study(
     locale: LocaleCode,
 ) -> None:
     from src.plugins.wordbank.handlers import (
-        finalize_submission,
         handle_guided_study_shape_result,
     )
-    from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
+    from src.plugins.wordbank.services import wordbank_service
     from src.plugins.wordbank.services.rules import (
         RuleError,
         build_legacy_study_shortcut_rule,
@@ -663,20 +696,12 @@ async def _finish_guided_study(
                     _default_i18n_text("wordbank.error.response_empty"),
                     key="wordbank.error.response_empty",
                 )
-            await finalize_submission(
+            await _finalize_study_submission(
                 matcher,
                 bot,
                 event,
                 batch,
                 locale=locale,
-                service=wordbank_service,
-                media_service=wordbank_media_service,
-                submission_source_kind="study_submission",
-                batch_submission_source_kind="study_batch_submission",
-                batch_feedback_nickname=tr(
-                    locale,
-                    "wordbank.batch_add.study_forward_nickname",
-                ),
             )
             return
         if response_shape is None or response_shape.is_empty():
@@ -701,20 +726,12 @@ async def _finish_guided_study(
             _study_error_message(exc, locale),
         )
         return
-    await finalize_submission(
+    await _finalize_study_submission(
         matcher,
         bot,
         event,
         result,
         locale=locale,
-        service=wordbank_service,
-        media_service=wordbank_media_service,
-        submission_source_kind="study_submission",
-        batch_submission_source_kind="study_batch_submission",
-        batch_feedback_nickname=tr(
-            locale,
-            "wordbank.batch_add.study_forward_nickname",
-        ),
     )
 
 
@@ -752,7 +769,6 @@ async def _(
     from src.plugins.wordbank.handlers import (
         extract_image_urls,
         fetch_image_bytes_from_message,
-        finalize_submission,
         handle_study_with_media_result,
     )
     from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
@@ -809,20 +825,12 @@ async def _(
     except (RuleError, ValueError) as exc:
         await matcher.finish(_study_error_message(exc, locale))
         return
-    await finalize_submission(
+    await _finalize_study_submission(
         matcher,
         bot,
         event,
         result,
         locale=locale,
-        service=wordbank_service,
-        media_service=wordbank_media_service,
-        submission_source_kind="study_submission",
-        batch_submission_source_kind="study_batch_submission",
-        batch_feedback_nickname=tr(
-            locale,
-            "wordbank.batch_add.study_forward_nickname",
-        ),
     )
 
 

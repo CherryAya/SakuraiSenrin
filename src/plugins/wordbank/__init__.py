@@ -62,15 +62,15 @@ from .guided_flow import (
     WORDBANK_GUIDED_SEARCH_STAGE_PAGE as WORDBANK_GUIDED_SEARCH_STAGE_PAGE,
 )
 from .handlers import (
+    SubmissionLifecycle,
+    is_reply,
+    localize_command_error,
+)
+from .handlers import (
     extract_image_urls as extract_image_urls,
 )
 from .handlers import (
     fetch_first_image_bytes_from_message as fetch_first_image_bytes_from_message,
-)
-from .handlers import (
-    finalize_submission,
-    is_reply,
-    localize_command_error,
 )
 from .handlers import (
     handle_add_text_result as handle_add_text_result,
@@ -91,8 +91,6 @@ from .handlers.commands import execute_search_page as execute_search_page
 from .handlers.commands import render_search_page_message as render_search_page_message
 from .pending_batch import send_pending_entries_review
 from .services import wordbank_media_service, wordbank_service
-from .services.core import WordbankAddResult
-from .services.presentation import WordbankBatchAddResult
 
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
@@ -272,25 +270,16 @@ async def _cancel_guided_resources(
     await cancel_guided_resources(state, cleanup_keys=cleanup_keys)
 
 
-async def _finalize_wordbank_submission(
-    matcher: Matcher,
-    bot: Bot,
-    event: MessageEvent,
-    submission: WordbankAddResult | WordbankBatchAddResult,
-    locale: LocaleCode,
-) -> None:
-    await finalize_submission(
-        matcher,
-        bot,
-        event,
-        submission,
-        locale=locale,
-        service=wordbank_service,
-        media_service=wordbank_media_service,
-        submission_source_kind="wordbank_submission",
-        batch_submission_source_kind="wordbank_batch_submission",
-        batch_feedback_nickname=tr(locale, "wordbank.batch_add.forward_nickname"),
-    )
+_wordbank_submission_lifecycle = SubmissionLifecycle(
+    service=wordbank_service,
+    media_service=wordbank_media_service,
+    submission_source_kind="wordbank_submission",
+    batch_submission_source_kind="wordbank_batch_submission",
+    batch_feedback_nickname_builder=lambda locale: tr(
+        locale,
+        "wordbank.batch_add.forward_nickname",
+    ),
+)
 
 
 async def _send_pending_entries_view(
@@ -567,7 +556,7 @@ async def _finish_guided_add(
         matcher,
         event,
         state,
-        finalize_submission=_finalize_wordbank_submission,
+        finalize_submission=_wordbank_submission_lifecycle.finalize,
         wordbank_service=wordbank_service,
     )
 
@@ -652,7 +641,7 @@ register_wordbank_command_handlers(
     wordbank_restore_command=wordbank_restore_command,
     initialize_plugin=initialize_wordbank_plugin,
     build_error_message=_wordbank_error_message,
-    finalize_submission=_finalize_wordbank_submission,
+    finalize_submission=_wordbank_submission_lifecycle.finalize,
     collect_search_query_content=_collect_search_query_content,
     start_guided_add=_start_guided_add,
     start_guided_add_with_trigger_image=_start_guided_add_with_trigger_image,

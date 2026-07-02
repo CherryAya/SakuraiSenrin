@@ -27,6 +27,7 @@ from .guided_flow import (
 )
 from .handlers import (
     GROUP_ALIASES,
+    SubmissionHandler,
     build_forced_command_text,
     dispatch_wordbank_command,
     parse_group_view_args,
@@ -89,10 +90,7 @@ def register_wordbank_command_handlers(
     wordbank_restore_command: Any,
     initialize_plugin: Callable[[], Awaitable[None]],
     build_error_message: ErrorBuilder,
-    finalize_submission: Callable[
-        [Matcher, Bot, MessageEvent, Any, LocaleCode],
-        Awaitable[None],
-    ],
+    finalize_submission: SubmissionHandler,
     collect_search_query_content: SearchQueryCollector,
     start_guided_add: Callable[
         [Matcher, MessageEvent, T_State, LocaleCode], Awaitable[None]

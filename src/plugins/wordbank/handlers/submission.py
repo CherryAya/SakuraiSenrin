@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.matcher import Matcher
@@ -25,6 +28,41 @@ from .approval import (
 )
 
 type SubmissionPayload = WordbankAddResult | WordbankBatchAddResult
+type BatchFeedbackNicknameBuilder = Callable[[LocaleCode], str]
+type SubmissionHandler = Callable[
+    [Matcher, Bot, MessageEvent, SubmissionPayload, LocaleCode],
+    Awaitable[None],
+]
+
+
+@dataclass(slots=True, frozen=True)
+class SubmissionLifecycle:
+    service: WordbankService
+    media_service: WordbankMediaService
+    submission_source_kind: str
+    batch_submission_source_kind: str
+    batch_feedback_nickname_builder: BatchFeedbackNicknameBuilder
+
+    async def finalize(
+        self,
+        matcher: Matcher,
+        bot: Bot,
+        event: MessageEvent,
+        submission: SubmissionPayload,
+        locale: LocaleCode,
+    ) -> None:
+        await finalize_submission(
+            matcher,
+            bot,
+            event,
+            submission,
+            locale=locale,
+            service=self.service,
+            media_service=self.media_service,
+            submission_source_kind=self.submission_source_kind,
+            batch_submission_source_kind=self.batch_submission_source_kind,
+            batch_feedback_nickname=self.batch_feedback_nickname_builder(locale),
+        )
 
 
 async def finalize_submission(

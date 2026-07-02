@@ -41,7 +41,7 @@ from src.plugins.wordbank.handlers.parsers import (
 )
 from src.plugins.wordbank.handlers.search_cards import SearchCardQuery
 from src.plugins.wordbank.message_model import MessageShape, shape_from_image
-from src.plugins.wordbank.services import format_add_result, format_creator_leaderboard
+from src.plugins.wordbank.services import format_creator_leaderboard
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
@@ -54,7 +54,6 @@ from src.plugins.wordbank.services.rules import (
 )
 from src.plugins.wordbank.text_parsing import has_meaningful_text, split_command_text
 
-from .approval import build_add_result_message
 from .media_helpers import (
     build_shape_from_text_and_images,
     shape_from_response_parts,
@@ -835,13 +834,8 @@ async def dispatch_wordbank_command(
     if not action or action in {"help", "帮助"}:
         return wordbank_help_text(locale)
     if action in ADD_ALIASES:
-        result = await handle_add_text(service, event=event, text=rest, locale=locale)
-        if media_service is None:
-            return format_add_result(result, locale=locale)
-        return await build_add_result_message(
-            result,
-            locale=locale,
-            media_service=media_service,
+        raise RuntimeError(
+            "add commands must be handled by the unified submission flow"
         )
     if action in SEARCH_ALIASES:
         if media_service is None:

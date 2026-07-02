@@ -46,6 +46,7 @@ from src.plugins.wordbank.handlers.parsers import (
     parse_search_session_command,
 )
 from src.plugins.wordbank.handlers.reply import parse_view_reply_for_search_result
+from src.plugins.wordbank.handlers.submission import SubmissionHandler
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services.rules import RuleError
 from src.plugins.wordbank.text_parsing import (
@@ -430,7 +431,7 @@ async def finish_guided_add(
     event: MessageEvent,
     state: T_State,
     *,
-    finalize_submission: Any,
+    finalize_submission: SubmissionHandler,
     wordbank_service: Any,
 ) -> None:
     locale = wordbank_guided_locale(state)

@@ -59,7 +59,7 @@ from .reply import (
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
 )
-from .submission import finalize_submission
+from .submission import SubmissionHandler, SubmissionLifecycle, finalize_submission
 
 __all__ = [
     "APPROVAL_REPLY_ALIASES",
@@ -67,6 +67,8 @@ __all__ = [
     "REPLY_COMMAND_ALIASES",
     "ApprovalReplyOutcome",
     "PassiveResponse",
+    "SubmissionHandler",
+    "SubmissionLifecycle",
     "build_add_result_message",
     "build_forced_command_text",
     "build_group_detail_message",
