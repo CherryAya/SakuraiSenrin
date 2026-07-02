@@ -16,6 +16,8 @@ from src.lib.message_assets import (
 )
 from src.lib.message_delivery import (
     DEFAULT_FORWARD_REUSE_POLICY,
+    DeliveryTarget,
+    _try_forward_single_message,
     build_forward_batch_descriptor,
     deliver_forward_messages,
 )
@@ -178,6 +180,56 @@ async def test_deliver_forward_messages_reuses_bundle_on_exact_match(
 
 
 @pytest.mark.asyncio
+async def test_try_forward_single_message_prefers_friend_api_for_private_target() -> (
+    None
+):
+    bot = cast(
+        Any,
+        SimpleNamespace(
+            self_id="99999", call_api=AsyncMock(return_value={"message_id": 88})
+        ),
+    )
+
+    await _try_forward_single_message(
+        bot,
+        target=DeliveryTarget(kind="private", target_id="10001"),
+        message_id="5566",
+        origin_message_type="group",
+    )
+
+    assert bot.call_api.await_count == 1
+    assert bot.call_api.await_args.args == ("forward_friend_single_msg",)
+    assert bot.call_api.await_args.kwargs == {
+        "message_id": "5566",
+        "user_id": "10001",
+    }
+
+
+@pytest.mark.asyncio
+async def test_try_forward_single_message_prefers_group_api_for_group_target() -> None:
+    bot = cast(
+        Any,
+        SimpleNamespace(
+            self_id="99999", call_api=AsyncMock(return_value={"message_id": 89})
+        ),
+    )
+
+    await _try_forward_single_message(
+        bot,
+        target=DeliveryTarget(kind="group", target_id="20001"),
+        message_id="7788",
+        origin_message_type="private",
+    )
+
+    assert bot.call_api.await_count == 1
+    assert bot.call_api.await_args.args == ("forward_group_single_msg",)
+    assert bot.call_api.await_args.kwargs == {
+        "message_id": "7788",
+        "group_id": "20001",
+    }
+
+
+@pytest.mark.asyncio
 async def test_deliver_forward_messages_falls_back_when_bundle_reuse_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -264,6 +316,116 @@ async def test_deliver_forward_messages_falls_back_when_bundle_reuse_fails(
         origin_message_type="group",
         origin_target_id="20001",
         forward_context_key=batch.context_key,
+    )
+
+
+@pytest.mark.asyncio
+async def test_deliver_forward_messages_reordered_batch_resets_prefix_reuse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bot = cast(
+        Any,
+        SimpleNamespace(
+            self_id="99999",
+            call_api=AsyncMock(
+                side_effect=[
+                    {"message_id": 301},
+                    {"message_id": 302},
+                    {"nickname": "测试机器人"},
+                    {"message_id": 9004},
+                ]
+            ),
+        ),
+    )
+    original_messages = (text_message("summary"), text_message("feature"))
+    reordered_messages = (text_message("feature"), text_message("summary"))
+    original_batch = build_forward_batch_descriptor(
+        original_messages,
+        policy=DEFAULT_FORWARD_REUSE_POLICY,
+    )
+    reordered_batch = build_forward_batch_descriptor(
+        reordered_messages,
+        policy=DEFAULT_FORWARD_REUSE_POLICY,
+    )
+    assert original_batch.context_key != reordered_batch.context_key
+
+    get_forward_bundle_asset = AsyncMock(
+        side_effect=lambda asset_key: (
+            _build_asset_record(
+                asset_key=asset_key,
+                asset_kind="forward_bundle",
+                message_id="bundle-old",
+                origin_message_type="group",
+                origin_target_id="20001",
+                forward_context_key=asset_key,
+            )
+            if asset_key == original_batch.context_key
+            else None
+        )
+    )
+    get_forward_node_asset = AsyncMock(
+        side_effect=lambda asset_key: (
+            _build_asset_record(
+                asset_key=asset_key,
+                asset_kind="forward_node",
+                message_id="node-old",
+                origin_message_type="private",
+                origin_target_id="99999",
+                forward_context_key=original_batch.node_context_keys[0],
+                forward_sort_key=0,
+            )
+            if asset_key == original_batch.node_asset_keys[0]
+            else None
+        )
+    )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_forward_bundle_asset",
+        get_forward_bundle_asset,
+    )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_forward_node_asset",
+        get_forward_node_asset,
+    )
+    monkeypatch.setattr(message_asset_repo, "mark_stale", AsyncMock())
+    upsert_forward_bundle_asset = AsyncMock()
+    monkeypatch.setattr(
+        message_asset_repo,
+        "upsert_forward_bundle_asset",
+        upsert_forward_bundle_asset,
+    )
+
+    await deliver_forward_messages(
+        bot,
+        build_group_message_event("#help wordbank"),
+        reordered_messages,
+        source_kind="help",
+        fallback_nickname="fallback",
+    )
+
+    api_calls = [call.args[0] for call in bot.call_api.await_args_list]
+    assert api_calls == [
+        "send_private_msg",
+        "send_private_msg",
+        "get_login_info",
+        "send_group_forward_msg",
+    ]
+    get_forward_bundle_asset.assert_awaited_once_with(reordered_batch.context_key)
+    get_forward_node_asset.assert_awaited_once_with(reordered_batch.node_asset_keys[0])
+    first_stage_call = bot.call_api.await_args_list[0]
+    second_stage_call = bot.call_api.await_args_list[1]
+    assert str(first_stage_call.kwargs["message"]) == "feature"
+    assert str(second_stage_call.kwargs["message"]) == "summary"
+    upsert_forward_bundle_asset.assert_awaited_once_with(
+        asset_key=reordered_batch.context_key,
+        content_hash=reordered_batch.context_key,
+        source_kind="help",
+        message_id="9004",
+        sender_bot_id="99999",
+        origin_message_type="group",
+        origin_target_id="20001",
+        forward_context_key=reordered_batch.context_key,
     )
 
 

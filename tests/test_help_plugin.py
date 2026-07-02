@@ -10,6 +10,7 @@ import pytest
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR
+from src.lib.message_assets import message_asset_repo
 from src.lib.messages import text_message
 from src.lib.plugin_docs import (
     DocNode,
@@ -907,19 +908,44 @@ async def test_resolve_forward_sender_prefers_login_nickname() -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_help_forward_uses_group_forward_api() -> None:
+async def test_send_help_forward_uses_group_forward_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bot = cast(
         Any,
         SimpleNamespace(
             self_id="99999",
-            call_api=AsyncMock(side_effect=[{"nickname": "测试机器人"}, None]),
+            call_api=AsyncMock(
+                side_effect=[
+                    {"message_id": 101},
+                    {"message_id": 102},
+                    {"nickname": "测试机器人"},
+                    {"message_id": 9001},
+                ]
+            ),
         ),
     )
     event = build_group_message_event("#help wordbank")
     plan = HelpDeliveryPlan(messages=(text_message("A"), text_message("B")))
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_forward_bundle_asset",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_forward_node_asset",
+        AsyncMock(return_value=None),
+    )
 
     await _send_help_forward(bot, event, plan)
 
+    assert [call.args[0] for call in bot.call_api.await_args_list] == [
+        "send_private_msg",
+        "send_private_msg",
+        "get_login_info",
+        "send_group_forward_msg",
+    ]
     assert bot.call_api.await_args_list[-1].args[0] == "send_group_forward_msg"
     assert bot.call_api.await_args_list[-1].kwargs["group_id"] == 20001
     nodes = bot.call_api.await_args_list[-1].kwargs["messages"]
@@ -930,13 +956,15 @@ async def test_send_help_forward_uses_group_forward_api() -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_help_forward_uses_private_forward_api_with_fallback_nickname() -> (
-    None
-):
+async def test_send_help_forward_uses_private_forward_api_with_fallback_nickname(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def fake_call_api(api: str, **kwargs: Any) -> Any:
         if api == "get_login_info":
             raise RuntimeError("boom")
-        return None
+        if api == "send_private_forward_msg":
+            return {"message_id": 9002}
+        return {"message_id": 101}
 
     bot = cast(
         Any,
@@ -944,9 +972,25 @@ async def test_send_help_forward_uses_private_forward_api_with_fallback_nickname
     )
     event = build_private_message_event("#help wordbank")
     plan = HelpDeliveryPlan(messages=(text_message("A"), text_message("B")))
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_forward_bundle_asset",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_forward_node_asset",
+        AsyncMock(return_value=None),
+    )
 
     await _send_help_forward(bot, event, plan)
 
+    assert [call.args[0] for call in bot.call_api.await_args_list] == [
+        "send_private_msg",
+        "send_private_msg",
+        "get_login_info",
+        "send_private_forward_msg",
+    ]
     assert bot.call_api.await_args_list[-1].args[0] == "send_private_forward_msg"
     assert bot.call_api.await_args_list[-1].kwargs["user_id"] == 10001
     nodes = bot.call_api.await_args_list[-1].kwargs["messages"]
@@ -955,7 +999,9 @@ async def test_send_help_forward_uses_private_forward_api_with_fallback_nickname
 
 
 @pytest.mark.asyncio
-async def test_deliver_help_plan_sends_wait_prompt_before_forward() -> None:
+async def test_deliver_help_plan_sends_wait_prompt_before_forward(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bot = cast(
         Any,
         SimpleNamespace(
@@ -965,7 +1011,8 @@ async def test_deliver_help_plan_sends_wait_prompt_before_forward() -> None:
                     {"message_id": 101},
                     {"message_id": 102},
                     {"message_id": 103},
-                    None,
+                    {"nickname": "SakuraiSenrin"},
+                    {"message_id": 9003},
                 ]
             ),
         ),
@@ -973,6 +1020,16 @@ async def test_deliver_help_plan_sends_wait_prompt_before_forward() -> None:
     matcher = cast(Any, SimpleNamespace(send=AsyncMock(), finish=AsyncMock()))
     event = build_group_message_event("#help wordbank")
     plan = HelpDeliveryPlan(messages=(text_message("A"), text_message("B")))
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_forward_bundle_asset",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_forward_node_asset",
+        AsyncMock(return_value=None),
+    )
 
     await _deliver_help_plan(bot, matcher, event, plan)
 
@@ -980,6 +1037,13 @@ async def test_deliver_help_plan_sends_wait_prompt_before_forward() -> None:
     assert first_call.args[0] == "send_group_msg"
     assert first_call.kwargs["group_id"] == 20001
     assert str(first_call.kwargs["message"]) == HELP_FORWARD_WAIT_PROMPT
+    assert [call.args[0] for call in bot.call_api.await_args_list] == [
+        "send_group_msg",
+        "send_private_msg",
+        "send_private_msg",
+        "get_login_info",
+        "send_group_forward_msg",
+    ]
     matcher.finish.assert_awaited_once_with()
 
 

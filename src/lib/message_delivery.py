@@ -214,65 +214,31 @@ async def _try_forward_single_message(
     message_id: str,
     origin_message_type: str,
 ) -> Any:
-    candidates: list[tuple[str, dict[str, str | int]]] = []
-    if origin_message_type == "group":
-        candidates.append(
-            (
-                "forward_group_single_msg",
-                {
-                    "message_id": message_id,
-                    "group_id": target.target_id,
-                }
-                if target.kind == "group"
-                else {
-                    "message_id": message_id,
-                    "user_id": target.target_id,
-                },
-            )
-        )
-        candidates.append(
-            (
-                "forward_friend_single_msg",
-                {
-                    "message_id": message_id,
-                    "group_id": target.target_id,
-                }
-                if target.kind == "group"
-                else {
-                    "message_id": message_id,
-                    "user_id": target.target_id,
-                },
-            )
-        )
+    primary_api = (
+        "forward_group_single_msg"
+        if target.kind == "group"
+        else "forward_friend_single_msg"
+    )
+    fallback_api = (
+        "forward_friend_single_msg"
+        if primary_api == "forward_group_single_msg"
+        else "forward_group_single_msg"
+    )
+    payload: dict[str, str | int]
+    if target.kind == "group":
+        payload = {
+            "message_id": message_id,
+            "group_id": target.target_id,
+        }
     else:
-        candidates.append(
-            (
-                "forward_friend_single_msg",
-                {
-                    "message_id": message_id,
-                    "group_id": target.target_id,
-                }
-                if target.kind == "group"
-                else {
-                    "message_id": message_id,
-                    "user_id": target.target_id,
-                },
-            )
-        )
-        candidates.append(
-            (
-                "forward_group_single_msg",
-                {
-                    "message_id": message_id,
-                    "group_id": target.target_id,
-                }
-                if target.kind == "group"
-                else {
-                    "message_id": message_id,
-                    "user_id": target.target_id,
-                },
-            )
-        )
+        payload = {
+            "message_id": message_id,
+            "user_id": target.target_id,
+        }
+    candidates: list[tuple[str, dict[str, str | int]]] = [
+        (primary_api, payload),
+        (fallback_api, payload),
+    ]
 
     last_exc: Exception | None = None
     for api, payload in candidates:
