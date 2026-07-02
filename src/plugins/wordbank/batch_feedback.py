@@ -8,7 +8,8 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
 from src.lib.messages import text_message
 from src.lib.onebot_forward import send_custom_forward
-from src.plugins.wordbank.services import format_add_result
+from src.plugins.wordbank.handlers.approval import build_add_result_message
+from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import WordbankBatchAddResult
 
 
@@ -18,6 +19,7 @@ async def send_batch_add_feedback(
     *,
     batch: WordbankBatchAddResult,
     locale: LocaleCode,
+    media_service: WordbankMediaService,
     source_kind: str,
     fallback_nickname: str,
 ) -> None:
@@ -40,10 +42,10 @@ async def send_batch_add_feedback(
     for item in batch.items:
         if item.ok and item.result is not None:
             detail_messages.append(
-                text_message(
-                    tr(locale, "wordbank.batch.index", index=item.index)
-                    + "\n"
-                    + format_add_result(item.result, locale=locale)
+                await build_add_result_message(
+                    item.result,
+                    locale=locale,
+                    media_service=media_service,
                 )
             )
         else:

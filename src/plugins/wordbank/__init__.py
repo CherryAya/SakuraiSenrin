@@ -323,6 +323,7 @@ async def _finish_batch_add_result(
         event,
         batch=batch,
         locale=locale,
+        media_service=wordbank_media_service,
         source_kind="wordbank_batch_submission",
         fallback_nickname=tr(locale, "wordbank.batch_add.forward_nickname"),
     )
