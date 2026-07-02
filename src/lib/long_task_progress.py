@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from datetime import datetime
 import json
@@ -81,6 +82,13 @@ class LongTaskHeavyPathCandidate:
     line: int
     snippet: str
     reasons: tuple[str, ...]
+
+
+@dataclass(slots=True, frozen=True)
+class SourceBlock:
+    start_line: int
+    end_line: int
+    name: str
 
 
 DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
@@ -310,6 +318,68 @@ def _read_text(path: Path) -> str:
         return ""
 
 
+def _build_source_blocks(source: str) -> list[SourceBlock]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+
+    blocks: list[SourceBlock] = []
+
+    def _visit(node: ast.AST, prefix: tuple[str, ...] = ()) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                _visit(child, (*prefix, child.name))
+                continue
+            if isinstance(child, ast.AsyncFunctionDef | ast.FunctionDef):
+                end_line = getattr(child, "end_lineno", child.lineno)
+                blocks.append(
+                    SourceBlock(
+                        start_line=child.lineno,
+                        end_line=end_line,
+                        name=".".join((*prefix, child.name)),
+                    )
+                )
+                _visit(child, (*prefix, child.name))
+                continue
+            _visit(child, prefix)
+
+    _visit(tree)
+    return sorted(
+        blocks,
+        key=lambda item: (item.start_line, item.end_line - item.start_line),
+    )
+
+
+def _find_innermost_block(
+    blocks: list[SourceBlock],
+    line_number: int,
+) -> SourceBlock | None:
+    matched = [
+        block for block in blocks if block.start_line <= line_number <= block.end_line
+    ]
+    if not matched:
+        return None
+    return min(
+        matched,
+        key=lambda item: (item.end_line - item.start_line, item.start_line),
+    )
+
+
+def _slice_source_block(source: str, block: SourceBlock) -> str:
+    lines = source.splitlines()
+    return "\n".join(lines[block.start_line - 1 : block.end_line])
+
+
+def _is_long_task_aware_scope(scope_source: str) -> bool:
+    return bool(
+        re.search(
+            r"\bLongTaskRunner\b|\btask:\s*LongTaskRunner\b",
+            scope_source,
+        )
+    )
+
+
 def _extract_scoped_source(source: str, target: LongTaskAuditTarget) -> str:
     if not target.scope_terms:
         return source
@@ -389,8 +459,10 @@ def _collect_legacy_wait_candidates(root: Path) -> list[LongTaskLegacyCandidate]
     candidates: list[LongTaskLegacyCandidate] = []
     for path in _iter_runtime_python_files(root):
         source = _read_text(path)
-        if not source or "LongTaskRunner" in source:
+        if not source:
             continue
+        blocks = _build_source_blocks(source)
+        file_has_long_task = "LongTaskRunner" in source
         for line_number, line in enumerate(source.splitlines(), start=1):
             has_wait_text = WAIT_PROMPT_PATTERN.search(line) is not None
             has_wait_key = any(wait_key in line for wait_key in WAIT_I18N_KEYS)
@@ -398,6 +470,12 @@ def _collect_legacy_wait_candidates(root: Path) -> list[LongTaskLegacyCandidate]
                 continue
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
+                continue
+            block = _find_innermost_block(blocks, line_number)
+            if block is not None:
+                if _is_long_task_aware_scope(_slice_source_block(source, block)):
+                    continue
+            elif file_has_long_task:
                 continue
             candidates.append(
                 LongTaskLegacyCandidate(
@@ -415,44 +493,52 @@ def _collect_heavy_path_candidates(
     targets: tuple[LongTaskAuditTarget, ...],
 ) -> list[LongTaskHeavyPathCandidate]:
     candidates: list[LongTaskHeavyPathCandidate] = []
-    target_paths = {target.path for target in targets}
     for path in _iter_runtime_python_files(root):
         relative_path = str(path.relative_to(root))
-        if relative_path in target_paths:
-            continue
         source = _read_text(path)
-        if not source or "LongTaskRunner" in source:
+        if not source:
             continue
-
-        delivery_detected = False
-        heavy_reason_lines: dict[str, tuple[int, str]] = {}
-        for line_number, line in enumerate(source.splitlines(), start=1):
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
+        blocks = _build_source_blocks(source)
+        seen_candidate_keys: set[tuple[str, int, tuple[str, ...]]] = set()
+        for block in blocks:
+            block_source = _slice_source_block(source, block)
+            if _is_long_task_aware_scope(block_source):
                 continue
-            if not delivery_detected and HEAVY_DELIVERY_PATTERN.search(line):
-                delivery_detected = True
-            for reason, pattern in HEAVY_SIGNAL_RULES:
-                if reason in heavy_reason_lines:
+            delivery_detected = False
+            heavy_reason_lines: dict[str, tuple[int, str]] = {}
+            for offset, line in enumerate(
+                block_source.splitlines(),
+                start=block.start_line,
+            ):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
                     continue
-                if pattern.search(line):
-                    heavy_reason_lines[reason] = (line_number, stripped)
-        if not delivery_detected or not heavy_reason_lines:
-            continue
-
-        reason_names = tuple(sorted(heavy_reason_lines))
-        first_reason = min(
-            heavy_reason_lines.items(),
-            key=lambda item: item[1][0],
-        )
-        candidates.append(
-            LongTaskHeavyPathCandidate(
-                path=relative_path,
-                line=first_reason[1][0],
-                snippet=first_reason[1][1],
-                reasons=reason_names,
+                if not delivery_detected and HEAVY_DELIVERY_PATTERN.search(line):
+                    delivery_detected = True
+                for reason, pattern in HEAVY_SIGNAL_RULES:
+                    if reason in heavy_reason_lines:
+                        continue
+                    if pattern.search(line):
+                        heavy_reason_lines[reason] = (offset, stripped)
+            if not delivery_detected or not heavy_reason_lines:
+                continue
+            reason_names = tuple(sorted(heavy_reason_lines))
+            first_reason = min(
+                heavy_reason_lines.items(),
+                key=lambda item: item[1][0],
             )
-        )
+            candidate_key = (relative_path, block.start_line, reason_names)
+            if candidate_key in seen_candidate_keys:
+                continue
+            seen_candidate_keys.add(candidate_key)
+            candidates.append(
+                LongTaskHeavyPathCandidate(
+                    path=relative_path,
+                    line=first_reason[1][0],
+                    snippet=first_reason[1][1],
+                    reasons=reason_names,
+                )
+            )
     return candidates
 
 

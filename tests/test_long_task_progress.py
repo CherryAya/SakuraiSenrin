@@ -88,6 +88,39 @@ def test_long_task_progress_report_detects_complete_and_legacy_candidates(
     ]
 
 
+def test_long_task_progress_report_detects_mixed_file_blind_spots(
+    tmp_path: Path,
+) -> None:
+    mixed_file = tmp_path / "src" / "plugins" / "demo" / "mixed.py"
+    mixed_file.parent.mkdir(parents=True, exist_ok=True)
+    mixed_file.write_text(
+        "\n".join(
+            [
+                "from src.lib.long_task import LongTaskRunner",
+                "from src.lib.message_plan import ImageBytesBlock",
+                "from src.lib.utils.img import QQAvatar",
+                "async def covered(task: LongTaskRunner) -> None:",
+                '    prompt = "处理中"',
+                "async def uncovered(matcher):",
+                '    wait = "正在处理中，请稍候..."',
+                '    avatar = await QQAvatar.fetch_user("1")',
+                "    await matcher.finish(ImageBytesBlock(avatar))",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = build_long_task_progress_report(root=tmp_path, targets=())
+
+    assert payload["summary"]["legacy_wait_candidates"] == 1
+    assert payload["summary"]["heavy_path_candidates"] == 1
+    assert payload["legacy_wait_candidates"][0]["path"] == "src/plugins/demo/mixed.py"
+    assert payload["legacy_wait_candidates"][0]["line"] == 7
+    assert payload["heavy_path_candidates"][0]["path"] == "src/plugins/demo/mixed.py"
+    assert payload["heavy_path_candidates"][0]["line"] == 8
+
+
 def test_long_task_progress_endpoint_writer_outputs_json(tmp_path: Path) -> None:
     target_file = tmp_path / "src" / "plugins" / "demo" / "runner.py"
     target_file.parent.mkdir(parents=True, exist_ok=True)

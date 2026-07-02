@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fail-on-candidates",
         action="store_true",
-        help="exit with code 1 when legacy wait-message candidates still exist",
+        help="exit with code 1 when legacy/heavy migration candidates still exist",
     )
     return parser.parse_args()
 
@@ -56,7 +56,10 @@ def main() -> int:
             f"heavy_candidates={summary['heavy_path_candidates']} "
             f"path={args.output}\n"
         )
-    if args.fail_on_candidates and payload["summary"]["legacy_wait_candidates"] > 0:
+    if args.fail_on_candidates and (
+        payload["summary"]["legacy_wait_candidates"] > 0
+        or payload["summary"]["heavy_path_candidates"] > 0
+    ):
         return 1
     return 0
 

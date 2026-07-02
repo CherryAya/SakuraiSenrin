@@ -38,7 +38,7 @@ docs/development/long-task-progress.json
 uv run python scripts/long_task_progress.py --stdout
 ```
 
-如果想把“仍有遗留旧等待提示”作为失败条件：
+如果想把“仍有遗留旧等待提示 / 潜在重路径未迁移”作为失败条件：
 
 ```bash
 uv run python scripts/long_task_progress.py --fail-on-candidates
@@ -82,8 +82,9 @@ uv run python scripts/long_task_progress.py --fail-on-candidates
 - `targets` 是显式维护的迁移目标矩阵
 - `legacy_wait_candidates` 是对 `src/plugins`、`src/services`、`src/hooks` 的启发式扫描结果
 - `heavy_path_candidates` 是“还没接入 LongTask、但同时具备重渲染/图片/头像信号且直接参与用户输出”的候选列表
-- 如果某个文件还保留“请稍候 / 执行中 / 处理中”这类旧等待提示，且文件本身没有 `LongTaskRunner`，就会被列出来
-- 如果某个文件没有旧等待提示，但仍像一个潜在重路径入口，`heavy_path_candidates` 会把它保留下来，作为下一批迁移目标参考
+- 如果某个函数 / 方法块还保留“请稍候 / 执行中 / 处理中”这类旧等待提示，且该块本身没有 LongTask 感知，就会被列出来
+- 如果某个函数 / 方法块没有旧等待提示，但仍像一个潜在重路径入口，`heavy_path_candidates` 会把它保留下来，作为下一批迁移目标参考
+- 审计不是按“整文件是否出现过 `LongTaskRunner`”粗暴判断，而是按函数 / 方法块判断；同一文件里即使已有一条分支接入 LongTask，其他未迁移的重分支仍会被扫出来
 
 ## 当前约束
 
