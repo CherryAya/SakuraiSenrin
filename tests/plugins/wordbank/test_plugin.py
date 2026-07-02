@@ -6,6 +6,8 @@ import nonebot
 from nonebot.adapters.onebot.v11 import Message
 import pytest
 
+from src.lib.message_plan import render_message_plan_input
+
 nonebot.init(
     SUPERUSERS={"1"},
     IGNORED_USERS=set(),
@@ -73,9 +75,10 @@ async def test_build_passive_message_rebuilds_text_and_image_segments(
         response,
         locale="zh-CN",
     )
+    rendered = render_message_plan_input(message)
 
-    assert isinstance(message, Message)
-    assert [segment.type for segment in message] == ["text", "image"]
+    assert isinstance(rendered, Message)
+    assert [segment.type for segment in rendered] == ["text", "image"]
     assert image_trace_fields == {
         "requested_image_ids": (7,),
         "loaded_image_ids": (7,),
@@ -119,8 +122,9 @@ async def test_build_passive_message_logs_render_shape_stages(
         response,
         locale="zh-CN",
     )
+    rendered = render_message_plan_input(message)
 
-    assert isinstance(message, Message)
+    assert isinstance(rendered, Message)
     assert image_trace_fields["image_total_bytes"] == len(b"image-bytes")
     assert "plugin.build_passive_message.render_shape.begin" in events
     assert events["plugin.build_passive_message.render_shape.images_loaded"][
@@ -157,11 +161,12 @@ async def test_build_passive_message_keeps_text_when_image_storage_is_missing(
         response,
         locale="zh-CN",
     )
+    rendered = render_message_plan_input(message)
 
-    assert isinstance(message, Message)
-    assert [segment.type for segment in message] == ["text", "text"]
-    assert message[0].data["text"] == "做个好梦"
-    assert message[1].data["text"] == MISSING_IMAGE_PLACEHOLDER
+    assert isinstance(rendered, Message)
+    assert [segment.type for segment in rendered] == ["text", "text"]
+    assert rendered[0].data["text"] == "做个好梦"
+    assert rendered[1].data["text"] == MISSING_IMAGE_PLACEHOLDER
     assert image_trace_fields == {
         "requested_image_ids": (7,),
         "loaded_image_ids": (),

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, cast
 
-from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
     FriendRecallNoticeEvent,
@@ -27,12 +26,16 @@ from src.lib.interactive_recall import (
     rebuild_temp_matcher,
     register_root_message,
 )
-from src.lib.message_delivery import (
-    DeliveryTarget,
-    deliver_single_message,
-    resolve_delivery_target,
+from src.lib.message_delivery import DeliveryTarget
+from src.lib.message_plan import (
+    DeliveryPlan,
+    MessagePlanEntry,
+    MessagePlanInput,
+    ReplyRefBlock,
+    TextBlock,
+    deliver_message_plan,
+    render_message_plan_input,
 )
-from src.lib.messages import empty_message
 from src.logger import logger
 
 from .database.types import WordbankMessageRefRecord
@@ -51,7 +54,7 @@ from .handlers.commands import (
     parse_search_args,
     render_search_page_message,
 )
-from .handlers.rendering import render_shape_message
+from .handlers.rendering import build_shape_plan_entry
 from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError
 
@@ -75,6 +78,21 @@ def register_wordbank_runtime_handlers(
 
         return getattr(wordbank_plugin, name)
 
+    async def _get_runtime_attr(name: str, fallback: Any) -> Any:
+        try:
+            return await _get_plugin_attr(name)
+        except Exception:
+            return fallback
+
+    async def _get_wordbank_service() -> Any:
+        return await _get_runtime_attr("wordbank_service", wordbank_service)
+
+    async def _get_wordbank_media_service() -> Any:
+        return await _get_runtime_attr(
+            "wordbank_media_service",
+            wordbank_media_service,
+        )
+
     def _extract_sent_message_id(result: Any) -> str | None:
         if isinstance(result, dict):
             value = result.get("message_id")
@@ -92,7 +110,8 @@ def register_wordbank_runtime_handlers(
         if message_id is None:
             return
         try:
-            await wordbank_service.record_message_ref(
+            service = await _get_wordbank_service()
+            await service.record_message_ref(
                 ref_kind="response",
                 message_id=message_id,
                 trigger_group_id=response.trigger_group_id,
@@ -134,7 +153,8 @@ def register_wordbank_runtime_handlers(
         if message_id is None:
             return
         try:
-            await wordbank_service.record_message_ref(
+            service = await _get_wordbank_service()
+            await service.record_message_ref(
                 ref_kind="view",
                 message_id=message_id,
                 context_type=context_type,
@@ -215,9 +235,11 @@ def register_wordbank_runtime_handlers(
         finish_guided_search: Callable[..., Awaitable[None]] | None = None,
     ) -> None:
         parsed = parse_search_args(keyword)
+        service = await _get_wordbank_service()
+        media_service = await _get_wordbank_media_service()
         if state is None:
             page = await execute_search_page(
-                wordbank_service,
+                service,
                 parsed=parsed,
                 image_scores=image_scores,
             )
@@ -226,14 +248,17 @@ def register_wordbank_runtime_handlers(
                 parsed=parsed,
                 locale=locale,
                 has_image=image_scores is not None,
-                media_service=wordbank_media_service,
+                media_service=media_service,
             )
-            send_result = await deliver_single_message(
+            plan_result = await deliver_message_plan(
                 bot,
-                target=resolve_delivery_target(event),
-                message=message,
-                source_kind="wordbank_view",
+                plan=DeliveryPlan(
+                    messages=(message,),
+                    source_kind="wordbank_view",
+                ),
+                event=event,
             )
+            send_result = plan_result.results[0]
             await _record_search_result_view_message(
                 send_result=send_result,
                 event=event,
@@ -273,19 +298,24 @@ def register_wordbank_runtime_handlers(
         page: int,
         finish_after_send: bool = True,
     ) -> None:
+        service = await _get_wordbank_service()
+        media_service = await _get_wordbank_media_service()
         message, detail, _ = await build_group_detail_message(
-            wordbank_service,
+            service,
             trigger_group_id=trigger_group_id,
             page=page,
             locale=locale,
-            media_service=wordbank_media_service,
+            media_service=media_service,
         )
-        send_result = await deliver_single_message(
+        plan_result = await deliver_message_plan(
             bot,
-            target=resolve_delivery_target(event),
-            message=message,
-            source_kind="wordbank_view",
+            plan=DeliveryPlan(
+                messages=(message,),
+                source_kind="wordbank_view",
+            ),
+            event=event,
         )
+        send_result = plan_result.results[0]
         await _record_group_detail_view_message(
             send_result=send_result,
             event=event,
@@ -301,41 +331,42 @@ def register_wordbank_runtime_handlers(
         approval_message: WordbankMessageRefRecord,
         message: str,
     ) -> None:
-        source = empty_message()
-        if approval_message.source_message_id.isdigit():
-            source += MessageSegment.reply(int(approval_message.source_message_id))
-        source += MessageSegment.text(message)
+        blocks: list[ReplyRefBlock | TextBlock] = []
+        if approval_message.source_message_id:
+            blocks.append(
+                ReplyRefBlock(message_id=str(approval_message.source_message_id))
+            )
+        blocks.append(TextBlock(text=message))
+        plan = DeliveryPlan(
+            messages=(MessagePlanEntry(blocks=tuple(blocks)),),
+            source_kind="wordbank_approval_source_notice",
+            allow_asset_reuse=False,
+        )
         try:
             if approval_message.group_id:
-                await deliver_single_message(
+                await deliver_message_plan(
                     bot,
+                    plan=plan,
                     target=DeliveryTarget(
                         kind="group",
                         target_id=str(approval_message.group_id),
                     ),
-                    message=source,
-                    source_kind="wordbank_approval_source_notice",
-                    allow_asset_reuse=False,
                 )
                 return
             if approval_message.user_id:
-                await deliver_single_message(
+                await deliver_message_plan(
                     bot,
+                    plan=plan,
                     target=DeliveryTarget(
                         kind="private",
                         target_id=str(approval_message.user_id),
                     ),
-                    message=source,
-                    source_kind="wordbank_approval_source_notice",
-                    allow_asset_reuse=False,
                 )
         except Exception as exc:
             logger.warning(f"[Wordbank] approval source notice skipped: {exc}")
 
-    def _message_segment_stats(message: Message | str) -> tuple[int, int]:
-        if isinstance(message, str):
-            return (1 if message else 0, 0)
-        segments = list(message)
+    def _message_segment_stats(message: MessagePlanInput) -> tuple[int, int]:
+        segments = list(render_message_plan_input(message))
         return (
             len(segments),
             sum(1 for segment in segments if segment.type == "image"),
@@ -365,10 +396,14 @@ def register_wordbank_runtime_handlers(
         response: PassiveResponse,
         *,
         locale: LocaleCode,
-    ) -> tuple[Message | str, dict[str, object]]:
-        from src.plugins.wordbank.debug import log_perf, perf_start
+    ) -> tuple[MessagePlanInput, dict[str, object]]:
+        from src.plugins.wordbank.debug import log_perf as default_log_perf
+        from src.plugins.wordbank.debug import perf_start as default_perf_start
 
+        log_perf = await _get_runtime_attr("log_perf", default_log_perf)
+        perf_start = await _get_runtime_attr("perf_start", default_perf_start)
         start = perf_start()
+        media_service = await _get_wordbank_media_service()
         if response.response_shape is None or response.response_shape.is_empty():
             log_perf(
                 "plugin.build_passive_message.text_only",
@@ -386,9 +421,9 @@ def register_wordbank_runtime_handlers(
             image_atom_count=image_atom_count,
         )
         render_trace: dict[str, object] = {}
-        message = await render_shape_message(
+        message = await build_shape_plan_entry(
             response.response_shape,
-            wordbank_media_service,
+            media_service,
             locale=locale,
             trace_fields={"response_item_id": response.response_item_id},
             trace_sink=render_trace,
@@ -399,7 +434,7 @@ def register_wordbank_runtime_handlers(
             start=start,
             response_item_id=response.response_item_id,
             atoms=len(response.response_shape.atoms),
-            segments=len(list(message)),
+            segments=len(message.blocks),
             **cast(Any, image_trace_fields),
         )
         return message, image_trace_fields
@@ -408,14 +443,16 @@ def register_wordbank_runtime_handlers(
     async def _wordbank_reply(matcher: Matcher, event: MessageEvent) -> None:
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+        service = await _get_wordbank_service()
+        media_service = await _get_wordbank_media_service()
         try:
             msg = await handle_reply_command(
-                wordbank_service,
+                service,
                 event=event,
                 message=event.message,
                 text=event.message.extract_plain_text(),
                 locale=locale,
-                media_service=wordbank_media_service,
+                media_service=media_service,
             )
         except (RuleError, ValueError) as exc:
             await matcher.finish(
@@ -436,9 +473,10 @@ def register_wordbank_runtime_handlers(
     ) -> None:
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+        service = await _get_wordbank_service()
         try:
             outcome = await handle_approval_reply_result(
-                wordbank_service,
+                service,
                 event=event,
                 text=event.message.extract_plain_text(),
                 locale=locale,
@@ -473,7 +511,8 @@ def register_wordbank_runtime_handlers(
         if reply_message_id is None:
             await matcher.finish(tr(locale, "wordbank.reply.target_missing"))
             return
-        view_message = await wordbank_service.get_message_ref(
+        service = await _get_wordbank_service()
+        view_message = await service.get_message_ref(
             str(reply_message_id),
             expected_kind="view",
         )
@@ -523,12 +562,14 @@ def register_wordbank_runtime_handlers(
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         try:
+            service = await _get_wordbank_service()
+            media_service = await _get_wordbank_media_service()
             handle_start = perf_start()
             response = await (await _get_plugin_attr("handle_passive_message"))(
                 bot,
                 event,
-                wordbank_service,
-                wordbank_media_service,
+                service,
+                media_service,
             )
             handle_ms = elapsed_ms(handle_start)
         except Exception as exc:
@@ -557,12 +598,15 @@ def register_wordbank_runtime_handlers(
             **cast(Any, image_trace_fields),
         )
         send_start = perf_start()
-        send_result = await deliver_single_message(
+        plan_result = await deliver_message_plan(
             bot,
-            target=resolve_delivery_target(event),
-            message=message,
-            source_kind="wordbank_response",
+            plan=DeliveryPlan(
+                messages=(message,),
+                source_kind="wordbank_response",
+            ),
+            event=event,
         )
+        send_result = plan_result.results[0]
         send_ms = elapsed_ms(send_start)
         log_perf(
             "plugin.passive.handle.send.done",
@@ -615,11 +659,13 @@ def register_wordbank_runtime_handlers(
                 )
                 session.matcher_cls.destroy()
                 if session.is_root_message or checkpoint is None:
-                    await deliver_single_message(
+                    await deliver_message_plan(
                         bot,
+                        plan=DeliveryPlan(
+                            messages=((tr(locale, "interaction.cancelled")),),
+                            source_kind="wordbank_notice",
+                        ),
                         target=_notice_delivery_target(recall_event),
-                        message=tr(locale, "interaction.cancelled"),
-                        source_kind="wordbank_notice",
                     )
                     return
                 rebuild_temp_matcher(
@@ -628,11 +674,13 @@ def register_wordbank_runtime_handlers(
                     step_index=checkpoint.step_index,
                     state=checkpoint.state_snapshot,
                 )
-                await deliver_single_message(
+                await deliver_message_plan(
                     bot,
+                    plan=DeliveryPlan(
+                        messages=((checkpoint.prompt),),
+                        source_kind="wordbank_notice",
+                    ),
                     target=_notice_delivery_target(recall_event),
-                    message=checkpoint.prompt,
-                    source_kind="wordbank_notice",
                 )
                 return
 
@@ -640,11 +688,12 @@ def register_wordbank_runtime_handlers(
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         try:
+            service = await _get_wordbank_service()
             handle_start = perf_start()
             response = await (await _get_plugin_attr("handle_passive_notice"))(
                 bot,
                 event,
-                wordbank_service,
+                service,
             )
             handle_ms = elapsed_ms(handle_start)
         except Exception as exc:
@@ -673,12 +722,15 @@ def register_wordbank_runtime_handlers(
             **cast(Any, image_trace_fields),
         )
         send_start = perf_start()
-        send_result = await deliver_single_message(
+        plan_result = await deliver_message_plan(
             bot,
+            plan=DeliveryPlan(
+                messages=(message,),
+                source_kind="wordbank_response",
+            ),
             target=_notice_delivery_target(event),
-            message=message,
-            source_kind="wordbank_response",
         )
+        send_result = plan_result.results[0]
         send_ms = elapsed_ms(send_start)
         log_perf(
             "plugin.notice.handle.send.done",
