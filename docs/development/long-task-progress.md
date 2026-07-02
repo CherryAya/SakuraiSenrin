@@ -52,8 +52,8 @@ uv run python scripts/long_task_progress.py --fail-on-candidates
   "generated_at": "2026-07-03T00:00:00+00:00",
   "root": "/path/to/repo",
   "summary": {
-    "total_targets": 15,
-    "complete_targets": 15,
+    "total_targets": 16,
+    "complete_targets": 16,
     "partial_targets": 0,
     "missing_file_targets": 0,
     "legacy_wait_candidates": 0

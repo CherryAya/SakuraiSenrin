@@ -40,6 +40,7 @@ from .handlers import (
 )
 from .handlers.commands import (
     PENDING_ALIASES,
+    RANK_ALIASES,
     parse_guided_advanced_options,
     parse_guided_scope_choice,
 )
@@ -81,6 +82,43 @@ def _raw_rest_after_first_token(text: str) -> str:
     if not tokens:
         return ""
     return rest_after_token(source, tokens[0]).lstrip()
+
+
+def _build_wordbank_command_progress_spec(
+    action: str,
+    *,
+    locale: LocaleCode,
+) -> LongTaskSpec | None:
+    if action in RANK_ALIASES:
+        return LongTaskSpec(
+            task_name="wordbank.rank.view",
+            source_kind="wordbank_command",
+            prompt=tr(locale, "wordbank.view.processing"),
+            threshold_ms=800,
+        )
+    return None
+
+
+async def _run_wordbank_command_with_optional_progress(
+    action: str,
+    *,
+    bot: Bot,
+    event: MessageEvent,
+    locale: LocaleCode,
+    work: Callable[[], Awaitable[Message | str]],
+) -> Message | str:
+    spec = _build_wordbank_command_progress_spec(action, locale=locale)
+    if spec is None:
+        return await work()
+    async with LongTaskRunner(
+        spec,
+        sink=CompositeProgressSink(
+            LoggerProgressSink(),
+            MessageEventProgressSink(bot, event),
+        ),
+    ) as long_task:
+        await long_task.advance("rendering")
+        return await work()
 
 
 def register_wordbank_command_handlers(
@@ -289,8 +327,8 @@ def register_wordbank_command_handlers(
             await matcher.finish()
             return
 
-        try:
-            msg = await dispatch_wordbank_command(
+        async def _dispatch_command() -> Message | str:
+            return await dispatch_wordbank_command(
                 wordbank_service,
                 event=event,
                 text=text,
@@ -298,6 +336,15 @@ def register_wordbank_command_handlers(
                 raw_message=arg,
                 search_image_scores=search_image_scores,
                 media_service=wordbank_media_service,
+            )
+
+        try:
+            msg = await _run_wordbank_command_with_optional_progress(
+                action,
+                bot=bot,
+                event=event,
+                locale=locale,
+                work=_dispatch_command,
             )
         except (RuleError, ValueError) as exc:
             await matcher.finish(build_error_message(exc, locale))

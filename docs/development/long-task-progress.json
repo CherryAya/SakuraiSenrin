@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "generated_at": "2026-07-03T00:48:29",
+  "generated_at": "2026-07-03T00:54:51",
   "root": "/Users/sakuraicora/Documents/Development/SakuraiSenrin/SakuraiSenrin",
   "summary": {
-    "total_targets": 15,
-    "complete_targets": 15,
+    "total_targets": 16,
+    "complete_targets": 16,
     "partial_targets": 0,
     "missing_file_targets": 0,
     "legacy_wait_candidates": 0
@@ -16,6 +16,20 @@
       "path": "src/plugins/wordbank/entry_commands.py",
       "category": "plugin",
       "description": "Direct add command with media ingestion.",
+      "status": "complete",
+      "exists": true,
+      "has_runner": true,
+      "has_logger_sink": true,
+      "has_message_event_sink": true,
+      "has_matcher_sink": false,
+      "missing": []
+    },
+    {
+      "slug": "wordbank.rank_command",
+      "label": "Wordbank Rank Command",
+      "path": "src/plugins/wordbank/entry_commands.py",
+      "category": "plugin",
+      "description": "Creator leaderboard avatar fetch and card rendering path.",
       "status": "complete",
       "exists": true,
       "has_runner": true,

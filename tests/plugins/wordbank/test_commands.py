@@ -7,6 +7,7 @@ from nonebot.adapters.onebot.v11.message import Message
 import pytest
 
 from src.lib.messages import empty_message, text_message
+from src.plugins.wordbank import entry_commands as entry_commands_module
 from src.plugins.wordbank.database.types import WordbankSearchItem, WordbankSearchPage
 from src.plugins.wordbank.handlers import commands as commands_module
 from src.plugins.wordbank.handlers.commands import (
@@ -138,6 +139,23 @@ def test_parse_rank_period_supports_default_and_aliases() -> None:
     assert parse_rank_period("month") == "month"
     assert parse_rank_period("本季") == "season"
     assert parse_rank_period("总榜") == "total"
+
+
+def test_wordbank_command_progress_spec_marks_rank_as_long_task() -> None:
+    assert (
+        entry_commands_module._build_wordbank_command_progress_spec(
+            "rank",
+            locale="zh-CN",
+        )
+        is not None
+    )
+    assert (
+        entry_commands_module._build_wordbank_command_progress_spec(
+            "approve",
+            locale="zh-CN",
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -297,41 +315,17 @@ async def test_render_search_page_message_fallback_renders_image_shapes(
 
 
 @pytest.mark.asyncio
-async def test_dispatch_wordbank_command_add_renders_image_shapes() -> None:
+async def test_dispatch_wordbank_command_rejects_add_subcommand() -> None:
     event = build_group_message_event("#wordbank add 晚安 => 做个好梦")
-    service = cast(
-        WordbankService,
-        SimpleNamespace(
-            add_message_entry=AsyncMock(
-                return_value=_add_result(
-                    trigger_text="[图片:8]",
-                    response_text="做个好梦 [图片:7]",
-                    trigger_shape=shape_from_image(8),
-                    response_shape=combine_shapes(
-                        shape_from_text("做个好梦"),
-                        shape_from_image(7),
-                    ),
-                )
-            )
-        ),
-    )
-    media_service = cast(
-        WordbankMediaService,
-        SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=b"bytes")),
-    )
+    service = cast(WordbankService, SimpleNamespace())
 
-    message = await dispatch_wordbank_command(
-        service,
-        event=event,
-        text="add [图片触发] => 做个好梦",
-        locale="zh-CN",
-        media_service=media_service,
-    )
-
-    assert isinstance(message, Message)
-    assert "[图片:8]" not in str(message)
-    assert "[图片:7]" not in str(message)
-    assert sum(1 for segment in message if segment.type == "image") == 2
+    with pytest.raises(RuntimeError, match="unified submission flow"):
+        await dispatch_wordbank_command(
+            service,
+            event=event,
+            text="add [图片触发] => 做个好梦",
+            locale="zh-CN",
+        )
 
 
 @pytest.mark.asyncio
@@ -1086,8 +1080,9 @@ async def test_build_shape_from_text_and_images_combines_text_and_media(
         _message: Message,
         *,
         limit: int = 4,
+        task: object | None = None,
     ) -> tuple[bytes, ...]:
-        _ = limit
+        _ = limit, task
         return (b"image-bytes",)
 
     monkeypatch.setattr(
@@ -1121,8 +1116,9 @@ async def test_build_shape_from_text_and_images_keeps_event_literal_for_response
         _message: Message,
         *,
         limit: int = 4,
+        task: object | None = None,
     ) -> tuple[bytes, ...]:
-        _ = limit
+        _ = limit, task
         return ()
 
     monkeypatch.setattr(

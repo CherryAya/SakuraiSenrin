@@ -66,6 +66,19 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         expect_message_event_sink=True,
     ),
     LongTaskAuditTarget(
+        slug="wordbank.rank_command",
+        label="Wordbank Rank Command",
+        path="src/plugins/wordbank/entry_commands.py",
+        category="plugin",
+        description="Creator leaderboard avatar fetch and card rendering path.",
+        scope_terms=(
+            "def _build_wordbank_command_progress_spec",
+            "async def _run_wordbank_command_with_optional_progress",
+        ),
+        expect_logger_sink=True,
+        expect_message_event_sink=True,
+    ),
+    LongTaskAuditTarget(
         slug="wordbank.guided_flow",
         label="Wordbank Guided Flow",
         path="src/plugins/wordbank/guided_flow.py",
