@@ -11,6 +11,7 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR
 from src.lib.message_assets import message_asset_repo
+from src.lib.message_plan import render_message_plan_input
 from src.lib.messages import text_message
 from src.lib.plugin_docs import (
     DocNode,
@@ -352,7 +353,8 @@ def test_build_index_message_only_lists_root_nodes() -> None:
         | Permission.SUPERUSER,
     )
 
-    rendered = str(message)
+    rendered_message = render_message_plan_input(message)
+    rendered = str(rendered_message)
     assert "今天想要做些什么呢" in rendered
     assert "凛凛的系统" in rendered
     assert "有趣的功能" in rendered
@@ -362,7 +364,7 @@ def test_build_index_message_only_lists_root_nodes() -> None:
     assert "#help 凛凛的妙妙小工具目录" in rendered
     assert "继续查看" not in rendered
     assert "群组管理模块" not in rendered
-    assert any(segment.type == "image" for segment in message)
+    assert any(segment.type == "image" for segment in rendered_message)
 
 
 def test_build_index_message_lists_full_root_entries_without_demo_hint() -> None:
@@ -867,8 +869,10 @@ async def test_resolve_docs_delivery_plan_wordbank_guide_splits_into_forward_nod
 
     assert plan.should_forward is True
     assert len(plan.messages) > 1
-    assert plan.messages[0][-1].data["file"] == "base64://c3VtbWFyeS1kZW1v"
-    assert "👉 基础添加" in str(plan.messages[1])
+    first_message = render_message_plan_input(plan.messages[0])
+    second_message = render_message_plan_input(plan.messages[1])
+    assert first_message[-1].data["file"] == "base64://c3VtbWFyeS1kZW1v"
+    assert "👉 基础添加" in str(second_message)
 
 
 @pytest.mark.asyncio
@@ -889,7 +893,7 @@ async def test_resolve_docs_delivery_plan_simple_leaf_stays_single_message() -> 
 
     assert plan.should_forward is False
     assert len(plan.messages) == 1
-    assert "图片搜索" in str(plan.messages[0])
+    assert "图片搜索" in str(render_message_plan_input(plan.messages[0]))
 
 
 @pytest.mark.asyncio

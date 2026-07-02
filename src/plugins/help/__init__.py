@@ -26,10 +26,14 @@ from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     DeliveryPlan,
+    ImageBytesBlock,
+    MessagePlanEntry,
+    MessagePlanInput,
+    TextBlock,
     deliver_message_plan,
     render_message_plan_input,
 )
-from src.lib.messages import image_message, text_message
+from src.lib.messages import text_message
 from src.lib.onebot_forward import resolve_forward_sender
 from src.lib.plugin_docs import (
     DocNode,
@@ -399,7 +403,7 @@ def _build_index_message(
     entries: list[DocsEntry],
     locale: LocaleCode,
     actor_permission: Permission = Permission.NORMAL,
-) -> Message:
+) -> MessagePlanInput:
     sections = build_help_home_sections(
         [entry.node for entry in entries],
         locale=locale,
@@ -420,7 +424,7 @@ def _build_index_message(
     )
 
 
-def _single_message_plan(message: Message) -> DeliveryPlan:
+def _single_message_plan(message: MessagePlanInput) -> DeliveryPlan:
     return DeliveryPlan(
         messages=(message,),
         source_kind="help",
@@ -521,10 +525,13 @@ def _resolve_child_entry(
     return child_entry, feature_query
 
 
-def _compose_help_reply(image_bytes: bytes, text: str) -> Message:
-    message = text_message(f"{text.strip()}")
-    message += image_message(image_bytes)
-    return message
+def _compose_help_reply(image_bytes: bytes, text: str) -> MessagePlanEntry:
+    blocks = []
+    text_value = text.strip()
+    if text_value:
+        blocks.append(TextBlock(text_value))
+    blocks.append(ImageBytesBlock(image_bytes))
+    return MessagePlanEntry(blocks=tuple(blocks))
 
 
 def _compose_plugin_guide_messages(
@@ -534,20 +541,22 @@ def _compose_plugin_guide_messages(
     child_entries: list[DocsEntry],
     locale: LocaleCode,
     actor_permission: Permission,
-) -> tuple[Message, ...]:
-    messages: list[Message] = []
+) -> tuple[MessagePlanInput, ...]:
+    messages: list[MessagePlanEntry] = []
     summary_text = build_plugin_summary_copy_text(entry.node)
-    summary_message = Message()
+    summary_blocks = []
     if summary_text:
-        summary_message += text_message(summary_text)
-    summary_message += image_message(
-        render_plugin_summary(
-            entry.node,
-            locale=locale,
-            actor_permission=actor_permission,
+        summary_blocks.append(TextBlock(summary_text))
+    summary_blocks.append(
+        ImageBytesBlock(
+            render_plugin_summary(
+                entry.node,
+                locale=locale,
+                actor_permission=actor_permission,
+            )
         )
     )
-    messages.append(summary_message)
+    messages.append(MessagePlanEntry(blocks=tuple(summary_blocks)))
 
     for feature in features:
         lines = [f"👉 {feature.title}"]
@@ -560,12 +569,17 @@ def _compose_plugin_guide_messages(
             if normalized and not normalized.startswith("#"):
                 normalized = f"#{normalized}"
             lines.append(normalized)
-        feature_message = text_message("\n".join(lines).strip())
-        feature_message += image_message(
-            load_demo_bytes(entry.node.bundle, feature)
-            or render_demo_png(entry.node.bundle, feature)
+        messages.append(
+            MessagePlanEntry(
+                blocks=(
+                    TextBlock("\n".join(lines).strip()),
+                    ImageBytesBlock(
+                        load_demo_bytes(entry.node.bundle, feature)
+                        or render_demo_png(entry.node.bundle, feature)
+                    ),
+                )
+            )
         )
-        messages.append(feature_message)
 
     if child_entries:
         child_lines = ["子模块"]
@@ -575,7 +589,9 @@ def _compose_plugin_guide_messages(
             child_summary = child_entry.node.summary.strip()
             if child_summary:
                 child_lines.append(child_summary)
-        messages.append(text_message("\n".join(child_lines).strip()))
+        messages.append(
+            MessagePlanEntry(blocks=(TextBlock("\n".join(child_lines).strip()),))
+        )
     return tuple(messages)
 
 
