@@ -550,7 +550,7 @@ async def deliver_forward_messages(
     source_kind: str,
     fallback_nickname: str,
     reuse_policy: ForwardReusePolicy = DEFAULT_FORWARD_REUSE_POLICY,
-) -> None:
+) -> DeliveryResult:
     batch = build_forward_batch_descriptor(messages, policy=reuse_policy)
     target = resolve_delivery_target(event)
     bundle_asset_key = batch.context_key
@@ -584,7 +584,11 @@ async def deliver_forward_messages(
                     message_id=bundle_asset.message_id,
                     origin_message_type=bundle_asset.origin_message_type,
                 )
-                return
+                return DeliveryResult(
+                    message_id=bundle_asset.message_id,
+                    reused_asset=True,
+                    asset_key=bundle_asset_key,
+                )
             except Exception as exc:
                 logger.debug(
                     "[MessageDelivery] forward bundle reuse invalidated "
@@ -640,3 +644,8 @@ async def deliver_forward_messages(
             "[MessageDelivery] forward bundle asset not stored "
             f"asset_key={_short_key(bundle_asset_key)} reason=empty_message_id"
         )
+    return DeliveryResult(
+        message_id=message_id,
+        reused_asset=False,
+        asset_key=bundle_asset_key or None,
+    )

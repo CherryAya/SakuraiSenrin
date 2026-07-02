@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 import pytest
 
+from src.lib.message_plan import render_message_plan_input
 from src.plugins.wordbank import batch_feedback as batch_feedback_module
 from src.plugins.wordbank.batch_feedback import send_batch_add_feedback
 from src.plugins.wordbank.message_model import (
@@ -32,7 +33,7 @@ async def test_send_batch_add_feedback_uses_rich_result_messages(
     )
     build_message = AsyncMock(return_value=rich_message)
     deliver_message = AsyncMock(return_value={"message_id": 1})
-    send_forward = AsyncMock(return_value=None)
+    deliver_plan = AsyncMock(return_value=None)
 
     monkeypatch.setattr(
         batch_feedback_module,
@@ -46,8 +47,8 @@ async def test_send_batch_add_feedback_uses_rich_result_messages(
     )
     monkeypatch.setattr(
         batch_feedback_module,
-        "send_custom_forward",
-        send_forward,
+        "deliver_message_plan",
+        deliver_plan,
     )
 
     batch = WordbankBatchAddResult(
@@ -93,10 +94,13 @@ async def test_send_batch_add_feedback_uses_rich_result_messages(
         locale="zh-CN",
         media_service=media_service,
     )
-    send_forward.assert_awaited_once()
-    await_args = send_forward.await_args
+    deliver_plan.assert_awaited_once()
+    await_args = deliver_plan.await_args
     assert await_args is not None
-    detail_messages = await_args.args[2]
-    assert detail_messages[0] == rich_message
-    assert any(segment.type == "image" for segment in detail_messages[0])
-    assert "boom" in str(detail_messages[1])
+    plan = await_args.kwargs["plan"]
+    detail_messages = plan.messages
+    first_message = detail_messages[0]
+    second_message = detail_messages[1]
+    rendered_first = render_message_plan_input(first_message)
+    assert any(segment.type == "image" for segment in rendered_first)
+    assert "boom" in str(render_message_plan_input(second_message))

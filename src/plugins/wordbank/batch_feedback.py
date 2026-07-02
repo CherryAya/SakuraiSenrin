@@ -6,8 +6,14 @@ from nonebot.adapters.onebot.v11.event import MessageEvent
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
+from src.lib.message_plan import (
+    DeliveryPlan,
+    MessagePlanEntry,
+    RawMessageBlock,
+    TextBlock,
+    deliver_message_plan,
+)
 from src.lib.messages import text_message
-from src.lib.onebot_forward import send_custom_forward
 from src.plugins.wordbank.handlers.approval import build_add_result_message
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import WordbankBatchAddResult
@@ -41,29 +47,40 @@ async def send_batch_add_feedback(
     detail_messages = []
     for item in batch.items:
         if item.ok and item.result is not None:
+            rendered = await build_add_result_message(
+                item.result,
+                locale=locale,
+                media_service=media_service,
+            )
             detail_messages.append(
-                await build_add_result_message(
-                    item.result,
-                    locale=locale,
-                    media_service=media_service,
+                MessagePlanEntry(
+                    blocks=(RawMessageBlock(rendered),),
                 )
             )
         else:
             detail_messages.append(
-                text_message(
-                    tr(
-                        locale,
-                        "wordbank.batch_add.detail_failed",
-                        index=item.index,
-                        error=item.error
-                        or tr(locale, "wordbank.batch_add.unknown_error"),
+                MessagePlanEntry(
+                    blocks=(
+                        TextBlock(
+                            tr(
+                                locale,
+                                "wordbank.batch_add.detail_failed",
+                                index=item.index,
+                                error=item.error
+                                or tr(locale, "wordbank.batch_add.unknown_error"),
+                            )
+                        ),
                     )
                 )
             )
     if detail_messages:
-        await send_custom_forward(
+        await deliver_message_plan(
             bot,
-            event,
-            tuple(detail_messages),
-            fallback_nickname=fallback_nickname,
+            plan=DeliveryPlan(
+                messages=tuple(detail_messages),
+                source_kind=source_kind,
+                fallback_nickname=fallback_nickname,
+                force_forward=True,
+            ),
+            event=event,
         )

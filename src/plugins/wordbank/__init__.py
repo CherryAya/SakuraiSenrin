@@ -26,7 +26,7 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
@@ -288,12 +288,15 @@ async def _finish_add_result(
         locale=locale,
         media_service=wordbank_media_service,
     )
-    send_result = await deliver_single_message(
+    plan_result = await deliver_message_plan(
         bot,
-        target=resolve_delivery_target(event),
-        message=message,
-        source_kind="wordbank_submission",
+        plan=DeliveryPlan(
+            messages=(message,),
+            source_kind="wordbank_submission",
+        ),
+        event=event,
     )
+    send_result = plan_result.results[0]
     await record_submission_approval_message(
         wordbank_service,
         event=event,

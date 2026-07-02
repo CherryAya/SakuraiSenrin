@@ -24,10 +24,11 @@ from src.lib.consts import TriggerType
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import (
-    deliver_forward_messages,
-    deliver_single_message,
-    resolve_delivery_target,
+from src.lib.message_delivery import deliver_forward_messages
+from src.lib.message_plan import (
+    DeliveryPlan,
+    deliver_message_plan,
+    render_message_plan_input,
 )
 from src.lib.messages import image_message, text_message
 from src.lib.onebot_forward import resolve_forward_sender
@@ -90,16 +91,8 @@ class MatchResult:
     candidates: list[DocsEntry] | None = None
 
 
-@dataclass(slots=True)
-class HelpDeliveryPlan:
-    messages: tuple[Message, ...]
-
-    @property
-    def should_forward(self) -> bool:
-        return len(self.messages) > 1
-
-
 type RootSection = Literal["system", "developer", "community"]
+HelpDeliveryPlan = DeliveryPlan
 
 __plugin_meta__ = create_plugin_metadata(
     name=name,
@@ -428,8 +421,12 @@ def _build_index_message(
     )
 
 
-def _single_message_plan(message: Message) -> HelpDeliveryPlan:
-    return HelpDeliveryPlan(messages=(message,))
+def _single_message_plan(message: Message) -> DeliveryPlan:
+    return DeliveryPlan(
+        messages=(message,),
+        source_kind="help",
+        fallback_nickname=HELP_FORWARD_FALLBACK_NICKNAME,
+    )
 
 
 def _build_ambiguous_message(
@@ -537,8 +534,22 @@ def _compose_plugin_guide_messages(
     features: tuple[Any, ...],
     child_entries: list[DocsEntry],
     locale: LocaleCode,
+    actor_permission: Permission,
 ) -> tuple[Message, ...]:
     messages: list[Message] = []
+    summary_text = build_plugin_summary_copy_text(entry.node)
+    summary_message = Message()
+    if summary_text:
+        summary_message += text_message(summary_text)
+    summary_message += image_message(
+        render_plugin_summary(
+            entry.node,
+            locale=locale,
+            actor_permission=actor_permission,
+        )
+    )
+    messages.append(summary_message)
+
     for feature in features:
         lines = [f"👉 {feature.title}"]
         for trigger in feature_command_sections(
@@ -566,18 +577,6 @@ def _compose_plugin_guide_messages(
             if child_summary:
                 child_lines.append(child_summary)
         messages.append(text_message("\n".join(child_lines).strip()))
-
-    summary_text = build_plugin_summary_copy_text(entry.node)
-    summary_message = Message()
-    if summary_text:
-        summary_message += text_message(summary_text)
-    summary_message += image_message(
-        render_plugin_summary(
-            entry.node,
-            locale=locale,
-        )
-    )
-    messages.append(summary_message)
     return tuple(messages)
 
 
@@ -591,14 +590,14 @@ async def _resolve_forward_sender(bot: Bot) -> tuple[int, str]:
 async def _send_help_forward(
     bot: Bot,
     event: MessageEvent,
-    plan: HelpDeliveryPlan,
+    plan: DeliveryPlan,
 ) -> None:
     await deliver_forward_messages(
         bot,
         event,
-        plan.messages,
-        source_kind="help",
-        fallback_nickname=HELP_FORWARD_FALLBACK_NICKNAME,
+        tuple(render_message_plan_input(entry) for entry in plan.messages),
+        source_kind=plan.source_kind or "help",
+        fallback_nickname=plan.fallback_nickname or HELP_FORWARD_FALLBACK_NICKNAME,
     )
 
 
@@ -606,18 +605,23 @@ async def _deliver_help_plan(
     bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
-    plan: HelpDeliveryPlan,
+    plan: DeliveryPlan,
 ) -> None:
     if not plan.should_forward:
-        await matcher.finish(plan.messages[0])
+        await matcher.finish(render_message_plan_input(plan.messages[0]))
         return
-    await deliver_single_message(
+    await deliver_message_plan(
         bot,
-        target=resolve_delivery_target(event),
-        message=text_message(HELP_FORWARD_WAIT_PROMPT),
-        source_kind="help_wait_prompt",
+        plan=DeliveryPlan(
+            messages=plan.messages,
+            source_kind=plan.source_kind or "help",
+            fallback_nickname=plan.fallback_nickname or HELP_FORWARD_FALLBACK_NICKNAME,
+            wait_message=plan.wait_message or text_message(HELP_FORWARD_WAIT_PROMPT),
+            allow_asset_reuse=plan.allow_asset_reuse,
+            force_forward=True,
+        ),
+        event=event,
     )
-    await _send_help_forward(bot, event, plan)
     await matcher.finish()
 
 
@@ -628,7 +632,7 @@ async def _resolve_docs_delivery_plan(
     feature_query: str | None = None,
     actor_permission: Permission = Permission.NORMAL,
     all_entries: list[DocsEntry] | None = None,
-) -> HelpDeliveryPlan:
+) -> DeliveryPlan:
     scoped_entries = all_entries or [entry]
     tree = build_doc_tree([item.node for item in scoped_entries])
     children = tuple(
@@ -720,12 +724,13 @@ async def _resolve_docs_delivery_plan(
                             ),
                         )
                     )
-                return HelpDeliveryPlan(
+                return DeliveryPlan(
                     messages=_compose_plugin_guide_messages(
                         child_entry,
                         features=tuple(features),
                         child_entries=[],
                         locale=locale,
+                        actor_permission=actor_permission,
                     )
                 )
         if match.status == "ambiguous":
@@ -772,12 +777,13 @@ async def _resolve_docs_delivery_plan(
         )
     if entry_shape == "overview_group":
         if features:
-            return HelpDeliveryPlan(
+            return DeliveryPlan(
                 messages=_compose_plugin_guide_messages(
                     entry,
                     features=features,
                     child_entries=child_entries,
                     locale=locale,
+                    actor_permission=actor_permission,
                 )
             )
         overview_text = str(
@@ -808,12 +814,13 @@ async def _resolve_docs_delivery_plan(
                 ),
             )
         )
-    return HelpDeliveryPlan(
+    return DeliveryPlan(
         messages=_compose_plugin_guide_messages(
             entry,
             features=features,
             child_entries=child_entries,
             locale=locale,
+            actor_permission=actor_permission,
         )
     )
 
@@ -834,10 +841,10 @@ async def _resolve_docs_message(
         all_entries=all_entries,
     )
     if len(plan.messages) == 1:
-        return plan.messages[0]
+        return render_message_plan_input(plan.messages[0])
     merged = Message()
     for message in plan.messages:
-        merged += message
+        merged += render_message_plan_input(message)
     return merged
 
 

@@ -7,8 +7,13 @@ from nonebot.adapters.onebot.v11.event import MessageEvent
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
+from src.lib.message_plan import (
+    DeliveryPlan,
+    MessagePlanEntry,
+    RawMessageBlock,
+    deliver_message_plan,
+)
 from src.lib.messages import empty_message, text_message
-from src.lib.onebot_forward import send_custom_forward
 from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.handlers.approval import extract_sent_message_id
 from src.plugins.wordbank.handlers.mutation import build_mutation_actor
@@ -177,17 +182,27 @@ async def send_pending_entries_review(
         )
 
     detail_messages = [
-        await _build_pending_detail_message(
-            item,
-            index=index,
-            locale=locale,
-            media_service=media_service,
+        MessagePlanEntry(
+            blocks=(
+                RawMessageBlock(
+                    await _build_pending_detail_message(
+                        item,
+                        index=index,
+                        locale=locale,
+                        media_service=media_service,
+                    )
+                ),
+            )
         )
         for index, item in enumerate(items, start=1)
     ]
-    await send_custom_forward(
+    await deliver_message_plan(
         bot,
-        event,
-        detail_messages,
-        fallback_nickname=fallback_nickname,
+        plan=DeliveryPlan(
+            messages=tuple(detail_messages),
+            source_kind=source_kind,
+            fallback_nickname=fallback_nickname,
+            force_forward=True,
+        ),
+        event=event,
     )

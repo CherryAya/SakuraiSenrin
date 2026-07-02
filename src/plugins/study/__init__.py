@@ -49,6 +49,7 @@ from src.lib.message_delivery import (
     resolve_delivery_target,
     resolve_notice_delivery_target,
 )
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -674,6 +675,7 @@ async def _finish_guided_study(
                 event,
                 batch=batch,
                 locale=locale,
+                media_service=wordbank_media_service,
                 source_kind="study_batch_submission",
                 fallback_nickname=tr(
                     locale,
@@ -709,12 +711,15 @@ async def _finish_guided_study(
         locale=locale,
         media_service=wordbank_media_service,
     )
-    send_result = await deliver_single_message(
+    plan_result = await deliver_message_plan(
         bot,
-        target=resolve_delivery_target(event),
-        message=message,
-        source_kind="study_submission",
+        plan=DeliveryPlan(
+            messages=(message,),
+            source_kind="study_submission",
+        ),
+        event=event,
     )
+    send_result = plan_result.results[0]
     await record_submission_approval_message(
         wordbank_service,
         event=event,
@@ -828,12 +833,15 @@ async def _(
         locale=locale,
         media_service=wordbank_media_service,
     )
-    send_result = await deliver_single_message(
+    plan_result = await deliver_message_plan(
         bot,
-        target=resolve_delivery_target(event),
-        message=message,
-        source_kind="study_submission",
+        plan=DeliveryPlan(
+            messages=(message,),
+            source_kind="study_submission",
+        ),
+        event=event,
     )
+    send_result = plan_result.results[0]
     await record_submission_approval_message(
         wordbank_service,
         event=event,
