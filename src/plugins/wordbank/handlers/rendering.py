@@ -12,7 +12,15 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.messages import empty_message, image_message, text_message
+from src.lib.message_plan import (
+    AtRefBlock,
+    ImageBytesBlock,
+    MessagePlanBlock,
+    MessagePlanEntry,
+    TextBlock,
+    render_message_plan_entry,
+)
+from src.lib.messages import image_message, text_message
 from src.lib.utils.img import QQAvatar
 from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
 from src.plugins.wordbank.debug import log_perf, perf_start
@@ -36,6 +44,25 @@ async def render_shape_message(
     trace_fields: Mapping[str, object] | None = None,
     trace_sink: MutableMapping[str, object] | None = None,
 ) -> Message:
+    return render_message_plan_entry(
+        await build_shape_plan_entry(
+            shape,
+            media_service,
+            locale=locale,
+            trace_fields=trace_fields,
+            trace_sink=trace_sink,
+        )
+    )
+
+
+async def build_shape_plan_entry(
+    shape: MessageShape,
+    media_service: WordbankMediaService,
+    *,
+    locale: LocaleCode = "zh-CN",
+    trace_fields: Mapping[str, object] | None = None,
+    trace_sink: MutableMapping[str, object] | None = None,
+) -> MessagePlanEntry:
     load_start = perf_start()
     image_bytes_by_id = await _load_shape_image_bytes(shape, media_service)
     payload_stats = _build_image_payload_stats(image_bytes_by_id)
@@ -48,31 +75,32 @@ async def render_shape_message(
             **cast(Any, payload_stats),
             **cast(Any, dict(trace_fields)),
         )
-    message = empty_message()
+    blocks: list[MessagePlanBlock] = []
     image_segments = 0
     for atom in shape.atoms:
         if atom.kind == "text" and atom.text:
-            message += MessageSegment.text(atom.text)
+            blocks.append(TextBlock(atom.text))
         elif atom.kind == "at" and atom.target_id:
-            message += MessageSegment.at(atom.target_id)
+            blocks.append(AtRefBlock(atom.target_id))
         elif atom.kind == "image" and atom.canonical_image_id is not None:
             image_bytes = image_bytes_by_id.get(atom.canonical_image_id)
             if image_bytes is None:
-                message += MessageSegment.text(
-                    tr(locale, "wordbank.render.image_missing")
+                blocks.append(
+                    TextBlock(tr(locale, "wordbank.render.image_missing"))
                 )
                 continue
-            message += MessageSegment.image(image_bytes)
+            blocks.append(ImageBytesBlock(image_bytes))
             image_segments += 1
+    entry = MessagePlanEntry(blocks=tuple(blocks))
     if trace_fields is not None:
         log_perf(
             "plugin.build_passive_message.render_shape.segment_built",
-            segments=len(list(message)),
+            segments=len(blocks),
             image_segments=image_segments,
             **cast(Any, payload_stats),
             **cast(Any, dict(trace_fields)),
         )
-    return message
+    return entry
 
 
 async def render_search_items_text_message(

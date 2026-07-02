@@ -27,6 +27,11 @@ class ImageBytesBlock:
 
 
 @dataclass(slots=True, frozen=True)
+class AtRefBlock:
+    target_id: str
+
+
+@dataclass(slots=True, frozen=True)
 class ReplyRefBlock:
     message_id: str
 
@@ -36,7 +41,9 @@ class RawMessageBlock:
     message: Message
 
 
-type MessagePlanBlock = TextBlock | ImageBytesBlock | ReplyRefBlock | RawMessageBlock
+type MessagePlanBlock = (
+    TextBlock | ImageBytesBlock | AtRefBlock | ReplyRefBlock | RawMessageBlock
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -108,6 +115,10 @@ def render_message_plan_entry(entry: MessagePlanEntry) -> Message:
             continue
         if isinstance(block, ImageBytesBlock):
             message += MessageSegment.image(block.image_bytes)
+            continue
+        if isinstance(block, AtRefBlock):
+            if block.target_id:
+                message += MessageSegment.at(block.target_id)
             continue
         if isinstance(block, ReplyRefBlock):
             if block.message_id.isdigit():
