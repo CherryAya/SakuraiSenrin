@@ -30,6 +30,8 @@ uv run python scripts/long_task_progress.py
 docs/development/long-task-progress.json
 ```
 
+终端摘要会额外打印 `heavy_candidates=...`，方便快速看“还剩多少重路径候选”。
+
 如果想直接查看完整 JSON：
 
 ```bash
@@ -52,11 +54,12 @@ uv run python scripts/long_task_progress.py --fail-on-candidates
   "generated_at": "2026-07-03T00:00:00+00:00",
   "root": "/path/to/repo",
   "summary": {
-    "total_targets": 16,
-    "complete_targets": 16,
+    "total_targets": 18,
+    "complete_targets": 18,
     "partial_targets": 0,
     "missing_file_targets": 0,
-    "legacy_wait_candidates": 0
+    "legacy_wait_candidates": 0,
+    "heavy_path_candidates": 1
   },
   "targets": [
     {
@@ -69,7 +72,14 @@ uv run python scripts/long_task_progress.py --fail-on-candidates
       "missing": []
     }
   ],
-  "legacy_wait_candidates": []
+  "legacy_wait_candidates": [],
+  "heavy_path_candidates": [
+    {
+      "path": "src/plugins/water/services/report.py",
+      "line": 35,
+      "reasons": ["image_render"]
+    }
+  ]
 }
 ```
 
@@ -77,7 +87,9 @@ uv run python scripts/long_task_progress.py --fail-on-candidates
 
 - `targets` 是显式维护的迁移目标矩阵
 - `legacy_wait_candidates` 是对 `src/plugins`、`src/services`、`src/hooks` 的启发式扫描结果
+- `heavy_path_candidates` 是“还没接入 LongTask、但同时具备重渲染/图片/头像信号且直接参与用户输出”的候选列表
 - 如果某个文件还保留“请稍候 / 执行中 / 处理中”这类旧等待提示，且文件本身没有 `LongTaskRunner`，就会被列出来
+- 如果某个文件没有旧等待提示，但仍像一个潜在重路径入口，`heavy_path_candidates` 会把它保留下来，作为下一批迁移目标参考
 
 ## 当前约束
 

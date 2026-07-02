@@ -53,6 +53,7 @@ def main() -> int:
             f"complete={summary['complete_targets']} "
             f"partial={summary['partial_targets']} "
             f"legacy_candidates={summary['legacy_wait_candidates']} "
+            f"heavy_candidates={summary['heavy_path_candidates']} "
             f"path={args.output}\n"
         )
     if args.fail_on_candidates and payload["summary"]["legacy_wait_candidates"] > 0:

@@ -201,6 +201,34 @@ async def test_water_query_direct_rank_still_runs_without_guided_flow(
 
 
 @pytest.mark.asyncio
+async def test_water_achievement_command_runs_through_query_long_task(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    build_message = AsyncMock(return_value=text_message("ACH_OK"))
+    monkeypatch.setattr(
+        water_plugin,
+        "build_my_achievements_message",
+        build_message,
+    )
+    monkeypatch.setattr(
+        message_asset_repo,
+        "get_asset",
+        AsyncMock(return_value=None),
+    )
+
+    event = build_group_message_event("#我的水王成就", message_id=1)
+
+    async with app.test_matcher(water_plugin.water_achievement) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, text_message("ACH_OK"), bot=bot)
+        ctx.should_finished()
+
+    build_message.assert_awaited_once_with(event, "zh-CN")
+
+
+@pytest.mark.asyncio
 async def test_water_query_shortcut_alias_runs_direct_rank(
     app: App,
     monkeypatch: pytest.MonkeyPatch,

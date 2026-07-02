@@ -68,6 +68,7 @@ from .database import water_repo
 from .handlers import (
     WaterAdminContext,
     WaterMergeContext,
+    build_my_achievements_message,
     build_my_water_profile_message,
     build_water_query_message,
     handle_group_increase_notice,
@@ -76,7 +77,6 @@ from .handlers import (
     handle_ignored,
     handle_merge_no,
     handle_merge_yes,
-    handle_my_achievements,
     handle_pardon,
     handle_season,
     handle_settle,
@@ -365,8 +365,8 @@ async def _run_water_query_long_task(
     locale: LocaleCode,
     *,
     spec: WaterQuerySpec,
-    build_message: Callable[[], Awaitable[Message]],
-) -> Message:
+    build_message: Callable[[], Awaitable[Message | str]],
+) -> Message | str:
     async with LongTaskRunner(
         LongTaskSpec(
             task_name=_water_progress_task_name(spec),
@@ -921,11 +921,24 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
 
 
 @water_achievement.handle()
-async def _(matcher: Matcher, event: MessageEvent) -> None:
+async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
         await matcher.finish(tr(locale, "water.common.group_only"))
-    await handle_my_achievements(matcher, event, locale)
+    message = await _run_water_query_long_task(
+        bot,
+        event,
+        locale,
+        spec=WaterQuerySpec(
+            subject="personal",
+            scope_type="activity",
+            scope_value="achievement",
+            view="achievement",
+            mode="full",
+        ),
+        build_message=lambda: build_my_achievements_message(event, locale),
+    )
+    await matcher.finish(message)
 
 
 @water_merge.handle()

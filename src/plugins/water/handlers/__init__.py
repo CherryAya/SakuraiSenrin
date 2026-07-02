@@ -1,6 +1,6 @@
 """Water handlers 导出。"""
 
-from .achievement import handle_my_achievements
+from .achievement import build_my_achievements_message, handle_my_achievements
 from .admin import (
     WaterAdminContext,
     format_settlement_message,
@@ -30,6 +30,7 @@ from .query import (
 __all__ = [
     "WaterAdminContext",
     "WaterMergeContext",
+    "build_my_achievements_message",
     "build_my_water_profile_message",
     "build_water_query_message",
     "format_settlement_message",

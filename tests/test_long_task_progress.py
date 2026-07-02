@@ -34,6 +34,23 @@ def test_long_task_progress_report_detects_complete_and_legacy_candidates(
         'WAIT = "正在执行手动备份，请稍候..."\n',
         encoding="utf-8",
     )
+    heavy_file = tmp_path / "src" / "plugins" / "demo" / "heavy.py"
+    heavy_file.write_text(
+        "\n".join(
+            [
+                "from src.lib.message_plan import (",
+                "    ImageBytesBlock,",
+                "    deliver_message_plan,",
+                ")",
+                "from src.lib.utils.img import QQAvatar",
+                "async def run(matcher):",
+                '    avatar = await QQAvatar.fetch_user("1")',
+                "    await matcher.finish(ImageBytesBlock(avatar))",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     targets = (
         LongTaskAuditTarget(
@@ -60,9 +77,15 @@ def test_long_task_progress_report_detects_complete_and_legacy_candidates(
     assert payload["summary"]["complete_targets"] == 1
     assert payload["summary"]["missing_file_targets"] == 1
     assert payload["summary"]["legacy_wait_candidates"] == 1
+    assert payload["summary"]["heavy_path_candidates"] == 1
     assert payload["targets"][0]["status"] == "complete"
     assert payload["targets"][1]["status"] == "missing_file"
     assert payload["legacy_wait_candidates"][0]["path"] == "src/plugins/demo/legacy.py"
+    assert payload["heavy_path_candidates"][0]["path"] == "src/plugins/demo/heavy.py"
+    assert payload["heavy_path_candidates"][0]["reasons"] == [
+        "avatar_fetch",
+        "image_render",
+    ]
 
 
 def test_long_task_progress_endpoint_writer_outputs_json(tmp_path: Path) -> None:

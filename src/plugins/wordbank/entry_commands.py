@@ -41,6 +41,9 @@ from .handlers import (
 from .handlers.commands import (
     PENDING_ALIASES,
     RANK_ALIASES,
+    RESPONSE_ALIASES,
+    SET_ALIASES,
+    TRIGGER_ALIASES,
     parse_guided_advanced_options,
     parse_guided_scope_choice,
 )
@@ -87,6 +90,7 @@ def _raw_rest_after_first_token(text: str) -> str:
 def _build_wordbank_command_progress_spec(
     action: str,
     *,
+    rest: str,
     locale: LocaleCode,
 ) -> LongTaskSpec | None:
     if action in RANK_ALIASES:
@@ -96,18 +100,34 @@ def _build_wordbank_command_progress_spec(
             prompt=tr(locale, "wordbank.view.processing"),
             threshold_ms=800,
         )
+    sub_action, _ = split_command_text(rest)
+    if action in TRIGGER_ALIASES and sub_action in SET_ALIASES:
+        return LongTaskSpec(
+            task_name="wordbank.trigger.set",
+            source_kind="wordbank_command",
+            prompt=tr(locale, "wordbank.mutation.processing"),
+            threshold_ms=800,
+        )
+    if action in RESPONSE_ALIASES and sub_action in SET_ALIASES:
+        return LongTaskSpec(
+            task_name="wordbank.response.set",
+            source_kind="wordbank_command",
+            prompt=tr(locale, "wordbank.mutation.processing"),
+            threshold_ms=800,
+        )
     return None
 
 
 async def _run_wordbank_command_with_optional_progress(
     action: str,
     *,
+    rest: str,
     bot: Bot,
     event: MessageEvent,
     locale: LocaleCode,
     work: Callable[[], Awaitable[Message | str]],
 ) -> Message | str:
-    spec = _build_wordbank_command_progress_spec(action, locale=locale)
+    spec = _build_wordbank_command_progress_spec(action, rest=rest, locale=locale)
     if spec is None:
         return await work()
     async with LongTaskRunner(
@@ -341,6 +361,7 @@ def register_wordbank_command_handlers(
         try:
             msg = await _run_wordbank_command_with_optional_progress(
                 action,
+                rest=rest,
                 bot=bot,
                 event=event,
                 locale=locale,

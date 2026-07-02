@@ -461,6 +461,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.mutation.trigger_probability_updated": "trigger group #{group_id} 的触发概率已更新为 {probability}。",
     "wordbank.mutation.trigger_content_updated": "trigger group #{group_id} 的触发词已更新，该组响应已重新进入待审核。",
     "wordbank.mutation.trigger_not_found": "未找到可修改的 trigger group #{group_id}，或你没有操作权限。",
+    "wordbank.mutation.processing": "正在更新词条内容并处理图片，请稍等。",
     "wordbank.mutation.response_weight_updated": "词条 #{entry_id} 的响应权重已更新为 {weight}。",
     "wordbank.mutation.response_content_updated": "词条 #{entry_id} 的响应内容已更新，并重新进入待审核。",
     "wordbank.mutation.response_not_found": "未找到可修改的词条 #{entry_id}，或你没有操作权限。",

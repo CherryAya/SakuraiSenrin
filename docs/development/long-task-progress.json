@@ -1,13 +1,14 @@
 {
   "version": 1,
-  "generated_at": "2026-07-03T00:54:51",
+  "generated_at": "2026-07-03T01:10:28",
   "root": "/Users/sakuraicora/Documents/Development/SakuraiSenrin/SakuraiSenrin",
   "summary": {
-    "total_targets": 16,
-    "complete_targets": 16,
+    "total_targets": 18,
+    "complete_targets": 18,
     "partial_targets": 0,
     "missing_file_targets": 0,
-    "legacy_wait_candidates": 0
+    "legacy_wait_candidates": 0,
+    "heavy_path_candidates": 1
   },
   "targets": [
     {
@@ -30,6 +31,20 @@
       "path": "src/plugins/wordbank/entry_commands.py",
       "category": "plugin",
       "description": "Creator leaderboard avatar fetch and card rendering path.",
+      "status": "complete",
+      "exists": true,
+      "has_runner": true,
+      "has_logger_sink": true,
+      "has_message_event_sink": true,
+      "has_matcher_sink": false,
+      "missing": []
+    },
+    {
+      "slug": "wordbank.mutation_commands",
+      "label": "Wordbank Mutation Commands",
+      "path": "src/plugins/wordbank/entry_commands.py",
+      "category": "plugin",
+      "description": "Trigger/response content update flows with media rebuild.",
       "status": "complete",
       "exists": true,
       "has_runner": true,
@@ -151,6 +166,20 @@
       "missing": []
     },
     {
+      "slug": "water.achievement_command",
+      "label": "Water Achievement Command",
+      "path": "src/plugins/water/__init__.py",
+      "category": "plugin",
+      "description": "Personal achievement query flow.",
+      "status": "complete",
+      "exists": true,
+      "has_runner": true,
+      "has_logger_sink": true,
+      "has_message_event_sink": true,
+      "has_matcher_sink": false,
+      "missing": []
+    },
+    {
       "slug": "water.period_rank_handler",
       "label": "Water Period Rank Handler",
       "path": "src/plugins/water/handlers/rank.py",
@@ -235,5 +264,15 @@
       "missing": []
     }
   ],
-  "legacy_wait_candidates": []
+  "legacy_wait_candidates": [],
+  "heavy_path_candidates": [
+    {
+      "path": "src/plugins/water/services/report.py",
+      "line": 35,
+      "snippet": "build_water_group_report_image,",
+      "reasons": [
+        "image_render"
+      ]
+    }
+  ]
 }

@@ -145,6 +145,23 @@ def test_wordbank_command_progress_spec_marks_rank_as_long_task() -> None:
     assert (
         entry_commands_module._build_wordbank_command_progress_spec(
             "rank",
+            rest="周榜",
+            locale="zh-CN",
+        )
+        is not None
+    )
+    assert (
+        entry_commands_module._build_wordbank_command_progress_spec(
+            "trigger",
+            rest="set 12 [CQ:image,file=a.png]",
+            locale="zh-CN",
+        )
+        is not None
+    )
+    assert (
+        entry_commands_module._build_wordbank_command_progress_spec(
+            "response",
+            rest="set 12 新响应",
             locale="zh-CN",
         )
         is not None
@@ -152,6 +169,7 @@ def test_wordbank_command_progress_spec_marks_rank_as_long_task() -> None:
     assert (
         entry_commands_module._build_wordbank_command_progress_spec(
             "approve",
+            rest="1",
             locale="zh-CN",
         )
         is None

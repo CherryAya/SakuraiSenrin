@@ -30,6 +30,27 @@ WAIT_I18N_KEYS = {
     "water.rank.working",
     "wordbank.add.processing_with_media",
 }
+HEAVY_DELIVERY_PATTERN = re.compile(
+    r"(deliver_message_plan\(|matcher\.(?:finish|send|pause|reject)\()"
+)
+HEAVY_SIGNAL_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "avatar_fetch",
+        re.compile(r"QQAvatar\.fetch_(?:user|group)\("),
+    ),
+    (
+        "image_render",
+        re.compile(
+            r"(render_[A-Za-z0-9_]+(?:card|image)|build_[A-Za-z0-9_]+image|ImageBytesBlock\()"
+        ),
+    ),
+    (
+        "media_io",
+        re.compile(
+            r"(load_(?:canonical_)?storage_bytes\(|load_demo_bytes\(|fetch_image_bytes_from_message\(|build_shape_from_text_and_images\()"
+        ),
+    ),
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -54,6 +75,14 @@ class LongTaskLegacyCandidate:
     snippet: str
 
 
+@dataclass(slots=True, frozen=True)
+class LongTaskHeavyPathCandidate:
+    path: str
+    line: int
+    snippet: str
+    reasons: tuple[str, ...]
+
+
 DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
     LongTaskAuditTarget(
         slug="wordbank.entry_add",
@@ -73,6 +102,20 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
         description="Creator leaderboard avatar fetch and card rendering path.",
         scope_terms=(
             "def _build_wordbank_command_progress_spec",
+            "async def _run_wordbank_command_with_optional_progress",
+        ),
+        expect_logger_sink=True,
+        expect_message_event_sink=True,
+    ),
+    LongTaskAuditTarget(
+        slug="wordbank.mutation_commands",
+        label="Wordbank Mutation Commands",
+        path="src/plugins/wordbank/entry_commands.py",
+        category="plugin",
+        description="Trigger/response content update flows with media rebuild.",
+        scope_terms=(
+            'task_name="wordbank.trigger.set"',
+            'task_name="wordbank.response.set"',
             "async def _run_wordbank_command_with_optional_progress",
         ),
         expect_logger_sink=True,
@@ -172,6 +215,19 @@ DEFAULT_LONG_TASK_AUDIT_TARGETS: tuple[LongTaskAuditTarget, ...] = (
             "@water_query.handle",
             "@water_query.got",
             "@water_profile.handle",
+        ),
+        expect_logger_sink=True,
+        expect_message_event_sink=True,
+    ),
+    LongTaskAuditTarget(
+        slug="water.achievement_command",
+        label="Water Achievement Command",
+        path="src/plugins/water/__init__.py",
+        category="plugin",
+        description="Personal achievement query flow.",
+        scope_terms=(
+            "@water_achievement.handle()",
+            "async def _run_water_query_long_task",
         ),
         expect_logger_sink=True,
         expect_message_event_sink=True,
@@ -353,6 +409,53 @@ def _collect_legacy_wait_candidates(root: Path) -> list[LongTaskLegacyCandidate]
     return candidates
 
 
+def _collect_heavy_path_candidates(
+    root: Path,
+    *,
+    targets: tuple[LongTaskAuditTarget, ...],
+) -> list[LongTaskHeavyPathCandidate]:
+    candidates: list[LongTaskHeavyPathCandidate] = []
+    target_paths = {target.path for target in targets}
+    for path in _iter_runtime_python_files(root):
+        relative_path = str(path.relative_to(root))
+        if relative_path in target_paths:
+            continue
+        source = _read_text(path)
+        if not source or "LongTaskRunner" in source:
+            continue
+
+        delivery_detected = False
+        heavy_reason_lines: dict[str, tuple[int, str]] = {}
+        for line_number, line in enumerate(source.splitlines(), start=1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if not delivery_detected and HEAVY_DELIVERY_PATTERN.search(line):
+                delivery_detected = True
+            for reason, pattern in HEAVY_SIGNAL_RULES:
+                if reason in heavy_reason_lines:
+                    continue
+                if pattern.search(line):
+                    heavy_reason_lines[reason] = (line_number, stripped)
+        if not delivery_detected or not heavy_reason_lines:
+            continue
+
+        reason_names = tuple(sorted(heavy_reason_lines))
+        first_reason = min(
+            heavy_reason_lines.items(),
+            key=lambda item: item[1][0],
+        )
+        candidates.append(
+            LongTaskHeavyPathCandidate(
+                path=relative_path,
+                line=first_reason[1][0],
+                snippet=first_reason[1][1],
+                reasons=reason_names,
+            )
+        )
+    return candidates
+
+
 def build_long_task_progress_report(
     *,
     root: Path = ROOT,
@@ -360,6 +463,7 @@ def build_long_task_progress_report(
 ) -> dict[str, Any]:
     target_rows = [_target_status(root, target) for target in targets]
     legacy_candidates = _collect_legacy_wait_candidates(root)
+    heavy_path_candidates = _collect_heavy_path_candidates(root, targets=targets)
     complete_count = sum(1 for row in target_rows if row["status"] == "complete")
     partial_count = sum(1 for row in target_rows if row["status"] == "partial")
     missing_file_count = sum(
@@ -376,6 +480,7 @@ def build_long_task_progress_report(
             "partial_targets": partial_count,
             "missing_file_targets": missing_file_count,
             "legacy_wait_candidates": len(legacy_candidates),
+            "heavy_path_candidates": len(heavy_path_candidates),
         },
         "targets": target_rows,
         "legacy_wait_candidates": [
@@ -385,6 +490,15 @@ def build_long_task_progress_report(
                 "snippet": item.snippet,
             }
             for item in legacy_candidates
+        ],
+        "heavy_path_candidates": [
+            {
+                "path": item.path,
+                "line": item.line,
+                "snippet": item.snippet,
+                "reasons": list(item.reasons),
+            }
+            for item in heavy_path_candidates
         ],
     }
 
