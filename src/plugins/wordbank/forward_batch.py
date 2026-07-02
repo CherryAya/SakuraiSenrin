@@ -9,6 +9,8 @@ from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import MessageSegment
 
 from src.lib.i18n.runtime import tr
+from src.logger import logger
+from src.plugins.wordbank.debug import describe_message_segments, describe_shape
 from src.plugins.wordbank.message_model import MessageShape, combine_shapes
 from src.plugins.wordbank.services.errors import WordbankUserError
 
@@ -84,7 +86,28 @@ async def build_forward_batch_payload(
             key="wordbank.error.forward_message_not_found",
         )
     detail = await bot.call_api("get_forward_msg", message_id=source_message_id)
-    messages = _extract_forward_messages(detail)
+    raw_items = _extract_forward_raw_items(detail)
+    logger.debug(
+        "[Wordbank][forward] payload fetch | "
+        f"source_message_id={source_message_id} raw_node_count={len(raw_items)} "
+        f"detail_type={type(detail).__name__}"
+    )
+    messages: list[Message] = []
+    for index, item in enumerate(raw_items, start=1):
+        message = _coerce_forward_message(item)
+        if message is None:
+            logger.debug(
+                "[Wordbank][forward] node skipped | "
+                f"source_message_id={source_message_id} node_index={index} "
+                f"raw_type={type(item).__name__} reason=coerce_failed"
+            )
+            continue
+        logger.debug(
+            "[Wordbank][forward] node parsed | "
+            f"source_message_id={source_message_id} node_index={index} "
+            f"{describe_message_segments(message)}"
+        )
+        messages.append(message)
     if not messages:
         raise WordbankUserError(
             tr("zh-CN", "wordbank.error.forward_message_empty"),
@@ -101,8 +124,13 @@ async def build_forward_batch_payload(
             limit=FORWARD_BATCH_NODE_LIMIT,
         )
     shapes: list[MessageShape] = []
-    for message in messages:
+    for index, message in enumerate(messages, start=1):
         shape = await build_message_shape_from_message(media_service, message)
+        logger.debug(
+            "[Wordbank][forward] node shape | "
+            f"source_message_id={source_message_id} node_index={index} "
+            f"{describe_shape(shape)}"
+        )
         if not shape.is_empty():
             shapes.append(shape)
     if not shapes:
@@ -111,6 +139,11 @@ async def build_forward_batch_payload(
             key="wordbank.error.forward_message_empty",
         )
     whole = combine_shapes(*_with_separators(tuple(shapes)))
+    logger.debug(
+        "[Wordbank][forward] payload built | "
+        f"source_message_id={source_message_id} parsed_nodes={len(messages)} "
+        f"split_shapes={len(shapes)} whole={describe_shape(whole)}"
+    )
     return ForwardBatchPayload(
         source_message_id=source_message_id,
         node_count=len(shapes),
@@ -131,6 +164,15 @@ def _with_separators(shapes: tuple[MessageShape, ...]) -> tuple[MessageShape, ..
 
 
 def _extract_forward_messages(detail: Any) -> tuple[Message, ...]:
+    messages: list[Message] = []
+    for item in _extract_forward_raw_items(detail):
+        message = _coerce_forward_message(item)
+        if message is not None:
+            messages.append(message)
+    return tuple(messages)
+
+
+def _extract_forward_raw_items(detail: Any) -> tuple[Any, ...]:
     raw = None
     if isinstance(detail, dict):
         raw = detail.get("messages")
@@ -140,38 +182,63 @@ def _extract_forward_messages(detail: Any) -> tuple[Message, ...]:
             raw = detail.get("data")
     else:
         raw = getattr(detail, "messages", None)
-    messages: list[Message] = []
-    for item in raw or ():
-        if isinstance(item, Message):
-            messages.append(item)
-            continue
-        if isinstance(item, list):
-            try:
-                messages.append(Message(item))
-            except Exception:
-                continue
-            continue
-        if isinstance(item, dict):
-            content = item.get("content")
-            if isinstance(content, Message):
-                messages.append(content)
-                continue
-            if isinstance(content, list):
-                try:
-                    messages.append(Message(content))
-                except Exception:
-                    continue
-                continue
-            if isinstance(content, str):
-                messages.append(Message([MessageSegment.text(content)]))
-                continue
-            message = item.get("message")
-            if isinstance(message, Message):
-                messages.append(message)
-                continue
-            if isinstance(message, list):
-                try:
-                    messages.append(Message(message))
-                except Exception:
-                    continue
-    return tuple(messages)
+    if raw is None:
+        return ()
+    if isinstance(raw, (list, tuple)):
+        return tuple(raw)
+    return (raw,)
+
+
+def _coerce_forward_message(raw: Any) -> Message | None:
+    if isinstance(raw, Message):
+        return raw
+    if isinstance(raw, str):
+        if not raw.strip():
+            return None
+        return Message([MessageSegment.text(raw)])
+    if isinstance(raw, list):
+        try:
+            return Message(raw)
+        except Exception:
+            segments: list[MessageSegment] = []
+            for item in raw:
+                segment = _coerce_forward_segment(item)
+                if segment is not None:
+                    segments.append(segment)
+            return Message(segments) if segments else None
+    if isinstance(raw, dict):
+        segment = _coerce_forward_segment(raw)
+        if segment is not None:
+            return Message([segment])
+        for key in ("content", "message", "messages", "raw_message"):
+            nested = raw.get(key)
+            message = _coerce_forward_message(nested)
+            if message is not None:
+                return message
+        data = raw.get("data")
+        if isinstance(data, dict):
+            for key in ("content", "message", "messages", "raw_message"):
+                nested = data.get(key)
+                message = _coerce_forward_message(nested)
+                if message is not None:
+                    return message
+    return None
+
+
+def _coerce_forward_segment(raw: Any) -> MessageSegment | None:
+    if isinstance(raw, MessageSegment):
+        return raw
+    if isinstance(raw, str):
+        if not raw.strip():
+            return None
+        return MessageSegment.text(raw)
+    if not isinstance(raw, dict):
+        return None
+    segment_type = raw.get("type")
+    data = raw.get("data")
+    if not isinstance(segment_type, str) or not isinstance(data, dict):
+        return None
+    try:
+        return MessageSegment(segment_type, data)
+    except TypeError:
+        return None

@@ -14,6 +14,7 @@ from src.database.consts import WritePolicy
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
+from src.logger import logger
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
@@ -27,7 +28,13 @@ from src.plugins.wordbank.database.types import (
     WordbankSearchRequest,
     WordbankTriggerGroupRecord,
 )
-from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
+from src.plugins.wordbank.debug import (
+    describe_batch_errors,
+    describe_shape,
+    elapsed_ms,
+    log_perf,
+    perf_start,
+)
 from src.plugins.wordbank.message_model import (
     MessageShape,
     fingerprint_shape,
@@ -300,8 +307,14 @@ class WordbankService:
         is_group: bool,
         raw_rule: dict[str, Any] | None = None,
     ) -> WordbankBatchAddResult:
+        start = perf_start()
         items: list[WordbankBatchAddItemResult] = []
         success = 0
+        logger.debug(
+            "[Wordbank][batch_add] start | "
+            f"responses={len(response_shapes)} trigger={describe_shape(trigger_shape)} "
+            f"group_id={group_id or '-'} user_id={user_id} is_group={is_group}"
+        )
         for index, response_shape in enumerate(response_shapes, start=1):
             try:
                 result = await self.add_message_entry(
@@ -320,6 +333,11 @@ class WordbankService:
                         error=str(exc),
                     )
                 )
+                logger.debug(
+                    "[Wordbank][batch_add] item failed | "
+                    f"index={index} error_type={type(exc).__name__} error={exc} "
+                    f"response={describe_shape(response_shape)}"
+                )
                 continue
             success += 1
             items.append(
@@ -329,12 +347,29 @@ class WordbankService:
                     result=result,
                 )
             )
-        return WordbankBatchAddResult(
+        batch = WordbankBatchAddResult(
             total=len(response_shapes),
             success=success,
             failed=max(0, len(response_shapes) - success),
             items=tuple(items),
         )
+        log_perf(
+            "service.add_message_entries.done",
+            start=start,
+            total=batch.total,
+            success=batch.success,
+            failed=batch.failed,
+        )
+        if batch.failed > 0:
+            batch_errors = describe_batch_errors(
+                [item.error for item in batch.items if not item.ok]
+            )
+            logger.debug(
+                "[Wordbank][batch_add] summary | "
+                f"total={batch.total} success={batch.success} failed={batch.failed} "
+                f"errors={batch_errors}"
+            )
+        return batch
 
     async def delete_response_item(
         self,

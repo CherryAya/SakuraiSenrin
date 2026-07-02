@@ -51,7 +51,13 @@ from src.lib.message_delivery import (
 )
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
+from src.logger import logger
 from src.plugins.wordbank.batch_feedback import send_batch_add_feedback
+from src.plugins.wordbank.debug import (
+    describe_batch_errors,
+    describe_message_segments,
+    describe_shape,
+)
 from src.plugins.wordbank.forward_batch import (
     build_forward_batch_payload,
     extract_forward_source_message_id,
@@ -218,6 +224,10 @@ def _contains_study_pair_separator(text: str) -> bool:
     return any(sep in text for sep in ("=>", "->", "回答", "回复"))
 
 
+def _study_state_keys(state: Mapping[str, Any]) -> list[str]:
+    return sorted(str(key) for key in state.keys() if str(key).startswith("study_"))
+
+
 async def _start_guided_study_from_partial_args(
     matcher: Matcher,
     event: MessageEvent,
@@ -369,6 +379,11 @@ async def _record_study_response(
         source_message_id = extract_forward_source_message_id(event)
         if source_message_id is not None:
             state["study_forward_source_message_id"] = source_message_id
+        logger.debug(
+            "[Study][guided] forward response detected | "
+            f"source_message_id={source_message_id or '-'} "
+            f"{describe_message_segments(event.message)}"
+        )
         clear_interaction_errors(state)
         locale = _study_locale(state)
         snapshot = _copy_study_state(
@@ -440,6 +455,11 @@ async def _record_study_forward_response_choice(
     if not _is_truthy_state_flag(state, "study_forward_response_pending"):
         return
     choice = event.message.extract_plain_text().strip().lower()
+    state_keys = _study_state_keys(state)
+    logger.debug(
+        "[Study][guided] forward response choice | "
+        f"choice={choice or '-'} state_keys={state_keys}"
+    )
     if choice in {"1", "whole", "整体"}:
         payload = await build_forward_batch_payload(
             bot,
@@ -453,6 +473,12 @@ async def _record_study_forward_response_choice(
         state.pop("study_forward_response_pending", None)
         state.pop("study_forward_source_message_id", None)
         state.pop("study_forward_split_shapes", None)
+        whole_description = describe_shape(payload.whole_shape)
+        logger.debug(
+            "[Study][guided] forward response imported whole | "
+            f"source_message_id={payload.source_message_id} "
+            f"node_count={payload.node_count} whole={whole_description}"
+        )
         clear_interaction_errors(state)
         await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
         return
@@ -469,6 +495,14 @@ async def _record_study_forward_response_choice(
         state["study_weight_after_preloaded_trigger"] = True
         state.pop("study_forward_response_pending", None)
         state.pop("study_forward_source_message_id", None)
+        first_shape = payload.split_shapes[0] if payload.split_shapes else None
+        logger.debug(
+            "[Study][guided] forward response imported split | "
+            f"source_message_id={payload.source_message_id} "
+            f"node_count={payload.node_count} "
+            f"split_count={len(payload.split_shapes)} "
+            f"first={describe_shape(first_shape)}"
+        )
         clear_interaction_errors(state)
         await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
         return
@@ -544,6 +578,8 @@ async def _finish_guided_study(
     )
 
     try:
+        state_keys = _study_state_keys(state)
+        logger.debug(f"[Study][guided] finish start | state_keys={state_keys}")
         trigger_shape = _state_message_shape(state, "study_trigger_shape")
         response_shape = _state_message_shape(state, "study_response_shape")
         if trigger_shape is None or trigger_shape.is_empty():
@@ -556,6 +592,15 @@ async def _finish_guided_study(
                 shape
                 for shape in state.get("study_forward_split_shapes", ())
                 if isinstance(shape, MessageShape)
+            )
+            raw_split_count = len(
+                tuple(state.get("study_forward_split_shapes", ()) or ())
+            )
+            logger.debug(
+                "[Study][guided] finish split branch | "
+                f"raw_split_count={raw_split_count} "
+                f"filtered_split_count={len(split_shapes)} "
+                f"trigger={describe_shape(trigger_shape)}"
             )
             if not split_shapes:
                 raise RuleError(
@@ -575,6 +620,14 @@ async def _finish_guided_study(
                 group_id=str(getattr(event, "group_id", "")),
                 user_id=str(event.user_id),
                 is_group=bool(getattr(event, "group_id", "")),
+            )
+            batch_errors = describe_batch_errors(
+                [item.error for item in batch.items if not item.ok]
+            )
+            logger.debug(
+                "[Study][guided] finish split result | "
+                f"total={batch.total} success={batch.success} failed={batch.failed} "
+                f"errors={batch_errors}"
             )
             if batch.success <= 0:
                 raise RuleError(
