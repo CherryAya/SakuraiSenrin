@@ -871,17 +871,34 @@ async def _(
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     argv = arg.extract_plain_text().strip().split()
     if not argv:
-        await admin_invite.finish(build_docs(DocsRenderContext(locale=locale)))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=build_docs(DocsRenderContext(locale=locale)),
+            source_kind="admin_invite",
+        )
+        return
     try:
         args: Namespace | ParserExit = invite_parser.parse_args(argv)
     except ParserExit as exc:
         args = exc
     if isinstance(args, ParserExit):
         if args.status == 0:
-            await admin_invite.finish(build_docs(DocsRenderContext(locale=locale)))
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_docs(DocsRenderContext(locale=locale)),
+                source_kind="admin_invite",
+            )
+            return
         else:
-            await admin_invite.finish(
-                _build_error_demo(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
                     locale,
                     tr(
                         locale,
@@ -889,8 +906,10 @@ async def _(
                         message=tr(locale, "admin.invite.args_error.detail"),
                     ),
                     argv[0].lower() if argv else None,
-                )
+                ),
+                source_kind="admin_invite",
             )
+            return
 
     action = args.action
     flag = getattr(args, "flag", UNSET)
@@ -921,13 +940,18 @@ async def _(
         case "log" | "日志":
             handler = handle_log
         case _:
-            await admin_invite.finish(
-                _build_error_demo(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
                     locale,
                     tr(locale, "admin.invite.unknown_command"),
                     None,
-                )
+                ),
+                source_kind="admin_invite",
             )
+            return
 
     await handler(ctx)
     await admin_invite.finish()

@@ -84,14 +84,25 @@ def test_delivery_guardrail_blocks_matcher_send_and_finish_payloads() -> None:
     violations = _scan_source(
         "\n".join(
             [
+                "from nonebot import on_command",
                 "async def f(matcher, ctx):",
                 '    await matcher.send("x")',
                 '    await matcher.finish("y")',
                 "    await ctx.matcher.finish(message='z')",
+                'named_matcher = on_command("demo")',
+                "async def g(handler: Matcher):",
+                '    await named_matcher.finish("named")',
+                '    await handler.finish("typed")',
             ]
         )
     )
-    assert [item.code for item in violations] == ["MDG001", "MDG002", "MDG002"]
+    assert [item.code for item in violations] == [
+        "MDG001",
+        "MDG002",
+        "MDG002",
+        "MDG002",
+        "MDG002",
+    ]
 
 
 def test_delivery_guardrail_allows_bare_finish_and_interaction_controls() -> None:
@@ -112,7 +123,7 @@ def test_delivery_guardrail_blocks_direct_bot_sends() -> None:
     violations = _scan_source(
         "\n".join(
             [
-                "async def f(bot, ctx):",
+                "async def f(bot, ctx, client: Bot):",
                 '    await bot.send("x")',
                 '    await bot.call_api("send_group_msg", group_id=1, message="x")',
                 (
@@ -120,10 +131,16 @@ def test_delivery_guardrail_blocks_direct_bot_sends() -> None:
                     '"send_private_forward_msg", user_id=1, messages=[]'
                     ")"
                 ),
+                '    await client.send("y")',
             ]
         )
     )
-    assert [item.code for item in violations] == ["MDG003", "MDG004", "MDG004"]
+    assert [item.code for item in violations] == [
+        "MDG003",
+        "MDG004",
+        "MDG004",
+        "MDG003",
+    ]
 
 
 def test_plugin_layers_have_no_direct_send_violations() -> None:

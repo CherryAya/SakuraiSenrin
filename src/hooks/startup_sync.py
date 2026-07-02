@@ -5,8 +5,10 @@ from __future__ import annotations
 from nonebot import on_message
 from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.matcher import Matcher
 from nonebot.permission import SUPERUSER
 
+from src.lib.message_plan import finish_with_message
 from src.services.startup_sync import (
     handle_startup_sync_reply,
     is_startup_sync_reply_text,
@@ -28,7 +30,7 @@ startup_sync_reply = on_message(
 
 
 @startup_sync_reply.handle()
-async def _(bot: Bot, event: MessageEvent) -> None:
+async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     reply = event.reply
     if reply is None:
         return
@@ -41,4 +43,10 @@ async def _(bot: Bot, event: MessageEvent) -> None:
         text=event.message.extract_plain_text(),
     )
     if result is not None:
-        await startup_sync_reply.finish(result)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=result,
+            source_kind="startup_sync",
+        )
