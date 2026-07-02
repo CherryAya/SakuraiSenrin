@@ -4,6 +4,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.lib.message_delivery import (
+    DEFAULT_FORWARD_REUSE_POLICY,
+    build_forward_context_key,
+)
 from src.lib.messages import text_message
 from src.lib.onebot_forward import (
     build_custom_forward_nodes,
@@ -58,6 +62,21 @@ def test_build_custom_forward_nodes_uses_node_custom_segments() -> None:
     assert nodes[0].data["user_id"] == "99999"
     assert nodes[0].data["nickname"] == "测试机器人"
     assert str(nodes[0].data["content"]) == "A"
+
+
+def test_build_forward_context_key_is_order_sensitive_by_default() -> None:
+    ordered = build_forward_context_key(
+        (text_message("summary"), text_message("feature")),
+        policy=DEFAULT_FORWARD_REUSE_POLICY,
+    )
+    reversed_key = build_forward_context_key(
+        (text_message("feature"), text_message("summary")),
+        policy=DEFAULT_FORWARD_REUSE_POLICY,
+    )
+
+    assert ordered
+    assert reversed_key
+    assert ordered != reversed_key
 
 
 @pytest.mark.asyncio

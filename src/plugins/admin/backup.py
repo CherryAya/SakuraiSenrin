@@ -22,6 +22,7 @@ from src.lib.long_task import (
     LongTaskSpec,
     MessageEventProgressSink,
 )
+from src.lib.message_plan import finish_with_message
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_doc_demo_message,
@@ -184,30 +185,52 @@ async def _(
     docs_text = str(docs)
     args = arg.extract_plain_text().strip().split()
     if not args:
-        await matcher.finish(docs)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=docs,
+            source_kind="admin_backup",
+        )
 
     action = args[0].lower()
     service = build_backup_service_from_config()
 
     try:
         if action in {"help", "帮助"}:
-            await matcher.finish(docs)
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=docs,
+                source_kind="admin_backup",
+            )
             return
 
         if action == "check":
             snapshots = await service.list_snapshots()
             if not snapshots:
-                await matcher.finish(tr(locale, "admin.backup.check.empty"))
+                await finish_with_message(
+                    bot,
+                    matcher,
+                    event=event,
+                    message=tr(locale, "admin.backup.check.empty"),
+                    source_kind="admin_backup",
+                )
                 return
             latest = snapshots[0]
-            await matcher.finish(
-                "\n".join(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message="\n".join(
                     [
                         tr(locale, "admin.backup.check.ok", count=len(snapshots)),
                         tr(locale, "admin.backup.check.latest"),
                         _format_snapshot(locale, latest),
                     ]
-                )
+                ),
+                source_kind="admin_backup",
             )
             return
 
@@ -215,17 +238,27 @@ async def _(
             try:
                 limit = _parse_limit(args[1] if len(args) > 1 else None)
             except ValueError:
-                await matcher.finish(
-                    _build_error_demo(
+                await finish_with_message(
+                    bot,
+                    matcher,
+                    event=event,
+                    message=_build_error_demo(
                         locale,
                         tr(locale, "admin.backup.limit.invalid"),
                         "snapshots",
-                    )
+                    ),
+                    source_kind="admin_backup",
                 )
                 return
             snapshots = await service.list_snapshots()
             if not snapshots:
-                await matcher.finish(tr(locale, "admin.backup.snapshots.empty"))
+                await finish_with_message(
+                    bot,
+                    matcher,
+                    event=event,
+                    message=tr(locale, "admin.backup.snapshots.empty"),
+                    source_kind="admin_backup",
+                )
                 return
             lines = [
                 tr(
@@ -236,7 +269,13 @@ async def _(
             ]
             for snapshot in snapshots[:limit]:
                 lines.append(_format_snapshot(locale, snapshot))
-            await matcher.finish("\n".join(lines))
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message="\n".join(lines),
+                source_kind="admin_backup",
+            )
             return
 
         if action == "run":
@@ -252,21 +291,37 @@ async def _(
                 await long_task.advance("archiving")
                 result = await service.run(plan, force=True)
             if result is None:
-                await matcher.finish(tr(locale, "admin.backup.run.skipped"))
+                await finish_with_message(
+                    bot,
+                    matcher,
+                    event=event,
+                    message=tr(locale, "admin.backup.run.skipped"),
+                    source_kind="admin_backup",
+                )
                 return
-            await matcher.finish(_format_run_result(locale, result))
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_format_run_result(locale, result),
+                source_kind="admin_backup",
+            )
             return
 
         if action == "restore":
             try:
                 snapshot = _parse_restore_snapshot(args[1] if len(args) > 1 else None)
             except ValueError:
-                await matcher.finish(
-                    _build_error_demo(
+                await finish_with_message(
+                    bot,
+                    matcher,
+                    event=event,
+                    message=_build_error_demo(
                         locale,
                         tr(locale, "admin.backup.restore.snapshot_required"),
                         "restore",
-                    )
+                    ),
+                    source_kind="admin_backup",
                 )
                 return
             async with LongTaskRunner(
@@ -279,8 +334,11 @@ async def _(
             ) as long_task:
                 await long_task.advance("restoring", metadata={"snapshot": snapshot})
                 await restore_remote_snapshot_into_local(snapshot=snapshot)
-            await matcher.finish(
-                "\n".join(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message="\n".join(
                     [
                         tr(locale, "admin.backup.restore.completed"),
                         tr(
@@ -289,12 +347,16 @@ async def _(
                             snapshot_id=snapshot,
                         ),
                     ]
-                )
+                ),
+                source_kind="admin_backup",
             )
             return
 
-        await matcher.finish(
-            _build_error_demo(
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=_build_error_demo(
                 locale,
                 tr(
                     locale,
@@ -303,9 +365,16 @@ async def _(
                     docs=docs_text,
                 ),
                 None,
-            )
+            ),
+            source_kind="admin_backup",
         )
     except FinishedException:
         raise
     except Exception as exc:
-        await matcher.finish(tr(locale, "admin.backup.failed", message=str(exc)))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "admin.backup.failed", message=str(exc)),
+            source_kind="admin_backup",
+        )

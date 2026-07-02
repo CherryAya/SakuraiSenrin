@@ -38,6 +38,7 @@ from src.lib.message_plan import (
     MessagePlanInput,
     TextBlock,
     deliver_message_plan,
+    finish_with_message,
     render_message_plan_input,
 )
 from src.lib.messages import text_message
@@ -634,7 +635,14 @@ async def _deliver_help_plan(
     plan: DeliveryPlan,
 ) -> None:
     if not plan.should_forward:
-        await matcher.finish(render_message_plan_input(plan.messages[0]))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=plan.messages[0],
+            source_kind=plan.source_kind or "help",
+            allow_asset_reuse=plan.allow_asset_reuse,
+        )
         return
     async with LongTaskRunner(
         LongTaskSpec(
@@ -925,22 +933,42 @@ async def _(
             and denied_match.entry is not None
             and not _can_view_entry(denied_match.entry, actor_permission)
         ):
-            await matcher.finish(
-                _build_permission_denied_message(denied_match.entry, locale)
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_permission_denied_message(denied_match.entry, locale),
+                source_kind="help",
             )
-        await matcher.finish(
-            text_message(tr(locale, "help.query.not_found", query=query))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=text_message(tr(locale, "help.query.not_found", query=query)),
+            source_kind="help",
         )
 
     if match_result.status == "ambiguous":
-        await matcher.finish(
-            _build_ambiguous_message(query, match_result.candidates or [], locale)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=_build_ambiguous_message(
+                query,
+                match_result.candidates or [],
+                locale,
+            ),
+            source_kind="help",
         )
 
     assert match_result.entry is not None
     if not _can_view_entry(match_result.entry, actor_permission):
-        await matcher.finish(
-            _build_permission_denied_message(match_result.entry, locale)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=_build_permission_denied_message(match_result.entry, locale),
+            source_kind="help",
         )
 
     docs_plan = await _resolve_docs_delivery_plan(

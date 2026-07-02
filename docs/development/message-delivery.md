@@ -18,6 +18,29 @@
 4. 在缓存失效、转发失败或平台能力不足时，自动降级。
 5. 对复用判定、hash 计算和失败原因保持可审计、可调试。
 
+## 1.1 静态门禁
+
+插件与 hook 层现在有静态门禁约束：
+
+- Ruff `banned-api` 禁止直接依赖底层单条/forward 发送实现。
+- `scripts/check_message_delivery_guardrails.py` 禁止在 `src/plugins/**`、`src/hooks/**` 中直接调用：
+  - `matcher.send(...)`
+  - 带消息参数的 `matcher.finish(...)`
+  - `bot.send(...)`
+  - `bot.call_api("send_*", ...)`
+
+允许保留：
+
+- `deliver_message_plan(...)`
+- `matcher.finish()` 空调用
+- `matcher.pause(...)`
+- `matcher.reject(...)`
+
+统一替换模板：
+
+- `await matcher.send(message)` -> `await deliver_message_plan(...)`
+- `await matcher.finish(message)` -> 先 `await deliver_message_plan(...)`，再 `await matcher.finish()`
+
 ## 2. 统一入口
 
 ### 2.0 消息计划层

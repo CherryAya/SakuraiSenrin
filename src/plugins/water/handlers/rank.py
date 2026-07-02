@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.matcher import Matcher
@@ -19,6 +18,8 @@ from src.lib.long_task import (
     LongTaskSpec,
     MessageEventProgressSink,
 )
+from src.lib.message_plan import finish_with_message
+from src.lib.messages import image_message
 from src.plugins.water.services.rank import water_rank_service
 
 PeriodType = Literal["week", "month", "season", "year"]
@@ -56,5 +57,17 @@ async def handle_period_rank(
         await long_task.advance("rendering")
         res = await water_rank_service.build_period_rank_image(period, locale)
     if res:
-        await matcher.finish(MessageSegment.image(res))
-    await matcher.finish(tr(locale, "water.rank.empty"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=image_message(res),
+            source_kind="water_rank_period",
+        )
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message=tr(locale, "water.rank.empty"),
+        source_kind="water_rank_period",
+    )

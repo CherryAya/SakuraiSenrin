@@ -24,6 +24,7 @@ from src.lib.cache.field import GroupCacheItem
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_plan import finish_with_message
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_doc_demo_message,
@@ -169,11 +170,23 @@ async def _(
     docs_text = str(docs_message)
     args = arg.extract_plain_text().strip().split()
     if not args:
-        await matcher.finish(docs_message)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=docs_message,
+            source_kind="admin_group",
+        )
 
     command = args[0].lower()
     if command in ["help", "帮助"]:
-        await matcher.finish(docs_message)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=docs_message,
+            source_kind="admin_group",
+        )
 
     handler: Callable[[AdminGroupContext], Awaitable[str]]
     match command:
@@ -190,30 +203,45 @@ async def _(
         case "leave" | "退群":
             handler = leave_group
         case _:
-            await matcher.finish(
-                _build_error_demo(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
                     locale,
                     tr(locale, "admin.group.unknown_command", docs=docs_text),
                     None,
-                )
+                ),
+                source_kind="admin_group",
             )
+            return
 
     group_ids = args[1:]
     if not group_ids:
         if isinstance(event, GroupMessageEvent):
             group_ids = [str(event.group_id)]
         else:
-            await matcher.finish(tr(locale, "admin.group.group_required"))
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr(locale, "admin.group.group_required"),
+                source_kind="admin_group",
+            )
 
     results = []
     for gid in set(group_ids):
         if not gid.isdigit():
-            await matcher.finish(
-                _build_error_demo(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
                     locale,
                     tr(locale, "admin.group.group_invalid", group_id=gid),
                     command,
-                )
+                ),
+                source_kind="admin_group",
             )
 
         name = await resolve_group_name(bot, gid)
@@ -240,4 +268,10 @@ async def _(
                 message=res_msg,
             )
         )
-    await matcher.finish("\n".join(results))
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message="\n".join(results),
+        source_kind="admin_group",
+    )

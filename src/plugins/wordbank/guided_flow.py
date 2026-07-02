@@ -29,7 +29,7 @@ from src.lib.long_task import (
     LongTaskSpec,
     MatcherProgressSink,
 )
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan, finish_with_message
 from src.logger import logger
 from src.plugins.wordbank.debug import (
     describe_batch_errors,
@@ -100,6 +100,13 @@ def _resolve_guided_bot(bot: Bot | None, matcher: Matcher) -> Bot | None:
     ):
         return fallback
     return None
+
+
+def _require_guided_bot(bot: Bot | None, matcher: Matcher) -> Bot:
+    resolved = _resolve_guided_bot(bot, matcher)
+    if resolved is None:
+        raise RuntimeError("wordbank guided flow requires a delivery-capable bot")
+    return resolved
 
 
 def state_message_shape(state: Mapping[str, Any], key: str) -> MessageShape | None:
@@ -796,19 +803,16 @@ async def finish_guided_search(
         page,
         wordbank_service=wordbank_service,
     )
-    delivery_bot = _resolve_guided_bot(bot, matcher)
-    if delivery_bot is None:
-        send_result = await matcher.send(message)
-    else:
-        plan_result = await deliver_message_plan(
-            delivery_bot,
-            plan=DeliveryPlan(
-                messages=(message,),
-                source_kind="wordbank_view",
-            ),
-            event=event,
-        )
-        send_result = plan_result.results[0]
+    delivery_bot = _require_guided_bot(bot, matcher)
+    plan_result = await deliver_message_plan(
+        delivery_bot,
+        plan=DeliveryPlan(
+            messages=(message,),
+            source_kind="wordbank_view",
+        ),
+        event=event,
+    )
+    send_result = plan_result.results[0]
     await record_search_result_view_message(
         send_result=send_result,
         event=event,
@@ -855,7 +859,13 @@ async def handle_search_session_event(
         return
 
     if parsed.action == "exit":
-        await matcher.finish(tr(locale, "wordbank.guided.search.finished"))
+        await finish_with_message(
+            _require_guided_bot(bot if isinstance(bot, Bot) else None, matcher),
+            matcher,
+            event=event,
+            message=tr(locale, "wordbank.guided.search.finished"),
+            source_kind="wordbank_view",
+        )
         return
 
     if parsed.action == "detail":
@@ -915,21 +925,14 @@ async def handle_search_session_event(
         ]
         if messages:
             merged_message = "\n".join(messages)
-            delivery_bot = _resolve_guided_bot(
-                bot if bot is not None else None,
-                matcher,
+            await deliver_message_plan(
+                _require_guided_bot(bot if isinstance(bot, Bot) else None, matcher),
+                plan=DeliveryPlan(
+                    messages=(merged_message,),
+                    source_kind="wordbank_command",
+                ),
+                event=event,
             )
-            if delivery_bot is None:
-                await matcher.send(merged_message)
-            else:
-                await deliver_message_plan(
-                    delivery_bot,
-                    plan=DeliveryPlan(
-                        messages=(merged_message,),
-                        source_kind="wordbank_command",
-                    ),
-                    event=event,
-                )
         clear_interaction_errors(state)
         await finish_guided_search_fn(
             bot,
@@ -944,7 +947,13 @@ async def handle_search_session_event(
 
     page_number = parsed.page
     if page_number is None:
-        await matcher.finish(tr(locale, "wordbank.guided.search.finished"))
+        await finish_with_message(
+            _require_guided_bot(bot if isinstance(bot, Bot) else None, matcher),
+            matcher,
+            event=event,
+            message=tr(locale, "wordbank.guided.search.finished"),
+            source_kind="wordbank_view",
+        )
         return
     clear_interaction_errors(state)
     await finish_guided_search_fn(

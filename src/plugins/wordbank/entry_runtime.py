@@ -34,6 +34,7 @@ from src.lib.message_plan import (
     ReplyRefBlock,
     TextBlock,
     deliver_message_plan,
+    finish_with_message,
     render_message_plan_input,
 )
 from src.logger import logger
@@ -440,7 +441,11 @@ def register_wordbank_runtime_handlers(
         return message, image_trace_fields
 
     @wordbank_reply_command.handle()
-    async def _wordbank_reply(matcher: Matcher, event: MessageEvent) -> None:
+    async def _wordbank_reply(
+        bot: Bot,
+        matcher: Matcher,
+        event: MessageEvent,
+    ) -> None:
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         service = await _get_wordbank_service()
@@ -455,15 +460,25 @@ def register_wordbank_runtime_handlers(
                 media_service=media_service,
             )
         except (RuleError, ValueError) as exc:
-            await matcher.finish(
-                build_error_message(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_error_message(
                     exc,
                     locale,
                     default_feature="reply-shortcut",
-                )
+                ),
+                source_kind="wordbank_command",
             )
             return
-        await matcher.finish(msg)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=msg,
+            source_kind="wordbank_command",
+        )
 
     @wordbank_approval_reply_command.handle()
     async def _wordbank_approval_reply(
@@ -482,18 +497,28 @@ def register_wordbank_runtime_handlers(
                 locale=locale,
             )
         except (RuleError, ValueError) as exc:
-            await matcher.finish(
-                build_error_message(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_error_message(
                     exc,
                     locale,
                     default_feature="approval-reply",
                     actor_permission=Permission.GROUP_ADMIN,
-                )
+                ),
+                source_kind="wordbank_command",
             )
             return
         if outcome.completed and outcome.approval_message is not None:
             await notify_approval_source(bot, outcome.approval_message, outcome.message)
-        await matcher.finish(outcome.message)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=outcome.message,
+            source_kind="wordbank_command",
+        )
 
     @wordbank_view_reply_command.handle()
     async def _wordbank_view_reply(
@@ -505,11 +530,23 @@ def register_wordbank_runtime_handlers(
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         reply = event.reply
         if reply is None:
-            await matcher.finish(tr(locale, "wordbank.reply.target_missing"))
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr(locale, "wordbank.reply.target_missing"),
+                source_kind="wordbank_command",
+            )
             return
         reply_message_id = getattr(reply, "message_id", None)
         if reply_message_id is None:
-            await matcher.finish(tr(locale, "wordbank.reply.target_missing"))
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr(locale, "wordbank.reply.target_missing"),
+                source_kind="wordbank_command",
+            )
             return
         service = await _get_wordbank_service()
         view_message = await service.get_message_ref(
@@ -517,12 +554,16 @@ def register_wordbank_runtime_handlers(
             expected_kind="view",
         )
         if view_message is None:
-            await matcher.finish(
-                tr(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr(
                     locale,
                     "wordbank.reply.view_target_not_found",
                     message_id=reply_message_id,
-                )
+                ),
+                source_kind="wordbank_command",
             )
             return
         try:
@@ -546,12 +587,16 @@ def register_wordbank_runtime_handlers(
                 page=parsed.page,
             )
         except (RuleError, ValueError) as exc:
-            await matcher.finish(
-                build_error_message(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_error_message(
                     exc,
                     locale,
                     default_feature="reply-shortcut",
-                )
+                ),
+                source_kind="wordbank_command",
             )
 
     @wordbank_passive.handle()

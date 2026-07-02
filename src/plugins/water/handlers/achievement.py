@@ -5,6 +5,7 @@ from nonebot.adapters.onebot.v11.event import GroupMessageEvent
 from nonebot.matcher import Matcher
 
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_plan import finish_with_message
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.services.achievement import achievement_service
@@ -31,4 +32,10 @@ async def handle_my_achievements(
     event: GroupMessageEvent,
     locale: LocaleCode,
 ) -> None:
-    await matcher.finish(await build_my_achievements_message(event, locale))
+    await finish_with_message(
+        getattr(matcher, "bot", None),
+        matcher,
+        event=event,
+        message=await build_my_achievements_message(event, locale),
+        source_kind="water_achievement",
+    )

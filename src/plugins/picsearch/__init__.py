@@ -35,7 +35,7 @@ from src.lib.long_task import (
     LongTaskSpec,
     MessageEventProgressSink,
 )
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan, finish_with_message
 from src.lib.messages import text_message
 from src.lib.plugin_docs import (
     DocsRenderContext,
@@ -306,7 +306,14 @@ async def run_search(
     indexes: list[int],
 ) -> None:
     if engine is PicsearchEngine.SAUCENAO and get_engine_key(engine) is None:
-        await matcher.finish(tr(locale, "picsearch.engine_key_missing", engine=engine))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "picsearch.engine_key_missing", engine=engine),
+            source_kind="picsearch",
+        )
+        return
 
     for selected in indexes:
         async with LongTaskRunner(
@@ -420,16 +427,26 @@ async def _(
 
     image_urls = extract_reply_image_urls(event)
     if not image_urls:
-        await matcher.finish(
-            _build_error_demo(locale, tr(locale, "picsearch.reply_required"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=_build_error_demo(locale, tr(locale, "picsearch.reply_required")),
+            source_kind="picsearch",
         )
+        return
 
     try:
         engine = parse_request_text(event.get_plaintext())
     except ValueError:
-        await matcher.finish(
-            _build_error_demo(locale, tr(locale, "picsearch.engine_invalid"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=_build_error_demo(locale, tr(locale, "picsearch.engine_invalid")),
+            source_kind="picsearch",
         )
+        return
 
     state["picsearch_engine"] = engine.value
     state["picsearch_image_urls"] = image_urls
@@ -461,10 +478,20 @@ async def _choose_indexes(
     if not isinstance(image_urls, list) or not all(
         isinstance(item, str) for item in image_urls
     ):
-        await matcher.finish(tr(locale, "picsearch.reply_required"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "picsearch.reply_required"),
+            source_kind="picsearch",
+        )
+        return
+    typed_image_urls = cast(list[str], image_urls)
 
     try:
-        parsed_indexes = parse_indexes(indexes.extract_plain_text(), len(image_urls))
+        parsed_indexes = parse_indexes(
+            indexes.extract_plain_text(), len(typed_image_urls)
+        )
         engine = PicsearchEngine(engine_text)
     except ValueError as exc:
         message_key = cast(
@@ -484,6 +511,6 @@ async def _choose_indexes(
         event,
         locale=locale,
         engine=engine,
-        image_urls=image_urls,
+        image_urls=typed_image_urls,
         indexes=parsed_indexes,
     )

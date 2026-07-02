@@ -8,6 +8,7 @@ from nonebot.matcher import Matcher
 
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import LongTaskRunner
+from src.lib.message_plan import finish_with_message
 from src.plugins.water.services.query_router import WaterQuerySpec, water_query_router
 
 
@@ -40,14 +41,18 @@ async def handle_water_query(
     is_superuser: bool = False,
     spec: WaterQuerySpec | None = None,
 ) -> None:
-    await matcher.finish(
-        await build_water_query_message(
+    await finish_with_message(
+        getattr(matcher, "bot", None),
+        matcher,
+        event=event,
+        message=await build_water_query_message(
             event,
             arg,
             locale,
             is_superuser=is_superuser,
             spec=spec,
-        )
+        ),
+        source_kind="water_query",
     )
 
 
@@ -68,4 +73,10 @@ async def handle_my_water_profile(
     event: GroupMessageEvent,
     locale: LocaleCode,
 ) -> None:
-    await matcher.finish(await build_my_water_profile_message(event, locale))
+    await finish_with_message(
+        getattr(matcher, "bot", None),
+        matcher,
+        event=event,
+        message=await build_my_water_profile_message(event, locale),
+        source_kind="water_query",
+    )

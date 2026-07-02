@@ -23,6 +23,7 @@ from src.lib.long_task import (
     LongTaskSpec,
     MessageEventProgressSink,
 )
+from src.lib.message_plan import finish_with_message
 
 from .guided_flow import (
     WORDBANK_GUIDED_SEARCH_STAGE_CREATOR,
@@ -287,8 +288,12 @@ def register_wordbank_command_handlers(
                             )
                         await long_task.advance("submitting")
             except (RuleError, ValueError) as exc:
-                await matcher.finish(
-                    build_error_message(exc, locale, default_feature="add")
+                await finish_with_message(
+                    bot,
+                    matcher,
+                    event=event,
+                    message=build_error_message(exc, locale, default_feature="add"),
+                    source_kind="wordbank_command",
                 )
                 return
             await finalize_submission(matcher, bot, event, result, locale)
@@ -301,8 +306,16 @@ def register_wordbank_command_handlers(
                     search_image_scores,
                 ) = await collect_search_query_content(arg, keyword_text=rest)
             except (RuleError, ValueError) as exc:
-                await matcher.finish(
-                    build_error_message(exc, locale, default_feature="search")
+                await finish_with_message(
+                    bot,
+                    matcher,
+                    event=event,
+                    message=build_error_message(
+                        exc,
+                        locale,
+                        default_feature="search",
+                    ),
+                    source_kind="wordbank_command",
                 )
                 return
             try:
@@ -317,8 +330,16 @@ def register_wordbank_command_handlers(
                     state=state,
                 )
             except (RuleError, ValueError) as exc:
-                await matcher.finish(
-                    build_error_message(exc, locale, default_feature="search")
+                await finish_with_message(
+                    bot,
+                    matcher,
+                    event=event,
+                    message=build_error_message(
+                        exc,
+                        locale,
+                        default_feature="search",
+                    ),
+                    source_kind="wordbank_command",
                 )
             return
         if action in {"详情", *GROUP_ALIASES}:
@@ -334,12 +355,16 @@ def register_wordbank_command_handlers(
                     page=parsed_group.page,
                 )
             except (RuleError, ValueError) as exc:
-                await matcher.finish(
-                    build_error_message(
+                await finish_with_message(
+                    bot,
+                    matcher,
+                    event=event,
+                    message=build_error_message(
                         exc,
                         locale,
                         default_feature="reply-shortcut",
-                    )
+                    ),
+                    source_kind="wordbank_command",
                 )
             return
         if action in PENDING_ALIASES and send_pending_entries_view is not None:
@@ -368,9 +393,21 @@ def register_wordbank_command_handlers(
                 work=_dispatch_command,
             )
         except (RuleError, ValueError) as exc:
-            await matcher.finish(build_error_message(exc, locale))
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_error_message(exc, locale),
+                source_kind="wordbank_command",
+            )
             return
-        await matcher.finish(msg)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=msg,
+            source_kind="wordbank_command",
+        )
 
     setattr(
         register_wordbank_command_handlers,

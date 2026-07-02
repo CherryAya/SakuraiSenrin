@@ -28,6 +28,7 @@ from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
 from src.lib.i18n.runtime import format_duration, resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_plan import finish_with_message
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_doc_demo_message,
@@ -199,17 +200,33 @@ async def _(
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     argv = arg.extract_plain_text().strip().split()
     if not argv:
-        await matcher.finish(build_docs(DocsRenderContext(locale=locale)))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=build_docs(DocsRenderContext(locale=locale)),
+            source_kind="admin_user",
+        )
     try:
         args: Namespace | ParserExit = user_parser.parse_args(argv)
     except ParserExit as exc:
         args = exc
     if isinstance(args, ParserExit):
         if args.status == 0:
-            await matcher.finish(build_docs(DocsRenderContext(locale=locale)))
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_docs(DocsRenderContext(locale=locale)),
+                source_kind="admin_user",
+            )
+            return
         else:
-            await matcher.finish(
-                _build_error_demo(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
                     locale,
                     tr(
                         locale,
@@ -217,8 +234,11 @@ async def _(
                         message=tr(locale, "admin.user.args_error.detail"),
                     ),
                     argv[0].lower() if argv else None,
-                )
+                ),
+                source_kind="admin_user",
             )
+            return
+    assert not isinstance(args, ParserExit)
 
     action = args.action
     uids = list(set(args.uids))
@@ -235,13 +255,18 @@ async def _(
         case "status" | "状态":
             handler = status_user
         case _:
-            await matcher.finish(
-                _build_error_demo(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
                     locale,
                     tr(locale, "admin.user.unknown_command"),
                     None,
-                )
+                ),
+                source_kind="admin_user",
             )
+            return
 
     operator_id = str(event.user_id)
     results = []
@@ -296,4 +321,10 @@ async def _(
             )
         )
 
-    await matcher.finish("\n".join(results))
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message="\n".join(results),
+        source_kind="admin_user",
+    )

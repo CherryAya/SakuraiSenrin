@@ -47,6 +47,7 @@ from src.lib.message_plan import (
     ReplyRefBlock,
     TextBlock,
     deliver_message_plan,
+    finish_with_message,
 )
 from src.lib.plugin_docs import (
     DocsRenderContext,
@@ -701,7 +702,13 @@ async def handle_list(ctx: AdminInviteContext) -> None:
             )
 
     if empty_message is not None:
-        await ctx.matcher.finish(empty_message)
+        await finish_with_message(
+            ctx.bot,
+            ctx.matcher,
+            event=ctx.event,
+            message=empty_message,
+            source_kind="admin_invite",
+        )
 
 
 async def handle_approve(ctx: AdminInviteContext) -> None:
@@ -733,7 +740,13 @@ async def handle_reject(ctx: AdminInviteContext) -> None:
 
     invs = await invite_repo.get_by_status(InvitationStatus.PENDING)
     if not invs:
-        await ctx.matcher.finish(tr(ctx.locale, "admin.invite.reject.none"))
+        await finish_with_message(
+            ctx.bot,
+            ctx.matcher,
+            event=ctx.event,
+            message=tr(ctx.locale, "admin.invite.reject.none"),
+            source_kind="admin_invite",
+        )
 
     success_count = 0
     details = []
@@ -772,7 +785,14 @@ async def handle_ignore(ctx: AdminInviteContext) -> None:
             inv = await invite_repo.get_by_flag(ctx.flag)
 
         if not inv:
-            await ctx.matcher.finish(tr(ctx.locale, "admin.invite.record.not_found"))
+            await finish_with_message(
+                ctx.bot,
+                ctx.matcher,
+                event=ctx.event,
+                message=tr(ctx.locale, "admin.invite.record.not_found"),
+                source_kind="admin_invite",
+            )
+            return
         await invite_repo.update_status(inv.id, InvitationStatus.IGNORED)
         msg = tr(
             ctx.locale,
@@ -784,7 +804,13 @@ async def handle_ignore(ctx: AdminInviteContext) -> None:
         return
     invs = await invite_repo.ignore_all_pending()
     if not invs:
-        await ctx.matcher.finish(tr(ctx.locale, "admin.invite.ignore.none"))
+        await finish_with_message(
+            ctx.bot,
+            ctx.matcher,
+            event=ctx.event,
+            message=tr(ctx.locale, "admin.invite.ignore.none"),
+            source_kind="admin_invite",
+        )
 
     details = []
     for inv in invs:

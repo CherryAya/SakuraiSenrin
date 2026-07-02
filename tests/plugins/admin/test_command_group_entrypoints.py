@@ -287,9 +287,7 @@ async def test_admin_invite_log_returns_i18n_notice(
             "send_private_msg",
             {
                 "user_id": SUPERUSER_ID,
-                "message": text_message(
-                    tr("zh-CN", "admin.invite.log.unavailable")
-                ),
+                "message": text_message(tr("zh-CN", "admin.invite.log.unavailable")),
             },
             result={"message_id": 1},
         )

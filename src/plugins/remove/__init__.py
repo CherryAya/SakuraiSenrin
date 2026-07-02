@@ -17,7 +17,7 @@ from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import DeliveryTarget
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan, finish_with_message
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -113,7 +113,13 @@ async def perform_remove(
 ) -> None:
     reason_text = reason.strip()
     if not reason_text:
-        await matcher.finish(tr(locale, "remove.reason.empty"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "remove.reason.empty"),
+            source_kind="remove_command",
+        )
 
     group_id = str(event.group_id)
     group_name = await resolve_group_name(bot, group_id)
@@ -130,7 +136,13 @@ async def perform_remove(
         await bot.set_group_leave(group_id=event.group_id)
     except ActionFailed as exc:
         logger.warning(f"[Remove] leave failed for group {group_id}: {exc}")
-        await matcher.finish(tr(locale, "remove.leave_failed"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "remove.leave_failed"),
+            source_kind="remove_command",
+        )
 
     await group_repo.update_status(group_id, GroupStatus.LEFT)
     await notify_superusers(
@@ -141,11 +153,18 @@ async def perform_remove(
         operator_id=event.get_user_id(),
         reason=reason_text,
     )
-    await matcher.finish(tr(locale, "remove.leave_success", group_name=group_name))
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message=tr(locale, "remove.leave_success", group_name=group_name),
+        source_kind="remove_command",
+    )
 
 
 @remove_matcher.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
@@ -154,15 +173,30 @@ async def _(
         return
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
-        await matcher.finish(tr(locale, "remove.group_only"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "remove.group_only"),
+            source_kind="remove_command",
+        )
+        return
     if not await has_remove_permission(event):
-        await matcher.finish(tr(locale, "remove.permission_denied"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "remove.permission_denied"),
+            source_kind="remove_command",
+        )
+        return
     state["remove_stage"] = "confirm"
     await matcher.reject(tr(locale, "remove.confirm.prompt"))
 
 
 @remove_matcher.handle()
 async def _(
+    bot: Bot,
     matcher: Matcher,
     event: GroupMessageEvent,
     state: T_State,
@@ -174,7 +208,14 @@ async def _(
     if not confirm_text:
         await matcher.reject(tr(locale, "remove.confirm.prompt"))
     if not is_remove_confirmed(confirm_text):
-        await matcher.finish(tr(locale, "remove.cancelled"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "remove.cancelled"),
+            source_kind="remove_command",
+        )
+        return
     state["remove_stage"] = "reason"
     await matcher.reject(tr(locale, "remove.reason.prompt"))
 

@@ -78,6 +78,10 @@ extend-select = ["TID251"]
 "time.time".msg = "禁止直接获取时间戳，请统一使用 get_current_time()"
 "arrow.now".msg = "禁止直接调用 arrow.now，请统一使用 get_current_time()"
 "arrow.utcnow".msg = "禁止直接调用 arrow.utcnow，请统一使用 get_current_time()"
+"src.lib.message_delivery.deliver_single_message".msg = "插件与 hook 不得直接调用 deliver_single_message(...)；请统一使用 DeliveryPlan + deliver_message_plan(...)"
+"src.lib.message_delivery.resolve_delivery_target".msg = "插件与 hook 不得直接调用 resolve_delivery_target(...)；请统一使用 DeliveryPlan + deliver_message_plan(...)"
+"src.lib.message_delivery.deliver_forward_messages".msg = "插件与 hook 不得直接调用 deliver_forward_messages(...)；请统一使用 DeliveryPlan + deliver_message_plan(...)"
+"src.lib.onebot_forward.send_custom_forward".msg = "插件与 hook 不得直接调用 send_custom_forward(...)；请统一使用 DeliveryPlan + deliver_message_plan(...)"
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
@@ -86,6 +90,13 @@ extra-standard-library = ["typing_extensions"]
 [tool.ruff.lint.per-file-ignores]
 "src/locales/*.py" = ["E501"]
 "src/lib/i18n/keys.py" = ["E501"]
+"src/lib/i18n/runtime.py" = ["TID251"]
+"src/lib/message_api_hooks.py" = ["TID251"]
+"src/lib/message_delivery.py" = ["TID251"]
+"src/lib/message_plan.py" = ["TID251"]
+"src/services/startup_sync.py" = ["TID251"]
+"tests/test_message_delivery_forward.py" = ["TID251"]
+"tests/test_onebot_forward.py" = ["TID251"]
 "tests/test_plugin_docs_*.py" = ["F403", "F405"]
 "tests/plugins/wordbank/test_media_*.py" = ["F403", "F405"]
 "tests/plugins/wordbank/test_migration_*.py" = ["F403", "F405"]

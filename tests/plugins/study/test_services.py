@@ -1,7 +1,7 @@
 import sys
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import nonebot
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
@@ -91,6 +91,7 @@ async def test_forward_choice_uses_saved_response_event(
         bot,
         response_event,
         media_service=wordbank_media_service,
+        task=ANY,
     )
     assert "study_forward_response_pending" not in state
     assert "study_forward_response_event" not in state

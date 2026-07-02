@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import cast
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.matcher import Matcher
 
 from src.lib.message_delivery import (
     DeliveryResult,
@@ -191,4 +193,60 @@ async def deliver_message_plan(
         wait_result=wait_result,
         results=tuple(results),
         used_forward=False,
+    )
+
+
+async def finish_with_delivery_plan(
+    bot: Bot,
+    matcher: Matcher,
+    *,
+    plan: DeliveryPlan,
+    event: MessageEvent | None = None,
+    target: DeliveryTarget | None = None,
+) -> None:
+    await deliver_message_plan(
+        bot,
+        plan=plan,
+        event=event,
+        target=target,
+    )
+    await matcher.finish()
+
+
+async def finish_with_message(
+    bot: Bot | None,
+    matcher: Matcher,
+    *,
+    message: MessagePlanInput,
+    source_kind: str,
+    event: MessageEvent | None = None,
+    target: DeliveryTarget | None = None,
+    fallback_nickname: str = "",
+    allow_asset_reuse: bool = True,
+    force_forward: bool | None = None,
+) -> None:
+    rendered_message: Message | str
+    if isinstance(message, MessagePlanEntry):
+        rendered_message = render_message_plan_entry(message)
+    else:
+        rendered_message = message
+    if target is None and force_forward is not True and not fallback_nickname:
+        await matcher.finish(rendered_message)
+        return
+    delivery_capable_bot = isinstance(bot, Bot)
+    if not delivery_capable_bot or (event is None and target is None):
+        await matcher.finish(rendered_message)
+        return
+    await finish_with_delivery_plan(
+        cast(Bot, bot),
+        matcher,
+        plan=DeliveryPlan(
+            messages=(message,),
+            source_kind=source_kind,
+            fallback_nickname=fallback_nickname,
+            allow_asset_reuse=allow_asset_reuse,
+            force_forward=force_forward,
+        ),
+        event=event,
+        target=target,
     )

@@ -58,7 +58,7 @@ from src.lib.long_task import (
     MessageEventProgressSink,
 )
 from src.lib.message_delivery import resolve_notice_delivery_target
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan, finish_with_message
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -625,7 +625,15 @@ async def _(
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     is_superuser = _is_water_superuser(event)
     if not isinstance(event, GroupMessageEvent):
-        await matcher.finish(tr(locale, "water.common.group_only"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "water.common.group_only"),
+            source_kind="water_query",
+        )
+        return
+    assert isinstance(event, GroupMessageEvent)
     text = arg.extract_plain_text().strip()
     shortcut_rank_spec, shortcut_errors = water_query_router.parse_shortcut_command(
         getattr(event, "raw_message", "")
@@ -673,14 +681,26 @@ async def _(
         spec = water_query_router.parse(text)
     if spec.view == "report":
         if not is_group_admin_event(event):
-            await matcher.finish(tr(locale, "water.common.admin_confirm"))
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr(locale, "water.common.admin_confirm"),
+                source_kind="water_query",
+            )
+            return
         acquired, remain_seconds = (
             water_report_service.try_acquire_today_report_cooldown(str(event.group_id))
         )
         if not acquired:
-            await matcher.finish(
-                tr(locale, "water.report.cooldown", seconds=remain_seconds)
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr(locale, "water.report.cooldown", seconds=remain_seconds),
+                source_kind="water_query",
             )
+            return
     if water_query_router.should_send_working(spec) and (
         spec.rank_spec is None
         or water_query_router.is_rank_period_allowed(
@@ -702,7 +722,13 @@ async def _(
                 task=task,
             ),
         )
-        await matcher.finish(message)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=message,
+            source_kind="water_query",
+        )
         return
     await handle_water_query(
         matcher,
@@ -730,7 +756,14 @@ async def _water_query_guided_step(
     await _abort_water_on_revoke(matcher, event, locale)
     text = guided_arg.extract_plain_text().strip()
     if water_query_router.is_guided_cancel(text):
-        await matcher.finish(water_query_router.build_guided_cancel_message(locale))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=water_query_router.build_guided_cancel_message(locale),
+            source_kind="water_query",
+        )
+        return
     draft = water_query_router.parse_rank_input(text)
 
     if draft.errors:
@@ -894,7 +927,13 @@ async def _water_query_guided_step(
             locale=locale,
         ),
     )
-    await matcher.finish(message)
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message=message,
+        source_kind="water_query",
+    )
 
 
 @water_profile.handle(
@@ -905,7 +944,15 @@ async def _water_query_guided_step(
 async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
-        await matcher.finish(tr(locale, "water.common.group_only"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "water.common.group_only"),
+            source_kind="water_query",
+        )
+        return
+    assert isinstance(event, GroupMessageEvent)
     message = await _run_water_query_long_task(
         bot,
         event,
@@ -919,14 +966,28 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
         ),
         build_message=lambda _task: build_my_water_profile_message(event, locale),
     )
-    await matcher.finish(message)
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message=message,
+        source_kind="water_query",
+    )
 
 
 @water_achievement.handle()
 async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
-        await matcher.finish(tr(locale, "water.common.group_only"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "water.common.group_only"),
+            source_kind="water_achievement",
+        )
+        return
+    assert isinstance(event, GroupMessageEvent)
     message = await _run_water_query_long_task(
         bot,
         event,
@@ -940,16 +1001,42 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
         ),
         build_message=lambda _task: build_my_achievements_message(event, locale),
     )
-    await matcher.finish(message)
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message=message,
+        source_kind="water_achievement",
+    )
 
 
 @water_merge.handle()
-async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) -> None:
+async def _(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     if not isinstance(event, GroupMessageEvent):
-        await matcher.finish(tr(locale, "water.common.group_only"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "water.common.group_only"),
+            source_kind="water_merge",
+        )
+        return
+    assert isinstance(event, GroupMessageEvent)
     if not is_group_admin_event(event):
-        await matcher.finish(tr(locale, "water.common.admin_confirm"))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "water.common.admin_confirm"),
+            source_kind="water_merge",
+        )
+        return
 
     choice = arg.extract_plain_text().strip().lower()
     handler: Callable[[WaterMergeContext], Awaitable[None]]
@@ -959,17 +1046,42 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
         case "no" | "拒绝":
             handler = handle_merge_no
         case _:
-            await matcher.finish(tr(locale, "water.common.merge_choice_invalid"))
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr(locale, "water.common.merge_choice_invalid"),
+                source_kind="water_merge",
+            )
+            return
 
-    await handler(WaterMergeContext(matcher=matcher, event=event, locale=locale))
+    await handler(
+        WaterMergeContext(
+            matcher=matcher,
+            event=event,
+            locale=locale,
+        )
+    )
 
 
 @water_admin.handle()
-async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) -> None:
+async def _(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     text = arg.extract_plain_text().strip()
     if not text:
-        await matcher.finish(water_help_message(locale))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=water_help_message(locale),
+            source_kind="water_admin",
+        )
+        return
 
     args = text.split()
     action = args[0].lower().removeprefix(".")
@@ -992,8 +1104,11 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
         case "season":
             handler = handle_season
         case _:
-            await matcher.finish(
-                _build_water_demo_message(
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_water_demo_message(
                     locale,
                     tr(
                         locale,
@@ -1003,12 +1118,14 @@ async def _(matcher: Matcher, event: MessageEvent, arg: Message = CommandArg()) 
                     ),
                     "admin-maintenance",
                     actor_permission=Permission.SUPERUSER,
-                )
+                ),
+                source_kind="water_admin",
             )
+            return
 
     await handler(
         WaterAdminContext(
-            bot=cast(Bot, getattr(matcher, "bot")),
+            bot=bot,
             event=event,
             matcher=matcher,
             args=args,

@@ -54,7 +54,7 @@ from src.lib.long_task import (
     MessageEventProgressSink,
 )
 from src.lib.message_delivery import resolve_notice_delivery_target
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan, finish_with_message
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -907,7 +907,13 @@ async def _(
                 )
                 await long_task.advance("submitting")
     except (RuleError, ValueError) as exc:
-        await matcher.finish(_study_error_message(exc, locale))
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=_study_error_message(exc, locale),
+            source_kind="study_command",
+        )
         return
     await _finalize_study_submission(
         matcher,

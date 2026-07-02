@@ -22,6 +22,7 @@ from src.lib.long_task import (
     LongTaskSpec,
     MessageEventProgressSink,
 )
+from src.lib.message_plan import finish_with_message
 from src.lib.plugin_docs import build_doc_demo_message
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
@@ -49,6 +50,16 @@ class WaterAdminContext:
     matcher: Matcher
     args: list[str]
     locale: LocaleCode
+
+
+async def _finish_admin(ctx: WaterAdminContext, message: Message | str) -> None:
+    await finish_with_message(
+        ctx.bot,
+        ctx.matcher,
+        event=ctx.event,
+        message=message,
+        source_kind="water_admin",
+    )
 
 
 def _build_error_demo(locale: LocaleCode, message: str) -> Message:
@@ -119,7 +130,7 @@ def format_settlement_message(result: SettlementResult, locale: LocaleCode) -> s
 
 
 async def handle_help(ctx: WaterAdminContext) -> None:
-    await ctx.matcher.finish(water_help_message(ctx.locale))
+    await _finish_admin(ctx, water_help_message(ctx.locale))
 
 
 async def handle_settle(ctx: WaterAdminContext) -> None:
@@ -133,30 +144,33 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
             force = True
             continue
         if date_arg is not None:
-            await ctx.matcher.finish(
+            await _finish_admin(
+                ctx,
                 _build_error_demo(
                     ctx.locale,
                     tr(ctx.locale, "water.admin.settle.args_multiple_date"),
-                )
+                ),
             )
         date_arg = arg
 
     if date_arg is not None:
         if len(date_arg) != 8 or not date_arg.isdigit():
-            await ctx.matcher.finish(
+            await _finish_admin(
+                ctx,
                 _build_error_demo(
                     ctx.locale,
                     tr(ctx.locale, "water.admin.settle.date_invalid"),
-                )
+                ),
             )
         try:
             target_day = arrow.get(date_arg, "YYYYMMDD")
         except ValueError:
-            await ctx.matcher.finish(
+            await _finish_admin(
+                ctx,
                 _build_error_demo(
                     ctx.locale,
                     tr(ctx.locale, "water.admin.settle.date_parse_failed"),
-                )
+                ),
             )
 
     async with LongTaskRunner(
@@ -175,62 +189,71 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
             target_day,
             force=force,
         )
-    await ctx.matcher.finish(format_settlement_message(result, ctx.locale))
+    await _finish_admin(ctx, format_settlement_message(result, ctx.locale))
 
 
 async def handle_pardon(ctx: WaterAdminContext) -> None:
     if len(ctx.args) < 2:
-        await ctx.matcher.finish(
-            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.pardon.missing"))
+        await _finish_admin(
+            ctx,
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.pardon.missing")),
         )
     penalty_id = ctx.args[1]
     if not penalty_id.isdigit():
-        await ctx.matcher.finish(
-            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.pardon.invalid"))
+        await _finish_admin(
+            ctx,
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.pardon.invalid")),
         )
 
     ok = await water_repo.pardon_penalty(int(penalty_id))
     if ok:
-        await ctx.matcher.finish(
-            tr(ctx.locale, "water.admin.pardon.success", penalty_id=penalty_id)
+        await _finish_admin(
+            ctx,
+            tr(ctx.locale, "water.admin.pardon.success", penalty_id=penalty_id),
         )
-    await ctx.matcher.finish(
-        tr(ctx.locale, "water.admin.pardon.failed", penalty_id=penalty_id)
+    await _finish_admin(
+        ctx,
+        tr(ctx.locale, "water.admin.pardon.failed", penalty_id=penalty_id),
     )
 
 
 async def handle_ignore(ctx: WaterAdminContext) -> None:
     if len(ctx.args) < 2:
-        await ctx.matcher.finish(
-            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.ignore.missing"))
+        await _finish_admin(
+            ctx,
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.ignore.missing")),
         )
     group_id = ctx.args[1]
     if not group_id.isdigit():
-        await ctx.matcher.finish(
-            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.ignore.invalid"))
+        await _finish_admin(
+            ctx,
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.ignore.invalid")),
         )
 
     ok = await water_repo.ignore_matrix_suggestion(group_id)
     if ok:
-        await ctx.matcher.finish(
-            tr(ctx.locale, "water.admin.ignore.success", group_id=group_id)
+        await _finish_admin(
+            ctx,
+            tr(ctx.locale, "water.admin.ignore.success", group_id=group_id),
         )
-    await ctx.matcher.finish(
-        tr(ctx.locale, "water.admin.ignore.unchanged", group_id=group_id)
+    await _finish_admin(
+        ctx,
+        tr(ctx.locale, "water.admin.ignore.unchanged", group_id=group_id),
     )
 
 
 async def handle_ignored(ctx: WaterAdminContext) -> None:
     ignored = sorted(await water_repo.get_ignored_matrix_suggestions())
     if not ignored:
-        await ctx.matcher.finish(tr(ctx.locale, "water.admin.ignored.empty"))
-    await ctx.matcher.finish(
+        await _finish_admin(ctx, tr(ctx.locale, "water.admin.ignored.empty"))
+    await _finish_admin(
+        ctx,
         tr(
             ctx.locale,
             "water.admin.ignored.list",
             count=len(ignored),
             items="\n".join(f"- {gid}" for gid in ignored),
-        )
+        ),
     )
 
 
@@ -248,7 +271,8 @@ async def handle_state(ctx: WaterAdminContext) -> None:
         if finished_at > 0
         else "-"
     )
-    await ctx.matcher.finish(
+    await _finish_admin(
+        ctx,
         tr(
             ctx.locale,
             "water.admin.state",
@@ -259,33 +283,36 @@ async def handle_state(ctx: WaterAdminContext) -> None:
             latest_finished_at=finished_text,
             ignored_count=state["ignored_count"],
             query_time=arrow.get(get_current_time()).format("YYYY-MM-DD HH:mm:ss"),
-        )
+        ),
     )
 
 
 async def handle_season(ctx: WaterAdminContext) -> None:
     if len(ctx.args) < 2:
-        await ctx.matcher.finish(
-            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.season.usage"))
+        return await _finish_admin(
+            ctx,
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.season.usage")),
         )
     action = ctx.args[1].lower()
     if action == "create":
         if len(ctx.args) < 6:
-            await ctx.matcher.finish(
+            return await _finish_admin(
+                ctx,
                 _build_error_demo(
                     ctx.locale,
                     tr(ctx.locale, "water.admin.season.create.usage"),
-                )
+                ),
             )
         season_id = ctx.args[2]
         start_date = ctx.args[3]
         end_date = ctx.args[4]
         if not (start_date.isdigit() and end_date.isdigit()):
-            await ctx.matcher.finish(
+            return await _finish_admin(
+                ctx,
                 _build_error_demo(
                     ctx.locale,
                     tr(ctx.locale, "water.admin.season.date_invalid"),
-                )
+                ),
             )
         name = " ".join(ctx.args[5:]).strip()
         try:
@@ -298,8 +325,9 @@ async def handle_season(ctx: WaterAdminContext) -> None:
                 )
             )
         except SeasonServiceError as exc:
-            await ctx.matcher.finish(tr(ctx.locale, exc.key, **exc.params))
-        await ctx.matcher.finish(
+            return await _finish_admin(ctx, tr(ctx.locale, exc.key, **exc.params))
+        return await _finish_admin(
+            ctx,
             tr(
                 ctx.locale,
                 "water.admin.season.created",
@@ -307,61 +335,67 @@ async def handle_season(ctx: WaterAdminContext) -> None:
                 name=season.name,
                 start_date=season.start_date,
                 end_date=season.end_date,
-            )
+            ),
         )
     if action == "publish":
         if len(ctx.args) < 3:
-            await ctx.matcher.finish(
+            return await _finish_admin(
+                ctx,
                 _build_error_demo(
                     ctx.locale,
                     tr(ctx.locale, "water.admin.season.publish.usage"),
-                )
+                ),
             )
         try:
             season = await season_service.publish(ctx.args[2])
         except SeasonServiceError as exc:
-            await ctx.matcher.finish(tr(ctx.locale, exc.key, **exc.params))
-        await ctx.matcher.finish(
+            return await _finish_admin(ctx, tr(ctx.locale, exc.key, **exc.params))
+        return await _finish_admin(
+            ctx,
             tr(
                 ctx.locale,
                 "water.admin.season.published",
                 season_id=season.season_id,
                 name=season.name,
-            )
+            ),
         )
     if action == "archive":
         if len(ctx.args) < 3:
-            await ctx.matcher.finish(
+            return await _finish_admin(
+                ctx,
                 _build_error_demo(
                     ctx.locale,
                     tr(ctx.locale, "water.admin.season.archive.usage"),
-                )
+                ),
             )
         try:
             season = await season_service.archive(ctx.args[2])
         except SeasonServiceError as exc:
-            await ctx.matcher.finish(tr(ctx.locale, exc.key, **exc.params))
-        await ctx.matcher.finish(
+            return await _finish_admin(ctx, tr(ctx.locale, exc.key, **exc.params))
+        return await _finish_admin(
+            ctx,
             tr(
                 ctx.locale,
                 "water.admin.season.archived",
                 season_id=season.season_id,
                 name=season.name,
-            )
+            ),
         )
     if action == "show":
         if len(ctx.args) < 3:
-            await ctx.matcher.finish(
+            return await _finish_admin(
+                ctx,
                 _build_error_demo(
                     ctx.locale,
                     tr(ctx.locale, "water.admin.season.show.usage"),
-                )
+                ),
             )
         try:
             season = await season_service.require(ctx.args[2])
         except SeasonServiceError as exc:
-            await ctx.matcher.finish(tr(ctx.locale, exc.key, **exc.params))
-        await ctx.matcher.finish(
+            return await _finish_admin(ctx, tr(ctx.locale, exc.key, **exc.params))
+        return await _finish_admin(
+            ctx,
             tr(
                 ctx.locale,
                 "water.admin.season.show",
@@ -371,18 +405,19 @@ async def handle_season(ctx: WaterAdminContext) -> None:
                 start_date=season.start_date,
                 end_date=season.end_date,
                 description=season.description or "-",
-            )
+            ),
         )
     if action == "list":
         filter_arg = ctx.args[2].lower() if len(ctx.args) >= 3 else ""
         if filter_arg == "current":
             seasons = await season_service.list_current()
-            await ctx.matcher.finish(
+            return await _finish_admin(
+                ctx,
                 render_season_list(
                     tr(ctx.locale, "water.query.season_list.admin.current"),
                     seasons,
                     ctx.locale,
-                )
+                ),
             )
         statuses: list[SeasonStatus] | None = None
         if filter_arg == "published":
@@ -392,26 +427,29 @@ async def handle_season(ctx: WaterAdminContext) -> None:
         elif filter_arg == "draft":
             statuses = ["draft"]
         seasons = await season_service.list(statuses)
-        await ctx.matcher.finish(
+        return await _finish_admin(
+            ctx,
             render_season_list(
                 tr(ctx.locale, "water.query.season_list.admin.all"),
                 seasons,
                 ctx.locale,
-            )
+            ),
         )
     if action == "delete":
         if len(ctx.args) < 3:
-            await ctx.matcher.finish(
+            return await _finish_admin(
+                ctx,
                 _build_error_demo(
                     ctx.locale,
                     tr(ctx.locale, "water.admin.season.delete.usage"),
-                )
+                ),
             )
         try:
             ok = await season_service.delete_draft(ctx.args[2])
         except SeasonServiceError as exc:
-            await ctx.matcher.finish(tr(ctx.locale, exc.key, **exc.params))
-        await ctx.matcher.finish(
+            return await _finish_admin(ctx, tr(ctx.locale, exc.key, **exc.params))
+        return await _finish_admin(
+            ctx,
             tr(
                 ctx.locale,
                 (
@@ -419,11 +457,12 @@ async def handle_season(ctx: WaterAdminContext) -> None:
                     if ok
                     else "water.admin.season.delete.result.failed"
                 ),
-            )
+            ),
         )
-    await ctx.matcher.finish(
+    return await _finish_admin(
+        ctx,
         _build_error_demo(
             ctx.locale,
             tr(ctx.locale, "water.admin.season.unknown", action=action),
-        )
+        ),
     )
