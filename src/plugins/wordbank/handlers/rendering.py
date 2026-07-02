@@ -8,7 +8,7 @@ from dataclasses import replace
 import math
 from typing import Any, cast
 
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Message
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -20,7 +20,7 @@ from src.lib.message_plan import (
     TextBlock,
     render_message_plan_entry,
 )
-from src.lib.messages import image_message, text_message
+from src.lib.messages import image_message
 from src.lib.utils.img import QQAvatar
 from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
 from src.plugins.wordbank.debug import log_perf, perf_start
@@ -112,51 +112,80 @@ async def render_search_items_text_message(
     limit: int = 10,
     has_more: bool = False,
 ) -> Message:
-    if not items:
-        return text_message(tr(locale, "wordbank.search.empty", page=page))
+    return render_message_plan_entry(
+        await build_search_items_text_plan_entry(
+            items=items,
+            locale=locale,
+            media_service=media_service,
+            page=page,
+            limit=limit,
+            has_more=has_more,
+        )
+    )
 
-    message = text_message(tr(locale, "wordbank.search.title", page=page))
+
+async def build_search_items_text_plan_entry(
+    *,
+    items: tuple[WordbankSearchItem, ...] | list[WordbankSearchItem],
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+    page: int = 1,
+    limit: int = 10,
+    has_more: bool = False,
+) -> MessagePlanEntry:
+    if not items:
+        return MessagePlanEntry(
+            blocks=(TextBlock(tr(locale, "wordbank.search.empty", page=page)),)
+        )
+
+    blocks: list[MessagePlanBlock] = [
+        TextBlock(tr(locale, "wordbank.search.title", page=page))
+    ]
     for item in items:
         response_preview = " / ".join(item.response_summaries[:3]) or item.response_text
         if item.has_more_responses:
             response_preview = f"{response_preview} (+{item.remaining_response_count})"
-        message += MessageSegment.text(
-            "\n"
-            + tr(
-                locale,
-                "wordbank.search.item",
-                entry_id=item.trigger_group_id,
-                status=item.status,
-                scope=item.scope,
-                trigger_text=item.trigger_text,
-                response_text=response_preview,
+        blocks.append(
+            TextBlock(
+                "\n"
+                + tr(
+                    locale,
+                    "wordbank.search.item",
+                    entry_id=item.trigger_group_id,
+                    status=item.status,
+                    scope=item.scope,
+                    trigger_text=item.trigger_text,
+                    response_text=response_preview,
+                )
             )
         )
-        if _has_non_text_shape(item.trigger_shape):
-            assert item.trigger_shape is not None
-            message += MessageSegment.text(
-                "\n" + tr(locale, "wordbank.group.trigger_label") + "\n"
-            )
-            message += await render_shape_message(
-                item.trigger_shape,
-                media_service,
-                locale=locale,
-            )
-        if _has_non_text_shape(item.response_shape):
-            assert item.response_shape is not None
-            message += MessageSegment.text(
-                "\n" + tr(locale, "wordbank.approval.response_label") + "\n"
-            )
-            message += await render_shape_message(
-                item.response_shape,
-                media_service,
-                locale=locale,
-            )
+        await _append_labeled_shape_blocks(
+            blocks,
+            shape=item.trigger_shape,
+            media_service=media_service,
+            locale=locale,
+            label=tr(locale, "wordbank.group.trigger_label"),
+        )
+        await _append_labeled_shape_blocks(
+            blocks,
+            shape=item.response_shape,
+            media_service=media_service,
+            locale=locale,
+            label=tr(locale, "wordbank.approval.response_label"),
+        )
     if has_more:
-        message += MessageSegment.text(
-            "\n" + tr(locale, "wordbank.search.more", next_page=page + 1, limit=limit)
+        blocks.append(
+            TextBlock(
+                "\n"
+                + tr(
+                    locale,
+                    "wordbank.search.more",
+                    next_page=page + 1,
+                    limit=limit,
+                )
+            )
         )
-    return message
+    return MessagePlanEntry(blocks=tuple(blocks))
 
 
 async def render_pending_items_message(
@@ -168,59 +197,84 @@ async def render_pending_items_message(
     limit: int = 10,
     has_more: bool = False,
 ) -> Message:
-    if not items:
-        return text_message(tr(locale, "wordbank.approval.pending_empty", page=page))
+    return render_message_plan_entry(
+        await build_pending_items_plan_entry(
+            items=items,
+            locale=locale,
+            media_service=media_service,
+            page=page,
+            limit=limit,
+            has_more=has_more,
+        )
+    )
 
-    message = text_message(tr(locale, "wordbank.approval.pending_title", page=page))
+
+async def build_pending_items_plan_entry(
+    *,
+    items: tuple[WordbankSearchItem, ...] | list[WordbankSearchItem],
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+    page: int = 1,
+    limit: int = 10,
+    has_more: bool = False,
+) -> MessagePlanEntry:
+    if not items:
+        return MessagePlanEntry(
+            blocks=(
+                TextBlock(tr(locale, "wordbank.approval.pending_empty", page=page)),
+            )
+        )
+
+    blocks: list[MessagePlanBlock] = [
+        TextBlock(tr(locale, "wordbank.approval.pending_title", page=page))
+    ]
     for item in items:
         response_item_id = (
             item.response_item_ids[0]
             if item.response_item_ids
             else item.trigger_group_id
         )
-        message += MessageSegment.text(
-            "\n"
-            + tr(
-                locale,
-                "wordbank.approval.pending_item",
-                entry_id=response_item_id,
-                scope=item.scope,
-                trigger_text=item.trigger_text,
-                response_text=item.response_text,
-                created_by=item.created_by,
+        blocks.append(
+            TextBlock(
+                "\n"
+                + tr(
+                    locale,
+                    "wordbank.approval.pending_item",
+                    entry_id=response_item_id,
+                    scope=item.scope,
+                    trigger_text=item.trigger_text,
+                    response_text=item.response_text,
+                    created_by=item.created_by,
+                )
             )
         )
-        if _has_non_text_shape(item.trigger_shape):
-            assert item.trigger_shape is not None
-            message += MessageSegment.text(
-                "\n" + tr(locale, "wordbank.group.trigger_label") + "\n"
-            )
-            message += await render_shape_message(
-                item.trigger_shape,
-                media_service,
-                locale=locale,
-            )
-        if _has_non_text_shape(item.response_shape):
-            assert item.response_shape is not None
-            message += MessageSegment.text(
-                "\n" + tr(locale, "wordbank.approval.response_label") + "\n"
-            )
-            message += await render_shape_message(
-                item.response_shape,
-                media_service,
-                locale=locale,
-            )
+        await _append_labeled_shape_blocks(
+            blocks,
+            shape=item.trigger_shape,
+            media_service=media_service,
+            locale=locale,
+            label=tr(locale, "wordbank.group.trigger_label"),
+        )
+        await _append_labeled_shape_blocks(
+            blocks,
+            shape=item.response_shape,
+            media_service=media_service,
+            locale=locale,
+            label=tr(locale, "wordbank.approval.response_label"),
+        )
     if has_more:
-        message += MessageSegment.text(
-            "\n"
-            + tr(
-                locale,
-                "wordbank.approval.pending_more",
-                next_page=page + 1,
-                limit=limit,
+        blocks.append(
+            TextBlock(
+                "\n"
+                + tr(
+                    locale,
+                    "wordbank.approval.pending_more",
+                    next_page=page + 1,
+                    limit=limit,
+                )
             )
         )
-    return message
+    return MessagePlanEntry(blocks=tuple(blocks))
 
 
 async def render_reply_detail_message(
@@ -231,44 +285,71 @@ async def render_reply_detail_message(
     message_id: str,
     message_type: str,
 ) -> Message:
-    selected = detail.selected_response
-    if selected is None:
-        return text_message(tr(locale, "wordbank.reply.entry_not_found", entry_id=0))
-
-    message = text_message(
-        tr(
-            locale,
-            "wordbank.reply.info_header",
-            entry_id=selected.response_item_id,
-            status=selected.status,
-            enabled=_format_enabled(selected.enabled, locale),
-            deleted_at=str(selected.deleted_at) if selected.deleted_at else "0",
-            scope=selected.scope,
-            group_id=selected.group_id or "-",
-            created_by=selected.created_by,
-            probability=f"{detail.probability:g}",
-            weight=selected.weight,
+    return render_message_plan_entry(
+        await build_reply_detail_plan_entry(
+            detail=detail,
+            locale=locale,
+            media_service=media_service,
             message_id=message_id,
             message_type=message_type,
         )
     )
-    message += MessageSegment.text(
-        "\n" + tr(locale, "wordbank.group.trigger_label") + "\n"
-    )
-    message += await render_shape_message(
-        detail.trigger_shape,
-        media_service,
+
+
+async def build_reply_detail_plan_entry(
+    *,
+    detail: WordbankGroupDetail,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+    message_id: str,
+    message_type: str,
+) -> MessagePlanEntry:
+    selected = detail.selected_response
+    if selected is None:
+        return MessagePlanEntry(
+            blocks=(
+                TextBlock(tr(locale, "wordbank.reply.entry_not_found", entry_id=0)),
+            )
+        )
+
+    blocks: list[MessagePlanBlock] = [
+        TextBlock(
+            tr(
+                locale,
+                "wordbank.reply.info_header",
+                entry_id=selected.response_item_id,
+                status=selected.status,
+                enabled=_format_enabled(selected.enabled, locale),
+                deleted_at=str(selected.deleted_at) if selected.deleted_at else "0",
+                scope=selected.scope,
+                group_id=selected.group_id or "-",
+                created_by=selected.created_by,
+                probability=f"{detail.probability:g}",
+                weight=selected.weight,
+                message_id=message_id,
+                message_type=message_type,
+            )
+        )
+    ]
+    await _append_labeled_shape_blocks(
+        blocks,
+        shape=detail.trigger_shape,
+        media_service=media_service,
         locale=locale,
+        label=tr(locale, "wordbank.group.trigger_label"),
+        prefix="\n",
+        include_text_only=True,
     )
-    message += MessageSegment.text(
-        "\n" + tr(locale, "wordbank.approval.response_label") + "\n"
-    )
-    message += await render_shape_message(
-        selected.response_shape,
-        media_service,
+    await _append_labeled_shape_blocks(
+        blocks,
+        shape=selected.response_shape,
+        media_service=media_service,
         locale=locale,
+        label=tr(locale, "wordbank.approval.response_label"),
+        prefix="\n",
+        include_text_only=True,
     )
-    return message
+    return MessagePlanEntry(blocks=tuple(blocks))
 
 
 def _has_non_text_shape(shape: MessageShape | None) -> bool:
@@ -351,68 +432,105 @@ async def render_group_detail_page_message(
             page=page,
             total_pages=total_pages,
         )
+    return (
+        render_message_plan_entry(
+            await build_group_detail_page_plan_entry(
+                detail=detail,
+                page=page,
+                total_pages=total_pages,
+                locale=locale,
+                media_service=media_service,
+                page_size=page_size,
+            )
+        ),
+        total_pages,
+    )
 
-    message = text_message(
-        tr(
-            locale,
-            "wordbank.group.page_header",
-            group_id=detail.trigger_group_id,
-            status=detail.status,
-            created_by=detail.created_by,
-            probability=f"{detail.probability:g}",
-            response_count=len(detail.responses),
-            active_response_count=sum(
-                1
-                for item in detail.responses
-                if (
-                    item.status == "approved"
-                    and item.enabled == 1
-                    and item.deleted_at == 0
-                )
-            ),
-            page=page,
-            total_pages=total_pages,
+
+async def build_group_detail_page_plan_entry(
+    *,
+    detail: WordbankGroupDetail,
+    page: int,
+    total_pages: int,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+    page_size: int = GROUP_PAGE_SIZE,
+) -> MessagePlanEntry:
+    start = (page - 1) * page_size
+    end = start + page_size
+    responses = detail.responses[start:end]
+    blocks: list[MessagePlanBlock] = [
+        TextBlock(
+            tr(
+                locale,
+                "wordbank.group.page_header",
+                group_id=detail.trigger_group_id,
+                status=detail.status,
+                created_by=detail.created_by,
+                probability=f"{detail.probability:g}",
+                response_count=len(detail.responses),
+                active_response_count=sum(
+                    1
+                    for item in detail.responses
+                    if (
+                        item.status == "approved"
+                        and item.enabled == 1
+                        and item.deleted_at == 0
+                    )
+                ),
+                page=page,
+                total_pages=total_pages,
+            )
         )
-    )
-    message += MessageSegment.text(
-        "\n" + tr(locale, "wordbank.group.trigger_label") + "\n"
-    )
-    message += await render_shape_message(
-        detail.trigger_shape,
-        media_service,
+    ]
+    await _append_labeled_shape_blocks(
+        blocks,
+        shape=detail.trigger_shape,
+        media_service=media_service,
         locale=locale,
+        label=tr(locale, "wordbank.group.trigger_label"),
+        prefix="\n",
+        include_text_only=True,
     )
     for response in responses:
-        message += MessageSegment.text(
-            "\n\n"
-            + tr(
-                locale,
-                "wordbank.group.response_header",
-                response_item_id=response.response_item_id,
-                status=response.status,
-                enabled=_format_enabled(response.enabled, locale),
-                scope=response.scope,
-                weight=response.weight,
-                rule=_format_rule_text(response.rule),
+        blocks.append(
+            TextBlock(
+                "\n\n"
+                + tr(
+                    locale,
+                    "wordbank.group.response_header",
+                    response_item_id=response.response_item_id,
+                    status=response.status,
+                    enabled=_format_enabled(response.enabled, locale),
+                    scope=response.scope,
+                    weight=response.weight,
+                    rule=_format_rule_text(response.rule),
+                )
+                + "\n"
             )
-            + "\n"
         )
-        message += await render_shape_message(
-            response.response_shape,
-            media_service,
-            locale=locale,
+        blocks.extend(
+            (
+                await build_shape_plan_entry(
+                    response.response_shape,
+                    media_service,
+                    locale=locale,
+                )
+            ).blocks
         )
     if page < total_pages:
-        message += MessageSegment.text(
-            "\n\n"
-            + tr(
-                locale,
-                "wordbank.group.page_more",
-                next_page=page + 1,
-                group_id=detail.trigger_group_id,
+        blocks.append(
+            TextBlock(
+                "\n\n"
+                + tr(
+                    locale,
+                    "wordbank.group.page_more",
+                    next_page=page + 1,
+                    group_id=detail.trigger_group_id,
+                )
             )
         )
-    return message, total_pages
+    return MessagePlanEntry(blocks=tuple(blocks))
 
 
 async def render_creator_leaderboard_card_message(
@@ -440,6 +558,32 @@ async def render_creator_leaderboard_card_message(
         locale=locale,
     )
     return image_message(image_bytes)
+
+
+async def _append_labeled_shape_blocks(
+    blocks: list[MessagePlanBlock],
+    *,
+    shape: MessageShape | None,
+    media_service: WordbankMediaService,
+    locale: LocaleCode,
+    label: str,
+    prefix: str = "",
+    include_text_only: bool = False,
+) -> None:
+    if shape is None or shape.is_empty():
+        return
+    if not include_text_only and not _has_non_text_shape(shape):
+        return
+    blocks.append(TextBlock(f"{prefix}{label}\n"))
+    blocks.extend(
+        (
+            await build_shape_plan_entry(
+                shape,
+                media_service,
+                locale=locale,
+            )
+        ).blocks
+    )
 
 
 def _format_enabled(enabled: int, locale: LocaleCode) -> str:
