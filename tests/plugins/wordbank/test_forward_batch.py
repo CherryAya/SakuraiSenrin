@@ -84,6 +84,39 @@ async def test_build_forward_batch_payload_fetches_forward_msg_content() -> None
 
 
 @pytest.mark.asyncio
+async def test_build_forward_batch_payload_falls_back_to_int_message_id() -> None:
+    call_api = AsyncMock(
+        side_effect=[
+            RuntimeError("string id failed"),
+            {
+                "messages": [
+                    Message([MessageSegment.text("第一条")]),
+                    Message([MessageSegment.text("第二条")]),
+                ]
+            },
+        ]
+    )
+    bot = cast(Bot, SimpleNamespace(call_api=call_api))
+    event = build_group_message_event("", message_id=1)
+    event.message = Message([MessageSegment.forward("7657605421581295285")])
+
+    payload = await build_forward_batch_payload(
+        bot,
+        event,
+        media_service=SimpleNamespace(),
+    )
+
+    assert call_api.await_args_list[0].kwargs == {
+        "message_id": "7657605421581295285",
+    }
+    assert call_api.await_args_list[1].kwargs == {
+        "message_id": 7657605421581295285,
+    }
+    assert payload.source_message_id == "7657605421581295285"
+    assert payload.node_count == 2
+
+
+@pytest.mark.asyncio
 async def test_build_forward_batch_payload_accepts_nested_onebot_nodes() -> None:
     call_api = AsyncMock(
         return_value={

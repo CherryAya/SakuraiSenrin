@@ -306,7 +306,10 @@ async def _collect_forward_messages_from_source_message_id(
             key="wordbank.error.forward_message_too_deep",
             limit=max_depth,
         )
-    detail = await bot.call_api("get_forward_msg", message_id=source_message_id)
+    detail = await _fetch_forward_message_detail(
+        bot,
+        source_message_id=source_message_id,
+    )
     raw_items = _extract_forward_raw_items(detail)
     logger.debug(
         "[Wordbank][forward] payload fetch | "
@@ -343,6 +346,61 @@ async def _collect_forward_messages_from_source_message_id(
             key="wordbank.error.forward_message_empty",
         )
     return tuple(messages)
+
+
+async def _fetch_forward_message_detail(
+    bot: Bot,
+    *,
+    source_message_id: str,
+) -> Any:
+    candidates = _build_forward_message_id_candidates(source_message_id)
+    last_exc: Exception | None = None
+    for index, candidate in enumerate(candidates, start=1):
+        try:
+            detail = await bot.call_api("get_forward_msg", message_id=candidate)
+        except Exception as exc:  # pragma: no cover - adapter specific
+            last_exc = exc
+            logger.debug(
+                "[Wordbank][forward] payload fetch failed | "
+                f"source_message_id={source_message_id} "
+                f"candidate={candidate!r} candidate_type={type(candidate).__name__} "
+                f"attempt={index}/{len(candidates)} exc_type={type(exc).__name__} "
+                f"exc={exc}"
+            )
+            continue
+        if index > 1:
+            logger.debug(
+                "[Wordbank][forward] payload fetch fallback succeeded | "
+                f"source_message_id={source_message_id} "
+                f"candidate={candidate!r} candidate_type={type(candidate).__name__}"
+            )
+        return detail
+    if last_exc is not None:
+        raise last_exc
+    raise WordbankUserError(
+        tr("zh-CN", "wordbank.error.forward_message_not_found"),
+        key="wordbank.error.forward_message_not_found",
+    )
+
+
+def _build_forward_message_id_candidates(
+    source_message_id: str,
+) -> tuple[str | int, ...]:
+    candidates: list[str | int] = [source_message_id]
+    numeric_id = _parse_forward_source_message_id_as_int(source_message_id)
+    if numeric_id is not None:
+        candidates.append(numeric_id)
+    return tuple(candidates)
+
+
+def _parse_forward_source_message_id_as_int(source_message_id: str) -> int | None:
+    normalized = source_message_id.strip()
+    if not normalized.isdigit():
+        return None
+    try:
+        return int(normalized)
+    except ValueError:
+        return None
 
 
 async def _flatten_forward_message(
