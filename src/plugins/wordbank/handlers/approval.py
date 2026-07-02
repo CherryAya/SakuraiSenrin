@@ -35,6 +35,7 @@ from src.plugins.wordbank.services.core import (
     WordbankService,
 )
 from src.plugins.wordbank.services.media import WordbankMediaService
+from src.plugins.wordbank.services.presentation import WordbankBatchAddResult
 
 from .rendering import build_shape_plan_entry
 
@@ -84,6 +85,38 @@ def format_pending_approval_notice(
     )
 
 
+def format_pending_batch_approval_notice(
+    batch: WordbankBatchAddResult,
+    *,
+    event: MessageEvent,
+    locale: LocaleCode,
+) -> str:
+    pending_results = _pending_results(batch)
+    lines = [
+        tr(locale, "wordbank.approval.pending_title", page=1),
+        tr(locale, "wordbank.approval.pending_batch_instruction"),
+    ]
+    for index, result in enumerate(pending_results, start=1):
+        lines.append(
+            tr(
+                locale,
+                "wordbank.approval.pending_item",
+                entry_id=result.response_item_id,
+                scope=result.scope,
+                trigger_text=format_response_summary(
+                    result.trigger_text,
+                    shape=result.trigger_shape,
+                ),
+                response_text=format_response_summary(
+                    result.response_text,
+                    shape=result.response_shape,
+                ),
+                created_by=str(event.user_id),
+            )
+        )
+    return "\n".join(lines)
+
+
 async def build_add_result_message(
     result: WordbankAddResult,
     *,
@@ -131,6 +164,21 @@ async def build_pending_approval_notice_message(
     )
 
 
+async def build_pending_batch_approval_notice_message(
+    batch: WordbankBatchAddResult,
+    *,
+    event: MessageEvent,
+    locale: LocaleCode,
+) -> Message:
+    return render_message_plan_entry(
+        build_pending_batch_approval_notice_plan_entry(
+            batch,
+            event=event,
+            locale=locale,
+        )
+    )
+
+
 async def build_pending_approval_notice_plan_entry(
     result: WordbankAddResult,
     *,
@@ -144,6 +192,25 @@ async def build_pending_approval_notice_plan_entry(
         text=text,
         locale=locale,
         media_service=media_service,
+    )
+
+
+def build_pending_batch_approval_notice_plan_entry(
+    batch: WordbankBatchAddResult,
+    *,
+    event: MessageEvent,
+    locale: LocaleCode,
+) -> MessagePlanEntry:
+    return MessagePlanEntry(
+        blocks=(
+            TextBlock(
+                format_pending_batch_approval_notice(
+                    batch,
+                    event=event,
+                    locale=locale,
+                )
+            ),
+        )
     )
 
 
@@ -237,6 +304,14 @@ def _embed_rendered_shapes(
             continue
         blocks.extend(field.rendered_entry.blocks)
     return MessagePlanEntry(blocks=tuple(blocks))
+
+
+def _pending_results(batch: WordbankBatchAddResult) -> tuple[WordbankAddResult, ...]:
+    return tuple(
+        item.result
+        for item in batch.items
+        if item.ok and item.result is not None and item.result.status == "pending"
+    )
 
 
 async def send_pending_approval_notice(
@@ -346,6 +421,129 @@ def schedule_pending_approval_notice(
     task.add_done_callback(_background_tasks.discard)
 
 
+async def send_pending_batch_approval_notice(
+    bot: Bot,
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    batch: WordbankBatchAddResult,
+    locale: LocaleCode,
+    media_service: WordbankMediaService | None = None,
+) -> None:
+    _ = media_service
+    pending_results = _pending_results(batch)
+    if not pending_results:
+        return
+
+    message = await build_pending_batch_approval_notice_message(
+        batch,
+        event=event,
+        locale=locale,
+    )
+    source_message_id = str(getattr(event, "message_id", "") or "")
+    group_id = str(getattr(event, "group_id", "") or "")
+    user_id = str(event.user_id)
+    response_item_ids = tuple(result.response_item_id for result in pending_results)
+    first_result = pending_results[0]
+
+    await asyncio.gather(
+        *(
+            _send_single_pending_batch_approval_notice(
+                bot,
+                service,
+                superuser_id=superuser_id,
+                message=message,
+                first_result=first_result,
+                response_item_ids=response_item_ids,
+                group_id=group_id,
+                user_id=user_id,
+                source_message_id=source_message_id,
+            )
+            for superuser_id in config.SUPERUSERS
+        )
+    )
+
+
+async def _send_single_pending_batch_approval_notice(
+    bot: Bot,
+    service: WordbankService,
+    *,
+    superuser_id: str,
+    message: MessagePlanInput,
+    first_result: WordbankAddResult,
+    response_item_ids: tuple[int, ...],
+    group_id: str,
+    user_id: str,
+    source_message_id: str,
+) -> None:
+    try:
+        plan_result = await deliver_message_plan(
+            bot,
+            plan=DeliveryPlan(
+                messages=(message,),
+                source_kind="wordbank_pending_approval_notice",
+            ),
+            target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
+        )
+        send_result = plan_result.results[0]
+        message_id = extract_sent_message_id(send_result)
+        if message_id is None:
+            return
+        await service.record_message_ref(
+            ref_kind="approval",
+            message_id=message_id,
+            trigger_group_id=first_result.trigger_group_id,
+            response_item_id=first_result.response_item_id,
+            group_id=group_id,
+            user_id=user_id,
+            source_message_id=source_message_id,
+            context_type="pending_batch",
+            message_type="approval_batch",
+            group_ids=response_item_ids,
+        )
+    except Exception as exc:
+        logger.warning(
+            f"[Wordbank] batch approval notice skipped for {superuser_id}: {exc}"
+        )
+
+
+def schedule_submission_approval_notice(
+    bot: Bot,
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    submission: WordbankAddResult | WordbankBatchAddResult,
+    locale: LocaleCode,
+    media_service: WordbankMediaService | None = None,
+) -> None:
+    if isinstance(submission, WordbankAddResult):
+        schedule_pending_approval_notice(
+            bot,
+            service,
+            event=event,
+            result=submission,
+            locale=locale,
+            media_service=media_service,
+        )
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    task = loop.create_task(
+        send_pending_batch_approval_notice(
+            bot,
+            service,
+            event=event,
+            batch=submission,
+            locale=locale,
+            media_service=media_service,
+        )
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
 async def record_submission_approval_message(
     service: WordbankService,
     *,
@@ -373,3 +571,36 @@ async def record_submission_approval_message(
         )
     except Exception as exc:
         logger.warning(f"[Wordbank] submission approval record skipped: {exc}")
+
+
+async def record_batch_submission_approval_message(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    batch: WordbankBatchAddResult,
+    send_result: Any,
+) -> None:
+    pending_results = _pending_results(batch)
+    if not pending_results:
+        return
+
+    message_id = extract_sent_message_id(send_result)
+    if message_id is None:
+        return
+
+    first_result = pending_results[0]
+    try:
+        await service.record_message_ref(
+            ref_kind="approval",
+            message_id=message_id,
+            trigger_group_id=first_result.trigger_group_id,
+            response_item_id=first_result.response_item_id,
+            group_id=str(getattr(event, "group_id", "") or ""),
+            user_id=str(event.user_id),
+            source_message_id=str(getattr(event, "message_id", "") or ""),
+            context_type="pending_batch",
+            message_type="submission_batch",
+            group_ids=tuple(result.response_item_id for result in pending_results),
+        )
+    except Exception as exc:
+        logger.warning(f"[Wordbank] batch submission approval record skipped: {exc}")

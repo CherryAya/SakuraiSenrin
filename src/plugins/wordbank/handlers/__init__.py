@@ -4,10 +4,14 @@ from .approval import (
     APPROVAL_REPLY_ALIASES,
     build_add_result_message,
     build_pending_approval_notice_message,
+    build_pending_batch_approval_notice_message,
     extract_sent_message_id,
+    record_batch_submission_approval_message,
     record_submission_approval_message,
     schedule_pending_approval_notice,
+    schedule_submission_approval_notice,
     send_pending_approval_notice,
+    send_pending_batch_approval_notice,
 )
 from .commands import (
     GROUP_ALIASES,
@@ -55,6 +59,7 @@ from .reply import (
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
 )
+from .submission import finalize_submission
 
 __all__ = [
     "APPROVAL_REPLY_ALIASES",
@@ -67,11 +72,13 @@ __all__ = [
     "build_group_detail_message",
     "build_message_shape_from_message",
     "build_pending_approval_notice_message",
+    "build_pending_batch_approval_notice_message",
     "dispatch_wordbank_command",
     "extract_image_urls",
     "extract_sent_message_id",
     "fetch_first_image_bytes_from_message",
     "fetch_image_bytes_from_message",
+    "finalize_submission",
     "handle_add_text_result",
     "handle_add_with_media",
     "handle_add_with_media_result",
@@ -100,8 +107,11 @@ __all__ = [
     "parse_search_session_command",
     "parse_view_reply_for_group_detail",
     "parse_view_reply_for_search_result",
+    "record_batch_submission_approval_message",
     "record_submission_approval_message",
     "schedule_pending_approval_notice",
+    "schedule_submission_approval_notice",
     "send_pending_approval_notice",
+    "send_pending_batch_approval_notice",
     "wordbank_help_text",
 ]

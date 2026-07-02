@@ -89,7 +89,7 @@ def register_wordbank_command_handlers(
     wordbank_restore_command: Any,
     initialize_plugin: Callable[[], Awaitable[None]],
     build_error_message: ErrorBuilder,
-    finish_add_result: Callable[
+    finalize_submission: Callable[
         [Matcher, Bot, MessageEvent, Any, LocaleCode],
         Awaitable[None],
     ],
@@ -213,14 +213,7 @@ def register_wordbank_command_handlers(
                     build_error_message(exc, locale, default_feature="add")
                 )
                 return
-            await _call_dynamic(
-                "_finish_add_result",
-                matcher,
-                bot,
-                event,
-                result,
-                locale,
-            )
+            await finalize_submission(matcher, bot, event, result, locale)
             return
         if action in {"search", "find", "查询", "搜索"}:
             try:

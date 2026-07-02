@@ -49,7 +49,6 @@ from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
-from src.plugins.wordbank.batch_feedback import send_batch_add_feedback
 from src.plugins.wordbank.debug import (
     describe_batch_errors,
     describe_message_segments,
@@ -598,10 +597,8 @@ async def _finish_guided_study(
     locale: LocaleCode,
 ) -> None:
     from src.plugins.wordbank.handlers import (
-        build_add_result_message,
+        finalize_submission,
         handle_guided_study_shape_result,
-        record_submission_approval_message,
-        schedule_pending_approval_notice,
     )
     from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
     from src.plugins.wordbank.services.rules import (
@@ -666,19 +663,21 @@ async def _finish_guided_study(
                     _default_i18n_text("wordbank.error.response_empty"),
                     key="wordbank.error.response_empty",
                 )
-            await send_batch_add_feedback(
+            await finalize_submission(
+                matcher,
                 bot,
                 event,
-                batch=batch,
+                batch,
                 locale=locale,
+                service=wordbank_service,
                 media_service=wordbank_media_service,
-                source_kind="study_batch_submission",
-                fallback_nickname=tr(
+                submission_source_kind="study_submission",
+                batch_submission_source_kind="study_batch_submission",
+                batch_feedback_nickname=tr(
                     locale,
                     "wordbank.batch_add.study_forward_nickname",
                 ),
             )
-            await matcher.finish()
             return
         if response_shape is None or response_shape.is_empty():
             raise RuleError(
@@ -702,35 +701,21 @@ async def _finish_guided_study(
             _study_error_message(exc, locale),
         )
         return
-    message = await build_add_result_message(
+    await finalize_submission(
+        matcher,
+        bot,
+        event,
         result,
         locale=locale,
+        service=wordbank_service,
         media_service=wordbank_media_service,
-    )
-    plan_result = await deliver_message_plan(
-        bot,
-        plan=DeliveryPlan(
-            messages=(message,),
-            source_kind="study_submission",
+        submission_source_kind="study_submission",
+        batch_submission_source_kind="study_batch_submission",
+        batch_feedback_nickname=tr(
+            locale,
+            "wordbank.batch_add.study_forward_nickname",
         ),
-        event=event,
     )
-    send_result = plan_result.results[0]
-    await record_submission_approval_message(
-        wordbank_service,
-        event=event,
-        result=result,
-        send_result=send_result,
-    )
-    schedule_pending_approval_notice(
-        bot,
-        wordbank_service,
-        event=event,
-        result=result,
-        locale=locale,
-        media_service=wordbank_media_service,
-    )
-    await matcher.finish()
 
 
 async def _start_guided_study_with_trigger_image(
@@ -765,12 +750,10 @@ async def _(
     arg: Message = CommandArg(),
 ) -> None:
     from src.plugins.wordbank.handlers import (
-        build_add_result_message,
         extract_image_urls,
         fetch_image_bytes_from_message,
+        finalize_submission,
         handle_study_with_media_result,
-        record_submission_approval_message,
-        schedule_pending_approval_notice,
     )
     from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
     from src.plugins.wordbank.services.rules import RuleError
@@ -826,35 +809,21 @@ async def _(
     except (RuleError, ValueError) as exc:
         await matcher.finish(_study_error_message(exc, locale))
         return
-    message = await build_add_result_message(
+    await finalize_submission(
+        matcher,
+        bot,
+        event,
         result,
         locale=locale,
+        service=wordbank_service,
         media_service=wordbank_media_service,
-    )
-    plan_result = await deliver_message_plan(
-        bot,
-        plan=DeliveryPlan(
-            messages=(message,),
-            source_kind="study_submission",
+        submission_source_kind="study_submission",
+        batch_submission_source_kind="study_batch_submission",
+        batch_feedback_nickname=tr(
+            locale,
+            "wordbank.batch_add.study_forward_nickname",
         ),
-        event=event,
     )
-    send_result = plan_result.results[0]
-    await record_submission_approval_message(
-        wordbank_service,
-        event=event,
-        result=result,
-        send_result=send_result,
-    )
-    schedule_pending_approval_notice(
-        bot,
-        wordbank_service,
-        event=event,
-        result=result,
-        locale=locale,
-        media_service=wordbank_media_service,
-    )
-    await matcher.finish()
 
 
 @study_command.handle()

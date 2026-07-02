@@ -27,6 +27,7 @@ if nonebot.get_plugin("wordbank") is None:
 from src.lib.i18n.runtime import tr
 from src.lib.message_assets import message_asset_repo
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank.handlers import submission as wordbank_submission_handlers
 from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.message_model import shape_from_text
 from src.plugins.wordbank.services.core import WordbankAddResult
@@ -190,18 +191,18 @@ async def test_wordbank_add_direct_success_records_submission(
         handle_add,
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        wordbank_submission_handlers,
         "build_add_result_message",
         build_result_message,
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        wordbank_submission_handlers,
         "record_submission_approval_message",
         record_submission,
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "schedule_pending_approval_notice",
+        wordbank_submission_handlers,
+        "schedule_submission_approval_notice",
         schedule_pending,
     )
     monkeypatch.setattr(
@@ -346,18 +347,18 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
         handle_add,
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        wordbank_submission_handlers,
         "build_add_result_message",
         build_result_message,
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        wordbank_submission_handlers,
         "record_submission_approval_message",
         record_submission,
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "schedule_pending_approval_notice",
+        wordbank_submission_handlers,
+        "schedule_submission_approval_notice",
         schedule_pending,
     )
     monkeypatch.setattr(
@@ -450,7 +451,7 @@ async def test_wordbank_passive_matcher_sends_response(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "被动回复",
+                "message": text_message("被动回复"),
             },
             result={"message_id": 1},
         )
@@ -500,7 +501,7 @@ async def test_wordbank_notice_matcher_sends_response(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": "别戳了",
+                "message": text_message("别戳了"),
             },
             result={"message_id": 1},
         )

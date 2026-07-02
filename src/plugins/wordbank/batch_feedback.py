@@ -5,6 +5,7 @@ from nonebot.adapters.onebot.v11.event import MessageEvent
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_delivery import DeliveryResult
 from src.lib.message_plan import (
     DeliveryPlan,
     MessagePlanEntry,
@@ -25,7 +26,7 @@ async def send_batch_add_feedback(
     media_service: WordbankMediaService,
     source_kind: str,
     fallback_nickname: str,
-) -> None:
+) -> DeliveryResult:
     summary = tr(
         locale,
         "wordbank.batch_add.summary",
@@ -33,7 +34,7 @@ async def send_batch_add_feedback(
         success=batch.success,
         failed=batch.failed,
     )
-    await deliver_message_plan(
+    plan_result = await deliver_message_plan(
         bot,
         plan=DeliveryPlan(
             messages=(summary,),
@@ -41,6 +42,7 @@ async def send_batch_add_feedback(
         ),
         event=event,
     )
+    summary_result = plan_result.results[0]
     detail_messages = []
     for item in batch.items:
         if item.ok and item.result is not None:
@@ -78,3 +80,4 @@ async def send_batch_add_feedback(
             ),
             event=event,
         )
+    return summary_result

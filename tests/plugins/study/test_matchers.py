@@ -28,6 +28,7 @@ from src.lib.i18n.runtime import tr
 from src.lib.message_assets import message_asset_repo
 from src.plugins import study as study_plugin
 from src.plugins.wordbank import handlers as wordbank_handlers
+from src.plugins.wordbank.handlers import submission as wordbank_submission_handlers
 from src.plugins.wordbank.message_model import shape_from_event, shape_from_text
 from src.plugins.wordbank.services import wordbank_service
 from src.plugins.wordbank.services.core import WordbankAddResult
@@ -240,18 +241,18 @@ async def test_study_guided_flow_submits_pending_entry(
         handle_guided,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "build_add_result_message",
         build_result_message,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "record_submission_approval_message",
         record_submission,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
-        "schedule_pending_approval_notice",
+        wordbank_submission_handlers,
+        "schedule_submission_approval_notice",
         schedule_pending,
     )
     monkeypatch.setattr(
@@ -370,18 +371,18 @@ async def test_study_guided_flow_accepts_event_trigger_text(
         handle_guided,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "build_add_result_message",
         build_result_message,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "record_submission_approval_message",
         record_submission,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
-        "schedule_pending_approval_notice",
+        wordbank_submission_handlers,
+        "schedule_submission_approval_notice",
         schedule_pending,
     )
     monkeypatch.setattr(
@@ -495,18 +496,18 @@ async def test_study_guided_flow_accepts_bracket_event_trigger_text(
         handle_guided,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "build_add_result_message",
         build_result_message,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "record_submission_approval_message",
         record_submission,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
-        "schedule_pending_approval_notice",
+        wordbank_submission_handlers,
+        "schedule_submission_approval_notice",
         schedule_pending,
     )
     monkeypatch.setattr(
@@ -620,18 +621,18 @@ async def test_study_prefilled_trigger_parses_event_shape(
         handle_guided,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "build_add_result_message",
         build_result_message,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "record_submission_approval_message",
         record_submission,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
-        "schedule_pending_approval_notice",
+        wordbank_submission_handlers,
+        "schedule_submission_approval_notice",
         schedule_pending,
     )
     monkeypatch.setattr(
@@ -728,18 +729,18 @@ async def test_study_direct_media_submission_sends_processing_hint_before_result
         handle_with_media,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "build_add_result_message",
         build_result_message,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "record_submission_approval_message",
         record_submission,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
-        "schedule_pending_approval_notice",
+        wordbank_submission_handlers,
+        "schedule_submission_approval_notice",
         schedule_pending,
     )
     monkeypatch.setattr(

@@ -12,7 +12,10 @@ from src.plugins.wordbank.handlers.approval import (
     build_pending_approval_notice_message,
     build_pending_approval_notice_plan_entry,
     format_pending_approval_notice,
+    format_pending_batch_approval_notice,
+    record_batch_submission_approval_message,
     send_pending_approval_notice,
+    send_pending_batch_approval_notice,
 )
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -22,20 +25,27 @@ from src.plugins.wordbank.message_model import (
 )
 from src.plugins.wordbank.services.core import WordbankAddResult
 from src.plugins.wordbank.services.media import WordbankMediaService
+from src.plugins.wordbank.services.presentation import (
+    WordbankBatchAddItemResult,
+    WordbankBatchAddResult,
+)
 from tests.plugins.water.helpers import build_group_message_event
 
 
 def _result(
     *,
+    trigger_group_id: int = 10,
+    trigger_variant_id: int = 11,
+    response_item_id: int = 12,
     trigger_text: str = "晚安",
     trigger_shape: MessageShape | None = None,
     response_text: str = "做个好梦",
     response_shape: MessageShape | None = None,
 ) -> WordbankAddResult:
     return WordbankAddResult(
-        trigger_group_id=10,
-        trigger_variant_id=11,
-        response_item_id=12,
+        trigger_group_id=trigger_group_id,
+        trigger_variant_id=trigger_variant_id,
+        response_item_id=response_item_id,
         trigger_text=trigger_text,
         response_text=response_text,
         scope="current_group",
@@ -316,3 +326,136 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently() 
     targets = [call.kwargs["target"].target_id for call in deliver_plan.await_args_list]
     assert sorted(targets) == ["1", "2"]
     assert record_message_ref.await_count == 2
+
+
+def test_format_pending_batch_approval_notice_lists_all_pending_items() -> None:
+    batch = WordbankBatchAddResult(
+        total=2,
+        success=2,
+        failed=0,
+        items=(
+            WordbankBatchAddItemResult(index=1, ok=True, result=_result()),
+            WordbankBatchAddItemResult(
+                index=2,
+                ok=True,
+                result=_result(
+                    trigger_text="晚安 2",
+                    response_text="做个好梦 2",
+                    response_shape=shape_from_text("做个好梦 2"),
+                ),
+            ),
+        ),
+    )
+
+    notice = format_pending_batch_approval_notice(
+        batch,
+        event=_event(),
+        locale="zh-CN",
+    )
+
+    assert "待审核词条" in notice
+    assert "#12 [current_group] 晚安 => 做个好梦" in notice
+    assert "#12 [current_group] 晚安 2 => 做个好梦 2" in notice
+
+
+@pytest.mark.asyncio
+async def test_send_pending_batch_approval_notice_records_pending_batch_context(
+) -> None:
+    record_message_ref = AsyncMock(return_value=None)
+    deliver_plan = AsyncMock(
+        side_effect=[
+            SimpleNamespace(results=({"message_id": 1},)),
+            SimpleNamespace(results=({"message_id": 2},)),
+        ],
+    )
+    service = cast(Any, SimpleNamespace(record_message_ref=record_message_ref))
+    batch = WordbankBatchAddResult(
+        total=2,
+        success=2,
+        failed=0,
+        items=(
+            WordbankBatchAddItemResult(index=1, ok=True, result=_result()),
+            WordbankBatchAddItemResult(
+                index=2,
+                ok=True,
+                result=_result(
+                    trigger_variant_id=22,
+                    response_item_id=23,
+                    trigger_text="晚安 2",
+                    response_text="做个好梦 2",
+                    response_shape=shape_from_text("做个好梦 2"),
+                ),
+            ),
+        ),
+    )
+    bot = cast(Any, SimpleNamespace())
+
+    from src.plugins.wordbank.handlers import approval as approval_module
+
+    original_superusers = approval_module.config.SUPERUSERS
+    original_deliver = approval_module.deliver_message_plan
+    approval_module.config.SUPERUSERS = {"1", "2"}
+    approval_module.deliver_message_plan = deliver_plan
+    try:
+        await send_pending_batch_approval_notice(
+            bot,
+            service,
+            event=_event(),
+            batch=batch,
+            locale="zh-CN",
+        )
+    finally:
+        approval_module.config.SUPERUSERS = original_superusers
+        approval_module.deliver_message_plan = original_deliver
+
+    assert deliver_plan.await_count == 2
+    targets = [call.kwargs["target"].target_id for call in deliver_plan.await_args_list]
+    assert sorted(targets) == ["1", "2"]
+    first_plan = deliver_plan.await_args_list[0].kwargs["plan"]
+    assert "待审核词条" in str(first_plan.messages[0])
+    assert record_message_ref.await_count == 2
+    first_record = record_message_ref.await_args_list[0].kwargs
+    assert first_record["context_type"] == "pending_batch"
+    assert first_record["group_ids"] == (12, 23)
+
+
+@pytest.mark.asyncio
+async def test_record_batch_submission_approval_message_uses_pending_batch_context(
+) -> None:
+    record_message_ref = AsyncMock(return_value=None)
+    service = cast(Any, SimpleNamespace(record_message_ref=record_message_ref))
+    batch = WordbankBatchAddResult(
+        total=2,
+        success=2,
+        failed=0,
+        items=(
+            WordbankBatchAddItemResult(index=1, ok=True, result=_result()),
+            WordbankBatchAddItemResult(
+                index=2,
+                ok=True,
+                result=_result(
+                    trigger_variant_id=22,
+                    response_item_id=23,
+                    trigger_text="晚安 2",
+                    response_text="做个好梦 2",
+                    response_shape=shape_from_text("做个好梦 2"),
+                ),
+            ),
+        ),
+    )
+
+    await record_batch_submission_approval_message(
+        service,
+        event=_event(),
+        batch=batch,
+        send_result={"message_id": 99},
+    )
+
+    record_message_ref.assert_awaited_once()
+    await_args = record_message_ref.await_args
+    assert await_args is not None
+    kwargs = await_args.kwargs
+    assert kwargs["message_id"] == "99"
+    assert kwargs["context_type"] == "pending_batch"
+    assert kwargs["message_type"] == "submission_batch"
+    assert kwargs["group_ids"] == (12, 23)

@@ -430,8 +430,7 @@ async def finish_guided_add(
     event: MessageEvent,
     state: T_State,
     *,
-    finish_add_result: Any,
-    finish_batch_add_result: Any,
+    finalize_submission: Any,
     wordbank_service: Any,
 ) -> None:
     locale = wordbank_guided_locale(state)
@@ -496,7 +495,7 @@ async def finish_guided_add(
                     _default_i18n_text("wordbank.error.response_empty"),
                     key="wordbank.error.response_empty",
                 )
-            await finish_batch_add_result(matcher, bot, event, batch, locale)
+            await finalize_submission(matcher, bot, event, batch, locale)
             return
         else:
             response_shape = state_message_shape(
@@ -517,7 +516,7 @@ async def finish_guided_add(
             )
     except (RuleError, ValueError) as exc:
         raise exc
-    await finish_add_result(matcher, bot, event, result, locale)
+    await finalize_submission(matcher, bot, event, result, locale)
 
 
 def guided_search_stage(state: Mapping[str, Any]) -> str:

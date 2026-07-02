@@ -26,13 +26,11 @@ from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.services.startup_sync import ensure_restore_not_in_progress
 
-from .batch_feedback import send_batch_add_feedback
 from .docs_support import (
     DOCS_SOURCE,
     wordbank_docs_meta,
@@ -64,17 +62,15 @@ from .guided_flow import (
     WORDBANK_GUIDED_SEARCH_STAGE_PAGE as WORDBANK_GUIDED_SEARCH_STAGE_PAGE,
 )
 from .handlers import (
-    build_add_result_message,
-    is_reply,
-    localize_command_error,
-    record_submission_approval_message,
-    schedule_pending_approval_notice,
-)
-from .handlers import (
     extract_image_urls as extract_image_urls,
 )
 from .handlers import (
     fetch_first_image_bytes_from_message as fetch_first_image_bytes_from_message,
+)
+from .handlers import (
+    finalize_submission,
+    is_reply,
+    localize_command_error,
 )
 from .handlers import (
     handle_add_text_result as handle_add_text_result,
@@ -276,61 +272,25 @@ async def _cancel_guided_resources(
     await cancel_guided_resources(state, cleanup_keys=cleanup_keys)
 
 
-async def _finish_add_result(
-    matcher: Matcher,
-    bot: Any,
-    event: MessageEvent,
-    result: WordbankAddResult,
-    locale: LocaleCode,
-) -> None:
-    message = await build_add_result_message(
-        result,
-        locale=locale,
-        media_service=wordbank_media_service,
-    )
-    plan_result = await deliver_message_plan(
-        bot,
-        plan=DeliveryPlan(
-            messages=(message,),
-            source_kind="wordbank_submission",
-        ),
-        event=event,
-    )
-    send_result = plan_result.results[0]
-    await record_submission_approval_message(
-        wordbank_service,
-        event=event,
-        result=result,
-        send_result=send_result,
-    )
-    schedule_pending_approval_notice(
-        bot,
-        wordbank_service,
-        event=event,
-        result=result,
-        locale=locale,
-        media_service=wordbank_media_service,
-    )
-    await matcher.finish()
-
-
-async def _finish_batch_add_result(
+async def _finalize_wordbank_submission(
     matcher: Matcher,
     bot: Bot,
     event: MessageEvent,
-    batch: WordbankBatchAddResult,
+    submission: WordbankAddResult | WordbankBatchAddResult,
     locale: LocaleCode,
 ) -> None:
-    await send_batch_add_feedback(
+    await finalize_submission(
+        matcher,
         bot,
         event,
-        batch=batch,
+        submission,
         locale=locale,
+        service=wordbank_service,
         media_service=wordbank_media_service,
-        source_kind="wordbank_batch_submission",
-        fallback_nickname=tr(locale, "wordbank.batch_add.forward_nickname"),
+        submission_source_kind="wordbank_submission",
+        batch_submission_source_kind="wordbank_batch_submission",
+        batch_feedback_nickname=tr(locale, "wordbank.batch_add.forward_nickname"),
     )
-    await matcher.finish()
 
 
 async def _send_pending_entries_view(
@@ -607,8 +567,7 @@ async def _finish_guided_add(
         matcher,
         event,
         state,
-        finish_add_result=_finish_add_result,
-        finish_batch_add_result=_finish_batch_add_result,
+        finalize_submission=_finalize_wordbank_submission,
         wordbank_service=wordbank_service,
     )
 
@@ -693,7 +652,7 @@ register_wordbank_command_handlers(
     wordbank_restore_command=wordbank_restore_command,
     initialize_plugin=initialize_wordbank_plugin,
     build_error_message=_wordbank_error_message,
-    finish_add_result=_finish_add_result,
+    finalize_submission=_finalize_wordbank_submission,
     collect_search_query_content=_collect_search_query_content,
     start_guided_add=_start_guided_add,
     start_guided_add_with_trigger_image=_start_guided_add_with_trigger_image,
