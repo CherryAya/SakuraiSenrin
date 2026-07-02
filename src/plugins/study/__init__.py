@@ -59,7 +59,7 @@ from src.plugins.wordbank.debug import (
     describe_shape,
 )
 from src.plugins.wordbank.forward_batch import (
-    build_forward_batch_payload,
+    build_forward_batch_payload_by_source_message_id,
     extract_forward_source_message_id,
     is_forward_input,
 )
@@ -228,6 +228,16 @@ def _study_state_keys(state: Mapping[str, Any]) -> list[str]:
     return sorted(str(key) for key in state.keys() if str(key).startswith("study_"))
 
 
+def _study_forward_source_message_id(state: Mapping[str, Any]) -> int | None:
+    value = state.get("study_forward_source_message_id")
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str) and value.strip().isdigit():
+        parsed = int(value.strip())
+        return parsed if parsed > 0 else None
+    return None
+
+
 async def _start_guided_study_from_partial_args(
     matcher: Matcher,
     event: MessageEvent,
@@ -377,8 +387,19 @@ async def _record_study_response(
     if is_forward_input(event):
         state["study_forward_response_pending"] = True
         source_message_id = extract_forward_source_message_id(event)
-        if source_message_id is not None:
-            state["study_forward_source_message_id"] = source_message_id
+        if source_message_id is None:
+            logger.debug(
+                "[Study][guided] forward response missing source_message_id | "
+                f"{describe_message_segments(event.message)}"
+            )
+            await _reject_study_error(
+                matcher,
+                state,
+                locale,
+                tr(locale, "wordbank.error.forward_message_not_found"),
+            )
+            return
+        state["study_forward_source_message_id"] = source_message_id
         logger.debug(
             "[Study][guided] forward response detected | "
             f"source_message_id={source_message_id or '-'} "
@@ -460,13 +481,24 @@ async def _record_study_forward_response_choice(
         "[Study][guided] forward response choice | "
         f"choice={choice or '-'} state_keys={state_keys}"
     )
+    source_message_id = _study_forward_source_message_id(state)
+    if source_message_id is None:
+        logger.debug(
+            "[Study][guided] forward response choice missing source_message_id | "
+            f"choice={choice or '-'}"
+        )
+        await _reject_study_error(
+            matcher,
+            state,
+            locale,
+            tr(locale, "wordbank.error.forward_message_not_found"),
+        )
+        return
     if choice in {"1", "whole", "整体"}:
-        payload = await build_forward_batch_payload(
+        payload = await build_forward_batch_payload_by_source_message_id(
             bot,
-            event,
             media_service=wordbank_media_service,
-            source_message_id=int(state.get("study_forward_source_message_id", 0) or 0)
-            or None,
+            source_message_id=source_message_id,
         )
         state["study_response_shape"] = payload.whole_shape
         state["study_weight_after_preloaded_trigger"] = True
@@ -483,12 +515,10 @@ async def _record_study_forward_response_choice(
         await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
         return
     if choice in {"2", "split", "拆开"}:
-        payload = await build_forward_batch_payload(
+        payload = await build_forward_batch_payload_by_source_message_id(
             bot,
-            event,
             media_service=wordbank_media_service,
-            source_message_id=int(state.get("study_forward_source_message_id", 0) or 0)
-            or None,
+            source_message_id=source_message_id,
         )
         state["study_response_shape"] = payload.split_shapes[0]
         state["study_forward_split_shapes"] = payload.split_shapes

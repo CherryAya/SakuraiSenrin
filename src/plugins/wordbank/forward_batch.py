@@ -75,16 +75,28 @@ async def build_forward_batch_payload(
     event: MessageEvent,
     *,
     media_service: Any,
-    source_message_id: int | None = None,
 ) -> ForwardBatchPayload:
-    from src.plugins.wordbank.handlers import build_message_shape_from_message
-
-    source_message_id = source_message_id or extract_forward_source_message_id(event)
+    source_message_id = extract_forward_source_message_id(event)
     if source_message_id is None:
         raise WordbankUserError(
             tr("zh-CN", "wordbank.error.forward_message_not_found"),
             key="wordbank.error.forward_message_not_found",
         )
+    return await build_forward_batch_payload_by_source_message_id(
+        bot,
+        media_service=media_service,
+        source_message_id=source_message_id,
+    )
+
+
+async def build_forward_batch_payload_by_source_message_id(
+    bot: Bot,
+    *,
+    media_service: Any,
+    source_message_id: int,
+) -> ForwardBatchPayload:
+    from src.plugins.wordbank.handlers import build_message_shape_from_message
+
     detail = await bot.call_api("get_forward_msg", message_id=source_message_id)
     raw_items = _extract_forward_raw_items(detail)
     logger.debug(
