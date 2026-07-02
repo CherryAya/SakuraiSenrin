@@ -365,7 +365,7 @@ async def _run_water_query_long_task(
     locale: LocaleCode,
     *,
     spec: WaterQuerySpec,
-    build_message: Callable[[], Awaitable[Message | str]],
+    build_message: Callable[[LongTaskRunner], Awaitable[Message | str]],
 ) -> Message | str:
     async with LongTaskRunner(
         LongTaskSpec(
@@ -377,7 +377,7 @@ async def _run_water_query_long_task(
         sink=_build_water_progress_sink(bot, event),
     ) as long_task:
         await long_task.advance(_water_progress_stage(spec))
-        return await build_message()
+        return await build_message(long_task)
 
 
 async def initialize_water_plugin() -> None:
@@ -545,6 +545,7 @@ async def _water_daily_report_push_job() -> None:
             result = await water_report_service.run_daily_group_report_push(
                 bot=cast(Bot, bots[0]),
                 locale="zh-CN",
+                task=long_task,
             )
         logger.success(
             "[Water][ReportPush] cron done: "
@@ -692,12 +693,13 @@ async def _(
             event,
             locale,
             spec=spec,
-            build_message=lambda: build_water_query_message(
+            build_message=lambda task: build_water_query_message(
                 event,
                 arg,
                 locale,
                 is_superuser=is_superuser,
                 spec=spec,
+                task=task,
             ),
         )
         await matcher.finish(message)
@@ -884,7 +886,7 @@ async def _water_query_guided_step(
             mode="simple",
             rank_spec=rank_spec,
         ),
-        build_message=lambda: water_rank_query_service.build_rank_message(
+        build_message=lambda _task: water_rank_query_service.build_rank_message(
             subject=rank_spec.subject,
             scope=rank_spec.scope,
             period=rank_spec.period,
@@ -915,7 +917,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
             view="profile",
             mode="full",
         ),
-        build_message=lambda: build_my_water_profile_message(event, locale),
+        build_message=lambda _task: build_my_water_profile_message(event, locale),
     )
     await matcher.finish(message)
 
@@ -936,7 +938,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent) -> None:
             view="achievement",
             mode="full",
         ),
-        build_message=lambda: build_my_achievements_message(event, locale),
+        build_message=lambda _task: build_my_achievements_message(event, locale),
     )
     await matcher.finish(message)
 

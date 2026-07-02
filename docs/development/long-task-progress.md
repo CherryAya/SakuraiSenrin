@@ -59,7 +59,7 @@ uv run python scripts/long_task_progress.py --fail-on-candidates
     "partial_targets": 0,
     "missing_file_targets": 0,
     "legacy_wait_candidates": 0,
-    "heavy_path_candidates": 1
+    "heavy_path_candidates": 0
   },
   "targets": [
     {
@@ -73,13 +73,7 @@ uv run python scripts/long_task_progress.py --fail-on-candidates
     }
   ],
   "legacy_wait_candidates": [],
-  "heavy_path_candidates": [
-    {
-      "path": "src/plugins/water/services/report.py",
-      "line": 35,
-      "reasons": ["image_render"]
-    }
-  ]
+  "heavy_path_candidates": []
 }
 ```
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import nonebot
 from nonebot.adapters.onebot.v11 import Bot
@@ -691,6 +691,7 @@ async def test_water_today_report_runs_for_group_admin(
         window="today_live",
         group_id="20001",
         locale="zh-CN",
+        task=ANY,
     )
 
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
 
+from src.lib.long_task import LongTaskRunner
 from src.lib.messages import text_message
 from src.plugins.water.database.repo_models import (
     WaterDailyReportCandidate,
@@ -123,9 +126,11 @@ async def test_run_daily_group_report_push_renders_parallel_and_sends_serially(
     assert result.candidate_groups == 2
     assert result.rendered_groups == 2
     assert result.sent_groups == 2
-    assert bot.send_group_msg.await_count == 2
-    first_call = bot.send_group_msg.await_args_list[0]
-    second_call = bot.send_group_msg.await_args_list[1]
+    assert bot.call_api.await_count == 2
+    first_call = bot.call_api.await_args_list[0]
+    second_call = bot.call_api.await_args_list[1]
+    assert first_call.args == ("send_group_msg",)
+    assert second_call.args == ("send_group_msg",)
     assert first_call.kwargs["group_id"] == 20002
     assert second_call.kwargs["group_id"] == 20001
     assert sleep_mock.await_count == 2
@@ -201,6 +206,55 @@ async def test_build_card_data_keeps_group_report_core_fields(
     assert data.total_msg_count == 42
     assert data.active_user_count == 1
     assert data.top_items[0].display_name == "Alice"
+
+
+@pytest.mark.asyncio
+async def test_build_group_report_message_advances_long_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import report as report_module
+
+    snapshot = WaterGroupReportSnapshot(
+        group_id="20001",
+        record_date=20260613,
+        total_msg_count=42,
+        active_user_count=1,
+        active_hours=6,
+        hourly_counts=[0] * 24,
+        previous_total_msg_count=21,
+        previous_active_user_count=1,
+        previous_active_hours=4,
+        previous_hourly_counts=[0] * 24,
+        leaderboard=[],
+    )
+    monkeypatch.setattr(
+        report_module.water_report_service,
+        "_get_snapshot",
+        AsyncMock(return_value=snapshot),
+    )
+    monkeypatch.setattr(
+        report_module.water_report_service,
+        "_build_card_data",
+        AsyncMock(return_value=SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        report_module,
+        "build_water_group_report_image",
+        AsyncMock(return_value=b"fake-image"),
+    )
+    advance_mock = AsyncMock()
+    task = cast(LongTaskRunner, SimpleNamespace(advance=advance_mock))
+
+    message = await water_report_service.build_group_report_message(
+        window="today_live",
+        group_id="20001",
+        locale="zh-CN",
+        task=task,
+    )
+
+    assert len(message) == 1
+    assert message[0].type == "image"
+    assert advance_mock.await_count == 3
 
 
 @pytest.mark.asyncio

@@ -15,6 +15,7 @@ from pil_utils import BuildImage
 from src.lib.cooldown import CooldownIsolateLevel, MemoryCooldown
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import LongTaskRunner
 from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.messages import image_message, text_message
@@ -76,7 +77,10 @@ class WaterReportService:
         group_id: str,
         locale: LocaleCode,
         now_ts: int | None = None,
+        task: LongTaskRunner | None = None,
     ) -> Message:
+        if task is not None:
+            await task.advance("loading_snapshot", metadata={"group_id": group_id})
         snapshot = await self._get_snapshot(
             window=window,
             group_id=group_id,
@@ -84,7 +88,17 @@ class WaterReportService:
         )
         if snapshot is None or snapshot.total_msg_count <= 0:
             return text_message(tr(locale, "water.report.empty"))
+        if task is not None:
+            await task.advance(
+                "building_report_data",
+                metadata={"group_id": group_id},
+            )
         data = await self._build_card_data(window, snapshot, locale)
+        if task is not None:
+            await task.advance(
+                "rendering_report",
+                metadata={"group_id": group_id},
+            )
         image = await build_water_group_report_image(data, locale)
         if image is None:
             return text_message(tr(locale, "water.report.empty"))
@@ -96,8 +110,11 @@ class WaterReportService:
         bot: Bot,
         locale: LocaleCode = "zh-CN",
         record_date: int | None = None,
+        task: LongTaskRunner | None = None,
     ) -> WaterDailyReportBatchResult:
         started = perf_counter()
+        if task is not None:
+            await task.advance("loading_candidates")
         state = await water_repo.get_settlement_state()
         target_date = record_date or int(state["last_success_record_date"])
         if target_date <= 0 or int(state["last_success_record_date"]) < target_date:
@@ -139,6 +156,12 @@ class WaterReportService:
             )
 
         sem = asyncio.Semaphore(4)
+        if task is not None:
+            await task.advance(
+                "rendering_groups",
+                current=0,
+                total=len(candidates),
+            )
 
         async def _render(
             candidate: WaterDailyReportCandidate,
@@ -154,6 +177,7 @@ class WaterReportService:
                         .to("Asia/Shanghai")
                         .shift(days=1)
                         .int_timestamp,
+                        task=task,
                     )
                     logger.debug(
                         "[Water][ReportPush] group={} score={} msg={} users={} "
@@ -172,9 +196,20 @@ class WaterReportService:
                     )
                     return candidate, None
 
-        rendered = await asyncio.gather(
-            *[_render(candidate) for candidate in candidates]
-        )
+        rendered: list[tuple[WaterDailyReportCandidate, Message | None]] = []
+        for completed_count, render_task in enumerate(
+            asyncio.as_completed(
+                [asyncio.create_task(_render(candidate)) for candidate in candidates]
+            ),
+            start=1,
+        ):
+            rendered.append(await render_task)
+            if task is not None:
+                await task.advance(
+                    "rendering_groups",
+                    current=completed_count,
+                    total=len(candidates),
+                )
         rendered_items = [
             (candidate, message)
             for candidate, message in rendered
@@ -182,6 +217,12 @@ class WaterReportService:
         ]
         sent_groups = 0
         failed_groups = 0
+        if task is not None and rendered_items:
+            await task.advance(
+                "sending_groups",
+                current=0,
+                total=len(rendered_items),
+            )
         for candidate, message in rendered_items:
             send_started = perf_counter()
             try:
@@ -197,6 +238,12 @@ class WaterReportService:
                     ),
                 )
                 sent_groups += 1
+                if task is not None:
+                    await task.advance(
+                        "sending_groups",
+                        current=sent_groups + failed_groups,
+                        total=len(rendered_items),
+                    )
                 logger.debug(
                     "[Water][ReportPush] group={} score={} msg={} users={} "
                     "stage=send elapsed_ms={:.2f}",
@@ -208,6 +255,12 @@ class WaterReportService:
                 )
             except Exception:
                 failed_groups += 1
+                if task is not None:
+                    await task.advance(
+                        "sending_groups",
+                        current=sent_groups + failed_groups,
+                        total=len(rendered_items),
+                    )
                 logger.exception(
                     "[Water][ReportPush] group={} stage=send failed",
                     candidate.group_id,

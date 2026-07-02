@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-07-03T01:10:28",
+  "generated_at": "2026-07-03T01:21:59",
   "root": "/Users/sakuraicora/Documents/Development/SakuraiSenrin/SakuraiSenrin",
   "summary": {
     "total_targets": 18,
@@ -8,7 +8,7 @@
     "partial_targets": 0,
     "missing_file_targets": 0,
     "legacy_wait_candidates": 0,
-    "heavy_path_candidates": 1
+    "heavy_path_candidates": 0
   },
   "targets": [
     {
@@ -265,14 +265,5 @@
     }
   ],
   "legacy_wait_candidates": [],
-  "heavy_path_candidates": [
-    {
-      "path": "src/plugins/water/services/report.py",
-      "line": 35,
-      "snippet": "build_water_group_report_image,",
-      "reasons": [
-        "image_render"
-      ]
-    }
-  ]
+  "heavy_path_candidates": []
 }

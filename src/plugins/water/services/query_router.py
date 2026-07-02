@@ -9,6 +9,7 @@ from nonebot.adapters.onebot.v11 import Message
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import LongTaskRunner
 from src.lib.messages import image_message, text_message
 from src.plugins.water.renderers import render_season_list
 from src.plugins.water.renderers.profile import (
@@ -596,6 +597,7 @@ class WaterQueryRouter:
         group_id: str,
         locale: LocaleCode,
         is_superuser: bool = False,
+        task: LongTaskRunner | None = None,
     ) -> Message:
         if spec.view == "report":
             from src.plugins.water.services.report import water_report_service
@@ -604,6 +606,7 @@ class WaterQueryRouter:
                 window="today_live",
                 group_id=group_id,
                 locale=locale,
+                task=task,
             )
         if spec.scope_type == "activity":
             return await self._execute_activity(

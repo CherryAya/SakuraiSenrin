@@ -7,6 +7,7 @@ from nonebot.adapters.onebot.v11.event import GroupMessageEvent
 from nonebot.matcher import Matcher
 
 from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import LongTaskRunner
 from src.plugins.water.services.query_router import WaterQuerySpec, water_query_router
 
 
@@ -17,6 +18,7 @@ async def build_water_query_message(
     *,
     is_superuser: bool = False,
     spec: WaterQuerySpec | None = None,
+    task: LongTaskRunner | None = None,
 ) -> Message:
     resolved_spec = spec or water_query_router.parse(arg.extract_plain_text())
     return await water_query_router.execute(
@@ -25,6 +27,7 @@ async def build_water_query_message(
         group_id=str(event.group_id),
         locale=locale,
         is_superuser=is_superuser,
+        task=task,
     )
 
 
