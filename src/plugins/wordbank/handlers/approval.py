@@ -14,14 +14,16 @@ from src.config import config
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import DeliveryTarget, deliver_single_message
+from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import (
+    DeliveryPlan,
     MessagePlanBlock,
     MessagePlanEntry,
+    MessagePlanInput,
     TextBlock,
+    deliver_message_plan,
     render_message_plan_entry,
 )
-from src.lib.messages import text_message
 from src.logger import logger
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services import (
@@ -249,7 +251,7 @@ async def send_pending_approval_notice(
     if result.status != "pending":
         return
 
-    message = (
+    message: MessagePlanInput = (
         await build_pending_approval_notice_message(
             result,
             event=event,
@@ -257,9 +259,7 @@ async def send_pending_approval_notice(
             media_service=media_service,
         )
         if media_service is not None
-        else text_message(
-            format_pending_approval_notice(result, event=event, locale=locale)
-        )
+        else format_pending_approval_notice(result, event=event, locale=locale)
     )
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")
@@ -286,19 +286,22 @@ async def _send_single_pending_approval_notice(
     service: WordbankService,
     *,
     superuser_id: str,
-    message: Message,
+    message: MessagePlanInput,
     result: WordbankAddResult,
     group_id: str,
     user_id: str,
     source_message_id: str,
 ) -> None:
     try:
-        send_result = await deliver_single_message(
+        plan_result = await deliver_message_plan(
             bot,
+            plan=DeliveryPlan(
+                messages=(message,),
+                source_kind="wordbank_pending_approval_notice",
+            ),
             target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
-            message=message,
-            source_kind="wordbank_pending_approval_notice",
         )
+        send_result = plan_result.results[0]
         message_id = extract_sent_message_id(send_result)
         if message_id is None:
             return

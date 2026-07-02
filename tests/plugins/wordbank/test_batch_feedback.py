@@ -38,18 +38,17 @@ async def test_send_batch_add_feedback_uses_rich_result_messages(
     build_message = AsyncMock(
         return_value=MessagePlanEntry(blocks=(RawMessageBlock(rich_message),))
     )
-    deliver_message = AsyncMock(return_value={"message_id": 1})
-    deliver_plan = AsyncMock(return_value=None)
+    deliver_plan = AsyncMock(
+        side_effect=[
+            SimpleNamespace(results=({"message_id": 1},)),
+            SimpleNamespace(results=({"message_id": 2},)),
+        ]
+    )
 
     monkeypatch.setattr(
         batch_feedback_module,
         "build_add_result_plan_entry",
         build_message,
-    )
-    monkeypatch.setattr(
-        batch_feedback_module,
-        "deliver_single_message",
-        deliver_message,
     )
     monkeypatch.setattr(
         batch_feedback_module,
@@ -100,8 +99,13 @@ async def test_send_batch_add_feedback_uses_rich_result_messages(
         locale="zh-CN",
         media_service=media_service,
     )
-    deliver_plan.assert_awaited_once()
-    await_args = deliver_plan.await_args
+    assert deliver_plan.await_count == 2
+    summary_call = deliver_plan.await_args_list[0]
+    summary_plan = summary_call.kwargs["plan"]
+    assert len(summary_plan.messages) == 1
+    assert str(summary_plan.messages[0]).startswith("已处理合并转发响应导入")
+
+    await_args = deliver_plan.await_args_list[1]
     assert await_args is not None
     plan = await_args.kwargs["plan"]
     detail_messages = plan.messages

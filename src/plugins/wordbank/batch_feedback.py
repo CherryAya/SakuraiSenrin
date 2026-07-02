@@ -5,14 +5,12 @@ from nonebot.adapters.onebot.v11.event import MessageEvent
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
 from src.lib.message_plan import (
     DeliveryPlan,
     MessagePlanEntry,
     TextBlock,
     deliver_message_plan,
 )
-from src.lib.messages import text_message
 from src.plugins.wordbank.handlers.approval import build_add_result_plan_entry
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import WordbankBatchAddResult
@@ -28,20 +26,20 @@ async def send_batch_add_feedback(
     source_kind: str,
     fallback_nickname: str,
 ) -> None:
-    summary = text_message(
-        tr(
-            locale,
-            "wordbank.batch_add.summary",
-            total=batch.total,
-            success=batch.success,
-            failed=batch.failed,
-        )
+    summary = tr(
+        locale,
+        "wordbank.batch_add.summary",
+        total=batch.total,
+        success=batch.success,
+        failed=batch.failed,
     )
-    await deliver_single_message(
+    await deliver_message_plan(
         bot,
-        target=resolve_delivery_target(event),
-        message=summary,
-        source_kind=source_kind,
+        plan=DeliveryPlan(
+            messages=(summary,),
+            source_kind=source_kind,
+        ),
+        event=event,
     )
     detail_messages = []
     for item in batch.items:

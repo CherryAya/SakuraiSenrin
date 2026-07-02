@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import deliver_single_message, resolve_delivery_target
 from src.lib.message_plan import (
     DeliveryPlan,
     MessagePlanBlock,
@@ -14,7 +12,6 @@ from src.lib.message_plan import (
     TextBlock,
     deliver_message_plan,
 )
-from src.lib.messages import text_message
 from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.handlers.approval import extract_sent_message_id
 from src.plugins.wordbank.handlers.mutation import build_mutation_actor
@@ -44,7 +41,7 @@ def _build_pending_batch_summary(
     page: int,
     limit: int,
     has_more: bool,
-) -> Message:
+) -> str:
     lines = [
         tr(locale, "wordbank.approval.pending_title", page=page),
         tr(locale, "wordbank.approval.pending_batch_instruction"),
@@ -63,7 +60,7 @@ def _build_pending_batch_summary(
                 limit=limit,
             )
         )
-    return text_message("\n".join(lines))
+    return "\n".join(lines)
 
 
 async def _build_pending_detail_message(
@@ -132,11 +129,13 @@ async def send_pending_entries_review(
 ) -> None:
     actor = build_mutation_actor(event)
     if not actor_can_review(actor):
-        await deliver_single_message(
+        await deliver_message_plan(
             bot,
-            target=resolve_delivery_target(event),
-            message=text_message(tr(locale, "wordbank.approval.permission_denied")),
-            source_kind=source_kind,
+            plan=DeliveryPlan(
+                messages=(tr(locale, "wordbank.approval.permission_denied"),),
+                source_kind=source_kind,
+            ),
+            event=event,
         )
         return
 
@@ -153,13 +152,15 @@ async def send_pending_entries_review(
     has_more = len(pending_items) > parsed.limit
     items = pending_items[: parsed.limit]
     if not items:
-        await deliver_single_message(
+        await deliver_message_plan(
             bot,
-            target=resolve_delivery_target(event),
-            message=text_message(
-                tr(locale, "wordbank.approval.pending_empty", page=parsed.page)
+            plan=DeliveryPlan(
+                messages=(
+                    tr(locale, "wordbank.approval.pending_empty", page=parsed.page),
+                ),
+                source_kind=source_kind,
             ),
-            source_kind=source_kind,
+            event=event,
         )
         return
 
@@ -170,12 +171,15 @@ async def send_pending_entries_review(
         limit=parsed.limit,
         has_more=has_more,
     )
-    send_result = await deliver_single_message(
+    plan_result = await deliver_message_plan(
         bot,
-        target=resolve_delivery_target(event),
-        message=summary,
-        source_kind=source_kind,
+        plan=DeliveryPlan(
+            messages=(summary,),
+            source_kind=source_kind,
+        ),
+        event=event,
     )
+    send_result = plan_result.results[0]
     message_id = extract_sent_message_id(send_result)
     if message_id is not None:
         await service.record_message_ref(

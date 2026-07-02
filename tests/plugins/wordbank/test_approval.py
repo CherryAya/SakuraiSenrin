@@ -281,8 +281,11 @@ async def test_build_pending_approval_notice_plan_entry_renders_image_trigger() 
 @pytest.mark.asyncio
 async def test_send_pending_approval_notice_sends_all_superusers_concurrently() -> None:
     record_message_ref = AsyncMock(return_value=None)
-    deliver_message = AsyncMock(
-        side_effect=[{"message_id": 1}, {"message_id": 2}],
+    deliver_plan = AsyncMock(
+        side_effect=[
+            SimpleNamespace(results=({"message_id": 1},)),
+            SimpleNamespace(results=({"message_id": 2},)),
+        ],
     )
     service = cast(
         Any,
@@ -294,9 +297,9 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently() 
     from src.plugins.wordbank.handlers import approval as approval_module
 
     original_superusers = approval_module.config.SUPERUSERS
-    original_deliver = approval_module.deliver_single_message
+    original_deliver = approval_module.deliver_message_plan
     approval_module.config.SUPERUSERS = {"1", "2"}
-    approval_module.deliver_single_message = deliver_message
+    approval_module.deliver_message_plan = deliver_plan
     try:
         await send_pending_approval_notice(
             bot,
@@ -308,10 +311,8 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently() 
         )
     finally:
         approval_module.config.SUPERUSERS = original_superusers
-        approval_module.deliver_single_message = original_deliver
+        approval_module.deliver_message_plan = original_deliver
 
-    targets = [
-        call.kwargs["target"].target_id for call in deliver_message.await_args_list
-    ]
+    targets = [call.kwargs["target"].target_id for call in deliver_plan.await_args_list]
     assert sorted(targets) == ["1", "2"]
     assert record_message_ref.await_count == 2
