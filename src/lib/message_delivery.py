@@ -13,7 +13,7 @@ from nonebot.adapters.onebot.v11.event import (
     MessageEvent,
     NoticeEvent,
 )
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.adapters.onebot.v11.message import Message
 
 from src.lib.message_assets import describe_message_asset, message_asset_repo
 from src.logger import logger
@@ -578,8 +578,6 @@ async def deliver_forward_messages(
     fallback_nickname: str,
     reuse_policy: ForwardReusePolicy = DEFAULT_FORWARD_REUSE_POLICY,
 ) -> None:
-    nodes: list[MessageSegment] = []
-    node_results: list[ForwardNodeResult] = []
     batch = build_forward_batch_descriptor(messages, policy=reuse_policy)
     target = resolve_delivery_target(event)
     logger.debug(
@@ -588,96 +586,16 @@ async def deliver_forward_messages(
         f"target={target.kind}:{target.target_id} "
         f"nodes={len(messages)} batch_ctx={_short_key(batch.context_key)}"
     )
-    reusable_prefix_length = await _resolve_reusable_forward_prefix_length(batch=batch)
-    try:
-        for index, message in enumerate(messages):
-            mode = "reuse_or_verify" if index < reusable_prefix_length else "rebuild"
-            logger.debug(
-                "[MessageDelivery] materialize forward node "
-                f"index={index} asset_key={_short_key(batch.node_asset_keys[index])} "
-                f"mode={mode}"
-            )
-            node = await ensure_forward_node(
-                bot,
-                node_message=message,
-                node_asset_key=batch.node_asset_keys[index],
-                source_kind=source_kind,
-                fallback_nickname=fallback_nickname,
-                forward_context_key=batch.node_context_keys[index],
-                forward_sort_key=index,
-                allow_asset_reuse=index < reusable_prefix_length,
-            )
-            node_results.append(node)
-            nodes.append(MessageSegment.node(int(node.message_id)))
-            logger.debug(
-                "[MessageDelivery] forward node ready "
-                f"index={index} asset_key={_short_key(node.asset_key)} "
-                f"message_id={node.message_id} reused={node.reused_asset}"
-            )
-    except Exception as exc:
-        logger.debug(
-            "[MessageDelivery] forward node materialization failed "
-            f"error={exc}; fallback=custom_forward"
-        )
-        for node in node_results:
-            await message_asset_repo.mark_stale(
-                node.asset_key,
-                last_verify_error=str(exc),
-            )
-        from src.lib.onebot_forward import send_custom_forward
+    logger.debug(
+        "[MessageDelivery] merged forward path "
+        "mode=node_custom_direct "
+        "reason=napcat_send_group_forward_msg_requires_custom_nodes"
+    )
+    from src.lib.onebot_forward import send_custom_forward
 
-        await send_custom_forward(
-            bot,
-            event,
-            messages,
-            fallback_nickname=fallback_nickname,
-        )
-        return
-
-    try:
-        if target.kind == "group":
-            logger.debug(
-                "[MessageDelivery] send merged forward "
-                f"target=group:{target.target_id} node_count={len(nodes)}"
-            )
-            await bot.call_api(
-                "send_group_forward_msg",
-                group_id=int(target.target_id),
-                messages=nodes,
-            )
-            logger.debug(
-                "[MessageDelivery] send merged forward success "
-                f"target=group:{target.target_id} node_count={len(nodes)}"
-            )
-            return
-        logger.debug(
-            "[MessageDelivery] send merged forward "
-            f"target=private:{target.target_id} node_count={len(nodes)}"
-        )
-        await bot.call_api(
-            "send_private_forward_msg",
-            user_id=int(target.target_id),
-            messages=nodes,
-        )
-        logger.debug(
-            "[MessageDelivery] send merged forward success "
-            f"target=private:{target.target_id} node_count={len(nodes)}"
-        )
-    except Exception as exc:
-        logger.debug(
-            "[MessageDelivery] send merged forward failed "
-            f"error={exc}; fallback=custom_forward"
-        )
-        for node in node_results:
-            await message_asset_repo.mark_stale(
-                node.asset_key,
-                last_verify_error=str(exc),
-            )
-        from src.lib.onebot_forward import send_custom_forward
-
-        await send_custom_forward(
-            bot,
-            event,
-            messages,
-            fallback_nickname=fallback_nickname,
-        )
+    await send_custom_forward(
+        bot,
+        event,
+        messages,
+        fallback_nickname=fallback_nickname,
+    )

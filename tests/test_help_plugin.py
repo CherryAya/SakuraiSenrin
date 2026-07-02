@@ -40,6 +40,7 @@ if nonebot.get_plugin("study") is None:
     nonebot.load_plugin("src.plugins.study")
 
 from src.plugins.help import (
+    HELP_FORWARD_FALLBACK_NICKNAME,
     HELP_FORWARD_WAIT_PROMPT,
     DocsEntry,
     HelpDeliveryPlan,
@@ -61,6 +62,13 @@ from tests.plugins.water.helpers import (
     build_group_message_event,
     build_private_message_event,
 )
+
+
+def _first_image_file(message: Any) -> str | None:
+    for segment in message:
+        if segment.type == "image":
+            return cast(str | None, segment.data.get("file"))
+    return None
 
 
 def _make_entry(
@@ -742,7 +750,7 @@ async def test_resolve_docs_message_formats_water_overview_shortcuts(
     assert "👉 查看周期榜单" in rendered
     assert "更多高级功能" not in rendered
     assert "📖" not in rendered
-    assert message[-1].data["file"] == "base64://c3VtbWFyeS1kZW1v"
+    assert _first_image_file(message) == "base64://c3VtbWFyeS1kZW1v"
     assert sum(1 for segment in message if segment.type == "image") >= 3
 
 
@@ -772,7 +780,7 @@ async def test_resolve_docs_message_wordbank_guide_hides_admin_features_for_norm
     assert "待审核词条" not in rendered
     assert "通过审核" not in rendered
     assert "拒绝审核" not in rendered
-    assert message[-1].data["file"] == "base64://c3VtbWFyeS1kZW1v"
+    assert _first_image_file(message) == "base64://c3VtbWFyeS1kZW1v"
 
 
 @pytest.mark.asyncio
@@ -800,7 +808,7 @@ async def test_resolve_docs_message_wordbank_guide_shows_admin_features_for_admi
     assert "👉 通过审核" in rendered
     assert "👉 拒绝审核" in rendered
     assert "👉 审批回复快捷方式" in rendered
-    assert message[-1].data["file"] == "base64://c3VtbWFyeS1kZW1v"
+    assert _first_image_file(message) == "base64://c3VtbWFyeS1kZW1v"
 
 
 @pytest.mark.asyncio
@@ -858,8 +866,8 @@ async def test_resolve_docs_delivery_plan_wordbank_guide_splits_into_forward_nod
 
     assert plan.should_forward is True
     assert len(plan.messages) > 1
-    assert "👉 基础添加" in str(plan.messages[0])
-    assert plan.messages[-1][-1].data["file"] == "base64://c3VtbWFyeS1kZW1v"
+    assert plan.messages[0][-1].data["file"] == "base64://c3VtbWFyeS1kZW1v"
+    assert "👉 基础添加" in str(plan.messages[1])
 
 
 @pytest.mark.asyncio
@@ -904,14 +912,7 @@ async def test_send_help_forward_uses_group_forward_api() -> None:
         Any,
         SimpleNamespace(
             self_id="99999",
-            call_api=AsyncMock(
-                side_effect=[
-                    {"message_id": 101},
-                    {"message_id": 102},
-                    {"message_id": 103},
-                    None,
-                ]
-            ),
+            call_api=AsyncMock(side_effect=[{"nickname": "测试机器人"}, None]),
         ),
     )
     event = build_group_message_event("#help wordbank")
@@ -924,18 +925,17 @@ async def test_send_help_forward_uses_group_forward_api() -> None:
     nodes = bot.call_api.await_args_list[-1].kwargs["messages"]
     assert len(nodes) == 2
     assert all(node.type == "node" for node in nodes)
-    assert "id" in nodes[0].data
+    assert nodes[0].data["nickname"] == "测试机器人"
+    assert str(nodes[0].data["content"]) == "A"
 
 
 @pytest.mark.asyncio
 async def test_send_help_forward_uses_private_forward_api_with_fallback_nickname() -> (
     None
 ):
-    sent_message_ids = iter((201, 202))
-
     async def fake_call_api(api: str, **kwargs: Any) -> Any:
-        if api == "send_private_msg":
-            return {"message_id": next(sent_message_ids)}
+        if api == "get_login_info":
+            raise RuntimeError("boom")
         return None
 
     bot = cast(
@@ -950,7 +950,8 @@ async def test_send_help_forward_uses_private_forward_api_with_fallback_nickname
     assert bot.call_api.await_args_list[-1].args[0] == "send_private_forward_msg"
     assert bot.call_api.await_args_list[-1].kwargs["user_id"] == 10001
     nodes = bot.call_api.await_args_list[-1].kwargs["messages"]
-    assert "id" in nodes[0].data
+    assert nodes[0].data["nickname"] == HELP_FORWARD_FALLBACK_NICKNAME
+    assert str(nodes[0].data["content"]) == "A"
 
 
 @pytest.mark.asyncio

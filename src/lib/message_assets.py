@@ -199,16 +199,23 @@ class MessageAssetRepository:
             ).scalar_one_or_none()
         if row is None:
             logger.debug(f"[MessageAsset] cache miss asset_key={_short_key(asset_key)}")
-        else:
+            return None
+        if row.status != "active":
             logger.debug(
-                "[MessageAsset] cache hit "
+                "[MessageAsset] cache filtered "
                 f"asset_key={_short_key(asset_key)} message_id={row.message_id or '-'} "
-                f"kind={row.asset_kind} status={row.status} "
-                f"shape={row.message_shape_kind} "
-                f"forward_ctx={_short_key(row.forward_context_key)} "
-                f"sort={row.forward_sort_key}"
+                f"kind={row.asset_kind} status={row.status}"
             )
-        return self._to_record(row) if row is not None else None
+            return None
+        logger.debug(
+            "[MessageAsset] cache hit "
+            f"asset_key={_short_key(asset_key)} message_id={row.message_id or '-'} "
+            f"kind={row.asset_kind} status={row.status} "
+            f"shape={row.message_shape_kind} "
+            f"forward_ctx={_short_key(row.forward_context_key)} "
+            f"sort={row.forward_sort_key}"
+        )
+        return self._to_record(row)
 
     async def upsert_asset(
         self,
