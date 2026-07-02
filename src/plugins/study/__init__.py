@@ -44,11 +44,7 @@ from src.lib.interactive_recall import (
     register_recall_checkpoint,
     register_root_message,
 )
-from src.lib.message_delivery import (
-    deliver_single_message,
-    resolve_delivery_target,
-    resolve_notice_delivery_target,
-)
+from src.lib.message_delivery import resolve_notice_delivery_target
 from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
@@ -810,11 +806,13 @@ async def _(
     await wordbank_service.initialize()
     try:
         if has_images:
-            await deliver_single_message(
+            await deliver_message_plan(
                 bot,
-                target=resolve_delivery_target(event),
-                message=tr(locale, "wordbank.add.processing_with_media"),
-                source_kind="study_command",
+                plan=DeliveryPlan(
+                    messages=(tr(locale, "wordbank.add.processing_with_media"),),
+                    source_kind="study_command",
+                ),
+                event=event,
             )
         image_items = await fetch_image_bytes_from_message(arg, limit=2)
         result = await handle_study_with_media_result(
@@ -1024,11 +1022,13 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
     session.matcher_cls.destroy()
 
     if session.is_root_message or checkpoint is None:
-        await deliver_single_message(
+        await deliver_message_plan(
             bot,
+            plan=DeliveryPlan(
+                messages=(tr(locale, "interaction.cancelled"),),
+                source_kind="study_notice",
+            ),
             target=resolve_notice_delivery_target(event),
-            message=tr(locale, "interaction.cancelled"),
-            source_kind="study_notice",
         )
         return
 
@@ -1038,9 +1038,11 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
         step_index=checkpoint.step_index,
         state=checkpoint.state_snapshot,
     )
-    await deliver_single_message(
+    await deliver_message_plan(
         bot,
+        plan=DeliveryPlan(
+            messages=(checkpoint.prompt,),
+            source_kind="study_notice",
+        ),
         target=resolve_notice_delivery_target(event),
-        message=checkpoint.prompt,
-        source_kind="study_notice",
     )
