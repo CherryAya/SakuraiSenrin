@@ -77,6 +77,58 @@ def test_build_readme_docs_formats_multi_section_commands_for_help_output() -> N
     assert "#本季矩阵榜" in rendered
 
 
+def test_build_readme_docs_plan_entry_renders_feature_text_and_demo_image(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "README.MD"
+    source.write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试 feature 渲染。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `flow` 完整流程: 测试 demo 生成。
+
+## 子功能详情
+### `flow` 完整流程
+- 摘要: 测试 demo 生成。
+- 指令: `#flow`
+#### 说明
+这里是说明。
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #flow
+BOT: 操作完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+
+    entry = build_readme_docs_plan_entry(
+        source=source,
+        name="测试插件",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        ctx=DocsRenderContext(locale="zh-CN", feature_query="flow"),
+    )
+
+    assert isinstance(entry, MessagePlanEntry)
+    rendered = render_message_plan_entry(entry)
+    assert "测试插件\n完整流程" in str(rendered)
+    assert any(segment.type == "image" for segment in rendered)
+
+
 def test_render_doc_node_overview_formats_multi_section_commands() -> None:
     node = load_doc_node(
         source=Path("src/plugins/water/docs/README.MD"),
@@ -105,6 +157,28 @@ def test_render_doc_node_overview_formats_multi_section_commands() -> None:
         == 1
     )
     assert "群号 1107576103" in rendered
+
+
+def test_render_doc_node_overview_plan_entry_can_attach_demo() -> None:
+    node = load_doc_node(
+        source=Path("src/plugins/water/docs/README.MD"),
+        default_name="吹水记录",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    entry = render_doc_node_overview_plan_entry(
+        node,
+        locale="zh-CN",
+        include_demo=True,
+        actor_permission=Permission.NORMAL,
+    )
+
+    assert isinstance(entry, MessagePlanEntry)
+    rendered = render_message_plan_entry(entry)
+    assert "可用功能：" in str(rendered)
+    assert any(segment.type == "image" for segment in rendered)
 
 
 def test_build_readme_docs_can_attach_representative_overview_demo(

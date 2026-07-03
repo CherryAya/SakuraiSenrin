@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.plugin import PluginMetadata
 
 from src.database.core.consts import Permission
@@ -28,7 +28,6 @@ from src.lib.message_plan import (
     TextBlock,
     render_message_plan_entry,
 )
-from src.lib.messages import text_message
 from src.lib.utils.common import get_current_time
 
 from .command_layout import (
@@ -358,6 +357,33 @@ def build_static_docs(
     permission: Permission,
     locale: LocaleCode = "zh-CN",
 ) -> Message:
+    return render_message_plan_entry(
+        build_static_docs_plan_entry(
+            name=name,
+            description=description,
+            content=content,
+            name_key=name_key,
+            description_key=description_key,
+            content_key=content_key,
+            trigger=trigger,
+            permission=permission,
+            locale=locale,
+        )
+    )
+
+
+def build_static_docs_plan_entry(
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    content: str | None = None,
+    name_key: MessageKey | None = None,
+    description_key: MessageKey | None = None,
+    content_key: MessageKey | None = None,
+    trigger: TriggerType,
+    permission: Permission,
+    locale: LocaleCode = "zh-CN",
+) -> MessagePlanEntry:
     body = (
         tr(locale, content_key).strip()
         if content_key is not None
@@ -369,7 +395,7 @@ def build_static_docs(
         else (description or "").strip()
     ) or tr(locale, "docs.default.no_description")
     title = tr(locale, name_key) if name_key is not None else (name or "")
-    return text_message(
+    return _build_text_plan_entry(
         (
             f"===== {title} =====\n"
             f"{tr(locale, 'docs.default.trigger')}: {trigger}\n"
@@ -390,6 +416,27 @@ def build_readme_docs(
     permission: Permission,
     ctx: DocsRenderContext | None = None,
 ) -> Message:
+    return render_message_plan_entry(
+        build_readme_docs_plan_entry(
+            source=source,
+            name=name,
+            description=description,
+            trigger=trigger,
+            permission=permission,
+            ctx=ctx,
+        )
+    )
+
+
+def build_readme_docs_plan_entry(
+    *,
+    source: str | Path,
+    name: str,
+    description: str,
+    trigger: TriggerType,
+    permission: Permission,
+    ctx: DocsRenderContext | None = None,
+) -> MessagePlanEntry:
     locale = ctx.locale if ctx is not None else "zh-CN"
     actor_permission = ctx.actor_permission if ctx is not None else Permission.NORMAL
     node = load_doc_node(
@@ -405,14 +452,14 @@ def build_readme_docs(
         )
         match = match_feature(visible_features, ctx.feature_query)
         if match.status == "matched" and match.feature is not None:
-            return render_doc_feature(
+            return render_doc_feature_plan_entry(
                 node,
                 match.feature,
                 locale=locale,
                 include_demo=ctx.include_demo,
             )
         if match.status == "ambiguous":
-            return text_message(
+            return _build_text_plan_entry(
                 "\n".join(
                     [
                         tr(
@@ -429,7 +476,7 @@ def build_readme_docs(
                     ]
                 ).strip()
             )
-        return text_message(
+        return _build_text_plan_entry(
             tr(
                 locale,
                 "docs.feature.not_found",
@@ -439,7 +486,7 @@ def build_readme_docs(
     include_demo = (
         ctx.include_demo if ctx is not None and ctx.view == "plugin" else False
     )
-    return render_doc_node_overview(
+    return render_doc_node_overview_plan_entry(
         node,
         locale=locale,
         include_demo=include_demo,
@@ -614,6 +661,25 @@ def render_doc_node_overview(
     actor_permission: Permission = Permission.NORMAL,
     children: Sequence[DocNode] = (),
 ) -> Message:
+    return render_message_plan_entry(
+        render_doc_node_overview_plan_entry(
+            node,
+            locale=locale,
+            include_demo=include_demo,
+            actor_permission=actor_permission,
+            children=children,
+        )
+    )
+
+
+def render_doc_node_overview_plan_entry(
+    node: DocNode,
+    *,
+    locale: LocaleCode,
+    include_demo: bool = False,
+    actor_permission: Permission = Permission.NORMAL,
+    children: Sequence[DocNode] = (),
+) -> MessagePlanEntry:
     lines = [node.title, ""]
     if node.summary:
         lines.extend([node.summary, ""])
@@ -654,7 +720,7 @@ def render_doc_node_overview(
             _support_text_block(locale),
         ]
     )
-    message = text_message("\n".join(lines).strip())
+    message = _build_text_plan_entry("\n".join(lines).strip())
     if not include_demo:
         return message
     demo_bytes = load_representative_demo_bytes(
@@ -668,7 +734,7 @@ def render_doc_node_overview(
     )
     if demo_bytes is None:
         return message
-    return message + MessageSegment.image(demo_bytes)
+    return _append_image_plan_entry(message, demo_bytes)
 
 
 def resolve_help_entry_shape(
@@ -723,6 +789,23 @@ def render_doc_feature(
     locale: LocaleCode,
     include_demo: bool = True,
 ) -> Message:
+    return render_message_plan_entry(
+        render_doc_feature_plan_entry(
+            node,
+            feature,
+            locale=locale,
+            include_demo=include_demo,
+        )
+    )
+
+
+def render_doc_feature_plan_entry(
+    node: DocNode,
+    feature: FeatureDoc,
+    *,
+    locale: LocaleCode,
+    include_demo: bool = True,
+) -> MessagePlanEntry:
     lines = [
         node.title,
         feature.title,
@@ -742,13 +825,13 @@ def render_doc_feature(
         start=1,
     ):
         lines.append(f"{index}. {note}")
-    message = text_message("\n".join(lines).strip())
+    message = _build_text_plan_entry("\n".join(lines).strip())
     if not include_demo:
         return message
     demo_bytes = load_demo_bytes(node.bundle, feature)
     if demo_bytes is None:
         return message
-    return message + MessageSegment.image(demo_bytes)
+    return _append_image_plan_entry(message, demo_bytes)
 
 
 def can_view_node(node: DocNode, actor_permission: Permission) -> bool:
@@ -1441,6 +1524,19 @@ def build_doc_demo_plan_entry(
             TextBlock(f"{text}\n参考示例如下：\n"),
             ImageBytesBlock(image_bytes),
         )
+    )
+
+
+def _build_text_plan_entry(text: str) -> MessagePlanEntry:
+    return MessagePlanEntry(blocks=(TextBlock(text),))
+
+
+def _append_image_plan_entry(
+    entry: MessagePlanEntry,
+    image_bytes: bytes,
+) -> MessagePlanEntry:
+    return MessagePlanEntry(
+        blocks=(*entry.blocks, ImageBytesBlock(image_bytes))
     )
 
 

@@ -23,7 +23,9 @@ from ._engine import build_help_home_text as build_help_home_text
 from ._engine import build_plugin_guide_copy_text as build_plugin_guide_copy_text
 from ._engine import build_plugin_summary_copy_text as build_plugin_summary_copy_text
 from ._engine import build_readme_docs as build_readme_docs
+from ._engine import build_readme_docs_plan_entry as build_readme_docs_plan_entry
 from ._engine import build_simple_leaf_copy_text as build_simple_leaf_copy_text
+from ._engine import build_static_docs_plan_entry as build_static_docs_plan_entry
 from ._engine import build_static_entry_copy_text as build_static_entry_copy_text
 from ._engine import build_virtual_plugin_doc_bundle as build_virtual_plugin_doc_bundle
 from ._engine import can_view_node as can_view_node
@@ -42,7 +44,11 @@ from ._engine import node_help_command as node_help_command
 from ._engine import read_docs_metas as read_docs_metas
 from ._engine import render_demo_png as render_demo_png
 from ._engine import render_demo_png_with_audit as render_demo_png_with_audit
+from ._engine import render_doc_feature_plan_entry as render_doc_feature_plan_entry
 from ._engine import render_doc_node_overview as render_doc_node_overview
+from ._engine import (
+    render_doc_node_overview_plan_entry as render_doc_node_overview_plan_entry,
+)
 from ._engine import render_feature_deep_dive as render_feature_deep_dive
 from ._engine import render_help_dashboard as render_help_dashboard
 from ._engine import render_plugin_guide as render_plugin_guide
