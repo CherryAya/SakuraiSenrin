@@ -23,9 +23,10 @@ from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
-    ImageBytesBlock,
     MessagePlanEntry,
-    TextBlock,
+    append_image_plan_entry,
+    build_image_plan_entry,
+    build_text_plan_entry,
     render_message_plan_entry,
 )
 from src.lib.utils.common import get_current_time
@@ -1518,26 +1519,15 @@ def build_doc_demo_plan_entry(
 
     text = (prefix_text or "").strip()
     if not text:
-        return MessagePlanEntry(blocks=(ImageBytesBlock(image_bytes),))
-    return MessagePlanEntry(
-        blocks=(
-            TextBlock(f"{text}\n参考示例如下：\n"),
-            ImageBytesBlock(image_bytes),
-        )
+        return build_image_plan_entry(image_bytes)
+    return append_image_plan_entry(
+        build_text_plan_entry(f"{text}\n参考示例如下：\n"),
+        image_bytes,
     )
 
 
-def _build_text_plan_entry(text: str) -> MessagePlanEntry:
-    return MessagePlanEntry(blocks=(TextBlock(text),))
-
-
-def _append_image_plan_entry(
-    entry: MessagePlanEntry,
-    image_bytes: bytes,
-) -> MessagePlanEntry:
-    return MessagePlanEntry(
-        blocks=(*entry.blocks, ImageBytesBlock(image_bytes))
-    )
+_build_text_plan_entry = build_text_plan_entry
+_append_image_plan_entry = append_image_plan_entry
 
 
 def build_doc_demo_message(

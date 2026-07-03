@@ -117,6 +117,13 @@ def build_image_plan_entry(image_bytes: bytes) -> MessagePlanEntry:
     return MessagePlanEntry(blocks=(ImageBytesBlock(image_bytes),))
 
 
+def append_image_plan_entry(
+    entry: MessagePlanEntry,
+    image_bytes: bytes,
+) -> MessagePlanEntry:
+    return MessagePlanEntry(blocks=(*entry.blocks, ImageBytesBlock(image_bytes)))
+
+
 async def build_image_or_text_plan_entry(
     *,
     image_bytes: bytes | None,

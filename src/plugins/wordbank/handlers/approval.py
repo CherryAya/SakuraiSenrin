@@ -20,6 +20,7 @@ from src.lib.message_plan import (
     MessagePlanEntry,
     MessagePlanInput,
     TextBlock,
+    build_text_plan_entry,
     deliver_message_plan,
 )
 from src.logger import logger
@@ -267,7 +268,7 @@ def _embed_rendered_shapes(
     rendered_fields: tuple[_RenderedShapeField, ...],
 ) -> MessagePlanEntry:
     if not rendered_fields:
-        return MessagePlanEntry(blocks=(TextBlock(text),))
+        return build_text_plan_entry(text)
 
     fields_by_marker = {
         f"{field.label} {field.summary}": field for field in rendered_fields

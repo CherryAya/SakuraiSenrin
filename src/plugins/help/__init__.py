@@ -37,6 +37,9 @@ from src.lib.message_plan import (
     MessagePlanEntry,
     MessagePlanInput,
     TextBlock,
+    append_image_plan_entry,
+    build_image_plan_entry,
+    build_text_plan_entry,
     deliver_message_plan,
     finish_with_message,
 )
@@ -535,16 +538,13 @@ def _resolve_child_entry(
 
 
 def _compose_help_reply(image_bytes: bytes, text: str) -> MessagePlanEntry:
-    blocks = []
     text_value = text.strip()
-    if text_value:
-        blocks.append(TextBlock(text_value))
-    blocks.append(ImageBytesBlock(image_bytes))
-    return MessagePlanEntry(blocks=tuple(blocks))
+    if not text_value:
+        return build_image_plan_entry(image_bytes)
+    return append_image_plan_entry(build_text_plan_entry(text_value), image_bytes)
 
 
-def _build_text_plan_entry(text: str) -> MessagePlanEntry:
-    return MessagePlanEntry(blocks=(TextBlock(text),))
+_build_text_plan_entry = build_text_plan_entry
 
 
 def _compose_plugin_guide_messages(
@@ -602,9 +602,7 @@ def _compose_plugin_guide_messages(
             child_summary = child_entry.node.summary.strip()
             if child_summary:
                 child_lines.append(child_summary)
-        messages.append(
-            MessagePlanEntry(blocks=(TextBlock("\n".join(child_lines).strip()),))
-        )
+        messages.append(build_text_plan_entry("\n".join(child_lines).strip()))
     return tuple(messages)
 
 

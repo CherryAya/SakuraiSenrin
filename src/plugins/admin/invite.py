@@ -42,11 +42,11 @@ from src.lib.long_task import (
 )
 from src.lib.message_plan import (
     DeliveryPlan,
-    ImageBytesBlock,
     MessagePlanEntry,
     MessagePlanInput,
     ReplyRefBlock,
     TextBlock,
+    build_image_plan_entry,
     deliver_message_plan,
     finish_with_message,
 )
@@ -696,7 +696,7 @@ async def handle_list(ctx: AdminInviteContext) -> None:
             await deliver_message_plan(
                 ctx.bot,
                 plan=DeliveryPlan(
-                    messages=(MessagePlanEntry(blocks=(ImageBytesBlock(img_bytes),)),),
+                    messages=(build_image_plan_entry(img_bytes),),
                     source_kind="admin_invite_list",
                 ),
                 event=ctx.event,
