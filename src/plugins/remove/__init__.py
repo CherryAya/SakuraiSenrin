@@ -17,7 +17,12 @@ from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import DeliveryTarget
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan, finish_with_message
+from src.lib.message_plan import (
+    DeliveryPlan,
+    deliver_message_plan,
+    finish_with_message,
+    reject_with_message,
+)
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -191,7 +196,10 @@ async def _(
         )
         return
     state["remove_stage"] = "confirm"
-    await matcher.reject(tr(locale, "remove.confirm.prompt"))
+    await reject_with_message(
+        matcher,
+        message=tr(locale, "remove.confirm.prompt"),
+    )
 
 
 @remove_matcher.handle()
@@ -206,7 +214,10 @@ async def _(
     locale = await resolve_locale(str(event.group_id))
     confirm_text = event.message.extract_plain_text().strip()
     if not confirm_text:
-        await matcher.reject(tr(locale, "remove.confirm.prompt"))
+        await reject_with_message(
+            matcher,
+            message=tr(locale, "remove.confirm.prompt"),
+        )
     if not is_remove_confirmed(confirm_text):
         await finish_with_message(
             bot,
@@ -217,7 +228,10 @@ async def _(
         )
         return
     state["remove_stage"] = "reason"
-    await matcher.reject(tr(locale, "remove.reason.prompt"))
+    await reject_with_message(
+        matcher,
+        message=tr(locale, "remove.reason.prompt"),
+    )
 
 
 @remove_matcher.handle()
@@ -232,7 +246,10 @@ async def _(
     locale = await resolve_locale(str(event.group_id))
     reason = event.message.extract_plain_text()
     if not reason.strip():
-        await matcher.reject(tr(locale, "remove.reason.prompt"))
+        await reject_with_message(
+            matcher,
+            message=tr(locale, "remove.reason.prompt"),
+        )
     await perform_remove(
         bot,
         matcher,

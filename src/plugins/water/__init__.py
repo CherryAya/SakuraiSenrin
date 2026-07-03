@@ -63,6 +63,7 @@ from src.lib.message_plan import (
     MessagePlanInput,
     deliver_message_plan,
     finish_with_message,
+    reject_with_message,
 )
 from src.lib.plugin_docs import build_doc_demo_plan_entry, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
@@ -899,7 +900,7 @@ async def _water_query_guided_step(
                 ),
             ),
         )
-        await matcher.reject(prompt)
+        await reject_with_message(matcher, message=prompt)
         return
 
     clear_interaction_errors(state)

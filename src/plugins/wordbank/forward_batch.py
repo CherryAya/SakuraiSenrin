@@ -13,7 +13,12 @@ from src.lib.i18n.runtime import tr
 from src.lib.long_task import LongTaskRunner
 from src.logger import logger
 from src.plugins.wordbank.debug import describe_message_segments, describe_shape
-from src.plugins.wordbank.message_model import MessageShape, combine_shapes
+from src.plugins.wordbank.message_model import (
+    MessageInput,
+    MessageShape,
+    combine_shapes,
+    iter_message_segments,
+)
 from src.plugins.wordbank.services.errors import WordbankUserError
 
 FORWARD_BATCH_NODE_LIMIT = 50
@@ -249,10 +254,10 @@ def _with_separators(shapes: tuple[MessageShape, ...]) -> tuple[MessageShape, ..
     return tuple(parts)
 
 
-def _extract_forward_messages(detail: Any) -> tuple[Message, ...]:
-    messages: list[Message] = []
+def _extract_forward_messages(detail: Any) -> tuple[MessageInput, ...]:
+    messages: list[MessageInput] = []
     for item in _extract_forward_raw_items(detail):
-        message = _coerce_forward_message(item)
+        message = _coerce_forward_input(item)
         if message is not None:
             messages.append(message)
     return tuple(messages)
@@ -275,37 +280,30 @@ def _extract_forward_raw_items(detail: Any) -> tuple[Any, ...]:
     return (raw,)
 
 
-def _coerce_forward_message(raw: Any) -> Message | None:
+def _coerce_forward_input(raw: Any) -> MessageInput | None:
     if isinstance(raw, Message):
         return raw
+    if isinstance(raw, MessageSegment):
+        return raw
     if isinstance(raw, str):
-        if not raw.strip():
-            return None
-        return Message([MessageSegment.text(raw)])
-    if isinstance(raw, list):
-        try:
-            return Message(raw)
-        except Exception:
-            segments: list[MessageSegment] = []
-            for item in raw:
-                segment = _coerce_forward_segment(item)
-                if segment is not None:
-                    segments.append(segment)
-            return Message(segments) if segments else None
+        return raw if raw.strip() else None
+    if isinstance(raw, (list, tuple)):
+        items = tuple(item for item in raw if item is not None)
+        return items if items else None
     if isinstance(raw, dict):
         segment = _coerce_forward_segment(raw)
         if segment is not None:
-            return Message([segment])
+            return segment
         for key in ("content", "message", "messages", "raw_message"):
             nested = raw.get(key)
-            message = _coerce_forward_message(nested)
+            message = _coerce_forward_input(nested)
             if message is not None:
                 return message
         data = raw.get("data")
         if isinstance(data, dict):
             for key in ("content", "message", "messages", "raw_message"):
                 nested = data.get(key)
-                message = _coerce_forward_message(nested)
+                message = _coerce_forward_input(nested)
                 if message is not None:
                     return message
     return None
@@ -371,7 +369,7 @@ async def _collect_forward_messages_from_source_message_id(
     messages: list[Message] = []
     next_visited = (*visited_ids, source_message_id)
     for index, item in enumerate(raw_items, start=1):
-        message = _coerce_forward_message(item)
+        message = _coerce_forward_input(item)
         if message is None:
             logger.debug(
                 "[Wordbank][forward] node skipped | "
@@ -458,13 +456,30 @@ def _parse_forward_source_message_id_as_int(source_message_id: str) -> int | Non
 async def _flatten_forward_message(
     bot: Bot,
     *,
-    message: Message,
+    message: MessageInput,
     max_depth: int,
     depth: int,
     visited_ids: tuple[str, ...],
 ) -> tuple[Message, ...]:
-    if not is_forward_message(message):
+    if isinstance(message, Message) and not is_forward_message(message):
         return (message,)
+    if not isinstance(message, Message):
+        coerced = _coerce_forward_input(message)
+        if isinstance(coerced, Message):
+            message = coerced
+        elif isinstance(coerced, MessageSegment):
+            message = Message([coerced])
+        elif isinstance(coerced, str):
+            message = Message([MessageSegment.text(coerced)])
+        elif isinstance(coerced, (list, tuple)):
+            segments = [
+                segment for item in coerced for segment in iter_message_segments(item)
+            ]
+            message = Message(segments) if segments else Message()
+        else:
+            return ()
+        if not is_forward_message(message):
+            return (message,) if len(message) > 0 else ()
     parts: list[Message] = []
     buffer: list[MessageSegment] = []
     for segment in message:

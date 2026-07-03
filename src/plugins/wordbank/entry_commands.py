@@ -23,7 +23,11 @@ from src.lib.long_task import (
     LongTaskSpec,
     MessageEventProgressSink,
 )
-from src.lib.message_plan import MessagePlanInput, finish_with_message
+from src.lib.message_plan import (
+    MessagePlanInput,
+    finish_with_message,
+    pause_with_message,
+)
 
 from .guided_flow import (
     WORDBANK_GUIDED_SEARCH_STAGE_CREATOR,
@@ -518,7 +522,10 @@ def register_wordbank_command_handlers(
             ),
         )
         state["wordbank_guided_scope"] = text
-        await matcher.pause(tr(locale, "wordbank.guided.add.advanced_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.add.advanced_prompt"),
+        )
 
     async def _handle_advanced_step(
         bot: Bot,
@@ -738,11 +745,17 @@ def register_wordbank_command_handlers(
         state["wordbank_guided_search_requires_creator"] = selection.requires_creator
         if selection.requires_query:
             state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_QUERY
-            await matcher.pause(tr(locale, "wordbank.guided.search.keyword_prompt"))
+            await pause_with_message(
+                matcher,
+                message=tr(locale, "wordbank.guided.search.keyword_prompt"),
+            )
             return
         if selection.requires_creator:
             state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_CREATOR
-            await matcher.pause(tr(locale, "wordbank.guided.search.creator_prompt"))
+            await pause_with_message(
+                matcher,
+                message=tr(locale, "wordbank.guided.search.creator_prompt"),
+            )
             return
         await _call_dynamic(
             "_finish_guided_search",
@@ -790,7 +803,10 @@ def register_wordbank_command_handlers(
         state["wordbank_guided_search_image_scores"] = image_scores
         if bool(state.get("wordbank_guided_search_requires_creator")):
             state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_CREATOR
-            await matcher.pause(tr(locale, "wordbank.guided.search.creator_prompt"))
+            await pause_with_message(
+                matcher,
+                message=tr(locale, "wordbank.guided.search.creator_prompt"),
+            )
             return
         await _call_dynamic(
             "_finish_guided_search",

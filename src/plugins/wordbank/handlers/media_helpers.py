@@ -9,10 +9,11 @@ from nonebot.adapters.onebot.v11.message import Message
 from src.lib.i18n.runtime import tr
 from src.lib.long_task import LongTaskRunner
 from src.plugins.wordbank.message_model import (
+    MessageInput,
     MessageShape,
     combine_shapes,
     shape_from_image,
-    shape_from_message,
+    shape_from_message_input,
     shape_from_text,
     shape_from_trigger_text,
 )
@@ -27,7 +28,9 @@ ACTIVE_IMAGE_DOWNLOAD_CONCURRENCY = 4
 ACTIVE_IMAGE_INGEST_CONCURRENCY = 2
 
 
-def extract_image_urls(message: Message) -> list[str]:
+def extract_image_urls(message: MessageInput) -> list[str]:
+    if not isinstance(message, Message):
+        return []
     urls: list[str] = []
     for segment in message:
         if segment.type != "image":
@@ -56,7 +59,7 @@ async def fetch_image_bytes_with_retry(
 
 
 async def fetch_image_bytes_from_message(
-    message: Message,
+    message: MessageInput,
     *,
     limit: int = 2,
     task: LongTaskRunner | None = None,
@@ -102,7 +105,7 @@ async def fetch_image_bytes_from_message(
 
 
 async def fetch_first_image_bytes_from_message(
-    message: Message,
+    message: MessageInput,
     *,
     task: LongTaskRunner | None = None,
 ) -> bytes | None:
@@ -179,7 +182,7 @@ def shape_from_trigger_parts(text: str, *, image_id: int | None = None) -> Messa
 
 async def build_message_shape_from_message(
     media_service: WordbankMediaService,
-    message: Message,
+    message: MessageInput,
     *,
     image_limit: int = GUIDED_MESSAGE_IMAGE_LIMIT,
     task: LongTaskRunner | None = None,
@@ -202,7 +205,7 @@ async def build_message_shape_from_message(
         )
     for index, canonical_id in enumerate(canonical_ids):
         image_ids[index] = canonical_id
-    return shape_from_message(message, image_ids=image_ids)
+    return shape_from_message_input(message, image_ids=image_ids)
 
 
 async def build_shape_from_text_and_images(

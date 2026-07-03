@@ -29,7 +29,12 @@ from src.lib.long_task import (
     LongTaskSpec,
     MatcherProgressSink,
 )
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan, finish_with_message
+from src.lib.message_plan import (
+    DeliveryPlan,
+    deliver_message_plan,
+    finish_with_message,
+    pause_with_message,
+)
 from src.logger import logger
 from src.plugins.wordbank.debug import (
     describe_batch_errors,
@@ -261,7 +266,10 @@ async def record_guided_trigger(
         locale=locale,
         snapshot=snapshot,
     )
-    await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
+    await pause_with_message(
+        matcher,
+        message=tr(locale, "wordbank.guided.add.response_prompt"),
+    )
 
 
 async def record_guided_response(
@@ -291,7 +299,10 @@ async def record_guided_response(
                 keep_keys=("wordbank_guided_trigger_shape",),
             ),
         )
-        await matcher.pause(tr(locale, "wordbank.guided.forward_response_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.forward_response_prompt"),
+        )
         return
     long_task = LongTaskRunner(
         LongTaskSpec(
@@ -333,7 +344,10 @@ async def record_guided_response(
         locale=locale,
         snapshot=snapshot,
     )
-    await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
+    await pause_with_message(
+        matcher,
+        message=tr(locale, "wordbank.guided.add.scope_prompt"),
+    )
 
 
 async def record_guided_forward_response_choice(
@@ -404,7 +418,10 @@ async def record_guided_forward_response_choice(
             f"node_count={len(payload.split_shapes)} whole={whole_description}"
         )
         clear_interaction_errors(state)
-        await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.add.scope_prompt"),
+        )
         return
     if choice in {"2", "split", "拆开"}:
         state.pop("wordbank_guided_response_forward_pending", None)
@@ -446,7 +463,10 @@ async def record_guided_forward_response_choice(
             f"first={describe_shape(first_shape)}"
         )
         clear_interaction_errors(state)
-        await matcher.pause(tr(locale, "wordbank.guided.add.scope_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.add.scope_prompt"),
+        )
         return
     await reject_guided_error(
         matcher,
@@ -481,7 +501,10 @@ async def start_guided_add_with_trigger_image(
     clear_interaction_errors(state)
     register_root_message(state, event)
     state["wordbank_guided_trigger_shape"] = shape
-    await matcher.pause(tr(locale, "wordbank.guided.add.response_prompt"))
+    await pause_with_message(
+        matcher,
+        message=tr(locale, "wordbank.guided.add.response_prompt"),
+    )
 
 
 async def start_guided_add(
@@ -495,7 +518,10 @@ async def start_guided_add(
     await initialize_plugin()
     state["wordbank_locale"] = locale
     register_root_message(state, event)
-    await matcher.pause(tr(locale, "wordbank.guided.add.trigger_prompt"))
+    await pause_with_message(
+        matcher,
+        message=tr(locale, "wordbank.guided.add.trigger_prompt"),
+    )
 
 
 async def finish_guided_add(
@@ -737,7 +763,10 @@ async def start_guided_search(
     state["wordbank_guided_search_image_scores"] = {}
     state["wordbank_guided_search_requires_creator"] = False
     register_root_message(state, event)
-    await matcher.pause(tr(locale, "wordbank.guided.search.mode_prompt"))
+    await pause_with_message(
+        matcher,
+        message=tr(locale, "wordbank.guided.search.mode_prompt"),
+    )
 
 
 async def finish_guided_search(
@@ -823,11 +852,12 @@ async def finish_guided_search(
     if page.total_count <= 0:
         await matcher.finish()
         return
-    await matcher.pause(
-        search_session_prompt(
+    await pause_with_message(
+        matcher,
+        message=search_session_prompt(
             locale,
             total_pages=guided_search_total_pages(state),
-        )
+        ),
     )
 
 
@@ -892,11 +922,12 @@ async def handle_search_session_event(
             page=view.page,
             finish_after_send=False,
         )
-        await matcher.pause(
-            search_session_prompt(
+        await pause_with_message(
+            matcher,
+            message=search_session_prompt(
                 locale,
                 total_pages=guided_search_total_pages(state),
-            )
+            ),
         )
         return
 

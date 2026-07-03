@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import MutableMapping
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from src.lib.i18n.runtime import tr
+from src.lib.message_plan import reject_with_message
 
 REVOKE_MARKERS = ("revoke", "recall", "exit")
 DEFAULT_ABORT_MESSAGE = tr("zh-CN", "interaction.cancelled")
@@ -101,4 +102,4 @@ async def reject_or_abort_on_error(
     if count >= max_errors:
         await matcher.finish(abort_message)
         return
-    await matcher.reject(error_message)
+    await reject_with_message(cast(Any, matcher), message=error_message)

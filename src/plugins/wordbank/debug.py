@@ -6,10 +6,13 @@ from collections.abc import Sequence
 from time import perf_counter
 from typing import Any
 
-from nonebot.adapters.onebot.v11 import Message
-
 from src.logger import logger
-from src.plugins.wordbank.message_model import MessageShape, shape_to_summary_text
+from src.plugins.wordbank.message_model import (
+    MessageInput,
+    MessageShape,
+    iter_message_segments,
+    shape_to_summary_text,
+)
 
 _DEBUG_TEXT_LIMIT = 48
 
@@ -32,13 +35,14 @@ def log_perf(stage: str, *, start: float | None = None, **fields: Any) -> None:
     logger.debug(f"[Wordbank][perf] {stage}{suffix}")
 
 
-def describe_message_segments(message: Message | None) -> str:
-    if not isinstance(message, Message):
-        return f"type={type(message).__name__}"
-    if len(message) == 0:
+def describe_message_segments(message: MessageInput | None) -> str:
+    if message is None:
+        return "type=NoneType"
+    segments = list(iter_message_segments(message))
+    if len(segments) == 0:
         return "segments=0"
     parts: list[str] = []
-    for index, segment in enumerate(message):
+    for index, segment in enumerate(segments):
         if segment.type == "text":
             text = _compact_debug_text(str(segment.data.get("text", "")))
             parts.append(f"{index}:text({text})")

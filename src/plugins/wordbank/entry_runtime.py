@@ -28,13 +28,15 @@ from src.lib.interactive_recall import (
 from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import (
     DeliveryPlan,
+    ImageBytesBlock,
     MessagePlanEntry,
     MessagePlanInput,
+    RawMessageBlock,
     ReplyRefBlock,
     TextBlock,
     deliver_message_plan,
     finish_with_message,
-    render_message_plan_input,
+    normalize_message_plan_entry,
 )
 from src.logger import logger
 
@@ -366,10 +368,33 @@ def register_wordbank_runtime_handlers(
             logger.warning(f"[Wordbank] approval source notice skipped: {exc}")
 
     def _message_segment_stats(message: MessagePlanInput) -> tuple[int, int]:
-        segments = list(render_message_plan_input(message))
+        entry = normalize_message_plan_entry(message)
+        segment_count = 0
+        image_count = 0
+        for block in entry.blocks:
+            if isinstance(block, TextBlock):
+                if block.text:
+                    segment_count += 1
+                continue
+            if isinstance(block, ImageBytesBlock):
+                segment_count += 1
+                image_count += 1
+                continue
+            if isinstance(block, ReplyRefBlock):
+                if block.message_id.isdigit():
+                    segment_count += 1
+                continue
+            if isinstance(block, RawMessageBlock):
+                raw_segments = list(block.message)
+                segment_count += len(raw_segments)
+                image_count += sum(
+                    1 for segment in raw_segments if segment.type == "image"
+                )
+                continue
+            segment_count += 1
         return (
-            len(segments),
-            sum(1 for segment in segments if segment.type == "image"),
+            segment_count,
+            image_count,
         )
 
     def _image_payload_trace_fields(

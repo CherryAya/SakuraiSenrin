@@ -2,20 +2,28 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from hashlib import md5
 import json
 import re
-from typing import Literal
+from typing import Any, Literal
 import unicodedata
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
-from src.lib.messages import empty_message
 
 MessageAtomKind = Literal["text", "image", "at", "event"]
 MessageAtomPayload = dict[str, int | str]
+type MessageInput = (
+    Message
+    | MessageSegment
+    | str
+    | list[Any]
+    | tuple[Any, ...]
+    | dict[str, Any]
+)
 _SPACE_RE = re.compile(r"\s+")
 EVENT_TRIGGER_ESCAPED_PREFIX = "\\"
 EVENT_TRIGGER_BRACKET_PAIRS = (("[", "]"), ("【", "】"))
@@ -172,8 +180,56 @@ def combine_shapes(*shapes: MessageShape) -> MessageShape:
     return MessageShape(tuple(atoms))
 
 
+def iter_message_segments(message: MessageInput) -> Iterator[MessageSegment]:
+    if isinstance(message, Message):
+        yield from message
+        return
+    if isinstance(message, MessageSegment):
+        yield message
+        return
+    if isinstance(message, str):
+        if message:
+            yield MessageSegment.text(message)
+        return
+    if isinstance(message, (list, tuple)):
+        for item in message:
+            yield from iter_message_segments(item)
+        return
+    if not isinstance(message, dict):
+        return
+    segment = _coerce_message_segment(message)
+    if segment is not None:
+        yield segment
+        return
+    for key in ("content", "message", "messages", "raw_message"):
+        nested = message.get(key)
+        if nested is not None:
+            yield from iter_message_segments(nested)
+    data = message.get("data")
+    if isinstance(data, dict):
+        for key in ("content", "message", "messages", "raw_message"):
+            nested = data.get(key)
+            if nested is not None:
+                yield from iter_message_segments(nested)
+
+
 def shape_from_message(
     message: Message,
+    *,
+    image_ids: dict[int, int] | None = None,
+    event_names: tuple[str, ...] = (),
+    preserve_blank_text: bool = False,
+) -> MessageShape:
+    return shape_from_message_input(
+        message,
+        image_ids=image_ids,
+        event_names=event_names,
+        preserve_blank_text=preserve_blank_text,
+    )
+
+
+def shape_from_message_input(
+    message: MessageInput,
     *,
     image_ids: dict[int, int] | None = None,
     event_names: tuple[str, ...] = (),
@@ -182,7 +238,7 @@ def shape_from_message(
     image_ids = image_ids or {}
     atoms: list[MessageAtom] = []
     image_index = 0
-    for segment in message:
+    for segment in iter_message_segments(message):
         if segment.type == "text":
             raw_text = str(segment.data.get("text", ""))
             if is_valid_message_text(
@@ -207,9 +263,9 @@ def shape_from_message(
     return MessageShape(tuple(atoms))
 
 
-def shape_from_forward_message(message: Message) -> MessageShape:
+def shape_from_forward_message(message: MessageInput) -> MessageShape:
     atoms: list[MessageAtom] = []
-    for segment in message:
+    for segment in iter_message_segments(message):
         if segment.type == "text":
             raw_text = str(segment.data.get("text", ""))
             if is_valid_message_text(raw_text, preserve_blank_text=False):
@@ -220,14 +276,18 @@ def shape_from_forward_message(message: Message) -> MessageShape:
             target_id = str(segment.data.get("qq", "") or "").strip()
             if target_id:
                 atoms.append(MessageAtom(kind="at", target_id=target_id))
-        elif segment.type == "node":
-            content = segment.data.get("content")
-            if isinstance(content, Message):
-                nested = shape_from_forward_message(content)
-                atoms.extend(nested.atoms)
-            elif isinstance(content, str) and is_valid_message_text(content):
-                atoms.append(MessageAtom(kind="text", text=content))
     return MessageShape(tuple(atoms))
+
+
+def _coerce_message_segment(raw: dict[str, Any]) -> MessageSegment | None:
+    segment_type = raw.get("type")
+    data = raw.get("data")
+    if not isinstance(segment_type, str) or not isinstance(data, dict):
+        return None
+    try:
+        return MessageSegment(segment_type, data)
+    except TypeError:
+        return None
 
 
 def shape_to_payload(shape: MessageShape) -> str:
@@ -310,16 +370,6 @@ def shape_to_search_text(shape: MessageShape) -> str:
         elif atom.kind == "event" and atom.event_name:
             texts.append(atom.event_name)
     return _join_shape_text_parts(texts)
-
-
-def shape_to_message(shape: MessageShape) -> Message:
-    message = empty_message()
-    for atom in shape.atoms:
-        if atom.kind == "text" and atom.text:
-            message += MessageSegment.text(atom.text)
-        elif atom.kind == "at" and atom.target_id:
-            message += MessageSegment.at(atom.target_id)
-    return message
 
 
 def _shape_image_keys(shape: MessageShape) -> str:

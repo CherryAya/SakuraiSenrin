@@ -198,7 +198,12 @@ async def _reject_study_error(
     message: MessagePlanInput,
 ) -> None:
     if record_interaction_error(state) >= GUIDED_MAX_ERRORS:
-        await matcher.finish(tr(locale, "interaction.too_many_errors"))
+        await finish_with_message(
+            None,
+            matcher,
+            message=tr(locale, "interaction.too_many_errors"),
+            source_kind="study_guided",
+        )
         return
     await reject_with_message(matcher, message=message)
 
@@ -320,7 +325,10 @@ async def _start_guided_study_from_partial_args(
     state["study_mode_prefilled"] = True
 
     if len(tokens) == 1:
-        await matcher.pause(tr(locale, "wordbank.guided.study.group_block_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.study.group_block_prompt"),
+        )
         return True
 
     try:
@@ -338,19 +346,28 @@ async def _start_guided_study_from_partial_args(
     if len(tokens) == 2:
         if has_images:
             return False
-        await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.study.trigger_prompt"),
+        )
         return True
 
     trigger_text = rest_after_token(source, tokens[1])
     if not trigger_text:
-        await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.study.trigger_prompt"),
+        )
         return True
 
     if len(tokens) == 3 and not has_images:
         state["study_trigger_shape"] = shape_from_trigger_text_value(trigger_text)
         state["study_trigger_preloaded"] = True
         state["study_response_after_preloaded_trigger"] = True
-        await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.study.response_prompt"),
+        )
         return True
 
     return False
@@ -428,7 +445,10 @@ async def _record_study_trigger(
         locale=locale,
         snapshot=snapshot,
     )
-    await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
+    await pause_with_message(
+        matcher,
+        message=tr(locale, "wordbank.guided.study.response_prompt"),
+    )
 
 
 async def _record_study_response(
@@ -467,7 +487,10 @@ async def _record_study_response(
             locale=locale,
             snapshot=snapshot,
         )
-        await matcher.pause(tr(locale, "wordbank.guided.forward_response_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.forward_response_prompt"),
+        )
         return
     long_task = LongTaskRunner(
         LongTaskSpec(
@@ -527,7 +550,10 @@ async def _record_study_response(
         locale=locale,
         snapshot=snapshot,
     )
-    await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
+    await pause_with_message(
+        matcher,
+        message=tr(locale, "wordbank.guided.study.weight_prompt"),
+    )
 
 
 async def _record_study_forward_response_choice(
@@ -600,7 +626,10 @@ async def _record_study_forward_response_choice(
             f"node_count={len(payload.split_shapes)} whole={whole_description}"
         )
         clear_interaction_errors(state)
-        await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.study.weight_prompt"),
+        )
         return
     if choice in {"2", "split", "拆开"}:
         long_task = LongTaskRunner(
@@ -644,7 +673,10 @@ async def _record_study_forward_response_choice(
             f"first={describe_shape(first_shape)}"
         )
         clear_interaction_errors(state)
-        await matcher.pause(tr(locale, "wordbank.guided.study.weight_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.study.weight_prompt"),
+        )
         return
     await _reject_study_error(
         matcher,
@@ -824,13 +856,19 @@ async def _start_guided_study_with_trigger_image(
     state["study_locale"] = locale
     shape = await build_message_shape_from_message(wordbank_media_service, arg)
     if shape.is_empty():
-        await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.study.mode_prompt"),
+        )
         return
     clear_interaction_errors(state)
     register_root_message(state, event)
     state["study_trigger_shape"] = shape
     state["study_trigger_preloaded"] = True
-    await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
+    await pause_with_message(
+        matcher,
+        message=tr(locale, "wordbank.guided.study.mode_prompt"),
+    )
 
 
 @study_command.handle()
@@ -866,7 +904,10 @@ async def _(
         await wordbank_service.initialize()
         state["study_locale"] = locale
         register_root_message(state, event)
-        await matcher.pause(tr(locale, "wordbank.guided.study.mode_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.study.mode_prompt"),
+        )
         return
     if await _start_guided_study_from_partial_args(
         matcher,
@@ -975,7 +1016,10 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
         snapshot=_copy_study_state(state, keep_keys=mode_keep_keys),
         cleanup_keys=mode_cleanup_keys,
     )
-    await matcher.pause(tr(locale, "wordbank.guided.study.group_block_prompt"))
+    await pause_with_message(
+        matcher,
+        message=tr(locale, "wordbank.guided.study.group_block_prompt"),
+    )
 
 
 @study_command.handle()
@@ -1024,9 +1068,15 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
     )
     if _is_truthy_state_flag(state, "study_trigger_preloaded"):
         state["study_response_after_preloaded_trigger"] = True
-        await matcher.pause(tr(locale, "wordbank.guided.study.response_prompt"))
+        await pause_with_message(
+            matcher,
+            message=tr(locale, "wordbank.guided.study.response_prompt"),
+        )
         return
-    await matcher.pause(tr(locale, "wordbank.guided.study.trigger_prompt"))
+    await pause_with_message(
+        matcher,
+        message=tr(locale, "wordbank.guided.study.trigger_prompt"),
+    )
 
 
 def _study_locale(state: T_State) -> LocaleCode:
