@@ -25,6 +25,7 @@ from src.plugins.wordbank.database.types import WordbankSearchItem
 from .search_card_helpers import (
     build_search_card_footer_text,
     fallback_match_label,
+    fold_hint,
     folded_preview_note,
     has_folded_preview,
     line_height,
@@ -766,6 +767,16 @@ class SearchResultCardRenderer:
             max_lines=3,
         )
         return max(CARD_FOLDED_BLOCK_MIN_HEIGHT, text_height + 28)
+
+    # Compatibility helpers kept for tests and local renderer inspection.
+    def _fold_hint(self, item: WordbankSearchItem, locale: LocaleCode) -> str:
+        return fold_hint(item, locale)
+
+    def _has_folded_preview(self, item: WordbankSearchItem) -> bool:
+        return has_folded_preview(item)
+
+    def _folded_preview_block_height(self) -> int:
+        return CARD_FOLDED_BLOCK_MIN_HEIGHT
 
     def _draw_wrapped_text(
         self,

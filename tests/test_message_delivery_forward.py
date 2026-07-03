@@ -161,10 +161,10 @@ async def test_deliver_forward_messages_reuses_bundle_on_exact_match(
 
     await deliver_forward_messages(
         bot,
-        event,
         messages,
         source_kind="help",
         fallback_nickname="fallback",
+        event=event,
     )
 
     assert bot.call_api.await_count == 1
@@ -287,10 +287,10 @@ async def test_deliver_forward_messages_falls_back_when_bundle_reuse_fails(
 
     await deliver_forward_messages(
         bot,
-        event,
         messages,
         source_kind="help",
         fallback_nickname="fallback",
+        event=event,
     )
 
     api_calls = [call.args[0] for call in bot.call_api.await_args_list]
@@ -398,10 +398,10 @@ async def test_deliver_forward_messages_reordered_batch_resets_prefix_reuse(
 
     await deliver_forward_messages(
         bot,
-        build_group_message_event("#help wordbank"),
         reordered_messages,
         source_kind="help",
         fallback_nickname="fallback",
+        event=build_group_message_event("#help wordbank"),
     )
 
     api_calls = [call.args[0] for call in bot.call_api.await_args_list]
@@ -487,10 +487,10 @@ async def test_deliver_forward_messages_only_restages_tail_after_prefix_hit(
 
     await deliver_forward_messages(
         bot,
-        event,
         messages,
         source_kind="help",
         fallback_nickname="fallback",
+        event=event,
     )
 
     api_calls = [call.args[0] for call in bot.call_api.await_args_list]
@@ -555,10 +555,10 @@ async def test_deliver_forward_messages_uses_fallback_nickname_for_private_path(
 
     await deliver_forward_messages(
         bot,
-        event,
         (text_message("summary"),),
         source_kind="help",
         fallback_nickname="fallback",
+        event=event,
     )
 
     assert bot.call_api.await_args_list[-1].args[0] == "send_private_forward_msg"
@@ -607,10 +607,10 @@ async def test_deliver_forward_messages_logs_serialized_payload_summary(
 
     await deliver_forward_messages(
         bot,
-        event,
         (text_message("summary"),),
         source_kind="help",
         fallback_nickname="fallback",
+        event=event,
     )
 
     merged_logs = [

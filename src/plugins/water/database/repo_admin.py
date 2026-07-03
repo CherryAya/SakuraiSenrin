@@ -5,27 +5,19 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import arrow
 from sqlalchemy import delete
 from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.lib.utils.common import get_current_time, split_list
+from src.lib.utils.common import split_list
 
 from .instances import water_core_db, water_message, water_summary
 from .ops import (
     WaterAchievementOps,
     WaterActivitySeasonOps,
-    WaterGroupMatrixMapOps,
-    WaterGroupStatsOps,
-    WaterLevelOps,
-    WaterMatrixMergeStateOps,
-    WaterMessageOps,
-    WaterPenaltyOps,
-    WaterSettlementJobOps,
-    WaterSummaryOps,
 )
 from .tables import (
     WaterDailySummary,
@@ -59,6 +51,16 @@ from .repo_models import (
 )
 
 
+def _repo_module() -> Any:
+    from . import repo as repo_module
+
+    return repo_module
+
+
+def _current_time() -> int:
+    return int(_repo_module().get_current_time())
+
+
 class WaterRepositoryAdminMixin:
     async def collect_daily_aggregates(
         self,
@@ -73,17 +75,25 @@ class WaterRepositoryAdminMixin:
         async def _stats_in_shard(
             session: AsyncSession,
         ) -> Sequence[Row[tuple[str, str, int, int]]]:
-            return await WaterMessageOps(session).aggregate_daily_stats(
-                start_ts,
-                end_ts,
+            return (
+                await _repo_module()
+                .WaterMessageOps(session)
+                .aggregate_daily_stats(
+                    start_ts,
+                    end_ts,
+                )
             )
 
         async def _hourly_in_shard(
             session: AsyncSession,
         ) -> Sequence[tuple[str, str, int, int]]:
-            return await WaterMessageOps(session).aggregate_daily_hourly_stats(
-                start_ts,
-                end_ts,
+            return (
+                await _repo_module()
+                .WaterMessageOps(session)
+                .aggregate_daily_hourly_stats(
+                    start_ts,
+                    end_ts,
+                )
             )
 
         from src.lib.db.connectors import ColdPolicy
@@ -135,9 +145,9 @@ class WaterRepositoryAdminMixin:
         force: bool = False,
         stale_after: int = 60 * 30,
     ) -> tuple[bool, str]:
-        now_ts = get_current_time()
+        now_ts = _current_time()
         async with water_core_db.session(commit=True) as session:
-            ops = WaterSettlementJobOps(session)
+            ops = _repo_module().WaterSettlementJobOps(session)
             if force:
                 started = await ops.try_start_job(
                     record_date,
@@ -163,14 +173,29 @@ class WaterRepositoryAdminMixin:
             return False, "pending"
 
     async def mark_settlement_success(self, record_date: int) -> None:
-        now_ts = get_current_time()
+        now_ts = _current_time()
         async with water_core_db.session(commit=True) as session:
-            await WaterSettlementJobOps(session).mark_success(record_date, now_ts)
+            await (
+                _repo_module()
+                .WaterSettlementJobOps(session)
+                .mark_success(
+                    record_date,
+                    now_ts,
+                )
+            )
 
     async def mark_settlement_failed(self, record_date: int, error: str) -> None:
-        now_ts = get_current_time()
+        now_ts = _current_time()
         async with water_core_db.session(commit=True) as session:
-            await WaterSettlementJobOps(session).mark_failed(record_date, now_ts, error)
+            await (
+                _repo_module()
+                .WaterSettlementJobOps(session)
+                .mark_failed(
+                    record_date,
+                    now_ts,
+                    error,
+                )
+            )
 
     async def apply_daily_settlement(
         self,
@@ -184,7 +209,7 @@ class WaterRepositoryAdminMixin:
         if not aggregates:
             return
 
-        now_ts = get_current_time()
+        now_ts = _current_time()
         record_date = int(target_date.format("YYYYMMDD"))
 
         summary_payloads: list[WaterSummaryPayload] = []
@@ -254,9 +279,9 @@ class WaterRepositoryAdminMixin:
             )
 
         async with water_core_db.session(commit=True) as session:
-            group_stats_ops = WaterGroupStatsOps(session)
-            level_ops = WaterLevelOps(session)
-            penalty_ops = WaterPenaltyOps(session)
+            group_stats_ops = _repo_module().WaterGroupStatsOps(session)
+            level_ops = _repo_module().WaterLevelOps(session)
+            penalty_ops = _repo_module().WaterPenaltyOps(session)
 
             group_user_keys = list(group_user_gain.keys())
             group_ids = list(group_gain.keys())
@@ -478,7 +503,11 @@ class WaterRepositoryAdminMixin:
 
     async def get_penalty_log(self, penalty_id: int) -> object | None:
         async with water_core_db.session(commit=False) as session:
-            return await WaterPenaltyOps(session).get_penalty_by_id(penalty_id)
+            return (
+                await _repo_module()
+                .WaterPenaltyOps(session)
+                .get_penalty_by_id(penalty_id)
+            )
 
     async def get_user_recent_summaries(
         self,
@@ -490,19 +519,25 @@ class WaterRepositoryAdminMixin:
         repo_self = cast("WaterRepository", self)
         hot_start_date = repo_self._hot_summary_start_date()
         async with water_core_db.session(commit=False) as session:
-            group_ids = await WaterGroupMatrixMapOps(session).get_groups_by_matrix(
-                matrix_id
+            group_ids = (
+                await _repo_module()
+                .WaterGroupMatrixMapOps(session)
+                .get_groups_by_matrix(matrix_id)
             )
             if not group_ids:
                 return []
 
             hot_rows: list[WaterSummaryRecord] = []
             if end_date >= hot_start_date:
-                hot_rows = await WaterSummaryOps(session).get_user_recent_summaries(
-                    user_id=user_id,
-                    group_ids=group_ids,
-                    start_date=max(start_date, hot_start_date),
-                    end_date=end_date,
+                hot_rows = (
+                    await _repo_module()
+                    .WaterSummaryOps(session)
+                    .get_user_recent_summaries(
+                        user_id=user_id,
+                        group_ids=group_ids,
+                        start_date=max(start_date, hot_start_date),
+                        end_date=end_date,
+                    )
                 )
 
         archived_rows: list[WaterSummaryRecord] = []
@@ -529,12 +564,16 @@ class WaterRepositoryAdminMixin:
         hot_rows: list[WaterSummaryRecord] = []
         async with water_core_db.session(commit=False) as session:
             if end_date >= hot_start_date:
-                hot_rows = await WaterSummaryOps(session).get_summaries_in_window(
-                    start_date=max(start_date, hot_start_date),
-                    end_date=end_date,
-                    group_ids=group_ids,
-                    user_id=user_id,
-                    preserve_order=preserve_order,
+                hot_rows = (
+                    await _repo_module()
+                    .WaterSummaryOps(session)
+                    .get_summaries_in_window(
+                        start_date=max(start_date, hot_start_date),
+                        end_date=end_date,
+                        group_ids=group_ids,
+                        user_id=user_id,
+                        preserve_order=preserve_order,
+                    )
                 )
 
         archived_rows: list[WaterSummaryRecord] = []
@@ -577,15 +616,23 @@ class WaterRepositoryAdminMixin:
 
     async def get_user_global_level(self, user_id: str) -> tuple[int, int, int] | None:
         async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_global_level(user_id)
+            return await _repo_module().WaterLevelOps(session).get_global_level(user_id)
 
     async def get_user_global_rank(self, user_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_user_global_rank(user_id)
+            return (
+                await _repo_module()
+                .WaterLevelOps(session)
+                .get_user_global_rank(user_id)
+            )
 
     async def get_groups_by_matrix_id(self, matrix_id: str) -> list[str]:
         async with water_core_db.session(commit=False) as session:
-            return await WaterGroupMatrixMapOps(session).get_groups_by_matrix(matrix_id)
+            return (
+                await _repo_module()
+                .WaterGroupMatrixMapOps(session)
+                .get_groups_by_matrix(matrix_id)
+            )
 
     async def get_user_matrix_level(
         self,
@@ -593,22 +640,44 @@ class WaterRepositoryAdminMixin:
         matrix_id: str,
     ) -> tuple[int, int, int] | None:
         async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_matrix_level(matrix_id, user_id)
+            return (
+                await _repo_module()
+                .WaterLevelOps(session)
+                .get_matrix_level(
+                    matrix_id,
+                    user_id,
+                )
+            )
 
     async def get_user_matrix_rank(self, user_id: str, matrix_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_user_matrix_rank(matrix_id, user_id)
+            return (
+                await _repo_module()
+                .WaterLevelOps(session)
+                .get_user_matrix_rank(
+                    matrix_id,
+                    user_id,
+                )
+            )
 
     async def get_group_user_rank(self, group_id: str, user_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:
-            return await WaterGroupStatsOps(session).get_group_user_rank(
-                group_id,
-                user_id,
+            return (
+                await _repo_module()
+                .WaterGroupStatsOps(session)
+                .get_group_user_rank(
+                    group_id,
+                    user_id,
+                )
             )
 
     async def get_group_activity_rank(self, group_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:
-            return await WaterGroupStatsOps(session).get_group_activity_rank(group_id)
+            return (
+                await _repo_module()
+                .WaterGroupStatsOps(session)
+                .get_group_activity_rank(group_id)
+            )
 
     async def archive_summary_shards(self) -> None:
         await water_summary.run_archiver_task()
@@ -626,49 +695,81 @@ class WaterRepositoryAdminMixin:
 
     async def get_matrix_rank(self, matrix_id: str) -> int | None:
         async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_matrix_rank(matrix_id)
+            return (
+                await _repo_module().WaterLevelOps(session).get_matrix_rank(matrix_id)
+            )
 
     async def get_matrix_total_level(
         self, matrix_id: str
     ) -> tuple[int, int, int] | None:
         async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_matrix_total(matrix_id)
+            return (
+                await _repo_module().WaterLevelOps(session).get_matrix_total(matrix_id)
+            )
 
     async def exists_other_global_lv10(self, user_id: str) -> bool:
         async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).exists_other_global_lv10(user_id)
+            return (
+                await _repo_module()
+                .WaterLevelOps(session)
+                .exists_other_global_lv10(user_id)
+            )
 
     async def ignore_matrix_suggestion(self, group_id: str) -> bool:
-        now_ts = get_current_time()
+        now_ts = _current_time()
         async with water_core_db.session(commit=True) as session:
-            return await WaterMatrixMergeStateOps(session).set_ignored(group_id, now_ts)
+            return (
+                await _repo_module()
+                .WaterMatrixMergeStateOps(session)
+                .set_ignored(
+                    group_id,
+                    now_ts,
+                )
+            )
 
     async def get_ignored_matrix_suggestions(self) -> set[str]:
         async with water_core_db.session(commit=False) as session:
-            return await WaterMatrixMergeStateOps(session).get_ignored_groups()
+            return (
+                await _repo_module()
+                .WaterMatrixMergeStateOps(session)
+                .get_ignored_groups()
+            )
 
     async def mark_group_first_record_seen(self, group_id: str) -> bool:
-        now_ts = get_current_time()
+        now_ts = _current_time()
         async with water_core_db.session(commit=True) as session:
-            return await WaterMatrixMergeStateOps(session).mark_first_seen(
-                group_id,
-                now_ts,
+            return (
+                await _repo_module()
+                .WaterMatrixMergeStateOps(session)
+                .mark_first_seen(group_id, now_ts)
             )
 
     async def get_marked_first_record_groups(self) -> set[str]:
         async with water_core_db.session(commit=False) as session:
-            return await WaterMatrixMergeStateOps(session).get_first_seen_groups()
+            return (
+                await _repo_module()
+                .WaterMatrixMergeStateOps(session)
+                .get_first_seen_groups()
+            )
 
     async def has_matrix_merge_decision(self, group_id: str) -> bool:
         async with water_core_db.session(commit=False) as session:
-            state = await WaterMatrixMergeStateOps(session).get_state(group_id)
+            state = (
+                await _repo_module()
+                .WaterMatrixMergeStateOps(session)
+                .get_state(group_id)
+            )
             if state is None:
                 return False
             return state.status in {"merge", "reject"}
 
     async def get_pending_matrix_suggestion(self, group_id: str) -> dict | None:
         async with water_core_db.session(commit=False) as session:
-            state = await WaterMatrixMergeStateOps(session).get_state(group_id)
+            state = (
+                await _repo_module()
+                .WaterMatrixMergeStateOps(session)
+                .get_state(group_id)
+            )
             if state is None:
                 return None
             if state.status != "pending" or not state.target_matrix_id:
@@ -680,11 +781,11 @@ class WaterRepositoryAdminMixin:
         group_id: str,
         target_matrix_id: str,
     ) -> None:
-        now_ts = get_current_time()
+        now_ts = _current_time()
         repo_self = cast("WaterRepository", self)
         async with repo_self._get_merge_state_lock(group_id):
             async with water_core_db.session(commit=True) as session:
-                ops = WaterMatrixMergeStateOps(session)
+                ops = _repo_module().WaterMatrixMergeStateOps(session)
                 state = await ops.get_state(group_id)
                 if state is not None and state.status in {"merge", "reject", "pending"}:
                     return
@@ -696,13 +797,13 @@ class WaterRepositoryAdminMixin:
         action: str,
         operator_id: str,
     ) -> tuple[bool, dict]:
-        now_ts = get_current_time()
+        now_ts = _current_time()
         stale_target_corrected = False
         merge_applied = False
         repo_self = cast("WaterRepository", self)
         async with repo_self._get_merge_state_lock(group_id):
             async with water_core_db.session(commit=True) as session:
-                ops = WaterMatrixMergeStateOps(session)
+                ops = _repo_module().WaterMatrixMergeStateOps(session)
                 state = await ops.get_state(group_id)
                 if state is not None and state.status in {"merge", "reject"}:
                     return False, {
@@ -721,9 +822,11 @@ class WaterRepositoryAdminMixin:
                 )
                 resolved_target_matrix_id = target_matrix_id
                 if action == "merge" and target_matrix_id != current_matrix_id:
-                    target_groups = await WaterGroupMatrixMapOps(
-                        session
-                    ).count_groups_by_matrix(target_matrix_id)
+                    target_groups = (
+                        await _repo_module()
+                        .WaterGroupMatrixMapOps(session)
+                        .count_groups_by_matrix(target_matrix_id)
+                    )
                     if target_groups <= 0:
                         resolved_target_matrix_id = current_matrix_id
                         stale_target_corrected = True
@@ -761,8 +864,8 @@ class WaterRepositoryAdminMixin:
 
     async def get_settlement_state(self) -> dict[str, int | str]:
         async with water_core_db.session(commit=False) as session:
-            merge_ops = WaterMatrixMergeStateOps(session)
-            job_ops = WaterSettlementJobOps(session)
+            merge_ops = _repo_module().WaterMatrixMergeStateOps(session)
+            job_ops = _repo_module().WaterSettlementJobOps(session)
             latest_job = await job_ops.get_latest_job()
             last_success = await job_ops.get_last_success_record_date()
             ignored_count = len(await merge_ops.get_ignored_groups())
@@ -787,11 +890,11 @@ class WaterRepositoryAdminMixin:
         }
 
     async def pardon_penalty(self, penalty_id: int) -> bool:
-        now_ts = get_current_time()
+        now_ts = _current_time()
         async with water_core_db.session(commit=True) as session:
-            penalty_ops = WaterPenaltyOps(session)
-            level_ops = WaterLevelOps(session)
-            summary_ops = WaterSummaryOps(session)
+            penalty_ops = _repo_module().WaterPenaltyOps(session)
+            level_ops = _repo_module().WaterLevelOps(session)
+            summary_ops = _repo_module().WaterSummaryOps(session)
             log = await penalty_ops.get_penalty_by_id(penalty_id)
             if log is None or log.is_revoked:
                 return False

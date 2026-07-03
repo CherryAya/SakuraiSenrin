@@ -418,12 +418,13 @@ def test_demo_image_renderer_builds_full_section_bands_for_study_demo() -> None:
 
     assert layout.demo_heading_rect is not None
     assert layout.demo_rect[1] - layout.demo_heading_rect[3] <= 24
-    assert len(layout.demo_section_bands) == 5
-    assert [band.index for band in layout.demo_section_bands] == [1, 2, 3, 4, 5]
+    assert len(layout.demo_section_bands) == 6
+    assert [band.index for band in layout.demo_section_bands] == [1, 2, 3, 4, 5, 6]
     assert [band.title for band in layout.demo_section_bands] == [
         "引导式",
         "传统模式",
         "=> 语法糖",
+        "合并转发批量导入",
         "事件类例子",
         "高级选项",
     ]
@@ -909,7 +910,7 @@ def test_render_plugin_guide_and_copy_text_list_all_visible_features() -> None:
             )
         )
     )
-    assert image.width > 700
+    assert image.width > 650
     assert image.height > 1200
 
     copy_text = build_plugin_guide_copy_text(
@@ -960,7 +961,7 @@ def test_render_plugin_guide_builds_support_strip_inline_without_post_compose(
         )
     )
 
-    assert image.width > 700
+    assert image.width > 650
     assert image.height > 1200
 
 

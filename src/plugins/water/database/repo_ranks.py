@@ -7,17 +7,15 @@ from collections import defaultdict
 from collections.abc import Sequence
 from heapq import nsmallest
 from time import perf_counter
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import arrow
 from sqlalchemy.engine.row import Row
 
-from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.water.services.rank_types import WaterRankScope, WaterRankSubject
 
 from .instances import water_core_db, water_message
-from .ops import WaterMessageOps, WaterSummaryOps
 from .types import WaterSummaryRecord
 from .writers import water_writer
 
@@ -41,6 +39,16 @@ from .repo_models import (
 )
 
 
+def _repo_module() -> Any:
+    from . import repo as repo_module
+
+    return repo_module
+
+
+def _current_time() -> int:
+    return int(_repo_module().get_current_time())
+
+
 class WaterRepositoryRanksMixin:
     async def get_today_leaderboard(
         self,
@@ -49,25 +57,33 @@ class WaterRepositoryRanksMixin:
     ) -> list["RankItem"]:
         await water_writer.flush_now()
 
-        now = arrow.get(get_current_time()).to("Asia/Shanghai")
+        now = arrow.get(_current_time()).to("Asia/Shanghai")
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
         yesterday_int = int(now.shift(days=-1).format("YYYYMMDD"))
 
         async def _fetch_today() -> Sequence[Row[tuple[str, int]]]:
             async with water_message.read_session(time_ctx=now.datetime) as session:
-                return await WaterMessageOps(session).get_top_users(
-                    group_id,
-                    start_ts,
-                    end_ts,
-                    limit,
+                return (
+                    await _repo_module()
+                    .WaterMessageOps(session)
+                    .get_top_users(
+                        group_id,
+                        start_ts,
+                        end_ts,
+                        limit,
+                    )
                 )
 
         async def _fetch_yesterday() -> dict[str, int]:
             async with water_core_db.session(commit=False) as session:
-                return await WaterSummaryOps(session).get_ranks_by_date(
-                    group_id,
-                    yesterday_int,
+                return (
+                    await _repo_module()
+                    .WaterSummaryOps(session)
+                    .get_ranks_by_date(
+                        group_id,
+                        yesterday_int,
+                    )
                 )
 
         today_data, yesterday_ranks = await asyncio.gather(
@@ -89,13 +105,15 @@ class WaterRepositoryRanksMixin:
     async def get_today_group_rank(self, group_id: str) -> int:
         await water_writer.flush_now()
 
-        now = arrow.get(get_current_time()).to("Asia/Shanghai")
+        now = arrow.get(_current_time()).to("Asia/Shanghai")
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 
         async with water_message.read_session(time_ctx=now.datetime) as session:
-            return await WaterMessageOps(session).get_today_group_rank(
-                group_id, start_ts, end_ts
+            return (
+                await _repo_module()
+                .WaterMessageOps(session)
+                .get_today_group_rank(group_id, start_ts, end_ts)
             )
 
     async def get_users_hourly_distribution(
@@ -108,13 +126,15 @@ class WaterRepositoryRanksMixin:
 
         await water_writer.flush_now()
 
-        now = arrow.get(get_current_time()).to("Asia/Shanghai")
+        now = arrow.get(_current_time()).to("Asia/Shanghai")
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 
         async with water_message.read_session(time_ctx=now.datetime) as session:
-            raw_timestamps = await WaterMessageOps(session).get_users_timestamps(
-                group_id, user_ids, start_ts, end_ts
+            raw_timestamps = (
+                await _repo_module()
+                .WaterMessageOps(session)
+                .get_users_timestamps(group_id, user_ids, start_ts, end_ts)
             )
 
         user_hourly: dict[str, list[int]] = defaultdict(lambda: [0] * 24)
@@ -245,8 +265,10 @@ class WaterRepositoryRanksMixin:
             return first_archived_date
 
         async with water_core_db.session(commit=False) as session:
-            return await WaterSummaryOps(session).get_first_summary_record_date(
-                group_ids=group_ids
+            return (
+                await _repo_module()
+                .WaterSummaryOps(session)
+                .get_first_summary_record_date(group_ids=group_ids)
             )
 
     async def get_natural_period_leaderboard(

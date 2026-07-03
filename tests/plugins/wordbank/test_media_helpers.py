@@ -77,6 +77,7 @@ async def test_build_message_shape_from_message_uses_hint_without_download(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fetch_image_bytes = AsyncMock(return_value=b"unexpected")
+    ingest_image_bytes = AsyncMock()
     media_service = cast(
         WordbankMediaService,
         SimpleNamespace(
@@ -84,7 +85,7 @@ async def test_build_message_shape_from_message_uses_hint_without_download(
                 7 if "ABCDEF1234567890ABCDEF1234567890.PNG" in hints else None
             ),
             resolve_canonical_id=lambda *_args, **_kwargs: None,
-            ingest_image_bytes=AsyncMock(),
+            ingest_image_bytes=ingest_image_bytes,
         ),
     )
     monkeypatch.setattr(
@@ -109,7 +110,7 @@ async def test_build_message_shape_from_message_uses_hint_without_download(
 
     assert shape_to_summary_text(shape) == "早安 [图片:7]"
     assert fetch_image_bytes.await_count == 0
-    assert media_service.ingest_image_bytes.await_count == 0
+    assert ingest_image_bytes.await_count == 0
 
 
 @pytest.mark.asyncio
@@ -117,12 +118,13 @@ async def test_build_message_shape_from_message_keeps_text_when_image_download_f
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fetch_image_bytes = AsyncMock(return_value=None)
+    ingest_image_bytes = AsyncMock()
     media_service = cast(
         WordbankMediaService,
         SimpleNamespace(
             resolve_canonical_id_from_hints=lambda _hints: None,
             resolve_canonical_id=lambda *_args, **_kwargs: None,
-            ingest_image_bytes=AsyncMock(),
+            ingest_image_bytes=ingest_image_bytes,
         ),
     )
     monkeypatch.setattr(
@@ -141,4 +143,4 @@ async def test_build_message_shape_from_message_keeps_text_when_image_download_f
 
     assert shape_to_summary_text(shape) == "只有文字也要保留"
     assert fetch_image_bytes.await_count == 1
-    assert media_service.ingest_image_bytes.await_count == 0
+    assert ingest_image_bytes.await_count == 0

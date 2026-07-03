@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import suppress
 import sys
+from typing import Any
 from unittest.mock import AsyncMock
 
 import nonebot
@@ -34,7 +35,7 @@ from src.lib.messages import text_message
 from src.lib.utils.common import get_current_time
 from src.plugins import study as study_plugin
 from src.plugins import wordbank as wordbank_plugin
-from src.plugins.wordbank import handlers as wordbank_handlers
+from src.plugins.wordbank.handlers import submission as wordbank_submission_handlers
 from src.plugins.wordbank.message_model import (
     MessageShape,
     shape_from_event,
@@ -46,6 +47,17 @@ from src.plugins.wordbank.services.rules import (
     RuleContext,
 )
 from tests.plugins.water.helpers import build_group_message_event
+
+
+def _should_call_group_send_api(ctx: Any, *, group_id: int, message: Message) -> None:
+    ctx.should_call_api(
+        "send_group_msg",
+        {
+            "group_id": group_id,
+            "message": message,
+        },
+        result={"message_id": 1},
+    )
 
 
 async def _cancel_pending_rebuild() -> None:
@@ -137,17 +149,17 @@ async def test_wordbank_add_command_pipeline_matches_after_approval(
 ) -> None:
     await _reset_wordbank_runtime()
     monkeypatch.setattr(
-        wordbank_plugin,
-        "schedule_pending_approval_notice",
+        wordbank_submission_handlers,
+        "schedule_submission_approval_notice",
         lambda *args, **kwargs: None,
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        wordbank_submission_handlers,
         "record_submission_approval_message",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        wordbank_submission_handlers,
         "build_add_result_plan_entry",
         AsyncMock(return_value=text_message("ADD_OK")),
     )
@@ -160,7 +172,11 @@ async def test_wordbank_add_command_pipeline_matches_after_approval(
         )
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, text_message("ADD_OK"), bot=bot)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("ADD_OK"),
+        )
         ctx.should_finished()
 
     pending_ids = await _pending_response_item_ids()
@@ -173,7 +189,11 @@ async def test_wordbank_add_command_pipeline_matches_after_approval(
         event = build_group_message_event("晚安", message_id=2)
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, text_message("做个好梦"), bot=bot)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("做个好梦"),
+        )
 
 
 @pytest.mark.asyncio
@@ -183,17 +203,17 @@ async def test_study_guided_pipeline_matches_after_approval(
 ) -> None:
     await _reset_wordbank_runtime()
     monkeypatch.setattr(
-        wordbank_handlers,
-        "send_pending_approval_notice",
-        AsyncMock(return_value=None),
+        wordbank_submission_handlers,
+        "schedule_submission_approval_notice",
+        lambda *args, **kwargs: None,
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "record_submission_approval_message",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_handlers,
+        wordbank_submission_handlers,
         "build_add_result_plan_entry",
         AsyncMock(return_value=text_message("STUDY_OK")),
     )
@@ -254,7 +274,11 @@ async def test_study_guided_pipeline_matches_after_approval(
         ctx.should_paused()
 
         ctx.receive_event(bot, sixth)
-        ctx.should_call_send(sixth, text_message("STUDY_OK"), bot=bot)
+        _should_call_group_send_api(
+            ctx,
+            group_id=sixth.group_id,
+            message=text_message("STUDY_OK"),
+        )
         ctx.should_finished()
 
     pending_ids = await _pending_response_item_ids()
@@ -267,7 +291,11 @@ async def test_study_guided_pipeline_matches_after_approval(
         event = build_group_message_event("不嘻嘻", message_id=7)
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, text_message("消息回复如下"), bot=bot)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("消息回复如下"),
+        )
 
 
 @pytest.mark.asyncio
@@ -287,7 +315,11 @@ async def test_passive_event_at_pipeline_hits_real_event_trigger(app: App) -> No
         event.raw_message = "[CQ:at,qq=99999]"
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, text_message("收到艾特"), bot=bot)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("收到艾特"),
+        )
 
 
 @pytest.mark.asyncio
@@ -312,7 +344,11 @@ async def test_passive_event_at_pipeline_uses_original_message_after_strip(
         event.to_me = True
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, text_message("收到剥离艾特"), bot=bot)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("收到剥离艾特"),
+        )
 
 
 @pytest.mark.asyncio
@@ -335,7 +371,11 @@ async def test_passive_text_pipeline_uses_original_message_after_callme_strip(
         event.to_me = True
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, text_message("完整原文命中"), bot=bot)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("完整原文命中"),
+        )
 
 
 @pytest.mark.asyncio
@@ -378,7 +418,11 @@ async def test_passive_invalid_call_count_window_does_not_break_matching(
         event = build_group_message_event("?", message_id=1)
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, text_message("正常兜底"), bot=bot)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("正常兜底"),
+        )
 
 
 @pytest.mark.asyncio
@@ -487,10 +531,18 @@ async def test_passive_rule_priority_and_call_count_pipeline(app: App) -> None:
         )
 
         ctx.receive_event(bot, admin_event)
-        ctx.should_call_send(admin_event, text_message("管理员专属"), bot=bot)
+        _should_call_group_send_api(
+            ctx,
+            group_id=admin_event.group_id,
+            message=text_message("管理员专属"),
+        )
 
         ctx.receive_event(bot, first_limited)
-        ctx.should_call_send(first_limited, text_message("普通回退"), bot=bot)
+        _should_call_group_send_api(
+            ctx,
+            group_id=first_limited.group_id,
+            message=text_message("普通回退"),
+        )
 
 
 @pytest.mark.asyncio
@@ -558,4 +610,8 @@ async def test_passive_event_at_call_count_is_shared_by_trigger_group(app: App) 
         event.raw_message = "[CQ:at,qq=99999]"
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, text_message("第二阶段"), bot=bot)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("第二阶段"),
+        )

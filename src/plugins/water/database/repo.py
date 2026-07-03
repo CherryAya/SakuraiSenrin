@@ -18,7 +18,12 @@ from .instances import water_core_db, water_message, water_summary
 from .ops import (
     WaterArchivedSummaryOps,
     WaterGroupMatrixMapOps,
+    WaterGroupStatsOps,
+    WaterLevelOps,
+    WaterMatrixMergeStateOps,
     WaterMessageOps,
+    WaterPenaltyOps,
+    WaterSettlementJobOps,
     WaterSummaryOps,
 )
 from .repo_admin import WaterRepositoryAdminMixin
@@ -61,6 +66,19 @@ from .writers import water_writer
 SETTLEMENT_STALE_SECONDS = 60 * 30
 GLOBAL_EXP_DECAY_WEIGHTS = (1.0, 0.5, 0.2)
 SUMMARY_HOT_WINDOW_DAYS = 90
+
+__all__ = [
+    "WaterArchivedSummaryOps",
+    "WaterGroupMatrixMapOps",
+    "WaterGroupStatsOps",
+    "WaterLevelOps",
+    "WaterMatrixMergeStateOps",
+    "WaterMessageOps",
+    "WaterPenaltyOps",
+    "WaterRepository",
+    "WaterSettlementJobOps",
+    "WaterSummaryOps",
+]
 
 
 class WaterRepository(

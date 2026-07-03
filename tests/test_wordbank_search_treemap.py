@@ -886,7 +886,7 @@ def test_renderer_builds_three_metadata_lines() -> None:
         max_width=220,
     )
 
-    assert lines == ["创建者 10001", "权重 3", "规则 默认"]
+    assert lines == ["创建者: 10001", "权重: 3", "规则: 默认"]
 
 
 def test_renderer_uses_compact_meta_font_for_narrow_cards() -> None:

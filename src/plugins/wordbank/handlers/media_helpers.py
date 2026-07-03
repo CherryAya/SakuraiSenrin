@@ -280,16 +280,19 @@ async def build_shape_from_text_and_images(
     task: LongTaskRunner | None = None,
     build_context: MessageShapeBuildContext | None = None,
 ) -> MessageShape:
-    fetch_kwargs: dict[str, object] = {
-        "limit": image_limit,
-        "task": task,
-    }
-    if build_context is not None:
-        fetch_kwargs["build_context"] = build_context
-    image_bytes_items = await fetch_image_bytes_from_message(
-        message,
-        **fetch_kwargs,
-    )
+    if build_context is None:
+        image_bytes_items = await fetch_image_bytes_from_message(
+            message,
+            limit=image_limit,
+            task=task,
+        )
+    else:
+        image_bytes_items = await fetch_image_bytes_from_message(
+            message,
+            limit=image_limit,
+            task=task,
+            build_context=build_context,
+        )
     parts: list[MessageShape] = []
     if has_meaningful_text(text):
         text_shape = (
@@ -298,14 +301,19 @@ async def build_shape_from_text_and_images(
             else shape_from_text_value(text)
         )
         parts.append(text_shape)
-    ingest_kwargs: dict[str, object] = {"task": task}
-    if build_context is not None:
-        ingest_kwargs["build_context"] = build_context
-    canonical_ids = await ingest_image_bytes_items(
-        media_service,
-        image_bytes_items,
-        **ingest_kwargs,
-    )
+    if build_context is None:
+        canonical_ids = await ingest_image_bytes_items(
+            media_service,
+            image_bytes_items,
+            task=task,
+        )
+    else:
+        canonical_ids = await ingest_image_bytes_items(
+            media_service,
+            image_bytes_items,
+            task=task,
+            build_context=build_context,
+        )
     if task is not None:
         await task.advance(
             "building_shape",

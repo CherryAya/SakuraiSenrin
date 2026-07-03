@@ -25,6 +25,12 @@ class WaterMessageOps(BaseOps[WaterHourlyCounter]):
     async def _resolve_message_insert_chunk_size(self) -> int:
         global _sqlite_max_variable_number
 
+        from . import ops as ops_module
+
+        exported_limit = getattr(ops_module, "_sqlite_max_variable_number", None)
+        if isinstance(exported_limit, int):
+            _sqlite_max_variable_number = exported_limit
+
         if _sqlite_max_variable_number is None:
             max_variables = _DEFAULT_SQLITE_MAX_VARIABLE_NUMBER
             result = await self.session.execute(text("PRAGMA compile_options"))
@@ -35,6 +41,7 @@ class WaterMessageOps(BaseOps[WaterHourlyCounter]):
                 max_variables = int(raw_value)
                 break
             _sqlite_max_variable_number = max_variables
+            setattr(ops_module, "_sqlite_max_variable_number", max_variables)
 
         return max(
             1,
