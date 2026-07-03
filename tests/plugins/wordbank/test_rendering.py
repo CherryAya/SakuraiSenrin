@@ -53,6 +53,8 @@ def _search_item() -> WordbankSearchItem:
         probability=1.0,
         weight=3,
         created_by="10001",
+        created_at=1_700_000_000,
+        rule={"roles": "admin"},
         response_item_ids=(300,),
     )
 
@@ -117,6 +119,9 @@ async def test_build_pending_items_plan_entry_renders_rich_shapes() -> None:
 
     rendered = render_message_plan_entry(entry)
     assert "待审核词条" in str(rendered)
+    assert "序号: 1" in str(rendered)
+    assert "创建者: 10001" in str(rendered)
+    assert "规则: 概率 1 | 角色 管理" in str(rendered)
     assert sum(1 for segment in rendered if segment.type == "image") == 2
 
 

@@ -28,6 +28,9 @@ from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import (
     format_creator_leaderboard,
     format_response_summary,
+    format_rule_summary,
+    format_scope_label,
+    format_timestamp,
 )
 
 from .group_detail_cards import (
@@ -179,7 +182,7 @@ async def build_pending_items_plan_entry(
     blocks: list[MessagePlanBlock] = [
         TextBlock(tr(locale, "wordbank.approval.pending_title", page=page))
     ]
-    for item in items:
+    for index, item in enumerate(items, start=1):
         response_item_id = (
             item.response_item_ids[0]
             if item.response_item_ids
@@ -192,10 +195,15 @@ async def build_pending_items_plan_entry(
                 trigger_text=item.trigger_text,
                 response_text=item.response_text,
                 created_by=item.created_by,
+                created_at=item.created_at,
+                probability=item.probability,
+                weight=item.weight,
+                rule=item.rule,
                 trigger_shape=item.trigger_shape,
                 response_shape=item.response_shape,
                 locale=locale,
                 media_service=media_service,
+                index=index,
             )
         )
     if has_more:
@@ -220,31 +228,43 @@ async def build_pending_item_blocks(
     trigger_text: str,
     response_text: str,
     created_by: str,
+    created_at: int,
+    probability: float,
+    weight: int,
+    rule: dict[str, object] | None,
     trigger_shape: MessageShape | None,
     response_shape: MessageShape | None,
     locale: LocaleCode,
     media_service: WordbankMediaService,
     prefix: str = "\n",
+    index: int | None = None,
 ) -> tuple[MessagePlanBlock, ...]:
-    blocks: list[MessagePlanBlock] = [
-        TextBlock(
-            prefix
-            + tr(
-                locale,
-                "wordbank.approval.pending_item",
-                entry_id=entry_id,
-                scope=scope,
-                trigger_text=format_response_summary(
-                    trigger_text,
-                    shape=trigger_shape,
-                ),
-                response_text=format_response_summary(
-                    response_text,
-                    shape=response_shape,
-                ),
-                created_by=created_by,
-            )
+    lines: list[str] = []
+    if index is not None:
+        lines.append(f"序号: {index}")
+    lines.extend(
+        (
+            f"ID: {entry_id}",
+            (
+                "触发词: "
+                f"{format_response_summary(trigger_text, shape=trigger_shape)}"
+            ),
+            (
+                "响应词: "
+                f"{format_response_summary(response_text, shape=response_shape)}"
+            ),
+            f"创建者: {created_by or '-'}",
+            f"提交时间: {format_timestamp(created_at)}",
+            f"范围: {format_scope_label(scope)}",
+            f"权重: {weight}",
+            (
+                "规则: "
+                f"{format_rule_summary(probability=probability, rule=rule)}"
+            ),
         )
+    )
+    blocks: list[MessagePlanBlock] = [
+        TextBlock(prefix + "\n".join(lines))
     ]
     await _append_labeled_shape_blocks(
         blocks,

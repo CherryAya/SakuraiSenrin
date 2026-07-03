@@ -8,6 +8,7 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     DeliveryPlan,
     MessagePlanEntry,
+    build_text_plan_entry,
     deliver_message_plan,
 )
 from src.plugins.wordbank.database.types import WordbankSearchItem
@@ -32,16 +33,16 @@ def _build_pending_batch_summary(
     page: int,
     limit: int,
     has_more: bool,
+    keyword: str,
 ) -> str:
     lines = [
         tr(locale, "wordbank.approval.pending_title", page=page),
         tr(locale, "wordbank.approval.pending_batch_instruction"),
+        "后续节点按“序号”字段对应批量处理编号。",
+        f"本页数量: {len(items)}",
     ]
-    for index, item in enumerate(items, start=1):
-        lines.append(
-            f"{index}. #{_response_item_id(item)} [{item.scope}] "
-            f"{item.trigger_text} => {item.response_text}"
-        )
+    if keyword:
+        lines.append(f"筛选: {keyword}")
     if has_more:
         lines.append(
             tr(
@@ -68,11 +69,16 @@ async def _build_pending_detail_message(
             trigger_text=item.trigger_text,
             response_text=item.response_text,
             created_by=item.created_by,
+            created_at=item.created_at,
+            probability=item.probability,
+            weight=item.weight,
+            rule=item.rule,
             trigger_shape=item.trigger_shape,
             response_shape=item.response_shape,
             locale=locale,
             media_service=media_service,
-            prefix=tr(locale, "wordbank.batch.index", index=index) + "\n",
+            prefix="",
+            index=index,
         )
     )
 
@@ -131,12 +137,24 @@ async def send_pending_entries_review(
         page=parsed.page,
         limit=parsed.limit,
         has_more=has_more,
+        keyword=parsed.keyword,
     )
+    detail_messages = [
+        await _build_pending_detail_message(
+            item,
+            index=index,
+            locale=locale,
+            media_service=media_service,
+        )
+        for index, item in enumerate(items, start=1)
+    ]
     plan_result = await deliver_message_plan(
         bot,
         plan=DeliveryPlan(
-            messages=(summary,),
+            messages=(build_text_plan_entry(summary), *detail_messages),
             source_kind=source_kind,
+            fallback_nickname=fallback_nickname,
+            force_forward=True,
         ),
         event=event,
     )
@@ -155,23 +173,3 @@ async def send_pending_entries_review(
             message_type="approval_batch",
             group_ids=tuple(_response_item_id(item) for item in items),
         )
-
-    detail_messages = [
-        await _build_pending_detail_message(
-            item,
-            index=index,
-            locale=locale,
-            media_service=media_service,
-        )
-        for index, item in enumerate(items, start=1)
-    ]
-    await deliver_message_plan(
-        bot,
-        plan=DeliveryPlan(
-            messages=tuple(detail_messages),
-            source_kind=source_kind,
-            fallback_nickname=fallback_nickname,
-            force_forward=True,
-        ),
-        event=event,
-    )

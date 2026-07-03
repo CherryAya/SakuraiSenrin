@@ -39,6 +39,8 @@ async def test_build_pending_detail_message_returns_image_blocks() -> None:
         probability=1.0,
         weight=3,
         created_by="10001",
+        created_at=1_700_000_000,
+        rule={"roles": "admin"},
         response_item_ids=(300,),
     )
 
@@ -50,7 +52,10 @@ async def test_build_pending_detail_message_returns_image_blocks() -> None:
     )
 
     rendered = render_message_plan_input(entry)
-    assert "序号 1" in str(rendered)
+    assert "序号: 1" in str(rendered)
+    assert "创建者: 10001" in str(rendered)
+    assert "提交时间: 2023-11-15 06:13" in str(rendered)
+    assert "规则: 概率 1 | 角色 管理" in str(rendered)
     assert "[图片:8]" not in str(rendered)
     assert "[图片:7]" not in str(rendered)
     assert sum(1 for segment in rendered if segment.type == "image") == 2
@@ -71,6 +76,8 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
         probability=1.0,
         weight=3,
         created_by="10001",
+        created_at=1_700_000_000,
+        rule={"roles": "admin"},
         response_item_ids=(300,),
     )
     record_message_ref = AsyncMock(return_value=None)
@@ -86,10 +93,7 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
         SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=b"bytes")),
     )
     deliver_plan = AsyncMock(
-        side_effect=[
-            SimpleNamespace(results=({"message_id": 1},)),
-            SimpleNamespace(results=({"message_id": 2},)),
-        ]
+        return_value=SimpleNamespace(results=({"message_id": 1},))
     )
     monkeypatch.setattr(
         pending_batch_module,
@@ -116,13 +120,18 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
         fallback_nickname="回 - 樱井千凛·Senrinです♡",
     )
 
-    assert deliver_plan.await_count == 2
-    summary_plan = deliver_plan.await_args_list[0].kwargs["plan"]
-    assert len(summary_plan.messages) == 1
-    assert "待审核词条" in str(render_message_plan_input(summary_plan.messages[0]))
-
-    detail_plan = deliver_plan.await_args_list[1].kwargs["plan"]
-    rendered_detail = render_message_plan_input(detail_plan.messages[0])
-    assert "序号 1" in str(rendered_detail)
+    assert deliver_plan.await_count == 1
+    await_args = deliver_plan.await_args
+    assert await_args is not None
+    plan = await_args.kwargs["plan"]
+    assert plan.force_forward is True
+    assert len(plan.messages) == 2
+    summary_message = render_message_plan_input(plan.messages[0])
+    rendered_detail = render_message_plan_input(plan.messages[1])
+    assert "待审核词条" in str(summary_message)
+    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in str(summary_message)
+    assert "后续节点按“序号”字段对应批量处理编号。" in str(summary_message)
+    assert "本页数量: 1" in str(summary_message)
+    assert "序号: 1" in str(rendered_detail)
     assert sum(1 for segment in rendered_detail if segment.type == "image") == 2
     assert record_message_ref.await_count == 1
