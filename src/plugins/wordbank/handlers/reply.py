@@ -11,6 +11,7 @@ from nonebot.adapters.onebot.v11.message import Message
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_plan import MessagePlanInput
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
     WordbankMessageRefRecord,
@@ -39,7 +40,7 @@ from .parsers import (
     parse_response_set_args,
     parse_trigger_set_args,
 )
-from .rendering import render_reply_detail_message
+from .rendering import build_reply_detail_plan_entry
 
 INFO_ALIASES = {"info", "详情"}
 HISTORY_ALIASES = {"history", "历史", "历史记录", "审批记录", "审批历史"}
@@ -131,7 +132,7 @@ async def handle_reply_command(
     text: str,
     locale: LocaleCode,
     media_service: WordbankMediaService,
-) -> Message | str:
+) -> MessagePlanInput:
     message_id = get_reply_message_id(event)
     if message_id is None:
         return tr(locale, "wordbank.reply.target_missing")
@@ -152,7 +153,7 @@ async def handle_reply_command(
                 "wordbank.reply.entry_not_found",
                 entry_id=response_message.response_item_id,
             )
-        return await render_reply_detail_message(
+        return await build_reply_detail_plan_entry(
             detail=detail,
             locale=locale,
             media_service=media_service,

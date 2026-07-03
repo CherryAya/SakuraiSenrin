@@ -35,6 +35,7 @@ from src.lib.long_task import (
     MatcherProgressSink,
     MessageEventProgressSink,
 )
+from src.lib.message_plan import MessagePlanInput
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
@@ -719,11 +720,11 @@ async def _build_passive_message(
     response: Any,
     *,
     locale: LocaleCode,
-) -> tuple[Message | str, dict[str, object]]:
+) -> tuple[MessagePlanInput, dict[str, object]]:
     result = await runtime_exports["_build_passive_message"](response, locale=locale)
     if result is None:
         raise RuntimeError("wordbank passive message builder is not registered")
-    return cast(tuple[Message | str, dict[str, object]], result)
+    return cast(tuple[MessagePlanInput, dict[str, object]], result)
 
 
 register_wordbank_command_handlers(

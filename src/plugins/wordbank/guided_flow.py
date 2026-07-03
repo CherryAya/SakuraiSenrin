@@ -926,7 +926,7 @@ async def handle_search_session_event(
         if messages:
             merged_message = "\n".join(messages)
             await deliver_message_plan(
-                _require_guided_bot(bot if isinstance(bot, Bot) else None, matcher),
+                _require_guided_bot(bot, matcher),
                 plan=DeliveryPlan(
                     messages=(merged_message,),
                     source_kind="wordbank_command",

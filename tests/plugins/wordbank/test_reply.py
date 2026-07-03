@@ -6,6 +6,7 @@ from nonebot.adapters.onebot.v11.event import GroupMessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 import pytest
 
+from src.lib.message_plan import render_message_plan_input
 from src.lib.messages import text_message
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
@@ -155,11 +156,12 @@ async def test_reply_info_formats_selected_response_item_detail() -> None:
         locale="zh-CN",
         media_service=cast(WordbankMediaService, SimpleNamespace()),
     )
+    rendered = render_message_plan_input(message)
 
     assert not isinstance(message, str)
-    assert "词条详情 #300" in str(message)
-    assert "触发:\n晚安" in str(message)
-    assert "响应:\n做个好梦" in str(message)
+    assert "词条详情 #300" in str(rendered)
+    assert "触发:\n晚安" in str(rendered)
+    assert "响应:\n做个好梦" in str(rendered)
     get_message_ref.assert_awaited_once_with("90001", expected_kind="response")
     get_group_detail.assert_awaited_once_with(12, response_item_id=300)
 
@@ -257,12 +259,13 @@ async def test_reply_info_renders_image_trigger_and_response() -> None:
         locale="zh-CN",
         media_service=media_service,
     )
+    rendered = render_message_plan_input(message)
 
     assert not isinstance(message, str)
-    assert "词条详情 #300" in str(message)
-    assert "[图片:8]" not in str(message)
-    assert "[图片:7]" not in str(message)
-    assert sum(1 for segment in message if segment.type == "image") == 2
+    assert "词条详情 #300" in str(rendered)
+    assert "[图片:8]" not in str(rendered)
+    assert "[图片:7]" not in str(rendered)
+    assert sum(1 for segment in rendered if segment.type == "image") == 2
 
 
 async def test_reply_history_returns_status_summary() -> None:
@@ -284,6 +287,7 @@ async def test_reply_history_returns_status_summary() -> None:
         media_service=cast(WordbankMediaService, SimpleNamespace()),
     )
 
+    assert isinstance(message, str)
     assert "词条 #300 状态摘要" in message
     assert "管理员审核通过后才变为 approved" in message
 

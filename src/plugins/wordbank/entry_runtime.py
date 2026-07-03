@@ -13,7 +13,6 @@ from nonebot.adapters.onebot.v11.event import (
     MessageEvent,
     NoticeEvent,
 )
-from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 
 from src.database.core.consts import Permission
@@ -70,7 +69,7 @@ def register_wordbank_runtime_handlers(
     wordbank_add_command: Any,
     wordbank_command: Any,
     initialize_plugin: Callable[[], Awaitable[None]],
-    build_error_message: Callable[..., Message | str],
+    build_error_message: Callable[..., MessagePlanInput],
     cancel_guided_resources: Callable[..., Awaitable[None]],
     guided_locale: Callable[[Mapping[str, Any]], LocaleCode],
 ) -> dict[str, Any]:
