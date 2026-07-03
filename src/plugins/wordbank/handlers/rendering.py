@@ -27,6 +27,7 @@ from src.plugins.wordbank.debug import log_perf, perf_start
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
 from src.plugins.wordbank.services.media import WordbankMediaService
+from src.plugins.wordbank.services.presentation import format_response_summary
 
 from .group_detail_cards import GroupDetailCardPage, render_group_detail_card_bytes
 from .leaderboard_cards import render_wordbank_leaderboard_card_bytes
@@ -85,9 +86,7 @@ async def build_shape_plan_entry(
         elif atom.kind == "image" and atom.canonical_image_id is not None:
             image_bytes = image_bytes_by_id.get(atom.canonical_image_id)
             if image_bytes is None:
-                blocks.append(
-                    TextBlock(tr(locale, "wordbank.render.image_missing"))
-                )
+                blocks.append(TextBlock(tr(locale, "wordbank.render.image_missing")))
                 continue
             blocks.append(ImageBytesBlock(image_bytes))
             image_segments += 1
@@ -234,33 +233,18 @@ async def build_pending_items_plan_entry(
             if item.response_item_ids
             else item.trigger_group_id
         )
-        blocks.append(
-            TextBlock(
-                "\n"
-                + tr(
-                    locale,
-                    "wordbank.approval.pending_item",
-                    entry_id=response_item_id,
-                    scope=item.scope,
-                    trigger_text=item.trigger_text,
-                    response_text=item.response_text,
-                    created_by=item.created_by,
-                )
+        blocks.extend(
+            await build_pending_item_blocks(
+                entry_id=response_item_id,
+                scope=item.scope,
+                trigger_text=item.trigger_text,
+                response_text=item.response_text,
+                created_by=item.created_by,
+                trigger_shape=item.trigger_shape,
+                response_shape=item.response_shape,
+                locale=locale,
+                media_service=media_service,
             )
-        )
-        await _append_labeled_shape_blocks(
-            blocks,
-            shape=item.trigger_shape,
-            media_service=media_service,
-            locale=locale,
-            label=tr(locale, "wordbank.group.trigger_label"),
-        )
-        await _append_labeled_shape_blocks(
-            blocks,
-            shape=item.response_shape,
-            media_service=media_service,
-            locale=locale,
-            label=tr(locale, "wordbank.approval.response_label"),
         )
     if has_more:
         blocks.append(
@@ -275,6 +259,56 @@ async def build_pending_items_plan_entry(
             )
         )
     return MessagePlanEntry(blocks=tuple(blocks))
+
+
+async def build_pending_item_blocks(
+    *,
+    entry_id: int,
+    scope: str,
+    trigger_text: str,
+    response_text: str,
+    created_by: str,
+    trigger_shape: MessageShape | None,
+    response_shape: MessageShape | None,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+    prefix: str = "\n",
+) -> tuple[MessagePlanBlock, ...]:
+    blocks: list[MessagePlanBlock] = [
+        TextBlock(
+            prefix
+            + tr(
+                locale,
+                "wordbank.approval.pending_item",
+                entry_id=entry_id,
+                scope=scope,
+                trigger_text=format_response_summary(
+                    trigger_text,
+                    shape=trigger_shape,
+                ),
+                response_text=format_response_summary(
+                    response_text,
+                    shape=response_shape,
+                ),
+                created_by=created_by,
+            )
+        )
+    ]
+    await _append_labeled_shape_blocks(
+        blocks,
+        shape=trigger_shape,
+        media_service=media_service,
+        locale=locale,
+        label=tr(locale, "wordbank.group.trigger_label"),
+    )
+    await _append_labeled_shape_blocks(
+        blocks,
+        shape=response_shape,
+        media_service=media_service,
+        locale=locale,
+        label=tr(locale, "wordbank.approval.response_label"),
+    )
+    return tuple(blocks)
 
 
 async def render_reply_detail_message(

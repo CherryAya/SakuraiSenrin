@@ -131,8 +131,9 @@ async def test_build_reply_detail_plan_entry_renders_selected_response() -> None
 
 
 @pytest.mark.asyncio
-async def test_build_group_detail_page_plan_entry_renders_trigger_and_responses(
-) -> None:
+async def test_build_group_detail_page_plan_entry_renders_trigger_and_responses() -> (
+    None
+):
     entry = await build_group_detail_page_plan_entry(
         detail=_group_detail(),
         page=1,

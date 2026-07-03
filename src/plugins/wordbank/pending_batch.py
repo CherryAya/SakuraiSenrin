@@ -7,17 +7,14 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     DeliveryPlan,
-    MessagePlanBlock,
     MessagePlanEntry,
-    TextBlock,
     deliver_message_plan,
 )
 from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.handlers.approval import extract_sent_message_id
 from src.plugins.wordbank.handlers.mutation import build_mutation_actor
 from src.plugins.wordbank.handlers.parsers import actor_can_review, parse_search_args
-from src.plugins.wordbank.handlers.rendering import build_shape_plan_entry
-from src.plugins.wordbank.message_model import MessageShape
+from src.plugins.wordbank.handlers.rendering import build_pending_item_blocks
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
 
@@ -26,12 +23,6 @@ def _response_item_id(item: WordbankSearchItem) -> int:
     if item.response_item_ids:
         return item.response_item_ids[0]
     return item.trigger_group_id
-
-
-def _has_non_text_shape(shape: MessageShape | None) -> bool:
-    if shape is None:
-        return False
-    return any(atom.kind != "text" for atom in shape.atoms)
 
 
 def _build_pending_batch_summary(
@@ -70,50 +61,20 @@ async def _build_pending_detail_message(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> MessagePlanEntry:
-    blocks: list[MessagePlanBlock] = [
-        TextBlock(
-            tr(locale, "wordbank.batch.index", index=index)
-            + "\n"
-            + tr(
-                locale,
-                "wordbank.approval.pending_item",
-                entry_id=_response_item_id(item),
-                scope=item.scope,
-                trigger_text=item.trigger_text,
-                response_text=item.response_text,
-                created_by=item.created_by,
-            )
+    return MessagePlanEntry(
+        blocks=await build_pending_item_blocks(
+            entry_id=_response_item_id(item),
+            scope=item.scope,
+            trigger_text=item.trigger_text,
+            response_text=item.response_text,
+            created_by=item.created_by,
+            trigger_shape=item.trigger_shape,
+            response_shape=item.response_shape,
+            locale=locale,
+            media_service=media_service,
+            prefix=tr(locale, "wordbank.batch.index", index=index) + "\n",
         )
-    ]
-    if _has_non_text_shape(item.trigger_shape):
-        assert item.trigger_shape is not None
-        blocks.append(
-            TextBlock("\n" + tr(locale, "wordbank.group.trigger_label") + "\n")
-        )
-        blocks.extend(
-            (
-                await build_shape_plan_entry(
-                    item.trigger_shape,
-                    media_service,
-                    locale=locale,
-                )
-            ).blocks
-        )
-    if _has_non_text_shape(item.response_shape):
-        assert item.response_shape is not None
-        blocks.append(
-            TextBlock("\n" + tr(locale, "wordbank.approval.response_label") + "\n")
-        )
-        blocks.extend(
-            (
-                await build_shape_plan_entry(
-                    item.response_shape,
-                    media_service,
-                    locale=locale,
-                )
-            ).blocks
-        )
-    return MessagePlanEntry(blocks=tuple(blocks))
+    )
 
 
 async def send_pending_entries_review(

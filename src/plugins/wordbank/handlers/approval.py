@@ -37,7 +37,7 @@ from src.plugins.wordbank.services.core import (
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import WordbankBatchAddResult
 
-from .rendering import build_shape_plan_entry
+from .rendering import build_pending_item_blocks, build_shape_plan_entry
 
 APPROVAL_APPROVE_ALIASES = {"y", "approve", "通过", "同意", "批准"}
 APPROVAL_REJECT_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
@@ -238,94 +238,19 @@ async def build_pending_batch_approval_notice_plan_entry(
     created_by = str(event.user_id)
     for result in pending_results:
         blocks.extend(
-            await _build_pending_batch_result_blocks(
-                result,
+            await build_pending_item_blocks(
+                entry_id=result.response_item_id,
+                scope=result.scope,
+                trigger_text=result.trigger_text,
+                response_text=result.response_text,
                 created_by=created_by,
+                trigger_shape=result.trigger_shape,
+                response_shape=result.response_shape,
                 locale=locale,
                 media_service=media_service,
             )
         )
     return MessagePlanEntry(blocks=tuple(blocks))
-
-
-async def _build_pending_batch_result_blocks(
-    result: WordbankAddResult,
-    *,
-    created_by: str,
-    locale: LocaleCode,
-    media_service: WordbankMediaService,
-) -> tuple[MessagePlanBlock, ...]:
-    if not (
-        _should_render_shape(result.trigger_shape)
-        or _should_render_shape(result.response_shape)
-    ):
-        return (
-            TextBlock(
-                "\n"
-                + tr(
-                    locale,
-                    "wordbank.approval.pending_item",
-                    entry_id=result.response_item_id,
-                    scope=result.scope,
-                    trigger_text=format_response_summary(
-                        result.trigger_text,
-                        shape=result.trigger_shape,
-                    ),
-                    response_text=format_response_summary(
-                        result.response_text,
-                        shape=result.response_shape,
-                    ),
-                    created_by=created_by,
-                )
-            ),
-        )
-
-    blocks: list[MessagePlanBlock] = [
-        TextBlock(f"\n#{result.response_item_id} [{result.scope}] 提交者: {created_by}")
-    ]
-    await _append_pending_batch_field_blocks(
-        blocks,
-        label_key="wordbank.approval.trigger_label",
-        text=result.trigger_text,
-        shape=result.trigger_shape,
-        locale=locale,
-        media_service=media_service,
-    )
-    await _append_pending_batch_field_blocks(
-        blocks,
-        label_key="wordbank.approval.response_label",
-        text=result.response_text,
-        shape=result.response_shape,
-        locale=locale,
-        media_service=media_service,
-    )
-    return tuple(blocks)
-
-
-async def _append_pending_batch_field_blocks(
-    blocks: list[MessagePlanBlock],
-    *,
-    label_key: MessageKey,
-    text: str,
-    shape: MessageShape | None,
-    locale: LocaleCode,
-    media_service: WordbankMediaService,
-) -> None:
-    label = tr(locale, label_key)
-    if _should_render_shape(shape):
-        assert shape is not None
-        blocks.append(TextBlock(f"\n{label}\n"))
-        blocks.extend(
-            (
-                await build_shape_plan_entry(
-                    shape,
-                    media_service,
-                    locale=locale,
-                )
-            ).blocks
-        )
-        return
-    blocks.append(TextBlock(f"\n{label} {format_response_summary(text, shape=shape)}"))
 
 
 async def _build_rendered_result_entry(
