@@ -12,6 +12,7 @@ from src.plugins.wordbank.forward_batch import (
     extract_forward_source_message_id,
     is_forward_input,
 )
+from src.plugins.wordbank.handlers import media_helpers
 from src.plugins.wordbank.message_model import shape_to_summary_text
 from src.plugins.wordbank.services.errors import WordbankUserError
 from tests.plugins.water.helpers import (
@@ -226,3 +227,111 @@ async def test_build_response_input_payload_rejects_forward_depth_over_limit() -
         )
 
     assert exc_info.value.key == "wordbank.error.forward_message_too_deep"
+
+
+@pytest.mark.asyncio
+async def test_build_forward_batch_payload_reuses_downloads_for_duplicate_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_api = AsyncMock(
+        return_value={
+            "messages": [
+                Message(
+                    [
+                        MessageSegment(
+                            "image",
+                            {
+                                "url": "https://example.test/shared.png",
+                                "file": "shared.png",
+                            },
+                        )
+                    ]
+                ),
+                Message(
+                    [
+                        MessageSegment(
+                            "image",
+                            {
+                                "url": "https://example.test/shared.png",
+                                "file": "shared.png",
+                            },
+                        )
+                    ]
+                ),
+            ]
+        }
+    )
+    fetch_image_bytes = AsyncMock(return_value=b"shared-bytes")
+    ingest_image_bytes = AsyncMock(return_value=SimpleNamespace(canonical_id=17))
+    bot = cast(Bot, SimpleNamespace(call_api=call_api))
+    event = build_group_message_event("", message_id=1)
+    event.message = Message([MessageSegment.forward("7657605421581295285")])
+    media_service = SimpleNamespace(
+        resolve_canonical_id_from_hints=lambda _hints: None,
+        resolve_canonical_id=lambda *_args, **_kwargs: None,
+        ingest_image_bytes=ingest_image_bytes,
+    )
+    monkeypatch.setattr(
+        media_helpers,
+        "fetch_image_bytes_with_retry",
+        fetch_image_bytes,
+    )
+
+    payload = await build_forward_batch_payload(
+        bot,
+        event,
+        media_service=media_service,
+    )
+
+    assert payload.node_count == 2
+    assert [shape_to_summary_text(shape) for shape in payload.split_shapes] == [
+        "[图片:17]",
+        "[图片:17]",
+    ]
+    assert fetch_image_bytes.await_count == 1
+    assert ingest_image_bytes.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_build_forward_batch_payload_keeps_text_when_image_download_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_api = AsyncMock(
+        return_value={
+            "messages": [
+                Message(
+                    [
+                        MessageSegment.text("第一条"),
+                        MessageSegment("image", {"url": "https://example.test/a.png"}),
+                    ]
+                ),
+                Message([MessageSegment.text("第二条")]),
+            ]
+        }
+    )
+    fetch_image_bytes = AsyncMock(return_value=None)
+    bot = cast(Bot, SimpleNamespace(call_api=call_api))
+    event = build_group_message_event("", message_id=1)
+    event.message = Message([MessageSegment.forward("7657605421581295285")])
+    media_service = SimpleNamespace(
+        resolve_canonical_id_from_hints=lambda _hints: None,
+        resolve_canonical_id=lambda *_args, **_kwargs: None,
+        ingest_image_bytes=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        media_helpers,
+        "fetch_image_bytes_with_retry",
+        fetch_image_bytes,
+    )
+
+    payload = await build_forward_batch_payload(
+        bot,
+        event,
+        media_service=media_service,
+    )
+
+    assert [shape_to_summary_text(shape) for shape in payload.split_shapes] == [
+        "第一条",
+        "第二条",
+    ]
+    assert media_service.ingest_image_bytes.await_count == 0

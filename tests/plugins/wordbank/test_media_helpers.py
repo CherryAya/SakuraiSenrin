@@ -1,11 +1,13 @@
 import asyncio
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import AsyncMock
 
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 import pytest
 
 from src.plugins.wordbank.handlers import media_helpers
+from src.plugins.wordbank.message_model import shape_to_summary_text
 from src.plugins.wordbank.services.media import WordbankMediaService
 
 
@@ -68,3 +70,75 @@ async def test_ingest_image_bytes_items_runs_concurrently_and_preserves_order() 
 
     assert canonical_ids == (3, 7, 11)
     assert max_running > 1
+
+
+@pytest.mark.asyncio
+async def test_build_message_shape_from_message_uses_hint_without_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetch_image_bytes = AsyncMock(return_value=b"unexpected")
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            resolve_canonical_id_from_hints=lambda hints: (
+                7 if "ABCDEF1234567890ABCDEF1234567890.PNG" in hints else None
+            ),
+            resolve_canonical_id=lambda *_args, **_kwargs: None,
+            ingest_image_bytes=AsyncMock(),
+        ),
+    )
+    monkeypatch.setattr(
+        media_helpers,
+        "fetch_image_bytes_with_retry",
+        fetch_image_bytes,
+    )
+    message = Message(
+        [
+            MessageSegment.text("早安"),
+            MessageSegment(
+                "image",
+                {
+                    "url": "https://example.test/static/abcdef1234567890abcdef1234567890.png?download=1",
+                    "file": "ABCDEF1234567890ABCDEF1234567890.PNG",
+                },
+            ),
+        ]
+    )
+
+    shape = await media_helpers.build_message_shape_from_message(media_service, message)
+
+    assert shape_to_summary_text(shape) == "早安 [图片:7]"
+    assert fetch_image_bytes.await_count == 0
+    assert media_service.ingest_image_bytes.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_build_message_shape_from_message_keeps_text_when_image_download_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetch_image_bytes = AsyncMock(return_value=None)
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            resolve_canonical_id_from_hints=lambda _hints: None,
+            resolve_canonical_id=lambda *_args, **_kwargs: None,
+            ingest_image_bytes=AsyncMock(),
+        ),
+    )
+    monkeypatch.setattr(
+        media_helpers,
+        "fetch_image_bytes_with_retry",
+        fetch_image_bytes,
+    )
+    message = Message(
+        [
+            MessageSegment.text("只有文字也要保留"),
+            MessageSegment("image", {"url": "https://example.test/missing.png"}),
+        ]
+    )
+
+    shape = await media_helpers.build_message_shape_from_message(media_service, message)
+
+    assert shape_to_summary_text(shape) == "只有文字也要保留"
+    assert fetch_image_bytes.await_count == 1
+    assert media_service.ingest_image_bytes.await_count == 0

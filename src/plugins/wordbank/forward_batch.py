@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from os import cpu_count
 from typing import Any, Literal
 
 from nonebot.adapters.onebot.v11 import Message
@@ -23,7 +24,7 @@ from src.plugins.wordbank.services.errors import WordbankUserError
 
 FORWARD_BATCH_NODE_LIMIT = 50
 FORWARD_BATCH_MAX_DEPTH = 3
-FORWARD_NODE_BUILD_CONCURRENCY = 2
+FORWARD_NODE_BUILD_CONCURRENCY = min(max(1, cpu_count() or 1), 8)
 
 
 @dataclass(slots=True, frozen=True)
@@ -118,6 +119,9 @@ async def build_forward_batch_payload_by_source_message_id(
     task: LongTaskRunner | None = None,
 ) -> ForwardBatchPayload:
     from src.plugins.wordbank.handlers import build_message_shape_from_message
+    from src.plugins.wordbank.handlers.media_helpers import (
+        open_message_shape_build_context,
+    )
 
     messages = await _collect_forward_messages_from_source_message_id(
         bot,
@@ -149,13 +153,15 @@ async def build_forward_batch_payload_by_source_message_id(
 
     async def _build_node_shape(
         index: int,
-        message: Message,
+        message: MessageInput,
+        build_context: Any,
     ) -> tuple[int, MessageShape]:
         async with semaphore:
             shape = await build_message_shape_from_message(
                 media_service,
                 message,
                 task=task,
+                build_context=build_context,
             )
         logger.debug(
             "[Wordbank][forward] node shape | "
@@ -164,12 +170,13 @@ async def build_forward_batch_payload_by_source_message_id(
         )
         return index, shape
 
-    shaped = await asyncio.gather(
-        *(
-            _build_node_shape(index, message)
-            for index, message in enumerate(messages, start=1)
+    async with open_message_shape_build_context() as build_context:
+        shaped = await asyncio.gather(
+            *(
+                _build_node_shape(index, message, build_context)
+                for index, message in enumerate(messages, start=1)
+            )
         )
-    )
     if task is not None:
         await task.advance(
             "processing_items",
@@ -335,7 +342,7 @@ async def _collect_forward_messages_from_source_message_id(
     max_depth: int,
     depth: int,
     visited_ids: tuple[str, ...],
-) -> tuple[Message, ...]:
+) -> tuple[MessageInput, ...]:
     if depth >= max_depth:
         raise WordbankUserError(
             tr(
@@ -366,7 +373,7 @@ async def _collect_forward_messages_from_source_message_id(
         f"source_message_id={source_message_id} raw_node_count={len(raw_items)} "
         f"detail_type={type(detail).__name__} depth={depth}"
     )
-    messages: list[Message] = []
+    messages: list[MessageInput] = []
     next_visited = (*visited_ids, source_message_id)
     for index, item in enumerate(raw_items, start=1):
         message = _coerce_forward_input(item)
@@ -460,34 +467,25 @@ async def _flatten_forward_message(
     max_depth: int,
     depth: int,
     visited_ids: tuple[str, ...],
-) -> tuple[Message, ...]:
+) -> tuple[MessageInput, ...]:
     if isinstance(message, Message) and not is_forward_message(message):
         return (message,)
     if not isinstance(message, Message):
         coerced = _coerce_forward_input(message)
-        if isinstance(coerced, Message):
-            message = coerced
-        elif isinstance(coerced, MessageSegment):
-            message = Message([coerced])
-        elif isinstance(coerced, str):
-            message = Message([MessageSegment.text(coerced)])
-        elif isinstance(coerced, (list, tuple)):
-            segments = [
-                segment for item in coerced for segment in iter_message_segments(item)
-            ]
-            message = Message(segments) if segments else Message()
-        else:
+        if coerced is None:
             return ()
-        if not is_forward_message(message):
-            return (message,) if len(message) > 0 else ()
-    parts: list[Message] = []
+        if not (isinstance(coerced, Message) and is_forward_message(coerced)):
+            segments = tuple(iter_message_segments(coerced))
+            return (segments,) if segments else ()
+        message = coerced
+    parts: list[MessageInput] = []
     buffer: list[MessageSegment] = []
     for segment in message:
         if segment.type != "forward":
             buffer.append(segment)
             continue
         if buffer:
-            parts.append(Message(buffer.copy()))
+            parts.append(tuple(buffer))
             buffer.clear()
         nested_source_id = _coerce_forward_segment_message_id(segment)
         if nested_source_id is None:
@@ -505,8 +503,8 @@ async def _flatten_forward_message(
         )
         parts.extend(nested_messages)
     if buffer:
-        parts.append(Message(buffer.copy()))
-    return tuple(part for part in parts if len(part) > 0)
+        parts.append(tuple(buffer))
+    return tuple(part for part in parts if not isinstance(part, tuple) or len(part) > 0)
 
 
 def _coerce_forward_segment_message_id(segment: MessageSegment) -> str | None:

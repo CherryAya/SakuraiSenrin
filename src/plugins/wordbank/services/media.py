@@ -112,6 +112,17 @@ class WordbankMediaService(WordbankMediaRuntimeMixin):
     ) -> WordbankImageRecord:
         start = perf_start()
         md5_hex = md5(data).hexdigest()
+        existing = self._by_md5.get(md5_hex)
+        if existing is not None:
+            log_perf(
+                "media.ingest_image_bytes.cache_hit",
+                start=start,
+                md5=md5_hex,
+                canonical_id=existing.canonical_id,
+                image_id=existing.id,
+                source="memory",
+            )
+            return existing
         existing = await self.repository.get_image_by_md5(md5_hex)
         if existing is not None:
             self._cache_image(existing)
@@ -121,6 +132,7 @@ class WordbankMediaService(WordbankMediaRuntimeMixin):
                 md5=md5_hex,
                 canonical_id=existing.canonical_id,
                 image_id=existing.id,
+                source="repo",
             )
             return existing
 
