@@ -29,6 +29,7 @@ if nonebot.get_plugin("help") is None:
 SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 
 from src.lib.i18n.runtime import tr
+from src.lib.message_plan import render_message_plan_input
 from src.plugins.admin.backup import _build_error_demo, admin_backup
 from src.plugins.help import (
     _iter_docs_entries,
@@ -148,10 +149,12 @@ async def test_admin_backup_snapshots_rejects_invalid_limit(
         ctx.receive_event(bot, event)
         ctx.should_call_send(
             event,
-            _build_error_demo(
-                "zh-CN",
-                tr("zh-CN", "admin.backup.limit.invalid"),
-                "snapshots",
+            render_message_plan_input(
+                _build_error_demo(
+                    "zh-CN",
+                    tr("zh-CN", "admin.backup.limit.invalid"),
+                    "snapshots",
+                )
             ),
             bot=bot,
         )

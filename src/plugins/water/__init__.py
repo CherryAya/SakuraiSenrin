@@ -58,8 +58,13 @@ from src.lib.long_task import (
     MessageEventProgressSink,
 )
 from src.lib.message_delivery import resolve_notice_delivery_target
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan, finish_with_message
-from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
+from src.lib.message_plan import (
+    DeliveryPlan,
+    MessagePlanInput,
+    deliver_message_plan,
+    finish_with_message,
+)
+from src.lib.plugin_docs import build_doc_demo_plan_entry, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.services.startup_sync import ensure_restore_not_in_progress
@@ -145,8 +150,8 @@ def _build_water_demo_message(
     feature_query: str | None,
     *,
     actor_permission: Permission = Permission.NORMAL,
-) -> Message:
-    return build_doc_demo_message(
+) -> MessagePlanInput:
+    return build_doc_demo_plan_entry(
         source=DOCS_SOURCE,
         name=name,
         description=description,
@@ -365,8 +370,8 @@ async def _run_water_query_long_task(
     locale: LocaleCode,
     *,
     spec: WaterQuerySpec,
-    build_message: Callable[[LongTaskRunner], Awaitable[Message | str]],
-) -> Message | str:
+    build_message: Callable[[LongTaskRunner], Awaitable[MessagePlanInput]],
+) -> MessagePlanInput:
     async with LongTaskRunner(
         LongTaskSpec(
             task_name=_water_progress_task_name(spec),

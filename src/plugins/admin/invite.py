@@ -44,6 +44,7 @@ from src.lib.message_plan import (
     DeliveryPlan,
     ImageBytesBlock,
     MessagePlanEntry,
+    MessagePlanInput,
     ReplyRefBlock,
     TextBlock,
     deliver_message_plan,
@@ -51,7 +52,7 @@ from src.lib.message_plan import (
 )
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_doc_demo_message,
+    build_doc_demo_plan_entry,
     build_readme_docs,
     create_docs_meta,
 )
@@ -83,8 +84,8 @@ def _build_error_demo(
     locale: LocaleCode,
     message: str,
     feature_query: str | None,
-) -> Message:
-    return build_doc_demo_message(
+) -> MessagePlanInput:
+    return build_doc_demo_plan_entry(
         source=DOCS_SOURCE,
         name=name,
         description=description,
