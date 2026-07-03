@@ -8,7 +8,7 @@ from nonebot.matcher import Matcher
 
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import LongTaskRunner
-from src.lib.message_plan import finish_with_message
+from src.lib.message_plan import MessagePlanInput, finish_with_message
 from src.plugins.water.services.query_router import WaterQuerySpec, water_query_router
 
 
@@ -20,7 +20,7 @@ async def build_water_query_message(
     is_superuser: bool = False,
     spec: WaterQuerySpec | None = None,
     task: LongTaskRunner | None = None,
-) -> Message:
+) -> MessagePlanInput:
     resolved_spec = spec or water_query_router.parse(arg.extract_plain_text())
     return await water_query_router.execute(
         spec=resolved_spec,
@@ -59,7 +59,7 @@ async def handle_water_query(
 async def build_my_water_profile_message(
     event: GroupMessageEvent,
     locale: LocaleCode,
-) -> Message:
+) -> MessagePlanInput:
     return await water_query_router.build_profile_message(
         user_id=str(event.user_id),
         group_id=str(event.group_id),

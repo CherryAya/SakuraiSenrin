@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.lib.long_task import LongTaskRunner
+from src.lib.message_plan import render_message_plan_input
 from src.lib.messages import text_message
 from src.plugins.water.database.repo_models import (
     WaterDailyReportCandidate,
@@ -251,9 +252,10 @@ async def test_build_group_report_message_advances_long_task(
         locale="zh-CN",
         task=task,
     )
+    rendered = render_message_plan_input(message)
 
-    assert len(message) == 1
-    assert message[0].type == "image"
+    assert len(rendered) == 1
+    assert rendered[0].type == "image"
     assert advance_mock.await_count == 3
 
 

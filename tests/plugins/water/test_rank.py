@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from pil_utils import BuildImage
 import pytest
 
+from src.lib.message_plan import render_message_plan_input
 from src.plugins.water.database.repo_models import (
     NaturalPeriodRankSnapshot,
     NaturalRankItem,
@@ -494,7 +495,7 @@ async def test_rank_query_service_routes_day_and_non_day(
         group_id="20001",
         locale="zh-CN",
     )
-    assert "CQ:image" in str(day_message)
+    assert "CQ:image" in str(render_message_plan_input(day_message))
     period_image_mock.assert_not_awaited()
 
     monkeypatch.setattr(
@@ -509,7 +510,10 @@ async def test_rank_query_service_routes_day_and_non_day(
         group_id="20001",
         locale="zh-CN",
     )
-    assert str(period_message) == "凛凛翻了翻账本，这个周期还没有可用结算数据喔。"
+    assert (
+        str(render_message_plan_input(period_message))
+        == "凛凛翻了翻账本，这个周期还没有可用结算数据喔。"
+    )
 
 
 @pytest.mark.asyncio
@@ -839,7 +843,9 @@ async def test_build_rank_message_renders_all_legal_combinations(
                 timings.append(
                     (subject, scope, period, (perf_counter() - started) * 1000)
                 )
-                assert "CQ:image" in str(message), (subject, scope, period)
+                assert (
+                    "CQ:image" in str(render_message_plan_input(message))
+                ), (subject, scope, period)
 
     assert max(elapsed_ms for *_rest, elapsed_ms in timings) >= 0
     assert len(timings) == 36

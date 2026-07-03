@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.lib.message_plan import MessagePlanInput, render_message_plan_input
 from src.lib.messages import text_message
 from src.plugins.water.database.repo import WaterActivitySeasonRecord
 from src.plugins.water.services.query_router import (
@@ -11,6 +12,10 @@ from src.plugins.water.services.query_router import (
 )
 from src.plugins.water.services.rank_types import RANK_SHORTCUTS, WaterRankQuerySpec
 from src.plugins.water.services.season import SeasonLookupAmbiguous
+
+
+def _rendered_text(message: MessagePlanInput) -> str:
+    return str(render_message_plan_input(message))
 
 
 def test_parse_rank_menu_and_any_order_rank_spec() -> None:
@@ -202,7 +207,7 @@ async def test_execute_rank_menu_and_invalid_combo(
         group_id="20001",
         locale="zh-CN",
     )
-    assert "主体 + 范围 + 时间" in str(menu_message)
+    assert "主体 + 范围 + 时间" in _rendered_text(menu_message)
 
     invalid_message = await router.execute(
         spec=router.parse("群聊榜 本群 月榜"),
@@ -210,8 +215,9 @@ async def test_execute_rank_menu_and_invalid_combo(
         group_id="20001",
         locale="zh-CN",
     )
-    assert "这个主体和范围组合不成立" in str(invalid_message)
-    assert "#水王 群聊榜 本矩阵 月榜" in str(invalid_message)
+    invalid_text = _rendered_text(invalid_message)
+    assert "这个主体和范围组合不成立" in invalid_text
+    assert "#水王 群聊榜 本矩阵 月榜" in invalid_text
 
     from src.plugins.water.services import query_router as router_module
 
@@ -226,7 +232,7 @@ async def test_execute_rank_menu_and_invalid_combo(
         group_id="20001",
         locale="zh-CN",
     )
-    assert str(rank_message) == "RANK_OK"
+    assert _rendered_text(rank_message) == "RANK_OK"
 
     shortcut_error_message = await router.execute(
         spec=WaterQuerySpec(
@@ -242,8 +248,9 @@ async def test_execute_rank_menu_and_invalid_combo(
         group_id="20001",
         locale="zh-CN",
     )
-    assert "快捷入口不需要额外参数" in str(shortcut_error_message)
-    assert "#今日水王" in str(shortcut_error_message)
+    shortcut_error_text = _rendered_text(shortcut_error_message)
+    assert "快捷入口不需要额外参数" in shortcut_error_text
+    assert "#今日水王" in shortcut_error_text
 
 
 @pytest.mark.asyncio
@@ -268,9 +275,10 @@ async def test_execute_rank_restricted_period_requires_superuser(
         locale="zh-CN",
         is_superuser=False,
     )
-    assert "时间不合法" in str(normal_message)
-    assert "超管可用" not in str(normal_message)
-    assert "#水王 矩阵榜 全局 季榜" in str(normal_message)
+    normal_text = _rendered_text(normal_message)
+    assert "时间不合法" in normal_text
+    assert "超管可用" not in normal_text
+    assert "#水王 矩阵榜 全局 季榜" in normal_text
 
     superuser_message = await router.execute(
         spec=router.parse("用户榜 本群 年榜"),
@@ -279,7 +287,7 @@ async def test_execute_rank_restricted_period_requires_superuser(
         locale="zh-CN",
         is_superuser=True,
     )
-    assert str(superuser_message) == "SHOULD_NOT_RUN"
+    assert _rendered_text(superuser_message) == "SHOULD_NOT_RUN"
     build_rank_mock.assert_awaited_once_with(
         subject="user",
         scope="group",
@@ -370,7 +378,7 @@ async def test_execute_activity_default_queries_all_current(
         group_id="20001",
         locale="zh-CN",
     )
-    text = str(message)
+    text = _rendered_text(message)
 
     assert "spring_a" in text
     assert "spring_b" in text
@@ -432,6 +440,7 @@ async def test_execute_activity_ambiguity_message(
         locale="zh-CN",
     )
 
-    assert "歧义" in str(message)
-    assert "ny_a" in str(message)
-    assert "ny_b" in str(message)
+    rendered = _rendered_text(message)
+    assert "歧义" in rendered
+    assert "ny_a" in rendered
+    assert "ny_b" in rendered

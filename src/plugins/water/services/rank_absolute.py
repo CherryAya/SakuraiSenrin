@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from nonebot.adapters.onebot.v11 import Message
-
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.messages import image_message, text_message
+from src.lib.message_plan import MessagePlanInput
+from src.plugins.water.message_support import (
+    build_image_plan_entry,
+    build_text_plan_entry,
+)
 from src.plugins.water.services.rank import PeriodType, water_rank_service
 from src.plugins.water.services.rank_query import water_rank_query_service
 
@@ -16,7 +18,7 @@ class AbsoluteRankService:
         self,
         group_id: str,
         locale: LocaleCode,
-    ) -> Message:
+    ) -> MessagePlanInput:
         return await water_rank_query_service.build_rank_message(
             subject="user",
             scope="group",
@@ -29,15 +31,15 @@ class AbsoluteRankService:
         self,
         period: PeriodType,
         locale: LocaleCode,
-    ) -> Message:
+    ) -> MessagePlanInput:
         res = await water_rank_service.build_period_rank_image(period, locale)
         if res:
-            return image_message(res)
-        return text_message(tr(locale, "water.rank.empty"))
+            return build_image_plan_entry(res)
+        return build_text_plan_entry(tr(locale, "water.rank.empty"))
 
-    async def build_total_rank(self, locale: LocaleCode) -> Message:
+    async def build_total_rank(self, locale: LocaleCode) -> MessagePlanInput:
         rows = await water_rank_service.build_total_rank_lines(locale)
-        return text_message("\n".join(rows))
+        return build_text_plan_entry("\n".join(rows))
 
 
 absolute_rank_service = AbsoluteRankService()

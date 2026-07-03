@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, cast
 
-from nonebot.adapters.onebot.v11 import Message
-
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import LongTaskRunner
-from src.lib.messages import image_message, text_message
+from src.lib.message_plan import MessagePlanInput
+from src.plugins.water.message_support import (
+    build_image_or_text_plan_entry,
+    build_text_plan_entry,
+)
 from src.plugins.water.renderers import render_season_list
 from src.plugins.water.renderers.profile import (
     build_my_water_fallback_text,
@@ -598,7 +600,7 @@ class WaterQueryRouter:
         locale: LocaleCode,
         is_superuser: bool = False,
         task: LongTaskRunner | None = None,
-    ) -> Message:
+    ) -> MessagePlanInput:
         if spec.view == "report":
             from src.plugins.water.services.report import water_report_service
 
@@ -624,7 +626,7 @@ class WaterQueryRouter:
                 record_date=season_service.today_record_date(),
                 locale=locale,
             )
-            return text_message(text)
+            return build_text_plan_entry(text)
         if spec.view == "profile":
             return await self.build_profile_message(
                 user_id=user_id,
@@ -634,7 +636,7 @@ class WaterQueryRouter:
             )
         if spec.scope_type == "rank":
             if spec.rank_spec is None:
-                return text_message(
+                return build_text_plan_entry(
                     self.build_rank_menu(
                         locale,
                         errors=spec.errors,
@@ -645,7 +647,7 @@ class WaterQueryRouter:
                 spec.rank_spec.period,
                 is_superuser=is_superuser,
             ):
-                return text_message(
+                return build_text_plan_entry(
                     self.build_rank_menu(
                         locale,
                         spec.rank_spec,
@@ -654,7 +656,7 @@ class WaterQueryRouter:
                     )
                 )
             if spec.errors:
-                return text_message(
+                return build_text_plan_entry(
                     self.build_rank_menu(
                         locale,
                         spec.rank_spec,
@@ -669,7 +671,7 @@ class WaterQueryRouter:
                 group_id=group_id,
                 locale=locale,
             )
-        return text_message(tr(locale, "water.query.unsupported"))
+        return build_text_plan_entry(tr(locale, "water.query.unsupported"))
 
     async def build_profile_message(
         self,
@@ -679,23 +681,24 @@ class WaterQueryRouter:
         locale: LocaleCode,
         mode: WaterMode = "simple",
         include_group_history_ranks: bool = False,
-    ) -> Message:
+    ) -> MessagePlanInput:
         profile_data = await profile_service.build_profile_data(
             user_id=user_id,
             group_id=group_id,
             include_group_history_ranks=include_group_history_ranks,
         )
         if profile_data is None:
-            return text_message(tr(locale, "water.query.profile_not_enough"))
+            return build_text_plan_entry(tr(locale, "water.query.profile_not_enough"))
         if mode == "full":
             card = await build_my_water_image(profile_data, locale)
         else:
             card = await build_my_water_simple_image(profile_data, locale)
             if not card:
                 card = await build_my_water_image(profile_data, locale)
-        if card:
-            return image_message(card)
-        return text_message(await build_my_water_fallback_text(profile_data, locale))
+        return await build_image_or_text_plan_entry(
+            image_bytes=card,
+            fallback_text=build_my_water_fallback_text(profile_data, locale),
+        )
 
     async def _execute_activity(
         self,
@@ -704,10 +707,10 @@ class WaterQueryRouter:
         user_id: str,
         group_id: str,
         locale: LocaleCode,
-    ) -> Message:
+    ) -> MessagePlanInput:
         if spec.scope_value == "列表":
             seasons = await season_service.list(["published"])
-            return text_message(
+            return build_text_plan_entry(
                 render_season_list(
                     tr(locale, "water.query.season_list.published"),
                     seasons,
@@ -716,7 +719,7 @@ class WaterQueryRouter:
             )
         if spec.scope_value == "当前列表":
             seasons = await season_service.list_current()
-            return text_message(
+            return build_text_plan_entry(
                 render_season_list(
                     tr(locale, "water.query.season_list.current"),
                     seasons,
@@ -727,8 +730,8 @@ class WaterQueryRouter:
         resolved = await season_service.resolve_one_or_many(spec.scope_value)
         if isinstance(resolved, SeasonLookupAmbiguous):
             if not resolved.candidates:
-                return text_message(tr(locale, "water.query.season_not_found"))
-            return text_message(
+                return build_text_plan_entry(tr(locale, "water.query.season_not_found"))
+            return build_text_plan_entry(
                 tr(
                     locale,
                     "water.query.season_ambiguous",
@@ -740,7 +743,7 @@ class WaterQueryRouter:
                 )
             )
         if not resolved:
-            return text_message(tr(locale, "water.query.season_empty"))
+            return build_text_plan_entry(tr(locale, "water.query.season_empty"))
 
         messages: list[str] = []
         if len(resolved) > 1:
@@ -762,7 +765,7 @@ class WaterQueryRouter:
                     locale=locale,
                 )
             )
-        return text_message("\n\n".join(messages))
+        return build_text_plan_entry("\n\n".join(messages))
 
     def build_rank_menu(
         self,

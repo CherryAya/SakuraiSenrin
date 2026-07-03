@@ -8,7 +8,6 @@ from time import perf_counter
 from typing import Literal
 
 import arrow
-from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.bot import Bot
 from pil_utils import BuildImage
 
@@ -17,8 +16,7 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import LongTaskRunner
 from src.lib.message_delivery import DeliveryTarget
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
-from src.lib.messages import image_message, text_message
+from src.lib.message_plan import DeliveryPlan, MessagePlanInput, deliver_message_plan
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.water.database import water_repo
@@ -26,6 +24,10 @@ from src.plugins.water.database.repo_models import (
     WaterDailyReportCandidate,
     WaterGroupDailyRankSnapshot,
     WaterGroupReportSnapshot,
+)
+from src.plugins.water.message_support import (
+    build_image_plan_entry,
+    build_text_plan_entry,
 )
 from src.plugins.water.renderers.models import (
     WaterGroupDailyRankCardItem,
@@ -78,7 +80,7 @@ class WaterReportService:
         locale: LocaleCode,
         now_ts: int | None = None,
         task: LongTaskRunner | None = None,
-    ) -> Message:
+    ) -> MessagePlanInput:
         if task is not None:
             await task.advance("loading_snapshot", metadata={"group_id": group_id})
         snapshot = await self._get_snapshot(
@@ -87,7 +89,7 @@ class WaterReportService:
             now_ts=now_ts,
         )
         if snapshot is None or snapshot.total_msg_count <= 0:
-            return text_message(tr(locale, "water.report.empty"))
+            return build_text_plan_entry(tr(locale, "water.report.empty"))
         if task is not None:
             await task.advance(
                 "building_report_data",
@@ -101,8 +103,8 @@ class WaterReportService:
             )
         image = await build_water_group_report_image(data, locale)
         if image is None:
-            return text_message(tr(locale, "water.report.empty"))
-        return image_message(image)
+            return build_text_plan_entry(tr(locale, "water.report.empty"))
+        return build_image_plan_entry(image)
 
     async def run_daily_group_report_push(
         self,
@@ -165,7 +167,7 @@ class WaterReportService:
 
         async def _render(
             candidate: WaterDailyReportCandidate,
-        ) -> tuple[WaterDailyReportCandidate, Message | None]:
+        ) -> tuple[WaterDailyReportCandidate, MessagePlanInput | None]:
             render_started = perf_counter()
             async with sem:
                 try:
@@ -196,7 +198,7 @@ class WaterReportService:
                     )
                     return candidate, None
 
-        rendered: list[tuple[WaterDailyReportCandidate, Message | None]] = []
+        rendered: list[tuple[WaterDailyReportCandidate, MessagePlanInput | None]] = []
         for completed_count, render_task in enumerate(
             asyncio.as_completed(
                 [asyncio.create_task(_render(candidate)) for candidate in candidates]
