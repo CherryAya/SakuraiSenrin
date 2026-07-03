@@ -6,7 +6,6 @@ from io import BytesIO
 from pathlib import Path
 
 import arrow
-from nonebot.adapters.onebot.v11 import Message
 from PIL import Image, ImageDraw, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
@@ -17,7 +16,6 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     ImageBytesBlock,
     MessagePlanEntry,
-    render_message_plan_entry,
 )
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.services.core import (
@@ -638,19 +636,6 @@ def render_wordbank_leaderboard_card_bytes(
     locale: LocaleCode,
 ) -> bytes:
     return WordbankLeaderboardCardRenderer().render(data=data, locale=locale)
-
-
-def render_wordbank_leaderboard_card(
-    *,
-    data: WordbankLeaderboardCardData,
-    locale: LocaleCode,
-) -> Message:
-    return render_message_plan_entry(
-        build_wordbank_leaderboard_card_plan_entry(
-            data=data,
-            locale=locale,
-        )
-    )
 
 
 def build_wordbank_leaderboard_card_plan_entry(

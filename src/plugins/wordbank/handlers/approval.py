@@ -6,7 +6,6 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 
@@ -22,7 +21,6 @@ from src.lib.message_plan import (
     MessagePlanInput,
     TextBlock,
     deliver_message_plan,
-    render_message_plan_entry,
 )
 from src.logger import logger
 from src.plugins.wordbank.message_model import MessageShape
@@ -117,21 +115,6 @@ def format_pending_batch_approval_notice(
     return "\n".join(lines)
 
 
-async def build_add_result_message(
-    result: WordbankAddResult,
-    *,
-    locale: LocaleCode,
-    media_service: WordbankMediaService,
-) -> Message:
-    return render_message_plan_entry(
-        await build_add_result_plan_entry(
-            result,
-            locale=locale,
-            media_service=media_service,
-        )
-    )
-
-
 async def build_add_result_plan_entry(
     result: WordbankAddResult,
     *,
@@ -144,40 +127,6 @@ async def build_add_result_plan_entry(
         text=text,
         locale=locale,
         media_service=media_service,
-    )
-
-
-async def build_pending_approval_notice_message(
-    result: WordbankAddResult,
-    *,
-    event: MessageEvent,
-    locale: LocaleCode,
-    media_service: WordbankMediaService,
-) -> Message:
-    return render_message_plan_entry(
-        await build_pending_approval_notice_plan_entry(
-            result,
-            event=event,
-            locale=locale,
-            media_service=media_service,
-        )
-    )
-
-
-async def build_pending_batch_approval_notice_message(
-    batch: WordbankBatchAddResult,
-    *,
-    event: MessageEvent,
-    locale: LocaleCode,
-    media_service: WordbankMediaService | None = None,
-) -> Message:
-    return render_message_plan_entry(
-        await build_pending_batch_approval_notice_plan_entry(
-            batch,
-            event=event,
-            locale=locale,
-            media_service=media_service,
-        )
     )
 
 
@@ -366,7 +315,7 @@ async def send_pending_approval_notice(
         return
 
     message: MessagePlanInput = (
-        await build_pending_approval_notice_message(
+        await build_pending_approval_notice_plan_entry(
             result,
             event=event,
             locale=locale,
@@ -473,7 +422,7 @@ async def send_pending_batch_approval_notice(
     if not pending_results:
         return
 
-    message = await build_pending_batch_approval_notice_message(
+    message = await build_pending_batch_approval_notice_plan_entry(
         batch,
         event=event,
         locale=locale,

@@ -5,7 +5,6 @@ from __future__ import annotations
 from io import BytesIO
 from typing import Any
 
-from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw
 
 from src.lib.consts import LXGW_FONG_PATH, MAPLE_FONT_PATH
@@ -15,7 +14,6 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     ImageBytesBlock,
     MessagePlanEntry,
-    render_message_plan_entry,
 )
 
 from .fitters import SearchTreemapFittersMixin
@@ -468,16 +466,6 @@ def render_search_results_treemap_bytes(
     locale: LocaleCode,
 ) -> bytes:
     return SearchTreemapRenderer().render(page, locale=locale)
-
-
-def render_search_results_treemap(
-    *,
-    page: SearchTreemapPage,
-    locale: LocaleCode,
-) -> Message:
-    return render_message_plan_entry(
-        build_search_results_treemap_plan_entry(page=page, locale=locale)
-    )
 
 
 def build_search_results_treemap_plan_entry(

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from typing import Any
 from unittest.mock import AsyncMock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import Bot, Message
 from nonebug import App
 import pytest
 
@@ -35,12 +36,21 @@ from src.plugins.help import (
     _iter_docs_entries,
     _resolve_actor_permission,
     _resolve_docs_delivery_plan,
-    _resolve_docs_message,
     help_matcher,
 )
 from tests.plugins.water.helpers import (
     build_private_message_event,
 )
+
+
+async def _resolve_docs_message(*args: Any, **kwargs: Any) -> Message:
+    plan = await _resolve_docs_delivery_plan(*args, **kwargs)
+    if len(plan.messages) == 1:
+        return render_message_plan_input(plan.messages[0])
+    merged = Message()
+    for message in plan.messages:
+        merged += render_message_plan_input(message)
+    return merged
 
 
 class _Snapshot:

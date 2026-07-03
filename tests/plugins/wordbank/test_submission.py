@@ -31,7 +31,7 @@ async def test_finalize_submission_routes_single_result_through_single_lifecycle
     schedule_notice = Mock(return_value=None)
     matcher = cast(Any, SimpleNamespace(finish=AsyncMock(return_value=None)))
 
-    monkeypatch.setattr(submission_module, "build_add_result_message", build_message)
+    monkeypatch.setattr(submission_module, "build_add_result_plan_entry", build_message)
     monkeypatch.setattr(submission_module, "deliver_message_plan", deliver_plan)
     monkeypatch.setattr(
         submission_module,
@@ -194,7 +194,5 @@ async def test_submission_lifecycle_binds_plugin_specific_submission_config(
     await_args = finalize.await_args
     assert await_args is not None
     assert await_args.kwargs["submission_source_kind"] == "study_submission"
-    assert (
-        await_args.kwargs["batch_submission_source_kind"] == "study_batch_submission"
-    )
+    assert await_args.kwargs["batch_submission_source_kind"] == "study_batch_submission"
     assert await_args.kwargs["batch_feedback_nickname"] == "nickname:zh-CN"

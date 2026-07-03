@@ -4,6 +4,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import nonebot
+from nonebot.adapters.onebot.v11 import Message
 from nonebot.plugin import PluginMetadata
 import pytest
 
@@ -54,7 +55,6 @@ from src.plugins.help import (
     _match_entry,
     _read_plugin_permission,
     _resolve_docs_delivery_plan,
-    _resolve_docs_message,
     _resolve_forward_sender,
     _send_help_forward,
     _split_query,
@@ -70,6 +70,16 @@ def _first_image_file(message: Any) -> str | None:
         if segment.type == "image":
             return cast(str | None, segment.data.get("file"))
     return None
+
+
+async def _resolve_docs_message(*args: Any, **kwargs: Any) -> Message:
+    plan = await _resolve_docs_delivery_plan(*args, **kwargs)
+    if len(plan.messages) == 1:
+        return render_message_plan_input(plan.messages[0])
+    merged = Message()
+    for message in plan.messages:
+        merged += render_message_plan_input(message)
+    return merged
 
 
 def _make_entry(

@@ -32,7 +32,7 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.interaction import (
     abort_if_revoke_signal,
     clear_interaction_errors,
-    reject_or_abort_on_error,
+    record_interaction_error,
 )
 from src.lib.interactive_recall import (
     INTERACTION_ROOT_MESSAGE_ID,
@@ -57,9 +57,11 @@ from src.lib.message_delivery import resolve_notice_delivery_target
 from src.lib.message_plan import (
     DeliveryPlan,
     MessagePlanEntry,
+    MessagePlanInput,
     deliver_message_plan,
     finish_with_message,
-    render_message_plan_entry,
+    pause_with_message,
+    reject_with_message,
 )
 from src.lib.plugin_docs import (
     build_doc_demo_plan_entry,
@@ -101,13 +103,6 @@ def _study_error_plan_entry(
         locale=locale,
         prefix_text=localize_command_error(exc, locale),
     )
-
-
-def _study_error_message(
-    exc: Exception,
-    locale: LocaleCode,
-) -> Message:
-    return render_message_plan_entry(_study_error_plan_entry(exc, locale))
 
 
 __plugin_meta__ = create_plugin_metadata(
@@ -200,15 +195,12 @@ async def _reject_study_error(
     matcher: Matcher,
     state: T_State,
     locale: LocaleCode,
-    message: Any,
+    message: MessagePlanInput,
 ) -> None:
-    await reject_or_abort_on_error(
-        matcher,
-        state,
-        message,
-        max_errors=GUIDED_MAX_ERRORS,
-        abort_message=tr(locale, "interaction.too_many_errors"),
-    )
+    if record_interaction_error(state) >= GUIDED_MAX_ERRORS:
+        await matcher.finish(tr(locale, "interaction.too_many_errors"))
+        return
+    await reject_with_message(matcher, message=message)
 
 
 def _copy_study_state(
@@ -334,7 +326,10 @@ async def _start_guided_study_from_partial_args(
     try:
         group_block = parse_study_group_block_choice(tokens[1].value)
     except RuleError as exc:
-        await matcher.pause(_study_error_message(exc, locale))
+        await pause_with_message(
+            matcher,
+            message=_study_error_plan_entry(exc, locale),
+        )
         return True
 
     state["study_group_block"] = group_block
@@ -678,7 +673,7 @@ async def _record_study_weight_and_finish(
             matcher,
             state,
             locale,
-            _study_error_message(exc, locale),
+            _study_error_plan_entry(exc, locale),
         )
         return
     clear_interaction_errors(state)
@@ -803,7 +798,7 @@ async def _finish_guided_study(
             matcher,
             state,
             locale,
-            _study_error_message(exc, locale),
+            _study_error_plan_entry(exc, locale),
         )
         return
     await _finalize_study_submission(
@@ -960,7 +955,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
             matcher,
             state,
             locale,
-            _study_error_message(exc, locale),
+            _study_error_plan_entry(exc, locale),
         )
         return
     clear_interaction_errors(state)
@@ -1003,7 +998,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
             matcher,
             state,
             locale,
-            _study_error_message(exc, locale),
+            _study_error_plan_entry(exc, locale),
         )
         return
     clear_interaction_errors(state)

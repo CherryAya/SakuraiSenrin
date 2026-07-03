@@ -21,7 +21,7 @@ from src.plugins.wordbank.services.presentation import (
 )
 
 from .approval import (
-    build_add_result_message,
+    build_add_result_plan_entry,
     record_batch_submission_approval_message,
     record_submission_approval_message,
     schedule_submission_approval_notice,
@@ -81,7 +81,7 @@ async def finalize_submission(
     send_result: DeliveryResult | None = None
 
     if isinstance(submission, WordbankAddResult):
-        message = await build_add_result_message(
+        message = await build_add_result_plan_entry(
             submission,
             locale=locale,
             media_service=media_service,

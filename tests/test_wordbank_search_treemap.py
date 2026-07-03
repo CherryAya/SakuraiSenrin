@@ -5,6 +5,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw
 import pytest
 
+from src.lib.message_plan import render_message_plan_entry
 from src.plugins.wordbank.treemap import (
     TREEMAP_HEIGHT,
     TREEMAP_WIDTH,
@@ -16,9 +17,9 @@ from src.plugins.wordbank.treemap import (
     SearchTreemapResponseSegment,
     SearchTreemapTile,
     TreemapRect,
+    build_search_results_treemap_plan_entry,
     build_search_treemap_layout,
     load_search_treemap_fixture,
-    render_search_results_treemap,
     render_search_results_treemap_bytes,
 )
 
@@ -130,7 +131,9 @@ def test_render_search_results_treemap_bytes_outputs_png() -> None:
 def test_render_search_results_treemap_returns_image_message() -> None:
     page = load_search_treemap_fixture(FIXTURES_ROOT / "search_treemap_basic.json")
 
-    message = render_search_results_treemap(page=page, locale="zh-CN")
+    message = render_message_plan_entry(
+        build_search_results_treemap_plan_entry(page=page, locale="zh-CN")
+    )
 
     assert isinstance(message, Message)
     assert len(message) == 1

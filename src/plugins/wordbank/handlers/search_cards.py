@@ -9,7 +9,6 @@ import math
 from typing import Any
 
 import arrow
-from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
@@ -19,7 +18,6 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     ImageBytesBlock,
     MessagePlanEntry,
-    render_message_plan_entry,
 )
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.types import WordbankSearchItem
@@ -990,23 +988,6 @@ def render_search_results_card_bytes(
 ) -> bytes:
     renderer = SearchResultCardRenderer(preview_bytes=preview_bytes)
     return renderer.render(items=items, query=query, locale=locale)
-
-
-def render_search_results_card(
-    *,
-    items: tuple[WordbankSearchItem, ...],
-    query: SearchCardQuery,
-    locale: LocaleCode,
-    preview_bytes: Mapping[int, bytes | None] | None = None,
-) -> Message:
-    return render_message_plan_entry(
-        build_search_results_card_plan_entry(
-            items=items,
-            query=query,
-            locale=locale,
-            preview_bytes=preview_bytes,
-        )
-    )
 
 
 def build_search_results_card_plan_entry(

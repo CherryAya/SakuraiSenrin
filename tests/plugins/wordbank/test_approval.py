@@ -7,11 +7,9 @@ import pytest
 
 from src.lib.message_plan import render_message_plan_input
 from src.plugins.wordbank.handlers.approval import (
-    build_add_result_message,
     build_add_result_plan_entry,
-    build_pending_approval_notice_message,
     build_pending_approval_notice_plan_entry,
-    build_pending_batch_approval_notice_message,
+    build_pending_batch_approval_notice_plan_entry,
     format_pending_approval_notice,
     format_pending_batch_approval_notice,
     record_batch_submission_approval_message,
@@ -61,6 +59,24 @@ def _event() -> MessageEvent:
     return build_group_message_event("#wordbank add 晚安 => 做个好梦")
 
 
+async def _build_add_result_message(*args: Any, **kwargs: Any) -> Any:
+    return render_message_plan_input(await build_add_result_plan_entry(*args, **kwargs))
+
+
+async def _build_pending_approval_notice_message(*args: Any, **kwargs: Any) -> Any:
+    return render_message_plan_input(
+        await build_pending_approval_notice_plan_entry(*args, **kwargs)
+    )
+
+
+async def _build_pending_batch_approval_notice_message(
+    *args: Any, **kwargs: Any
+) -> Any:
+    return render_message_plan_input(
+        await build_pending_batch_approval_notice_plan_entry(*args, **kwargs)
+    )
+
+
 @pytest.mark.asyncio
 async def test_build_add_result_message_rebuilds_shape_with_image() -> None:
     load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
@@ -73,7 +89,7 @@ async def test_build_add_result_message_rebuilds_shape_with_image() -> None:
         response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
     )
 
-    message = await build_add_result_message(
+    message = await _build_add_result_message(
         result,
         locale="zh-CN",
         media_service=media_service,
@@ -108,7 +124,7 @@ async def test_build_add_result_message_rebuilds_trigger_and_response_shapes() -
         response_shape=shape_from_image(7),
     )
 
-    message = await build_add_result_message(
+    message = await _build_add_result_message(
         result,
         locale="zh-CN",
         media_service=media_service,
@@ -143,7 +159,7 @@ async def test_build_add_result_message_keeps_plain_text_response() -> None:
         response_shape=shape_from_text("做个好梦"),
     )
 
-    message = await build_add_result_message(
+    message = await _build_add_result_message(
         result,
         locale="zh-CN",
         media_service=media_service,
@@ -214,7 +230,7 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
         response_shape=shape_from_image(7),
     )
 
-    message = await build_pending_approval_notice_message(
+    message = await _build_pending_approval_notice_message(
         result,
         event=_event(),
         locale="zh-CN",
@@ -248,7 +264,7 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
         response_shape=shape_from_text("做个好梦"),
     )
 
-    message = await build_pending_approval_notice_message(
+    message = await _build_pending_approval_notice_message(
         result,
         event=_event(),
         locale="zh-CN",
@@ -398,7 +414,7 @@ async def test_build_pending_batch_approval_notice_message_embeds_image_shapes()
         ),
     )
 
-    message = await build_pending_batch_approval_notice_message(
+    message = await _build_pending_batch_approval_notice_message(
         batch,
         event=_event(),
         locale="zh-CN",
@@ -483,9 +499,8 @@ async def test_send_pending_batch_approval_notice_records_pending_batch_context(
 
 
 @pytest.mark.asyncio
-async def test_record_batch_submission_approval_message_uses_pending_batch_context() -> (
-    None
-):
+async def test_record_batch_submission_approval_message_uses_pending_batch_context(
+) -> None:
     record_message_ref = AsyncMock(return_value=None)
     service = cast(Any, SimpleNamespace(record_message_ref=record_message_ref))
     batch = WordbankBatchAddResult(

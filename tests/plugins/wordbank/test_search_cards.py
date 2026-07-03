@@ -1,14 +1,16 @@
 from io import BytesIO
+from typing import Any
 
 from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image
 
+from src.lib.message_plan import render_message_plan_entry
 from src.plugins.water.img import _build_copyright_text
 from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.handlers.search_cards import (
     SearchCardQuery,
     SearchResultCardRenderer,
-    render_search_results_card,
+    build_search_results_card_plan_entry,
 )
 
 
@@ -37,8 +39,12 @@ def _item(
     )
 
 
+def _render_search_results_card(**kwargs: Any) -> Message:
+    return render_message_plan_entry(build_search_results_card_plan_entry(**kwargs))
+
+
 def test_render_search_results_card_returns_image_message() -> None:
-    message = render_search_results_card(
+    message = _render_search_results_card(
         items=(_item(12), _item(13, matched_by="image:response")),
         query=SearchCardQuery(
             keyword="晚安",
@@ -58,7 +64,7 @@ def test_render_search_results_card_returns_image_message() -> None:
 
 
 def test_render_search_results_card_supports_multiline_response_text() -> None:
-    message = render_search_results_card(
+    message = _render_search_results_card(
         items=(
             WordbankSearchItem(
                 trigger_group_id=12,
@@ -91,7 +97,7 @@ def test_render_search_results_card_supports_multiline_response_text() -> None:
 
 
 def test_render_search_results_card_supports_inline_preview_images() -> None:
-    message = render_search_results_card(
+    message = _render_search_results_card(
         items=(
             WordbankSearchItem(
                 trigger_group_id=22,

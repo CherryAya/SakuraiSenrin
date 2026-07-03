@@ -203,7 +203,7 @@ async def test_wordbank_add_direct_success_records_submission(
     )
     monkeypatch.setattr(
         wordbank_submission_handlers,
-        "build_add_result_message",
+        "build_add_result_plan_entry",
         build_result_message,
     )
     monkeypatch.setattr(
@@ -359,7 +359,7 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
     )
     monkeypatch.setattr(
         wordbank_submission_handlers,
-        "build_add_result_message",
+        "build_add_result_plan_entry",
         build_result_message,
     )
     monkeypatch.setattr(

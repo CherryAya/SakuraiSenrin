@@ -8,7 +8,6 @@ from io import BytesIO
 from typing import Any
 
 import arrow
-from nonebot.adapters.onebot.v11.message import Message
 from PIL import Image, ImageDraw, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
@@ -18,7 +17,6 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     ImageBytesBlock,
     MessagePlanEntry,
-    render_message_plan_entry,
 )
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.types import (
@@ -947,21 +945,6 @@ def render_group_detail_card_bytes(
 ) -> bytes:
     renderer = GroupDetailCardRenderer(preview_bytes=preview_bytes)
     return renderer.render(page_data=page_data, locale=locale)
-
-
-def render_group_detail_card(
-    *,
-    page_data: GroupDetailCardPage,
-    locale: LocaleCode,
-    preview_bytes: Mapping[int, bytes | None] | None = None,
-) -> Message:
-    return render_message_plan_entry(
-        build_group_detail_card_plan_entry(
-            page_data=page_data,
-            locale=locale,
-            preview_bytes=preview_bytes,
-        )
-    )
 
 
 def build_group_detail_card_plan_entry(

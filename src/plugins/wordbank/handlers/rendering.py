@@ -8,8 +8,6 @@ from dataclasses import replace
 import math
 from typing import Any, cast
 
-from nonebot.adapters.onebot.v11 import Message
-
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
@@ -18,7 +16,6 @@ from src.lib.message_plan import (
     MessagePlanBlock,
     MessagePlanEntry,
     TextBlock,
-    render_message_plan_entry,
 )
 from src.lib.utils.img import QQAvatar
 from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
@@ -49,25 +46,6 @@ from .search_cards import (
 
 GROUP_PAGE_SIZE = 10
 MISSING_IMAGE_PLACEHOLDER = tr("zh-CN", "wordbank.render.image_missing")
-
-
-async def render_shape_message(
-    shape: MessageShape,
-    media_service: WordbankMediaService,
-    *,
-    locale: LocaleCode = "zh-CN",
-    trace_fields: Mapping[str, object] | None = None,
-    trace_sink: MutableMapping[str, object] | None = None,
-) -> Message:
-    return render_message_plan_entry(
-        await build_shape_plan_entry(
-            shape,
-            media_service,
-            locale=locale,
-            trace_fields=trace_fields,
-            trace_sink=trace_sink,
-        )
-    )
 
 
 async def build_shape_plan_entry(
@@ -114,27 +92,6 @@ async def build_shape_plan_entry(
             **cast(Any, dict(trace_fields)),
         )
     return entry
-
-
-async def render_search_items_text_message(
-    *,
-    items: tuple[WordbankSearchItem, ...] | list[WordbankSearchItem],
-    locale: LocaleCode,
-    media_service: WordbankMediaService,
-    page: int = 1,
-    limit: int = 10,
-    has_more: bool = False,
-) -> Message:
-    return render_message_plan_entry(
-        await build_search_items_text_plan_entry(
-            items=items,
-            locale=locale,
-            media_service=media_service,
-            page=page,
-            limit=limit,
-            has_more=has_more,
-        )
-    )
 
 
 async def build_search_items_text_plan_entry(
@@ -199,27 +156,6 @@ async def build_search_items_text_plan_entry(
             )
         )
     return MessagePlanEntry(blocks=tuple(blocks))
-
-
-async def render_pending_items_message(
-    *,
-    items: tuple[WordbankSearchItem, ...] | list[WordbankSearchItem],
-    locale: LocaleCode,
-    media_service: WordbankMediaService,
-    page: int = 1,
-    limit: int = 10,
-    has_more: bool = False,
-) -> Message:
-    return render_message_plan_entry(
-        await build_pending_items_plan_entry(
-            items=items,
-            locale=locale,
-            media_service=media_service,
-            page=page,
-            limit=limit,
-            has_more=has_more,
-        )
-    )
 
 
 async def build_pending_items_plan_entry(
@@ -325,25 +261,6 @@ async def build_pending_item_blocks(
     return tuple(blocks)
 
 
-async def render_reply_detail_message(
-    *,
-    detail: WordbankGroupDetail,
-    locale: LocaleCode,
-    media_service: WordbankMediaService,
-    message_id: str,
-    message_type: str,
-) -> Message:
-    return render_message_plan_entry(
-        await build_reply_detail_plan_entry(
-            detail=detail,
-            locale=locale,
-            media_service=media_service,
-            message_id=message_id,
-            message_type=message_type,
-        )
-    )
-
-
 async def build_reply_detail_plan_entry(
     *,
     detail: WordbankGroupDetail,
@@ -408,23 +325,6 @@ def _has_non_text_shape(shape: MessageShape | None) -> bool:
     )
 
 
-async def render_search_results_card_message(
-    *,
-    items: tuple[WordbankSearchItem, ...],
-    query: SearchCardQuery,
-    locale: LocaleCode,
-    media_service: WordbankMediaService,
-) -> Message:
-    return render_message_plan_entry(
-        await build_search_results_card_plan_entry(
-            items=items,
-            query=query,
-            locale=locale,
-            media_service=media_service,
-        )
-    )
-
-
 async def build_search_results_card_plan_entry(
     *,
     items: tuple[WordbankSearchItem, ...],
@@ -467,24 +367,6 @@ async def build_search_results_card_plan_entry(
             "total_count": query.total_count,
         },
     )
-
-
-async def render_group_detail_page_message(
-    *,
-    detail: WordbankGroupDetail,
-    page: int,
-    locale: LocaleCode,
-    media_service: WordbankMediaService,
-    page_size: int = GROUP_PAGE_SIZE,
-) -> tuple[Message, int]:
-    entry, total_pages = await build_group_detail_page_message_plan_entry(
-        detail=detail,
-        page=page,
-        locale=locale,
-        media_service=media_service,
-        page_size=page_size,
-    )
-    return render_message_plan_entry(entry), total_pages
 
 
 async def build_group_detail_page_message_plan_entry(
@@ -625,19 +507,6 @@ async def build_group_detail_page_plan_entry(
             )
         )
     return MessagePlanEntry(blocks=tuple(blocks))
-
-
-async def render_creator_leaderboard_card_message(
-    *,
-    data: WordbankLeaderboardCardData,
-    locale: LocaleCode,
-) -> Message:
-    return render_message_plan_entry(
-        await build_creator_leaderboard_card_plan_entry(
-            data=data,
-            locale=locale,
-        )
-    )
 
 
 async def build_creator_leaderboard_card_plan_entry(

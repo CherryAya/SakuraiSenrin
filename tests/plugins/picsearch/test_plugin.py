@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import sys
+from typing import Any
 from unittest.mock import AsyncMock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot, MessageSegment
+from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 from nonebug import App
 import pytest
 
@@ -30,13 +31,14 @@ from src.plugins import picsearch as picsearch_plugin
 from src.plugins.help import (
     _iter_docs_entries,
     _resolve_actor_permission,
-    _resolve_docs_message,
+    _resolve_docs_delivery_plan,
     help_matcher,
 )
 from src.plugins.picsearch import (
     PicsearchEngine,
     PicsearchResult,
     _build_error_demo,
+    build_result_plan_entry,
     picsearch_matcher,
 )
 from tests.plugins.water.helpers import (
@@ -66,6 +68,20 @@ def _freeze_error_demo(monkeypatch: pytest.MonkeyPatch) -> None:
         "src.lib.plugin_docs.render_feature_deep_dive",
         lambda *args, **kwargs: b"feature-demo",
     )
+
+
+def _build_result_message(*args: Any, **kwargs: Any) -> Message:
+    return render_message_plan_input(build_result_plan_entry(*args, **kwargs))
+
+
+async def _resolve_docs_message(*args: Any, **kwargs: Any) -> Message:
+    plan = await _resolve_docs_delivery_plan(*args, **kwargs)
+    if len(plan.messages) == 1:
+        return render_message_plan_input(plan.messages[0])
+    merged = Message()
+    for message in plan.messages:
+        merged += render_message_plan_input(message)
+    return merged
 
 
 @pytest.mark.asyncio
@@ -260,7 +276,7 @@ async def test_picsearch_multi_image_ascii2d_success(
 
 @pytest.mark.asyncio
 async def test_build_result_message_uses_locale_labels() -> None:
-    message = picsearch_plugin.build_result_message(
+    message = _build_result_message(
         1,
         PicsearchResult(
             engine=PicsearchEngine.ASCII2D,

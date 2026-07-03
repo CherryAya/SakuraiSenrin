@@ -44,7 +44,6 @@ from src.lib.message_plan import (
     deliver_message_plan,
     finish_with_message,
     reject_with_message,
-    render_message_plan_entry,
 )
 from src.lib.plugin_docs import (
     DocsRenderContext,
@@ -269,23 +268,6 @@ async def load_thumbnail_bytes(url: str) -> bytes | None:
         response = await client.get(url)
         response.raise_for_status()
         return response.content
-
-
-def build_result_message(
-    index: int,
-    result: PicsearchResult,
-    thumbnail_bytes: bytes | None,
-    *,
-    locale: LocaleCode,
-) -> Message:
-    return render_message_plan_entry(
-        build_result_plan_entry(
-            index,
-            result,
-            thumbnail_bytes,
-            locale=locale,
-        )
-    )
 
 
 def build_result_plan_entry(

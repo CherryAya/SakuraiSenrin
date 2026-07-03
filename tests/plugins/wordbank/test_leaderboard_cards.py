@@ -1,6 +1,11 @@
+from typing import Any
+
+from nonebot.adapters.onebot.v11 import Message
+
+from src.lib.message_plan import render_message_plan_entry
 from src.plugins.wordbank.handlers.leaderboard_cards import (
     WordbankLeaderboardCardRenderer,
-    render_wordbank_leaderboard_card,
+    build_wordbank_leaderboard_card_plan_entry,
 )
 from src.plugins.wordbank.services.core import (
     WordbankLeaderboardCardData,
@@ -31,8 +36,14 @@ def _data(
     )
 
 
+def _render_wordbank_leaderboard_card(**kwargs: Any) -> Message:
+    return render_message_plan_entry(
+        build_wordbank_leaderboard_card_plan_entry(**kwargs)
+    )
+
+
 def test_render_wordbank_leaderboard_card_returns_image_message() -> None:
-    message = render_wordbank_leaderboard_card(
+    message = _render_wordbank_leaderboard_card(
         data=_data(
             items=(
                 WordbankLeaderboardCardItem(

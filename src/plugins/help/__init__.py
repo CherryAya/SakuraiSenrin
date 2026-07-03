@@ -39,7 +39,6 @@ from src.lib.message_plan import (
     TextBlock,
     deliver_message_plan,
     finish_with_message,
-    render_message_plan_input,
 )
 from src.lib.onebot_forward import resolve_forward_sender
 from src.lib.plugin_docs import (
@@ -878,29 +877,6 @@ async def _resolve_docs_delivery_plan(
             actor_permission=actor_permission,
         )
     )
-
-
-async def _resolve_docs_message(
-    entry: DocsEntry,
-    locale: LocaleCode,
-    *,
-    feature_query: str | None = None,
-    actor_permission: Permission = Permission.NORMAL,
-    all_entries: list[DocsEntry] | None = None,
-) -> Message:
-    plan = await _resolve_docs_delivery_plan(
-        entry,
-        locale,
-        feature_query=feature_query,
-        actor_permission=actor_permission,
-        all_entries=all_entries,
-    )
-    if len(plan.messages) == 1:
-        return render_message_plan_input(plan.messages[0])
-    merged = Message()
-    for message in plan.messages:
-        merged += render_message_plan_input(message)
-    return merged
 
 
 @help_matcher.handle()

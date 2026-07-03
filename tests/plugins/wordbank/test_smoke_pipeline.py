@@ -147,7 +147,7 @@ async def test_wordbank_add_command_pipeline_matches_after_approval(
     )
     monkeypatch.setattr(
         wordbank_plugin,
-        "build_add_result_message",
+        "build_add_result_plan_entry",
         AsyncMock(return_value=text_message("ADD_OK")),
     )
 
@@ -193,7 +193,7 @@ async def test_study_guided_pipeline_matches_after_approval(
     )
     monkeypatch.setattr(
         wordbank_handlers,
-        "build_add_result_message",
+        "build_add_result_plan_entry",
         AsyncMock(return_value=text_message("STUDY_OK")),
     )
     monkeypatch.setattr(
