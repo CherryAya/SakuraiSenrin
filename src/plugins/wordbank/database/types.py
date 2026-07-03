@@ -172,6 +172,7 @@ class WordbankResponseItemRecord:
     search_text: str
     search_tokens: str
     image_keys: str
+    created_at: int
 
 
 @dataclass(slots=True, frozen=True)

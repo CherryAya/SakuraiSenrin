@@ -28,7 +28,11 @@ if nonebot.get_plugin("wordbank") is None:
     nonebot.load_plugin("src.plugins.wordbank")
 
 from src.plugins.wordbank.forward_batch import ResponseInputPayload
-from src.plugins.wordbank.guided_flow import record_guided_forward_response_choice
+from src.plugins.wordbank.guided_flow import (
+    copy_guided_state,
+    guided_response_state_keys,
+    record_guided_forward_response_choice,
+)
 from src.plugins.wordbank.message_model import shape_from_text
 from src.plugins.wordbank.services import wordbank_media_service
 
@@ -97,3 +101,27 @@ async def test_guided_forward_choice_uses_saved_response_event(
     else:
         assert "wordbank_guided_response_split_shapes" not in state
         assert state["wordbank_guided_response_shape"] == payload.whole_shape
+
+
+def test_guided_response_state_keys_keeps_forward_response_state() -> None:
+    split_shape = shape_from_text("第一条")
+    state: dict[str, object] = {
+        "wordbank_guided_response_split_shapes": (split_shape,),
+        "wordbank_guided_response_forward_source_message_id": "54321",
+        "wordbank_guided_response_forward_node_count": 2,
+        "wordbank_guided_response_forward_messages": ("node-1", "node-2"),
+        "wordbank_guided_scope": "1",
+    }
+
+    snapshot = copy_guided_state(
+        state,
+        keep_keys=("wordbank_guided_trigger_shape", *guided_response_state_keys(state)),
+    )
+
+    assert snapshot["wordbank_guided_response_split_shapes"] == (split_shape,)
+    assert snapshot["wordbank_guided_response_forward_source_message_id"] == "54321"
+    assert snapshot["wordbank_guided_response_forward_node_count"] == 2
+    assert snapshot["wordbank_guided_response_forward_messages"] == (
+        "node-1",
+        "node-2",
+    )

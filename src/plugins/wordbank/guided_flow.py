@@ -175,6 +175,22 @@ def copy_guided_state(
     return snapshot
 
 
+def guided_response_state_keys(state: Mapping[str, Any]) -> tuple[str, ...]:
+    keys: list[str] = []
+    for key in (
+        "wordbank_guided_response_shape",
+        "wordbank_guided_response_split_shapes",
+        "wordbank_guided_response_forward_pending",
+        "wordbank_guided_response_forward_event",
+        "wordbank_guided_response_forward_source_message_id",
+        "wordbank_guided_response_forward_messages",
+        "wordbank_guided_response_forward_node_count",
+    ):
+        if key in state:
+            keys.append(key)
+    return tuple(keys)
+
+
 def guided_prompt_for_step(locale: LocaleCode, step_index: int) -> str:
     prompt_by_step = {
         WORDBANK_GUIDED_STEP_TRIGGER: tr(locale, "wordbank.guided.add.trigger_prompt"),
@@ -609,7 +625,8 @@ async def finish_guided_add(
                     key="wordbank.error.response_empty",
                 )
             source_message_id = str(
-                state.get("wordbank_guided_response_forward_source_message_id", "") or ""
+                state.get("wordbank_guided_response_forward_source_message_id", "")
+                or ""
             )
             node_count = int(
                 state.get("wordbank_guided_response_forward_node_count", 0) or 0
@@ -658,7 +675,9 @@ async def finish_guided_add(
                     result,
                     response_mode="forward_whole",
                     forward_source_message_id=str(
-                        state.get("wordbank_guided_response_forward_source_message_id", "")
+                        state.get(
+                            "wordbank_guided_response_forward_source_message_id", ""
+                        )
                         or ""
                     )
                     or None,

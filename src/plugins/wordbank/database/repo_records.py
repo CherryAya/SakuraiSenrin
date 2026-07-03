@@ -82,6 +82,7 @@ class WordbankRepositoryRecordsMixin:
             search_text=row.search_text,
             search_tokens=row.search_tokens,
             image_keys=row.image_keys,
+            created_at=row.created_at,
         )
 
     @classmethod

@@ -8,7 +8,7 @@ from typing import Any
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
-from nonebot.adapters.onebot.v11.message import Message
+from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.typing import T_State
@@ -35,6 +35,7 @@ from .guided_flow import (
     WORDBANK_GUIDED_SEARCH_STAGE_QUERY,
     WORDBANK_GUIDED_STEP_ADVANCED,
     WORDBANK_GUIDED_STEP_SCOPE,
+    guided_response_state_keys,
 )
 from .handlers import (
     GROUP_ALIASES,
@@ -517,7 +518,7 @@ def register_wordbank_command_handlers(
                 state,
                 keep_keys=(
                     "wordbank_guided_trigger_shape",
-                    "wordbank_guided_response_shape",
+                    *guided_response_state_keys(state),
                 ),
             ),
         )
@@ -555,8 +556,8 @@ def register_wordbank_command_handlers(
                 state,
                 keep_keys=(
                     "wordbank_guided_trigger_shape",
-                    "wordbank_guided_response_shape",
                     "wordbank_guided_scope",
+                    *guided_response_state_keys(state),
                 ),
             ),
         )
@@ -704,11 +705,13 @@ def register_wordbank_command_handlers(
             await _call_dynamic("_start_guided_search", matcher, event, state, locale)
             return
         handler = handle_wordbank_command_message_fn or handle_wordbank_command_message
-        arg_for_handler = (
-            Message(_raw_rest_after_first_token(event.raw_message))
-            if not has_images
-            else arg
-        )
+        if not has_images:
+            arg_for_handler = Message()
+            arg_for_handler += MessageSegment.text(
+                _raw_rest_after_first_token(event.raw_message)
+            )
+        else:
+            arg_for_handler = arg
         await handler(
             bot,
             matcher,
