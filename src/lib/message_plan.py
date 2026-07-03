@@ -138,6 +138,12 @@ def render_delivery_plan_messages(plan: DeliveryPlan) -> tuple[Message, ...]:
     return tuple(render_message_plan_input(entry) for entry in plan.messages)
 
 
+def _render_matcher_message_input(message: MessagePlanInput) -> Message | str:
+    if isinstance(message, MessagePlanEntry):
+        return render_message_plan_entry(message)
+    return message
+
+
 async def deliver_message_plan(
     bot: Bot,
     *,
@@ -225,11 +231,7 @@ async def finish_with_message(
     allow_asset_reuse: bool = True,
     force_forward: bool | None = None,
 ) -> None:
-    rendered_message: Message | str
-    if isinstance(message, MessagePlanEntry):
-        rendered_message = render_message_plan_entry(message)
-    else:
-        rendered_message = message
+    rendered_message = _render_matcher_message_input(message)
     if target is None and force_forward is not True and not fallback_nickname:
         await matcher.finish(rendered_message)
         return
@@ -250,3 +252,19 @@ async def finish_with_message(
         event=event,
         target=target,
     )
+
+
+async def reject_with_message(
+    matcher: Matcher,
+    *,
+    message: MessagePlanInput,
+) -> None:
+    await matcher.reject(_render_matcher_message_input(message))
+
+
+async def pause_with_message(
+    matcher: Matcher,
+    *,
+    message: MessagePlanInput,
+) -> None:
+    await matcher.pause(_render_matcher_message_input(message))

@@ -9,7 +9,7 @@ from nonebug import App
 import pytest
 
 from src.lib.message_assets import message_asset_repo
-from src.lib.messages import text_message
+from src.lib.message_plan import render_message_plan_input
 
 nonebot.init(
     SUPERUSERS={"1"},
@@ -45,7 +45,7 @@ from tests.plugins.water.helpers import (
     build_message,
 )
 
-MULTI_IMAGE_PROMPT = text_message(
+MULTI_IMAGE_PROMPT = (
     "检测到有多张图片，请输入对应的序号，最多允许 3 张，可以使用空格进行分割："
 )
 
@@ -82,9 +82,11 @@ async def test_picsearch_requires_reply_image(
         ctx.receive_event(bot, event)
         ctx.should_call_send(
             event,
-            _build_error_demo(
-                "zh-CN",
-                "请先回复一条包含图片的消息，再发送搜图指令。",
+            render_message_plan_input(
+                _build_error_demo(
+                    "zh-CN",
+                    "请先回复一条包含图片的消息，再发送搜图指令。",
+                )
             ),
             bot=bot,
         )
@@ -182,7 +184,9 @@ async def test_picsearch_rejects_invalid_index_on_multi_image(
         ctx.receive_event(bot, second)
         ctx.should_call_send(
             second,
-            _build_error_demo("zh-CN", "图片序号超出范围，请重新输入。"),
+            render_message_plan_input(
+                _build_error_demo("zh-CN", "图片序号超出范围，请重新输入。")
+            ),
             bot=bot,
         )
         ctx.should_rejected(picsearch_matcher)
@@ -238,13 +242,15 @@ async def test_picsearch_multi_image_ascii2d_success(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": text_message(
-                    "第 2 张图片搜索结果：\n"
-                    "引擎：ascii2d\n"
-                    "相似度：N/A\n"
-                    "标题：ASCII 标题\n"
-                    "作者：ASCII 作者\n"
-                    "链接：https://example.com/ascii"
+                "message": build_message(
+                    MessageSegment.text(
+                        "第 2 张图片搜索结果：\n"
+                        "引擎：ascii2d\n"
+                        "相似度：N/A\n"
+                        "标题：ASCII 标题\n"
+                        "作者：ASCII 作者\n"
+                        "链接：https://example.com/ascii"
+                    )
                 ),
             },
             result={"message_id": 1},
@@ -330,7 +336,9 @@ async def test_picsearch_handles_no_result(
             "send_group_msg",
             {
                 "group_id": 20001,
-                "message": text_message("第 1 张图片没有找到结果。当前引擎：saucenao"),
+                "message": build_message(
+                    MessageSegment.text("第 1 张图片没有找到结果。当前引擎：saucenao")
+                ),
             },
             result={"message_id": 1},
         )

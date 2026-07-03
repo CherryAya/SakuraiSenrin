@@ -11,7 +11,7 @@ from httpx import AsyncClient
 from nonebot import on_regex
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import Arg
 from nonebot.typing import T_State
@@ -35,11 +35,19 @@ from src.lib.long_task import (
     LongTaskSpec,
     MessageEventProgressSink,
 )
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan, finish_with_message
-from src.lib.messages import text_message
+from src.lib.message_plan import (
+    DeliveryPlan,
+    ImageBytesBlock,
+    MessagePlanEntry,
+    TextBlock,
+    deliver_message_plan,
+    finish_with_message,
+    reject_with_message,
+    render_message_plan_entry,
+)
 from src.lib.plugin_docs import (
     DocsRenderContext,
-    build_doc_demo_message,
+    build_doc_demo_plan_entry,
     build_readme_docs,
     create_docs_meta,
 )
@@ -78,8 +86,8 @@ def build_docs(ctx: DocsRenderContext | None = None) -> Message:
     )
 
 
-def _build_error_demo(locale: LocaleCode, message: str) -> Message:
-    return build_doc_demo_message(
+def _build_error_demo(locale: LocaleCode, message: str) -> MessagePlanEntry:
+    return build_doc_demo_plan_entry(
         source=DOCS_SOURCE,
         name=name,
         description=description,
@@ -111,7 +119,7 @@ __plugin_meta__ = create_plugin_metadata(
     },
 )
 
-MULTI_IMAGE_PROMPT = text_message(tr("zh-CN", "picsearch.index_prompt"))
+MULTI_IMAGE_PROMPT = tr("zh-CN", "picsearch.index_prompt")
 _picsearch_cooldown = MemoryCooldown(
     30,
     isolate_level=CooldownIsolateLevel.USER,
@@ -269,6 +277,23 @@ def build_result_message(
     *,
     locale: LocaleCode,
 ) -> Message:
+    return render_message_plan_entry(
+        build_result_plan_entry(
+            index,
+            result,
+            thumbnail_bytes,
+            locale=locale,
+        )
+    )
+
+
+def build_result_plan_entry(
+    index: int,
+    result: PicsearchResult,
+    thumbnail_bytes: bytes | None,
+    *,
+    locale: LocaleCode,
+) -> MessagePlanEntry:
     lines = [
         tr(locale, "picsearch.result.header", index=index),
         tr(locale, "picsearch.result.engine", engine=result.engine.value),
@@ -277,10 +302,10 @@ def build_result_message(
         tr(locale, "picsearch.result.author", author=result.author),
         tr(locale, "picsearch.result.link", link=result.source_url),
     ]
-    message = text_message("\n".join(lines))
+    blocks: list[TextBlock | ImageBytesBlock] = [TextBlock("\n".join(lines))]
     if thumbnail_bytes is not None:
-        message += MessageSegment.image(thumbnail_bytes)
-    return message
+        blocks.append(ImageBytesBlock(thumbnail_bytes))
+    return MessagePlanEntry(blocks=tuple(blocks))
 
 
 async def build_cooldown_prompt(
@@ -394,7 +419,7 @@ async def run_search(
                 bot,
                 plan=DeliveryPlan(
                     messages=(
-                        build_result_message(
+                        build_result_plan_entry(
                             selected + 1,
                             result,
                             thumbnail_bytes,
@@ -503,7 +528,11 @@ async def _choose_indexes(
                 "too_many": "picsearch.index_too_many",
             }.get(str(exc), "picsearch.index_invalid"),
         )
-        await matcher.reject(_build_error_demo(locale, tr(locale, message_key)))
+        await reject_with_message(
+            matcher,
+            message=_build_error_demo(locale, tr(locale, message_key)),
+        )
+        return
 
     await run_search(
         bot,
