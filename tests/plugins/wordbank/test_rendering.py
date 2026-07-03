@@ -10,17 +10,22 @@ from src.plugins.wordbank.database.types import (
     WordbankResponseItemDetail,
     WordbankSearchItem,
 )
+from src.plugins.wordbank.handlers import rendering as rendering_module
 from src.plugins.wordbank.handlers.rendering import (
+    build_creator_leaderboard_card_plan_entry,
     build_group_detail_page_plan_entry,
     build_pending_items_plan_entry,
     build_reply_detail_plan_entry,
     build_search_items_text_plan_entry,
+    build_search_results_card_plan_entry,
 )
+from src.plugins.wordbank.handlers.search_cards import SearchCardQuery
 from src.plugins.wordbank.message_model import (
     combine_shapes,
     shape_from_image,
     shape_from_text,
 )
+from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
 from src.plugins.wordbank.services.media import WordbankMediaService
 
 
@@ -116,6 +121,36 @@ async def test_build_pending_items_plan_entry_renders_rich_shapes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_build_search_results_card_plan_entry_falls_back_to_text_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        rendering_module,
+        "render_search_results_card_bytes",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    entry = await build_search_results_card_plan_entry(
+        items=(_search_item(),),
+        query=SearchCardQuery(
+            keyword="晚安",
+            field="all",
+            creator_id="",
+            has_image=False,
+            page=1,
+            total_count=1,
+            limit=10,
+        ),
+        locale="zh-CN",
+        media_service=_media_service(),
+    )
+
+    rendered = render_message_plan_entry(entry)
+    assert "词库搜索结果" in str(rendered)
+    assert sum(1 for segment in rendered if segment.type == "image") == 2
+
+
+@pytest.mark.asyncio
 async def test_build_reply_detail_plan_entry_renders_selected_response() -> None:
     entry = await build_reply_detail_plan_entry(
         detail=_group_detail(),
@@ -146,3 +181,41 @@ async def test_build_group_detail_page_plan_entry_renders_trigger_and_responses(
     assert "Trigger Group #12" in str(rendered)
     assert "响应 #300" in str(rendered)
     assert sum(1 for segment in rendered if segment.type == "image") == 2
+
+
+@pytest.mark.asyncio
+async def test_build_creator_leaderboard_card_plan_entry_falls_back_to_text_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        rendering_module.QQAvatar,
+        "fetch_user",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        rendering_module,
+        "render_wordbank_leaderboard_card_bytes",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    entry = await build_creator_leaderboard_card_plan_entry(
+        data=WordbankLeaderboardCardData(
+            title="月榜",
+            subtitle="本月",
+            period="month",
+            badge_text="TOP",
+            range_text="2026-06-01 - 2026-06-30",
+            generated_at=1,
+            total_creator_count=1,
+            total_approved_count=3,
+            champion_gap=0,
+            top_share=1.0,
+            items=(),
+            range_start=1,
+            range_end=2,
+        ),
+        locale="zh-CN",
+    )
+
+    rendered = render_message_plan_entry(entry)
+    assert "这个周期还没有通过审核的词条。" in str(rendered)

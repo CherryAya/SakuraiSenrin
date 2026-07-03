@@ -23,7 +23,7 @@ from src.lib.long_task import (
     LongTaskSpec,
     MessageEventProgressSink,
 )
-from src.lib.message_plan import finish_with_message
+from src.lib.message_plan import MessagePlanInput, finish_with_message
 
 from .guided_flow import (
     WORDBANK_GUIDED_SEARCH_STAGE_CREATOR,
@@ -62,7 +62,7 @@ from .text_parsing import (
     tokenize_shell_like,
 )
 
-ErrorBuilder = Callable[..., Message | str]
+ErrorBuilder = Callable[..., MessagePlanInput]
 SearchQueryCollector = Callable[..., Awaitable[tuple[str, bool, dict[int, float]]]]
 
 
@@ -126,8 +126,8 @@ async def _run_wordbank_command_with_optional_progress(
     bot: Bot,
     event: MessageEvent,
     locale: LocaleCode,
-    work: Callable[[], Awaitable[Message | str]],
-) -> Message | str:
+    work: Callable[[], Awaitable[MessagePlanInput]],
+) -> MessagePlanInput:
     spec = _build_wordbank_command_progress_spec(action, rest=rest, locale=locale)
     if spec is None:
         return await work()
@@ -184,7 +184,7 @@ def register_wordbank_command_handlers(
     ],
     guided_search_stage: Callable[[T_State], str | None],
     reject_guided_error: Callable[
-        [Matcher, T_State, LocaleCode, Message | str], Awaitable[None]
+        [Matcher, T_State, LocaleCode, MessagePlanInput], Awaitable[None]
     ],
     register_guided_checkpoint: Callable[..., None],
     guided_locale: Callable[[T_State], LocaleCode],
@@ -372,7 +372,7 @@ def register_wordbank_command_handlers(
             await matcher.finish()
             return
 
-        async def _dispatch_command() -> Message | str:
+        async def _dispatch_command() -> MessagePlanInput:
             return await dispatch_wordbank_command(
                 wordbank_service,
                 event=event,

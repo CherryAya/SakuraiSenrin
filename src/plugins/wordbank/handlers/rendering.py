@@ -20,14 +20,16 @@ from src.lib.message_plan import (
     TextBlock,
     render_message_plan_entry,
 )
-from src.lib.messages import image_message
 from src.lib.utils.img import QQAvatar
 from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
 from src.plugins.wordbank.debug import log_perf, perf_start
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
 from src.plugins.wordbank.services.media import WordbankMediaService
-from src.plugins.wordbank.services.presentation import format_response_summary
+from src.plugins.wordbank.services.presentation import (
+    format_creator_leaderboard,
+    format_response_summary,
+)
 
 from .group_detail_cards import GroupDetailCardPage, render_group_detail_card_bytes
 from .leaderboard_cards import render_wordbank_leaderboard_card_bytes
@@ -401,6 +403,23 @@ async def render_search_results_card_message(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> Message:
+    return render_message_plan_entry(
+        await build_search_results_card_plan_entry(
+            items=items,
+            query=query,
+            locale=locale,
+            media_service=media_service,
+        )
+    )
+
+
+async def build_search_results_card_plan_entry(
+    *,
+    items: tuple[WordbankSearchItem, ...],
+    query: SearchCardQuery,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> MessagePlanEntry:
     preview_ids = {
         image_id
         for item in items
@@ -410,15 +429,33 @@ async def render_search_results_card_message(
         )
         if image_id is not None
     }
-    preview_bytes = await _load_image_bytes_map(preview_ids, media_service)
-    image_bytes = await asyncio.to_thread(
-        render_search_results_card_bytes,
+    try:
+        preview_bytes = await _load_image_bytes_map(preview_ids, media_service)
+        image_bytes = await asyncio.to_thread(
+            render_search_results_card_bytes,
+            items=items,
+            query=query,
+            locale=locale,
+            preview_bytes=preview_bytes,
+        )
+        return MessagePlanEntry(blocks=(ImageBytesBlock(image_bytes),))
+    except Exception:
+        log_perf(
+            "plugin.render_search_results_card_message.fallback_text",
+            keyword=query.keyword,
+            page=query.page,
+            field=query.field,
+            has_image=query.has_image,
+            total_count=query.total_count,
+        )
+    return await build_search_items_text_plan_entry(
         items=items,
-        query=query,
         locale=locale,
-        preview_bytes=preview_bytes,
+        media_service=media_service,
+        page=query.page,
+        limit=query.limit,
+        has_more=query.page * query.limit < query.total_count,
     )
-    return image_message(image_bytes)
 
 
 async def render_group_detail_page_message(
@@ -429,6 +466,24 @@ async def render_group_detail_page_message(
     media_service: WordbankMediaService,
     page_size: int = GROUP_PAGE_SIZE,
 ) -> tuple[Message, int]:
+    entry, total_pages = await build_group_detail_page_message_plan_entry(
+        detail=detail,
+        page=page,
+        locale=locale,
+        media_service=media_service,
+        page_size=page_size,
+    )
+    return render_message_plan_entry(entry), total_pages
+
+
+async def build_group_detail_page_message_plan_entry(
+    *,
+    detail: WordbankGroupDetail,
+    page: int,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+    page_size: int = GROUP_PAGE_SIZE,
+) -> tuple[MessagePlanEntry, int]:
     total_pages = max(1, math.ceil(len(detail.responses) / max(page_size, 1)))
     page = min(max(page, 1), total_pages)
     start = (page - 1) * page_size
@@ -458,7 +513,7 @@ async def render_group_detail_page_message(
             locale=locale,
             preview_bytes=preview_bytes,
         )
-        return image_message(image_bytes), total_pages
+        return MessagePlanEntry(blocks=(ImageBytesBlock(image_bytes),)), total_pages
     except Exception:
         log_perf(
             "plugin.render_group_detail_page_message.fallback_text",
@@ -467,15 +522,13 @@ async def render_group_detail_page_message(
             total_pages=total_pages,
         )
     return (
-        render_message_plan_entry(
-            await build_group_detail_page_plan_entry(
-                detail=detail,
-                page=page,
-                total_pages=total_pages,
-                locale=locale,
-                media_service=media_service,
-                page_size=page_size,
-            )
+        await build_group_detail_page_plan_entry(
+            detail=detail,
+            page=page,
+            total_pages=total_pages,
+            locale=locale,
+            media_service=media_service,
+            page_size=page_size,
         ),
         total_pages,
     )
@@ -572,26 +625,49 @@ async def render_creator_leaderboard_card_message(
     data: WordbankLeaderboardCardData,
     locale: LocaleCode,
 ) -> Message:
-    items = data.items
-    if items:
-        avatars = await asyncio.gather(
-            *(QQAvatar.fetch_user(item.user_id, size=160) for item in items),
-            return_exceptions=True,
+    return render_message_plan_entry(
+        await build_creator_leaderboard_card_plan_entry(
+            data=data,
+            locale=locale,
         )
-        items = tuple(
-            replace(
-                item,
-                avatar=avatar if not isinstance(avatar, Exception) else None,
-            )
-            for item, avatar in zip(items, avatars, strict=False)
-        )
-        data = replace(data, items=items)
-    image_bytes = await asyncio.to_thread(
-        render_wordbank_leaderboard_card_bytes,
-        data=data,
-        locale=locale,
     )
-    return image_message(image_bytes)
+
+
+async def build_creator_leaderboard_card_plan_entry(
+    *,
+    data: WordbankLeaderboardCardData,
+    locale: LocaleCode,
+) -> MessagePlanEntry:
+    try:
+        items = data.items
+        if items:
+            avatars = await asyncio.gather(
+                *(QQAvatar.fetch_user(item.user_id, size=160) for item in items),
+                return_exceptions=True,
+            )
+            items = tuple(
+                replace(
+                    item,
+                    avatar=avatar if not isinstance(avatar, Exception) else None,
+                )
+                for item, avatar in zip(items, avatars, strict=False)
+            )
+            data = replace(data, items=items)
+        image_bytes = await asyncio.to_thread(
+            render_wordbank_leaderboard_card_bytes,
+            data=data,
+            locale=locale,
+        )
+        return MessagePlanEntry(blocks=(ImageBytesBlock(image_bytes),))
+    except Exception:
+        log_perf(
+            "plugin.render_creator_leaderboard_card_message.fallback_text",
+            period=data.period,
+            items=len(data.items),
+        )
+    return MessagePlanEntry(
+        blocks=(TextBlock(format_creator_leaderboard(data, locale=locale)),)
+    )
 
 
 async def _append_labeled_shape_blocks(

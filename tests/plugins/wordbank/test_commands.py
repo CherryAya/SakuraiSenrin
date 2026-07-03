@@ -6,6 +6,7 @@ from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.message import Message
 import pytest
 
+from src.lib.message_plan import render_message_plan_input
 from src.lib.messages import empty_message, text_message
 from src.plugins.wordbank import entry_commands as entry_commands_module
 from src.plugins.wordbank.database.types import WordbankSearchItem, WordbankSearchPage
@@ -241,12 +242,13 @@ async def test_handle_pending_entries_renders_image_shapes() -> None:
         locale="zh-CN",
         media_service=media_service,
     )
+    rendered = render_message_plan_input(message)
 
     assert not isinstance(message, str)
-    assert "待审核词条 (第 1 页):" in str(message)
-    assert "[图片:8]" not in str(message)
-    assert "[图片:7]" not in str(message)
-    assert sum(1 for segment in message if segment.type == "image") == 2
+    assert "待审核词条 (第 1 页):" in str(rendered)
+    assert "[图片:8]" not in str(rendered)
+    assert "[图片:7]" not in str(rendered)
+    assert sum(1 for segment in rendered if segment.type == "image") == 2
 
 
 @pytest.mark.asyncio
@@ -276,21 +278,13 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
             SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=None)),
         ),
     )
+    rendered = render_message_plan_input(message)
 
-    assert isinstance(message, Message)
-    assert len(message) == 1
-    assert message[0].type == "image"
+    assert rendered[0].type == "image"
 
 
 @pytest.mark.asyncio
-async def test_render_search_page_message_fallback_renders_image_shapes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        commands_module,
-        "render_search_results_card_message",
-        AsyncMock(side_effect=RuntimeError("boom")),
-    )
+async def test_render_search_page_message_returns_plan_with_image_card() -> None:
     media_service = cast(
         WordbankMediaService,
         SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=b"bytes")),
@@ -326,10 +320,11 @@ async def test_render_search_page_message_fallback_renders_image_shapes(
         has_image=False,
         media_service=media_service,
     )
+    rendered = render_message_plan_input(message)
 
-    assert "[图片:8]" not in str(message)
-    assert "[图片:7]" not in str(message)
-    assert sum(1 for segment in message if segment.type == "image") == 2
+    assert "[图片:8]" not in str(rendered)
+    assert "[图片:7]" not in str(rendered)
+    assert sum(1 for segment in rendered if segment.type == "image") == 1
 
 
 @pytest.mark.asyncio
@@ -431,11 +426,12 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
         locale="zh-CN",
         media_service=media_service,
     )
+    rendered = render_message_plan_input(message)
 
     assert total_pages == 2
     assert returned_detail is detail
-    assert len(message) == 1
-    assert message[0].type == "image"
+    assert len(rendered) == 1
+    assert rendered[0].type == "image"
     load_bytes = cast(AsyncMock, media_service.load_canonical_storage_bytes)
     assert load_bytes.await_args_list == [
         call(7),

@@ -13,8 +13,7 @@ from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import LongTaskRunner
-from src.lib.messages import text_message
-from src.logger import logger
+from src.lib.message_plan import MessagePlanInput
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
     WordbankSearchPage,
@@ -42,7 +41,6 @@ from src.plugins.wordbank.handlers.parsers import (
 )
 from src.plugins.wordbank.handlers.search_cards import SearchCardQuery
 from src.plugins.wordbank.message_model import MessageShape, shape_from_image
-from src.plugins.wordbank.services import format_creator_leaderboard
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
@@ -76,11 +74,10 @@ from .mutation import (
 )
 from .rendering import (
     GROUP_PAGE_SIZE,
-    render_creator_leaderboard_card_message,
-    render_group_detail_page_message,
-    render_pending_items_message,
-    render_search_items_text_message,
-    render_search_results_card_message,
+    build_creator_leaderboard_card_plan_entry,
+    build_group_detail_page_message_plan_entry,
+    build_pending_items_plan_entry,
+    build_search_results_card_plan_entry,
 )
 
 ADD_ALIASES = {"add", "添加", "学习"}
@@ -511,7 +508,7 @@ async def handle_search(
     image_scores: dict[int, float] | None = None,
     locale: LocaleCode,
     media_service: WordbankMediaService,
-) -> Message:
+) -> MessagePlanInput:
     parsed = parse_search_args(keyword)
     page = await execute_search_page(
         service,
@@ -554,36 +551,21 @@ async def render_search_page_message(
     locale: LocaleCode,
     has_image: bool,
     media_service: WordbankMediaService,
-) -> Message:
-    try:
-        return await render_search_results_card_message(
-            items=page.items,
-            query=SearchCardQuery(
-                keyword=parsed.keyword,
-                field=parsed.field,
-                creator_id=parsed.creator_id,
-                has_image=has_image,
-                page=parsed.page,
-                total_count=page.total_count,
-                limit=parsed.limit,
-            ),
-            locale=locale,
-            media_service=media_service,
-        )
-    except Exception:
-        logger.exception(
-            "[Wordbank] search card render failed; fallback to text. "
-            f"keyword={parsed.keyword!r} page={parsed.page} field={parsed.field} "
-            f"has_image={has_image} total_count={page.total_count}"
-        )
-        return await render_search_items_text_message(
-            items=list(page.items),
-            locale=locale,
-            media_service=media_service,
+) -> MessagePlanInput:
+    return await build_search_results_card_plan_entry(
+        items=page.items,
+        query=SearchCardQuery(
+            keyword=parsed.keyword,
+            field=parsed.field,
+            creator_id=parsed.creator_id,
+            has_image=has_image,
             page=parsed.page,
+            total_count=page.total_count,
             limit=parsed.limit,
-            has_more=page.has_more,
-        )
+        ),
+        locale=locale,
+        media_service=media_service,
+    )
 
 
 async def build_group_detail_message(
@@ -593,7 +575,7 @@ async def build_group_detail_message(
     page: int,
     locale: LocaleCode,
     media_service: WordbankMediaService,
-) -> tuple[Message, WordbankGroupDetail, int]:
+) -> tuple[MessagePlanInput, WordbankGroupDetail, int]:
     detail = await service.get_group_detail(trigger_group_id)
     if detail is None:
         raise RuleError(
@@ -613,7 +595,7 @@ async def build_group_detail_message(
             key="wordbank.error.guided_search_page_out_of_range",
             total_pages=total_pages,
         )
-    message, total_pages = await render_group_detail_page_message(
+    message, total_pages = await build_group_detail_page_message_plan_entry(
         detail=detail,
         page=page,
         locale=locale,
@@ -629,7 +611,7 @@ async def handle_pending_entries(
     text: str,
     locale: LocaleCode,
     media_service: WordbankMediaService,
-) -> Message | str:
+) -> MessagePlanInput:
     actor = build_mutation_actor(event)
     if not actor_can_review(actor):
         return tr(locale, "wordbank.approval.permission_denied")
@@ -644,7 +626,7 @@ async def handle_pending_entries(
         is_superuser=actor.is_superuser,
     )
     has_more = len(items) > parsed.limit
-    return await render_pending_items_message(
+    return await build_pending_items_plan_entry(
         items=items[: parsed.limit],
         locale=locale,
         media_service=media_service,
@@ -659,17 +641,13 @@ async def handle_creator_leaderboard(
     *,
     text: str,
     locale: LocaleCode,
-) -> Message:
+) -> MessagePlanInput:
     period = parse_rank_period(text)
     data = await service.build_creator_leaderboard(period=period, locale=locale)
-    try:
-        return await render_creator_leaderboard_card_message(
-            data=data,
-            locale=locale,
-        )
-    except Exception:
-        logger.exception("[Wordbank] creator leaderboard render failed")
-        return text_message(format_creator_leaderboard(data, locale=locale))
+    return await build_creator_leaderboard_card_plan_entry(
+        data=data,
+        locale=locale,
+    )
 
 
 async def handle_trigger_probability_update(
@@ -873,7 +851,7 @@ async def dispatch_wordbank_command(
     raw_message: Message | None = None,
     search_image_scores: dict[int, float] | None = None,
     media_service: WordbankMediaService | None = None,
-) -> str | Message:
+) -> MessagePlanInput:
     action, rest = _split_command(text)
     if not action or action in {"help", "帮助"}:
         return wordbank_help_text(locale)
