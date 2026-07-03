@@ -200,6 +200,11 @@ async def test_handle_approval_reply_result_supports_pending_batch_reply() -> No
     assert "总数: 3" in outcome.message
     assert "成功: 3" in outcome.message
     assert [call.args[0] for call in approve.await_args_list] == [301, 303, 304]
+    assert outcome.batch_notices == (
+        (301, "approve"),
+        (303, "approve"),
+        (304, "approve"),
+    )
 
 
 async def test_reply_info_renders_image_trigger_and_response() -> None:

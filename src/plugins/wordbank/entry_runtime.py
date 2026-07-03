@@ -27,6 +27,7 @@ from src.lib.interactive_recall import (
 )
 from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import (
+    AtRefBlock,
     DeliveryPlan,
     ImageBytesBlock,
     MessagePlanEntry,
@@ -367,6 +368,85 @@ def register_wordbank_runtime_handlers(
         except Exception as exc:
             logger.warning(f"[Wordbank] approval source notice skipped: {exc}")
 
+    async def _find_creator_submission_context(
+        response_item_id: int,
+    ) -> WordbankMessageRefRecord | None:
+        service = await _get_wordbank_service()
+        refs = await service.list_message_refs_by_response_item_ids(
+            (response_item_id,),
+            expected_kind="approval",
+        )
+        for record in refs:
+            if record.message_type in {"submission", "submission_batch"}:
+                return record
+        return None
+
+    def _build_creator_notice_message(
+        *,
+        action: str,
+        response_item_id: int,
+        locale: LocaleCode,
+    ) -> str:
+        _ = locale
+        if action == "approve":
+            return f"你创建的词条 #{response_item_id} 已通过审核。"
+        return f"你创建的词条 #{response_item_id} 未通过审核。"
+
+    async def notify_creator_review_result(
+        bot: Bot,
+        *,
+        response_item_id: int,
+        action: str,
+        locale: LocaleCode,
+        approval_message: WordbankMessageRefRecord | None = None,
+    ) -> None:
+        context = approval_message
+        if context is None:
+            context = await _find_creator_submission_context(response_item_id)
+        if context is None or not context.user_id:
+            return
+
+        blocks: list[ReplyRefBlock | AtRefBlock | TextBlock] = []
+        if context.source_message_id:
+            blocks.append(ReplyRefBlock(message_id=str(context.source_message_id)))
+        blocks.append(AtRefBlock(target_id=str(context.user_id)))
+        blocks.append(TextBlock(text=" "))
+        blocks.append(
+            TextBlock(
+                text=_build_creator_notice_message(
+                    action=action,
+                    response_item_id=response_item_id,
+                    locale=locale,
+                )
+            )
+        )
+        plan = DeliveryPlan(
+            messages=(MessagePlanEntry(blocks=tuple(blocks)),),
+            source_kind="wordbank_creator_review_notice",
+            allow_asset_reuse=False,
+        )
+        try:
+            if context.group_id:
+                await deliver_message_plan(
+                    bot,
+                    plan=plan,
+                    target=DeliveryTarget(
+                        kind="group",
+                        target_id=str(context.group_id),
+                    ),
+                )
+                return
+            await deliver_message_plan(
+                bot,
+                plan=plan,
+                target=DeliveryTarget(
+                    kind="private",
+                    target_id=str(context.user_id),
+                ),
+            )
+        except Exception as exc:
+            logger.warning(f"[Wordbank] creator review notice skipped: {exc}")
+
     def _message_segment_stats(message: MessagePlanInput) -> tuple[int, int]:
         entry = normalize_message_plan_entry(message)
         segment_count = 0
@@ -536,6 +616,22 @@ def register_wordbank_runtime_handlers(
             return
         if outcome.completed and outcome.approval_message is not None:
             await notify_approval_source(bot, outcome.approval_message, outcome.message)
+            if outcome.action:
+                await notify_creator_review_result(
+                    bot,
+                    response_item_id=outcome.approval_message.response_item_id,
+                    action=outcome.action,
+                    locale=locale,
+                    approval_message=outcome.approval_message,
+                )
+        elif outcome.completed and outcome.batch_notices:
+            for response_item_id, action in outcome.batch_notices:
+                await notify_creator_review_result(
+                    bot,
+                    response_item_id=response_item_id,
+                    action=action,
+                    locale=locale,
+                )
         await finish_with_message(
             bot,
             matcher,
@@ -837,5 +933,6 @@ def register_wordbank_runtime_handlers(
         "record_search_result_view_message": _record_search_result_view_message,
         "record_passive_response_message": _record_passive_response_message,
         "notify_approval_source": notify_approval_source,
+        "notify_creator_review_result": notify_creator_review_result,
         "_build_passive_message": _build_passive_message,
     }

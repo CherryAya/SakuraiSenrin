@@ -96,6 +96,7 @@ class ApprovalReplyOutcome:
     approval_message: WordbankMessageRefRecord | None = None
     completed: bool = False
     action: str = ""
+    batch_notices: tuple[tuple[int, str], ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
@@ -444,6 +445,9 @@ async def _handle_batch_approval_reply_result(
         approval_message=None,
         completed=bool(success_ids),
         action=parsed.action,
+        batch_notices=tuple(
+            (response_item_id, parsed.action) for response_item_id in success_ids
+        ),
     )
 
 

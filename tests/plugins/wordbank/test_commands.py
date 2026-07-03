@@ -15,6 +15,7 @@ from src.plugins.wordbank.handlers.commands import (
     build_group_detail_message,
     build_shape_from_text_and_images,
     dispatch_wordbank_command,
+    dispatch_wordbank_command_with_outcome,
     handle_add_text_result,
     handle_add_with_media_result,
     handle_delete,
@@ -200,6 +201,66 @@ async def test_dispatch_wordbank_command_routes_rank_to_leaderboard_handler(
     await_args = handle_rank.await_args
     assert await_args is not None
     assert await_args.kwargs["text"] == "周榜"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_wordbank_command_with_outcome_returns_approve_metadata(
+) -> None:
+    event = build_group_message_event(
+        "#wordbank approve 12",
+        role="admin",
+        user_id=10002,
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            approve_response_item=AsyncMock(return_value=True),
+        ),
+    )
+
+    message, outcome = await dispatch_wordbank_command_with_outcome(
+        service,
+        event=event,
+        text="approve 12",
+        locale="zh-CN",
+    )
+
+    assert isinstance(message, str)
+    assert "词条 #12 已通过审核" in message
+    assert outcome is not None
+    assert outcome.completed is True
+    assert outcome.action == "approve"
+    assert outcome.response_item_id == 12
+
+
+@pytest.mark.asyncio
+async def test_dispatch_wordbank_command_with_outcome_returns_reject_metadata(
+) -> None:
+    event = build_group_message_event(
+        "#wordbank reject 12",
+        role="admin",
+        user_id=10002,
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            reject_response_item=AsyncMock(return_value=True),
+        ),
+    )
+
+    message, outcome = await dispatch_wordbank_command_with_outcome(
+        service,
+        event=event,
+        text="reject 12",
+        locale="zh-CN",
+    )
+
+    assert isinstance(message, str)
+    assert "词条 #12 已拒绝" in message
+    assert outcome is not None
+    assert outcome.completed is True
+    assert outcome.action == "reject"
+    assert outcome.response_item_id == 12
 
 
 @pytest.mark.asyncio

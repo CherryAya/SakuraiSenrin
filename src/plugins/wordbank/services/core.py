@@ -728,6 +728,17 @@ class WordbankService:
             expected_kind=expected_kind,
         )
 
+    async def list_message_refs_by_response_item_ids(
+        self,
+        response_item_ids: Sequence[int],
+        *,
+        expected_kind: WordbankMessageRefKind | None = None,
+    ) -> list[WordbankMessageRefRecord]:
+        return await self.repository.list_message_refs_by_response_item_ids(
+            response_item_ids,
+            expected_kind=expected_kind,
+        )
+
     async def get_group_detail(
         self,
         trigger_group_id: int,

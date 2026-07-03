@@ -60,10 +60,13 @@ from .media_helpers import (
     shape_from_trigger_text_value,
 )
 from .mutation import (
+    ApprovalMutationOutcome,
     build_mutation_actor,
     handle_approve,
+    handle_approve_result,
     handle_delete,
     handle_reject,
+    handle_reject_result,
     handle_restore,
 )
 from .mutation import (
@@ -946,6 +949,47 @@ async def dispatch_wordbank_command(
         "wordbank.error.unknown_subcommand",
         action=action,
         help=wordbank_help_text(locale),
+    )
+
+
+async def dispatch_wordbank_command_with_outcome(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    text: str,
+    locale: LocaleCode,
+    raw_message: Message | None = None,
+    search_image_scores: dict[int, float] | None = None,
+    media_service: WordbankMediaService | None = None,
+) -> tuple[MessagePlanInput, ApprovalMutationOutcome | None]:
+    action, rest = _split_command(text)
+    if action in APPROVE_ALIASES:
+        outcome = await handle_approve_result(
+            service,
+            event=event,
+            response_item_id_text=rest,
+            locale=locale,
+        )
+        return outcome.message, outcome
+    if action in REJECT_ALIASES:
+        outcome = await handle_reject_result(
+            service,
+            event=event,
+            response_item_id_text=rest,
+            locale=locale,
+        )
+        return outcome.message, outcome
+    return (
+        await dispatch_wordbank_command(
+            service,
+            event=event,
+            text=text,
+            locale=locale,
+            raw_message=raw_message,
+            search_image_scores=search_image_scores,
+            media_service=media_service,
+        ),
+        None,
     )
 
 

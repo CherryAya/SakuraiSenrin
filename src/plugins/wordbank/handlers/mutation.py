@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 
@@ -19,6 +21,14 @@ from .parsers import (
     parse_trigger_probability_args,
     parse_trigger_set_args,
 )
+
+
+@dataclass(slots=True, frozen=True)
+class ApprovalMutationOutcome:
+    message: str
+    completed: bool = False
+    action: str = ""
+    response_item_id: int = 0
 
 
 def build_mutation_actor(event: MessageEvent) -> MutationActor:
@@ -44,11 +54,29 @@ async def handle_approve(
     response_item_id_text: str,
     locale: LocaleCode,
 ) -> str:
+    outcome = await handle_approve_result(
+        service,
+        event=event,
+        response_item_id_text=response_item_id_text,
+        locale=locale,
+    )
+    return outcome.message
+
+
+async def handle_approve_result(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    response_item_id_text: str,
+    locale: LocaleCode,
+) -> ApprovalMutationOutcome:
     if not response_item_id_text.isdigit():
-        return tr(locale, "wordbank.error.entry_id_numeric")
+        return ApprovalMutationOutcome(tr(locale, "wordbank.error.entry_id_numeric"))
     actor = build_mutation_actor(event)
     if not actor_can_review(actor):
-        return tr(locale, "wordbank.approval.permission_denied")
+        return ApprovalMutationOutcome(
+            tr(locale, "wordbank.approval.permission_denied")
+        )
     response_item_id = int(response_item_id_text)
     if await service.approve_response_item(
         response_item_id,
@@ -57,8 +85,17 @@ async def handle_approve(
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return tr(locale, "wordbank.approval.approved", entry_id=response_item_id)
-    return tr(locale, "wordbank.approval.not_found", entry_id=response_item_id)
+        return ApprovalMutationOutcome(
+            tr(locale, "wordbank.approval.approved", entry_id=response_item_id),
+            completed=True,
+            action="approve",
+            response_item_id=response_item_id,
+        )
+    return ApprovalMutationOutcome(
+        tr(locale, "wordbank.approval.not_found", entry_id=response_item_id),
+        action="approve",
+        response_item_id=response_item_id,
+    )
 
 
 async def handle_reject(
@@ -68,11 +105,29 @@ async def handle_reject(
     response_item_id_text: str,
     locale: LocaleCode,
 ) -> str:
+    outcome = await handle_reject_result(
+        service,
+        event=event,
+        response_item_id_text=response_item_id_text,
+        locale=locale,
+    )
+    return outcome.message
+
+
+async def handle_reject_result(
+    service: WordbankService,
+    *,
+    event: MessageEvent,
+    response_item_id_text: str,
+    locale: LocaleCode,
+) -> ApprovalMutationOutcome:
     if not response_item_id_text.isdigit():
-        return tr(locale, "wordbank.error.entry_id_numeric")
+        return ApprovalMutationOutcome(tr(locale, "wordbank.error.entry_id_numeric"))
     actor = build_mutation_actor(event)
     if not actor_can_review(actor):
-        return tr(locale, "wordbank.approval.permission_denied")
+        return ApprovalMutationOutcome(
+            tr(locale, "wordbank.approval.permission_denied")
+        )
     response_item_id = int(response_item_id_text)
     if await service.reject_response_item(
         response_item_id,
@@ -81,8 +136,17 @@ async def handle_reject(
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
     ):
-        return tr(locale, "wordbank.approval.rejected", entry_id=response_item_id)
-    return tr(locale, "wordbank.approval.not_found", entry_id=response_item_id)
+        return ApprovalMutationOutcome(
+            tr(locale, "wordbank.approval.rejected", entry_id=response_item_id),
+            completed=True,
+            action="reject",
+            response_item_id=response_item_id,
+        )
+    return ApprovalMutationOutcome(
+        tr(locale, "wordbank.approval.not_found", entry_id=response_item_id),
+        action="reject",
+        response_item_id=response_item_id,
+    )
 
 
 async def handle_delete(

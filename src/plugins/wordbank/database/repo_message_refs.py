@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -139,3 +140,41 @@ class WordbankRepositoryMessageRefsMixin:
         if expected_kind is not None and row.ref_kind != expected_kind:
             return None
         return self._to_message_ref_record(row)
+
+    async def list_message_refs_by_response_item_ids(
+        self: Any,
+        response_item_ids: Sequence[int],
+        *,
+        expected_kind: WordbankMessageRefKind | None = None,
+    ) -> list[WordbankMessageRefRecord]:
+        target_ids = tuple(
+            response_item_id
+            for response_item_id in response_item_ids
+            if response_item_id
+        )
+        if not target_ids:
+            return []
+        route_rows = await self.list_message_ref_routes()
+        shard_keys = tuple({route.shard_key for route in route_rows})
+        records: list[WordbankMessageRefRecord] = []
+        for shard_key in shard_keys:
+            async with wordbank_message_ref_db.read_session(
+                time_ctx=message_ref_time_ctx(shard_key)
+            ) as session:
+                stmt = select(WordbankMessageRef).order_by(
+                    WordbankMessageRef.updated_at.desc(),
+                    WordbankMessageRef.id.desc(),
+                )
+                if expected_kind is not None:
+                    stmt = stmt.where(WordbankMessageRef.ref_kind == expected_kind)
+                rows = (await session.execute(stmt)).scalars().all()
+            for row in rows:
+                if expected_kind is not None and row.ref_kind != expected_kind:
+                    continue
+                record = self._to_message_ref_record(row)
+                if record.response_item_id in target_ids or any(
+                    response_item_id in target_ids
+                    for response_item_id in record.group_ids
+                ):
+                    records.append(record)
+        return records
