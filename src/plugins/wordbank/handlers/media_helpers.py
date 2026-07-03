@@ -280,12 +280,15 @@ async def build_shape_from_text_and_images(
     task: LongTaskRunner | None = None,
     build_context: MessageShapeBuildContext | None = None,
 ) -> MessageShape:
-    image_ids = await resolve_message_image_ids(
-        media_service,
+    fetch_kwargs: dict[str, object] = {
+        "limit": image_limit,
+        "task": task,
+    }
+    if build_context is not None:
+        fetch_kwargs["build_context"] = build_context
+    image_bytes_items = await fetch_image_bytes_from_message(
         message,
-        limit=image_limit,
-        task=task,
-        build_context=build_context,
+        **fetch_kwargs,
     )
     parts: list[MessageShape] = []
     if has_meaningful_text(text):
@@ -295,12 +298,20 @@ async def build_shape_from_text_and_images(
             else shape_from_text_value(text)
         )
         parts.append(text_shape)
+    ingest_kwargs: dict[str, object] = {"task": task}
+    if build_context is not None:
+        ingest_kwargs["build_context"] = build_context
+    canonical_ids = await ingest_image_bytes_items(
+        media_service,
+        image_bytes_items,
+        **ingest_kwargs,
+    )
     if task is not None:
         await task.advance(
             "building_shape",
-            metadata={"image_count": len(image_ids)},
+            metadata={"image_count": len(canonical_ids)},
         )
-    for _, canonical_id in sorted(image_ids.items()):
+    for canonical_id in canonical_ids:
         parts.append(shape_from_image(canonical_id))
     return combine_shapes(*parts)
 

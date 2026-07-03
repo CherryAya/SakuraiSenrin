@@ -4,7 +4,8 @@ import sys
 from unittest.mock import AsyncMock
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import Bot, Message
+from nonebot.adapters.onebot.v11.message import MessageSegment
 from nonebug import App
 import pytest
 
@@ -280,7 +281,10 @@ async def test_passive_event_at_pipeline_hits_real_event_trigger(app: App) -> No
 
     async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
-        event = build_group_message_event("[CQ:at,qq=99999]", message_id=1)
+        event = build_group_message_event("", message_id=1)
+        event.message = Message([MessageSegment.at("99999")])
+        event.original_message = Message([MessageSegment.at("99999")])
+        event.raw_message = "[CQ:at,qq=99999]"
 
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, text_message("收到艾特"), bot=bot)
@@ -301,7 +305,9 @@ async def test_passive_event_at_pipeline_uses_original_message_after_strip(
         bot = ctx.create_bot(base=Bot, self_id="99999")
         event = build_group_message_event("", message_id=1)
         event.message = text_message("")
-        event.original_message = text_message("[CQ:at,qq=99999] ")
+        event.original_message = Message(
+            [MessageSegment.at("99999"), MessageSegment.text(" ")]
+        )
         event.raw_message = "[CQ:at,qq=99999] "
         event.to_me = True
 
@@ -546,7 +552,10 @@ async def test_passive_event_at_call_count_is_shared_by_trigger_group(app: App) 
 
     async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
-        event = build_group_message_event("[CQ:at,qq=99999]", message_id=1)
+        event = build_group_message_event("", message_id=1)
+        event.message = Message([MessageSegment.at("99999")])
+        event.original_message = Message([MessageSegment.at("99999")])
+        event.raw_message = "[CQ:at,qq=99999]"
 
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, text_message("第二阶段"), bot=bot)

@@ -2,7 +2,8 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock, Mock
 
-from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import Bot, Message
+from nonebot.adapters.onebot.v11.message import MessageSegment
 import pytest
 
 from src.plugins.wordbank.handlers.passive import (
@@ -98,7 +99,10 @@ def test_build_passive_response_preserves_message_shape() -> None:
 @pytest.mark.asyncio
 async def test_handle_passive_message_falls_back_to_at_event() -> None:
     bot = cast(Bot, SimpleNamespace(self_id="99999"))
-    event = build_group_message_event("[CQ:at,qq=99999]")
+    event = build_group_message_event("")
+    event.message = Message([MessageSegment.at("99999")])
+    event.original_message = Message([MessageSegment.at("99999")])
+    event.raw_message = "[CQ:at,qq=99999]"
     match_message = AsyncMock(side_effect=[None, _selected(response_text="收到@我了")])
     service = cast(
         WordbankService,
@@ -209,8 +213,22 @@ async def test_handle_passive_message_uses_image_name_hints_before_download() ->
     from src.plugins.wordbank.handlers import passive as passive_module
 
     bot = cast(Bot, SimpleNamespace(self_id="99999"))
-    event = build_group_message_event(
-        "[CQ:image,file=ABCDEF1234567890ABCDEF1234567890.PNG,url=https://example.test/static/abcdef1234567890abcdef1234567890.png?download=1]"
+    event = build_group_message_event("")
+    event.message = Message(
+        [
+            MessageSegment(
+                "image",
+                {
+                    "file": "ABCDEF1234567890ABCDEF1234567890.PNG",
+                    "url": "https://example.test/static/abcdef1234567890abcdef1234567890.png?download=1",
+                },
+            )
+        ]
+    )
+    event.original_message = event.message
+    event.raw_message = (
+        "[CQ:image,file=ABCDEF1234567890ABCDEF1234567890.PNG,"
+        "url=https://example.test/static/abcdef1234567890abcdef1234567890.png?download=1]"
     )
     service = cast(
         WordbankService,
@@ -384,9 +402,7 @@ async def test_handle_passive_notice_uses_bot_leave_event_for_self_leave() -> No
 
 
 @pytest.mark.asyncio
-async def test_handle_passive_notice_uses_member_leave_event_for_other_leave() -> (
-    None
-):
+async def test_handle_passive_notice_uses_member_leave_event_for_other_leave() -> None:
     bot = cast(Bot, SimpleNamespace(self_id="99999"))
     event = build_group_decrease_event(user_id=10002)
     match_message = AsyncMock(return_value=_selected(response_text="下次见"))
