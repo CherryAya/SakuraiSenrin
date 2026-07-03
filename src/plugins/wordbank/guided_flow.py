@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -80,6 +81,9 @@ WORDBANK_GUIDED_RECALL_PENDING_KEYS = (
     "wordbank_guided_response_shape",
     "wordbank_guided_response_forward_pending",
     "wordbank_guided_response_forward_event",
+    "wordbank_guided_response_forward_source_message_id",
+    "wordbank_guided_response_forward_messages",
+    "wordbank_guided_response_forward_node_count",
     "wordbank_guided_response_split_shapes",
     "wordbank_guided_scope",
     "wordbank_guided_search_keyword",
@@ -410,6 +414,11 @@ async def record_guided_forward_response_choice(
             )
             return
         state["wordbank_guided_response_shape"] = payload.whole_shape
+        state["wordbank_guided_response_forward_source_message_id"] = (
+            payload.source_message_id or ""
+        )
+        state["wordbank_guided_response_forward_messages"] = payload.messages
+        state["wordbank_guided_response_forward_node_count"] = len(payload.messages)
         state.pop("wordbank_guided_response_forward_event", None)
         whole_description = describe_shape(payload.whole_shape)
         logger.debug(
@@ -453,6 +462,10 @@ async def record_guided_forward_response_choice(
             )
             return
         state["wordbank_guided_response_split_shapes"] = payload.split_shapes
+        state["wordbank_guided_response_forward_source_message_id"] = (
+            payload.source_message_id or ""
+        )
+        state["wordbank_guided_response_forward_node_count"] = len(payload.messages)
         state.pop("wordbank_guided_response_forward_event", None)
         first_shape = payload.split_shapes[0] if payload.split_shapes else None
         logger.debug(
@@ -595,6 +608,31 @@ async def finish_guided_add(
                     _default_i18n_text("wordbank.error.response_empty"),
                     key="wordbank.error.response_empty",
                 )
+            source_message_id = str(
+                state.get("wordbank_guided_response_forward_source_message_id", "") or ""
+            )
+            node_count = int(
+                state.get("wordbank_guided_response_forward_node_count", 0) or 0
+            )
+            batch = replace(
+                batch,
+                items=tuple(
+                    replace(
+                        item,
+                        result=(
+                            replace(
+                                item.result,
+                                response_mode="forward_split",
+                                forward_source_message_id=source_message_id or None,
+                                forward_node_count=node_count,
+                            )
+                            if item.result is not None
+                            else None
+                        ),
+                    )
+                    for item in batch.items
+                ),
+            )
             await finalize_submission(matcher, bot, event, batch, locale)
             return
         else:
@@ -614,6 +652,20 @@ async def finish_guided_add(
                 scope_text=str(state.get("wordbank_guided_scope", "")),
                 advanced_text=event.message.extract_plain_text(),
             )
+            forward_messages = state.get("wordbank_guided_response_forward_messages")
+            if isinstance(forward_messages, tuple) and forward_messages:
+                result = replace(
+                    result,
+                    response_mode="forward_whole",
+                    forward_source_message_id=str(
+                        state.get("wordbank_guided_response_forward_source_message_id", "")
+                        or ""
+                    )
+                    or None,
+                    forward_node_count=int(
+                        state.get("wordbank_guided_response_forward_node_count", 0) or 0
+                    ),
+                )
     except (RuleError, ValueError) as exc:
         raise exc
     await finalize_submission(matcher, bot, event, result, locale)

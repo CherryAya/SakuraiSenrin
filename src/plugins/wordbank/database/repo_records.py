@@ -239,6 +239,8 @@ class WordbankRepositoryRecordsMixin:
             probability=group.probability,
             weight=response.weight,
             created_by=response.created_by,
+            created_at=response.created_at,
+            rule=dict(response.rule or {}),
             response_item_ids=(response.id,),
         )
 

@@ -268,6 +268,8 @@ class WordbankSearchItem:
     probability: float = 1.0
     weight: int = 3
     created_by: str = ""
+    created_at: int = 0
+    rule: dict[str, object] | None = None
     score: float = 0.0
     matched_by: str = ""
     response_item_ids: tuple[int, ...] = dataclass_field(default_factory=tuple)

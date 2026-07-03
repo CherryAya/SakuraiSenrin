@@ -40,6 +40,12 @@ def _result(
     trigger_shape: MessageShape | None = None,
     response_text: str = "做个好梦",
     response_shape: MessageShape | None = None,
+    created_by: str = "10001",
+    created_at: int = 1_700_000_000,
+    rule: dict[str, object] | None = None,
+    response_mode: str = "normal",
+    forward_source_message_id: str | None = None,
+    forward_node_count: int = 0,
 ) -> WordbankAddResult:
     return WordbankAddResult(
         trigger_group_id=trigger_group_id,
@@ -52,6 +58,12 @@ def _result(
         weight=3,
         trigger_shape=trigger_shape,
         response_shape=response_shape,
+        created_by=created_by,
+        created_at=created_at,
+        rule=rule,
+        response_mode=response_mode,
+        forward_source_message_id=forward_source_message_id,
+        forward_node_count=forward_node_count,
     )
 
 
@@ -74,6 +86,14 @@ async def _build_pending_batch_approval_notice_message(
 ) -> Any:
     return render_message_plan_input(
         await build_pending_batch_approval_notice_plan_entry(*args, **kwargs)
+    )
+
+
+def _message_text(message: Any) -> str:
+    return "".join(
+        str(segment.data.get("text", ""))
+        for segment in message
+        if segment.type == "text"
     )
 
 
@@ -238,18 +258,21 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
     )
 
     segments = list(message)
-    text_values = [str(segment) for segment in segments if segment.type == "text"]
-    full_text = "".join(text_values)
-    assert full_text.startswith("新增词条待审核\nID: 12\n")
-    assert (
-        "详细触发词 / 响应词见下一条合并转发。\n"
-        "范围: current_group\n"
-        "概率: 1\n"
-        "权重: 3\n"
-        "提交者: 10001\n"
-        "来源群: 20001" in full_text
+    full_text = _message_text(message)
+    assert full_text.startswith(
+        "新增词条待审核\n"
+        "回复 y / approve / 通过 可通过\n"
+        "回复 n / reject / 拒绝 可驳回\n\n"
+        "ID: 12\n"
     )
-    assert "请回复本条消息发送 y / approve / 通过" in full_text
+    assert "触发词: 晚安" in full_text
+    assert "响应词: [图片:7]" in full_text
+    assert "创建者: 10001" in full_text
+    assert "提交时间: 2023-11-15 06:13" in full_text
+    assert "范围: 当前群" in full_text
+    assert "权重: 3" in full_text
+    assert "规则: 概率 1" in full_text
+    assert "响应模式: 普通响应" in full_text
     assert not any(segment.type == "image" for segment in segments)
     load_canonical_storage_bytes.assert_not_awaited()
 
@@ -276,11 +299,16 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
     )
 
     segments = list(message)
-    text_values = [str(segment) for segment in segments if segment.type == "text"]
-    full_text = "".join(text_values)
-    assert full_text.startswith("新增词条待审核\nID: 12\n")
-    assert "详细触发词 / 响应词见下一条合并转发。" in full_text
-    assert "请回复本条消息发送 y / approve / 通过" in full_text
+    full_text = _message_text(message)
+    assert full_text.startswith(
+        "新增词条待审核\n"
+        "回复 y / approve / 通过 可通过\n"
+        "回复 n / reject / 拒绝 可驳回\n\n"
+        "ID: 12\n"
+    )
+    assert "触发词: [图片:8]" in full_text
+    assert "响应词: 做个好梦" in full_text
+    assert "响应模式: 普通响应" in full_text
     assert sum(1 for segment in segments if segment.type == "image") == 0
     load_canonical_storage_bytes.assert_not_awaited()
 
@@ -306,7 +334,10 @@ async def test_build_pending_approval_notice_plan_entry_returns_summary() -> Non
     message = render_message_plan_input(entry)
 
     assert not any(segment.type == "image" for segment in message)
-    assert "详细触发词 / 响应词见下一条合并转发。" in str(message)
+    full_text = _message_text(message)
+    assert "回复 y / approve / 通过 可通过" in full_text
+    assert "触发词: [图片:8]" in full_text
+    assert "规则: 概率 1" in full_text
 
 
 @pytest.mark.asyncio
@@ -353,10 +384,7 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently() 
 async def test_send_pending_approval_notice_sends_detail_as_forward_to_admin() -> None:
     record_message_ref = AsyncMock(return_value=None)
     deliver_plan = AsyncMock(
-        side_effect=[
-            SimpleNamespace(results=({"message_id": 1},), used_forward=False),
-            SimpleNamespace(results=({"message_id": 99},), used_forward=True),
-        ],
+        return_value=SimpleNamespace(results=({"message_id": 99},), used_forward=True),
     )
     load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
     service = cast(Any, SimpleNamespace(record_message_ref=record_message_ref))
@@ -389,17 +417,72 @@ async def test_send_pending_approval_notice_sends_detail_as_forward_to_admin() -
         approval_module.config.SUPERUSERS = original_superusers
         approval_module.deliver_message_plan = original_deliver
 
-    assert deliver_plan.await_count == 2
-    summary_plan = deliver_plan.await_args_list[0].kwargs["plan"]
-    detail_plan = deliver_plan.await_args_list[1].kwargs["plan"]
-    assert summary_plan.force_forward is None
-    assert "请回复本条消息发送 y / approve / 通过" in str(summary_plan.messages[0])
-    assert "详细触发词 / 响应词见下一条合并转发。" in str(summary_plan.messages[0])
-    assert detail_plan.force_forward is True
-    assert detail_plan.fallback_nickname == "待审核词条"
-    detail_message = render_message_plan_input(detail_plan.messages[0])
+    assert deliver_plan.await_count == 1
+    await_args = deliver_plan.await_args
+    assert await_args is not None
+    plan = await_args.kwargs["plan"]
+    assert plan.force_forward is True
+    assert len(plan.messages) == 2
+    summary_message = render_message_plan_input(plan.messages[0])
+    detail_message = render_message_plan_input(plan.messages[1])
+    summary_text = _message_text(summary_message)
+    assert "回复 y / approve / 通过 可通过" in summary_text
+    assert "响应词: [图片:7]" in summary_text
     assert any(segment.type == "image" for segment in detail_message)
     assert "晚安" in str(detail_message)
+    assert record_message_ref.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_send_notice_embeds_forward_whole_mode() -> None:
+    record_message_ref = AsyncMock(return_value=None)
+    deliver_plan = AsyncMock(
+        return_value=SimpleNamespace(results=({"message_id": 88},), used_forward=True),
+    )
+    service = cast(Any, SimpleNamespace(record_message_ref=record_message_ref))
+    result = _result(
+        response_text="原始合并转发",
+        response_shape=shape_from_text("原始合并转发"),
+        response_mode="forward_whole",
+        forward_source_message_id="456",
+        forward_node_count=2,
+    )
+    bot = cast(Any, SimpleNamespace())
+
+    from src.plugins.wordbank.handlers import approval as approval_module
+
+    original_superusers = approval_module.config.SUPERUSERS
+    original_deliver = approval_module.deliver_message_plan
+    approval_module.config.SUPERUSERS = {"1"}
+    approval_module.deliver_message_plan = deliver_plan
+    try:
+        await send_pending_approval_notice(
+            bot,
+            service,
+            event=_event(),
+            result=result,
+            locale="zh-CN",
+            media_service=None,
+        )
+    finally:
+        approval_module.config.SUPERUSERS = original_superusers
+        approval_module.deliver_message_plan = original_deliver
+
+    assert deliver_plan.await_count == 1
+    await_args = deliver_plan.await_args
+    assert await_args is not None
+    plan = await_args.kwargs["plan"]
+    assert plan.force_forward is True
+    assert len(plan.messages) == 2
+    summary_message = render_message_plan_input(plan.messages[0])
+    forward_message = render_message_plan_input(plan.messages[1])
+    summary_text = _message_text(summary_message)
+    assert "响应词: [合并转发整体]" in summary_text
+    assert "响应模式: 合并转发整体（2 条）" in summary_text
+    forward_segments = list(forward_message)
+    assert len(forward_segments) == 1
+    assert forward_segments[0].type == "forward"
+    assert forward_segments[0].data["id"] == "456"
     assert record_message_ref.await_count == 1
 
 
@@ -429,8 +512,15 @@ def test_format_pending_batch_approval_notice_lists_all_pending_items() -> None:
     )
 
     assert "待审核词条" in notice
-    assert "#12 [current_group] 晚安 => 做个好梦" in notice
-    assert "#12 [current_group] 晚安 2 => 做个好梦 2" in notice
+    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in notice
+    assert "触发词: 晚安" in notice
+    assert "创建者: 10001" in notice
+    assert "提交时间: 2023-11-15 06:13" in notice
+    assert "范围: 当前群" in notice
+    assert "权重: 3" in notice
+    assert "规则: 概率 1" in notice
+    assert "响应模式: 普通响应" in notice
+    assert "待审数量: 2" in notice
 
 
 @pytest.mark.asyncio
@@ -483,9 +573,9 @@ async def test_build_pending_batch_approval_notice_message_embeds_image_shapes()
     full_text = "".join(str(segment) for segment in segments if segment.type == "text")
     assert "待审核词条" in full_text
     assert "回复我发送：通过 1 2 5-8，或拒绝 all" in full_text
-    assert "详细触发词 / 响应词见下一条合并转发。" in full_text
-    assert "test_forward" not in full_text
-    assert "做个好梦" not in full_text
+    assert "触发词: test_forward" in full_text
+    assert "创建者: 10001" in full_text
+    assert "待审数量: 2" in full_text
     assert sum(1 for segment in segments if segment.type == "image") == 0
     load_canonical_storage_bytes.assert_not_awaited()
 
@@ -545,7 +635,10 @@ async def test_send_pending_batch_approval_notice_records_pending_batch_context(
     targets = [call.kwargs["target"].target_id for call in deliver_plan.await_args_list]
     assert sorted(targets) == ["1", "2"]
     first_plan = deliver_plan.await_args_list[0].kwargs["plan"]
-    assert "待审核词条" in str(first_plan.messages[0])
+    assert first_plan.force_forward is True
+    assert len(first_plan.messages) == 3
+    first_message = render_message_plan_input(first_plan.messages[0])
+    assert "待审核词条" in str(first_message)
     assert record_message_ref.await_count == 2
     first_record = record_message_ref.await_args_list[0].kwargs
     assert first_record["context_type"] == "pending_batch"
@@ -556,10 +649,7 @@ async def test_send_pending_batch_approval_notice_records_pending_batch_context(
 async def test_batch_notice_sends_summary_then_forward_details() -> None:
     record_message_ref = AsyncMock(return_value=None)
     deliver_plan = AsyncMock(
-        side_effect=[
-            SimpleNamespace(results=({"message_id": 1},), used_forward=False),
-            SimpleNamespace(results=({"message_id": 2},), used_forward=True),
-        ],
+        return_value=SimpleNamespace(results=({"message_id": 2},), used_forward=True),
     )
     load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
     media_service = cast(
@@ -615,26 +705,24 @@ async def test_batch_notice_sends_summary_then_forward_details() -> None:
         approval_module.config.SUPERUSERS = original_superusers
         approval_module.deliver_message_plan = original_deliver
 
-    assert deliver_plan.await_count == 2
-    summary_plan = deliver_plan.await_args_list[0].kwargs["plan"]
-    detail_plan = deliver_plan.await_args_list[1].kwargs["plan"]
-    assert summary_plan.force_forward is None
-    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in str(summary_plan.messages[0])
-    assert "详细触发词 / 响应词见下一条合并转发。" in str(summary_plan.messages[0])
-    assert detail_plan.force_forward is True
-    assert detail_plan.fallback_nickname == "待审核词条"
-    assert len(detail_plan.messages) == 2
-    first_detail = render_message_plan_input(detail_plan.messages[0])
-    second_detail = render_message_plan_input(detail_plan.messages[1])
+    assert deliver_plan.await_count == 1
+    await_args = deliver_plan.await_args
+    assert await_args is not None
+    plan = await_args.kwargs["plan"]
+    assert plan.force_forward is True
+    assert len(plan.messages) == 3
+    summary_message = render_message_plan_input(plan.messages[0])
+    first_detail = render_message_plan_input(plan.messages[1])
+    second_detail = render_message_plan_input(plan.messages[2])
+    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in str(summary_message)
+    assert "待审数量: 2" in str(summary_message)
     assert any(segment.type == "image" for segment in first_detail)
     assert any(segment.type == "image" for segment in second_detail)
     assert record_message_ref.await_count == 1
 
 
 @pytest.mark.asyncio
-async def test_record_batch_submission_approval_message_uses_pending_batch_context() -> (
-    None
-):
+async def test_record_batch_submission_uses_pending_context() -> None:
     record_message_ref = AsyncMock(return_value=None)
     service = cast(Any, SimpleNamespace(record_message_ref=record_message_ref))
     batch = WordbankBatchAddResult(

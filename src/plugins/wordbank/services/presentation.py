@@ -42,6 +42,12 @@ class WordbankAddResult:
     created_group: bool = False
     trigger_shape: MessageShape | None = None
     response_shape: MessageShape | None = None
+    created_by: str = ""
+    created_at: int = 0
+    rule: dict[str, object] | None = None
+    response_mode: str = "normal"
+    forward_source_message_id: str | None = None
+    forward_node_count: int = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -249,6 +255,16 @@ def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
     )
 
 
+def response_mode_label(result: WordbankAddResult) -> str:
+    if result.response_mode == "forward_whole":
+        count = result.forward_node_count or 0
+        return f"合并转发整体（{count} 条）" if count > 0 else "合并转发整体"
+    if result.response_mode == "forward_split":
+        count = result.forward_node_count or 0
+        return f"合并转发拆分（{count} 条）" if count > 0 else "合并转发拆分"
+    return "普通响应"
+
+
 def format_response_summary(
     text: str,
     *,
@@ -257,3 +273,46 @@ def format_response_summary(
     if shape is None:
         return text
     return shape_to_summary_text(shape)
+
+
+def format_timestamp(timestamp: int) -> str:
+    if timestamp <= 0:
+        return "-"
+    return arrow.get(timestamp).to("Asia/Shanghai").format("YYYY-MM-DD HH:mm")
+
+
+def format_scope_label(scope: str) -> str:
+    return {
+        "current_group": "当前群",
+        "all_groups": "所有群",
+        "self": "仅自己",
+        "private_only": "仅私聊",
+        "self_in_current_group": "自己+当前群",
+    }.get(scope, scope or "-")
+
+
+def format_rule_summary(
+    *,
+    probability: float,
+    rule: dict[str, object] | None = None,
+) -> str:
+    parts = [f"概率 {probability:g}"]
+    payload = dict(rule or {})
+    role = str(payload.get("roles", "") or "").strip()
+    if role:
+        role_label = {
+            "owner": "群主",
+            "admin": "管理",
+            "member": "成员",
+            "any": "不限",
+        }.get(role, role)
+        if role_label != "不限":
+            parts.append(f"角色 {role_label}")
+    call_count = payload.get("call_count")
+    if isinstance(call_count, dict):
+        window_seconds = int(call_count.get("window_seconds", 0) or 0)
+        min_count = int(call_count.get("min", 0) or 0)
+        max_count = int(call_count.get("max", 0) or 0)
+        if window_seconds > 0:
+            parts.append(f"频率 {window_seconds}s/{min_count}-{max_count or 'inf'}")
+    return " | ".join(parts)

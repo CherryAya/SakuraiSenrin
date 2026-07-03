@@ -295,6 +295,9 @@ class WordbankService:
             weight=rule.weight,
             trigger_shape=trigger_shape,
             response_shape=response_shape,
+            created_by=user_id,
+            created_at=created.response_item.created_at,
+            rule=dict(rule.rule),
         )
 
     async def add_message_entries(

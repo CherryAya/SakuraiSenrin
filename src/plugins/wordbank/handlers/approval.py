@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
+from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.adapters.onebot.v11.message import MessageSegment
 
 from src.config import config
 from src.lib.i18n.keys import MessageKey
@@ -19,12 +21,17 @@ from src.lib.message_plan import (
     MessagePlanBlock,
     MessagePlanEntry,
     MessagePlanInput,
+    RawMessageBlock,
     TextBlock,
     build_text_plan_entry,
     deliver_message_plan,
 )
 from src.logger import logger
-from src.plugins.wordbank.message_model import MessageShape
+from src.plugins.wordbank.message_model import (
+    MessageInput,
+    MessageShape,
+    iter_message_segments,
+)
 from src.plugins.wordbank.services import (
     format_add_result,
     format_response_summary,
@@ -34,9 +41,15 @@ from src.plugins.wordbank.services.core import (
     WordbankService,
 )
 from src.plugins.wordbank.services.media import WordbankMediaService
-from src.plugins.wordbank.services.presentation import WordbankBatchAddResult
+from src.plugins.wordbank.services.presentation import (
+    WordbankBatchAddResult,
+    format_rule_summary,
+    format_scope_label,
+    format_timestamp,
+    response_mode_label,
+)
 
-from .rendering import build_pending_item_blocks, build_shape_plan_entry
+from .rendering import build_shape_plan_entry
 
 APPROVAL_APPROVE_ALIASES = {"y", "approve", "通过", "同意", "批准"}
 APPROVAL_REJECT_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
@@ -61,6 +74,26 @@ def extract_sent_message_id(result: Any) -> str | None:
     return str(value)
 
 
+def _event_submit_timestamp(event: MessageEvent, created_at: int) -> str:
+    fallback = int(getattr(event, "time", 0) or 0)
+    return format_timestamp(created_at or fallback)
+
+
+def _trigger_summary(result: WordbankAddResult) -> str:
+    return format_response_summary(result.trigger_text, shape=result.trigger_shape)
+
+
+def _response_summary(result: WordbankAddResult) -> str:
+    return format_response_summary(result.response_text, shape=result.response_shape)
+
+
+def _rule_summary(result: WordbankAddResult) -> str:
+    return format_rule_summary(
+        probability=result.probability,
+        rule=result.rule,
+    )
+
+
 def format_pending_approval_notice(
     result: WordbankAddResult,
     *,
@@ -68,27 +101,28 @@ def format_pending_approval_notice(
     locale: LocaleCode,
     split_detail: bool = False,
 ) -> str:
-    key: MessageKey = "wordbank.approval.notice"
-    detail_hint = ""
-    if split_detail:
-        key = "wordbank.approval.notice_summary"
-        detail_hint = tr(locale, "wordbank.approval.pending_detail_hint") + "\n"
-    return tr(
-        locale,
-        key,
-        entry_id=result.response_item_id,
-        trigger_text=result.trigger_text,
-        response_text=format_response_summary(
-            result.response_text,
-            shape=result.response_shape,
-        ),
-        scope=result.scope,
-        probability=f"{result.probability:g}",
-        weight=result.weight,
-        user_id=str(event.user_id),
-        group_id=str(getattr(event, "group_id", "")) or "-",
-        detail_hint=detail_hint,
+    _ = split_detail, locale
+    response_text = (
+        "[合并转发整体]"
+        if result.response_mode == "forward_whole"
+        else _response_summary(result)
     )
+    lines = [
+        "新增词条待审核",
+        "回复 y / approve / 通过 可通过",
+        "回复 n / reject / 拒绝 可驳回",
+        "",
+        f"ID: {result.response_item_id}",
+        f"触发词: {_trigger_summary(result)}",
+        f"响应词: {response_text}",
+        f"创建者: {result.created_by or str(event.user_id)}",
+        f"提交时间: {_event_submit_timestamp(event, result.created_at)}",
+        f"范围: {format_scope_label(result.scope)}",
+        f"权重: {result.weight}",
+        f"规则: {_rule_summary(result)}",
+        f"响应模式: {response_mode_label(result)}",
+    ]
+    return "\n".join(lines)
 
 
 def format_pending_batch_approval_notice(
@@ -98,32 +132,22 @@ def format_pending_batch_approval_notice(
     locale: LocaleCode,
     split_detail: bool = False,
 ) -> str:
+    _ = split_detail, locale
     pending_results = _pending_results(batch)
+    first_result = pending_results[0]
     lines = [
         tr(locale, "wordbank.approval.pending_title", page=1),
         tr(locale, "wordbank.approval.pending_batch_instruction"),
+        "",
+        f"触发词: {_trigger_summary(first_result)}",
+        f"创建者: {first_result.created_by or str(event.user_id)}",
+        f"提交时间: {_event_submit_timestamp(event, first_result.created_at)}",
+        f"范围: {format_scope_label(first_result.scope)}",
+        f"权重: {first_result.weight}",
+        f"规则: {_rule_summary(first_result)}",
+        f"响应模式: {response_mode_label(first_result)}",
+        f"待审数量: {len(pending_results)}",
     ]
-    if split_detail:
-        lines.append(tr(locale, "wordbank.approval.pending_detail_hint"))
-        return "\n".join(lines)
-    for index, result in enumerate(pending_results, start=1):
-        lines.append(
-            tr(
-                locale,
-                "wordbank.approval.pending_item",
-                entry_id=result.response_item_id,
-                scope=result.scope,
-                trigger_text=format_response_summary(
-                    result.trigger_text,
-                    shape=result.trigger_shape,
-                ),
-                response_text=format_response_summary(
-                    result.response_text,
-                    shape=result.response_shape,
-                ),
-                created_by=str(event.user_id),
-            )
-        )
     return "\n".join(lines)
 
 
@@ -149,20 +173,13 @@ async def build_pending_approval_notice_plan_entry(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> MessagePlanEntry:
-    split_detail = _should_split_pending_approval_notice(result)
-    text = format_pending_approval_notice(
-        result,
-        event=event,
-        locale=locale,
-        split_detail=split_detail,
-    )
-    if split_detail:
-        return build_text_plan_entry(text)
-    return await _build_rendered_result_entry(
-        result,
-        text=text,
-        locale=locale,
-        media_service=media_service,
+    _ = media_service
+    return build_text_plan_entry(
+        format_pending_approval_notice(
+            result,
+            event=event,
+            locale=locale,
+        )
     )
 
 
@@ -173,122 +190,171 @@ async def build_pending_batch_approval_notice_plan_entry(
     locale: LocaleCode,
     media_service: WordbankMediaService | None = None,
 ) -> MessagePlanEntry:
-    split_detail = media_service is not None and bool(_pending_results(batch))
-    if media_service is None:
-        return MessagePlanEntry(
-            blocks=(
-                TextBlock(
-                    format_pending_batch_approval_notice(
-                        batch,
-                        event=event,
-                        locale=locale,
-                        split_detail=False,
-                    )
-                ),
-            )
+    _ = media_service
+    return build_text_plan_entry(
+        format_pending_batch_approval_notice(
+            batch,
+            event=event,
+            locale=locale,
         )
+    )
 
-    if split_detail:
-        return build_text_plan_entry(
-            format_pending_batch_approval_notice(
-                batch,
-                event=event,
-                locale=locale,
-                split_detail=True,
-            )
+
+async def _build_pending_approval_detail_plan_entry(
+    result: WordbankAddResult,
+    *,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+    index: int | None = None,
+) -> MessagePlanEntry:
+    lines = []
+    if index is not None:
+        lines.append(f"序号: {index}")
+    lines.extend(
+        (
+            f"ID: {result.response_item_id}",
+            f"触发词: {_trigger_summary(result)}",
+            f"响应词: {_response_summary(result)}",
+            f"创建者: {result.created_by or '-'}",
+            f"提交时间: {format_timestamp(result.created_at)}",
+            f"范围: {format_scope_label(result.scope)}",
+            f"权重: {result.weight}",
+            f"规则: {_rule_summary(result)}",
         )
-
-    pending_results = _pending_results(batch)
-    if not pending_results:
-        return MessagePlanEntry(
-            blocks=(
-                TextBlock(
-                    format_pending_batch_approval_notice(
-                        batch,
-                        event=event,
-                        locale=locale,
-                        split_detail=False,
-                    )
-                ),
-            )
-        )
-
-    blocks: list[MessagePlanBlock] = [
-        TextBlock(tr(locale, "wordbank.approval.pending_title", page=1)),
-        TextBlock("\n" + tr(locale, "wordbank.approval.pending_batch_instruction")),
-    ]
-    created_by = str(event.user_id)
-    for result in pending_results:
+    )
+    blocks: list[MessagePlanBlock] = [TextBlock("\n".join(lines))]
+    trigger_shape = result.trigger_shape
+    if trigger_shape is not None and _should_render_shape(trigger_shape):
+        blocks.append(TextBlock("\n触发词详情:\n"))
         blocks.extend(
-            await build_pending_item_blocks(
-                entry_id=result.response_item_id,
-                scope=result.scope,
-                trigger_text=result.trigger_text,
-                response_text=result.response_text,
-                created_by=created_by,
-                trigger_shape=result.trigger_shape,
-                response_shape=result.response_shape,
-                locale=locale,
-                media_service=media_service,
-            )
+            (
+                await build_shape_plan_entry(
+                    trigger_shape,
+                    media_service,
+                    locale=locale,
+                )
+            ).blocks
+        )
+    response_shape = result.response_shape
+    if response_shape is not None and _should_render_shape(response_shape):
+        blocks.append(TextBlock("\n响应词详情:\n"))
+        blocks.extend(
+            (
+                await build_shape_plan_entry(
+                    response_shape,
+                    media_service,
+                    locale=locale,
+                )
+            ).blocks
         )
     return MessagePlanEntry(blocks=tuple(blocks))
 
 
-async def _build_pending_approval_notice_detail_plan_entry(
+def _forward_message_plan_entry(message: MessageInput) -> MessagePlanEntry:
+    rendered = Message()
+    for segment in iter_message_segments(message):
+        rendered += segment
+    return MessagePlanEntry(blocks=(RawMessageBlock(rendered),))
+
+
+def _build_forward_source_entry(source_message_id: str) -> MessagePlanEntry:
+    return MessagePlanEntry(
+        blocks=(
+            RawMessageBlock(
+                Message((MessageSegment("forward", {"id": source_message_id}),))
+            ),
+        )
+    )
+
+
+async def _build_pending_approval_delivery_plan(
     result: WordbankAddResult,
     *,
     event: MessageEvent,
     locale: LocaleCode,
-    media_service: WordbankMediaService,
-) -> MessagePlanEntry | None:
-    if not _should_split_pending_approval_notice(result):
-        return None
-    blocks = await build_pending_item_blocks(
-        entry_id=result.response_item_id,
-        scope=result.scope,
-        trigger_text=result.trigger_text,
-        response_text=result.response_text,
-        created_by=str(event.user_id),
-        trigger_shape=result.trigger_shape,
-        response_shape=result.response_shape,
-        locale=locale,
-        media_service=media_service,
-        prefix="",
+    media_service: WordbankMediaService | None,
+) -> DeliveryPlan:
+    messages: list[MessagePlanInput] = [
+        await build_pending_approval_notice_plan_entry(
+            result,
+            event=event,
+            locale=locale,
+            media_service=cast(WordbankMediaService, media_service),
+        )
+    ]
+    if result.response_mode == "forward_whole" and result.forward_source_message_id:
+        messages.append(_build_forward_source_entry(result.forward_source_message_id))
+    elif media_service is not None and (
+        _should_render_shape(result.trigger_shape)
+        or _should_render_shape(result.response_shape)
+    ):
+        messages.append(
+            await _build_pending_approval_detail_plan_entry(
+                result,
+                locale=locale,
+                media_service=media_service,
+            )
+        )
+    return DeliveryPlan(
+        messages=tuple(messages),
+        source_kind="wordbank_pending_approval_notice",
+        force_forward=True,
     )
-    return MessagePlanEntry(blocks=blocks)
 
 
-async def _build_pending_batch_approval_detail_entries(
+async def _build_pending_batch_approval_delivery_plan(
     batch: WordbankBatchAddResult,
     *,
     event: MessageEvent,
     locale: LocaleCode,
-    media_service: WordbankMediaService,
-) -> tuple[MessagePlanEntry, ...]:
+    media_service: WordbankMediaService | None,
+) -> DeliveryPlan:
     pending_results = _pending_results(batch)
-    if not pending_results:
-        return ()
-    entries: list[MessagePlanEntry] = []
-    created_by = str(event.user_id)
-    for index, result in enumerate(pending_results, start=1):
-        entries.append(
-            MessagePlanEntry(
-                blocks=await build_pending_item_blocks(
-                    entry_id=result.response_item_id,
-                    scope=result.scope,
-                    trigger_text=result.trigger_text,
-                    response_text=result.response_text,
-                    created_by=created_by,
-                    trigger_shape=result.trigger_shape,
-                    response_shape=result.response_shape,
+    messages: list[MessagePlanInput] = [
+        await build_pending_batch_approval_notice_plan_entry(
+            batch,
+            event=event,
+            locale=locale,
+            media_service=media_service,
+        )
+    ]
+    if media_service is not None:
+        for index, result in enumerate(pending_results, start=1):
+            messages.append(
+                await _build_pending_approval_detail_plan_entry(
+                    result,
                     locale=locale,
                     media_service=media_service,
-                    prefix=tr(locale, "wordbank.batch.index", index=index) + "\n",
+                    index=index,
                 )
             )
-        )
-    return tuple(entries)
+    else:
+        for index, result in enumerate(pending_results, start=1):
+            messages.append(
+                build_text_plan_entry(
+                    "\n".join(
+                        (
+                            f"序号: {index}",
+                            f"ID: {result.response_item_id}",
+                            f"触发词: {_trigger_summary(result)}",
+                            f"响应词: {_response_summary(result)}",
+                            f"创建者: {result.created_by or str(event.user_id)}",
+                            (
+                                "提交时间: "
+                                f"{_event_submit_timestamp(event, result.created_at)}"
+                            ),
+                            f"范围: {format_scope_label(result.scope)}",
+                            f"权重: {result.weight}",
+                            f"规则: {_rule_summary(result)}",
+                        )
+                    )
+                )
+            )
+    return DeliveryPlan(
+        messages=tuple(messages),
+        source_kind="wordbank_pending_approval_notice",
+        force_forward=True,
+    )
 
 
 async def _build_rendered_result_entry(
@@ -419,21 +485,11 @@ async def send_pending_approval_notice(
     if result.status != "pending":
         return
 
-    detail_message = (
-        await _build_pending_approval_notice_detail_plan_entry(
-            result,
-            event=event,
-            locale=locale,
-            media_service=media_service,
-        )
-        if media_service is not None
-        else None
-    )
-    message = format_pending_approval_notice(
+    plan = await _build_pending_approval_delivery_plan(
         result,
         event=event,
         locale=locale,
-        split_detail=detail_message is not None,
+        media_service=media_service,
     )
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")
@@ -444,9 +500,7 @@ async def send_pending_approval_notice(
                 bot,
                 service,
                 superuser_id=superuser_id,
-                message=message,
-                detail_message=detail_message,
-                locale=locale,
+                plan=plan,
                 result=result,
                 group_id=group_id,
                 user_id=user_id,
@@ -462,9 +516,7 @@ async def _send_single_pending_approval_notice(
     service: WordbankService,
     *,
     superuser_id: str,
-    message: MessagePlanInput,
-    detail_message: MessagePlanEntry | None,
-    locale: LocaleCode,
+    plan: DeliveryPlan,
     result: WordbankAddResult,
     group_id: str,
     user_id: str,
@@ -473,10 +525,7 @@ async def _send_single_pending_approval_notice(
     try:
         plan_result = await deliver_message_plan(
             bot,
-            plan=DeliveryPlan(
-                messages=(message,),
-                source_kind="wordbank_pending_approval_notice",
-            ),
+            plan=plan,
             target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
         )
         send_result = plan_result.results[0]
@@ -493,20 +542,6 @@ async def _send_single_pending_approval_notice(
             source_message_id=source_message_id,
             message_type="approval",
         )
-        if detail_message is not None:
-            await deliver_message_plan(
-                bot,
-                plan=DeliveryPlan(
-                    messages=(detail_message,),
-                    source_kind="wordbank_pending_approval_notice",
-                    fallback_nickname=tr(
-                        locale,
-                        "wordbank.approval.pending_forward_nickname",
-                    ),
-                    force_forward=True,
-                ),
-                target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
-            )
     except Exception as exc:
         logger.warning(f"[Wordbank] approval notice skipped for {superuser_id}: {exc}")
 
@@ -551,21 +586,11 @@ async def send_pending_batch_approval_notice(
     if not pending_results:
         return
 
-    detail_messages = (
-        await _build_pending_batch_approval_detail_entries(
-            batch,
-            event=event,
-            locale=locale,
-            media_service=media_service,
-        )
-        if media_service is not None
-        else ()
-    )
-    message = format_pending_batch_approval_notice(
+    plan = await _build_pending_batch_approval_delivery_plan(
         batch,
         event=event,
         locale=locale,
-        split_detail=bool(detail_messages),
+        media_service=media_service,
     )
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")
@@ -579,9 +604,7 @@ async def send_pending_batch_approval_notice(
                 bot,
                 service,
                 superuser_id=superuser_id,
-                message=message,
-                detail_messages=detail_messages,
-                locale=locale,
+                plan=plan,
                 first_result=first_result,
                 response_item_ids=response_item_ids,
                 group_id=group_id,
@@ -598,9 +621,7 @@ async def _send_single_pending_batch_approval_notice(
     service: WordbankService,
     *,
     superuser_id: str,
-    message: MessagePlanInput,
-    detail_messages: tuple[MessagePlanEntry, ...],
-    locale: LocaleCode,
+    plan: DeliveryPlan,
     first_result: WordbankAddResult,
     response_item_ids: tuple[int, ...],
     group_id: str,
@@ -610,10 +631,7 @@ async def _send_single_pending_batch_approval_notice(
     try:
         plan_result = await deliver_message_plan(
             bot,
-            plan=DeliveryPlan(
-                messages=(message,),
-                source_kind="wordbank_pending_approval_notice",
-            ),
+            plan=plan,
             target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
         )
         send_result = plan_result.results[0]
@@ -632,20 +650,6 @@ async def _send_single_pending_batch_approval_notice(
             message_type="approval_batch",
             group_ids=response_item_ids,
         )
-        if detail_messages:
-            await deliver_message_plan(
-                bot,
-                plan=DeliveryPlan(
-                    messages=detail_messages,
-                    source_kind="wordbank_pending_approval_notice",
-                    fallback_nickname=tr(
-                        locale,
-                        "wordbank.approval.pending_forward_nickname",
-                    ),
-                    force_forward=True,
-                ),
-                target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
-            )
     except Exception as exc:
         logger.warning(
             f"[Wordbank] batch approval notice skipped for {superuser_id}: {exc}"

@@ -33,6 +33,7 @@ class ResponseInputPayload:
     whole_shape: MessageShape
     split_shapes: tuple[MessageShape, ...]
     source_message_id: str | None = None
+    messages: tuple[MessageInput, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
@@ -41,6 +42,7 @@ class ForwardBatchPayload:
     node_count: int
     whole_shape: MessageShape
     split_shapes: tuple[MessageShape, ...]
+    messages: tuple[MessageInput, ...] = ()
 
 
 def is_forward_message(message: Message) -> bool:
@@ -209,6 +211,7 @@ async def build_forward_batch_payload_by_source_message_id(
         node_count=len(shapes),
         whole_shape=whole,
         split_shapes=tuple(shapes),
+        messages=messages,
     )
 
 
@@ -235,6 +238,7 @@ async def build_response_input_payload(
             whole_shape=payload.whole_shape,
             split_shapes=payload.split_shapes,
             source_message_id=payload.source_message_id,
+            messages=payload.messages,
         )
     shape = await build_message_shape_from_message(
         media_service,
@@ -247,6 +251,7 @@ async def build_response_input_payload(
         whole_shape=shape,
         split_shapes=split_shapes,
         source_message_id=None,
+        messages=(),
     )
 
 
