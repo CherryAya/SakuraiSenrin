@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Awaitable, Callable, Mapping, MutableMapping
 from dataclasses import replace
 import math
 from typing import Any, cast
@@ -441,31 +441,31 @@ async def build_search_results_card_plan_entry(
         )
         if image_id is not None
     }
-    try:
-        preview_bytes = await _load_image_bytes_map(preview_ids, media_service)
-        return await asyncio.to_thread(
+    preview_bytes = await _load_image_bytes_map(preview_ids, media_service)
+    return await _build_plan_with_fallback(
+        preferred_builder=lambda: asyncio.to_thread(
             build_search_results_image_plan_entry,
             items=items,
             query=query,
             locale=locale,
             preview_bytes=preview_bytes,
-        )
-    except Exception:
-        log_perf(
-            "plugin.render_search_results_card_message.fallback_text",
-            keyword=query.keyword,
+        ),
+        fallback_builder=lambda: build_search_items_text_plan_entry(
+            items=items,
+            locale=locale,
+            media_service=media_service,
             page=query.page,
-            field=query.field,
-            has_image=query.has_image,
-            total_count=query.total_count,
-        )
-    return await build_search_items_text_plan_entry(
-        items=items,
-        locale=locale,
-        media_service=media_service,
-        page=query.page,
-        limit=query.limit,
-        has_more=query.page * query.limit < query.total_count,
+            limit=query.limit,
+            has_more=query.page * query.limit < query.total_count,
+        ),
+        fallback_log_event="plugin.render_search_results_card_message.fallback_text",
+        fallback_log_fields={
+            "keyword": query.keyword,
+            "page": query.page,
+            "field": query.field,
+            "has_image": query.has_image,
+            "total_count": query.total_count,
+        },
     )
 
 
@@ -508,10 +508,9 @@ async def build_group_detail_page_message_plan_entry(
         )
         for image_id in _shape_preview_ids(shape)
     }
-
-    try:
-        preview_bytes = await _load_image_bytes_map(preview_ids, media_service)
-        return await asyncio.to_thread(
+    preview_bytes = await _load_image_bytes_map(preview_ids, media_service)
+    entry = await _build_plan_with_fallback(
+        preferred_builder=lambda: asyncio.to_thread(
             build_group_detail_image_plan_entry,
             page_data=GroupDetailCardPage(
                 detail=detail,
@@ -523,16 +522,8 @@ async def build_group_detail_page_message_plan_entry(
             ),
             locale=locale,
             preview_bytes=preview_bytes,
-        ), total_pages
-    except Exception:
-        log_perf(
-            "plugin.render_group_detail_page_message.fallback_text",
-            trigger_group_id=detail.trigger_group_id,
-            page=page,
-            total_pages=total_pages,
-        )
-    return (
-        await build_group_detail_page_plan_entry(
+        ),
+        fallback_builder=lambda: build_group_detail_page_plan_entry(
             detail=detail,
             page=page,
             total_pages=total_pages,
@@ -540,8 +531,14 @@ async def build_group_detail_page_message_plan_entry(
             media_service=media_service,
             page_size=page_size,
         ),
-        total_pages,
+        fallback_log_event="plugin.render_group_detail_page_message.fallback_text",
+        fallback_log_fields={
+            "trigger_group_id": detail.trigger_group_id,
+            "page": page,
+            "total_pages": total_pages,
+        },
     )
+    return entry, total_pages
 
 
 async def build_group_detail_page_plan_entry(
@@ -648,34 +645,34 @@ async def build_creator_leaderboard_card_plan_entry(
     data: WordbankLeaderboardCardData,
     locale: LocaleCode,
 ) -> MessagePlanEntry:
-    try:
-        items = data.items
-        if items:
-            avatars = await asyncio.gather(
-                *(QQAvatar.fetch_user(item.user_id, size=160) for item in items),
-                return_exceptions=True,
+    items = data.items
+    if items:
+        avatars = await asyncio.gather(
+            *(QQAvatar.fetch_user(item.user_id, size=160) for item in items),
+            return_exceptions=True,
+        )
+        items = tuple(
+            replace(
+                item,
+                avatar=avatar if not isinstance(avatar, Exception) else None,
             )
-            items = tuple(
-                replace(
-                    item,
-                    avatar=avatar if not isinstance(avatar, Exception) else None,
-                )
-                for item, avatar in zip(items, avatars, strict=False)
-            )
-            data = replace(data, items=items)
-        return await asyncio.to_thread(
+            for item, avatar in zip(items, avatars, strict=False)
+        )
+        data = replace(data, items=items)
+    return await _build_plan_with_fallback(
+        preferred_builder=lambda: asyncio.to_thread(
             build_leaderboard_image_plan_entry,
             data=data,
             locale=locale,
-        )
-    except Exception:
-        log_perf(
-            "plugin.render_creator_leaderboard_card_message.fallback_text",
-            period=data.period,
-            items=len(data.items),
-        )
-    return MessagePlanEntry(
-        blocks=(TextBlock(format_creator_leaderboard(data, locale=locale)),)
+        ),
+        fallback_builder=lambda: _build_text_plan_entry(
+            format_creator_leaderboard(data, locale=locale)
+        ),
+        fallback_log_event="plugin.render_creator_leaderboard_card_message.fallback_text",
+        fallback_log_fields={
+            "period": data.period,
+            "items": len(data.items),
+        },
     )
 
 
@@ -703,6 +700,30 @@ async def _append_labeled_shape_blocks(
             )
         ).blocks
     )
+
+
+async def _build_plan_with_fallback[TPlanResult](
+    *,
+    preferred_builder: Callable[[], Awaitable[TPlanResult]],
+    fallback_builder: Callable[[], Awaitable[TPlanResult] | TPlanResult],
+    fallback_log_event: str,
+    fallback_log_fields: Mapping[str, object],
+) -> TPlanResult:
+    try:
+        return await preferred_builder()
+    except Exception:
+        log_perf(
+            fallback_log_event,
+            **cast(Any, dict(fallback_log_fields)),
+        )
+    fallback = fallback_builder()
+    if isinstance(fallback, Awaitable):
+        return await fallback
+    return fallback
+
+
+async def _build_text_plan_entry(text: str) -> MessagePlanEntry:
+    return MessagePlanEntry(blocks=(TextBlock(text),))
 
 
 def _format_enabled(enabled: int, locale: LocaleCode) -> str:
