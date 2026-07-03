@@ -35,6 +35,7 @@ from src.plugins.wordbank.handlers.commands import (
 from src.plugins.wordbank.handlers.media_helpers import build_message_shape_from_message
 from src.plugins.wordbank.handlers.parsers import (
     parse_group_view_args,
+    parse_guided_scope_choice,
     parse_guided_search_mode_choice,
     parse_search_session_command,
 )
@@ -113,6 +114,18 @@ def test_parse_guided_search_mode_choice_rejects_invalid_combinations() -> None:
 
     with pytest.raises(RuleError):
         parse_guided_search_mode_choice("4")
+
+
+def test_parse_guided_scope_choice_simplifies_private_chat_options() -> None:
+    assert parse_guided_scope_choice("", is_group=False) == "self"
+    assert parse_guided_scope_choice("1", is_group=False) == "self"
+    assert parse_guided_scope_choice("2", is_group=False) == "all_groups"
+
+    with pytest.raises(RuleError):
+        parse_guided_scope_choice("3", is_group=False)
+
+    with pytest.raises(RuleError):
+        parse_guided_scope_choice("private", is_group=False)
 
 
 def test_parse_search_session_command_supports_page_detail_delete_and_exit() -> None:
@@ -1275,7 +1288,7 @@ async def test_build_message_shape_from_message_preserves_mixed_segments(
         + MessageSegment("image", {"url": "https://example.test/a.png"}),
     )
 
-    assert shape_to_summary_text(shape) == "[@:10002] 早安 [图片:7]"
+    assert shape_to_summary_text(shape) == "@用户(10002) 早安 [图片:7]"
 
 
 @pytest.mark.asyncio
@@ -1334,7 +1347,7 @@ async def test_handle_guided_add_shape_result_accepts_message_shapes() -> None:
 
     assert add_message_entry.await_args is not None
     kwargs = add_message_entry.await_args.kwargs
-    assert shape_to_summary_text(kwargs["trigger_shape"]) == "[@:10002] 早安"
+    assert shape_to_summary_text(kwargs["trigger_shape"]) == "@用户(10002) 早安"
     assert shape_to_summary_text(kwargs["response_shape"]) == "做个好梦"
 
 

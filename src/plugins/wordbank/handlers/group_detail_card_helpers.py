@@ -13,7 +13,11 @@ from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
     WordbankResponseItemDetail,
 )
-from src.plugins.wordbank.message_model import MessageAtom, MessageShape
+from src.plugins.wordbank.message_model import (
+    MessageAtom,
+    MessageShape,
+    format_at_fallback_text,
+)
 
 
 def build_copyright_text(year: int) -> str:
@@ -97,7 +101,7 @@ def atom_text(atom: MessageAtom, locale: LocaleCode) -> str:
     if atom.kind == "text":
         return atom.text
     if atom.kind == "at" and atom.target_id:
-        return f"[@:{atom.target_id}]"
+        return format_at_fallback_text(atom.target_id)
     if atom.kind == "event" and atom.event_name:
         return tr(locale, "wordbank.shape.event_ref", event_name=atom.event_name)
     return ""

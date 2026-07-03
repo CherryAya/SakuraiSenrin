@@ -17,12 +17,7 @@ from src.lib.i18n.runtime import tr
 MessageAtomKind = Literal["text", "image", "at", "event"]
 MessageAtomPayload = dict[str, int | str]
 type MessageInput = (
-    Message
-    | MessageSegment
-    | str
-    | list[Any]
-    | tuple[Any, ...]
-    | dict[str, Any]
+    Message | MessageSegment | str | list[Any] | tuple[Any, ...] | dict[str, Any]
 )
 _SPACE_RE = re.compile(r"\s+")
 EVENT_TRIGGER_ESCAPED_PREFIX = "\\"
@@ -66,16 +61,16 @@ EVENT_TRIGGER_ALIASES = {
     "成员离群": "event:member_leave",
 }
 EVENT_TRIGGER_DISPLAY_LINES = (
-    "event:at / [@] / 【@】 / [at] / 【at】 -> @到机器人",
-    "event:mention / [提及] / 【提及】 -> 提及机器人",
+    "event:at / [@] / 【@】 / [at] / 【at】 -> @到凛凛",
+    "event:mention / [提及] / 【提及】 -> 提及凛凛",
     "event:poke / [戳一戳] / 【戳一戳】 -> 戳一戳",
-    "event:bot_join / [bot加群] / 【bot加群】 -> 机器人自己进群",
+    "event:bot_join / [bot加群] / 【bot加群】 -> 凛凛自己进群",
     "event:member_join / [成员加群] / 【成员加群】 -> 其他人进群",
     "event:join / [新人加入] / 【新人加入】 / [新成员加入]",
     " / 【新成员加入】 / [有人加群] / 【有人加群】 -> 入群",
     "event:group_join -> 入群",
     "event:group_increase -> 群成员增加",
-    "event:bot_leave / [bot退群] / 【bot退群】 -> 机器人自己退群",
+    "event:bot_leave / [bot退群] / 【bot退群】 -> 凛凛自己退群",
     "event:member_leave / [成员离群] / 【成员离群】 -> 其他人退群",
     "event:leave / [成员退群] / 【成员退群】 / [有人退群]",
     " / 【有人退群】 / [离群] / 【离群】 -> 离群",
@@ -348,7 +343,7 @@ def shape_to_summary_text(shape: MessageShape) -> str:
                 )
             )
         elif atom.kind == "at" and atom.target_id:
-            parts.append(f"[@:{atom.target_id}]")
+            parts.append(format_at_fallback_text(atom.target_id))
         elif atom.kind == "event" and atom.event_name:
             parts.append(
                 tr(
@@ -370,6 +365,10 @@ def shape_to_search_text(shape: MessageShape) -> str:
         elif atom.kind == "event" and atom.event_name:
             texts.append(atom.event_name)
     return _join_shape_text_parts(texts)
+
+
+def format_at_fallback_text(target_id: str) -> str:
+    return f"@用户({target_id})"
 
 
 def _shape_image_keys(shape: MessageShape) -> str:

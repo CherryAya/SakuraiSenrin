@@ -510,6 +510,11 @@ def parse_guided_scope_choice(text: str, *, is_group: bool) -> str:
         return "current_group" if is_group else "self"
     if choice in {"2", "all", "all_groups", "全群", "所有群"}:
         return "all_groups"
+    if not is_group:
+        raise RuleError(
+            _default_i18n_text("wordbank.error.guided_scope_invalid"),
+            key="wordbank.error.guided_scope_invalid",
+        )
     if choice in {"3", "self", "only_me", "仅自己", "自己"}:
         return "self_in_current_group" if is_group else "self"
     if choice in {"4", "private", "private_only", "私聊"}:

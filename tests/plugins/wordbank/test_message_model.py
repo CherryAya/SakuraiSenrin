@@ -1,3 +1,5 @@
+from nonebot.adapters.onebot.v11 import MessageSegment
+
 from src.lib.messages import text_message
 from src.plugins.wordbank.message_model import (
     is_valid_message_text,
@@ -30,3 +32,9 @@ def test_shape_from_message_rejects_blank_text_segments() -> None:
     shape = shape_from_message(text_message(" \n\t"))
 
     assert shape.is_empty()
+
+
+def test_shape_from_message_formats_at_as_fallback_text() -> None:
+    shape = shape_from_message(MessageSegment.at("10002") + MessageSegment.text(""))
+
+    assert shape_to_summary_text(shape) == "@用户(10002)"

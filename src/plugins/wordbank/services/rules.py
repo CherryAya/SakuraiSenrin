@@ -157,6 +157,8 @@ def _normalize_scope(value: Any, *, is_group: bool) -> Scope:
             )
         value = next(iter(values))
     scope = normalize_scope_alias(str(value).strip()) or str(value).strip()
+    if not is_group and scope == "private_only":
+        return "self"
     if scope not in VALID_SCOPES:
         raise _rule_error(
             _default_i18n_text(
@@ -390,7 +392,7 @@ def _legacy_study_shortcut_rule(
 ) -> dict[str, Any]:
     if trig_mode == "a":
         if not is_group:
-            return {"scope": "private_only"}
+            return {"scope": "self"}
         return {"scope": "current_group" if group_block == "t" else "all_groups"}
     if is_group and group_block == "t":
         return {"scope": {"self", "current_group"}}

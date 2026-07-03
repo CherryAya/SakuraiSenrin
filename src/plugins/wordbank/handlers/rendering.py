@@ -11,7 +11,6 @@ from typing import Any, cast
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
-    AtRefBlock,
     ImageBytesBlock,
     MessagePlanBlock,
     MessagePlanEntry,
@@ -22,7 +21,7 @@ from src.lib.message_plan import (
 from src.lib.utils.img import QQAvatar
 from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
 from src.plugins.wordbank.debug import log_perf, perf_start
-from src.plugins.wordbank.message_model import MessageShape
+from src.plugins.wordbank.message_model import MessageShape, format_at_fallback_text
 from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import (
@@ -79,7 +78,7 @@ async def build_shape_plan_entry(
         if atom.kind == "text" and atom.text:
             blocks.append(TextBlock(atom.text))
         elif atom.kind == "at" and atom.target_id:
-            blocks.append(AtRefBlock(atom.target_id))
+            blocks.append(TextBlock(format_at_fallback_text(atom.target_id)))
         elif atom.kind == "image" and atom.canonical_image_id is not None:
             image_bytes = image_bytes_by_id.get(atom.canonical_image_id)
             if image_bytes is None:
@@ -245,27 +244,16 @@ async def build_pending_item_blocks(
     lines.extend(
         (
             f"ID: {entry_id}",
-            (
-                "触发词: "
-                f"{format_response_summary(trigger_text, shape=trigger_shape)}"
-            ),
-            (
-                "响应词: "
-                f"{format_response_summary(response_text, shape=response_shape)}"
-            ),
+            (f"触发词: {format_response_summary(trigger_text, shape=trigger_shape)}"),
+            (f"响应词: {format_response_summary(response_text, shape=response_shape)}"),
             f"创建者: {created_by or '-'}",
             f"提交时间: {format_timestamp(created_at)}",
             f"范围: {format_scope_label(scope)}",
             f"权重: {weight}",
-            (
-                "规则: "
-                f"{format_rule_summary(probability=probability, rule=rule)}"
-            ),
+            (f"规则: {format_rule_summary(probability=probability, rule=rule)}"),
         )
     )
-    blocks: list[MessagePlanBlock] = [
-        TextBlock(prefix + "\n".join(lines))
-    ]
+    blocks: list[MessagePlanBlock] = [TextBlock(prefix + "\n".join(lines))]
     await _append_labeled_shape_blocks(
         blocks,
         shape=trigger_shape,

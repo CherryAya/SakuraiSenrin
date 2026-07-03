@@ -22,6 +22,9 @@ def test_canonicalize_defaults_and_short_trigger_probability() -> None:
     assert rule.probability == 0.5
     assert rule.weight == 3
 
+    private_rule = canonicalize_rule({}, is_group=False, short_trigger=False)
+    assert private_rule.scope == "self"
+
 
 def test_canonicalize_rejects_conflicting_scope_and_bad_weight() -> None:
     with pytest.raises(RuleError, match="scope"):
@@ -190,13 +193,26 @@ def test_parse_legacy_study_shortcut_modes() -> None:
         "scope": {"self", "current_group"}
     }
     assert parse_legacy_study_text("a t 晚安 做个好梦", is_group=False)[2] == {
-        "scope": "private_only"
+        "scope": "self"
     }
 
     assert build_legacy_study_shortcut_rule("a", "t") == {"scope": "current_group"}
     assert build_legacy_study_shortcut_rule("m", "t") == {
         "scope": {"self", "current_group"}
     }
+    assert build_legacy_study_shortcut_rule("a", "t", is_group=False) == {
+        "scope": "self"
+    }
+
+
+def test_canonicalize_private_only_in_private_chat_downgrades_to_self() -> None:
+    rule = canonicalize_rule(
+        {"scope": "private_only"},
+        is_group=False,
+        short_trigger=False,
+    )
+
+    assert rule.scope == "self"
 
     with pytest.raises(RuleError, match="学习格式"):
         parse_legacy_study_text("a t 晚安")

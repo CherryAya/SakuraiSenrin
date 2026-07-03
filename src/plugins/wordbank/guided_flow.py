@@ -93,6 +93,12 @@ WORDBANK_GUIDED_RECALL_PENDING_KEYS = (
     "wordbank_guided_search_group_ids",
     "wordbank_guided_search_delete_target_ids",
 )
+PRIVATE_SCOPE_PROMPT = (
+    "请选择生效范围：\n"
+    "1. 仅自己（默认）\n"
+    "2. 全局响应\n"
+    "输入 revoke / recall / exit 可取消本次操作。"
+)
 
 
 def _resolve_guided_bot(bot: Bot | None, matcher: Matcher) -> Bot | None:
@@ -191,20 +197,35 @@ def guided_response_state_keys(state: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(keys)
 
 
-def guided_prompt_for_step(locale: LocaleCode, step_index: int) -> str:
+def guided_prompt_for_step(
+    locale: LocaleCode,
+    step_index: int,
+    *,
+    is_group: bool,
+) -> str:
     prompt_by_step = {
         WORDBANK_GUIDED_STEP_TRIGGER: tr(locale, "wordbank.guided.add.trigger_prompt"),
         WORDBANK_GUIDED_STEP_RESPONSE: tr(
             locale,
             "wordbank.guided.add.response_prompt",
         ),
-        WORDBANK_GUIDED_STEP_SCOPE: tr(locale, "wordbank.guided.add.scope_prompt"),
+        WORDBANK_GUIDED_STEP_SCOPE: guided_scope_prompt(
+            locale=locale,
+            is_group=is_group,
+        ),
         WORDBANK_GUIDED_STEP_ADVANCED: tr(
             locale,
             "wordbank.guided.add.advanced_prompt",
         ),
     }
     return prompt_by_step[step_index]
+
+
+def guided_scope_prompt(*, locale: LocaleCode, is_group: bool) -> str:
+    if is_group:
+        return tr(locale, "wordbank.guided.add.scope_prompt")
+    _ = locale
+    return PRIVATE_SCOPE_PROMPT
 
 
 def register_guided_checkpoint(
@@ -220,7 +241,11 @@ def register_guided_checkpoint(
         state,
         message_id=getattr(event, "message_id", ""),
         step_index=step_index,
-        prompt=guided_prompt_for_step(locale, step_index),
+        prompt=guided_prompt_for_step(
+            locale,
+            step_index,
+            is_group=bool(getattr(event, "group_id", "")),
+        ),
         state_snapshot=snapshot,
         cleanup_keys=cleanup_keys,
     )
@@ -366,7 +391,10 @@ async def record_guided_response(
     )
     await pause_with_message(
         matcher,
-        message=tr(locale, "wordbank.guided.add.scope_prompt"),
+        message=guided_scope_prompt(
+            locale=locale,
+            is_group=bool(getattr(event, "group_id", "")),
+        ),
     )
 
 
@@ -445,7 +473,10 @@ async def record_guided_forward_response_choice(
         clear_interaction_errors(state)
         await pause_with_message(
             matcher,
-            message=tr(locale, "wordbank.guided.add.scope_prompt"),
+            message=guided_scope_prompt(
+                locale=locale,
+                is_group=bool(getattr(event, "group_id", "")),
+            ),
         )
         return
     if choice in {"2", "split", "拆开"}:
@@ -494,7 +525,10 @@ async def record_guided_forward_response_choice(
         clear_interaction_errors(state)
         await pause_with_message(
             matcher,
-            message=tr(locale, "wordbank.guided.add.scope_prompt"),
+            message=guided_scope_prompt(
+                locale=locale,
+                is_group=bool(getattr(event, "group_id", "")),
+            ),
         )
         return
     await reject_guided_error(

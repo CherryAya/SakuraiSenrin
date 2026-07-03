@@ -29,8 +29,10 @@ if nonebot.get_plugin("wordbank") is None:
 
 from src.plugins.wordbank.forward_batch import ResponseInputPayload
 from src.plugins.wordbank.guided_flow import (
+    PRIVATE_SCOPE_PROMPT,
     copy_guided_state,
     guided_response_state_keys,
+    guided_scope_prompt,
     record_guided_forward_response_choice,
 )
 from src.plugins.wordbank.message_model import shape_from_text
@@ -125,3 +127,11 @@ def test_guided_response_state_keys_keeps_forward_response_state() -> None:
         "node-1",
         "node-2",
     )
+
+
+def test_guided_scope_prompt_uses_private_variant_in_private_chat() -> None:
+    assert guided_scope_prompt(locale="zh-CN", is_group=True) == tr(
+        "zh-CN",
+        "wordbank.guided.add.scope_prompt",
+    )
+    assert guided_scope_prompt(locale="zh-CN", is_group=False) == PRIVATE_SCOPE_PROMPT
