@@ -509,12 +509,15 @@ def register_wordbank_runtime_handlers(
         start = perf_start()
         media_service = await _get_wordbank_media_service()
         if response.response_shape is None or response.response_shape.is_empty():
+            text_value = response.text
+            if response.mention_fallback_text:
+                text_value = f"{response.mention_fallback_text} {text_value}".strip()
             log_perf(
                 "plugin.build_passive_message.text_only",
                 start=start,
                 response_item_id=response.response_item_id,
             )
-            return response.text, {}
+            return text_value, {}
         image_atom_count = sum(
             1 for atom in response.response_shape.atoms if atom.kind == "image"
         )
@@ -532,6 +535,17 @@ def register_wordbank_runtime_handlers(
             trace_fields={"response_item_id": response.response_item_id},
             trace_sink=render_trace,
         )
+        if response.mention_fallback_text:
+            prefix = f"{response.mention_fallback_text} "
+            blocks = message.blocks
+            if blocks and isinstance(blocks[0], TextBlock):
+                first_block = TextBlock(text=f"{prefix}{blocks[0].text}")
+                blocks = (first_block, *blocks[1:])
+            else:
+                blocks = (TextBlock(prefix), *blocks)
+            message = MessagePlanEntry(
+                blocks=blocks
+            )
         image_trace_fields = _image_payload_trace_fields(render_trace)
         log_perf(
             "plugin.build_passive_message.rendered_shape",

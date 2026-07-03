@@ -46,7 +46,10 @@ from src.plugins.wordbank.services.rules import (
     MAX_CALL_COUNT_WINDOW_SECONDS,
     RuleContext,
 )
-from tests.plugins.water.helpers import build_group_message_event
+from tests.plugins.water.helpers import (
+    build_group_message_event,
+    build_group_poke_event,
+)
 
 
 def _should_call_group_send_api(ctx: Any, *, group_id: int, message: Message) -> None:
@@ -318,7 +321,7 @@ async def test_passive_event_at_pipeline_hits_real_event_trigger(app: App) -> No
         _should_call_group_send_api(
             ctx,
             group_id=event.group_id,
-            message=text_message("收到艾特"),
+            message=text_message("@用户(10001) 收到艾特"),
         )
 
 
@@ -347,7 +350,29 @@ async def test_passive_event_at_pipeline_uses_original_message_after_strip(
         _should_call_group_send_api(
             ctx,
             group_id=event.group_id,
-            message=text_message("收到剥离艾特"),
+            message=text_message("@用户(10001) 收到剥离艾特"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_poke_pipeline_prefixes_user_fallback_text(app: App) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_event("event:poke"),
+        response_text="别戳啦",
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_notice) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_poke_event(user_id=10001, target_id=99999)
+        assert event.group_id is not None
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("@用户(10001) 别戳啦"),
         )
 
 
@@ -613,5 +638,5 @@ async def test_passive_event_at_call_count_is_shared_by_trigger_group(app: App) 
         _should_call_group_send_api(
             ctx,
             group_id=event.group_id,
-            message=text_message("第二阶段"),
+            message=text_message("@用户(10001) 第二阶段"),
         )

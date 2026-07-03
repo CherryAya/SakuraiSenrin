@@ -92,6 +92,36 @@ async def test_build_passive_message_rebuilds_text_and_image_segments(
 
 
 @pytest.mark.asyncio
+async def test_build_passive_message_prefixes_mention_fallback_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    media_service = SimpleNamespace(
+        load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
+    )
+    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    response = PassiveResponse(
+        text="fallback",
+        trigger_group_id=12,
+        trigger_variant_id=21,
+        response_item_id=22,
+        group_id="20001",
+        user_id="10001",
+        message_type="event",
+        response_shape=shape_from_text("收到艾特"),
+        mention_fallback_text="@用户(10001)",
+    )
+
+    message, _ = await wordbank_plugin._build_passive_message(
+        response,
+        locale="zh-CN",
+    )
+    rendered = render_message_plan_input(message)
+
+    assert isinstance(rendered, Message)
+    assert str(rendered) == "@用户(10001) 收到艾特"
+
+
+@pytest.mark.asyncio
 async def test_build_passive_message_logs_render_shape_stages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
