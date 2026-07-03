@@ -41,7 +41,6 @@ from src.lib.message_plan import (
     finish_with_message,
     render_message_plan_input,
 )
-from src.lib.messages import text_message
 from src.lib.onebot_forward import resolve_forward_sender
 from src.lib.plugin_docs import (
     DocNode,
@@ -418,7 +417,7 @@ def _build_index_message(
         actor_permission=actor_permission,
     )
     if not sections:
-        return text_message(tr(locale, "help.index.empty"))
+        return _build_text_plan_entry(tr(locale, "help.index.empty"))
 
     dashboard_bytes = render_help_dashboard(
         sections,
@@ -444,7 +443,7 @@ def _build_ambiguous_message(
     query: str,
     candidates: list[DocsEntry],
     locale: LocaleCode,
-) -> Message:
+) -> MessagePlanEntry:
     lines = [
         tr(locale, "help.query.ambiguous.title", query=query),
         tr(locale, "help.query.ambiguous.hint"),
@@ -453,11 +452,14 @@ def _build_ambiguous_message(
     ]
     for entry in candidates:
         lines.append(f"{entry.display_name} ({entry.node.slug})")
-    return text_message("\n".join(lines))
+    return _build_text_plan_entry("\n".join(lines))
 
 
-def _build_permission_denied_message(entry: DocsEntry, locale: LocaleCode) -> Message:
-    return text_message(
+def _build_permission_denied_message(
+    entry: DocsEntry,
+    locale: LocaleCode,
+) -> MessagePlanEntry:
+    return _build_text_plan_entry(
         tr(
             locale,
             "help.query.permission_denied",
@@ -540,6 +542,10 @@ def _compose_help_reply(image_bytes: bytes, text: str) -> MessagePlanEntry:
         blocks.append(TextBlock(text_value))
     blocks.append(ImageBytesBlock(image_bytes))
     return MessagePlanEntry(blocks=tuple(blocks))
+
+
+def _build_text_plan_entry(text: str) -> MessagePlanEntry:
+    return MessagePlanEntry(blocks=(TextBlock(text),))
 
 
 def _compose_plugin_guide_messages(
@@ -648,7 +654,8 @@ async def _deliver_help_plan(
         LongTaskSpec(
             task_name="help.forward_delivery",
             source_kind=plan.source_kind or "help",
-            prompt=plan.wait_message or text_message(HELP_FORWARD_WAIT_PROMPT),
+            prompt=plan.wait_message
+            or _build_text_plan_entry(HELP_FORWARD_WAIT_PROMPT),
             threshold_ms=800,
         ),
         sink=CompositeProgressSink(
@@ -781,7 +788,7 @@ async def _resolve_docs_delivery_plan(
                 )
         if match.status == "ambiguous":
             return _single_message_plan(
-                text_message(
+                _build_text_plan_entry(
                     "\n".join(
                         [
                             tr(
@@ -800,7 +807,9 @@ async def _resolve_docs_delivery_plan(
                 )
             )
         return _single_message_plan(
-            text_message(tr(locale, "help.query.not_found", query=feature_query))
+            _build_text_plan_entry(
+                tr(locale, "help.query.not_found", query=feature_query)
+            )
         )
     features = filter_features_by_permission(
         entry.node.features,
@@ -841,7 +850,7 @@ async def _resolve_docs_delivery_plan(
                 children=children,
             )
         )
-        return _single_message_plan(text_message(overview_text))
+        return _single_message_plan(_build_text_plan_entry(overview_text))
     if entry_shape == "simple_leaf" and features:
         feature = features[0]
         image_bytes = render_feature_deep_dive(
@@ -944,7 +953,9 @@ async def _(
             bot,
             matcher,
             event=event,
-            message=text_message(tr(locale, "help.query.not_found", query=query)),
+            message=_build_text_plan_entry(
+                tr(locale, "help.query.not_found", query=query)
+            ),
             source_kind="help",
         )
 
