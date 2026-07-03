@@ -11,6 +11,7 @@ from src.plugins.wordbank.handlers.approval import (
     build_add_result_plan_entry,
     build_pending_approval_notice_message,
     build_pending_approval_notice_plan_entry,
+    build_pending_batch_approval_notice_message,
     format_pending_approval_notice,
     format_pending_batch_approval_notice,
     record_batch_submission_approval_message,
@@ -359,8 +360,70 @@ def test_format_pending_batch_approval_notice_lists_all_pending_items() -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_pending_batch_approval_notice_records_pending_batch_context(
-) -> None:
+async def test_build_pending_batch_approval_notice_message_embeds_image_shapes() -> (
+    None
+):
+    load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    batch = WordbankBatchAddResult(
+        total=2,
+        success=2,
+        failed=0,
+        items=(
+            WordbankBatchAddItemResult(
+                index=1,
+                ok=True,
+                result=_result(
+                    trigger_text="test_forward",
+                    trigger_shape=shape_from_text("test_forward"),
+                    response_text="[图片:3069]",
+                    response_shape=shape_from_image(3069),
+                ),
+            ),
+            WordbankBatchAddItemResult(
+                index=2,
+                ok=True,
+                result=_result(
+                    trigger_variant_id=22,
+                    response_item_id=23,
+                    trigger_text="[图片:3070]",
+                    trigger_shape=shape_from_image(3070),
+                    response_text="做个好梦",
+                    response_shape=shape_from_text("做个好梦"),
+                ),
+            ),
+        ),
+    )
+
+    message = await build_pending_batch_approval_notice_message(
+        batch,
+        event=_event(),
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    segments = list(message)
+    full_text = "".join(str(segment) for segment in segments if segment.type == "text")
+    assert "待审核词条" in full_text
+    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in full_text
+    assert "[图片:3069]" not in full_text
+    assert "[图片:3070]" not in full_text
+    assert "test_forward" in full_text
+    assert "做个好梦" in full_text
+    assert sum(1 for segment in segments if segment.type == "image") == 2
+    assert [call.args for call in load_canonical_storage_bytes.await_args_list] == [
+        (3069,),
+        (3070,),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_send_pending_batch_approval_notice_records_pending_batch_context() -> (
+    None
+):
     record_message_ref = AsyncMock(return_value=None)
     deliver_plan = AsyncMock(
         side_effect=[
@@ -420,8 +483,9 @@ async def test_send_pending_batch_approval_notice_records_pending_batch_context(
 
 
 @pytest.mark.asyncio
-async def test_record_batch_submission_approval_message_uses_pending_batch_context(
-) -> None:
+async def test_record_batch_submission_approval_message_uses_pending_batch_context() -> (
+    None
+):
     record_message_ref = AsyncMock(return_value=None)
     service = cast(Any, SimpleNamespace(record_message_ref=record_message_ref))
     batch = WordbankBatchAddResult(

@@ -169,12 +169,14 @@ async def build_pending_batch_approval_notice_message(
     *,
     event: MessageEvent,
     locale: LocaleCode,
+    media_service: WordbankMediaService | None = None,
 ) -> Message:
     return render_message_plan_entry(
-        build_pending_batch_approval_notice_plan_entry(
+        await build_pending_batch_approval_notice_plan_entry(
             batch,
             event=event,
             locale=locale,
+            media_service=media_service,
         )
     )
 
@@ -195,23 +197,135 @@ async def build_pending_approval_notice_plan_entry(
     )
 
 
-def build_pending_batch_approval_notice_plan_entry(
+async def build_pending_batch_approval_notice_plan_entry(
     batch: WordbankBatchAddResult,
     *,
     event: MessageEvent,
     locale: LocaleCode,
+    media_service: WordbankMediaService | None = None,
 ) -> MessagePlanEntry:
-    return MessagePlanEntry(
-        blocks=(
+    if media_service is None:
+        return MessagePlanEntry(
+            blocks=(
+                TextBlock(
+                    format_pending_batch_approval_notice(
+                        batch,
+                        event=event,
+                        locale=locale,
+                    )
+                ),
+            )
+        )
+
+    pending_results = _pending_results(batch)
+    if not pending_results:
+        return MessagePlanEntry(
+            blocks=(
+                TextBlock(
+                    format_pending_batch_approval_notice(
+                        batch,
+                        event=event,
+                        locale=locale,
+                    )
+                ),
+            )
+        )
+
+    blocks: list[MessagePlanBlock] = [
+        TextBlock(tr(locale, "wordbank.approval.pending_title", page=1)),
+        TextBlock("\n" + tr(locale, "wordbank.approval.pending_batch_instruction")),
+    ]
+    created_by = str(event.user_id)
+    for result in pending_results:
+        blocks.extend(
+            await _build_pending_batch_result_blocks(
+                result,
+                created_by=created_by,
+                locale=locale,
+                media_service=media_service,
+            )
+        )
+    return MessagePlanEntry(blocks=tuple(blocks))
+
+
+async def _build_pending_batch_result_blocks(
+    result: WordbankAddResult,
+    *,
+    created_by: str,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> tuple[MessagePlanBlock, ...]:
+    if not (
+        _should_render_shape(result.trigger_shape)
+        or _should_render_shape(result.response_shape)
+    ):
+        return (
             TextBlock(
-                format_pending_batch_approval_notice(
-                    batch,
-                    event=event,
-                    locale=locale,
+                "\n"
+                + tr(
+                    locale,
+                    "wordbank.approval.pending_item",
+                    entry_id=result.response_item_id,
+                    scope=result.scope,
+                    trigger_text=format_response_summary(
+                        result.trigger_text,
+                        shape=result.trigger_shape,
+                    ),
+                    response_text=format_response_summary(
+                        result.response_text,
+                        shape=result.response_shape,
+                    ),
+                    created_by=created_by,
                 )
             ),
         )
+
+    blocks: list[MessagePlanBlock] = [
+        TextBlock(f"\n#{result.response_item_id} [{result.scope}] 提交者: {created_by}")
+    ]
+    await _append_pending_batch_field_blocks(
+        blocks,
+        label_key="wordbank.approval.trigger_label",
+        text=result.trigger_text,
+        shape=result.trigger_shape,
+        locale=locale,
+        media_service=media_service,
     )
+    await _append_pending_batch_field_blocks(
+        blocks,
+        label_key="wordbank.approval.response_label",
+        text=result.response_text,
+        shape=result.response_shape,
+        locale=locale,
+        media_service=media_service,
+    )
+    return tuple(blocks)
+
+
+async def _append_pending_batch_field_blocks(
+    blocks: list[MessagePlanBlock],
+    *,
+    label_key: MessageKey,
+    text: str,
+    shape: MessageShape | None,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> None:
+    label = tr(locale, label_key)
+    if _should_render_shape(shape):
+        assert shape is not None
+        blocks.append(TextBlock(f"\n{label}\n"))
+        blocks.extend(
+            (
+                await build_shape_plan_entry(
+                    shape,
+                    media_service,
+                    locale=locale,
+                )
+            ).blocks
+        )
+        return
+    blocks.append(TextBlock(f"\n{label} {format_response_summary(text, shape=shape)}"))
 
 
 async def _build_rendered_result_entry(
@@ -430,7 +544,6 @@ async def send_pending_batch_approval_notice(
     locale: LocaleCode,
     media_service: WordbankMediaService | None = None,
 ) -> None:
-    _ = media_service
     pending_results = _pending_results(batch)
     if not pending_results:
         return
@@ -439,6 +552,7 @@ async def send_pending_batch_approval_notice(
         batch,
         event=event,
         locale=locale,
+        media_service=media_service,
     )
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")
