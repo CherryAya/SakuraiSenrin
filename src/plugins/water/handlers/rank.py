@@ -19,8 +19,7 @@ from src.lib.long_task import (
     MessageEventProgressSink,
 )
 from src.lib.message_plan import finish_with_message
-from src.lib.messages import image_message
-from src.plugins.water.services.rank import water_rank_service
+from src.plugins.water.services.rank_absolute import absolute_rank_service
 
 PeriodType = Literal["week", "month", "season", "year"]
 
@@ -55,19 +54,11 @@ async def handle_period_rank(
         ),
     ) as long_task:
         await long_task.advance("rendering")
-        res = await water_rank_service.build_period_rank_image(period, locale)
-    if res:
-        await finish_with_message(
-            bot,
-            matcher,
-            event=event,
-            message=image_message(res),
-            source_kind="water_rank_period",
-        )
+        message = await absolute_rank_service.build_period_rank(period, locale)
     await finish_with_message(
         bot,
         matcher,
         event=event,
-        message=tr(locale, "water.rank.empty"),
+        message=message,
         source_kind="water_rank_period",
     )

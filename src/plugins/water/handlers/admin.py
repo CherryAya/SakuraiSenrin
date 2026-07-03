@@ -8,7 +8,6 @@ from pathlib import Path
 import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
-from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 
 from src.database.core.consts import Permission
@@ -22,8 +21,8 @@ from src.lib.long_task import (
     LongTaskSpec,
     MessageEventProgressSink,
 )
-from src.lib.message_plan import finish_with_message
-from src.lib.plugin_docs import build_doc_demo_message
+from src.lib.message_plan import MessagePlanInput, finish_with_message
+from src.lib.plugin_docs import build_doc_demo_plan_entry
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.renderers import render_season_list
@@ -52,7 +51,7 @@ class WaterAdminContext:
     locale: LocaleCode
 
 
-async def _finish_admin(ctx: WaterAdminContext, message: Message | str) -> None:
+async def _finish_admin(ctx: WaterAdminContext, message: MessagePlanInput) -> None:
     await finish_with_message(
         ctx.bot,
         ctx.matcher,
@@ -62,8 +61,8 @@ async def _finish_admin(ctx: WaterAdminContext, message: Message | str) -> None:
     )
 
 
-def _build_error_demo(locale: LocaleCode, message: str) -> Message:
-    return build_doc_demo_message(
+def _build_error_demo(locale: LocaleCode, message: str) -> MessagePlanInput:
+    return build_doc_demo_plan_entry(
         source=DOCS_SOURCE,
         name=PLUGIN_NAME,
         description=PLUGIN_DESCRIPTION,
