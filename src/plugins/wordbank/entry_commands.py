@@ -41,7 +41,7 @@ from .handlers import (
     GROUP_ALIASES,
     SubmissionHandler,
     build_forced_command_text,
-    dispatch_wordbank_command,
+    dispatch_wordbank_command_with_outcome,
     parse_group_view_args,
 )
 from .handlers.commands import (
@@ -378,7 +378,7 @@ def register_wordbank_command_handlers(
             return
 
         async def _dispatch_command() -> MessagePlanInput:
-            return await dispatch_wordbank_command(
+            message, outcome = await dispatch_wordbank_command_with_outcome(
                 wordbank_service,
                 event=event,
                 text=text,
@@ -387,6 +387,16 @@ def register_wordbank_command_handlers(
                 search_image_scores=search_image_scores,
                 media_service=wordbank_media_service,
             )
+            if outcome is not None and outcome.completed and outcome.action:
+                await _call_dynamic(
+                    "notify_creator_review_result",
+                    bot,
+                    response_item_id=outcome.response_item_id,
+                    action=outcome.action,
+                    locale=locale,
+                    reviewer_id=str(event.user_id),
+                )
+            return message
 
         try:
             msg = await _run_wordbank_command_with_optional_progress(

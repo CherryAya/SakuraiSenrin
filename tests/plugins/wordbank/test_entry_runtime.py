@@ -84,6 +84,7 @@ async def test_notify_creator_review_result_replies_and_mentions_creator(
         response_item_id=300,
         action="approve",
         locale="zh-CN",
+        reviewer_id="10002",
     )
 
     assert deliver_plan.await_count == 1
@@ -94,7 +95,7 @@ async def test_notify_creator_review_result_replies_and_mentions_creator(
     blocks = entry.blocks
     assert blocks[0].message_id == "456"
     assert blocks[1].target_id == "10001"
-    assert "已通过审核" in blocks[3].text
+    assert blocks[3].text == "管理员 10002 已通过该词条。"
     target = await_args.kwargs["target"]
     assert target.kind == "group"
     assert target.target_id == "20001"
@@ -117,10 +118,11 @@ async def test_notify_creator_review_result_uses_approval_message_context_first(
         action="reject",
         locale="zh-CN",
         approval_message=_approval_submission_message(),
+        reviewer_id="10002",
     )
 
     assert deliver_plan.await_count == 1
     await_args = deliver_plan.await_args
     assert await_args is not None
     plan = await_args.kwargs["plan"]
-    assert "未通过审核" in plan.messages[0].blocks[3].text
+    assert plan.messages[0].blocks[3].text == "管理员 10002 已拒绝该词条。"

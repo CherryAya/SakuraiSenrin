@@ -384,13 +384,12 @@ def register_wordbank_runtime_handlers(
     def _build_creator_notice_message(
         *,
         action: str,
-        response_item_id: int,
-        locale: LocaleCode,
+        reviewer_id: str,
     ) -> str:
-        _ = locale
+        reviewer = reviewer_id or "管理员"
         if action == "approve":
-            return f"你创建的词条 #{response_item_id} 已通过审核。"
-        return f"你创建的词条 #{response_item_id} 未通过审核。"
+            return f"管理员 {reviewer} 已通过该词条。"
+        return f"管理员 {reviewer} 已拒绝该词条。"
 
     async def notify_creator_review_result(
         bot: Bot,
@@ -399,6 +398,7 @@ def register_wordbank_runtime_handlers(
         action: str,
         locale: LocaleCode,
         approval_message: WordbankMessageRefRecord | None = None,
+        reviewer_id: str = "",
     ) -> None:
         context = approval_message
         if context is None:
@@ -415,8 +415,7 @@ def register_wordbank_runtime_handlers(
             TextBlock(
                 text=_build_creator_notice_message(
                     action=action,
-                    response_item_id=response_item_id,
-                    locale=locale,
+                    reviewer_id=reviewer_id,
                 )
             )
         )
@@ -623,6 +622,7 @@ def register_wordbank_runtime_handlers(
                     action=outcome.action,
                     locale=locale,
                     approval_message=outcome.approval_message,
+                    reviewer_id=str(event.user_id),
                 )
         elif outcome.completed and outcome.batch_notices:
             for response_item_id, action in outcome.batch_notices:
@@ -631,6 +631,7 @@ def register_wordbank_runtime_handlers(
                     response_item_id=response_item_id,
                     action=action,
                     locale=locale,
+                    reviewer_id=str(event.user_id),
                 )
         await finish_with_message(
             bot,
