@@ -12,7 +12,11 @@ from src.lib.consts import LXGW_FONG_PATH, MAPLE_FONT_PATH
 from src.lib.demo_theme import SENRIN_V3_WORDBANK_TREEMAP_THEME
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.messages import image_message
+from src.lib.message_plan import (
+    ImageBytesBlock,
+    MessagePlanEntry,
+    render_message_plan_entry,
+)
 
 from .fitters import SearchTreemapFittersMixin
 from .models import (
@@ -471,4 +475,20 @@ def render_search_results_treemap(
     page: SearchTreemapPage,
     locale: LocaleCode,
 ) -> Message:
-    return image_message(render_search_results_treemap_bytes(page=page, locale=locale))
+    return render_message_plan_entry(
+        build_search_results_treemap_plan_entry(page=page, locale=locale)
+    )
+
+
+def build_search_results_treemap_plan_entry(
+    *,
+    page: SearchTreemapPage,
+    locale: LocaleCode,
+) -> MessagePlanEntry:
+    return MessagePlanEntry(
+        blocks=(
+            ImageBytesBlock(
+                render_search_results_treemap_bytes(page=page, locale=locale)
+            ),
+        )
+    )

@@ -14,7 +14,11 @@ from src.lib.demo_theme import SENRIN_V3_WORDBANK_LEADERBOARD_THEME
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.messages import image_message
+from src.lib.message_plan import (
+    ImageBytesBlock,
+    MessagePlanEntry,
+    render_message_plan_entry,
+)
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.services.core import (
     WordbankLeaderboardCardData,
@@ -641,6 +645,23 @@ def render_wordbank_leaderboard_card(
     data: WordbankLeaderboardCardData,
     locale: LocaleCode,
 ) -> Message:
-    return image_message(
-        render_wordbank_leaderboard_card_bytes(data=data, locale=locale)
+    return render_message_plan_entry(
+        build_wordbank_leaderboard_card_plan_entry(
+            data=data,
+            locale=locale,
+        )
+    )
+
+
+def build_wordbank_leaderboard_card_plan_entry(
+    *,
+    data: WordbankLeaderboardCardData,
+    locale: LocaleCode,
+) -> MessagePlanEntry:
+    return MessagePlanEntry(
+        blocks=(
+            ImageBytesBlock(
+                render_wordbank_leaderboard_card_bytes(data=data, locale=locale)
+            ),
+        )
     )

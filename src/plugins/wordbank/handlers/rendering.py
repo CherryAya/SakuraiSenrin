@@ -31,9 +31,21 @@ from src.plugins.wordbank.services.presentation import (
     format_response_summary,
 )
 
-from .group_detail_cards import GroupDetailCardPage, render_group_detail_card_bytes
-from .leaderboard_cards import render_wordbank_leaderboard_card_bytes
-from .search_cards import SearchCardQuery, render_search_results_card_bytes
+from .group_detail_cards import (
+    GroupDetailCardPage,
+)
+from .group_detail_cards import (
+    build_group_detail_card_plan_entry as build_group_detail_image_plan_entry,
+)
+from .leaderboard_cards import (
+    build_wordbank_leaderboard_card_plan_entry as build_leaderboard_image_plan_entry,
+)
+from .search_cards import (
+    SearchCardQuery,
+)
+from .search_cards import (
+    build_search_results_card_plan_entry as build_search_results_image_plan_entry,
+)
 
 GROUP_PAGE_SIZE = 10
 MISSING_IMAGE_PLACEHOLDER = tr("zh-CN", "wordbank.render.image_missing")
@@ -431,14 +443,13 @@ async def build_search_results_card_plan_entry(
     }
     try:
         preview_bytes = await _load_image_bytes_map(preview_ids, media_service)
-        image_bytes = await asyncio.to_thread(
-            render_search_results_card_bytes,
+        return await asyncio.to_thread(
+            build_search_results_image_plan_entry,
             items=items,
             query=query,
             locale=locale,
             preview_bytes=preview_bytes,
         )
-        return MessagePlanEntry(blocks=(ImageBytesBlock(image_bytes),))
     except Exception:
         log_perf(
             "plugin.render_search_results_card_message.fallback_text",
@@ -500,8 +511,8 @@ async def build_group_detail_page_message_plan_entry(
 
     try:
         preview_bytes = await _load_image_bytes_map(preview_ids, media_service)
-        image_bytes = await asyncio.to_thread(
-            render_group_detail_card_bytes,
+        return await asyncio.to_thread(
+            build_group_detail_image_plan_entry,
             page_data=GroupDetailCardPage(
                 detail=detail,
                 page=page,
@@ -512,8 +523,7 @@ async def build_group_detail_page_message_plan_entry(
             ),
             locale=locale,
             preview_bytes=preview_bytes,
-        )
-        return MessagePlanEntry(blocks=(ImageBytesBlock(image_bytes),)), total_pages
+        ), total_pages
     except Exception:
         log_perf(
             "plugin.render_group_detail_page_message.fallback_text",
@@ -653,12 +663,11 @@ async def build_creator_leaderboard_card_plan_entry(
                 for item, avatar in zip(items, avatars, strict=False)
             )
             data = replace(data, items=items)
-        image_bytes = await asyncio.to_thread(
-            render_wordbank_leaderboard_card_bytes,
+        return await asyncio.to_thread(
+            build_leaderboard_image_plan_entry,
             data=data,
             locale=locale,
         )
-        return MessagePlanEntry(blocks=(ImageBytesBlock(image_bytes),))
     except Exception:
         log_perf(
             "plugin.render_creator_leaderboard_card_message.fallback_text",

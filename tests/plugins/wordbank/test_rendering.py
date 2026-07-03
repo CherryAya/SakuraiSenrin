@@ -126,7 +126,7 @@ async def test_build_search_results_card_plan_entry_falls_back_to_text_plan(
 ) -> None:
     monkeypatch.setattr(
         rendering_module,
-        "render_search_results_card_bytes",
+        "build_search_results_image_plan_entry",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
@@ -194,7 +194,7 @@ async def test_build_creator_leaderboard_card_plan_entry_falls_back_to_text_plan
     )
     monkeypatch.setattr(
         rendering_module,
-        "render_wordbank_leaderboard_card_bytes",
+        "build_leaderboard_image_plan_entry",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 

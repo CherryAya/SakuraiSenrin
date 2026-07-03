@@ -16,7 +16,11 @@ from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.demo_theme import SENRIN_V3_WORDBANK_CARD_THEME
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.messages import image_message
+from src.lib.message_plan import (
+    ImageBytesBlock,
+    MessagePlanEntry,
+    render_message_plan_entry,
+)
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.types import WordbankSearchItem
 
@@ -995,10 +999,27 @@ def render_search_results_card(
     locale: LocaleCode,
     preview_bytes: Mapping[int, bytes | None] | None = None,
 ) -> Message:
+    return render_message_plan_entry(
+        build_search_results_card_plan_entry(
+            items=items,
+            query=query,
+            locale=locale,
+            preview_bytes=preview_bytes,
+        )
+    )
+
+
+def build_search_results_card_plan_entry(
+    *,
+    items: tuple[WordbankSearchItem, ...],
+    query: SearchCardQuery,
+    locale: LocaleCode,
+    preview_bytes: Mapping[int, bytes | None] | None = None,
+) -> MessagePlanEntry:
     image_bytes = render_search_results_card_bytes(
         items=items,
         query=query,
         locale=locale,
         preview_bytes=preview_bytes,
     )
-    return image_message(image_bytes)
+    return MessagePlanEntry(blocks=(ImageBytesBlock(image_bytes),))
