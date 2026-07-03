@@ -66,10 +66,16 @@ def format_pending_approval_notice(
     *,
     event: MessageEvent,
     locale: LocaleCode,
+    split_detail: bool = False,
 ) -> str:
+    key: MessageKey = "wordbank.approval.notice"
+    detail_hint = ""
+    if split_detail:
+        key = "wordbank.approval.notice_summary"
+        detail_hint = tr(locale, "wordbank.approval.pending_detail_hint") + "\n"
     return tr(
         locale,
-        "wordbank.approval.notice",
+        key,
         entry_id=result.response_item_id,
         trigger_text=result.trigger_text,
         response_text=format_response_summary(
@@ -81,6 +87,7 @@ def format_pending_approval_notice(
         weight=result.weight,
         user_id=str(event.user_id),
         group_id=str(getattr(event, "group_id", "")) or "-",
+        detail_hint=detail_hint,
     )
 
 
@@ -89,12 +96,16 @@ def format_pending_batch_approval_notice(
     *,
     event: MessageEvent,
     locale: LocaleCode,
+    split_detail: bool = False,
 ) -> str:
     pending_results = _pending_results(batch)
     lines = [
         tr(locale, "wordbank.approval.pending_title", page=1),
         tr(locale, "wordbank.approval.pending_batch_instruction"),
     ]
+    if split_detail:
+        lines.append(tr(locale, "wordbank.approval.pending_detail_hint"))
+        return "\n".join(lines)
     for index, result in enumerate(pending_results, start=1):
         lines.append(
             tr(
@@ -114,18 +125,6 @@ def format_pending_batch_approval_notice(
             )
         )
     return "\n".join(lines)
-
-
-def _format_pending_batch_approval_summary(
-    *,
-    locale: LocaleCode,
-) -> str:
-    return "\n".join(
-        (
-            tr(locale, "wordbank.approval.pending_title", page=1),
-            tr(locale, "wordbank.approval.pending_batch_instruction"),
-        )
-    )
 
 
 async def build_add_result_plan_entry(
@@ -150,7 +149,15 @@ async def build_pending_approval_notice_plan_entry(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> MessagePlanEntry:
-    text = format_pending_approval_notice(result, event=event, locale=locale)
+    split_detail = _should_split_pending_approval_notice(result)
+    text = format_pending_approval_notice(
+        result,
+        event=event,
+        locale=locale,
+        split_detail=split_detail,
+    )
+    if split_detail:
+        return build_text_plan_entry(text)
     return await _build_rendered_result_entry(
         result,
         text=text,
@@ -166,6 +173,7 @@ async def build_pending_batch_approval_notice_plan_entry(
     locale: LocaleCode,
     media_service: WordbankMediaService | None = None,
 ) -> MessagePlanEntry:
+    split_detail = media_service is not None and bool(_pending_results(batch))
     if media_service is None:
         return MessagePlanEntry(
             blocks=(
@@ -174,8 +182,19 @@ async def build_pending_batch_approval_notice_plan_entry(
                         batch,
                         event=event,
                         locale=locale,
+                        split_detail=False,
                     )
                 ),
+            )
+        )
+
+    if split_detail:
+        return build_text_plan_entry(
+            format_pending_batch_approval_notice(
+                batch,
+                event=event,
+                locale=locale,
+                split_detail=True,
             )
         )
 
@@ -188,6 +207,7 @@ async def build_pending_batch_approval_notice_plan_entry(
                         batch,
                         event=event,
                         locale=locale,
+                        split_detail=False,
                     )
                 ),
             )
@@ -222,6 +242,8 @@ async def _build_pending_approval_notice_detail_plan_entry(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> MessagePlanEntry | None:
+    if not _should_split_pending_approval_notice(result):
+        return None
     blocks = await build_pending_item_blocks(
         entry_id=result.response_item_id,
         scope=result.scope,
@@ -234,10 +256,7 @@ async def _build_pending_approval_notice_detail_plan_entry(
         media_service=media_service,
         prefix="",
     )
-    entry = MessagePlanEntry(blocks=blocks)
-    if not _entry_contains_rich_blocks(entry):
-        return None
-    return entry
+    return MessagePlanEntry(blocks=blocks)
 
 
 async def _build_pending_batch_approval_detail_entries(
@@ -364,8 +383,20 @@ def _embed_rendered_shapes(
     return MessagePlanEntry(blocks=tuple(blocks))
 
 
-def _entry_contains_rich_blocks(entry: MessagePlanEntry) -> bool:
-    return any(not isinstance(block, TextBlock) for block in entry.blocks)
+def _shape_requires_split_detail(shape: MessageShape | None) -> bool:
+    if shape is None or shape.is_empty():
+        return False
+    if any(atom.kind != "text" for atom in shape.atoms):
+        return True
+    if len(shape.atoms) > 1:
+        return True
+    return any("\n" in atom.text for atom in shape.atoms if atom.kind == "text")
+
+
+def _should_split_pending_approval_notice(result: WordbankAddResult) -> bool:
+    return _shape_requires_split_detail(
+        result.trigger_shape
+    ) or _shape_requires_split_detail(result.response_shape)
 
 
 def _pending_results(batch: WordbankBatchAddResult) -> tuple[WordbankAddResult, ...]:
@@ -388,7 +419,6 @@ async def send_pending_approval_notice(
     if result.status != "pending":
         return
 
-    message = format_pending_approval_notice(result, event=event, locale=locale)
     detail_message = (
         await _build_pending_approval_notice_detail_plan_entry(
             result,
@@ -398,6 +428,12 @@ async def send_pending_approval_notice(
         )
         if media_service is not None
         else None
+    )
+    message = format_pending_approval_notice(
+        result,
+        event=event,
+        locale=locale,
+        split_detail=detail_message is not None,
     )
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")
@@ -515,7 +551,6 @@ async def send_pending_batch_approval_notice(
     if not pending_results:
         return
 
-    message = _format_pending_batch_approval_summary(locale=locale)
     detail_messages = (
         await _build_pending_batch_approval_detail_entries(
             batch,
@@ -525,6 +560,12 @@ async def send_pending_batch_approval_notice(
         )
         if media_service is not None
         else ()
+    )
+    message = format_pending_batch_approval_notice(
+        batch,
+        event=event,
+        locale=locale,
+        split_detail=bool(detail_messages),
     )
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")

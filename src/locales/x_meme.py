@@ -29,6 +29,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.approval.trigger_label": "触发:",
     "wordbank.approval.response_label": "响应:",
     "wordbank.approval.pending_batch_instruction": "回我发：通过 1 2 5-8，或者拒绝 all",
+    "wordbank.approval.pending_detail_hint": "详细触发词 / 响应词看下一条合并转发。",
     "wordbank.approval.pending_forward_nickname": "待审核词条",
     "wordbank.approval.batch.title.approve": "批量通过完事",
     "wordbank.approval.batch.title.reject": "批量拒绝完事",

@@ -716,7 +716,9 @@ MessageKey = Literal[
     "wordbank.approval.batch.total",
     "wordbank.approval.not_found",
     "wordbank.approval.notice",
+    "wordbank.approval.notice_summary",
     "wordbank.approval.pending_batch_instruction",
+    "wordbank.approval.pending_detail_hint",
     "wordbank.approval.pending_empty",
     "wordbank.approval.pending_forward_nickname",
     "wordbank.approval.pending_item",
@@ -927,7 +929,7 @@ MessageKey = Literal[
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported"
+    "wordbank.vote.supported",
 ]
 
 ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
@@ -1644,7 +1646,9 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.approval.batch.total",
     "wordbank.approval.not_found",
     "wordbank.approval.notice",
+    "wordbank.approval.notice_summary",
     "wordbank.approval.pending_batch_instruction",
+    "wordbank.approval.pending_detail_hint",
     "wordbank.approval.pending_empty",
     "wordbank.approval.pending_forward_nickname",
     "wordbank.approval.pending_item",
@@ -1855,5 +1859,5 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported"
+    "wordbank.vote.supported",
 )

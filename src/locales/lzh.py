@@ -34,6 +34,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.approval.trigger_label": "觸發:",
     "wordbank.approval.response_label": "響應:",
     "wordbank.approval.pending_batch_instruction": "覆我發之：通過 1 2 5-8，或拒絕 all",
+    "wordbank.approval.pending_detail_hint": "詳觸發詞 / 響應詞見下一條合併轉發。",
     "wordbank.approval.pending_forward_nickname": "待審詞條",
     "wordbank.approval.batch.title.approve": "批量通過畢",
     "wordbank.approval.batch.title.reject": "批量拒絕畢",

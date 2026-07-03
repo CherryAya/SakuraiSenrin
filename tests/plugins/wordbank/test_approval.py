@@ -240,14 +240,18 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
     segments = list(message)
     text_values = [str(segment) for segment in segments if segment.type == "text"]
     full_text = "".join(text_values)
-    assert full_text.startswith("新增词条待审核\nID: 12\n触发: 晚安\n响应:\n")
+    assert full_text.startswith("新增词条待审核\nID: 12\n")
     assert (
-        "\n范围: current_group\n概率: 1\n权重: 3\n提交者: 10001\n来源群: 20001"
-        in full_text
+        "详细触发词 / 响应词见下一条合并转发。\n"
+        "范围: current_group\n"
+        "概率: 1\n"
+        "权重: 3\n"
+        "提交者: 10001\n"
+        "来源群: 20001" in full_text
     )
-    assert any(segment.type == "image" for segment in segments)
-    assert "消息回复如下" not in str(message)
-    load_canonical_storage_bytes.assert_awaited_once_with(7)
+    assert "请回复本条消息发送 y / approve / 通过" in full_text
+    assert not any(segment.type == "image" for segment in segments)
+    load_canonical_storage_bytes.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -274,15 +278,15 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
     segments = list(message)
     text_values = [str(segment) for segment in segments if segment.type == "text"]
     full_text = "".join(text_values)
-    assert full_text.startswith("新增词条待审核\nID: 12\n触发:\n")
-    assert "\n响应: 做个好梦\n" in full_text
-    assert sum(1 for segment in segments if segment.type == "image") == 1
-    assert "[图片:8]" not in str(message)
-    load_canonical_storage_bytes.assert_awaited_once_with(8)
+    assert full_text.startswith("新增词条待审核\nID: 12\n")
+    assert "详细触发词 / 响应词见下一条合并转发。" in full_text
+    assert "请回复本条消息发送 y / approve / 通过" in full_text
+    assert sum(1 for segment in segments if segment.type == "image") == 0
+    load_canonical_storage_bytes.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_build_pending_approval_notice_plan_entry_renders_image_trigger() -> None:
+async def test_build_pending_approval_notice_plan_entry_returns_summary() -> None:
     load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
     media_service = cast(
         WordbankMediaService,
@@ -301,8 +305,8 @@ async def test_build_pending_approval_notice_plan_entry_renders_image_trigger() 
     )
     message = render_message_plan_input(entry)
 
-    assert any(segment.type == "image" for segment in message)
-    assert "[图片:8]" not in str(message)
+    assert not any(segment.type == "image" for segment in message)
+    assert "详细触发词 / 响应词见下一条合并转发。" in str(message)
 
 
 @pytest.mark.asyncio
@@ -389,9 +393,13 @@ async def test_send_pending_approval_notice_sends_detail_as_forward_to_admin() -
     summary_plan = deliver_plan.await_args_list[0].kwargs["plan"]
     detail_plan = deliver_plan.await_args_list[1].kwargs["plan"]
     assert summary_plan.force_forward is None
-    assert "回复 y / approve / 通过" in str(summary_plan.messages[0])
+    assert "请回复本条消息发送 y / approve / 通过" in str(summary_plan.messages[0])
+    assert "详细触发词 / 响应词见下一条合并转发。" in str(summary_plan.messages[0])
     assert detail_plan.force_forward is True
     assert detail_plan.fallback_nickname == "待审核词条"
+    detail_message = render_message_plan_input(detail_plan.messages[0])
+    assert any(segment.type == "image" for segment in detail_message)
+    assert "晚安" in str(detail_message)
     assert record_message_ref.await_count == 1
 
 
@@ -475,15 +483,11 @@ async def test_build_pending_batch_approval_notice_message_embeds_image_shapes()
     full_text = "".join(str(segment) for segment in segments if segment.type == "text")
     assert "待审核词条" in full_text
     assert "回复我发送：通过 1 2 5-8，或拒绝 all" in full_text
-    assert "[图片:3069]" not in full_text
-    assert "[图片:3070]" not in full_text
-    assert "test_forward" in full_text
-    assert "做个好梦" in full_text
-    assert sum(1 for segment in segments if segment.type == "image") == 2
-    assert [call.args for call in load_canonical_storage_bytes.await_args_list] == [
-        (3069,),
-        (3070,),
-    ]
+    assert "详细触发词 / 响应词见下一条合并转发。" in full_text
+    assert "test_forward" not in full_text
+    assert "做个好梦" not in full_text
+    assert sum(1 for segment in segments if segment.type == "image") == 0
+    load_canonical_storage_bytes.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -616,9 +620,14 @@ async def test_batch_notice_sends_summary_then_forward_details() -> None:
     detail_plan = deliver_plan.await_args_list[1].kwargs["plan"]
     assert summary_plan.force_forward is None
     assert "回复我发送：通过 1 2 5-8，或拒绝 all" in str(summary_plan.messages[0])
+    assert "详细触发词 / 响应词见下一条合并转发。" in str(summary_plan.messages[0])
     assert detail_plan.force_forward is True
     assert detail_plan.fallback_nickname == "待审核词条"
     assert len(detail_plan.messages) == 2
+    first_detail = render_message_plan_input(detail_plan.messages[0])
+    second_detail = render_message_plan_input(detail_plan.messages[1])
+    assert any(segment.type == "image" for segment in first_detail)
+    assert any(segment.type == "image" for segment in second_detail)
     assert record_message_ref.await_count == 1
 
 
