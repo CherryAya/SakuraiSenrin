@@ -15,6 +15,7 @@ from ._engine import _support_note as _support_note
 from ._engine import audit_demo_layout as audit_demo_layout
 from ._engine import build_command_layout as build_command_layout
 from ._engine import build_doc_demo_message as build_doc_demo_message
+from ._engine import build_doc_demo_plan_entry as build_doc_demo_plan_entry
 from ._engine import build_doc_tree as build_doc_tree
 from ._engine import build_feature_copy_text as build_feature_copy_text
 from ._engine import build_help_home_sections as build_help_home_sections

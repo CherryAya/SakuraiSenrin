@@ -1276,6 +1276,38 @@ def test_build_doc_demo_message_falls_back_to_plugin_guide(monkeypatch: Any) -> 
     assert message[-1].data["file"] == "base64://Z3VpZGUtZGVtbw=="
 
 
+def test_build_doc_demo_plan_entry_builds_prefixed_image_plan(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        plugin_docs_module,
+        "render_feature_deep_dive",
+        lambda *args, **kwargs: b"feature-demo",
+    )
+    monkeypatch.setattr(
+        plugin_docs_module,
+        "render_plugin_guide",
+        lambda *args, **kwargs: b"guide-demo",
+    )
+
+    entry = build_doc_demo_plan_entry(
+        source="src/plugins/wordbank/docs/README.MD",
+        name="词库模块",
+        description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        locale="zh-CN",
+        feature_query="add-scope",
+        prefix_text="参数错误",
+    )
+
+    assert isinstance(entry, MessagePlanEntry)
+    assert len(entry.blocks) == 2
+    rendered = render_message_plan_entry(entry)
+    assert str(rendered).startswith("参数错误")
+    assert rendered[-1].data["file"] == "base64://ZmVhdHVyZS1kZW1v"
+
+
 def test_plugin_docs_generate_reuses_one_build_timestamp(
     monkeypatch: Any,
 ) -> None:

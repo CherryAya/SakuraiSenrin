@@ -18,6 +18,7 @@ from src.lib.demo_theme import (
     normalize_hex_color,
 )
 from src.lib.i18n.runtime import tr
+from src.lib.message_plan import MessagePlanEntry, render_message_plan_entry
 import src.lib.plugin_docs as plugin_docs_module
 from src.lib.plugin_docs import (
     DemoImageRenderer,
@@ -32,6 +33,7 @@ from src.lib.plugin_docs import (
     audit_demo_layout,
     build_command_layout,
     build_doc_demo_message,
+    build_doc_demo_plan_entry,
     build_doc_tree,
     build_feature_copy_text,
     build_help_home_sections,
@@ -71,6 +73,7 @@ __all__ = [
     "Image",
     "InlineTextSpan",
     "Message",
+    "MessagePlanEntry",
     "Path",
     "Permission",
     "ProgressiveDisclosureRenderer",
@@ -81,6 +84,7 @@ __all__ = [
     "build_command_layout",
     "build_demo_theme",
     "build_doc_demo_message",
+    "build_doc_demo_plan_entry",
     "build_doc_tree",
     "build_feature_copy_text",
     "build_help_home_sections",
@@ -104,6 +108,7 @@ __all__ = [
     "plugin_docs_script",
     "render_doc_node_overview",
     "render_help_dashboard",
+    "render_message_plan_entry",
     "render_plugin_guide",
     "render_static_entry",
     "resolve_help_entry_shape",

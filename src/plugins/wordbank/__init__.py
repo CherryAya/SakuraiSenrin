@@ -116,7 +116,7 @@ def _wordbank_error_message(
     default_feature: str | None = None,
     source: Path = DOCS_SOURCE,
     actor_permission: Permission = Permission.NORMAL,
-) -> Message:
+) -> MessagePlanInput:
     return wordbank_error_message(
         exc,
         locale,

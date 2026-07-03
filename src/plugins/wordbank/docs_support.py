@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nonebot.adapters.onebot.v11.message import Message
-
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
+from src.lib.message_plan import MessagePlanEntry
+from src.lib.plugin_docs import (
+    build_doc_demo_plan_entry,
+    create_docs_meta,
+)
 
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
@@ -68,8 +70,8 @@ def build_wordbank_error_demo(
     feature_query: str | None,
     source: Path = DOCS_SOURCE,
     actor_permission: Permission = Permission.NORMAL,
-) -> Message:
-    return build_doc_demo_message(
+) -> MessagePlanEntry:
+    return build_doc_demo_plan_entry(
         source=source,
         name=tr("zh-CN", "plugin.wordbank.name"),
         description=tr("zh-CN", "plugin.wordbank.description"),
@@ -90,8 +92,8 @@ def wordbank_error_message(
     prefix_text: str = "",
     source: Path = DOCS_SOURCE,
     actor_permission: Permission = Permission.NORMAL,
-) -> Message:
-    return build_doc_demo_message(
+) -> MessagePlanEntry:
+    return build_doc_demo_plan_entry(
         source=source,
         name=tr("zh-CN", "plugin.wordbank.name"),
         description=tr("zh-CN", "plugin.wordbank.description"),

@@ -22,7 +22,13 @@ from src.lib.demo_theme import (
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.messages import image_message, text_message
+from src.lib.message_plan import (
+    ImageBytesBlock,
+    MessagePlanEntry,
+    TextBlock,
+    render_message_plan_entry,
+)
+from src.lib.messages import text_message
 from src.lib.utils.common import get_current_time
 
 from .command_layout import (
@@ -1385,7 +1391,7 @@ def feature_command_sections(
     )
 
 
-def build_doc_demo_message(
+def build_doc_demo_plan_entry(
     *,
     source: str | Path,
     name: str,
@@ -1396,7 +1402,7 @@ def build_doc_demo_message(
     actor_permission: Permission | None = None,
     feature_query: str | None = None,
     prefix_text: str | None = None,
-) -> Message:
+) -> MessagePlanEntry:
     from src.lib import plugin_docs as plugin_docs_module
 
     node = load_doc_node(
@@ -1429,10 +1435,40 @@ def build_doc_demo_message(
 
     text = (prefix_text or "").strip()
     if not text:
-        return image_message(image_bytes)
-    message = text_message(f"{text}\n参考示例如下：\n")
-    message += MessageSegment.image(image_bytes)
-    return message
+        return MessagePlanEntry(blocks=(ImageBytesBlock(image_bytes),))
+    return MessagePlanEntry(
+        blocks=(
+            TextBlock(f"{text}\n参考示例如下：\n"),
+            ImageBytesBlock(image_bytes),
+        )
+    )
+
+
+def build_doc_demo_message(
+    *,
+    source: str | Path,
+    name: str,
+    description: str,
+    trigger: TriggerType,
+    permission: Permission,
+    locale: LocaleCode,
+    actor_permission: Permission | None = None,
+    feature_query: str | None = None,
+    prefix_text: str | None = None,
+) -> Message:
+    return render_message_plan_entry(
+        build_doc_demo_plan_entry(
+            source=source,
+            name=name,
+            description=description,
+            trigger=trigger,
+            permission=permission,
+            locale=locale,
+            actor_permission=actor_permission,
+            feature_query=feature_query,
+            prefix_text=prefix_text,
+        )
+    )
 
 
 def build_feature_copy_text(

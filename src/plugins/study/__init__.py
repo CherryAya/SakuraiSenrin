@@ -54,8 +54,17 @@ from src.lib.long_task import (
     MessageEventProgressSink,
 )
 from src.lib.message_delivery import resolve_notice_delivery_target
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan, finish_with_message
-from src.lib.plugin_docs import build_doc_demo_message, create_docs_meta
+from src.lib.message_plan import (
+    DeliveryPlan,
+    MessagePlanEntry,
+    deliver_message_plan,
+    finish_with_message,
+    render_message_plan_entry,
+)
+from src.lib.plugin_docs import (
+    build_doc_demo_plan_entry,
+    create_docs_meta,
+)
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
 from src.plugins.wordbank.debug import (
@@ -77,13 +86,13 @@ description = tr("zh-CN", "plugin.study.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
-def _study_error_message(
+def _study_error_plan_entry(
     exc: Exception,
     locale: LocaleCode,
-) -> Message:
+) -> MessagePlanEntry:
     from src.plugins.wordbank.handlers.commands import localize_command_error
 
-    return build_doc_demo_message(
+    return build_doc_demo_plan_entry(
         source=DOCS_SOURCE,
         name=name,
         description=description,
@@ -92,6 +101,13 @@ def _study_error_message(
         locale=locale,
         prefix_text=localize_command_error(exc, locale),
     )
+
+
+def _study_error_message(
+    exc: Exception,
+    locale: LocaleCode,
+) -> Message:
+    return render_message_plan_entry(_study_error_plan_entry(exc, locale))
 
 
 __plugin_meta__ = create_plugin_metadata(
@@ -911,7 +927,7 @@ async def _(
             bot,
             matcher,
             event=event,
-            message=_study_error_message(exc, locale),
+            message=_study_error_plan_entry(exc, locale),
             source_kind="study_command",
         )
         return
