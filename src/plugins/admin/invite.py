@@ -53,7 +53,7 @@ from src.lib.message_plan import (
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_doc_demo_plan_entry,
-    build_readme_docs,
+    build_readme_docs_plan_entry,
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
@@ -69,8 +69,8 @@ DOCS_SOURCE = Path(__file__).parent / "docs" / "invite" / "README.MD"
 INVITATION_AVATAR_CONCURRENCY = 8
 
 
-def build_docs(ctx: DocsRenderContext | None = None) -> Message:
-    return build_readme_docs(
+def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
+    return build_readme_docs_plan_entry(
         source=DOCS_SOURCE,
         name=name,
         description=description,
