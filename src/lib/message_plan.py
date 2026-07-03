@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from typing import cast
 
@@ -106,6 +107,44 @@ def normalize_message_plan_entry(entry: MessagePlanInput) -> MessagePlanEntry:
     if isinstance(entry, MessagePlanEntry):
         return entry
     return MessagePlanEntry.from_message(entry)
+
+
+def build_text_plan_entry(text: str) -> MessagePlanEntry:
+    return MessagePlanEntry(blocks=(TextBlock(text),))
+
+
+def build_image_plan_entry(image_bytes: bytes) -> MessagePlanEntry:
+    return MessagePlanEntry(blocks=(ImageBytesBlock(image_bytes),))
+
+
+async def build_image_or_text_plan_entry(
+    *,
+    image_bytes: bytes | None,
+    fallback_text: str | Awaitable[str],
+) -> MessagePlanEntry:
+    if image_bytes is not None:
+        return build_image_plan_entry(image_bytes)
+    if isinstance(fallback_text, Awaitable):
+        fallback_text = await fallback_text
+    return build_text_plan_entry(fallback_text)
+
+
+async def build_preferred_message_plan[TPlanResult](
+    *,
+    preferred_builder: Callable[[], Awaitable[TPlanResult]],
+    alternative_builder: Callable[[], Awaitable[TPlanResult] | TPlanResult],
+    on_preferred_error: Callable[[Exception], None] | None = None,
+) -> TPlanResult:
+    try:
+        return await preferred_builder()
+    except Exception as exc:
+        if on_preferred_error is not None:
+            on_preferred_error(exc)
+
+    alternative = alternative_builder()
+    if isinstance(alternative, Awaitable):
+        return await alternative
+    return alternative
 
 
 def render_message_plan_entry(entry: MessagePlanEntry) -> Message:
@@ -260,6 +299,14 @@ async def reject_with_message(
     message: MessagePlanInput,
 ) -> None:
     await matcher.reject(_render_matcher_message_input(message))
+
+
+async def send_with_message(
+    matcher: Matcher,
+    *,
+    message: MessagePlanInput,
+) -> None:
+    await matcher.send(_render_matcher_message_input(message))
 
 
 async def pause_with_message(

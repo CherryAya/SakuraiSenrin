@@ -1,8 +1,16 @@
 import asyncio
+from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 
-from src.lib.long_task import LongTaskEvent, LongTaskRunner, LongTaskSpec
+from src.lib.long_task import (
+    LongTaskEvent,
+    LongTaskRunner,
+    LongTaskSpec,
+    MatcherProgressSink,
+)
+from src.lib.message_plan import MessagePlanEntry, TextBlock
 
 
 class _CollectSink:
@@ -51,3 +59,23 @@ async def test_long_task_emits_prompt_after_threshold() -> None:
         "progress",
         "finish",
     ]
+
+
+@pytest.mark.asyncio
+async def test_matcher_progress_sink_sends_plan_input_via_wrapper() -> None:
+    matcher = cast(Any, type("_Matcher", (), {"send": AsyncMock()})())
+    sink = MatcherProgressSink(matcher)
+
+    await sink.handle_event(
+        LongTaskEvent(
+            kind="progress",
+            spec=LongTaskSpec(task_name="test.progress", source_kind="test"),
+            stage="loading",
+            elapsed_ms=12,
+            message=MessagePlanEntry(blocks=(TextBlock("处理中"),)),
+        )
+    )
+
+    matcher.send.assert_awaited_once()
+    sent_message = matcher.send.await_args.args[0]
+    assert str(sent_message) == "处理中"

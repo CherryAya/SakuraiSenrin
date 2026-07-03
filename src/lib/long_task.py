@@ -17,7 +17,7 @@ from src.lib.message_plan import (
     DeliveryPlan,
     MessagePlanInput,
     deliver_message_plan,
-    render_message_plan_input,
+    send_with_message,
 )
 from src.logger import logger
 
@@ -119,7 +119,7 @@ class MatcherProgressSink:
             return
         if event.kind not in {"prompt", "progress"}:
             return
-        await self._matcher.send(render_message_plan_input(event.message))
+        await send_with_message(self._matcher, message=event.message)
 
 
 class LongTaskRunner:

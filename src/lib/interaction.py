@@ -6,7 +6,7 @@ from collections.abc import MutableMapping
 from typing import Any, Protocol, cast
 
 from src.lib.i18n.runtime import tr
-from src.lib.message_plan import reject_with_message
+from src.lib.message_plan import finish_with_message, reject_with_message
 
 REVOKE_MARKERS = ("revoke", "recall", "exit")
 DEFAULT_ABORT_MESSAGE = tr("zh-CN", "interaction.cancelled")
@@ -68,7 +68,15 @@ async def abort_if_revoke_signal(
 ) -> None:
     if not is_revoke_signal(event):
         return
-    await matcher.finish(message)
+    if message is None:
+        await matcher.finish()
+        return
+    await finish_with_message(
+        None,
+        cast(Any, matcher),
+        message=message,
+        source_kind="interaction_abort",
+    )
 
 
 def clear_interaction_errors(
@@ -100,6 +108,14 @@ async def reject_or_abort_on_error(
 ) -> None:
     count = record_interaction_error(state, key=key)
     if count >= max_errors:
-        await matcher.finish(abort_message)
+        if abort_message is None:
+            await matcher.finish()
+            return
+        await finish_with_message(
+            None,
+            cast(Any, matcher),
+            message=abort_message,
+            source_kind="interaction_abort",
+        )
         return
     await reject_with_message(cast(Any, matcher), message=error_message)

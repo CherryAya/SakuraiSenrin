@@ -9,6 +9,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 
 from src.lib.message_delivery import DeliveryTarget, deliver_single_message
+from src.lib.message_plan import finish_with_message, send_with_message
 from src.lib.messages import text_message
 from src.locales.lzh import CATALOG as LZH_CATALOG
 from src.locales.x_meme import CATALOG as X_MEME_CATALOG
@@ -172,14 +173,19 @@ async def send_i18n(
     bot = getattr(matcher, "bot", None)
     target = _resolve_event_delivery_target(event)
     message = msg(locale, key, **params)
-    if bot is not None and hasattr(bot, "call_api") and hasattr(bot, "self_id") and target is not None:
+    if (
+        bot is not None
+        and hasattr(bot, "call_api")
+        and hasattr(bot, "self_id")
+        and target is not None
+    ):
         return await deliver_single_message(
             bot,
             target=target,
             message=message,
             source_kind="i18n_matcher_send",
         )
-    return await matcher.send(message)
+    return await send_with_message(matcher, message=message)
 
 
 async def finish_i18n(
@@ -192,7 +198,12 @@ async def finish_i18n(
     bot = getattr(matcher, "bot", None)
     target = _resolve_event_delivery_target(event)
     message = msg(locale, key, **params)
-    if bot is not None and hasattr(bot, "call_api") and hasattr(bot, "self_id") and target is not None:
+    if (
+        bot is not None
+        and hasattr(bot, "call_api")
+        and hasattr(bot, "self_id")
+        and target is not None
+    ):
         await deliver_single_message(
             bot,
             target=target,
@@ -201,7 +212,12 @@ async def finish_i18n(
         )
         await matcher.finish()
         return
-    await matcher.finish(message)
+    await finish_with_message(
+        None,
+        matcher,
+        message=message,
+        source_kind="i18n_matcher_finish",
+    )
 
 
 async def send_private_i18n(
