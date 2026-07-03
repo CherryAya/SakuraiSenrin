@@ -116,6 +116,18 @@ def format_pending_batch_approval_notice(
     return "\n".join(lines)
 
 
+def _format_pending_batch_approval_summary(
+    *,
+    locale: LocaleCode,
+) -> str:
+    return "\n".join(
+        (
+            tr(locale, "wordbank.approval.pending_title", page=1),
+            tr(locale, "wordbank.approval.pending_batch_instruction"),
+        )
+    )
+
+
 async def build_add_result_plan_entry(
     result: WordbankAddResult,
     *,
@@ -201,6 +213,63 @@ async def build_pending_batch_approval_notice_plan_entry(
             )
         )
     return MessagePlanEntry(blocks=tuple(blocks))
+
+
+async def _build_pending_approval_notice_detail_plan_entry(
+    result: WordbankAddResult,
+    *,
+    event: MessageEvent,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> MessagePlanEntry | None:
+    blocks = await build_pending_item_blocks(
+        entry_id=result.response_item_id,
+        scope=result.scope,
+        trigger_text=result.trigger_text,
+        response_text=result.response_text,
+        created_by=str(event.user_id),
+        trigger_shape=result.trigger_shape,
+        response_shape=result.response_shape,
+        locale=locale,
+        media_service=media_service,
+        prefix="",
+    )
+    entry = MessagePlanEntry(blocks=blocks)
+    if not _entry_contains_rich_blocks(entry):
+        return None
+    return entry
+
+
+async def _build_pending_batch_approval_detail_entries(
+    batch: WordbankBatchAddResult,
+    *,
+    event: MessageEvent,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> tuple[MessagePlanEntry, ...]:
+    pending_results = _pending_results(batch)
+    if not pending_results:
+        return ()
+    entries: list[MessagePlanEntry] = []
+    created_by = str(event.user_id)
+    for index, result in enumerate(pending_results, start=1):
+        entries.append(
+            MessagePlanEntry(
+                blocks=await build_pending_item_blocks(
+                    entry_id=result.response_item_id,
+                    scope=result.scope,
+                    trigger_text=result.trigger_text,
+                    response_text=result.response_text,
+                    created_by=created_by,
+                    trigger_shape=result.trigger_shape,
+                    response_shape=result.response_shape,
+                    locale=locale,
+                    media_service=media_service,
+                    prefix=tr(locale, "wordbank.batch.index", index=index) + "\n",
+                )
+            )
+        )
+    return tuple(entries)
 
 
 async def _build_rendered_result_entry(
@@ -295,6 +364,10 @@ def _embed_rendered_shapes(
     return MessagePlanEntry(blocks=tuple(blocks))
 
 
+def _entry_contains_rich_blocks(entry: MessagePlanEntry) -> bool:
+    return any(not isinstance(block, TextBlock) for block in entry.blocks)
+
+
 def _pending_results(batch: WordbankBatchAddResult) -> tuple[WordbankAddResult, ...]:
     return tuple(
         item.result
@@ -315,15 +388,16 @@ async def send_pending_approval_notice(
     if result.status != "pending":
         return
 
-    message: MessagePlanInput = (
-        await build_pending_approval_notice_plan_entry(
+    message = format_pending_approval_notice(result, event=event, locale=locale)
+    detail_message = (
+        await _build_pending_approval_notice_detail_plan_entry(
             result,
             event=event,
             locale=locale,
             media_service=media_service,
         )
         if media_service is not None
-        else format_pending_approval_notice(result, event=event, locale=locale)
+        else None
     )
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")
@@ -335,6 +409,8 @@ async def send_pending_approval_notice(
                 service,
                 superuser_id=superuser_id,
                 message=message,
+                detail_message=detail_message,
+                locale=locale,
                 result=result,
                 group_id=group_id,
                 user_id=user_id,
@@ -351,6 +427,8 @@ async def _send_single_pending_approval_notice(
     *,
     superuser_id: str,
     message: MessagePlanInput,
+    detail_message: MessagePlanEntry | None,
+    locale: LocaleCode,
     result: WordbankAddResult,
     group_id: str,
     user_id: str,
@@ -379,6 +457,20 @@ async def _send_single_pending_approval_notice(
             source_message_id=source_message_id,
             message_type="approval",
         )
+        if detail_message is not None:
+            await deliver_message_plan(
+                bot,
+                plan=DeliveryPlan(
+                    messages=(detail_message,),
+                    source_kind="wordbank_pending_approval_notice",
+                    fallback_nickname=tr(
+                        locale,
+                        "wordbank.approval.pending_forward_nickname",
+                    ),
+                    force_forward=True,
+                ),
+                target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
+            )
     except Exception as exc:
         logger.warning(f"[Wordbank] approval notice skipped for {superuser_id}: {exc}")
 
@@ -423,11 +515,16 @@ async def send_pending_batch_approval_notice(
     if not pending_results:
         return
 
-    message = await build_pending_batch_approval_notice_plan_entry(
-        batch,
-        event=event,
-        locale=locale,
-        media_service=media_service,
+    message = _format_pending_batch_approval_summary(locale=locale)
+    detail_messages = (
+        await _build_pending_batch_approval_detail_entries(
+            batch,
+            event=event,
+            locale=locale,
+            media_service=media_service,
+        )
+        if media_service is not None
+        else ()
     )
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")
@@ -442,6 +539,8 @@ async def send_pending_batch_approval_notice(
                 service,
                 superuser_id=superuser_id,
                 message=message,
+                detail_messages=detail_messages,
+                locale=locale,
                 first_result=first_result,
                 response_item_ids=response_item_ids,
                 group_id=group_id,
@@ -459,6 +558,8 @@ async def _send_single_pending_batch_approval_notice(
     *,
     superuser_id: str,
     message: MessagePlanInput,
+    detail_messages: tuple[MessagePlanEntry, ...],
+    locale: LocaleCode,
     first_result: WordbankAddResult,
     response_item_ids: tuple[int, ...],
     group_id: str,
@@ -490,6 +591,20 @@ async def _send_single_pending_batch_approval_notice(
             message_type="approval_batch",
             group_ids=response_item_ids,
         )
+        if detail_messages:
+            await deliver_message_plan(
+                bot,
+                plan=DeliveryPlan(
+                    messages=detail_messages,
+                    source_kind="wordbank_pending_approval_notice",
+                    fallback_nickname=tr(
+                        locale,
+                        "wordbank.approval.pending_forward_nickname",
+                    ),
+                    force_forward=True,
+                ),
+                target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
+            )
     except Exception as exc:
         logger.warning(
             f"[Wordbank] batch approval notice skipped for {superuser_id}: {exc}"

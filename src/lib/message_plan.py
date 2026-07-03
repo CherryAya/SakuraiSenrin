@@ -215,14 +215,13 @@ async def deliver_message_plan(
 
     rendered_messages = render_delivery_plan_messages(plan)
     if plan.should_forward:
-        if event is None:
-            raise ValueError("forward delivery requires event")
         forward_result = await deliver_forward_messages(
             bot,
-            event,
             rendered_messages,
             source_kind=plan.source_kind,
             fallback_nickname=plan.fallback_nickname,
+            event=event,
+            target=delivery_target,
         )
         return DeliveryPlanResult(
             wait_result=wait_result,

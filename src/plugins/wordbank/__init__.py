@@ -41,6 +41,7 @@ from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.services.startup_sync import ensure_restore_not_in_progress
 
+from . import guided_flow as guided_flow
 from .docs_support import (
     DOCS_SOURCE,
     wordbank_docs_meta,
@@ -75,6 +76,15 @@ from .handlers import (
     SubmissionLifecycle,
     is_reply,
     localize_command_error,
+    record_batch_submission_approval_message,  # noqa: F401
+    record_submission_approval_message,  # noqa: F401
+    schedule_pending_approval_notice,  # noqa: F401
+    schedule_submission_approval_notice,  # noqa: F401
+    send_pending_approval_notice,  # noqa: F401
+    send_pending_batch_approval_notice,  # noqa: F401
+)
+from .handlers import (
+    build_add_result_plan_entry as build_add_result_plan_entry,
 )
 from .handlers import (
     extract_image_urls as extract_image_urls,

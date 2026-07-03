@@ -345,6 +345,56 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently() 
     assert record_message_ref.await_count == 2
 
 
+@pytest.mark.asyncio
+async def test_send_pending_approval_notice_sends_detail_as_forward_to_admin() -> None:
+    record_message_ref = AsyncMock(return_value=None)
+    deliver_plan = AsyncMock(
+        side_effect=[
+            SimpleNamespace(results=({"message_id": 1},), used_forward=False),
+            SimpleNamespace(results=({"message_id": 99},), used_forward=True),
+        ],
+    )
+    load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
+    service = cast(Any, SimpleNamespace(record_message_ref=record_message_ref))
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    result = _result(
+        response_text="[图片:7]",
+        response_shape=shape_from_image(7),
+    )
+    bot = cast(Any, SimpleNamespace())
+
+    from src.plugins.wordbank.handlers import approval as approval_module
+
+    original_superusers = approval_module.config.SUPERUSERS
+    original_deliver = approval_module.deliver_message_plan
+    approval_module.config.SUPERUSERS = {"1"}
+    approval_module.deliver_message_plan = deliver_plan
+    try:
+        await send_pending_approval_notice(
+            bot,
+            service,
+            event=_event(),
+            result=result,
+            locale="zh-CN",
+            media_service=media_service,
+        )
+    finally:
+        approval_module.config.SUPERUSERS = original_superusers
+        approval_module.deliver_message_plan = original_deliver
+
+    assert deliver_plan.await_count == 2
+    summary_plan = deliver_plan.await_args_list[0].kwargs["plan"]
+    detail_plan = deliver_plan.await_args_list[1].kwargs["plan"]
+    assert summary_plan.force_forward is None
+    assert "回复 y / approve / 通过" in str(summary_plan.messages[0])
+    assert detail_plan.force_forward is True
+    assert detail_plan.fallback_nickname == "待审核词条"
+    assert record_message_ref.await_count == 1
+
+
 def test_format_pending_batch_approval_notice_lists_all_pending_items() -> None:
     batch = WordbankBatchAddResult(
         total=2,
@@ -499,8 +549,83 @@ async def test_send_pending_batch_approval_notice_records_pending_batch_context(
 
 
 @pytest.mark.asyncio
-async def test_record_batch_submission_approval_message_uses_pending_batch_context(
-) -> None:
+async def test_batch_notice_sends_summary_then_forward_details() -> None:
+    record_message_ref = AsyncMock(return_value=None)
+    deliver_plan = AsyncMock(
+        side_effect=[
+            SimpleNamespace(results=({"message_id": 1},), used_forward=False),
+            SimpleNamespace(results=({"message_id": 2},), used_forward=True),
+        ],
+    )
+    load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    service = cast(Any, SimpleNamespace(record_message_ref=record_message_ref))
+    batch = WordbankBatchAddResult(
+        total=2,
+        success=2,
+        failed=0,
+        items=(
+            WordbankBatchAddItemResult(
+                index=1,
+                ok=True,
+                result=_result(
+                    response_text="[图片:3069]",
+                    response_shape=shape_from_image(3069),
+                ),
+            ),
+            WordbankBatchAddItemResult(
+                index=2,
+                ok=True,
+                result=_result(
+                    trigger_variant_id=22,
+                    response_item_id=23,
+                    trigger_text="[图片:3070]",
+                    trigger_shape=shape_from_image(3070),
+                    response_text="做个好梦",
+                    response_shape=shape_from_text("做个好梦"),
+                ),
+            ),
+        ),
+    )
+    bot = cast(Any, SimpleNamespace())
+
+    from src.plugins.wordbank.handlers import approval as approval_module
+
+    original_superusers = approval_module.config.SUPERUSERS
+    original_deliver = approval_module.deliver_message_plan
+    approval_module.config.SUPERUSERS = {"1"}
+    approval_module.deliver_message_plan = deliver_plan
+    try:
+        await send_pending_batch_approval_notice(
+            bot,
+            service,
+            event=_event(),
+            batch=batch,
+            locale="zh-CN",
+            media_service=media_service,
+        )
+    finally:
+        approval_module.config.SUPERUSERS = original_superusers
+        approval_module.deliver_message_plan = original_deliver
+
+    assert deliver_plan.await_count == 2
+    summary_plan = deliver_plan.await_args_list[0].kwargs["plan"]
+    detail_plan = deliver_plan.await_args_list[1].kwargs["plan"]
+    assert summary_plan.force_forward is None
+    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in str(summary_plan.messages[0])
+    assert detail_plan.force_forward is True
+    assert detail_plan.fallback_nickname == "待审核词条"
+    assert len(detail_plan.messages) == 2
+    assert record_message_ref.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_record_batch_submission_approval_message_uses_pending_batch_context() -> (
+    None
+):
     record_message_ref = AsyncMock(return_value=None)
     service = cast(Any, SimpleNamespace(record_message_ref=record_message_ref))
     batch = WordbankBatchAddResult(

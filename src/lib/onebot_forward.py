@@ -9,6 +9,7 @@ from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
 from src.lib.message_assets import serialize_message
+from src.lib.message_delivery import DeliveryTarget
 from src.logger import logger
 
 ForwardReuseMode = Literal["bundle_hit", "prefix_hit", "rebuild_all"]
@@ -67,13 +68,29 @@ def serialize_custom_forward_payload(
 
 async def send_custom_forward(
     bot: Bot,
-    event: MessageEvent,
     messages: Sequence[Message],
     *,
+    event: MessageEvent | None = None,
+    target: DeliveryTarget | None = None,
     fallback_nickname: str,
     bundle_asset_key: str = "",
     reuse_mode: ForwardReuseMode = "rebuild_all",
 ) -> Any:
+    delivery_target = target
+    if delivery_target is None:
+        if event is None:
+            raise ValueError("event or target is required for custom forward delivery")
+        if isinstance(event, GroupMessageEvent):
+            delivery_target = DeliveryTarget(
+                kind="group",
+                target_id=str(event.group_id),
+            )
+        else:
+            delivery_target = DeliveryTarget(
+                kind="private",
+                target_id=str(event.user_id),
+            )
+
     user_id, nickname = await resolve_forward_sender(
         bot,
         fallback_nickname=fallback_nickname,
@@ -88,26 +105,26 @@ async def send_custom_forward(
         user_id=user_id,
         nickname=nickname,
     )
-    if isinstance(event, GroupMessageEvent):
+    if delivery_target.kind == "group":
         logger.debug(
             "[OneBotForward] send merged forward payload "
             f"bundle_asset_key={bundle_asset_key or '-'} "
-            f"target=group:{event.group_id} node_count={len(nodes)} "
+            f"target=group:{delivery_target.target_id} node_count={len(nodes)} "
             f"reuse_mode={reuse_mode} payload={payload_summary}"
         )
         return await bot.call_api(
             "send_group_forward_msg",
-            group_id=event.group_id,
+            group_id=int(delivery_target.target_id),
             messages=nodes,
         )
     logger.debug(
         "[OneBotForward] send merged forward payload "
         f"bundle_asset_key={bundle_asset_key or '-'} "
-        f"target=private:{event.user_id} node_count={len(nodes)} "
+        f"target=private:{delivery_target.target_id} node_count={len(nodes)} "
         f"reuse_mode={reuse_mode} payload={payload_summary}"
     )
     return await bot.call_api(
         "send_private_forward_msg",
-        user_id=event.user_id,
+        user_id=int(delivery_target.target_id),
         messages=nodes,
     )

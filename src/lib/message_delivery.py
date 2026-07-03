@@ -544,20 +544,25 @@ async def _resolve_reusable_forward_prefix_length(
 
 async def deliver_forward_messages(
     bot: Bot,
-    event: MessageEvent,
     messages: Sequence[Message],
     *,
     source_kind: str,
     fallback_nickname: str,
+    event: MessageEvent | None = None,
+    target: DeliveryTarget | None = None,
     reuse_policy: ForwardReusePolicy = DEFAULT_FORWARD_REUSE_POLICY,
 ) -> DeliveryResult:
     batch = build_forward_batch_descriptor(messages, policy=reuse_policy)
-    target = resolve_delivery_target(event)
+    delivery_target = target
+    if delivery_target is None:
+        if event is None:
+            raise ValueError("forward delivery requires event or target")
+        delivery_target = resolve_delivery_target(event)
     bundle_asset_key = batch.context_key
     logger.debug(
         "[MessageDelivery] deliver forward messages "
-        f"source={source_kind} event={event.message_type} "
-        f"target={target.kind}:{target.target_id} "
+        f"source={source_kind} event={getattr(event, 'message_type', '-')} "
+        f"target={delivery_target.kind}:{delivery_target.target_id} "
         f"nodes={len(messages)} batch_ctx={_short_key(batch.context_key)}"
     )
     from src.lib.onebot_forward import send_custom_forward
@@ -580,7 +585,7 @@ async def deliver_forward_messages(
                 )
                 await _try_forward_single_message(
                     bot,
-                    target=target,
+                    target=delivery_target,
                     message_id=bundle_asset.message_id,
                     origin_message_type=bundle_asset.origin_message_type,
                 )
@@ -621,8 +626,9 @@ async def deliver_forward_messages(
 
     send_result = await send_custom_forward(
         bot,
-        event,
         messages,
+        event=event,
+        target=delivery_target,
         fallback_nickname=fallback_nickname,
         bundle_asset_key=bundle_asset_key,
         reuse_mode=reuse_mode,
@@ -635,8 +641,8 @@ async def deliver_forward_messages(
             source_kind=source_kind,
             message_id=message_id,
             sender_bot_id=str(bot.self_id),
-            origin_message_type=target.kind,
-            origin_target_id=target.target_id,
+            origin_message_type=delivery_target.kind,
+            origin_target_id=delivery_target.target_id,
             forward_context_key=batch.context_key,
         )
     elif bundle_asset_key:

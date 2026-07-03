@@ -6,6 +6,7 @@ import pytest
 
 from src.lib.message_delivery import (
     DEFAULT_FORWARD_REUSE_POLICY,
+    DeliveryTarget,
     build_forward_context_key,
 )
 from src.lib.messages import text_message
@@ -92,8 +93,8 @@ async def test_send_custom_forward_uses_group_forward_api() -> None:
 
     await send_custom_forward(
         bot,
-        event,
         (text_message("A"), text_message("B")),
+        event=event,
         fallback_nickname="fallback",
     )
 
@@ -118,11 +119,33 @@ async def test_send_custom_forward_uses_private_forward_api() -> None:
 
     await send_custom_forward(
         bot,
-        event,
         (text_message("A"), text_message("B")),
+        event=event,
         fallback_nickname="fallback",
     )
 
     assert bot.call_api.await_count == 2
     assert bot.call_api.await_args_list[1].args[0] == "send_private_forward_msg"
     assert bot.call_api.await_args_list[1].kwargs["user_id"] == 10001
+
+
+@pytest.mark.asyncio
+async def test_send_custom_forward_accepts_explicit_private_target() -> None:
+    bot = cast(
+        Any,
+        SimpleNamespace(
+            self_id="99999",
+            call_api=AsyncMock(side_effect=[{"nickname": "测试机器人"}, None]),
+        ),
+    )
+
+    await send_custom_forward(
+        bot,
+        (text_message("A"), text_message("B")),
+        target=DeliveryTarget(kind="private", target_id="12345"),
+        fallback_nickname="fallback",
+    )
+
+    assert bot.call_api.await_count == 2
+    assert bot.call_api.await_args_list[1].args[0] == "send_private_forward_msg"
+    assert bot.call_api.await_args_list[1].kwargs["user_id"] == 12345
