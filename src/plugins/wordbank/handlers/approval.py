@@ -32,10 +32,7 @@ from src.plugins.wordbank.message_model import (
     MessageShape,
     iter_message_segments,
 )
-from src.plugins.wordbank.services import (
-    format_add_result,
-    format_response_summary,
-)
+from src.plugins.wordbank.services import format_add_result
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
@@ -43,8 +40,10 @@ from src.plugins.wordbank.services.core import (
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import (
     WordbankBatchAddResult,
+    format_notice_content_summary,
     format_rule_summary,
     format_scope_label,
+    format_status_label,
     format_timestamp,
     response_mode_label,
 )
@@ -80,11 +79,19 @@ def _event_submit_timestamp(event: MessageEvent, created_at: int) -> str:
 
 
 def _trigger_summary(result: WordbankAddResult) -> str:
-    return format_response_summary(result.trigger_text, shape=result.trigger_shape)
+    return format_notice_content_summary(
+        result.trigger_text,
+        shape=result.trigger_shape,
+    )
 
 
 def _response_summary(result: WordbankAddResult) -> str:
-    return format_response_summary(result.response_text, shape=result.response_shape)
+    return format_notice_content_summary(
+        result.response_text,
+        shape=result.response_shape,
+        response_mode=result.response_mode,
+        forward_node_count=result.forward_node_count,
+    )
 
 
 def _rule_summary(result: WordbankAddResult) -> str:
@@ -102,19 +109,15 @@ def format_pending_approval_notice(
     split_detail: bool = False,
 ) -> str:
     _ = split_detail, locale
-    response_text = (
-        "[合并转发整体]"
-        if result.response_mode == "forward_whole"
-        else _response_summary(result)
-    )
     lines = [
         "新增词条待审核",
         "回复 y / approve / 通过 可通过",
         "回复 n / reject / 拒绝 可驳回",
         "",
         f"ID: {result.response_item_id}",
+        f"状态: {format_status_label(result.status)}",
         f"触发词: {_trigger_summary(result)}",
-        f"响应词: {response_text}",
+        f"响应词: {_response_summary(result)}",
         f"创建者: {result.created_by or str(event.user_id)}",
         f"提交时间: {_event_submit_timestamp(event, result.created_at)}",
         f"范围: {format_scope_label(result.scope)}",
@@ -213,6 +216,7 @@ async def _build_pending_approval_detail_plan_entry(
     lines.extend(
         (
             f"ID: {result.response_item_id}",
+            f"状态: {format_status_label(result.status)}",
             f"触发词: {_trigger_summary(result)}",
             f"响应词: {_response_summary(result)}",
             f"创建者: {result.created_by or '-'}",
@@ -336,6 +340,7 @@ async def _build_pending_batch_approval_delivery_plan(
                         (
                             f"序号: {index}",
                             f"ID: {result.response_item_id}",
+                            f"状态: {format_status_label(result.status)}",
                             f"触发词: {_trigger_summary(result)}",
                             f"响应词: {_response_summary(result)}",
                             f"创建者: {result.created_by or str(event.user_id)}",
@@ -383,10 +388,22 @@ async def _collect_rendered_shape_fields(
 ) -> tuple[_RenderedShapeField, ...]:
     fields: list[_RenderedShapeField] = []
     entries: tuple[tuple[MessageKey, str, MessageShape | None], ...] = (
-        ("wordbank.approval.trigger_label", result.trigger_text, result.trigger_shape),
+        (
+            "wordbank.approval.trigger_label",
+            format_notice_content_summary(
+                result.trigger_text,
+                shape=result.trigger_shape,
+            ),
+            result.trigger_shape,
+        ),
         (
             "wordbank.approval.response_label",
-            result.response_text,
+            format_notice_content_summary(
+                result.response_text,
+                shape=result.response_shape,
+                response_mode=result.response_mode,
+                forward_node_count=result.forward_node_count,
+            ),
             result.response_shape,
         ),
     )
@@ -394,10 +411,15 @@ async def _collect_rendered_shape_fields(
         if not _should_render_shape(shape):
             continue
         assert shape is not None
+        label = (
+            "触发词:"
+            if label_key == "wordbank.approval.trigger_label"
+            else "响应词:"
+        )
         fields.append(
             _RenderedShapeField(
-                label=tr(locale, label_key),
-                summary=format_response_summary(summary_text, shape=shape),
+                label=label,
+                summary=summary_text,
                 rendered_entry=await build_shape_plan_entry(
                     shape,
                     media_service,

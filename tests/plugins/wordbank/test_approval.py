@@ -119,10 +119,11 @@ async def test_build_add_result_message_rebuilds_shape_with_image() -> None:
     text_values = [str(segment) for segment in segments if segment.type == "text"]
     full_text = "".join(text_values)
     assert full_text.startswith(
-        "词条已提交审核\nID: 12\n状态: pending\n触发: 晚安\n响应:\n"
+        "词条已提交审核\nID: 12\n状态: 待审核\n触发词: 晚安\n响应词:\n"
     )
     assert (
-        "\n范围: current_group\n概率: 1\n权重: 3\n管理员通过前不会触发。" in full_text
+        "\n范围: 当前群\n规则: 概率 1\n权重: 3\n管理员通过前不会触发。"
+        in full_text
     )
     assert "做个好梦" in full_text
     assert any(segment.type == "image" for segment in segments)
@@ -153,10 +154,11 @@ async def test_build_add_result_message_rebuilds_trigger_and_response_shapes() -
     segments = list(message)
     text_values = [str(segment) for segment in segments if segment.type == "text"]
     full_text = "".join(text_values)
-    assert full_text.startswith("词条已提交审核\nID: 12\n状态: pending\n触发:\n")
-    assert "\n响应:\n" in full_text
+    assert full_text.startswith("词条已提交审核\nID: 12\n状态: 待审核\n触发词:\n")
+    assert "\n响应词:\n" in full_text
     assert (
-        "\n范围: current_group\n概率: 1\n权重: 3\n管理员通过前不会触发。" in full_text
+        "\n范围: 当前群\n规则: 概率 1\n权重: 3\n管理员通过前不会触发。"
+        in full_text
     )
     assert sum(1 for segment in segments if segment.type == "image") == 2
     assert "[图片:8]" not in str(message)
@@ -188,11 +190,11 @@ async def test_build_add_result_message_keeps_plain_text_response() -> None:
     assert str(message) == (
         "词条已提交审核\n"
         "ID: 12\n"
-        "状态: pending\n"
-        "触发: 晚安\n"
-        "响应: 做个好梦\n"
-        "范围: current_group\n"
-        "概率: 1\n"
+        "状态: 待审核\n"
+        "触发词: 晚安\n"
+        "响应词: 做个好梦\n"
+        "范围: 当前群\n"
+        "规则: 概率 1\n"
         "权重: 3\n"
         "管理员通过前不会触发。"
     )
@@ -234,7 +236,8 @@ def test_format_pending_approval_notice_uses_shape_summary() -> None:
         locale="zh-CN",
     )
 
-    assert "做个好梦 [图片:7]" in notice
+    assert "响应词: 做个好梦" in notice
+    assert "状态: 待审核" in notice
     assert "原始文本" not in notice
 
 
@@ -265,8 +268,9 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
         "回复 n / reject / 拒绝 可驳回\n\n"
         "ID: 12\n"
     )
+    assert "状态: 待审核" in full_text
     assert "触发词: 晚安" in full_text
-    assert "响应词: [图片:7]" in full_text
+    assert "响应词: 图片消息" in full_text
     assert "创建者: 10001" in full_text
     assert "提交时间: 2023-11-15 06:13" in full_text
     assert "范围: 当前群" in full_text
@@ -306,7 +310,8 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
         "回复 n / reject / 拒绝 可驳回\n\n"
         "ID: 12\n"
     )
-    assert "触发词: [图片:8]" in full_text
+    assert "状态: 待审核" in full_text
+    assert "触发词: 图片消息" in full_text
     assert "响应词: 做个好梦" in full_text
     assert "响应模式: 普通响应" in full_text
     assert sum(1 for segment in segments if segment.type == "image") == 0
@@ -336,7 +341,8 @@ async def test_build_pending_approval_notice_plan_entry_returns_summary() -> Non
     assert not any(segment.type == "image" for segment in message)
     full_text = _message_text(message)
     assert "回复 y / approve / 通过 可通过" in full_text
-    assert "触发词: [图片:8]" in full_text
+    assert "状态: 待审核" in full_text
+    assert "触发词: 图片消息" in full_text
     assert "规则: 概率 1" in full_text
 
 
@@ -427,7 +433,7 @@ async def test_send_pending_approval_notice_sends_detail_as_forward_to_admin() -
     detail_message = render_message_plan_input(plan.messages[1])
     summary_text = _message_text(summary_message)
     assert "回复 y / approve / 通过 可通过" in summary_text
-    assert "响应词: [图片:7]" in summary_text
+    assert "响应词: 图片消息" in summary_text
     assert any(segment.type == "image" for segment in detail_message)
     assert "晚安" in str(detail_message)
     assert record_message_ref.await_count == 1
@@ -477,8 +483,8 @@ async def test_send_notice_embeds_forward_whole_mode() -> None:
     summary_message = render_message_plan_input(plan.messages[0])
     forward_message = render_message_plan_input(plan.messages[1])
     summary_text = _message_text(summary_message)
-    assert "响应词: [合并转发整体]" in summary_text
-    assert "响应模式: 合并转发整体（2 条）" in summary_text
+    assert "响应词: 一条合并转发消息（2 条）" in summary_text
+    assert "响应模式: 一条合并转发消息（2 条）" in summary_text
     forward_segments = list(forward_message)
     assert len(forward_segments) == 1
     assert forward_segments[0].type == "forward"

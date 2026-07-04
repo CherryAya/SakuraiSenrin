@@ -26,9 +26,10 @@ from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import (
     format_creator_leaderboard,
-    format_response_summary,
+    format_notice_content_summary,
     format_rule_summary,
     format_scope_label,
+    format_status_label,
     format_timestamp,
 )
 
@@ -244,8 +245,15 @@ async def build_pending_item_blocks(
     lines.extend(
         (
             f"ID: {entry_id}",
-            (f"触发词: {format_response_summary(trigger_text, shape=trigger_shape)}"),
-            (f"响应词: {format_response_summary(response_text, shape=response_shape)}"),
+            f"状态: {format_status_label('pending')}",
+            (
+                "触发词: "
+                f"{format_notice_content_summary(trigger_text, shape=trigger_shape)}"
+            ),
+            (
+                "响应词: "
+                f"{format_notice_content_summary(response_text, shape=response_shape)}"
+            ),
             f"创建者: {created_by or '-'}",
             f"提交时间: {format_timestamp(created_at)}",
             f"范围: {format_scope_label(scope)}",

@@ -14,7 +14,11 @@ from src.plugins.wordbank.database.types import (
     WordbankRankPeriod,
     WordbankSearchItem,
 )
-from src.plugins.wordbank.message_model import MessageShape, shape_to_summary_text
+from src.plugins.wordbank.message_model import (
+    MessageAtom,
+    MessageShape,
+    shape_to_summary_text,
+)
 
 if TYPE_CHECKING:
     from pil_utils import BuildImage
@@ -246,10 +250,21 @@ def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
         locale,
         key,
         entry_id=result.response_item_id,
-        status=result.status,
-        trigger_text=result.trigger_text,
-        response_text=result.response_text,
-        scope=result.scope,
+        status=format_status_label(result.status),
+        trigger_text=format_notice_content_summary(
+            result.trigger_text,
+            shape=result.trigger_shape,
+            response_mode="normal",
+            locale=locale,
+        ),
+        response_text=format_notice_content_summary(
+            result.response_text,
+            shape=result.response_shape,
+            response_mode=result.response_mode,
+            forward_node_count=result.forward_node_count,
+            locale=locale,
+        ),
+        scope=format_scope_label(result.scope),
         probability=f"{result.probability:g}",
         weight=result.weight,
     )
@@ -258,11 +273,19 @@ def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
 def response_mode_label(result: WordbankAddResult) -> str:
     if result.response_mode == "forward_whole":
         count = result.forward_node_count or 0
-        return f"合并转发整体（{count} 条）" if count > 0 else "合并转发整体"
+        return f"一条合并转发消息（{count} 条）" if count > 0 else "一条合并转发消息"
     if result.response_mode == "forward_split":
         count = result.forward_node_count or 0
-        return f"合并转发拆分（{count} 条）" if count > 0 else "合并转发拆分"
+        return f"拆分导入（{count} 条）" if count > 0 else "拆分导入"
     return "普通响应"
+
+
+def format_status_label(status: str) -> str:
+    return {
+        "pending": "待审核",
+        "approved": "已通过",
+        "rejected": "已拒绝",
+    }.get(status, status or "-")
 
 
 def format_response_summary(
@@ -273,6 +296,35 @@ def format_response_summary(
     if shape is None:
         return text
     return shape_to_summary_text(shape)
+
+
+def format_notice_content_summary(
+    text: str,
+    *,
+    shape: MessageShape | None = None,
+    response_mode: str = "normal",
+    forward_node_count: int = 0,
+    locale: LocaleCode = "zh-CN",
+) -> str:
+    if response_mode == "forward_whole":
+        return (
+            f"一条合并转发消息（{forward_node_count} 条）"
+            if forward_node_count > 0
+            else "一条合并转发消息"
+        )
+    if shape is None or shape.is_empty():
+        return text or "-"
+    atoms = shape.atoms
+    if all(atom.kind == "image" for atom in atoms):
+        count = sum(1 for atom in atoms if atom.kind == "image")
+        return "图片消息" if count <= 1 else f"{count} 张图片"
+    parts: list[str] = []
+    for atom in atoms:
+        summary = _format_notice_atom(atom, locale=locale)
+        if summary:
+            parts.append(summary)
+    summary_text = "".join(parts).strip()
+    return summary_text or text or "-"
 
 
 def format_timestamp(timestamp: int) -> str:
@@ -316,3 +368,34 @@ def format_rule_summary(
         if window_seconds > 0:
             parts.append(f"频率 {window_seconds}s/{min_count}-{max_count or 'inf'}")
     return " | ".join(parts)
+
+
+def _format_notice_atom(atom: MessageAtom, *, locale: LocaleCode) -> str:
+    if atom.kind == "text" and atom.text:
+        return atom.text
+    if atom.kind == "image":
+        return ""
+    if atom.kind == "at":
+        return "艾特某位用户"
+    if atom.kind == "event" and atom.event_name:
+        return _format_notice_event_name(atom.event_name, locale=locale)
+    return ""
+
+
+def _format_notice_event_name(event_name: str, *, locale: LocaleCode) -> str:
+    _ = locale
+    return {
+        "event:at": "艾特消息",
+        "event:mention": "提及消息",
+        "event:poke": "戳一戳事件",
+        "event:join": "新人加入事件",
+        "event:bot_join": "机器人进群事件",
+        "event:member_join": "其他成员进群事件",
+        "event:group_join": "入群事件",
+        "event:group_increase": "群成员增加事件",
+        "event:leave": "退群事件",
+        "event:bot_leave": "机器人退群事件",
+        "event:member_leave": "其他成员退群事件",
+        "event:group_leave": "离群事件",
+        "event:group_decrease": "群成员减少事件",
+    }.get(event_name, event_name)

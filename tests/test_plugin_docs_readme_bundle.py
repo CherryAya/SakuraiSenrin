@@ -761,9 +761,9 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     )
     assert add.demo_turns[23].text == "#添加词条 晚安 => 做个好梦"
     assert add.demo_turns[25].text == "#添加词条 晚安呀 宝宝 => 做个好梦"
-    assert "触发: [@]" in add.demo_turns[28].text
-    assert "触发: [bot加群]" in add.demo_turns[30].text
-    assert "触发: [戳一戳]" in add.demo_turns[32].text
+    assert "触发词: 艾特消息" in add.demo_turns[28].text
+    assert "触发词: 机器人进群事件" in add.demo_turns[30].text
+    assert "触发词: 戳一戳事件" in add.demo_turns[32].text
     assert "-s 本群 -r 管理 -w 5" in add.demo_turns[33].text
     assert rank.demo_filename == "wordbank-rank.webp"
     assert rank.demo_turns[0].text == "#苦瓜榜"
@@ -829,7 +829,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert any(
         turn.text == "#study 晚安呀 宝宝 => 做个好梦" for turn in study_main.demo_turns
     )
-    assert any("触发: [bot加群]" in turn.text for turn in study_main.demo_turns)
+    assert any("触发词: 机器人进群事件" in turn.text for turn in study_main.demo_turns)
     assert study_main.demo_turns[-1].speaker == "BOT"
     assert "权重: 5" in study_main.demo_turns[-1].text
     assert all(feature.slug != "wordbank.approval" for feature in wordbank.index)

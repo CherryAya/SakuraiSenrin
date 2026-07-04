@@ -53,6 +53,7 @@ async def test_build_pending_detail_message_returns_image_blocks() -> None:
 
     rendered = render_message_plan_input(entry)
     assert "序号: 1" in str(rendered)
+    assert "状态: 待审核" in str(rendered)
     assert "创建者: 10001" in str(rendered)
     assert "提交时间: 2023-11-15 06:13" in str(rendered)
     assert "规则: 概率 1 | 角色 管理" in str(rendered)
@@ -92,9 +93,7 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
         WordbankMediaService,
         SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=b"bytes")),
     )
-    deliver_plan = AsyncMock(
-        return_value=SimpleNamespace(results=({"message_id": 1},))
-    )
+    deliver_plan = AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},)))
     monkeypatch.setattr(
         pending_batch_module,
         "build_mutation_actor",
@@ -129,9 +128,10 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
     summary_message = render_message_plan_input(plan.messages[0])
     rendered_detail = render_message_plan_input(plan.messages[1])
     assert "待审核词条" in str(summary_message)
-    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in str(summary_message)
+    assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in str(summary_message)
     assert "后续节点按“序号”字段对应批量处理编号。" in str(summary_message)
     assert "本页数量: 1" in str(summary_message)
     assert "序号: 1" in str(rendered_detail)
+    assert "状态: 待审核" in str(rendered_detail)
     assert sum(1 for segment in rendered_detail if segment.type == "image") == 2
     assert record_message_ref.await_count == 1
