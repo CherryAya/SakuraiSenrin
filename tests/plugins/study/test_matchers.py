@@ -213,7 +213,6 @@ async def test_study_guided_forward_reply_prompts_import_mode(
         ctx.should_paused(study_plugin.study_command)
 
 
-@pytest.mark.asyncio
 async def test_study_guided_flow_submits_pending_entry(
     app: App,
     monkeypatch: pytest.MonkeyPatch,

@@ -103,6 +103,7 @@ async def finalize_submission(
         )
     else:
         send_result = await send_batch_add_feedback(
+            matcher,
             bot,
             event,
             batch=submission,

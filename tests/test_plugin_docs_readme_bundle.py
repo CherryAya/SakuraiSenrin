@@ -573,7 +573,7 @@ def test_load_plugin_doc_bundle_preserves_inline_backticks_in_meta_value() -> No
 
     assert (
         reply_shortcut.trigger
-        == "回复机器人词库自动回复并发送 `info` / `history` / `del` / `rst` / "
+        == "回复凛凛词库自动回复并发送 `info` / `history` / `del` / `rst` / "
         "`trigger prob` / `trigger set` / `response weight` / `response set`"
     )
 
@@ -756,7 +756,8 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
         == "检测到合并转发消息，请回复 1 作为整体响应，或回复 2 拆开成多条响应。"
     )
     assert (
-        add.demo_turns[21].text == "已处理合并转发响应导入\n总数: 20\n成功: 20\n失败: 0"
+        add.demo_turns[21].text
+        == "已完成合并转发响应导入，正在整理详情\n总数: 20\n成功: 20\n失败: 0"
     )
     assert add.demo_turns[23].text == "#添加词条 晚安 => 做个好梦"
     assert add.demo_turns[25].text == "#添加词条 晚安呀 宝宝 => 做个好梦"
@@ -789,7 +790,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert pending.demo_filename == "wordbank-approval-pending.webp"
     assert pending.demo_turns[0].text == "#待审核词条 晚安"
     assert "回复我发送：通过 1 2 5-8，或拒绝 all" in pending.demo_turns[1].text
-    assert pending.demo_turns[3].text == "[回复摘要消息] @机器人 通过 1-2"
+    assert pending.demo_turns[3].text == "[回复摘要消息] @凛凛 通过 1-2"
     assert approve.demo_filename == "wordbank-approval-approve.webp"
     assert approve.permission == Permission.GROUP_ADMIN
     assert "词条 #12 已通过审核" in approve.demo_turns[1].text
@@ -797,10 +798,8 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert reject.permission == Permission.GROUP_ADMIN
     assert approval_reply.demo_filename == "wordbank-approval-approval-reply.webp"
     assert approval_reply.permission == Permission.GROUP_ADMIN
-    assert "[回复审批通知] @机器人 y" in approval_reply.demo_turns[1].text
-    assert (
-        approval_reply.demo_turns[5].text == "[回复待审核摘要消息] @机器人 通过 1 3-5"
-    )
+    assert "[回复审批通知] @凛凛 y" in approval_reply.demo_turns[1].text
+    assert approval_reply.demo_turns[5].text == "[回复待审核摘要消息] @凛凛 通过 1 3-5"
     assert "批量通过完成" in approval_reply.demo_turns[6].text
     assert study_main.demo_filename == "study-main.webp"
     assert study_main.demo_turns[0].text == "#study"
@@ -821,7 +820,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     )
     assert (
         study_main.demo_turns[29].text
-        == "已处理合并转发响应导入\n总数: 18\n成功: 18\n失败: 0"
+        == "已完成合并转发响应导入，正在整理详情\n总数: 18\n成功: 18\n失败: 0"
     )
     assert any(
         turn.text == "#study 晚安呀 宝宝 => 做个好梦" for turn in study_main.demo_turns

@@ -2,9 +2,17 @@ from __future__ import annotations
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.matcher import Matcher
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MatcherProgressSink,
+)
 from src.lib.message_delivery import DeliveryResult
 from src.lib.message_plan import (
     DeliveryPlan,
@@ -18,6 +26,7 @@ from src.plugins.wordbank.services.presentation import WordbankBatchAddResult
 
 
 async def send_batch_add_feedback(
+    matcher: Matcher,
     bot: Bot,
     event: MessageEvent,
     *,
@@ -70,14 +79,27 @@ async def send_batch_add_feedback(
                 )
             )
     if detail_messages:
-        await deliver_message_plan(
-            bot,
-            plan=DeliveryPlan(
-                messages=tuple(detail_messages),
+        long_task = LongTaskRunner(
+            LongTaskSpec(
+                task_name="wordbank.batch_add.detail_feedback",
                 source_kind=source_kind,
-                fallback_nickname=fallback_nickname,
-                force_forward=True,
+                prompt=tr(locale, "wordbank.batch_add.detail_preparing"),
+                threshold_ms=800,
             ),
-            event=event,
+            sink=CompositeProgressSink(
+                LoggerProgressSink(),
+                MatcherProgressSink(matcher),
+            ),
         )
+        async with long_task:
+            await deliver_message_plan(
+                bot,
+                plan=DeliveryPlan(
+                    messages=tuple(detail_messages),
+                    source_kind=source_kind,
+                    fallback_nickname=fallback_nickname,
+                    force_forward=True,
+                ),
+                event=event,
+            )
     return summary_result

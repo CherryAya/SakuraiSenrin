@@ -727,6 +727,7 @@ MESSAGE_KEY_NAMES = (
     "wordbank.approval.trigger_label",
     "wordbank.approval.response_label",
     "wordbank.batch.index",
+    "wordbank.batch_add.detail_preparing",
     "wordbank.batch_add.detail_failed",
     "wordbank.batch_add.forward_nickname",
     "wordbank.batch_add.study_forward_nickname",

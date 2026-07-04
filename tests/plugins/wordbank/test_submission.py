@@ -149,6 +149,8 @@ async def test_finalize_submission_routes_batch_result_through_batch_lifecycle(
     )
 
     send_feedback.assert_awaited_once()
+    assert send_feedback.await_args is not None
+    assert send_feedback.await_args.args[0] is matcher
     record_submission.assert_not_awaited()
     record_batch_submission.assert_awaited_once()
     schedule_notice.assert_called_once()

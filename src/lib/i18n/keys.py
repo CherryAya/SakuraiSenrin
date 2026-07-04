@@ -732,6 +732,7 @@ MessageKey = Literal[
     "wordbank.approval.response_label",
     "wordbank.approval.trigger_label",
     "wordbank.batch.index",
+    "wordbank.batch_add.detail_preparing",
     "wordbank.batch_add.detail_failed",
     "wordbank.batch_add.forward_nickname",
     "wordbank.batch_add.study_forward_nickname",

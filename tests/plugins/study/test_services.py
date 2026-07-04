@@ -31,6 +31,7 @@ from src.plugins import study as study_plugin
 from src.plugins.wordbank.forward_batch import ResponseInputPayload
 from src.plugins.wordbank.message_model import shape_from_text
 from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
+from src.plugins.wordbank.services.presentation import WordbankBatchAddResult
 
 INVALID_GROUP_BLOCK_PROMPT = (
     "群组隔离开关输入错误，请输入 t 或 f。"
@@ -96,6 +97,7 @@ async def test_forward_choice_uses_saved_response_event(
     assert "study_forward_response_pending" not in state
     assert "study_forward_response_event" not in state
     assert state["study_weight_after_preloaded_trigger"] is True
+    assert state["study_weight_pending"] is True
     assert matcher.paused == [tr("zh-CN", "wordbank.guided.study.weight_prompt")]
     if expect_split:
         assert state["study_forward_split_shapes"] == payload.split_shapes
@@ -181,3 +183,62 @@ async def test_partial_args_preserve_trigger_whitespace_verbatim(
     trigger_shape = state["study_trigger_shape"]
     assert isinstance(trigger_shape, study_plugin.MessageShape)
     assert trigger_shape.atoms[0].text == "第一行  "
+
+
+@pytest.mark.asyncio
+async def test_finish_guided_study_uses_split_shapes_after_forward_choice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matcher = cast(Matcher, SimpleNamespace())
+    bot = cast(Bot, SimpleNamespace())
+    event = build_group_message_event("3", message_id=10)
+    state: dict[str, object] = {
+        "study_locale": "zh-CN",
+        "study_trig_mode": "a",
+        "study_group_block": "f",
+        "study_trigger_shape": shape_from_text("test123"),
+        "study_response_shape": shape_from_text("第一条"),
+        "study_forward_split_shapes": (
+            shape_from_text("第一条"),
+            shape_from_text("第二条"),
+        ),
+    }
+    batch_result = WordbankBatchAddResult(
+        total=2,
+        success=2,
+        failed=0,
+        items=(),
+    )
+    add_message_entries = AsyncMock(return_value=batch_result)
+    finalize_submission = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(wordbank_service, "add_message_entries", add_message_entries)
+    monkeypatch.setattr(
+        study_plugin,
+        "_finalize_study_submission",
+        finalize_submission,
+    )
+
+    await study_plugin._finish_guided_study(
+        bot,
+        matcher,
+        event,
+        state,
+        "zh-CN",
+    )
+
+    add_message_entries.assert_awaited_once()
+    assert add_message_entries.await_args is not None
+    add_kwargs = add_message_entries.await_args.kwargs
+    assert add_kwargs["response_shapes"] == (
+        shape_from_text("第一条"),
+        shape_from_text("第二条"),
+    )
+    assert add_kwargs["raw_rule"]["weight"] == 3
+    finalize_submission.assert_awaited_once_with(
+        matcher,
+        bot,
+        event,
+        batch_result,
+        locale="zh-CN",
+    )

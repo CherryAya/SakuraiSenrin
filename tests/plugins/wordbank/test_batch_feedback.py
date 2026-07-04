@@ -1,8 +1,10 @@
+import asyncio
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
 
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
+from nonebot.matcher import Matcher
 import pytest
 
 from src.lib.message_plan import (
@@ -82,9 +84,11 @@ async def test_send_batch_add_feedback_uses_rich_result_messages(
     )
     media_service = cast(WordbankMediaService, SimpleNamespace())
     bot = cast(Bot, SimpleNamespace())
+    matcher = cast(Matcher, SimpleNamespace())
     event = build_group_message_event("#wordbank.add", message_id=1)
 
     await send_batch_add_feedback(
+        matcher,
         bot,
         event,
         batch=batch,
@@ -103,7 +107,9 @@ async def test_send_batch_add_feedback_uses_rich_result_messages(
     summary_call = deliver_plan.await_args_list[0]
     summary_plan = summary_call.kwargs["plan"]
     assert len(summary_plan.messages) == 1
-    assert str(summary_plan.messages[0]).startswith("已处理合并转发响应导入")
+    assert str(summary_plan.messages[0]).startswith(
+        "已完成合并转发响应导入，正在整理详情"
+    )
 
     await_args = deliver_plan.await_args_list[1]
     assert await_args is not None
@@ -114,3 +120,77 @@ async def test_send_batch_add_feedback_uses_rich_result_messages(
     rendered_first = render_message_plan_input(first_message)
     assert any(segment.type == "image" for segment in rendered_first)
     assert "boom" in str(render_message_plan_input(second_message))
+
+
+@pytest.mark.asyncio
+async def test_send_batch_add_feedback_emits_long_task_prompt_for_slow_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    build_message = AsyncMock(
+        return_value=MessagePlanEntry.from_message("详情节点")
+    )
+
+    async def _deliver_plan(*args: object, **kwargs: object) -> object:
+        plan = kwargs["plan"]
+        assert isinstance(plan, batch_feedback_module.DeliveryPlan)
+        if str(plan.messages[0]).startswith("已完成合并转发响应导入，正在整理详情"):
+            return SimpleNamespace(results=({"message_id": 1},))
+        await asyncio.sleep(0.85)
+        return SimpleNamespace(results=({"message_id": 2},))
+
+    matcher = cast(Matcher, SimpleNamespace(send=AsyncMock()))
+    media_service = cast(WordbankMediaService, SimpleNamespace())
+    bot = cast(Bot, SimpleNamespace())
+    event = build_group_message_event("#wordbank.add", message_id=1)
+    batch = WordbankBatchAddResult(
+        total=1,
+        success=1,
+        failed=0,
+        items=(
+            WordbankBatchAddItemResult(
+                index=1,
+                ok=True,
+                result=WordbankAddResult(
+                    trigger_group_id=1,
+                    trigger_variant_id=2,
+                    response_item_id=3,
+                    trigger_text="test_forward",
+                    response_text="详情节点",
+                    scope="all_groups",
+                    probability=1.0,
+                    weight=3,
+                    trigger_shape=shape_from_text("test_forward"),
+                    response_shape=shape_from_text("详情节点"),
+                ),
+            ),
+        ),
+    )
+
+    deliver_plan = AsyncMock(side_effect=_deliver_plan)
+    monkeypatch.setattr(
+        batch_feedback_module,
+        "build_add_result_plan_entry",
+        build_message,
+    )
+    monkeypatch.setattr(
+        batch_feedback_module,
+        "deliver_message_plan",
+        deliver_plan,
+    )
+
+    await send_batch_add_feedback(
+        matcher,
+        bot,
+        event,
+        batch=batch,
+        locale="zh-CN",
+        media_service=media_service,
+        source_kind="wordbank_batch_submission",
+        fallback_nickname="回 - 樱井千凛·Senrinです♡",
+    )
+
+    send_mock = cast(AsyncMock, matcher.send)
+    send_mock.assert_awaited()
+    assert send_mock.await_args is not None
+    sent_message = send_mock.await_args.args[0]
+    assert str(sent_message) == "正在整理导入详情，请稍候。"

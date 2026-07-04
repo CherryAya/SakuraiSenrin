@@ -144,6 +144,7 @@ STUDY_RECALL_PENDING_KEYS: tuple[str, ...] = (
     "study_forward_response_pending",
     "study_forward_response_event",
     "study_forward_split_shapes",
+    "study_weight_pending",
 )
 
 
@@ -268,6 +269,14 @@ def _state_message_shape(state: Mapping[str, Any], key: str) -> MessageShape | N
 
 def _is_truthy_state_flag(state: T_State, key: str) -> bool:
     return bool(state.get(key, False))
+
+
+def _enter_study_weight_step(state: T_State) -> None:
+    state["study_weight_pending"] = True
+
+
+def _leave_study_weight_step(state: T_State) -> None:
+    state.pop("study_weight_pending", None)
 
 
 def _contains_study_pair_separator(text: str) -> bool:
@@ -543,6 +552,7 @@ async def _record_study_response(
     )
     state["study_response_shape"] = shape
     state["study_weight_after_preloaded_trigger"] = True
+    _enter_study_weight_step(state)
     _register_study_checkpoint(
         state,
         event,
@@ -616,6 +626,7 @@ async def _record_study_forward_response_choice(
             return
         state["study_response_shape"] = payload.whole_shape
         state["study_weight_after_preloaded_trigger"] = True
+        _enter_study_weight_step(state)
         state.pop("study_forward_response_pending", None)
         state.pop("study_forward_response_event", None)
         state.pop("study_forward_split_shapes", None)
@@ -659,9 +670,18 @@ async def _record_study_forward_response_choice(
                 tr(locale, "wordbank.error.forward_message_not_found"),
             )
             return
+        if not payload.split_shapes:
+            await _reject_study_error(
+                matcher,
+                state,
+                locale,
+                tr(locale, "wordbank.error.forward_message_empty"),
+            )
+            return
         state["study_response_shape"] = payload.split_shapes[0]
         state["study_forward_split_shapes"] = payload.split_shapes
         state["study_weight_after_preloaded_trigger"] = True
+        _enter_study_weight_step(state)
         state.pop("study_forward_response_pending", None)
         state.pop("study_forward_response_event", None)
         first_shape = payload.split_shapes[0] if payload.split_shapes else None
@@ -709,6 +729,7 @@ async def _record_study_weight_and_finish(
         )
         return
     clear_interaction_errors(state)
+    _leave_study_weight_step(state)
     _register_study_checkpoint(
         state,
         event,
@@ -1088,6 +1109,8 @@ def _study_locale(state: T_State) -> LocaleCode:
 async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
+    if _is_truthy_state_flag(state, "study_weight_pending"):
+        return
     if _is_truthy_state_flag(state, "study_weight_after_preloaded_trigger"):
         return
     if _is_truthy_state_flag(state, "study_response_after_preloaded_trigger"):
@@ -1101,8 +1124,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
 async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    if _is_truthy_state_flag(state, "study_weight_after_preloaded_trigger"):
-        await _record_study_weight_and_finish(bot, matcher, event, state, locale)
+    if _is_truthy_state_flag(state, "study_weight_pending"):
         return
     if _is_truthy_state_flag(state, "study_forward_response_pending"):
         await _record_study_forward_response_choice(
@@ -1113,6 +1135,8 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
             locale,
         )
         return
+    if not _state_message_shape(state, "study_trigger_shape"):
+        return
     await _record_study_response(bot, matcher, event, state, locale)
 
 
@@ -1120,6 +1144,8 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
 async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
+    if not _is_truthy_state_flag(state, "study_weight_pending"):
+        return
     await _record_study_weight_and_finish(bot, matcher, event, state, locale)
 
 
