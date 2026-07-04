@@ -789,8 +789,12 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert pending.permission == Permission.GROUP_ADMIN
     assert pending.demo_filename == "wordbank-approval-pending.webp"
     assert pending.demo_turns[0].text == "#待审核词条 晚安"
-    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in pending.demo_turns[1].text
-    assert pending.demo_turns[3].text == "[回复摘要消息] @凛凛 通过 1-2"
+    assert pending.demo_turns[1].text == "[一条合并转发消息]"
+    assert (
+        "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n"
+        in pending.demo_turns[2].text
+    )
+    assert pending.demo_turns[4].text == "[回复待审核首节点] @凛凛 通过 1-2"
     assert approve.demo_filename == "wordbank-approval-approve.webp"
     assert approve.permission == Permission.GROUP_ADMIN
     assert "词条 #12 已通过审核" in approve.demo_turns[1].text
@@ -799,7 +803,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert approval_reply.demo_filename == "wordbank-approval-approval-reply.webp"
     assert approval_reply.permission == Permission.GROUP_ADMIN
     assert "[回复审批通知] @凛凛 y" in approval_reply.demo_turns[1].text
-    assert approval_reply.demo_turns[5].text == "[回复待审核摘要消息] @凛凛 通过 1 3-5"
+    assert approval_reply.demo_turns[5].text == "[回复待审核首节点] @凛凛 通过 1 3-5"
     assert "批量通过完成" in approval_reply.demo_turns[6].text
     assert study_main.demo_filename == "study-main.webp"
     assert study_main.demo_turns[0].text == "#study"

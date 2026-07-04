@@ -21,7 +21,11 @@ from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import RuleError
 from src.plugins.wordbank.text_parsing import normalize_cq_plain_text
 
-from .approval import APPROVAL_APPROVE_ALIASES, APPROVAL_REJECT_ALIASES
+from .approval import (
+    APPROVAL_APPROVE_ALIASES,
+    APPROVAL_REJECT_ALIASES,
+    APPROVAL_REPLY_ALIASES,
+)
 from .mutation import (
     build_mutation_actor,
     handle_delete,
@@ -107,8 +111,9 @@ class ParsedViewReplyCommand:
 
 @dataclass(slots=True, frozen=True)
 class ParsedBatchApprovalCommand:
-    action: str
-    response_item_ids: tuple[int, ...]
+    selected_action: str
+    selected_response_item_ids: tuple[int, ...]
+    remaining_action: str = "noop"
 
 
 async def is_reply(event: MessageEvent) -> bool:
@@ -383,10 +388,24 @@ async def _handle_batch_approval_reply_result(
     can_moderate_group = bool(getattr(actor, "can_moderate_group", False))
     is_superuser = bool(getattr(actor, "is_superuser", False))
 
-    success_ids: list[int] = []
+    selected_ids = set(parsed.selected_response_item_ids)
+    execution_plan: list[tuple[int, str]] = [
+        (response_item_id, parsed.selected_action)
+        for response_item_id in approval_message.group_ids
+        if response_item_id in selected_ids
+    ]
+    if parsed.remaining_action != "noop":
+        execution_plan.extend(
+            (response_item_id, parsed.remaining_action)
+            for response_item_id in approval_message.group_ids
+            if response_item_id not in selected_ids
+        )
+
+    approved_success_ids: list[int] = []
+    rejected_success_ids: list[int] = []
     failed_ids: list[int] = []
-    for response_item_id in parsed.response_item_ids:
-        if parsed.action == "approve":
+    for response_item_id, action in execution_plan:
+        if action == "approve":
             ok = await service.approve_response_item(
                 response_item_id,
                 actor_user_id=actor_user_id,
@@ -403,33 +422,47 @@ async def _handle_batch_approval_reply_result(
                 is_superuser=is_superuser,
             )
         if ok:
-            success_ids.append(response_item_id)
+            if action == "approve":
+                approved_success_ids.append(response_item_id)
+            else:
+                rejected_success_ids.append(response_item_id)
         else:
             failed_ids.append(response_item_id)
 
+    success_count = len(approved_success_ids) + len(rejected_success_ids)
+    attempted_actions = {action for _, action in execution_plan}
+    if len(attempted_actions) > 1:
+        title_key = "wordbank.approval.batch.title.completed"
+    elif attempted_actions == {"approve"}:
+        title_key = "wordbank.approval.batch.title.approve"
+    else:
+        title_key = "wordbank.approval.batch.title.reject"
     lines = [
-        tr(
-            locale,
-            (
-                "wordbank.approval.batch.title.approve"
-                if parsed.action == "approve"
-                else "wordbank.approval.batch.title.reject"
-            ),
-        ),
+        tr(locale, title_key),
         tr(
             locale,
             "wordbank.approval.batch.total",
-            count=len(parsed.response_item_ids),
+            count=len(execution_plan),
         ),
-        tr(locale, "wordbank.approval.batch.success", count=len(success_ids)),
+        tr(locale, "wordbank.approval.batch.success", count=success_count),
         tr(locale, "wordbank.approval.batch.failed", count=len(failed_ids)),
+        tr(locale, "wordbank.approval.batch.approved", count=len(approved_success_ids)),
+        tr(locale, "wordbank.approval.batch.rejected", count=len(rejected_success_ids)),
     ]
-    if success_ids:
+    if approved_success_ids:
         lines.append(
             tr(
                 locale,
-                "wordbank.approval.batch.success_entries",
-                entries=", ".join(f"#{item_id}" for item_id in success_ids),
+                "wordbank.approval.batch.approved_entries",
+                entries=", ".join(f"#{item_id}" for item_id in approved_success_ids),
+            )
+        )
+    if rejected_success_ids:
+        lines.append(
+            tr(
+                locale,
+                "wordbank.approval.batch.rejected_entries",
+                entries=", ".join(f"#{item_id}" for item_id in rejected_success_ids),
             )
         )
     if failed_ids:
@@ -443,10 +476,17 @@ async def _handle_batch_approval_reply_result(
     return ApprovalReplyOutcome(
         "\n".join(lines),
         approval_message=None,
-        completed=bool(success_ids),
-        action=parsed.action,
+        completed=bool(success_count),
+        action=(
+            parsed.selected_action
+            if parsed.remaining_action == "noop"
+            else "mixed"
+        ),
         batch_notices=tuple(
-            (response_item_id, parsed.action) for response_item_id in success_ids
+            (response_item_id, "approve") for response_item_id in approved_success_ids
+        )
+        + tuple(
+            (response_item_id, "reject") for response_item_id in rejected_success_ids
         ),
     )
 
@@ -462,24 +502,93 @@ def parse_batch_approval_reply(
     available_response_item_ids: Sequence[int],
 ) -> ParsedBatchApprovalCommand:
     normalized = normalize_reply_command(text)
+    id_map = dict(enumerate(available_response_item_ids, start=1))
+    quick = _parse_quick_batch_approval_command(normalized, id_map)
+    if quick is not None:
+        return quick
+
     action, rest = _split_batch_approval_command(normalized)
     if not rest:
         raise RuleError(
             _default_i18n_text("wordbank.approval.batch.selection_required"),
             key="wordbank.approval.batch.selection_required",
         )
-
-    id_map = dict(enumerate(available_response_item_ids, start=1))
     if rest in {"all", "全部", "所有"}:
         return ParsedBatchApprovalCommand(
-            action=action,
-            response_item_ids=tuple(id_map.values()),
+            selected_action=action,
+            selected_response_item_ids=tuple(id_map.values()),
         )
 
     selected_indexes = _parse_batch_selection_indexes(rest, max_index=len(id_map))
     return ParsedBatchApprovalCommand(
-        action=action,
-        response_item_ids=tuple(id_map[index] for index in selected_indexes),
+        selected_action=action,
+        selected_response_item_ids=tuple(id_map[index] for index in selected_indexes),
+    )
+
+
+def _parse_quick_batch_approval_command(
+    text: str,
+    id_map: dict[int, int],
+) -> ParsedBatchApprovalCommand | None:
+    tokens = [token for token in re.split(r"[\s,，、]+", text) if token]
+    if not tokens:
+        raise RuleError(
+            _default_i18n_text("wordbank.approval.batch.action_required"),
+            key="wordbank.approval.batch.action_required",
+        )
+
+    quick_action_map = {"y": ("approve", "reject"), "n": ("reject", "approve")}
+    quick_positions = [
+        index for index, token in enumerate(tokens) if token in quick_action_map
+    ]
+    if not quick_positions:
+        return None
+    if len(quick_positions) != 1:
+        raise RuleError(
+            _default_i18n_text("wordbank.approval.batch.multiple_actions"),
+            key="wordbank.approval.batch.multiple_actions",
+        )
+
+    quick_index = quick_positions[0]
+    if quick_index not in {0, len(tokens) - 1}:
+        raise RuleError(
+            _default_i18n_text("wordbank.approval.batch.action_position_invalid"),
+            key="wordbank.approval.batch.action_position_invalid",
+        )
+
+    quick_token = tokens[quick_index]
+    selection_tokens = tokens[:quick_index] + tokens[quick_index + 1 :]
+    selected_action, remaining_action = quick_action_map[quick_token]
+    if not selection_tokens:
+        return ParsedBatchApprovalCommand(
+            selected_action=selected_action,
+            selected_response_item_ids=tuple(id_map.values()),
+            remaining_action=remaining_action,
+        )
+
+    if any(token in APPROVAL_REPLY_ALIASES for token in selection_tokens):
+        raise RuleError(
+            _default_i18n_text("wordbank.approval.batch.multiple_actions"),
+            key="wordbank.approval.batch.multiple_actions",
+        )
+
+    if any(token in {"all", "全部", "所有"} for token in selection_tokens):
+        if len(selection_tokens) != 1:
+            raise RuleError(
+                _default_i18n_text("wordbank.approval.batch.selection_conflict"),
+                key="wordbank.approval.batch.selection_conflict",
+            )
+        selected_response_item_ids = tuple(id_map.values())
+    else:
+        selected_indexes = _parse_batch_selection_indexes(
+            " ".join(selection_tokens),
+            max_index=len(id_map),
+        )
+        selected_response_item_ids = tuple(id_map[index] for index in selected_indexes)
+    return ParsedBatchApprovalCommand(
+        selected_action=selected_action,
+        selected_response_item_ids=selected_response_item_ids,
+        remaining_action=remaining_action,
     )
 
 

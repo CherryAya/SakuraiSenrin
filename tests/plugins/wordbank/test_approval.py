@@ -512,7 +512,7 @@ def test_format_pending_batch_approval_notice_lists_all_pending_items() -> None:
     )
 
     assert "待审核词条" in notice
-    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in notice
+    assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in notice
     assert "触发词: 晚安" in notice
     assert "创建者: 10001" in notice
     assert "提交时间: 2023-11-15 06:13" in notice
@@ -572,7 +572,7 @@ async def test_build_pending_batch_approval_notice_message_embeds_image_shapes()
     segments = list(message)
     full_text = "".join(str(segment) for segment in segments if segment.type == "text")
     assert "待审核词条" in full_text
-    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in full_text
+    assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in full_text
     assert "触发词: test_forward" in full_text
     assert "创建者: 10001" in full_text
     assert "待审数量: 2" in full_text
@@ -714,7 +714,7 @@ async def test_batch_notice_sends_summary_then_forward_details() -> None:
     summary_message = render_message_plan_input(plan.messages[0])
     first_detail = render_message_plan_input(plan.messages[1])
     second_detail = render_message_plan_input(plan.messages[2])
-    assert "回复我发送：通过 1 2 5-8，或拒绝 all" in str(summary_message)
+    assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in str(summary_message)
     assert "待审数量: 2" in str(summary_message)
     assert any(segment.type == "image" for segment in first_detail)
     assert any(segment.type == "image" for segment in second_detail)

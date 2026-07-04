@@ -29,6 +29,7 @@ from src.plugins.wordbank.message_model import (
 )
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
+from src.plugins.wordbank.services.rules import RuleError
 from tests.plugins.water.helpers import build_group_message_event
 
 
@@ -172,8 +173,57 @@ def test_parse_batch_approval_reply_supports_ranges() -> None:
         available_response_item_ids=(101, 102, 103, 104),
     )
 
-    assert parsed.action == "approve"
-    assert parsed.response_item_ids == (101, 103, 104)
+    assert parsed.selected_action == "approve"
+    assert parsed.selected_response_item_ids == (101, 103, 104)
+    assert parsed.remaining_action == "noop"
+
+
+def test_parse_batch_approval_reply_supports_quick_approve_complement() -> None:
+    parsed = parse_batch_approval_reply(
+        "y 1 3-4",
+        available_response_item_ids=(101, 102, 103, 104),
+    )
+
+    assert parsed.selected_action == "approve"
+    assert parsed.selected_response_item_ids == (101, 103, 104)
+    assert parsed.remaining_action == "reject"
+
+
+def test_parse_batch_approval_reply_supports_quick_reject_suffix() -> None:
+    parsed = parse_batch_approval_reply(
+        "2 4 n",
+        available_response_item_ids=(101, 102, 103, 104),
+    )
+
+    assert parsed.selected_action == "reject"
+    assert parsed.selected_response_item_ids == (102, 104)
+    assert parsed.remaining_action == "approve"
+
+
+def test_parse_batch_approval_reply_supports_quick_all() -> None:
+    approve_all = parse_batch_approval_reply(
+        "y",
+        available_response_item_ids=(101, 102, 103),
+    )
+    reject_all = parse_batch_approval_reply(
+        "n all",
+        available_response_item_ids=(101, 102, 103),
+    )
+
+    assert approve_all.selected_response_item_ids == (101, 102, 103)
+    assert approve_all.remaining_action == "reject"
+    assert reject_all.selected_action == "reject"
+    assert reject_all.selected_response_item_ids == (101, 102, 103)
+    assert reject_all.remaining_action == "approve"
+
+
+@pytest.mark.parametrize("text", ["y n", "通过 y 1", "all 1 y", "1 2 3"])
+def test_parse_batch_approval_reply_rejects_invalid_mixed_commands(text: str) -> None:
+    with pytest.raises(RuleError):
+        parse_batch_approval_reply(
+            text,
+            available_response_item_ids=(101, 102, 103, 104),
+        )
 
 
 async def test_handle_approval_reply_result_supports_pending_batch_reply() -> None:
@@ -204,6 +254,47 @@ async def test_handle_approval_reply_result_supports_pending_batch_reply() -> No
         (301, "approve"),
         (303, "approve"),
         (304, "approve"),
+    )
+
+
+async def test_handle_approval_reply_result_supports_quick_complement_batch_reply() -> (
+    None
+):
+    approve = AsyncMock(return_value=True)
+    reject = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_batch_approval_message()),
+            approve_response_item=approve,
+            reject_response_item=reject,
+        ),
+    )
+    event = _event_with_reply("y 1 3")
+
+    outcome = await handle_approval_reply_result(
+        service,
+        event=event,
+        text="y 1 3",
+        locale="zh-CN",
+    )
+
+    assert outcome.approval_message is None
+    assert outcome.completed is True
+    assert "批量审批完成" in outcome.message
+    assert "总数: 4" in outcome.message
+    assert "成功: 4" in outcome.message
+    assert "通过: 2" in outcome.message
+    assert "拒绝: 2" in outcome.message
+    assert "通过条目: #301, #303" in outcome.message
+    assert "拒绝条目: #302, #304" in outcome.message
+    assert [call.args[0] for call in approve.await_args_list] == [301, 303]
+    assert [call.args[0] for call in reject.await_args_list] == [302, 304]
+    assert outcome.batch_notices == (
+        (301, "approve"),
+        (303, "approve"),
+        (302, "reject"),
+        (304, "reject"),
     )
 
 
