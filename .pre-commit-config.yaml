@@ -14,3 +14,9 @@ repos:
         language: system
         types: [python]
         entry: python3 scripts/check_message_constructor.py
+      - id: matcher-bot-injection-check
+        name: "matcher-bot-injection-check"
+        description: matcher handler 调用需要 Bot 的 helper 时必须显式传递 bot
+        language: system
+        types: [python]
+        entry: python3 scripts/check_matcher_bot_injection.py

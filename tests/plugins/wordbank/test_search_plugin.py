@@ -500,29 +500,6 @@ async def test_handle_search_session_delete_refreshes_current_page(
 
 
 @pytest.mark.asyncio
-async def test_finish_guided_search_wrapper_requires_bot_argument() -> None:
-    with pytest.raises(TypeError, match="expects 5 arguments"):
-        await wordbank_plugin._finish_guided_search(
-            cast(Matcher, SimpleNamespace()),
-            {},
-            build_group_message_event("#搜索词条 晚安"),
-            "zh-CN",
-            page_number=1,
-        )
-
-
-@pytest.mark.asyncio
-async def test_handle_search_session_wrapper_requires_bot_argument() -> None:
-    with pytest.raises(TypeError, match="expects 5 arguments"):
-        await wordbank_plugin._handle_search_session_event(
-            cast(Matcher, SimpleNamespace()),
-            build_group_message_event("page 1"),
-            {},
-            "zh-CN",
-        )
-
-
-@pytest.mark.asyncio
 async def test_view_reply_matcher_routes_search_result_reply_to_group_detail(
     app: App,
     monkeypatch: pytest.MonkeyPatch,

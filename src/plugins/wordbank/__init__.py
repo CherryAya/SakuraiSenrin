@@ -530,14 +530,15 @@ runtime_exports = register_wordbank_runtime_handlers(
 
 
 async def _finish_guided_search(
-    *args: Any,
+    bot: Bot,
+    matcher: Matcher,
+    state: T_State,
+    event: MessageEvent,
+    locale: LocaleCode,
+    *,
     page_number: int,
     clamp_page: bool = False,
 ) -> None:
-    if len(args) == 5:
-        bot, matcher, state, event, locale = args
-    else:
-        raise TypeError("_finish_guided_search expects 5 arguments")
     async with LongTaskRunner(
         LongTaskSpec(
             task_name="wordbank.search.guided_view",
@@ -567,12 +568,12 @@ async def _finish_guided_search(
 
 
 async def _handle_search_session_event(
-    *args: Any,
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    state: T_State,
+    locale: LocaleCode,
 ) -> None:
-    if len(args) == 5:
-        bot, matcher, event, state, locale = args
-    else:
-        raise TypeError("_handle_search_session_event expects 5 arguments")
     await handle_search_session_event(
         bot,
         matcher,
