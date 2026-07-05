@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from nonebot.adapters.onebot.v11.message import Message
+from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
 from src.lib.long_task import LongTaskRunner
@@ -22,6 +22,7 @@ from src.plugins.wordbank.message_model import (
     iter_message_segments,
     shape_from_image,
     shape_from_message_input,
+    shape_from_response_text,
     shape_from_text,
     shape_from_trigger_text,
 )
@@ -231,10 +232,14 @@ def shape_from_trigger_text_value(text: str) -> MessageShape:
     return shape_from_trigger_text(text)
 
 
+def shape_from_response_text_value(text: str) -> MessageShape:
+    return shape_from_response_text(text)
+
+
 def shape_from_response_parts(
     text: str, *, image_id: int | None = None
 ) -> MessageShape:
-    parts = [shape_from_text_value(text)]
+    parts = [shape_from_response_text_value(text)]
     if image_id is not None:
         parts.append(shape_from_image(image_id))
     return combine_shapes(*parts)
@@ -322,6 +327,101 @@ async def build_shape_from_text_and_images(
     for canonical_id in canonical_ids:
         parts.append(shape_from_image(canonical_id))
     return combine_shapes(*parts)
+
+
+async def build_response_shape_from_message(
+    media_service: WordbankMediaService | None,
+    message: MessageInput,
+    *,
+    image_limit: int = GUIDED_MESSAGE_IMAGE_LIMIT,
+    task: LongTaskRunner | None = None,
+    build_context: MessageShapeBuildContext | None = None,
+) -> MessageShape:
+    image_ids: dict[int, int] = {}
+    if media_service is not None:
+        image_ids = await resolve_message_image_ids(
+            media_service,
+            message,
+            limit=image_limit,
+            task=task,
+            build_context=build_context,
+        )
+    if task is not None and media_service is not None:
+        await task.advance(
+            "building_shape",
+            metadata={"image_count": len(image_ids)},
+        )
+    atoms = []
+    image_index = 0
+    for segment in iter_message_segments(message):
+        if segment.type == "text":
+            text_value = str(segment.data.get("text", ""))
+            atoms.extend(shape_from_response_text_value(text_value).atoms)
+            continue
+        if segment.type == "image":
+            canonical_image_id = image_ids.get(image_index)
+            if canonical_image_id is not None:
+                atoms.append(shape_from_image(canonical_image_id).atoms[0])
+            image_index += 1
+            continue
+        if segment.type == "at":
+            target_id = str(segment.data.get("qq", "") or "").strip()
+            if target_id:
+                atoms.extend(shape_from_message_input(Message([segment])).atoms)
+    return MessageShape(tuple(atoms))
+
+
+def extract_message_suffix_by_plain_text(
+    message: Message,
+    suffix_text: str,
+) -> Message:
+    if not suffix_text:
+        return Message([])
+    plain_text = message.extract_plain_text()
+    if not plain_text.endswith(suffix_text):
+        return message
+    prefix_text = plain_text[: len(plain_text) - len(suffix_text)]
+    return extract_message_after_plain_prefix(message, prefix_text)
+
+
+def extract_message_after_plain_prefix(
+    message: Message,
+    prefix_text: str,
+) -> Message:
+    if not prefix_text:
+        return Message(list(message))
+
+    remaining = prefix_text
+    extracted: list[MessageSegment] = []
+    started = False
+    for segment in message:
+        if started:
+            extracted.append(segment)
+            continue
+        if segment.type != "text":
+            if remaining:
+                continue
+            extracted.append(segment)
+            started = True
+            continue
+        raw_text = str(segment.data.get("text", ""))
+        if not remaining:
+            if raw_text:
+                extracted.append(MessageSegment.text(raw_text))
+            started = True
+            continue
+        if remaining.startswith(raw_text):
+            remaining = remaining[len(raw_text) :]
+            continue
+        if raw_text.startswith(remaining):
+            leftover = raw_text[len(remaining) :]
+            if leftover:
+                extracted.append(MessageSegment.text(leftover))
+            remaining = ""
+            started = True
+            continue
+        return Message(list(message))
+    return Message(extracted)
 
 
 async def resolve_message_image_ids(

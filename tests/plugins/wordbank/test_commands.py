@@ -45,6 +45,7 @@ from src.plugins.wordbank.message_model import (
     shape_from_event,
     shape_from_image,
     shape_from_message,
+    shape_from_response_text,
     shape_from_text,
     shape_to_summary_text,
 )
@@ -217,8 +218,9 @@ async def test_dispatch_wordbank_command_routes_rank_to_leaderboard_handler(
 
 
 @pytest.mark.asyncio
-async def test_dispatch_wordbank_command_with_outcome_returns_approve_metadata(
-) -> None:
+async def test_dispatch_wordbank_command_with_outcome_returns_approve_metadata() -> (
+    None
+):
     event = build_group_message_event(
         "#wordbank approve 12",
         role="admin",
@@ -247,8 +249,7 @@ async def test_dispatch_wordbank_command_with_outcome_returns_approve_metadata(
 
 
 @pytest.mark.asyncio
-async def test_dispatch_wordbank_command_with_outcome_returns_reject_metadata(
-) -> None:
+async def test_dispatch_wordbank_command_with_outcome_returns_reject_metadata() -> None:
     event = build_group_message_event(
         "#wordbank reject 12",
         role="admin",
@@ -1465,6 +1466,52 @@ async def test_handle_add_text_result_keeps_bracket_literal_response_text() -> N
     kwargs = add_message_entry.await_args.kwargs
     assert kwargs["trigger_shape"] == shape_from_text("晚安")
     assert kwargs["response_shape"] == shape_from_text("【戳一戳】")
+
+
+@pytest.mark.asyncio
+async def test_handle_add_text_result_parses_sender_response_placeholders() -> None:
+    add_message_entry = AsyncMock(return_value=_add_result())
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add 晚安 => [@触发者] [戳触发者]")
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="晚安 => [@触发者] [戳触发者]",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["response_shape"] == shape_from_response_text("[@触发者] [戳触发者]")
+
+
+@pytest.mark.asyncio
+async def test_handle_add_text_result_preserves_native_at_in_response_shape() -> None:
+    add_message_entry = AsyncMock(return_value=_add_result())
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#wordbank add 晚安 => 你好 ", message_id=1)
+    event.message = Message(
+        [
+            MessageSegment.text("#wordbank add 晚安 => 你好 "),
+            MessageSegment.at("10002"),
+        ]
+    )
+
+    await handle_add_text_result(
+        service,
+        event=event,
+        text="晚安 => 你好 ",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert shape_to_summary_text(kwargs["response_shape"]) == "你好 @用户(10002)"
 
 
 @pytest.mark.asyncio

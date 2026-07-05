@@ -291,15 +291,15 @@ async def handle_response_content_update(
     raw_message: Message,
     locale: LocaleCode,
 ) -> str:
-    from .commands import (
-        build_shape_from_text_and_images as _build_shape_from_text_and_images,
+    from .media_helpers import (
+        build_response_shape_from_message,
+        extract_message_suffix_by_plain_text,
     )
 
     actor = build_mutation_actor(event)
-    response_shape = await _build_shape_from_text_and_images(
+    response_shape = await build_response_shape_from_message(
         media_service,
-        text=text,
-        message=raw_message,
+        extract_message_suffix_by_plain_text(raw_message, text),
     )
     if await service.update_response_content(
         response_item_id,

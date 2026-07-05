@@ -20,8 +20,10 @@ type MessageInput = (
     Message | MessageSegment | str | list[Any] | tuple[Any, ...] | dict[str, Any]
 )
 _SPACE_RE = re.compile(r"\s+")
+_RESPONSE_PLACEHOLDER_RE = re.compile(r"(\[[^\]]+\]|【[^】]+】)")
 EVENT_TRIGGER_ESCAPED_PREFIX = "\\"
 EVENT_TRIGGER_BRACKET_PAIRS = (("[", "]"), ("【", "】"))
+RESPONSE_TARGET_SENDER = "__sender__"
 EVENT_TRIGGER_NAMES = frozenset(
     {
         "event:at",
@@ -121,6 +123,25 @@ def shape_from_image(canonical_image_id: int) -> MessageShape:
 def shape_from_event(event_name: str) -> MessageShape:
     normalized = normalize_text(event_name, casefold=False)
     return MessageShape((MessageAtom(kind="event", event_name=normalized),))
+
+
+def shape_from_response_text(text: str) -> MessageShape:
+    if not is_valid_message_text(text, preserve_blank_text=False):
+        return MessageShape(())
+    atoms: list[MessageAtom] = []
+    last_index = 0
+    for match in _RESPONSE_PLACEHOLDER_RE.finditer(text):
+        if match.start() > last_index:
+            _append_response_text_atom(atoms, text[last_index : match.start()])
+        placeholder_atom = _parse_response_placeholder(match.group(0))
+        if placeholder_atom is None:
+            _append_response_text_atom(atoms, match.group(0))
+        else:
+            atoms.append(placeholder_atom)
+        last_index = match.end()
+    if last_index < len(text):
+        _append_response_text_atom(atoms, text[last_index:])
+    return MessageShape(tuple(atoms))
 
 
 def shape_from_trigger_text(text: str) -> MessageShape:
@@ -343,15 +364,9 @@ def shape_to_summary_text(shape: MessageShape) -> str:
                 )
             )
         elif atom.kind == "at" and atom.target_id:
-            parts.append(format_at_fallback_text(atom.target_id))
+            parts.append(format_at_summary_text(atom.target_id))
         elif atom.kind == "event" and atom.event_name:
-            parts.append(
-                tr(
-                    "zh-CN",
-                    "wordbank.shape.event_ref",
-                    event_name=atom.event_name,
-                )
-            )
+            parts.append(format_event_summary_text(atom.event_name, atom.target_id))
     return _join_shape_text_parts(parts)
 
 
@@ -363,12 +378,38 @@ def shape_to_search_text(shape: MessageShape) -> str:
         elif atom.kind == "at" and atom.target_id:
             texts.append(f"at {atom.target_id}")
         elif atom.kind == "event" and atom.event_name:
-            texts.append(atom.event_name)
+            if atom.target_id:
+                texts.append(f"{atom.event_name} {atom.target_id}")
+            else:
+                texts.append(atom.event_name)
     return _join_shape_text_parts(texts)
 
 
 def format_at_fallback_text(target_id: str) -> str:
     return f"@用户({target_id})"
+
+
+def is_response_sender_target(target_id: str) -> bool:
+    return target_id == RESPONSE_TARGET_SENDER
+
+
+def format_at_summary_text(target_id: str) -> str:
+    if is_response_sender_target(target_id):
+        return "@触发者"
+    return format_at_fallback_text(target_id)
+
+
+def format_event_summary_text(event_name: str, target_id: str = "") -> str:
+    if event_name == "event:poke":
+        if is_response_sender_target(target_id):
+            return "戳一戳触发者"
+        if target_id:
+            return f"戳一戳用户({target_id})"
+    return tr(
+        "zh-CN",
+        "wordbank.shape.event_ref",
+        event_name=event_name,
+    )
 
 
 def _shape_image_keys(shape: MessageShape) -> str:
@@ -412,6 +453,35 @@ def normalize_text(text: str, *, casefold: bool = True) -> str:
     return normalized.casefold() if casefold else normalized
 
 
+def _append_response_text_atom(atoms: list[MessageAtom], text: str) -> None:
+    if is_valid_message_text(text, preserve_blank_text=False):
+        atoms.append(MessageAtom(kind="text", text=text))
+
+
+def _parse_response_placeholder(raw_text: str) -> MessageAtom | None:
+    content = _extract_bracket_content(raw_text)
+    if content is None:
+        return None
+    compact = re.sub(r"\s+", "", unicodedata.normalize("NFKC", content).strip())
+    if compact == "@触发者":
+        return MessageAtom(kind="at", target_id=RESPONSE_TARGET_SENDER)
+    if compact == "戳触发者":
+        return MessageAtom(
+            kind="event",
+            event_name="event:poke",
+            target_id=RESPONSE_TARGET_SENDER,
+        )
+    if compact.startswith("戳:"):
+        target_id = compact.removeprefix("戳:").strip()
+        if target_id.isdigit():
+            return MessageAtom(
+                kind="event",
+                event_name="event:poke",
+                target_id=target_id,
+            )
+    return None
+
+
 def normalize_message_text(
     text: str,
     *,
@@ -442,12 +512,18 @@ def is_valid_message_text(
 
 
 def _join_shape_text_parts(parts: list[str]) -> str:
-    if len(parts) == 1:
-        return parts[0]
-    joined = " ".join(part for part in parts if part)
+    joined = ""
+    for part in parts:
+        if not part:
+            continue
+        if not joined:
+            joined = part
+            continue
+        if joined[-1].isspace() or part[0].isspace():
+            joined += part
+            continue
+        joined += f" {part}"
     if not joined:
         return ""
     stripped = joined.strip()
-    if stripped:
-        return stripped
-    return " "
+    return stripped or " "

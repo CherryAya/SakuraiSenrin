@@ -21,7 +21,11 @@ from src.lib.message_plan import (
 from src.lib.utils.img import QQAvatar
 from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
 from src.plugins.wordbank.debug import log_perf, perf_start
-from src.plugins.wordbank.message_model import MessageShape, format_at_fallback_text
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    format_at_summary_text,
+    format_event_summary_text,
+)
 from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import (
@@ -79,7 +83,7 @@ async def build_shape_plan_entry(
         if atom.kind == "text" and atom.text:
             blocks.append(TextBlock(atom.text))
         elif atom.kind == "at" and atom.target_id:
-            blocks.append(TextBlock(format_at_fallback_text(atom.target_id)))
+            blocks.append(TextBlock(format_at_summary_text(atom.target_id)))
         elif atom.kind == "image" and atom.canonical_image_id is not None:
             image_bytes = image_bytes_by_id.get(atom.canonical_image_id)
             if image_bytes is None:
@@ -87,6 +91,10 @@ async def build_shape_plan_entry(
                 continue
             blocks.append(ImageBytesBlock(image_bytes))
             image_segments += 1
+        elif atom.kind == "event" and atom.event_name:
+            blocks.append(
+                TextBlock(format_event_summary_text(atom.event_name, atom.target_id))
+            )
     entry = MessagePlanEntry(blocks=tuple(blocks))
     if trace_fields is not None:
         log_perf(

@@ -144,3 +144,46 @@ async def test_build_message_shape_from_message_keeps_text_when_image_download_f
     assert shape_to_summary_text(shape) == "只有文字也要保留"
     assert fetch_image_bytes.await_count == 1
     assert ingest_image_bytes.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_build_response_shape_from_message_preserves_native_at_and_placeholders(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetch_image_bytes = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        media_helpers,
+        "fetch_image_bytes_with_retry",
+        fetch_image_bytes,
+    )
+
+    shape = await media_helpers.build_response_shape_from_message(
+        None,
+        Message(
+            [
+                MessageSegment.text("你好"),
+                MessageSegment.at("10002"),
+                MessageSegment.text("[@触发者]"),
+            ]
+        ),
+    )
+
+    assert shape_to_summary_text(shape) == "你好 @用户(10002) @触发者"
+    assert fetch_image_bytes.await_count == 0
+
+
+def test_extract_message_suffix_by_plain_text_preserves_non_text_segment_order() -> (
+    None
+):
+    message = Message(
+        [
+            MessageSegment.text("#wordbank add 晚安 => 你好 "),
+            MessageSegment.at("10002"),
+            MessageSegment.text(" 再见"),
+        ]
+    )
+
+    suffix = media_helpers.extract_message_suffix_by_plain_text(message, "你好  再见")
+
+    assert [segment.type for segment in suffix] == ["text", "at", "text"]
+    assert str(suffix) == "你好 [CQ:at,qq=10002] 再见"

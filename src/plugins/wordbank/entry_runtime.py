@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, cast
 
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -57,7 +58,11 @@ from .handlers.commands import (
     parse_search_args,
     render_search_page_message,
 )
-from .handlers.rendering import build_shape_plan_entry
+from .handlers.rendering import (
+    _build_image_payload_stats,
+    _load_shape_image_bytes,
+)
+from .message_model import format_event_summary_text, is_response_sender_target
 from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError
 
@@ -610,6 +615,16 @@ def register_wordbank_runtime_handlers(
             image_count,
         )
 
+    @dataclass(slots=True, frozen=True)
+    class PassivePokeAction:
+        target_id: str
+
+    @dataclass(slots=True, frozen=True)
+    class CompiledPassiveResponse:
+        message: MessagePlanInput | None
+        image_trace_fields: dict[str, object]
+        post_actions: tuple[PassivePokeAction, ...] = ()
+
     def _image_payload_trace_fields(
         trace_fields: Mapping[str, object] | None,
     ) -> dict[str, object]:
@@ -630,11 +645,22 @@ def register_wordbank_runtime_handlers(
                 payload[key] = value
         return payload
 
-    async def _build_passive_message(
+    def _shape_binds_sender(response: PassiveResponse) -> bool:
+        shape = response.response_shape
+        if shape is None:
+            return False
+        return any(is_response_sender_target(atom.target_id) for atom in shape.atoms)
+
+    def _resolve_passive_target_id(response: PassiveResponse, target_id: str) -> str:
+        if is_response_sender_target(target_id):
+            return str(response.user_id).strip()
+        return str(target_id).strip()
+
+    async def _compile_passive_response(
         response: PassiveResponse,
         *,
         locale: LocaleCode,
-    ) -> tuple[MessagePlanInput, dict[str, object]]:
+    ) -> CompiledPassiveResponse:
         from src.plugins.wordbank.debug import log_perf as default_log_perf
         from src.plugins.wordbank.debug import perf_start as default_perf_start
 
@@ -642,52 +668,160 @@ def register_wordbank_runtime_handlers(
         perf_start = await _get_runtime_attr("perf_start", default_perf_start)
         start = perf_start()
         media_service = await _get_wordbank_media_service()
-        if response.response_shape is None or response.response_shape.is_empty():
+        shape = response.response_shape
+        apply_mention_prefix = bool(
+            response.mention_fallback_text
+        ) and not _shape_binds_sender(response)
+        if shape is None or shape.is_empty():
             text_value = response.text
-            if response.mention_fallback_text:
+            if apply_mention_prefix and text_value:
                 text_value = f"{response.mention_fallback_text} {text_value}".strip()
             log_perf(
                 "plugin.build_passive_message.text_only",
                 start=start,
                 response_item_id=response.response_item_id,
             )
-            return text_value, {}
-        image_atom_count = sum(
-            1 for atom in response.response_shape.atoms if atom.kind == "image"
-        )
+            if not text_value:
+                return CompiledPassiveResponse(message=None, image_trace_fields={})
+            return CompiledPassiveResponse(
+                message=text_value,
+                image_trace_fields={},
+            )
+        image_atom_count = sum(1 for atom in shape.atoms if atom.kind == "image")
         log_perf(
             "plugin.build_passive_message.render_shape.begin",
             response_item_id=response.response_item_id,
-            atom_count=len(response.response_shape.atoms),
+            atom_count=len(shape.atoms),
             image_atom_count=image_atom_count,
         )
-        render_trace: dict[str, object] = {}
-        message = await build_shape_plan_entry(
-            response.response_shape,
-            media_service,
-            locale=locale,
-            trace_fields={"response_item_id": response.response_item_id},
-            trace_sink=render_trace,
+        image_bytes_by_id = await _load_shape_image_bytes(shape, media_service)
+        payload_stats = _build_image_payload_stats(image_bytes_by_id)
+        log_perf(
+            "plugin.build_passive_message.render_shape.images_loaded",
+            start=start,
+            response_item_id=response.response_item_id,
+            **cast(Any, payload_stats),
         )
-        if response.mention_fallback_text:
+        blocks: list[Any] = []
+        post_actions: list[PassivePokeAction] = []
+        image_segments = 0
+        for atom in shape.atoms:
+            if atom.kind == "text" and atom.text:
+                blocks.append(TextBlock(atom.text))
+                continue
+            if atom.kind == "at" and atom.target_id:
+                resolved_target_id = _resolve_passive_target_id(
+                    response, atom.target_id
+                )
+                if resolved_target_id:
+                    blocks.append(AtRefBlock(resolved_target_id))
+                continue
+            if atom.kind == "image" and atom.canonical_image_id is not None:
+                image_bytes = image_bytes_by_id.get(atom.canonical_image_id)
+                if image_bytes is None:
+                    blocks.append(
+                        TextBlock(tr(locale, "wordbank.render.image_missing"))
+                    )
+                    continue
+                blocks.append(ImageBytesBlock(image_bytes))
+                image_segments += 1
+                continue
+            if atom.kind == "event" and atom.event_name == "event:poke":
+                resolved_target_id = _resolve_passive_target_id(
+                    response, atom.target_id
+                )
+                if resolved_target_id:
+                    post_actions.append(PassivePokeAction(target_id=resolved_target_id))
+                    continue
+                logger.debug(
+                    "[Wordbank] passive poke skipped | "
+                    f"response_item_id={response.response_item_id} reason=empty_target"
+                )
+                continue
+            if atom.kind == "event" and atom.event_name:
+                blocks.append(
+                    TextBlock(
+                        format_event_summary_text(atom.event_name, atom.target_id)
+                    )
+                )
+        if apply_mention_prefix and blocks:
             prefix = f"{response.mention_fallback_text} "
-            blocks = message.blocks
-            if blocks and isinstance(blocks[0], TextBlock):
-                first_block = TextBlock(text=f"{prefix}{blocks[0].text}")
-                blocks = (first_block, *blocks[1:])
+            if isinstance(blocks[0], TextBlock):
+                first_block = cast(TextBlock, blocks[0])
+                blocks[0] = TextBlock(text=f"{prefix}{first_block.text}")
             else:
-                blocks = (TextBlock(prefix), *blocks)
-            message = MessagePlanEntry(blocks=blocks)
-        image_trace_fields = _image_payload_trace_fields(render_trace)
+                blocks.insert(0, TextBlock(prefix))
+        message: MessagePlanInput | None = None
+        if blocks:
+            message = MessagePlanEntry(blocks=tuple(blocks))
+        log_perf(
+            "plugin.build_passive_message.render_shape.segment_built",
+            segments=len(blocks),
+            image_segments=image_segments,
+            post_action_count=len(post_actions),
+            **cast(Any, payload_stats),
+            response_item_id=response.response_item_id,
+        )
+        image_trace_fields = _image_payload_trace_fields(payload_stats)
         log_perf(
             "plugin.build_passive_message.rendered_shape",
             start=start,
             response_item_id=response.response_item_id,
-            atoms=len(response.response_shape.atoms),
-            segments=len(message.blocks),
+            atoms=len(shape.atoms),
+            segments=len(blocks),
+            post_action_count=len(post_actions),
             **cast(Any, image_trace_fields),
         )
-        return message, image_trace_fields
+        return CompiledPassiveResponse(
+            message=message,
+            image_trace_fields=image_trace_fields,
+            post_actions=tuple(post_actions),
+        )
+
+    async def _build_passive_message(
+        response: PassiveResponse,
+        *,
+        locale: LocaleCode,
+    ) -> tuple[MessagePlanInput, dict[str, object]]:
+        compiled = await _compile_passive_response(response, locale=locale)
+        return (
+            compiled.message or MessagePlanEntry(blocks=()),
+            compiled.image_trace_fields,
+        )
+
+    async def _execute_passive_post_actions(
+        bot: Bot,
+        response: PassiveResponse,
+        actions: tuple[PassivePokeAction, ...],
+    ) -> None:
+        if not actions:
+            return
+        for action in actions:
+            target_id = str(action.target_id).strip()
+            if not target_id.isdigit():
+                logger.debug(
+                    "[Wordbank] passive poke skipped | "
+                    "response_item_id="
+                    f"{response.response_item_id} reason=invalid_target"
+                )
+                continue
+            if not str(response.group_id).strip().isdigit():
+                logger.debug(
+                    "[Wordbank] passive poke skipped | "
+                    "response_item_id="
+                    f"{response.response_item_id} reason=unsupported_private"
+                )
+                continue
+            logger.debug(
+                "[Wordbank] passive poke execute | "
+                f"response_item_id={response.response_item_id} "
+                f"group_id={response.group_id} target_id={target_id}"
+            )
+            await bot.call_api(
+                "group_poke",
+                group_id=int(response.group_id),
+                user_id=int(target_id),
+            )
 
     @wordbank_reply_command.handle()
     async def _wordbank_reply(
@@ -893,45 +1027,69 @@ def register_wordbank_runtime_handlers(
             )
             return
         build_start = perf_start()
-        message, image_trace_fields = await _build_passive_message(
+        compiled = await _compile_passive_response(
             response,
             locale=locale,
         )
         build_ms = elapsed_ms(build_start)
-        segment_count, image_segment_count = _message_segment_stats(message)
-        log_perf(
-            "plugin.passive.handle.send.begin",
-            message_type=response.message_type,
-            response_item_id=response.response_item_id,
-            segment_count=segment_count,
-            image_segment_count=image_segment_count,
-            **cast(Any, image_trace_fields),
+        message = compiled.message
+        image_trace_fields = compiled.image_trace_fields
+        post_action_count = len(compiled.post_actions)
+        if message is None and not compiled.post_actions:
+            log_perf(
+                "plugin.passive.handle.no_output",
+                start=start,
+                message_type=response.message_type,
+                response_item_id=response.response_item_id,
+                handle_ms=f"{handle_ms:.2f}",
+                build_ms=f"{build_ms:.2f}",
+            )
+            return
+        segment_count, image_segment_count = (
+            _message_segment_stats(message) if message is not None else (0, 0)
         )
-        send_start = perf_start()
-        plan_result = await deliver_message_plan(
-            bot,
-            plan=DeliveryPlan(
-                messages=(message,),
-                source_kind="wordbank_response",
-            ),
-            event=event,
-        )
-        send_result = plan_result.results[0]
-        send_ms = elapsed_ms(send_start)
-        log_perf(
-            "plugin.passive.handle.send.done",
-            start=send_start,
-            message_type=response.message_type,
-            response_item_id=response.response_item_id,
-            segment_count=segment_count,
-            image_segment_count=image_segment_count,
-            **cast(Any, image_trace_fields),
-        )
+        send_result: Any = None
+        send_ms = 0.0
+        if message is not None:
+            log_perf(
+                "plugin.passive.handle.send.begin",
+                message_type=response.message_type,
+                response_item_id=response.response_item_id,
+                segment_count=segment_count,
+                image_segment_count=image_segment_count,
+                post_action_count=post_action_count,
+                **cast(Any, image_trace_fields),
+            )
+            send_start = perf_start()
+            plan_result = await deliver_message_plan(
+                bot,
+                plan=DeliveryPlan(
+                    messages=(message,),
+                    source_kind="wordbank_response",
+                ),
+                event=event,
+            )
+            send_result = plan_result.results[0]
+            send_ms = elapsed_ms(send_start)
+            log_perf(
+                "plugin.passive.handle.send.done",
+                start=send_start,
+                message_type=response.message_type,
+                response_item_id=response.response_item_id,
+                segment_count=segment_count,
+                image_segment_count=image_segment_count,
+                post_action_count=post_action_count,
+                **cast(Any, image_trace_fields),
+            )
+        action_start = perf_start()
+        await _execute_passive_post_actions(bot, response, compiled.post_actions)
+        action_ms = elapsed_ms(action_start) if compiled.post_actions else 0.0
         record_start = perf_start()
-        await (await _get_plugin_attr("_record_passive_response_message"))(
-            response,
-            send_result,
-        )
+        if send_result is not None:
+            await (await _get_plugin_attr("_record_passive_response_message"))(
+                response,
+                send_result,
+            )
         record_ms = elapsed_ms(record_start)
         log_perf(
             "plugin.passive.handle.sent",
@@ -941,9 +1099,11 @@ def register_wordbank_runtime_handlers(
             response_item_id=response.response_item_id,
             segment_count=segment_count,
             image_segment_count=image_segment_count,
+            post_action_count=post_action_count,
             handle_ms=f"{handle_ms:.2f}",
             build_ms=f"{build_ms:.2f}",
             send_ms=f"{send_ms:.2f}",
+            action_ms=f"{action_ms:.2f}",
             record_ms=f"{record_ms:.2f}",
             **cast(Any, image_trace_fields),
         )
@@ -1017,45 +1177,69 @@ def register_wordbank_runtime_handlers(
             )
             return
         build_start = perf_start()
-        message, image_trace_fields = await _build_passive_message(
+        compiled = await _compile_passive_response(
             response,
             locale=locale,
         )
         build_ms = elapsed_ms(build_start)
-        segment_count, image_segment_count = _message_segment_stats(message)
-        log_perf(
-            "plugin.notice.handle.send.begin",
-            message_type=response.message_type,
-            response_item_id=response.response_item_id,
-            segment_count=segment_count,
-            image_segment_count=image_segment_count,
-            **cast(Any, image_trace_fields),
+        message = compiled.message
+        image_trace_fields = compiled.image_trace_fields
+        post_action_count = len(compiled.post_actions)
+        if message is None and not compiled.post_actions:
+            log_perf(
+                "plugin.notice.handle.no_output",
+                start=start,
+                message_type=response.message_type,
+                response_item_id=response.response_item_id,
+                handle_ms=f"{handle_ms:.2f}",
+                build_ms=f"{build_ms:.2f}",
+            )
+            return
+        segment_count, image_segment_count = (
+            _message_segment_stats(message) if message is not None else (0, 0)
         )
-        send_start = perf_start()
-        plan_result = await deliver_message_plan(
-            bot,
-            plan=DeliveryPlan(
-                messages=(message,),
-                source_kind="wordbank_response",
-            ),
-            target=_notice_delivery_target(event),
-        )
-        send_result = plan_result.results[0]
-        send_ms = elapsed_ms(send_start)
-        log_perf(
-            "plugin.notice.handle.send.done",
-            start=send_start,
-            message_type=response.message_type,
-            response_item_id=response.response_item_id,
-            segment_count=segment_count,
-            image_segment_count=image_segment_count,
-            **cast(Any, image_trace_fields),
-        )
+        send_result: Any = None
+        send_ms = 0.0
+        if message is not None:
+            log_perf(
+                "plugin.notice.handle.send.begin",
+                message_type=response.message_type,
+                response_item_id=response.response_item_id,
+                segment_count=segment_count,
+                image_segment_count=image_segment_count,
+                post_action_count=post_action_count,
+                **cast(Any, image_trace_fields),
+            )
+            send_start = perf_start()
+            plan_result = await deliver_message_plan(
+                bot,
+                plan=DeliveryPlan(
+                    messages=(message,),
+                    source_kind="wordbank_response",
+                ),
+                target=_notice_delivery_target(event),
+            )
+            send_result = plan_result.results[0]
+            send_ms = elapsed_ms(send_start)
+            log_perf(
+                "plugin.notice.handle.send.done",
+                start=send_start,
+                message_type=response.message_type,
+                response_item_id=response.response_item_id,
+                segment_count=segment_count,
+                image_segment_count=image_segment_count,
+                post_action_count=post_action_count,
+                **cast(Any, image_trace_fields),
+            )
+        action_start = perf_start()
+        await _execute_passive_post_actions(bot, response, compiled.post_actions)
+        action_ms = elapsed_ms(action_start) if compiled.post_actions else 0.0
         record_start = perf_start()
-        await (await _get_plugin_attr("_record_passive_response_message"))(
-            response,
-            send_result,
-        )
+        if send_result is not None:
+            await (await _get_plugin_attr("_record_passive_response_message"))(
+                response,
+                send_result,
+            )
         record_ms = elapsed_ms(record_start)
         log_perf(
             "plugin.notice.handle.sent",
@@ -1065,9 +1249,11 @@ def register_wordbank_runtime_handlers(
             response_item_id=response.response_item_id,
             segment_count=segment_count,
             image_segment_count=image_segment_count,
+            post_action_count=post_action_count,
             handle_ms=f"{handle_ms:.2f}",
             build_ms=f"{build_ms:.2f}",
             send_ms=f"{send_ms:.2f}",
+            action_ms=f"{action_ms:.2f}",
             record_ms=f"{record_ms:.2f}",
             **cast(Any, image_trace_fields),
         )

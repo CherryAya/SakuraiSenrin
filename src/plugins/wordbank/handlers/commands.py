@@ -40,7 +40,11 @@ from src.plugins.wordbank.handlers.parsers import (
     split_add_pair,
 )
 from src.plugins.wordbank.handlers.search_cards import SearchCardQuery
-from src.plugins.wordbank.message_model import MessageShape, shape_from_image
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    combine_shapes,
+    shape_from_image,
+)
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
     WordbankService,
@@ -54,7 +58,9 @@ from src.plugins.wordbank.services.rules import (
 from src.plugins.wordbank.text_parsing import has_meaningful_text, split_command_text
 
 from .media_helpers import (
+    build_response_shape_from_message,
     build_shape_from_text_and_images,
+    extract_message_suffix_by_plain_text,
     ingest_image_bytes_items,
     shape_from_response_parts,
     shape_from_trigger_text_value,
@@ -123,6 +129,32 @@ def _split_command(text: str) -> tuple[str, str]:
     return split_command_text(text)
 
 
+def combine_response_shape_with_image(
+    response_shape: MessageShape,
+    *,
+    image_id: int,
+) -> MessageShape:
+    return combine_shapes(response_shape, shape_from_image(image_id))
+
+
+async def build_response_shape_from_command_message(
+    *,
+    response_text: str,
+    message: Message,
+    media_service: WordbankMediaService | None = None,
+) -> MessageShape:
+    response_message = extract_message_suffix_by_plain_text(message, response_text)
+    if response_message.extract_plain_text() != response_text:
+        return shape_from_response_parts(response_text)
+    shape = await build_response_shape_from_message(
+        media_service,
+        response_message,
+    )
+    if shape.is_empty():
+        return shape_from_response_parts(response_text)
+    return shape
+
+
 async def handle_add_text(
     service: WordbankService,
     *,
@@ -141,9 +173,13 @@ async def handle_add_text_result(
     text: str,
 ) -> WordbankAddResult:
     parsed = parse_text_add_args(text)
+    response_shape = await build_response_shape_from_command_message(
+        response_text=parsed.response_text,
+        message=event.message,
+    )
     return await service.add_message_entry(
         trigger_shape=shape_from_trigger_text_value(parsed.trigger_text),
-        response_shape=shape_from_response_parts(parsed.response_text),
+        response_shape=response_shape,
         raw_rule=parsed.raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),
@@ -220,12 +256,23 @@ async def handle_add_with_media_result(
                 task=task,
             )
         )[0]
-        return await service.add_message_entry(
-            trigger_shape=shape_from_trigger_text_value(trigger_text),
-            response_shape=shape_from_response_parts(
+        response_shape = await build_response_shape_from_command_message(
+            response_text=response_text,
+            message=event.message,
+        )
+        if response_shape == shape_from_response_parts(response_text):
+            response_shape = shape_from_response_parts(
                 response_text,
                 image_id=image_id,
-            ),
+            )
+        else:
+            response_shape = combine_response_shape_with_image(
+                response_shape,
+                image_id=image_id,
+            )
+        return await service.add_message_entry(
+            trigger_shape=shape_from_trigger_text_value(trigger_text),
+            response_shape=response_shape,
             raw_rule=parsed.raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -240,9 +287,13 @@ async def handle_add_with_media_result(
                 task=task,
             )
         )[0]
+        response_shape = await build_response_shape_from_command_message(
+            response_text=response_text,
+            message=event.message,
+        )
         return await service.add_message_entry(
             trigger_shape=shape_from_image(image_id),
-            response_shape=shape_from_response_parts(response_text),
+            response_shape=response_shape,
             raw_rule=parsed.raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -297,9 +348,13 @@ async def handle_study_shortcut_result(
 ) -> WordbankAddResult:
     is_group = isinstance(event, GroupMessageEvent)
     trigger, response, raw_rule = parse_legacy_study_text(text, is_group=is_group)
+    response_shape = await build_response_shape_from_command_message(
+        response_text=response,
+        message=event.message,
+    )
     return await service.add_message_entry(
         trigger_shape=shape_from_trigger_text_value(trigger),
-        response_shape=shape_from_response_parts(response),
+        response_shape=response_shape,
         raw_rule=raw_rule,
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),
@@ -440,12 +495,23 @@ async def handle_study_media_with_rule_result(
                 task=task,
             )
         )[0]
-        return await service.add_message_entry(
-            trigger_shape=shape_from_trigger_text_value(trigger_text),
-            response_shape=shape_from_response_parts(
+        response_shape = await build_response_shape_from_command_message(
+            response_text=response_text,
+            message=event.message,
+        )
+        if response_shape == shape_from_response_parts(response_text):
+            response_shape = shape_from_response_parts(
                 response_text,
                 image_id=response_image_id,
-            ),
+            )
+        else:
+            response_shape = combine_response_shape_with_image(
+                response_shape,
+                image_id=response_image_id,
+            )
+        return await service.add_message_entry(
+            trigger_shape=shape_from_trigger_text_value(trigger_text),
+            response_shape=response_shape,
             raw_rule=raw_rule,
             group_id=group_id,
             user_id=user_id,
@@ -461,12 +527,23 @@ async def handle_study_media_with_rule_result(
     response_image_id: int | None = None
     if len(image_ids) >= 2:
         response_image_id = image_ids[1]
-    return await service.add_message_entry(
-        trigger_shape=shape_from_image(trigger_image_id),
-        response_shape=shape_from_response_parts(
+    response_shape = await build_response_shape_from_command_message(
+        response_text=response_text,
+        message=event.message,
+    )
+    if response_shape == shape_from_response_parts(response_text):
+        response_shape = shape_from_response_parts(
             response_text,
             image_id=response_image_id,
-        ),
+        )
+    elif response_image_id is not None:
+        response_shape = combine_response_shape_with_image(
+            response_shape,
+            image_id=response_image_id,
+        )
+    return await service.add_message_entry(
+        trigger_shape=shape_from_image(trigger_image_id),
+        response_shape=response_shape,
         raw_rule=raw_rule,
         group_id=group_id,
         user_id=user_id,

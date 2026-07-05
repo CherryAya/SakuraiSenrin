@@ -39,6 +39,7 @@ from src.plugins.wordbank.handlers import submission as wordbank_submission_hand
 from src.plugins.wordbank.message_model import (
     MessageShape,
     shape_from_event,
+    shape_from_response_text,
     shape_from_text,
 )
 from src.plugins.wordbank.services import wordbank_service
@@ -60,6 +61,17 @@ def _should_call_group_send_api(ctx: Any, *, group_id: int, message: Message) ->
             "message": message,
         },
         result={"message_id": 1},
+    )
+
+
+def _should_call_group_poke_api(ctx: Any, *, group_id: int, user_id: int) -> None:
+    ctx.should_call_api(
+        "group_poke",
+        {
+            "group_id": group_id,
+            "user_id": user_id,
+        },
+        result={},
     )
 
 
@@ -121,12 +133,13 @@ async def _add_approved_entry(
     *,
     trigger_shape: MessageShape,
     response_text: str,
+    response_shape: MessageShape | None = None,
     raw_rule: dict | None = None,
     user_id: str = "10001",
 ) -> int:
     created = await wordbank_service.add_message_entry(
         trigger_shape=trigger_shape,
-        response_shape=shape_from_text(response_text),
+        response_shape=response_shape or shape_from_text(response_text),
         group_id="20001",
         user_id=user_id,
         is_group=True,
@@ -373,6 +386,57 @@ async def test_passive_poke_pipeline_prefixes_user_fallback_text(app: App) -> No
             ctx,
             group_id=event.group_id,
             message=text_message("@用户(10001) 别戳啦"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_response_pipeline_renders_sender_at_segment(app: App) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_text("晚安"),
+        response_text="",
+        response_shape=shape_from_response_text("你好 [@触发者]"),
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("晚安", message_id=2)
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=Message(
+                [
+                    MessageSegment.text("你好 "),
+                    MessageSegment.at("10001"),
+                ]
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_response_pipeline_executes_poke_without_empty_message(
+    app: App,
+) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_text("晚安"),
+        response_text="",
+        response_shape=shape_from_response_text("[戳触发者]"),
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("晚安", message_id=3)
+
+        ctx.receive_event(bot, event)
+        _should_call_group_poke_api(
+            ctx,
+            group_id=event.group_id,
+            user_id=event.user_id,
         )
 
 

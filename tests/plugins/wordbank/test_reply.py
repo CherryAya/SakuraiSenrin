@@ -574,7 +574,7 @@ async def test_reply_trigger_set_returns_permission_error_when_denied() -> None:
 async def test_reply_response_set_uses_response_item_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src.plugins.wordbank.handlers import commands as commands_module
+    from src.plugins.wordbank.handlers import media_helpers
 
     event = _event_with_reply("response set 新响应")
     update_response_content = AsyncMock(return_value=True)
@@ -587,18 +587,15 @@ async def test_reply_response_set_uses_response_item_id(
     )
 
     async def _build_shape(
-        _media_service: WordbankMediaService,
-        *,
-        text: str,
+        _media_service: WordbankMediaService | None,
         message: Message,
     ) -> MessageShape:
-        assert text == "新响应"
-        assert str(message) == "response set 新响应"
-        return shape_from_text(f"{text} 修改")
+        assert str(message) == "新响应"
+        return shape_from_text("新响应 修改")
 
     monkeypatch.setattr(
-        commands_module,
-        "build_shape_from_text_and_images",
+        media_helpers,
+        "build_response_shape_from_message",
         _build_shape,
     )
 

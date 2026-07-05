@@ -54,7 +54,10 @@ from src.plugins.wordbank.handlers.commands import (
     ParsedSearch,
     _default_i18n_text,
 )
-from src.plugins.wordbank.handlers.media_helpers import shape_from_trigger_text_value
+from src.plugins.wordbank.handlers.media_helpers import (
+    build_response_shape_from_message,
+    shape_from_trigger_text_value,
+)
 from src.plugins.wordbank.handlers.parsers import (
     parse_search_session_command,
 )
@@ -372,7 +375,7 @@ async def record_guided_response(
         ),
     )
     async with long_task:
-        shape = await build_message_shape_from_message(
+        shape = await build_response_shape_from_message(
             media_service,
             event.message,
             task=long_task,

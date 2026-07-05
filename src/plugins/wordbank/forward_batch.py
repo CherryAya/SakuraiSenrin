@@ -120,7 +120,6 @@ async def build_forward_batch_payload_by_source_message_id(
     max_depth: int = FORWARD_BATCH_MAX_DEPTH,
     task: LongTaskRunner | None = None,
 ) -> ForwardBatchPayload:
-    from src.plugins.wordbank.handlers import build_message_shape_from_message
     from src.plugins.wordbank.handlers.media_helpers import (
         open_message_shape_build_context,
     )
@@ -158,8 +157,12 @@ async def build_forward_batch_payload_by_source_message_id(
         message: MessageInput,
         build_context: Any,
     ) -> tuple[int, MessageShape]:
+        from src.plugins.wordbank.handlers.media_helpers import (
+            build_response_shape_from_message,
+        )
+
         async with semaphore:
-            shape = await build_message_shape_from_message(
+            shape = await build_response_shape_from_message(
                 media_service,
                 message,
                 task=task,
@@ -223,7 +226,9 @@ async def build_response_input_payload(
     max_forward_depth: int = FORWARD_BATCH_MAX_DEPTH,
     task: LongTaskRunner | None = None,
 ) -> ResponseInputPayload:
-    from src.plugins.wordbank.handlers import build_message_shape_from_message
+    from src.plugins.wordbank.handlers.media_helpers import (
+        build_response_shape_from_message,
+    )
 
     if is_forward_input(event):
         payload = await build_forward_batch_payload(
@@ -240,7 +245,7 @@ async def build_response_input_payload(
             source_message_id=payload.source_message_id,
             messages=payload.messages,
         )
-    shape = await build_message_shape_from_message(
+    shape = await build_response_shape_from_message(
         media_service,
         event.message,
         task=task,
