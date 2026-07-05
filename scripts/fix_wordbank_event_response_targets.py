@@ -1,4 +1,4 @@
-"""Bind sender at-targets for legacy wordbank event responses."""
+"""Bind sender targets for legacy wordbank event responses."""
 
 from __future__ import annotations
 
@@ -160,8 +160,39 @@ def has_sender_at(shape: list[dict[str, object]]) -> bool:
     )
 
 
+def has_sender_poke(shape: list[dict[str, object]]) -> bool:
+    return any(
+        str(atom.get("kind", "") or "") == "event"
+        and str(atom.get("event_name", "") or "") == "event:poke"
+        and str(atom.get("target_id", "") or "") == RESPONSE_TARGET_SENDER
+        for atom in shape
+    )
+
+
+def remove_sender_at(shape: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        atom
+        for atom in shape
+        if not (
+            str(atom.get("kind", "") or "") == "at"
+            and str(atom.get("target_id", "") or "") == RESPONSE_TARGET_SENDER
+        )
+    ]
+
+
 def prepend_sender_at(shape: list[dict[str, object]]) -> list[dict[str, object]]:
     return [{"kind": "at", "target_id": RESPONSE_TARGET_SENDER}, *shape]
+
+
+def prepend_sender_poke(shape: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        {
+            "kind": "event",
+            "event_name": "event:poke",
+            "target_id": RESPONSE_TARGET_SENDER,
+        },
+        *shape,
+    ]
 
 
 def event_names(shape: list[dict[str, object]]) -> set[str]:
@@ -177,11 +208,17 @@ def transform_response_shape(
     response_shape: list[dict[str, object]],
 ) -> tuple[list[dict[str, object]], str | None]:
     events = event_names(trigger_shape)
-    if "event:at" in events or "event:poke" in events:
+    if "event:at" in events:
         if has_sender_at(response_shape):
             return response_shape, None
-        reason = "event:at" if "event:at" in events else "event:poke"
-        return prepend_sender_at(response_shape), reason
+        return prepend_sender_at(response_shape), "event:at"
+    if "event:poke" in events:
+        cleaned_shape = remove_sender_at(response_shape)
+        if has_sender_poke(cleaned_shape):
+            if cleaned_shape == response_shape:
+                return response_shape, None
+            return cleaned_shape, "event:poke"
+        return prepend_sender_poke(cleaned_shape), "event:poke"
     return response_shape, None
 
 
@@ -263,7 +300,7 @@ def fix_wordbank_event_response_targets(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Bind sender at-targets for legacy wordbank event responses"
+        description="Bind sender targets for legacy wordbank event responses"
     )
     parser.add_argument(
         "--db-path",

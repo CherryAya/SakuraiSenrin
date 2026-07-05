@@ -10,6 +10,10 @@ from scripts.fix_wordbank_event_response_targets import (
 BOUND_SENDER_JSON = (
     '[{"kind":"at","target_id":"__sender__"},{"kind":"text","text":" 已绑定"}]'
 )
+BOUND_SENDER_POKE_JSON = (
+    '[{"kind":"event","event_name":"event:poke","target_id":"__sender__"},'
+    '{"kind":"text","text":" 已戳回去"}]'
+)
 
 
 def _prepare_db(path: Path) -> None:
@@ -70,9 +74,16 @@ def _prepare_db(path: Path) -> None:
                     0,
                     '@触发者 已绑定',
                     ?
+                ),
+                (
+                    13,
+                    2,
+                    0,
+                    '戳一戳触发者 已戳回去',
+                    ?
                 )
             """,
-            (BOUND_SENDER_JSON,),
+            (BOUND_SENDER_JSON, BOUND_SENDER_POKE_JSON),
         )
         connection.commit()
     finally:
@@ -85,7 +96,7 @@ def test_fix_wordbank_event_response_targets_updates_event_rows(tmp_path: Path) 
 
     stats = fix_wordbank_event_response_targets(db_path)
 
-    assert stats.scanned == 3
+    assert stats.scanned == 4
     assert stats.updated == 2
     assert stats.at_updated == 1
     assert stats.poke_updated == 1
@@ -100,12 +111,13 @@ def test_fix_wordbank_event_response_targets_updates_event_rows(tmp_path: Path) 
         )
         assert rows[0][2] == "@触发者 在？"
         assert rows[1][1] == (
-            '[{"kind":"at","target_id":"__sender__"},{"kind":"text","text":"别戳"}]'
+            '[{"kind":"event","event_name":"event:poke","target_id":"__sender__"},{"kind":"text","text":"别戳"}]'
         )
-        assert rows[1][2] == "@触发者 别戳"
+        assert rows[1][2] == "戳一戳触发者 别戳"
         assert rows[2][1] == (
             '[{"kind":"at","target_id":"__sender__"},{"kind":"text","text":" 已绑定"}]'
         )
+        assert rows[3][1] == BOUND_SENDER_POKE_JSON
         trigger_fts_count = connection.execute(
             "SELECT COUNT(*) FROM wordbank_search_trigger_fts"
         ).fetchone()[0]

@@ -387,7 +387,7 @@ async def test_passive_poke_pipeline_mentions_sender_from_response_shape(
     await _add_approved_entry(
         trigger_shape=shape_from_event("event:poke"),
         response_text="别戳啦",
-        response_shape=shape_from_response_text("[@触发者] 别戳啦"),
+        response_shape=shape_from_response_text("[戳触发者] 别戳啦"),
         raw_rule={"scope": "current_group"},
     )
 
@@ -400,12 +400,12 @@ async def test_passive_poke_pipeline_mentions_sender_from_response_shape(
         _should_call_group_send_api(
             ctx,
             group_id=event.group_id,
-            message=Message(
-                [
-                    MessageSegment.at("10001"),
-                    MessageSegment.text(" 别戳啦"),
-                ]
-            ),
+            message=text_message(" 别戳啦"),
+        )
+        _should_call_group_poke_api(
+            ctx,
+            group_id=event.group_id,
+            user_id=event.user_id,
         )
 
 
