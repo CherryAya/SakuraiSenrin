@@ -3,18 +3,31 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import WordbankSearchItem
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    format_at_summary_text,
+    format_event_summary_text,
+)
 
 
 @dataclass(slots=True, frozen=True)
-class SearchCardResponsePreview:
+class SearchCardContentBlock:
+    kind: Literal["text", "image", "label"]
+    text: str = ""
+    image_id: int | None = None
+    label: str = ""
+
+
+@dataclass(slots=True, frozen=True)
+class SearchCardResponseRenderItem:
     index: int
     response_item_id: int
-    text: str
+    blocks: tuple[SearchCardContentBlock, ...]
 
 
 def safe_field_label(locale: LocaleCode, key: str) -> str:
@@ -124,10 +137,21 @@ def response_preview(item: WordbankSearchItem, locale: LocaleCode) -> str:
     return preview or tr(locale, "wordbank.search_card.none")
 
 
+def trigger_preview_blocks(
+    item: WordbankSearchItem,
+    locale: LocaleCode,
+) -> tuple[SearchCardContentBlock, ...]:
+    return _content_blocks_from_shape_or_text(
+        shape=item.trigger_shape,
+        fallback_text=item.trigger_text,
+        locale=locale,
+    )
+
+
 def response_preview_items(
     item: WordbankSearchItem,
     locale: LocaleCode,
-) -> tuple[SearchCardResponsePreview, ...]:
+) -> tuple[SearchCardResponseRenderItem, ...]:
     summaries = [summary for summary in item.response_summaries[:3] if summary]
     if not summaries and item.response_text:
         summaries = [item.response_text]
@@ -137,13 +161,36 @@ def response_preview_items(
     while len(response_ids) < len(summaries):
         response_ids.append(0)
     return tuple(
-        SearchCardResponsePreview(
+        SearchCardResponseRenderItem(
             index=index,
             response_item_id=response_ids[index - 1],
-            text=summary,
+            blocks=(
+                _content_blocks_from_shape_or_text(
+                    shape=item.response_shape,
+                    fallback_text=summary,
+                    locale=locale,
+                )
+                if index == 1
+                else _content_blocks_from_text(summary, locale)
+            ),
         )
         for index, summary in enumerate(summaries, start=1)
     )
+
+
+def search_card_image_ids(
+    item: WordbankSearchItem,
+    locale: LocaleCode,
+) -> tuple[int, ...]:
+    image_ids: list[int] = []
+    for block in trigger_preview_blocks(item, locale):
+        if block.kind == "image" and block.image_id is not None:
+            image_ids.append(block.image_id)
+    for response in response_preview_items(item, locale):
+        for block in response.blocks:
+            if block.kind == "image" and block.image_id is not None:
+                image_ids.append(block.image_id)
+    return tuple(dict.fromkeys(image_ids))
 
 
 def preview_summary_count(item: WordbankSearchItem) -> int:
@@ -190,4 +237,64 @@ def text_width(text: str, font: Any) -> int:
             text,
             font=font,
         )
+    )
+
+
+def _content_blocks_from_shape_or_text(
+    *,
+    shape: MessageShape | None,
+    fallback_text: str,
+    locale: LocaleCode,
+) -> tuple[SearchCardContentBlock, ...]:
+    if shape is not None and not shape.is_empty():
+        blocks = _content_blocks_from_shape(shape)
+        if blocks:
+            return blocks
+    return _content_blocks_from_text(fallback_text, locale)
+
+
+def _content_blocks_from_shape(
+    shape: MessageShape,
+) -> tuple[SearchCardContentBlock, ...]:
+    blocks: list[SearchCardContentBlock] = []
+    for atom in shape.atoms:
+        if atom.kind == "text" and atom.text:
+            blocks.append(SearchCardContentBlock(kind="text", text=atom.text))
+        elif atom.kind == "image" and atom.canonical_image_id is not None:
+            blocks.append(
+                SearchCardContentBlock(
+                    kind="image",
+                    image_id=atom.canonical_image_id,
+                )
+            )
+        elif atom.kind == "at" and atom.target_id:
+            blocks.append(
+                SearchCardContentBlock(
+                    kind="label",
+                    label=f"[{format_at_summary_text(atom.target_id)}]",
+                )
+            )
+        elif atom.kind == "event" and atom.event_name:
+            event_label = format_event_summary_text(atom.event_name, atom.target_id)
+            blocks.append(
+                SearchCardContentBlock(
+                    kind="label",
+                    label=f"[{event_label}]",
+                )
+            )
+    return tuple(blocks)
+
+
+def _content_blocks_from_text(
+    text: str,
+    locale: LocaleCode,
+) -> tuple[SearchCardContentBlock, ...]:
+    normalized = text.strip()
+    if normalized:
+        return (SearchCardContentBlock(kind="text", text=text),)
+    return (
+        SearchCardContentBlock(
+            kind="text",
+            text=tr(locale, "wordbank.search_card.none"),
+        ),
     )

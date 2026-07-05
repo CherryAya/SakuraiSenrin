@@ -156,6 +156,30 @@ async def test_build_search_results_card_plan_entry_falls_back_to_text_plan(
 
 
 @pytest.mark.asyncio
+async def test_search_results_card_plan_entry_preloads_shape_images() -> None:
+    media_service = _media_service()
+
+    await build_search_results_card_plan_entry(
+        items=(_search_item(),),
+        query=SearchCardQuery(
+            keyword="晚安",
+            field="all",
+            creator_id="",
+            has_image=True,
+            page=1,
+            total_count=1,
+            limit=10,
+        ),
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    load_mock = media_service.load_canonical_storage_bytes
+    assert isinstance(load_mock, AsyncMock)
+    assert {call.args[0] for call in load_mock.await_args_list} == {7, 8}
+
+
+@pytest.mark.asyncio
 async def test_build_reply_detail_plan_entry_renders_selected_response() -> None:
     entry = await build_reply_detail_plan_entry(
         detail=_group_detail(),

@@ -20,7 +20,8 @@ from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.types import WordbankSearchItem
 
 from .search_card_helpers import (
-    SearchCardResponsePreview,
+    SearchCardContentBlock,
+    SearchCardResponseRenderItem,
     build_search_card_footer_text,
     fallback_match_label,
     fold_hint,
@@ -31,12 +32,13 @@ from .search_card_helpers import (
     safe_field_label,
     summary_chips,
     text_width,
+    trigger_preview_blocks,
 )
 
 CARD_WIDTH = 1320
-CARD_PADDING_X = 32
+CARD_PADDING_X = 28
 CARD_PADDING_Y = 28
-CARD_COLUMN_GAP = 20
+CARD_COLUMN_GAP = 24
 CARD_ROW_GAP = 18
 CARD_RADIUS = 22
 CARD_HEADER_GAP = 16
@@ -47,19 +49,27 @@ CARD_ITEM_PADDING_X = 20
 CARD_ITEM_PADDING_Y = 18
 CARD_ITEM_RADIUS = 20
 CARD_ITEM_GAP = 12
-CARD_SUBSECTION_GAP = 10
-CARD_RESPONSE_GAP = 8
+CARD_SUBSECTION_GAP = 14
+CARD_RESPONSE_GAP = 14
 CARD_RESPONSE_PADDING_X = 14
-CARD_RESPONSE_PADDING_Y = 12
+CARD_RESPONSE_PADDING_Y = 14
 CARD_RESPONSE_RADIUS = 16
 CARD_BADGE_SIZE = 42
-CARD_TAG_GAP = 8
+CARD_TAG_COLUMN_GAP = 8
+CARD_TAG_ROW_GAP = 6
 CARD_TAG_PADDING_X = 12
 CARD_TAG_PADDING_Y = 6
 CARD_TAG_RADIUS = 14
 CARD_IMAGE_RADIUS = 16
 CARD_IMAGE_MAX_HEIGHT = 220
 CARD_FOLDED_HEIGHT = 52
+CARD_CONTENT_GAP = 8
+CARD_LABEL_PADDING_X = 12
+CARD_LABEL_PADDING_Y = 6
+CARD_LABEL_RADIUS = 13
+CARD_RESPONSE_BADGE_HEIGHT = 28
+CARD_RESPONSE_BADGE_PADDING_X = 12
+CARD_RESPONSE_BADGE_OFFSET_X = 18
 TEXTURE_SPACING = 40
 TEXTURE_DOT_RADIUS = 2
 CARD_COLUMNS = 2
@@ -109,10 +119,15 @@ class SearchResultCardRenderer:
         self.title_font = self._load_font(38)
         self.summary_font = self._load_font(20)
         self.item_title_font = self._load_font(28)
-        self.item_body_font = self._load_font(24)
+        self.trigger_body_font = self._load_font(26)
+        self.response_body_font = self._load_font(24)
         self.item_meta_font = self._load_font(18)
         self.item_tag_font = self._load_font(17)
         self.footer_font = self._load_font(17)
+        self.trigger_text_fill = self._shade_color(self.HEADER, 0.88)
+        self.response_text_fill = self.BODY
+        self.label_fill = self.ACCENT_SOFT
+        self.label_text_fill = self.ACCENT_DEEP
         self.preview_bytes = dict(preview_bytes or {})
         self._preview_size_cache: dict[
             tuple[int, int, int], tuple[int, int] | None
@@ -267,7 +282,7 @@ class SearchResultCardRenderer:
             )
             if chip_x + chip_width > max_x:
                 chip_x = CARD_PADDING_X + 16
-                chip_y += chip_height + CARD_TAG_GAP
+                chip_y += chip_height + CARD_TAG_COLUMN_GAP
             draw.rounded_rectangle(
                 (chip_x, chip_y, chip_x + chip_width, chip_y + chip_height),
                 radius=chip_height // 2,
@@ -279,7 +294,7 @@ class SearchResultCardRenderer:
                 font=self.summary_font,
                 fill=self.ACCENT_DEEP,
             )
-            chip_x += chip_width + CARD_TAG_GAP
+            chip_x += chip_width + CARD_TAG_COLUMN_GAP
         return cursor_y + height
 
     def _draw_grid(
@@ -449,7 +464,6 @@ class SearchResultCardRenderer:
         width: int,
         height: int,
     ) -> None:
-        _ = locale
         draw.rounded_rectangle(
             (x, y, x + width, y + height),
             radius=CARD_RESPONSE_RADIUS,
@@ -457,38 +471,23 @@ class SearchResultCardRenderer:
             outline=self.TRIGGER_BORDER,
             width=1,
         )
-        cursor_y = y + 12
-        cursor_y = self._draw_wrapped_text(
+        self._draw_content_blocks(
+            image,
             draw,
-            x=x + 14,
-            y=cursor_y,
-            text=item.trigger_text or "",
-            font=self.item_body_font,
-            fill=self._contrast_text_color(self.TRIGGER_PANEL),
-            max_width=width - 28,
-            max_lines=4,
+            blocks=trigger_preview_blocks(item, locale),
+            x=x + CARD_RESPONSE_PADDING_X,
+            y=y + CARD_RESPONSE_PADDING_Y,
+            max_width=width - CARD_RESPONSE_PADDING_X * 2,
+            text_font=self.trigger_body_font,
+            text_fill=self.trigger_text_fill,
         )
-        if item.trigger_preview_image_id is not None:
-            preview = self._prepare_preview_image(
-                item.trigger_preview_image_id,
-                max_width=width - 28,
-                max_height=CARD_IMAGE_MAX_HEIGHT,
-            )
-            if preview is not None:
-                cursor_y += 10
-                self._paste_rounded_image(
-                    image,
-                    preview,
-                    (x + 14 + int((width - 28 - preview.width) / 2), cursor_y),
-                    radius=CARD_IMAGE_RADIUS,
-                )
 
     def _draw_response_panel(
         self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
         *,
-        response: SearchCardResponsePreview,
+        response: SearchCardResponseRenderItem,
         item: WordbankSearchItem,
         absolute_index: int,
         x: int,
@@ -506,55 +505,40 @@ class SearchResultCardRenderer:
             width=1,
         )
         label = f"{absolute_index}-{response.index}"
-        label_width = text_width(label, self.item_tag_font) + 20
+        label_width = (
+            text_width(label, self.item_tag_font) + CARD_RESPONSE_BADGE_PADDING_X * 2
+        )
         draw.rounded_rectangle(
             (
-                x + CARD_RESPONSE_PADDING_X,
-                y + CARD_RESPONSE_PADDING_Y,
-                x + CARD_RESPONSE_PADDING_X + label_width,
-                y + CARD_RESPONSE_PADDING_Y + 28,
+                x + CARD_RESPONSE_BADGE_OFFSET_X,
+                y - CARD_RESPONSE_BADGE_HEIGHT // 2,
+                x + CARD_RESPONSE_BADGE_OFFSET_X + label_width,
+                y + CARD_RESPONSE_BADGE_HEIGHT // 2,
             ),
-            radius=14,
+            radius=CARD_RESPONSE_BADGE_HEIGHT // 2,
             fill=self.ACCENT_SOFT,
+            outline=self.BORDER,
+            width=1,
         )
         draw.text(
-            (x + CARD_RESPONSE_PADDING_X + 10, y + CARD_RESPONSE_PADDING_Y + 5),
+            (
+                x + CARD_RESPONSE_BADGE_OFFSET_X + CARD_RESPONSE_BADGE_PADDING_X,
+                y - CARD_RESPONSE_BADGE_HEIGHT // 2 + 5,
+            ),
             label,
             font=self.item_tag_font,
             fill=self.ACCENT_DEEP,
         )
-        cursor_y = y + CARD_RESPONSE_PADDING_Y + 34
-        cursor_y = self._draw_wrapped_text(
+        self._draw_content_blocks(
+            image,
             draw,
+            blocks=response.blocks,
             x=x + CARD_RESPONSE_PADDING_X,
-            y=cursor_y,
-            text=response.text,
-            font=self.item_body_font,
-            fill=self._contrast_text_color(fill),
+            y=y + CARD_RESPONSE_PADDING_Y,
             max_width=width - CARD_RESPONSE_PADDING_X * 2,
-            max_lines=5,
+            text_font=self.response_body_font,
+            text_fill=self.response_text_fill,
         )
-        if response.index == 1 and item.response_preview_image_id is not None:
-            preview = self._prepare_preview_image(
-                item.response_preview_image_id,
-                max_width=width - CARD_RESPONSE_PADDING_X * 2,
-                max_height=CARD_IMAGE_MAX_HEIGHT,
-            )
-            if preview is not None:
-                cursor_y += 10
-                self._paste_rounded_image(
-                    image,
-                    preview,
-                    (
-                        x
-                        + CARD_RESPONSE_PADDING_X
-                        + int(
-                            (width - CARD_RESPONSE_PADDING_X * 2 - preview.width) / 2
-                        ),
-                        cursor_y,
-                    ),
-                    radius=CARD_IMAGE_RADIUS,
-                )
 
     def _draw_folded_preview_block(
         self,
@@ -603,7 +587,7 @@ class SearchResultCardRenderer:
             tag_width = text_width(tag, self.item_tag_font) + CARD_TAG_PADDING_X * 2
             if cursor_x + tag_width > max_x:
                 cursor_x = x
-                cursor_y += line_height_value + CARD_TAG_GAP
+                cursor_y += line_height_value + CARD_TAG_ROW_GAP
             draw.rounded_rectangle(
                 (
                     cursor_x,
@@ -612,7 +596,7 @@ class SearchResultCardRenderer:
                     cursor_y + line_height_value,
                 ),
                 radius=CARD_TAG_RADIUS,
-                fill="#FFFFFF",
+                fill=self.PANEL,
                 outline=self.BORDER,
                 width=1,
             )
@@ -622,7 +606,7 @@ class SearchResultCardRenderer:
                 font=self.item_tag_font,
                 fill=self.MUTED,
             )
-            cursor_x += tag_width + CARD_TAG_GAP
+            cursor_x += tag_width + CARD_TAG_COLUMN_GAP
 
     def _draw_empty_state(
         self,
@@ -721,10 +705,10 @@ class SearchResultCardRenderer:
             )
             if current_x + chip_width > max_x:
                 rows += 1
-                current_x = CARD_PADDING_X + 16 + chip_width + CARD_TAG_GAP
+                current_x = CARD_PADDING_X + 16 + chip_width + CARD_TAG_COLUMN_GAP
             else:
-                current_x += chip_width + CARD_TAG_GAP
-        return 14 + rows * chip_height + (rows - 1) * CARD_TAG_GAP + 14
+                current_x += chip_width + CARD_TAG_COLUMN_GAP
+        return 14 + rows * chip_height + (rows - 1) * CARD_TAG_COLUMN_GAP + 14
 
     def _item_block_height(
         self,
@@ -770,48 +754,29 @@ class SearchResultCardRenderer:
         width: int,
         locale: LocaleCode,
     ) -> int:
-        total = 12
-        total += self._wrapped_text_height(
-            item.trigger_text or tr(locale, "wordbank.search_card.none"),
-            self.item_body_font,
-            max_width=width - 28,
-            max_lines=4,
+        total = CARD_RESPONSE_PADDING_Y * 2
+        total += self._content_blocks_height(
+            trigger_preview_blocks(item, locale),
+            max_width=width - CARD_RESPONSE_PADDING_X * 2,
+            text_font=self.trigger_body_font,
         )
-        preview_height = self._preview_height(
-            item.trigger_preview_image_id,
-            max_width=width - 28,
-            max_height=CARD_IMAGE_MAX_HEIGHT,
-        )
-        if preview_height > 0:
-            total += 10 + preview_height
-        total += 12
         return total
 
     def _response_panel_height(
         self,
         *,
-        response: SearchCardResponsePreview,
+        response: SearchCardResponseRenderItem,
         item: WordbankSearchItem,
         absolute_index: int,
         width: int,
     ) -> int:
-        _ = absolute_index
-        total = CARD_RESPONSE_PADDING_Y + 34
-        total += self._wrapped_text_height(
-            response.text,
-            self.item_body_font,
+        _ = (absolute_index, item)
+        total = CARD_RESPONSE_PADDING_Y * 2
+        total += self._content_blocks_height(
+            response.blocks,
             max_width=width - CARD_RESPONSE_PADDING_X * 2,
-            max_lines=5,
+            text_font=self.response_body_font,
         )
-        if response.index == 1:
-            preview_height = self._preview_height(
-                item.response_preview_image_id,
-                max_width=width - CARD_RESPONSE_PADDING_X * 2,
-                max_height=CARD_IMAGE_MAX_HEIGHT,
-            )
-            if preview_height > 0:
-                total += 10 + preview_height
-        total += CARD_RESPONSE_PADDING_Y
         return total
 
     def _folded_block_height(
@@ -865,10 +830,10 @@ class SearchResultCardRenderer:
             tag_width = text_width(tag, self.item_tag_font) + CARD_TAG_PADDING_X * 2
             if cursor_x and cursor_x + tag_width > width:
                 rows += 1
-                cursor_x = tag_width + CARD_TAG_GAP
+                cursor_x = tag_width + CARD_TAG_COLUMN_GAP
             else:
-                cursor_x += tag_width + CARD_TAG_GAP
-        return rows * line_height_value + (rows - 1) * CARD_TAG_GAP
+                cursor_x += tag_width + CARD_TAG_COLUMN_GAP
+        return rows * line_height_value + (rows - 1) * CARD_TAG_ROW_GAP
 
     def _draw_wrapped_text(
         self,
@@ -892,6 +857,124 @@ class SearchResultCardRenderer:
             draw.text((x, cursor_y), line, font=font, fill=fill)
             cursor_y += line_height(font)
         return cursor_y
+
+    def _draw_content_blocks(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        blocks: tuple[SearchCardContentBlock, ...],
+        x: int,
+        y: int,
+        max_width: int,
+        text_font: Any,
+        text_fill: str,
+    ) -> int:
+        cursor_y = y
+        drawn = 0
+        for block in blocks:
+            if drawn > 0:
+                cursor_y += CARD_CONTENT_GAP
+            if block.kind == "text" and block.text:
+                cursor_y = self._draw_wrapped_text(
+                    draw,
+                    x=x,
+                    y=cursor_y,
+                    text=block.text,
+                    font=text_font,
+                    fill=text_fill,
+                    max_width=max_width,
+                )
+                drawn += 1
+            elif block.kind == "image" and block.image_id is not None:
+                preview = self._prepare_preview_image(
+                    block.image_id,
+                    max_width=max_width,
+                    max_height=CARD_IMAGE_MAX_HEIGHT,
+                )
+                if preview is None:
+                    if drawn > 0:
+                        cursor_y -= CARD_CONTENT_GAP
+                    continue
+                self._paste_rounded_image(
+                    image,
+                    preview,
+                    (x, cursor_y),
+                    radius=CARD_IMAGE_RADIUS,
+                )
+                cursor_y += preview.height
+                drawn += 1
+            elif block.kind == "label" and block.label:
+                cursor_y = self._draw_label_block(
+                    draw,
+                    x=x,
+                    y=cursor_y,
+                    text=block.label,
+                )
+                drawn += 1
+            elif drawn > 0:
+                cursor_y -= CARD_CONTENT_GAP
+        return cursor_y
+
+    def _content_blocks_height(
+        self,
+        blocks: tuple[SearchCardContentBlock, ...],
+        *,
+        max_width: int,
+        text_font: Any,
+    ) -> int:
+        total = 0
+        visible = 0
+        for block in blocks:
+            block_height = 0
+            if block.kind == "text" and block.text:
+                block_height = self._wrapped_text_height(
+                    block.text,
+                    text_font,
+                    max_width=max_width,
+                )
+            elif block.kind == "image" and block.image_id is not None:
+                block_height = self._preview_height(
+                    block.image_id,
+                    max_width=max_width,
+                    max_height=CARD_IMAGE_MAX_HEIGHT,
+                )
+            elif block.kind == "label" and block.label:
+                block_height = self._label_block_height(block.label)
+            if block_height <= 0:
+                continue
+            if visible > 0:
+                total += CARD_CONTENT_GAP
+            total += block_height
+            visible += 1
+        return total
+
+    def _draw_label_block(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        y: int,
+        text: str,
+    ) -> int:
+        height = self._label_block_height(text)
+        width = text_width(text, self.item_meta_font) + CARD_LABEL_PADDING_X * 2
+        draw.rounded_rectangle(
+            (x, y, x + width, y + height),
+            radius=CARD_LABEL_RADIUS,
+            fill=self.label_fill,
+        )
+        draw.text(
+            (x + CARD_LABEL_PADDING_X, y + 4),
+            text,
+            font=self.item_meta_font,
+            fill=self.label_text_fill,
+        )
+        return y + height
+
+    def _label_block_height(self, text: str) -> int:
+        _ = text
+        return line_height(self.item_meta_font) + CARD_LABEL_PADDING_Y
 
     def _wrapped_text_height(
         self,
@@ -1043,11 +1126,12 @@ class SearchResultCardRenderer:
     def _column_width(self) -> int:
         return int((CARD_WIDTH - CARD_PADDING_X * 2 - CARD_COLUMN_GAP) / CARD_COLUMNS)
 
-    def _contrast_text_color(self, background: str) -> str:
-        rgb = ImageColor.getrgb(background)
-        red, green, blue = rgb[:3]
-        luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255
-        return "#FFF9FC" if luminance < 0.62 else self.HEADER
+    def _shade_color(self, color: str, factor: float) -> str:
+        red, green, blue = ImageColor.getrgb(color)[:3]
+        red_value = max(0, min(255, int(red * factor)))
+        green_value = max(0, min(255, int(green * factor)))
+        blue_value = max(0, min(255, int(blue * factor)))
+        return f"#{red_value:02X}{green_value:02X}{blue_value:02X}"
 
     # Compatibility helpers kept for tests and local renderer inspection.
     def _fold_hint(self, item: WordbankSearchItem, locale: LocaleCode) -> str:

@@ -46,6 +46,7 @@ from .group_detail_cards import (
 from .leaderboard_cards import (
     build_wordbank_leaderboard_card_plan_entry as build_leaderboard_image_plan_entry,
 )
+from .search_card_helpers import search_card_image_ids
 from .search_cards import (
     SearchCardQuery,
 )
@@ -359,13 +360,7 @@ async def build_search_results_card_plan_entry(
     media_service: WordbankMediaService,
 ) -> MessagePlanEntry:
     preview_ids = {
-        image_id
-        for item in items
-        for image_id in (
-            item.trigger_preview_image_id,
-            item.response_preview_image_id,
-        )
-        if image_id is not None
+        image_id for item in items for image_id in search_card_image_ids(item, locale)
     }
     preview_bytes = await _load_image_bytes_map(preview_ids, media_service)
     return await build_preferred_message_plan(
