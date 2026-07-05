@@ -466,6 +466,18 @@ class WordbankRepositorySearchMixin:
                                 )
                                 else None
                             ),
+                            response_item_ids=(
+                                tuple(response.id for response in bundle.responses[:3])
+                                if (
+                                    (
+                                        bundle := bundles_by_group_id.get(
+                                            document.trigger_group_id
+                                        )
+                                    )
+                                    is not None
+                                )
+                                else ()
+                            ),
                         )
                         for document in documents
                     ),
@@ -548,6 +560,18 @@ class WordbankRepositorySearchMixin:
                             and bundle.responses
                         )
                         else None
+                    ),
+                    response_item_ids=(
+                        tuple(response.id for response in bundle.responses[:3])
+                        if (
+                            (
+                                bundle := bundles_by_group_id.get(
+                                    document.trigger_group_id
+                                )
+                            )
+                            is not None
+                        )
+                        else ()
                     ),
                 )
                 for score, _, matched_by, document in paged

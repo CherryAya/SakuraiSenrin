@@ -181,7 +181,7 @@ class ParsedSearchSessionCommand:
     action: str
     page: int | None = None
     trigger_group_id: int | None = None
-    delete_indexes: tuple[int, ...] = ()
+    delete_targets: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
@@ -860,24 +860,31 @@ def parse_search_session_command(text: str) -> ParsedSearchSessionCommand:
             action="detail", page=parsed.page, trigger_group_id=parsed.trigger_group_id
         )
     if action in {"delete", "del", "remove", "删除"}:
-        raw_indexes = tuple(part for part in rest.split() if part)
-        if not raw_indexes:
+        raw_targets = tuple(part for part in rest.split() if part)
+        if not raw_targets:
             raise RuleError(
                 _default_i18n_text("wordbank.error.search_delete_index_invalid"),
                 key="wordbank.error.search_delete_index_invalid",
             )
-        indexes: list[int] = []
-        for raw_index in raw_indexes:
-            if not raw_index.isdigit() or int(raw_index) <= 0:
+        targets: list[tuple[int, int]] = []
+        for raw_target in raw_targets:
+            group_text, separator, response_text = raw_target.partition("-")
+            if (
+                not separator
+                or not group_text.isdigit()
+                or not response_text.isdigit()
+                or int(group_text) <= 0
+                or int(response_text) <= 0
+            ):
                 raise RuleError(
                     _default_i18n_text("wordbank.error.search_delete_index_invalid"),
                     key="wordbank.error.search_delete_index_invalid",
                 )
-            value = int(raw_index)
-            if value not in indexes:
-                indexes.append(value)
+            value = (int(group_text), int(response_text))
+            if value not in targets:
+                targets.append(value)
         return ParsedSearchSessionCommand(
-            action="delete", delete_indexes=tuple(indexes)
+            action="delete", delete_targets=tuple(targets)
         )
     if source.isdigit() or normalized == "page":
         return ParsedSearchSessionCommand(

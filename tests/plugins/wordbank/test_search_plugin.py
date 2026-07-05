@@ -400,8 +400,8 @@ async def test_finish_guided_search_keeps_search_session_when_results_exist(
     )
     monkeypatch.setattr(
         wordbank_plugin,
-        "_resolve_search_delete_target_ids",
-        AsyncMock(return_value=(12,)),
+        "_resolve_search_delete_target_map",
+        AsyncMock(return_value=(("1-1", 12),)),
     )
     monkeypatch.setattr(
         wordbank_plugin,
@@ -438,7 +438,7 @@ async def test_finish_guided_search_keeps_search_session_when_results_exist(
     assert state["wordbank_guided_search_current_page"] == 1
     assert state["wordbank_guided_search_total_pages"] == 1
     assert state["wordbank_guided_search_group_ids"] == (271,)
-    assert state["wordbank_guided_search_delete_target_ids"] == (12,)
+    assert state["wordbank_guided_search_delete_target_map"] == (("1-1", 12),)
 
 
 @pytest.mark.asyncio
@@ -466,14 +466,14 @@ async def test_handle_search_session_delete_refreshes_current_page(
         "wordbank_guided_search_current_page": 1,
         "wordbank_guided_search_total_pages": 2,
         "wordbank_guided_search_group_ids": (271,),
-        "wordbank_guided_search_delete_target_ids": (12,),
+        "wordbank_guided_search_delete_target_map": (("1-1", 12),),
         "wordbank_guided_search_field": "all",
         "wordbank_guided_search_keyword": "晚安",
         "wordbank_guided_search_creator_id": "",
         "wordbank_guided_search_has_image": False,
         "wordbank_guided_search_image_scores": {},
     }
-    event = build_group_message_event("del 1")
+    event = build_group_message_event("del 1-1")
 
     await wordbank_plugin._handle_search_session_event(
         bot,
@@ -497,6 +497,51 @@ async def test_handle_search_session_delete_refreshes_current_page(
     assert await_args is not None
     assert await_args.kwargs["page_number"] == 1
     assert await_args.kwargs["clamp_page"] is True
+
+
+@pytest.mark.asyncio
+async def test_handle_search_session_delete_uses_response_level_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matcher = _FinishMatcher()
+    call_api = _fallback_send_group_side_effect()
+    bot = cast(Bot, SimpleNamespace(self_id="99999", call_api=call_api))
+    handle_delete = AsyncMock(return_value="词条 #22 已删除。")
+    monkeypatch.setattr(wordbank_plugin, "handle_delete", handle_delete)
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "_finish_guided_search",
+        AsyncMock(return_value=None),
+    )
+
+    state = {
+        "wordbank_guided_search_stage": (
+            wordbank_plugin.WORDBANK_GUIDED_SEARCH_STAGE_PAGE
+        ),
+        "wordbank_guided_search_current_page": 1,
+        "wordbank_guided_search_total_pages": 2,
+        "wordbank_guided_search_group_ids": (271,),
+        "wordbank_guided_search_delete_target_map": (("1-1", 21), ("1-2", 22)),
+        "wordbank_guided_search_field": "all",
+        "wordbank_guided_search_keyword": "晚安",
+        "wordbank_guided_search_creator_id": "",
+        "wordbank_guided_search_has_image": False,
+        "wordbank_guided_search_image_scores": {},
+    }
+    event = build_group_message_event("del 1-2")
+
+    await wordbank_plugin._handle_search_session_event(
+        bot,
+        cast(Matcher, matcher),
+        event,
+        state,
+        "zh-CN",
+    )
+
+    handle_delete.assert_awaited_once()
+    await_args = handle_delete.await_args
+    assert await_args is not None
+    assert await_args.kwargs["response_item_id_text"] == "22"
 
 
 @pytest.mark.asyncio

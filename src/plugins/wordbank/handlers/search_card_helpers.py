@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import WordbankSearchItem
+
+
+@dataclass(slots=True, frozen=True)
+class SearchCardResponsePreview:
+    index: int
+    response_item_id: int
+    text: str
 
 
 def safe_field_label(locale: LocaleCode, key: str) -> str:
@@ -114,6 +122,28 @@ def response_preview(item: WordbankSearchItem, locale: LocaleCode) -> str:
         )
         preview = f"{preview}\n{suffix}".strip() if preview else suffix.strip()
     return preview or tr(locale, "wordbank.search_card.none")
+
+
+def response_preview_items(
+    item: WordbankSearchItem,
+    locale: LocaleCode,
+) -> tuple[SearchCardResponsePreview, ...]:
+    summaries = [summary for summary in item.response_summaries[:3] if summary]
+    if not summaries and item.response_text:
+        summaries = [item.response_text]
+    if not summaries:
+        summaries = [tr(locale, "wordbank.search_card.none")]
+    response_ids = list(item.response_item_ids[: len(summaries)])
+    while len(response_ids) < len(summaries):
+        response_ids.append(0)
+    return tuple(
+        SearchCardResponsePreview(
+            index=index,
+            response_item_id=response_ids[index - 1],
+            text=summary,
+        )
+        for index, summary in enumerate(summaries, start=1)
+    )
 
 
 def preview_summary_count(item: WordbankSearchItem) -> int:

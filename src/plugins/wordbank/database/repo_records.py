@@ -194,6 +194,7 @@ class WordbankRepositoryRecordsMixin:
         matched_by: str = "",
         trigger_shape: MessageShape | None = None,
         response_shape: MessageShape | None = None,
+        response_item_ids: tuple[int, ...] = (),
     ) -> WordbankSearchItem:
         raw_summaries = json.loads(document.response_preview_json or "[]")
         response_summaries = tuple(str(item) for item in raw_summaries if str(item))
@@ -214,6 +215,7 @@ class WordbankRepositoryRecordsMixin:
             created_by=document.created_by,
             score=score,
             matched_by=matched_by,
+            response_item_ids=response_item_ids,
             trigger_preview_image_id=first_image_id(document.trigger_image_keys),
             response_preview_image_id=first_image_id(document.response_image_keys),
         )

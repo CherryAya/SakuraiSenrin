@@ -7,6 +7,7 @@ from PIL import Image
 from src.lib.message_plan import render_message_plan_entry
 from src.plugins.water.img import _build_copyright_text
 from src.plugins.wordbank.database.types import WordbankSearchItem
+from src.plugins.wordbank.handlers.search_card_helpers import response_preview_items
 from src.plugins.wordbank.handlers.search_cards import (
     SearchCardQuery,
     SearchResultCardRenderer,
@@ -155,6 +156,30 @@ def test_search_card_renderer_adds_fold_hint_for_multi_response_group() -> None:
     assert "详情123" in hint
     assert renderer._has_folded_preview(item) is True  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
     assert renderer._folded_preview_block_height() > 0  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+
+
+def test_response_preview_items_preserve_response_boundaries() -> None:
+    item = WordbankSearchItem(
+        trigger_group_id=123,
+        status="approved",
+        trigger_text="晚安",
+        response_text="第一条",
+        response_summaries=("第一条\n第一段", "第二条\n第二段", "第三条"),
+        response_item_ids=(401, 402, 403),
+        response_count=5,
+        scope="current_group",
+        probability=1.0,
+        weight=3,
+        created_by="10001",
+        matched_by="text:trigger",
+    )
+
+    previews = response_preview_items(item, "zh-CN")
+
+    assert tuple(preview.index for preview in previews) == (1, 2, 3)
+    assert tuple(preview.response_item_id for preview in previews) == (401, 402, 403)
+    assert previews[0].text == "第一条\n第一段"
+    assert previews[1].text == "第二条\n第二段"
 
 
 def test_search_card_copyright_text_matches_water_style() -> None:

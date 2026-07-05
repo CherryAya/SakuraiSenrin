@@ -133,7 +133,7 @@ def test_parse_search_session_command_supports_page_detail_delete_and_exit() -> 
     page = parse_search_session_command("page 2")
     detail = parse_search_session_command("详情 271 3")
     compact_detail = parse_search_session_command("详情271 4")
-    delete = parse_search_session_command("del 1 2 2")
+    delete = parse_search_session_command("del 1-1 1-2 1-2")
     exit_cmd = parse_search_session_command("exit")
 
     assert page.action == "page"
@@ -145,8 +145,13 @@ def test_parse_search_session_command_supports_page_detail_delete_and_exit() -> 
     assert compact_detail.trigger_group_id == 271
     assert compact_detail.page == 4
     assert delete.action == "delete"
-    assert delete.delete_indexes == (1, 2)
+    assert delete.delete_targets == ((1, 1), (1, 2))
     assert exit_cmd.action == "exit"
+
+
+def test_parse_search_session_command_rejects_legacy_delete_indexes() -> None:
+    with pytest.raises(RuleError):
+        parse_search_session_command("del 1")
 
 
 def test_parse_rank_period_supports_default_and_aliases() -> None:

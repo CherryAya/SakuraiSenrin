@@ -94,7 +94,7 @@ WORDBANK_GUIDED_RECALL_PENDING_KEYS = (
     "wordbank_guided_search_creator_id",
     "wordbank_guided_search_image_scores",
     "wordbank_guided_search_group_ids",
-    "wordbank_guided_search_delete_target_ids",
+    "wordbank_guided_search_delete_target_map",
 )
 PRIVATE_SCOPE_PROMPT = (
     "请选择生效范围：\n"
@@ -829,47 +829,52 @@ def guided_search_group_ids(state: Mapping[str, Any]) -> tuple[int, ...]:
     )
 
 
-def guided_search_delete_target_ids(state: Mapping[str, Any]) -> tuple[int, ...]:
-    value = state.get("wordbank_guided_search_delete_target_ids")
-    if not isinstance(value, (list, tuple)):
-        return ()
-    return tuple(
-        int(item) for item in value if isinstance(item, int) or str(item).isdigit()
-    )
-
-
-def representative_detail_response_item_id(detail: Any) -> int | None:
-    responses = tuple(getattr(detail, "responses", ()) or ())
-    if not responses:
-        return None
-
-    def _sort_key(response: Any) -> tuple[int, int, int]:
-        deleted_at = int(getattr(response, "deleted_at", 0) or 0)
-        status = str(getattr(response, "status", "") or "")
-        enabled = int(getattr(response, "enabled", 0) or 0)
-        response_item_id = int(getattr(response, "response_item_id", 0) or 0)
-        active_rank = (
-            0 if deleted_at == 0 and status == "approved" and enabled == 1 else 1
-        )
-        deleted_rank = 0 if deleted_at == 0 else 1
-        return (active_rank, deleted_rank, response_item_id)
-
-    representative = min(responses, key=_sort_key)
-    response_item_id = int(getattr(representative, "response_item_id", 0) or 0)
-    return response_item_id if response_item_id > 0 else None
-
-
-async def resolve_search_delete_target_ids(
-    page: Any, *, wordbank_service: Any
-) -> tuple[int, ...]:
-    target_ids: list[int] = []
-    for item in page.items:
-        if item.response_item_ids:
-            target_ids.append(int(item.response_item_ids[0]))
+def guided_search_delete_target_map(state: Mapping[str, Any]) -> dict[str, int]:
+    value = state.get("wordbank_guided_search_delete_target_map")
+    if isinstance(value, Mapping):
+        pairs = value.items()
+    elif isinstance(value, (list, tuple)):
+        pairs = value
+    else:
+        return {}
+    target_map: dict[str, int] = {}
+    for pair in pairs:
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
             continue
-        detail = await wordbank_service.get_group_detail(item.trigger_group_id)
-        target_ids.append(representative_detail_response_item_id(detail) or 0)
-    return tuple(target_ids)
+        raw_key, raw_value = pair
+        key = str(raw_key).strip()
+        if not key:
+            continue
+        if not (isinstance(raw_value, int) or str(raw_value).isdigit()):
+            continue
+        target_map[key] = int(raw_value)
+    return target_map
+
+
+async def resolve_search_delete_target_map(
+    page: Any, *, wordbank_service: Any
+) -> tuple[tuple[str, int], ...]:
+    target_pairs: list[tuple[str, int]] = []
+    for group_index, item in enumerate(page.items, start=1):
+        response_item_ids = tuple(
+            int(response_item_id)
+            for response_item_id in item.response_item_ids
+            if int(response_item_id) > 0
+        )
+        if not response_item_ids:
+            detail = await wordbank_service.get_group_detail(item.trigger_group_id)
+            responses = tuple(getattr(detail, "responses", ()) or ())[:3]
+            response_item_ids = tuple(
+                int(getattr(response, "response_item_id", 0) or 0)
+                for response in responses
+                if int(getattr(response, "response_item_id", 0) or 0) > 0
+            )
+        for response_index, response_item_id in enumerate(
+            response_item_ids[:3],
+            start=1,
+        ):
+            target_pairs.append((f"{group_index}-{response_index}", response_item_id))
+    return tuple(target_pairs)
 
 
 def search_session_prompt(locale: LocaleCode, *, total_pages: int) -> str:
@@ -963,8 +968,8 @@ async def finish_guided_search(
         item.trigger_group_id for item in page.items
     )
     state[
-        "wordbank_guided_search_delete_target_ids"
-    ] = await wordbank_plugin._resolve_search_delete_target_ids(
+        "wordbank_guided_search_delete_target_map"
+    ] = await wordbank_plugin._resolve_search_delete_target_map(
         page,
         wordbank_service=wordbank_service,
     )
@@ -1068,12 +1073,8 @@ async def handle_search_session_event(
         return
 
     if parsed.action == "delete":
-        delete_target_ids = guided_search_delete_target_ids(state)
-        if (
-            not delete_target_ids
-            or any(index > len(delete_target_ids) for index in parsed.delete_indexes)
-            or any(delete_target_ids[index - 1] <= 0 for index in parsed.delete_indexes)
-        ):
+        delete_target_map = guided_search_delete_target_map(state)
+        if not delete_target_map:
             await reject_guided_error(
                 matcher,
                 state,
@@ -1081,14 +1082,26 @@ async def handle_search_session_event(
                 tr(locale, "wordbank.error.search_delete_index_invalid"),
             )
             return
+        target_ids: list[int] = []
+        for group_index, response_index in parsed.delete_targets:
+            target_id = delete_target_map.get(f"{group_index}-{response_index}", 0)
+            if target_id <= 0:
+                await reject_guided_error(
+                    matcher,
+                    state,
+                    locale,
+                    tr(locale, "wordbank.error.search_delete_index_invalid"),
+                )
+                return
+            target_ids.append(target_id)
         messages = [
             await wordbank_plugin.handle_delete(
                 wordbank_service,
                 event=event,
-                response_item_id_text=str(delete_target_ids[index - 1]),
+                response_item_id_text=str(target_id),
                 locale=locale,
             )
-            for index in parsed.delete_indexes
+            for target_id in target_ids
         ]
         if messages:
             merged_message = "\n".join(messages)

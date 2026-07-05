@@ -63,7 +63,7 @@ from .guided_flow import (
     record_guided_trigger,
     register_guided_checkpoint,
     reject_guided_error,
-    resolve_search_delete_target_ids,
+    resolve_search_delete_target_map,
     start_guided_add,
     start_guided_add_with_trigger_image,
     start_guided_search,
@@ -715,10 +715,10 @@ async def _record_passive_response_message(*args: Any, **kwargs: Any) -> None:
     await runtime_exports["record_passive_response_message"](*args, **kwargs)
 
 
-async def _resolve_search_delete_target_ids(
+async def _resolve_search_delete_target_map(
     *args: Any, **kwargs: Any
-) -> tuple[int, ...]:
-    return await resolve_search_delete_target_ids(*args, **kwargs)
+) -> tuple[tuple[str, int], ...]:
+    return await resolve_search_delete_target_map(*args, **kwargs)
 
 
 async def _build_passive_message(

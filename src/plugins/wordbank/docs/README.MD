@@ -389,14 +389,14 @@ SYSTEM: 这条词在 60 秒里，第 2 次到第 5 次才会回复。
 - 兼容指令: `wordbank search [关键词]`、`wordbank.search [关键词]`
 - Demo: wordbank-search.webp
 #### 说明
-默认同时搜触发词和响应词，也支持按图片相似度搜索。结果会以卡片展示，可继续发送 `page <页码>`、`详情 <group_id>`、`del <序号...>` 或 `exit` 管理当前搜索会话。
+默认同时搜触发词和响应词，也支持按图片相似度搜索。结果会以卡片展示，可继续发送 `page <页码>`、`详情 <group_id>`、`del <组序号-响应序号...>` 或 `exit` 管理当前搜索会话。
 #### 前置条件
 无。
 #### 完整流程
 ```demo
 USER: #搜索词条 晚安
 BOT: [词库搜索结果卡片]
-BOT: 可发送 `page 页码`、`详情 组号`、`del 序号...` 或 `exit`
+BOT: 可发送 `page 页码`、`详情 组号`、`del 组序号-响应序号...` 或 `exit`
 USER: 详情 271
 BOT: [展开 trigger group 271]
 ```
