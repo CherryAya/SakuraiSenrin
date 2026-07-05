@@ -534,13 +534,10 @@ async def _finish_guided_search(
     page_number: int,
     clamp_page: bool = False,
 ) -> None:
-    if len(args) == 4:
-        matcher, state, event, locale = args
-        bot = None
-    elif len(args) == 5:
+    if len(args) == 5:
         bot, matcher, state, event, locale = args
     else:
-        raise TypeError("_finish_guided_search expects 4 or 5 arguments")
+        raise TypeError("_finish_guided_search expects 5 arguments")
     async with LongTaskRunner(
         LongTaskSpec(
             task_name="wordbank.search.guided_view",
@@ -572,13 +569,10 @@ async def _finish_guided_search(
 async def _handle_search_session_event(
     *args: Any,
 ) -> None:
-    if len(args) == 4:
-        matcher, event, state, locale = args
-        bot = None
-    elif len(args) == 5:
+    if len(args) == 5:
         bot, matcher, event, state, locale = args
     else:
-        raise TypeError("_handle_search_session_event expects 4 or 5 arguments")
+        raise TypeError("_handle_search_session_event expects 5 arguments")
     await handle_search_session_event(
         bot,
         matcher,
