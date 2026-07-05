@@ -3,6 +3,8 @@ from nonebot.adapters.onebot.v11 import MessageSegment
 from src.lib.messages import text_message
 from src.plugins.wordbank.message_model import (
     RESPONSE_TARGET_SENDER,
+    format_at_fallback_text,
+    is_safe_executable_at_target,
     is_valid_message_text,
     shape_from_message,
     shape_from_payload,
@@ -42,6 +44,18 @@ def test_shape_from_message_formats_at_as_fallback_text() -> None:
     shape = shape_from_message(MessageSegment.at("10002") + MessageSegment.text(""))
 
     assert shape_to_summary_text(shape) == "@用户(10002)"
+
+
+def test_is_safe_executable_at_target_only_allows_digits_or_sender() -> None:
+    assert is_safe_executable_at_target("10002") is True
+    assert is_safe_executable_at_target(RESPONSE_TARGET_SENDER) is True
+    assert is_safe_executable_at_target("all") is False
+    assert is_safe_executable_at_target("abc") is False
+
+
+def test_format_at_fallback_text_formats_all_as_literal_broadcast() -> None:
+    assert format_at_fallback_text("all") == "@全体成员"
+    assert format_at_fallback_text("10002") == "@用户(10002)"
 
 
 def test_shape_from_response_text_parses_sender_placeholders() -> None:

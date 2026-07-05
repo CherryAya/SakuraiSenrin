@@ -62,7 +62,12 @@ from .handlers.rendering import (
     _build_image_payload_stats,
     _load_shape_image_bytes,
 )
-from .message_model import format_event_summary_text, is_response_sender_target
+from .message_model import (
+    format_at_fallback_text,
+    format_event_summary_text,
+    is_response_sender_target,
+    is_safe_executable_at_target,
+)
 from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError
 
@@ -714,7 +719,12 @@ def register_wordbank_runtime_handlers(
                     response, atom.target_id
                 )
                 if resolved_target_id:
-                    blocks.append(AtRefBlock(resolved_target_id))
+                    if is_safe_executable_at_target(resolved_target_id):
+                        blocks.append(AtRefBlock(resolved_target_id))
+                    else:
+                        blocks.append(
+                            TextBlock(format_at_fallback_text(resolved_target_id))
+                        )
                 continue
             if atom.kind == "image" and atom.canonical_image_id is not None:
                 image_bytes = image_bytes_by_id.get(atom.canonical_image_id)

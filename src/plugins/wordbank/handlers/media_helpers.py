@@ -19,6 +19,8 @@ from src.plugins.wordbank.message_model import (
     MessageInput,
     MessageShape,
     combine_shapes,
+    format_at_fallback_text,
+    is_safe_executable_at_target,
     iter_message_segments,
     shape_from_image,
     shape_from_message_input,
@@ -367,7 +369,12 @@ async def build_response_shape_from_message(
         if segment.type == "at":
             target_id = str(segment.data.get("qq", "") or "").strip()
             if target_id:
-                atoms.extend(shape_from_message_input(Message([segment])).atoms)
+                if is_safe_executable_at_target(target_id):
+                    atoms.extend(shape_from_message_input(Message([segment])).atoms)
+                else:
+                    atoms.extend(
+                        shape_from_text(format_at_fallback_text(target_id)).atoms
+                    )
     return MessageShape(tuple(atoms))
 
 

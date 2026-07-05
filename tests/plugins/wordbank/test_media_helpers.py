@@ -172,6 +172,32 @@ async def test_build_response_shape_from_message_preserves_native_at_and_placeho
     assert fetch_image_bytes.await_count == 0
 
 
+@pytest.mark.asyncio
+async def test_build_response_shape_from_message_degrades_unsafe_native_at(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetch_image_bytes = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        media_helpers,
+        "fetch_image_bytes_with_retry",
+        fetch_image_bytes,
+    )
+
+    shape = await media_helpers.build_response_shape_from_message(
+        None,
+        Message(
+            [
+                MessageSegment.text("注意"),
+                MessageSegment.at("all"),
+            ]
+        ),
+    )
+
+    assert [atom.kind for atom in shape.atoms] == ["text", "text"]
+    assert shape_to_summary_text(shape) == "注意 @全体成员"
+    assert fetch_image_bytes.await_count == 0
+
+
 def test_extract_message_suffix_by_plain_text_preserves_non_text_segment_order() -> (
     None
 ):

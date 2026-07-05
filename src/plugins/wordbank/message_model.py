@@ -386,11 +386,19 @@ def shape_to_search_text(shape: MessageShape) -> str:
 
 
 def format_at_fallback_text(target_id: str) -> str:
+    if target_id == "all":
+        return "@全体成员"
     return f"@用户({target_id})"
 
 
 def is_response_sender_target(target_id: str) -> bool:
     return target_id == RESPONSE_TARGET_SENDER
+
+
+def is_safe_executable_at_target(target_id: str) -> bool:
+    if is_response_sender_target(target_id):
+        return True
+    return target_id.isdigit()
 
 
 def format_at_summary_text(target_id: str) -> str:

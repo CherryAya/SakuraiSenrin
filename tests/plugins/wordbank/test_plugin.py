@@ -29,6 +29,8 @@ from src.plugins.wordbank.handlers import rendering as rendering_module
 from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.handlers.rendering import MISSING_IMAGE_PLACEHOLDER
 from src.plugins.wordbank.message_model import (
+    MessageAtom,
+    MessageShape,
     combine_shapes,
     shape_from_image,
     shape_from_text,
@@ -119,6 +121,41 @@ async def test_build_passive_message_prefixes_mention_fallback_text(
 
     assert isinstance(rendered, Message)
     assert str(rendered) == "@用户(10001) 收到艾特"
+
+
+@pytest.mark.asyncio
+async def test_build_passive_message_degrades_legacy_unsafe_at_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    media_service = SimpleNamespace(
+        load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
+    )
+    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    response = PassiveResponse(
+        text="fallback",
+        trigger_group_id=12,
+        trigger_variant_id=21,
+        response_item_id=22,
+        group_id="20001",
+        user_id="10001",
+        message_type="message",
+        response_shape=MessageShape(
+            (
+                MessageAtom(kind="text", text="提醒"),
+                MessageAtom(kind="at", target_id="all"),
+            )
+        ),
+    )
+
+    message, _ = await wordbank_plugin._build_passive_message(
+        response,
+        locale="zh-CN",
+    )
+    rendered = render_message_plan_input(message)
+
+    assert isinstance(rendered, Message)
+    assert [segment.type for segment in rendered] == ["text", "text"]
+    assert str(rendered) == "提醒@全体成员"
 
 
 @pytest.mark.asyncio
