@@ -733,6 +733,7 @@ def register_wordbank_command_handlers(
 
     @wordbank_search_command.handle()
     async def _wordbank_search_dimensions(
+        bot: Bot,
         matcher: Matcher,
         event: MessageEvent,
         state: T_State,
@@ -772,6 +773,7 @@ def register_wordbank_command_handlers(
             return
         await _call_dynamic(
             "_finish_guided_search",
+            bot,
             matcher,
             state,
             event,
@@ -781,6 +783,7 @@ def register_wordbank_command_handlers(
 
     @wordbank_search_command.handle()
     async def _wordbank_search_query(
+        bot: Bot,
         matcher: Matcher,
         event: MessageEvent,
         state: T_State,
@@ -823,6 +826,7 @@ def register_wordbank_command_handlers(
             return
         await _call_dynamic(
             "_finish_guided_search",
+            bot,
             matcher,
             state,
             event,
@@ -832,6 +836,7 @@ def register_wordbank_command_handlers(
 
     @wordbank_search_command.handle()
     async def _wordbank_search_creator(
+        bot: Bot,
         matcher: Matcher,
         event: MessageEvent,
         state: T_State,
@@ -867,6 +872,7 @@ def register_wordbank_command_handlers(
             return
         await _call_dynamic(
             "_finish_guided_search",
+            bot,
             matcher,
             state,
             event,

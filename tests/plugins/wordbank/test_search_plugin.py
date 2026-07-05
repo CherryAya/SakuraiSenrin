@@ -200,7 +200,6 @@ async def test_guided_search_creator_only_prompts_for_creator_account(
         ctx.should_paused()
 
 
-@pytest.mark.asyncio
 async def test_guided_search_query_stage_accepts_image_message(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
@@ -255,10 +254,59 @@ async def test_guided_search_query_stage_accepts_image_message(
     finish_guided_search.assert_awaited_once()
     await_args = finish_guided_search.await_args
     assert await_args is not None
-    state = await_args.args[1]
+    assert await_args.args[0] is bot
+    state = await_args.args[2]
     assert state["wordbank_guided_search_keyword"] == ""
     assert state["wordbank_guided_search_has_image"] is True
     assert state["wordbank_guided_search_image_scores"] == {7: 0.91}
+
+
+@pytest.mark.asyncio
+async def test_guided_search_creator_stage_finishes_with_bot_argument(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    finish_guided_search = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "initialize_wordbank_plugin",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "_finish_guided_search",
+        finish_guided_search,
+    )
+
+    async with app.test_matcher(wordbank_search_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        first = build_group_message_event("#搜索词条", message_id=1)
+        second = build_group_message_event("3", message_id=2)
+        third = build_group_message_event("10001", message_id=3)
+
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(first, _SEARCH_DIMENSIONS_PROMPT, bot=bot)
+        ctx.should_paused()
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(second, _SEARCH_CREATOR_PROMPT, bot=bot)
+        ctx.should_paused()
+
+        ctx.receive_event(bot, third)
+
+    finish_guided_search.assert_awaited_once()
+    await_args = finish_guided_search.await_args
+    assert await_args is not None
+    assert await_args.args[0] is bot
+    state = await_args.args[2]
+    assert state["wordbank_guided_search_creator_id"] == "10001"
+    assert await_args.kwargs["page_number"] == 1
 
 
 @pytest.mark.asyncio
