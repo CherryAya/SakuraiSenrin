@@ -320,6 +320,7 @@ async def test_passive_event_at_pipeline_hits_real_event_trigger(app: App) -> No
     await _add_approved_entry(
         trigger_shape=shape_from_event("event:at"),
         response_text="收到艾特",
+        response_shape=shape_from_response_text("[@触发者] 收到艾特"),
         raw_rule={"scope": "current_group"},
     )
 
@@ -334,7 +335,12 @@ async def test_passive_event_at_pipeline_hits_real_event_trigger(app: App) -> No
         _should_call_group_send_api(
             ctx,
             group_id=event.group_id,
-            message=text_message("@用户(10001) 收到艾特"),
+            message=Message(
+                [
+                    MessageSegment.at("10001"),
+                    MessageSegment.text(" 收到艾特"),
+                ]
+            ),
         )
 
 
@@ -346,6 +352,7 @@ async def test_passive_event_at_pipeline_uses_original_message_after_strip(
     await _add_approved_entry(
         trigger_shape=shape_from_event("event:at"),
         response_text="收到剥离艾特",
+        response_shape=shape_from_response_text("[@触发者] 收到剥离艾特"),
         raw_rule={"scope": "current_group"},
     )
 
@@ -363,16 +370,24 @@ async def test_passive_event_at_pipeline_uses_original_message_after_strip(
         _should_call_group_send_api(
             ctx,
             group_id=event.group_id,
-            message=text_message("@用户(10001) 收到剥离艾特"),
+            message=Message(
+                [
+                    MessageSegment.at("10001"),
+                    MessageSegment.text(" 收到剥离艾特"),
+                ]
+            ),
         )
 
 
 @pytest.mark.asyncio
-async def test_passive_poke_pipeline_prefixes_user_fallback_text(app: App) -> None:
+async def test_passive_poke_pipeline_mentions_sender_from_response_shape(
+    app: App,
+) -> None:
     await _reset_wordbank_runtime()
     await _add_approved_entry(
         trigger_shape=shape_from_event("event:poke"),
         response_text="别戳啦",
+        response_shape=shape_from_response_text("[@触发者] 别戳啦"),
         raw_rule={"scope": "current_group"},
     )
 
@@ -385,7 +400,12 @@ async def test_passive_poke_pipeline_prefixes_user_fallback_text(app: App) -> No
         _should_call_group_send_api(
             ctx,
             group_id=event.group_id,
-            message=text_message("@用户(10001) 别戳啦"),
+            message=Message(
+                [
+                    MessageSegment.at("10001"),
+                    MessageSegment.text(" 别戳啦"),
+                ]
+            ),
         )
 
 
@@ -639,7 +659,7 @@ async def test_passive_event_at_call_count_is_shared_by_trigger_group(app: App) 
     await _reset_wordbank_runtime()
     first_stage = await wordbank_service.add_message_entry(
         trigger_shape=shape_from_event("event:at"),
-        response_shape=shape_from_text("第一阶段"),
+        response_shape=shape_from_response_text("[@触发者] 第一阶段"),
         group_id="20001",
         user_id="10001",
         is_group=True,
@@ -651,7 +671,7 @@ async def test_passive_event_at_call_count_is_shared_by_trigger_group(app: App) 
     )
     second_stage = await wordbank_service.add_message_entry(
         trigger_shape=shape_from_event("event:at"),
-        response_shape=shape_from_text("第二阶段"),
+        response_shape=shape_from_response_text("[@触发者] 第二阶段"),
         group_id="20001",
         user_id="10001",
         is_group=True,
@@ -702,5 +722,10 @@ async def test_passive_event_at_call_count_is_shared_by_trigger_group(app: App) 
         _should_call_group_send_api(
             ctx,
             group_id=event.group_id,
-            message=text_message("@用户(10001) 第二阶段"),
+            message=Message(
+                [
+                    MessageSegment.at("10001"),
+                    MessageSegment.text(" 第二阶段"),
+                ]
+            ),
         )

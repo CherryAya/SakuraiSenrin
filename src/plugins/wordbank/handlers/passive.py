@@ -20,7 +20,6 @@ from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.plugins.wordbank.message_model import (
     MessageShape,
-    format_at_fallback_text,
     shape_from_event,
     shape_from_message,
     shape_to_payload,
@@ -44,7 +43,6 @@ class PassiveResponse:
     user_id: str
     message_type: str
     response_shape: MessageShape | None = None
-    mention_fallback_text: str = ""
 
 
 @dataclass(slots=True, frozen=True)
@@ -131,9 +129,6 @@ def build_passive_response(
     message_type: str,
     event_trigger: str = "",
 ) -> PassiveResponse:
-    mention_fallback_text = ""
-    if event_trigger in {"event:at", "event:poke"} and context.user_id:
-        mention_fallback_text = format_at_fallback_text(context.user_id)
     return PassiveResponse(
         text=selected.response.text,
         trigger_group_id=selected.candidate.group.id,
@@ -143,7 +138,6 @@ def build_passive_response(
         user_id=context.user_id,
         message_type=message_type,
         response_shape=selected.response.message_shape,
-        mention_fallback_text=mention_fallback_text,
     )
 
 

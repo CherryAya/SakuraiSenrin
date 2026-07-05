@@ -650,12 +650,6 @@ def register_wordbank_runtime_handlers(
                 payload[key] = value
         return payload
 
-    def _shape_binds_sender(response: PassiveResponse) -> bool:
-        shape = response.response_shape
-        if shape is None:
-            return False
-        return any(is_response_sender_target(atom.target_id) for atom in shape.atoms)
-
     def _resolve_passive_target_id(response: PassiveResponse, target_id: str) -> str:
         if is_response_sender_target(target_id):
             return str(response.user_id).strip()
@@ -674,13 +668,8 @@ def register_wordbank_runtime_handlers(
         start = perf_start()
         media_service = await _get_wordbank_media_service()
         shape = response.response_shape
-        apply_mention_prefix = bool(
-            response.mention_fallback_text
-        ) and not _shape_binds_sender(response)
         if shape is None or shape.is_empty():
             text_value = response.text
-            if apply_mention_prefix and text_value:
-                text_value = f"{response.mention_fallback_text} {text_value}".strip()
             log_perf(
                 "plugin.build_passive_message.text_only",
                 start=start,
@@ -754,13 +743,6 @@ def register_wordbank_runtime_handlers(
                         format_event_summary_text(atom.event_name, atom.target_id)
                     )
                 )
-        if apply_mention_prefix and blocks:
-            prefix = f"{response.mention_fallback_text} "
-            if isinstance(blocks[0], TextBlock):
-                first_block = cast(TextBlock, blocks[0])
-                blocks[0] = TextBlock(text=f"{prefix}{first_block.text}")
-            else:
-                blocks.insert(0, TextBlock(prefix))
         message: MessagePlanInput | None = None
         if blocks:
             message = MessagePlanEntry(blocks=tuple(blocks))

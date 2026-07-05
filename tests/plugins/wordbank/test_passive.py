@@ -125,7 +125,6 @@ async def test_handle_passive_message_falls_back_to_at_event() -> None:
 
     assert response is not None
     assert response.text == "收到@我了"
-    assert response.mention_fallback_text == "@用户(10001)"
     assert match_message.await_count == 2
     second_shape = match_message.await_args_list[1].args[0]
     assert second_shape == shape_from_event("event:at")
@@ -331,7 +330,6 @@ async def test_handle_passive_notice_matches_poke_event() -> None:
 
     assert response is not None
     assert response.message_type == "event"
-    assert response.mention_fallback_text == "@用户(10001)"
 
 
 @pytest.mark.asyncio
