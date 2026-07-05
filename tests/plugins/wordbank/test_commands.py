@@ -1425,6 +1425,27 @@ async def test_handle_study_shortcut_result_parses_bracket_event_alias_shape() -
 
 
 @pytest.mark.asyncio
+async def test_handle_study_shortcut_result_parses_response_placeholders() -> None:
+    add_message_entry = AsyncMock(return_value=_add_result())
+    service = cast(
+        WordbankService,
+        SimpleNamespace(add_message_entry=add_message_entry),
+    )
+    event = build_group_message_event("#study 晚安 => [@触发者] [戳触发者]")
+
+    await commands_module.handle_study_shortcut_result(
+        service,
+        event=event,
+        text="晚安 => [@触发者] [戳触发者]",
+    )
+
+    assert add_message_entry.await_args is not None
+    kwargs = add_message_entry.await_args.kwargs
+    assert kwargs["trigger_shape"] == shape_from_text("晚安")
+    assert kwargs["response_shape"] == shape_from_response_text("[@触发者] [戳触发者]")
+
+
+@pytest.mark.asyncio
 async def test_handle_add_text_result_keeps_event_literal_in_response_plain_text() -> (
     None
 ):
