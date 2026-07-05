@@ -36,6 +36,7 @@ from .types import (
     WordbankResponseItemDetail,
     WordbankResponseItemRecord,
     WordbankSearchItem,
+    WordbankSearchPreviewResponse,
     WordbankTriggerGroupRecord,
     WordbankTriggerVariantRecord,
 )
@@ -195,6 +196,7 @@ class WordbankRepositoryRecordsMixin:
         trigger_shape: MessageShape | None = None,
         response_shape: MessageShape | None = None,
         response_item_ids: tuple[int, ...] = (),
+        preview_responses: tuple[WordbankSearchPreviewResponse, ...] = (),
     ) -> WordbankSearchItem:
         raw_summaries = json.loads(document.response_preview_json or "[]")
         response_summaries = tuple(str(item) for item in raw_summaries if str(item))
@@ -216,6 +218,7 @@ class WordbankRepositoryRecordsMixin:
             score=score,
             matched_by=matched_by,
             response_item_ids=response_item_ids,
+            preview_responses=preview_responses,
             trigger_preview_image_id=first_image_id(document.trigger_image_keys),
             response_preview_image_id=first_image_id(document.response_image_keys),
         )
@@ -245,6 +248,38 @@ class WordbankRepositoryRecordsMixin:
             created_at=response.created_at,
             rule=dict(response.rule or {}),
             response_item_ids=(response.id,),
+            preview_responses=(
+                WordbankSearchPreviewResponse(
+                    response_item_id=response.id,
+                    status=response.status,
+                    created_by=response.created_by,
+                    scope=response.scope,
+                    weight=response.weight,
+                    rule=dict(response.rule or {}),
+                    response_text=response.text,
+                    response_shape=shape_from_payload(response.message_json),
+                ),
+            ),
+        )
+
+    @staticmethod
+    def _search_preview_responses_from_bundle(
+        bundle: GroupBundle | None,
+    ) -> tuple[WordbankSearchPreviewResponse, ...]:
+        if bundle is None:
+            return ()
+        return tuple(
+            WordbankSearchPreviewResponse(
+                response_item_id=response.id,
+                status=response.status,
+                created_by=response.created_by,
+                scope=response.scope,
+                weight=response.weight,
+                rule=dict(response.rule or {}),
+                response_text=response.text,
+                response_shape=shape_from_payload(response.message_json),
+            )
+            for response in search_preview_responses(bundle.responses)
         )
 
     @classmethod

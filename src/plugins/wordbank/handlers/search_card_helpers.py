@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Literal
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.plugins.wordbank.database.types import WordbankSearchItem
+from src.plugins.wordbank.database.types import (
+    WordbankSearchItem,
+)
 from src.plugins.wordbank.message_model import (
     MessageShape,
     format_at_summary_text,
@@ -27,6 +30,11 @@ class SearchCardContentBlock:
 class SearchCardResponseRenderItem:
     index: int
     response_item_id: int
+    status: str
+    created_by: str
+    scope: str
+    weight: int
+    rule: dict[str, object] | None
     blocks: tuple[SearchCardContentBlock, ...]
 
 
@@ -73,35 +81,40 @@ def summary_chips(
     locale: LocaleCode,
     field_label: str,
 ) -> tuple[str, ...]:
-    return (
-        tr(
-            locale,
-            "wordbank.search_card.summary.field",
-            field=field_label,
-        ),
-        tr(
-            locale,
-            "wordbank.search_card.summary.keyword",
-            keyword=keyword or tr(locale, "wordbank.search_card.none"),
-        ),
-        tr(
-            locale,
-            "wordbank.search_card.summary.has_image",
-            has_image=tr(
+    chips: list[str] = []
+    if field != "all":
+        chips.append(
+            tr(
                 locale,
-                (
-                    "wordbank.search_card.boolean.yes"
-                    if has_image
-                    else "wordbank.search_card.boolean.no"
-                ),
-            ),
-        ),
-        tr(
-            locale,
-            "wordbank.search_card.summary.creator",
-            creator_id=creator_id or tr(locale, "wordbank.search_card.none"),
-        ),
-    )
+                "wordbank.search_card.summary.field",
+                field=field_label,
+            )
+        )
+    if keyword:
+        chips.append(
+            tr(
+                locale,
+                "wordbank.search_card.summary.keyword",
+                keyword=keyword,
+            )
+        )
+    if has_image:
+        chips.append(
+            tr(
+                locale,
+                "wordbank.search_card.summary.has_image",
+                has_image=tr(locale, "wordbank.search_card.boolean.yes"),
+            )
+        )
+    if creator_id:
+        chips.append(
+            tr(
+                locale,
+                "wordbank.search_card.summary.creator",
+                creator_id=creator_id,
+            )
+        )
+    return tuple(chips)
 
 
 def fallback_match_label(
@@ -152,6 +165,26 @@ def response_preview_items(
     item: WordbankSearchItem,
     locale: LocaleCode,
 ) -> tuple[SearchCardResponseRenderItem, ...]:
+    responses = item.preview_responses[:3]
+    if responses:
+        return tuple(
+            SearchCardResponseRenderItem(
+                index=index,
+                response_item_id=response.response_item_id,
+                status=response.status,
+                created_by=response.created_by,
+                scope=response.scope,
+                weight=response.weight,
+                rule=response.rule,
+                blocks=_content_blocks_from_shape_or_text(
+                    shape=response.response_shape,
+                    fallback_text=response.response_text,
+                    locale=locale,
+                ),
+            )
+            for index, response in enumerate(responses, start=1)
+        )
+
     summaries = [summary for summary in item.response_summaries[:3] if summary]
     if not summaries and item.response_text:
         summaries = [item.response_text]
@@ -164,6 +197,11 @@ def response_preview_items(
         SearchCardResponseRenderItem(
             index=index,
             response_item_id=response_ids[index - 1],
+            status=item.status,
+            created_by=item.created_by,
+            scope=item.scope,
+            weight=item.weight,
+            rule=item.rule,
             blocks=(
                 _content_blocks_from_shape_or_text(
                     shape=item.response_shape,
@@ -194,6 +232,8 @@ def search_card_image_ids(
 
 
 def preview_summary_count(item: WordbankSearchItem) -> int:
+    if item.preview_responses:
+        return min(3, len(item.preview_responses))
     summaries = [summary for summary in item.response_summaries[:3] if summary]
     if summaries:
         return len(summaries)
@@ -220,6 +260,60 @@ def fold_hint(item: WordbankSearchItem, locale: LocaleCode) -> str:
 
 def folded_preview_note(item: WordbankSearchItem, locale: LocaleCode) -> str:
     return f"💬 {fold_hint(item, locale)}"
+
+
+def status_chip_label(locale: LocaleCode, status: str) -> str:
+    return tr(locale, "wordbank.search_card.status", status=status).replace("状态 ", "")
+
+
+def scope_chip_label(scope: str) -> str:
+    return {
+        "all_groups": "全局",
+        "current_group": "当前群",
+        "self": "仅自己",
+        "private_only": "仅私聊",
+        "self_in_current_group": "自己+当前群",
+    }.get(scope, scope or "-")
+
+
+def probability_chip_text(probability: float) -> str:
+    if math.isclose(probability, 1.0):
+        return ""
+    return f"P:{probability:g}"
+
+
+def weight_chip_text(weight: int) -> str:
+    if weight == 3:
+        return ""
+    return f"W:{weight}"
+
+
+def response_rule_chips(rule: dict[str, object] | None) -> tuple[str, ...]:
+    payload = dict(rule or {})
+    chips: list[str] = []
+    role = str(payload.get("roles", "") or "").strip()
+    if role:
+        role_label = {
+            "owner": "群主",
+            "admin": "管理",
+            "member": "成员",
+            "any": "",
+        }.get(role, role)
+        if role_label:
+            chips.append(role_label)
+    call_count = payload.get("call_count")
+    if isinstance(call_count, dict):
+        window_seconds = int(call_count.get("window_seconds", 0) or 0)
+        min_count = int(call_count.get("min", 0) or 0)
+        max_count = int(call_count.get("max", 0) or 0)
+        if window_seconds > 0:
+            upper_bound = str(max_count) if max_count > 0 else "∞"
+            chips.append(f"{window_seconds}s/{min_count}-{upper_bound}")
+    return tuple(chips)
+
+
+def creator_chip_text(created_by: str) -> str:
+    return f"U:{created_by or '-'}"
 
 
 def line_height(font: Any) -> int:

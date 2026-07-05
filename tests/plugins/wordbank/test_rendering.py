@@ -9,6 +9,7 @@ from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
     WordbankResponseItemDetail,
     WordbankSearchItem,
+    WordbankSearchPreviewResponse,
 )
 from src.plugins.wordbank.handlers import rendering as rendering_module
 from src.plugins.wordbank.handlers.rendering import (
@@ -56,6 +57,21 @@ def _search_item() -> WordbankSearchItem:
         created_at=1_700_000_000,
         rule={"roles": "admin"},
         response_item_ids=(300,),
+        preview_responses=(
+            WordbankSearchPreviewResponse(
+                response_item_id=300,
+                status="approved",
+                created_by="10001",
+                scope="current_group",
+                weight=3,
+                rule={"roles": "admin"},
+                response_text="做个好梦 [图片:7]",
+                response_shape=combine_shapes(
+                    shape_from_text("做个好梦"),
+                    shape_from_image(7),
+                ),
+            ),
+        ),
     )
 
 

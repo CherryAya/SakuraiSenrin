@@ -23,53 +23,63 @@ from .search_card_helpers import (
     SearchCardContentBlock,
     SearchCardResponseRenderItem,
     build_search_card_footer_text,
-    fallback_match_label,
+    creator_chip_text,
     fold_hint,
     folded_preview_note,
     has_folded_preview,
     line_height,
+    probability_chip_text,
     response_preview_items,
-    safe_field_label,
+    response_rule_chips,
+    scope_chip_label,
+    status_chip_label,
     summary_chips,
     text_width,
     trigger_preview_blocks,
+    weight_chip_text,
 )
 
 CARD_WIDTH = 1320
-CARD_PADDING_X = 28
+CARD_PADDING_X = 30
 CARD_PADDING_Y = 28
 CARD_COLUMN_GAP = 24
-CARD_ROW_GAP = 18
-CARD_RADIUS = 22
+CARD_ROW_GAP = 20
+CARD_RADIUS = 24
 CARD_HEADER_GAP = 16
 CARD_SUMMARY_GAP = 18
 CARD_FOOTER_GAP = 18
 CARD_FOOTER_HEIGHT = 72
-CARD_ITEM_PADDING_X = 20
-CARD_ITEM_PADDING_Y = 18
-CARD_ITEM_RADIUS = 20
-CARD_ITEM_GAP = 12
+CARD_ITEM_PADDING_X = 22
+CARD_ITEM_PADDING_Y = 20
+CARD_ITEM_RADIUS = 24
+CARD_ITEM_GAP = 14
 CARD_SUBSECTION_GAP = 14
 CARD_RESPONSE_GAP = 14
-CARD_RESPONSE_PADDING_X = 14
-CARD_RESPONSE_PADDING_Y = 14
-CARD_RESPONSE_RADIUS = 16
+CARD_RESPONSE_PADDING_X = 16
+CARD_RESPONSE_PADDING_Y = 10
+CARD_RESPONSE_RADIUS = 18
 CARD_BADGE_SIZE = 42
 CARD_TAG_COLUMN_GAP = 8
-CARD_TAG_ROW_GAP = 6
+CARD_TAG_ROW_GAP = 8
 CARD_TAG_PADDING_X = 12
 CARD_TAG_PADDING_Y = 6
 CARD_TAG_RADIUS = 14
 CARD_IMAGE_RADIUS = 16
-CARD_IMAGE_MAX_HEIGHT = 220
+CARD_IMAGE_MAX_HEIGHT = 210
 CARD_FOLDED_HEIGHT = 52
-CARD_CONTENT_GAP = 8
+CARD_CONTENT_GAP = 6
 CARD_LABEL_PADDING_X = 12
 CARD_LABEL_PADDING_Y = 6
 CARD_LABEL_RADIUS = 13
 CARD_RESPONSE_BADGE_HEIGHT = 28
 CARD_RESPONSE_BADGE_PADDING_X = 12
 CARD_RESPONSE_BADGE_OFFSET_X = 18
+CARD_CHIP_HEIGHT = 28
+CARD_CHIP_PADDING_X = 12
+CARD_CHIP_GAP = 8
+CARD_CHIP_RADIUS = 14
+CARD_META_ROW_GAP = 10
+CARD_TRIGGER_PROB_GAP = 8
 TEXTURE_SPACING = 40
 TEXTURE_DOT_RADIUS = 2
 CARD_COLUMNS = 2
@@ -92,6 +102,14 @@ class SearchCardQuery:
         return max(1, math.ceil(self.total_count / max(self.limit, 1)))
 
 
+@dataclass(slots=True, frozen=True)
+class SearchCardChip:
+    text: str
+    fill: str
+    text_fill: str
+    outline: str
+
+
 class SearchResultCardRenderer:
     THEME = SENRIN_V3_WORDBANK_CARD_THEME
 
@@ -103,8 +121,10 @@ class SearchResultCardRenderer:
         self.theme = self.THEME
         self.BG = self.theme.bg
         self.PANEL = self.theme.panel
+        self.PANEL_SOFT = self.theme.panel_soft
         self.BORDER = self.theme.border
         self.HEADER = self.theme.header
+        self.HEADER_SOFT = self.theme.header_soft
         self.BODY = self.theme.body
         self.MUTED = self.theme.muted
         self.ACCENT = self.theme.accent
@@ -116,9 +136,33 @@ class SearchResultCardRenderer:
         self.RESPONSE_BORDER = self.theme.response_border
         self.TEXTURE = self.theme.texture
         self.BADGE_TEXT = self.theme.badge_text
+        self.SUCCESS_FILL = self.theme.success_fill
+        self.SUCCESS_TEXT = self.theme.success_text
+        self.SUCCESS_OUTLINE = self.theme.success_outline
+        self.WARNING_FILL = self.theme.warning_fill
+        self.WARNING_TEXT = self.theme.warning_text
+        self.WARNING_OUTLINE = self.theme.warning_outline
+        self.DANGER_FILL = self.theme.danger_fill
+        self.DANGER_TEXT = self.theme.danger_text
+        self.DANGER_OUTLINE = self.theme.danger_outline
+        self.SCOPE_GLOBAL_FILL = self.theme.scope_global_fill
+        self.SCOPE_GLOBAL_TEXT = self.theme.scope_global_text
+        self.SCOPE_GLOBAL_OUTLINE = self.theme.scope_global_outline
+        self.SCOPE_LOCAL_FILL = self.theme.scope_local_fill
+        self.SCOPE_LOCAL_TEXT = self.theme.scope_local_text
+        self.SCOPE_LOCAL_OUTLINE = self.theme.scope_local_outline
+        self.SCOPE_PRIVATE_FILL = self.theme.scope_private_fill
+        self.SCOPE_PRIVATE_TEXT = self.theme.scope_private_text
+        self.SCOPE_PRIVATE_OUTLINE = self.theme.scope_private_outline
+        self.NEUTRAL_CHIP_FILL = self.theme.neutral_chip_fill
+        self.NEUTRAL_CHIP_TEXT = self.theme.neutral_chip_text
+        self.NEUTRAL_CHIP_OUTLINE = self.theme.neutral_chip_outline
+        self.DATA_CHIP_FILL = self.theme.data_chip_fill
+        self.DATA_CHIP_TEXT = self.theme.data_chip_text
+        self.DATA_CHIP_OUTLINE = self.theme.data_chip_outline
         self.title_font = self._load_font(38)
         self.summary_font = self._load_font(20)
-        self.item_title_font = self._load_font(28)
+        self.item_title_font = self._load_font(30)
         self.trigger_body_font = self._load_font(26)
         self.response_body_font = self._load_font(24)
         self.item_meta_font = self._load_font(18)
@@ -148,8 +192,10 @@ class SearchResultCardRenderer:
         cursor_y = CARD_PADDING_Y
         cursor_y = self._draw_header(draw, query, locale, cursor_y)
         cursor_y += CARD_HEADER_GAP
-        cursor_y = self._draw_summary(draw, query, locale, cursor_y)
-        cursor_y += CARD_SUMMARY_GAP
+        summary_height = self._summary_block_height(query, locale)
+        if summary_height > 0:
+            cursor_y = self._draw_summary(draw, query, locale, cursor_y)
+            cursor_y += CARD_SUMMARY_GAP
 
         if items:
             cursor_y = self._draw_grid(image, draw, items, query, locale, cursor_y)
@@ -172,8 +218,9 @@ class SearchResultCardRenderer:
         total = CARD_PADDING_Y
         total += line_height(self.title_font)
         total += CARD_HEADER_GAP
-        total += self._summary_block_height(query, locale)
-        total += CARD_SUMMARY_GAP
+        summary_height = self._summary_block_height(query, locale)
+        if summary_height > 0:
+            total += summary_height + CARD_SUMMARY_GAP
         if items:
             column_width = self._column_width()
             column_heights = [0] * CARD_COLUMNS
@@ -252,6 +299,16 @@ class SearchResultCardRenderer:
         locale: LocaleCode,
         cursor_y: int,
     ) -> int:
+        chips = summary_chips(
+            keyword=query.keyword,
+            field=query.field,
+            creator_id=query.creator_id,
+            has_image=query.has_image,
+            locale=locale,
+            field_label=self._field_label(query.field, locale),
+        )
+        if not chips:
+            return cursor_y
         height = self._summary_block_height(query, locale)
         draw.rounded_rectangle(
             (
@@ -261,32 +318,26 @@ class SearchResultCardRenderer:
                 cursor_y + height,
             ),
             radius=CARD_RADIUS,
-            fill=self.PANEL,
-            outline=self.BORDER,
+            fill=self.PANEL_SOFT,
+            outline=self.theme.panel_outline,
             width=1,
         )
         chip_x = CARD_PADDING_X + 16
         chip_y = cursor_y + 14
-        chip_height = line_height(self.summary_font) + CARD_TAG_PADDING_Y
         max_x = CARD_WIDTH - CARD_PADDING_X - 16
-        for chip_text in summary_chips(
-            keyword=query.keyword,
-            field=query.field,
-            creator_id=query.creator_id,
-            has_image=query.has_image,
-            locale=locale,
-            field_label=self._field_label(query.field, locale),
-        ):
+        for chip_text in chips:
             chip_width = (
                 text_width(chip_text, self.summary_font) + CARD_TAG_PADDING_X * 2
             )
             if chip_x + chip_width > max_x:
                 chip_x = CARD_PADDING_X + 16
-                chip_y += chip_height + CARD_TAG_COLUMN_GAP
+                chip_y += CARD_CHIP_HEIGHT + CARD_TAG_ROW_GAP
             draw.rounded_rectangle(
-                (chip_x, chip_y, chip_x + chip_width, chip_y + chip_height),
-                radius=chip_height // 2,
+                (chip_x, chip_y, chip_x + chip_width, chip_y + CARD_CHIP_HEIGHT),
+                radius=CARD_CHIP_RADIUS,
                 fill=self.ACCENT_SOFT,
+                outline=self.theme.panel_outline,
+                width=1,
             )
             draw.text(
                 (chip_x + CARD_TAG_PADDING_X, chip_y + 4),
@@ -351,41 +402,29 @@ class SearchResultCardRenderer:
         draw.rounded_rectangle(
             (x, y, x + width, y + height),
             radius=CARD_ITEM_RADIUS,
-            fill=self.PANEL,
-            outline=self.BORDER,
+            fill=self.PANEL_SOFT,
+            outline=self.theme.panel_outline,
             width=1,
         )
         inner_x = x + CARD_ITEM_PADDING_X
         cursor_y = y + CARD_ITEM_PADDING_Y
-        badge_text = f"{absolute_index:02d}"
-        draw.ellipse(
-            (inner_x, cursor_y, inner_x + CARD_BADGE_SIZE, cursor_y + CARD_BADGE_SIZE),
-            fill=self.ACCENT,
+        content_width = width - CARD_ITEM_PADDING_X * 2
+        header_height = self._item_header_height(
+            item=item,
+            width=content_width,
+            locale=locale,
         )
-        badge_width = text_width(badge_text, self.item_meta_font)
-        draw.text(
-            (
-                inner_x + (CARD_BADGE_SIZE - badge_width) / 2,
-                cursor_y + 9,
-            ),
-            badge_text,
-            font=self.item_meta_font,
-            fill=self.BADGE_TEXT,
+        self._draw_item_header(
+            draw,
+            item=item,
+            locale=locale,
+            absolute_index=absolute_index,
+            x=inner_x,
+            y=cursor_y,
+            width=content_width,
+            height=header_height,
         )
-        draw.text(
-            (inner_x + CARD_BADGE_SIZE + 12, cursor_y + 3),
-            item.trigger_text or tr(locale, "wordbank.search_card.none"),
-            font=self.item_title_font,
-            fill=self.HEADER,
-        )
-        meta_y = cursor_y + 28
-        draw.text(
-            (inner_x + CARD_BADGE_SIZE + 12, meta_y),
-            tr(locale, "wordbank.search_card.group_id", group_id=item.trigger_group_id),
-            font=self.item_meta_font,
-            fill=self.MUTED,
-        )
-        cursor_y += CARD_BADGE_SIZE + CARD_ITEM_GAP
+        cursor_y += header_height + CARD_ITEM_GAP
 
         trigger_height = self._trigger_panel_height(
             item=item,
@@ -404,7 +443,8 @@ class SearchResultCardRenderer:
         )
         cursor_y += trigger_height + CARD_SUBSECTION_GAP
 
-        for response in response_preview_items(item, locale):
+        response_items = response_preview_items(item, locale)
+        for response_index, response in enumerate(response_items, start=1):
             response_height = self._response_panel_height(
                 response=response,
                 item=item,
@@ -417,14 +457,19 @@ class SearchResultCardRenderer:
                 response=response,
                 item=item,
                 absolute_index=absolute_index,
+                locale=locale,
                 x=inner_x,
                 y=cursor_y,
                 width=width - CARD_ITEM_PADDING_X * 2,
                 height=response_height,
             )
-            cursor_y += response_height + CARD_RESPONSE_GAP
+            cursor_y += response_height
+            if response_index < len(response_items):
+                cursor_y += CARD_RESPONSE_GAP
 
         if has_folded_preview(item):
+            if response_items:
+                cursor_y += CARD_RESPONSE_GAP
             folded_height = self._folded_block_height(
                 item,
                 locale=locale,
@@ -441,16 +486,80 @@ class SearchResultCardRenderer:
             )
             cursor_y += folded_height + CARD_SUBSECTION_GAP
         else:
-            cursor_y += CARD_SUBSECTION_GAP - CARD_RESPONSE_GAP
+            _ = query
 
-        tag_texts = self._item_tag_texts(item=item, query=query, locale=locale)
-        self._draw_tags(
-            draw,
-            tags=tag_texts,
-            x=inner_x,
-            y=cursor_y,
-            width=width - CARD_ITEM_PADDING_X * 2,
+    def _draw_item_header(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        item: WordbankSearchItem,
+        locale: LocaleCode,
+        absolute_index: int,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> None:
+        badge_text = f"{absolute_index:02d}"
+        badge_y = y + max(0, int((height - CARD_BADGE_SIZE) / 2))
+        draw.ellipse(
+            (x, badge_y, x + CARD_BADGE_SIZE, badge_y + CARD_BADGE_SIZE),
+            fill=self.ACCENT,
         )
+        badge_width = text_width(badge_text, self.item_meta_font)
+        draw.text(
+            (
+                x + (CARD_BADGE_SIZE - badge_width) / 2,
+                badge_y + 9,
+            ),
+            badge_text,
+            font=self.item_meta_font,
+            fill=self.BADGE_TEXT,
+        )
+        title_x = x + CARD_BADGE_SIZE + 14
+        title_width = width - CARD_BADGE_SIZE - 14
+        title_text = item.trigger_text or tr(locale, "wordbank.search_card.none")
+        title_lines = self._wrap_text(
+            title_text,
+            self.item_title_font,
+            max_width=title_width,
+            max_lines=2,
+        )
+        title_y = y
+        for index, line in enumerate(title_lines):
+            draw.text(
+                (title_x, title_y + index * line_height(self.item_title_font)),
+                line,
+                font=self.item_title_font,
+                fill=self.HEADER,
+            )
+        chips = self._header_chips(item)
+        if chips:
+            chips_y = title_y + len(title_lines) * line_height(self.item_title_font) + 8
+            self._draw_chip_row(
+                draw,
+                chips=chips,
+                x=title_x,
+                y=chips_y,
+                max_width=x + width,
+            )
+
+    def _item_header_height(
+        self,
+        *,
+        item: WordbankSearchItem,
+        width: int,
+        locale: LocaleCode,
+    ) -> int:
+        title_width = width - CARD_BADGE_SIZE - 14
+        title_height = self._wrapped_text_height(
+            item.trigger_text or tr(locale, "wordbank.search_card.none"),
+            self.item_title_font,
+            max_width=title_width,
+            max_lines=2,
+        )
+        chips_height = CARD_CHIP_HEIGHT + 8 if self._header_chips(item) else 0
+        return max(CARD_BADGE_SIZE, title_height + chips_height)
 
     def _draw_trigger_panel(
         self,
@@ -471,12 +580,30 @@ class SearchResultCardRenderer:
             outline=self.TRIGGER_BORDER,
             width=1,
         )
+        cursor_y = y + CARD_RESPONSE_PADDING_Y
+        probability_chip = probability_chip_text(item.probability)
+        if probability_chip:
+            self._draw_chip_row(
+                draw,
+                chips=(
+                    SearchCardChip(
+                        text=probability_chip,
+                        fill=self.ACCENT_SOFT,
+                        text_fill=self.ACCENT_DEEP,
+                        outline=self.theme.panel_outline,
+                    ),
+                ),
+                x=x + CARD_RESPONSE_PADDING_X,
+                y=cursor_y,
+                max_width=x + width - CARD_RESPONSE_PADDING_X,
+            )
+            cursor_y += CARD_CHIP_HEIGHT + CARD_TRIGGER_PROB_GAP
         self._draw_content_blocks(
             image,
             draw,
             blocks=trigger_preview_blocks(item, locale),
             x=x + CARD_RESPONSE_PADDING_X,
-            y=y + CARD_RESPONSE_PADDING_Y,
+            y=cursor_y,
             max_width=width - CARD_RESPONSE_PADDING_X * 2,
             text_font=self.trigger_body_font,
             text_fill=self.trigger_text_fill,
@@ -490,6 +617,7 @@ class SearchResultCardRenderer:
         response: SearchCardResponseRenderItem,
         item: WordbankSearchItem,
         absolute_index: int,
+        locale: LocaleCode,
         x: int,
         y: int,
         width: int,
@@ -529,12 +657,21 @@ class SearchResultCardRenderer:
             font=self.item_tag_font,
             fill=self.ACCENT_DEEP,
         )
+        meta_y = y + CARD_RESPONSE_PADDING_Y
+        self._draw_response_meta_row(
+            draw,
+            response=response,
+            x=x + CARD_RESPONSE_PADDING_X,
+            y=meta_y,
+            width=width - CARD_RESPONSE_PADDING_X * 2,
+            locale=locale,
+        )
         self._draw_content_blocks(
             image,
             draw,
             blocks=response.blocks,
             x=x + CARD_RESPONSE_PADDING_X,
-            y=y + CARD_RESPONSE_PADDING_Y,
+            y=meta_y + CARD_CHIP_HEIGHT + CARD_META_ROW_GAP,
             max_width=width - CARD_RESPONSE_PADDING_X * 2,
             text_font=self.response_body_font,
             text_fill=self.response_text_fill,
@@ -570,43 +707,182 @@ class SearchResultCardRenderer:
             max_lines=3,
         )
 
-    def _draw_tags(
+    def _draw_response_meta_row(
         self,
         draw: ImageDraw.ImageDraw,
         *,
-        tags: tuple[str, ...],
+        response: SearchCardResponseRenderItem,
         x: int,
         y: int,
         width: int,
+        locale: LocaleCode,
+    ) -> None:
+        left_chips = self._response_left_chips(response, locale)
+        right_chips = self._response_right_chips(response)
+        self._draw_chip_row(draw, chips=left_chips, x=x, y=y, max_width=x + width)
+        self._draw_chip_row_right(
+            draw,
+            chips=right_chips,
+            right=x + width,
+            y=y,
+        )
+
+    def _draw_chip_row(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        chips: tuple[SearchCardChip, ...],
+        x: int,
+        y: int,
+        max_width: int,
     ) -> None:
         cursor_x = x
-        cursor_y = y
-        line_height_value = line_height(self.item_tag_font) + CARD_TAG_PADDING_Y
-        max_x = x + width
-        for tag in tags:
-            tag_width = text_width(tag, self.item_tag_font) + CARD_TAG_PADDING_X * 2
-            if cursor_x + tag_width > max_x:
-                cursor_x = x
-                cursor_y += line_height_value + CARD_TAG_ROW_GAP
-            draw.rounded_rectangle(
-                (
-                    cursor_x,
-                    cursor_y,
-                    cursor_x + tag_width,
-                    cursor_y + line_height_value,
-                ),
-                radius=CARD_TAG_RADIUS,
-                fill=self.PANEL,
-                outline=self.BORDER,
-                width=1,
+        for chip in chips:
+            chip_width = self._chip_width(chip.text)
+            if cursor_x + chip_width > max_width:
+                break
+            self._draw_chip(draw, chip=chip, x=cursor_x, y=y)
+            cursor_x += chip_width + CARD_CHIP_GAP
+
+    def _draw_chip_row_right(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        chips: tuple[SearchCardChip, ...],
+        right: int,
+        y: int,
+    ) -> None:
+        total_width = self._chip_row_width(chips)
+        cursor_x = right - total_width
+        for chip in chips:
+            self._draw_chip(draw, chip=chip, x=cursor_x, y=y)
+            cursor_x += self._chip_width(chip.text) + CARD_CHIP_GAP
+
+    def _draw_chip(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        chip: SearchCardChip,
+        x: int,
+        y: int,
+    ) -> None:
+        chip_width = self._chip_width(chip.text)
+        draw.rounded_rectangle(
+            (x, y, x + chip_width, y + CARD_CHIP_HEIGHT),
+            radius=CARD_CHIP_RADIUS,
+            fill=chip.fill,
+            outline=chip.outline,
+            width=1,
+        )
+        draw.text(
+            (x + CARD_CHIP_PADDING_X, y + 4),
+            chip.text,
+            font=self.item_tag_font,
+            fill=chip.text_fill,
+        )
+
+    def _chip_width(self, text: str) -> int:
+        return text_width(text, self.item_tag_font) + CARD_CHIP_PADDING_X * 2
+
+    def _chip_row_width(self, chips: tuple[SearchCardChip, ...]) -> int:
+        if not chips:
+            return 0
+        return sum(self._chip_width(chip.text) for chip in chips) + CARD_CHIP_GAP * (
+            len(chips) - 1
+        )
+
+    def _header_chips(self, item: WordbankSearchItem) -> tuple[SearchCardChip, ...]:
+        return (
+            self._neutral_chip(f"#组{item.trigger_group_id}"),
+            self._data_chip(f"{item.response_count} 条响应"),
+        )
+
+    def _response_left_chips(
+        self,
+        response: SearchCardResponseRenderItem,
+        locale: LocaleCode,
+    ) -> tuple[SearchCardChip, ...]:
+        chips = [
+            self._status_chip(
+                status_chip_label(locale, response.status),
+                response.status,
+            ),
+            self._scope_chip(scope_chip_label(response.scope), response.scope),
+        ]
+        chips.extend(
+            self._neutral_chip(text) for text in response_rule_chips(response.rule)
+        )
+        return tuple(chips)
+
+    def _response_right_chips(
+        self,
+        response: SearchCardResponseRenderItem,
+    ) -> tuple[SearchCardChip, ...]:
+        chips = [self._data_chip(creator_chip_text(response.created_by))]
+        weight_text = weight_chip_text(response.weight)
+        if weight_text:
+            chips.append(self._data_chip(weight_text))
+        return tuple(chips)
+
+    def _status_chip(self, text: str, status: str) -> SearchCardChip:
+        if status == "approved":
+            return SearchCardChip(
+                text=text,
+                fill=self.SUCCESS_FILL,
+                text_fill=self.SUCCESS_TEXT,
+                outline=self.SUCCESS_OUTLINE,
             )
-            draw.text(
-                (cursor_x + CARD_TAG_PADDING_X, cursor_y + 4),
-                tag,
-                font=self.item_tag_font,
-                fill=self.MUTED,
+        if status == "pending":
+            return SearchCardChip(
+                text=text,
+                fill=self.WARNING_FILL,
+                text_fill=self.WARNING_TEXT,
+                outline=self.WARNING_OUTLINE,
             )
-            cursor_x += tag_width + CARD_TAG_COLUMN_GAP
+        return SearchCardChip(
+            text=text,
+            fill=self.DANGER_FILL,
+            text_fill=self.DANGER_TEXT,
+            outline=self.DANGER_OUTLINE,
+        )
+
+    def _scope_chip(self, text: str, scope: str) -> SearchCardChip:
+        if scope == "all_groups":
+            return SearchCardChip(
+                text=text,
+                fill=self.SCOPE_GLOBAL_FILL,
+                text_fill=self.SCOPE_GLOBAL_TEXT,
+                outline=self.SCOPE_GLOBAL_OUTLINE,
+            )
+        if scope in {"current_group", "self_in_current_group"}:
+            return SearchCardChip(
+                text=text,
+                fill=self.SCOPE_LOCAL_FILL,
+                text_fill=self.SCOPE_LOCAL_TEXT,
+                outline=self.SCOPE_LOCAL_OUTLINE,
+            )
+        return SearchCardChip(
+            text=text,
+            fill=self.SCOPE_PRIVATE_FILL,
+            text_fill=self.SCOPE_PRIVATE_TEXT,
+            outline=self.SCOPE_PRIVATE_OUTLINE,
+        )
+
+    def _neutral_chip(self, text: str) -> SearchCardChip:
+        return SearchCardChip(
+            text=text,
+            fill=self.NEUTRAL_CHIP_FILL,
+            text_fill=self.NEUTRAL_CHIP_TEXT,
+            outline=self.NEUTRAL_CHIP_OUTLINE,
+        )
+
+    def _data_chip(self, text: str) -> SearchCardChip:
+        return SearchCardChip(
+            text=text,
+            fill=self.DATA_CHIP_FILL,
+            text_fill=self.DATA_CHIP_TEXT,
+            outline=self.DATA_CHIP_OUTLINE,
+        )
 
     def _draw_empty_state(
         self,
@@ -688,18 +964,20 @@ class SearchResultCardRenderer:
         )
 
     def _summary_block_height(self, query: SearchCardQuery, locale: LocaleCode) -> int:
-        chip_height = line_height(self.summary_font) + CARD_TAG_PADDING_Y
-        rows = 1
-        current_x = CARD_PADDING_X + 16
-        max_x = CARD_WIDTH - CARD_PADDING_X - 16
-        for chip_text in summary_chips(
+        chips = summary_chips(
             keyword=query.keyword,
             field=query.field,
             creator_id=query.creator_id,
             has_image=query.has_image,
             locale=locale,
             field_label=self._field_label(query.field, locale),
-        ):
+        )
+        if not chips:
+            return 0
+        rows = 1
+        current_x = CARD_PADDING_X + 16
+        max_x = CARD_WIDTH - CARD_PADDING_X - 16
+        for chip_text in chips:
             chip_width = (
                 text_width(chip_text, self.summary_font) + CARD_TAG_PADDING_X * 2
             )
@@ -708,7 +986,7 @@ class SearchResultCardRenderer:
                 current_x = CARD_PADDING_X + 16 + chip_width + CARD_TAG_COLUMN_GAP
             else:
                 current_x += chip_width + CARD_TAG_COLUMN_GAP
-        return 14 + rows * chip_height + (rows - 1) * CARD_TAG_COLUMN_GAP + 14
+        return 14 + rows * CARD_CHIP_HEIGHT + (rows - 1) * CARD_TAG_ROW_GAP + 14
 
     def _item_block_height(
         self,
@@ -720,31 +998,27 @@ class SearchResultCardRenderer:
     ) -> int:
         width = column_width - CARD_ITEM_PADDING_X * 2
         total = CARD_ITEM_PADDING_Y * 2
-        total += CARD_BADGE_SIZE + CARD_ITEM_GAP
+        total += self._item_header_height(item=item, width=width, locale=locale)
+        total += CARD_ITEM_GAP
         total += self._trigger_panel_height(item=item, width=width, locale=locale)
         total += CARD_SUBSECTION_GAP
         previews = response_preview_items(item, locale)
-        for response in previews:
+        for response_index, response in enumerate(previews, start=1):
             total += self._response_panel_height(
                 response=response,
                 item=item,
                 absolute_index=absolute_index,
                 width=width,
             )
-            total += CARD_RESPONSE_GAP
         if has_folded_preview(item):
+            if len(previews) > 1:
+                total += CARD_RESPONSE_GAP * (len(previews) - 1)
+            if previews:
+                total += CARD_RESPONSE_GAP
             total += self._folded_block_height(item, locale=locale, width=width)
             total += CARD_SUBSECTION_GAP
-        else:
-            total += max(0, CARD_SUBSECTION_GAP - CARD_RESPONSE_GAP)
-        total += self._tags_height(
-            tags=self._item_tag_texts(
-                item=item,
-                query=None,
-                locale=locale,
-            ),
-            width=width,
-        )
+        elif len(previews) > 1:
+            total += CARD_RESPONSE_GAP * (len(previews) - 1)
         return total
 
     def _trigger_panel_height(
@@ -755,6 +1029,8 @@ class SearchResultCardRenderer:
         locale: LocaleCode,
     ) -> int:
         total = CARD_RESPONSE_PADDING_Y * 2
+        if probability_chip_text(item.probability):
+            total += CARD_CHIP_HEIGHT + CARD_TRIGGER_PROB_GAP
         total += self._content_blocks_height(
             trigger_preview_blocks(item, locale),
             max_width=width - CARD_RESPONSE_PADDING_X * 2,
@@ -772,6 +1048,8 @@ class SearchResultCardRenderer:
     ) -> int:
         _ = (absolute_index, item)
         total = CARD_RESPONSE_PADDING_Y * 2
+        total += CARD_CHIP_HEIGHT
+        total += CARD_META_ROW_GAP
         total += self._content_blocks_height(
             response.blocks,
             max_width=width - CARD_RESPONSE_PADDING_X * 2,
@@ -793,47 +1071,6 @@ class SearchResultCardRenderer:
             max_lines=3,
         )
         return max(CARD_FOLDED_HEIGHT, text_height + 20)
-
-    def _item_tag_texts(
-        self,
-        *,
-        item: WordbankSearchItem,
-        query: SearchCardQuery | None,
-        locale: LocaleCode,
-    ) -> tuple[str, ...]:
-        matched_by = item.matched_by or fallback_match_label(
-            has_image=query.has_image if query is not None else False,
-            keyword=query.keyword if query is not None else "",
-            creator_id=query.creator_id if query is not None else "",
-            locale=locale,
-        )
-        return (
-            f"#{item.trigger_group_id}",
-            tr(locale, "wordbank.search_card.status", status=item.status),
-            tr(
-                locale,
-                "wordbank.search_card.response_count",
-                count=item.response_count,
-            ),
-            tr(locale, "wordbank.search_card.created_by", created_by=item.created_by),
-            matched_by,
-            f"{safe_field_label(locale, 'scope')} {item.scope}",
-            f"{safe_field_label(locale, 'probability')} {item.probability:g}",
-            f"{safe_field_label(locale, 'weight')} {item.weight}",
-        )
-
-    def _tags_height(self, *, tags: tuple[str, ...], width: int) -> int:
-        cursor_x = 0
-        rows = 1
-        line_height_value = line_height(self.item_tag_font) + CARD_TAG_PADDING_Y
-        for tag in tags:
-            tag_width = text_width(tag, self.item_tag_font) + CARD_TAG_PADDING_X * 2
-            if cursor_x and cursor_x + tag_width > width:
-                rows += 1
-                cursor_x = tag_width + CARD_TAG_COLUMN_GAP
-            else:
-                cursor_x += tag_width + CARD_TAG_COLUMN_GAP
-        return rows * line_height_value + (rows - 1) * CARD_TAG_ROW_GAP
 
     def _draw_wrapped_text(
         self,

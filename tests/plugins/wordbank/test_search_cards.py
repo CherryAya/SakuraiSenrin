@@ -6,11 +6,18 @@ from PIL import Image, ImageDraw
 
 from src.lib.message_plan import render_message_plan_entry
 from src.plugins.water.img import _build_copyright_text
-from src.plugins.wordbank.database.types import WordbankSearchItem
-from src.plugins.wordbank.handlers.search_card_helpers import response_preview_items
+from src.plugins.wordbank.database.types import (
+    WordbankSearchItem,
+    WordbankSearchPreviewResponse,
+)
+from src.plugins.wordbank.handlers.search_card_helpers import (
+    probability_chip_text,
+    response_preview_items,
+    summary_chips,
+    weight_chip_text,
+)
 from src.plugins.wordbank.handlers.search_cards import (
     CARD_RESPONSE_PADDING_X,
-    CARD_TAG_ROW_GAP,
     SearchCardQuery,
     SearchResultCardRenderer,
     build_search_results_card_plan_entry,
@@ -173,15 +180,38 @@ def test_response_preview_items_preserve_response_boundaries() -> None:
         trigger_group_id=123,
         status="approved",
         trigger_text="晚安",
-        response_text="第一条",
-        response_summaries=("第一条\n第一段", "第二条\n第二段", "第三条"),
-        response_item_ids=(401, 402, 403),
+        response_text="第一条\n第一段",
         response_count=5,
-        scope="current_group",
         probability=1.0,
-        weight=3,
-        created_by="10001",
-        matched_by="text:trigger",
+        preview_responses=(
+            WordbankSearchPreviewResponse(
+                response_item_id=401,
+                status="approved",
+                created_by="10001",
+                scope="current_group",
+                weight=3,
+                rule=None,
+                response_text="第一条\n第一段",
+            ),
+            WordbankSearchPreviewResponse(
+                response_item_id=402,
+                status="pending",
+                created_by="10002",
+                scope="all_groups",
+                weight=5,
+                rule={"roles": "admin"},
+                response_text="第二条\n第二段",
+            ),
+            WordbankSearchPreviewResponse(
+                response_item_id=403,
+                status="rejected",
+                created_by="10003",
+                scope="self",
+                weight=2,
+                rule={"call_count": {"window_seconds": 30, "min": 2, "max": 4}},
+                response_text="第三条",
+            ),
+        ),
     )
 
     previews = response_preview_items(item, "zh-CN")
@@ -190,6 +220,10 @@ def test_response_preview_items_preserve_response_boundaries() -> None:
     assert tuple(preview.response_item_id for preview in previews) == (401, 402, 403)
     assert previews[0].blocks[0].text == "第一条\n第一段"
     assert previews[1].blocks[0].text == "第二条\n第二段"
+    assert previews[1].created_by == "10002"
+    assert previews[1].scope == "all_groups"
+    assert previews[1].rule == {"roles": "admin"}
+    assert previews[2].weight == 2
 
 
 def test_response_preview_items_use_shape_blocks_without_image_placeholder() -> None:
@@ -198,13 +232,31 @@ def test_response_preview_items_use_shape_blocks_without_image_placeholder() -> 
         status="approved",
         trigger_text="晚安",
         response_text="做个好梦 [图片:7]",
-        response_summaries=("做个好梦 [图片:7]", "第二条预览"),
-        response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
-        response_item_ids=(501, 502),
-        scope="current_group",
         probability=1.0,
-        weight=3,
-        created_by="10001",
+        preview_responses=(
+            WordbankSearchPreviewResponse(
+                response_item_id=501,
+                status="approved",
+                created_by="10001",
+                scope="current_group",
+                weight=3,
+                rule=None,
+                response_text="做个好梦 [图片:7]",
+                response_shape=combine_shapes(
+                    shape_from_text("做个好梦"),
+                    shape_from_image(7),
+                ),
+            ),
+            WordbankSearchPreviewResponse(
+                response_item_id=502,
+                status="approved",
+                created_by="10002",
+                scope="all_groups",
+                weight=3,
+                rule=None,
+                response_text="第二条预览",
+            ),
+        ),
     )
 
     previews = response_preview_items(item, "zh-CN")
@@ -220,24 +272,44 @@ def test_response_preview_items_preserve_shape_order_for_mixed_content() -> None
         status="approved",
         trigger_text="晚安",
         response_text="文本后接图",
-        response_summaries=("文本后接图",),
-        response_shape=combine_shapes(shape_from_text("前文"), shape_from_image(7)),
-        scope="current_group",
         probability=1.0,
-        weight=3,
-        created_by="10001",
+        preview_responses=(
+            WordbankSearchPreviewResponse(
+                response_item_id=701,
+                status="approved",
+                created_by="10001",
+                scope="current_group",
+                weight=3,
+                rule=None,
+                response_text="文本后接图",
+                response_shape=combine_shapes(
+                    shape_from_text("前文"),
+                    shape_from_image(7),
+                ),
+            ),
+        ),
     )
     image_first = WordbankSearchItem(
         trigger_group_id=2,
         status="approved",
         trigger_text="晚安",
         response_text="先图后文",
-        response_summaries=("先图后文",),
-        response_shape=combine_shapes(shape_from_image(8), shape_from_text("后文")),
-        scope="current_group",
         probability=1.0,
-        weight=3,
-        created_by="10001",
+        preview_responses=(
+            WordbankSearchPreviewResponse(
+                response_item_id=702,
+                status="approved",
+                created_by="10001",
+                scope="current_group",
+                weight=3,
+                rule=None,
+                response_text="先图后文",
+                response_shape=combine_shapes(
+                    shape_from_image(8),
+                    shape_from_text("后文"),
+                ),
+            ),
+        ),
     )
 
     text_first_preview = response_preview_items(text_first, "zh-CN")[0]
@@ -259,18 +331,23 @@ def test_search_card_renderer_uses_distinct_trigger_and_response_text_styles() -
     )
 
 
-def test_search_card_renderer_adds_tag_row_gap_to_multiline_tags() -> None:
-    renderer = SearchResultCardRenderer()
-    tags = ("特别特别长的标签一", "特别特别长的标签二", "特别特别长的标签三")
-    width = 220
-
-    height = renderer._tags_height(tags=tags, width=width)  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
-    single_row_height = (
-        renderer._tags_height(tags=("单行标签",), width=width)  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+def test_summary_chips_hide_default_filters() -> None:
+    assert (
+        summary_chips(
+            keyword="",
+            field="all",
+            creator_id="",
+            has_image=False,
+            locale="zh-CN",
+            field_label="全部",
+        )
+        == ()
     )
 
-    assert height > single_row_height
-    assert height >= single_row_height * 2 + CARD_TAG_ROW_GAP - 4
+
+def test_probability_and_weight_default_values_are_hidden() -> None:
+    assert probability_chip_text(1.0) == ""
+    assert weight_chip_text(3) == ""
 
 
 def test_search_card_renderer_response_body_keeps_uniform_content_start_x() -> None:
@@ -281,12 +358,19 @@ def test_search_card_renderer_response_body_keeps_uniform_content_start_x() -> N
             status="approved",
             trigger_text="晚安",
             response_text="[图片:7]",
-            response_summaries=("[图片:7]",),
-            response_shape=shape_from_image(7),
-            scope="current_group",
             probability=1.0,
-            weight=3,
-            created_by="10001",
+            preview_responses=(
+                WordbankSearchPreviewResponse(
+                    response_item_id=801,
+                    status="approved",
+                    created_by="10001",
+                    scope="current_group",
+                    weight=3,
+                    rule=None,
+                    response_text="[图片:7]",
+                    response_shape=shape_from_image(7),
+                ),
+            ),
         ),
         "zh-CN",
     )[0]
@@ -307,6 +391,7 @@ def test_search_card_renderer_response_body_keeps_uniform_content_start_x() -> N
         response=response,
         item=_item(77),
         absolute_index=4,
+        locale="zh-CN",
         x=30,
         y=80,
         width=300,
@@ -314,6 +399,37 @@ def test_search_card_renderer_response_body_keeps_uniform_content_start_x() -> N
     )
 
     assert recorded == [30 + CARD_RESPONSE_PADDING_X]
+
+
+def test_search_card_renderer_response_meta_uses_response_level_values() -> None:
+    renderer = SearchResultCardRenderer()
+    response = response_preview_items(
+        WordbankSearchItem(
+            trigger_group_id=66,
+            status="approved",
+            trigger_text="晚安",
+            response_text="第一条",
+            probability=1.0,
+            preview_responses=(
+                WordbankSearchPreviewResponse(
+                    response_item_id=901,
+                    status="pending",
+                    created_by="24680",
+                    scope="all_groups",
+                    weight=5,
+                    rule={"roles": "admin"},
+                    response_text="第一条",
+                ),
+            ),
+        ),
+        "zh-CN",
+    )[0]
+
+    left_chips = renderer._response_left_chips(response, "zh-CN")  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+    right_chips = renderer._response_right_chips(response)  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+
+    assert [chip.text for chip in left_chips] == ["[pending]", "全局", "管理"]
+    assert [chip.text for chip in right_chips] == ["U:24680", "W:5"]
 
 
 def test_search_card_copyright_text_matches_water_style() -> None:

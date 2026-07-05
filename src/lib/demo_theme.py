@@ -145,7 +145,9 @@ class WordbankCardTheme:
     response_panel: str
     response_border: str
     panel: str
+    panel_soft: str
     header: str
+    header_soft: str
     body: str
     muted: str
     accent: str
@@ -160,6 +162,30 @@ class WordbankCardTheme:
     panel_outline: str
     page_more_shadow_fill: str
     page_more_outline: str
+    success_fill: str
+    success_text: str
+    success_outline: str
+    warning_fill: str
+    warning_text: str
+    warning_outline: str
+    danger_fill: str
+    danger_text: str
+    danger_outline: str
+    scope_global_fill: str
+    scope_global_text: str
+    scope_global_outline: str
+    scope_local_fill: str
+    scope_local_text: str
+    scope_local_outline: str
+    scope_private_fill: str
+    scope_private_text: str
+    scope_private_outline: str
+    neutral_chip_fill: str
+    neutral_chip_text: str
+    neutral_chip_outline: str
+    data_chip_fill: str
+    data_chip_text: str
+    data_chip_outline: str
 
 
 @dataclass(frozen=True)
@@ -453,13 +479,15 @@ SENRIN_V3_THEME = DemoThemeDefinition(
 SENRIN_V3_WORDBANK_CARD_THEME = WordbankCardTheme(
     bg="#FDFBF7",
     trigger_panel="#FFF0F5",
-    trigger_border="#FDD8E5",
-    response_panel="#FFFFFF",
-    response_border="#E8F0FE",
-    panel="#FFFFFF",
-    header="#4A4350",
-    body="#4A4350",
-    muted="#A49BAE",
+    trigger_border="#F8D6E4",
+    response_panel="#FFFDFE",
+    response_border="#F0E6EC",
+    panel="#FFFDFE",
+    panel_soft="#FFF7FB",
+    header="#574B59",
+    header_soft="#866C84",
+    body="#5C5260",
+    muted="#AA9EAE",
     accent="#FFA6C9",
     accent_deep="#E1759C",
     accent_soft="#FFF5F8",
@@ -472,6 +500,30 @@ SENRIN_V3_WORDBANK_CARD_THEME = WordbankCardTheme(
     panel_outline="#F0E8ED",
     page_more_shadow_fill="#FCEAF2",
     page_more_outline="#F7D8E6",
+    success_fill="#ECF8F1",
+    success_text="#4E7A64",
+    success_outline="#CDEAD8",
+    warning_fill="#FFF1DD",
+    warning_text="#9B6C38",
+    warning_outline="#F8D7AC",
+    danger_fill="#FFE9EE",
+    danger_text="#A56B7A",
+    danger_outline="#F8CAD5",
+    scope_global_fill="#FFE6F0",
+    scope_global_text="#B7668A",
+    scope_global_outline="#F7C8D9",
+    scope_local_fill="#E8F3FF",
+    scope_local_text="#5E7EA5",
+    scope_local_outline="#CFE1F8",
+    scope_private_fill="#F0ECF8",
+    scope_private_text="#756B90",
+    scope_private_outline="#DDD5EE",
+    neutral_chip_fill="#F8EEF4",
+    neutral_chip_text="#8A7286",
+    neutral_chip_outline="#E7D8E3",
+    data_chip_fill="#FFF4E8",
+    data_chip_text="#9A6F54",
+    data_chip_outline="#F0D8C3",
 )
 
 SENRIN_V3_WORDBANK_LEADERBOARD_THEME = WordbankLeaderboardTheme(

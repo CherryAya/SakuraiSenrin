@@ -255,6 +255,18 @@ class WordbankSearchRequest:
 
 
 @dataclass(slots=True, frozen=True)
+class WordbankSearchPreviewResponse:
+    response_item_id: int
+    status: str
+    created_by: str
+    scope: str
+    weight: int
+    rule: dict[str, object] | None
+    response_text: str
+    response_shape: MessageShape | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class WordbankSearchItem:
     trigger_group_id: int
     status: str
@@ -274,6 +286,9 @@ class WordbankSearchItem:
     score: float = 0.0
     matched_by: str = ""
     response_item_ids: tuple[int, ...] = dataclass_field(default_factory=tuple)
+    preview_responses: tuple[WordbankSearchPreviewResponse, ...] = dataclass_field(
+        default_factory=tuple
+    )
     trigger_preview_image_id: int | None = None
     response_preview_image_id: int | None = None
 

@@ -478,6 +478,9 @@ class WordbankRepositorySearchMixin:
                                 )
                                 else ()
                             ),
+                            preview_responses=self._search_preview_responses_from_bundle(
+                                bundles_by_group_id.get(document.trigger_group_id)
+                            ),
                         )
                         for document in documents
                     ),
@@ -572,6 +575,9 @@ class WordbankRepositorySearchMixin:
                             is not None
                         )
                         else ()
+                    ),
+                    preview_responses=self._search_preview_responses_from_bundle(
+                        bundles_by_group_id.get(document.trigger_group_id)
                     ),
                 )
                 for score, _, matched_by, document in paged
