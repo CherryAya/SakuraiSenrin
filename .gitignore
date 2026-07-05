@@ -11,6 +11,8 @@ wheels/
 .env.*
 
 .devtest
+.devtest/**/*.db
+.devtest/**/*.zst
 
 
 
@@ -23,6 +25,9 @@ backup/
 !src/lib/backup/*.py
 
 data/*
+data/**/*.db
+data/**/*.zst
+data/db/**
 !data/db/.gitkeep
 !data/font/.gitkeep
 !data/image/.gitkeep

@@ -1,2 +1,7 @@
 *.ttf filter=lfs diff=lfs merge=lfs -text
 *.db filter=lfs diff=lfs merge=lfs -text
+data/db/** -filter -diff -merge text
+data/**/*.db -filter -diff -merge text
+data/**/*.zst -filter -diff -merge text
+.devtest/**/*.db -filter -diff -merge text
+.devtest/**/*.zst -filter -diff -merge text
