@@ -444,11 +444,24 @@ async def _handle_batch_approval_reply_result(
             "wordbank.approval.batch.total",
             count=len(execution_plan),
         ),
-        tr(locale, "wordbank.approval.batch.success", count=success_count),
-        tr(locale, "wordbank.approval.batch.failed", count=len(failed_ids)),
-        tr(locale, "wordbank.approval.batch.approved", count=len(approved_success_ids)),
-        tr(locale, "wordbank.approval.batch.rejected", count=len(rejected_success_ids)),
     ]
+    if approved_success_ids:
+        lines.append(
+            tr(
+                locale,
+                "wordbank.approval.batch.approved",
+                count=len(approved_success_ids),
+            )
+        )
+    if rejected_success_ids:
+        lines.append(
+            tr(
+                locale,
+                "wordbank.approval.batch.rejected",
+                count=len(rejected_success_ids),
+            )
+        )
+    lines.append(tr(locale, "wordbank.approval.batch.failed", count=len(failed_ids)))
     if approved_success_ids:
         lines.append(
             tr(
@@ -478,9 +491,7 @@ async def _handle_batch_approval_reply_result(
         approval_message=None,
         completed=bool(success_count),
         action=(
-            parsed.selected_action
-            if parsed.remaining_action == "noop"
-            else "mixed"
+            parsed.selected_action if parsed.remaining_action == "noop" else "mixed"
         ),
         batch_notices=tuple(
             (response_item_id, "approve") for response_item_id in approved_success_ids

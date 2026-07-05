@@ -96,6 +96,7 @@ async def test_forward_choice_uses_saved_response_event(
     )
     assert "study_forward_response_pending" not in state
     assert "study_forward_response_event" not in state
+    assert state["study_submission_source_event"] is response_event
     assert state["study_weight_after_preloaded_trigger"] is True
     assert state["study_weight_pending"] is True
     assert matcher.paused == [tr("zh-CN", "wordbank.guided.study.weight_prompt")]
@@ -192,6 +193,7 @@ async def test_finish_guided_study_uses_split_shapes_after_forward_choice(
     matcher = cast(Matcher, SimpleNamespace())
     bot = cast(Bot, SimpleNamespace())
     event = build_group_message_event("3", message_id=10)
+    source_event = build_group_message_event("第一条", message_id=8)
     state: dict[str, object] = {
         "study_locale": "zh-CN",
         "study_trig_mode": "a",
@@ -202,6 +204,7 @@ async def test_finish_guided_study_uses_split_shapes_after_forward_choice(
             shape_from_text("第一条"),
             shape_from_text("第二条"),
         ),
+        "study_submission_source_event": source_event,
     }
     batch_result = WordbankBatchAddResult(
         total=2,
@@ -241,4 +244,5 @@ async def test_finish_guided_study_uses_split_shapes_after_forward_choice(
         event,
         batch_result,
         locale="zh-CN",
+        source_event=source_event,
     )

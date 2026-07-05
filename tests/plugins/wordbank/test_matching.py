@@ -74,6 +74,7 @@ def _entry(
                 search_text=shape_to_search_text(response_shape),
                 search_tokens=response_fp.search_tokens,
                 image_keys=response_fp.image_keys,
+                created_at=0,
             ),
         ),
     )

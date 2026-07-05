@@ -248,7 +248,8 @@ async def test_handle_approval_reply_result_supports_pending_batch_reply() -> No
     assert outcome.completed is True
     assert "批量通过完成" in outcome.message
     assert "总数: 3" in outcome.message
-    assert "成功: 3" in outcome.message
+    assert "通过: 3" in outcome.message
+    assert "失败: 0" in outcome.message
     assert [call.args[0] for call in approve.await_args_list] == [301, 303, 304]
     assert outcome.batch_notices == (
         (301, "approve"),
@@ -283,9 +284,9 @@ async def test_handle_approval_reply_result_supports_quick_complement_batch_repl
     assert outcome.completed is True
     assert "批量审批完成" in outcome.message
     assert "总数: 4" in outcome.message
-    assert "成功: 4" in outcome.message
     assert "通过: 2" in outcome.message
     assert "拒绝: 2" in outcome.message
+    assert "失败: 0" in outcome.message
     assert "通过条目: #301, #303" in outcome.message
     assert "拒绝条目: #302, #304" in outcome.message
     assert [call.args[0] for call in approve.await_args_list] == [301, 303]

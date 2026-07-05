@@ -170,6 +170,8 @@ async def _finalize_study_submission(
     event: MessageEvent,
     submission: Any,
     locale: LocaleCode,
+    *,
+    source_event: MessageEvent | None = None,
 ) -> None:
     await _build_study_submission_lifecycle().finalize(
         matcher,
@@ -177,6 +179,7 @@ async def _finalize_study_submission(
         event,
         submission,
         locale,
+        source_event=source_event,
     )
 
 
@@ -225,6 +228,10 @@ def _copy_study_state(
         snapshot["study_locale"] = state["study_locale"]
     if INTERACTION_ROOT_MESSAGE_ID in state:
         snapshot[INTERACTION_ROOT_MESSAGE_ID] = state[INTERACTION_ROOT_MESSAGE_ID]
+    if "study_submission_source_event" in state:
+        snapshot["study_submission_source_event"] = state[
+            "study_submission_source_event"
+        ]
     for key in keep_keys:
         if key in state:
             snapshot[key] = state[key]
@@ -289,6 +296,11 @@ def _study_state_keys(state: Mapping[str, Any]) -> list[str]:
 
 def _study_forward_response_event(state: Mapping[str, Any]) -> MessageEvent | None:
     value = state.get("study_forward_response_event")
+    return value if isinstance(value, MessageEvent) else None
+
+
+def _study_submission_source_event(state: Mapping[str, Any]) -> MessageEvent | None:
+    value = state.get("study_submission_source_event")
     return value if isinstance(value, MessageEvent) else None
 
 
@@ -551,6 +563,7 @@ async def _record_study_response(
         ),
     )
     state["study_response_shape"] = shape
+    state["study_submission_source_event"] = event
     state["study_weight_after_preloaded_trigger"] = True
     _enter_study_weight_step(state)
     _register_study_checkpoint(
@@ -625,6 +638,7 @@ async def _record_study_forward_response_choice(
             )
             return
         state["study_response_shape"] = payload.whole_shape
+        state["study_submission_source_event"] = response_event
         state["study_weight_after_preloaded_trigger"] = True
         _enter_study_weight_step(state)
         state.pop("study_forward_response_pending", None)
@@ -680,6 +694,7 @@ async def _record_study_forward_response_choice(
             return
         state["study_response_shape"] = payload.split_shapes[0]
         state["study_forward_split_shapes"] = payload.split_shapes
+        state["study_submission_source_event"] = response_event
         state["study_weight_after_preloaded_trigger"] = True
         _enter_study_weight_step(state)
         state.pop("study_forward_response_pending", None)
@@ -770,6 +785,7 @@ async def _finish_guided_study(
     try:
         state_keys = _study_state_keys(state)
         logger.debug(f"[Study][guided] finish start | state_keys={state_keys}")
+        source_event = _study_submission_source_event(state)
         trigger_shape = _state_message_shape(state, "study_trigger_shape")
         response_shape = _state_message_shape(state, "study_response_shape")
         if trigger_shape is None or trigger_shape.is_empty():
@@ -830,6 +846,7 @@ async def _finish_guided_study(
                 event,
                 batch,
                 locale=locale,
+                source_event=source_event,
             )
             return
         if response_shape is None or response_shape.is_empty():
@@ -860,6 +877,7 @@ async def _finish_guided_study(
         event,
         result,
         locale=locale,
+        source_event=source_event,
     )
 
 

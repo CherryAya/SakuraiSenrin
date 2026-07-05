@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Protocol
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
@@ -29,10 +30,19 @@ from .approval import (
 
 type SubmissionPayload = WordbankAddResult | WordbankBatchAddResult
 type BatchFeedbackNicknameBuilder = Callable[[LocaleCode], str]
-type SubmissionHandler = Callable[
-    [Matcher, Bot, MessageEvent, SubmissionPayload, LocaleCode],
-    Awaitable[None],
-]
+
+
+class SubmissionHandler(Protocol):
+    def __call__(
+        self,
+        matcher: Matcher,
+        bot: Bot,
+        event: MessageEvent,
+        submission: SubmissionPayload,
+        locale: LocaleCode,
+        *,
+        source_event: MessageEvent | None = None,
+    ) -> Awaitable[None]: ...
 
 
 @dataclass(slots=True, frozen=True)
@@ -50,6 +60,8 @@ class SubmissionLifecycle:
         event: MessageEvent,
         submission: SubmissionPayload,
         locale: LocaleCode,
+        *,
+        source_event: MessageEvent | None = None,
     ) -> None:
         await finalize_submission(
             matcher,
@@ -62,6 +74,7 @@ class SubmissionLifecycle:
             submission_source_kind=self.submission_source_kind,
             batch_submission_source_kind=self.batch_submission_source_kind,
             batch_feedback_nickname=self.batch_feedback_nickname_builder(locale),
+            source_event=source_event,
         )
 
 
@@ -77,7 +90,9 @@ async def finalize_submission(
     submission_source_kind: str,
     batch_submission_source_kind: str,
     batch_feedback_nickname: str,
+    source_event: MessageEvent | None = None,
 ) -> None:
+    approval_event = source_event or event
     send_result: DeliveryResult | None = None
 
     if isinstance(submission, WordbankAddResult):
@@ -97,7 +112,7 @@ async def finalize_submission(
         send_result = plan_result.results[0]
         await record_submission_approval_message(
             service,
-            event=event,
+            event=approval_event,
             result=submission,
             send_result=send_result,
         )
@@ -114,7 +129,7 @@ async def finalize_submission(
         )
         await record_batch_submission_approval_message(
             service,
-            event=event,
+            event=approval_event,
             batch=submission,
             send_result=send_result,
         )
@@ -122,7 +137,7 @@ async def finalize_submission(
     schedule_submission_approval_notice(
         bot,
         service,
-        event=event,
+        event=approval_event,
         submission=submission,
         locale=locale,
         media_service=media_service,

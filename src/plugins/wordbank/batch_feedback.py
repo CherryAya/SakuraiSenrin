@@ -52,6 +52,7 @@ async def send_batch_add_feedback(
         event=event,
     )
     summary_result = plan_result.results[0]
+    feedback_result = summary_result
     detail_messages = []
     for item in batch.items:
         if item.ok and item.result is not None:
@@ -92,7 +93,7 @@ async def send_batch_add_feedback(
             ),
         )
         async with long_task:
-            await deliver_message_plan(
+            detail_plan_result = await deliver_message_plan(
                 bot,
                 plan=DeliveryPlan(
                     messages=tuple(detail_messages),
@@ -102,4 +103,5 @@ async def send_batch_add_feedback(
                 ),
                 event=event,
             )
-    return summary_result
+        feedback_result = detail_plan_result.results[0]
+    return feedback_result

@@ -381,6 +381,26 @@ def register_wordbank_runtime_handlers(
                 return record
         return None
 
+    async def _find_creator_submission_contexts(
+        response_item_ids: tuple[int, ...],
+    ) -> dict[int, WordbankMessageRefRecord]:
+        service = await _get_wordbank_service()
+        refs = await service.list_message_refs_by_response_item_ids(
+            response_item_ids,
+            expected_kind="approval",
+        )
+        contexts: dict[int, WordbankMessageRefRecord] = {}
+        for response_item_id in response_item_ids:
+            for record in refs:
+                if record.message_type not in {"submission", "submission_batch"}:
+                    continue
+                if record.response_item_id == response_item_id or (
+                    response_item_id in record.group_ids
+                ):
+                    contexts[response_item_id] = record
+                    break
+        return contexts
+
     def _build_creator_notice_message(
         *,
         action: str,
@@ -390,6 +410,120 @@ def register_wordbank_runtime_handlers(
         if action == "approve":
             return f"管理员 {reviewer} 已通过该词条。"
         return f"管理员 {reviewer} 已拒绝该词条。"
+
+    def _build_creator_batch_notice_message(
+        *,
+        notices: tuple[tuple[int, str], ...],
+        reviewer_id: str,
+    ) -> str:
+        reviewer = reviewer_id or "管理员"
+        approved_ids = [
+            response_item_id
+            for response_item_id, action in notices
+            if action == "approve"
+        ]
+        rejected_ids = [
+            response_item_id
+            for response_item_id, action in notices
+            if action == "reject"
+        ]
+        if approved_ids and not rejected_ids:
+            entries = ", ".join(f"#{item_id}" for item_id in approved_ids)
+            return (
+                f"管理员 {reviewer} 已批量通过 {len(approved_ids)} 条词条：{entries}。"
+            )
+        if rejected_ids and not approved_ids:
+            entries = ", ".join(f"#{item_id}" for item_id in rejected_ids)
+            return (
+                f"管理员 {reviewer} 已批量拒绝 {len(rejected_ids)} 条词条：{entries}。"
+            )
+        lines = [
+            f"管理员 {reviewer} 已处理 {len(notices)} 条词条。",
+        ]
+        if approved_ids:
+            lines.append(
+                "通过: " + ", ".join(f"#{item_id}" for item_id in approved_ids)
+            )
+        if rejected_ids:
+            lines.append(
+                "拒绝: " + ", ".join(f"#{item_id}" for item_id in rejected_ids)
+            )
+        return "\n".join(lines)
+
+    async def notify_creator_review_results(
+        bot: Bot,
+        *,
+        notices: tuple[tuple[int, str], ...],
+        locale: LocaleCode,
+        reviewer_id: str = "",
+    ) -> None:
+        _ = locale
+        if not notices:
+            return
+        contexts = await _find_creator_submission_contexts(
+            tuple(response_item_id for response_item_id, _ in notices)
+        )
+        grouped_notices: dict[
+            tuple[str, str, str, str],
+            list[tuple[int, str]],
+        ] = {}
+        grouped_contexts: dict[tuple[str, str, str, str], WordbankMessageRefRecord] = {}
+        for response_item_id, action in notices:
+            context = contexts.get(response_item_id)
+            if context is None or not context.user_id:
+                continue
+            context_key = (
+                str(context.group_id),
+                str(context.user_id),
+                str(context.source_message_id),
+                str(context.message_type),
+            )
+            grouped_contexts[context_key] = context
+            grouped_notices.setdefault(context_key, []).append(
+                (response_item_id, action)
+            )
+
+        for context_key, context_notices in grouped_notices.items():
+            context = grouped_contexts[context_key]
+            blocks: list[ReplyRefBlock | AtRefBlock | TextBlock] = []
+            if context.source_message_id:
+                blocks.append(ReplyRefBlock(message_id=str(context.source_message_id)))
+            blocks.append(AtRefBlock(target_id=str(context.user_id)))
+            blocks.append(TextBlock(text=" "))
+            blocks.append(
+                TextBlock(
+                    text=_build_creator_batch_notice_message(
+                        notices=tuple(context_notices),
+                        reviewer_id=reviewer_id,
+                    )
+                )
+            )
+            plan = DeliveryPlan(
+                messages=(MessagePlanEntry(blocks=tuple(blocks)),),
+                source_kind="wordbank_creator_review_notice",
+                allow_asset_reuse=False,
+            )
+            try:
+                if context.group_id:
+                    await deliver_message_plan(
+                        bot,
+                        plan=plan,
+                        target=DeliveryTarget(
+                            kind="group",
+                            target_id=str(context.group_id),
+                        ),
+                    )
+                    continue
+                await deliver_message_plan(
+                    bot,
+                    plan=plan,
+                    target=DeliveryTarget(
+                        kind="private",
+                        target_id=str(context.user_id),
+                    ),
+                )
+            except Exception as exc:
+                logger.warning(f"[Wordbank] creator review notice skipped: {exc}")
 
     async def notify_creator_review_result(
         bot: Bot,
@@ -543,9 +677,7 @@ def register_wordbank_runtime_handlers(
                 blocks = (first_block, *blocks[1:])
             else:
                 blocks = (TextBlock(prefix), *blocks)
-            message = MessagePlanEntry(
-                blocks=blocks
-            )
+            message = MessagePlanEntry(blocks=blocks)
         image_trace_fields = _image_payload_trace_fields(render_trace)
         log_perf(
             "plugin.build_passive_message.rendered_shape",
@@ -639,14 +771,12 @@ def register_wordbank_runtime_handlers(
                     reviewer_id=str(event.user_id),
                 )
         elif outcome.completed and outcome.batch_notices:
-            for response_item_id, action in outcome.batch_notices:
-                await notify_creator_review_result(
-                    bot,
-                    response_item_id=response_item_id,
-                    action=action,
-                    locale=locale,
-                    reviewer_id=str(event.user_id),
-                )
+            await notify_creator_review_results(
+                bot,
+                notices=outcome.batch_notices,
+                locale=locale,
+                reviewer_id=str(event.user_id),
+            )
         await finish_with_message(
             bot,
             matcher,
@@ -949,5 +1079,6 @@ def register_wordbank_runtime_handlers(
         "record_passive_response_message": _record_passive_response_message,
         "notify_approval_source": notify_approval_source,
         "notify_creator_review_result": notify_creator_review_result,
+        "notify_creator_review_results": notify_creator_review_results,
         "_build_passive_message": _build_passive_message,
     }

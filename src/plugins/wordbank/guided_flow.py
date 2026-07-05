@@ -138,6 +138,11 @@ def _guided_forward_response_event(state: Mapping[str, Any]) -> MessageEvent | N
     return value if isinstance(value, MessageEvent) else None
 
 
+def _guided_submission_source_event(state: Mapping[str, Any]) -> MessageEvent | None:
+    value = state.get("wordbank_guided_submission_source_event")
+    return value if isinstance(value, MessageEvent) else None
+
+
 async def reject_guided_error(
     matcher: Matcher,
     state: T_State,
@@ -174,6 +179,10 @@ def copy_guided_state(
         snapshot["wordbank_locale"] = state["wordbank_locale"]
     if INTERACTION_ROOT_MESSAGE_ID in state:
         snapshot[INTERACTION_ROOT_MESSAGE_ID] = state[INTERACTION_ROOT_MESSAGE_ID]
+    if "wordbank_guided_submission_source_event" in state:
+        snapshot["wordbank_guided_submission_source_event"] = state[
+            "wordbank_guided_submission_source_event"
+        ]
     for key in keep_keys:
         if key in state:
             snapshot[key] = state[key]
@@ -188,6 +197,7 @@ def guided_response_state_keys(state: Mapping[str, Any]) -> tuple[str, ...]:
         "wordbank_guided_response_split_shapes",
         "wordbank_guided_response_forward_pending",
         "wordbank_guided_response_forward_event",
+        "wordbank_guided_submission_source_event",
         "wordbank_guided_response_forward_source_message_id",
         "wordbank_guided_response_forward_messages",
         "wordbank_guided_response_forward_node_count",
@@ -382,6 +392,7 @@ async def record_guided_response(
         keep_keys=("wordbank_guided_trigger_shape",),
     )
     state["wordbank_guided_response_shape"] = shape
+    state["wordbank_guided_submission_source_event"] = event
     register_guided_checkpoint(
         state,
         event,
@@ -458,6 +469,7 @@ async def record_guided_forward_response_choice(
             )
             return
         state["wordbank_guided_response_shape"] = payload.whole_shape
+        state["wordbank_guided_submission_source_event"] = response_event
         state["wordbank_guided_response_forward_source_message_id"] = (
             payload.source_message_id or ""
         )
@@ -509,6 +521,7 @@ async def record_guided_forward_response_choice(
             )
             return
         state["wordbank_guided_response_split_shapes"] = payload.split_shapes
+        state["wordbank_guided_submission_source_event"] = response_event
         state["wordbank_guided_response_forward_source_message_id"] = (
             payload.source_message_id or ""
         )
@@ -597,6 +610,7 @@ async def finish_guided_add(
     wordbank_service: Any,
 ) -> None:
     locale = wordbank_guided_locale(state)
+    source_event = _guided_submission_source_event(state)
     try:
         state_keys = _guided_state_keys(state)
         logger.debug(f"[Wordbank][guided] finish add start | state_keys={state_keys}")
@@ -684,7 +698,14 @@ async def finish_guided_add(
                     for item in batch.items
                 ),
             )
-            await finalize_submission(matcher, bot, event, batch, locale)
+            await finalize_submission(
+                matcher,
+                bot,
+                event,
+                batch,
+                locale,
+                source_event=source_event,
+            )
             return
         else:
             response_shape = state_message_shape(
@@ -721,7 +742,14 @@ async def finish_guided_add(
                 )
     except (RuleError, ValueError) as exc:
         raise exc
-    await finalize_submission(matcher, bot, event, result, locale)
+    await finalize_submission(
+        matcher,
+        bot,
+        event,
+        result,
+        locale,
+        source_event=source_event,
+    )
 
 
 def guided_search_stage(state: Mapping[str, Any]) -> str:

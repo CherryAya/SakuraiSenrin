@@ -1,6 +1,6 @@
 import asyncio
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
@@ -87,7 +87,7 @@ async def test_send_batch_add_feedback_uses_rich_result_messages(
     matcher = cast(Matcher, SimpleNamespace())
     event = build_group_message_event("#wordbank.add", message_id=1)
 
-    await send_batch_add_feedback(
+    send_result = await send_batch_add_feedback(
         matcher,
         bot,
         event,
@@ -120,15 +120,14 @@ async def test_send_batch_add_feedback_uses_rich_result_messages(
     rendered_first = render_message_plan_input(first_message)
     assert any(segment.type == "image" for segment in rendered_first)
     assert "boom" in str(render_message_plan_input(second_message))
+    assert cast(Any, send_result)["message_id"] == 2
 
 
 @pytest.mark.asyncio
 async def test_send_batch_add_feedback_emits_long_task_prompt_for_slow_detail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    build_message = AsyncMock(
-        return_value=MessagePlanEntry.from_message("详情节点")
-    )
+    build_message = AsyncMock(return_value=MessagePlanEntry.from_message("详情节点"))
 
     async def _deliver_plan(*args: object, **kwargs: object) -> object:
         plan = kwargs["plan"]
@@ -178,7 +177,7 @@ async def test_send_batch_add_feedback_emits_long_task_prompt_for_slow_detail(
         deliver_plan,
     )
 
-    await send_batch_add_feedback(
+    send_result = await send_batch_add_feedback(
         matcher,
         bot,
         event,
@@ -194,3 +193,4 @@ async def test_send_batch_add_feedback_emits_long_task_prompt_for_slow_detail(
     assert send_mock.await_args is not None
     sent_message = send_mock.await_args.args[0]
     assert str(sent_message) == "正在整理导入详情，请稍候。"
+    assert cast(Any, send_result)["message_id"] == 2

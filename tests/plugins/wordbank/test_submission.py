@@ -61,6 +61,7 @@ async def test_finalize_submission_routes_single_result_through_single_lifecycle
         trigger_shape=shape_from_text("晚安"),
         response_shape=shape_from_text("做个好梦"),
     )
+    source_event = build_group_message_event("做个好梦", message_id=99)
 
     await finalize_submission(
         matcher,
@@ -73,13 +74,18 @@ async def test_finalize_submission_routes_single_result_through_single_lifecycle
         submission_source_kind="wordbank_submission",
         batch_submission_source_kind="wordbank_batch_submission",
         batch_feedback_nickname="回 - 樱井千凛·Senrinです♡",
+        source_event=source_event,
     )
 
     build_message.assert_awaited_once()
     deliver_plan.assert_awaited_once()
     record_submission.assert_awaited_once()
+    assert record_submission.await_args is not None
+    assert record_submission.await_args.kwargs["event"] is source_event
     record_batch_submission.assert_not_awaited()
     schedule_notice.assert_called_once()
+    assert schedule_notice.call_args is not None
+    assert schedule_notice.call_args.kwargs["event"] is source_event
     matcher.finish.assert_awaited_once()
 
 
@@ -87,7 +93,7 @@ async def test_finalize_submission_routes_single_result_through_single_lifecycle
 async def test_finalize_submission_routes_batch_result_through_batch_lifecycle(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    send_feedback = AsyncMock(return_value={"message_id": 1})
+    send_feedback = AsyncMock(return_value={"message_id": 2})
     record_submission = AsyncMock(return_value=None)
     record_batch_submission = AsyncMock(return_value=None)
     schedule_notice = Mock(return_value=None)
@@ -134,6 +140,7 @@ async def test_finalize_submission_routes_batch_result_through_batch_lifecycle(
             WordbankBatchAddItemResult(index=2, ok=False, error="boom"),
         ),
     )
+    source_event = build_group_message_event("第一条", message_id=88)
 
     await finalize_submission(
         matcher,
@@ -146,6 +153,7 @@ async def test_finalize_submission_routes_batch_result_through_batch_lifecycle(
         submission_source_kind="study_submission",
         batch_submission_source_kind="study_batch_submission",
         batch_feedback_nickname="回 - 樱井千凛·Senrinです♡",
+        source_event=source_event,
     )
 
     send_feedback.assert_awaited_once()
@@ -153,7 +161,12 @@ async def test_finalize_submission_routes_batch_result_through_batch_lifecycle(
     assert send_feedback.await_args.args[0] is matcher
     record_submission.assert_not_awaited()
     record_batch_submission.assert_awaited_once()
+    assert record_batch_submission.await_args is not None
+    assert record_batch_submission.await_args.kwargs["event"] is source_event
+    assert record_batch_submission.await_args.kwargs["send_result"] == {"message_id": 2}
     schedule_notice.assert_called_once()
+    assert schedule_notice.call_args is not None
+    assert schedule_notice.call_args.kwargs["event"] is source_event
     matcher.finish.assert_awaited_once()
 
 

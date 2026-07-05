@@ -31,12 +31,14 @@ from src.plugins.wordbank.forward_batch import ResponseInputPayload
 from src.plugins.wordbank.guided_flow import (
     PRIVATE_SCOPE_PROMPT,
     copy_guided_state,
+    finish_guided_add,
     guided_response_state_keys,
     guided_scope_prompt,
     record_guided_forward_response_choice,
 )
 from src.plugins.wordbank.message_model import shape_from_text
 from src.plugins.wordbank.services import wordbank_media_service
+from src.plugins.wordbank.services.presentation import WordbankBatchAddResult
 
 
 class _PauseMatcher:
@@ -96,6 +98,7 @@ async def test_guided_forward_choice_uses_saved_response_event(
     assert await_args.kwargs["task"] is not None
     assert "wordbank_guided_response_forward_pending" not in state
     assert "wordbank_guided_response_forward_event" not in state
+    assert state["wordbank_guided_submission_source_event"] is response_event
     assert matcher.paused == [tr("zh-CN", "wordbank.guided.add.scope_prompt")]
     if expect_split:
         assert state["wordbank_guided_response_split_shapes"] == payload.split_shapes
@@ -112,6 +115,10 @@ def test_guided_response_state_keys_keeps_forward_response_state() -> None:
         "wordbank_guided_response_forward_source_message_id": "54321",
         "wordbank_guided_response_forward_node_count": 2,
         "wordbank_guided_response_forward_messages": ("node-1", "node-2"),
+        "wordbank_guided_submission_source_event": build_group_message_event(
+            "响应词",
+            message_id=7,
+        ),
         "wordbank_guided_scope": "1",
     }
 
@@ -127,6 +134,48 @@ def test_guided_response_state_keys_keeps_forward_response_state() -> None:
         "node-1",
         "node-2",
     )
+    assert (
+        snapshot["wordbank_guided_submission_source_event"]
+        is state["wordbank_guided_submission_source_event"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_finish_guided_add_uses_saved_submission_source_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matcher = cast(Matcher, SimpleNamespace())
+    bot = cast(Bot, SimpleNamespace())
+    source_event = build_group_message_event("第一条响应", message_id=8)
+    weight_event = build_group_message_event("跳过", message_id=9)
+    state: dict[str, object] = {
+        "wordbank_locale": "zh-CN",
+        "wordbank_guided_trigger_shape": shape_from_text("晚安"),
+        "wordbank_guided_response_split_shapes": (
+            shape_from_text("第一条"),
+            shape_from_text("第二条"),
+        ),
+        "wordbank_guided_submission_source_event": source_event,
+        "wordbank_guided_scope": "1",
+    }
+    batch = WordbankBatchAddResult(total=2, success=2, failed=0, items=())
+    add_message_entries = AsyncMock(return_value=batch)
+    finalize_submission = AsyncMock(return_value=None)
+
+    service = SimpleNamespace(add_message_entries=add_message_entries)
+
+    await finish_guided_add(
+        bot,
+        matcher,
+        weight_event,
+        state,
+        finalize_submission=finalize_submission,
+        wordbank_service=service,
+    )
+
+    finalize_submission.assert_awaited_once()
+    assert finalize_submission.await_args is not None
+    assert finalize_submission.await_args.kwargs["source_event"] is source_event
 
 
 def test_guided_scope_prompt_uses_private_variant_in_private_chat() -> None:
