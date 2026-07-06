@@ -17,6 +17,10 @@ from src.plugins.wordbank.handlers.search_card_helpers import (
     weight_chip_text,
 )
 from src.plugins.wordbank.handlers.search_cards import (
+    CARD_CHIP_HEIGHT,
+    CARD_META_SEPARATOR_GAP,
+    CARD_META_SEPARATOR_MARGIN_BOTTOM,
+    CARD_META_SEPARATOR_MARGIN_TOP,
     CARD_RESPONSE_PADDING_X,
     SearchCardQuery,
     SearchResultCardRenderer,
@@ -322,13 +326,40 @@ def test_response_preview_items_preserve_shape_order_for_mixed_content() -> None
     )
 
 
-def test_search_card_renderer_uses_distinct_trigger_and_response_text_styles() -> None:
+def test_search_card_renderer_drops_inner_trigger_panel() -> None:
     renderer = SearchResultCardRenderer()
+    item = _item(31)
+    column_width = 500
 
-    assert (
-        renderer.trigger_body_font != renderer.response_body_font
-        or renderer.trigger_text_fill != renderer.response_text_fill
+    total_height = renderer._item_block_height(  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+        item,
+        absolute_index=1,
+        locale="zh-CN",
+        column_width=column_width,
     )
+    width = column_width - 22 * 2
+    expected = 20 * 2
+    expected += renderer._item_header_height(  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+        item=item,
+        width=width,
+        locale="zh-CN",
+    )
+    expected += 14
+    previews = response_preview_items(item, "zh-CN")
+    expected += sum(
+        renderer._response_panel_height(  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+            response=preview,
+            item=item,
+            absolute_index=1,
+            width=width,
+        )
+        for preview in previews
+    )
+    if len(previews) > 1:
+        expected += 14 * (len(previews) - 1)
+
+    assert total_height == expected
+    assert not hasattr(renderer, "_draw_trigger_panel")
 
 
 def test_summary_chips_hide_default_filters() -> None:
@@ -399,6 +430,109 @@ def test_search_card_renderer_response_body_keeps_uniform_content_start_x() -> N
     )
 
     assert recorded == [30 + CARD_RESPONSE_PADDING_X]
+
+
+def test_search_card_renderer_draws_response_content_before_meta_row() -> None:
+    renderer = SearchResultCardRenderer()
+    response = response_preview_items(
+        WordbankSearchItem(
+            trigger_group_id=78,
+            status="approved",
+            trigger_text="晚安",
+            response_text="第一条\n第二行",
+            probability=1.0,
+            preview_responses=(
+                WordbankSearchPreviewResponse(
+                    response_item_id=811,
+                    status="approved",
+                    created_by="10001",
+                    scope="current_group",
+                    weight=3,
+                    rule={"roles": "admin"},
+                    response_text="第一条\n第二行",
+                ),
+            ),
+        ),
+        "zh-CN",
+    )[0]
+    image = Image.new("RGB", (400, 280), "#FFFFFF")
+    draw = ImageDraw.Draw(image)
+    recorded: dict[str, int] = {}
+
+    original_content = renderer._draw_content_blocks  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+    original_meta = renderer._draw_response_meta_row  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+
+    def _recorded_content(*args: Any, **kwargs: Any) -> int:
+        recorded["content_y"] = int(kwargs["y"])
+        return original_content(*args, **kwargs)
+
+    def _recorded_meta(*args: Any, **kwargs: Any) -> None:
+        recorded["meta_y"] = int(kwargs["y"])
+        return original_meta(*args, **kwargs)
+
+    renderer._draw_content_blocks = _recorded_content  # type: ignore[method-assign]  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+    renderer._draw_response_meta_row = _recorded_meta  # type: ignore[method-assign]  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+    renderer._draw_response_panel(  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+        image,
+        draw,
+        response=response,
+        item=_item(78),
+        absolute_index=5,
+        locale="zh-CN",
+        x=30,
+        y=80,
+        width=300,
+        height=180,
+    )
+
+    assert recorded["content_y"] == 80 + 10
+    assert recorded["meta_y"] > recorded["content_y"]
+
+
+def test_search_card_renderer_response_panel_height_includes_bottom_meta_area() -> None:
+    renderer = SearchResultCardRenderer()
+    response = response_preview_items(
+        WordbankSearchItem(
+            trigger_group_id=79,
+            status="approved",
+            trigger_text="晚安",
+            response_text="正文",
+            probability=1.0,
+            preview_responses=(
+                WordbankSearchPreviewResponse(
+                    response_item_id=812,
+                    status="approved",
+                    created_by="10001",
+                    scope="current_group",
+                    weight=3,
+                    rule=None,
+                    response_text="正文",
+                ),
+            ),
+        ),
+        "zh-CN",
+    )[0]
+
+    height = renderer._response_panel_height(  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+        response=response,
+        item=_item(79),
+        absolute_index=5,
+        width=300,
+    )
+    content_height = renderer._content_blocks_height(  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+        response.blocks,
+        max_width=300 - CARD_RESPONSE_PADDING_X * 2,
+        text_font=renderer.response_body_font,
+    )
+
+    assert height == (
+        10 * 2
+        + content_height
+        + CARD_META_SEPARATOR_MARGIN_TOP
+        + CARD_META_SEPARATOR_GAP
+        + CARD_META_SEPARATOR_MARGIN_BOTTOM
+        + CARD_CHIP_HEIGHT
+    )
 
 
 def test_search_card_renderer_response_meta_uses_response_level_values() -> None:

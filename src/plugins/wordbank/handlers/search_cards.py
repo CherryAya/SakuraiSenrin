@@ -28,14 +28,12 @@ from .search_card_helpers import (
     folded_preview_note,
     has_folded_preview,
     line_height,
-    probability_chip_text,
     response_preview_items,
     response_rule_chips,
     scope_chip_label,
     status_chip_label,
     summary_chips,
     text_width,
-    trigger_preview_blocks,
     weight_chip_text,
 )
 
@@ -78,8 +76,9 @@ CARD_CHIP_HEIGHT = 28
 CARD_CHIP_PADDING_X = 12
 CARD_CHIP_GAP = 8
 CARD_CHIP_RADIUS = 14
-CARD_META_ROW_GAP = 10
-CARD_TRIGGER_PROB_GAP = 8
+CARD_META_SEPARATOR_GAP = 12
+CARD_META_SEPARATOR_MARGIN_TOP = 12
+CARD_META_SEPARATOR_MARGIN_BOTTOM = 10
 TEXTURE_SPACING = 40
 TEXTURE_DOT_RADIUS = 2
 CARD_COLUMNS = 2
@@ -163,12 +162,11 @@ class SearchResultCardRenderer:
         self.title_font = self._load_font(38)
         self.summary_font = self._load_font(20)
         self.item_title_font = self._load_font(30)
-        self.trigger_body_font = self._load_font(26)
         self.response_body_font = self._load_font(24)
         self.item_meta_font = self._load_font(18)
         self.item_tag_font = self._load_font(17)
+        self.meta_chip_font = self._load_font(15)
         self.footer_font = self._load_font(17)
-        self.trigger_text_fill = self._shade_color(self.HEADER, 0.88)
         self.response_text_fill = self.BODY
         self.label_fill = self.ACCENT_SOFT
         self.label_text_fill = self.ACCENT_DEEP
@@ -426,23 +424,6 @@ class SearchResultCardRenderer:
         )
         cursor_y += header_height + CARD_ITEM_GAP
 
-        trigger_height = self._trigger_panel_height(
-            item=item,
-            width=width - CARD_ITEM_PADDING_X * 2,
-            locale=locale,
-        )
-        self._draw_trigger_panel(
-            image,
-            draw,
-            item=item,
-            locale=locale,
-            x=inner_x,
-            y=cursor_y,
-            width=width - CARD_ITEM_PADDING_X * 2,
-            height=trigger_height,
-        )
-        cursor_y += trigger_height + CARD_SUBSECTION_GAP
-
         response_items = response_preview_items(item, locale)
         for response_index, response in enumerate(response_items, start=1):
             response_height = self._response_panel_height(
@@ -561,54 +542,6 @@ class SearchResultCardRenderer:
         chips_height = CARD_CHIP_HEIGHT + 8 if self._header_chips(item) else 0
         return max(CARD_BADGE_SIZE, title_height + chips_height)
 
-    def _draw_trigger_panel(
-        self,
-        image: Image.Image,
-        draw: ImageDraw.ImageDraw,
-        *,
-        item: WordbankSearchItem,
-        locale: LocaleCode,
-        x: int,
-        y: int,
-        width: int,
-        height: int,
-    ) -> None:
-        draw.rounded_rectangle(
-            (x, y, x + width, y + height),
-            radius=CARD_RESPONSE_RADIUS,
-            fill=self.TRIGGER_PANEL,
-            outline=self.TRIGGER_BORDER,
-            width=1,
-        )
-        cursor_y = y + CARD_RESPONSE_PADDING_Y
-        probability_chip = probability_chip_text(item.probability)
-        if probability_chip:
-            self._draw_chip_row(
-                draw,
-                chips=(
-                    SearchCardChip(
-                        text=probability_chip,
-                        fill=self.ACCENT_SOFT,
-                        text_fill=self.ACCENT_DEEP,
-                        outline=self.theme.panel_outline,
-                    ),
-                ),
-                x=x + CARD_RESPONSE_PADDING_X,
-                y=cursor_y,
-                max_width=x + width - CARD_RESPONSE_PADDING_X,
-            )
-            cursor_y += CARD_CHIP_HEIGHT + CARD_TRIGGER_PROB_GAP
-        self._draw_content_blocks(
-            image,
-            draw,
-            blocks=trigger_preview_blocks(item, locale),
-            x=x + CARD_RESPONSE_PADDING_X,
-            y=cursor_y,
-            max_width=width - CARD_RESPONSE_PADDING_X * 2,
-            text_font=self.trigger_body_font,
-            text_fill=self.trigger_text_fill,
-        )
-
     def _draw_response_panel(
         self,
         image: Image.Image,
@@ -657,24 +590,38 @@ class SearchResultCardRenderer:
             font=self.item_tag_font,
             fill=self.ACCENT_DEEP,
         )
-        meta_y = y + CARD_RESPONSE_PADDING_Y
-        self._draw_response_meta_row(
-            draw,
-            response=response,
-            x=x + CARD_RESPONSE_PADDING_X,
-            y=meta_y,
-            width=width - CARD_RESPONSE_PADDING_X * 2,
-            locale=locale,
-        )
-        self._draw_content_blocks(
+        content_x = x + CARD_RESPONSE_PADDING_X
+        content_y = y + CARD_RESPONSE_PADDING_Y
+        content_width = width - CARD_RESPONSE_PADDING_X * 2
+        content_bottom = self._draw_content_blocks(
             image,
             draw,
             blocks=response.blocks,
-            x=x + CARD_RESPONSE_PADDING_X,
-            y=meta_y + CARD_CHIP_HEIGHT + CARD_META_ROW_GAP,
-            max_width=width - CARD_RESPONSE_PADDING_X * 2,
+            x=content_x,
+            y=content_y,
+            max_width=content_width,
             text_font=self.response_body_font,
             text_fill=self.response_text_fill,
+        )
+        separator_y = content_bottom + CARD_META_SEPARATOR_MARGIN_TOP
+        draw.line(
+            (
+                content_x,
+                separator_y,
+                x + width - CARD_RESPONSE_PADDING_X,
+                separator_y,
+            ),
+            fill=self._shade_color(self.theme.panel_outline, 1.02),
+            width=1,
+        )
+        meta_y = separator_y + CARD_META_SEPARATOR_MARGIN_BOTTOM
+        self._draw_response_meta_row(
+            draw,
+            response=response,
+            x=content_x,
+            y=meta_y,
+            width=content_width,
+            locale=locale,
         )
 
     def _draw_folded_preview_block(
@@ -719,12 +666,20 @@ class SearchResultCardRenderer:
     ) -> None:
         left_chips = self._response_left_chips(response, locale)
         right_chips = self._response_right_chips(response)
-        self._draw_chip_row(draw, chips=left_chips, x=x, y=y, max_width=x + width)
+        self._draw_chip_row(
+            draw,
+            chips=left_chips,
+            x=x,
+            y=y,
+            max_width=x + width,
+            font=self.meta_chip_font,
+        )
         self._draw_chip_row_right(
             draw,
             chips=right_chips,
             right=x + width,
             y=y,
+            font=self.meta_chip_font,
         )
 
     def _draw_chip_row(
@@ -735,13 +690,15 @@ class SearchResultCardRenderer:
         x: int,
         y: int,
         max_width: int,
+        font: Any | None = None,
     ) -> None:
         cursor_x = x
+        chip_font = font or self.item_tag_font
         for chip in chips:
-            chip_width = self._chip_width(chip.text)
+            chip_width = self._chip_width(chip.text, font=chip_font)
             if cursor_x + chip_width > max_width:
                 break
-            self._draw_chip(draw, chip=chip, x=cursor_x, y=y)
+            self._draw_chip(draw, chip=chip, x=cursor_x, y=y, font=chip_font)
             cursor_x += chip_width + CARD_CHIP_GAP
 
     def _draw_chip_row_right(
@@ -751,12 +708,14 @@ class SearchResultCardRenderer:
         chips: tuple[SearchCardChip, ...],
         right: int,
         y: int,
+        font: Any | None = None,
     ) -> None:
-        total_width = self._chip_row_width(chips)
+        chip_font = font or self.item_tag_font
+        total_width = self._chip_row_width(chips, font=chip_font)
         cursor_x = right - total_width
         for chip in chips:
-            self._draw_chip(draw, chip=chip, x=cursor_x, y=y)
-            cursor_x += self._chip_width(chip.text) + CARD_CHIP_GAP
+            self._draw_chip(draw, chip=chip, x=cursor_x, y=y, font=chip_font)
+            cursor_x += self._chip_width(chip.text, font=chip_font) + CARD_CHIP_GAP
 
     def _draw_chip(
         self,
@@ -765,8 +724,10 @@ class SearchResultCardRenderer:
         chip: SearchCardChip,
         x: int,
         y: int,
+        font: Any | None = None,
     ) -> None:
-        chip_width = self._chip_width(chip.text)
+        chip_font = font or self.item_tag_font
+        chip_width = self._chip_width(chip.text, font=chip_font)
         draw.rounded_rectangle(
             (x, y, x + chip_width, y + CARD_CHIP_HEIGHT),
             radius=CARD_CHIP_RADIUS,
@@ -775,21 +736,31 @@ class SearchResultCardRenderer:
             width=1,
         )
         draw.text(
-            (x + CARD_CHIP_PADDING_X, y + 4),
+            (
+                x + CARD_CHIP_PADDING_X,
+                y + max(3, int((CARD_CHIP_HEIGHT - line_height(chip_font)) / 2)),
+            ),
             chip.text,
-            font=self.item_tag_font,
+            font=chip_font,
             fill=chip.text_fill,
         )
 
-    def _chip_width(self, text: str) -> int:
-        return text_width(text, self.item_tag_font) + CARD_CHIP_PADDING_X * 2
+    def _chip_width(self, text: str, *, font: Any | None = None) -> int:
+        chip_font = font or self.item_tag_font
+        return text_width(text, chip_font) + CARD_CHIP_PADDING_X * 2
 
-    def _chip_row_width(self, chips: tuple[SearchCardChip, ...]) -> int:
+    def _chip_row_width(
+        self,
+        chips: tuple[SearchCardChip, ...],
+        *,
+        font: Any | None = None,
+    ) -> int:
+        chip_font = font or self.item_tag_font
         if not chips:
             return 0
-        return sum(self._chip_width(chip.text) for chip in chips) + CARD_CHIP_GAP * (
-            len(chips) - 1
-        )
+        return sum(
+            self._chip_width(chip.text, font=chip_font) for chip in chips
+        ) + CARD_CHIP_GAP * (len(chips) - 1)
 
     def _header_chips(self, item: WordbankSearchItem) -> tuple[SearchCardChip, ...]:
         return (
@@ -871,17 +842,17 @@ class SearchResultCardRenderer:
     def _neutral_chip(self, text: str) -> SearchCardChip:
         return SearchCardChip(
             text=text,
-            fill=self.NEUTRAL_CHIP_FILL,
-            text_fill=self.NEUTRAL_CHIP_TEXT,
-            outline=self.NEUTRAL_CHIP_OUTLINE,
+            fill=self._shade_color(self.NEUTRAL_CHIP_FILL, 1.01),
+            text_fill=self._shade_color(self.NEUTRAL_CHIP_TEXT, 0.95),
+            outline=self._shade_color(self.NEUTRAL_CHIP_OUTLINE, 0.98),
         )
 
     def _data_chip(self, text: str) -> SearchCardChip:
         return SearchCardChip(
             text=text,
-            fill=self.DATA_CHIP_FILL,
-            text_fill=self.DATA_CHIP_TEXT,
-            outline=self.DATA_CHIP_OUTLINE,
+            fill=self._shade_color(self.DATA_CHIP_FILL, 1.01),
+            text_fill=self._shade_color(self.DATA_CHIP_TEXT, 0.94),
+            outline=self._shade_color(self.DATA_CHIP_OUTLINE, 0.98),
         )
 
     def _draw_empty_state(
@@ -1000,8 +971,6 @@ class SearchResultCardRenderer:
         total = CARD_ITEM_PADDING_Y * 2
         total += self._item_header_height(item=item, width=width, locale=locale)
         total += CARD_ITEM_GAP
-        total += self._trigger_panel_height(item=item, width=width, locale=locale)
-        total += CARD_SUBSECTION_GAP
         previews = response_preview_items(item, locale)
         for response_index, response in enumerate(previews, start=1):
             total += self._response_panel_height(
@@ -1021,23 +990,6 @@ class SearchResultCardRenderer:
             total += CARD_RESPONSE_GAP * (len(previews) - 1)
         return total
 
-    def _trigger_panel_height(
-        self,
-        *,
-        item: WordbankSearchItem,
-        width: int,
-        locale: LocaleCode,
-    ) -> int:
-        total = CARD_RESPONSE_PADDING_Y * 2
-        if probability_chip_text(item.probability):
-            total += CARD_CHIP_HEIGHT + CARD_TRIGGER_PROB_GAP
-        total += self._content_blocks_height(
-            trigger_preview_blocks(item, locale),
-            max_width=width - CARD_RESPONSE_PADDING_X * 2,
-            text_font=self.trigger_body_font,
-        )
-        return total
-
     def _response_panel_height(
         self,
         *,
@@ -1048,13 +1000,15 @@ class SearchResultCardRenderer:
     ) -> int:
         _ = (absolute_index, item)
         total = CARD_RESPONSE_PADDING_Y * 2
-        total += CARD_CHIP_HEIGHT
-        total += CARD_META_ROW_GAP
         total += self._content_blocks_height(
             response.blocks,
             max_width=width - CARD_RESPONSE_PADDING_X * 2,
             text_font=self.response_body_font,
         )
+        total += CARD_META_SEPARATOR_MARGIN_TOP
+        total += CARD_META_SEPARATOR_GAP
+        total += CARD_META_SEPARATOR_MARGIN_BOTTOM
+        total += CARD_CHIP_HEIGHT
         return total
 
     def _folded_block_height(
