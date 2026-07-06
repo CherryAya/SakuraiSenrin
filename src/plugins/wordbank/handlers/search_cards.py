@@ -307,17 +307,17 @@ class SearchResultCardRenderer:
         if not chips:
             return cursor_y
         height = self._summary_block_height(query, locale)
-        draw.rounded_rectangle(
-            (
+        self._draw_surface_panel(
+            draw,
+            bbox=(
                 CARD_PADDING_X,
                 cursor_y,
                 CARD_WIDTH - CARD_PADDING_X,
                 cursor_y + height,
             ),
             radius=CARD_RADIUS,
-            fill=self.PANEL_SOFT,
-            outline=self.theme.panel_outline,
-            width=1,
+            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.62),
+            outline="",
         )
         chip_x = CARD_PADDING_X + 16
         chip_y = cursor_y + 14
@@ -332,9 +332,7 @@ class SearchResultCardRenderer:
             draw.rounded_rectangle(
                 (chip_x, chip_y, chip_x + chip_width, chip_y + CARD_CHIP_HEIGHT),
                 radius=CARD_CHIP_RADIUS,
-                fill=self.ACCENT_SOFT,
-                outline=self.theme.panel_outline,
-                width=1,
+                fill=self._mix_color(self.ACCENT_SOFT, self.ACCENT, 0.18),
             )
             draw.text(
                 (chip_x + CARD_TAG_PADDING_X, chip_y + 4),
@@ -396,12 +394,12 @@ class SearchResultCardRenderer:
         width: int,
         height: int,
     ) -> None:
-        draw.rounded_rectangle(
-            (x, y, x + width, y + height),
+        self._draw_surface_panel(
+            draw,
+            bbox=(x, y, x + width, y + height),
             radius=CARD_ITEM_RADIUS,
-            fill=self.PANEL_SOFT,
-            outline=self.theme.panel_outline,
-            width=1,
+            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.48),
+            outline="",
         )
         inner_x = x + CARD_ITEM_PADDING_X
         cursor_y = y + CARD_ITEM_PADDING_Y
@@ -482,12 +480,12 @@ class SearchResultCardRenderer:
     ) -> None:
         badge_text = f"{absolute_index:02d}"
         badge_y = y + max(0, int((height - CARD_BADGE_HEIGHT) / 2))
-        draw.rounded_rectangle(
-            (x, badge_y, x + CARD_BADGE_WIDTH, badge_y + CARD_BADGE_HEIGHT),
+        self._draw_surface_panel(
+            draw,
+            bbox=(x, badge_y, x + CARD_BADGE_WIDTH, badge_y + CARD_BADGE_HEIGHT),
             radius=CARD_BADGE_RADIUS,
-            fill=self._shade_color(self.ACCENT, 1.02),
-            outline=self._shade_color(self.theme.panel_outline, 0.95),
-            width=1,
+            fill=self.ACCENT,
+            outline="",
         )
         badge_width = text_width(badge_text, self.item_meta_font)
         draw.text(
@@ -558,13 +556,12 @@ class SearchResultCardRenderer:
         height: int,
     ) -> None:
         fill = self.RESPONSE_PANEL
-        outline = self.RESPONSE_BORDER
-        draw.rounded_rectangle(
-            (x, y, x + width, y + height),
+        self._draw_surface_panel(
+            draw,
+            bbox=(x, y, x + width, y + height),
             radius=CARD_RESPONSE_RADIUS,
             fill=fill,
-            outline=outline,
-            width=1,
+            outline="",
         )
         content_x = x + CARD_RESPONSE_PADDING_X
         content_y = y + CARD_RESPONSE_PADDING_Y
@@ -579,18 +576,19 @@ class SearchResultCardRenderer:
             text_font=self.response_body_font,
             text_fill=self.response_text_fill,
         )
-        separator_y = content_bottom + CARD_META_SEPARATOR_MARGIN_TOP
-        draw.line(
+        meta_y = content_bottom + CARD_META_SEPARATOR_MARGIN_TOP + 2
+        meta_band_top = meta_y - 6
+        meta_band_bottom = y + height - 10
+        draw.rounded_rectangle(
             (
-                content_x,
-                separator_y,
-                x + width - CARD_RESPONSE_PADDING_X,
-                separator_y,
+                content_x - 2,
+                meta_band_top,
+                x + width - CARD_RESPONSE_PADDING_X + 2,
+                meta_band_bottom,
             ),
-            fill=self._shade_color(self.theme.panel_outline, 1.02),
-            width=1,
+            radius=14,
+            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.38),
         )
-        meta_y = separator_y + CARD_META_SEPARATOR_MARGIN_BOTTOM
         self._draw_response_meta_row(
             draw,
             response=response,
@@ -612,12 +610,12 @@ class SearchResultCardRenderer:
         width: int,
         height: int,
     ) -> None:
-        draw.rounded_rectangle(
-            (x, y, x + width, y + height),
+        self._draw_surface_panel(
+            draw,
+            bbox=(x, y, x + width, y + height),
             radius=16,
             fill=self.ACCENT_SOFT,
-            outline=self.theme.folded_outline,
-            width=1,
+            outline="",
         )
         hint = folded_preview_note(item, locale)
         self._draw_wrapped_text(
@@ -714,9 +712,14 @@ class SearchResultCardRenderer:
             (x, y, x + chip_width, y + CARD_CHIP_HEIGHT),
             radius=CARD_CHIP_RADIUS,
             fill=chip.fill,
-            outline=chip.outline,
-            width=1,
         )
+        if chip.outline:
+            draw.rounded_rectangle(
+                (x, y, x + chip_width, y + CARD_CHIP_HEIGHT),
+                radius=CARD_CHIP_RADIUS,
+                outline=chip.outline,
+                width=1,
+            )
         draw.text(
             (
                 x + CARD_CHIP_PADDING_X,
@@ -780,20 +783,20 @@ class SearchResultCardRenderer:
                 text=text,
                 fill=self.SUCCESS_FILL,
                 text_fill=self.SUCCESS_TEXT,
-                outline=self.SUCCESS_OUTLINE,
+                outline="",
             )
         if status == "pending":
             return SearchCardChip(
                 text=text,
                 fill=self.WARNING_FILL,
                 text_fill=self.WARNING_TEXT,
-                outline=self.WARNING_OUTLINE,
+                outline="",
             )
         return SearchCardChip(
             text=text,
             fill=self.DANGER_FILL,
             text_fill=self.DANGER_TEXT,
-            outline=self.DANGER_OUTLINE,
+            outline="",
         )
 
     def _scope_chip(self, text: str, scope: str) -> SearchCardChip:
@@ -802,44 +805,44 @@ class SearchResultCardRenderer:
                 text=text,
                 fill=self.SCOPE_GLOBAL_FILL,
                 text_fill=self.SCOPE_GLOBAL_TEXT,
-                outline=self.SCOPE_GLOBAL_OUTLINE,
+                outline="",
             )
         if scope in {"current_group", "self_in_current_group"}:
             return SearchCardChip(
                 text=text,
                 fill=self.SCOPE_LOCAL_FILL,
                 text_fill=self.SCOPE_LOCAL_TEXT,
-                outline=self.SCOPE_LOCAL_OUTLINE,
+                outline="",
             )
         return SearchCardChip(
             text=text,
             fill=self.SCOPE_PRIVATE_FILL,
             text_fill=self.SCOPE_PRIVATE_TEXT,
-            outline=self.SCOPE_PRIVATE_OUTLINE,
+            outline="",
         )
 
     def _neutral_chip(self, text: str) -> SearchCardChip:
         return SearchCardChip(
             text=text,
-            fill=self._shade_color(self.NEUTRAL_CHIP_FILL, 1.01),
+            fill=self._mix_color(self.NEUTRAL_CHIP_FILL, self.ACCENT_SOFT, 0.22),
             text_fill=self._shade_color(self.NEUTRAL_CHIP_TEXT, 0.95),
-            outline=self._shade_color(self.NEUTRAL_CHIP_OUTLINE, 0.98),
+            outline="",
         )
 
     def _data_chip(self, text: str) -> SearchCardChip:
         return SearchCardChip(
             text=text,
-            fill=self._shade_color(self.DATA_CHIP_FILL, 1.01),
+            fill=self._mix_color(self.DATA_CHIP_FILL, self.ACCENT_SOFT, 0.12),
             text_fill=self._shade_color(self.DATA_CHIP_TEXT, 0.94),
-            outline=self._shade_color(self.DATA_CHIP_OUTLINE, 0.98),
+            outline="",
         )
 
     def _response_index_chip(self, text: str) -> SearchCardChip:
         return SearchCardChip(
             text=text,
-            fill=self._shade_color(self.ACCENT_SOFT, 1.0),
+            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.18),
             text_fill=self._shade_color(self.ACCENT_DEEP, 0.92),
-            outline=self._shade_color(self.theme.panel_outline, 0.98),
+            outline="",
         )
 
     def _draw_empty_state(
@@ -849,17 +852,17 @@ class SearchResultCardRenderer:
         locale: LocaleCode,
         cursor_y: int,
     ) -> int:
-        draw.rounded_rectangle(
-            (
+        self._draw_surface_panel(
+            draw,
+            bbox=(
                 CARD_PADDING_X,
                 cursor_y,
                 CARD_WIDTH - CARD_PADDING_X,
                 cursor_y + 120,
             ),
             radius=CARD_RADIUS,
-            fill=self.PANEL,
-            outline=self.BORDER,
-            width=1,
+            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.5),
+            outline="",
         )
         draw.text(
             (CARD_PADDING_X + 24, cursor_y + 28),
@@ -1304,12 +1307,43 @@ class SearchResultCardRenderer:
     def _column_width(self) -> int:
         return int((CARD_WIDTH - CARD_PADDING_X * 2 - CARD_COLUMN_GAP) / CARD_COLUMNS)
 
+    def _draw_surface_panel(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        bbox: tuple[int, int, int, int],
+        radius: int,
+        fill: str,
+        outline: str,
+    ) -> None:
+        draw.rounded_rectangle(
+            bbox,
+            radius=radius,
+            fill=fill,
+        )
+        if outline:
+            draw.rounded_rectangle(
+                bbox,
+                radius=radius,
+                outline=outline,
+                width=1,
+            )
+
     def _shade_color(self, color: str, factor: float) -> str:
         red, green, blue = ImageColor.getrgb(color)[:3]
         red_value = max(0, min(255, int(red * factor)))
         green_value = max(0, min(255, int(green * factor)))
         blue_value = max(0, min(255, int(blue * factor)))
         return f"#{red_value:02X}{green_value:02X}{blue_value:02X}"
+
+    def _mix_color(self, color_a: str, color_b: str, ratio_b: float) -> str:
+        red_a, green_a, blue_a = ImageColor.getrgb(color_a)[:3]
+        red_b, green_b, blue_b = ImageColor.getrgb(color_b)[:3]
+        ratio = max(0.0, min(1.0, ratio_b))
+        red = int(red_a * (1 - ratio) + red_b * ratio)
+        green = int(green_a * (1 - ratio) + green_b * ratio)
+        blue = int(blue_a * (1 - ratio) + blue_b * ratio)
+        return f"#{red:02X}{green:02X}{blue:02X}"
 
     # Compatibility helpers kept for tests and local renderer inspection.
     def _fold_hint(self, item: WordbankSearchItem, locale: LocaleCode) -> str:
