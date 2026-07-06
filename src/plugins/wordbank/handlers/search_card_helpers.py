@@ -98,14 +98,6 @@ def summary_chips(
                 keyword=keyword,
             )
         )
-    if has_image:
-        chips.append(
-            tr(
-                locale,
-                "wordbank.search_card.summary.has_image",
-                has_image=tr(locale, "wordbank.search_card.boolean.yes"),
-            )
-        )
     if creator_id:
         chips.append(
             tr(
