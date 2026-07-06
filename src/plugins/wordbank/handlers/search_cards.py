@@ -56,7 +56,9 @@ CARD_RESPONSE_GAP = 14
 CARD_RESPONSE_PADDING_X = 16
 CARD_RESPONSE_PADDING_Y = 10
 CARD_RESPONSE_RADIUS = 18
-CARD_BADGE_SIZE = 42
+CARD_BADGE_HEIGHT = 42
+CARD_BADGE_WIDTH = 50
+CARD_BADGE_RADIUS = 16
 CARD_TAG_COLUMN_GAP = 8
 CARD_TAG_ROW_GAP = 8
 CARD_TAG_PADDING_X = 12
@@ -479,23 +481,36 @@ class SearchResultCardRenderer:
         height: int,
     ) -> None:
         badge_text = f"{absolute_index:02d}"
-        badge_y = y + max(0, int((height - CARD_BADGE_SIZE) / 2))
-        draw.ellipse(
-            (x, badge_y, x + CARD_BADGE_SIZE, badge_y + CARD_BADGE_SIZE),
-            fill=self.ACCENT,
+        badge_y = y + max(0, int((height - CARD_BADGE_HEIGHT) / 2))
+        draw.rounded_rectangle(
+            (x, badge_y, x + CARD_BADGE_WIDTH, badge_y + CARD_BADGE_HEIGHT),
+            radius=CARD_BADGE_RADIUS,
+            fill=self._shade_color(self.ACCENT, 1.02),
+            outline=self._shade_color(self.theme.panel_outline, 0.95),
+            width=1,
         )
         badge_width = text_width(badge_text, self.item_meta_font)
         draw.text(
             (
-                x + (CARD_BADGE_SIZE - badge_width) / 2,
-                badge_y + 9,
+                x + (CARD_BADGE_WIDTH - badge_width) / 2,
+                badge_y
+                + max(
+                    7,
+                    int(
+                        (
+                            CARD_BADGE_HEIGHT
+                            - line_height(self.item_meta_font)
+                        )
+                        / 2
+                    ),
+                ),
             ),
             badge_text,
             font=self.item_meta_font,
             fill=self.BADGE_TEXT,
         )
-        title_x = x + CARD_BADGE_SIZE + 14
-        title_width = width - CARD_BADGE_SIZE - 14
+        title_x = x + CARD_BADGE_WIDTH + 14
+        title_width = width - CARD_BADGE_WIDTH - 14
         title_text = item.trigger_text or tr(locale, "wordbank.search_card.none")
         title_lines = self._wrap_text(
             title_text,
@@ -529,7 +544,7 @@ class SearchResultCardRenderer:
         width: int,
         locale: LocaleCode,
     ) -> int:
-        title_width = width - CARD_BADGE_SIZE - 14
+        title_width = width - CARD_BADGE_WIDTH - 14
         title_height = self._wrapped_text_height(
             item.trigger_text or tr(locale, "wordbank.search_card.none"),
             self.item_title_font,
@@ -537,7 +552,7 @@ class SearchResultCardRenderer:
             max_lines=2,
         )
         chips_height = CARD_CHIP_HEIGHT + 8 if self._header_chips(item) else 0
-        return max(CARD_BADGE_SIZE, title_height + chips_height)
+        return max(CARD_BADGE_HEIGHT, title_height + chips_height)
 
     def _draw_response_panel(
         self,
