@@ -526,16 +526,6 @@ class SearchResultCardRenderer:
                 font=self.item_title_font,
                 fill=self.HEADER,
             )
-        chips = self._header_chips(item)
-        if chips:
-            chips_y = title_y + len(title_lines) * line_height(self.item_title_font) + 8
-            self._draw_chip_row(
-                draw,
-                chips=chips,
-                x=title_x,
-                y=chips_y,
-                max_width=x + width,
-            )
 
     def _item_header_height(
         self,
@@ -551,8 +541,7 @@ class SearchResultCardRenderer:
             max_width=title_width,
             max_lines=2,
         )
-        chips_height = CARD_CHIP_HEIGHT + 8 if self._header_chips(item) else 0
-        return max(CARD_BADGE_HEIGHT, title_height + chips_height)
+        return max(CARD_BADGE_HEIGHT, title_height)
 
     def _draw_response_panel(
         self,
@@ -754,12 +743,6 @@ class SearchResultCardRenderer:
         return sum(
             self._chip_width(chip.text, font=chip_font) for chip in chips
         ) + CARD_CHIP_GAP * (len(chips) - 1)
-
-    def _header_chips(self, item: WordbankSearchItem) -> tuple[SearchCardChip, ...]:
-        return (
-            self._neutral_chip(f"#组{item.trigger_group_id}"),
-            self._data_chip(f"{item.response_count} 条响应"),
-        )
 
     def _response_left_chips(
         self,
