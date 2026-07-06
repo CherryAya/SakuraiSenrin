@@ -69,9 +69,6 @@ CARD_CONTENT_GAP = 6
 CARD_LABEL_PADDING_X = 12
 CARD_LABEL_PADDING_Y = 6
 CARD_LABEL_RADIUS = 13
-CARD_RESPONSE_BADGE_HEIGHT = 28
-CARD_RESPONSE_BADGE_PADDING_X = 12
-CARD_RESPONSE_BADGE_OFFSET_X = 18
 CARD_CHIP_HEIGHT = 28
 CARD_CHIP_PADDING_X = 12
 CARD_CHIP_GAP = 8
@@ -565,31 +562,6 @@ class SearchResultCardRenderer:
             outline=outline,
             width=1,
         )
-        label = f"{absolute_index}-{response.index}"
-        label_width = (
-            text_width(label, self.item_tag_font) + CARD_RESPONSE_BADGE_PADDING_X * 2
-        )
-        draw.rounded_rectangle(
-            (
-                x + CARD_RESPONSE_BADGE_OFFSET_X,
-                y - CARD_RESPONSE_BADGE_HEIGHT // 2,
-                x + CARD_RESPONSE_BADGE_OFFSET_X + label_width,
-                y + CARD_RESPONSE_BADGE_HEIGHT // 2,
-            ),
-            radius=CARD_RESPONSE_BADGE_HEIGHT // 2,
-            fill=self.ACCENT_SOFT,
-            outline=self.BORDER,
-            width=1,
-        )
-        draw.text(
-            (
-                x + CARD_RESPONSE_BADGE_OFFSET_X + CARD_RESPONSE_BADGE_PADDING_X,
-                y - CARD_RESPONSE_BADGE_HEIGHT // 2 + 5,
-            ),
-            label,
-            font=self.item_tag_font,
-            fill=self.ACCENT_DEEP,
-        )
         content_x = x + CARD_RESPONSE_PADDING_X
         content_y = y + CARD_RESPONSE_PADDING_Y
         content_width = width - CARD_RESPONSE_PADDING_X * 2
@@ -618,6 +590,7 @@ class SearchResultCardRenderer:
         self._draw_response_meta_row(
             draw,
             response=response,
+            absolute_index=absolute_index,
             x=content_x,
             y=meta_y,
             width=content_width,
@@ -659,12 +632,17 @@ class SearchResultCardRenderer:
         draw: ImageDraw.ImageDraw,
         *,
         response: SearchCardResponseRenderItem,
+        absolute_index: int,
         x: int,
         y: int,
         width: int,
         locale: LocaleCode,
     ) -> None:
-        left_chips = self._response_left_chips(response, locale)
+        left_chips = self._response_left_chips(
+            response,
+            locale,
+            absolute_index=absolute_index,
+        )
         right_chips = self._response_right_chips(response)
         self._draw_chip_row(
             draw,
@@ -772,8 +750,11 @@ class SearchResultCardRenderer:
         self,
         response: SearchCardResponseRenderItem,
         locale: LocaleCode,
+        *,
+        absolute_index: int,
     ) -> tuple[SearchCardChip, ...]:
         chips = [
+            self._response_index_chip(f"{absolute_index}-{response.index}"),
             self._status_chip(
                 status_chip_label(locale, response.status),
                 response.status,
@@ -853,6 +834,14 @@ class SearchResultCardRenderer:
             fill=self._shade_color(self.DATA_CHIP_FILL, 1.01),
             text_fill=self._shade_color(self.DATA_CHIP_TEXT, 0.94),
             outline=self._shade_color(self.DATA_CHIP_OUTLINE, 0.98),
+        )
+
+    def _response_index_chip(self, text: str) -> SearchCardChip:
+        return SearchCardChip(
+            text=text,
+            fill=self._shade_color(self.ACCENT_SOFT, 1.0),
+            text_fill=self._shade_color(self.ACCENT_DEEP, 0.92),
+            outline=self._shade_color(self.theme.panel_outline, 0.98),
         )
 
     def _draw_empty_state(

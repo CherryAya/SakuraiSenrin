@@ -559,10 +559,14 @@ def test_search_card_renderer_response_meta_uses_response_level_values() -> None
         "zh-CN",
     )[0]
 
-    left_chips = renderer._response_left_chips(response, "zh-CN")  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+    left_chips = renderer._response_left_chips(  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+        response,
+        "zh-CN",
+        absolute_index=9,
+    )
     right_chips = renderer._response_right_chips(response)  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
 
-    assert [chip.text for chip in left_chips] == ["[pending]", "全局", "管理"]
+    assert [chip.text for chip in left_chips] == ["9-1", "[pending]", "全局", "管理"]
     assert [chip.text for chip in right_chips] == ["U:24680", "W:5"]
 
 
