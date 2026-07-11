@@ -964,13 +964,19 @@ class DemoImageRenderer:
             shadow_blur=self.theme.instruction_shadow_blur,
             fill=self.theme.panel_bg,
         )
+        draw.rounded_rectangle(
+            layout.instruction_rect,
+            radius=self.theme.instruction_radius,
+            outline=self._rgba(self.theme.accent, 62),
+            width=2,
+        )
         self._draw_soft_subcard(
             image,
             draw,
             layout.trigger_rect,
             radius=self.SUBCARD_RADIUS,
             fill=self.theme.terminal_bg,
-            outline=self._rgba(self.theme.accent, 48),
+            outline=None,
         )
         self._draw_command_layout(
             draw,
@@ -1070,6 +1076,12 @@ class DemoImageRenderer:
             fill="#FFFFFF",
         )
         for band in layout.demo_section_bands:
+            draw.rounded_rectangle(
+                band.rect,
+                radius=34,
+                outline=self._rgba(self.theme.accent, 62),
+                width=2,
+            )
             badge_rect = (
                 band.tag_rect[0],
                 band.tag_rect[1] + 2,

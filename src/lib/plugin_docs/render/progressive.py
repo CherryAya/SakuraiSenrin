@@ -680,6 +680,12 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             shadow_blur=self.theme.instruction_shadow_blur,
             fill=self.theme.panel_bg,
         )
+        draw.rounded_rectangle(
+            rect,
+            radius=self.GUIDE_SECTION_RADIUS,
+            outline=self._rgba(self.theme.accent, 62),
+            width=2,
+        )
         # self._draw_section_watermark(
         #     draw,
         #     rect=(
@@ -705,7 +711,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             command_rect,
             radius=self.SINGLE_PAGE_COMMAND_RADIUS,
             fill=self.theme.terminal_bg,
-            outline=self._rgba(self.theme.accent, 54),
+            outline=None,
         )
         self._draw_command_layout(
             draw,
@@ -2255,6 +2261,12 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             shadow_offset_y=self.theme.instruction_shadow_offset_y,
             shadow_blur=self.theme.instruction_shadow_blur,
             fill=self.theme.panel_bg,
+        )
+        draw.rounded_rectangle(
+            layout.rect,
+            radius=self.SUPPORT_STRIP_RADIUS,
+            outline=self._rgba(self.theme.accent, 62),
+            width=2,
         )
         draw.rounded_rectangle(
             (
