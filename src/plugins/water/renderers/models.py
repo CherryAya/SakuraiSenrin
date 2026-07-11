@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from pil_utils import BuildImage
@@ -128,6 +128,12 @@ class WaterGroupDailyRankCardItem:
 
 
 @dataclass(frozen=True)
+class WaterReportInsightItem:
+    label: str
+    value: str
+
+
+@dataclass(frozen=True)
 class WaterGroupReportImageData:
     title: str
     badge: str
@@ -143,5 +149,6 @@ class WaterGroupReportImageData:
     group_rank_title: str
     group_rank_summary: str
     group_rank_items: list[WaterGroupDailyRankCardItem]
+    group_rank_insights: list[WaterReportInsightItem] = field(default_factory=list)
     group_rank_has_hidden_before: bool = False
     group_rank_has_hidden_after: bool = False

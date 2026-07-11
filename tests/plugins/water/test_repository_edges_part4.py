@@ -192,6 +192,7 @@ def test_build_group_daily_rank_snapshot_from_rows_keeps_focus_window() -> None:
 
     assert snapshot is not None
     assert snapshot.total_groups == 7
+    assert snapshot.total_msg_count == sum(60 - idx * 5 for idx in range(1, 8))
     assert snapshot.focus_rank == 4
     assert snapshot.focus_trend == -2
     assert snapshot.has_hidden_before is True
@@ -233,10 +234,11 @@ def test_build_group_daily_rank_snapshot_from_rows_handles_top_edge() -> None:
     )
 
     assert snapshot is not None
+    assert snapshot.total_msg_count == sum(50 - idx for idx in range(1, 5))
     assert snapshot.focus_rank == 1
     assert snapshot.has_hidden_before is False
-    assert snapshot.has_hidden_after is True
-    assert [item.current_rank for item in snapshot.leaderboard] == [1, 2, 3]
+    assert snapshot.has_hidden_after is False
+    assert [item.current_rank for item in snapshot.leaderboard] == [1, 2, 3, 4]
 
 
 def test_group_daily_rank_snapshot_returns_none_when_focus_missing() -> None:
@@ -314,6 +316,7 @@ async def test_get_group_daily_rank_snapshot_queries_global_rows(
 
     assert snapshot is not None
     assert snapshot.total_groups == 2
+    assert snapshot.total_msg_count == 45
     assert snapshot.focus_rank == 2
     assert snapshot.focus_trend == -1
     assert [item.group_id for item in snapshot.leaderboard] == ["29999", "20001"]

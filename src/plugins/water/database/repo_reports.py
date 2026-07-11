@@ -441,13 +441,15 @@ class WaterRepositoryReportsMixin:
         if focus_index is None:
             return None
 
-        start = max(0, focus_index - radius)
-        end = min(len(items), focus_index + radius + 1)
+        window_size = radius * 2 + 1
+        start = max(0, min(focus_index - radius, len(items) - window_size))
+        end = min(len(items), start + window_size)
         focus_item = items[focus_index]
         return WaterGroupDailyRankSnapshot(
             focus_group_id=focus_group_id,
             record_date=record_date,
             total_groups=len(items),
+            total_msg_count=sum(item.msg_count for item in items),
             focus_rank=focus_item.current_rank,
             focus_trend=focus_item.trend,
             leaderboard=items[start:end],

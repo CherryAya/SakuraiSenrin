@@ -108,6 +108,7 @@ class WaterGroupDailyRankSnapshot:
     focus_group_id: str
     record_date: int
     total_groups: int
+    total_msg_count: int
     focus_rank: int
     focus_trend: int | None
     leaderboard: list[WaterGroupDailyRankItem]

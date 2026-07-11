@@ -100,22 +100,25 @@ async def build_water_group_report_image(
         return None
 
     scale = 2.0
-    width = int(980 * scale)
+    width = int(1120 * scale)
     pad = int(24 * scale)
     gap = int(12 * scale)
     hero_h = int(148 * scale)
-    left_w = int(620 * scale)
+    left_w = int(610 * scale)
     right_w = width - pad * 2 - left_w - gap
     user_card_h = int(118 * scale)
     user_row_gap = int(10 * scale)
     group_rank_header_h = int(58 * scale)
     group_rank_row_h = int(44 * scale)
     group_rank_row_gap = int(6 * scale)
+    group_rank_panel_gap = int(10 * scale)
+    group_rank_insight_header_h = int(40 * scale)
+    group_rank_insight_tile_h = int(52 * scale)
+    group_rank_insight_tile_gap = int(8 * scale)
     histogram_h = int(182 * scale)
     footer_h = int(50 * scale)
     group_rank_avatar_size = int(28 * scale)
     group_name_font = _load_font(int(9 * scale))
-    group_name_max_width = right_w - int(232 * scale)
     group_rank_summary_font = _load_font(int(8 * scale))
     group_rank_summary_max_width = right_w - int(18 * scale)
 
@@ -130,13 +133,26 @@ async def build_water_group_report_image(
         data.group_rank_has_hidden_after
     )
     rank_row_count = len(data.group_rank_items) + hidden_rows
-    right_h = (
+    group_rank_card_h = (
         group_rank_header_h
         + int(12 * scale)
         + rank_row_count * group_rank_row_h
         + max(0, rank_row_count - 1) * group_rank_row_gap
         + int(16 * scale)
     )
+    group_rank_insight_h = 0
+    if data.group_rank_insights:
+        insight_rows = (len(data.group_rank_insights) + 1) // 2
+        group_rank_insight_h = (
+            group_rank_insight_header_h
+            + int(8 * scale)
+            + insight_rows * group_rank_insight_tile_h
+            + max(0, insight_rows - 1) * group_rank_insight_tile_gap
+            + int(14 * scale)
+        )
+    right_h = group_rank_card_h
+    if group_rank_insight_h:
+        right_h += group_rank_panel_gap + group_rank_insight_h
     middle_h = max(left_h, right_h)
     height = pad * 2 + hero_h + gap + middle_h + gap + histogram_h + gap + footer_h
 
@@ -434,7 +450,7 @@ async def build_water_group_report_image(
         row_y += user_card_h + user_row_gap
 
     card.draw_rounded_rectangle(
-        (right_x, y, right_x + right_w, y + right_h),
+        (right_x, y, right_x + right_w, y + group_rank_card_h),
         radius=int(20 * scale),
         fill=panel_bg,
     )
@@ -471,19 +487,28 @@ async def build_water_group_report_image(
         font_families=[WATER_THEME.white],
     )
     rank_y = y + group_rank_header_h + int(12 * scale)
+    rank_row_left = right_x + int(14 * scale)
+    rank_row_right = right_x + right_w - int(14 * scale)
     if data.group_rank_has_hidden_before:
         pass
     for item in data.group_rank_items:
+        trend_text, trend_color = format_trend(item.trend)
+        trend_w = int(50 * scale)
+        trend_h = int(22 * scale)
+        trend_x = rank_row_right - trend_w - int(14 * scale)
+        count_right = trend_x - int(10 * scale)
+        count_left = count_right - int(86 * scale)
+        name_x = right_x + int(92 * scale)
         safe_name = _truncate_text_to_width_pixels(
             item.display_name,
             font=group_name_font,
-            max_width=group_name_max_width,
+            max_width=max(int(60 * scale), count_left - name_x - int(8 * scale)),
         )
         card.draw_rounded_rectangle(
             (
-                right_x + int(14 * scale),
+                rank_row_left,
                 rank_y,
-                right_x + right_w - int(14 * scale),
+                rank_row_right,
                 rank_y + group_rank_row_h,
             ),
             radius=int(12 * scale),
@@ -495,9 +520,9 @@ async def build_water_group_report_image(
         )
         card.draw_text(
             (
-                right_x + int(24 * scale),
+                right_x + int(22 * scale),
                 rank_y,
-                right_x + int(56 * scale),
+                right_x + int(48 * scale),
                 rank_y + group_rank_row_h,
             ),
             f"#{item.current_rank}",
@@ -508,7 +533,7 @@ async def build_water_group_report_image(
             valign="center",
             font_families=[WATER_THEME.white],
         )
-        avatar_x = right_x + int(54 * scale)
+        avatar_x = right_x + int(48 * scale)
         avatar_y = rank_y + (group_rank_row_h - group_rank_avatar_size) // 2
         avatar = item.avatar or build_avatar_fallback(
             group_rank_avatar_size,
@@ -523,9 +548,9 @@ async def build_water_group_report_image(
         )
         card.draw_text(
             (
-                right_x + int(100 * scale),
+                name_x,
                 rank_y,
-                right_x + right_w - int(104 * scale),
+                count_left - int(8 * scale),
                 rank_y + group_rank_row_h,
             ),
             safe_name,
@@ -536,10 +561,6 @@ async def build_water_group_report_image(
             valign="center",
             font_families=[WATER_THEME.white],
         )
-        trend_text, trend_color = format_trend(item.trend)
-        trend_w = int(54 * scale)
-        trend_h = int(22 * scale)
-        trend_x = right_x + right_w - trend_w - int(22 * scale)
         trend_y = rank_y + (group_rank_row_h - trend_h) // 2
         card.draw_rounded_rectangle(
             (trend_x, trend_y, trend_x + trend_w, trend_y + trend_h),
@@ -558,9 +579,9 @@ async def build_water_group_report_image(
         )
         card.draw_text(
             (
-                right_x + right_w - int(176 * scale),
+                count_left,
                 rank_y,
-                right_x + right_w - int(86 * scale),
+                count_right,
                 rank_y + group_rank_row_h,
             ),
             tr(locale, "water.report.group_rank.count", count=item.msg_count),
@@ -574,6 +595,78 @@ async def build_water_group_report_image(
         rank_y += group_rank_row_h + group_rank_row_gap
     if data.group_rank_has_hidden_after:
         pass
+    if group_rank_insight_h:
+        insight_y = y + group_rank_card_h + group_rank_panel_gap
+        card.draw_rounded_rectangle(
+            (right_x, insight_y, right_x + right_w, insight_y + group_rank_insight_h),
+            radius=int(18 * scale),
+            fill=panel_soft_bg,
+        )
+        card.draw_text(
+            (
+                right_x + int(18 * scale),
+                insight_y + int(8 * scale),
+                right_x + right_w - int(18 * scale),
+                insight_y + int(28 * scale),
+            ),
+            tr(locale, "water.report.group_rank.insight.title"),
+            max_fontsize=int(15 * scale),
+            min_fontsize=int(10 * scale),
+            fill=deep,
+            halign="left",
+            font_families=[WATER_THEME.white],
+        )
+        insight_tile_gap_x = int(10 * scale)
+        insight_tile_w = (right_w - int(36 * scale) - insight_tile_gap_x) // 2
+        insight_y_cursor = insight_y + group_rank_insight_header_h
+        for idx, insight in enumerate(data.group_rank_insights):
+            row = idx // 2
+            col = idx % 2
+            tile_x = (
+                right_x + int(18 * scale) + col * (insight_tile_w + insight_tile_gap_x)
+            )
+            tile_y = insight_y_cursor + row * (
+                group_rank_insight_tile_h + group_rank_insight_tile_gap
+            )
+            card.draw_rounded_rectangle(
+                (
+                    tile_x,
+                    tile_y,
+                    tile_x + insight_tile_w,
+                    tile_y + group_rank_insight_tile_h,
+                ),
+                radius=int(12 * scale),
+                fill=theme.rank_row_fill,
+            )
+            card.draw_text(
+                (
+                    tile_x + int(10 * scale),
+                    tile_y + int(8 * scale),
+                    tile_x + insight_tile_w - int(10 * scale),
+                    tile_y + int(20 * scale),
+                ),
+                insight.label,
+                max_fontsize=int(10 * scale),
+                min_fontsize=int(7 * scale),
+                fill=accent,
+                halign="left",
+                font_families=[WATER_THEME.white],
+            )
+            card.draw_text(
+                (
+                    tile_x + int(10 * scale),
+                    tile_y + int(18 * scale),
+                    tile_x + insight_tile_w - int(10 * scale),
+                    tile_y + group_rank_insight_tile_h - int(6 * scale),
+                ),
+                insight.value,
+                max_fontsize=int(16 * scale),
+                min_fontsize=int(10 * scale),
+                fill=strong,
+                halign="left",
+                valign="center",
+                font_families=[WATER_THEME.white],
+            )
     y += middle_h + gap
     card.draw_rounded_rectangle(
         (pad, y, width - pad, y + histogram_h), radius=int(20 * scale), fill=panel_bg
@@ -1110,9 +1203,9 @@ async def build_water_period_rank_image(
                     font_families=[SYS_FONT_NAME],
                 )
                 avatar_x = pad + int(54 * scale)
-                avatar_y = rank_y + (
-                    group_rank_row_h - report_group_rank_avatar_size
-                ) // 2
+                avatar_y = (
+                    rank_y + (group_rank_row_h - report_group_rank_avatar_size) // 2
+                )
                 avatar = item.avatar or build_avatar_fallback(
                     report_group_rank_avatar_size,
                     item.display_name[:1] or "?",

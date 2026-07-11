@@ -292,6 +292,7 @@ async def test_build_card_data_includes_group_rank_block(
         focus_group_id="20001",
         record_date=20260613,
         total_groups=12,
+        total_msg_count=81,
         focus_rank=3,
         focus_trend=1,
         leaderboard=[
@@ -373,6 +374,12 @@ async def test_build_card_data_includes_group_rank_block(
     assert data.group_rank_items[0].avatar is not None
     assert data.group_rank_items[0].is_focus_group is True
     assert data.group_rank_items[1].is_focus_group is False
+    assert [(item.label, item.value) for item in data.group_rank_insights] == [
+        ("本群占比", "51.9%"),
+        ("峰值时段", "02:00"),
+        ("距上一名", "榜首"),
+        ("领先下一名", "3 条"),
+    ]
     assert data.group_rank_has_hidden_before is True
     assert data.group_rank_has_hidden_after is True
 
@@ -382,6 +389,7 @@ def test_build_group_rank_summary_uses_numeric_delta_when_no_previous_rank() -> 
         focus_group_id="20001",
         record_date=20260613,
         total_groups=7,
+        total_msg_count=210,
         focus_rank=5,
         focus_trend=None,
         leaderboard=[],
@@ -436,6 +444,7 @@ async def test_build_group_rank_snapshot_uses_live_snapshot_for_today_report(
         focus_group_id="20001",
         record_date=20260613,
         total_groups=99,
+        total_msg_count=999,
         focus_rank=8,
         focus_trend=2,
         leaderboard=[],
@@ -460,6 +469,7 @@ async def test_build_group_rank_snapshot_uses_live_snapshot_for_today_report(
     get_rank_mock.assert_awaited_once_with(
         group_id="20001",
         record_date=20260613,
+        radius=4,
         live=True,
     )
     group_ids_mock.assert_not_awaited()
@@ -488,6 +498,7 @@ async def test_build_group_rank_snapshot_uses_summary_snapshot_for_settled_repor
         focus_group_id="20001",
         record_date=20260613,
         total_groups=99,
+        total_msg_count=999,
         focus_rank=8,
         focus_trend=2,
         leaderboard=[],
@@ -511,5 +522,6 @@ async def test_build_group_rank_snapshot_uses_summary_snapshot_for_settled_repor
     get_rank_mock.assert_awaited_once_with(
         group_id="20001",
         record_date=20260613,
+        radius=4,
         live=False,
     )

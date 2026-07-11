@@ -34,6 +34,7 @@ from src.plugins.water.renderers.models import (
     WaterGroupDailyRankCardItem,
     WaterGroupReportImageData,
     WaterRankCardItem,
+    WaterReportInsightItem,
 )
 from src.plugins.water.renderers.report import (
     build_water_group_report_image,
@@ -332,6 +333,10 @@ class WaterReportService:
         group_rank_items = await self._build_group_rank_items(
             group_rank_snapshot,
         )
+        group_rank_insights = self._build_group_rank_insights(
+            group_rank_snapshot,
+            locale,
+        )
         title = (
             tr(locale, "water.report.title.today")
             if window == "today_live"
@@ -378,6 +383,7 @@ class WaterReportService:
                 locale,
             ),
             group_rank_items=group_rank_items or [],
+            group_rank_insights=group_rank_insights,
             group_rank_has_hidden_before=(
                 group_rank_snapshot.has_hidden_before
                 if group_rank_snapshot is not None
@@ -455,6 +461,7 @@ class WaterReportService:
         return await water_repo.get_group_daily_rank_snapshot(
             group_id=snapshot.group_id,
             record_date=snapshot.record_date,
+            radius=4,
             live=window == "today_live",
         )
 
@@ -507,6 +514,79 @@ class WaterReportService:
             total_groups=snapshot.total_groups,
             trend=trend_text,
         )
+
+    def _build_group_rank_insights(
+        self,
+        snapshot: WaterGroupDailyRankSnapshot | None,
+        locale: LocaleCode,
+    ) -> list[WaterReportInsightItem]:
+        if snapshot is None or not snapshot.leaderboard:
+            return []
+
+        focus_index = next(
+            (
+                index
+                for index, item in enumerate(snapshot.leaderboard)
+                if item.group_id == snapshot.focus_group_id
+            ),
+            None,
+        )
+        if focus_index is None:
+            return []
+
+        focus_item = snapshot.leaderboard[focus_index]
+        peak_hour = max(
+            range(len(focus_item.hourly_counts)),
+            key=lambda hour: focus_item.hourly_counts[hour],
+        )
+        previous_item = (
+            snapshot.leaderboard[focus_index - 1] if focus_index > 0 else None
+        )
+        next_item = (
+            snapshot.leaderboard[focus_index + 1]
+            if focus_index + 1 < len(snapshot.leaderboard)
+            else None
+        )
+        share = (
+            focus_item.msg_count / snapshot.total_msg_count
+            if snapshot.total_msg_count > 0
+            else 0.0
+        )
+
+        return [
+            WaterReportInsightItem(
+                label=tr(locale, "water.report.group_rank.insight.share"),
+                value=f"{share * 100:.1f}%",
+            ),
+            WaterReportInsightItem(
+                label=tr(locale, "water.report.group_rank.insight.peak_hour"),
+                value=f"{peak_hour:02d}:00",
+            ),
+            WaterReportInsightItem(
+                label=tr(locale, "water.report.group_rank.insight.previous_gap"),
+                value=(
+                    tr(
+                        locale,
+                        "water.report.group_rank.count",
+                        count=previous_item.msg_count - focus_item.msg_count,
+                    )
+                    if previous_item is not None
+                    else tr(locale, "water.report.group_rank.insight.top")
+                ),
+            ),
+            WaterReportInsightItem(
+                label=tr(locale, "water.report.group_rank.insight.next_gap"),
+                value=(
+                    tr(
+                        locale,
+                        "water.report.group_rank.count",
+                        count=focus_item.msg_count - next_item.msg_count,
+                    )
+                    if next_item is not None
+                    else tr(locale, "water.report.group_rank.insight.bottom")
+                ),
+            ),
+        ]
 
 
 def now_ts_or_current(now_ts: int | None) -> int:
