@@ -332,13 +332,11 @@ class WaterReportService:
         group_rank_items = await self._build_group_rank_items(
             group_rank_snapshot,
         )
-        group_name = await resolve_group_name(None, snapshot.group_id)
         title = (
             tr(locale, "water.report.title.today")
             if window == "today_live"
             else tr(locale, "water.report.title.yesterday")
         )
-        badge = group_name
         record_day = arrow.get(str(snapshot.record_date), "YYYYMMDD").to(
             "Asia/Shanghai"
         )
@@ -363,8 +361,8 @@ class WaterReportService:
             user_delta=self._format_delta(snapshot.delta_active_user_count),
         )
         return WaterGroupReportImageData(
-            title=f"{group_name} · {title}",
-            badge=badge,
+            title=title,
+            badge="",
             range_text=range_text,
             compare_text=compare_text,
             generated_at=now_ts_or_current(now_ts=None),
@@ -498,11 +496,10 @@ class WaterReportService:
     ) -> str:
         if snapshot is None:
             return ""
-        trend_text = (
-            tr(locale, "water.report.group_rank.new")
-            if snapshot.focus_trend is None
-            else self._format_delta(snapshot.focus_trend)
-        )
+        trend_value = snapshot.focus_trend
+        if trend_value is None:
+            trend_value = max(0, snapshot.total_groups - snapshot.focus_rank)
+        trend_text = self._format_delta(trend_value)
         return tr(
             locale,
             "water.report.group_rank.summary",

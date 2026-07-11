@@ -153,9 +153,6 @@ async def build_water_group_report_image(
     line = theme.line
     blue = theme.blue
     mint = theme.mint
-    badge_bg = theme.badge_bg
-    badge_fg = theme.badge_fg
-
     card = BuildImage.new("RGB", (width, height), page_bg)
     y = pad
     card.draw_rounded_rectangle(
@@ -204,25 +201,6 @@ async def build_water_group_report_image(
         min_fontsize=int(8 * scale),
         fill=hint,
         halign="left",
-        font_families=[WATER_THEME.white],
-    )
-    badge_w = int(112 * scale)
-    badge_h = int(34 * scale)
-    badge_x = width - pad - badge_w - int(18 * scale)
-    badge_y = y + int(18 * scale)
-    card.draw_rounded_rectangle(
-        (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
-        radius=int(12 * scale),
-        fill=badge_bg,
-    )
-    card.draw_text(
-        (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
-        data.badge,
-        max_fontsize=int(13 * scale),
-        min_fontsize=int(10 * scale),
-        fill=badge_fg,
-        halign="center",
-        valign="center",
         font_families=[WATER_THEME.white],
     )
 
@@ -523,7 +501,7 @@ async def build_water_group_report_image(
             (
                 right_x + int(24 * scale),
                 rank_y,
-                right_x + int(82 * scale),
+                right_x + int(62 * scale),
                 rank_y + group_rank_row_h,
             ),
             f"#{item.current_rank}",
@@ -534,7 +512,7 @@ async def build_water_group_report_image(
             valign="center",
             font_families=[WATER_THEME.white],
         )
-        avatar_x = right_x + int(88 * scale)
+        avatar_x = right_x + int(64 * scale)
         avatar_y = rank_y + (group_rank_row_h - group_rank_avatar_size) // 2
         avatar = item.avatar or build_avatar_fallback(
             group_rank_avatar_size,
@@ -549,7 +527,7 @@ async def build_water_group_report_image(
         )
         card.draw_text(
             (
-                right_x + int(126 * scale),
+                right_x + int(100 * scale),
                 rank_y,
                 right_x + right_w - int(136 * scale),
                 rank_y + group_rank_row_h,
@@ -749,9 +727,6 @@ async def build_water_period_rank_image(
         line = theme.line
         blue = theme.blue
         mint = theme.mint
-        badge_bg = theme.badge_bg
-        badge_fg = theme.badge_fg
-
         card = BuildImage.new("RGB", (width, height), page_bg)
         y = pad
 
@@ -809,26 +784,6 @@ async def build_water_period_rank_image(
             min_fontsize=int(8 * scale),
             fill=hint,
             halign="left",
-            font_families=[SYS_FONT_NAME],
-        )
-
-        badge_w = int(112 * scale)
-        badge_h = int(34 * scale)
-        badge_x = width - pad - badge_w - int(18 * scale)
-        badge_y = y + int(18 * scale)
-        card.draw_rounded_rectangle(
-            (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
-            radius=int(12 * scale),
-            fill=badge_bg,
-        )
-        card.draw_text(
-            (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
-            data.badge,
-            max_fontsize=int(13 * scale),
-            min_fontsize=int(10 * scale),
-            fill=badge_fg,
-            halign="center",
-            valign="center",
             font_families=[SYS_FONT_NAME],
         )
 
@@ -1171,7 +1126,7 @@ async def build_water_period_rank_image(
                     (
                         pad + int(24 * scale),
                         rank_y,
-                        pad + int(82 * scale),
+                        pad + int(62 * scale),
                         rank_y + group_rank_row_h,
                     ),
                     f"#{item.current_rank}",
@@ -1182,7 +1137,7 @@ async def build_water_period_rank_image(
                     valign="center",
                     font_families=[SYS_FONT_NAME],
                 )
-                avatar_x = pad + int(88 * scale)
+                avatar_x = pad + int(64 * scale)
                 avatar_y = rank_y + (
                     group_rank_row_h - report_group_rank_avatar_size
                 ) // 2
@@ -1204,7 +1159,7 @@ async def build_water_period_rank_image(
                 )
                 card.draw_text(
                     (
-                        pad + int(126 * scale),
+                        pad + int(100 * scale),
                         rank_y,
                         width - pad - int(136 * scale),
                         rank_y + group_rank_row_h,

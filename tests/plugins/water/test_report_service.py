@@ -203,8 +203,8 @@ async def test_build_card_data_keeps_group_report_core_fields(
         "zh-CN",
     )
 
-    assert data.title == "测试群 · Senrin水王日报"
-    assert data.badge == "测试群"
+    assert data.title == "Senrin水王日报"
+    assert data.badge == ""
     assert data.total_msg_count == 42
     assert data.active_user_count == 1
     assert data.top_items[0].display_name == "Alice"
@@ -377,7 +377,7 @@ async def test_build_card_data_includes_group_rank_block(
     assert data.group_rank_has_hidden_after is True
 
 
-def test_build_group_rank_summary_uses_new_when_no_previous_rank() -> None:
+def test_build_group_rank_summary_uses_numeric_delta_when_no_previous_rank() -> None:
     snapshot = WaterGroupDailyRankSnapshot(
         focus_group_id="20001",
         record_date=20260613,
@@ -391,7 +391,7 @@ def test_build_group_rank_summary_uses_new_when_no_previous_rank() -> None:
 
     summary = water_report_service._build_group_rank_summary(snapshot, "zh-CN")
 
-    assert summary == "本群当前排名 #5 / 7 · 较昨日 NEW"
+    assert summary == "本群当前排名 #5 / 7 · 较昨日 +2"
 
 
 def test_build_group_rank_summary_returns_empty_without_snapshot() -> None:

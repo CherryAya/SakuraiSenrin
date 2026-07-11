@@ -520,8 +520,8 @@ async def test_rank_query_service_routes_day_and_non_day(
 async def test_build_water_group_report_image_smoke() -> None:
     avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
     data = WaterGroupReportImageData(
-        title="测试群 · 今日群报告",
-        badge="测试群",
+        title="Senrin水王日报",
+        badge="",
         range_text="统计日期: 2026.06.14 · 今日实时快照",
         compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
         generated_at=1_747_960_000,
@@ -593,8 +593,8 @@ async def test_build_water_group_report_image_smoke() -> None:
 async def test_build_water_group_report_image_without_group_rank_block() -> None:
     avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
     data = WaterGroupReportImageData(
-        title="测试群 · 今日群报告",
-        badge="测试群",
+        title="Senrin水王日报",
+        badge="",
         range_text="统计日期: 2026.06.14 · 今日实时快照",
         compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
         generated_at=1_747_960_000,
@@ -634,8 +634,8 @@ async def test_build_water_group_report_image_without_group_rank_block() -> None
 async def test_build_water_group_report_image_truncates_long_group_rank_names() -> None:
     avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
     data = WaterGroupReportImageData(
-        title="测试群 · 今日群报告",
-        badge="测试群",
+        title="Senrin水王日报",
+        badge="",
         range_text="统计日期: 2026.06.14 · 今日实时快照",
         compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
         generated_at=1_747_960_000,
@@ -701,8 +701,8 @@ async def test_build_water_group_report_image_truncates_long_group_rank_names() 
 async def test_group_report_image_truncates_long_group_rank_summary() -> None:
     avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
     data = WaterGroupReportImageData(
-        title="测试群 · 今日群报告",
-        badge="测试群",
+        title="Senrin水王日报",
+        badge="",
         range_text="统计日期: 2026.06.14 · 今日实时快照",
         compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
         generated_at=1_747_960_000,
