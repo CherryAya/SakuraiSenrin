@@ -203,10 +203,6 @@ async def build_water_group_report_image(
     stat_top = y + int(92 * scale)
     stat_gap = int(10 * scale)
     stat_w = int((width - pad * 2 - int(36 * scale) - stat_gap * 2) / 3)
-    try:
-        stat_value_font = ImageFont.truetype(FALLBACK_FONT_PATH, int(20 * scale))
-    except OSError:
-        stat_value_font = ImageFont.load_default()
     stats = [
         (
             tr(locale, "water.image.period.stats.total_msg_count"),
@@ -239,9 +235,9 @@ async def build_water_group_report_image(
         card.draw_text(
             (
                 sx + int(10 * scale),
-                stat_top + int(6 * scale),
+                stat_top + int(8 * scale),
                 sx + stat_w - int(10 * scale),
-                stat_top + int(24 * scale),
+                stat_top + int(26 * scale),
             ),
             label,
             max_fontsize=int(11 * scale),
@@ -250,12 +246,20 @@ async def build_water_group_report_image(
             halign="left",
             font_families=[WATER_THEME.white],
         )
-        card.draw.text(
-            (sx + int(10 * scale), stat_top + int(50 * scale)),
+        card.draw_text(
+            (
+                sx + int(10 * scale),
+                stat_top + int(28 * scale),
+                sx + stat_w - int(10 * scale),
+                y + hero_h - int(10 * scale),
+            ),
             value,
+            max_fontsize=int(20 * scale),
+            min_fontsize=int(11 * scale),
             fill=value_color,
-            font=stat_value_font,
-            anchor="lm",
+            halign="left",
+            valign="center",
+            font_families=[WATER_THEME.white],
         )
 
     y += hero_h + gap
@@ -762,10 +766,6 @@ async def build_water_period_rank_image(
         stat_top = y + int(92 * scale)
         stat_gap = int(10 * scale)
         stat_w = int((width - pad * 2 - int(36 * scale) - stat_gap * 2) / 3)
-        try:
-            stat_value_font = ImageFont.truetype(FALLBACK_FONT_PATH, int(20 * scale))
-        except OSError:
-            stat_value_font = ImageFont.load_default()
         stats = [
             (
                 tr(locale, "water.image.period.stats.total_msg_count"),
@@ -800,9 +800,9 @@ async def build_water_period_rank_image(
             card.draw_text(
                 (
                     sx + int(10 * scale),
-                    stat_top + int(6 * scale),
+                    stat_top + int(8 * scale),
                     sx + stat_w - int(10 * scale),
-                    stat_top + int(24 * scale),
+                    stat_top + int(26 * scale),
                 ),
                 label,
                 max_fontsize=int(11 * scale),
@@ -811,12 +811,20 @@ async def build_water_period_rank_image(
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            card.draw.text(
-                (sx + int(10 * scale), stat_top + int(50 * scale)),
+            card.draw_text(
+                (
+                    sx + int(10 * scale),
+                    stat_top + int(28 * scale),
+                    sx + stat_w - int(10 * scale),
+                    y + hero_h - int(10 * scale),
+                ),
                 value,
+                max_fontsize=int(20 * scale),
+                min_fontsize=int(11 * scale),
                 fill=value_color,
-                font=stat_value_font,
-                anchor="lm",
+                halign="left",
+                valign="center",
+                font_families=[SYS_FONT_NAME],
             )
 
         y += hero_h + gap
