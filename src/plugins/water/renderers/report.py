@@ -17,7 +17,6 @@ from .common import (
     SYS_FONT_NAME,
     WATER_THEME,
     build_avatar_fallback,
-    draw_gloss_lines,
     draw_hourly_histogram,
     draw_report_footer,
     format_delta,
@@ -158,9 +157,6 @@ async def build_water_group_report_image(
     card.draw_rounded_rectangle(
         (pad, y, width - pad, y + hero_h), radius=int(20 * scale), fill=hero_bg
     )
-    draw_gloss_lines(
-        card, pad, y, width - pad * 2, hero_h, tone=theme.gloss_hero_tone, strength=0.85
-    )
     card.draw_text(
         (
             pad + int(18 * scale),
@@ -269,9 +265,6 @@ async def build_water_group_report_image(
         (left_x, y, left_x + left_w, y + left_h),
         radius=int(20 * scale),
         fill=panel_soft_bg,
-    )
-    draw_gloss_lines(
-        card, left_x, y, left_w, left_h, tone=theme.gloss_soft_tone, strength=0.8
     )
     card.draw_text(
         (
@@ -439,9 +432,6 @@ async def build_water_group_report_image(
         radius=int(20 * scale),
         fill=panel_bg,
     )
-    draw_gloss_lines(
-        card, right_x, y, right_w, right_h, tone=theme.gloss_panel_tone, strength=0.82
-    )
     card.draw_text(
         (
             right_x + int(18 * scale),
@@ -581,15 +571,6 @@ async def build_water_group_report_image(
     y += middle_h + gap
     card.draw_rounded_rectangle(
         (pad, y, width - pad, y + histogram_h), radius=int(20 * scale), fill=panel_bg
-    )
-    draw_gloss_lines(
-        card,
-        pad,
-        y,
-        width - pad * 2,
-        histogram_h,
-        tone=theme.gloss_panel_tone,
-        strength=0.82,
     )
     card.draw_text(
         (pad + int(18 * scale), y + int(8 * scale), width - pad, y + int(30 * scale)),
@@ -735,15 +716,6 @@ async def build_water_period_rank_image(
             radius=int(20 * scale),
             fill=hero_bg,
         )
-        draw_gloss_lines(
-            card,
-            pad,
-            y,
-            width - pad * 2,
-            hero_h,
-            tone=theme.gloss_hero_tone,
-            strength=0.85,
-        )
         card.draw_text(
             (
                 pad + int(18 * scale),
@@ -854,9 +826,6 @@ async def build_water_period_rank_image(
             (left_x, y, left_x + left_w, y + board_h),
             radius=int(20 * scale),
             fill=panel_soft_bg,
-        )
-        draw_gloss_lines(
-            card, left_x, y, left_w, board_h, tone=theme.gloss_soft_tone, strength=0.8
         )
         card.draw_text(
             (
@@ -1043,15 +1012,6 @@ async def build_water_period_rank_image(
                 radius=int(20 * scale),
                 fill=panel_bg,
             )
-            draw_gloss_lines(
-                card,
-                pad,
-                y,
-                width - pad * 2,
-                group_rank_h,
-                tone=theme.gloss_panel_tone,
-                strength=0.82,
-            )
             card.draw_text(
                 (
                     pad + int(18 * scale),
@@ -1231,15 +1191,6 @@ async def build_water_period_rank_image(
                 (pad, y, width - pad, y + overview_h),
                 radius=int(20 * scale),
                 fill=panel_bg,
-            )
-            draw_gloss_lines(
-                card,
-                pad,
-                y,
-                width - pad * 2,
-                overview_h,
-                tone=theme.gloss_panel_tone,
-                strength=0.82,
             )
             card.draw_text(
                 (
