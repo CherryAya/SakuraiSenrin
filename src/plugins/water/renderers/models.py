@@ -120,9 +120,11 @@ class WaterDayRankCardData:
 class WaterGroupDailyRankCardItem:
     group_id: str
     display_name: str
+    avatar: BuildImage | None
     msg_count: int
     current_rank: int
     trend: int | None
+    is_focus_group: bool = False
 
 
 @dataclass(frozen=True)

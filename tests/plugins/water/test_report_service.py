@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
 
+from pil_utils import BuildImage
 import pytest
 
 from src.lib.long_task import LongTaskRunner
@@ -202,7 +203,7 @@ async def test_build_card_data_keeps_group_report_core_fields(
         "zh-CN",
     )
 
-    assert data.title == "测试群 · 今日群报告"
+    assert data.title == "测试群 · Senrin水王日报"
     assert data.badge == "测试群"
     assert data.total_msg_count == 42
     assert data.active_user_count == 1
@@ -351,6 +352,11 @@ async def test_build_card_data_includes_group_rank_block(
         "_build_group_rank_snapshot",
         AsyncMock(return_value=group_rank_snapshot),
     )
+    monkeypatch.setattr(
+        report_module.QQAvatar,
+        "fetch_group",
+        AsyncMock(return_value=BuildImage.new("RGBA", (64, 64), "#F6B7D2")),
+    )
 
     data = await water_report_service._build_card_data(
         "today_live",
@@ -364,6 +370,9 @@ async def test_build_card_data_includes_group_rank_block(
         "测试群",
         "隔壁群",
     ]
+    assert data.group_rank_items[0].avatar is not None
+    assert data.group_rank_items[0].is_focus_group is True
+    assert data.group_rank_items[1].is_focus_group is False
     assert data.group_rank_has_hidden_before is True
     assert data.group_rank_has_hidden_after is True
 

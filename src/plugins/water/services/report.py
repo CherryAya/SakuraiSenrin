@@ -18,6 +18,7 @@ from src.lib.long_task import LongTaskRunner
 from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import DeliveryPlan, MessagePlanInput, deliver_message_plan
 from src.lib.utils.common import get_current_time
+from src.lib.utils.img import QQAvatar
 from src.logger import logger
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo_models import (
@@ -465,16 +466,27 @@ class WaterReportService:
     ) -> list[WaterGroupDailyRankCardItem] | None:
         if snapshot is None:
             return None
-        names = await asyncio.gather(
-            *(resolve_group_name(None, item.group_id) for item in snapshot.leaderboard)
+        names, avatars = await asyncio.gather(
+            asyncio.gather(
+                *(
+                    resolve_group_name(None, item.group_id)
+                    for item in snapshot.leaderboard
+                )
+            ),
+            asyncio.gather(
+                *(QQAvatar.fetch_group(item.group_id) for item in snapshot.leaderboard),
+                return_exceptions=True,
+            ),
         )
         return [
             WaterGroupDailyRankCardItem(
                 group_id=item.group_id,
                 display_name=names[idx],
+                avatar=self._normalize_avatar(avatars[idx]),
                 msg_count=item.msg_count,
                 current_rank=item.current_rank,
                 trend=item.trend,
+                is_focus_group=item.group_id == snapshot.focus_group_id,
             )
             for idx, item in enumerate(snapshot.leaderboard)
         ]

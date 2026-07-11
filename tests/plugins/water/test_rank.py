@@ -562,13 +562,16 @@ async def test_build_water_group_report_image_smoke() -> None:
             WaterGroupDailyRankCardItem(
                 group_id="20001",
                 display_name="测试群",
+                avatar=avatar,
                 msg_count=120,
                 current_rank=3,
                 trend=1,
+                is_focus_group=True,
             ),
             WaterGroupDailyRankCardItem(
                 group_id="20002",
                 display_name="隔壁群",
+                avatar=avatar,
                 msg_count=98,
                 current_rank=4,
                 trend=-1,
@@ -664,9 +667,11 @@ async def test_build_water_group_report_image_truncates_long_group_rank_names() 
                     "这是一个非常非常非常非常非常长的群聊名称"
                     " With Extra Long Mixed Content 1234567890"
                 ),
+                avatar=avatar,
                 msg_count=120,
                 current_rank=3,
                 trend=1,
+                is_focus_group=True,
             ),
             WaterGroupDailyRankCardItem(
                 group_id="20002",
@@ -674,6 +679,7 @@ async def test_build_water_group_report_image_truncates_long_group_rank_names() 
                     "隔壁那个名字也很长很长很长的测试群"
                     " Another Extremely Long Group Name"
                 ),
+                avatar=avatar,
                 msg_count=98,
                 current_rank=4,
                 trend=-1,
@@ -728,9 +734,11 @@ async def test_group_report_image_truncates_long_group_rank_summary() -> None:
             WaterGroupDailyRankCardItem(
                 group_id="20001",
                 display_name="测试群",
+                avatar=avatar,
                 msg_count=120,
                 current_rank=3,
                 trend=1,
+                is_focus_group=True,
             )
         ],
         group_rank_has_hidden_before=False,

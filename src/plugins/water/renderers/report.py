@@ -79,6 +79,19 @@ def _truncate_text_to_width_pixels(
     return f"{candidate}{ellipsis}" if candidate else ellipsis
 
 
+def _group_rank_row_fill(
+    *,
+    is_focus_group: bool,
+    base_fill: str,
+    accent: str,
+) -> str:
+    if not is_focus_group:
+        return base_fill
+    from .common import mix_hex
+
+    return mix_hex(base_fill, accent, 0.16)
+
+
 async def build_water_group_report_image(
     data: WaterGroupReportImageData,
     locale: LocaleCode,
@@ -101,8 +114,9 @@ async def build_water_group_report_image(
     group_rank_row_gap = int(6 * scale)
     histogram_h = int(182 * scale)
     footer_h = int(50 * scale)
+    group_rank_avatar_size = int(28 * scale)
     group_name_font = _load_font(int(9 * scale))
-    group_name_max_width = right_w - int(228 * scale)
+    group_name_max_width = right_w - int(268 * scale)
     group_rank_summary_font = _load_font(int(8 * scale))
     group_rank_summary_max_width = right_w - int(18 * scale)
 
@@ -499,7 +513,11 @@ async def build_water_group_report_image(
                 rank_y + group_rank_row_h,
             ),
             radius=int(12 * scale),
-            fill=theme.rank_row_fill,
+            fill=_group_rank_row_fill(
+                is_focus_group=item.is_focus_group,
+                base_fill=theme.rank_row_fill,
+                accent=theme.podium_gold_badge,
+            ),
         )
         card.draw_text(
             (
@@ -516,9 +534,22 @@ async def build_water_group_report_image(
             valign="center",
             font_families=[WATER_THEME.white],
         )
+        avatar_x = right_x + int(88 * scale)
+        avatar_y = rank_y + (group_rank_row_h - group_rank_avatar_size) // 2
+        avatar = item.avatar or build_avatar_fallback(
+            group_rank_avatar_size,
+            item.display_name[:1] or "?",
+            theme.group_avatar_fallback_bg,
+            theme.group_avatar_fallback_fg,
+        )
+        card.paste(
+            avatar.circle().resize((group_rank_avatar_size, group_rank_avatar_size)),
+            (avatar_x, avatar_y),
+            alpha=True,
+        )
         card.draw_text(
             (
-                right_x + int(92 * scale),
+                right_x + int(126 * scale),
                 rank_y,
                 right_x + right_w - int(136 * scale),
                 rank_y + group_rank_row_h,
@@ -1047,9 +1078,10 @@ async def build_water_period_rank_image(
         y += board_h
         if group_rank_h:
             report_group_name_font = _load_font(int(9 * scale))
-            report_group_name_max_width = width - pad * 2 - int(228 * scale)
+            report_group_name_max_width = width - pad * 2 - int(268 * scale)
             report_group_rank_summary_font = _load_font(int(8 * scale))
             report_group_rank_summary_max_width = width - pad * 2 - int(36 * scale)
+            report_group_rank_avatar_size = int(28 * scale)
             y += gap
             card.draw_rounded_rectangle(
                 (pad, y, width - pad, y + group_rank_h),
@@ -1129,7 +1161,11 @@ async def build_water_period_rank_image(
                         rank_y + group_rank_row_h,
                     ),
                     radius=int(12 * scale),
-                    fill=theme.rank_row_fill,
+                    fill=_group_rank_row_fill(
+                        is_focus_group=item.is_focus_group,
+                        base_fill=theme.rank_row_fill,
+                        accent=theme.podium_gold_badge,
+                    ),
                 )
                 card.draw_text(
                     (
@@ -1146,9 +1182,29 @@ async def build_water_period_rank_image(
                     valign="center",
                     font_families=[SYS_FONT_NAME],
                 )
+                avatar_x = pad + int(88 * scale)
+                avatar_y = rank_y + (
+                    group_rank_row_h - report_group_rank_avatar_size
+                ) // 2
+                avatar = item.avatar or build_avatar_fallback(
+                    report_group_rank_avatar_size,
+                    item.display_name[:1] or "?",
+                    theme.group_avatar_fallback_bg,
+                    theme.group_avatar_fallback_fg,
+                )
+                card.paste(
+                    avatar.circle().resize(
+                        (
+                            report_group_rank_avatar_size,
+                            report_group_rank_avatar_size,
+                        )
+                    ),
+                    (avatar_x, avatar_y),
+                    alpha=True,
+                )
                 card.draw_text(
                     (
-                        pad + int(92 * scale),
+                        pad + int(126 * scale),
                         rank_y,
                         width - pad - int(136 * scale),
                         rank_y + group_rank_row_h,
