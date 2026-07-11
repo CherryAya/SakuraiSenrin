@@ -619,7 +619,7 @@ class WaterReportService:
     def _select_trend_group_ids(
         snapshot: WaterGroupDailyRankSnapshot | None,
         *,
-        radius: int = 3,
+        radius: int = 4,
     ) -> list[str]:
         if snapshot is None or not snapshot.leaderboard:
             return []

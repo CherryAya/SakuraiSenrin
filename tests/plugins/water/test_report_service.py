@@ -474,7 +474,7 @@ def test_build_group_rank_summary_returns_empty_without_snapshot() -> None:
     assert water_report_service._build_group_rank_summary(None, "zh-CN") == ""
 
 
-def test_select_trend_group_ids_keeps_focus_group_within_plus_minus_three() -> None:
+def test_select_trend_group_ids_keeps_focus_group_within_plus_minus_four() -> None:
     snapshot = WaterGroupDailyRankSnapshot(
         focus_group_id="20005",
         record_date=20260613,
@@ -501,6 +501,7 @@ def test_select_trend_group_ids_keeps_focus_group_within_plus_minus_three() -> N
     group_ids = water_report_service._select_trend_group_ids(snapshot)
 
     assert group_ids == [
+        "20001",
         "20002",
         "20003",
         "20004",

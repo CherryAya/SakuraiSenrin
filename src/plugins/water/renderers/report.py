@@ -548,7 +548,7 @@ def _render_group_rank_trend_panel(
             locale,
             "water.report.group_rank.trend.subtitle",
             days=len(data.group_rank_trend_labels),
-            radius=3,
+            radius=max(0, len(trend_series) // 2),
         ),
         max_fontsize=int(10 * scale),
         min_fontsize=int(8 * scale),
@@ -564,7 +564,7 @@ def _render_group_rank_trend_panel(
         color = (
             theme.podium_gold_badge
             if item.is_focus_group
-            else palette[palette_index % len(palette)]
+            else mix_hex(palette[palette_index % len(palette)], theme.white, 0.08)
         )
         if not item.is_focus_group:
             palette_index += 1
@@ -574,11 +574,11 @@ def _render_group_rank_trend_panel(
     legend_x = x + int(18 * scale)
     legend_y = y + int(54 * scale)
     legend_w = w - int(36 * scale)
-    cols = 2 if len(legend_specs) <= 4 else 3
+    cols = 3 if len(legend_specs) >= 7 else 2
     rows = max(1, (len(legend_specs) + cols - 1) // cols)
-    legend_gap_x = int(10 * scale)
+    legend_gap_x = int(8 * scale)
     legend_gap_y = int(8 * scale)
-    legend_item_h = int(24 * scale)
+    legend_item_h = int(28 * scale)
     legend_item_w = (legend_w - legend_gap_x * (cols - 1)) // max(cols, 1)
     legend_font = _load_font(int(9 * scale))
     for index, (color, label, is_focus_group) in enumerate(legend_specs):
@@ -586,17 +586,20 @@ def _render_group_rank_trend_panel(
         col = index % cols
         item_x = legend_x + col * (legend_item_w + legend_gap_x)
         item_y = legend_y + row * (legend_item_h + legend_gap_y)
-        if is_focus_group:
-            card.draw_rounded_rectangle(
-                (
-                    item_x,
-                    item_y,
-                    item_x + legend_item_w,
-                    item_y + legend_item_h,
-                ),
-                radius=int(10 * scale),
-                fill=mix_hex(theme.panel_soft_bg, theme.podium_gold_badge, 0.1),
-            )
+        card.draw_rounded_rectangle(
+            (
+                item_x,
+                item_y,
+                item_x + legend_item_w,
+                item_y + legend_item_h,
+            ),
+            radius=int(10 * scale),
+            fill=(
+                mix_hex(theme.panel_soft_bg, theme.podium_gold_badge, 0.1)
+                if is_focus_group
+                else theme.rank_row_fill
+            ),
+        )
         dot_size = int(10 * scale)
         dot_x = item_x + int(8 * scale)
         dot_y = item_y + (legend_item_h - dot_size) // 2
@@ -621,7 +624,7 @@ def _render_group_rank_trend_panel(
             label_text,
             max_fontsize=int(9 * scale),
             min_fontsize=int(7 * scale),
-            fill=deep if is_focus_group else hint,
+            fill=deep if is_focus_group else accent,
             halign="left",
             valign="center",
             font_families=[WATER_THEME.white],

@@ -541,15 +541,56 @@ def draw_group_rank_trend_chart(
             font_families=[SYS_FONT_NAME],
         )
 
+    def _smooth_segment(points: list[tuple[int, int]]) -> list[tuple[int, int]]:
+        if len(points) < 3:
+            return points
+        samples_per_segment = max(8, int(6 * scale))
+        padded = [points[0], *points, points[-1]]
+        smoothed = [points[0]]
+        for idx in range(1, len(padded) - 2):
+            p0, p1, p2, p3 = (
+                padded[idx - 1],
+                padded[idx],
+                padded[idx + 1],
+                padded[idx + 2],
+            )
+            for step in range(1, samples_per_segment + 1):
+                t = step / samples_per_segment
+                tt = t * t
+                ttt = tt * t
+                px = 0.5 * (
+                    (2 * p1[0])
+                    + (-p0[0] + p2[0]) * t
+                    + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * tt
+                    + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * ttt
+                )
+                py = 0.5 * (
+                    (2 * p1[1])
+                    + (-p0[1] + p2[1]) * t
+                    + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * tt
+                    + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * ttt
+                )
+                smoothed.append((round(px), round(py)))
+        return smoothed
+
     for color, ranks, is_focus in series:
         points: list[tuple[int, int]] = []
         for idx, rank in enumerate(ranks):
             if rank is None:
                 if len(points) >= 2:
+                    smooth_points = _smooth_segment(points)
                     card.draw.line(
-                        points,
+                        smooth_points,
+                        fill=mix_hex(color, WATER_THEME.white, 0.48)
+                        if is_focus
+                        else mix_hex(color, WATER_THEME.white, 0.68),
+                        width=max(4, int((7 if is_focus else 5) * scale / 2)),
+                        joint="curve",
+                    )
+                    card.draw.line(
+                        smooth_points,
                         fill=color,
-                        width=max(2, int((4 if is_focus else 2) * scale / 2)),
+                        width=max(3, int((5 if is_focus else 3) * scale / 2)),
                         joint="curve",
                     )
                 points = []
@@ -563,9 +604,18 @@ def draw_group_rank_trend_chart(
             py = y + int(relative * max(chart_h - int(8 * scale), 1))
             points.append((px, py))
         if len(points) >= 2:
+            smooth_points = _smooth_segment(points)
             card.draw.line(
-                points,
+                smooth_points,
+                fill=mix_hex(color, WATER_THEME.white, 0.48)
+                if is_focus
+                else mix_hex(color, WATER_THEME.white, 0.68),
+                width=max(4, int((7 if is_focus else 5) * scale / 2)),
+                joint="curve",
+            )
+            card.draw.line(
+                smooth_points,
                 fill=color,
-                width=max(2, int((4 if is_focus else 2) * scale / 2)),
+                width=max(3, int((5 if is_focus else 3) * scale / 2)),
                 joint="curve",
             )
