@@ -208,7 +208,7 @@ async def test_build_card_data_keeps_group_report_core_fields(
         "zh-CN",
     )
 
-    assert data.title == "Senrin水王日报"
+    assert data.title == "测试群水王日报"
     assert data.badge == ""
     assert data.total_msg_count == 42
     assert data.active_user_count == 1

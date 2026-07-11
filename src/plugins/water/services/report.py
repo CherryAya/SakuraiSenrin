@@ -367,11 +367,14 @@ class WaterReportService:
             if group_rank_snapshot is not None
             else False
         )
-        title = (
+        report_title = (
             tr(locale, "water.report.title.today")
             if window == "today_live"
             else tr(locale, "water.report.title.yesterday")
         )
+        group_name = await resolve_group_name(None, snapshot.group_id)
+        report_suffix = report_title.removeprefix("Senrin")
+        title = f"{group_name}{report_suffix}"
         record_day = arrow.get(str(snapshot.record_date), "YYYYMMDD").to(
             "Asia/Shanghai"
         )

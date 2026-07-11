@@ -739,6 +739,12 @@ async def build_water_group_report_image(
     card.draw_rounded_rectangle(
         (pad, y, width - pad, y + hero_h), radius=int(20 * scale), fill=hero_bg
     )
+    hero_title_font = _load_font(int(32 * scale))
+    hero_title_text = _truncate_text_to_width_pixels(
+        data.title,
+        font=hero_title_font,
+        max_width=width - pad * 2 - int(36 * scale),
+    )
     card.draw_text(
         (
             pad + int(18 * scale),
@@ -746,7 +752,7 @@ async def build_water_group_report_image(
             width - pad - int(18 * scale),
             y + int(48 * scale),
         ),
-        data.title,
+        hero_title_text,
         max_fontsize=int(32 * scale),
         min_fontsize=int(22 * scale),
         fill=strong,
@@ -928,13 +934,11 @@ async def build_water_group_report_image(
             alpha=True,
         )
         text_x = avatar_x + avatar_size + int(12 * scale)
-        row_inner_right = left_x + left_w - int(14 * scale)
         trend_text, trend_color = format_trend(item.trend)
         trend_w = int(48 * scale)
         trend_h = int(20 * scale)
-        trend_x = row_inner_right - int(18 * scale) - trend_w
         trend_y = badge_y + int(1 * scale)
-        info_col_w = int(124 * scale)
+        info_col_w = int(138 * scale)
         name_right = text_x + info_col_w
         safe_name = _truncate_text_to_width_pixels(
             item.display_name,
@@ -955,7 +959,8 @@ async def build_water_group_report_image(
             halign="left",
             font_families=[WATER_THEME.white],
         )
-        summary_right = text_x + int(112 * scale)
+        summary_right = text_x + int(124 * scale)
+        tile_container_left = summary_right + int(2 * scale)
         card.draw_text(
             (
                 text_x,
@@ -989,27 +994,20 @@ async def build_water_group_report_image(
             font_families=[WATER_THEME.white],
         )
         tile_chart = tile_renderer._generate_tile_chart(item.hourly_counts)
-        tile_region_left = summary_right + int(4.5 * scale)
-        tile_region_right = row_inner_right - int(18 * scale)
+        tile_gap = int(2 * scale)
         tile_region_top = row_y + int(40 * scale)
         tile_region_bottom = row_y + user_card_h - int(12 * scale)
-        tile_region_w = max(1, tile_region_right - tile_region_left)
-        tile_region_h = max(1, tile_region_bottom - tile_region_top)
-        tile_scale = min(
-            0.72,
-            tile_region_w / tile_chart.width,
-            tile_region_h / tile_chart.height,
-        )
+        tile_scale = 0.72
         tile_w = max(1, int(tile_chart.width * tile_scale))
         tile_h = max(1, int(tile_chart.height * tile_scale))
+        tile_x = tile_container_left + tile_gap
+        tile_region_h = max(1, tile_region_bottom - tile_region_top)
         resized_tile = tile_chart.resize((tile_w, tile_h))
-        tile_x = tile_region_left + max(
-            0, (tile_region_w - tile_w) // 2
-        )
         tile_y = tile_region_top + max(
             0, (tile_region_h - tile_h) // 2
         )
         card.paste(resized_tile, (tile_x, tile_y), alpha=True)
+        trend_x = tile_x + tile_w - trend_w
         card.draw_rounded_rectangle(
             (trend_x, trend_y, trend_x + trend_w, trend_y + trend_h),
             radius=trend_h // 2,
