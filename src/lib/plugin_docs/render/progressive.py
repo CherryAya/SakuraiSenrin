@@ -639,18 +639,18 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + len(header_title_lines) * self._line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
         )
-        self._draw_section_watermark(
-            draw,
-            rect=(
-                side,
-                summary_top + 4,
-                self.WIDTH - side - self.theme.hero_standee_size + 16,
-                hero_bottom,
-            ),
-            text="GROUP ACCESS",
-            font=self.watermark_font,
-            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
-        )
+        # self._draw_section_watermark(
+        #     draw,
+        #     rect=(
+        #         side,
+        #         summary_top + 4,
+        #         self.WIDTH - side - self.theme.hero_standee_size + 16,
+        #         hero_bottom,
+        #     ),
+        #     text="GROUP ACCESS",
+        #     font=self.watermark_font,
+        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
+        # )
         self._draw_multiline_text(
             draw,
             x=side,
@@ -680,19 +680,19 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             shadow_blur=self.theme.instruction_shadow_blur,
             fill=self.theme.panel_bg,
         )
-        self._draw_section_watermark(
-            draw,
-            rect=(
-                rect[0] + self.GUIDE_SECTION_PADDING_X,
-                rect[1] + 6,
-                rect[2] - self.GUIDE_SECTION_PADDING_X,
-                rect[1] + 70,
-            ),
-            text="ACCESS NOTE",
-            font=self.watermark_font_small,
-            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
-            align="right",
-        )
+        # self._draw_section_watermark(
+        #     draw,
+        #     rect=(
+        #         rect[0] + self.GUIDE_SECTION_PADDING_X,
+        #         rect[1] + 6,
+        #         rect[2] - self.GUIDE_SECTION_PADDING_X,
+        #         rect[1] + 70,
+        #     ),
+        #     text="ACCESS NOTE",
+        #     font=self.watermark_font_small,
+        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
+        #     align="right",
+        # )
         command_rect = (
             rect[0] + self.GUIDE_SECTION_PADDING_X,
             rect[1] + self.GUIDE_SECTION_PADDING_Y,
@@ -763,19 +763,19 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 fill=(255, 243, 228, 191),
                 outline=None,
             )
-            self._draw_section_watermark(
-                draw,
-                rect=(
-                    demo_card_rect[0] + self.GUIDE_SECTION_PADDING_X,
-                    demo_card_rect[1] + 8,
-                    demo_card_rect[2] - self.GUIDE_SECTION_PADDING_X,
-                    demo_card_rect[1] + 78,
-                ),
-                text="DEMONSTRATION FLOW",
-                font=self.watermark_font_small,
-                fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
-                align="right",
-            )
+            # self._draw_section_watermark(
+            #     draw,
+            #     rect=(
+            #         demo_card_rect[0] + self.GUIDE_SECTION_PADDING_X,
+            #         demo_card_rect[1] + 8,
+            #         demo_card_rect[2] - self.GUIDE_SECTION_PADDING_X,
+            #         demo_card_rect[1] + 78,
+            #     ),
+            #     text="DEMONSTRATION FLOW",
+            #     font=self.watermark_font_small,
+            #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
+            #     align="right",
+            # )
             badge_rect = (
                 demo_card_rect[0] + self.GUIDE_SECTION_PADDING_X,
                 demo_card_rect[1] + 28,
@@ -2195,7 +2195,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             tuple(
                 self._wrap_inline_text(
                     group.title,
-                    max_width=max(160, text_width - 32),
+                    max_width=max(160, text_width),
                     font=self.note_font,
                 )
             )
@@ -2207,7 +2207,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             len(lines) * self._line_height_for_font(self.note_font) + 10
             for lines in group_lines
         )
-        group_panel_height = groups_height + 24 if group_lines else 0
+        group_panel_height = groups_height if group_lines else 0
         text_height = title_height + 18 + tip_height + 20 + group_panel_height
         strip_height = max(
             text_height + self.SUPPORT_STRIP_PADDING_Y * 2,
@@ -2266,19 +2266,19 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             radius=12,
             fill=self.theme.accent,
         )
-        self._draw_section_watermark(
-            draw,
-            rect=(
-                layout.rect[0] + self.SUPPORT_STRIP_PADDING_X,
-                layout.rect[1] + 10,
-                layout.rect[2] - self.SUPPORT_STRIP_PADDING_X,
-                layout.rect[1] + 72,
-            ),
-            text="COMMUNITY INTERACTION",
-            font=self.watermark_font_small,
-            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
-            align="right",
-        )
+        # self._draw_section_watermark(
+        #     draw,
+        #     rect=(
+        #         layout.rect[0] + self.SUPPORT_STRIP_PADDING_X,
+        #         layout.rect[1] + 10,
+        #         layout.rect[2] - self.SUPPORT_STRIP_PADDING_X,
+        #         layout.rect[1] + 72,
+        #     ),
+        #     text="COMMUNITY INTERACTION",
+        #     font=self.watermark_font_small,
+        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
+        #     align="right",
+        # )
         text_x = layout.rect[0] + self.SUPPORT_STRIP_PADDING_X
         text_y = layout.rect[1] + self.SUPPORT_STRIP_PADDING_Y
         self._draw_multiline_text(
@@ -2308,37 +2308,11 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             len(layout.tip_lines) * self._line_height_for_font(self.note_font) + 20
         )
         if layout.group_lines:
-            group_panel_right = (
-                layout.qr_rect[0] - 24
-                if layout.qr_rect is not None
-                else layout.rect[2] - self.SUPPORT_STRIP_PADDING_X
-            )
-            group_panel_height = (
-                sum(
-                    len(lines) * self._line_height_for_font(self.note_font) + 10
-                    for lines in layout.group_lines
-                )
-                + 24
-            )
-            group_panel_rect = (
-                text_x,
-                text_y,
-                group_panel_right,
-                text_y + group_panel_height,
-            )
-            self._draw_soft_subcard(
-                image,
-                draw,
-                group_panel_rect,
-                radius=self.SUBCARD_RADIUS,
-                fill=self.theme.panel_soft_bg,
-                outline=None,
-            )
-            group_text_y = group_panel_rect[1] + 12
+            group_text_y = text_y
             for lines in layout.group_lines:
                 self._draw_multiline_text(
                     draw,
-                    x=group_panel_rect[0] + 18,
+                    x=text_x,
                     y=group_text_y,
                     lines=lines,
                     font=self.note_font,
