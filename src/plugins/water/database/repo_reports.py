@@ -235,13 +235,25 @@ class WaterRepositoryReportsMixin:
         group_id: str,
         record_date: int,
         radius: int = 2,
+        live: bool = False,
     ) -> "WaterGroupDailyRankSnapshot | None":
         repo_self = cast("WaterRepository", self)
         previous_date = repo_self._previous_date(record_date)
-        current_rows, previous_rows = await asyncio.gather(
-            repo_self.get_summaries_in_window(record_date, record_date),
-            repo_self.get_summaries_in_window(previous_date, previous_date),
-        )
+        if live:
+            await water_writer.flush_now()
+            current_rows, previous_rows = await asyncio.gather(
+                repo_self._collect_realtime_daily_rows(
+                    scope="global",
+                    group_id=group_id,
+                    record_date=record_date,
+                ),
+                repo_self.get_summaries_in_window(previous_date, previous_date),
+            )
+        else:
+            current_rows, previous_rows = await asyncio.gather(
+                repo_self.get_summaries_in_window(record_date, record_date),
+                repo_self.get_summaries_in_window(previous_date, previous_date),
+            )
         return repo_self._build_group_daily_rank_snapshot_from_rows(
             focus_group_id=group_id,
             record_date=record_date,

@@ -405,7 +405,7 @@ def test_try_acquire_today_report_cooldown_skips_in_debug(
 
 
 @pytest.mark.asyncio
-async def test_build_group_rank_snapshot_uses_global_scope(
+async def test_build_group_rank_snapshot_uses_live_snapshot_for_today_report(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.plugins.water.services import report as report_module
@@ -441,17 +441,66 @@ async def test_build_group_rank_snapshot_uses_global_scope(
         "get_group_daily_rank_snapshot",
         get_rank_mock,
     )
-    monkeypatch.setattr(
-        report_module.group_repo,
-        "get_working_group_ids",
-        group_ids_mock,
-    )
 
-    result = await water_report_service._build_group_rank_snapshot(snapshot)
+    result = await water_report_service._build_group_rank_snapshot(
+        "today_live",
+        snapshot,
+    )
 
     assert result == rank_snapshot
     get_rank_mock.assert_awaited_once_with(
         group_id="20001",
         record_date=20260613,
+        live=True,
     )
     group_ids_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_build_group_rank_snapshot_uses_summary_snapshot_for_settled_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import report as report_module
+
+    snapshot = WaterGroupReportSnapshot(
+        group_id="20001",
+        record_date=20260613,
+        total_msg_count=42,
+        active_user_count=1,
+        active_hours=6,
+        hourly_counts=[0] * 24,
+        previous_total_msg_count=21,
+        previous_active_user_count=1,
+        previous_active_hours=4,
+        previous_hourly_counts=[0] * 24,
+        leaderboard=[],
+    )
+    rank_snapshot = WaterGroupDailyRankSnapshot(
+        focus_group_id="20001",
+        record_date=20260613,
+        total_groups=99,
+        focus_rank=8,
+        focus_trend=2,
+        leaderboard=[],
+        has_hidden_before=True,
+        has_hidden_after=True,
+    )
+    get_rank_mock = AsyncMock(return_value=rank_snapshot)
+
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "get_group_daily_rank_snapshot",
+        get_rank_mock,
+    )
+
+    result = await water_report_service._build_group_rank_snapshot(
+        "yesterday_settled",
+        snapshot,
+    )
+
+    assert result == rank_snapshot
+    get_rank_mock.assert_awaited_once_with(
+        group_id="20001",
+        record_date=20260613,
+        live=False,
+    )

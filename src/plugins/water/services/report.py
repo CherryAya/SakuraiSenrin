@@ -324,7 +324,10 @@ class WaterReportService:
         locale: LocaleCode,
     ) -> WaterGroupReportImageData:
         top_items = await self._build_view_items(snapshot, locale)
-        group_rank_snapshot = await self._build_group_rank_snapshot(snapshot)
+        group_rank_snapshot = await self._build_group_rank_snapshot(
+            window,
+            snapshot,
+        )
         group_rank_items = await self._build_group_rank_items(
             group_rank_snapshot,
         )
@@ -447,11 +450,13 @@ class WaterReportService:
 
     async def _build_group_rank_snapshot(
         self,
+        window: WaterGroupReportWindow,
         snapshot: WaterGroupReportSnapshot,
     ) -> WaterGroupDailyRankSnapshot | None:
         return await water_repo.get_group_daily_rank_snapshot(
             group_id=snapshot.group_id,
             record_date=snapshot.record_date,
+            live=window == "today_live",
         )
 
     async def _build_group_rank_items(
