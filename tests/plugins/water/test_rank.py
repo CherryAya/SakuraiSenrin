@@ -691,6 +691,60 @@ async def test_build_water_group_report_image_truncates_long_group_rank_names() 
     assert img.startswith(b"\x89PNG")
 
 
+@pytest.mark.asyncio
+async def test_group_report_image_truncates_long_group_rank_summary() -> None:
+    avatar = BuildImage.new("RGBA", (128, 128), "#F6B7D2")
+    data = WaterGroupReportImageData(
+        title="测试群 · 今日群报告",
+        badge="测试群",
+        range_text="统计日期: 2026.06.14 · 今日实时快照",
+        compare_text="对比日期: 2026.06.13 · 消息 +30 · 活跃成员 +1",
+        generated_at=1_747_960_000,
+        total_msg_count=420,
+        active_user_count=66,
+        hourly_counts=[(idx % 6) + 1 for idx in range(24)],
+        peak_hour=5,
+        previous_total_msg_count=390,
+        top_items=[
+            WaterRankCardItem(
+                entity_id="10001",
+                display_name="Alice",
+                secondary_label="用户 10001",
+                avatar=avatar,
+                msg_count=120,
+                active_days=15,
+                active_hours=28,
+                hourly_counts=[(idx % 5) + 1 for idx in range(24)],
+                current_rank=1,
+                trend=3,
+            )
+        ],
+        group_rank_title="群聊当日排名",
+        group_rank_summary=(
+            "本群当前排名 #3 / 9999 · 较昨日 +123456789 "
+            "这是一个非常非常非常非常非常长的摘要说明，用来验证右侧摘要在固定宽度里会被安全截断"
+        ),
+        group_rank_items=[
+            WaterGroupDailyRankCardItem(
+                group_id="20001",
+                display_name="测试群",
+                msg_count=120,
+                current_rank=3,
+                trend=1,
+            )
+        ],
+        group_rank_has_hidden_before=False,
+        group_rank_has_hidden_after=False,
+    )
+
+    from src.plugins.water.renderers import build_water_group_report_image
+
+    img = await build_water_group_report_image(data, "zh-CN")
+
+    assert img is not None
+    assert img.startswith(b"\x89PNG")
+
+
 def _build_fake_natural_items(
     subject: str,
     *,

@@ -103,6 +103,8 @@ async def build_water_group_report_image(
     footer_h = int(50 * scale)
     group_name_font = _load_font(int(9 * scale))
     group_name_max_width = right_w - int(228 * scale)
+    group_rank_summary_font = _load_font(int(8 * scale))
+    group_rank_summary_max_width = right_w - int(18 * scale)
 
     user_count = len(data.top_items)
     left_h = (
@@ -469,7 +471,11 @@ async def build_water_group_report_image(
             right_x + right_w - int(18 * scale),
             y + int(52 * scale),
         ),
-        data.group_rank_summary,
+        _truncate_text_to_width_pixels(
+            data.group_rank_summary,
+            font=group_rank_summary_font,
+            max_width=group_rank_summary_max_width,
+        ),
         max_fontsize=int(11 * scale),
         min_fontsize=int(8 * scale),
         fill=accent,
@@ -1042,6 +1048,8 @@ async def build_water_period_rank_image(
         if group_rank_h:
             report_group_name_font = _load_font(int(9 * scale))
             report_group_name_max_width = width - pad * 2 - int(228 * scale)
+            report_group_rank_summary_font = _load_font(int(8 * scale))
+            report_group_rank_summary_max_width = width - pad * 2 - int(36 * scale)
             y += gap
             card.draw_rounded_rectangle(
                 (pad, y, width - pad, y + group_rank_h),
@@ -1078,7 +1086,11 @@ async def build_water_period_rank_image(
                     width - pad,
                     y + int(52 * scale),
                 ),
-                data.report_group_rank_summary,
+                _truncate_text_to_width_pixels(
+                    data.report_group_rank_summary,
+                    font=report_group_rank_summary_font,
+                    max_width=report_group_rank_summary_max_width,
+                ),
                 max_fontsize=int(11 * scale),
                 min_fontsize=int(8 * scale),
                 fill=accent,
