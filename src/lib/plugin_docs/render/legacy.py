@@ -1,4 +1,13 @@
-"""Legacy plugin docs demo renderer."""
+"""Legacy plugin docs demo renderer.
+
+This module is kept only for compatibility/reference purposes.
+The active plugin-docs render pipeline uses:
+- DemoImageRenderer
+- ProgressiveDisclosureRenderer
+- DemoCollectionRenderer
+
+Do not add new runtime or build-time render flows on top of this module.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +32,7 @@ from .demo import DEMO_AVATAR_PATH, DEMO_STANDEE_PATH, _TurnSpec
 
 
 class LegacyDemoImageRenderer:
-    """Render a compact plugin docs demo card."""
+    """Render a compact legacy demo card kept outside the active render pipeline."""
 
     WIDTH = 1280
     OUTER_MARGIN = 40
@@ -962,7 +971,7 @@ class LegacyDemoImageRenderer:
         return ellipsis
 
     def _normalize_demo_text(self, text: str) -> str:
-        return "\n".join(line.rstrip() for line in text.split("\n"))
+        return "\n".join(line.rstrip() for line in text.split("\n")).strip()
 
     def _wrap_inline_text(
         self,
