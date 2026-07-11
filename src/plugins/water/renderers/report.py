@@ -28,6 +28,55 @@ from .models import WaterGroupReportImageData, WaterPeriodRankCardData
 from .rank import WaterRankRenderer
 
 FALLBACK_FONT_PATH = MAPLE_FONT_PATH
+FontLike = ImageFont.FreeTypeFont | ImageFont.ImageFont
+
+
+def _load_font(size: int) -> FontLike:
+    try:
+        return ImageFont.truetype(FALLBACK_FONT_PATH, size)
+    except OSError:
+        return ImageFont.load_default()
+
+
+def _pixel_text_width(text: str, font: FontLike) -> int:
+    if not text:
+        return 0
+    bbox = font.getbbox(text)
+    return max(0, int(bbox[2] - bbox[0]))
+
+
+def _truncate_text_to_width_pixels(
+    text: str,
+    *,
+    font: FontLike,
+    max_width: int,
+    ellipsis: str = "...",
+) -> str:
+    normalized = text.replace("\n", " ").replace("\r", "").replace("\t", " ").strip()
+    if not normalized:
+        return ""
+    if _pixel_text_width(normalized, font) <= max_width:
+        return normalized
+
+    ellipsis_width = _pixel_text_width(ellipsis, font)
+    if ellipsis_width >= max_width:
+        return ellipsis
+
+    fitted: list[str] = []
+    current_width = 0
+    for char in normalized:
+        char_width = _pixel_text_width(char, font)
+        if fitted and current_width + char_width + ellipsis_width > max_width:
+            break
+        if not fitted and char_width + ellipsis_width > max_width:
+            return ellipsis
+        fitted.append(char)
+        current_width += char_width
+
+    candidate = "".join(fitted).rstrip()
+    while candidate and _pixel_text_width(f"{candidate}{ellipsis}", font) > max_width:
+        candidate = candidate[:-1].rstrip()
+    return f"{candidate}{ellipsis}" if candidate else ellipsis
 
 
 async def build_water_group_report_image(
@@ -52,6 +101,8 @@ async def build_water_group_report_image(
     group_rank_row_gap = int(6 * scale)
     histogram_h = int(182 * scale)
     footer_h = int(50 * scale)
+    group_name_font = _load_font(int(9 * scale))
+    group_name_max_width = right_w - int(228 * scale)
 
     user_count = len(data.top_items)
     left_h = (
@@ -429,6 +480,11 @@ async def build_water_group_report_image(
     if data.group_rank_has_hidden_before:
         pass
     for item in data.group_rank_items:
+        safe_name = _truncate_text_to_width_pixels(
+            item.display_name,
+            font=group_name_font,
+            max_width=group_name_max_width,
+        )
         card.draw_rounded_rectangle(
             (
                 right_x + int(14 * scale),
@@ -461,7 +517,7 @@ async def build_water_group_report_image(
                 right_x + right_w - int(136 * scale),
                 rank_y + group_rank_row_h,
             ),
-            item.display_name,
+            safe_name,
             max_fontsize=int(13 * scale),
             min_fontsize=int(9 * scale),
             fill=deep,
@@ -984,6 +1040,8 @@ async def build_water_period_rank_image(
 
         y += board_h
         if group_rank_h:
+            report_group_name_font = _load_font(int(9 * scale))
+            report_group_name_max_width = width - pad * 2 - int(228 * scale)
             y += gap
             card.draw_rounded_rectangle(
                 (pad, y, width - pad, y + group_rank_h),
@@ -1046,6 +1104,11 @@ async def build_water_period_rank_image(
                 )
                 rank_y += group_rank_row_h + group_rank_row_gap
             for item in group_rank_items:
+                safe_name = _truncate_text_to_width_pixels(
+                    item.display_name,
+                    font=report_group_name_font,
+                    max_width=report_group_name_max_width,
+                )
                 card.draw_rounded_rectangle(
                     (
                         pad + int(14 * scale),
@@ -1078,7 +1141,7 @@ async def build_water_period_rank_image(
                         width - pad - int(136 * scale),
                         rank_y + group_rank_row_h,
                     ),
-                    item.display_name,
+                    safe_name,
                     max_fontsize=int(13 * scale),
                     min_fontsize=int(9 * scale),
                     fill=deep,
