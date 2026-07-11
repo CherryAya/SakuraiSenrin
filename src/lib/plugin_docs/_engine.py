@@ -1140,7 +1140,12 @@ def render_demo_png(
     *,
     generated_at: datetime | None = None,
 ) -> bytes:
-    return DemoImageRenderer(impression_color=bundle.impression_color).render(
+    generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
+        microsecond=0
+    )
+    demo_result = DemoImageRenderer(
+        impression_color=bundle.impression_color
+    ).render_with_audit(
         plugin_title=bundle.title,
         feature_title=feature.title,
         feature_summary=feature.summary,
@@ -1155,7 +1160,23 @@ def render_demo_png(
         plugin_author=bundle.author,
         turns=feature.demo_turns,
         locale="zh-CN",
-        generated_at=generated_at,
+        generated_at=generated,
+    )
+    return ProgressiveDisclosureRenderer(
+        impression_color=bundle.impression_color
+    ).compose_with_support_strip(
+        demo_result.image,
+        locale="zh-CN",
+        footer_left_text=build_trace_footer_left_text(
+            plugin_title=bundle.title,
+            feature_title=feature.title,
+            plugin_version=bundle.version,
+            plugin_author=bundle.author,
+        ),
+        footer_right_text=(
+            f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
+        ),
+        trim_source_footer=True,
     )
 
 

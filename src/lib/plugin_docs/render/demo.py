@@ -895,18 +895,21 @@ class DemoImageRenderer:
             fill=self.theme.strong,
             line_height=self._line_height_for_font(self.kicker_font),
         )
-        self._draw_section_watermark(
-            draw,
-            rect=(
-                layout.title_rect[0],
-                layout.title_rect[3] + 6,
-                min(self.WIDTH - self.theme.hero_side_padding, layout.standee_rect[0]),
-                layout.summary_rect[3] + 8,
-            ),
-            text="FEATURE GUIDE",
-            font=self.watermark_font,
-            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
-        )
+        # self._draw_section_watermark(
+        #     draw,
+        #     rect=(
+        #         layout.title_rect[0],
+        #         layout.title_rect[3] + 6,
+        #         min(
+        #             self.WIDTH - self.theme.hero_side_padding,
+        #             layout.standee_rect[0],
+        #         ),
+        #         layout.summary_rect[3] + 8,
+        #     ),
+        #     text="FEATURE GUIDE",
+        #     font=self.watermark_font,
+        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
+        # )
         self._draw_multiline_text(
             draw,
             x=layout.title_rect[0],
@@ -1043,38 +1046,30 @@ class DemoImageRenderer:
             draw,
             rect=capsule_rect,
             text="看看它是怎么工作的",
-            fill=(255, 243, 228, 224),
-            outline=self._rgba(self.theme.accent, 52),
+            fill=(255, 243, 228, 191),
+            outline=None,
         )
-        self._draw_section_watermark(
-            draw,
-            rect=(
-                layout.demo_rect[0] + 48,
-                layout.demo_rect[1] - 18,
-                layout.demo_rect[2] - 48,
-                layout.demo_rect[1] + 88,
-            ),
-            text="DEMONSTRATION FLOW",
-            font=self.watermark_font_small,
-            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
-            align="right",
-        )
-        self._draw_outlined_panel(
-            image,
-            draw,
-            rect=layout.demo_rect,
-            radius=34,
-            fill="#FFFFFF",
-            outline=self._rgba(self.theme.accent, 62),
-            shadow_offset_y=24,
-            shadow_blur=44,
-        )
+        # self._draw_section_watermark(
+        #     draw,
+        #     rect=(
+        #         layout.demo_rect[0] + 48,
+        #         layout.demo_rect[1] - 18,
+        #         layout.demo_rect[2] - 48,
+        #         layout.demo_rect[1] + 88,
+        #     ),
+        #     text="DEMONSTRATION FLOW",
+        #     font=self.watermark_font_small,
+        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
+        #     align="right",
+        # )
         for band in layout.demo_section_bands:
-            self._draw_panel_outline(
+            self._draw_soft_band_panel(
+                image,
                 draw,
                 rect=band.rect,
                 radius=34,
-                outline=self._rgba(self.theme.accent, 62),
+                fill="#FFFFFF",
+                outline=self._rgba(self.theme.accent, 34),
             )
             badge_rect = (
                 band.tag_rect[0],
@@ -1381,6 +1376,33 @@ class DemoImageRenderer:
         width: int = 2,
     ) -> None:
         draw.rounded_rectangle(rect, radius=radius, outline=outline, width=width)
+
+    def _draw_soft_band_panel(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        rect: tuple[int, int, int, int],
+        radius: int,
+        fill: str,
+        outline: tuple[int, int, int, int],
+    ) -> None:
+        self._draw_shadowed_rect(
+            image,
+            rect=rect,
+            radius=radius,
+            shadow_color=self._rgba(self.theme.accent, 10),
+            shadow_offset_y=6,
+            shadow_blur=20,
+            fill=fill,
+        )
+        self._draw_panel_outline(
+            draw,
+            rect=rect,
+            radius=radius,
+            outline=outline,
+            width=1,
+        )
 
     def _draw_outlined_panel(
         self,
