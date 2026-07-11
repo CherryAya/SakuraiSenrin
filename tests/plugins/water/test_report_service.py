@@ -374,6 +374,13 @@ async def test_build_card_data_includes_group_rank_block(
     assert data.group_rank_items[0].avatar is not None
     assert data.group_rank_items[0].is_focus_group is True
     assert data.group_rank_items[1].is_focus_group is False
+    assert data.previous_hourly_counts == [0] * 24
+    assert data.right_panel_layout_tier == "compact"
+    assert data.group_rank_share_ratio == pytest.approx(42 / 81)
+    assert data.group_rank_total_msg_count == 81
+    assert data.group_rank_focus_msg_count == 42
+    assert data.group_rank_prev_gap_msg_count is None
+    assert data.group_rank_next_gap_msg_count == 3
     assert [(item.label, item.value) for item in data.group_rank_insights] == [
         ("本群占比", "51.9%"),
         ("峰值时段", "02:00"),

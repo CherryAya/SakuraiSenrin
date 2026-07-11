@@ -9,6 +9,8 @@ from pil_utils import BuildImage
 
 from src.lib.i18n.runtime import tr, tr_template
 
+from .report_layout import WaterReportLayoutTier
+
 
 @dataclass
 class WaterInfo:
@@ -149,6 +151,13 @@ class WaterGroupReportImageData:
     group_rank_title: str
     group_rank_summary: str
     group_rank_items: list[WaterGroupDailyRankCardItem]
+    previous_hourly_counts: list[int] = field(default_factory=list)
     group_rank_insights: list[WaterReportInsightItem] = field(default_factory=list)
+    right_panel_layout_tier: WaterReportLayoutTier = "compact"
+    group_rank_share_ratio: float = 0.0
+    group_rank_total_msg_count: int = 0
+    group_rank_focus_msg_count: int = 0
+    group_rank_prev_gap_msg_count: int | None = None
+    group_rank_next_gap_msg_count: int | None = None
     group_rank_has_hidden_before: bool = False
     group_rank_has_hidden_after: bool = False

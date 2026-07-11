@@ -298,3 +298,121 @@ def draw_hourly_histogram(
                 halign="center",
                 font_families=[SYS_FONT_NAME],
             )
+
+
+def draw_donut_chart(
+    card: BuildImage,
+    *,
+    x: int,
+    y: int,
+    size: int,
+    ratio: float,
+    primary_color: str,
+    secondary_color: str,
+    inner_color: str,
+    ring_width: int,
+) -> None:
+    clamped_ratio = max(0.0, min(1.0, ratio))
+    bbox = (x, y, x + size, y + size)
+    card.draw.ellipse(bbox, fill=secondary_color)
+    if clamped_ratio > 0:
+        card.draw.pieslice(
+            bbox,
+            start=-90,
+            end=-90 + int(360 * clamped_ratio),
+            fill=primary_color,
+        )
+    inner_inset = max(4, ring_width)
+    inner_bbox = (
+        x + inner_inset,
+        y + inner_inset,
+        x + size - inner_inset,
+        y + size - inner_inset,
+    )
+    card.draw.ellipse(inner_bbox, fill=inner_color)
+
+
+def draw_dual_hourly_trend(
+    card: BuildImage,
+    *,
+    x: int,
+    y: int,
+    w: int,
+    h: int,
+    current_hourly_counts: list[int],
+    previous_hourly_counts: list[int],
+    current_color: str,
+    previous_color: str,
+    axis_color: str,
+    label_color: str,
+    scale: float,
+) -> None:
+    current_hourly = safe_hourly_counts(current_hourly_counts)
+    previous_hourly = safe_hourly_counts(previous_hourly_counts)
+    chart_h = h - int(20 * scale)
+    baseline_y = y + chart_h
+    max_count = max([*current_hourly, *previous_hourly]) or 1
+
+    card.draw.line(
+        (x, baseline_y, x + w, baseline_y),
+        fill=axis_color,
+        width=max(1, int(1 * scale)),
+    )
+    grid_step = max(1, int(chart_h / 3))
+    for idx in range(1, 3):
+        grid_y = baseline_y - idx * grid_step
+        card.draw.line(
+            (x, grid_y, x + w, grid_y),
+            fill=mix_hex(axis_color, WATER_THEME.white, 0.25),
+            width=1,
+        )
+
+    def _points(hourly: list[int]) -> list[tuple[int, int]]:
+        points: list[tuple[int, int]] = []
+        for hour, count in enumerate(hourly):
+            px = x + int((w - 1) * hour / 23) if hour < 23 else x + w - 1
+            py = baseline_y - int(
+                (count / max_count) * max(2, chart_h - int(8 * scale))
+            )
+            points.append((px, py))
+        return points
+
+    previous_points = _points(previous_hourly)
+    current_points = _points(current_hourly)
+    card.draw.line(
+        previous_points,
+        fill=previous_color,
+        width=max(2, int(2 * scale)),
+        joint="curve",
+    )
+    card.draw.line(
+        current_points,
+        fill=current_color,
+        width=max(2, int(3 * scale)),
+        joint="curve",
+    )
+    dot_r = max(2, int(2 * scale))
+    for points, fill in (
+        (previous_points, previous_color),
+        (current_points, current_color),
+    ):
+        for hour in (0, 6, 12, 18, 23):
+            px, py = points[hour]
+            card.draw.ellipse(
+                (px - dot_r, py - dot_r, px + dot_r, py + dot_r),
+                fill=fill,
+            )
+            card.draw_text(
+                (
+                    px - int(8 * scale),
+                    baseline_y + int(4 * scale),
+                    px + int(8 * scale),
+                    y + h,
+                ),
+                f"{hour:02d}",
+                max_fontsize=int(8 * scale),
+                min_fontsize=int(6 * scale),
+                fill=label_color,
+                halign="center",
+                font_families=[SYS_FONT_NAME],
+            )

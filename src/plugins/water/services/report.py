@@ -36,8 +36,9 @@ from src.plugins.water.renderers.models import (
     WaterRankCardItem,
     WaterReportInsightItem,
 )
-from src.plugins.water.renderers.report import (
-    build_water_group_report_image,
+from src.plugins.water.renderers.report import build_water_group_report_image
+from src.plugins.water.renderers.report_layout import (
+    pick_group_report_right_panel_tier,
 )
 from src.plugins.water.services.rank import water_rank_service
 from src.repositories import group_repo
@@ -333,9 +334,23 @@ class WaterReportService:
         group_rank_items = await self._build_group_rank_items(
             group_rank_snapshot,
         )
-        group_rank_insights = self._build_group_rank_insights(
+        group_rank_metrics = self._build_group_rank_metrics(
             group_rank_snapshot,
+            snapshot,
+        )
+        group_rank_insights = self._build_group_rank_insights(
+            group_rank_metrics,
             locale,
+        )
+        group_rank_has_hidden_before = (
+            group_rank_snapshot.has_hidden_before
+            if group_rank_snapshot is not None
+            else False
+        )
+        group_rank_has_hidden_after = (
+            group_rank_snapshot.has_hidden_after
+            if group_rank_snapshot is not None
+            else False
         )
         title = (
             tr(locale, "water.report.title.today")
@@ -374,6 +389,7 @@ class WaterReportService:
             total_msg_count=snapshot.total_msg_count,
             active_user_count=snapshot.active_user_count,
             hourly_counts=snapshot.hourly_counts,
+            previous_hourly_counts=snapshot.previous_hourly_counts,
             peak_hour=snapshot.peak_hour,
             previous_total_msg_count=snapshot.previous_total_msg_count,
             top_items=top_items,
@@ -384,16 +400,28 @@ class WaterReportService:
             ),
             group_rank_items=group_rank_items or [],
             group_rank_insights=group_rank_insights,
-            group_rank_has_hidden_before=(
-                group_rank_snapshot.has_hidden_before
-                if group_rank_snapshot is not None
-                else False
+            right_panel_layout_tier=pick_group_report_right_panel_tier(
+                user_count=len(top_items),
+                rank_item_count=len(group_rank_items or []),
+                has_hidden_before=group_rank_has_hidden_before,
+                has_hidden_after=group_rank_has_hidden_after,
+                has_trend_history=bool(snapshot.previous_hourly_counts),
             ),
-            group_rank_has_hidden_after=(
-                group_rank_snapshot.has_hidden_after
-                if group_rank_snapshot is not None
-                else False
+            group_rank_share_ratio=float(group_rank_metrics["share_ratio"] or 0.0),
+            group_rank_total_msg_count=int(group_rank_metrics["total_msg_count"] or 0),
+            group_rank_focus_msg_count=int(group_rank_metrics["focus_msg_count"] or 0),
+            group_rank_prev_gap_msg_count=(
+                int(group_rank_metrics["prev_gap_msg_count"])
+                if group_rank_metrics["prev_gap_msg_count"] is not None
+                else None
             ),
+            group_rank_next_gap_msg_count=(
+                int(group_rank_metrics["next_gap_msg_count"])
+                if group_rank_metrics["next_gap_msg_count"] is not None
+                else None
+            ),
+            group_rank_has_hidden_before=group_rank_has_hidden_before,
+            group_rank_has_hidden_after=group_rank_has_hidden_after,
         )
 
     async def _build_view_items(
@@ -515,13 +543,21 @@ class WaterReportService:
             trend=trend_text,
         )
 
-    def _build_group_rank_insights(
+    def _build_group_rank_metrics(
         self,
         snapshot: WaterGroupDailyRankSnapshot | None,
-        locale: LocaleCode,
-    ) -> list[WaterReportInsightItem]:
+        report_snapshot: WaterGroupReportSnapshot,
+    ) -> dict[str, int | float | None]:
+        empty_metrics: dict[str, int | float | None] = {
+            "share_ratio": 0.0,
+            "total_msg_count": 0,
+            "focus_msg_count": 0,
+            "prev_gap_msg_count": None,
+            "next_gap_msg_count": None,
+            "peak_hour": report_snapshot.peak_hour,
+        }
         if snapshot is None or not snapshot.leaderboard:
-            return []
+            return empty_metrics
 
         focus_index = next(
             (
@@ -532,13 +568,9 @@ class WaterReportService:
             None,
         )
         if focus_index is None:
-            return []
+            return empty_metrics
 
         focus_item = snapshot.leaderboard[focus_index]
-        peak_hour = max(
-            range(len(focus_item.hourly_counts)),
-            key=lambda hour: focus_item.hourly_counts[hour],
-        )
         previous_item = (
             snapshot.leaderboard[focus_index - 1] if focus_index > 0 else None
         )
@@ -547,16 +579,40 @@ class WaterReportService:
             if focus_index + 1 < len(snapshot.leaderboard)
             else None
         )
-        share = (
-            focus_item.msg_count / snapshot.total_msg_count
-            if snapshot.total_msg_count > 0
-            else 0.0
-        )
+        return {
+            "share_ratio": (
+                focus_item.msg_count / snapshot.total_msg_count
+                if snapshot.total_msg_count > 0
+                else 0.0
+            ),
+            "total_msg_count": snapshot.total_msg_count,
+            "focus_msg_count": focus_item.msg_count,
+            "prev_gap_msg_count": (
+                previous_item.msg_count - focus_item.msg_count
+                if previous_item is not None
+                else None
+            ),
+            "next_gap_msg_count": (
+                focus_item.msg_count - next_item.msg_count
+                if next_item is not None
+                else None
+            ),
+            "peak_hour": report_snapshot.peak_hour,
+        }
 
+    def _build_group_rank_insights(
+        self,
+        metrics: dict[str, int | float | None],
+        locale: LocaleCode,
+    ) -> list[WaterReportInsightItem]:
+        share_ratio = float(metrics["share_ratio"] or 0.0)
+        peak_hour = int(metrics["peak_hour"] or 0)
+        prev_gap_msg_count = metrics["prev_gap_msg_count"]
+        next_gap_msg_count = metrics["next_gap_msg_count"]
         return [
             WaterReportInsightItem(
                 label=tr(locale, "water.report.group_rank.insight.share"),
-                value=f"{share * 100:.1f}%",
+                value=f"{share_ratio * 100:.1f}%",
             ),
             WaterReportInsightItem(
                 label=tr(locale, "water.report.group_rank.insight.peak_hour"),
@@ -568,9 +624,9 @@ class WaterReportService:
                     tr(
                         locale,
                         "water.report.group_rank.count",
-                        count=previous_item.msg_count - focus_item.msg_count,
+                        count=int(prev_gap_msg_count),
                     )
-                    if previous_item is not None
+                    if prev_gap_msg_count is not None
                     else tr(locale, "water.report.group_rank.insight.top")
                 ),
             ),
@@ -580,9 +636,9 @@ class WaterReportService:
                     tr(
                         locale,
                         "water.report.group_rank.count",
-                        count=focus_item.msg_count - next_item.msg_count,
+                        count=int(next_gap_msg_count),
                     )
-                    if next_item is not None
+                    if next_gap_msg_count is not None
                     else tr(locale, "water.report.group_rank.insight.bottom")
                 ),
             ),
