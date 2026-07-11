@@ -953,30 +953,31 @@ async def build_water_group_report_image(
             halign="left",
             font_families=[WATER_THEME.white],
         )
+        summary_right = left_x + int(300 * scale)
         card.draw_text(
-                (
-                    text_x,
-                    row_y + int(52 * scale),
-                    left_x + int(300 * scale),
-                    row_y + int(74 * scale),
-                ),
-                tr(locale, "water.report.board.summary", msg_count=item.msg_count),
-                max_fontsize=int(11 * scale),
-                min_fontsize=int(8 * scale),
+            (
+                text_x,
+                row_y + int(52 * scale),
+                summary_right,
+                row_y + int(74 * scale),
+            ),
+            tr(locale, "water.report.board.summary", msg_count=item.msg_count),
+            max_fontsize=int(11 * scale),
+            min_fontsize=int(8 * scale),
             fill=accent,
             halign="left",
             font_families=[WATER_THEME.white],
         )
         card.draw_text(
-                (
-                    text_x,
-                    row_y + int(78 * scale),
-                    left_x + int(300 * scale),
-                    row_y + int(96 * scale),
-                ),
-                tr(
-                    locale,
-                    "water.report.board.active_hours",
+            (
+                text_x,
+                row_y + int(78 * scale),
+                summary_right,
+                row_y + int(96 * scale),
+            ),
+            tr(
+                locale,
+                "water.report.board.active_hours",
                 active_hours=item.active_hours,
             ),
             max_fontsize=int(10 * scale),
@@ -986,18 +987,25 @@ async def build_water_group_report_image(
             font_families=[WATER_THEME.white],
         )
         tile_chart = tile_renderer._generate_tile_chart(item.hourly_counts)
-        tile_w = int(tile_chart.width * 0.72)
-        tile_h = int(tile_chart.height * 0.72)
-        resized_tile = tile_chart.resize((tile_w, tile_h))
-        tile_region_left = left_x + int(320 * scale)
+        tile_region_left = summary_right + int(18 * scale)
         tile_region_right = row_inner_right - int(18 * scale)
         tile_region_top = row_y + int(40 * scale)
         tile_region_bottom = row_y + user_card_h - int(12 * scale)
+        tile_region_w = max(1, tile_region_right - tile_region_left)
+        tile_region_h = max(1, tile_region_bottom - tile_region_top)
+        tile_scale = min(
+            0.72,
+            tile_region_w / tile_chart.width,
+            tile_region_h / tile_chart.height,
+        )
+        tile_w = max(1, int(tile_chart.width * tile_scale))
+        tile_h = max(1, int(tile_chart.height * tile_scale))
+        resized_tile = tile_chart.resize((tile_w, tile_h))
         tile_x = tile_region_left + max(
-            0, (tile_region_right - tile_region_left - tile_w) // 2
+            0, (tile_region_w - tile_w) // 2
         )
         tile_y = tile_region_top + max(
-            0, (tile_region_bottom - tile_region_top - tile_h) // 2
+            0, (tile_region_h - tile_h) // 2
         )
         card.paste(resized_tile, (tile_x, tile_y), alpha=True)
         card.draw_rounded_rectangle(
