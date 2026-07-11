@@ -55,11 +55,14 @@ from src.lib.plugin_docs import (
     render_feature_deep_dive,
     render_help_dashboard,
     render_plugin_guide,
+    render_plugin_summary,
     render_static_entry,
     resolve_help_entry_shape,
     should_prefer_collection_demo,
     static_signature,
     static_target_key,
+    summary_signature,
+    summary_target_key,
 )
 from src.lib.plugin_docs import (
     DemoCollectionRenderer as _DemoCollectionRenderer,
@@ -99,7 +102,7 @@ class DeclaredDocContext:
     plugin_name: str = ""
 
 
-type HelpAssetKind = Literal["dashboard", "guide", "static", "feature"]
+type HelpAssetKind = Literal["dashboard", "guide", "summary", "static", "feature"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -301,7 +304,7 @@ def _declared_doc_context_for_path(path: Path) -> DeclaredDocContext | None:
         )
         return DeclaredDocContext(
             docs_meta=docs_meta,
-            permission=Permission.NORMAL,
+            permission=Permission.SUPERUSER,
             module_name="src.hooks.processor",
             plugin_name="processor",
         )
@@ -316,7 +319,7 @@ def _declared_doc_context_for_path(path: Path) -> DeclaredDocContext | None:
         )
         return DeclaredDocContext(
             docs_meta=docs_meta,
-            permission=Permission.NORMAL,
+            permission=Permission.SUPERUSER,
             module_name="src.hooks.plugin",
             plugin_name="plugin",
         )
@@ -356,8 +359,6 @@ def _declared_doc_context_for_path(path: Path) -> DeclaredDocContext | None:
             if source_vars.get(source_var) != target:
                 continue
             slug_match = re.search(r'slug\s*=\s*"([^"]+)"', block)
-            if not slug_match:
-                return None
             parent_match = re.search(r'parent_slug\s*=\s*"([^"]+)"', block)
             category_match = re.search(r'category\s*=\s*"([^"]+)"', block)
             order_match = re.search(r"order\s*=\s*(\d+)", block)
@@ -381,7 +382,7 @@ def _declared_doc_context_for_path(path: Path) -> DeclaredDocContext | None:
                 category=category_match.group(1) if category_match else "general",
                 order=int(order_match.group(1)) if order_match else 100,
                 source=path,
-                slug=slug_match.group(1),
+                slug=slug_match.group(1) if slug_match else None,
                 parent_slug=parent_match.group(1) if parent_match else None,
                 kind=kind,
             )
@@ -709,6 +710,15 @@ def _render_help_asset_plan(plan: HelpAssetRenderPlan) -> HelpAssetRenderResult:
             generated_at=plan.generated_at,
             prefer_static=False,
         )
+    elif plan.kind == "summary":
+        assert plan.node is not None
+        data = render_plugin_summary(
+            plan.node,
+            locale="zh-CN",
+            generated_at=plan.generated_at,
+            actor_permission=plan.actor_permission,
+            prefer_static=False,
+        )
     elif plan.kind == "static":
         assert plan.node is not None
         data = render_static_entry(
@@ -934,6 +944,20 @@ def build_help_assets(
                         node=context.node,
                     )
                 )
+                summary_sig = summary_signature(context.node)
+                plans.append(
+                    HelpAssetRenderPlan(
+                        kind="summary",
+                        render_key=f"summary:{summary_sig}",
+                        signature=summary_sig,
+                        profile=profile_name,
+                        source_path=source,
+                        target_key=summary_target_key(context.node),
+                        actor_permission=permission,
+                        generated_at=build_time,
+                        node=context.node,
+                    )
+                )
             elif shape == "static_entry":
                 signature = static_signature(context.node)
                 plans.append(
@@ -1004,6 +1028,16 @@ def build_help_assets(
             if filename is None:
                 filename = _hash_filename(
                     f"{plan.source_path.stem}-guide{suffix}",
+                    plan.signature,
+                )
+                signature_to_filename[plan.signature] = filename
+            path = plan.source_path.parent / "demos" / filename
+            _output_static_asset(path, result.data)
+        elif plan.kind == "summary":
+            filename = signature_to_filename.get(plan.signature)
+            if filename is None:
+                filename = _hash_filename(
+                    f"{plan.source_path.stem}-summary{suffix}",
                     plan.signature,
                 )
                 signature_to_filename[plan.signature] = filename

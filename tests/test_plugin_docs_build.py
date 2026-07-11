@@ -1251,6 +1251,7 @@ __plugin_meta__ = create_plugin_metadata(
             order=10,
             source=DOCS_SOURCE,
             slug="help",
+            kind="overview",
         ),
     },
 )
@@ -1357,6 +1358,70 @@ __plugin_meta__ = create_plugin_metadata(
     assert context.node.plugin_name == "community_sample"
 
 
+def test_load_doc_context_preserves_declared_permission_without_explicit_slug(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    plugin_root = tmp_path / "src" / "plugins" / "sentry"
+    docs_root = plugin_root / "docs"
+    docs_root.mkdir(parents=True)
+    (docs_root / "README.MD").write_text(
+        """
+# Sentry 监控
+
+## 概览
+用于测试未显式声明 slug 的 docs metadata。
+
+## 权限与触发
+- 触发方式: 被动触发
+- 权限: 超级用户
+""".strip(),
+        encoding="utf-8",
+    )
+    (plugin_root / "__init__.py").write_text(
+        """
+from pathlib import Path
+
+from src.database.core.consts import Permission
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
+
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+
+__plugin_meta__ = create_plugin_metadata(
+    name="Sentry 监控",
+    description="desc",
+    extra={
+        "permission": Permission.SUPERUSER,
+        "docs": create_docs_meta(
+            visible=True,
+            category="system",
+            order=30,
+            source=DOCS_SOURCE,
+        ),
+    },
+)
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    plugin_docs_script._reset_caches()
+
+    context = plugin_docs_script.load_doc_context(docs_root / "README.MD")
+
+    assert context.node.slug == "sentry"
+    assert context.node.category == "system"
+    assert context.node.permission == Permission.SUPERUSER
+    assert context.node.module_name == "src.plugins.sentry"
+    assert context.node.plugin_name == "sentry"
+
+
 def test_build_help_assets_keeps_distinct_dashboard_variants_per_permission(
     tmp_path: Path,
     monkeypatch: Any,
@@ -1397,6 +1462,7 @@ __plugin_meta__ = create_plugin_metadata(
             order=10,
             source=DOCS_SOURCE,
             slug="help",
+            kind="overview",
         ),
     },
 )
@@ -1465,6 +1531,115 @@ __plugin_meta__ = create_plugin_metadata(
     assert dashboard_variants["superuser"] != dashboard_variants["normal"]
 
 
+def test_build_help_assets_excludes_superuser_only_nodes_from_normal_dashboard(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    help_root = tmp_path / "src" / "plugins" / "help" / "docs"
+    help_root.mkdir(parents=True)
+    (help_root / "README.MD").write_text(
+        """
+# 帮助中心
+
+## 概览
+帮助首页。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "plugins" / "help" / "__init__.py").write_text(
+        """
+from pathlib import Path
+
+from src.database.core.consts import Permission
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
+
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+
+__plugin_meta__ = create_plugin_metadata(
+    name="帮助中心",
+    description="desc",
+    extra={
+        "permission": Permission.NORMAL,
+        "docs": create_docs_meta(
+            visible=True,
+            category="system",
+            order=10,
+            source=DOCS_SOURCE,
+            slug="help",
+            kind="overview",
+        ),
+    },
+)
+""".strip(),
+        encoding="utf-8",
+    )
+
+    sentry_root = tmp_path / "src" / "plugins" / "sentry" / "docs"
+    sentry_root.mkdir(parents=True)
+    (sentry_root / "README.MD").write_text(
+        """
+# Sentry 监控
+
+## 概览
+仅超级用户可见。
+
+## 权限与触发
+- 触发方式: 被动触发
+- 权限: 超级用户
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "plugins" / "sentry" / "__init__.py").write_text(
+        """
+from pathlib import Path
+
+from src.database.core.consts import Permission
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
+
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+
+__plugin_meta__ = create_plugin_metadata(
+    name="Sentry 监控",
+    description="desc",
+    extra={
+        "permission": Permission.SUPERUSER,
+        "docs": create_docs_meta(
+            visible=True,
+            category="system",
+            order=30,
+            source=DOCS_SOURCE,
+        ),
+    },
+)
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    plugin_docs_script._reset_caches()
+
+    normal_sections = plugin_docs_module.build_help_home_sections(
+        plugin_docs_script._build_tree(plugin_docs_script._all_doc_contexts()),
+        locale="zh-CN",
+        actor_permission=Permission.NORMAL,
+    )
+    normal_slugs = {node.slug for section in normal_sections for node in section.nodes}
+
+    assert "help" in normal_slugs
+    assert "sentry" not in normal_slugs
+
+
 def test_build_help_assets_reuses_feature_filename_when_signatures_match(
     tmp_path: Path,
     monkeypatch: Any,
@@ -1521,6 +1696,7 @@ __plugin_meta__ = create_plugin_metadata(
             order=10,
             source=DOCS_SOURCE,
             slug="help",
+            kind="overview",
         ),
     },
 )
@@ -1540,11 +1716,14 @@ __plugin_meta__ = create_plugin_metadata(
 
     manifest = json.loads((help_root / "demos" / "manifest.json").read_text("utf-8"))
     feature_variants = manifest["targets"]["feature:help:main"]
+    summary_variants = manifest["targets"]["summary:help"]
 
     assert feature_variants["normal"] == "help-main.webp"
     assert feature_variants["group_admin"] == "help-main.webp"
     assert feature_variants["group_owner"] == "help-main.webp"
     assert feature_variants["superuser"] == "help-main.webp"
+    assert summary_variants["normal"].startswith("README-summary")
+    assert summary_variants["superuser"] == summary_variants["normal"]
 
 
 def test_render_help_dashboard_prefers_manifest_backed_help_asset_from_explicit_source(

@@ -688,7 +688,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 rect[2] - self.GUIDE_SECTION_PADDING_X,
                 rect[1] + 70,
             ),
-                text="ACCESS NOTE",
+            text="ACCESS NOTE",
             font=self.watermark_font_small,
             fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
             align="right",
@@ -736,16 +736,9 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             )
             capsule_rect = (
                 demo_card_rect[0] + (width - capsule_width) // 2,
-                demo_card_rect[1] - self.CAPSULE_HEIGHT // 2,
+                demo_card_rect[1] - self.CAPSULE_HEIGHT - 10,
                 demo_card_rect[0] + (width - capsule_width) // 2 + capsule_width,
-                demo_card_rect[1] - self.CAPSULE_HEIGHT // 2 + self.CAPSULE_HEIGHT,
-            )
-            self._draw_capsule_title(
-                draw,
-                rect=capsule_rect,
-                text="看看它是怎么工作的",
-                fill=(255, 243, 228, 224),
-                outline=self._rgba(self.theme.accent, 52),
+                demo_card_rect[1] - 10,
             )
             self._draw_shadowed_rect(
                 image,
@@ -755,6 +748,19 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 shadow_offset_y=self.theme.instruction_shadow_offset_y,
                 shadow_blur=self.theme.instruction_shadow_blur,
                 fill=self.theme.panel_bg,
+            )
+            draw.rounded_rectangle(
+                demo_card_rect,
+                radius=self.GUIDE_SECTION_RADIUS,
+                outline=self._rgba(self.theme.accent, 62),
+                width=2,
+            )
+            self._draw_capsule_title(
+                draw,
+                rect=capsule_rect,
+                text="看看它是怎么工作的",
+                fill=(255, 243, 228, 232),
+                outline=self._rgba(self.theme.accent, 60),
             )
             self._draw_section_watermark(
                 draw,

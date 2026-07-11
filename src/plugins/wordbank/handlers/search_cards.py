@@ -335,7 +335,15 @@ class SearchResultCardRenderer:
                 fill=self._mix_color(self.ACCENT_SOFT, self.ACCENT, 0.18),
             )
             draw.text(
-                (chip_x + CARD_TAG_PADDING_X, chip_y + 4),
+                (
+                    chip_x + CARD_TAG_PADDING_X,
+                    chip_y
+                    + max(
+                        2,
+                        int((CARD_CHIP_HEIGHT - line_height(self.summary_font)) / 2)
+                        - 1,
+                    ),
+                ),
                 chip_text,
                 font=self.summary_font,
                 fill=self.ACCENT_DEEP,
@@ -398,8 +406,18 @@ class SearchResultCardRenderer:
             draw,
             bbox=(x, y, x + width, y + height),
             radius=CARD_ITEM_RADIUS,
-            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.48),
+            fill=self._mix_color(self.ACCENT_SOFT, self.ACCENT, 0.22),
             outline="",
+        )
+        draw.rounded_rectangle(
+            (
+                x + 10,
+                y + 10,
+                x + width - 10,
+                y + CARD_ITEM_PADDING_Y + CARD_BADGE_HEIGHT + 14,
+            ),
+            radius=18,
+            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.18),
         )
         inner_x = x + CARD_ITEM_PADDING_X
         cursor_y = y + CARD_ITEM_PADDING_Y
