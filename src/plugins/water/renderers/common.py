@@ -471,8 +471,12 @@ def draw_group_rank_trend_chart(
 ) -> None:
     if not labels or not series:
         return
-    chart_h = h - int(24 * scale)
+    label_band_h = int(20 * scale)
+    chart_h = h - label_band_h
     baseline_y = y + chart_h
+    plot_top_pad = int(14 * scale)
+    plot_bottom_pad = int(18 * scale)
+    usable_h = max(16, chart_h - plot_top_pad - plot_bottom_pad)
     all_ranks = [
         rank for _name, ranks, _focus in series for rank in ranks if rank is not None
     ]
@@ -497,7 +501,7 @@ def draw_group_rank_trend_chart(
         relative = (
             0.0 if max_rank == min_rank else (tick - min_rank) / (max_rank - min_rank)
         )
-        tick_y = y + int(relative * max(chart_h - int(8 * scale), 1))
+        tick_y = y + plot_top_pad + int(relative * usable_h)
         card.draw.line(
             (left_axis_x, tick_y, x + w, tick_y),
             fill=mix_hex(axis_color, WATER_THEME.white, 0.22),
@@ -531,7 +535,7 @@ def draw_group_rank_trend_chart(
                 px - int(20 * scale),
                 baseline_y + int(4 * scale),
                 px + int(20 * scale),
-                y + h,
+                y + h - int(2 * scale),
             ),
             labels[idx],
             max_fontsize=int(8 * scale),
@@ -583,7 +587,7 @@ def draw_group_rank_trend_chart(
                         smooth_points,
                         fill=mix_hex(color, WATER_THEME.white, 0.48)
                         if is_focus
-                        else mix_hex(color, WATER_THEME.white, 0.68),
+                        else mix_hex(color, WATER_THEME.white, 0.5),
                         width=max(4, int((7 if is_focus else 5) * scale / 2)),
                         joint="curve",
                     )
@@ -601,7 +605,7 @@ def draw_group_rank_trend_chart(
                 if max_rank == min_rank
                 else (rank - min_rank) / (max_rank - min_rank)
             )
-            py = y + int(relative * max(chart_h - int(8 * scale), 1))
+            py = y + plot_top_pad + int(relative * usable_h)
             points.append((px, py))
         if len(points) >= 2:
             smooth_points = _smooth_segment(points)
@@ -609,7 +613,7 @@ def draw_group_rank_trend_chart(
                 smooth_points,
                 fill=mix_hex(color, WATER_THEME.white, 0.48)
                 if is_focus
-                else mix_hex(color, WATER_THEME.white, 0.68),
+                else mix_hex(color, WATER_THEME.white, 0.5),
                 width=max(4, int((7 if is_focus else 5) * scale / 2)),
                 joint="curve",
             )
@@ -619,3 +623,25 @@ def draw_group_rank_trend_chart(
                 width=max(3, int((5 if is_focus else 3) * scale / 2)),
                 joint="curve",
             )
+            if is_focus:
+                end_x, end_y = smooth_points[-1]
+                halo_r = max(4, int(5 * scale))
+                dot_r = max(3, int(3 * scale))
+                card.draw.ellipse(
+                    (
+                        end_x - halo_r,
+                        end_y - halo_r,
+                        end_x + halo_r,
+                        end_y + halo_r,
+                    ),
+                    fill=mix_hex(color, WATER_THEME.white, 0.55),
+                )
+                card.draw.ellipse(
+                    (
+                        end_x - dot_r,
+                        end_y - dot_r,
+                        end_x + dot_r,
+                        end_y + dot_r,
+                    ),
+                    fill=color,
+                )

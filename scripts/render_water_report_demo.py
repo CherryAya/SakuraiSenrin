@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 DEFAULT_DB_ROOT = Path("./data/db")
 DEFAULT_NAMESPACE = "water_db"
 DEFAULT_OUTPUT = Path("./output/water-report-demo.png")
+DEFAULT_OUTPUT_DIR = Path("./output/water-report-demos")
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,6 +64,22 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="when auto-picking, choose the Nth most active group-day sample",
     )
+    parser.add_argument(
+        "--batch-count",
+        type=int,
+        default=1,
+        help="render multiple samples at once",
+    )
+    parser.add_argument(
+        "--distinct-days",
+        action="store_true",
+        help="when batch rendering, prefer different record dates",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=str(DEFAULT_OUTPUT_DIR),
+        help="output directory for batch rendering",
+    )
     return parser.parse_args()
 
 
@@ -103,6 +120,25 @@ def pick_active_sample(
     namespace: str,
     top_n: int,
 ) -> tuple[str, int, int]:
+    ordered = list_active_samples(
+        db_root=db_root,
+        namespace=namespace,
+        limit=max(top_n, 1),
+        distinct_days=False,
+    )
+    if not ordered:
+        raise RuntimeError("No water summary rows found in local DB")
+    index = max(0, min(len(ordered) - 1, top_n - 1))
+    return ordered[index]
+
+
+def list_active_samples(
+    *,
+    db_root: Path,
+    namespace: str,
+    limit: int,
+    distinct_days: bool,
+) -> list[tuple[str, int, int]]:
     namespace_dir = db_root / namespace
     candidates: list[tuple[int, str, int]] = []
     for db_path in _list_summary_files(namespace_dir):
@@ -113,22 +149,29 @@ def pick_active_sample(
                 FROM water_daily_summary
                 GROUP BY group_id, record_date
                 ORDER BY total_msg_count DESC
-                LIMIT 10
+                LIMIT 40
                 """
             ).fetchall()
         for row in rows:
             candidates.append((int(row[2]), str(row[0]), int(row[1])))
 
     if not candidates:
-        raise RuntimeError("No water summary rows found in local DB")
+        return []
 
     ordered = sorted(candidates, key=lambda item: (-item[0], item[2], item[1]))
-    index = max(0, min(len(ordered) - 1, top_n - 1))
-    total_msg_count, group_id, record_date = ordered[index]
-    return group_id, record_date, total_msg_count
+    selected: list[tuple[str, int, int]] = []
+    seen_dates: set[int] = set()
+    for total_msg_count, group_id, record_date in ordered:
+        if distinct_days and record_date in seen_dates:
+            continue
+        selected.append((group_id, record_date, total_msg_count))
+        seen_dates.add(record_date)
+        if len(selected) >= limit:
+            break
+    return selected
 
 
-async def render_demo(args: argparse.Namespace) -> tuple[Path, str]:
+async def _init_runtime() -> tuple[Any, Any, Any]:
     nonebot.init()
 
     from src.plugins.water.database import water_repo
@@ -136,6 +179,57 @@ async def render_demo(args: argparse.Namespace) -> tuple[Path, str]:
     from src.plugins.water.services.report import water_report_service
 
     await water_repo.init_all_tables()
+    return water_repo, build_water_group_report_image, water_report_service
+
+
+async def _render_demo_sample(
+    *,
+    water_repo: Any,
+    build_water_group_report_image: Any,
+    water_report_service: Any,
+    group_id: str,
+    record_date: int,
+    window: str,
+    output_path: Path,
+    picked_total: int | None,
+) -> tuple[Path, str]:
+    snapshot = await water_repo.get_group_report_summary_snapshot(
+        group_id=str(group_id),
+        record_date=int(record_date),
+    )
+    if snapshot is None:
+        raise RuntimeError(
+            f"No group report snapshot found for group={group_id} date={record_date}"
+        )
+
+    data = await water_report_service._build_card_data(
+        window,
+        snapshot,
+        "zh-CN",
+    )
+    image = await build_water_group_report_image(data, "zh-CN")
+    if image is None:
+        raise RuntimeError(
+            "Report renderer returned empty image for "
+            f"group={group_id} date={record_date}"
+        )
+
+    await asyncio.to_thread(output_path.parent.mkdir, parents=True, exist_ok=True)
+    await asyncio.to_thread(output_path.write_bytes, image)
+    sample_note = (
+        f"group={group_id} date={record_date} total_msg_count={picked_total}"
+        if picked_total is not None
+        else f"group={group_id} date={record_date}"
+    )
+    return output_path, sample_note
+
+
+async def render_demo(args: argparse.Namespace) -> tuple[Path, str]:
+    (
+        water_repo,
+        build_water_group_report_image,
+        water_report_service,
+    ) = await _init_runtime()
 
     group_id = args.group_id
     record_date = args.record_date
@@ -147,40 +241,63 @@ async def render_demo(args: argparse.Namespace) -> tuple[Path, str]:
             top_n=args.top_n,
         )
 
-    snapshot = await water_repo.get_group_report_summary_snapshot(
+    return await _render_demo_sample(
+        water_repo=water_repo,
+        build_water_group_report_image=build_water_group_report_image,
+        water_report_service=water_report_service,
         group_id=str(group_id),
         record_date=int(record_date),
+        window=args.window,
+        output_path=Path(args.output),
+        picked_total=picked_total,
     )
-    if snapshot is None:
-        raise RuntimeError(
-            f"No group report snapshot found for group={group_id} date={record_date}"
-        )
 
-    data = await water_report_service._build_card_data(
-        args.window,
-        snapshot,
-        "zh-CN",
-    )
-    image = await build_water_group_report_image(data, "zh-CN")
-    if image is None:
-        raise RuntimeError(
-            "Report renderer returned empty image for "
-            f"group={group_id} date={record_date}"
-        )
 
-    output_path = Path(args.output)
-    await asyncio.to_thread(output_path.parent.mkdir, parents=True, exist_ok=True)
-    await asyncio.to_thread(output_path.write_bytes, image)
-    sample_note = (
-        f"group={group_id} date={record_date} total_msg_count={picked_total}"
-        if picked_total is not None
-        else f"group={group_id} date={record_date}"
+async def render_demo_batch(args: argparse.Namespace) -> list[tuple[Path, str]]:
+    (
+        water_repo,
+        build_water_group_report_image,
+        water_report_service,
+    ) = await _init_runtime()
+    samples = list_active_samples(
+        db_root=Path(args.db_root),
+        namespace=args.namespace,
+        limit=max(1, args.batch_count),
+        distinct_days=args.distinct_days,
     )
-    return output_path, sample_note
+    if not samples:
+        raise RuntimeError("No water summary rows found in local DB")
+
+    output_dir = Path(args.output_dir)
+    rendered: list[tuple[Path, str]] = []
+    for index, (group_id, record_date, total_msg_count) in enumerate(samples, start=1):
+        output_path = (
+            output_dir / f"water-report-demo-{index:02d}-{record_date}-{group_id}.png"
+        )
+        rendered.append(
+            await _render_demo_sample(
+                water_repo=water_repo,
+                build_water_group_report_image=build_water_group_report_image,
+                water_report_service=water_report_service,
+                group_id=group_id,
+                record_date=record_date,
+                window=args.window,
+                output_path=output_path,
+                picked_total=total_msg_count,
+            )
+        )
+    return rendered
 
 
 async def main() -> None:
     args = parse_args()
+    if args.batch_count > 1:
+        rendered = await render_demo_batch(args)
+        for output_path, sample_note in rendered:
+            sys.stdout.write(f"rendered: {output_path}\n")
+            sys.stdout.write(f"sample: {sample_note}\n")
+        return
+
     output_path, sample_note = await render_demo(args)
     sys.stdout.write(f"rendered: {output_path}\n")
     sys.stdout.write(f"sample: {sample_note}\n")
