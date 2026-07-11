@@ -987,7 +987,7 @@ async def build_water_group_report_image(
             font_families=[WATER_THEME.white],
         )
         tile_chart = tile_renderer._generate_tile_chart(item.hourly_counts)
-        tile_region_left = summary_right + int(18 * scale)
+        tile_region_left = summary_right + int(4.5 * scale)
         tile_region_right = row_inner_right - int(18 * scale)
         tile_region_top = row_y + int(40 * scale)
         tile_region_bottom = row_y + user_card_h - int(12 * scale)
