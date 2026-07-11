@@ -235,6 +235,7 @@ class WaterRepositoryReportsMixin:
         group_id: str,
         record_date: int,
         radius: int = 2,
+        min_window_size: int = 0,
         live: bool = False,
     ) -> "WaterGroupDailyRankSnapshot | None":
         repo_self = cast("WaterRepository", self)
@@ -260,6 +261,7 @@ class WaterRepositoryReportsMixin:
             current_rows=current_rows,
             previous_rows=previous_rows,
             radius=radius,
+            min_window_size=min_window_size,
         )
 
     async def get_group_daily_rank_history(
@@ -457,6 +459,7 @@ class WaterRepositoryReportsMixin:
         current_rows: Sequence[WaterSummaryRecord],
         previous_rows: Sequence[WaterSummaryRecord],
         radius: int,
+        min_window_size: int = 0,
     ) -> "WaterGroupDailyRankSnapshot | None":
         repo_self = cast("WaterRepository", self)
         if not current_rows:
@@ -545,8 +548,11 @@ class WaterRepositoryReportsMixin:
         if focus_index is None:
             return None
 
-        window_size = radius * 2 + 1
-        start = max(0, min(focus_index - radius, len(items) - window_size))
+        window_size = max(radius * 2 + 1, min_window_size)
+        window_size = min(len(items), window_size)
+        before_count = min(radius, window_size - 1)
+        start = focus_index - before_count
+        start = max(0, min(start, len(items) - window_size))
         end = min(len(items), start + window_size)
         focus_item = items[focus_index]
         return WaterGroupDailyRankSnapshot(

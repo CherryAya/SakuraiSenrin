@@ -576,6 +576,7 @@ async def test_build_group_rank_snapshot_uses_live_snapshot_for_today_report(
         group_id="20001",
         record_date=20260613,
         radius=4,
+        min_window_size=10,
         live=True,
     )
     group_ids_mock.assert_not_awaited()
@@ -629,5 +630,6 @@ async def test_build_group_rank_snapshot_uses_summary_snapshot_for_settled_repor
         group_id="20001",
         record_date=20260613,
         radius=4,
+        min_window_size=10,
         live=False,
     )

@@ -508,6 +508,7 @@ class WaterReportService:
             group_id=snapshot.group_id,
             record_date=snapshot.record_date,
             radius=4,
+            min_window_size=10,
             live=window == "today_live",
         )
 

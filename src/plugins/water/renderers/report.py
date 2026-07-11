@@ -741,46 +741,33 @@ async def build_water_group_report_image(
         (
             pad + int(18 * scale),
             y + int(12 * scale),
-            width - pad - int(180 * scale),
+            width - pad - int(18 * scale),
             y + int(48 * scale),
         ),
         data.title,
         max_fontsize=int(32 * scale),
         min_fontsize=int(22 * scale),
         fill=strong,
-        halign="left",
+        halign="center",
         font_families=[WATER_THEME.white],
     )
+    hero_meta_text = f"{data.range_text}  |  {data.compare_text}"
     card.draw_text(
         (
             pad + int(18 * scale),
             y + int(52 * scale),
             width - pad - int(18 * scale),
-            y + int(78 * scale),
+            y + int(88 * scale),
         ),
-        data.range_text,
-        max_fontsize=int(15 * scale),
-        min_fontsize=int(12 * scale),
-        fill=accent,
-        halign="left",
-        font_families=[WATER_THEME.white],
-    )
-    card.draw_text(
-        (
-            pad + int(18 * scale),
-            y + int(80 * scale),
-            width - pad - int(18 * scale),
-            y + int(102 * scale),
-        ),
-        data.compare_text,
-        max_fontsize=int(13 * scale),
+        hero_meta_text,
+        max_fontsize=int(14 * scale),
         min_fontsize=int(10 * scale),
-        fill=hint,
-        halign="left",
+        fill=accent,
+        halign="center",
         font_families=[WATER_THEME.white],
     )
 
-    stat_top = y + int(92 * scale)
+    stat_top = y + int(96 * scale)
     stat_gap = int(10 * scale)
     stat_w = int((width - pad * 2 - int(36 * scale) - stat_gap * 2) / 3)
     stats = [
