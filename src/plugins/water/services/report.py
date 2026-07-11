@@ -507,8 +507,8 @@ class WaterReportService:
         return await water_repo.get_group_daily_rank_snapshot(
             group_id=snapshot.group_id,
             record_date=snapshot.record_date,
-            radius=4,
-            min_window_size=10,
+            radius=6,
+            min_window_size=13,
             live=window == "today_live",
         )
 

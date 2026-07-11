@@ -682,20 +682,22 @@ async def build_water_group_report_image(
     group_name_font = _load_font(int(10 * scale))
     group_rank_summary_font = _load_font(int(9 * scale))
     group_rank_summary_max_width = right_w - int(18 * scale)
+    visible_group_rank_has_hidden_before = False
+    visible_group_rank_has_hidden_after = False
 
     user_count = len(data.top_items)
     left_h = estimate_group_report_left_height(user_count, scale=scale)
     group_rank_card_h = estimate_group_rank_card_height(
         len(data.group_rank_items),
-        has_hidden_before=data.group_rank_has_hidden_before,
-        has_hidden_after=data.group_rank_has_hidden_after,
+        has_hidden_before=visible_group_rank_has_hidden_before,
+        has_hidden_after=visible_group_rank_has_hidden_after,
         scale=scale,
     )
     right_extra_h = compute_group_report_right_extra_height(
         user_count=user_count,
         rank_item_count=len(data.group_rank_items),
-        has_hidden_before=data.group_rank_has_hidden_before,
-        has_hidden_after=data.group_rank_has_hidden_after,
+        has_hidden_before=visible_group_rank_has_hidden_before,
+        has_hidden_after=visible_group_rank_has_hidden_after,
         scale=scale,
     )
     compact_panel_h = 0
@@ -872,6 +874,7 @@ async def build_water_group_report_image(
         }.items()
     }
     tile_renderer = WaterRankRenderer()
+    board_name_font = _load_font(int(14 * scale))
     for item in data.top_items:
         rank_theme = rank_themes.get(
             item.current_rank,
@@ -925,14 +928,25 @@ async def build_water_group_report_image(
             alpha=True,
         )
         text_x = avatar_x + avatar_size + int(12 * scale)
+        row_inner_right = left_x + left_w - int(14 * scale)
+        trend_text, trend_color = format_trend(item.trend)
+        trend_w = int(48 * scale)
+        trend_h = int(20 * scale)
+        trend_x = row_inner_right - int(18 * scale) - trend_w
+        trend_y = badge_y + int(1 * scale)
+        safe_name = _truncate_text_to_width_pixels(
+            item.display_name,
+            font=board_name_font,
+            max_width=max(int(96 * scale), trend_x - text_x - int(12 * scale)),
+        )
         card.draw_text(
             (
                 text_x,
                 row_y + int(16 * scale),
-                left_x + int(300 * scale),
-                row_y + int(40 * scale),
+                trend_x - int(12 * scale),
+                row_y + int(42 * scale),
             ),
-            item.display_name,
+            safe_name,
             max_fontsize=int(16 * scale),
             min_fontsize=int(10 * scale),
             fill=deep,
@@ -940,29 +954,29 @@ async def build_water_group_report_image(
             font_families=[WATER_THEME.white],
         )
         card.draw_text(
-            (
-                text_x,
-                row_y + int(42 * scale),
-                left_x + int(300 * scale),
-                row_y + int(64 * scale),
-            ),
-            tr(locale, "water.report.board.summary", msg_count=item.msg_count),
-            max_fontsize=int(11 * scale),
-            min_fontsize=int(8 * scale),
+                (
+                    text_x,
+                    row_y + int(52 * scale),
+                    left_x + int(300 * scale),
+                    row_y + int(74 * scale),
+                ),
+                tr(locale, "water.report.board.summary", msg_count=item.msg_count),
+                max_fontsize=int(11 * scale),
+                min_fontsize=int(8 * scale),
             fill=accent,
             halign="left",
             font_families=[WATER_THEME.white],
         )
         card.draw_text(
-            (
-                text_x,
-                row_y + int(66 * scale),
-                left_x + int(300 * scale),
-                row_y + int(84 * scale),
-            ),
-            tr(
-                locale,
-                "water.report.board.active_hours",
+                (
+                    text_x,
+                    row_y + int(78 * scale),
+                    left_x + int(300 * scale),
+                    row_y + int(96 * scale),
+                ),
+                tr(
+                    locale,
+                    "water.report.board.active_hours",
                 active_hours=item.active_hours,
             ),
             max_fontsize=int(10 * scale),
@@ -975,14 +989,17 @@ async def build_water_group_report_image(
         tile_w = int(tile_chart.width * 0.72)
         tile_h = int(tile_chart.height * 0.72)
         resized_tile = tile_chart.resize((tile_w, tile_h))
-        tile_x = left_x + left_w - tile_w - int(28 * scale)
-        tile_y = row_y + (user_card_h - tile_h) // 2
+        tile_region_left = left_x + int(320 * scale)
+        tile_region_right = row_inner_right - int(18 * scale)
+        tile_region_top = row_y + int(40 * scale)
+        tile_region_bottom = row_y + user_card_h - int(12 * scale)
+        tile_x = tile_region_left + max(
+            0, (tile_region_right - tile_region_left - tile_w) // 2
+        )
+        tile_y = tile_region_top + max(
+            0, (tile_region_bottom - tile_region_top - tile_h) // 2
+        )
         card.paste(resized_tile, (tile_x, tile_y), alpha=True)
-        trend_text, trend_color = format_trend(item.trend)
-        trend_w = int(56 * scale)
-        trend_h = int(24 * scale)
-        trend_x = left_x + left_w - trend_w - int(28 * scale)
-        trend_y = row_y + int(12 * scale)
         card.draw_rounded_rectangle(
             (trend_x, trend_y, trend_x + trend_w, trend_y + trend_h),
             radius=trend_h // 2,

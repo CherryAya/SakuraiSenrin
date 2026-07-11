@@ -241,7 +241,9 @@ def test_build_group_daily_rank_snapshot_from_rows_handles_top_edge() -> None:
     assert [item.current_rank for item in snapshot.leaderboard] == [1, 2, 3, 4]
 
 
-def test_build_group_daily_rank_snapshot_from_rows_extends_top_edge_to_ten() -> None:
+def test_build_group_daily_rank_snapshot_from_rows_extends_top_edge_to_thirteen() -> (
+    None
+):
     repo = WaterRepository()
     current_rows = [
         WaterSummaryRecord(
@@ -254,7 +256,7 @@ def test_build_group_daily_rank_snapshot_from_rows_extends_top_edge_to_ten() -> 
             created_at=1,
             updated_at=2,
         )
-        for idx in range(1, 13)
+        for idx in range(1, 17)
     ]
 
     snapshot = repo._build_group_daily_rank_snapshot_from_rows(
@@ -262,16 +264,16 @@ def test_build_group_daily_rank_snapshot_from_rows_extends_top_edge_to_ten() -> 
         record_date=20260613,
         current_rows=current_rows,
         previous_rows=[],
-        radius=4,
-        min_window_size=10,
+        radius=6,
+        min_window_size=13,
     )
 
     assert snapshot is not None
     assert snapshot.focus_rank == 1
     assert snapshot.has_hidden_before is False
     assert snapshot.has_hidden_after is True
-    assert len(snapshot.leaderboard) == 10
-    assert [item.current_rank for item in snapshot.leaderboard] == list(range(1, 11))
+    assert len(snapshot.leaderboard) == 13
+    assert [item.current_rank for item in snapshot.leaderboard] == list(range(1, 14))
 
 
 def test_group_daily_rank_snapshot_returns_none_when_focus_missing() -> None:
