@@ -3,7 +3,6 @@
   "locale": "zh-CN",
   "targets": {
     "feature:remove:main": {
-      "normal": "remove-guide.webp",
       "group_admin": "remove-guide.webp",
       "group_owner": "remove-guide.webp",
       "superuser": "remove-guide.webp"

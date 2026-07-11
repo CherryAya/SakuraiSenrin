@@ -8,6 +8,12 @@
       "group_owner": "README-guide--eb0ad27153.webp",
       "superuser": "README-guide--eb0ad27153.webp"
     },
+    "summary:notice.invite": {
+      "normal": "README-summary--e566ce4ada.webp",
+      "group_admin": "README-summary--e566ce4ada.webp",
+      "group_owner": "README-summary--e566ce4ada.webp",
+      "superuser": "README-summary--e566ce4ada.webp"
+    },
     "feature:notice.invite:auto-approve-authorized": {
       "normal": "notice-invite-auto-approve-authorized.webp",
       "group_admin": "notice-invite-auto-approve-authorized.webp",

@@ -464,7 +464,7 @@ def test_demo_image_renderer_left_aligns_block_section_title_text() -> None:
         generated_at=datetime(2026, 6, 19, 16, 44, 50),
     )
     band = layout.demo_section_bands[0]
-    label_text = f"{band.index:02d} · {band.title}"
+    label_text = band.title
     captured: dict[str, tuple[float, float]] = {}
 
     def capture_draw_text(
@@ -474,7 +474,7 @@ def test_demo_image_renderer_left_aligns_block_section_title_text() -> None:
         y: float,
         text: str,
         font: Any,
-        fill: str,
+        fill: str | tuple[int, int, int, int],
     ) -> None:
         if text == label_text:
             captured[text] = (x, y)
@@ -490,9 +490,8 @@ def test_demo_image_renderer_left_aligns_block_section_title_text() -> None:
         locale="zh-CN",
     )
 
-    assert (
-        captured[label_text][0] == band.tag_rect[0] + renderer.DEMO_SECTION_TITLE_PAD_X
-    )
+    badge_right = band.tag_rect[0] + 66
+    assert captured[label_text][0] == badge_right + 18
     assert captured[label_text][1] >= band.tag_rect[1]
 
 
@@ -1141,6 +1140,29 @@ def test_render_static_entry_returns_showcase_canvas() -> None:
     assert image.height > 500
 
 
+def test_render_static_entry_dynamic_builds_command_and_demo_sections() -> None:
+    node = load_doc_node(
+        source="src/plugins/community_mima/docs/README.MD",
+        default_name="用户反馈群密码",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    image = Image.open(
+        BytesIO(
+            render_static_entry(
+                node,
+                locale="zh-CN",
+                prefer_static=False,
+            )
+        )
+    )
+
+    assert image.width == 1280
+    assert image.height > 1200
+
+
 def test_render_plugin_summary_returns_showcase_canvas() -> None:
     node = load_doc_node(
         source="src/plugins/wordbank/docs/README.MD",
@@ -1156,6 +1178,29 @@ def test_render_plugin_summary_returns_showcase_canvas() -> None:
 
     assert image.width == 1280
     assert image.height > 500
+
+
+def test_render_plugin_summary_dynamic_keeps_showcase_support_strip() -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    image = Image.open(
+        BytesIO(
+            plugin_docs_module.render_plugin_summary(
+                node,
+                locale="zh-CN",
+                prefer_static=False,
+            )
+        )
+    )
+
+    assert image.width == 1280
+    assert image.height > 700
 
 
 def test_build_plugin_summary_copy_text_excludes_static_entry_wording() -> None:

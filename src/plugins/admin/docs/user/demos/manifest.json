@@ -8,6 +8,12 @@
       "group_owner": "README-guide--e07509f111.webp",
       "superuser": "README-guide--e07509f111.webp"
     },
+    "summary:admin.user": {
+      "normal": "README-summary--b3f4187611.webp",
+      "group_admin": "README-summary--b3f4187611.webp",
+      "group_owner": "README-summary--b3f4187611.webp",
+      "superuser": "README-summary--b3f4187611.webp"
+    },
     "feature:admin.user:ban": {
       "normal": "admin-user-ban.webp",
       "group_admin": "admin-user-ban.webp",

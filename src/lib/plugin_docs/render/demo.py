@@ -164,6 +164,23 @@ class DemoImageRenderer:
     DEFAULT_SECTION_TITLE = "流程演示"
     DEMO_SECTION_TITLE_PAD_X = 26
     DEMO_SECTION_TITLE_PAD_Y = 16
+    SUBCARD_RADIUS = 22
+    CAPSULE_HEIGHT = 68
+    WATERMARK_ALPHA = 14
+    WATERMARK_ALPHA_LARGE = 10
+    WATERMARK_SPACING = 1
+    STEP_LABELS: ClassVar[tuple[str, ...]] = (
+        "STEP ONE",
+        "STEP TWO",
+        "STEP THREE",
+        "STEP FOUR",
+        "STEP FIVE",
+        "STEP SIX",
+        "STEP SEVEN",
+        "STEP EIGHT",
+        "STEP NINE",
+        "STEP TEN",
+    )
 
     def __init__(self, *, impression_color: str | None = None) -> None:
         self.theme_name = SENRIN_V3_THEME.name
@@ -185,6 +202,11 @@ class DemoImageRenderer:
             self.meta_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)
             self.footer_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)
             self.system_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
+            self.watermark_font = ImageFont.truetype(MAPLE_FONT_PATH, 72)
+            self.watermark_font_small = ImageFont.truetype(MAPLE_FONT_PATH, 54)
+            self.capsule_font = ImageFont.truetype(MAPLE_FONT_PATH, 30)
+            self.micro_caps_font = ImageFont.truetype(MAPLE_FONT_PATH, 18)
+            self.step_badge_font = ImageFont.truetype(MAPLE_FONT_PATH, 28)
         except OSError:
             self.kicker_font = ImageFont.load_default()
             self.eyebrow_font = ImageFont.load_default()
@@ -198,6 +220,11 @@ class DemoImageRenderer:
             self.meta_font = ImageFont.load_default()
             self.footer_font = ImageFont.load_default()
             self.system_font = ImageFont.load_default()
+            self.watermark_font = ImageFont.load_default()
+            self.watermark_font_small = ImageFont.load_default()
+            self.capsule_font = ImageFont.load_default()
+            self.micro_caps_font = ImageFont.load_default()
+            self.step_badge_font = ImageFont.load_default()
         self.senrin_avatar = self._load_asset(DEMO_AVATAR_PATH, self.theme.avatar_size)
         self.senrin_standee = self._load_asset(
             DEMO_STANDEE_PATH,
@@ -721,15 +748,6 @@ class DemoImageRenderer:
                 section_top = y_cursor
                 turn_top = section_top + inner_pad_top
                 normalized_title = section_title or self.DEFAULT_SECTION_TITLE
-                section_label_text = f"{section_index + 1:02d} · {normalized_title}"
-                section_label_width = min(
-                    content_right - content_left,
-                    max(
-                        220,
-                        self._text_width(section_label_text, self.meta_font)
-                        + self.DEMO_SECTION_TITLE_PAD_X * 2,
-                    ),
-                )
                 tag_rect = (
                     content_left,
                     section_top + 16,
@@ -877,6 +895,18 @@ class DemoImageRenderer:
             fill=self.theme.strong,
             line_height=self._line_height_for_font(self.kicker_font),
         )
+        self._draw_section_watermark(
+            draw,
+            rect=(
+                layout.title_rect[0],
+                layout.title_rect[3] + 6,
+                min(self.WIDTH - self.theme.hero_side_padding, layout.standee_rect[0]),
+                layout.summary_rect[3] + 8,
+            ),
+            text="FEATURE GUIDE",
+            font=self.watermark_font,
+            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
+        )
         self._draw_multiline_text(
             draw,
             x=layout.title_rect[0],
@@ -934,10 +964,13 @@ class DemoImageRenderer:
             shadow_blur=self.theme.instruction_shadow_blur,
             fill=self.theme.panel_bg,
         )
-        draw.rounded_rectangle(
+        self._draw_soft_subcard(
+            image,
+            draw,
             layout.trigger_rect,
-            radius=self.theme.trigger_radius,
+            radius=self.SUBCARD_RADIUS,
             fill=self.theme.terminal_bg,
+            outline=self._rgba(self.theme.accent, 48),
         )
         self._draw_command_layout(
             draw,
@@ -990,13 +1023,42 @@ class DemoImageRenderer:
     ) -> None:
         if layout.demo_heading_rect is None:
             return
-        self._draw_text(
+        capsule_width = min(
+            520,
+            max(
+                300,
+                self._text_width("看看它是怎么工作的", self.capsule_font) + 120,
+            ),
+        )
+        capsule_left = (
+            layout.demo_rect[0]
+            + (layout.demo_rect[2] - layout.demo_rect[0] - capsule_width) // 2
+        )
+        capsule_rect = (
+            capsule_left,
+            layout.demo_rect[1] - self.CAPSULE_HEIGHT // 2,
+            capsule_left + capsule_width,
+            layout.demo_rect[1] - self.CAPSULE_HEIGHT // 2 + self.CAPSULE_HEIGHT,
+        )
+        self._draw_capsule_title(
             draw,
-            x=layout.demo_heading_rect[0],
-            y=layout.demo_heading_rect[1],
+            rect=capsule_rect,
             text="看看它是怎么工作的",
-            font=self.note_font,
-            fill=self.theme.demo_heading,
+            fill=(255, 243, 228, 224),
+            outline=self._rgba(self.theme.accent, 52),
+        )
+        self._draw_section_watermark(
+            draw,
+            rect=(
+                layout.demo_rect[0] + 48,
+                layout.demo_rect[1] - 18,
+                layout.demo_rect[2] - 48,
+                layout.demo_rect[1] + 88,
+            ),
+            text="DEMONSTRATION FLOW",
+            font=self.watermark_font_small,
+            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
+            align="right",
         )
         self._draw_shadowed_rect(
             image,
@@ -1008,31 +1070,43 @@ class DemoImageRenderer:
             fill="#FFFFFF",
         )
         for band in layout.demo_section_bands:
+            badge_rect = (
+                band.tag_rect[0],
+                band.tag_rect[1] + 2,
+                band.tag_rect[0] + 66,
+                band.tag_rect[3] - 2,
+            )
             draw.rounded_rectangle(
-                band.tag_rect,
-                radius=(band.tag_rect[3] - band.tag_rect[1]) // 2,
+                badge_rect,
+                radius=18,
                 fill=band.accent,
-            )
-            section_label_text = f"{band.index:02d} · {band.title}"
-            max_text_width = (
-                band.tag_rect[2]
-                - band.tag_rect[0]
-                - self.DEMO_SECTION_TITLE_PAD_X * 2
-            )
-            fitted_text = self._fit_text(
-                draw,
-                section_label_text,
-                self.meta_font,
-                max_width=max_text_width,
             )
             self._draw_text_centered(
                 draw,
-                band.tag_rect,
-                fitted_text,
-                font=self.meta_font,
-                fill=band.text_fill,
-                align="left",
-                padding_x=self.DEMO_SECTION_TITLE_PAD_X,
+                badge_rect,
+                f"{band.index:02d}",
+                font=self.step_badge_font,
+                fill="#FFFFFF",
+            )
+            title_x = badge_rect[2] + 18
+            title_y = band.tag_rect[1] + 4
+            step_index = min(max(band.index - 1, 0), len(self.STEP_LABELS) - 1)
+            step_label = self.STEP_LABELS[step_index]
+            self._draw_text(
+                draw,
+                x=title_x,
+                y=title_y,
+                text=band.title,
+                font=self.instruction_font,
+                fill=self.theme.deep,
+            )
+            self._draw_text(
+                draw,
+                x=title_x + self._text_width(band.title, self.instruction_font) + 14,
+                y=title_y + 8,
+                text=step_label,
+                font=self.micro_caps_font,
+                fill=self.theme.hint,
             )
         for placement in layout.turn_placements:
             self._draw_turn(image, draw, placement, locale=locale)
@@ -2225,7 +2299,7 @@ class DemoImageRenderer:
         y: float,
         text: str,
         font: Any,
-        fill: str,
+        fill: str | tuple[int, int, int, int],
     ) -> None:
         if not text:
             return
@@ -2352,6 +2426,80 @@ class DemoImageRenderer:
 
     def _pill_width(self, text: str, font: Any) -> int:
         return max(88, self._text_width(text, font) + 32)
+
+    def _draw_soft_subcard(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        rect: tuple[int, int, int, int],
+        *,
+        radius: int,
+        fill: str,
+        outline: tuple[int, int, int, int] | None = None,
+    ) -> None:
+        self._draw_shadowed_rect(
+            image,
+            rect=rect,
+            radius=radius,
+            shadow_color=self._rgba(self.theme.accent, 8),
+            shadow_offset_y=1,
+            shadow_blur=10,
+            fill=fill,
+        )
+        if outline is not None:
+            draw.rounded_rectangle(rect, radius=radius, outline=outline, width=1)
+
+    def _draw_capsule_title(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        rect: tuple[int, int, int, int],
+        text: str,
+        fill: tuple[int, int, int, int],
+        outline: tuple[int, int, int, int],
+    ) -> None:
+        draw.rounded_rectangle(
+            rect,
+            radius=(rect[3] - rect[1]) // 2,
+            fill=fill,
+            outline=outline,
+            width=2,
+        )
+        self._draw_text_centered(
+            draw,
+            rect,
+            text,
+            font=self.capsule_font,
+            fill=self.theme.strong,
+        )
+
+    def _draw_section_watermark(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        rect: tuple[int, int, int, int],
+        text: str,
+        font: Any,
+        fill: tuple[int, int, int, int],
+        align: Literal["left", "right"] = "left",
+    ) -> None:
+        spread = self._spread_caps_text(text)
+        fitted = self._fit_text(
+            draw,
+            spread,
+            font,
+            max_width=max(120, rect[2] - rect[0]),
+        )
+        text_width = self._text_width(fitted, font)
+        x = rect[0] if align == "left" else max(rect[0], rect[2] - text_width)
+        y = rect[1]
+        self._draw_text(draw, x=x, y=y, text=fitted, font=font, fill=fill)
+
+    def _spread_caps_text(self, text: str) -> str:
+        words = []
+        for word in text.upper().split():
+            words.append((" " * self.WATERMARK_SPACING).join(word))
+        return "  ".join(words)
 
     def _font_size(self, font: Any) -> int:
         return int(getattr(font, "size", 16))

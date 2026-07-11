@@ -3,9 +3,6 @@
   "locale": "zh-CN",
   "targets": {
     "feature:sentry:main": {
-      "normal": "sentry-alert.webp",
-      "group_admin": "sentry-alert.webp",
-      "group_owner": "sentry-alert.webp",
       "superuser": "sentry-alert.webp"
     }
   }

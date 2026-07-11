@@ -3,9 +3,6 @@
   "locale": "zh-CN",
   "targets": {
     "feature:test:main": {
-      "normal": "test-listener.webp",
-      "group_admin": "test-listener.webp",
-      "group_owner": "test-listener.webp",
       "superuser": "test-listener.webp"
     }
   }

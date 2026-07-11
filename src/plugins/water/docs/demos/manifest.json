@@ -3,22 +3,22 @@
   "locale": "zh-CN",
   "targets": {
     "guide:water": {
-      "normal": "README-guide--ee90af5a53.webp",
-      "group_admin": "README-guide--3108648349.webp",
-      "group_owner": "README-guide--3108648349.webp",
-      "superuser": "README-guide--332aa6b685.webp"
+      "normal": "README-guide--f2b05240fd.webp",
+      "group_admin": "README-guide--648b8d1cc0.webp",
+      "group_owner": "README-guide--648b8d1cc0.webp",
+      "superuser": "README-guide--7cb5ad36b6.webp"
+    },
+    "summary:water": {
+      "normal": "README-summary--0c092fd5d6.webp",
+      "group_admin": "README-summary--0c092fd5d6.webp",
+      "group_owner": "README-summary--0c092fd5d6.webp",
+      "superuser": "README-summary--0c092fd5d6.webp"
     },
     "feature:water:profile": {
       "normal": "water-profile.webp",
       "group_admin": "water-profile.webp",
       "group_owner": "water-profile.webp",
       "superuser": "water-profile.webp"
-    },
-    "feature:water:profile-full": {
-      "normal": "water-profile-full.webp",
-      "group_admin": "water-profile-full.webp",
-      "group_owner": "water-profile-full.webp",
-      "superuser": "water-profile-full.webp"
     },
     "feature:water:ranking": {
       "normal": "water-ranking.webp",
@@ -43,6 +43,12 @@
       "group_admin": "water-season-query.webp",
       "group_owner": "water-season-query.webp",
       "superuser": "water-season-query.webp"
+    },
+    "feature:water:profile-full": {
+      "normal": "water-profile-full.webp",
+      "group_admin": "water-profile-full.webp",
+      "group_owner": "water-profile-full.webp",
+      "superuser": "water-profile-full.webp"
     },
     "feature:water:merge-confirm": {
       "group_admin": "water-merge-confirm.webp",

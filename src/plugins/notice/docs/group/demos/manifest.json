@@ -8,6 +8,12 @@
       "group_owner": "README-guide--c9fb6bedf7.webp",
       "superuser": "README-guide--c9fb6bedf7.webp"
     },
+    "summary:notice.group": {
+      "normal": "README-summary--ee59ae9194.webp",
+      "group_admin": "README-summary--ee59ae9194.webp",
+      "group_owner": "README-summary--ee59ae9194.webp",
+      "superuser": "README-summary--ee59ae9194.webp"
+    },
     "feature:notice.group:kick-cleanup": {
       "normal": "notice-group-kick-cleanup.webp",
       "group_admin": "notice-group-kick-cleanup.webp",

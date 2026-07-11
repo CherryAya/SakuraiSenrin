@@ -8,6 +8,12 @@
       "group_owner": "README-guide--73493ea2eb.webp",
       "superuser": "README-guide--140c3f12c4.webp"
     },
+    "summary:notice": {
+      "normal": "README-summary--4947101b3b.webp",
+      "group_admin": "README-summary--4947101b3b.webp",
+      "group_owner": "README-summary--4947101b3b.webp",
+      "superuser": "README-summary--4947101b3b.webp"
+    },
     "feature:notice:group": {
       "normal": "notice-overview-group.webp",
       "group_admin": "notice-overview-group.webp",

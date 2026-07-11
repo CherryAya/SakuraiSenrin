@@ -3,15 +3,18 @@
   "locale": "zh-CN",
   "targets": {
     "guide:hook.plugin": {
-      "normal": "README-guide--3ddec434cb.webp",
-      "group_admin": "README-guide--3ddec434cb.webp",
-      "group_owner": "README-guide--3ddec434cb.webp",
+      "normal": "README-guide--a689f041ff.webp",
+      "group_admin": "README-guide--a689f041ff.webp",
+      "group_owner": "README-guide--a689f041ff.webp",
       "superuser": "README-guide--3ddec434cb.webp"
     },
+    "summary:hook.plugin": {
+      "normal": "README-summary--4e8f2db8ee.webp",
+      "group_admin": "README-summary--4e8f2db8ee.webp",
+      "group_owner": "README-summary--4e8f2db8ee.webp",
+      "superuser": "README-summary--4e8f2db8ee.webp"
+    },
     "feature:hook.plugin:main": {
-      "normal": "hook-plugin-placeholder.webp",
-      "group_admin": "hook-plugin-placeholder.webp",
-      "group_owner": "hook-plugin-placeholder.webp",
       "superuser": "hook-plugin-placeholder.webp"
     }
   }

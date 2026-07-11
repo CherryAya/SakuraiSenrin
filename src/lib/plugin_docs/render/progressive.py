@@ -31,7 +31,6 @@ from .encoding import encode_docs_image
 from .helpers import (
     build_help_support_bundle,
     build_plugin_summary_copy,
-    build_static_entry_copy,
     feature_command_for_display_text,
     feature_demo_help_command,
     node_help_command,
@@ -124,6 +123,10 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     SUPPORT_STRIP_QR_FRAME_PADDING_Y = 16
     SUPPORT_STRIP_QR_FRAME_RADIUS = 18
     SUPPORT_STRIP_QR_VERTICAL_OFFSET_Y = -6
+    SINGLE_PAGE_INNER_GAP = 24
+    SINGLE_PAGE_SECTION_TOP_PAD = 36
+    SINGLE_PAGE_COMMAND_RADIUS = 22
+    SINGLE_PAGE_WATERMARK_OFFSET_Y = 18
 
     _DASHBOARD_MARKER_SIZE: ClassVar[dict[str, int]] = {
         "square": 12,
@@ -412,7 +415,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             section_positions.append((layout, cursor_y))
             cursor_y += layout.height + self.GUIDE_SECTION_GAP
 
-        support_layout = self._measure_support_strip(
+        support_layout = self._measure_showcase_support_strip(
             locale=locale,
             top=cursor_y + self.SUPPORT_STRIP_GAP,
         )
@@ -442,6 +445,18 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             self.theme.hero_top
             + len(header_title_lines) * self._line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
+        )
+        self._draw_section_watermark(
+            draw,
+            rect=(
+                side,
+                summary_top + 4,
+                self.WIDTH - side - self.theme.hero_standee_size + 16,
+                hero_bottom,
+            ),
+            text="FEATURE GUIDE",
+            font=self.watermark_font,
+            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
         )
         self._draw_multiline_text(
             draw,
@@ -474,7 +489,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 locale=locale,
             )
 
-        self._draw_support_strip(image, draw, layout=support_layout)
+        self._draw_showcase_support_strip(image, draw, layout=support_layout)
         self._draw_trace_footer(
             draw,
             footer_rect=footer_rect,
@@ -523,20 +538,80 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             )
             + self.theme.hero_bottom_padding
         )
+        primary_feature = self._primary_feature_for_entry(node)
+        command_text = (
+            primary_feature.trigger.strip()
+            if primary_feature is not None and primary_feature.trigger.strip()
+            else node_help_command(node)
+        )
+        command_layout = build_command_layout(
+            command_text,
+            max_width=width
+            - self.GUIDE_SECTION_PADDING_X * 2
+            - self.theme.trigger_padding_x * 2,
+            line_height=self._line_height_for_font(self.body_font),
+            indent_px=self.COMMAND_INDENT_PX,
+            measure_text=lambda value: self._text_width(value, self.body_font),
+            palette=self._command_palette(),
+        )
+        command_height = command_layout.total_height + self.theme.trigger_padding_y * 2
+        overview_text = (
+            primary_feature.overview.strip()
+            if primary_feature is not None and primary_feature.overview.strip()
+            else (node.description.strip() or node.summary.strip())
+        )
         body_lines = tuple(
             self._wrap_inline_text(
-                build_static_entry_copy(node, locale=locale),
+                overview_text,
                 max_width=width - self.GUIDE_SECTION_PADDING_X * 2,
                 font=self.instruction_font,
             )
         )
         body_line_height = self._line_height_for_font(self.instruction_font)
-        section_height = (
-            self.GUIDE_SECTION_PADDING_Y * 2 + len(body_lines) * body_line_height + 24
+        intro_section_height = (
+            self.GUIDE_SECTION_PADDING_Y * 2
+            + command_height
+            + len(body_lines) * body_line_height
+            + self.SINGLE_PAGE_INNER_GAP
+            + 24
         )
-        support_layout = self._measure_support_strip(
+        demo_turns = primary_feature.demo_turns if primary_feature is not None else ()
+        demo_card_height = 0
+        demo_card_rect: tuple[int, int, int, int] | None = None
+        demo_turn_placements: tuple[_ShowcaseTurnPlacement, ...] = ()
+        if demo_turns:
+            demo_inner_left = side + self.GUIDE_SECTION_PADDING_X
+            demo_inner_right = self.WIDTH - side - self.GUIDE_SECTION_PADDING_X
+            turn_top = 0
+            placements: list[_ShowcaseTurnPlacement] = []
+            for turn in demo_turns:
+                spec = self._measure_turn(turn, demo_inner_right - demo_inner_left)
+                placement = self._place_turn(
+                    spec,
+                    top=turn_top,
+                    left=demo_inner_left,
+                    right=demo_inner_right,
+                )
+                placements.append(placement)
+                turn_top = placement.rect[3] + self.theme.bubble_gap
+            demo_turn_placements = tuple(placements)
+            demo_content_height = max(0, turn_top - self.theme.bubble_gap)
+            demo_card_height = 44 + 56 + 20 + demo_content_height + 36
+            demo_card_top = hero_bottom + intro_section_height + self.GUIDE_SECTION_GAP
+            demo_card_rect = (
+                side,
+                demo_card_top,
+                side + width,
+                demo_card_top + demo_card_height,
+            )
+        content_bottom = (
+            demo_card_rect[3]
+            if demo_card_rect is not None
+            else hero_bottom + intro_section_height
+        )
+        support_layout = self._measure_showcase_support_strip(
             locale=locale,
-            top=hero_bottom + section_height + self.SUPPORT_STRIP_GAP,
+            top=content_bottom + self.SUPPORT_STRIP_GAP,
         )
         footer_rect = (
             side,
@@ -564,6 +639,18 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + len(header_title_lines) * self._line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
         )
+        self._draw_section_watermark(
+            draw,
+            rect=(
+                side,
+                summary_top + 4,
+                self.WIDTH - side - self.theme.hero_standee_size + 16,
+                hero_bottom,
+            ),
+            text="GROUP ACCESS",
+            font=self.watermark_font,
+            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
+        )
         self._draw_multiline_text(
             draw,
             x=side,
@@ -583,7 +670,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             self.theme.hero_top + 8 + self.theme.hero_standee_size,
         )
         self._draw_standee(image, draw, standee_rect)
-        rect = (side, hero_bottom, side + width, hero_bottom + section_height)
+        rect = (side, hero_bottom, side + width, hero_bottom + intro_section_height)
         self._draw_shadowed_rect(
             image,
             rect=rect,
@@ -593,17 +680,178 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             shadow_blur=self.theme.instruction_shadow_blur,
             fill=self.theme.panel_bg,
         )
+        self._draw_section_watermark(
+            draw,
+            rect=(
+                rect[0] + self.GUIDE_SECTION_PADDING_X,
+                rect[1] + 6,
+                rect[2] - self.GUIDE_SECTION_PADDING_X,
+                rect[1] + 70,
+            ),
+                text="ACCESS NOTE",
+            font=self.watermark_font_small,
+            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
+            align="right",
+        )
+        command_rect = (
+            rect[0] + self.GUIDE_SECTION_PADDING_X,
+            rect[1] + self.GUIDE_SECTION_PADDING_Y,
+            rect[2] - self.GUIDE_SECTION_PADDING_X,
+            rect[1] + self.GUIDE_SECTION_PADDING_Y + command_height,
+        )
+        self._draw_soft_subcard(
+            image,
+            draw,
+            command_rect,
+            radius=self.SINGLE_PAGE_COMMAND_RADIUS,
+            fill=self.theme.terminal_bg,
+            outline=self._rgba(self.theme.accent, 54),
+        )
+        self._draw_command_layout(
+            draw,
+            x=command_rect[0] + self.theme.trigger_padding_x,
+            y=command_rect[1] + self.theme.trigger_padding_y,
+            layout=command_layout,
+            font=self.body_font,
+            default_fill=self.theme.terminal_text,
+            guide_fill=self.theme.line,
+        )
+        body_text_y = command_rect[3] + self.SINGLE_PAGE_INNER_GAP
         self._draw_multiline_text(
             draw,
             x=rect[0] + self.GUIDE_SECTION_PADDING_X,
-            y=rect[1] + self.GUIDE_SECTION_PADDING_Y,
+            y=body_text_y,
             lines=body_lines,
             font=self.instruction_font,
             fill=self.theme.deep,
             line_height=body_line_height,
             render_code_chip=False,
         )
-        self._draw_support_strip(image, draw, layout=support_layout)
+        if demo_card_rect is not None:
+            capsule_width = min(
+                500,
+                max(
+                    300, self._text_width("看看它是怎么工作的", self.capsule_font) + 120
+                ),
+            )
+            capsule_rect = (
+                demo_card_rect[0] + (width - capsule_width) // 2,
+                demo_card_rect[1] - self.CAPSULE_HEIGHT // 2,
+                demo_card_rect[0] + (width - capsule_width) // 2 + capsule_width,
+                demo_card_rect[1] - self.CAPSULE_HEIGHT // 2 + self.CAPSULE_HEIGHT,
+            )
+            self._draw_capsule_title(
+                draw,
+                rect=capsule_rect,
+                text="看看它是怎么工作的",
+                fill=(255, 243, 228, 224),
+                outline=self._rgba(self.theme.accent, 52),
+            )
+            self._draw_shadowed_rect(
+                image,
+                rect=demo_card_rect,
+                radius=self.GUIDE_SECTION_RADIUS,
+                shadow_color=self.theme.card_shadow,
+                shadow_offset_y=self.theme.instruction_shadow_offset_y,
+                shadow_blur=self.theme.instruction_shadow_blur,
+                fill=self.theme.panel_bg,
+            )
+            self._draw_section_watermark(
+                draw,
+                rect=(
+                    demo_card_rect[0] + self.GUIDE_SECTION_PADDING_X,
+                    demo_card_rect[1] + 8,
+                    demo_card_rect[2] - self.GUIDE_SECTION_PADDING_X,
+                    demo_card_rect[1] + 78,
+                ),
+                text="DEMONSTRATION FLOW",
+                font=self.watermark_font_small,
+                fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
+                align="right",
+            )
+            badge_rect = (
+                demo_card_rect[0] + self.GUIDE_SECTION_PADDING_X,
+                demo_card_rect[1] + 28,
+                demo_card_rect[0] + self.GUIDE_SECTION_PADDING_X + 66,
+                demo_card_rect[1] + 28 + 52,
+            )
+            draw.rounded_rectangle(badge_rect, radius=18, fill=self.theme.accent)
+            self._draw_text_centered(
+                draw,
+                badge_rect,
+                "01",
+                font=self.step_badge_font,
+                fill="#FFFFFF",
+            )
+            title_x = badge_rect[2] + 18
+            title_y = badge_rect[1] + 4
+            self._draw_text(
+                draw,
+                x=title_x,
+                y=title_y,
+                text=self.DEFAULT_SECTION_TITLE,
+                font=self.instruction_font,
+                fill=self.theme.deep,
+            )
+            self._draw_text(
+                draw,
+                x=title_x
+                + self._text_width(self.DEFAULT_SECTION_TITLE, self.instruction_font)
+                + 14,
+                y=title_y + 8,
+                text=self.STEP_LABELS[0],
+                font=self.micro_caps_font,
+                fill=self.theme.hint,
+            )
+            shift_y = demo_card_rect[1] + 44 + 56 + 20
+            for placement in demo_turn_placements:
+                shifted = _ShowcaseTurnPlacement(
+                    spec=placement.spec,
+                    rect=(
+                        placement.rect[0],
+                        placement.rect[1] + shift_y,
+                        placement.rect[2],
+                        placement.rect[3] + shift_y,
+                    ),
+                    avatar_rect=(
+                        None
+                        if placement.avatar_rect is None
+                        else (
+                            placement.avatar_rect[0],
+                            placement.avatar_rect[1] + shift_y,
+                            placement.avatar_rect[2],
+                            placement.avatar_rect[3] + shift_y,
+                        )
+                    ),
+                    bubble_rect=(
+                        None
+                        if placement.bubble_rect is None
+                        else (
+                            placement.bubble_rect[0],
+                            placement.bubble_rect[1] + shift_y,
+                            placement.bubble_rect[2],
+                            placement.bubble_rect[3] + shift_y,
+                        )
+                    ),
+                    text_rect=(
+                        placement.text_rect[0],
+                        placement.text_rect[1] + shift_y,
+                        placement.text_rect[2],
+                        placement.text_rect[3] + shift_y,
+                    ),
+                    label_rect=(
+                        None
+                        if placement.label_rect is None
+                        else (
+                            placement.label_rect[0],
+                            placement.label_rect[1] + shift_y,
+                            placement.label_rect[2],
+                            placement.label_rect[3] + shift_y,
+                        )
+                    ),
+                )
+                self._draw_turn(image, draw, shifted, locale=locale)
+        self._draw_showcase_support_strip(image, draw, layout=support_layout)
         self._draw_trace_footer(
             draw,
             footer_rect=footer_rect,
@@ -650,6 +898,25 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + self.theme.hero_bottom_padding
         )
         body_text = build_plugin_summary_copy(node).strip()
+        primary_feature = self._primary_feature_for_entry(node)
+        command_layout = None
+        command_height = 0
+        if primary_feature is not None:
+            command_layout = build_command_layout(
+                feature_command_for_display_text(
+                    node.bundle, primary_feature, node.title
+                ),
+                max_width=width
+                - self.GUIDE_SECTION_PADDING_X * 2
+                - self.theme.trigger_padding_x * 2,
+                line_height=self._line_height_for_font(self.body_font),
+                indent_px=self.COMMAND_INDENT_PX,
+                measure_text=lambda value: self._text_width(value, self.body_font),
+                palette=self._command_palette(),
+            )
+            command_height = (
+                command_layout.total_height + self.theme.trigger_padding_y * 2
+            )
         body_lines = tuple(
             self._wrap_inline_text(
                 body_text,
@@ -660,11 +927,19 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         body_line_height = self._line_height_for_font(self.instruction_font)
         body_content_height = len(body_lines) * body_line_height if body_lines else 0
         section_height = (
-            self.GUIDE_SECTION_PADDING_Y * 2 + body_content_height + 24
+            self.GUIDE_SECTION_PADDING_Y * 2
+            + body_content_height
+            + command_height
+            + (
+                self.SINGLE_PAGE_INNER_GAP
+                if command_layout is not None and body_lines
+                else 0
+            )
+            + 24
             if body_lines
-            else self.GUIDE_SECTION_PADDING_Y * 2 + 24
+            else self.GUIDE_SECTION_PADDING_Y * 2 + command_height + 24
         )
-        support_layout = self._measure_support_strip(
+        support_layout = self._measure_showcase_support_strip(
             locale=locale,
             top=hero_bottom + section_height + self.SUPPORT_STRIP_GAP,
         )
@@ -693,6 +968,18 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             self.theme.hero_top
             + len(header_title_lines) * self._line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
+        )
+        self._draw_section_watermark(
+            draw,
+            rect=(
+                side,
+                summary_top + 4,
+                self.WIDTH - side - self.theme.hero_standee_size + 16,
+                hero_bottom,
+            ),
+            text="SUMMARY OVERVIEW",
+            font=self.watermark_font,
+            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
         )
         self._draw_multiline_text(
             draw,
@@ -724,17 +1011,56 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 shadow_blur=self.theme.instruction_shadow_blur,
                 fill=self.theme.panel_bg,
             )
+            self._draw_section_watermark(
+                draw,
+                rect=(
+                    rect[0] + self.GUIDE_SECTION_PADDING_X,
+                    rect[1] + 8,
+                    rect[2] - self.GUIDE_SECTION_PADDING_X,
+                    rect[1] + 80,
+                ),
+                text="MODULE SUMMARY",
+                font=self.watermark_font_small,
+                fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
+                align="right",
+            )
+            cursor_y = rect[1] + self.GUIDE_SECTION_PADDING_Y
+            if command_layout is not None:
+                command_rect = (
+                    rect[0] + self.GUIDE_SECTION_PADDING_X,
+                    cursor_y,
+                    rect[2] - self.GUIDE_SECTION_PADDING_X,
+                    cursor_y + command_height,
+                )
+                self._draw_soft_subcard(
+                    image,
+                    draw,
+                    command_rect,
+                    radius=self.SINGLE_PAGE_COMMAND_RADIUS,
+                    fill=self.theme.terminal_bg,
+                    outline=self._rgba(self.theme.accent, 52),
+                )
+                self._draw_command_layout(
+                    draw,
+                    x=command_rect[0] + self.theme.trigger_padding_x,
+                    y=command_rect[1] + self.theme.trigger_padding_y,
+                    layout=command_layout,
+                    font=self.body_font,
+                    default_fill=self.theme.terminal_text,
+                    guide_fill=self.theme.line,
+                )
+                cursor_y = command_rect[3] + self.SINGLE_PAGE_INNER_GAP
             self._draw_multiline_text(
                 draw,
                 x=rect[0] + self.GUIDE_SECTION_PADDING_X,
-                y=rect[1] + self.GUIDE_SECTION_PADDING_Y,
+                y=cursor_y,
                 lines=body_lines,
                 font=self.instruction_font,
                 fill=self.theme.deep,
                 line_height=body_line_height,
                 render_code_chip=False,
             )
-        self._draw_support_strip(image, draw, layout=support_layout)
+        self._draw_showcase_support_strip(image, draw, layout=support_layout)
         self._draw_trace_footer(
             draw,
             footer_rect=footer_rect,
@@ -1317,6 +1643,19 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         content_left = rect[0] + self.GUIDE_SECTION_PADDING_X
         cursor_y = rect[1] + self.GUIDE_SECTION_PADDING_Y
+        self._draw_section_watermark(
+            draw,
+            rect=(
+                content_left,
+                rect[1] + 8,
+                rect[2] - self.GUIDE_SECTION_PADDING_X,
+                rect[1] + 74,
+            ),
+            text="GUIDE SECTION",
+            font=self.watermark_font_small,
+            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
+            align="right",
+        )
         self._draw_multiline_text(
             draw,
             x=content_left,
@@ -1352,10 +1691,13 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + layout.trigger_layout.total_height
             + self.theme.trigger_padding_y * 2,
         )
-        draw.rounded_rectangle(
+        self._draw_soft_subcard(
+            image,
+            draw,
             trigger_rect,
-            radius=self.theme.trigger_radius,
+            radius=self.SINGLE_PAGE_COMMAND_RADIUS,
             fill=self.theme.terminal_bg,
+            outline=self._rgba(self.theme.accent, 48),
         )
         self._draw_command_layout(
             draw,
@@ -1386,10 +1728,13 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + layout.demo_layout.total_height
             + self.theme.trigger_padding_y * 2,
         )
-        draw.rounded_rectangle(
+        self._draw_soft_subcard(
+            image,
+            draw,
             demo_rect,
-            radius=self.theme.trigger_radius,
+            radius=self.SINGLE_PAGE_COMMAND_RADIUS,
             fill=self.theme.panel_soft_bg,
+            outline=self._rgba(self.theme.accent, 42),
         )
         self._draw_command_layout(
             draw,
@@ -1476,6 +1821,16 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                     placement.text_rect[1] + cursor_y,
                     placement.text_rect[2],
                     placement.text_rect[3] + cursor_y,
+                ),
+                label_rect=(
+                    None
+                    if placement.label_rect is None
+                    else (
+                        placement.label_rect[0],
+                        placement.label_rect[1] + cursor_y,
+                        placement.label_rect[2],
+                        placement.label_rect[3] + cursor_y,
+                    )
                 ),
             )
             self._draw_turn(image, draw, shifted, locale=locale)
@@ -1785,6 +2140,227 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             right_text=footer_right_text,
         )
         return encode_docs_image(canvas, webp_quality=88, webp_method=6)
+
+    def _primary_feature_for_entry(self, node: DocNode) -> FeatureDoc | None:
+        return node.features[0] if node.features else None
+
+    def _measure_showcase_support_strip(
+        self,
+        *,
+        locale: LocaleCode,
+        top: int,
+    ) -> _SupportStripLayout:
+        bundle = build_help_support_bundle(locale=locale)
+        side = self.theme.hero_side_padding
+        qr_image = self._load_support_qr_image(bundle.qr_asset_path)
+        qr_width = qr_image.width if qr_image is not None else 0
+        qr_frame_width = (
+            qr_width + self.SUPPORT_STRIP_QR_FRAME_PADDING_X * 2
+            if qr_image is not None
+            else 0
+        )
+        qr_frame_height = (
+            qr_image.height + self.SUPPORT_STRIP_QR_FRAME_PADDING_Y * 2
+            if qr_image is not None
+            else 0
+        )
+        text_width = (
+            self.WIDTH
+            - side * 2
+            - self.SUPPORT_STRIP_PADDING_X * 2
+            - (qr_frame_width + 28 if qr_image is not None else 0)
+        )
+        title_lines = tuple(
+            self._wrap_inline_text(
+                bundle.title,
+                max_width=text_width,
+                font=self.summary_font,
+            )
+        )
+        tip_lines = tuple(
+            self._wrap_inline_text(
+                bundle.tip_text,
+                max_width=text_width,
+                font=self.note_font,
+            )
+        )
+        group_lines = tuple(
+            tuple(
+                self._wrap_inline_text(
+                    group.title,
+                    max_width=max(160, text_width - 32),
+                    font=self.note_font,
+                )
+            )
+            for group in bundle.groups
+        )
+        title_height = len(title_lines) * self._line_height_for_font(self.summary_font)
+        tip_height = len(tip_lines) * self._line_height_for_font(self.note_font)
+        groups_height = sum(
+            len(lines) * self._line_height_for_font(self.note_font) + 10
+            for lines in group_lines
+        )
+        group_panel_height = groups_height + 24 if group_lines else 0
+        text_height = title_height + 18 + tip_height + 20 + group_panel_height
+        strip_height = max(
+            text_height + self.SUPPORT_STRIP_PADDING_Y * 2,
+            qr_frame_height + self.SUPPORT_STRIP_PADDING_Y * 2,
+        )
+        rect = (side, top, self.WIDTH - side, top + strip_height)
+        qr_rect = None
+        if qr_image is not None:
+            qr_frame_left = rect[2] - self.SUPPORT_STRIP_PADDING_X - qr_frame_width
+            qr_frame_top = (
+                rect[1]
+                + (strip_height - qr_frame_height) // 2
+                + self.SUPPORT_STRIP_QR_VERTICAL_OFFSET_Y
+            )
+            qr_frame_top = max(rect[1], qr_frame_top)
+            qr_left = qr_frame_left + self.SUPPORT_STRIP_QR_FRAME_PADDING_X
+            qr_top = qr_frame_top + self.SUPPORT_STRIP_QR_FRAME_PADDING_Y
+            qr_rect = (
+                qr_left,
+                qr_top,
+                qr_left + qr_image.width,
+                qr_top + qr_image.height,
+            )
+        return _SupportStripLayout(
+            rect=rect,
+            title_lines=title_lines,
+            tip_lines=tip_lines,
+            group_lines=group_lines,
+            qr_image=qr_image,
+            qr_rect=qr_rect,
+        )
+
+    def _draw_showcase_support_strip(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        layout: _SupportStripLayout,
+    ) -> None:
+        self._draw_shadowed_rect(
+            image,
+            rect=layout.rect,
+            radius=self.SUPPORT_STRIP_RADIUS,
+            shadow_color=self.theme.card_shadow,
+            shadow_offset_y=self.theme.instruction_shadow_offset_y,
+            shadow_blur=self.theme.instruction_shadow_blur,
+            fill=self.theme.panel_bg,
+        )
+        draw.rounded_rectangle(
+            (
+                layout.rect[0],
+                layout.rect[1],
+                layout.rect[0] + 12,
+                layout.rect[3],
+            ),
+            radius=12,
+            fill=self.theme.accent,
+        )
+        self._draw_section_watermark(
+            draw,
+            rect=(
+                layout.rect[0] + self.SUPPORT_STRIP_PADDING_X,
+                layout.rect[1] + 10,
+                layout.rect[2] - self.SUPPORT_STRIP_PADDING_X,
+                layout.rect[1] + 72,
+            ),
+            text="COMMUNITY INTERACTION",
+            font=self.watermark_font_small,
+            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
+            align="right",
+        )
+        text_x = layout.rect[0] + self.SUPPORT_STRIP_PADDING_X
+        text_y = layout.rect[1] + self.SUPPORT_STRIP_PADDING_Y
+        self._draw_multiline_text(
+            draw,
+            x=text_x,
+            y=text_y,
+            lines=layout.title_lines,
+            font=self.summary_font,
+            fill=self.theme.deep,
+            line_height=self._line_height_for_font(self.summary_font),
+            render_code_chip=False,
+        )
+        text_y += (
+            len(layout.title_lines) * self._line_height_for_font(self.summary_font) + 18
+        )
+        self._draw_multiline_text(
+            draw,
+            x=text_x,
+            y=text_y,
+            lines=layout.tip_lines,
+            font=self.note_font,
+            fill=self.theme.hint,
+            line_height=self._line_height_for_font(self.note_font),
+            render_code_chip=False,
+        )
+        text_y += (
+            len(layout.tip_lines) * self._line_height_for_font(self.note_font) + 20
+        )
+        if layout.group_lines:
+            group_panel_right = (
+                layout.qr_rect[0] - 24
+                if layout.qr_rect is not None
+                else layout.rect[2] - self.SUPPORT_STRIP_PADDING_X
+            )
+            group_panel_height = (
+                sum(
+                    len(lines) * self._line_height_for_font(self.note_font) + 10
+                    for lines in layout.group_lines
+                )
+                + 24
+            )
+            group_panel_rect = (
+                text_x,
+                text_y,
+                group_panel_right,
+                text_y + group_panel_height,
+            )
+            self._draw_soft_subcard(
+                image,
+                draw,
+                group_panel_rect,
+                radius=self.SUBCARD_RADIUS,
+                fill=self.theme.panel_soft_bg,
+                outline=self._rgba(self.theme.accent, 40),
+            )
+            group_text_y = group_panel_rect[1] + 12
+            for lines in layout.group_lines:
+                self._draw_multiline_text(
+                    draw,
+                    x=group_panel_rect[0] + 18,
+                    y=group_text_y,
+                    lines=lines,
+                    font=self.note_font,
+                    fill=self.theme.deep,
+                    line_height=self._line_height_for_font(self.note_font),
+                    render_code_chip=False,
+                )
+                group_text_y += (
+                    len(lines) * self._line_height_for_font(self.note_font) + 10
+                )
+        if layout.qr_image is not None and layout.qr_rect is not None:
+            qr_frame_rect = (
+                layout.qr_rect[0] - self.SUPPORT_STRIP_QR_FRAME_PADDING_X,
+                layout.qr_rect[1] - self.SUPPORT_STRIP_QR_FRAME_PADDING_Y,
+                layout.qr_rect[2] + self.SUPPORT_STRIP_QR_FRAME_PADDING_X,
+                layout.qr_rect[3] + self.SUPPORT_STRIP_QR_FRAME_PADDING_Y,
+            )
+            self._draw_soft_subcard(
+                image,
+                draw,
+                qr_frame_rect,
+                radius=self.SUPPORT_STRIP_QR_FRAME_RADIUS,
+                fill="#FFFDFC",
+                outline=self._rgba(self.theme.accent, 48),
+            )
+            image.alpha_composite(
+                layout.qr_image,
+                (layout.qr_rect[0], layout.qr_rect[1]),
+            )
 
     def _load_support_qr_image(self, asset_path: Path) -> Image.Image | None:
         if not asset_path.exists():
