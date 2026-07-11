@@ -136,6 +136,23 @@ class WaterReportInsightItem:
 
 
 @dataclass(frozen=True)
+class WaterGroupShareSlice:
+    group_id: str
+    display_name: str
+    msg_count: int
+    share_ratio: float
+    is_focus_group: bool = False
+
+
+@dataclass(frozen=True)
+class WaterGroupRankTrendSeries:
+    group_id: str
+    display_name: str
+    ranks: list[int | None]
+    is_focus_group: bool = False
+
+
+@dataclass(frozen=True)
 class WaterGroupReportImageData:
     title: str
     badge: str
@@ -153,6 +170,11 @@ class WaterGroupReportImageData:
     group_rank_items: list[WaterGroupDailyRankCardItem]
     previous_hourly_counts: list[int] = field(default_factory=list)
     group_rank_insights: list[WaterReportInsightItem] = field(default_factory=list)
+    group_share_slices: list[WaterGroupShareSlice] = field(default_factory=list)
+    group_rank_trend_labels: list[str] = field(default_factory=list)
+    group_rank_trend_series: list[WaterGroupRankTrendSeries] = field(
+        default_factory=list
+    )
     right_panel_layout_tier: WaterReportLayoutTier = "compact"
     group_rank_share_ratio: float = 0.0
     group_rank_total_msg_count: int = 0

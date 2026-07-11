@@ -322,3 +322,144 @@ async def test_get_group_daily_rank_snapshot_queries_global_rows(
     assert [item.group_id for item in snapshot.leaderboard] == ["29999", "20001"]
     assert get_window_mock.await_args_list[0].args == (20260613, 20260613)
     assert get_window_mock.await_args_list[1].args == (20260612, 20260612)
+
+
+def test_build_group_distribution_items_from_rows_aggregates_multi_user_groups() -> (
+    None
+):
+    repo = WaterRepository()
+    rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260613,
+            msg_count=20,
+            active_hours=2,
+            hourly_counts=[1 if hour in {1, 2} else 0 for hour in range(24)],
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10002",
+            record_date=20260613,
+            msg_count=15,
+            active_hours=1,
+            hourly_counts=[1 if hour == 5 else 0 for hour in range(24)],
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20002",
+            user_id="10003",
+            record_date=20260613,
+            msg_count=48,
+            active_hours=3,
+            hourly_counts=[1 if hour in {3, 4, 5} else 0 for hour in range(24)],
+            created_at=1,
+            updated_at=2,
+        ),
+    ]
+
+    items = repo._build_group_distribution_items_from_rows(rows)
+
+    assert [item.group_id for item in items] == ["20002", "20001"]
+    assert items[0].msg_count == 48
+    assert items[0].current_rank == 1
+    assert items[1].msg_count == 35
+    assert items[1].active_user_count == 2
+    assert items[1].active_hours == 3
+    assert items[1].hourly_counts[1] == 1
+    assert items[1].hourly_counts[5] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_group_daily_rank_history_builds_day_by_day_ranks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = WaterRepository()
+    rows = [
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260611,
+            msg_count=30,
+            active_hours=2,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20002",
+            user_id="10002",
+            record_date=20260611,
+            msg_count=45,
+            active_hours=3,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260612,
+            msg_count=55,
+            active_hours=4,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20002",
+            user_id="10002",
+            record_date=20260612,
+            msg_count=35,
+            active_hours=2,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20001",
+            user_id="10001",
+            record_date=20260613,
+            msg_count=40,
+            active_hours=2,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+        WaterSummaryRecord(
+            group_id="20002",
+            user_id="10002",
+            record_date=20260613,
+            msg_count=58,
+            active_hours=4,
+            hourly_counts=[1] * 24,
+            created_at=1,
+            updated_at=2,
+        ),
+    ]
+    monkeypatch.setattr(repo, "get_summaries_in_window", AsyncMock(return_value=rows))
+
+    history = await repo.get_group_daily_rank_history(
+        group_ids=["20001", "20002", "29999"],
+        end_record_date=20260613,
+        days=3,
+    )
+
+    assert history["20001"] == [
+        (20260611, 2),
+        (20260612, 1),
+        (20260613, 2),
+    ]
+    assert history["20002"] == [
+        (20260611, 1),
+        (20260612, 2),
+        (20260613, 1),
+    ]
+    assert history["29999"] == [
+        (20260611, None),
+        (20260612, None),
+        (20260613, None),
+    ]

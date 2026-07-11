@@ -14,7 +14,9 @@ from src.plugins.water.database.repo_models import (
 )
 from src.plugins.water.renderers import (
     WaterGroupDailyRankCardItem,
+    WaterGroupRankTrendSeries,
     WaterGroupReportImageData,
+    WaterGroupShareSlice,
     WaterPeriodRankCardData,
     WaterRankCardItem,
 )
@@ -586,6 +588,27 @@ async def test_build_water_group_report_image_smoke() -> None:
         group_rank_next_gap_msg_count=22,
         group_rank_has_hidden_before=True,
         group_rank_has_hidden_after=True,
+        group_share_slices=[
+            WaterGroupShareSlice(
+                group_id="20001",
+                display_name="测试群",
+                msg_count=120,
+                share_ratio=0.4,
+                is_focus_group=True,
+            ),
+            WaterGroupShareSlice(
+                group_id="20002",
+                display_name="隔壁群",
+                msg_count=98,
+                share_ratio=98 / 300,
+            ),
+            WaterGroupShareSlice(
+                group_id="20003",
+                display_name="第三群",
+                msg_count=82,
+                share_ratio=82 / 300,
+            ),
+        ],
     )
 
     from src.plugins.water.renderers import build_water_group_report_image
@@ -664,6 +687,33 @@ async def test_build_water_group_report_image_balanced_panel_smoke() -> None:
         group_rank_next_gap_msg_count=22,
         group_rank_has_hidden_before=False,
         group_rank_has_hidden_after=True,
+        group_share_slices=[
+            WaterGroupShareSlice(
+                group_id="20004",
+                display_name="榜一群",
+                msg_count=260,
+                share_ratio=260 / 620,
+            ),
+            WaterGroupShareSlice(
+                group_id="20001",
+                display_name="测试群",
+                msg_count=220,
+                share_ratio=220 / 620,
+                is_focus_group=True,
+            ),
+            WaterGroupShareSlice(
+                group_id="20002",
+                display_name="隔壁群",
+                msg_count=90,
+                share_ratio=90 / 620,
+            ),
+            WaterGroupShareSlice(
+                group_id="20003",
+                display_name="第三群",
+                msg_count=50,
+                share_ratio=50 / 620,
+            ),
+        ],
     )
 
     from src.plugins.water.renderers import build_water_group_report_image
@@ -742,6 +792,46 @@ async def test_build_water_group_report_image_expanded_panel_smoke() -> None:
         group_rank_next_gap_msg_count=122,
         group_rank_has_hidden_before=False,
         group_rank_has_hidden_after=True,
+        group_share_slices=[
+            WaterGroupShareSlice(
+                group_id="20002",
+                display_name="榜一群",
+                msg_count=598,
+                share_ratio=598 / 1240,
+            ),
+            WaterGroupShareSlice(
+                group_id="20001",
+                display_name="测试群",
+                msg_count=540,
+                share_ratio=540 / 1240,
+                is_focus_group=True,
+            ),
+            WaterGroupShareSlice(
+                group_id="20003",
+                display_name="第三群",
+                msg_count=102,
+                share_ratio=102 / 1240,
+            ),
+        ],
+        group_rank_trend_labels=["05/01", "05/08", "05/15", "05/22", "05/29"],
+        group_rank_trend_series=[
+            WaterGroupRankTrendSeries(
+                group_id="20002",
+                display_name="榜一群",
+                ranks=[1, 1, 1, 1, 1],
+            ),
+            WaterGroupRankTrendSeries(
+                group_id="20001",
+                display_name="测试群",
+                ranks=[4, 3, 3, 2, 2],
+                is_focus_group=True,
+            ),
+            WaterGroupRankTrendSeries(
+                group_id="20003",
+                display_name="第三群",
+                ranks=[2, 2, 4, 4, 3],
+            ),
+        ],
     )
 
     from src.plugins.water.renderers import build_water_group_report_image

@@ -686,10 +686,12 @@ MessageKey = Literal[
     "water.report.cooldown",
     "water.report.empty",
     "water.report.entity_label",
+    "water.report.group_rank.analysis.detail",
     "water.report.group_rank.analysis.subtitle",
     "water.report.group_rank.analysis.title",
     "water.report.group_rank.count",
     "water.report.group_rank.ellipsis",
+    "water.report.group_rank.focus_badge",
     "water.report.group_rank.insight.bottom",
     "water.report.group_rank.insight.next_gap",
     "water.report.group_rank.insight.peak_hour",
@@ -950,7 +952,7 @@ MessageKey = Literal[
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported"
+    "wordbank.vote.supported",
 ]
 
 ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
@@ -1637,10 +1639,12 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "water.report.cooldown",
     "water.report.empty",
     "water.report.entity_label",
+    "water.report.group_rank.analysis.detail",
     "water.report.group_rank.analysis.subtitle",
     "water.report.group_rank.analysis.title",
     "water.report.group_rank.count",
     "water.report.group_rank.ellipsis",
+    "water.report.group_rank.focus_badge",
     "water.report.group_rank.insight.bottom",
     "water.report.group_rank.insight.next_gap",
     "water.report.group_rank.insight.peak_hour",
@@ -1901,5 +1905,5 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported"
+    "wordbank.vote.supported",
 )

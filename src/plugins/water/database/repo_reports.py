@@ -262,6 +262,110 @@ class WaterRepositoryReportsMixin:
             radius=radius,
         )
 
+    async def get_group_daily_rank_history(
+        self,
+        *,
+        group_ids: Sequence[str],
+        end_record_date: int,
+        days: int = 30,
+        live: bool = False,
+    ) -> dict[str, list[tuple[int, int | None]]]:
+        repo_self = cast("WaterRepository", self)
+        if not group_ids or days <= 0:
+            return {}
+
+        end_day = arrow.get(str(end_record_date), "YYYYMMDD").to("Asia/Shanghai")
+        start_day = end_day.shift(days=-(days - 1))
+        start_record_date = int(start_day.format("YYYYMMDD"))
+        summary_end_record_date = (
+            repo_self._previous_date(end_record_date) if live else end_record_date
+        )
+
+        summary_rows: list[WaterSummaryRecord] = []
+        if start_record_date <= summary_end_record_date:
+            summary_rows = list(
+                await repo_self.get_summaries_in_window(
+                    start_record_date,
+                    summary_end_record_date,
+                )
+            )
+
+        all_rows = list(summary_rows)
+        if live:
+            await water_writer.flush_now()
+            current_rows = await repo_self._collect_realtime_daily_rows(
+                scope="global",
+                group_id="",
+                record_date=end_record_date,
+            )
+            all_rows.extend(current_rows)
+
+        grouped_by_date: dict[int, list[WaterSummaryRecord]] = defaultdict(list)
+        for row in all_rows:
+            grouped_by_date[int(row.record_date)].append(row)
+
+        history_dates = [
+            int(start_day.shift(days=offset).format("YYYYMMDD"))
+            for offset in range(days)
+        ]
+        history: dict[str, list[tuple[int, int | None]]] = {
+            group_id: [(record_date, None) for record_date in history_dates]
+            for group_id in group_ids
+        }
+        for index, record_date in enumerate(history_dates):
+            rows = grouped_by_date.get(record_date)
+            if not rows:
+                continue
+            current_aggregates = repo_self._build_entity_period_aggregates(
+                rows,
+                lambda item: item.group_id,
+            )
+            ordered_current = sorted(
+                (
+                    (
+                        entity_id,
+                        msg_count,
+                        active_days,
+                        active_hours,
+                        hourly_counts,
+                        group_count,
+                    )
+                    for entity_id, (
+                        msg_count,
+                        active_days,
+                        active_hours,
+                        hourly_counts,
+                        group_count,
+                    ) in current_aggregates.items()
+                ),
+                key=repo_self._natural_rank_sort_key,
+            )
+            ranks = {
+                entity_id: current_rank
+                for current_rank, (entity_id, *_rest) in enumerate(ordered_current, 1)
+            }
+            for group_id in group_ids:
+                history[group_id][index] = (record_date, ranks.get(group_id))
+        return history
+
+    async def get_group_daily_distribution_items(
+        self,
+        *,
+        record_date: int,
+        live: bool = False,
+    ) -> list[WaterGroupDailyRankItem]:
+        repo_self = cast("WaterRepository", self)
+        if live:
+            await water_writer.flush_now()
+            rows = await repo_self._collect_realtime_daily_rows(
+                scope="global",
+                group_id="",
+                record_date=record_date,
+            )
+        else:
+            rows = await repo_self.get_summaries_in_window(record_date, record_date)
+        return repo_self._build_group_distribution_items_from_rows(rows)
+
     def _build_group_report_snapshot_from_rows(
         self,
         *,
@@ -456,6 +560,68 @@ class WaterRepositoryReportsMixin:
             has_hidden_before=start > 0,
             has_hidden_after=end < len(items),
         )
+
+    def _build_group_distribution_items_from_rows(
+        self,
+        rows: Sequence[WaterSummaryRecord],
+    ) -> list[WaterGroupDailyRankItem]:
+        repo_self = cast("WaterRepository", self)
+        if not rows:
+            return []
+        current_aggregates = repo_self._build_entity_period_aggregates(
+            rows,
+            lambda item: item.group_id,
+        )
+        group_active_users: dict[str, set[str]] = defaultdict(set)
+        group_hourly_counts: dict[str, list[int]] = defaultdict(lambda: [0] * 24)
+        for row in rows:
+            current_group_id = str(row.group_id)
+            group_active_users[current_group_id].add(str(row.user_id))
+            hourly_counts = group_hourly_counts[current_group_id]
+            for hour, count in enumerate(row.hourly_counts):
+                hourly_counts[hour] += int(count)
+
+        ordered_current = sorted(
+            (
+                (
+                    entity_id,
+                    msg_count,
+                    active_days,
+                    active_hours,
+                    hourly_counts,
+                    group_count,
+                )
+                for entity_id, (
+                    msg_count,
+                    active_days,
+                    active_hours,
+                    hourly_counts,
+                    group_count,
+                ) in current_aggregates.items()
+            ),
+            key=repo_self._natural_rank_sort_key,
+        )
+        return [
+            WaterGroupDailyRankItem(
+                group_id=entity_id,
+                msg_count=msg_count,
+                active_user_count=len(group_active_users.get(entity_id, set())),
+                active_hours=sum(
+                    1 for count in group_hourly_counts[entity_id] if count
+                ),
+                hourly_counts=group_hourly_counts[entity_id],
+                current_rank=current_rank,
+                trend=None,
+            )
+            for current_rank, (
+                entity_id,
+                msg_count,
+                _active_days,
+                _active_hours,
+                _aggregate_hourly_counts,
+                _group_count,
+            ) in enumerate(ordered_current, 1)
+        ]
 
     async def _collect_realtime_daily_rows(
         self,

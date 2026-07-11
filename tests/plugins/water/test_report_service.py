@@ -174,6 +174,11 @@ async def test_build_card_data_keeps_group_report_core_fields(
         "_build_group_rank_snapshot",
         AsyncMock(return_value=None),
     )
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "get_group_daily_distribution_items",
+        AsyncMock(return_value=[]),
+    )
     snapshot = WaterGroupReportSnapshot(
         group_id="20001",
         record_date=20260613,
@@ -354,6 +359,50 @@ async def test_build_card_data_includes_group_rank_block(
         AsyncMock(return_value=group_rank_snapshot),
     )
     monkeypatch.setattr(
+        report_module.water_repo,
+        "get_group_daily_distribution_items",
+        AsyncMock(
+            return_value=[
+                WaterGroupDailyRankItem(
+                    group_id="20001",
+                    msg_count=42,
+                    active_user_count=9,
+                    active_hours=6,
+                    hourly_counts=[hour % 3 for hour in range(24)],
+                    current_rank=3,
+                    trend=1,
+                ),
+                WaterGroupDailyRankItem(
+                    group_id="20002",
+                    msg_count=39,
+                    active_user_count=8,
+                    active_hours=5,
+                    hourly_counts=[0] * 24,
+                    current_rank=4,
+                    trend=-1,
+                ),
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "get_group_daily_rank_history",
+        AsyncMock(
+            return_value={
+                "20001": [
+                    (20260611, 4),
+                    (20260612, 4),
+                    (20260613, 3),
+                ],
+                "20002": [
+                    (20260611, 3),
+                    (20260612, 3),
+                    (20260613, 4),
+                ],
+            }
+        ),
+    )
+    monkeypatch.setattr(
         report_module.QQAvatar,
         "fetch_group",
         AsyncMock(return_value=BuildImage.new("RGBA", (64, 64), "#F6B7D2")),
@@ -377,6 +426,18 @@ async def test_build_card_data_includes_group_rank_block(
     assert data.previous_hourly_counts == [0] * 24
     assert data.right_panel_layout_tier == "compact"
     assert data.group_rank_share_ratio == pytest.approx(42 / 81)
+    assert [item.display_name for item in data.group_share_slices] == [
+        "测试群",
+        "隔壁群",
+    ]
+    assert data.group_share_slices[0].is_focus_group is True
+    assert data.group_rank_trend_labels == ["06/11", "06/12", "06/13"]
+    assert [item.group_id for item in data.group_rank_trend_series] == [
+        "20001",
+        "20002",
+    ]
+    assert data.group_rank_trend_series[0].is_focus_group is True
+    assert data.group_rank_trend_series[0].ranks == [4, 4, 3]
     assert data.group_rank_total_msg_count == 81
     assert data.group_rank_focus_msg_count == 42
     assert data.group_rank_prev_gap_msg_count is None
@@ -411,6 +472,43 @@ def test_build_group_rank_summary_uses_numeric_delta_when_no_previous_rank() -> 
 
 def test_build_group_rank_summary_returns_empty_without_snapshot() -> None:
     assert water_report_service._build_group_rank_summary(None, "zh-CN") == ""
+
+
+def test_select_trend_group_ids_keeps_focus_group_within_plus_minus_three() -> None:
+    snapshot = WaterGroupDailyRankSnapshot(
+        focus_group_id="20005",
+        record_date=20260613,
+        total_groups=10,
+        total_msg_count=500,
+        focus_rank=5,
+        focus_trend=1,
+        leaderboard=[
+            WaterGroupDailyRankItem(
+                group_id=f"2000{idx}",
+                msg_count=100 - idx,
+                active_user_count=idx,
+                active_hours=idx,
+                hourly_counts=[0] * 24,
+                current_rank=idx,
+                trend=0,
+            )
+            for idx in range(1, 9)
+        ],
+        has_hidden_before=True,
+        has_hidden_after=True,
+    )
+
+    group_ids = water_report_service._select_trend_group_ids(snapshot)
+
+    assert group_ids == [
+        "20002",
+        "20003",
+        "20004",
+        "20005",
+        "20006",
+        "20007",
+        "20008",
+    ]
 
 
 def test_try_acquire_today_report_cooldown_skips_in_debug(

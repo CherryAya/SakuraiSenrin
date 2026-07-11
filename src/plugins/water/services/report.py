@@ -32,7 +32,9 @@ from src.plugins.water.message_support import (
 )
 from src.plugins.water.renderers.models import (
     WaterGroupDailyRankCardItem,
+    WaterGroupRankTrendSeries,
     WaterGroupReportImageData,
+    WaterGroupShareSlice,
     WaterRankCardItem,
     WaterReportInsightItem,
 )
@@ -334,6 +336,19 @@ class WaterReportService:
         group_rank_items = await self._build_group_rank_items(
             group_rank_snapshot,
         )
+        group_share_slices = await self._build_group_share_slices(
+            window,
+            snapshot,
+            group_rank_snapshot,
+        )
+        (
+            group_rank_trend_labels,
+            group_rank_trend_series,
+        ) = await self._build_group_rank_trend_series(
+            window,
+            snapshot,
+            group_rank_snapshot,
+        )
         group_rank_metrics = self._build_group_rank_metrics(
             group_rank_snapshot,
             snapshot,
@@ -400,12 +415,15 @@ class WaterReportService:
             ),
             group_rank_items=group_rank_items or [],
             group_rank_insights=group_rank_insights,
+            group_share_slices=group_share_slices,
+            group_rank_trend_labels=group_rank_trend_labels,
+            group_rank_trend_series=group_rank_trend_series,
             right_panel_layout_tier=pick_group_report_right_panel_tier(
                 user_count=len(top_items),
                 rank_item_count=len(group_rank_items or []),
                 has_hidden_before=group_rank_has_hidden_before,
                 has_hidden_after=group_rank_has_hidden_after,
-                has_trend_history=bool(snapshot.previous_hourly_counts),
+                has_trend_history=bool(group_rank_trend_series),
             ),
             group_rank_share_ratio=float(group_rank_metrics["share_ratio"] or 0.0),
             group_rank_total_msg_count=int(group_rank_metrics["total_msg_count"] or 0),
@@ -523,6 +541,105 @@ class WaterReportService:
             )
             for idx, item in enumerate(snapshot.leaderboard)
         ]
+
+    async def _build_group_share_slices(
+        self,
+        window: WaterGroupReportWindow,
+        snapshot: WaterGroupReportSnapshot,
+        group_rank_snapshot: WaterGroupDailyRankSnapshot | None,
+    ) -> list[WaterGroupShareSlice]:
+        distribution_items = await water_repo.get_group_daily_distribution_items(
+            record_date=snapshot.record_date,
+            live=window == "today_live",
+        )
+        if not distribution_items:
+            return []
+        names = await asyncio.gather(
+            *(resolve_group_name(None, item.group_id) for item in distribution_items)
+        )
+        total_msg_count = sum(item.msg_count for item in distribution_items) or 1
+        focus_group_id = (
+            group_rank_snapshot.focus_group_id
+            if group_rank_snapshot is not None
+            else snapshot.group_id
+        )
+        return [
+            WaterGroupShareSlice(
+                group_id=item.group_id,
+                display_name=names[idx],
+                msg_count=item.msg_count,
+                share_ratio=item.msg_count / total_msg_count,
+                is_focus_group=item.group_id == focus_group_id,
+            )
+            for idx, item in enumerate(distribution_items)
+        ]
+
+    async def _build_group_rank_trend_series(
+        self,
+        window: WaterGroupReportWindow,
+        snapshot: WaterGroupReportSnapshot,
+        group_rank_snapshot: WaterGroupDailyRankSnapshot | None,
+    ) -> tuple[list[str], list[WaterGroupRankTrendSeries]]:
+        trend_group_ids = self._select_trend_group_ids(group_rank_snapshot)
+        if not trend_group_ids:
+            return [], []
+        history = await water_repo.get_group_daily_rank_history(
+            group_ids=trend_group_ids,
+            end_record_date=snapshot.record_date,
+            days=30,
+            live=window == "today_live",
+        )
+        if not history:
+            return [], []
+        first_history = next(iter(history.values()))
+        labels = [
+            arrow.get(str(record_date), "YYYYMMDD").format("MM/DD")
+            for record_date, _rank in first_history
+        ]
+        names = await asyncio.gather(
+            *(resolve_group_name(None, group_id) for group_id in trend_group_ids)
+        )
+        focus_group_id = (
+            group_rank_snapshot.focus_group_id
+            if group_rank_snapshot is not None
+            else snapshot.group_id
+        )
+        series = [
+            WaterGroupRankTrendSeries(
+                group_id=group_id,
+                display_name=names[idx],
+                ranks=[rank for _record_date, rank in history[group_id]],
+                is_focus_group=group_id == focus_group_id,
+            )
+            for idx, group_id in enumerate(trend_group_ids)
+        ]
+        return labels, series
+
+    @staticmethod
+    def _select_trend_group_ids(
+        snapshot: WaterGroupDailyRankSnapshot | None,
+        *,
+        radius: int = 3,
+    ) -> list[str]:
+        if snapshot is None or not snapshot.leaderboard:
+            return []
+        focus_index = next(
+            (
+                index
+                for index, item in enumerate(snapshot.leaderboard)
+                if item.group_id == snapshot.focus_group_id
+            ),
+            None,
+        )
+        if focus_index is None:
+            return []
+        window_size = radius * 2 + 1
+        start = max(
+            0,
+            min(focus_index - radius, len(snapshot.leaderboard) - window_size),
+        )
+        end = min(len(snapshot.leaderboard), start + window_size)
+        return [item.group_id for item in snapshot.leaderboard[start:end]]
 
     def _build_group_rank_summary(
         self,

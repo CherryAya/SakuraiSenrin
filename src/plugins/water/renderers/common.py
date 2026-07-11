@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import arrow
 from PIL import Image, ImageChops, ImageDraw
 from pil_utils import BuildImage
@@ -332,6 +334,42 @@ def draw_donut_chart(
     card.draw.ellipse(inner_bbox, fill=inner_color)
 
 
+def draw_pie_chart(
+    card: BuildImage,
+    *,
+    x: int,
+    y: int,
+    size: int,
+    ratios: list[float],
+    colors: list[str],
+    highlight_index: int | None = None,
+    highlight_offset: int = 0,
+) -> None:
+    bbox = (x, y, x + size, y + size)
+    start_angle = -90.0
+    for index, ratio in enumerate(ratios):
+        span = max(0.0, min(1.0, ratio)) * 360.0
+        if span <= 0:
+            continue
+        draw_bbox = bbox
+        if (
+            highlight_index is not None
+            and index == highlight_index
+            and highlight_offset > 0
+        ):
+            mid_angle = start_angle + span / 2
+            dx = round(math.cos(math.radians(mid_angle)) * highlight_offset)
+            dy = round(math.sin(math.radians(mid_angle)) * highlight_offset)
+            draw_bbox = (x + dx, y + dy, x + size + dx, y + size + dy)
+        card.draw.pieslice(
+            draw_bbox,
+            start=start_angle,
+            end=start_angle + span,
+            fill=colors[index % len(colors)],
+        )
+        start_angle += span
+
+
 def draw_dual_hourly_trend(
     card: BuildImage,
     *,
@@ -415,4 +453,119 @@ def draw_dual_hourly_trend(
                 fill=label_color,
                 halign="center",
                 font_families=[SYS_FONT_NAME],
+            )
+
+
+def draw_group_rank_trend_chart(
+    card: BuildImage,
+    *,
+    x: int,
+    y: int,
+    w: int,
+    h: int,
+    labels: list[str],
+    series: list[tuple[str, list[int | None], bool]],
+    axis_color: str,
+    label_color: str,
+    scale: float,
+) -> None:
+    if not labels or not series:
+        return
+    chart_h = h - int(24 * scale)
+    baseline_y = y + chart_h
+    all_ranks = [
+        rank for _name, ranks, _focus in series for rank in ranks if rank is not None
+    ]
+    max_rank = max(all_ranks) if all_ranks else 1
+    min_rank = min(all_ranks) if all_ranks else 1
+    if min_rank == max_rank:
+        max_rank += 1
+
+    card.draw.line(
+        (x, baseline_y, x + w, baseline_y),
+        fill=axis_color,
+        width=max(1, int(1 * scale)),
+    )
+    left_axis_x = x + int(20 * scale)
+    card.draw.line(
+        (left_axis_x, y, left_axis_x, baseline_y),
+        fill=axis_color,
+        width=max(1, int(1 * scale)),
+    )
+    tick_values = sorted({1, min_rank, (min_rank + max_rank) // 2, max_rank})
+    for tick in tick_values:
+        relative = (
+            0.0 if max_rank == min_rank else (tick - min_rank) / (max_rank - min_rank)
+        )
+        tick_y = y + int(relative * max(chart_h - int(8 * scale), 1))
+        card.draw.line(
+            (left_axis_x, tick_y, x + w, tick_y),
+            fill=mix_hex(axis_color, WATER_THEME.white, 0.22),
+            width=1,
+        )
+        card.draw_text(
+            (
+                x,
+                tick_y - int(6 * scale),
+                left_axis_x - int(4 * scale),
+                tick_y + int(6 * scale),
+            ),
+            str(tick),
+            max_fontsize=int(8 * scale),
+            min_fontsize=int(6 * scale),
+            fill=label_color,
+            halign="right",
+            valign="center",
+            font_families=[SYS_FONT_NAME],
+        )
+
+    plot_x = left_axis_x + int(10 * scale)
+    plot_w = w - (plot_x - x)
+    label_indexes = sorted(
+        {0, len(labels) // 3, (len(labels) * 2) // 3, len(labels) - 1}
+    )
+    for idx in label_indexes:
+        px = plot_x + int((plot_w - 1) * idx / max(1, len(labels) - 1))
+        card.draw_text(
+            (
+                px - int(20 * scale),
+                baseline_y + int(4 * scale),
+                px + int(20 * scale),
+                y + h,
+            ),
+            labels[idx],
+            max_fontsize=int(8 * scale),
+            min_fontsize=int(6 * scale),
+            fill=label_color,
+            halign="center",
+            font_families=[SYS_FONT_NAME],
+        )
+
+    for color, ranks, is_focus in series:
+        points: list[tuple[int, int]] = []
+        for idx, rank in enumerate(ranks):
+            if rank is None:
+                if len(points) >= 2:
+                    card.draw.line(
+                        points,
+                        fill=color,
+                        width=max(2, int((4 if is_focus else 2) * scale / 2)),
+                        joint="curve",
+                    )
+                points = []
+                continue
+            px = plot_x + int((plot_w - 1) * idx / max(1, len(labels) - 1))
+            relative = (
+                0.0
+                if max_rank == min_rank
+                else (rank - min_rank) / (max_rank - min_rank)
+            )
+            py = y + int(relative * max(chart_h - int(8 * scale), 1))
+            points.append((px, py))
+        if len(points) >= 2:
+            card.draw.line(
+                points,
+                fill=color,
+                width=max(2, int((4 if is_focus else 2) * scale / 2)),
+                joint="curve",
             )

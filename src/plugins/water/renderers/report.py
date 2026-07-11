@@ -18,15 +18,20 @@ from .common import (
     SYS_FONT_NAME,
     WATER_THEME,
     build_avatar_fallback,
-    draw_donut_chart,
-    draw_dual_hourly_trend,
+    draw_group_rank_trend_chart,
     draw_hourly_histogram,
+    draw_pie_chart,
     draw_report_footer,
     format_delta,
     format_trend,
+    mix_hex,
     short_exp,
 )
-from .models import WaterGroupReportImageData, WaterPeriodRankCardData
+from .models import (
+    WaterGroupReportImageData,
+    WaterGroupShareSlice,
+    WaterPeriodRankCardData,
+)
 from .rank import WaterRankRenderer
 from .report_layout import (
     compute_group_report_right_extra_height,
@@ -94,9 +99,52 @@ def _group_rank_row_fill(
 ) -> str:
     if not is_focus_group:
         return base_fill
-    from .common import mix_hex
-
     return mix_hex(base_fill, accent, 0.16)
+
+
+def _group_share_palette(theme: Any) -> tuple[str, ...]:
+    return (
+        theme.blue,
+        theme.mint,
+        mix_hex(theme.accent, theme.blue, 0.42),
+        mix_hex(theme.accent, theme.mint, 0.42),
+        mix_hex(theme.deep, theme.blue, 0.18),
+        mix_hex(theme.deep, theme.mint, 0.22),
+        mix_hex(theme.podium_gold_badge, theme.blue, 0.35),
+        mix_hex(theme.podium_gold_badge, theme.mint, 0.35),
+    )
+
+
+def _group_trend_palette(theme: Any) -> tuple[str, ...]:
+    return (
+        theme.blue,
+        theme.mint,
+        mix_hex(theme.accent, theme.blue, 0.25),
+        mix_hex(theme.accent, theme.mint, 0.3),
+        mix_hex(theme.deep, theme.blue, 0.1),
+        mix_hex(theme.deep, theme.mint, 0.14),
+        theme.trend_flat,
+    )
+
+
+def _pick_group_share_legend_items(
+    slices: list[WaterGroupShareSlice],
+    *,
+    limit: int,
+) -> list[WaterGroupShareSlice]:
+    if not slices or limit <= 0:
+        return []
+    picked = list(slices[:limit])
+    focus_slice = next((item for item in slices if item.is_focus_group), None)
+    if focus_slice is None or any(
+        item.group_id == focus_slice.group_id for item in picked
+    ):
+        return picked
+    if len(picked) >= limit:
+        picked[-1] = focus_slice
+        return picked
+    picked.append(focus_slice)
+    return picked
 
 
 def _render_compact_group_rank_insights(
@@ -195,6 +243,7 @@ def _render_group_rank_share_panel(
     strong: str,
     hint: str,
 ) -> None:
+    slices = data.group_share_slices
     card.draw_rounded_rectangle(
         (x, y, x + w, y + h), radius=int(18 * scale), fill=theme.panel_soft_bg
     )
@@ -212,9 +261,11 @@ def _render_group_rank_share_panel(
         halign="left",
         font_families=[WATER_THEME.white],
     )
-    focus_count = data.group_rank_focus_msg_count
-    total_count = data.group_rank_total_msg_count
-    other_count = max(0, total_count - focus_count)
+    if not slices:
+        return
+
+    focus_slice = next((item for item in slices if item.is_focus_group), slices[0])
+    total_count = sum(item.msg_count for item in slices)
     card.draw_text(
         (
             x + int(18 * scale),
@@ -225,8 +276,8 @@ def _render_group_rank_share_panel(
         tr(
             locale,
             "water.report.group_rank.analysis.subtitle",
-            focus=short_exp(focus_count),
-            others=short_exp(other_count),
+            share=f"{focus_slice.share_ratio * 100:.1f}%",
+            total_groups=len(slices),
         ),
         max_fontsize=int(10 * scale),
         min_fontsize=int(8 * scale),
@@ -234,110 +285,217 @@ def _render_group_rank_share_panel(
         halign="left",
         font_families=[WATER_THEME.white],
     )
-    donut_size = min(max(int(112 * scale), h - int(58 * scale)), int(w * 0.38))
-    donut_x = x + int(18 * scale)
-    donut_y = y + max(int(42 * scale), (h - donut_size) // 2)
-    draw_donut_chart(
-        card,
-        x=donut_x,
-        y=donut_y,
-        size=donut_size,
-        ratio=data.group_rank_share_ratio,
-        primary_color=theme.podium_gold_badge,
-        secondary_color=theme.rank_row_fill,
-        inner_color=theme.panel_soft_bg,
-        ring_width=max(int(14 * scale), donut_size // 6),
+    pie_size = min(max(int(96 * scale), h - int(92 * scale)), int(w * 0.32))
+    pie_x = x + int(18 * scale)
+    pie_y = y + max(int(54 * scale), (h - pie_size) // 2)
+    palette = _group_share_palette(theme)
+    highlight_index = next(
+        (index for index, item in enumerate(slices) if item.is_focus_group),
+        None,
     )
+    slice_colors: list[str] = []
+    palette_index = 0
+    for item in slices:
+        if item.is_focus_group:
+            slice_colors.append(theme.podium_gold_badge)
+            continue
+        slice_colors.append(palette[palette_index % len(palette)])
+        palette_index += 1
+    draw_pie_chart(
+        card,
+        x=pie_x,
+        y=pie_y,
+        size=pie_size,
+        ratios=[item.share_ratio for item in slices],
+        colors=slice_colors,
+        highlight_index=highlight_index,
+        highlight_offset=int(4 * scale),
+    )
+    card.draw.ellipse(
+        (pie_x, pie_y, pie_x + pie_size, pie_y + pie_size),
+        outline=mix_hex(theme.line, theme.white, 0.3),
+        width=max(1, int(2 * scale)),
+    )
+
+    metric_x = pie_x + pie_size + int(20 * scale)
+    metric_w = x + w - metric_x - int(18 * scale)
     card.draw_text(
         (
-            donut_x + int(14 * scale),
-            donut_y + int(30 * scale),
-            donut_x + donut_size - int(14 * scale),
-            donut_y + donut_size - int(6 * scale),
+            metric_x,
+            y + int(46 * scale),
+            metric_x + metric_w,
+            y + int(80 * scale),
         ),
-        f"{data.group_rank_share_ratio * 100:.1f}%",
-        max_fontsize=int(18 * scale),
-        min_fontsize=int(12 * scale),
+        f"{focus_slice.share_ratio * 100:.1f}%",
+        max_fontsize=int(26 * scale),
+        min_fontsize=int(16 * scale),
         fill=strong,
-        halign="center",
+        halign="left",
         valign="center",
         font_families=[WATER_THEME.white],
     )
     card.draw_text(
         (
-            donut_x + int(18 * scale),
-            donut_y + donut_size // 2,
-            donut_x + donut_size - int(18 * scale),
-            donut_y + donut_size - int(18 * scale),
+            metric_x,
+            y + int(80 * scale),
+            metric_x + metric_w,
+            y + int(98 * scale),
         ),
         tr(locale, "water.report.group_rank.insight.share"),
         max_fontsize=int(9 * scale),
         min_fontsize=int(7 * scale),
         fill=hint,
-        halign="center",
-        valign="center",
+        halign="left",
         font_families=[WATER_THEME.white],
     )
-    metric_x = donut_x + donut_size + int(16 * scale)
-    metric_w = x + w - metric_x - int(18 * scale)
-    metric_y = y + int(58 * scale)
-    metric_gap = int(10 * scale)
-    metric_h = max(int(42 * scale), (h - int(76 * scale) - metric_gap) // 2)
-    metrics = [
+    card.draw_text(
         (
-            tr(locale, "water.report.group_rank.insight.previous_gap"),
-            tr(
-                locale,
-                "water.report.group_rank.count",
-                count=data.group_rank_prev_gap_msg_count,
-            )
-            if data.group_rank_prev_gap_msg_count is not None
-            else tr(locale, "water.report.group_rank.insight.top"),
+            metric_x,
+            y + int(98 * scale),
+            metric_x + metric_w,
+            y + int(114 * scale),
         ),
-        (
-            tr(locale, "water.report.group_rank.insight.next_gap"),
-            tr(
-                locale,
-                "water.report.group_rank.count",
-                count=data.group_rank_next_gap_msg_count,
-            )
-            if data.group_rank_next_gap_msg_count is not None
-            else tr(locale, "water.report.group_rank.insight.bottom"),
+        tr(
+            locale,
+            "water.report.group_rank.analysis.detail",
+            focus=short_exp(focus_slice.msg_count),
+            total=short_exp(total_count),
         ),
-    ]
-    for idx, (label, value) in enumerate(metrics):
-        item_y = metric_y + idx * (metric_h + metric_gap)
-        card.draw_rounded_rectangle(
-            (metric_x, item_y, metric_x + metric_w, item_y + metric_h),
-            radius=int(12 * scale),
-            fill=theme.rank_row_fill,
+        max_fontsize=int(9 * scale),
+        min_fontsize=int(7 * scale),
+        fill=hint,
+        halign="left",
+        font_families=[WATER_THEME.white],
+    )
+
+    if h < int(160 * scale):
+        legend_limit = 2
+    elif h < int(210 * scale):
+        legend_limit = 3
+    else:
+        legend_limit = 4
+    legend_items = _pick_group_share_legend_items(slices, limit=legend_limit)
+    legend_rank_map = {item.group_id: idx + 1 for idx, item in enumerate(slices)}
+    legend_y = y + int(118 * scale)
+    legend_gap = int(8 * scale)
+    legend_h = max(
+        int(34 * scale),
+        min(
+            int(42 * scale),
+            (y + h - legend_y - int(14 * scale) - legend_gap * (len(legend_items) - 1))
+            // max(len(legend_items), 1),
+        ),
+    )
+    ratio_font = _load_font(int(10 * scale))
+    name_font = _load_font(int(10 * scale))
+    for idx, item in enumerate(legend_items):
+        item_y = legend_y + idx * (legend_h + legend_gap)
+        fill = (
+            mix_hex(theme.rank_row_fill, theme.podium_gold_badge, 0.16)
+            if item.is_focus_group
+            else theme.rank_row_fill
         )
+        card.draw_rounded_rectangle(
+            (metric_x, item_y, metric_x + metric_w, item_y + legend_h),
+            radius=int(12 * scale),
+            fill=fill,
+        )
+        dot_x = metric_x + int(10 * scale)
+        dot_y = item_y + int(10 * scale)
+        item_color = slice_colors[legend_rank_map[item.group_id] - 1]
+        dot_size = int(10 * scale)
+        card.draw.ellipse(
+            (dot_x, dot_y, dot_x + dot_size, dot_y + dot_size),
+            fill=item_color,
+        )
+        rank_text = f"#{legend_rank_map[item.group_id]}"
         card.draw_text(
             (
-                metric_x + int(10 * scale),
-                item_y + int(7 * scale),
-                metric_x + metric_w - int(10 * scale),
-                item_y + int(18 * scale),
+                dot_x + dot_size + int(8 * scale),
+                item_y + int(5 * scale),
+                dot_x + dot_size + int(42 * scale),
+                item_y + legend_h - int(4 * scale),
             ),
-            label,
+            rank_text,
             max_fontsize=int(10 * scale),
             min_fontsize=int(7 * scale),
             fill=accent,
             halign="left",
+            valign="center",
             font_families=[WATER_THEME.white],
+        )
+        ratio_text = f"{item.share_ratio * 100:.1f}%"
+        ratio_width = max(
+            int(64 * scale),
+            _pixel_text_width(ratio_text, ratio_font) + int(12 * scale),
+        )
+        ratio_left = metric_x + metric_w - ratio_width - int(10 * scale)
+        badge_right = ratio_left - int(6 * scale)
+        badge_w = int(48 * scale) if item.is_focus_group else 0
+        name_left = dot_x + dot_size + int(48 * scale)
+        name_right = max(
+            name_left + int(42 * scale),
+            badge_right - (badge_w + (int(6 * scale) if badge_w else 0)),
+        )
+        name_text = _truncate_text_to_width_pixels(
+            item.display_name,
+            font=name_font,
+            max_width=max(int(50 * scale), name_right - name_left),
         )
         card.draw_text(
             (
-                metric_x + int(10 * scale),
-                item_y + int(18 * scale),
-                metric_x + metric_w - int(10 * scale),
-                item_y + metric_h - int(6 * scale),
+                name_left,
+                item_y + int(5 * scale),
+                name_right,
+                item_y + legend_h - int(4 * scale),
             ),
-            value,
-            max_fontsize=int(16 * scale),
-            min_fontsize=int(10 * scale),
-            fill=strong,
+            name_text,
+            max_fontsize=int(10 * scale),
+            min_fontsize=int(7 * scale),
+            fill=deep,
             halign="left",
+            valign="center",
+            font_families=[WATER_THEME.white],
+        )
+        if item.is_focus_group:
+            badge_left = badge_right - badge_w
+            card.draw_rounded_rectangle(
+                (
+                    badge_left,
+                    item_y + int(7 * scale),
+                    badge_right,
+                    item_y + legend_h - int(7 * scale),
+                ),
+                radius=int(8 * scale),
+                fill=mix_hex(theme.podium_gold_badge, theme.white, 0.7),
+            )
+            card.draw_text(
+                (
+                    badge_left + int(4 * scale),
+                    item_y + int(7 * scale),
+                    badge_right - int(4 * scale),
+                    item_y + legend_h - int(7 * scale),
+                ),
+                tr(locale, "water.report.group_rank.focus_badge"),
+                max_fontsize=int(8 * scale),
+                min_fontsize=int(6 * scale),
+                fill=theme.deep,
+                halign="center",
+                valign="center",
+                font_families=[WATER_THEME.white],
+            )
+        card.draw_text(
+            (
+                ratio_left,
+                item_y + int(5 * scale),
+                metric_x + metric_w - int(10 * scale),
+                item_y + legend_h - int(4 * scale),
+            ),
+            ratio_text,
+            max_fontsize=int(10 * scale),
+            min_fontsize=int(7 * scale),
+            fill=strong,
+            halign="right",
             valign="center",
             font_families=[WATER_THEME.white],
         )
@@ -358,6 +516,7 @@ def _render_group_rank_trend_panel(
     accent: str,
     hint: str,
 ) -> None:
+    trend_series = data.group_rank_trend_series
     card.draw_rounded_rectangle(
         (x, y, x + w, y + h), radius=int(18 * scale), fill=theme.panel_bg
     )
@@ -375,6 +534,9 @@ def _render_group_rank_trend_panel(
         halign="left",
         font_families=[WATER_THEME.white],
     )
+    if not data.group_rank_trend_labels or not trend_series:
+        return
+
     card.draw_text(
         (
             x + int(18 * scale),
@@ -385,7 +547,8 @@ def _render_group_rank_trend_panel(
         tr(
             locale,
             "water.report.group_rank.trend.subtitle",
-            hour=f"{data.peak_hour:02d}:00",
+            days=len(data.group_rank_trend_labels),
+            radius=3,
         ),
         max_fontsize=int(10 * scale),
         min_fontsize=int(8 * scale),
@@ -393,48 +556,91 @@ def _render_group_rank_trend_panel(
         halign="left",
         font_families=[WATER_THEME.white],
     )
-    legend_y = y + int(14 * scale)
-    legend_specs = [
-        (
-            theme.podium_gold_badge,
-            tr(locale, "water.report.group_rank.trend.today"),
-            x + w - int(182 * scale),
-        ),
-        (
-            theme.trend_flat,
-            tr(locale, "water.report.group_rank.trend.yesterday"),
-            x + w - int(98 * scale),
-        ),
-    ]
-    for color, label, lx in legend_specs:
+    palette = _group_trend_palette(theme)
+    rendered_series: list[tuple[str, list[int | None], bool]] = []
+    legend_specs: list[tuple[str, str, bool]] = []
+    palette_index = 0
+    for item in trend_series:
+        color = (
+            theme.podium_gold_badge
+            if item.is_focus_group
+            else palette[palette_index % len(palette)]
+        )
+        if not item.is_focus_group:
+            palette_index += 1
+        rendered_series.append((color, item.ranks, item.is_focus_group))
+        legend_specs.append((color, item.display_name, item.is_focus_group))
+
+    legend_x = x + int(18 * scale)
+    legend_y = y + int(54 * scale)
+    legend_w = w - int(36 * scale)
+    cols = 2 if len(legend_specs) <= 4 else 3
+    rows = max(1, (len(legend_specs) + cols - 1) // cols)
+    legend_gap_x = int(10 * scale)
+    legend_gap_y = int(8 * scale)
+    legend_item_h = int(24 * scale)
+    legend_item_w = (legend_w - legend_gap_x * (cols - 1)) // max(cols, 1)
+    legend_font = _load_font(int(9 * scale))
+    for index, (color, label, is_focus_group) in enumerate(legend_specs):
+        row = index // cols
+        col = index % cols
+        item_x = legend_x + col * (legend_item_w + legend_gap_x)
+        item_y = legend_y + row * (legend_item_h + legend_gap_y)
+        if is_focus_group:
+            card.draw_rounded_rectangle(
+                (
+                    item_x,
+                    item_y,
+                    item_x + legend_item_w,
+                    item_y + legend_item_h,
+                ),
+                radius=int(10 * scale),
+                fill=mix_hex(theme.panel_soft_bg, theme.podium_gold_badge, 0.1),
+            )
+        dot_size = int(10 * scale)
+        dot_x = item_x + int(8 * scale)
+        dot_y = item_y + (legend_item_h - dot_size) // 2
         card.draw.ellipse(
-            (lx, legend_y, lx + int(8 * scale), legend_y + int(8 * scale)), fill=color
+            (dot_x, dot_y, dot_x + dot_size, dot_y + dot_size),
+            fill=color,
+        )
+        label_left = dot_x + dot_size + int(8 * scale)
+        label_right = item_x + legend_item_w - int(8 * scale)
+        label_text = _truncate_text_to_width_pixels(
+            label,
+            font=legend_font,
+            max_width=max(int(40 * scale), label_right - label_left),
         )
         card.draw_text(
             (
-                lx + int(10 * scale),
-                legend_y - int(4 * scale),
-                lx + int(74 * scale),
-                legend_y + int(12 * scale),
+                label_left,
+                item_y + int(2 * scale),
+                label_right,
+                item_y + legend_item_h - int(2 * scale),
             ),
-            label,
-            max_fontsize=int(8 * scale),
-            min_fontsize=int(6 * scale),
-            fill=hint,
+            label_text,
+            max_fontsize=int(9 * scale),
+            min_fontsize=int(7 * scale),
+            fill=deep if is_focus_group else hint,
             halign="left",
             valign="center",
             font_families=[WATER_THEME.white],
         )
-    draw_dual_hourly_trend(
+
+    chart_y = (
+        legend_y
+        + rows * legend_item_h
+        + max(0, rows - 1) * legend_gap_y
+        + int(12 * scale)
+    )
+    draw_group_rank_trend_chart(
         card,
         x=x + int(18 * scale),
-        y=y + int(58 * scale),
+        y=chart_y,
         w=w - int(36 * scale),
-        h=h - int(76 * scale),
-        current_hourly_counts=data.hourly_counts,
-        previous_hourly_counts=data.previous_hourly_counts,
-        current_color=theme.podium_gold_badge,
-        previous_color=theme.trend_flat,
+        h=y + h - chart_y - int(14 * scale),
+        labels=data.group_rank_trend_labels,
+        series=rendered_series,
         axis_color=theme.line,
         label_color=hint,
         scale=scale,
