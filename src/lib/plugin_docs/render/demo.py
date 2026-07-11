@@ -955,20 +955,13 @@ class DemoImageRenderer:
         draw: ImageDraw.ImageDraw,
         layout: _ShowcaseLayout,
     ) -> None:
-        self._draw_shadowed_rect(
+        self._draw_outlined_panel(
             image,
+            draw,
             rect=layout.instruction_rect,
             radius=self.theme.instruction_radius,
-            shadow_color=self.theme.card_shadow,
-            shadow_offset_y=self.theme.instruction_shadow_offset_y,
-            shadow_blur=self.theme.instruction_shadow_blur,
             fill=self.theme.panel_bg,
-        )
-        draw.rounded_rectangle(
-            layout.instruction_rect,
-            radius=self.theme.instruction_radius,
             outline=self._rgba(self.theme.accent, 62),
-            width=2,
         )
         self._draw_soft_subcard(
             image,
@@ -1066,21 +1059,22 @@ class DemoImageRenderer:
             fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
             align="right",
         )
-        self._draw_shadowed_rect(
+        self._draw_outlined_panel(
             image,
+            draw,
             rect=layout.demo_rect,
             radius=34,
-            shadow_color=self.theme.card_shadow,
+            fill="#FFFFFF",
+            outline=self._rgba(self.theme.accent, 62),
             shadow_offset_y=24,
             shadow_blur=44,
-            fill="#FFFFFF",
         )
         for band in layout.demo_section_bands:
-            draw.rounded_rectangle(
-                band.rect,
+            self._draw_panel_outline(
+                draw,
+                rect=band.rect,
                 radius=34,
                 outline=self._rgba(self.theme.accent, 62),
-                width=2,
             )
             badge_rect = (
                 band.tag_rect[0],
@@ -1376,6 +1370,54 @@ class DemoImageRenderer:
         shadow = shadow.filter(ImageFilter.GaussianBlur(shadow_blur))
         image.alpha_composite(shadow)
         ImageDraw.Draw(image).rounded_rectangle(rect, radius=radius, fill=fill)
+
+    def _draw_panel_outline(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        rect: tuple[int, int, int, int],
+        radius: int,
+        outline: tuple[int, int, int, int],
+        width: int = 2,
+    ) -> None:
+        draw.rounded_rectangle(rect, radius=radius, outline=outline, width=width)
+
+    def _draw_outlined_panel(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        rect: tuple[int, int, int, int],
+        radius: int,
+        fill: str,
+        outline: tuple[int, int, int, int],
+        shadow_color: tuple[int, int, int, int] | None = None,
+        shadow_offset_y: int | None = None,
+        shadow_blur: int | None = None,
+    ) -> None:
+        self._draw_shadowed_rect(
+            image,
+            rect=rect,
+            radius=radius,
+            shadow_color=shadow_color or self.theme.card_shadow,
+            shadow_offset_y=(
+                self.theme.instruction_shadow_offset_y
+                if shadow_offset_y is None
+                else shadow_offset_y
+            ),
+            shadow_blur=(
+                self.theme.instruction_shadow_blur
+                if shadow_blur is None
+                else shadow_blur
+            ),
+            fill=fill,
+        )
+        self._draw_panel_outline(
+            draw,
+            rect=rect,
+            radius=radius,
+            outline=outline,
+        )
 
     def _draw_standee_anchor(
         self,

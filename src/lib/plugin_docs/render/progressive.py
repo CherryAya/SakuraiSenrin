@@ -671,20 +671,13 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         self._draw_standee(image, draw, standee_rect)
         rect = (side, hero_bottom, side + width, hero_bottom + intro_section_height)
-        self._draw_shadowed_rect(
+        self._draw_outlined_panel(
             image,
+            draw,
             rect=rect,
             radius=self.GUIDE_SECTION_RADIUS,
-            shadow_color=self.theme.card_shadow,
-            shadow_offset_y=self.theme.instruction_shadow_offset_y,
-            shadow_blur=self.theme.instruction_shadow_blur,
             fill=self.theme.panel_bg,
-        )
-        draw.rounded_rectangle(
-            rect,
-            radius=self.GUIDE_SECTION_RADIUS,
             outline=self._rgba(self.theme.accent, 62),
-            width=2,
         )
         # self._draw_section_watermark(
         #     draw,
@@ -747,20 +740,13 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 demo_card_rect[0] + (width - capsule_width) // 2 + capsule_width,
                 capsule_top + self.CAPSULE_HEIGHT,
             )
-            self._draw_shadowed_rect(
+            self._draw_outlined_panel(
                 image,
+                draw,
                 rect=demo_card_rect,
                 radius=self.GUIDE_SECTION_RADIUS,
-                shadow_color=self.theme.card_shadow,
-                shadow_offset_y=self.theme.instruction_shadow_offset_y,
-                shadow_blur=self.theme.instruction_shadow_blur,
                 fill=self.theme.panel_bg,
-            )
-            draw.rounded_rectangle(
-                demo_card_rect,
-                radius=self.GUIDE_SECTION_RADIUS,
                 outline=self._rgba(self.theme.accent, 62),
-                width=2,
             )
             self._draw_capsule_title(
                 draw,
@@ -2262,11 +2248,11 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             shadow_blur=self.theme.instruction_shadow_blur,
             fill=self.theme.panel_bg,
         )
-        draw.rounded_rectangle(
-            layout.rect,
+        self._draw_panel_outline(
+            draw,
+            rect=layout.rect,
             radius=self.SUPPORT_STRIP_RADIUS,
             outline=self._rgba(self.theme.accent, 62),
-            width=2,
         )
         draw.rounded_rectangle(
             (

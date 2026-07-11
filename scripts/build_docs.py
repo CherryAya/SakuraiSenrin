@@ -728,6 +728,19 @@ def _render_help_asset_plan(plan: HelpAssetRenderPlan) -> HelpAssetRenderResult:
             generated_at=plan.generated_at,
             prefer_static=False,
         )
+    elif plan.kind == "feature":
+        assert plan.node is not None
+        assert plan.feature is not None
+        demo_path = plan.source_path.parent / "demos" / plan.feature.demo_filename
+        try:
+            data = demo_path.read_bytes()
+        except OSError as exc:
+            raise RuntimeError(
+                "missing generated feature demo asset "
+                f"for {plan.source_path.relative_to(ROOT)} "
+                f"feature={plan.feature.slug} "
+                f"expected={demo_path.relative_to(ROOT)}"
+            ) from exc
     else:
         assert plan.node is not None
         assert plan.feature is not None
@@ -1053,6 +1066,21 @@ def build_help_assets(
                 signature_to_filename[plan.signature] = filename
             path = plan.source_path.parent / "demos" / filename
             _output_static_asset(path, result.data)
+        elif plan.kind == "feature":
+            assert plan.feature is not None
+            base_filename = _with_suffix(plan.feature.demo_filename, suffix)
+            filename = signature_to_filename.get(plan.signature)
+            if filename is None:
+                filename = base_filename
+                signature_to_filename[plan.signature] = filename
+            path = plan.source_path.parent / "demos" / filename
+            if not path.is_file():
+                raise RuntimeError(
+                    "missing generated feature demo asset "
+                    f"for {plan.source_path.relative_to(ROOT)} "
+                    f"feature={plan.feature.slug} "
+                    f"expected={path.relative_to(ROOT)}"
+                )
         else:
             assert plan.feature is not None
             base_filename = _with_suffix(plan.feature.demo_filename, suffix)

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from tests.test_plugin_docs_support import *
 
 
@@ -1145,15 +1147,19 @@ BOT: Alpha 完成
         "render_help_dashboard",
         fake_render_help_dashboard,
     )
-    monkeypatch.setattr(
-        plugin_docs_script,
-        "render_feature_deep_dive",
-        fake_render_feature_deep_dive,
-    )
+    help_demos_dir = help_docs / "demos"
+    help_demos_dir.mkdir()
+    (help_demos_dir / "help-main.webp").write_bytes(b"RIFFfakeWEBP")
+    demos_dir = sample_docs / "demos"
+    demos_dir.mkdir()
+    feature_main = demos_dir / "sample-alpha.webp"
+    feature_main.write_bytes(b"RIFFfakeWEBP")
 
     assert plugin_docs_script.build_help_assets(workers=4) == 0
     assert render_counts["dashboard"] == 1
-    assert render_counts["sample_feature"] == 1
+    assert render_counts["sample_feature"] == 0
+    manifest = json.loads((demos_dir / "manifest.json").read_text("utf-8"))
+    assert manifest["targets"]["feature:sample:alpha"]["normal"] == feature_main.name
 
 
 def test_ensure_help_support_qr_asset_writes_double_qr_png_from_support_groups(
@@ -1287,6 +1293,9 @@ __plugin_meta__ = create_plugin_metadata(
         "render_help_dashboard",
         lambda *args, **kwargs: b"RIFFfakeWEBP",
     )
+    help_demos_dir = help_root / "demos"
+    help_demos_dir.mkdir()
+    (help_demos_dir / "help-main.webp").write_bytes(b"RIFFfakeWEBP")
     plugin_docs_script._reset_caches()
 
     assert plugin_docs_script.build_help_assets(workers=1) == 0
@@ -1520,6 +1529,10 @@ __plugin_meta__ = create_plugin_metadata(
         "DOCS_ROOTS",
         (tmp_path / "src" / "plugins",),
     )
+    (help_root / "demos").mkdir()
+    (help_root / "demos" / "help-main.webp").write_bytes(b"RIFFfakeWEBP")
+    (admin_root / "demos").mkdir()
+    (admin_root / "demos" / "admin-main.webp").write_bytes(b"RIFFfakeWEBP")
     plugin_docs_script._reset_caches()
 
     assert plugin_docs_script.build_help_assets(workers=1) == 0
@@ -1710,6 +1723,9 @@ __plugin_meta__ = create_plugin_metadata(
         "DOCS_ROOTS",
         (tmp_path / "src" / "plugins",),
     )
+    help_demos_dir = help_root / "demos"
+    help_demos_dir.mkdir()
+    (help_demos_dir / "help-main.webp").write_bytes(b"RIFFfakeWEBP")
     plugin_docs_script._reset_caches()
 
     assert plugin_docs_script.build_help_assets(workers=1) == 0
@@ -1724,6 +1740,82 @@ __plugin_meta__ = create_plugin_metadata(
     assert feature_variants["superuser"] == "help-main.webp"
     assert summary_variants["normal"].startswith("README-summary")
     assert summary_variants["superuser"] == summary_variants["normal"]
+
+
+def test_build_help_assets_requires_prebuilt_feature_demo_asset(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    help_root = tmp_path / "src" / "plugins" / "help" / "docs"
+    help_root.mkdir(parents=True)
+    (help_root / "README.MD").write_text(
+        """
+# 帮助中心
+
+## 概览
+帮助首页。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 用法
+- 别名: 首页说明
+- 指令: `#help`
+- Demo: help-main.webp
+## 说明
+首页说明。
+## 前置条件
+无
+## 完整流程
+```demo
+USER: #help
+BOT: 帮助首页
+```
+## 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "plugins" / "help" / "__init__.py").write_text(
+        """
+from pathlib import Path
+
+from src.database.core.consts import Permission
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
+
+DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
+
+__plugin_meta__ = create_plugin_metadata(
+    name="帮助中心",
+    description="desc",
+    extra={
+        "permission": Permission.NORMAL,
+        "docs": create_docs_meta(
+            visible=True,
+            category="system",
+            order=10,
+            source=DOCS_SOURCE,
+            slug="help",
+            kind="overview",
+        ),
+    },
+)
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    plugin_docs_script._reset_caches()
+
+    with pytest.raises(RuntimeError, match="missing generated feature demo asset"):
+        plugin_docs_script.build_help_assets(workers=1)
 
 
 def test_render_help_dashboard_prefers_manifest_backed_help_asset_from_explicit_source(
