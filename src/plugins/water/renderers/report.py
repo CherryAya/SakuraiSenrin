@@ -934,7 +934,7 @@ async def build_water_group_report_image(
         trend_h = int(20 * scale)
         trend_x = row_inner_right - int(18 * scale) - trend_w
         trend_y = badge_y + int(1 * scale)
-        info_col_w = int(138 * scale)
+        info_col_w = int(124 * scale)
         name_right = text_x + info_col_w
         safe_name = _truncate_text_to_width_pixels(
             item.display_name,
@@ -955,7 +955,7 @@ async def build_water_group_report_image(
             halign="left",
             font_families=[WATER_THEME.white],
         )
-        summary_right = text_x + int(124 * scale)
+        summary_right = text_x + int(112 * scale)
         card.draw_text(
             (
                 text_x,
