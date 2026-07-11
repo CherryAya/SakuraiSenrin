@@ -2456,15 +2456,22 @@ class DemoImageRenderer:
         rect: tuple[int, int, int, int],
         text: str,
         fill: tuple[int, int, int, int],
-        outline: tuple[int, int, int, int],
+        outline: tuple[int, int, int, int] | None = None,
     ) -> None:
-        draw.rounded_rectangle(
-            rect,
-            radius=(rect[3] - rect[1]) // 2,
-            fill=fill,
-            outline=outline,
-            width=2,
-        )
+        if outline is None:
+            draw.rounded_rectangle(
+                rect,
+                radius=(rect[3] - rect[1]) // 2,
+                fill=fill,
+            )
+        else:
+            draw.rounded_rectangle(
+                rect,
+                radius=(rect[3] - rect[1]) // 2,
+                fill=fill,
+                outline=outline,
+                width=2,
+            )
         self._draw_text_centered(
             draw,
             rect,

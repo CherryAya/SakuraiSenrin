@@ -734,11 +734,12 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                     300, self._text_width("看看它是怎么工作的", self.capsule_font) + 120
                 ),
             )
+            capsule_top = demo_card_rect[1] - self.CAPSULE_HEIGHT // 2
             capsule_rect = (
                 demo_card_rect[0] + (width - capsule_width) // 2,
-                demo_card_rect[1] - self.CAPSULE_HEIGHT - 10,
+                capsule_top,
                 demo_card_rect[0] + (width - capsule_width) // 2 + capsule_width,
-                demo_card_rect[1] - 10,
+                capsule_top + self.CAPSULE_HEIGHT,
             )
             self._draw_shadowed_rect(
                 image,
@@ -759,8 +760,8 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 draw,
                 rect=capsule_rect,
                 text="看看它是怎么工作的",
-                fill=(255, 243, 228, 232),
-                outline=self._rgba(self.theme.accent, 60),
+                fill=(255, 243, 228, 191),
+                outline=None,
             )
             self._draw_section_watermark(
                 draw,
@@ -2331,7 +2332,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 group_panel_rect,
                 radius=self.SUBCARD_RADIUS,
                 fill=self.theme.panel_soft_bg,
-                outline=self._rgba(self.theme.accent, 40),
+                outline=None,
             )
             group_text_y = group_panel_rect[1] + 12
             for lines in layout.group_lines:
