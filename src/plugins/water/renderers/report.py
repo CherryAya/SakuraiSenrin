@@ -953,7 +953,7 @@ async def build_water_group_report_image(
             halign="left",
             font_families=[WATER_THEME.white],
         )
-        summary_right = left_x + int(300 * scale)
+        summary_right = max(text_x + int(108 * scale), left_x + int(248 * scale))
         card.draw_text(
             (
                 text_x,
@@ -1068,13 +1068,17 @@ async def build_water_group_report_image(
     if data.group_rank_has_hidden_before:
         pass
     for item in data.group_rank_items:
+        rank_avatar_gap = int(10 * scale)
         trend_text, trend_color = format_trend(item.trend)
         trend_w = int(50 * scale)
         trend_h = int(22 * scale)
         trend_x = rank_row_right - trend_w - int(14 * scale)
         count_right = trend_x - int(10 * scale)
         count_left = count_right - int(86 * scale)
-        name_x = right_x + int(92 * scale)
+        rank_text_left = right_x + int(22 * scale)
+        rank_text_right = rank_text_left + int(26 * scale)
+        avatar_x = rank_text_right + rank_avatar_gap
+        name_x = avatar_x + group_rank_avatar_size + rank_avatar_gap
         safe_name = _truncate_text_to_width_pixels(
             item.display_name,
             font=group_name_font,
@@ -1096,9 +1100,9 @@ async def build_water_group_report_image(
         )
         card.draw_text(
             (
-                right_x + int(22 * scale),
+                rank_text_left,
                 rank_y,
-                right_x + int(48 * scale),
+                rank_text_right,
                 rank_y + group_rank_row_h,
             ),
             f"#{item.current_rank}",
@@ -1109,7 +1113,6 @@ async def build_water_group_report_image(
             valign="center",
             font_families=[WATER_THEME.white],
         )
-        avatar_x = right_x + int(48 * scale)
         avatar_y = rank_y + (group_rank_row_h - group_rank_avatar_size) // 2
         avatar = item.avatar or build_avatar_fallback(
             group_rank_avatar_size,
