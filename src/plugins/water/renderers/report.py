@@ -227,8 +227,9 @@ async def build_water_group_report_image(
     ]
     for idx, (label, value, value_color, bg) in enumerate(stats):
         sx = pad + int(18 * scale) + idx * (stat_w + stat_gap)
+        stat_bottom = y + hero_h - int(18 * scale)
         card.draw_rounded_rectangle(
-            (sx, stat_top, sx + stat_w, y + hero_h - int(18 * scale)),
+            (sx, stat_top, sx + stat_w, stat_bottom),
             radius=int(12 * scale),
             fill=bg,
         )
@@ -237,25 +238,26 @@ async def build_water_group_report_image(
                 sx + int(10 * scale),
                 stat_top + int(8 * scale),
                 sx + stat_w - int(10 * scale),
-                stat_top + int(26 * scale),
+                stat_top + int(20 * scale),
             ),
             label,
-            max_fontsize=int(11 * scale),
-            min_fontsize=int(8 * scale),
+            max_fontsize=int(10 * scale),
+            min_fontsize=int(7 * scale),
             fill=accent,
             halign="left",
+            valign="center",
             font_families=[WATER_THEME.white],
         )
         card.draw_text(
             (
                 sx + int(10 * scale),
-                stat_top + int(28 * scale),
+                stat_top + int(18 * scale),
                 sx + stat_w - int(10 * scale),
-                y + hero_h - int(10 * scale),
+                stat_bottom - int(4 * scale),
             ),
             value,
-            max_fontsize=int(20 * scale),
-            min_fontsize=int(11 * scale),
+            max_fontsize=int(17 * scale),
+            min_fontsize=int(10 * scale),
             fill=value_color,
             halign="left",
             valign="center",
@@ -792,8 +794,9 @@ async def build_water_period_rank_image(
         ]
         for idx, (label, value, value_color, bg) in enumerate(stats):
             sx = pad + int(18 * scale) + idx * (stat_w + stat_gap)
+            stat_bottom = y + hero_h - int(18 * scale)
             card.draw_rounded_rectangle(
-                (sx, stat_top, sx + stat_w, y + hero_h - int(18 * scale)),
+                (sx, stat_top, sx + stat_w, stat_bottom),
                 radius=int(12 * scale),
                 fill=bg,
             )
@@ -802,25 +805,26 @@ async def build_water_period_rank_image(
                     sx + int(10 * scale),
                     stat_top + int(8 * scale),
                     sx + stat_w - int(10 * scale),
-                    stat_top + int(26 * scale),
+                    stat_top + int(20 * scale),
                 ),
                 label,
-                max_fontsize=int(11 * scale),
-                min_fontsize=int(8 * scale),
+                max_fontsize=int(10 * scale),
+                min_fontsize=int(7 * scale),
                 fill=accent,
                 halign="left",
+                valign="center",
                 font_families=[SYS_FONT_NAME],
             )
             card.draw_text(
                 (
                     sx + int(10 * scale),
-                    stat_top + int(28 * scale),
+                    stat_top + int(18 * scale),
                     sx + stat_w - int(10 * scale),
-                    y + hero_h - int(10 * scale),
+                    stat_bottom - int(4 * scale),
                 ),
                 value,
-                max_fontsize=int(20 * scale),
-                min_fontsize=int(11 * scale),
+                max_fontsize=int(17 * scale),
+                min_fontsize=int(10 * scale),
                 fill=value_color,
                 halign="left",
                 valign="center",
