@@ -105,6 +105,7 @@ CATALOG: Final[dict[str, str]] = {
     "water.report.range.today": "統計日: {date} · 今日即時快照",
     "water.report.range.yesterday": "統計日: {date} · 昨日結算數",
     "water.report.compare": "對比日: {prev_date} · 消息 {msg_delta} · 活躍成員 {user_delta}",
+    "water.image.period.stats.delta": "較前一日消息",
     "water.report.entity_label": "活躍成員",
     "water.report.champion.summary": "消息 {msg_count} 條 · 活躍 {active_hours} 小時",
     "water.report.board.title": "活躍成員前十",

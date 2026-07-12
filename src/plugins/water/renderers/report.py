@@ -339,7 +339,7 @@ def _render_group_rank_share_panel(
     legend_total_h = legend_h * len(legend_items) + legend_gap * max(
         0, len(legend_items) - 1
     )
-    legend_y = content_y + max(0, (legend_h_available - legend_total_h) // 2)
+    legend_y = content_y + (legend_h_available - legend_total_h) // 2
     chart_y = legend_y
     chart_h = legend_total_h
     pie_size = min(chart_w, chart_h)
@@ -374,8 +374,9 @@ def _render_group_rank_share_panel(
             radius=int(12 * scale),
             fill=fill,
         )
-        dot_x = legend_x + int(12 * scale)
-        dot_y = item_y + int(10 * scale)
+        legend_inner_left = legend_x + int(12 * scale)
+        dot_x = legend_inner_left
+        dot_y = item_y + int(10 * scale)*1.2
         item_color = slice_colors[legend_rank_map[item.group_id] - 1]
         dot_size = int(10 * scale)
         card.draw.ellipse(
@@ -383,11 +384,14 @@ def _render_group_rank_share_panel(
             fill=item_color,
         )
         rank_text = f"#{legend_rank_map[item.group_id]}"
+        item_gap = int(4 * scale)
+        rank_left = dot_x + dot_size + item_gap
+        rank_right = rank_left + int(16 * scale)
         card.draw_text(
             (
-                dot_x + dot_size + int(8 * scale),
+                rank_left,
                 item_y + int(5 * scale),
-                dot_x + dot_size + int(42 * scale),
+                rank_right,
                 item_y + legend_h - int(4 * scale),
             ),
             rank_text,
@@ -404,17 +408,17 @@ def _render_group_rank_share_panel(
             _pixel_text_width(ratio_text, ratio_font) + int(12 * scale),
         )
         ratio_left = legend_x + legend_w - ratio_width - int(12 * scale)
-        badge_right = ratio_left - int(6 * scale)
+        badge_right = ratio_left - item_gap
         badge_w = int(48 * scale) if item.is_focus_group else 0
-        name_left = dot_x + dot_size + int(48 * scale)
+        name_left = rank_right + item_gap
         name_right = max(
-            name_left + int(42 * scale),
-            badge_right - (badge_w + (int(6 * scale) if badge_w else 0)),
+            name_left + int(60 * scale),
+            badge_right - (badge_w + (item_gap if badge_w else 0)),
         )
         name_text = _truncate_text_to_width_pixels(
             item.display_name,
             font=name_font,
-            max_width=max(int(50 * scale), name_right - name_left),
+            max_width=max(int(60 * scale), name_right - name_left),
         )
         card.draw_text(
             (
@@ -649,7 +653,7 @@ async def build_water_group_report_image(
     group_rank_header_h = int(GROUP_REPORT_RANK_HEADER_HEIGHT * scale)
     group_rank_row_h = int(GROUP_REPORT_RANK_ROW_HEIGHT * scale)
     group_rank_row_gap = int(GROUP_REPORT_RANK_ROW_GAP * scale)
-    group_rank_panel_gap = int(10 * scale)
+    group_rank_panel_gap = int(22 * scale)
     histogram_h = int(182 * scale)
     footer_h = int(50 * scale)
     group_rank_avatar_size = int(28 * scale)
@@ -757,25 +761,26 @@ async def build_water_group_report_image(
     stat_top = y + int(96 * scale)
     stat_gap = int(10 * scale)
     stat_w = int((width - pad * 2 - int(36 * scale) - stat_gap * 2) / 3)
+    delta_msg = data.total_msg_count - data.previous_total_msg_count
     stats = [
         (
             tr(locale, "water.image.period.stats.total_msg_count"),
-            short_exp(data.total_msg_count),
+            f"{short_exp(data.total_msg_count)} 条",
             strong,
             theme.stat_total_bg,
         ),
         (
             tr(locale, "water.image.period.stats.active_user_count"),
-            str(data.active_user_count),
+            f"{data.active_user_count} 人",
             blue,
             theme.stat_active_bg,
         ),
         (
             tr(locale, "water.image.period.stats.delta"),
-            format_delta(data.total_msg_count - data.previous_total_msg_count),
-            mint if data.total_msg_count >= data.previous_total_msg_count else strong,
+            f"{format_delta(delta_msg)} 条",
+            mint if delta_msg >= 0 else strong,
             theme.stat_delta_positive_bg
-            if data.total_msg_count >= data.previous_total_msg_count
+            if delta_msg >= 0
             else theme.stat_delta_negative_bg,
         ),
     ]
@@ -1390,27 +1395,26 @@ async def build_water_period_rank_image(
         stat_top = y + int(92 * scale)
         stat_gap = int(10 * scale)
         stat_w = int((width - pad * 2 - int(36 * scale) - stat_gap * 2) / 3)
+        delta_msg = data.total_msg_count - data.previous_total_msg_count
         stats = [
             (
                 tr(locale, "water.image.period.stats.total_msg_count"),
-                short_exp(data.total_msg_count),
+                f"{short_exp(data.total_msg_count)} 条",
                 strong,
                 theme.stat_total_bg,
             ),
             (
                 tr(locale, "water.image.period.stats.active_user_count"),
-                str(data.active_user_count),
+                f"{data.active_user_count} 人",
                 blue,
                 theme.stat_active_bg,
             ),
             (
                 tr(locale, "water.image.period.stats.delta"),
-                format_delta(data.total_msg_count - data.previous_total_msg_count),
-                mint
-                if data.total_msg_count >= data.previous_total_msg_count
-                else strong,
+                f"{format_delta(delta_msg)} 条",
+                mint if delta_msg >= 0 else strong,
                 theme.stat_delta_positive_bg
-                if data.total_msg_count >= data.previous_total_msg_count
+                if delta_msg >= 0
                 else theme.stat_delta_negative_bg,
             ),
         ]
