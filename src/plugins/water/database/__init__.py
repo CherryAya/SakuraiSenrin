@@ -7,7 +7,35 @@ Description:
 """
 
 from .repo import WaterRepository
+from .repo_models import (
+    DailyAggregateItem,
+    GlobalPeriodOverview,
+    GlobalPeriodRankItem,
+    NaturalPeriodRankSnapshot,
+    NaturalRankItem,
+    RankItem,
+    WaterActivitySeasonRecord,
+    WaterDailyReportCandidate,
+    WaterGroupDailyRankItem,
+    WaterGroupDailyRankSnapshot,
+    WaterGroupReportMember,
+    WaterGroupReportSnapshot,
+)
 
 water_repo = WaterRepository()
 
-__all__ = ["water_repo"]
+__all__ = [
+    "DailyAggregateItem",
+    "GlobalPeriodOverview",
+    "GlobalPeriodRankItem",
+    "NaturalPeriodRankSnapshot",
+    "NaturalRankItem",
+    "RankItem",
+    "WaterActivitySeasonRecord",
+    "WaterDailyReportCandidate",
+    "WaterGroupDailyRankItem",
+    "WaterGroupDailyRankSnapshot",
+    "WaterGroupReportMember",
+    "WaterGroupReportSnapshot",
+    "water_repo",
+]

@@ -7,38 +7,49 @@ Description: 好友通知处理
 """
 
 import asyncio
+from pathlib import Path
 import random
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import FriendRequestEvent
-from nonebot.plugin import PluginMetadata, on_request
+from nonebot.plugin import on_request
 
 from src.config import config
 from src.database.consts import WritePolicy
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.i18n.runtime import send_private_i18n, tr
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import user_repo
 
-name = "好友通知事件处理"
-description = """
-好友通知事件处理:
-  处理好友请求
-""".strip()
+name = tr("zh-CN", "plugin.notice_user.name")
+description = tr("zh-CN", "plugin.notice_user.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "user" / "README.MD"
 
-usage = """
-被动触发
-""".strip()
 
-__plugin_meta__ = PluginMetadata(
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
         "version": "0.2.0",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
         "no_check": True,
+        "i18n": {
+            "name_key": "plugin.notice_user.name",
+            "description_key": "plugin.notice_user.description",
+        },
+        "docs": create_docs_meta(
+            visible=False,
+            category="system",
+            order=120,
+            source=DOCS_SOURCE,
+            slug="notice.user",
+            parent_slug="notice",
+            aliases=("用户事件处理", "notice.user"),
+        ),
     },
 )
 
@@ -63,8 +74,10 @@ async def _(
         )
 
     for super_user_id in config.SUPERUSERS:
-        await bot.send_private_msg(
-            user_id=int(super_user_id),
-            message=f"收到了新的好友请求，已同意：{event.user_id}",
+        await send_private_i18n(
+            bot,
+            int(super_user_id),
+            "notice.user.friend_request",
+            user_id=str(event.user_id),
         )
         await asyncio.sleep(1)

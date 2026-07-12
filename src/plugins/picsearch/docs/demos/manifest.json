@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:picsearch:main": {
+      "normal": "picsearch-search.webp",
+      "group_admin": "picsearch-search.webp",
+      "group_owner": "picsearch-search.webp",
+      "superuser": "picsearch-search.webp"
+    }
+  }
+}

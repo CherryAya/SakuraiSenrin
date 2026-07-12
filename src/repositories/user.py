@@ -68,6 +68,7 @@ class UserRepository:
         if is_set(ctx.user_name):
             await user_update_name_writer.add(
                 {
+                    "created_at": event_time,
                     "user_id": ctx.user_id,
                     "user_name": ctx.user_name,
                     "updated_at": event_time,

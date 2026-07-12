@@ -2,7 +2,10 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
+from nonebot import on_message
 from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11.event import GroupMessageEvent
+from nonebot.matcher import Matcher
 from nonebug import App
 import pytest
 
@@ -11,6 +14,7 @@ from src.plugins.water.handlers.admin import (
     WaterAdminContext,
     format_settlement_message,
     handle_ignore,
+    handle_season,
     handle_settle,
 )
 from src.plugins.water.handlers.merge import (
@@ -23,6 +27,8 @@ from src.plugins.water.handlers.passive import (
     handle_group_increase_notice,
     handle_water_record,
 )
+from src.plugins.water.handlers.query import handle_my_water_profile
+from src.plugins.water.services.season import SeasonServiceError
 from src.plugins.water.services.settlement import SettlementResult
 from tests.plugins.water.helpers import (
     DummyMatcher,
@@ -32,16 +38,29 @@ from tests.plugins.water.helpers import (
 )
 
 
+def _build_admin_ctx(
+    matcher: DummyMatcher,
+    args: list[str],
+    *,
+    event_text: str = "#water.admin",
+) -> WaterAdminContext:
+    return WaterAdminContext(
+        bot=cast(Bot, SimpleNamespace(self_id="99999", call_api=AsyncMock())),
+        event=build_group_message_event(event_text),
+        matcher=cast(Any, matcher),
+        args=args,
+        locale="zh-CN",
+    )
+
+
 @pytest.mark.asyncio
 async def test_handle_merge_yes_first_intention(
+    app: App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.plugins.water.handlers import merge as merge_module
 
     event = build_group_message_event("#water.merge yes", role="admin")
-    matcher = DummyMatcher()
-    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event)
-
     monkeypatch.setattr(
         merge_module.water_repo,
         "set_matrix_merge_intention_once",
@@ -62,11 +81,30 @@ async def test_handle_merge_yes_first_intention(
         AsyncMock(return_value={"target_matrix_id": "abcd1234"}),
     )
 
-    with pytest.raises(MatcherFinished):
-        await handle_merge_yes(ctx)
+    matcher = on_message(priority=1, block=True)
 
-    assert matcher.finished is not None
-    assert "目标矩阵: abcd1234" in matcher.finished
+    @matcher.handle()
+    async def _(
+        matcher: Matcher,
+        event: GroupMessageEvent,
+    ) -> None:
+        await handle_merge_yes(
+            WaterMergeContext(matcher=matcher, event=event, locale="zh-CN")
+        )
+
+    async with app.test_matcher(matcher) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            "已记录为“同意合并”啦 (≧▽≦)\n"
+            "群号: 20001\n"
+            "目标矩阵: abcd1234\n"
+            "后续不会再重复询问这个群。\n"
+            "后续要改，请到反馈群 10001 联系超管。",
+            bot=bot,
+        )
+        ctx.should_finished(matcher)
 
 
 @pytest.mark.asyncio
@@ -77,7 +115,7 @@ async def test_handle_merge_yes_shows_stale_target_hint(
 
     event = build_group_message_event("#water.merge yes", role="admin")
     matcher = DummyMatcher()
-    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event)
+    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event, locale="zh-CN")
 
     monkeypatch.setattr(
         merge_module.water_repo,
@@ -113,7 +151,7 @@ async def test_handle_merge_no_locked(monkeypatch: pytest.MonkeyPatch) -> None:
 
     event = build_group_message_event("#water.merge no", role="admin")
     matcher = DummyMatcher()
-    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event)
+    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event, locale="zh-CN")
 
     monkeypatch.setattr(
         merge_module.water_repo,
@@ -139,7 +177,7 @@ async def test_handle_merge_yes_no_need(monkeypatch: pytest.MonkeyPatch) -> None
 
     event = build_group_message_event("#water.merge yes", role="admin")
     matcher = DummyMatcher()
-    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event)
+    ctx = WaterMergeContext(matcher=cast(Any, matcher), event=event, locale="zh-CN")
 
     set_intention_mock = AsyncMock(return_value=(False, {"action": "no_need"}))
     monkeypatch.setattr(
@@ -164,9 +202,13 @@ async def test_handle_merge_yes_no_need(monkeypatch: pytest.MonkeyPatch) -> None
 def test_is_group_admin_event() -> None:
     member_event = build_group_message_event("hello", role="member")
     admin_event = build_group_message_event("hello", role="admin")
+    owner_event = build_group_message_event("hello", role="owner")
+    superuser_event = build_group_message_event("hello", user_id=1, role="member")
 
     assert is_group_admin_event(member_event) is False
     assert is_group_admin_event(admin_event) is True
+    assert is_group_admin_event(owner_event) is True
+    assert is_group_admin_event(superuser_event) is True
 
 
 @pytest.mark.asyncio
@@ -176,7 +218,7 @@ async def test_handle_ignore_param_validation_and_success(
     from src.plugins.water.handlers import admin as admin_module
 
     matcher = DummyMatcher()
-    ctx = WaterAdminContext(matcher=cast(Any, matcher), args=["ignore", "20001"])
+    ctx = _build_admin_ctx(matcher, ["ignore", "20001"])
 
     monkeypatch.setattr(
         admin_module.water_repo,
@@ -189,6 +231,142 @@ async def test_handle_ignore_param_validation_and_success(
 
     assert matcher.finished is not None
     assert "状态: 成功" in matcher.finished
+
+
+@pytest.mark.asyncio
+async def test_handle_my_water_profile_uses_profile_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.handlers import query as query_module
+
+    matcher = DummyMatcher()
+    event = build_group_message_event("我有多水")
+
+    profile_mock = AsyncMock(return_value="PROFILE")
+    monkeypatch.setattr(
+        query_module.water_query_router,
+        "build_profile_message",
+        profile_mock,
+    )
+
+    with pytest.raises(MatcherFinished):
+        await handle_my_water_profile(cast(Any, matcher), event, "zh-CN")
+
+    profile_mock.assert_awaited_once()
+    assert matcher.finished == "PROFILE"
+
+
+@pytest.mark.asyncio
+async def test_handle_season_create_and_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.handlers import admin as admin_module
+
+    create_matcher = DummyMatcher()
+    create_ctx = _build_admin_ctx(
+        create_matcher,
+        [
+            "season",
+            "create",
+            "spring_2026",
+            "20260301",
+            "20260331",
+            "2026",
+            "春日特别季",
+        ],
+        event_text="#water.admin season create",
+    )
+
+    monkeypatch.setattr(
+        admin_module.season_service,
+        "create",
+        AsyncMock(
+            return_value=type(
+                "Season",
+                (),
+                {
+                    "season_id": "spring_2026",
+                    "name": "2026 春日特别季",
+                    "start_date": 20260301,
+                    "end_date": 20260331,
+                },
+            )()
+        ),
+    )
+
+    with pytest.raises(MatcherFinished):
+        await handle_season(create_ctx)
+
+    assert "已创建 draft" in str(create_matcher.finished)
+
+    list_matcher = DummyMatcher()
+    list_ctx = _build_admin_ctx(
+        list_matcher,
+        ["season", "list", "published"],
+        event_text="#water.admin season list",
+    )
+    monkeypatch.setattr(
+        admin_module.season_service,
+        "list",
+        AsyncMock(
+            return_value=[
+                type(
+                    "Season",
+                    (),
+                    {
+                        "season_id": "spring_2026",
+                        "name": "2026 春日特别季",
+                        "start_date": 20260301,
+                        "end_date": 20260331,
+                        "status": "published",
+                    },
+                )()
+            ]
+        ),
+    )
+
+    with pytest.raises(MatcherFinished):
+        await handle_season(list_ctx)
+
+    assert "spring_2026" in str(list_matcher.finished)
+
+
+@pytest.mark.asyncio
+async def test_handle_season_create_surfaces_localized_service_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.handlers import admin as admin_module
+
+    matcher = DummyMatcher()
+    ctx = _build_admin_ctx(
+        matcher,
+        [
+            "season",
+            "create",
+            "spring_2026",
+            "20260301",
+            "20260331",
+            "2026",
+            "春日特别季",
+        ],
+        event_text="#water.admin season create",
+    )
+
+    monkeypatch.setattr(
+        admin_module.season_service,
+        "create",
+        AsyncMock(
+            side_effect=SeasonServiceError(
+                "water.admin.season.create.exists",
+                season_id="spring_2026",
+            )
+        ),
+    )
+
+    with pytest.raises(MatcherFinished):
+        await handle_season(ctx)
+
+    assert matcher.finished == "season_id 已存在: spring_2026"
 
 
 @pytest.mark.asyncio
@@ -249,7 +427,8 @@ def test_format_settlement_message_reason_mapping() -> None:
             aggregate_rows=0,
             unlocked_achievements=0,
             reason="already_settled",
-        )
+        ),
+        "zh-CN",
     )
     assert "该日期已结算成功" in msg
 
@@ -263,7 +442,8 @@ def test_format_settlement_message_shows_force_mode() -> None:
             aggregate_rows=8,
             unlocked_achievements=1,
             forced=True,
-        )
+        ),
+        "zh-CN",
     )
     assert "模式: 强制重结算" in msg
 
@@ -275,7 +455,11 @@ async def test_handle_settle_parses_force_flag(
     from src.plugins.water.handlers import admin as admin_module
 
     matcher = DummyMatcher()
-    ctx = WaterAdminContext(matcher=cast(Any, matcher), args=["settle", "-f"])
+    ctx = _build_admin_ctx(
+        matcher,
+        ["settle", "-f"],
+        event_text="#water.admin settle",
+    )
     settle_mock = AsyncMock(
         return_value=SettlementResult(
             success=True,
@@ -301,3 +485,5 @@ async def test_handle_settle_parses_force_flag(
     assert awaited_call is not None
     kwargs = awaited_call.kwargs
     assert kwargs["force"] is True
+    call_api = cast(Any, ctx.bot.call_api)
+    call_api.assert_not_awaited()

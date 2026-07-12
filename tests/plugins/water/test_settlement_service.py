@@ -141,3 +141,51 @@ async def test_run_daily_settlement_force_result_flag(
 
     assert result.success is True
     assert result.forced is True
+
+
+@pytest.mark.asyncio
+async def test_run_daily_settlement_defaults_to_yesterday(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = WaterSettlementService()
+
+    from src.plugins.water.services import settlement as settlement_module
+
+    monkeypatch.setattr(
+        settlement_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-13 01:42:22", "YYYY-MM-DD HH:mm:ss").int_timestamp,
+    )
+    monkeypatch.setattr(
+        settlement_module.water_repo,
+        "try_start_settlement_job",
+        AsyncMock(return_value=(False, "already_settled")),
+    )
+
+    result = await service.run_daily_settlement()
+
+    assert result.record_date == 20260612
+
+
+@pytest.mark.asyncio
+async def test_run_daily_settlement_defaults_to_shanghai_yesterday(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = WaterSettlementService()
+
+    from src.plugins.water.services import settlement as settlement_module
+
+    monkeypatch.setattr(
+        settlement_module,
+        "get_current_time",
+        lambda: 1_781_323_200,
+    )
+    monkeypatch.setattr(
+        settlement_module.water_repo,
+        "try_start_settlement_job",
+        AsyncMock(return_value=(False, "already_settled")),
+    )
+
+    result = await service.run_daily_settlement()
+
+    assert result.record_date == 20260612

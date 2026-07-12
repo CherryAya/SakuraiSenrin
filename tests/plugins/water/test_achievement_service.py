@@ -43,6 +43,48 @@ async def test_unlock_first_blood(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_unlock_seasonal_achievement_uses_passed_season_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = AchievementService()
+
+    from src.plugins.water.services import achievement as achievement_module
+
+    monkeypatch.setattr(
+        achievement_module.water_repo,
+        "get_user_achievement_items",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(service, "_check_first_blood", AsyncMock(return_value=False))
+    monkeypatch.setattr(service, "_check_night_owl", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        service, "_check_steady_companion", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(
+        achievement_module.water_repo,
+        "get_user_global_level",
+        AsyncMock(return_value=None),
+    )
+    unlock_mock = AsyncMock(return_value=1)
+    monkeypatch.setattr(
+        achievement_module.water_repo, "unlock_achievements", unlock_mock
+    )
+
+    unlocked = await service.check_and_unlock(
+        user_id="u1",
+        matrix_id="m1",
+        record_date=20260302,
+        today_msg_count=1,
+        season_id="spring_2026",
+    )
+
+    assert unlocked == ["NIGHT_OWL"]
+    assert unlock_mock.await_args is not None
+    payload = unlock_mock.await_args.args[0][0]
+    assert payload["season_id"] == "spring_2026"
+
+
+@pytest.mark.asyncio
 async def test_unlock_night_owl_requires_three_consecutive_days(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -71,6 +113,44 @@ async def test_unlock_night_owl_requires_three_consecutive_days(
     ok = await service._check_night_owl("u1", "m1", 20260303)
 
     assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_unlock_night_owl_merges_same_day_matrix_summaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = AchievementService()
+
+    from src.plugins.water.services import achievement as achievement_module
+
+    summaries = [
+        SimpleNamespace(
+            record_date=20260301,
+            hourly_counts=[0, 0, 1, 0, 0] + [0] * 19,
+        ),
+        SimpleNamespace(
+            record_date=20260302,
+            hourly_counts=[0, 0, 0, 1, 0] + [0] * 19,
+        ),
+        SimpleNamespace(
+            record_date=20260302,
+            hourly_counts=[0, 0, 0, 0, 1] + [0] * 19,
+        ),
+        SimpleNamespace(
+            record_date=20260303,
+            hourly_counts=[0, 0, 1, 0, 0] + [0] * 19,
+        ),
+    ]
+
+    monkeypatch.setattr(
+        achievement_module.water_repo,
+        "get_user_recent_summaries",
+        AsyncMock(return_value=summaries),
+    )
+
+    ok = await service._check_night_owl("u1", "m1", 20260303)
+
+    assert ok is True
 
 
 @pytest.mark.asyncio
@@ -144,6 +224,7 @@ async def test_build_user_achievement_message_contains_progress(
         user_id="u1",
         matrix_id="m1",
         record_date=20260304,
+        locale="zh-CN",
     )
 
     assert "我的水王成就" in message

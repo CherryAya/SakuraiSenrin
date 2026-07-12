@@ -7,6 +7,7 @@ Description: 邀请通知处理
 """
 
 import asyncio
+from pathlib import Path
 import random
 
 from nonebot import on_notice, on_request
@@ -16,37 +17,46 @@ from nonebot.adapters.onebot.v11.event import (
     GroupRequestEvent,
 )
 from nonebot.matcher import Matcher
-from nonebot.plugin import PluginMetadata
 from nonebot.rule import is_type, to_me
 
 from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
-from src.lib.utils.common import AlertTemplate
+from src.lib.i18n.runtime import resolve_locale, send_private_i18n, tr
+from src.lib.message_delivery import DeliveryTarget
+from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import group_repo, invite_repo
 from src.services.info import resolve_group_name
 
-name = "群组邀请处理"
-description = """
-群组邀请处理:
-  邀请事件上报
+name = tr("zh-CN", "plugin.notice_invite.name")
+description = tr("zh-CN", "plugin.notice_invite.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "invite" / "README.MD"
 
-""".strip()
 
-usage = """
-
-""".strip()
-
-__plugin_meta__ = PluginMetadata(
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
         "version": "0.2.0",
         "trigger": TriggerType.PASSIVE,
         "permission": Permission.SUPERUSER,
         "no_check": True,
+        "i18n": {
+            "name_key": "plugin.notice_invite.name",
+            "description_key": "plugin.notice_invite.description",
+        },
+        "docs": create_docs_meta(
+            visible=False,
+            category="system",
+            order=130,
+            source=DOCS_SOURCE,
+            slug="notice.invite",
+            parent_slug="notice",
+            aliases=("群组邀请处理", "notice.invite"),
+        ),
     },
 )
 
@@ -108,69 +118,60 @@ async def _(
                 sub_type=event.sub_type,
                 approve=False,
             )
-        await bot.send_private_msg(
-            user_id=int(inviter_id),
-            message=(
-                "🚫 自动拒绝\n"
-                f"群号：{event.group_id}\n"
-                f"群名：{group_name}\n"
-                f"邀请者：{inviter_id}\n"
-                "群聊已被拉黑，凛凛不想加入此群组。\n"
-                f"如有异议，请及时加入反馈群「{config.MAIN_GROUP_ID}」并联系群管【加入白名单】"
-            ),
+        await send_private_i18n(
+            bot,
+            int(inviter_id),
+            "notice.invite.auto_reject",
+            locale_group_id=group_id,
+            group_id=group_id,
+            group_name=group_name,
+            inviter_id=inviter_id,
+            main_group_id=config.MAIN_GROUP_ID,
         )
         for superuser in config.SUPERUSERS:
-            await bot.send_private_msg(
-                user_id=int(superuser),
-                message=AlertTemplate.build_tip_notification(
-                    event_name="自动拒绝",
-                    event_details=(
-                        "黑名单群组发起邀请，已自动拒绝\n"
-                        f"群号：{event.group_id}\n"
-                        f"群名：{group_name}\n"
-                        f"邀请者：{inviter_id}"
-                    ),
-                ),
+            await send_private_i18n(
+                bot,
+                int(superuser),
+                "notice.invite.auto_reject.details",
+                locale_group_id=group_id,
+                group_id=group_id,
+                group_name=group_name,
+                inviter_id=inviter_id,
             )
             await asyncio.sleep(1)
         await matcher.finish()
 
-    await bot.send_private_msg(
-        user_id=int(inviter_id),
-        message=(
-            "📩 谢谢您对凛凛发起的邀请 ^_^\n"
-            f"群号：{group_id}\n"
-            f"群名：{group_name}\n"
-            f"邀请者：{inviter_id}\n\n"
-            "======重要提示======\n"
-            f"请及时加入反馈群「{config.MAIN_GROUP_ID}」并联系群管【加入白名单】\n"
-            f"请及时加入反馈群「{config.MAIN_GROUP_ID}」并联系群管【加入白名单】\n"
-            f"请及时加入反馈群「{config.MAIN_GROUP_ID}」并联系群管【加入白名单】\n"
-            "===================\n\n"
-            "否则凛凛将无法在您的群聊中发送消息哦~\n"
-            "另外，任何形式的禁言是不被允许的！如需要凛凛退出群聊，切勿直接移除，还请发送【#remove】指令。\n"
-            "祝旅途愉快，每一种境遇都是命运的付赠品，还请好好珍惜，也希望能和凛凛相处的开心。\n"
-            "—— 来自 SakuraiSenrin (•◡•) /💕"
-        ),
+    await send_private_i18n(
+        bot,
+        int(inviter_id),
+        "notice.invite.received",
+        locale_group_id=group_id,
+        group_id=group_id,
+        group_name=group_name,
+        inviter_id=inviter_id,
+        main_group_id=config.MAIN_GROUP_ID,
     )
 
-    report_message = (
-        f"📩 新的邀请事件通知\n"
-        f"群号：{group_id}\n"
-        f"群名：{group_name}\n"
-        f"邀请者：{inviter_id}\n"
-        f"邀请 flag：{flag}\n\n"
-        "回复 y 以同意，发送 n 以拒绝。"
+    locale = await resolve_locale(group_id)
+    report_message = tr(
+        locale,
+        "notice.invite.report",
+        group_id=group_id,
+        group_name=group_name,
+        inviter_id=inviter_id,
+        flag=flag,
     )
     for super_user_id in config.SUPERUSERS:
-        message_id = (
-            await bot.send_private_msg(
-                user_id=int(super_user_id),
-                message=AlertTemplate.build_tip_notification(
-                    matcher.plugin_name, report_message
-                ),
-            )
-        )["message_id"]
+        plan_result = await deliver_message_plan(
+            bot,
+            plan=DeliveryPlan(
+                messages=(report_message,),
+                source_kind="notice_invite",
+            ),
+            target=DeliveryTarget(kind="private", target_id=str(super_user_id)),
+        )
+        send_result = plan_result.results[0]
+        message_id = send_result.message_id
         if not message_id:
             continue
 

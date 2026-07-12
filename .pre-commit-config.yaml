@@ -7,4 +7,16 @@ repos:
         language: pygrep
         types: [python]
         exclude: '^src/database/'
-        entry: '(==|!=|\bis\b|\bis\s+not\b)\s*\w+Status\.[A-Z0-9_]+'
+        entry: '(==|!=)\s*\w+Status\.[A-Z0-9_]+'
+      - id: message-constructor-check
+        name: "message-constructor-check"
+        description: 禁止使用 Message(...) 包裹消息，避免 message 注入
+        language: system
+        types: [python]
+        entry: python3 scripts/check_message_constructor.py
+      - id: matcher-bot-injection-check
+        name: "matcher-bot-injection-check"
+        description: matcher handler 调用需要 Bot 的 helper 时必须显式传递 bot
+        language: system
+        types: [python]
+        entry: python3 scripts/check_matcher_bot_injection.py

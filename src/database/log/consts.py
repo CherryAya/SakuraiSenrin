@@ -6,7 +6,7 @@ LastEditTime: 2026-02-19 22:33:19
 Description: log db 常量
 """
 
-from types import MappingProxyType
+from typing import ClassVar
 
 from .base import BaseAuditEnum
 
@@ -36,33 +36,31 @@ class OneBotV11Event(BaseAuditEnum):
     LIFECYCLE_META_EVENT = "LifecycleMetaEvent"
     HEARTBEAT_META_EVENT = "HeartbeatMetaEvent"
 
-    __labels__ = MappingProxyType(
-        {
-            EVENT: "事件",
-            MESSAGE_EVENT: "消息事件",
-            PRIVATE_MESSAGE_EVENT: "私聊消息事件",
-            GROUP_MESSAGE_EVENT: "群聊消息事件",
-            NOTICE_EVENT: "通知事件",
-            GROUP_UPLOAD_NOTICE_EVENT: "群文件上传通知事件",
-            GROUP_ADMIN_NOTICE_EVENT: "群管理员变动通知事件",
-            GROUP_DECREASE_NOTICE_EVENT: "群成员减少通知事件",
-            GROUP_INCREASE_NOTICE_EVENT: "群成员增加通知事件",
-            GROUP_BAN_NOTICE_EVENT: "群禁言通知事件",
-            FRIEND_ADD_NOTICE_EVENT: "好友添加通知事件",
-            GROUP_RECALL_NOTICE_EVENT: "群消息撤回通知事件",
-            FRIEND_RECALL_NOTICE_EVENT: "好友消息撤回通知事件",
-            NOTIFY_EVENT: "提醒事件",
-            POKE_NOTIFY_EVENT: "戳一戳提醒事件",
-            LUCKY_KING_NOTIFY_EVENT: "群红包提醒事件",
-            HONOR_NOTIFY_EVENT: "群荣誉变更提醒事件",
-            REQUEST_EVENT: "加群请求事件",
-            FRIEND_REQUEST_EVENT: "好友请求事件",
-            GROUP_REQUEST_EVENT: "群请求事件",
-            META_EVENT: "元事件",
-            LIFECYCLE_META_EVENT: "生命周期元事件",
-            HEARTBEAT_META_EVENT: "心跳元事件",
-        },
-    )
+    __label_keys__: ClassVar[dict[str, str]] = {
+        EVENT: "enum.onebot.event",
+        MESSAGE_EVENT: "enum.onebot.message_event",
+        PRIVATE_MESSAGE_EVENT: "enum.onebot.private_message_event",
+        GROUP_MESSAGE_EVENT: "enum.onebot.group_message_event",
+        NOTICE_EVENT: "enum.onebot.notice_event",
+        GROUP_UPLOAD_NOTICE_EVENT: "enum.onebot.group_upload_notice_event",
+        GROUP_ADMIN_NOTICE_EVENT: "enum.onebot.group_admin_notice_event",
+        GROUP_DECREASE_NOTICE_EVENT: "enum.onebot.group_decrease_notice_event",
+        GROUP_INCREASE_NOTICE_EVENT: "enum.onebot.group_increase_notice_event",
+        GROUP_BAN_NOTICE_EVENT: "enum.onebot.group_ban_notice_event",
+        FRIEND_ADD_NOTICE_EVENT: "enum.onebot.friend_add_notice_event",
+        GROUP_RECALL_NOTICE_EVENT: "enum.onebot.group_recall_notice_event",
+        FRIEND_RECALL_NOTICE_EVENT: "enum.onebot.friend_recall_notice_event",
+        NOTIFY_EVENT: "enum.onebot.notify_event",
+        POKE_NOTIFY_EVENT: "enum.onebot.poke_notify_event",
+        LUCKY_KING_NOTIFY_EVENT: "enum.onebot.lucky_king_notify_event",
+        HONOR_NOTIFY_EVENT: "enum.onebot.honor_notify_event",
+        REQUEST_EVENT: "enum.onebot.request_event",
+        FRIEND_REQUEST_EVENT: "enum.onebot.friend_request_event",
+        GROUP_REQUEST_EVENT: "enum.onebot.group_request_event",
+        META_EVENT: "enum.onebot.meta_event",
+        LIFECYCLE_META_EVENT: "enum.onebot.lifecycle_meta_event",
+        HEARTBEAT_META_EVENT: "enum.onebot.heartbeat_meta_event",
+    }
 
 
 class AuditContext(BaseAuditEnum):
@@ -72,15 +70,13 @@ class AuditContext(BaseAuditEnum):
     GUILD = "GUILD"
     SYSTEM = "SYSTEM"
 
-    __labels__ = MappingProxyType(
-        {
-            GLOBAL: "全局",
-            GROUP: "群组",
-            USER: " 用户",
-            GUILD: "频道/公会",
-            SYSTEM: "系统自身",
-        },
-    )
+    __label_keys__: ClassVar[dict[str, str]] = {
+        GLOBAL: "enum.audit_context.global",
+        GROUP: "enum.audit_context.group",
+        USER: "enum.audit_context.user",
+        GUILD: "enum.audit_context.guild",
+        SYSTEM: "enum.audit_context.system",
+    }
 
 
 class AuditCategory(BaseAuditEnum):
@@ -95,16 +91,14 @@ class AuditCategory(BaseAuditEnum):
     TASK = "TASK"
     FILE = "FILE"
 
-    __labels__ = MappingProxyType(
-        {
-            ACCESS: "黑名单/风控",
-            PERMISSION: "权限管理",
-            PLUGIN: "插件模块",
-            SYSTEM: "系统核心",
-            TASK: "定时任务",
-            FILE: "文件操作",
-        },
-    )
+    __label_keys__: ClassVar[dict[str, str]] = {
+        ACCESS: "enum.audit_category.access",
+        PERMISSION: "enum.audit_category.permission",
+        PLUGIN: "enum.audit_category.plugin",
+        SYSTEM: "enum.audit_category.system",
+        TASK: "enum.audit_category.task",
+        FILE: "enum.audit_category.file",
+    }
 
 
 class AuditAction(BaseAuditEnum):
@@ -144,33 +138,25 @@ class AuditAction(BaseAuditEnum):
     GRANT = "GRANT"
     REVOKE = "REVOKE"
 
-    __labels__ = MappingProxyType(
-        {
-            # 基础
-            CREATE: "创建/新增",
-            UPDATE: "更新/修改",
-            DELETE: "删除/移除",
-            # 状态
-            LOGIN: "登录",
-            LOGOUT: "登出",
-            CONNECT: "建立连接",
-            # 管控
-            KICK: "踢出成员",
-            BAN: "封禁/拉黑",
-            UNBAN: "解封/白名单",
-            MUTE: "禁言",
-            UNMUTE: "解除禁言",
-            # 审批
-            APPROVE: "审批通过",
-            REJECT: "审批拒绝",
-            # 功能
-            ENABLE: "启用功能",
-            DISABLE: "禁用功能",
-            TRIGGER: "触发执行",
-            RELOAD: "重载配置",
-            # 权限
-            CHANGE: "权限变更",
-            GRANT: "授予权限",
-            REVOKE: "撤销权限",
-        },
-    )
+    __label_keys__: ClassVar[dict[str, str]] = {
+        CREATE: "enum.audit_action.create",
+        UPDATE: "enum.audit_action.update",
+        DELETE: "enum.audit_action.delete",
+        LOGIN: "enum.audit_action.login",
+        LOGOUT: "enum.audit_action.logout",
+        CONNECT: "enum.audit_action.connect",
+        KICK: "enum.audit_action.kick",
+        BAN: "enum.audit_action.ban",
+        UNBAN: "enum.audit_action.unban",
+        MUTE: "enum.audit_action.mute",
+        UNMUTE: "enum.audit_action.unmute",
+        APPROVE: "enum.audit_action.approve",
+        REJECT: "enum.audit_action.reject",
+        ENABLE: "enum.audit_action.enable",
+        DISABLE: "enum.audit_action.disable",
+        TRIGGER: "enum.audit_action.trigger",
+        RELOAD: "enum.audit_action.reload",
+        CHANGE: "enum.audit_action.change",
+        GRANT: "enum.audit_action.grant",
+        REVOKE: "enum.audit_action.revoke",
+    }

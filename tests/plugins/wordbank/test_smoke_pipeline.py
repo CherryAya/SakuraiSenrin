@@ -1,0 +1,731 @@
+import asyncio
+from contextlib import suppress
+import sys
+from typing import Any
+from unittest.mock import AsyncMock
+
+import nonebot
+from nonebot.adapters.onebot.v11 import Bot, Message
+from nonebot.adapters.onebot.v11.message import MessageSegment
+from nonebug import App
+import pytest
+
+nonebot.init(
+    SUPERUSERS={"1"},
+    IGNORED_USERS=set(),
+    MAIN_GROUP_ID="10001",
+    GITHUB_TOKEN="test-token",
+    GITHUB_REPO="owner/repo",
+    GITHUB_BRANCH="main",
+    WORDBANK_MEDIA_PROVIDER="local",
+    command_start={"#", "/"},
+    command_sep={"."},
+)
+
+if nonebot.get_plugin("wordbank") is None:
+    sys.modules.pop("src.plugins.wordbank", None)
+    nonebot.load_plugin("src.plugins.wordbank")
+if nonebot.get_plugin("study") is None:
+    sys.modules.pop("src.plugins.study", None)
+    nonebot.load_plugin("src.plugins.study")
+
+from src.database.consts import WritePolicy
+from src.lib.i18n.runtime import tr
+from src.lib.messages import text_message
+from src.lib.utils.common import get_current_time
+from src.plugins import study as study_plugin
+from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank.handlers import submission as wordbank_submission_handlers
+from src.plugins.wordbank.message_model import (
+    MessageShape,
+    shape_from_event,
+    shape_from_response_text,
+    shape_from_text,
+)
+from src.plugins.wordbank.services import wordbank_service
+from src.plugins.wordbank.services.rules import (
+    MAX_CALL_COUNT_WINDOW_SECONDS,
+    RuleContext,
+)
+from tests.plugins.water.helpers import (
+    build_group_message_event,
+    build_group_poke_event,
+)
+
+
+def _should_call_group_send_api(ctx: Any, *, group_id: int, message: Message) -> None:
+    ctx.should_call_api(
+        "send_group_msg",
+        {
+            "group_id": group_id,
+            "message": message,
+        },
+        result={"message_id": 1},
+    )
+
+
+def _should_call_group_poke_api(ctx: Any, *, group_id: int, user_id: int) -> None:
+    ctx.should_call_api(
+        "group_poke",
+        {
+            "group_id": group_id,
+            "user_id": user_id,
+        },
+        result={},
+    )
+
+
+async def _cancel_pending_rebuild() -> None:
+    task = wordbank_service._rebuild_task
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+    wordbank_service._rebuild_task = None
+
+
+async def _reset_wordbank_runtime() -> None:
+    wordbank_plugin._wordbank_initialized = False
+    wordbank_service._initialized = False
+    wordbank_service._index.groups.clear()
+    wordbank_service._index.exact_match.clear()
+    await wordbank_plugin.initialize_wordbank_plugin()
+    await wordbank_service.repository.reset_all_data(
+        include_images=True,
+        include_logs=True,
+    )
+    await _cancel_pending_rebuild()
+    wordbank_service._dirty_group_ids.clear()
+    wordbank_service._call_count_cache.clear()
+    await wordbank_service.rebuild_index()
+
+
+async def _pending_response_item_ids() -> tuple[int, ...]:
+    items = await wordbank_service.list_pending_entries(
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    return tuple(
+        response_item_id
+        for item in items
+        for response_item_id in item.response_item_ids
+    )
+
+
+async def _approve_all_pending() -> None:
+    for response_item_id in await _pending_response_item_ids():
+        ok = await wordbank_service.approve_response_item(
+            response_item_id,
+            actor_user_id="10002",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+        assert ok is True
+    await _cancel_pending_rebuild()
+    await wordbank_service.rebuild_index()
+
+
+async def _add_approved_entry(
+    *,
+    trigger_shape: MessageShape,
+    response_text: str,
+    response_shape: MessageShape | None = None,
+    raw_rule: dict | None = None,
+    user_id: str = "10001",
+) -> int:
+    created = await wordbank_service.add_message_entry(
+        trigger_shape=trigger_shape,
+        response_shape=response_shape or shape_from_text(response_text),
+        group_id="20001",
+        user_id=user_id,
+        is_group=True,
+        raw_rule=raw_rule,
+    )
+    ok = await wordbank_service.approve_response_item(
+        created.response_item_id,
+        actor_user_id="10002",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    assert ok is True
+    await _cancel_pending_rebuild()
+    await wordbank_service.rebuild_index()
+    return created.response_item_id
+
+
+@pytest.mark.asyncio
+async def test_wordbank_add_command_pipeline_matches_after_approval(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _reset_wordbank_runtime()
+    monkeypatch.setattr(
+        wordbank_submission_handlers,
+        "schedule_submission_approval_notice",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        wordbank_submission_handlers,
+        "record_submission_approval_message",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        wordbank_submission_handlers,
+        "build_add_result_plan_entry",
+        AsyncMock(return_value=text_message("ADD_OK")),
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_add_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event(
+            "#wordbank.add 晚安 => 做个好梦",
+            message_id=1,
+        )
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("ADD_OK"),
+        )
+        ctx.should_finished()
+
+    pending_ids = await _pending_response_item_ids()
+    assert len(pending_ids) == 1
+
+    await _approve_all_pending()
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("晚安", message_id=2)
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("做个好梦"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_study_guided_pipeline_matches_after_approval(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _reset_wordbank_runtime()
+    monkeypatch.setattr(
+        wordbank_submission_handlers,
+        "schedule_submission_approval_notice",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        wordbank_submission_handlers,
+        "record_submission_approval_message",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        wordbank_submission_handlers,
+        "build_add_result_plan_entry",
+        AsyncMock(return_value=text_message("STUDY_OK")),
+    )
+    monkeypatch.setattr(
+        study_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+
+    async with app.test_matcher(study_plugin.study_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        first = build_group_message_event("#study", message_id=1)
+        second = build_group_message_event("M", message_id=2)
+        third = build_group_message_event("F", message_id=3)
+        fourth = build_group_message_event("不嘻嘻", message_id=4)
+        fifth = build_group_message_event("消息回复如下", message_id=5)
+        sixth = build_group_message_event("3", message_id=6)
+
+        ctx.receive_event(bot, first)
+        ctx.should_call_send(
+            first,
+            tr("zh-CN", "wordbank.guided.study.mode_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused()
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(
+            second,
+            tr("zh-CN", "wordbank.guided.study.group_block_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused()
+
+        ctx.receive_event(bot, third)
+        ctx.should_call_send(
+            third,
+            tr("zh-CN", "wordbank.guided.study.trigger_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused()
+
+        ctx.receive_event(bot, fourth)
+        ctx.should_call_send(
+            fourth,
+            tr("zh-CN", "wordbank.guided.study.response_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused()
+
+        ctx.receive_event(bot, fifth)
+        ctx.should_call_send(
+            fifth,
+            tr("zh-CN", "wordbank.guided.study.weight_prompt"),
+            bot=bot,
+        )
+        ctx.should_paused()
+
+        ctx.receive_event(bot, sixth)
+        _should_call_group_send_api(
+            ctx,
+            group_id=sixth.group_id,
+            message=text_message("STUDY_OK"),
+        )
+        ctx.should_finished()
+
+    pending_ids = await _pending_response_item_ids()
+    assert len(pending_ids) == 1
+
+    await _approve_all_pending()
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("不嘻嘻", message_id=7)
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("消息回复如下"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_event_at_pipeline_hits_real_event_trigger(app: App) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_event("event:at"),
+        response_text="收到艾特",
+        response_shape=shape_from_response_text("[@触发者] 收到艾特"),
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("", message_id=1)
+        event.message = Message([MessageSegment.at("99999")])
+        event.original_message = Message([MessageSegment.at("99999")])
+        event.raw_message = "[CQ:at,qq=99999]"
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=Message(
+                [
+                    MessageSegment.at("10001"),
+                    MessageSegment.text(" 收到艾特"),
+                ]
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_event_at_pipeline_uses_original_message_after_strip(
+    app: App,
+) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_event("event:at"),
+        response_text="收到剥离艾特",
+        response_shape=shape_from_response_text("[@触发者] 收到剥离艾特"),
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("", message_id=1)
+        event.message = text_message("")
+        event.original_message = Message(
+            [MessageSegment.at("99999"), MessageSegment.text(" ")]
+        )
+        event.raw_message = "[CQ:at,qq=99999] "
+        event.to_me = True
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=Message(
+                [
+                    MessageSegment.at("10001"),
+                    MessageSegment.text(" 收到剥离艾特"),
+                ]
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_poke_pipeline_mentions_sender_from_response_shape(
+    app: App,
+) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_event("event:poke"),
+        response_text="别戳啦",
+        response_shape=shape_from_response_text("[戳触发者] 别戳啦"),
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_notice) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_poke_event(user_id=10001, target_id=99999)
+        assert event.group_id is not None
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message(" 别戳啦"),
+        )
+        _should_call_group_poke_api(
+            ctx,
+            group_id=event.group_id,
+            user_id=event.user_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_response_pipeline_renders_sender_at_segment(app: App) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_text("晚安"),
+        response_text="",
+        response_shape=shape_from_response_text("你好 [@触发者]"),
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("晚安", message_id=2)
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=Message(
+                [
+                    MessageSegment.text("你好 "),
+                    MessageSegment.at("10001"),
+                ]
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_response_pipeline_executes_poke_without_empty_message(
+    app: App,
+) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_text("晚安"),
+        response_text="",
+        response_shape=shape_from_response_text("[戳触发者]"),
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("晚安", message_id=3)
+
+        ctx.receive_event(bot, event)
+        _should_call_group_poke_api(
+            ctx,
+            group_id=event.group_id,
+            user_id=event.user_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_text_pipeline_uses_original_message_after_callme_strip(
+    app: App,
+) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_text("凛凛的妙妙小工具"),
+        response_text="完整原文命中",
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("的妙妙小工具", message_id=1)
+        event.message = text_message("的妙妙小工具")
+        event.original_message = text_message("凛凛的妙妙小工具")
+        event.raw_message = "凛凛的妙妙小工具"
+        event.to_me = True
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("完整原文命中"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_invalid_call_count_window_does_not_break_matching(
+    app: App,
+) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_text("?"),
+        response_text="正常兜底",
+        raw_rule={"scope": "current_group", "priority": 1},
+    )
+    await wordbank_service.repository.create_or_append_response(
+        trigger_shape=shape_from_text("?"),
+        response_shape=shape_from_text("脏规则响应"),
+        rule={
+            "roles": "member",
+            "call_count": {
+                "window_seconds": MAX_CALL_COUNT_WINDOW_SECONDS + 1,
+                "min": 3,
+                "max": 0,
+            },
+        },
+        scope="current_group",
+        priority=9,
+        trigger_probability=1.0,
+        weight=3,
+        group_id="20001",
+        created_by="10001",
+        status="approved",
+        enabled=1,
+        approved_by="10002",
+    )
+    await _cancel_pending_rebuild()
+    wordbank_service._call_count_cache.clear()
+    await wordbank_service.rebuild_index()
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("?", message_id=1)
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=text_message("正常兜底"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_rule_priority_and_call_count_pipeline(app: App) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_text("权限测试"),
+        response_text="管理员专属",
+        raw_rule={"scope": "current_group", "roles": "admin", "priority": 9},
+    )
+    await _add_approved_entry(
+        trigger_shape=shape_from_text("首发测试"),
+        response_text="首发限次",
+        raw_rule={
+            "scope": "current_group",
+            "call_count": {"window_seconds": 3600, "min": 0, "max": 1},
+        },
+    )
+
+    selected = await wordbank_service.match_message(
+        shape_from_text("首发测试"),
+        context=RuleContext(
+            group_id="20001",
+            user_id="10003",
+            message_type="group",
+            sender_role="member",
+        ),
+    )
+    assert selected is not None
+    assert selected.response.text == "首发限次"
+
+    fallback_result = await wordbank_service.add_message_entry(
+        trigger_shape=shape_from_text("限次测试"),
+        response_shape=shape_from_text("普通回退"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={"scope": "current_group", "priority": 1},
+    )
+    limited_result = await wordbank_service.add_message_entry(
+        trigger_shape=shape_from_text("限次测试"),
+        response_shape=shape_from_text("首发限次"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "current_group",
+            "priority": 9,
+            "call_count": {"window_seconds": 3600, "min": 0, "max": 1},
+        },
+    )
+    for response_item_id in (
+        fallback_result.response_item_id,
+        limited_result.response_item_id,
+    ):
+        ok = await wordbank_service.approve_response_item(
+            response_item_id,
+            actor_user_id="10002",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+        assert ok is True
+    await _cancel_pending_rebuild()
+    await wordbank_service.rebuild_index()
+    await wordbank_service.repository.save_log(
+        {
+            "trigger_group_id": limited_result.trigger_group_id,
+            "trigger_variant_id": limited_result.trigger_variant_id,
+            "response_item_id": limited_result.response_item_id,
+            "group_id": "20001",
+            "user_id": "10003",
+            "message_type": "group",
+            "created_at": get_current_time(),
+        },
+        policy=WritePolicy.IMMEDIATE,
+    )
+    await wordbank_service.repository.save_log(
+        {
+            "trigger_group_id": limited_result.trigger_group_id,
+            "trigger_variant_id": limited_result.trigger_variant_id,
+            "response_item_id": limited_result.response_item_id,
+            "group_id": "20001",
+            "user_id": "10003",
+            "message_type": "group",
+            "created_at": get_current_time(),
+        },
+        policy=WritePolicy.IMMEDIATE,
+    )
+    wordbank_service._call_count_cache.clear()
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+
+        admin_event = build_group_message_event(
+            "权限测试",
+            role="admin",
+            user_id=10002,
+            message_id=1,
+        )
+        first_limited = build_group_message_event(
+            "限次测试",
+            role="member",
+            user_id=10003,
+            message_id=2,
+        )
+
+        ctx.receive_event(bot, admin_event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=admin_event.group_id,
+            message=text_message("管理员专属"),
+        )
+
+        ctx.receive_event(bot, first_limited)
+        _should_call_group_send_api(
+            ctx,
+            group_id=first_limited.group_id,
+            message=text_message("普通回退"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_event_at_call_count_is_shared_by_trigger_group(app: App) -> None:
+    await _reset_wordbank_runtime()
+    first_stage = await wordbank_service.add_message_entry(
+        trigger_shape=shape_from_event("event:at"),
+        response_shape=shape_from_response_text("[@触发者] 第一阶段"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "current_group",
+            "priority": 5,
+            "call_count": {"window_seconds": 3600, "min": 0, "max": 5},
+        },
+    )
+    second_stage = await wordbank_service.add_message_entry(
+        trigger_shape=shape_from_event("event:at"),
+        response_shape=shape_from_response_text("[@触发者] 第二阶段"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "current_group",
+            "priority": 9,
+            "call_count": {"window_seconds": 3600, "min": 6, "max": 10},
+        },
+    )
+    for response_item_id in (
+        first_stage.response_item_id,
+        second_stage.response_item_id,
+    ):
+        ok = await wordbank_service.approve_response_item(
+            response_item_id,
+            actor_user_id="10002",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+        assert ok is True
+    await _cancel_pending_rebuild()
+    await wordbank_service.rebuild_index()
+
+    for _ in range(6):
+        await wordbank_service.repository.save_log(
+            {
+                "trigger_group_id": first_stage.trigger_group_id,
+                "trigger_variant_id": first_stage.trigger_variant_id,
+                "response_item_id": first_stage.response_item_id,
+                "group_id": "20001",
+                "user_id": "10003",
+                "message_type": "event",
+                "created_at": get_current_time(),
+            },
+            policy=WritePolicy.IMMEDIATE,
+        )
+    wordbank_service._call_count_cache.clear()
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("", message_id=1)
+        event.message = Message([MessageSegment.at("99999")])
+        event.original_message = Message([MessageSegment.at("99999")])
+        event.raw_message = "[CQ:at,qq=99999]"
+
+        ctx.receive_event(bot, event)
+        _should_call_group_send_api(
+            ctx,
+            group_id=event.group_id,
+            message=Message(
+                [
+                    MessageSegment.at("10001"),
+                    MessageSegment.text(" 第二阶段"),
+                ]
+            ),
+        )

@@ -12,12 +12,14 @@ from src.lib.cache import blacklist_cache, group_cache, member_cache, user_cache
 
 from .blacklist import BlacklistRepository
 from .group import GroupRepository
+from .i18n import I18nRepository
 from .invite import InviteRepository
 from .member import MemberRepository
 from .user import UserRepository
 
 blacklist_repo = BlacklistRepository(blacklist_cache)
 group_repo = GroupRepository(group_cache)
+i18n_repo = I18nRepository()
 invite_repo = InviteRepository()
 member_repo = MemberRepository(member_cache)
 user_repo = UserRepository(user_cache)
@@ -25,6 +27,7 @@ user_repo = UserRepository(user_cache)
 __all__ = [
     "blacklist_repo",
     "group_repo",
+    "i18n_repo",
     "invite_repo",
     "member_repo",
     "user_repo",

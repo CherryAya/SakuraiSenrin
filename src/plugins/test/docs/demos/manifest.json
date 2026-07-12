@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:test:main": {
+      "superuser": "test-listener.webp"
+    }
+  }
+}

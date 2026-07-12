@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pil_utils import BuildImage
 
 from src.lib.consts import MAPLE_FONT_PATH
+from src.lib.demo_theme import SENRIN_V3_AVATAR_FALLBACK_THEME
 
 
 class QQAvatar:
@@ -26,15 +27,19 @@ class QQAvatar:
 
     @classmethod
     async def fetch_user(cls, uid: str, size: int = 100) -> BuildImage:
+        from src.lib.i18n.runtime import tr
+
         s_param = 640 if size > 100 else 100
         url = f"https://q1.qlogo.cn/g?b=qq&nk={uid}&s={s_param}"
-        return await cls._fetch(url, size, "人")
+        return await cls._fetch(url, size, tr("zh-CN", "avatar.default.user"))
 
     @classmethod
     async def fetch_group(cls, gid: str, size: int = 100) -> BuildImage:
+        from src.lib.i18n.runtime import tr
+
         s_param = 640 if size > 100 else 100
         url = f"https://p.qlogo.cn/gh/{gid}/{gid}/{s_param}"
-        return await cls._fetch(url, size, "群")
+        return await cls._fetch(url, size, tr("zh-CN", "avatar.default.group"))
 
     @classmethod
     async def _fetch(cls, url: str, size: int, fallback: str) -> BuildImage:
@@ -49,7 +54,7 @@ class QQAvatar:
 
     @staticmethod
     def _generate_fallback(size: int, text: str) -> BuildImage:
-        img = Image.new("RGBA", (size, size), (255, 225, 230))
+        img = Image.new("RGBA", (size, size), SENRIN_V3_AVATAR_FALLBACK_THEME.bg_color)
         draw = ImageDraw.Draw(img)
         try:
             font = ImageFont.truetype(MAPLE_FONT_PATH, int(size * 0.5))
@@ -58,7 +63,7 @@ class QQAvatar:
         draw.text(
             (size / 2, size / 2 - size * 0.05),
             text,
-            fill=(180, 76, 76),
+            fill=SENRIN_V3_AVATAR_FALLBACK_THEME.text_color,
             font=font,
             anchor="mm",
         )

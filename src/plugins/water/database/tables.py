@@ -1,37 +1,69 @@
-"""Water 数据表定义 (v2.0)."""
+"""Water 数据表定义 (v2.2)."""
 
 from sqlalchemy import JSON, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.lib.db.orm import TimeMixin
 
+from .hourly_counts import HourlyCountsType
+
 
 class WaterMessageBase(DeclarativeBase):
-    """水王流水分库表基类。"""
+    """水王计数分库表基类。"""
 
 
 class WaterCoreBase(DeclarativeBase):
     """水王核心资产主库表基类。"""
 
 
-class WaterMessage(WaterMessageBase):
-    __tablename__ = "water_message"
+class WaterSummaryBase(DeclarativeBase):
+    """水王日汇总分片表基类。"""
+
+
+class WaterHourlyCounter(WaterMessageBase):
+    __tablename__ = "water_hourly_counter"
     __table_args__ = (
         Index(
-            "idx_water_message_group_user_time",
+            "idx_water_hourly_counter_group_date_hour",
+            "group_id",
+            "record_date",
+            "hour",
+        ),
+        Index(
+            "idx_water_hourly_counter_user_date",
+            "user_id",
+            "record_date",
+        ),
+        Index(
+            "idx_water_hourly_counter_group_user_date",
             "group_id",
             "user_id",
-            "created_at",
+            "record_date",
         ),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    group_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    record_date: Mapped[int] = mapped_column(Integer, primary_key=True)
+    hour: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    msg_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
-class WaterDailySummary(WaterCoreBase, TimeMixin):
+class WaterDailySummaryMixin(TimeMixin):
+    group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    record_date: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    msg_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    hourly_counts: Mapped[list[int]] = mapped_column(
+        HourlyCountsType(),
+        nullable=False,
+        default=list,
+    )
+
+
+class WaterDailySummary(WaterCoreBase, WaterDailySummaryMixin):
     __tablename__ = "water_daily_summary"
     __table_args__ = (
         Index(
@@ -46,13 +78,21 @@ class WaterDailySummary(WaterCoreBase, TimeMixin):
         ),
     )
 
-    group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    record_date: Mapped[int] = mapped_column(Integer, primary_key=True)
 
-    msg_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    active_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    hourly_counts: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+class WaterArchivedDailySummary(WaterSummaryBase, WaterDailySummaryMixin):
+    __tablename__ = "water_daily_summary"
+    __table_args__ = (
+        Index(
+            "idx_water_summary_group_date",
+            "group_id",
+            "record_date",
+        ),
+        Index(
+            "idx_water_summary_user_date",
+            "user_id",
+            "record_date",
+        ),
+    )
 
 
 class WaterGroupMatrixMap(WaterCoreBase, TimeMixin):
@@ -92,6 +132,30 @@ class WaterMatrixTotalLevel(WaterCoreBase, TimeMixin):
     exp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     season_exp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class WaterGroupUserTotal(WaterCoreBase, TimeMixin):
+    __tablename__ = "water_group_user_total"
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id", name="uq_water_group_user_total"),
+        Index("idx_water_group_user_total_group_msg", "group_id", "msg_count"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    msg_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class WaterGroupTotal(WaterCoreBase, TimeMixin):
+    __tablename__ = "water_group_total"
+
+    group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    msg_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class WaterPenaltyLog(WaterCoreBase, TimeMixin):
@@ -155,3 +219,24 @@ class WaterUserAchievement(WaterCoreBase):
     season_id: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     unlocked_at: Mapped[int] = mapped_column(Integer, nullable=False)
     context: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class WaterActivitySeason(WaterCoreBase, TimeMixin):
+    __tablename__ = "water_activity_season"
+    __table_args__ = (
+        Index("idx_water_activity_season_status", "status"),
+        Index("idx_water_activity_season_window", "start_date", "end_date"),
+        UniqueConstraint("season_id", name="uq_water_activity_season_id"),
+    )
+
+    season_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True
+    )
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    start_date: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_date: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    published_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False, default="")

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:community.miaomiao-toolkit:main": {
+      "normal": "community-miaomiao-main.webp",
+      "group_admin": "community-miaomiao-main.webp",
+      "group_owner": "community-miaomiao-main.webp",
+      "superuser": "community-miaomiao-main.webp"
+    }
+  }
+}

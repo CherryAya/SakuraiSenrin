@@ -8,6 +8,7 @@ Description: 群聊管理插件
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
@@ -16,130 +17,145 @@ from nonebot.exception import ActionFailed
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
-from nonebot.plugin import CommandGroup, PluginMetadata
+from nonebot.plugin import CommandGroup
 
 from src.database.core.consts import GroupStatus, Permission
 from src.lib.cache.field import GroupCacheItem
 from src.lib.consts import TriggerType
+from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.i18n.types import LocaleCode
+from src.lib.message_plan import MessagePlanInput, finish_with_message
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_doc_demo_plan_entry,
+    build_readme_docs_plan_entry,
+    create_docs_meta,
+)
+from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import group_repo
 from src.services.info import resolve_group_name
 
-name = "群组管理模块"
-description = "群组管理模块: 处理群组黑白名单 (支持批量操作)"
+name = tr("zh-CN", "plugin.admin_group.name")
+description = tr("zh-CN", "plugin.admin_group.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "group" / "README.MD"
 
-usage = f"""
-===== {name} =====
 
-命令前缀: #admin.group / #群组管理
+def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
+    return build_readme_docs_plan_entry(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        ctx=ctx,
+    )
 
-1.加入黑名单
-  ban / 禁止 / 拉黑 / 封禁
-  示例: #admin.group ban <群号1> [群号2] ...
 
-2.解除黑名单
-  unban / 解除 / 加白 / 解封
-  示例: #admin.group unban <群号1> [群号2] ...
+def _build_error_demo(
+    locale: LocaleCode,
+    message: str,
+    feature_query: str | None,
+) -> MessagePlanInput:
+    return build_doc_demo_plan_entry(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        locale=locale,
+        feature_query=feature_query,
+        prefix_text=message,
+    )
 
-3.授权群组
-  auth / 授权
-  示例: #admin.group auth <群号1> [群号2] ...
 
-4.取消授权
-  unauth / 取消授权
-  示例: #admin.group unauth <群号1> [群号2] ...
-
-5.查询状态
-  status / 状态
-  示例: #admin.group status <群号1> [群号2] ...
-
-6.退群
-  leave / 退群
-  示例: #admin.group leave <群号1> [群号2] ...
-
-7.帮助信息
-  help / 帮助
-  示例: #admin.group help
-
-[注意事项]:
-1. 需要【Senrin】管理员权限。
-2. 支持同时输入多个群组 ID，用空格隔开。
-3. 若不填群号，默认对当前所在群组执行。
-""".strip()
-
-__plugin_meta__ = PluginMetadata(
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
+        "i18n": {
+            "name_key": "plugin.admin_group.name",
+            "description_key": "plugin.admin_group.description",
+        },
+        "docs": create_docs_meta(
+            visible=True,
+            category="admin",
+            order=110,
+            source=DOCS_SOURCE,
+            slug="admin.group",
+            parent_slug="admin",
+            aliases=("群组管理模块", "群组管理", "admin.group"),
+        ),
     },
 )
 
-admin_command_group = CommandGroup(
-    "admin",
+admin_command_group = CommandGroup("admin")
+admin_group = admin_command_group.command(
+    "group",
+    aliases={"群组管理"},
     permission=SUPERUSER,
     priority=5,
     block=False,
 )
-admin_group = admin_command_group.command("group")
 
 
 @dataclass
 class AdminGroupContext:
     bot: Bot
     group: GroupCacheItem
+    locale: LocaleCode
 
 
 async def ban_group(ctx: AdminGroupContext) -> str:
     if ctx.group.status.is_banned:
-        return "已处于封禁状态"
+        return tr(ctx.locale, "admin.group.already_banned")
 
     await group_repo.update_status(ctx.group.group_id, GroupStatus.BANNED)
-    return "已封禁"
+    return tr(ctx.locale, "admin.group.banned")
 
 
 async def unban_group(ctx: AdminGroupContext) -> str:
     if not ctx.group.status.is_banned:
-        return "未被封禁，无需解封"
+        return tr(ctx.locale, "admin.group.not_banned")
 
     await group_repo.update_status(ctx.group.group_id, GroupStatus.UNAUTHORIZED)
-    return "已解封，状态变更为未授权"
+    return tr(ctx.locale, "admin.group.unbanned")
 
 
 async def auth_group(ctx: AdminGroupContext) -> str:
     if ctx.group.status.is_banned:
-        return "已被封禁，请先解封"
+        return tr(ctx.locale, "admin.group.need_unban_first")
     elif ctx.group.status.is_working:
-        return "已是授权状态"
+        return tr(ctx.locale, "admin.group.already_authorized")
 
     await group_repo.update_status(ctx.group.group_id, GroupStatus.AUTHORIZED)
-    return "授权成功"
+    return tr(ctx.locale, "admin.group.authorized")
 
 
 async def unauth_group(ctx: AdminGroupContext) -> str:
     if ctx.group.status.is_banned:
-        return "处于封禁状态，无需取消授权"
+        return tr(ctx.locale, "admin.group.banned_skip_unauth")
     elif ctx.group.status.is_working:
         await group_repo.update_status(ctx.group.group_id, GroupStatus.UNAUTHORIZED)
-        return "已取消授权"
+        return tr(ctx.locale, "admin.group.unauthorized")
 
-    return "当前未授权，无需操作"
+    return tr(ctx.locale, "admin.group.already_unauthorized")
 
 
 async def leave_group(ctx: AdminGroupContext) -> str:
     await group_repo.update_status(ctx.group.group_id, GroupStatus.LEFT)
     try:
         await ctx.bot.set_group_leave(group_id=int(ctx.group.group_id))
-        return "已退群"
+        return tr(ctx.locale, "admin.group.left")
     except ActionFailed:
-        return "退群失败，仅更新数据库状态"
+        return tr(ctx.locale, "admin.group.leave_failed")
 
 
 async def status_group(ctx: AdminGroupContext) -> str:
-    return f"当前状态: {ctx.group.status}"
+    return tr(ctx.locale, "admin.group.status", status=ctx.group.status)
 
 
 @admin_group.handle()
@@ -149,13 +165,28 @@ async def _(
     event: MessageEvent,
     arg: Message = CommandArg(),
 ) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    docs_message = build_docs(DocsRenderContext(locale=locale))
+    docs_text = str(docs_message)
     args = arg.extract_plain_text().strip().split()
     if not args:
-        await matcher.finish(usage)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=docs_message,
+            source_kind="admin_group",
+        )
 
     command = args[0].lower()
     if command in ["help", "帮助"]:
-        await matcher.finish(usage)
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=docs_message,
+            source_kind="admin_group",
+        )
 
     handler: Callable[[AdminGroupContext], Awaitable[str]]
     match command:
@@ -172,28 +203,75 @@ async def _(
         case "leave" | "退群":
             handler = leave_group
         case _:
-            await matcher.finish(f"未知的操作指令。\n\n{usage}")
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
+                    locale,
+                    tr(locale, "admin.group.unknown_command", docs=docs_text),
+                    None,
+                ),
+                source_kind="admin_group",
+            )
+            return
 
     group_ids = args[1:]
     if not group_ids:
         if isinstance(event, GroupMessageEvent):
             group_ids = [str(event.group_id)]
         else:
-            await matcher.finish("错误: 请在指令后提供至少一个目标群组 ID。")
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr(locale, "admin.group.group_required"),
+                source_kind="admin_group",
+            )
 
     results = []
     for gid in set(group_ids):
         if not gid.isdigit():
-            await matcher.finish(f"错误: 存在非法群组 ID [{gid}]，群号必须为纯数字。")
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
+                    locale,
+                    tr(locale, "admin.group.group_invalid", group_id=gid),
+                    command,
+                ),
+                source_kind="admin_group",
+            )
 
         name = await resolve_group_name(bot, gid)
         group = await group_repo.get_group(gid)
         if not group:
-            results.append(f"[{gid}|{name}] 数据库中不存在该群组记录")
+            results.append(
+                tr(
+                    locale,
+                    "admin.group.not_found",
+                    group_id=gid,
+                    group_name=name,
+                )
+            )
             continue
 
-        ctx = AdminGroupContext(bot, group)
+        ctx = AdminGroupContext(bot, group, locale)
         res_msg = await handler(ctx)
-        results.append(f"[{gid}|{name}] {res_msg}")
-
-    await matcher.finish("\n".join(results))
+        results.append(
+            tr(
+                locale,
+                "admin.group.result",
+                group_id=gid,
+                group_name=name,
+                message=res_msg,
+            )
+        )
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message="\n".join(results),
+        source_kind="admin_group",
+    )

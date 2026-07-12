@@ -6,14 +6,32 @@ LastEditTime: 2026-03-03 17:17:50
 Description: types
 """
 
+from dataclasses import dataclass
 from typing import TypedDict
 
 
-class WaterMessagePayload(TypedDict):
-    created_at: int
-
+@dataclass(frozen=True, slots=True)
+class WaterSummaryRecord:
     group_id: str
     user_id: str
+    record_date: int
+    msg_count: int
+    active_hours: int
+    hourly_counts: list[int]
+    created_at: int
+    updated_at: int
+
+
+class WaterMessagePayload(TypedDict):
+    group_id: str
+    user_id: str
+    record_date: int
+    hour: int
+    msg_count: int
+
+
+class WaterMessageWritePayload(WaterMessagePayload):
+    created_at: int
 
 
 class WaterSummaryPayload(TypedDict):
@@ -31,6 +49,25 @@ class WaterSummaryPayload(TypedDict):
 class WaterGroupMatrixMapPayload(TypedDict):
     group_id: str
     matrix_id: str
+    created_at: int
+    updated_at: int
+
+
+class WaterGroupUserTotalPayload(TypedDict):
+    group_id: str
+    user_id: str
+    msg_count: int
+    active_days: int
+    active_hours: int
+    created_at: int
+    updated_at: int
+
+
+class WaterGroupTotalPayload(TypedDict):
+    group_id: str
+    msg_count: int
+    active_days: int
+    active_hours: int
     created_at: int
     updated_at: int
 
@@ -94,3 +131,17 @@ class WaterAchievementPayload(TypedDict):
     season_id: str
     unlocked_at: int
     context: str
+
+
+class WaterActivitySeasonPayload(TypedDict):
+    season_id: str
+    name: str
+    normalized_name: str
+    description: str
+    start_date: int
+    end_date: int
+    status: str
+    published_at: int | None
+    created_by: str
+    created_at: int
+    updated_at: int

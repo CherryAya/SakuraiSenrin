@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:sentry:main": {
+      "superuser": "sentry-alert.webp"
+    }
+  }
+}

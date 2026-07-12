@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:admin": {
+      "normal": "README-guide--f1c9d53765.webp",
+      "group_admin": "README-guide--f1c9d53765.webp",
+      "group_owner": "README-guide--f1c9d53765.webp",
+      "superuser": "README-guide--bbca3d9148.webp"
+    },
+    "summary:admin": {
+      "normal": "README-summary--87e47fc3c8.webp",
+      "group_admin": "README-summary--87e47fc3c8.webp",
+      "group_owner": "README-summary--87e47fc3c8.webp",
+      "superuser": "README-summary--87e47fc3c8.webp"
+    },
+    "feature:admin:group": {
+      "normal": "admin-overview-group.webp",
+      "group_admin": "admin-overview-group.webp",
+      "group_owner": "admin-overview-group.webp",
+      "superuser": "admin-overview-group.webp"
+    },
+    "feature:admin:user": {
+      "normal": "admin-overview-user.webp",
+      "group_admin": "admin-overview-user.webp",
+      "group_owner": "admin-overview-user.webp",
+      "superuser": "admin-overview-user.webp"
+    },
+    "feature:admin:invite": {
+      "normal": "admin-overview-invite.webp",
+      "group_admin": "admin-overview-invite.webp",
+      "group_owner": "admin-overview-invite.webp",
+      "superuser": "admin-overview-invite.webp"
+    },
+    "feature:admin:i18n": {
+      "normal": "admin-overview-i18n.webp",
+      "group_admin": "admin-overview-i18n.webp",
+      "group_owner": "admin-overview-i18n.webp",
+      "superuser": "admin-overview-i18n.webp"
+    },
+    "feature:admin:backup": {
+      "normal": "admin-overview-backup.webp",
+      "group_admin": "admin-overview-backup.webp",
+      "group_owner": "admin-overview-backup.webp",
+      "superuser": "admin-overview-backup.webp"
+    }
+  }
+}

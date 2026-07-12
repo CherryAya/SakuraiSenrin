@@ -1,74 +1,135 @@
 """Water 管理命令处理函数。"""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from pathlib import Path
 
 import arrow
+from nonebot.adapters.onebot.v11.bot import Bot
+from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.matcher import Matcher
 
+from src.database.core.consts import Permission
+from src.lib.consts import TriggerType
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MessageEventProgressSink,
+)
+from src.lib.message_plan import MessagePlanInput, finish_with_message
+from src.lib.plugin_docs import build_doc_demo_plan_entry
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
-from src.plugins.water.services import SettlementResult, water_settlement_service
+from src.plugins.water.renderers import render_season_list
+from src.plugins.water.services.season import (
+    SeasonCreateInput,
+    SeasonServiceError,
+    SeasonStatus,
+    season_service,
+)
+from src.plugins.water.services.settlement import (
+    SettlementResult,
+    water_settlement_service,
+)
+
+DOCS_SOURCE = Path(__file__).resolve().parent.parent / "docs" / "README.MD"
+PLUGIN_NAME = tr("zh-CN", "plugin.water.name")
+PLUGIN_DESCRIPTION = tr("zh-CN", "plugin.water.description")
 
 
 @dataclass
 class WaterAdminContext:
+    bot: Bot
+    event: MessageEvent
     matcher: Matcher
     args: list[str]
+    locale: LocaleCode
 
 
-def water_help_message() -> str:
-    return (
-        "===== Water Admin =====\n"
-        "1. help\n"
-        "   查看本帮助。\n"
-        "2. settle [YYYYMMDD] [-f|--force]\n"
-        "   触发日结算；不填日期时默认结算昨天，-f 可强制重结。\n"
-        "3. pardon <penalty_id>\n"
-        "   对惩罚日志执行事务回档。\n"
-        "4. ignore <group_id>\n"
-        "   将群加入智能感知忽略名单。\n"
-        "5. ignored\n"
-        "   查看忽略名单。\n"
-        "6. state\n"
-        "   查看系统幂等锁状态。"
+async def _finish_admin(ctx: WaterAdminContext, message: MessagePlanInput) -> None:
+    await finish_with_message(
+        ctx.bot,
+        ctx.matcher,
+        event=ctx.event,
+        message=message,
+        source_kind="water_admin",
     )
 
 
-def format_settlement_message(result: SettlementResult) -> str:
+def _build_error_demo(locale: LocaleCode, message: str) -> MessagePlanInput:
+    return build_doc_demo_plan_entry(
+        source=DOCS_SOURCE,
+        name=PLUGIN_NAME,
+        description=PLUGIN_DESCRIPTION,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+        actor_permission=Permission.SUPERUSER,
+        locale=locale,
+        feature_query="admin-maintenance",
+        prefix_text=message,
+    )
+
+
+def water_help_message(locale: LocaleCode) -> str:
+    return (
+        tr(locale, "water.admin.help.title")
+        + "\n"
+        + tr(
+            locale,
+            "water.admin.help.content",
+        )
+    )
+
+
+def format_settlement_message(result: SettlementResult, locale: LocaleCode) -> str:
     if result.success:
-        mode = "强制重结算" if result.forced else "常规结算"
-        return (
-            "===== Water Settlement =====\n"
-            f"状态: 成功\n"
-            f"模式: {mode}\n"
-            f"结算日期: {result.record_date}\n"
-            f"处理条目: {result.aggregate_rows}\n"
-            f"解锁成就: {result.unlocked_achievements}\n"
-            "备注: 已执行分块落盘与流水裁剪。"
+        mode = tr(
+            locale,
+            "water.admin.settlement.mode.force"
+            if result.forced
+            else "water.admin.settlement.mode.normal",
+        )
+        return tr(
+            locale,
+            "water.admin.settlement.success",
+            mode=mode,
+            record_date=result.record_date,
+            aggregate_rows=result.aggregate_rows,
+            unlocked_achievements=result.unlocked_achievements,
         )
     if result.skipped:
-        reason_map = {
-            "already_settled": "该日期已结算成功，幂等保护生效。",
-            "running": "同日期任务正在执行中，避免并发双花。",
-            "failed": "该日期上次任务失败，可检查后重新执行。",
-            "pending": "任务状态未就绪，稍后重试。",
-        }
-        return (
-            "===== Water Settlement =====\n"
-            "状态: 已跳过\n"
-            f"结算日期: {result.record_date}\n"
-            f"原因: {reason_map.get(result.reason, result.reason or 'unknown')}"
+        match result.reason:
+            case "already_settled":
+                reason = tr(locale, "water.admin.settlement.reason.already_settled")
+            case "running":
+                reason = tr(locale, "water.admin.settlement.reason.running")
+            case "failed":
+                reason = tr(locale, "water.admin.settlement.reason.failed")
+            case "pending":
+                reason = tr(locale, "water.admin.settlement.reason.pending")
+            case _:
+                reason = result.reason or "unknown"
+        return tr(
+            locale,
+            "water.admin.settlement.skipped",
+            record_date=result.record_date,
+            reason=reason,
         )
-    return (
-        "===== Water Settlement =====\n"
-        "状态: 失败\n"
-        f"结算日期: {result.record_date}\n"
-        f"原因: {result.reason or 'unknown'}"
+    return tr(
+        locale,
+        "water.admin.settlement.failed",
+        record_date=result.record_date,
+        reason=result.reason or "unknown",
     )
 
 
 async def handle_help(ctx: WaterAdminContext) -> None:
-    await ctx.matcher.finish(water_help_message())
+    await _finish_admin(ctx, water_help_message(ctx.locale))
 
 
 async def handle_settle(ctx: WaterAdminContext) -> None:
@@ -82,80 +143,116 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
             force = True
             continue
         if date_arg is not None:
-            await ctx.matcher.finish(
-                "参数错误: settle 仅允许一个日期参数，格式 YYYYMMDD。"
+            await _finish_admin(
+                ctx,
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.settle.args_multiple_date"),
+                ),
             )
         date_arg = arg
 
     if date_arg is not None:
         if len(date_arg) != 8 or not date_arg.isdigit():
-            await ctx.matcher.finish("日期格式错误，请使用 YYYYMMDD，例如 20260302。")
+            await _finish_admin(
+                ctx,
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.settle.date_invalid"),
+                ),
+            )
         try:
             target_day = arrow.get(date_arg, "YYYYMMDD")
         except ValueError:
-            await ctx.matcher.finish("日期解析失败，请检查输入是否为有效日期。")
+            await _finish_admin(
+                ctx,
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.settle.date_parse_failed"),
+                ),
+            )
 
-    await ctx.matcher.send("Water 结算任务执行中，请稍候...")
-    result = await water_settlement_service.run_daily_settlement(
-        target_day,
-        force=force,
-    )
-    await ctx.matcher.finish(format_settlement_message(result))
+    async with LongTaskRunner(
+        LongTaskSpec(
+            task_name="water.admin.settle",
+            source_kind="water_admin_settle",
+            prompt=tr(ctx.locale, "water.admin.settle.running"),
+        ),
+        sink=CompositeProgressSink(
+            LoggerProgressSink(),
+            MessageEventProgressSink(ctx.bot, ctx.event),
+        ),
+    ) as long_task:
+        await long_task.advance("settling")
+        result = await water_settlement_service.run_daily_settlement(
+            target_day,
+            force=force,
+        )
+    await _finish_admin(ctx, format_settlement_message(result, ctx.locale))
 
 
 async def handle_pardon(ctx: WaterAdminContext) -> None:
     if len(ctx.args) < 2:
-        await ctx.matcher.finish("参数缺失: 用法 #water pardon <penalty_id>")
+        await _finish_admin(
+            ctx,
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.pardon.missing")),
+        )
     penalty_id = ctx.args[1]
     if not penalty_id.isdigit():
-        await ctx.matcher.finish("参数错误: penalty_id 必须是整数。")
+        await _finish_admin(
+            ctx,
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.pardon.invalid")),
+        )
 
     ok = await water_repo.pardon_penalty(int(penalty_id))
     if ok:
-        await ctx.matcher.finish(
-            "===== Water Pardon =====\n"
-            "状态: 成功\n"
-            f"日志 ID: {penalty_id}\n"
-            "说明: 惩罚已回档并写入 revoked 标记。"
+        await _finish_admin(
+            ctx,
+            tr(ctx.locale, "water.admin.pardon.success", penalty_id=penalty_id),
         )
-    await ctx.matcher.finish(
-        "===== Water Pardon =====\n"
-        "状态: 失败\n"
-        f"日志 ID: {penalty_id}\n"
-        "原因: 日志不存在或已回档。"
+    await _finish_admin(
+        ctx,
+        tr(ctx.locale, "water.admin.pardon.failed", penalty_id=penalty_id),
     )
 
 
 async def handle_ignore(ctx: WaterAdminContext) -> None:
     if len(ctx.args) < 2:
-        await ctx.matcher.finish("参数缺失: 用法 #water ignore <group_id>")
+        await _finish_admin(
+            ctx,
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.ignore.missing")),
+        )
     group_id = ctx.args[1]
     if not group_id.isdigit():
-        await ctx.matcher.finish("参数错误: group_id 必须是纯数字。")
+        await _finish_admin(
+            ctx,
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.ignore.invalid")),
+        )
 
     ok = await water_repo.ignore_matrix_suggestion(group_id)
     if ok:
-        await ctx.matcher.finish(
-            "===== Matrix Suggestion Ignore =====\n"
-            f"状态: 成功\n群号: {group_id}\n"
-            "说明: 后续智能合并建议将不再提示该群。"
+        await _finish_admin(
+            ctx,
+            tr(ctx.locale, "water.admin.ignore.success", group_id=group_id),
         )
-    await ctx.matcher.finish(
-        "===== Matrix Suggestion Ignore =====\n"
-        f"状态: 未变更\n群号: {group_id}\n"
-        "说明: 该群已在忽略列表中。"
+    await _finish_admin(
+        ctx,
+        tr(ctx.locale, "water.admin.ignore.unchanged", group_id=group_id),
     )
 
 
 async def handle_ignored(ctx: WaterAdminContext) -> None:
     ignored = sorted(await water_repo.get_ignored_matrix_suggestions())
     if not ignored:
-        await ctx.matcher.finish(
-            "===== Ignored Suggestions =====\n当前为空，没有被忽略的群。"
-        )
-    await ctx.matcher.finish(
-        "===== Ignored Suggestions =====\n"
-        f"总数: {len(ignored)}\n" + "\n".join(f"- {gid}" for gid in ignored)
+        await _finish_admin(ctx, tr(ctx.locale, "water.admin.ignored.empty"))
+    await _finish_admin(
+        ctx,
+        tr(
+            ctx.locale,
+            "water.admin.ignored.list",
+            count=len(ignored),
+            items="\n".join(f"- {gid}" for gid in ignored),
+        ),
     )
 
 
@@ -173,13 +270,198 @@ async def handle_state(ctx: WaterAdminContext) -> None:
         if finished_at > 0
         else "-"
     )
-    await ctx.matcher.finish(
-        "===== Water System State =====\n"
-        f"last_success_record_date: {state['last_success_record_date']}\n"
-        f"latest_record_date: {state['latest_record_date']}\n"
-        f"latest_status: {state['latest_status']}\n"
-        f"latest_started_at: {started_text}\n"
-        f"latest_finished_at: {finished_text}\n"
-        f"ignored_count: {state['ignored_count']}\n"
-        f"query_time: {arrow.get(get_current_time()).format('YYYY-MM-DD HH:mm:ss')}"
+    await _finish_admin(
+        ctx,
+        tr(
+            ctx.locale,
+            "water.admin.state",
+            last_success_record_date=state["last_success_record_date"],
+            latest_record_date=state["latest_record_date"],
+            latest_status=state["latest_status"],
+            latest_started_at=started_text,
+            latest_finished_at=finished_text,
+            ignored_count=state["ignored_count"],
+            query_time=arrow.get(get_current_time()).format("YYYY-MM-DD HH:mm:ss"),
+        ),
+    )
+
+
+async def handle_season(ctx: WaterAdminContext) -> None:
+    if len(ctx.args) < 2:
+        return await _finish_admin(
+            ctx,
+            _build_error_demo(ctx.locale, tr(ctx.locale, "water.admin.season.usage")),
+        )
+    action = ctx.args[1].lower()
+    if action == "create":
+        if len(ctx.args) < 6:
+            return await _finish_admin(
+                ctx,
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.create.usage"),
+                ),
+            )
+        season_id = ctx.args[2]
+        start_date = ctx.args[3]
+        end_date = ctx.args[4]
+        if not (start_date.isdigit() and end_date.isdigit()):
+            return await _finish_admin(
+                ctx,
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.date_invalid"),
+                ),
+            )
+        name = " ".join(ctx.args[5:]).strip()
+        try:
+            season = await season_service.create(
+                SeasonCreateInput(
+                    season_id=season_id,
+                    start_date=int(start_date),
+                    end_date=int(end_date),
+                    name=name,
+                )
+            )
+        except SeasonServiceError as exc:
+            return await _finish_admin(ctx, tr(ctx.locale, exc.key, **exc.params))
+        return await _finish_admin(
+            ctx,
+            tr(
+                ctx.locale,
+                "water.admin.season.created",
+                season_id=season.season_id,
+                name=season.name,
+                start_date=season.start_date,
+                end_date=season.end_date,
+            ),
+        )
+    if action == "publish":
+        if len(ctx.args) < 3:
+            return await _finish_admin(
+                ctx,
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.publish.usage"),
+                ),
+            )
+        try:
+            season = await season_service.publish(ctx.args[2])
+        except SeasonServiceError as exc:
+            return await _finish_admin(ctx, tr(ctx.locale, exc.key, **exc.params))
+        return await _finish_admin(
+            ctx,
+            tr(
+                ctx.locale,
+                "water.admin.season.published",
+                season_id=season.season_id,
+                name=season.name,
+            ),
+        )
+    if action == "archive":
+        if len(ctx.args) < 3:
+            return await _finish_admin(
+                ctx,
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.archive.usage"),
+                ),
+            )
+        try:
+            season = await season_service.archive(ctx.args[2])
+        except SeasonServiceError as exc:
+            return await _finish_admin(ctx, tr(ctx.locale, exc.key, **exc.params))
+        return await _finish_admin(
+            ctx,
+            tr(
+                ctx.locale,
+                "water.admin.season.archived",
+                season_id=season.season_id,
+                name=season.name,
+            ),
+        )
+    if action == "show":
+        if len(ctx.args) < 3:
+            return await _finish_admin(
+                ctx,
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.show.usage"),
+                ),
+            )
+        try:
+            season = await season_service.require(ctx.args[2])
+        except SeasonServiceError as exc:
+            return await _finish_admin(ctx, tr(ctx.locale, exc.key, **exc.params))
+        return await _finish_admin(
+            ctx,
+            tr(
+                ctx.locale,
+                "water.admin.season.show",
+                season_id=season.season_id,
+                name=season.name,
+                status=season.status,
+                start_date=season.start_date,
+                end_date=season.end_date,
+                description=season.description or "-",
+            ),
+        )
+    if action == "list":
+        filter_arg = ctx.args[2].lower() if len(ctx.args) >= 3 else ""
+        if filter_arg == "current":
+            seasons = await season_service.list_current()
+            return await _finish_admin(
+                ctx,
+                render_season_list(
+                    tr(ctx.locale, "water.query.season_list.admin.current"),
+                    seasons,
+                    ctx.locale,
+                ),
+            )
+        statuses: list[SeasonStatus] | None = None
+        if filter_arg == "published":
+            statuses = ["published"]
+        elif filter_arg == "archived":
+            statuses = ["archived"]
+        elif filter_arg == "draft":
+            statuses = ["draft"]
+        seasons = await season_service.list(statuses)
+        return await _finish_admin(
+            ctx,
+            render_season_list(
+                tr(ctx.locale, "water.query.season_list.admin.all"),
+                seasons,
+                ctx.locale,
+            ),
+        )
+    if action == "delete":
+        if len(ctx.args) < 3:
+            return await _finish_admin(
+                ctx,
+                _build_error_demo(
+                    ctx.locale,
+                    tr(ctx.locale, "water.admin.season.delete.usage"),
+                ),
+            )
+        try:
+            ok = await season_service.delete_draft(ctx.args[2])
+        except SeasonServiceError as exc:
+            return await _finish_admin(ctx, tr(ctx.locale, exc.key, **exc.params))
+        return await _finish_admin(
+            ctx,
+            tr(
+                ctx.locale,
+                (
+                    "water.admin.season.delete.result.success"
+                    if ok
+                    else "water.admin.season.delete.result.failed"
+                ),
+            ),
+        )
+    return await _finish_admin(
+        ctx,
+        _build_error_demo(
+            ctx.locale,
+            tr(ctx.locale, "water.admin.season.unknown", action=action),
+        ),
     )

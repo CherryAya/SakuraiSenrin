@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:community.feedback-password:main": {
+      "normal": "community-mima-main.webp",
+      "group_admin": "community-mima-main.webp",
+      "group_owner": "community-mima-main.webp",
+      "superuser": "community-mima-main.webp"
+    }
+  }
+}

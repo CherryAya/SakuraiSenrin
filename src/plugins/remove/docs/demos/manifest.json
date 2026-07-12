@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:remove:main": {
+      "group_admin": "remove-guide.webp",
+      "group_owner": "remove-guide.webp",
+      "superuser": "remove-guide.webp"
+    }
+  }
+}

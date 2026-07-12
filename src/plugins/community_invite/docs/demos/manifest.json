@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:community.invite-guide:main": {
+      "normal": "community-invite-main.webp",
+      "group_admin": "community-invite-main.webp",
+      "group_owner": "community-invite-main.webp",
+      "superuser": "community-invite-main.webp"
+    }
+  }
+}

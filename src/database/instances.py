@@ -6,23 +6,36 @@ LastEditTime: 2026-02-26 20:18:32
 Description: db 实例
 """
 
-from src.lib.db.connectors import ShardedDB, StaticDB
+from src.lib.backup import register_backup_database
+from src.lib.db.connectors import EventStore, StateStore
 
-core_db = StaticDB(
+from .patches import (
+    build_core_patch_registry,
+    build_log_patch_registry,
+    build_snapshot_patch_registry,
+)
+
+core_db = StateStore(
     namespace="core_db",
     filename="core.db",
 )
+core_db.patch_registry = build_core_patch_registry()
+register_backup_database(core_db)
 
-log_db = ShardedDB(
+log_db = EventStore(
     namespace="log_db",
     prefix="log",
     fmt="%Y%m",
     active_window_months=2,
 )
+log_db.patch_registry = build_log_patch_registry()
+register_backup_database(log_db)
 
-snapshot_db = ShardedDB(
+snapshot_db = EventStore(
     namespace="snapshot_db",
     prefix="snapshot",
     fmt="%Y%m",
     active_window_months=2,
 )
+snapshot_db.patch_registry = build_snapshot_patch_registry()
+register_backup_database(snapshot_db)

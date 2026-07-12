@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:study:main": {
+      "normal": "study-main.webp",
+      "group_admin": "study-main.webp",
+      "group_owner": "study-main.webp",
+      "superuser": "study-main.webp"
+    }
+  }
+}

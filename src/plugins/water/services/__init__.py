@@ -1,20 +1,36 @@
-"""Water 服务导出。"""
+"""Water services package."""
 
-from .achievement import ACHIEVEMENT_RULES, AchievementService, achievement_service
-from .matrix_suggestion import MatrixSuggestionService, matrix_suggestion_service
-from .settlement import (
-    SettlementResult,
-    WaterSettlementService,
-    water_settlement_service,
-)
+from __future__ import annotations
+
+from importlib import import_module
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .achievement import ACHIEVEMENT_RULES as ACHIEVEMENT_RULES
+    from .report import (
+        TODAY_REPORT_COOLDOWN_SECONDS as TODAY_REPORT_COOLDOWN_SECONDS,
+    )
+    from .report import WaterDailyReportBatchResult as WaterDailyReportBatchResult
+    from .report import water_report_service as water_report_service
 
 __all__ = [
     "ACHIEVEMENT_RULES",
-    "AchievementService",
-    "MatrixSuggestionService",
-    "SettlementResult",
-    "WaterSettlementService",
-    "achievement_service",
-    "matrix_suggestion_service",
-    "water_settlement_service",
+    "TODAY_REPORT_COOLDOWN_SECONDS",
+    "WaterDailyReportBatchResult",
+    "water_report_service",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name == "ACHIEVEMENT_RULES":
+        from .achievement import ACHIEVEMENT_RULES
+
+        return ACHIEVEMENT_RULES
+    if name in {
+        "TODAY_REPORT_COOLDOWN_SECONDS",
+        "WaterDailyReportBatchResult",
+        "water_report_service",
+    }:
+        report_module = import_module(".report", __name__)
+        return getattr(report_module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

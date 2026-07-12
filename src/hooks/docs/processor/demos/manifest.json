@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:hook.processor": {
+      "normal": "README-guide--b13af9c481.webp",
+      "group_admin": "README-guide--b13af9c481.webp",
+      "group_owner": "README-guide--b13af9c481.webp",
+      "superuser": "README-guide--641629acaa.webp"
+    },
+    "summary:hook.processor": {
+      "normal": "README-summary--23e808d48a.webp",
+      "group_admin": "README-summary--23e808d48a.webp",
+      "group_owner": "README-summary--23e808d48a.webp",
+      "superuser": "README-summary--23e808d48a.webp"
+    },
+    "feature:hook.processor:main": {
+      "superuser": "hook-processor-main.webp"
+    }
+  }
+}

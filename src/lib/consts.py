@@ -8,7 +8,7 @@ Description: 公有常量
 
 from enum import StrEnum
 from pathlib import Path
-from types import MappingProxyType
+from typing import ClassVar
 
 from src.lib.enums import LocalizedMixin
 
@@ -33,11 +33,9 @@ class TriggerType(LocalizedMixin, StrEnum):
     EVENT = "EVENT"
     CRON = "CRON"
 
-    __labels__ = MappingProxyType(
-        {
-            COMMAND: "指令触发",
-            PASSIVE: "被动触发",
-            EVENT: "事件触发",
-            CRON: "定时任务",
-        },
-    )
+    __label_keys__: ClassVar[dict[str, str]] = {
+        COMMAND: "enum.trigger.command",
+        PASSIVE: "enum.trigger.passive",
+        EVENT: "enum.trigger.event",
+        CRON: "enum.trigger.cron",
+    }

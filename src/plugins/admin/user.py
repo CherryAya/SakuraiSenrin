@@ -11,48 +11,90 @@ from __future__ import annotations
 from argparse import Namespace
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 
-import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.exception import ParserExit
 from nonebot.matcher import Matcher
-from nonebot.params import ShellCommandArgs
+from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
-from nonebot.plugin import CommandGroup, PluginMetadata
+from nonebot.plugin import CommandGroup
 from nonebot.rule import ArgumentParser
 
 from src.database.core.consts import Permission
 from src.lib.cache.field import BlacklistCacheItem, UserCacheItem
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
+from src.lib.i18n.runtime import format_duration, resolve_locale, tr
+from src.lib.i18n.types import LocaleCode
+from src.lib.message_plan import MessagePlanInput, finish_with_message
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_doc_demo_plan_entry,
+    build_readme_docs_plan_entry,
+    create_docs_meta,
+)
+from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
 from src.lib.utils.common import get_current_time, time_to_timedelta
 from src.repositories import blacklist_repo, group_repo, user_repo
 from src.services.info import resolve_user_name
 
-name = "用户管理模块"
-description = "用户管理模块: 采用标准 Shell 风格解析 (argparse)"
+name = tr("zh-CN", "plugin.admin_user.name")
+description = tr("zh-CN", "plugin.admin_user.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "user" / "README.MD"
 
-usage = f"""
-===== {name} =====
-命令前缀: #admin.user / #用户管理
 
-本模块使用标准 CLI 语法，支持 -h 或 --help 查看详细帮助。
-示例:
-  #admin.user ban 12345 67890 -r 恶意刷屏 -t 1d
-  #admin.user unban 12345 -r 申诉通过
-  #admin.user status 12345
-""".strip()
+def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
+    return build_readme_docs_plan_entry(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        ctx=ctx,
+    )
 
-__plugin_meta__ = PluginMetadata(
+
+def _build_error_demo(
+    locale: LocaleCode,
+    message: str,
+    feature_query: str | None,
+) -> MessagePlanInput:
+    return build_doc_demo_plan_entry(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        locale=locale,
+        feature_query=feature_query,
+        prefix_text=message,
+    )
+
+
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
+        "i18n": {
+            "name_key": "plugin.admin_user.name",
+            "description_key": "plugin.admin_user.description",
+        },
+        "docs": create_docs_meta(
+            visible=True,
+            category="admin",
+            order=120,
+            source=DOCS_SOURCE,
+            slug="admin.user",
+            parent_slug="admin",
+            aliases=("用户管理模块", "用户管理", "admin.user"),
+        ),
     },
 )
 
@@ -75,16 +117,13 @@ status_parser = subparsers.add_parser("status", aliases=["状态"], help="查询
 status_parser.add_argument("uids", nargs="+", help="目标用户 ID 列表")
 # fmt: on
 
-admin_command_group = CommandGroup(
-    cmd="admin",
+admin_command_group = CommandGroup("admin")
+admin_user = admin_command_group.command(
+    "user",
+    aliases={"用户管理"},
     permission=SUPERUSER,
     priority=5,
     block=False,
-)
-admin_user = admin_command_group.shell_command(
-    cmd="user",
-    aliases={"用户管理"},
-    parser=user_parser,
 )
 
 
@@ -93,6 +132,7 @@ class AdminUserContext:
     user: UserCacheItem
     group_id: str
     operator_id: str
+    locale: LocaleCode
     blacklist: BlacklistCacheItem | Unset = UNSET
     time_str: str | Unset = UNSET
     reason: str | Unset = UNSET
@@ -100,26 +140,19 @@ class AdminUserContext:
 
 async def ban_user(ctx: AdminUserContext) -> str:
     if ctx.user.permission == Permission.SUPERUSER:
-        return "无法操作超级用户"
+        return tr(ctx.locale, "admin.user.action_superuser")
 
     if is_set(ctx.blacklist) and get_current_time() < ctx.blacklist.expiry:
-        return "已处于封禁状态"
+        return tr(ctx.locale, "admin.user.action_banned")
 
     duration = PERMANENT_BAN_FLAG
-    human_time = "永久"
+    human_time = tr(ctx.locale, "admin.user.duration.permanent")
     if is_set(ctx.time_str):
         try:
             duration = int(time_to_timedelta(ctx.time_str).total_seconds())
-            human_time = (
-                arrow.get(get_current_time())
-                .shift(seconds=duration)
-                .humanize(
-                    locale="zh",
-                    only_distance=True,
-                )
-            )
+            human_time = format_duration(ctx.locale, duration)
         except ValueError:
-            return "时间格式错误"
+            return tr(ctx.locale, "admin.user.time_invalid")
 
     await blacklist_repo.add_ban(
         target_user_id=ctx.user.user_id,
@@ -129,7 +162,12 @@ async def ban_user(ctx: AdminUserContext) -> str:
         reason=resolve_unset(ctx.reason, None),
     )
 
-    return f"已封禁 (时长: {human_time} 范围: {ctx.group_id})"
+    return tr(
+        ctx.locale,
+        "admin.user.banned",
+        duration=human_time,
+        group_id=ctx.group_id,
+    )
 
 
 async def unban_user(ctx: AdminUserContext) -> str:
@@ -139,17 +177,17 @@ async def unban_user(ctx: AdminUserContext) -> str:
             ctx.group_id,
             ctx.operator_id,
         )
-        return "已解封"
+        return tr(ctx.locale, "admin.user.unbanned")
     else:
-        return "未封禁"
+        return tr(ctx.locale, "admin.user.not_banned")
 
 
 async def status_user(ctx: AdminUserContext) -> str:
     if is_set(ctx.blacklist):
-        status = "封禁"
+        status = tr(ctx.locale, "admin.user.status.banned")
     else:
-        status = "正常"
-    return f"状态: {status}"
+        status = tr(ctx.locale, "admin.user.status.normal")
+    return tr(ctx.locale, "admin.user.status", status=status)
 
 
 @admin_user.handle()
@@ -157,13 +195,50 @@ async def _(
     bot: Bot,
     event: MessageEvent,
     matcher: Matcher,
-    args: Namespace | ParserExit = ShellCommandArgs(),
+    arg: Message = CommandArg(),
 ) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    argv = arg.extract_plain_text().strip().split()
+    if not argv:
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=build_docs(DocsRenderContext(locale=locale)),
+            source_kind="admin_user",
+        )
+    try:
+        args: Namespace | ParserExit = user_parser.parse_args(argv)
+    except ParserExit as exc:
+        args = exc
     if isinstance(args, ParserExit):
         if args.status == 0:
-            await matcher.finish(args.message)
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_docs(DocsRenderContext(locale=locale)),
+                source_kind="admin_user",
+            )
+            return
         else:
-            await matcher.finish(f"参数错误:\n{args.message}")
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
+                    locale,
+                    tr(
+                        locale,
+                        "admin.user.args_error",
+                        message=tr(locale, "admin.user.args_error.detail"),
+                    ),
+                    argv[0].lower() if argv else None,
+                ),
+                source_kind="admin_user",
+            )
+            return
+    assert not isinstance(args, ParserExit)
 
     action = args.action
     uids = list(set(args.uids))
@@ -180,25 +255,49 @@ async def _(
         case "status" | "状态":
             handler = status_user
         case _:
-            await matcher.finish("未知的操作指令。")
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
+                    locale,
+                    tr(locale, "admin.user.unknown_command"),
+                    None,
+                ),
+                source_kind="admin_user",
+            )
+            return
 
     operator_id = str(event.user_id)
     results = []
 
     for uid in uids:
         if not uid.isdigit():
-            results.append(f"[{uid}] 非法 ID，必须为纯数字")
+            results.append(tr(locale, "admin.user.uid_invalid", user_id=uid))
             continue
 
         name = await resolve_user_name(bot, uid)
         if not (user := await user_repo.get_user(uid)):
             results.append(
-                f"[{uid}|{name}] 这位用户还没有和凛凛聊过哦，随意操作会挨揍哦？"
+                tr(
+                    locale,
+                    "admin.user.user_missing",
+                    user_id=uid,
+                    user_name=name,
+                )
             )
             continue
 
         if group_id != GLOBAL_GROUP_FLAG and not (await group_repo.get_group(group_id)):
-            results.append(f"[{uid}|{name}] 群组({group_id})不存在，随意操作会挨揍哦？")
+            results.append(
+                tr(
+                    locale,
+                    "admin.user.group_missing",
+                    user_id=uid,
+                    user_name=name,
+                    group_id=group_id,
+                )
+            )
             continue
 
         blacklist = await blacklist_repo.get_blacklist(user.user_id, group_id) or UNSET
@@ -206,11 +305,26 @@ async def _(
             user=user,
             group_id=group_id,
             operator_id=operator_id,
+            locale=locale,
             reason=reason,
             blacklist=blacklist,
             time_str=time_str,
         )
         res_msg = await handler(ctx)
-        results.append(f"[{uid}|{name}] {res_msg}")
+        results.append(
+            tr(
+                locale,
+                "admin.user.result",
+                user_id=uid,
+                user_name=name,
+                message=res_msg,
+            )
+        )
 
-    await matcher.finish("\n".join(results))
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message="\n".join(results),
+        source_kind="admin_user",
+    )

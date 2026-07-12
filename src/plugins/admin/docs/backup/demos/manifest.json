@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:admin.backup": {
+      "normal": "README-guide--c58581d855.webp",
+      "group_admin": "README-guide--c58581d855.webp",
+      "group_owner": "README-guide--c58581d855.webp",
+      "superuser": "README-guide--c58581d855.webp"
+    },
+    "summary:admin.backup": {
+      "normal": "README-summary--fa73fc2259.webp",
+      "group_admin": "README-summary--fa73fc2259.webp",
+      "group_owner": "README-summary--fa73fc2259.webp",
+      "superuser": "README-summary--fa73fc2259.webp"
+    },
+    "feature:admin.backup:check": {
+      "normal": "admin-backup-check.webp",
+      "group_admin": "admin-backup-check.webp",
+      "group_owner": "admin-backup-check.webp",
+      "superuser": "admin-backup-check.webp"
+    },
+    "feature:admin.backup:snapshots": {
+      "normal": "admin-backup-snapshots.webp",
+      "group_admin": "admin-backup-snapshots.webp",
+      "group_owner": "admin-backup-snapshots.webp",
+      "superuser": "admin-backup-snapshots.webp"
+    },
+    "feature:admin.backup:run": {
+      "normal": "admin-backup-run.webp",
+      "group_admin": "admin-backup-run.webp",
+      "group_owner": "admin-backup-run.webp",
+      "superuser": "admin-backup-run.webp"
+    },
+    "feature:admin.backup:restore": {
+      "normal": "admin-backup-restore.webp",
+      "group_admin": "admin-backup-restore.webp",
+      "group_owner": "admin-backup-restore.webp",
+      "superuser": "admin-backup-restore.webp"
+    }
+  }
+}

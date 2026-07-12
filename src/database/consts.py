@@ -7,7 +7,7 @@ Description: db 全局常量
 """
 
 from enum import StrEnum
-from types import MappingProxyType
+from typing import ClassVar
 
 from src.lib.enums import LocalizedMixin
 
@@ -16,9 +16,7 @@ class WritePolicy(LocalizedMixin, StrEnum):
     BUFFERED = "buffered"
     IMMEDIATE = "immediate"
 
-    __labels__ = MappingProxyType(
-        {
-            "buffered": "批量写入",
-            "immediate": "即时写入",
-        },
-    )
+    __label_keys__: ClassVar[dict[str, str]] = {
+        "buffered": "enum.write_policy.buffered",
+        "immediate": "enum.write_policy.immediate",
+    }

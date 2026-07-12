@@ -6,16 +6,36 @@ LastEditTime: 2026-03-03 17:34:20
 Description: db 实例
 """
 
-from src.lib.db.connectors import ShardedDB, StaticDB
+from src.lib.backup import register_backup_database
+from src.lib.db.connectors import CounterStore, StateStore
 
-water_message = ShardedDB(
+from .patches import (
+    build_water_core_patch_registry,
+    build_water_message_patch_registry,
+    build_water_summary_patch_registry,
+)
+
+water_message = CounterStore(
     namespace="water_db",
     prefix="logs",
     fmt="%Y_%m",
     active_window_months=2,
 )
+water_message.patch_registry = build_water_message_patch_registry()
+register_backup_database(water_message)
 
-water_core_db = StaticDB(
+water_summary = CounterStore(
+    namespace="water_db",
+    prefix="summary",
+    fmt="%Y_%m",
+    active_window_months=4,
+)
+water_summary.patch_registry = build_water_summary_patch_registry()
+register_backup_database(water_summary)
+
+water_core_db = StateStore(
     namespace="water_db",
     filename="core.db",
 )
+water_core_db.patch_registry = build_water_core_patch_registry()
+register_backup_database(water_core_db)

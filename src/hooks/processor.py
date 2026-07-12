@@ -6,6 +6,8 @@ LastEditTime: 2026-03-03 12:18:17
 Description: 运行时同步检查 hook
 """
 
+from pathlib import Path
+
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
     Event,
@@ -13,12 +15,18 @@ from nonebot.adapters.onebot.v11.event import (
 from nonebot.exception import IgnoredException
 from nonebot.matcher import Matcher
 from nonebot.message import run_preprocessor
-from nonebot.plugin import PluginMetadata
 
 from src.config import config
-from src.lib.consts import GLOBAL_GROUP_FLAG
+from src.database.core.consts import Permission
+from src.lib.consts import GLOBAL_GROUP_FLAG, TriggerType
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
+from src.lib.plugin_docs import create_docs_meta
+from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, is_set
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
+from src.services.runtime_policy import get_group_block_reason
+from src.services.startup_sync import is_restore_in_progress
 from src.services.sync import (
     sync_group_runtime,
     sync_member_runtime,
@@ -26,28 +34,37 @@ from src.services.sync import (
     sync_user_runtime,
 )
 
-name = "检测服务"
-description = """
-黑白名单检测:
-  检测用户是否在黑名单中
-  检测群组是否在白名单中
-  定时任务校验合法群组，对于不合法的进行退群处理
-""".strip()
-
-usage = """
-被动触发
-""".strip()
+name = tr("zh-CN", "plugin.hook_processor.name")
+description = tr("zh-CN", "plugin.hook_processor.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "processor" / "README.MD"
 
 
-__plugin_meta__ = PluginMetadata(
+def _runtime_locale(group_id: str | None = None) -> LocaleCode:
+    return "zh-CN"
+
+
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
         "version": "0.2.0",
-        "trigger": "Passive",
-        "permission": "SUPERUSER",
+        "impression_color": "#12B886",
+        "trigger": TriggerType.PASSIVE,
+        "permission": Permission.SUPERUSER,
+        "i18n": {
+            "name_key": "plugin.hook_processor.name",
+            "description_key": "plugin.hook_processor.description",
+        },
+        "docs": create_docs_meta(
+            visible=True,
+            category="system",
+            order=10,
+            source=DOCS_SOURCE,
+            slug="hook.processor",
+            kind="overview",
+            aliases=("运行时处理器", "运行时检查", "hook.processor"),
+        ),
     },
 )
 
@@ -100,6 +117,17 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
     if is_user_event:
         user_id = str(_user_id)
 
+    if getattr(config, "DEBUG", False):
+        allowed_users = getattr(config, "DEV_TEST_USERS", set())
+        allowed_groups = getattr(config, "DEV_TEST_GROUPS", set())
+        if is_user_event and user_id in allowed_users:
+            return
+        if is_group_event and group_id in allowed_groups:
+            return
+        raise IgnoredException(
+            tr(_runtime_locale(group_id), "hook.processor.debug_only")
+        )
+
     user = await user_repo.get_user(user_id) if is_user_event else None
     group = await group_repo.get_group(group_id) if is_group_event else None
 
@@ -118,29 +146,36 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
     if is_no_check:
         return
 
+    locale = _runtime_locale(group_id or None)
+
     if is_user_event and user_id in config.IGNORED_USERS:
-        raise IgnoredException("用户已被全局配置忽略")
+        raise IgnoredException(tr(locale, "hook.processor.user_ignored"))
     if is_user_event and user_id in config.SUPERUSERS:
         return
     if is_user_event and await blacklist_repo.is_banned(user_id, GLOBAL_GROUP_FLAG):
-        raise IgnoredException("用户已被全局黑名单")
+        raise IgnoredException(tr(locale, "hook.processor.user_global_banned"))
     if is_group_event and user and getattr(user, "is_self_ignore", False):
-        raise IgnoredException("用户已启用 self_ignore")
+        raise IgnoredException(tr(locale, "hook.processor.user_self_ignored"))
     if is_group_event:
         if not group:
-            raise IgnoredException("未命中群缓存，默认阻止")
+            raise IgnoredException(tr(locale, "hook.processor.group_cache_miss"))
 
-        if group.status.is_unauthorized:
-            raise IgnoredException("群聊未授权")
+        if reason := get_group_block_reason(group.status):
+            raise IgnoredException(reason)
 
         if group.is_all_shut:
-            raise IgnoredException("群聊被全员禁言")
+            raise IgnoredException(tr(locale, "hook.processor.group_all_shut"))
 
         if is_user_event and await blacklist_repo.is_banned(user_id, group_id):
-            raise IgnoredException("用户已被群组黑名单")
+            raise IgnoredException(tr(locale, "hook.processor.user_group_banned"))
 
 
 @run_preprocessor
 async def _runtime_action(bot: Bot, event: Event, matcher: Matcher) -> None:
+    if is_restore_in_progress():
+        group_id = str(getattr(event, "group_id", "")) or None
+        raise IgnoredException(
+            tr(_runtime_locale(group_id), "hook.processor.restore_in_progress")
+        )
     await _runtime_sync(bot, event)
     await _runtime_check(bot, event, matcher)

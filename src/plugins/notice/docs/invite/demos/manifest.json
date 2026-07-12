@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:notice.invite": {
+      "normal": "README-guide--eb0ad27153.webp",
+      "group_admin": "README-guide--eb0ad27153.webp",
+      "group_owner": "README-guide--eb0ad27153.webp",
+      "superuser": "README-guide--eb0ad27153.webp"
+    },
+    "summary:notice.invite": {
+      "normal": "README-summary--e566ce4ada.webp",
+      "group_admin": "README-summary--e566ce4ada.webp",
+      "group_owner": "README-summary--e566ce4ada.webp",
+      "superuser": "README-summary--e566ce4ada.webp"
+    },
+    "feature:notice.invite:auto-approve-authorized": {
+      "normal": "notice-invite-auto-approve-authorized.webp",
+      "group_admin": "notice-invite-auto-approve-authorized.webp",
+      "group_owner": "notice-invite-auto-approve-authorized.webp",
+      "superuser": "notice-invite-auto-approve-authorized.webp"
+    },
+    "feature:notice.invite:auto-reject-banned": {
+      "normal": "notice-invite-auto-reject-banned.webp",
+      "group_admin": "notice-invite-auto-reject-banned.webp",
+      "group_owner": "notice-invite-auto-reject-banned.webp",
+      "superuser": "notice-invite-auto-reject-banned.webp"
+    },
+    "feature:notice.invite:report-pending": {
+      "normal": "notice-invite-report-pending.webp",
+      "group_admin": "notice-invite-report-pending.webp",
+      "group_owner": "notice-invite-report-pending.webp",
+      "superuser": "notice-invite-report-pending.webp"
+    }
+  }
+}

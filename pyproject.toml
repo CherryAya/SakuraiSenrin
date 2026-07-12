@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.22.1",
+    "aioboto3>=15.5.0",
     "arrow>=1.4.0",
     "greenlet>=3.3.1",
     "httpx>=0.28.1",
@@ -17,6 +18,14 @@ dependencies = [
     "pilmoji[requests]>=2.0.5",
     "sentry-sdk>=2.50.0",
     "sqlalchemy>=2.0.46",
+    "picimagesearch>=3.12.11",
+    "imagehash>=4.3.2",
+    "markdown-it-py>=3.0.0",
+    "pybktree>=1.1",
+    "zstandard>=0.25.0",
+    "squarify>=0.4.4",
+    "urllib3>=2.7.0",
+    "starlette>=1.3.1",
 ]
 
 
@@ -68,10 +77,31 @@ extend-select = ["TID251"]
 "datetime.date.today".msg = "禁止直接获取日期，请统一使用 get_current_time()"
 "time.time".msg = "禁止直接获取时间戳，请统一使用 get_current_time()"
 "arrow.now".msg = "禁止直接调用 arrow.now，请统一使用 get_current_time()"
+"arrow.utcnow".msg = "禁止直接调用 arrow.utcnow，请统一使用 get_current_time()"
+"src.lib.message_delivery.deliver_single_message".msg = "插件与 hook 不得直接调用 deliver_single_message(...)；请统一使用 DeliveryPlan + deliver_message_plan(...)"
+"src.lib.message_delivery.resolve_delivery_target".msg = "插件与 hook 不得直接调用 resolve_delivery_target(...)；请统一使用 DeliveryPlan + deliver_message_plan(...)"
+"src.lib.message_delivery.deliver_forward_messages".msg = "插件与 hook 不得直接调用 deliver_forward_messages(...)；请统一使用 DeliveryPlan + deliver_message_plan(...)"
+"src.lib.onebot_forward.send_custom_forward".msg = "插件与 hook 不得直接调用 send_custom_forward(...)；请统一使用 DeliveryPlan + deliver_message_plan(...)"
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
 extra-standard-library = ["typing_extensions"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/locales/*.py" = ["E501"]
+"src/lib/i18n/keys.py" = ["E501"]
+"src/lib/i18n/runtime.py" = ["TID251"]
+"src/lib/message_api_hooks.py" = ["TID251"]
+"src/lib/message_delivery.py" = ["TID251"]
+"src/lib/message_plan.py" = ["TID251"]
+"src/services/startup_sync.py" = ["TID251"]
+"tests/test_message_delivery_forward.py" = ["TID251"]
+"tests/test_onebot_forward.py" = ["TID251"]
+"tests/test_plugin_docs_*.py" = ["F403", "F405"]
+"tests/plugins/wordbank/test_media_*.py" = ["F403", "F405"]
+"tests/plugins/wordbank/test_migration_*.py" = ["F403", "F405"]
+"tests/plugins/wordbank/test_repository_*.py" = ["F403", "F405"]
+"tests/plugins/water/test_repository_edges_part*.py" = ["F403", "F405", "PYI036"]
 
 [tool.ruff.lint.flake8-pytest-style]
 fixture-parentheses = false
@@ -84,6 +114,7 @@ keep-runtime-typing = true
 dev = [
     "aiosqlite>=0.22.1",
     "nonebug>=0.4,<0.5",
+    "psycopg2-binary>=2.9.11",
     "pyright>=1.1.408",
     "pytest>=8.3,<9",
     "pytest-asyncio>=1.3.0",

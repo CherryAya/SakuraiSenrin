@@ -1,0 +1,161 @@
+"""Migrate legacy PostgreSQL water records into the current water plugin."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+from pathlib import Path
+import sys
+from typing import TYPE_CHECKING
+
+import nonebot
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.database.system_migration import LegacyPgConfig, load_legacy_pg_config
+from src.logger import logger
+
+if TYPE_CHECKING:
+    pass
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Migrate legacy water data")
+    parser.add_argument(
+        "--old-repo",
+        default="../sakuraisenrin-old",
+        help="path to the legacy repository root",
+    )
+    parser.add_argument("--pg-host", help="legacy PostgreSQL host override")
+    parser.add_argument("--pg-port", type=int, help="legacy PostgreSQL port override")
+    parser.add_argument("--pg-user", help="legacy PostgreSQL user override")
+    parser.add_argument("--pg-password", help="legacy PostgreSQL password override")
+    parser.add_argument(
+        "--pg-database",
+        default="senrin_water",
+        help="legacy PostgreSQL database name",
+    )
+    parser.add_argument(
+        "--report",
+        default="./data/db/water-migration-report.json",
+        help="where to write the migration report JSON",
+    )
+    parser.add_argument(
+        "--no-reset-target",
+        action="store_true",
+        help="do not clear the target water runtime before importing",
+    )
+    parser.add_argument(
+        "--from-date",
+        type=_parse_day_arg,
+        help="inclusive lower bound in YYYYMMDD",
+    )
+    parser.add_argument(
+        "--to-date",
+        type=_parse_day_arg,
+        help="inclusive upper bound in YYYYMMDD",
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=10_000,
+        help="counter upsert batch size for importing water_hourly_counter",
+    )
+    parser.add_argument(
+        "--fetch-size",
+        type=int,
+        default=50_000,
+        help="legacy PostgreSQL fetchmany size for streaming import",
+    )
+    parser.add_argument(
+        "--prefetch-batches",
+        type=int,
+        default=2,
+        help="number of prefetched legacy PG batches to overlap reading and importing",
+    )
+    return parser.parse_args()
+
+
+def build_pg_config(args: argparse.Namespace) -> LegacyPgConfig:
+    defaults = load_legacy_pg_config(Path(args.old_repo))
+    return LegacyPgConfig(
+        host=args.pg_host or defaults.host,
+        port=args.pg_port or defaults.port,
+        user=args.pg_user or defaults.user,
+        password=args.pg_password or defaults.password,
+        database=args.pg_database or defaults.database,
+    )
+
+
+async def main() -> None:
+    nonebot.init()
+    args = parse_args()
+    if args.from_date is not None and args.to_date is not None:
+        if args.from_date > args.to_date:
+            raise ValueError("--from-date cannot be greater than --to-date")
+
+    from src.plugins.water.migration import (
+        LegacyWaterMigrationProgressPayload,
+        migrate_legacy_water_from_pg,
+        write_report,
+    )
+
+    def _progress(stage: str, payload: LegacyWaterMigrationProgressPayload) -> None:
+        if stage == "import_batch":
+            logger.info(
+                "[water-migration] "
+                f"batch={payload['batch_index']} "
+                f"rows={payload['batch_rows']} "
+                f"source_rows={payload['source_rows']} "
+                f"counter_rows={payload['imported_counter_rows']} "
+                f"range={payload['batch_start_date']}-{payload['batch_end_date']} "
+                f"elapsed={payload['elapsed_seconds']:.2f}s "
+                f"source_rps={payload['source_rows_per_second']:.2f} "
+                f"counter_rps={payload['counter_rows_per_second']:.2f}"
+            )
+            return
+        if stage == "rebuild_complete":
+            logger.info(
+                "[water-migration] "
+                f"rebuild={payload['start_date']}-{payload['end_date']} "
+                f"settled_days={payload['settled_days']} "
+                f"summaries={payload['generated_summaries']} "
+                f"achievements={payload['generated_achievements']} "
+                f"failed_days={payload['failed_days']}"
+            )
+
+    report = await migrate_legacy_water_from_pg(
+        build_pg_config(args),
+        reset_target=not args.no_reset_target,
+        chunk_size=args.chunk_size,
+        from_date=args.from_date,
+        to_date=args.to_date,
+        fetch_size=args.fetch_size,
+        prefetch_batches=args.prefetch_batches,
+        progress=_progress,
+    )
+
+    report_path = Path(args.report)
+    await asyncio.to_thread(write_report, report_path, report)
+    logger.success(
+        "water migration completed: "
+        f"report={report_path} "
+        f"source_rows={report.source_rows} "
+        f"imported_messages={report.imported_messages} "
+        f"imported_counter_rows={report.imported_counter_rows} "
+        f"settled_days={report.settled_days} "
+        f"failed_days={len(report.failed_days)}"
+    )
+
+
+def _parse_day_arg(raw: str) -> int:
+    text = raw.strip()
+    if len(text) != 8 or not text.isdigit():
+        raise argparse.ArgumentTypeError("expected YYYYMMDD")
+    return int(text)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

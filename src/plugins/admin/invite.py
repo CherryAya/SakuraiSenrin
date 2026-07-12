@@ -17,79 +17,108 @@ from pathlib import Path
 from typing import Any
 
 import arrow
-import httpx
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
-from nonebot.adapters.onebot.v11.message import MessageSegment
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.exception import ParserExit
 from nonebot.matcher import Matcher
-from nonebot.params import ShellCommandArgs
+from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
-from nonebot.plugin import CommandGroup, PluginMetadata, on_fullmatch
+from nonebot.plugin import CommandGroup, on_fullmatch
 from nonebot.rule import ArgumentParser, to_me
 from PIL import Image, ImageDraw, ImageFont
 
-from src.database.core.consts import GroupStatus, InvitationStatus, Permission
+from src.database.core.consts import InvitationStatus, Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
+from src.lib.demo_theme import SENRIN_V3_ADMIN_INVITE_IMAGE_THEME
+from src.lib.i18n.runtime import resolve_locale, tr
+from src.lib.i18n.types import LocaleCode
+from src.lib.long_task import (
+    CompositeProgressSink,
+    LoggerProgressSink,
+    LongTaskRunner,
+    LongTaskSpec,
+    MessageEventProgressSink,
+)
+from src.lib.message_plan import (
+    DeliveryPlan,
+    MessagePlanEntry,
+    MessagePlanInput,
+    ReplyRefBlock,
+    TextBlock,
+    build_image_plan_entry,
+    deliver_message_plan,
+    finish_with_message,
+)
+from src.lib.plugin_docs import (
+    DocsRenderContext,
+    build_doc_demo_plan_entry,
+    build_readme_docs_plan_entry,
+    create_docs_meta,
+)
+from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set
-from src.lib.utils.common import AvatarFetcher, get_current_time
+from src.lib.utils.common import get_current_time
+from src.lib.utils.img import QQAvatar
 from src.repositories import group_repo, invite_repo
+from src.services.runtime_policy import resolve_invitation_transition
 
-name = "邀请管理模块"
-description = """
-群组管理模块:
-  处理群聊邀请事件
-""".strip()
+name = tr("zh-CN", "plugin.admin_invite.name")
+description = tr("zh-CN", "plugin.admin_invite.description")
+DOCS_SOURCE = Path(__file__).parent / "docs" / "invite" / "README.MD"
+INVITATION_AVATAR_CONCURRENCY = 8
 
-usage = f"""
-===== {name} =====
 
-命令前缀: #admin.invite / #邀请管理
+def build_docs(ctx: DocsRenderContext | None = None) -> MessagePlanInput:
+    return build_readme_docs_plan_entry(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        ctx=ctx,
+    )
 
-1.查看列表
-  list / show / ls / 列表
-  示例: #admin.invite list
 
-2.同意邀请
-  approve / 同意
-  示例: #admin.invite approve -g <群号>
-  快捷操作: 对邀请通知消息直接回复 y / 同意
+def _build_error_demo(
+    locale: LocaleCode,
+    message: str,
+    feature_query: str | None,
+) -> MessagePlanInput:
+    return build_doc_demo_plan_entry(
+        source=DOCS_SOURCE,
+        name=name,
+        description=description,
+        trigger=TriggerType.COMMAND,
+        permission=Permission.SUPERUSER,
+        locale=locale,
+        feature_query=feature_query,
+        prefix_text=message,
+    )
 
-3.拒绝邀请
-  reject / 拒绝
-  示例: #admin.invite reject -g <群号>
-  批量操作: #admin.invite reject --all
-  快捷操作: 对邀请通知消息直接回复 n / 拒绝
 
-4.忽略邀请
-  ignore / 忽略
-  示例: #admin.invite ignore -g <群号>
-  批量操作: #admin.invite ignore --all
-
-5.操作日志
-  log / 日志
-  示例: #admin.invite log [-g <群号>]
-
-6.帮助信息
-  help / 帮助
-  示例: #admin.invite help
-
-[注意事项]:
-1. 所有操作均需要【Senrin】管理员 (SUPERUSER) 权限。
-2. 同意/拒绝/忽略 操作支持使用 -g <群号> 或 -f <Flag> 进行精准匹配。
-3. 快捷回复操作 (y/n) 仅限直接回复机器人推送的邀请通知消息时生效。
-""".strip()
-
-__plugin_meta__ = PluginMetadata(
+__plugin_meta__ = create_plugin_metadata(
     name=name,
     description=description,
-    usage=usage,
     extra={
         "author": "SakuraiCora",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "trigger": TriggerType.COMMAND,
         "permission": Permission.SUPERUSER,
         "no_check": True,
+        "i18n": {
+            "name_key": "plugin.admin_invite.name",
+            "description_key": "plugin.admin_invite.description",
+        },
+        "docs": create_docs_meta(
+            visible=True,
+            category="admin",
+            order=130,
+            source=DOCS_SOURCE,
+            slug="admin.invite",
+            parent_slug="admin",
+            aliases=("邀请管理模块", "邀请管理", "admin.invite"),
+        ),
     },
 )
 
@@ -126,10 +155,12 @@ log_parser.add_argument("-g", "--gid", type=str, help="群组 ID")
 # fmt: on
 
 admin_command_group = CommandGroup("admin")
-admin_invite = admin_command_group.shell_command(
-    cmd="invite",
+admin_invite = admin_command_group.command(
+    "invite",
     aliases={"邀请管理"},
-    parser=invite_parser,
+    permission=SUPERUSER,
+    priority=5,
+    block=False,
 )
 
 approve_matcher = on_fullmatch(
@@ -153,8 +184,10 @@ reject_matcher = on_fullmatch(
 @dataclass
 class InviteContext:
     bot: Bot
+    event: MessageEvent
     matcher: Matcher
     approve: bool
+    locale: LocaleCode
 
     msg_id: str | Unset = UNSET
     flag: str | Unset = UNSET
@@ -166,15 +199,36 @@ class InviteContext:
 @dataclass
 class AdminInviteContext:
     bot: Bot
+    event: MessageEvent
     matcher: Matcher
     operator_id: str
+    locale: LocaleCode
 
     flag: str | Unset = UNSET
     group_id: str | Unset = UNSET
     is_all: bool = False
 
 
+async def _send_reusable_text(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    *,
+    message: str,
+) -> None:
+    await deliver_message_plan(
+        bot,
+        plan=DeliveryPlan(
+            messages=(message,),
+            source_kind="admin_invite",
+        ),
+        event=event,
+    )
+
+
 class InvitationListRenderer:
+    locale: LocaleCode
+
     """
     邀请列表排版与高分辨率图像渲染器
 
@@ -187,12 +241,18 @@ class InvitationListRenderer:
     有股味我也懒得改了你就说他能不能用，能用的代码就是好代码对吧！
     """
 
-    def __init__(self, font_path: str | Path = MAPLE_FONT_PATH) -> None:
-        self.BG_COLOR = (255, 217, 222)  # #ffd9de
-        self.TEXT_COLOR = (180, 76, 76)  # #b44c4c
-        self.ITEM_BG_COLOR = (255, 240, 245)  # #fff0f5
-        self.SUB_TEXT_COLOR = (200, 110, 110)  # 次要文本颜色
-        self.HIGHLIGHT_COLOR = (220, 90, 100)  # 强调色(如ID、序号)
+    def __init__(
+        self,
+        locale: LocaleCode,
+        font_path: str | Path = MAPLE_FONT_PATH,
+    ) -> None:
+        self.locale = locale
+        self.theme = SENRIN_V3_ADMIN_INVITE_IMAGE_THEME
+        self.BG_COLOR = self.theme.bg_color
+        self.TEXT_COLOR = self.theme.text_color
+        self.ITEM_BG_COLOR = self.theme.item_bg_color
+        self.SUB_TEXT_COLOR = self.theme.sub_text_color
+        self.HIGHLIGHT_COLOR = self.theme.highlight_color
 
         # 尺寸与超采样配置 (渲染宽度 800*3.2=2560 达到 2K 标准)
         self.SCALE = 3.2
@@ -244,7 +304,7 @@ class InvitationListRenderer:
         draw = ImageDraw.Draw(img)
 
         # --- 1. 绘制顶部标题与统计信息 ---
-        title_text = "待 处 理 邀 请 列 表"
+        title_text = tr(self.locale, "admin.invite.image.title")
         title_bbox = draw.textbbox((0, 0), title_text, font=self.font_title)
         title_x = (self.RENDER_WIDTH - (title_bbox[2] - title_bbox[0])) // 2
         draw.text(
@@ -255,8 +315,11 @@ class InvitationListRenderer:
         )
 
         current_time_str = arrow.get(get_current_time()).strftime("%Y-%m-%d %H:%M:%S")
-        stats_text = (
-            f"总计: {len(invitations)} 条未处理请求 | 生成时间: {current_time_str}"
+        stats_text = tr(
+            self.locale,
+            "admin.invite.image.stats",
+            count=len(invitations),
+            time=current_time_str,
         )
         stats_bbox = draw.textbbox((0, 0), stats_text, font=self.font_stats)
         stats_x = (self.RENDER_WIDTH - (stats_bbox[2] - stats_bbox[0])) // 2
@@ -315,7 +378,11 @@ class InvitationListRenderer:
                     content_x + idx_width + gname_width + int(10 * self.SCALE),
                     line_y + int(5 * self.SCALE),
                 ),
-                f"(群号: {item['group_id']})",
+                tr(
+                    self.locale,
+                    "admin.invite.image.group_id",
+                    group_id=item["group_id"],
+                ),
                 font=self.font_p,
                 fill=self.SUB_TEXT_COLOR,
             )
@@ -338,7 +405,11 @@ class InvitationListRenderer:
 
             line_y += max(self.H2_SIZE, user_avatar_size) + int(15 * self.SCALE)
 
-            id_text = f"邀请ID: {item['invitation_id']}"
+            id_text = tr(
+                self.locale,
+                "admin.invite.image.invitation_id",
+                invitation_id=item["invitation_id"],
+            )
             draw.text(
                 (content_x, line_y),
                 id_text,
@@ -348,7 +419,12 @@ class InvitationListRenderer:
             id_bbox = draw.textbbox((0, 0), id_text, font=self.font_p)
             id_width = id_bbox[2] - id_bbox[0]
 
-            other_info = f" | flag: {item['flag']} | 申请时间: {item['time']}"
+            other_info = tr(
+                self.locale,
+                "admin.invite.image.other_info",
+                flag=item["flag"],
+                time=item["time"],
+            )
             draw.text(
                 (content_x + id_width, line_y),
                 other_info,
@@ -365,6 +441,9 @@ class InvitationListRenderer:
 
 async def generate_invitation_image_bytes(
     invitations_data: list[dict[str, Any]],
+    locale: LocaleCode,
+    *,
+    task: LongTaskRunner | None = None,
 ) -> bytes:
     """
     提供给外部调用的异步门面函数。
@@ -374,25 +453,81 @@ async def generate_invitation_image_bytes(
 
     有股味我也懒得改了你就说他能不能用，能用的代码就是好代码对吧！
     """
-    async with httpx.AsyncClient() as client:
-        tasks = []
-        for item in invitations_data:
-            group_url = (
-                f"https://p.qlogo.cn/gh/{item['group_id']}/{item['group_id']}/100"
+    avatar_limiter = asyncio.Semaphore(INVITATION_AVATAR_CONCURRENCY)
+    avatar_tasks = [
+        asyncio.create_task(_load_invitation_avatar_pair(index, item, avatar_limiter))
+        for index, item in enumerate(invitations_data)
+    ]
+    fetched_images: list[tuple[Image.Image, Image.Image] | None] = [
+        None for _ in invitations_data
+    ]
+    total = len(avatar_tasks)
+    if task is not None and total > 0:
+        await task.advance(
+            "fetching_avatars",
+            current=0,
+            total=total,
+            metadata={"count": total},
+        )
+    for completed_count, avatar_task in enumerate(
+        asyncio.as_completed(avatar_tasks),
+        start=1,
+    ):
+        index, images = await avatar_task
+        fetched_images[index] = images
+        if task is not None:
+            await task.advance(
+                "fetching_avatars",
+                current=completed_count,
+                total=total,
+                metadata={"count": total},
             )
-            user_url = f"http://q1.qlogo.cn/g?b=qq&nk={item['inviter_id']}&s=100"
+    for item, images in zip(
+        invitations_data,
+        fetched_images,
+        strict=True,
+    ):
+        assert images is not None
+        group_avatar, user_avatar = images
+        assert group_avatar is not None
+        assert user_avatar is not None
+        item["group_avatar_img"] = group_avatar
+        item["user_avatar_img"] = user_avatar
 
-            tasks.append(
-                AvatarFetcher.fetch(client, group_url, size=300, is_user=False)
-            )
-            tasks.append(AvatarFetcher.fetch(client, user_url, size=150, is_user=True))
-        fetched_images = await asyncio.gather(*tasks)
-        for i, item in enumerate(invitations_data):
-            item["group_avatar_img"] = fetched_images[i * 2]
-            item["user_avatar_img"] = fetched_images[i * 2 + 1]
-
-    renderer = InvitationListRenderer()
+    if task is not None:
+        await task.advance(
+            "rendering",
+            current=total,
+            total=total,
+            metadata={"count": total},
+        )
+    renderer = InvitationListRenderer(locale)
     return renderer.render(invitations_data)
+
+
+async def _load_invitation_avatar_pair(
+    index: int,
+    item: dict[str, Any],
+    limiter: asyncio.Semaphore,
+) -> tuple[int, tuple[Image.Image, Image.Image]]:
+    return index, await _fetch_invitation_avatars(item, limiter)
+
+
+async def _fetch_invitation_avatars(
+    item: dict[str, Any],
+    limiter: asyncio.Semaphore,
+) -> tuple[Image.Image, Image.Image]:
+    group_avatar_size = 300
+    user_avatar_size = 150
+    async with limiter:
+        group_avatar, user_avatar = await asyncio.gather(
+            QQAvatar.fetch_group(str(item["group_id"]), size=group_avatar_size),
+            QQAvatar.fetch_user(str(item["inviter_id"]), size=user_avatar_size),
+        )
+    return (
+        group_avatar.circle_corner(group_avatar_size * 0.15).image.copy(),
+        user_avatar.circle().image.copy(),
+    )
 
 
 async def handle_invitation(ctx: InviteContext) -> bool:
@@ -413,20 +548,47 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         if not invitation:
             return False
     else:
-        await ctx.matcher.send("无法使用所提供的信息找到对应的邀请。")
+        await _send_reusable_text(
+            ctx.bot,
+            ctx.matcher,
+            ctx.event,
+            message=tr(ctx.locale, "admin.invite.lookup_failed"),
+        )
         return False
 
     if invitation.status.is_processed:
         operator = invitation.operator
         if not ctx.silent:
-            await ctx.matcher.send(
-                f"邀请已被 {operator.user_name}({operator.user_id}) 处理，无法操作。\n"
-                f"当前状态：{invitation.status}\n"
-                "━━━━━━━━━━━━━━━━\n"
-                f"群号：{invitation.group_id}\n"
-                f"群名：{invitation.group.group_name}\n"
-                f"邀请者：{invitation.inviter.user_name}\n"
-                f"邀请 flag：{invitation.flag}\n"
+            await _send_reusable_text(
+                ctx.bot,
+                ctx.matcher,
+                ctx.event,
+                message=tr(
+                    ctx.locale,
+                    "admin.invite.processed",
+                    operator_name=operator.user_name,
+                    operator_id=operator.user_id,
+                    status=invitation.status,
+                    group_id=invitation.group_id,
+                    group_name=invitation.group.group_name,
+                    inviter_name=invitation.inviter.user_name,
+                    flag=invitation.flag,
+                ),
+            )
+        return False
+
+    try:
+        invitation_status, group_status = resolve_invitation_transition(
+            approve=ctx.approve,
+            group_status=invitation.group.status,
+        )
+    except ValueError:
+        if not ctx.silent:
+            await _send_reusable_text(
+                ctx.bot,
+                ctx.matcher,
+                ctx.event,
+                message=tr(ctx.locale, "admin.invite.need_unban_first"),
             )
         return False
 
@@ -439,14 +601,11 @@ async def handle_invitation(ctx: InviteContext) -> bool:
     elif not ctx.approve:
         await ctx.bot.set_group_leave(group_id=int(invitation.group_id))
 
-    if ctx.approve:
-        action = "同意"
-        invitation_status = InvitationStatus.APPROVED
-        group_status = GroupStatus.AUTHORIZED
-    else:
-        action = "拒绝"
-        invitation_status = InvitationStatus.REJECTED
-        group_status = GroupStatus.UNAUTHORIZED
+    action = (
+        tr(ctx.locale, "admin.invite.action.approve")
+        if ctx.approve
+        else tr(ctx.locale, "admin.invite.action.reject")
+    )
 
     await invite_repo.update_status(
         invitation_id=invitation.id,
@@ -457,51 +616,111 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         status=group_status,
     )
     if not ctx.silent:
-        await ctx.matcher.send(
-            (
-                f"已{action}群聊邀请 {invitation.id}\n"
-                f"群号：{invitation.group_id}\n"
-                f"群名：{invitation.group.group_name}\n"
-                f"邀请者：{invitation.inviter.user_name}\n"
-                f"邀请 flag：{invitation.flag}\n"
+        message_id = getattr(ctx.event, "message_id", None)
+        blocks: list[ReplyRefBlock | TextBlock] = []
+        if message_id is not None:
+            blocks.append(ReplyRefBlock(message_id=str(message_id)))
+        blocks.append(
+            TextBlock(
+                tr(
+                    ctx.locale,
+                    "admin.invite.action_done",
+                    action=action,
+                    invitation_id=invitation.id,
+                    group_id=invitation.group_id,
+                    group_name=invitation.group.group_name,
+                    inviter_name=invitation.inviter.user_name,
+                    flag=invitation.flag,
+                )
+            )
+        )
+        await deliver_message_plan(
+            ctx.bot,
+            plan=DeliveryPlan(
+                messages=(MessagePlanEntry(blocks=tuple(blocks)),),
+                source_kind="admin_invite_action_done",
+                allow_asset_reuse=False,
             ),
-            reply_message=True,
+            event=ctx.event,
         )
     return True
 
 
+def _build_progress_sink(bot: Bot, event: MessageEvent) -> CompositeProgressSink:
+    return CompositeProgressSink(
+        LoggerProgressSink(),
+        MessageEventProgressSink(bot, event),
+    )
+
+
 async def handle_list(ctx: AdminInviteContext) -> None:
-    db_results = await invite_repo.get_by_status(InvitationStatus.PENDING)
+    empty_message: str | None = None
+    async with LongTaskRunner(
+        LongTaskSpec(
+            task_name="admin.invite.list",
+            source_kind="admin_invite_list",
+            prompt=tr(ctx.locale, "admin.invite.list.processing"),
+            threshold_ms=800,
+        ),
+        sink=_build_progress_sink(ctx.bot, ctx.event),
+    ) as long_task:
+        await long_task.advance("loading_records")
+        db_results = await invite_repo.get_by_status(InvitationStatus.PENDING)
+        if not db_results:
+            empty_message = tr(ctx.locale, "admin.invite.pending.none")
+        else:
+            render_data = []
+            for inv in db_results:
+                render_data.append(
+                    {
+                        "invitation_id": inv.id,
+                        "group_name": inv.group.group_name,
+                        "group_id": inv.group.group_id,
+                        "inviter_name": inv.inviter.user_name,
+                        "inviter_id": inv.inviter.user_id,
+                        "time": arrow.get(inv.created_at).strftime("%Y-%m-%d %H:%M"),
+                        "flag": (
+                            inv.flag or tr(ctx.locale, "admin.invite.image.flag.none")
+                        ),
+                    }
+                )
+            img_bytes = await generate_invitation_image_bytes(
+                render_data,
+                ctx.locale,
+                task=long_task,
+            )
+            await long_task.advance(
+                "delivering",
+                metadata={"count": len(render_data)},
+            )
+            await deliver_message_plan(
+                ctx.bot,
+                plan=DeliveryPlan(
+                    messages=(build_image_plan_entry(img_bytes),),
+                    source_kind="admin_invite_list",
+                ),
+                event=ctx.event,
+            )
 
-    if not db_results:
-        await ctx.matcher.finish("当前没有待处理的邀请哦。")
-
-    render_data = []
-    for inv in db_results:
-        render_data.append(
-            {
-                "invitation_id": inv.id,
-                "group_name": inv.group.group_name,
-                "group_id": inv.group.group_id,
-                "inviter_name": inv.inviter.user_name,
-                "inviter_id": inv.inviter.user_id,
-                "time": arrow.get(inv.created_at).strftime("%Y-%m-%d %H:%M"),
-                "flag": inv.flag or "无",
-            }
+    if empty_message is not None:
+        await finish_with_message(
+            ctx.bot,
+            ctx.matcher,
+            event=ctx.event,
+            message=empty_message,
+            source_kind="admin_invite",
         )
-
-    img_bytes = await generate_invitation_image_bytes(render_data)
-
-    await ctx.matcher.send(MessageSegment.image(img_bytes))
 
 
 async def handle_approve(ctx: AdminInviteContext) -> None:
     ic_ctx = InviteContext(
         bot=ctx.bot,
+        event=ctx.event,
         matcher=ctx.matcher,
         flag=ctx.flag,
         group_id=ctx.group_id,
         approve=True,
+        locale=ctx.locale,
     )
     await handle_invitation(ic_ctx)
 
@@ -510,42 +729,52 @@ async def handle_reject(ctx: AdminInviteContext) -> None:
     if not ctx.is_all:
         ic_ctx = InviteContext(
             bot=ctx.bot,
+            event=ctx.event,
             matcher=ctx.matcher,
             flag=ctx.flag,
             group_id=ctx.group_id,
             approve=False,
+            locale=ctx.locale,
         )
         await handle_invitation(ic_ctx)
         return
 
     invs = await invite_repo.get_by_status(InvitationStatus.PENDING)
     if not invs:
-        await ctx.matcher.finish("当前没有需要拒绝的待处理邀请哦。")
+        await finish_with_message(
+            ctx.bot,
+            ctx.matcher,
+            event=ctx.event,
+            message=tr(ctx.locale, "admin.invite.reject.none"),
+            source_kind="admin_invite",
+        )
 
     success_count = 0
     details = []
     for inv in invs:
         ic_ctx = InviteContext(
             bot=ctx.bot,
+            event=ctx.event,
             matcher=ctx.matcher,
             invitation_id=inv.id,
             approve=False,
             silent=True,
+            locale=ctx.locale,
         )
         if await handle_invitation(ic_ctx):
             success_count += 1
 
             details.append(f"{inv.group.group_name} ({inv.group_id})")
 
-    msg = "========== 批量拒绝 ==========\n"
+    msg = tr(ctx.locale, "admin.invite.bulk.reject.title") + "\n"
     if details:
         msg += "\n".join(details) + "\n"
     else:
-        msg += "  (无成功处理的邀请记录)\n"
-    msg += "------------------------------\n"
-    msg += f"统计: 共拒绝了 {success_count} 个待处理邀请。"
+        msg += tr(ctx.locale, "admin.invite.bulk.none_processed") + "\n"
+    msg += tr(ctx.locale, "admin.invite.bulk.separator") + "\n"
+    msg += tr(ctx.locale, "admin.invite.bulk.reject.summary", count=success_count)
 
-    await ctx.matcher.send(msg)
+    await _send_reusable_text(ctx.bot, ctx.matcher, ctx.event, message=msg)
 
 
 async def handle_ignore(ctx: AdminInviteContext) -> None:
@@ -557,33 +786,52 @@ async def handle_ignore(ctx: AdminInviteContext) -> None:
             inv = await invite_repo.get_by_flag(ctx.flag)
 
         if not inv:
-            await ctx.matcher.finish("未找到对应的邀请记录。")
+            await finish_with_message(
+                ctx.bot,
+                ctx.matcher,
+                event=ctx.event,
+                message=tr(ctx.locale, "admin.invite.record.not_found"),
+                source_kind="admin_invite",
+            )
+            return
         await invite_repo.update_status(inv.id, InvitationStatus.IGNORED)
-        msg = (
-            "======= 操作成功: 已忽略 =======\n"
-            f"群名：{inv.group.group_name}\n"
-            f"群号：{inv.group_id}\n"
+        msg = tr(
+            ctx.locale,
+            "admin.invite.ignore.done",
+            group_name=inv.group.group_name,
+            group_id=inv.group_id,
         )
-        await ctx.matcher.send(msg)
+        await _send_reusable_text(ctx.bot, ctx.matcher, ctx.event, message=msg)
         return
     invs = await invite_repo.ignore_all_pending()
     if not invs:
-        await ctx.matcher.finish("当前没有需要忽略的待处理邀请哦。")
+        await finish_with_message(
+            ctx.bot,
+            ctx.matcher,
+            event=ctx.event,
+            message=tr(ctx.locale, "admin.invite.ignore.none"),
+            source_kind="admin_invite",
+        )
 
     details = []
     for inv in invs:
         details.append(f"{inv.group.group_name} ({inv.group_id})")
-    msg = "========== 批量忽略 ==========\n"
+    msg = tr(ctx.locale, "admin.invite.bulk.ignore.title") + "\n"
     if details:
         msg += "\n".join(details) + "\n"
-    msg += "------------------------------\n"
-    msg += f"统计: 共清理了 {len(invs)} 个待处理邀请。"
+    msg += tr(ctx.locale, "admin.invite.bulk.separator") + "\n"
+    msg += tr(ctx.locale, "admin.invite.bulk.ignore.summary", count=len(invs))
 
-    await ctx.matcher.send(msg)
+    await _send_reusable_text(ctx.bot, ctx.matcher, ctx.event, message=msg)
 
 
 async def handle_log(ctx: AdminInviteContext) -> None:
-    raise NotImplementedError("还没做")  # TODO
+    await _send_reusable_text(
+        ctx.bot,
+        ctx.matcher,
+        ctx.event,
+        message=tr(ctx.locale, "admin.invite.log.unavailable"),
+    )
 
 
 @approve_matcher.handle()
@@ -591,9 +839,11 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     msg_id = str(event.reply.message_id)  # type: ignore
     ctx = InviteContext(
         bot=bot,
+        event=event,
         matcher=matcher,
         approve=True,
         msg_id=msg_id,
+        locale=await resolve_locale(),
     )
     await handle_invitation(ctx)
 
@@ -603,9 +853,11 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     msg_id = str(event.reply.message_id)  # type: ignore
     ctx = InviteContext(
         bot=bot,
+        event=event,
         matcher=matcher,
         approve=False,
         msg_id=msg_id,
+        locale=await resolve_locale(),
     )
     await handle_invitation(ctx)
 
@@ -615,13 +867,50 @@ async def _(
     bot: Bot,
     event: MessageEvent,
     matcher: Matcher,
-    args: Namespace | ParserExit = ShellCommandArgs(),
+    arg: Message = CommandArg(),
 ) -> None:
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    argv = arg.extract_plain_text().strip().split()
+    if not argv:
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=build_docs(DocsRenderContext(locale=locale)),
+            source_kind="admin_invite",
+        )
+        return
+    try:
+        args: Namespace | ParserExit = invite_parser.parse_args(argv)
+    except ParserExit as exc:
+        args = exc
     if isinstance(args, ParserExit):
         if args.status == 0:
-            await admin_invite.finish(args.message)
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_docs(DocsRenderContext(locale=locale)),
+                source_kind="admin_invite",
+            )
+            return
         else:
-            await admin_invite.finish(f"参数错误:\n{args.message}")
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
+                    locale,
+                    tr(
+                        locale,
+                        "admin.invite.args_error",
+                        message=tr(locale, "admin.invite.args_error.detail"),
+                    ),
+                    argv[0].lower() if argv else None,
+                ),
+                source_kind="admin_invite",
+            )
+            return
 
     action = args.action
     flag = getattr(args, "flag", UNSET)
@@ -630,8 +919,10 @@ async def _(
 
     ctx = AdminInviteContext(
         bot=bot,
+        event=event,
         matcher=matcher,
         operator_id=str(event.user_id),
+        locale=locale,
         flag=flag,
         group_id=group_id,
         is_all=is_all,
@@ -650,7 +941,18 @@ async def _(
         case "log" | "日志":
             handler = handle_log
         case _:
-            await admin_invite.finish("未知的操作指令。")
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=_build_error_demo(
+                    locale,
+                    tr(locale, "admin.invite.unknown_command"),
+                    None,
+                ),
+                source_kind="admin_invite",
+            )
+            return
 
     await handler(ctx)
     await admin_invite.finish()

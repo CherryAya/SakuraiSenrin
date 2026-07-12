@@ -1,0 +1,175 @@
+from __future__ import annotations
+
+from nonebot.adapters.onebot.v11.bot import Bot
+from nonebot.adapters.onebot.v11.event import MessageEvent
+
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
+from src.lib.message_plan import (
+    DeliveryPlan,
+    MessagePlanEntry,
+    build_text_plan_entry,
+    deliver_message_plan,
+)
+from src.plugins.wordbank.database.types import WordbankSearchItem
+from src.plugins.wordbank.handlers.approval import extract_sent_message_id
+from src.plugins.wordbank.handlers.mutation import build_mutation_actor
+from src.plugins.wordbank.handlers.parsers import actor_can_review, parse_search_args
+from src.plugins.wordbank.handlers.rendering import build_pending_item_blocks
+from src.plugins.wordbank.services.core import WordbankService
+from src.plugins.wordbank.services.media import WordbankMediaService
+
+
+def _response_item_id(item: WordbankSearchItem) -> int:
+    if item.response_item_ids:
+        return item.response_item_ids[0]
+    return item.trigger_group_id
+
+
+def _build_pending_batch_summary(
+    *,
+    items: list[WordbankSearchItem] | tuple[WordbankSearchItem, ...],
+    locale: LocaleCode,
+    page: int,
+    limit: int,
+    has_more: bool,
+    keyword: str,
+) -> str:
+    lines = [
+        tr(locale, "wordbank.approval.pending_title", page=page),
+        tr(locale, "wordbank.approval.pending_batch_instruction"),
+        "后续节点按“序号”字段对应批量处理编号。",
+        f"本页数量: {len(items)}",
+    ]
+    if keyword:
+        lines.append(f"筛选: {keyword}")
+    if has_more:
+        lines.append(
+            tr(
+                locale,
+                "wordbank.approval.pending_more",
+                next_page=page + 1,
+                limit=limit,
+            )
+        )
+    return "\n".join(lines)
+
+
+async def _build_pending_detail_message(
+    item: WordbankSearchItem,
+    *,
+    index: int,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> MessagePlanEntry:
+    return MessagePlanEntry(
+        blocks=await build_pending_item_blocks(
+            entry_id=_response_item_id(item),
+            scope=item.scope,
+            trigger_text=item.trigger_text,
+            response_text=item.response_text,
+            created_by=item.created_by,
+            created_at=item.created_at,
+            probability=item.probability,
+            weight=item.weight,
+            rule=item.rule,
+            trigger_shape=item.trigger_shape,
+            response_shape=item.response_shape,
+            locale=locale,
+            media_service=media_service,
+            prefix="",
+            index=index,
+        )
+    )
+
+
+async def send_pending_entries_review(
+    bot: Bot,
+    event: MessageEvent,
+    *,
+    text: str,
+    locale: LocaleCode,
+    service: WordbankService,
+    media_service: WordbankMediaService,
+    source_kind: str,
+    fallback_nickname: str,
+) -> None:
+    actor = build_mutation_actor(event)
+    if not actor_can_review(actor):
+        await deliver_message_plan(
+            bot,
+            plan=DeliveryPlan(
+                messages=(tr(locale, "wordbank.approval.permission_denied"),),
+                source_kind=source_kind,
+            ),
+            event=event,
+        )
+        return
+
+    parsed = parse_search_args(text)
+    offset = (parsed.page - 1) * parsed.limit
+    pending_items = await service.list_pending_entries(
+        keyword=parsed.keyword,
+        limit=parsed.limit + 1,
+        offset=offset,
+        actor_group_id=actor.group_id,
+        can_moderate_group=actor.can_moderate_group,
+        is_superuser=actor.is_superuser,
+    )
+    has_more = len(pending_items) > parsed.limit
+    items = pending_items[: parsed.limit]
+    if not items:
+        await deliver_message_plan(
+            bot,
+            plan=DeliveryPlan(
+                messages=(
+                    tr(locale, "wordbank.approval.pending_empty", page=parsed.page),
+                ),
+                source_kind=source_kind,
+            ),
+            event=event,
+        )
+        return
+
+    summary = _build_pending_batch_summary(
+        items=items,
+        locale=locale,
+        page=parsed.page,
+        limit=parsed.limit,
+        has_more=has_more,
+        keyword=parsed.keyword,
+    )
+    detail_messages = [
+        await _build_pending_detail_message(
+            item,
+            index=index,
+            locale=locale,
+            media_service=media_service,
+        )
+        for index, item in enumerate(items, start=1)
+    ]
+    plan_result = await deliver_message_plan(
+        bot,
+        plan=DeliveryPlan(
+            messages=(build_text_plan_entry(summary), *detail_messages),
+            source_kind=source_kind,
+            fallback_nickname=fallback_nickname,
+            force_forward=True,
+        ),
+        event=event,
+    )
+    send_result = plan_result.results[0]
+    message_id = extract_sent_message_id(send_result)
+    if message_id is not None:
+        await service.record_message_ref(
+            ref_kind="approval",
+            message_id=message_id,
+            trigger_group_id=items[0].trigger_group_id,
+            response_item_id=_response_item_id(items[0]),
+            group_id=str(getattr(event, "group_id", "") or ""),
+            user_id=str(event.user_id),
+            source_message_id=str(getattr(event, "message_id", "") or ""),
+            context_type="pending_batch",
+            message_type="approval_batch",
+            group_ids=tuple(_response_item_id(item) for item in items),
+        )

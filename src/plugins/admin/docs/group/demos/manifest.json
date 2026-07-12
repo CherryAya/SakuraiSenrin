@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:admin.group": {
+      "normal": "README-guide--667e4adb10.webp",
+      "group_admin": "README-guide--667e4adb10.webp",
+      "group_owner": "README-guide--667e4adb10.webp",
+      "superuser": "README-guide--667e4adb10.webp"
+    },
+    "summary:admin.group": {
+      "normal": "README-summary--f6a489ab0e.webp",
+      "group_admin": "README-summary--f6a489ab0e.webp",
+      "group_owner": "README-summary--f6a489ab0e.webp",
+      "superuser": "README-summary--f6a489ab0e.webp"
+    },
+    "feature:admin.group:ban": {
+      "normal": "admin-group-ban.webp",
+      "group_admin": "admin-group-ban.webp",
+      "group_owner": "admin-group-ban.webp",
+      "superuser": "admin-group-ban.webp"
+    },
+    "feature:admin.group:unban": {
+      "normal": "admin-group-unban.webp",
+      "group_admin": "admin-group-unban.webp",
+      "group_owner": "admin-group-unban.webp",
+      "superuser": "admin-group-unban.webp"
+    },
+    "feature:admin.group:auth": {
+      "normal": "admin-group-auth.webp",
+      "group_admin": "admin-group-auth.webp",
+      "group_owner": "admin-group-auth.webp",
+      "superuser": "admin-group-auth.webp"
+    },
+    "feature:admin.group:unauth": {
+      "normal": "admin-group-unauth.webp",
+      "group_admin": "admin-group-unauth.webp",
+      "group_owner": "admin-group-unauth.webp",
+      "superuser": "admin-group-unauth.webp"
+    },
+    "feature:admin.group:status": {
+      "normal": "admin-group-status.webp",
+      "group_admin": "admin-group-status.webp",
+      "group_owner": "admin-group-status.webp",
+      "superuser": "admin-group-status.webp"
+    },
+    "feature:admin.group:leave": {
+      "normal": "admin-group-leave.webp",
+      "group_admin": "admin-group-leave.webp",
+      "group_owner": "admin-group-leave.webp",
+      "superuser": "admin-group-leave.webp"
+    }
+  }
+}

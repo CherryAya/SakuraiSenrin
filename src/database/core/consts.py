@@ -7,7 +7,7 @@ Description: core db 常量
 """
 
 from enum import IntFlag, StrEnum, auto
-from types import MappingProxyType
+from typing import ClassVar
 
 from src.lib.enums import LocalizedMixin
 
@@ -19,15 +19,13 @@ class GroupStatus(LocalizedMixin, StrEnum):
     BANNED = "BANNED"
     LEFT = "LEFT"
 
-    __labels__ = MappingProxyType(
-        {
-            UNAUTHORIZED: "未授权",
-            AUTHORIZED: "已授权",
-            DORMANT: "休眠中",
-            BANNED: "封禁中",
-            LEFT: "已退群",
-        },
-    )
+    __label_keys__: ClassVar[dict[str, str]] = {
+        UNAUTHORIZED: "enum.group_status.unauthorized",
+        AUTHORIZED: "enum.group_status.authorized",
+        DORMANT: "enum.group_status.dormant",
+        BANNED: "enum.group_status.banned",
+        LEFT: "enum.group_status.left",
+    }
 
     @property
     def is_unauthorized(self) -> bool:
@@ -64,14 +62,12 @@ class InvitationStatus(LocalizedMixin, StrEnum):
     REJECTED = "REJECTED"
     IGNORED = "IGNORED"
 
-    __labels__ = MappingProxyType(
-        {
-            PENDING: "待审批",
-            APPROVED: "已接受",
-            REJECTED: "已拒绝",
-            IGNORED: "已忽略",
-        },
-    )
+    __label_keys__: ClassVar[dict[str, str]] = {
+        PENDING: "enum.invitation_status.pending",
+        APPROVED: "enum.invitation_status.approved",
+        REJECTED: "enum.invitation_status.rejected",
+        IGNORED: "enum.invitation_status.ignored",
+    }
 
     @property
     def is_pending(self) -> bool:
@@ -105,15 +101,13 @@ class Permission(LocalizedMixin, IntFlag):
     GROUP_OWNER = auto()
     SUPERUSER = auto()
 
-    __labels__ = MappingProxyType(
-        {
-            NONE: "无权限",
-            NORMAL: "普通用户",
-            GROUP_ADMIN: "群管理员",
-            GROUP_OWNER: "群主",
-            SUPERUSER: "超级管理员",
-        },
-    )
+    __label_keys__: ClassVar[dict[int, str]] = {
+        NONE: "enum.permission.none",
+        NORMAL: "enum.permission.normal",
+        GROUP_ADMIN: "enum.permission.group_admin",
+        GROUP_OWNER: "enum.permission.group_owner",
+        SUPERUSER: "enum.permission.superuser",
+    }
 
     def has(self, perm: "Permission") -> bool:
         """位运算判断权限"""

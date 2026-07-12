@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "guide:notice.group": {
+      "normal": "README-guide--c9fb6bedf7.webp",
+      "group_admin": "README-guide--c9fb6bedf7.webp",
+      "group_owner": "README-guide--c9fb6bedf7.webp",
+      "superuser": "README-guide--c9fb6bedf7.webp"
+    },
+    "summary:notice.group": {
+      "normal": "README-summary--ee59ae9194.webp",
+      "group_admin": "README-summary--ee59ae9194.webp",
+      "group_owner": "README-summary--ee59ae9194.webp",
+      "superuser": "README-summary--ee59ae9194.webp"
+    },
+    "feature:notice.group:kick-cleanup": {
+      "normal": "notice-group-kick-cleanup.webp",
+      "group_admin": "notice-group-kick-cleanup.webp",
+      "group_owner": "notice-group-kick-cleanup.webp",
+      "superuser": "notice-group-kick-cleanup.webp"
+    },
+    "feature:notice.group:ban-cleanup": {
+      "normal": "notice-group-ban-cleanup.webp",
+      "group_admin": "notice-group-ban-cleanup.webp",
+      "group_owner": "notice-group-ban-cleanup.webp",
+      "superuser": "notice-group-ban-cleanup.webp"
+    },
+    "feature:notice.group:member-sync": {
+      "normal": "notice-group-member-sync.webp",
+      "group_admin": "notice-group-member-sync.webp",
+      "group_owner": "notice-group-member-sync.webp",
+      "superuser": "notice-group-member-sync.webp"
+    },
+    "feature:notice.group:rename-sync": {
+      "normal": "notice-group-rename-sync.webp",
+      "group_admin": "notice-group-rename-sync.webp",
+      "group_owner": "notice-group-rename-sync.webp",
+      "superuser": "notice-group-rename-sync.webp"
+    }
+  }
+}

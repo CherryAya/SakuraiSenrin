@@ -6,6 +6,9 @@ from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.matcher import Matcher
 
 from src.config import config
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
+from src.lib.message_plan import finish_with_message
 from src.plugins.water.database import water_repo
 
 
@@ -13,11 +16,14 @@ from src.plugins.water.database import water_repo
 class WaterMergeContext:
     matcher: Matcher
     event: GroupMessageEvent
+    locale: LocaleCode
 
 
 def is_group_admin_event(event: MessageEvent) -> bool:
     if not isinstance(event, GroupMessageEvent):
         return False
+    if str(event.user_id) in config.SUPERUSERS:
+        return True
     role = getattr(event.sender, "role", "member")
     return role in {"owner", "admin"}
 
@@ -26,27 +32,42 @@ async def handle_merge_locked(ctx: WaterMergeContext, decision: dict) -> None:
     group_id = str(ctx.event.group_id)
     old_action = str(decision.get("action", ""))
     if old_action == "no_need":
-        await ctx.matcher.finish(
-            "这个群现在不用合并喔 (•̀ᴗ•́)و\n"
-            f"群号: {group_id}\n"
-            "当前没有待确认的合并建议，不用发 #water.merge yes/no。"
+        await finish_with_message(
+            getattr(ctx.matcher, "bot", None),
+            ctx.matcher,
+            event=ctx.event,
+            message=tr(ctx.locale, "water.merge.no_need", group_id=group_id),
+            source_kind="water_merge",
         )
-    action_label = "同意合并" if old_action == "merge" else "暂不合并"
-    await ctx.matcher.finish(
-        "这个群的首次选择已经生效啦 (•̀ω•́)✧\n"
-        f"群号: {group_id}\n"
-        f"已记录: {action_label}\n"
-        "后续如果要改，请联系超管处理。\n"
-        f"可到反馈群 {config.MAIN_GROUP_ID} 申请。"
+    action_label = tr(
+        ctx.locale,
+        "water.merge.locked.action.merge"
+        if old_action == "merge"
+        else "water.merge.locked.action.reject",
+    )
+    await finish_with_message(
+        getattr(ctx.matcher, "bot", None),
+        ctx.matcher,
+        event=ctx.event,
+        message=tr(
+            ctx.locale,
+            "water.merge.locked",
+            group_id=group_id,
+            action_label=action_label,
+            main_group_id=config.MAIN_GROUP_ID,
+        ),
+        source_kind="water_merge",
     )
 
 
 async def handle_merge_no_need(ctx: WaterMergeContext) -> None:
     group_id = str(ctx.event.group_id)
-    await ctx.matcher.finish(
-        "这个群现在不用合并喔 (•̀ᴗ•́)و\n"
-        f"群号: {group_id}\n"
-        "当前没有待确认的合并建议，不用发 #water.merge yes/no。"
+    await finish_with_message(
+        getattr(ctx.matcher, "bot", None),
+        ctx.matcher,
+        event=ctx.event,
+        message=tr(ctx.locale, "water.merge.no_need", group_id=group_id),
+        source_kind="water_merge",
     )
 
 
@@ -71,17 +92,23 @@ async def handle_merge_yes(ctx: WaterMergeContext) -> None:
     merge_applied = bool(decision.get("merge_applied", False))
     extra_lines: list[str] = []
     if stale_target_corrected and not merge_applied:
-        extra_lines.append("小提示: 目标已自动修正为当前有效矩阵，没有重复迁移数据。")
+        extra_lines.append(tr(ctx.locale, "water.merge.yes.hint.corrected"))
     elif merge_applied:
-        extra_lines.append("小提示: 这个群已经并入目标矩阵，后续会按同一套统计累计。")
+        extra_lines.append(tr(ctx.locale, "water.merge.yes.hint.merged"))
 
-    await ctx.matcher.finish(
-        "已记录为“同意合并”啦 (≧▽≦)\n"
-        f"群号: {group_id}\n"
-        f"目标矩阵: {target_text}\n"
-        "后续不会再重复询问这个群。\n"
-        + ("\n".join(extra_lines) + "\n" if extra_lines else "")
-        + f"后续要改，请到反馈群 {config.MAIN_GROUP_ID} 联系超管。"
+    await finish_with_message(
+        getattr(ctx.matcher, "bot", None),
+        ctx.matcher,
+        event=ctx.event,
+        message=tr(
+            ctx.locale,
+            "water.merge.yes.recorded",
+            group_id=group_id,
+            target_text=target_text,
+            extra=("\n".join(extra_lines) + "\n" if extra_lines else ""),
+            main_group_id=config.MAIN_GROUP_ID,
+        ),
+        source_kind="water_merge",
     )
 
 
@@ -102,10 +129,16 @@ async def handle_merge_no(ctx: WaterMergeContext) -> None:
 
     target_matrix_id = str(decision.get("target_matrix_id", ""))
     target_text = target_matrix_id if target_matrix_id else "-"
-    await ctx.matcher.finish(
-        "已记录为“先不合并”啦 (｡•́︿•̀｡)\n"
-        f"群号: {group_id}\n"
-        f"原建议目标: {target_text}\n"
-        "后续不会再弹这个群的合并询问。\n"
-        f"如果之后想合并，请到反馈群 {config.MAIN_GROUP_ID} 联系超管。"
+    await finish_with_message(
+        getattr(ctx.matcher, "bot", None),
+        ctx.matcher,
+        event=ctx.event,
+        message=tr(
+            ctx.locale,
+            "water.merge.no.recorded",
+            group_id=group_id,
+            target_text=target_text,
+            main_group_id=config.MAIN_GROUP_ID,
+        ),
+        source_kind="water_merge",
     )

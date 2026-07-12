@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:notice.user:main": {
+      "superuser": "notice-user-main.webp"
+    }
+  }
+}

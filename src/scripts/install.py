@@ -194,7 +194,7 @@ def init_fonts() -> None:
     else:
         logger.warning(
             "⚠️ Skia 验证未能全部通过，Lock 文件未生成。"
-            "如果是 Windows 系统，请尝试重启机器人的命令行窗口。"
+            "如果是 Windows 系统，请尝试重启凛凛的命令行窗口。"
         )
 
 

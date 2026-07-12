@@ -11,6 +11,8 @@ wheels/
 .env.*
 
 .devtest
+.devtest/**/*.db
+.devtest/**/*.zst
 
 
 
@@ -19,7 +21,14 @@ wheels/
 .ruff_cache
 
 backup/
+!src/lib/backup/
+!src/lib/backup/*.py
 
-data/font/.fonts_installed.lock
-data/db/*
+data/*
+data/**/*.db
+data/**/*.zst
+data/db/**
 !data/db/.gitkeep
+!data/font/.gitkeep
+!data/image/.gitkeep
+repo-dev

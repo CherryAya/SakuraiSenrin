@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "dashboard:index": {
+      "normal": "help-index.webp",
+      "group_admin": "help-index--fe5a50f6d6.webp",
+      "group_owner": "help-index--fe5a50f6d6.webp",
+      "superuser": "help-index--f5e054fc29.webp"
+    },
+    "feature:help:main": {
+      "normal": "help-main.webp",
+      "group_admin": "help-main.webp",
+      "group_owner": "help-main.webp",
+      "superuser": "help-main.webp"
+    }
+  }
+}

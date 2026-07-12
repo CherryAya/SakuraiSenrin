@@ -1,26 +1,129 @@
-<!--
- * Author: SakuraiCora<1479559098@qq.com>
- * Date: 2026-02-18 22:40:38
- * LastEditors: SakuraiCora<1479559098@qq.com>
- * LastEditTime: 2026-02-24 15:10:40
- * Description: 
--->
-#admin.group 
-    ban <gid>
-    unban <gid>
-    auth <gid>
-    unauth <gid>
-    leave <gid>
-    status <gid>
+# 管理模块
 
-#admin.user
-    ban <uid> [-r] <reason> [-t] <duration>
-    unban <uid> [-r] <reason>
-    status <uid>
+## 概览
+这是管理相关的动作，关乎凛凛怎么运行，管理员加油吧！
 
-#admin.invite
-    list | show | ls -> 考虑 PIL，做个 list
-    approve [-f] <flag> | [-g] <gid>
-    reject [-f] <flag> | [-g] <gid> | --all
-    ignore [-f] <flag> | [-g] <gid> | --all
-    log [-g] <gid>
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 超级管理员
+
+## 用法
+- Help: `admin`
+
+## 子功能目录
+- `group` 群组管理: 管理群授权、封禁、退群和状态查询。
+- `user` 用户管理: 管理用户封禁、解封和状态查询。
+- `invite` 邀请管理: 处理待审批邀请、批量拒绝/忽略，并查看日志。
+- `i18n` 语言管理: 调整全局默认语言和群级覆盖。
+- `backup` 备份管理: 检查远端仓库、查看快照并手动触发数据库备份。
+
+## 子功能详情
+### `group` 群组管理
+- 摘要: 管理群授权、封禁、退群和状态查询。
+- 别名: admin.group, 群组管理
+- 指令: `#help 群组管理模块`
+- Demo: admin-overview-group.webp
+#### 说明
+> [!TIP]
+> 这是群组管理的聚合入口。
+>
+> 适合先确认本模块负责哪些动作，再跳到具体子功能 demo。
+#### 前置条件
+需要具备超级管理员权限。
+#### 完整流程
+先进入群组管理模块，再按动作查看 demo。
+```demo
+USER: #help 管理模块总览 group
+BOT: 群组管理负责处理群授权、封禁、退群和状态查询。
+SYSTEM: 继续发送 #help 群组管理模块 ban 查看封禁流程 demo。
+```
+#### 失败情况
+如果直接把所有管理动作塞进总览文档，帮助消息会过长且不利于维护。
+
+### `user` 用户管理
+- 摘要: 管理用户封禁、解封和状态查询。
+- 别名: admin.user, 用户管理
+- 指令: `#help 用户管理模块`
+- Demo: admin-overview-user.webp
+#### 说明
+> [!TIP]
+> 这是用户管理的聚合入口。
+>
+> 先看这里确认动作范围，再进入 `ban`、`unban` 或 `status` 详情页会更清晰。
+#### 前置条件
+需要具备超级管理员权限。
+#### 完整流程
+先进入用户管理模块，再按动作查看 demo。
+```demo
+USER: #help 管理模块总览 user
+BOT: 用户管理支持 ban / unban / status 三类操作。
+SYSTEM: 继续发送 #help 用户管理模块 ban 查看完整流程。
+```
+#### 失败情况
+若后续新增动作，记得同步更新本总览和子模块 README。
+
+### `invite` 邀请管理
+- 摘要: 处理待审批邀请、批量拒绝/忽略，并查看日志。
+- 别名: admin.invite, 邀请管理
+- 指令: `#help 邀请管理模块`
+- Demo: admin-overview-invite.webp
+#### 说明
+> [!TIP]
+> 这是邀请管理的聚合入口。
+>
+> 如果你还不确定是看列表、审批还是日志，先从这里进入最省事。
+#### 前置条件
+需要具备超级管理员权限，并且项目正在接收邀请事件。
+#### 完整流程
+先进入邀请管理模块，再按动作查看 demo。
+```demo
+USER: #help 管理模块总览 invite
+BOT: 邀请管理支持 list / approve / reject / ignore / log。
+SYSTEM: 继续发送 #help 邀请管理模块 approve 查看完整流程。
+```
+#### 失败情况
+如果项目当前没有邀请记录，详情页会说明如何用 list 或日志功能排查。
+
+### `i18n` 语言管理
+- 摘要: 调整全局默认语言和群级覆盖。
+- 别名: admin.i18n, 语言管理
+- 指令: `#help 语言管理模块`
+- Demo: admin-overview-i18n.webp
+#### 说明
+> [!TIP]
+> 这是语言管理的聚合入口。
+>
+> 适合先确认 `show`、`default`、`set`、`clear`、`list` 分别做什么，再进入对应 demo。
+#### 前置条件
+需要具备超级管理员权限。
+#### 完整流程
+先进入语言管理模块，再按动作查看 demo。
+```demo
+USER: #help 管理模块总览 i18n
+BOT: 语言管理支持 show / default / set / clear / list。
+SYSTEM: 继续发送 #help 语言管理模块 set 查看完整流程。
+```
+#### 失败情况
+如果没有精确定位到子模块，帮助中心会先返回歧义或插件详情页。
+
+### `backup` 备份管理
+- 摘要: 检查远端仓库、查看快照并手动触发数据库备份。
+- 别名: admin.backup, 备份管理
+- 指令: `#help 备份管理模块`
+- Demo: admin-overview-backup.webp
+#### 说明
+> [!TIP]
+> 这是备份管理的聚合入口。
+>
+> 这里只负责收口说明，具体参数和执行细节请进入对应子功能 demo 查看。
+#### 前置条件
+需要具备超级管理员权限，并且当前环境已经配置好 restic 与远端仓库。
+#### 完整流程
+先进入备份管理模块，再按动作查看 demo。
+```demo
+USER: #help 管理模块总览 backup
+BOT: 备份管理支持 check / snapshots / run。
+SYSTEM: 继续发送 #help 备份管理模块 run 查看完整流程。
+```
+#### 失败情况
+如果备份仓库配置错误或 AK/SK 失效，模块详情页会提示先执行健康检查排障。

@@ -2,22 +2,23 @@
 
 import asyncio
 from collections import defaultdict
-from collections.abc import Sequence
-from dataclasses import dataclass
-from math import floor, sqrt
-from secrets import token_hex
+from collections.abc import Callable, Mapping, Sequence
+import os
+import unicodedata
 
 import arrow
-from sqlalchemy.engine.row import Row
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete
 
 from src.database.consts import WritePolicy
-from src.lib.utils.common import get_current_time, split_list
+from src.lib.db.connectors import ColdPolicy
+from src.lib.db.manager import db_manager
+from src.lib.utils.common import get_current_time
 
-from .instances import water_core_db, water_message
+from .instances import water_core_db, water_message, water_summary
 from .ops import (
-    WaterAchievementOps,
+    WaterArchivedSummaryOps,
     WaterGroupMatrixMapOps,
+    WaterGroupStatsOps,
     WaterLevelOps,
     WaterMatrixMergeStateOps,
     WaterMessageOps,
@@ -25,62 +26,66 @@ from .ops import (
     WaterSettlementJobOps,
     WaterSummaryOps,
 )
+from .repo_admin import WaterRepositoryAdminMixin
+from .repo_models import (
+    NaturalRankOverview,
+    SeasonGroupAggregate,
+    SeasonMatrixAggregate,
+    SeasonUserAggregate,
+    WaterActivitySeasonRecord,
+    WaterMessageContext,
+    _PeriodAggregateBucket,
+    gen_matrix_id,
+)
+from .repo_ranks import WaterRepositoryRanksMixin
+from .repo_reports import WaterRepositoryReportsMixin
 from .tables import (
+    WaterActivitySeason,
     WaterCoreBase,
     WaterDailySummary,
+    WaterGlobalLevel,
+    WaterGroupMatrixMap,
+    WaterGroupTotal,
+    WaterGroupUserTotal,
+    WaterMatrixLevel,
+    WaterMatrixMergeState,
+    WaterMatrixTotalLevel,
     WaterMessageBase,
     WaterPenaltyLog,
+    WaterSettlementJob,
+    WaterSummaryBase,
+    WaterUserAchievement,
 )
 from .types import (
-    WaterAchievementPayload,
-    WaterMatrixExpPayload,
     WaterMessagePayload,
-    WaterPenaltyPayload,
     WaterSummaryPayload,
-    WaterUserExpPayload,
+    WaterSummaryRecord,
 )
 from .writers import water_writer
 
 SETTLEMENT_STALE_SECONDS = 60 * 30
+GLOBAL_EXP_DECAY_WEIGHTS = (1.0, 0.5, 0.2)
+SUMMARY_HOT_WINDOW_DAYS = 90
+
+__all__ = [
+    "WaterArchivedSummaryOps",
+    "WaterGroupMatrixMapOps",
+    "WaterGroupStatsOps",
+    "WaterLevelOps",
+    "WaterMatrixMergeStateOps",
+    "WaterMessageOps",
+    "WaterPenaltyOps",
+    "WaterRepository",
+    "WaterSettlementJobOps",
+    "WaterSummaryOps",
+]
 
 
-@dataclass
-class RankItem:
-    user_id: str
-    msg_count: int
-    current_rank: int
-    trend: int | None
-
-
-@dataclass
-class WaterMessageContext:
-    group_id: str
-    user_id: str
-    created_at: int
-
-    def to_payload(self) -> WaterMessagePayload:
-        return {
-            "group_id": self.group_id,
-            "user_id": self.user_id,
-            "created_at": self.created_at,
-        }
-
-
-@dataclass
-class DailyAggregateItem:
-    matrix_id: str
-    group_id: str
-    user_id: str
-    msg_count: int
-    active_hours: int
-    hourly_counts: list[int]
-
-
-def calc_personal_delta_exp(msg_count: int, active_hours: int) -> int:
-    return floor(10 * sqrt(msg_count) + 5 * active_hours)
-
-
-class WaterRepository:
+class WaterRepository(
+    WaterRepositoryReportsMixin,
+    WaterRepositoryRanksMixin,
+    WaterRepositoryAdminMixin,
+):
     def __init__(self) -> None:
         self._group_matrix_cache: dict[str, str] = {}
         self._group_matrix_locks: dict[str, asyncio.Lock] = {}
@@ -89,11 +94,429 @@ class WaterRepository:
     @classmethod
     async def init_all_tables(cls) -> None:
         await water_message.init(WaterMessageBase)
+        await water_summary.init(WaterSummaryBase)
         await water_core_db.init(WaterCoreBase)
 
     @staticmethod
+    def _hot_summary_start_date(today_ts: int | None = None) -> int:
+        anchor = arrow.get(today_ts or get_current_time()).floor("day")
+        return int(anchor.shift(days=-(SUMMARY_HOT_WINDOW_DAYS - 1)).format("YYYYMMDD"))
+
+    @classmethod
+    def _is_hot_summary_date(
+        cls,
+        record_date: int,
+        today_ts: int | None = None,
+    ) -> bool:
+        return record_date >= cls._hot_summary_start_date(today_ts)
+
+    @staticmethod
+    def _previous_date(record_date: int) -> int:
+        return int(
+            arrow.get(str(record_date), "YYYYMMDD").shift(days=-1).format("YYYYMMDD")
+        )
+
+    @staticmethod
+    def _iter_month_keys(start_date: int, end_date: int) -> list[str]:
+        if start_date > end_date:
+            return []
+        start_key = (
+            arrow.get(str(start_date), "YYYYMMDD").floor("month").format("YYYY_MM")
+        )
+        end_key = arrow.get(str(end_date), "YYYYMMDD").floor("month").format("YYYY_MM")
+        keys: set[str] = set()
+        for pattern in (
+            f"{water_summary.prefix}_*.db",
+            f"{water_summary.prefix}_*.db.zst",
+        ):
+            for file_path in water_summary.base_dir.glob(pattern):
+                shard_key = file_path.name.removeprefix(f"{water_summary.prefix}_")
+                if shard_key.endswith(".db.zst"):
+                    shard_key = shard_key.removesuffix(".db.zst")
+                else:
+                    shard_key = shard_key.removesuffix(".db")
+                if start_key <= shard_key <= end_key:
+                    keys.add(shard_key)
+        return sorted(keys)
+
+    @staticmethod
+    def _merge_summary_records(
+        *groups: Sequence[WaterSummaryRecord],
+    ) -> list[WaterSummaryRecord]:
+        merged: dict[tuple[str, str, int], WaterSummaryRecord] = {}
+        for rows in groups:
+            for row in rows:
+                key = (row.group_id, row.user_id, row.record_date)
+                existing = merged.get(key)
+                if existing is None:
+                    merged[key] = row
+                    continue
+                hourly_counts = [0] * 24
+                for hour in range(24):
+                    hourly_counts[hour] = int(existing.hourly_counts[hour]) + int(
+                        row.hourly_counts[hour]
+                    )
+                merged[key] = WaterSummaryRecord(
+                    group_id=row.group_id,
+                    user_id=row.user_id,
+                    record_date=row.record_date,
+                    msg_count=int(existing.msg_count) + int(row.msg_count),
+                    active_hours=int(existing.active_hours) + int(row.active_hours),
+                    hourly_counts=hourly_counts,
+                    created_at=min(int(existing.created_at), int(row.created_at)),
+                    updated_at=max(int(existing.updated_at), int(row.updated_at)),
+                )
+        return sorted(
+            merged.values(),
+            key=lambda item: (item.record_date, item.group_id, item.user_id),
+        )
+
+    async def _fetch_archived_summaries_in_window(
+        self,
+        start_date: int,
+        end_date: int,
+        *,
+        group_ids: list[str] | None = None,
+        user_id: str | None = None,
+        preserve_order: bool = True,
+    ) -> list[WaterSummaryRecord]:
+        month_keys = self._iter_month_keys(start_date, end_date)
+
+        async def _query_for_key(shard_key: str) -> list[WaterSummaryRecord]:
+            time_ctx = arrow.get(shard_key, "YYYY_MM").datetime
+            async with water_summary.read_session(
+                time_ctx=time_ctx,
+                cold_policy=ColdPolicy.HYDRATE,
+            ) as session:
+                return await WaterArchivedSummaryOps(session).get_summaries_in_window(
+                    start_date=start_date,
+                    end_date=end_date,
+                    group_ids=group_ids,
+                    user_id=user_id,
+                    preserve_order=preserve_order,
+                )
+
+        results = await asyncio.gather(*(_query_for_key(key) for key in month_keys))
+        return self._merge_summary_records(*results)
+
+    async def _get_archived_first_summary_record_date(
+        self,
+        *,
+        end_date: int,
+        group_ids: list[str] | None = None,
+    ) -> int | None:
+        if end_date < 19000101:
+            return None
+        month_keys = self._iter_month_keys(19000101, end_date)
+        for shard_key in month_keys:
+            time_ctx = arrow.get(shard_key, "YYYY_MM").datetime
+            async with water_summary.read_session(
+                time_ctx=time_ctx,
+                cold_policy=ColdPolicy.HYDRATE,
+            ) as session:
+                first_date = await WaterArchivedSummaryOps(
+                    session
+                ).get_first_summary_record_date(group_ids=group_ids)
+            if first_date is not None:
+                return first_date
+        return None
+
+    @staticmethod
+    def _build_period_aggregates(
+        summaries: Sequence[WaterSummaryRecord],
+    ) -> dict[str, tuple[int, int, int, list[int]]]:
+        by_user: dict[str, _PeriodAggregateBucket] = {}
+        for item in summaries:
+            bucket = by_user.setdefault(
+                item.user_id,
+                _PeriodAggregateBucket(
+                    msg_count=0,
+                    active_days=set(),
+                    active_hours=0,
+                    hourly_counts=[0] * 24,
+                    group_ids=set(),
+                ),
+            )
+            bucket.msg_count += int(item.msg_count)
+            bucket.active_days.add(int(item.record_date))
+            bucket.active_hours += int(item.active_hours)
+            bucket.group_ids.add(str(item.group_id))
+            hourly_counts = bucket.hourly_counts
+            for hour, count in enumerate(item.hourly_counts):
+                hourly_counts[hour] += int(count)
+        return {
+            user_id: (
+                data.msg_count,
+                len(data.active_days),
+                data.active_hours,
+                data.hourly_counts,
+            )
+            for user_id, data in by_user.items()
+            if data.msg_count > 0
+        }
+
+    @staticmethod
+    def _build_entity_period_aggregates(
+        summaries: Sequence[WaterSummaryRecord],
+        entity_key_resolver: Callable[[WaterSummaryRecord], str],
+    ) -> dict[str, tuple[int, int, int, list[int], int]]:
+        by_entity: dict[str, _PeriodAggregateBucket] = {}
+        for item in summaries:
+            entity_id = str(entity_key_resolver(item))
+            bucket = by_entity.setdefault(
+                entity_id,
+                _PeriodAggregateBucket(
+                    msg_count=0,
+                    active_days=set(),
+                    active_hours=0,
+                    hourly_counts=[0] * 24,
+                    group_ids=set(),
+                ),
+            )
+            bucket.msg_count += int(item.msg_count)
+            bucket.active_days.add(int(item.record_date))
+            bucket.active_hours += int(item.active_hours)
+            bucket.group_ids.add(str(item.group_id))
+            for hour, count in enumerate(item.hourly_counts):
+                bucket.hourly_counts[hour] += int(count)
+        return {
+            entity_id: (
+                data.msg_count,
+                len(data.active_days),
+                data.active_hours,
+                data.hourly_counts,
+                len(data.group_ids),
+            )
+            for entity_id, data in by_entity.items()
+            if data.msg_count > 0
+        }
+
+    @staticmethod
+    def normalize_season_name(name: str) -> str:
+        normalized = unicodedata.normalize("NFKC", name).strip().casefold()
+        return " ".join(normalized.split())
+
+    @staticmethod
+    def _to_season_record(row: WaterActivitySeason) -> WaterActivitySeasonRecord:
+        return WaterActivitySeasonRecord(
+            season_id=row.season_id,
+            name=row.name,
+            normalized_name=row.normalized_name,
+            description=row.description,
+            start_date=row.start_date,
+            end_date=row.end_date,
+            status=row.status,
+            published_at=row.published_at,
+            created_by=row.created_by,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    @staticmethod
+    def _sum_hourly(items: Sequence[WaterSummaryRecord]) -> list[int]:
+        hourly = [0] * 24
+        for item in items:
+            source = list((item.hourly_counts or [0] * 24)[:24])
+            if len(source) < 24:
+                source.extend([0] * (24 - len(source)))
+            for idx, count in enumerate(source):
+                hourly[idx] += int(count)
+        return hourly
+
+    @staticmethod
+    def _natural_rank_sort_key(
+        item: tuple[str, int, int, int, list[int], int] | tuple[str, int, int, int],
+    ) -> tuple[int, int, int, str]:
+        entity_id, msg_count, active_days, active_hours, *_rest = item
+        return (-msg_count, -active_days, -active_hours, entity_id)
+
+    @classmethod
+    def _build_previous_rank_map(
+        cls,
+        aggregates: Mapping[str, tuple[int, int, int, list[int], int]]
+        | Mapping[str, tuple[int, int, int, list[int]]],
+        target_entity_ids: Sequence[str],
+    ) -> dict[str, int]:
+        target_keys: dict[str, tuple[int, int, int, str]] = {}
+        for entity_id in target_entity_ids:
+            aggregate = aggregates.get(entity_id)
+            if aggregate is None:
+                continue
+            msg_count, active_days, active_hours, *_rest = aggregate
+            target_keys[entity_id] = cls._natural_rank_sort_key(
+                (entity_id, msg_count, active_days, active_hours)
+            )
+        if not target_keys:
+            return {}
+
+        previous_ranks = dict.fromkeys(target_keys, 1)
+        for candidate_id, aggregate in aggregates.items():
+            msg_count, active_days, active_hours, *_rest = aggregate
+            candidate_key = cls._natural_rank_sort_key(
+                (candidate_id, msg_count, active_days, active_hours)
+            )
+            for entity_id, target_key in target_keys.items():
+                if candidate_key < target_key:
+                    previous_ranks[entity_id] += 1
+        return previous_ranks
+
+    @staticmethod
+    def _build_natural_overview_from_aggregates(
+        current_aggregates: Mapping[str, tuple[int, int, int, list[int], int]],
+        previous_aggregates: Mapping[str, tuple[int, int, int, list[int], int]],
+    ) -> NaturalRankOverview:
+        hourly_counts = [0] * 24
+        total_msg_count = 0
+        for (
+            msg_count,
+            _active_days,
+            _active_hours,
+            entity_hourly,
+            _group_count,
+        ) in current_aggregates.values():
+            total_msg_count += msg_count
+            for hour, count in enumerate(entity_hourly):
+                hourly_counts[hour] += int(count)
+
+        previous_total_msg_count = sum(
+            msg_count
+            for msg_count, _active_days, _active_hours, _hourly, _group_count in (
+                previous_aggregates.values()
+            )
+        )
+        return NaturalRankOverview(
+            total_msg_count=total_msg_count,
+            active_entity_count=len(current_aggregates),
+            hourly_counts=hourly_counts,
+            previous_total_msg_count=previous_total_msg_count,
+        )
+
+    @staticmethod
+    def _build_user_season_rank(
+        summaries: Sequence[WaterSummaryRecord],
+    ) -> list[SeasonUserAggregate]:
+        by_user: dict[str, list[WaterSummaryRecord]] = defaultdict(list)
+        for item in summaries:
+            by_user[item.user_id].append(item)
+        ordered = sorted(
+            (
+                (
+                    user_id,
+                    sum(int(row.msg_count) for row in rows),
+                    len({row.record_date for row in rows}),
+                    sum(int(row.active_hours) for row in rows),
+                    WaterRepository._sum_hourly(rows),
+                )
+                for user_id, rows in by_user.items()
+            ),
+            key=lambda item: (-item[1], -item[2], -item[3], item[0]),
+        )
+        return [
+            SeasonUserAggregate(
+                user_id=user_id,
+                msg_count=msg_count,
+                active_days=active_days,
+                active_hours=active_hours,
+                hourly_counts=hourly_counts,
+                rank=index,
+            )
+            for index, (
+                user_id,
+                msg_count,
+                active_days,
+                active_hours,
+                hourly_counts,
+            ) in enumerate(ordered, 1)
+            if msg_count > 0
+        ]
+
+    @staticmethod
+    def _build_group_season_rank(
+        summaries: Sequence[WaterSummaryRecord],
+    ) -> list[SeasonGroupAggregate]:
+        by_group: dict[str, list[WaterSummaryRecord]] = defaultdict(list)
+        for item in summaries:
+            by_group[item.group_id].append(item)
+        ordered = sorted(
+            (
+                (
+                    group_id,
+                    sum(int(row.msg_count) for row in rows),
+                    len({row.record_date for row in rows}),
+                    sum(int(row.active_hours) for row in rows),
+                    WaterRepository._sum_hourly(rows),
+                )
+                for group_id, rows in by_group.items()
+            ),
+            key=lambda item: (-item[1], -item[2], -item[3], item[0]),
+        )
+        return [
+            SeasonGroupAggregate(
+                group_id=group_id,
+                msg_count=msg_count,
+                active_days=active_days,
+                active_hours=active_hours,
+                hourly_counts=hourly_counts,
+                rank=index,
+            )
+            for index, (
+                group_id,
+                msg_count,
+                active_days,
+                active_hours,
+                hourly_counts,
+            ) in enumerate(ordered, 1)
+            if msg_count > 0
+        ]
+
+    async def _build_matrix_season_rank(
+        self,
+        summaries: Sequence[WaterSummaryRecord],
+    ) -> list[SeasonMatrixAggregate]:
+        if not summaries:
+            return []
+        group_ids = sorted({item.group_id for item in summaries})
+        group_map = await self.get_or_create_group_matrix_ids(group_ids)
+        by_matrix: dict[str, list[WaterSummaryRecord]] = defaultdict(list)
+        for item in summaries:
+            matrix_id = group_map.get(item.group_id)
+            if matrix_id:
+                by_matrix[matrix_id].append(item)
+        ordered = sorted(
+            (
+                (
+                    matrix_id,
+                    sum(int(row.msg_count) for row in rows),
+                    len({row.record_date for row in rows}),
+                    sum(int(row.active_hours) for row in rows),
+                    self._sum_hourly(rows),
+                )
+                for matrix_id, rows in by_matrix.items()
+            ),
+            key=lambda item: (-item[1], -item[2], -item[3], item[0]),
+        )
+        return [
+            SeasonMatrixAggregate(
+                matrix_id=matrix_id,
+                msg_count=msg_count,
+                active_days=active_days,
+                active_hours=active_hours,
+                hourly_counts=hourly_counts,
+                rank=index,
+            )
+            for index, (
+                matrix_id,
+                msg_count,
+                active_days,
+                active_hours,
+                hourly_counts,
+            ) in enumerate(ordered, 1)
+            if msg_count > 0
+        ]
+
+    @staticmethod
     def _gen_matrix_id() -> str:
-        return f"mtx_{token_hex(4)}"
+        return gen_matrix_id()
 
     def _get_group_matrix_lock(self, group_id: str) -> asyncio.Lock:
         lock = self._group_matrix_locks.get(group_id)
@@ -200,13 +623,13 @@ class WaterRepository:
         self._group_matrix_cache[group_id] = matrix_id
 
     async def _save_buffered(self, ctx: WaterMessageContext) -> None:
-        await water_writer.add(ctx.to_payload())
+        await water_writer.add(ctx.to_write_payload())
 
     async def _save_immediate(self, ctx: WaterMessageContext) -> None:
-        dt = arrow.get(ctx.created_at).datetime
+        dt = arrow.get(ctx.created_at).to("Asia/Shanghai").datetime
         time_ctx = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        async with water_message.session(time_ctx=time_ctx, commit=True) as session:
+        async with water_message.write_session(time_ctx=time_ctx) as session:
             await WaterMessageOps(session).bulk_insert_water_message([ctx.to_payload()])
 
     async def save_message(
@@ -230,613 +653,100 @@ class WaterRepository:
     async def save_summary_batch(self, summaries: list[WaterSummaryPayload]) -> None:
         if not summaries:
             return
-
-        async with water_core_db.session(commit=True) as session:
-            await WaterSummaryOps(session).bulk_upsert_summary(summaries)
-
-    async def get_today_leaderboard(
-        self, group_id: str, limit: int = 20
-    ) -> list[RankItem]:
-        now = arrow.get(get_current_time())
-        start_ts = now.floor("day").int_timestamp
-        end_ts = now.ceil("day").int_timestamp
-        yesterday_int = int(now.shift(days=-1).format("YYYYMMDD"))
-
-        async def _fetch_today() -> Sequence[Row[tuple[str, int]]]:
-            async with water_message.session(
-                time_ctx=now.datetime, commit=False
-            ) as session:
-                return await WaterMessageOps(session).get_top_users(
-                    group_id,
-                    start_ts,
-                    end_ts,
-                    limit,
-                )
-
-        async def _fetch_yesterday() -> dict[str, int]:
-            async with water_core_db.session(commit=False) as session:
-                return await WaterSummaryOps(session).get_ranks_by_date(
-                    group_id,
-                    yesterday_int,
-                )
-
-        today_data, yesterday_ranks = await asyncio.gather(
-            _fetch_today(), _fetch_yesterday()
-        )
-
-        return [
-            RankItem(
-                user_id=user_id,
-                msg_count=count,
-                current_rank=current_rank,
-                trend=(yesterday_ranks[user_id] - current_rank)
-                if user_id in yesterday_ranks
-                else None,
+        routed: dict[str, list[WaterSummaryPayload]] = defaultdict(list)
+        hot_payloads: list[WaterSummaryPayload] = []
+        for item in summaries:
+            route_ctx = (
+                arrow.get(str(item["record_date"]), "YYYYMMDD")
+                .to("Asia/Shanghai")
+                .floor("month")
             )
-            for current_rank, (user_id, count) in enumerate(today_data, 1)
-        ]
+            routed[route_ctx.format("YYYY_MM")].append(item)
+            if self._is_hot_summary_date(int(item["record_date"])):
+                hot_payloads.append(item)
 
-    async def get_today_group_rank(self, group_id: str) -> int:
-        now = arrow.get(get_current_time())
-        start_ts = now.floor("day").int_timestamp
-        end_ts = now.ceil("day").int_timestamp
+        for route_key, chunk in routed.items():
+            route_ctx = arrow.get(route_key, "YYYY_MM").datetime
+            async with water_summary.write_session(time_ctx=route_ctx) as session:
+                await WaterArchivedSummaryOps(session).bulk_upsert_summary(chunk)
 
-        async with water_message.session(
-            time_ctx=now.datetime,
-            commit=False,
-        ) as session:
-            return await WaterMessageOps(session).get_today_group_rank(
-                group_id, start_ts, end_ts
-            )
+        if hot_payloads:
+            async with water_core_db.session(commit=True) as session:
+                await WaterSummaryOps(session).bulk_upsert_summary(hot_payloads)
 
-    async def get_users_hourly_distribution(
-        self, group_id: str, user_ids: list[str]
-    ) -> dict[str, list[int]]:
-        if not user_ids:
-            return {}
-
-        now = arrow.get(get_current_time())
-        start_ts = now.floor("day").int_timestamp
-        end_ts = now.ceil("day").int_timestamp
-
-        async with water_message.session(
-            time_ctx=now.datetime,
-            commit=False,
-        ) as session:
-            raw_timestamps = await WaterMessageOps(session).get_users_timestamps(
-                group_id, user_ids, start_ts, end_ts
-            )
-
-        user_hourly: dict[str, list[int]] = defaultdict(lambda: [0] * 24)
-        for uid, ts in raw_timestamps:
-            hour = arrow.get(ts).to("local").hour
-            user_hourly[uid][hour] += 1
-        return dict(user_hourly)
-
-    async def collect_daily_aggregates(
+    async def import_message_batch(
         self,
-        target_date: arrow.Arrow,
-    ) -> list[DailyAggregateItem]:
-        day_start = target_date.floor("day")
-        day_end = target_date.ceil("day")
-        start_ts = day_start.int_timestamp
-        end_ts = day_end.int_timestamp
-
-        async def _stats_in_shard(
-            session: AsyncSession,
-        ) -> Sequence[Row[tuple[str, str, int, int]]]:
-            return await WaterMessageOps(session).aggregate_daily_stats(
-                start_ts,
-                end_ts,
-            )
-
-        async def _hourly_in_shard(
-            session: AsyncSession,
-        ) -> Sequence[tuple[str, str, int, int]]:
-            return await WaterMessageOps(session).aggregate_daily_hourly_stats(
-                start_ts,
-                end_ts,
-            )
-
-        stats_per_shard = await water_message.map_reduce(
-            day_start.datetime,
-            day_end.datetime,
-            _stats_in_shard,
-        )
-        hourly_per_shard = await water_message.map_reduce(
-            day_start.datetime,
-            day_end.datetime,
-            _hourly_in_shard,
-        )
-
-        merged_stats: dict[tuple[str, str], tuple[int, int]] = {}
-        for shard_rows in stats_per_shard:
-            for group_id, user_id, msg_count, active_hours in shard_rows:
-                merged_stats[(group_id, user_id)] = (msg_count, active_hours)
-
-        merged_hourly: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0] * 24)
-        for shard_rows in hourly_per_shard:
-            for group_id, user_id, hour, count in shard_rows:
-                merged_hourly[(group_id, user_id)][hour] += count
-
-        group_ids = sorted({group_id for group_id, _ in merged_stats})
-        group_matrix_map = await self.get_or_create_group_matrix_ids(group_ids)
-
-        return [
-            DailyAggregateItem(
-                matrix_id=group_matrix_map[group_id],
-                group_id=group_id,
-                user_id=user_id,
-                msg_count=msg_count,
-                active_hours=active_hours,
-                hourly_counts=merged_hourly[(group_id, user_id)],
-            )
-            for (group_id, user_id), (
-                msg_count,
-                active_hours,
-            ) in merged_stats.items()
-        ]
-
-    async def try_start_settlement_job(
-        self,
-        record_date: int,
-        force: bool = False,
-        stale_after: int = SETTLEMENT_STALE_SECONDS,
-    ) -> tuple[bool, str]:
-        now_ts = get_current_time()
-        async with water_core_db.session(commit=True) as session:
-            ops = WaterSettlementJobOps(session)
-            if force:
-                started = await ops.try_start_job(
-                    record_date,
-                    now_ts,
-                    stale_after=0,
-                    force=True,
-                )
-                return (started, "forced") if started else (False, "already_settled")
-
-            started = await ops.try_start_job(record_date, now_ts, stale_after)
-            if started:
-                return True, "started"
-
-            job = await ops.get_job(record_date)
-            if job is None:
-                return False, "unknown"
-            if job.status == "success":
-                return False, "already_settled"
-            if job.status == "running":
-                return False, "running"
-            if job.status == "failed":
-                return False, "failed"
-            return False, "pending"
-
-    async def mark_settlement_success(self, record_date: int) -> None:
-        now_ts = get_current_time()
-        async with water_core_db.session(commit=True) as session:
-            await WaterSettlementJobOps(session).mark_success(record_date, now_ts)
-
-    async def mark_settlement_failed(self, record_date: int, error: str) -> None:
-        now_ts = get_current_time()
-        async with water_core_db.session(commit=True) as session:
-            await WaterSettlementJobOps(session).mark_failed(record_date, now_ts, error)
-
-    async def apply_daily_settlement(
-        self,
-        target_date: arrow.Arrow,
-        aggregates: list[DailyAggregateItem],
-        chunk_size: int = 500,
-    ) -> None:
-        if not aggregates:
-            return
-
-        now_ts = get_current_time()
-        record_date = int(target_date.format("YYYYMMDD"))
-
-        summary_payloads: list[WaterSummaryPayload] = []
-        matrix_user_gain: dict[tuple[str, str], int] = defaultdict(int)
-        matrix_gain: dict[str, int] = defaultdict(int)
-        user_matrix_gain: dict[str, list[tuple[str, int]]] = defaultdict(list)
-        penalty_logs: list[WaterPenaltyPayload] = []
-
-        for row in aggregates:
-            summary_payloads.append(
-                {
-                    "group_id": row.group_id,
-                    "user_id": row.user_id,
-                    "record_date": record_date,
-                    "msg_count": row.msg_count,
-                    "active_hours": row.active_hours,
-                    "hourly_counts": row.hourly_counts,
-                    "created_at": now_ts,
-                    "updated_at": now_ts,
-                }
-            )
-
-            if row.msg_count > 1000 and row.active_hours <= 2:
-                penalty_logs.append(
-                    {
-                        "created_at": now_ts,
-                        "updated_at": now_ts,
-                        "record_date": record_date,
-                        "user_id": row.user_id,
-                        "group_id": row.group_id,
-                        "matrix_id": row.matrix_id,
-                        "reason": "ANTI_SPAM_ZERO_PROFIT",
-                        "delta_exp": 0,
-                        "is_revoked": 0,
-                        "revoked_at": None,
-                        "extra": {
-                            "msg_count": row.msg_count,
-                            "active_hours": row.active_hours,
-                        },
-                    }
-                )
-                continue
-
-            delta = calc_personal_delta_exp(row.msg_count, row.active_hours)
-            matrix_user_gain[(row.matrix_id, row.user_id)] += delta
-            matrix_gain[row.matrix_id] += delta
-            user_matrix_gain[row.user_id].append((row.matrix_id, delta))
-
-        user_global_gain: dict[str, int] = defaultdict(int)
-        decay_weights = [1.0, 0.5, 0.2]
-        for user_id, gains in user_matrix_gain.items():
-            ordered = sorted(gains, key=lambda x: x[1], reverse=True)
-            for idx, (_, gain) in enumerate(ordered):
-                weight = decay_weights[idx] if idx < len(decay_weights) else 0.0
-                user_global_gain[user_id] += floor(gain * weight)
-
-        async with water_core_db.session(commit=True) as session:
-            summary_ops = WaterSummaryOps(session)
-            level_ops = WaterLevelOps(session)
-            penalty_ops = WaterPenaltyOps(session)
-
-            matrix_keys = list(matrix_user_gain.keys())
-            matrix_ids = list(matrix_gain.keys())
-            user_ids = list(user_global_gain.keys())
-
-            old_matrix = await level_ops.get_matrix_levels(matrix_keys)
-            old_matrix_total = await level_ops.get_matrix_totals(matrix_ids)
-            old_global = await level_ops.get_global_levels(user_ids)
-
-            matrix_payloads: list[WaterUserExpPayload] = []
-            for matrix_id, user_id in matrix_keys:
-                gain = matrix_user_gain[(matrix_id, user_id)]
-                old_exp, old_season_exp, _ = old_matrix.get(
-                    (matrix_id, user_id),
-                    (0, 0, 1),
-                )
-                new_exp = max(0, old_exp + gain)
-                new_season = max(0, old_season_exp + gain)
-                matrix_payloads.append(
-                    {
-                        "matrix_id": matrix_id,
-                        "user_id": user_id,
-                        "delta_exp": new_exp,
-                        "delta_season_exp": new_season,
-                        "created_at": now_ts,
-                        "updated_at": now_ts,
-                    }
-                )
-
-            global_payloads: list[WaterUserExpPayload] = []
-            for user_id in user_ids:
-                gain = user_global_gain[user_id]
-                old_exp, old_season_exp, _ = old_global.get(user_id, (0, 0, 1))
-                new_exp = max(0, old_exp + gain)
-                new_season = max(0, old_season_exp + gain)
-                global_payloads.append(
-                    {
-                        "matrix_id": "",
-                        "user_id": user_id,
-                        "delta_exp": new_exp,
-                        "delta_season_exp": new_season,
-                        "created_at": now_ts,
-                        "updated_at": now_ts,
-                    }
-                )
-
-            matrix_total_payloads: list[WaterMatrixExpPayload] = []
-            for matrix_id in matrix_ids:
-                gain = matrix_gain[matrix_id]
-                old_exp, old_season_exp, _ = old_matrix_total.get(matrix_id, (0, 0, 1))
-                new_exp = max(0, old_exp + gain)
-                new_season = max(0, old_season_exp + gain)
-                matrix_total_payloads.append(
-                    {
-                        "matrix_id": matrix_id,
-                        "delta_exp": new_exp,
-                        "delta_season_exp": new_season,
-                        "created_at": now_ts,
-                        "updated_at": now_ts,
-                    }
-                )
-
-            for chunk in split_list(summary_payloads, chunk_size):
-                await summary_ops.bulk_upsert_summary(chunk)
-                await asyncio.sleep(0.1)
-
-            for chunk in split_list(matrix_payloads, chunk_size):
-                await level_ops.upsert_matrix_levels(chunk)
-                await asyncio.sleep(0.1)
-
-            for chunk in split_list(global_payloads, chunk_size):
-                await level_ops.upsert_global_levels(chunk)
-                await asyncio.sleep(0.1)
-
-            for chunk in split_list(matrix_total_payloads, chunk_size):
-                await level_ops.upsert_matrix_totals(chunk)
-                await asyncio.sleep(0.1)
-
-            if penalty_logs:
-                for chunk in split_list(penalty_logs, chunk_size):
-                    await penalty_ops.insert_penalty_logs(chunk)
-
-        # 按规范执行裁剪钩子，保留最近 3 天流水。
-        prune_before_ts = target_date.shift(days=-2).floor("day").int_timestamp
-        await self.prune_old_messages(prune_before_ts)
-
-    async def prune_old_messages(self, before_ts: int) -> int:
-        before = arrow.get(before_ts).floor("month")
-        now = arrow.get(get_current_time()).floor("month")
-        total = 0
-        cursor = before
-        while cursor <= now:
-            async with water_message.session(
-                time_ctx=cursor.datetime,
-                commit=True,
-            ) as session:
-                total += await WaterMessageOps(session).prune_before(before_ts)
-            cursor = cursor.shift(months=1)
-        return total
-
-    async def unlock_achievements(self, payloads: list[WaterAchievementPayload]) -> int:
-        if not payloads:
+        messages: list[WaterMessagePayload],
+    ) -> int:
+        if not messages:
             return 0
-        async with water_core_db.session(commit=True) as session:
-            return await WaterAchievementOps(session).bulk_unlock(payloads)
 
-    async def get_user_achievement_items(
-        self,
-        user_id: str,
-    ) -> list[tuple[str, str, str, int]]:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterAchievementOps(session).get_unlocked_items(user_id)
-
-    async def get_penalty_log(self, penalty_id: int) -> WaterPenaltyLog | None:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterPenaltyOps(session).get_penalty_by_id(penalty_id)
-
-    async def get_user_recent_summaries(
-        self,
-        user_id: str,
-        matrix_id: str,
-        start_date: int,
-        end_date: int,
-    ) -> Sequence[WaterDailySummary]:
-        async with water_core_db.session(commit=False) as session:
-            all_mappings = await WaterGroupMatrixMapOps(session).get_all_mappings()
-        group_ids = [
-            group_id
-            for group_id, mapped_matrix_id in all_mappings.items()
-            if mapped_matrix_id == matrix_id
-        ]
-        async with water_core_db.session(commit=False) as session:
-            return await WaterSummaryOps(session).get_user_recent_summaries(
-                user_id=user_id,
-                group_ids=group_ids,
-                start_date=start_date,
-                end_date=end_date,
+        routed: dict[str, list[WaterMessagePayload]] = defaultdict(list)
+        for item in messages:
+            route_ctx = (
+                arrow.get(str(item["record_date"]), "YYYYMMDD")
+                .to("Asia/Shanghai")
+                .floor("month")
             )
+            routed[route_ctx.format("YYYY_MM")].append(item)
 
-    async def get_user_global_level(self, user_id: str) -> tuple[int, int, int] | None:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_global_level(user_id)
-
-    async def get_user_global_rank(self, user_id: str) -> int | None:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_user_global_rank(user_id)
-
-    async def get_groups_by_matrix_id(self, matrix_id: str) -> list[str]:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterGroupMatrixMapOps(session).get_groups_by_matrix(matrix_id)
-
-    async def get_user_matrix_level(
-        self,
-        user_id: str,
-        matrix_id: str,
-    ) -> tuple[int, int, int] | None:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_matrix_level(matrix_id, user_id)
-
-    async def get_user_matrix_rank(self, user_id: str, matrix_id: str) -> int | None:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_user_matrix_rank(matrix_id, user_id)
-
-    async def get_group_user_rank(self, group_id: str, user_id: str) -> int | None:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterSummaryOps(session).get_group_user_rank(group_id, user_id)
-
-    async def get_group_activity_rank(self, group_id: str) -> int | None:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterSummaryOps(session).get_group_activity_rank(group_id)
-
-    async def get_matrix_rank(self, matrix_id: str) -> int | None:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_matrix_rank(matrix_id)
-
-    async def get_matrix_total_level(
-        self, matrix_id: str
-    ) -> tuple[int, int, int] | None:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).get_matrix_total(matrix_id)
-
-    async def exists_other_global_lv10(self, user_id: str) -> bool:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterLevelOps(session).exists_other_global_lv10(user_id)
-
-    async def ignore_matrix_suggestion(self, group_id: str) -> bool:
-        now_ts = get_current_time()
-        async with water_core_db.session(commit=True) as session:
-            return await WaterMatrixMergeStateOps(session).set_ignored(group_id, now_ts)
-
-    async def get_ignored_matrix_suggestions(self) -> set[str]:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterMatrixMergeStateOps(session).get_ignored_groups()
-
-    async def mark_group_first_record_seen(self, group_id: str) -> bool:
-        now_ts = get_current_time()
-        async with water_core_db.session(commit=True) as session:
-            return await WaterMatrixMergeStateOps(session).mark_first_seen(
-                group_id,
-                now_ts,
-            )
-
-    async def get_marked_first_record_groups(self) -> set[str]:
-        async with water_core_db.session(commit=False) as session:
-            return await WaterMatrixMergeStateOps(session).get_first_seen_groups()
-
-    async def has_matrix_merge_decision(self, group_id: str) -> bool:
-        async with water_core_db.session(commit=False) as session:
-            state = await WaterMatrixMergeStateOps(session).get_state(group_id)
-            if state is None:
-                return False
-            return state.status in {"merge", "reject"}
-
-    async def get_pending_matrix_suggestion(self, group_id: str) -> dict | None:
-        async with water_core_db.session(commit=False) as session:
-            state = await WaterMatrixMergeStateOps(session).get_state(group_id)
-            if state is None:
-                return None
-            if state.status != "pending" or not state.target_matrix_id:
-                return None
-            return {"target_matrix_id": state.target_matrix_id}
-
-    async def set_pending_matrix_suggestion(
-        self,
-        group_id: str,
-        target_matrix_id: str,
-    ) -> None:
-        now_ts = get_current_time()
-        async with self._get_merge_state_lock(group_id):
-            async with water_core_db.session(commit=True) as session:
-                ops = WaterMatrixMergeStateOps(session)
-                state = await ops.get_state(group_id)
-                if state is not None and state.status in {"merge", "reject", "pending"}:
-                    return
-                await ops.set_pending_target(group_id, target_matrix_id, now_ts)
-
-    async def set_matrix_merge_intention_once(
-        self,
-        group_id: str,
-        action: str,
-        operator_id: str,
-    ) -> tuple[bool, dict]:
-        """
-        首次合并意向直接生效，后续不可覆盖:
-        - 只保留单条状态，状态机: "" -> pending -> merge/reject。
-        - 如已是 merge/reject，拒绝覆盖，需超管介入。
-        """
-        now_ts = get_current_time()
-        stale_target_corrected = False
-        merge_applied = False
-        async with self._get_merge_state_lock(group_id):
-            async with water_core_db.session(commit=True) as session:
-                ops = WaterMatrixMergeStateOps(session)
-                state = await ops.get_state(group_id)
-                if state is not None and state.status in {"merge", "reject"}:
-                    return False, {
-                        "action": state.status,
-                        "target_matrix_id": state.target_matrix_id,
-                    }
-
-                target_matrix_id = state.target_matrix_id if state is not None else ""
-                if not target_matrix_id or (
-                    state is not None and state.status != "pending"
-                ):
-                    return False, {"action": "no_need", "target_matrix_id": ""}
-
-                current_matrix_id = await self.get_or_create_group_matrix_id(group_id)
-                resolved_target_matrix_id = target_matrix_id
-                if action == "merge" and target_matrix_id != current_matrix_id:
-                    target_groups = await WaterGroupMatrixMapOps(
-                        session
-                    ).count_groups_by_matrix(target_matrix_id)
-                    # 目标矩阵已失效(无群绑定)时，纠偏为当前矩阵，
-                    # 避免 A/B 二次同意导致矩阵互换。
-                    if target_groups <= 0:
-                        resolved_target_matrix_id = current_matrix_id
-                        stale_target_corrected = True
-
-                ok = await ops.set_intention_once(
-                    group_id,
-                    action,
-                    operator_id,
-                    now_ts,
-                    target_matrix_id=resolved_target_matrix_id,
+        inserted = 0
+        for route_key, chunk in routed.items():
+            route_ctx = arrow.get(route_key, "YYYY_MM").datetime
+            async with water_message.write_session(time_ctx=route_ctx) as session:
+                inserted += await WaterMessageOps(session).bulk_insert_water_message(
+                    chunk
                 )
-                if not ok:
-                    latest = await ops.get_state(group_id)
-                    if latest is None:
-                        return False, {"action": "no_need", "target_matrix_id": ""}
-                    return False, {
-                        "action": latest.status,
-                        "target_matrix_id": latest.target_matrix_id,
-                    }
+        return inserted
 
-        if (
-            action == "merge"
-            and resolved_target_matrix_id
-            and resolved_target_matrix_id != current_matrix_id
-        ):
-            await self.map_group_to_matrix(group_id, resolved_target_matrix_id)
-            merge_applied = True
-        return True, {
-            "action": action,
-            "target_matrix_id": resolved_target_matrix_id,
-            "stale_target_corrected": stale_target_corrected,
-            "merge_applied": merge_applied,
-        }
-
-    async def get_settlement_state(self) -> dict[str, int | str]:
-        async with water_core_db.session(commit=False) as session:
-            merge_ops = WaterMatrixMergeStateOps(session)
-            job_ops = WaterSettlementJobOps(session)
-            latest_job = await job_ops.get_latest_job()
-            last_success = await job_ops.get_last_success_record_date()
-            ignored_count = len(await merge_ops.get_ignored_groups())
-
-        if latest_job is None:
-            return {
-                "last_success_record_date": last_success,
-                "latest_record_date": 0,
-                "latest_status": "none",
-                "latest_started_at": 0,
-                "latest_finished_at": 0,
-                "ignored_count": ignored_count,
-            }
-
-        return {
-            "last_success_record_date": last_success,
-            "latest_record_date": latest_job.record_date,
-            "latest_status": latest_job.status,
-            "latest_started_at": latest_job.started_at,
-            "latest_finished_at": latest_job.finished_at,
-            "ignored_count": ignored_count,
-        }
-
-    async def pardon_penalty(self, penalty_id: int) -> bool:
-        now_ts = get_current_time()
+    async def reset_runtime_data(self, *, preserve_seasons: bool = True) -> None:
         async with water_core_db.session(commit=True) as session:
-            penalty_ops = WaterPenaltyOps(session)
-            level_ops = WaterLevelOps(session)
-            log = await penalty_ops.get_penalty_by_id(penalty_id)
-            if log is None or log.is_revoked:
-                return False
-            await level_ops.apply_exp_compensation_matrix(
-                matrix_id=log.matrix_id,
-                user_id=log.user_id,
-                delta=abs(log.delta_exp),
-            )
-            affected = await penalty_ops.revoke_penalty(penalty_id, now_ts)
-            return affected > 0
+            tables: list[type[WaterCoreBase]] = [
+                WaterDailySummary,
+                WaterPenaltyLog,
+                WaterSettlementJob,
+                WaterMatrixMergeState,
+            ]
+            if not preserve_seasons:
+                tables.append(WaterActivitySeason)
+
+            for model in tables:
+                await session.execute(delete(model))
+
+            for model in (
+                WaterGroupMatrixMap,
+                WaterGroupUserTotal,
+                WaterGroupTotal,
+                WaterMatrixLevel,
+                WaterGlobalLevel,
+                WaterMatrixTotalLevel,
+                WaterUserAchievement,
+            ):
+                await session.execute(delete(model))
+
+        for file_path in water_message.base_dir.glob(f"{water_message.prefix}_*"):
+            if "".join(file_path.suffixes) not in {".db", ".db.zst"}:
+                continue
+            full_path = str(file_path)
+            await db_manager.dispose(full_path)
+            if await asyncio.to_thread(os.path.exists, full_path):
+                await asyncio.to_thread(os.remove, full_path)
+        if await asyncio.to_thread(water_message.manifest_path.exists):
+            await asyncio.to_thread(os.remove, water_message.manifest_path)
+        for file_path in water_summary.base_dir.glob(f"{water_summary.prefix}_*"):
+            if "".join(file_path.suffixes) not in {".db", ".db.zst"}:
+                continue
+            full_path = str(file_path)
+            await db_manager.dispose(full_path)
+            if await asyncio.to_thread(os.path.exists, full_path):
+                await asyncio.to_thread(os.remove, full_path)
+        if await asyncio.to_thread(water_summary.manifest_path.exists):
+            await asyncio.to_thread(os.remove, water_summary.manifest_path)
+
+        self._group_matrix_cache.clear()
+        self._group_matrix_locks.clear()
+        self._merge_state_locks.clear()
+        water_message._initialized_shards.clear()
+        water_message._manifest = None
+        water_summary._initialized_shards.clear()
+        water_summary._manifest = None

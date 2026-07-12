@@ -1,0 +1,18 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "include": [
+    "bot.py",
+    "scripts",
+    "src",
+    "tests"
+  ],
+  "exclude": [
+    "**/.git",
+    "**/.pytest_cache",
+    "**/.ruff_cache",
+    "**/.venv",
+    "**/.devtest", "**/node_modules", "**/__pycache__", "**/.*"
+  ]
+}

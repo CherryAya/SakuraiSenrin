@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
+import nonebot
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -33,11 +34,21 @@ class DatabaseManager:
         dbapi_connection: Any,
         connection_record: Any,
     ) -> None:
+        _ = connection_record
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.execute(f"PRAGMA mmap_size={256 * 1024 * 1024}")
         cursor.close()
+
+    @staticmethod
+    def _resolve_sql_echo() -> bool:
+        try:
+            return bool(getattr(nonebot.get_driver().config, "debug_sql_echo", False))
+        except ValueError:
+            return False
 
     async def _ensure_engine(self, url: str) -> None:
         if url in self._session_factories:
@@ -47,7 +58,8 @@ class DatabaseManager:
             if url in self._session_factories:
                 return
 
-            engine = create_async_engine(url, echo=True)  # TODO: 记得 echo 改为 False
+            echo = self._resolve_sql_echo()
+            engine = create_async_engine(url, echo=echo)
             event.listen(engine.sync_engine, "connect", self._init_sqlite_pragma)
 
             async with engine.begin() as conn:
@@ -68,6 +80,15 @@ class DatabaseManager:
                 self._session_factories.pop(url, None)
                 await engine.dispose()
                 logger.debug(f"释放 connection: {full_path}")
+
+    async def dispose_all(self) -> None:
+        async with self._lock:
+            engines = list(self._engines.items())
+            self._engines.clear()
+            self._session_factories.clear()
+        for url, engine in engines:
+            await engine.dispose()
+            logger.debug(f"释放 connection: {url}")
 
     @asynccontextmanager
     async def open(
