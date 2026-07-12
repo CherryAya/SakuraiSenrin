@@ -156,8 +156,16 @@ async def maintain_wordbank_media(
             )
 
     async def inspect_gif_migration(image: Any) -> dict[str, Any] | None:
-        source_bytes = await wordbank_media_service.load_canonical_storage_bytes(
-            image.canonical_id
+        storage_path = str(getattr(image, "storage_path", "") or "")
+        if storage_path.lower().endswith(".gif"):
+            return {
+                "candidate": False,
+                "reason": "",
+                "source_format": "GIF",
+                "source_is_animated": True,
+            }
+        source_bytes = await wordbank_media_service._load_source_bytes_for_remote_sync(
+            image
         )
         if source_bytes is None:
             return {
@@ -189,8 +197,8 @@ async def maintain_wordbank_media(
         )
         from src.plugins.wordbank.services.media_models import REMOTE_SYNC_FAILED
 
-        source_bytes = await wordbank_media_service.load_canonical_storage_bytes(
-            image.canonical_id
+        source_bytes = await wordbank_media_service._load_source_bytes_for_remote_sync(
+            image
         )
         if source_bytes is None:
             return None

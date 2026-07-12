@@ -173,3 +173,56 @@ async def test_r2_object_storage_list_objects() -> None:
     ]
     assert objects[0].etag == "etag-a"
     assert objects[1].public_url == "https://cdn.example.com/wordbank/media/b.webp"
+
+
+async def test_r2_object_storage_put_bytes_sets_content_length() -> None:
+    class _FakeR2Client:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        async def put_object(self, **kwargs: object) -> dict[str, object]:
+            self.calls.append(kwargs)
+            return {"ETag": '"etag-a"'}
+
+    fake_client = _FakeR2Client()
+
+    class _FakeContext:
+        async def __aenter__(self) -> _FakeR2Client:
+            return fake_client
+
+        async def __aexit__(
+            self,
+            exc_type: object,
+            exc: object,
+            tb: object,
+        ) -> None:
+            return None
+
+    class _TestR2ObjectStorageClient(R2ObjectStorageClient):
+        def _client_context(self) -> _FakeContext:
+            return _FakeContext()
+
+    client = _TestR2ObjectStorageClient(
+        access_key_id="key",
+        secret_access_key="secret",
+        bucket="bucket",
+        endpoint="https://example.r2.cloudflarestorage.com",
+        public_base_url="https://cdn.example.com",
+    )
+
+    stored = await client.put_bytes(
+        "wordbank/media/a.webp",
+        b"image",
+        content_type="image/webp",
+    )
+
+    assert stored.etag == "etag-a"
+    assert fake_client.calls == [
+        {
+            "Bucket": "bucket",
+            "Key": "wordbank/media/a.webp",
+            "Body": b"image",
+            "ContentLength": 5,
+            "ContentType": "image/webp",
+        }
+    ]

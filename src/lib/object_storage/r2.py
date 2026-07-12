@@ -86,7 +86,9 @@ class R2ObjectStorageClient:
     ) -> StorageObject:
         _, _, bucket, _ = self._require_config()
         normalized_key = key.lstrip("/")
-        extra_args: dict[str, str] = {}
+        extra_args: dict[str, object] = {
+            "ContentLength": len(data),
+        }
         if content_type:
             extra_args["ContentType"] = content_type
         async with self._client_context() as client:

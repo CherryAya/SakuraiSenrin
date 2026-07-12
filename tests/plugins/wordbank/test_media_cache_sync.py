@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from tests.plugins.wordbank.test_media_support import *
 
 
@@ -419,3 +421,63 @@ async def test_media_syncs_legacy_local_image_to_remote_and_keeps_it_readable(
     reloaded = await service.load_canonical_storage_bytes(1)
 
     assert reloaded == legacy_bytes
+
+
+async def test_retry_remote_sync_processes_batch_with_controlled_concurrency(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    service = WordbankMediaService(
+        repo,
+        media_root=tmp_path / "legacy",
+        cache_storage=LocalLruCacheWordbankMediaStorage(tmp_path / "cache"),
+    )
+    for index in range(1, 5):
+        await repo.create_image(
+            {
+                "md5": f"{index}" * 32,
+                "dhash": f"{index}" * 16,
+                "phash": f"{index}" * 16,
+                "width": 16,
+                "height": 16,
+                "file_size": 128,
+                "hash_version": 2,
+                "storage_path": str(tmp_path / "legacy" / f"{index}.webp"),
+                "remote_storage_path": "",
+                "remote_sync_status": "pending",
+                "created_at": 1,
+                "updated_at": 1,
+            }
+        )
+
+    active = 0
+    max_active = 0
+
+    async def _sync(
+        image: WordbankImageRecord,
+        *,
+        verify_remote: bool,
+    ) -> WordbankImageRecord:
+        nonlocal active, max_active
+        _ = verify_remote
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.02)
+        active -= 1
+        return replace(
+            image,
+            remote_storage_path=f"r2://bucket/wordbank/media/{image.md5}.webp",
+            remote_sync_status="synced",
+        )
+
+    service.sync_image_to_remote = AsyncMock(side_effect=_sync)
+
+    report = await service.retry_remote_sync(limit=4, concurrency=2)
+
+    assert report == {
+        "scanned": 4,
+        "synced": 4,
+        "failed": 0,
+        "skipped": 0,
+    }
+    assert max_active == 2

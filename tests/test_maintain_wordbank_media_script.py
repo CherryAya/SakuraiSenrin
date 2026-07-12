@@ -54,6 +54,7 @@ def _install_fake_components(monkeypatch: pytest.MonkeyPatch) -> None:
             reconcile_image_with_remote_inventory=None,
             remote_storage=None,
             sync_image_to_remote=None,
+            _load_source_bytes_for_remote_sync=None,
             load_canonical_storage_bytes=None,
             legacy_storage=None,
             cache_storage=None,
@@ -469,7 +470,7 @@ async def test_maintenance_script_migrates_animated_webp_to_gif(
     )
     monkeypatch.setattr(
         maintain_script.wordbank_media_service,
-        "load_canonical_storage_bytes",
+        "_load_source_bytes_for_remote_sync",
         AsyncMock(return_value=animated_webp),
     )
     monkeypatch.setattr(
@@ -544,3 +545,110 @@ async def test_maintenance_script_migrates_animated_webp_to_gif(
         == "r2://bucket/wordbank/media/31.gif"
     )
     maintain_script.wordbank_media_service.sync_image_to_remote.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_maintenance_script_migrates_animated_webp_without_cache_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_components(monkeypatch)
+    image = _image_record(32)
+    animated_webp = _animated_webp([(255, 0, 0), (0, 255, 0)])
+
+    monkeypatch.setattr(
+        maintain_script.wordbank_repo,
+        "list_images_for_remote_sync",
+        AsyncMock(side_effect=[[image], []]),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "rebuild_cache_metadata",
+        AsyncMock(side_effect=lambda current: current),
+    )
+    load_source = AsyncMock(return_value=animated_webp)
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "_load_source_bytes_for_remote_sync",
+        load_source,
+    )
+    load_canonical = AsyncMock(side_effect=AssertionError("should not be used"))
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "load_canonical_storage_bytes",
+        load_canonical,
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "legacy_storage",
+        SimpleNamespace(
+            save_image=AsyncMock(return_value="/tmp/32.gif"),
+            delete_image=AsyncMock(return_value=None),
+        ),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "remote_storage",
+        None,
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "cache_storage",
+        SimpleNamespace(
+            remove_cache_entry=AsyncMock(return_value=None),
+            store_cached_bytes=AsyncMock(
+                return_value=SimpleNamespace(path="/tmp/cache/32.gif", size=456)
+            ),
+        ),
+    )
+    updated_remote = replace(
+        image,
+        storage_path="/tmp/32.gif",
+        remote_storage_path="",
+        remote_sync_status="pending",
+    )
+    updated_cached = replace(
+        updated_remote,
+        local_cache_path="/tmp/cache/32.gif",
+        cache_file_size=456,
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_repo,
+        "update_image_remote_sync",
+        AsyncMock(return_value=updated_remote),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_repo,
+        "update_image_cache_metadata",
+        AsyncMock(return_value=updated_cached),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "sync_image_to_remote",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "list_remote_objects_by_key",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        maintain_script.wordbank_media_service,
+        "reconcile_image_with_remote_inventory",
+        AsyncMock(return_value=None),
+    )
+
+    report = await maintain_script.maintain_wordbank_media(
+        dry_run=False,
+        limit=0,
+        batch_size=10,
+        concurrency=1,
+        id_start=32,
+        only_unsynced=False,
+        verify_remote=False,
+        rebuild_cache_metadata=False,
+        migrate_animated_gif=True,
+    )
+
+    assert report["rows"][0]["action"] == "migrate"
+    load_source.assert_awaited()
+    load_canonical.assert_not_awaited()

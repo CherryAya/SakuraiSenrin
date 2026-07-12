@@ -915,6 +915,7 @@ class WordbankMediaRuntimeMixin:
         self: _MediaRuntimeHost,
         *,
         limit: int = 200,
+        concurrency: int = 8,
         id_start: int = 0,
         only_unsynced: bool = True,
         verify_remote: bool = False,
@@ -925,23 +926,33 @@ class WordbankMediaRuntimeMixin:
             id_start=id_start,
             only_unsynced=only_unsynced,
         )
+        semaphore = asyncio.Semaphore(max(concurrency, 1))
+
+        async def _process_image(image: WordbankImageRecord) -> str:
+            async with semaphore:
+                working_image = (
+                    await self.rebuild_cache_metadata(image)
+                    if rebuild_cache_metadata
+                    else image
+                )
+                updated = await self.sync_image_to_remote(
+                    working_image, verify_remote=verify_remote
+                )
+                if updated is None:
+                    return "skipped"
+                if updated.remote_sync_status == REMOTE_SYNC_SYNCED:
+                    return "synced"
+                return "failed"
+
+        results = await asyncio.gather(*(_process_image(image) for image in images))
         synced = failed = skipped = 0
-        for image in images:
-            working_image = (
-                await self.rebuild_cache_metadata(image)
-                if rebuild_cache_metadata
-                else image
-            )
-            updated = await self.sync_image_to_remote(
-                working_image, verify_remote=verify_remote
-            )
-            if updated is None:
-                skipped += 1
-                continue
-            if updated.remote_sync_status == REMOTE_SYNC_SYNCED:
+        for status in results:
+            if status == "synced":
                 synced += 1
-            else:
+            elif status == "failed":
                 failed += 1
+            else:
+                skipped += 1
         return {
             "scanned": len(images),
             "synced": synced,
@@ -950,10 +961,16 @@ class WordbankMediaRuntimeMixin:
         }
 
     async def run_scheduled_maintenance(
-        self: _MediaRuntimeHost, *, batch_size: int = 200
+        self: _MediaRuntimeHost,
+        *,
+        batch_size: int = 200,
+        concurrency: int = 8,
     ) -> dict[str, int]:
         cache_report = await self.reconcile_local_cache()
-        sync_report = await self.retry_remote_sync(limit=batch_size)
+        sync_report = await self.retry_remote_sync(
+            limit=batch_size,
+            concurrency=concurrency,
+        )
         return {**cache_report, **sync_report}
 
     async def _load_source_bytes_for_remote_sync(
@@ -1040,6 +1057,7 @@ class _MediaRuntimeHost(Protocol):
         self,
         *,
         limit: int = 200,
+        concurrency: int = 8,
         id_start: int = 0,
         only_unsynced: bool = True,
         verify_remote: bool = False,
