@@ -101,6 +101,7 @@ async def test_backup_service_runs_restic_and_dispatches_success_event(
         databases=cast(Sequence[BaseDB], [_DB()]),
         local_root=tmp_path / "backup",
         restic=ResticConfig(
+            profile_name="default",
             repository="s3:https://example.test/bucket",
             password="secret",
         ),
@@ -183,6 +184,7 @@ async def test_backup_service_auto_inits_missing_restic_repository(
         databases=cast(Sequence[BaseDB], [_DB()]),
         local_root=tmp_path / "backup",
         restic=ResticConfig(
+            profile_name="default",
             repository="s3:https://example.test/bucket",
             password="secret",
         ),
@@ -247,6 +249,7 @@ async def test_backup_service_does_not_auto_init_non_repository_errors(
         databases=cast(Sequence[BaseDB], [_DB()]),
         local_root=tmp_path / "backup",
         restic=ResticConfig(
+            profile_name="default",
             repository="s3:https://example.test/bucket",
             password="secret",
         ),
@@ -364,6 +367,7 @@ async def test_backup_service_streams_restic_output_in_real_time(
         databases=cast(Sequence[BaseDB], [_DB()]),
         local_root=tmp_path / "backup",
         restic=ResticConfig(
+            profile_name="default",
             repository="s3:https://example.test/bucket",
             password="secret",
         ),
@@ -421,6 +425,7 @@ async def test_backup_service_lists_remote_snapshots(
         databases=[],
         local_root=tmp_path / "backup",
         restic=ResticConfig(
+            profile_name="default",
             repository="s3:https://example.test/bucket",
             password="secret",
         ),
@@ -455,7 +460,11 @@ async def test_backup_service_skips_disabled_plan(
     service = BackupService(
         databases=[],
         local_root=tmp_path,
-        restic=ResticConfig(repository=None, password=None),
+        restic=ResticConfig(
+            profile_name="default",
+            repository=None,
+            password=None,
+        ),
     )
 
     result = await service.run(BackupPlan(id="disabled", enabled=False))
@@ -509,7 +518,12 @@ async def test_backup_service_collects_segment_archives_and_manifest(
     service = BackupService(
         databases=[db],
         local_root=tmp_path / "backup",
-        restic=ResticConfig(repository=None, password=None, require_restic=False),
+        restic=ResticConfig(
+            profile_name="default",
+            repository=None,
+            password=None,
+            require_restic=False,
+        ),
     )
     sources = service._collect_sources(include_archives=True)
 
@@ -581,6 +595,12 @@ def test_build_backup_service_from_config_uses_registered_databases(
 ) -> None:
     reset_backup_database_registry_for_test()
     monkeypatch.setattr(backup_module.config, "BACKUP_LOCAL_ROOT", "./data/test-backup")
+    monkeypatch.setattr(
+        backup_module.config,
+        "BACKUP_RESTIC_REPOSITORY",
+        "s3:https://example.test/bucket",
+    )
+    monkeypatch.setattr(backup_module.config, "BACKUP_RESTIC_PASSWORD", "secret")
 
     service = backup_module.build_backup_service_from_config()
     databases = service.databases
