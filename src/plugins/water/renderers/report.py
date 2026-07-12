@@ -341,13 +341,13 @@ def _render_group_rank_share_panel(
     card.draw_text(
         (
             chart_x + int(16 * scale),
-            chart_y + int(14 * scale),
+            chart_y + int(10 * scale),
             chart_x + chart_w - int(16 * scale),
-            chart_y + int(40 * scale),
+            chart_y + int(34 * scale),
         ),
         f"{focus_slice.share_ratio * 100:.1f}%",
-        max_fontsize=int(22 * scale),
-        min_fontsize=int(14 * scale),
+        max_fontsize=int(18 * scale),
+        min_fontsize=int(12 * scale),
         fill=strong,
         halign="left",
         valign="center",
@@ -356,9 +356,9 @@ def _render_group_rank_share_panel(
     card.draw_text(
         (
             chart_x + int(16 * scale),
-            chart_y + int(38 * scale),
+            chart_y + int(30 * scale),
             chart_x + chart_w - int(16 * scale),
-            chart_y + int(58 * scale),
+            chart_y + int(46 * scale),
         ),
         tr(locale, "water.report.group_rank.insight.share"),
         max_fontsize=int(9 * scale),

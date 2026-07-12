@@ -7,6 +7,7 @@ import math
 import arrow
 from PIL import Image, ImageChops, ImageDraw
 from pil_utils import BuildImage
+import squarify
 
 from src.lib.consts import MAPLE_FONT_NAME
 from src.lib.demo_theme import SENRIN_V3_WATER_IMAGE_THEME, WaterImageTheme
@@ -390,78 +391,39 @@ def draw_share_area_chart(
     total_ratio = sum(clamped_ratios) or 1.0
     normalized = [ratio / total_ratio for ratio in clamped_ratios]
     chart_left = x + int(4 * scale)
-    chart_top = y + int(6 * scale)
-    chart_right = x + w - int(4 * scale)
-    chart_bottom = y + h - int(6 * scale)
-    usable_h = max(8, chart_bottom - chart_top)
-    current_top = chart_top
-    segments = 6
-    segment_w = max(12, (chart_right - chart_left) // segments)
+    chart_top = y + int(4 * scale)
+    chart_w = max(8, w - int(8 * scale))
+    chart_h = max(8, h - int(8 * scale))
+    sizes = squarify.normalize_sizes(normalized, chart_w, chart_h)
+    rects = squarify.squarify(sizes, chart_left, chart_top, chart_w, chart_h)
 
-    def _band_points(
-        *,
-        left: int,
-        right: int,
-        top: int,
-        bottom: int,
-        offset_seed: int,
-    ) -> list[tuple[int, int]]:
-        mid = (top + bottom) // 2
-        amplitude = max(4, min((bottom - top) // 3, int(10 * scale)))
-        top_offsets = [0, -0.55, 0.18, -0.22, 0.42, -0.1, 0]
-        bottom_offsets = [0, 0.38, -0.18, 0.28, -0.32, 0.16, 0]
-        points: list[tuple[int, int]] = []
-        for idx in range(segments + 1):
-            px = left + min(right - left, idx * segment_w)
-            if idx == segments:
-                px = right
-            jitter = (offset_seed % 5) * 0.04
-            py = mid + int((top_offsets[idx] + jitter) * amplitude)
-            points.append((px, max(top, min(bottom, py))))
-        lower: list[tuple[int, int]] = []
-        for idx in range(segments, -1, -1):
-            px = left + min(right - left, idx * segment_w)
-            if idx == segments:
-                px = right
-            jitter = (offset_seed % 3) * 0.03
-            py = mid + int((bottom_offsets[idx] - jitter) * amplitude)
-            lower.append((px, max(top, min(bottom, py))))
-        return [(left, top), *points, (right, bottom), *lower]
-
-    for index, ratio in enumerate(normalized):
-        band_h = max(1, round(ratio * usable_h))
-        next_top = min(chart_bottom, current_top + band_h)
-        if index == len(normalized) - 1:
-            next_top = chart_bottom
+    for index, rect in enumerate(rects):
         fill = colors[index % len(colors)]
-        polygon = _band_points(
-            left=chart_left,
-            right=chart_right,
-            top=current_top,
-            bottom=next_top,
-            offset_seed=index,
+        left = round(rect["x"])
+        top = round(rect["y"])
+        right = round(rect["x"] + rect["dx"])
+        bottom = round(rect["y"] + rect["dy"])
+        if right - left <= 1 or bottom - top <= 1:
+            continue
+        card.draw.rounded_rectangle(
+            (left, top, right, bottom),
+            radius=max(4, int(8 * scale)),
+            fill=fill,
         )
-        card.draw.polygon(polygon, fill=fill)
-        if index > 0:
-            separator_y = current_top
-            card.draw.line(
-                (chart_left, separator_y, chart_right, separator_y),
-                fill=mix_hex(axis_color, WATER_THEME.white, 0.2),
-                width=max(1, int(1 * scale)),
-            )
         if focus_index is not None and index == focus_index:
             outline = mix_hex(fill, WATER_THEME.white, 0.36)
-            card.draw.line(
-                (chart_left, current_top, chart_right, current_top),
-                fill=outline,
+            card.draw.rounded_rectangle(
+                (left, top, right, bottom),
+                radius=max(4, int(8 * scale)),
+                outline=outline,
                 width=max(2, int(2 * scale)),
             )
-            card.draw.line(
-                (chart_left, next_top, chart_right, next_top),
-                fill=outline,
-                width=max(2, int(2 * scale)),
-            )
-        current_top = next_top
+        card.draw.rounded_rectangle(
+            (left, top, right, bottom),
+            radius=max(4, int(8 * scale)),
+            outline=mix_hex(axis_color, WATER_THEME.white, 0.14),
+            width=1,
+        )
 
 
 def draw_dual_hourly_trend(
