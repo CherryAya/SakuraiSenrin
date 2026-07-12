@@ -34,6 +34,11 @@ from .models import (
 )
 from .rank import WaterRankRenderer
 from .report_layout import (
+    GROUP_REPORT_RANK_HEADER_HEIGHT,
+    GROUP_REPORT_RANK_ROW_GAP,
+    GROUP_REPORT_RANK_ROW_HEIGHT,
+    GROUP_REPORT_USER_CARD_HEIGHT,
+    GROUP_REPORT_USER_ROW_GAP,
     compute_group_report_right_extra_height,
     estimate_group_rank_card_height,
     estimate_group_report_left_height,
@@ -667,14 +672,14 @@ async def build_water_group_report_image(
     width = int(1120 * scale)
     pad = int(24 * scale)
     gap = int(12 * scale)
-    hero_h = int(178 * scale)
     left_w = int(570 * scale)
+    hero_h = int(178 * scale)
     right_w = width - pad * 2 - left_w - gap
-    user_card_h = int(108 * scale)
-    user_row_gap = int(10 * scale)
-    group_rank_header_h = int(58 * scale)
-    group_rank_row_h = int(44 * scale)
-    group_rank_row_gap = int(6 * scale)
+    user_card_h = int(GROUP_REPORT_USER_CARD_HEIGHT * scale)
+    user_row_gap = int(GROUP_REPORT_USER_ROW_GAP * scale)
+    group_rank_header_h = int(GROUP_REPORT_RANK_HEADER_HEIGHT * scale)
+    group_rank_row_h = int(GROUP_REPORT_RANK_ROW_HEIGHT * scale)
+    group_rank_row_gap = int(GROUP_REPORT_RANK_ROW_GAP * scale)
     group_rank_panel_gap = int(10 * scale)
     histogram_h = int(182 * scale)
     footer_h = int(50 * scale)
@@ -937,7 +942,7 @@ async def build_water_group_report_image(
             (avatar_x, avatar_y),
             alpha=True,
         )
-        line_gap = int(12 * scale)
+        line_gap = int(20 * scale)
         text_x = badge_x + badge_w + line_gap
         trend_text, trend_color = format_trend(item.trend)
         trend_w = int(48 * scale)
@@ -1006,9 +1011,7 @@ async def build_water_group_report_image(
         )
         tile_region_h = max(1, tile_region_bottom - tile_region_top)
         resized_tile = tile_chart.resize((tile_w, tile_h))
-        tile_y = tile_region_top + max(
-            0, (tile_region_h - tile_h) // 2
-        )
+        tile_y = tile_region_top + max(0, (tile_region_h - tile_h) // 2)
         card.paste(resized_tile, (tile_x, tile_y), alpha=True)
         card.draw_rounded_rectangle(
             (trend_x, trend_y, trend_x + trend_w, trend_y + trend_h),

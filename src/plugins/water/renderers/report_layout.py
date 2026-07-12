@@ -7,6 +7,15 @@ from typing import Literal
 WaterReportLayoutTier = Literal["compact", "balanced", "expanded"]
 
 DEFAULT_GROUP_REPORT_SCALE = 2.0
+GROUP_REPORT_LEFT_HEADER_HEIGHT = 40
+GROUP_REPORT_LEFT_FOOTER_PADDING = 18
+GROUP_REPORT_USER_CARD_HEIGHT = 108
+GROUP_REPORT_USER_ROW_GAP = 10
+GROUP_REPORT_RANK_HEADER_HEIGHT = 58
+GROUP_REPORT_RANK_BODY_TOP_PADDING = 12
+GROUP_REPORT_RANK_ROW_HEIGHT = 44
+GROUP_REPORT_RANK_ROW_GAP = 6
+GROUP_REPORT_RANK_BOTTOM_PADDING = 16
 
 
 def estimate_group_report_left_height(
@@ -14,13 +23,11 @@ def estimate_group_report_left_height(
     *,
     scale: float = DEFAULT_GROUP_REPORT_SCALE,
 ) -> int:
-    user_card_h = int(118 * scale)
-    user_row_gap = int(10 * scale)
     return (
-        int(40 * scale)
-        + user_count * user_card_h
-        + max(0, user_count - 1) * user_row_gap
-        + int(18 * scale)
+        int(GROUP_REPORT_LEFT_HEADER_HEIGHT * scale)
+        + user_count * int(GROUP_REPORT_USER_CARD_HEIGHT * scale)
+        + max(0, user_count - 1) * int(GROUP_REPORT_USER_ROW_GAP * scale)
+        + int(GROUP_REPORT_LEFT_FOOTER_PADDING * scale)
     )
 
 
@@ -31,17 +38,14 @@ def estimate_group_rank_card_height(
     has_hidden_after: bool,
     scale: float = DEFAULT_GROUP_REPORT_SCALE,
 ) -> int:
-    header_h = int(58 * scale)
-    row_h = int(44 * scale)
-    row_gap = int(6 * scale)
     hidden_rows = int(has_hidden_before) + int(has_hidden_after)
     rank_row_count = item_count + hidden_rows
     return (
-        header_h
-        + int(12 * scale)
-        + rank_row_count * row_h
-        + max(0, rank_row_count - 1) * row_gap
-        + int(16 * scale)
+        int(GROUP_REPORT_RANK_HEADER_HEIGHT * scale)
+        + int(GROUP_REPORT_RANK_BODY_TOP_PADDING * scale)
+        + rank_row_count * int(GROUP_REPORT_RANK_ROW_HEIGHT * scale)
+        + max(0, rank_row_count - 1) * int(GROUP_REPORT_RANK_ROW_GAP * scale)
+        + int(GROUP_REPORT_RANK_BOTTOM_PADDING * scale)
     )
 
 
