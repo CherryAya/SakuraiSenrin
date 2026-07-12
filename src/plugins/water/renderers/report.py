@@ -274,7 +274,7 @@ def _render_group_rank_share_panel(
         (
             x + int(18 * scale),
             y + int(30 * scale),
-            x + w - int(170 * scale),
+            x + w - int(18 * scale),
             y + int(50 * scale),
         ),
         tr(
@@ -289,26 +289,20 @@ def _render_group_rank_share_panel(
         halign="left",
         font_families=[WATER_THEME.white],
     )
-    card.draw_text(
-        (
-            x + w - int(156 * scale),
-            y + int(26 * scale),
-            x + w - int(18 * scale),
-            y + int(52 * scale),
-        ),
-        f"{focus_slice.share_ratio * 100:.1f}%",
-        max_fontsize=int(20 * scale),
-        min_fontsize=int(12 * scale),
-        fill=strong,
-        halign="right",
-        valign="center",
-        font_families=[WATER_THEME.white],
-    )
     title_bottom = y + int(50 * scale)
-    chart_x = x + int(18 * scale)
+    content_x = x + int(18 * scale)
+    content_y = title_bottom + int(10 * scale)
+    content_h = max(int(96 * scale), h - (content_y - y) - int(14 * scale))
+    content_w = w - int(36 * scale)
+    chart_w = max(int(164 * scale), min(int(content_w * 0.42), int(210 * scale)))
+    chart_x = content_x
+    chart_y = content_y
+    chart_h = content_h
+    legend_x = chart_x + chart_w + int(16 * scale)
+    legend_y = content_y
+    legend_w = x + w - int(18 * scale) - legend_x
+    legend_h_available = content_h
     chart_y = title_bottom + int(10 * scale)
-    chart_w = w - int(36 * scale)
-    chart_h = max(int(96 * scale), h - (chart_y - y) - int(14 * scale))
     palette = _group_share_palette(theme)
     focus_index = next(
         (index for index, item in enumerate(slices) if item.is_focus_group),
@@ -322,17 +316,56 @@ def _render_group_rank_share_panel(
             continue
         slice_colors.append(palette[palette_index % len(palette)])
         palette_index += 1
+    card.draw_rounded_rectangle(
+        (
+            chart_x,
+            chart_y,
+            chart_x + chart_w,
+            chart_y + chart_h,
+        ),
+        radius=int(14 * scale),
+        fill=theme.rank_row_fill,
+    )
     draw_share_area_chart(
         card,
-        x=chart_x,
-        y=chart_y,
-        w=chart_w,
-        h=chart_h,
+        x=chart_x + int(8 * scale),
+        y=chart_y + int(8 * scale),
+        w=chart_w - int(16 * scale),
+        h=chart_h - int(16 * scale),
         ratios=[item.share_ratio for item in slices],
         colors=slice_colors,
         focus_index=focus_index,
         axis_color=theme.line,
         scale=scale,
+    )
+    card.draw_text(
+        (
+            chart_x + int(16 * scale),
+            chart_y + int(14 * scale),
+            chart_x + chart_w - int(16 * scale),
+            chart_y + int(40 * scale),
+        ),
+        f"{focus_slice.share_ratio * 100:.1f}%",
+        max_fontsize=int(22 * scale),
+        min_fontsize=int(14 * scale),
+        fill=strong,
+        halign="left",
+        valign="center",
+        font_families=[WATER_THEME.white],
+    )
+    card.draw_text(
+        (
+            chart_x + int(16 * scale),
+            chart_y + int(38 * scale),
+            chart_x + chart_w - int(16 * scale),
+            chart_y + int(58 * scale),
+        ),
+        tr(locale, "water.report.group_rank.insight.share"),
+        max_fontsize=int(9 * scale),
+        min_fontsize=int(7 * scale),
+        fill=hint,
+        halign="left",
+        font_families=[WATER_THEME.white],
     )
 
     if h < int(160 * scale):
@@ -349,7 +382,7 @@ def _render_group_rank_share_panel(
         min(
             int(42 * scale),
             (
-                chart_h
+                legend_h_available
                 - int(18 * scale)
                 - legend_gap * (len(legend_items) - 1)
                 - int(18 * scale)
@@ -360,7 +393,7 @@ def _render_group_rank_share_panel(
     legend_total_h = legend_h * len(legend_items) + legend_gap * max(
         0, len(legend_items) - 1
     )
-    legend_y = chart_y + chart_h - legend_total_h - int(8 * scale)
+    legend_y += max(0, (legend_h_available - legend_total_h) // 2)
     ratio_font = _load_font(int(10 * scale))
     name_font = _load_font(int(10 * scale))
     for idx, item in enumerate(legend_items):
@@ -372,15 +405,15 @@ def _render_group_rank_share_panel(
         )
         card.draw_rounded_rectangle(
             (
-                chart_x + int(12 * scale),
+                legend_x,
                 item_y,
-                chart_x + chart_w - int(12 * scale),
+                legend_x + legend_w,
                 item_y + legend_h,
             ),
             radius=int(12 * scale),
             fill=fill,
         )
-        dot_x = chart_x + int(24 * scale)
+        dot_x = legend_x + int(12 * scale)
         dot_y = item_y + int(10 * scale)
         item_color = slice_colors[legend_rank_map[item.group_id] - 1]
         dot_size = int(10 * scale)
@@ -409,7 +442,7 @@ def _render_group_rank_share_panel(
             int(64 * scale),
             _pixel_text_width(ratio_text, ratio_font) + int(12 * scale),
         )
-        ratio_left = chart_x + chart_w - ratio_width - int(24 * scale)
+        ratio_left = legend_x + legend_w - ratio_width - int(12 * scale)
         badge_right = ratio_left - int(6 * scale)
         badge_w = int(48 * scale) if item.is_focus_group else 0
         name_left = dot_x + dot_size + int(48 * scale)
@@ -468,7 +501,7 @@ def _render_group_rank_share_panel(
             (
                 ratio_left,
                 item_y + int(5 * scale),
-                chart_x + chart_w - int(24 * scale),
+                legend_x + legend_w - int(12 * scale),
                 item_y + legend_h - int(4 * scale),
             ),
             ratio_text,
