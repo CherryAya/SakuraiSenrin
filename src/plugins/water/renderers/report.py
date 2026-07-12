@@ -353,27 +353,6 @@ def _render_group_rank_share_panel(
         highlight_index=focus_index,
         highlight_offset=int(4 * scale),
     )
-    card.draw.ellipse(
-        (pie_x, pie_y, pie_x + pie_size, pie_y + pie_size),
-        outline=mix_hex(theme.accent, theme.white, 0.26),
-        width=max(2, int(2 * scale)),
-    )
-    metric_box_h = int(34 * scale)
-    metric_box_w = min(chart_w - int(20 * scale), int(126 * scale))
-    metric_box_x = pie_x + int(10 * scale)
-    metric_box_y = pie_y + int(10 * scale)
-    card.draw_rounded_rectangle(
-        (
-            metric_box_x,
-            metric_box_y,
-            metric_box_x + metric_box_w,
-            metric_box_y + metric_box_h,
-        ),
-        radius=int(12 * scale),
-        fill=mix_hex(theme.accent, theme.white, 0.72),
-        outline=mix_hex(theme.accent, theme.white, 0.4),
-        width=max(1, int(1 * scale)),
-    )
     ratio_font = _load_font(int(10 * scale))
     name_font = _load_font(int(10 * scale))
     for idx, item in enumerate(legend_items):
