@@ -636,10 +636,10 @@ def _render_group_rank_trend_panel(
         + max(0, rows - 1) * legend_gap_y
         + int(10 * scale)
     )
-    chart_h_available = max(int(96 * scale), y + h - chart_y - int(18 * scale))
+    chart_h_available = max(int(96 * scale), y + h - chart_y - int(10 * scale))
     chart_h = max(
         int(92 * scale),
-        min(chart_h_available, int(chart_h_available * 0.92)),
+        min(chart_h_available, int(chart_h_available * 0.97)),
     )
     draw_group_rank_trend_chart(
         card,
