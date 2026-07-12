@@ -108,26 +108,28 @@ def _group_rank_row_fill(
 
 
 def _group_share_palette(theme: Any) -> tuple[str, ...]:
+    base = theme.tile_base_colors
     return (
-        mix_hex(theme.blue, theme.white, 0.14),
-        mix_hex(theme.mint, theme.white, 0.14),
-        mix_hex(theme.accent, theme.white, 0.18),
-        mix_hex(theme.podium_gold_badge, theme.white, 0.12),
-        mix_hex(theme.deep, theme.white, 0.34),
-        mix_hex(theme.blue, theme.mint, 0.5),
-        mix_hex(theme.accent, theme.podium_gold_badge, 0.42),
-        mix_hex(theme.deep, theme.accent, 0.3),
+        mix_hex(base[0], theme.white, 0.08),
+        mix_hex(base[1], theme.white, 0.08),
+        mix_hex(base[2], theme.white, 0.08),
+        mix_hex(base[3], theme.white, 0.08),
+        mix_hex(base[0], base[1], 0.5),
+        mix_hex(base[1], base[2], 0.5),
+        mix_hex(base[2], base[3], 0.5),
+        mix_hex(base[3], base[0], 0.5),
     )
 
 
 def _group_trend_palette(theme: Any) -> tuple[str, ...]:
+    base = theme.tile_base_colors
     return (
-        mix_hex(theme.blue, theme.white, 0.08),
-        mix_hex(theme.mint, theme.white, 0.08),
-        mix_hex(theme.accent, theme.white, 0.12),
-        mix_hex(theme.podium_gold_badge, theme.white, 0.1),
-        mix_hex(theme.deep, theme.white, 0.24),
-        mix_hex(theme.blue, theme.mint, 0.42),
+        mix_hex(base[0], theme.white, 0.02),
+        mix_hex(base[1], theme.white, 0.02),
+        mix_hex(base[2], theme.white, 0.02),
+        mix_hex(base[3], theme.white, 0.02),
+        mix_hex(base[0], base[2], 0.45),
+        mix_hex(base[1], base[3], 0.45),
         theme.trend_flat,
     )
 
