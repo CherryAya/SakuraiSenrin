@@ -20,8 +20,8 @@ from .common import (
     build_avatar_fallback,
     draw_group_rank_trend_chart,
     draw_hourly_histogram,
+    draw_pie_chart,
     draw_report_footer,
-    draw_share_area_chart,
     format_delta,
     format_trend,
     mix_hex,
@@ -340,27 +340,34 @@ def _render_group_rank_share_panel(
     legend_y = content_y + max(0, (legend_h_available - legend_total_h) // 2)
     chart_y = legend_y
     chart_h = legend_total_h
-
-    draw_share_area_chart(
+    pie_size = min(chart_w, chart_h)
+    pie_x = chart_x + (chart_w - pie_size) // 2
+    pie_y = chart_y + (chart_h - pie_size) // 2
+    draw_pie_chart(
         card,
-        x=chart_x,
-        y=chart_y,
-        w=chart_w,
-        h=chart_h,
+        x=pie_x,
+        y=pie_y,
+        size=pie_size,
         ratios=[item.share_ratio for item in slices],
         colors=slice_colors,
-        focus_index=focus_index,
-        axis_color=theme.line,
-        scale=scale,
+        highlight_index=focus_index,
+        highlight_offset=int(4 * scale),
+    )
+    card.draw.ellipse(
+        (pie_x, pie_y, pie_x + pie_size, pie_y + pie_size),
+        outline=mix_hex(theme.accent, theme.white, 0.26),
+        width=max(2, int(2 * scale)),
     )
     metric_box_h = int(34 * scale)
     metric_box_w = min(chart_w - int(20 * scale), int(126 * scale))
+    metric_box_x = pie_x + int(10 * scale)
+    metric_box_y = pie_y + int(10 * scale)
     card.draw_rounded_rectangle(
         (
-            chart_x + int(10 * scale),
-            chart_y + int(10 * scale),
-            chart_x + int(10 * scale) + metric_box_w,
-            chart_y + int(10 * scale) + metric_box_h,
+            metric_box_x,
+            metric_box_y,
+            metric_box_x + metric_box_w,
+            metric_box_y + metric_box_h,
         ),
         radius=int(12 * scale),
         fill=mix_hex(theme.accent, theme.white, 0.72),
