@@ -186,21 +186,9 @@ async def test_r2_object_storage_put_bytes_sets_content_length() -> None:
 
     fake_client = _FakeR2Client()
 
-    class _FakeContext:
-        def __enter__(self) -> _FakeR2Client:
-            return fake_client
-
-        def __exit__(
-            self,
-            exc_type: object,
-            exc: object,
-            tb: object,
-        ) -> None:
-            return None
-
     class _TestR2ObjectStorageClient(R2ObjectStorageClient):
-        def _sync_client_context(self) -> _FakeContext:
-            return _FakeContext()
+        def _sync_client_context(self) -> _FakeR2Client:
+            return fake_client
 
     client = _TestR2ObjectStorageClient(
         access_key_id="key",

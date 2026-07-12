@@ -108,13 +108,18 @@ class R2ObjectStorageClient:
         }
         if content_type:
             extra_args["ContentType"] = content_type
-        with self._sync_client_context() as client:
+        client = self._sync_client_context()
+        try:
             response = client.put_object(
                 Bucket=bucket,
                 Key=normalized_key,
                 Body=data,
                 **extra_args,
             )
+        finally:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
         return dict(response)
 
     async def put_bytes(
