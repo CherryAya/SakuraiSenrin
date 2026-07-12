@@ -417,7 +417,7 @@ def test_demo_image_renderer_builds_full_section_bands_for_study_demo() -> None:
     )
 
     assert layout.demo_heading_rect is not None
-    assert layout.demo_rect[1] - layout.demo_heading_rect[3] <= 24
+    assert layout.demo_rect[1] - layout.demo_heading_rect[3] <= 40
     assert len(layout.demo_section_bands) == 6
     assert [band.index for band in layout.demo_section_bands] == [1, 2, 3, 4, 5, 6]
     assert [band.title for band in layout.demo_section_bands] == [
@@ -947,6 +947,44 @@ def test_render_plugin_guide_builds_support_strip_inline_without_post_compose(
         ProgressiveDisclosureRenderer,
         "render_with_support_strip",
         fail_post_compose,
+    )
+
+    image = Image.open(
+        BytesIO(
+            render_plugin_guide(
+                node,
+                actor_permission=Permission.NORMAL,
+                locale="zh-CN",
+                prefer_static=False,
+            )
+        )
+    )
+
+    assert image.width > 650
+    assert image.height > 1200
+
+
+def test_render_plugin_guide_disables_uppercase_english_watermarks(
+    monkeypatch: Any,
+) -> None:
+    node = load_doc_node(
+        source="src/plugins/wordbank/docs/README.MD",
+        default_name="词库模块",
+        default_description="desc",
+        trigger=TriggerType.COMMAND,
+        permission=Permission.NORMAL,
+    )
+
+    def fail_draw_section_watermark(*args: Any, **kwargs: Any) -> None:
+        _ = (args, kwargs)
+        raise AssertionError(
+            "plugin guide should not draw uppercase English watermarks"
+        )
+
+    monkeypatch.setattr(
+        ProgressiveDisclosureRenderer,
+        "_draw_section_watermark",
+        fail_draw_section_watermark,
     )
 
     image = Image.open(

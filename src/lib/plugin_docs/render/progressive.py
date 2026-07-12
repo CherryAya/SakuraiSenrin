@@ -10,7 +10,7 @@ from math import ceil
 from pathlib import Path
 from typing import Any, ClassVar
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 from src.lib.demo_theme import SENRIN_V3_THEME, get_demo_theme
 from src.lib.i18n.runtime import tr
@@ -445,18 +445,6 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             self.theme.hero_top
             + len(header_title_lines) * self._line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
-        )
-        self._draw_section_watermark(
-            draw,
-            rect=(
-                side,
-                summary_top + 4,
-                self.WIDTH - side - self.theme.hero_standee_size + 16,
-                hero_bottom,
-            ),
-            text="FEATURE GUIDE",
-            font=self.watermark_font,
-            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
         )
         self._draw_multiline_text(
             draw,
@@ -968,18 +956,18 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + len(header_title_lines) * self._line_height_for_font(self.title_font)
             + self.theme.hero_text_gap
         )
-        self._draw_section_watermark(
-            draw,
-            rect=(
-                side,
-                summary_top + 4,
-                self.WIDTH - side - self.theme.hero_standee_size + 16,
-                hero_bottom,
-            ),
-            text="SUMMARY OVERVIEW",
-            font=self.watermark_font,
-            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
-        )
+        # self._draw_section_watermark(
+        #     draw,
+        #     rect=(
+        #         side,
+        #         summary_top + 4,
+        #         self.WIDTH - side - self.theme.hero_standee_size + 16,
+        #         hero_bottom,
+        #     ),
+        #     text="SUMMARY OVERVIEW",
+        #     font=self.watermark_font,
+        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA_LARGE),
+        # )
         self._draw_multiline_text(
             draw,
             x=side,
@@ -1010,19 +998,19 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 shadow_blur=self.theme.instruction_shadow_blur,
                 fill=self.theme.panel_bg,
             )
-            self._draw_section_watermark(
-                draw,
-                rect=(
-                    rect[0] + self.GUIDE_SECTION_PADDING_X,
-                    rect[1] + 8,
-                    rect[2] - self.GUIDE_SECTION_PADDING_X,
-                    rect[1] + 80,
-                ),
-                text="MODULE SUMMARY",
-                font=self.watermark_font_small,
-                fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
-                align="right",
-            )
+            # self._draw_section_watermark(
+            #     draw,
+            #     rect=(
+            #         rect[0] + self.GUIDE_SECTION_PADDING_X,
+            #         rect[1] + 8,
+            #         rect[2] - self.GUIDE_SECTION_PADDING_X,
+            #         rect[1] + 80,
+            #     ),
+            #     text="MODULE SUMMARY",
+            #     font=self.watermark_font_small,
+            #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
+            #     align="right",
+            # )
             cursor_y = rect[1] + self.GUIDE_SECTION_PADDING_Y
             if command_layout is not None:
                 command_rect = (
@@ -1642,19 +1630,6 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         content_left = rect[0] + self.GUIDE_SECTION_PADDING_X
         cursor_y = rect[1] + self.GUIDE_SECTION_PADDING_Y
-        self._draw_section_watermark(
-            draw,
-            rect=(
-                content_left,
-                rect[1] + 8,
-                rect[2] - self.GUIDE_SECTION_PADDING_X,
-                rect[1] + 74,
-            ),
-            text="GUIDE SECTION",
-            font=self.watermark_font_small,
-            fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
-            align="right",
-        )
         self._draw_multiline_text(
             draw,
             x=content_left,
@@ -2239,44 +2214,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         *,
         layout: _SupportStripLayout,
     ) -> None:
-        self._draw_shadowed_rect(
-            image,
-            rect=layout.rect,
-            radius=self.SUPPORT_STRIP_RADIUS,
-            shadow_color=self.theme.card_shadow,
-            shadow_offset_y=self.theme.instruction_shadow_offset_y,
-            shadow_blur=self.theme.instruction_shadow_blur,
-            fill=self.theme.panel_bg,
-        )
-        self._draw_panel_outline(
-            draw,
-            rect=layout.rect,
-            radius=self.SUPPORT_STRIP_RADIUS,
-            outline=self._rgba(self.theme.accent, 62),
-        )
-        draw.rounded_rectangle(
-            (
-                layout.rect[0],
-                layout.rect[1],
-                layout.rect[0] + 12,
-                layout.rect[3],
-            ),
-            radius=12,
-            fill=self.theme.accent,
-        )
-        # self._draw_section_watermark(
-        #     draw,
-        #     rect=(
-        #         layout.rect[0] + self.SUPPORT_STRIP_PADDING_X,
-        #         layout.rect[1] + 10,
-        #         layout.rect[2] - self.SUPPORT_STRIP_PADDING_X,
-        #         layout.rect[1] + 72,
-        #     ),
-        #     text="COMMUNITY INTERACTION",
-        #     font=self.watermark_font_small,
-        #     fill=self._rgba(self.theme.accent, self.WATERMARK_ALPHA),
-        #     align="right",
-        # )
+        self._draw_support_strip_base(image, draw, layout=layout, accent_width=12)
         text_x = layout.rect[0] + self.SUPPORT_STRIP_PADDING_X
         text_y = layout.rect[1] + self.SUPPORT_STRIP_PADDING_Y
         self._draw_multiline_text(
@@ -2340,6 +2278,55 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
                 layout.qr_image,
                 (layout.qr_rect[0], layout.qr_rect[1]),
             )
+
+    def _draw_support_strip_base(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        *,
+        layout: _SupportStripLayout,
+        accent_width: int,
+    ) -> None:
+        self._draw_shadowed_rect(
+            image,
+            rect=layout.rect,
+            radius=self.SUPPORT_STRIP_RADIUS,
+            shadow_color=self.theme.card_shadow,
+            shadow_offset_y=self.theme.instruction_shadow_offset_y,
+            shadow_blur=self.theme.instruction_shadow_blur,
+            fill=self.theme.panel_bg,
+        )
+        self._draw_panel_outline(
+            draw,
+            rect=layout.rect,
+            radius=self.SUPPORT_STRIP_RADIUS,
+            outline=self._rgba(self.theme.accent, 62),
+        )
+        accent_left = layout.rect[0]
+        accent_top = layout.rect[1]
+        accent_right = accent_left + accent_width
+        accent_bottom = layout.rect[3]
+        outer_mask = Image.new("L", image.size, 0)
+        outer_mask_draw = ImageDraw.Draw(outer_mask)
+        outer_mask_draw.rounded_rectangle(
+            layout.rect,
+            radius=self.SUPPORT_STRIP_RADIUS,
+            fill=255,
+        )
+        strip_mask = Image.new("L", image.size, 0)
+        strip_mask_draw = ImageDraw.Draw(strip_mask)
+        strip_mask_draw.rectangle(
+            (accent_left, accent_top, accent_right, accent_bottom),
+            fill=255,
+        )
+        accent_mask = ImageChops.multiply(outer_mask, strip_mask)
+        accent_layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        accent_layer_draw = ImageDraw.Draw(accent_layer)
+        accent_layer_draw.rectangle(
+            (accent_left, accent_top, accent_right, accent_bottom),
+            fill=self._rgba(self.theme.accent, 255),
+        )
+        image.paste(accent_layer, (0, 0), accent_mask)
 
     def _load_support_qr_image(self, asset_path: Path) -> Image.Image | None:
         if not asset_path.exists():
@@ -2454,25 +2441,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         *,
         layout: _SupportStripLayout,
     ) -> None:
-        self._draw_shadowed_rect(
-            image,
-            rect=layout.rect,
-            radius=self.SUPPORT_STRIP_RADIUS,
-            shadow_color=self.theme.card_shadow,
-            shadow_offset_y=self.theme.instruction_shadow_offset_y,
-            shadow_blur=self.theme.instruction_shadow_blur,
-            fill=self.theme.panel_bg,
-        )
-        draw.rounded_rectangle(
-            (
-                layout.rect[0],
-                layout.rect[1],
-                layout.rect[0] + 10,
-                layout.rect[3],
-            ),
-            radius=10,
-            fill=self.theme.accent,
-        )
+        self._draw_support_strip_base(image, draw, layout=layout, accent_width=10)
         text_x = layout.rect[0] + self.SUPPORT_STRIP_PADDING_X
         text_y = layout.rect[1] + self.SUPPORT_STRIP_PADDING_Y
         self._draw_multiline_text(
