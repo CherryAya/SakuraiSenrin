@@ -20,8 +20,8 @@ from .common import (
     build_avatar_fallback,
     draw_group_rank_trend_chart,
     draw_hourly_histogram,
-    draw_pie_chart,
     draw_report_footer,
+    draw_share_area_chart,
     format_delta,
     format_trend,
     mix_hex,
@@ -290,12 +290,13 @@ def _render_group_rank_share_panel(
         halign="left",
         font_families=[WATER_THEME.white],
     )
-    share_content_top = y + int(46 * scale)
-    pie_size = min(max(int(96 * scale), h - int(92 * scale)), int(w * 0.32))
-    pie_x = x + int(18 * scale)
-    pie_y = share_content_top
+    title_bottom = y + int(50 * scale)
+    chart_x = x + int(18 * scale)
+    chart_y = title_bottom + int(10 * scale)
+    chart_w = w - int(36 * scale)
+    chart_h = max(int(96 * scale), h - (chart_y - y) - int(14 * scale))
     palette = _group_share_palette(theme)
-    highlight_index = next(
+    focus_index = next(
         (index for index, item in enumerate(slices) if item.is_focus_group),
         None,
     )
@@ -307,30 +308,27 @@ def _render_group_rank_share_panel(
             continue
         slice_colors.append(palette[palette_index % len(palette)])
         palette_index += 1
-    draw_pie_chart(
+    draw_share_area_chart(
         card,
-        x=pie_x,
-        y=pie_y,
-        size=pie_size,
+        x=chart_x,
+        y=chart_y,
+        w=chart_w,
+        h=chart_h,
         ratios=[item.share_ratio for item in slices],
         colors=slice_colors,
-        highlight_index=highlight_index,
-        highlight_offset=int(4 * scale),
-    )
-    card.draw.ellipse(
-        (pie_x, pie_y, pie_x + pie_size, pie_y + pie_size),
-        outline=mix_hex(theme.line, theme.white, 0.3),
-        width=max(1, int(2 * scale)),
+        focus_index=focus_index,
+        axis_color=theme.line,
+        scale=scale,
     )
 
-    metric_x = pie_x + pie_size + int(20 * scale)
-    metric_w = x + w - metric_x - int(18 * scale)
+    metric_x = chart_x + int(14 * scale)
+    metric_w = chart_w - int(28 * scale)
     card.draw_text(
         (
             metric_x,
-            share_content_top,
+            chart_y + int(10 * scale),
             metric_x + metric_w,
-            share_content_top + int(34 * scale),
+            chart_y + int(44 * scale),
         ),
         f"{focus_slice.share_ratio * 100:.1f}%",
         max_fontsize=int(26 * scale),
@@ -343,9 +341,9 @@ def _render_group_rank_share_panel(
     card.draw_text(
         (
             metric_x,
-            share_content_top + int(34 * scale),
+            chart_y + int(42 * scale),
             metric_x + metric_w,
-            share_content_top + int(52 * scale),
+            chart_y + int(60 * scale),
         ),
         tr(locale, "water.report.group_rank.insight.share"),
         max_fontsize=int(9 * scale),
@@ -357,9 +355,9 @@ def _render_group_rank_share_panel(
     card.draw_text(
         (
             metric_x,
-            share_content_top + int(52 * scale),
+            chart_y + int(60 * scale),
             metric_x + metric_w,
-            share_content_top + int(68 * scale),
+            chart_y + int(76 * scale),
         ),
         tr(
             locale,
@@ -382,16 +380,24 @@ def _render_group_rank_share_panel(
         legend_limit = 4
     legend_items = _pick_group_share_legend_items(slices, limit=legend_limit)
     legend_rank_map = {item.group_id: idx + 1 for idx, item in enumerate(slices)}
-    legend_y = y + int(118 * scale)
     legend_gap = int(8 * scale)
     legend_h = max(
         int(34 * scale),
         min(
             int(42 * scale),
-            (y + h - legend_y - int(14 * scale) - legend_gap * (len(legend_items) - 1))
+            (
+                chart_h
+                - int(18 * scale)
+                - legend_gap * (len(legend_items) - 1)
+                - int(18 * scale)
+            )
             // max(len(legend_items), 1),
         ),
     )
+    legend_total_h = legend_h * len(legend_items) + legend_gap * max(
+        0, len(legend_items) - 1
+    )
+    legend_y = chart_y + chart_h - legend_total_h - int(8 * scale)
     ratio_font = _load_font(int(10 * scale))
     name_font = _load_font(int(10 * scale))
     for idx, item in enumerate(legend_items):
@@ -402,11 +408,16 @@ def _render_group_rank_share_panel(
             else theme.rank_row_fill
         )
         card.draw_rounded_rectangle(
-            (metric_x, item_y, metric_x + metric_w, item_y + legend_h),
+            (
+                chart_x + int(12 * scale),
+                item_y,
+                chart_x + chart_w - int(12 * scale),
+                item_y + legend_h,
+            ),
             radius=int(12 * scale),
             fill=fill,
         )
-        dot_x = metric_x + int(10 * scale)
+        dot_x = chart_x + int(24 * scale)
         dot_y = item_y + int(10 * scale)
         item_color = slice_colors[legend_rank_map[item.group_id] - 1]
         dot_size = int(10 * scale)
@@ -435,7 +446,7 @@ def _render_group_rank_share_panel(
             int(64 * scale),
             _pixel_text_width(ratio_text, ratio_font) + int(12 * scale),
         )
-        ratio_left = metric_x + metric_w - ratio_width - int(10 * scale)
+        ratio_left = chart_x + chart_w - ratio_width - int(24 * scale)
         badge_right = ratio_left - int(6 * scale)
         badge_w = int(48 * scale) if item.is_focus_group else 0
         name_left = dot_x + dot_size + int(48 * scale)
@@ -494,7 +505,7 @@ def _render_group_rank_share_panel(
             (
                 ratio_left,
                 item_y + int(5 * scale),
-                metric_x + metric_w - int(10 * scale),
+                chart_x + chart_w - int(24 * scale),
                 item_y + legend_h - int(4 * scale),
             ),
             ratio_text,

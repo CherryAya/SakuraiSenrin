@@ -370,6 +370,62 @@ def draw_pie_chart(
         start_angle += span
 
 
+def draw_share_area_chart(
+    card: BuildImage,
+    *,
+    x: int,
+    y: int,
+    w: int,
+    h: int,
+    ratios: list[float],
+    colors: list[str],
+    focus_index: int | None,
+    axis_color: str,
+    scale: float,
+) -> None:
+    if not ratios or w <= 0 or h <= 0:
+        return
+
+    clamped_ratios = [max(0.0, min(1.0, ratio)) for ratio in ratios]
+    total_ratio = sum(clamped_ratios) or 1.0
+    normalized = [ratio / total_ratio for ratio in clamped_ratios]
+    chart_left = x + int(2 * scale)
+    chart_top = y + int(6 * scale)
+    chart_right = x + w - int(2 * scale)
+    chart_bottom = y + h - int(6 * scale)
+    usable_w = max(8, chart_right - chart_left)
+    current_left = chart_left
+
+    for index, ratio in enumerate(normalized):
+        segment_w = max(1, round(ratio * usable_w))
+        next_left = min(chart_right, current_left + segment_w)
+        if index == len(normalized) - 1:
+            next_left = chart_right
+        fill = colors[index % len(colors)]
+        card.draw.rounded_rectangle(
+            (current_left, chart_top, next_left, chart_bottom),
+            radius=max(6, int(10 * scale)),
+            fill=fill,
+        )
+        if current_left > chart_left:
+            separator_x = current_left
+            card.draw.line(
+                (separator_x, chart_top, separator_x, chart_bottom),
+                fill=mix_hex(axis_color, WATER_THEME.white, 0.2),
+                width=max(1, int(2 * scale)),
+            )
+
+        if focus_index is not None and index == focus_index:
+            outline = mix_hex(fill, WATER_THEME.white, 0.36)
+            card.draw.rounded_rectangle(
+                (current_left, chart_top, next_left, chart_bottom),
+                radius=max(6, int(10 * scale)),
+                outline=outline,
+                width=max(2, int(3 * scale)),
+            )
+        current_left = next_left
+
+
 def draw_dual_hourly_trend(
     card: BuildImage,
     *,
