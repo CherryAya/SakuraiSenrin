@@ -367,6 +367,9 @@ class WaterReportService:
             if group_rank_snapshot is not None
             else False
         )
+        record_day = arrow.get(str(snapshot.record_date), "YYYYMMDD").to(
+            "Asia/Shanghai"
+        )
         report_title = (
             tr(locale, "water.report.title.today")
             if window == "today_live"
@@ -374,10 +377,7 @@ class WaterReportService:
         )
         group_name = await resolve_group_name(None, snapshot.group_id)
         report_suffix = report_title.removeprefix("Senrin")
-        title = f"{group_name}{report_suffix}"
-        record_day = arrow.get(str(snapshot.record_date), "YYYYMMDD").to(
-            "Asia/Shanghai"
-        )
+        title = f"{record_day.format('YYYY.MM.DD')} · {group_name}{report_suffix}"
         range_text = (
             tr(
                 locale,
@@ -510,8 +510,8 @@ class WaterReportService:
         return await water_repo.get_group_daily_rank_snapshot(
             group_id=snapshot.group_id,
             record_date=snapshot.record_date,
-            radius=6,
-            min_window_size=13,
+            radius=4,
+            min_window_size=9,
             live=window == "today_live",
         )
 
