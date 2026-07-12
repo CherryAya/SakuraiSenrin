@@ -389,41 +389,79 @@ def draw_share_area_chart(
     clamped_ratios = [max(0.0, min(1.0, ratio)) for ratio in ratios]
     total_ratio = sum(clamped_ratios) or 1.0
     normalized = [ratio / total_ratio for ratio in clamped_ratios]
-    chart_left = x + int(2 * scale)
+    chart_left = x + int(4 * scale)
     chart_top = y + int(6 * scale)
-    chart_right = x + w - int(2 * scale)
+    chart_right = x + w - int(4 * scale)
     chart_bottom = y + h - int(6 * scale)
-    usable_w = max(8, chart_right - chart_left)
-    current_left = chart_left
+    usable_h = max(8, chart_bottom - chart_top)
+    current_top = chart_top
+    segments = 6
+    segment_w = max(12, (chart_right - chart_left) // segments)
+
+    def _band_points(
+        *,
+        left: int,
+        right: int,
+        top: int,
+        bottom: int,
+        offset_seed: int,
+    ) -> list[tuple[int, int]]:
+        mid = (top + bottom) // 2
+        amplitude = max(4, min((bottom - top) // 3, int(10 * scale)))
+        top_offsets = [0, -0.55, 0.18, -0.22, 0.42, -0.1, 0]
+        bottom_offsets = [0, 0.38, -0.18, 0.28, -0.32, 0.16, 0]
+        points: list[tuple[int, int]] = []
+        for idx in range(segments + 1):
+            px = left + min(right - left, idx * segment_w)
+            if idx == segments:
+                px = right
+            jitter = (offset_seed % 5) * 0.04
+            py = mid + int((top_offsets[idx] + jitter) * amplitude)
+            points.append((px, max(top, min(bottom, py))))
+        lower: list[tuple[int, int]] = []
+        for idx in range(segments, -1, -1):
+            px = left + min(right - left, idx * segment_w)
+            if idx == segments:
+                px = right
+            jitter = (offset_seed % 3) * 0.03
+            py = mid + int((bottom_offsets[idx] - jitter) * amplitude)
+            lower.append((px, max(top, min(bottom, py))))
+        return [(left, top), *points, (right, bottom), *lower]
 
     for index, ratio in enumerate(normalized):
-        segment_w = max(1, round(ratio * usable_w))
-        next_left = min(chart_right, current_left + segment_w)
+        band_h = max(1, round(ratio * usable_h))
+        next_top = min(chart_bottom, current_top + band_h)
         if index == len(normalized) - 1:
-            next_left = chart_right
+            next_top = chart_bottom
         fill = colors[index % len(colors)]
-        card.draw.rounded_rectangle(
-            (current_left, chart_top, next_left, chart_bottom),
-            radius=max(6, int(10 * scale)),
-            fill=fill,
+        polygon = _band_points(
+            left=chart_left,
+            right=chart_right,
+            top=current_top,
+            bottom=next_top,
+            offset_seed=index,
         )
-        if current_left > chart_left:
-            separator_x = current_left
+        card.draw.polygon(polygon, fill=fill)
+        if index > 0:
+            separator_y = current_top
             card.draw.line(
-                (separator_x, chart_top, separator_x, chart_bottom),
+                (chart_left, separator_y, chart_right, separator_y),
                 fill=mix_hex(axis_color, WATER_THEME.white, 0.2),
-                width=max(1, int(2 * scale)),
+                width=max(1, int(1 * scale)),
             )
-
         if focus_index is not None and index == focus_index:
             outline = mix_hex(fill, WATER_THEME.white, 0.36)
-            card.draw.rounded_rectangle(
-                (current_left, chart_top, next_left, chart_bottom),
-                radius=max(6, int(10 * scale)),
-                outline=outline,
-                width=max(2, int(3 * scale)),
+            card.draw.line(
+                (chart_left, current_top, chart_right, current_top),
+                fill=outline,
+                width=max(2, int(2 * scale)),
             )
-        current_left = next_left
+            card.draw.line(
+                (chart_left, next_top, chart_right, next_top),
+                fill=outline,
+                width=max(2, int(2 * scale)),
+            )
+        current_top = next_top
 
 
 def draw_dual_hourly_trend(

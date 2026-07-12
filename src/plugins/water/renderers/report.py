@@ -270,12 +270,11 @@ def _render_group_rank_share_panel(
         return
 
     focus_slice = next((item for item in slices if item.is_focus_group), slices[0])
-    total_count = sum(item.msg_count for item in slices)
     card.draw_text(
         (
             x + int(18 * scale),
             y + int(30 * scale),
-            x + w - int(18 * scale),
+            x + w - int(170 * scale),
             y + int(50 * scale),
         ),
         tr(
@@ -288,6 +287,21 @@ def _render_group_rank_share_panel(
         min_fontsize=int(8 * scale),
         fill=accent,
         halign="left",
+        font_families=[WATER_THEME.white],
+    )
+    card.draw_text(
+        (
+            x + w - int(156 * scale),
+            y + int(26 * scale),
+            x + w - int(18 * scale),
+            y + int(52 * scale),
+        ),
+        f"{focus_slice.share_ratio * 100:.1f}%",
+        max_fontsize=int(20 * scale),
+        min_fontsize=int(12 * scale),
+        fill=strong,
+        halign="right",
+        valign="center",
         font_families=[WATER_THEME.white],
     )
     title_bottom = y + int(50 * scale)
@@ -319,57 +333,6 @@ def _render_group_rank_share_panel(
         focus_index=focus_index,
         axis_color=theme.line,
         scale=scale,
-    )
-
-    metric_x = chart_x + int(14 * scale)
-    metric_w = chart_w - int(28 * scale)
-    card.draw_text(
-        (
-            metric_x,
-            chart_y + int(10 * scale),
-            metric_x + metric_w,
-            chart_y + int(44 * scale),
-        ),
-        f"{focus_slice.share_ratio * 100:.1f}%",
-        max_fontsize=int(26 * scale),
-        min_fontsize=int(16 * scale),
-        fill=strong,
-        halign="left",
-        valign="center",
-        font_families=[WATER_THEME.white],
-    )
-    card.draw_text(
-        (
-            metric_x,
-            chart_y + int(42 * scale),
-            metric_x + metric_w,
-            chart_y + int(60 * scale),
-        ),
-        tr(locale, "water.report.group_rank.insight.share"),
-        max_fontsize=int(9 * scale),
-        min_fontsize=int(7 * scale),
-        fill=hint,
-        halign="left",
-        font_families=[WATER_THEME.white],
-    )
-    card.draw_text(
-        (
-            metric_x,
-            chart_y + int(60 * scale),
-            metric_x + metric_w,
-            chart_y + int(76 * scale),
-        ),
-        tr(
-            locale,
-            "water.report.group_rank.analysis.detail",
-            focus=short_exp(focus_slice.msg_count),
-            total=short_exp(total_count),
-        ),
-        max_fontsize=int(9 * scale),
-        min_fontsize=int(7 * scale),
-        fill=hint,
-        halign="left",
-        font_families=[WATER_THEME.white],
     )
 
     if h < int(160 * scale):
