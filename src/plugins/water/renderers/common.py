@@ -406,8 +406,26 @@ def draw_share_area_chart(
         if right - left <= 1 or bottom - top <= 1:
             continue
         card.draw.rectangle((left, top, right, bottom), fill=fill)
+        gloss = mix_hex(fill, WATER_THEME.white, 0.42)
+        edge = mix_hex(fill, WATER_THEME.white, 0.22)
+        if right - left > 8 and bottom - top > 8:
+            card.draw.line(
+                (
+                    left + 1,
+                    top + max(1, int(2 * scale)),
+                    right - 1,
+                    top + max(1, int(2 * scale)),
+                ),
+                fill=gloss,
+                width=max(1, int(1 * scale)),
+            )
+        card.draw.rectangle(
+            (left, top, right, bottom),
+            outline=edge,
+            width=1,
+        )
         if focus_index is not None and index == focus_index:
-            outline = mix_hex(fill, WATER_THEME.white, 0.36)
+            outline = mix_hex(fill, WATER_THEME.white, 0.56)
             card.draw.rectangle(
                 (left, top, right, bottom),
                 outline=outline,
