@@ -390,10 +390,10 @@ def draw_share_area_chart(
     clamped_ratios = [max(0.0, min(1.0, ratio)) for ratio in ratios]
     total_ratio = sum(clamped_ratios) or 1.0
     normalized = [ratio / total_ratio for ratio in clamped_ratios]
-    chart_left = x + int(4 * scale)
-    chart_top = y + int(4 * scale)
-    chart_w = max(8, w - int(8 * scale))
-    chart_h = max(8, h - int(8 * scale))
+    chart_left = x
+    chart_top = y
+    chart_w = max(8, w)
+    chart_h = max(8, h)
     sizes = squarify.normalize_sizes(normalized, chart_w, chart_h)
     rects = squarify.squarify(sizes, chart_left, chart_top, chart_w, chart_h)
 
@@ -405,25 +405,14 @@ def draw_share_area_chart(
         bottom = round(rect["y"] + rect["dy"])
         if right - left <= 1 or bottom - top <= 1:
             continue
-        card.draw.rounded_rectangle(
-            (left, top, right, bottom),
-            radius=max(4, int(8 * scale)),
-            fill=fill,
-        )
+        card.draw.rectangle((left, top, right, bottom), fill=fill)
         if focus_index is not None and index == focus_index:
             outline = mix_hex(fill, WATER_THEME.white, 0.36)
-            card.draw.rounded_rectangle(
+            card.draw.rectangle(
                 (left, top, right, bottom),
-                radius=max(4, int(8 * scale)),
                 outline=outline,
                 width=max(2, int(2 * scale)),
             )
-        card.draw.rounded_rectangle(
-            (left, top, right, bottom),
-            radius=max(4, int(8 * scale)),
-            outline=mix_hex(axis_color, WATER_THEME.white, 0.14),
-            width=1,
-        )
 
 
 def draw_dual_hourly_trend(

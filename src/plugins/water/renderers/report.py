@@ -109,25 +109,25 @@ def _group_rank_row_fill(
 
 def _group_share_palette(theme: Any) -> tuple[str, ...]:
     return (
-        theme.blue,
-        theme.mint,
-        mix_hex(theme.accent, theme.blue, 0.42),
-        mix_hex(theme.accent, theme.mint, 0.42),
-        mix_hex(theme.deep, theme.blue, 0.18),
-        mix_hex(theme.deep, theme.mint, 0.22),
-        mix_hex(theme.podium_gold_badge, theme.blue, 0.35),
-        mix_hex(theme.podium_gold_badge, theme.mint, 0.35),
+        mix_hex(theme.blue, theme.white, 0.14),
+        mix_hex(theme.mint, theme.white, 0.14),
+        mix_hex(theme.accent, theme.white, 0.18),
+        mix_hex(theme.podium_gold_badge, theme.white, 0.12),
+        mix_hex(theme.deep, theme.white, 0.34),
+        mix_hex(theme.blue, theme.mint, 0.5),
+        mix_hex(theme.accent, theme.podium_gold_badge, 0.42),
+        mix_hex(theme.deep, theme.accent, 0.3),
     )
 
 
 def _group_trend_palette(theme: Any) -> tuple[str, ...]:
     return (
-        theme.blue,
-        theme.mint,
-        mix_hex(theme.accent, theme.blue, 0.25),
-        mix_hex(theme.accent, theme.mint, 0.3),
-        mix_hex(theme.deep, theme.blue, 0.1),
-        mix_hex(theme.deep, theme.mint, 0.14),
+        mix_hex(theme.blue, theme.white, 0.08),
+        mix_hex(theme.mint, theme.white, 0.08),
+        mix_hex(theme.accent, theme.white, 0.12),
+        mix_hex(theme.podium_gold_badge, theme.white, 0.1),
+        mix_hex(theme.deep, theme.white, 0.24),
+        mix_hex(theme.blue, theme.mint, 0.42),
         theme.trend_flat,
     )
 
@@ -316,22 +316,12 @@ def _render_group_rank_share_panel(
             continue
         slice_colors.append(palette[palette_index % len(palette)])
         palette_index += 1
-    card.draw_rounded_rectangle(
-        (
-            chart_x,
-            chart_y,
-            chart_x + chart_w,
-            chart_y + chart_h,
-        ),
-        radius=int(14 * scale),
-        fill=theme.rank_row_fill,
-    )
     draw_share_area_chart(
         card,
-        x=chart_x + int(8 * scale),
-        y=chart_y + int(8 * scale),
-        w=chart_w - int(16 * scale),
-        h=chart_h - int(16 * scale),
+        x=chart_x,
+        y=chart_y,
+        w=chart_w,
+        h=chart_h,
         ratios=[item.share_ratio for item in slices],
         colors=slice_colors,
         focus_index=focus_index,
