@@ -6,6 +6,7 @@ MESSAGE_KEY_NAMES = (
     "admin.backup.check.ok",
     "admin.backup.failed",
     "admin.backup.limit.invalid",
+    "admin.backup.profile",
     "admin.backup.run.bytes",
     "admin.backup.run.completed",
     "admin.backup.run.files",

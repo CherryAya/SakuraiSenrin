@@ -90,6 +90,8 @@ async def test_admin_backup_check_returns_latest_snapshot(
     )
 
     class _Service:
+        profile_name = "default"
+
         async def list_snapshots(self) -> list[object]:
             return [
                 _Snapshot(
@@ -115,11 +117,12 @@ async def test_admin_backup_check_returns_latest_snapshot(
     monkeypatch.setattr(
         backup_plugin,
         "build_backup_service_from_config",
-        lambda: _Service(),
+        lambda profile_name=None: _Service(),
     )
     expected = "\n".join(
         [
             tr("zh-CN", "admin.backup.check.ok", count=2),
+            tr("zh-CN", "admin.backup.profile", profile="default"),
             tr("zh-CN", "admin.backup.check.latest"),
             tr("zh-CN", "admin.backup.snapshot.id", snapshot_id="snap-1"),
             tr(
@@ -189,6 +192,8 @@ async def test_admin_backup_run_returns_backup_result(
         restic_snapshot_id = "snap-1"
 
     class _Service:
+        profile_name = "dev"
+
         async def run(self, plan: object, *, force: bool = False) -> object:
             assert force is True
             return _Result()
@@ -198,12 +203,13 @@ async def test_admin_backup_run_returns_backup_result(
     monkeypatch.setattr(
         backup_plugin,
         "build_backup_service_from_config",
-        lambda: _Service(),
+        lambda profile_name=None: _Service(),
     )
     monkeypatch.setattr(backup_plugin, "build_default_backup_plan", lambda: object())
     expected = "\n".join(
         [
             tr("zh-CN", "admin.backup.run.completed"),
+            tr("zh-CN", "admin.backup.profile", profile="dev"),
             tr("zh-CN", "admin.backup.run.run_id", run_id="backup-1"),
             tr(
                 "zh-CN",
@@ -232,15 +238,32 @@ async def test_admin_backup_restore_reloads_local_runtime_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     event = build_private_message_event(
-        "#admin.backup restore latest", user_id=SUPERUSER_ID
+        "#admin.backup restore latest prod", user_id=SUPERUSER_ID
     )
 
     from src.plugins.admin import backup as backup_plugin
 
-    restored: list[str] = []
+    restored: list[dict[str, object]] = []
 
-    async def _restore_remote_snapshot_into_local(*, snapshot: str) -> None:
-        restored.append(snapshot)
+    monkeypatch.setattr(
+        backup_plugin,
+        "resolve_default_backup_profile_name",
+        lambda: "dev",
+    )
+
+    async def _restore_remote_snapshot_into_local(
+        *,
+        snapshot: str,
+        profile_name: str | None = None,
+        confirm_production_restore: bool = False,
+    ) -> None:
+        restored.append(
+            {
+                "snapshot": snapshot,
+                "profile_name": profile_name,
+                "confirm_production_restore": confirm_production_restore,
+            }
+        )
 
     monkeypatch.setattr(
         backup_plugin,
@@ -250,6 +273,7 @@ async def test_admin_backup_restore_reloads_local_runtime_state(
     expected = "\n".join(
         [
             tr("zh-CN", "admin.backup.restore.completed"),
+            tr("zh-CN", "admin.backup.profile", profile="prod"),
             tr("zh-CN", "admin.backup.restore.snapshot", snapshot_id="latest"),
         ]
     )
@@ -263,7 +287,13 @@ async def test_admin_backup_restore_reloads_local_runtime_state(
             bot=bot,
         )
 
-    assert restored == ["latest"]
+    assert restored == [
+        {
+            "snapshot": "latest",
+            "profile_name": "prod",
+            "confirm_production_restore": False,
+        }
+    ]
 
 
 @pytest.mark.asyncio

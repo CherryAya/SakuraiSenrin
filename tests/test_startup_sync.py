@@ -32,6 +32,15 @@ async def test_startup_sync_notifies_superuser_when_remote_is_newer(
 
     class _Service:
         local_root = Path("data/backup")
+        restic = type(
+            "_Restic",
+            (),
+            {
+                "profile_name": "dev",
+                "allow_restore": True,
+                "allowed_app_envs_for_restore": ("development",),
+            },
+        )()
 
         async def list_snapshots(self) -> list[object]:
             return [
@@ -46,7 +55,22 @@ async def test_startup_sync_notifies_superuser_when_remote_is_newer(
     monkeypatch.setattr(
         startup_sync_module,
         "build_backup_service_from_config",
-        lambda: _Service(),
+        lambda profile_name=None: _Service(),
+    )
+    monkeypatch.setattr(
+        startup_sync_module,
+        "resolve_default_backup_profile_name",
+        lambda: "dev",
+    )
+    monkeypatch.setattr(
+        startup_sync_module,
+        "resolve_default_backup_profile_name",
+        lambda: "dev",
+    )
+    monkeypatch.setattr(
+        startup_sync_module,
+        "resolve_default_backup_profile_name",
+        lambda: "dev",
     )
 
     async def _local_latest() -> int:
@@ -83,6 +107,15 @@ async def test_startup_sync_logs_when_local_is_newer(
 
     class _Service:
         local_root = Path("data/backup")
+        restic = type(
+            "_Restic",
+            (),
+            {
+                "profile_name": "dev",
+                "allow_restore": True,
+                "allowed_app_envs_for_restore": ("development",),
+            },
+        )()
 
         async def list_snapshots(self) -> list[object]:
             return [
@@ -97,7 +130,12 @@ async def test_startup_sync_logs_when_local_is_newer(
     monkeypatch.setattr(
         startup_sync_module,
         "build_backup_service_from_config",
-        lambda: _Service(),
+        lambda profile_name=None: _Service(),
+    )
+    monkeypatch.setattr(
+        startup_sync_module,
+        "resolve_default_backup_profile_name",
+        lambda: "dev",
     )
 
     async def _local_latest() -> int:
@@ -135,14 +173,19 @@ async def test_startup_sync_reply_yes_runs_restore(
             remote_latest_at=2,
             local_latest_at=1,
             prompt_message_id="123",
+            profile_name="dev",
         )
     )
 
-    async def _restore(*, snapshot_id: str) -> None:
-        restored.append(snapshot_id)
+    async def _restore(
+        *,
+        snapshot: str,
+        profile_name: str | None = None,
+    ) -> None:
+        restored.append(snapshot)
 
     monkeypatch.setattr(
-        startup_sync_module, "restore_latest_remote_snapshot_into_local", _restore
+        startup_sync_module, "restore_remote_snapshot_into_local", _restore
     )
 
     result = await startup_sync_module.handle_startup_sync_reply(
@@ -154,6 +197,67 @@ async def test_startup_sync_reply_yes_runs_restore(
     assert restored == ["snap-123"]
     assert result is not None
     assert "已恢复到本地" in result
+
+
+def test_assert_restore_allowed_rejects_production_restore_without_confirm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Service:
+        restic = type(
+            "_Restic",
+            (),
+            {
+                "allow_restore": True,
+                "allowed_app_envs_for_restore": ("production", "development"),
+            },
+        )()
+
+    monkeypatch.setattr(startup_sync_module, "resolve_app_env", lambda: "production")
+    monkeypatch.setattr(
+        startup_sync_module,
+        "build_backup_service_from_config",
+        lambda profile_name=None: _Service(),
+    )
+    monkeypatch.setattr(
+        startup_sync_module,
+        "resolve_default_backup_profile_name",
+        lambda: "prod",
+    )
+
+    with pytest.raises(RuntimeError, match="explicit confirmation"):
+        startup_sync_module.assert_restore_allowed(profile_name="prod")
+
+
+def test_assert_restore_allowed_rejects_cross_profile_restore_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Service:
+        restic = type(
+            "_Restic",
+            (),
+            {
+                "allow_restore": True,
+                "allowed_app_envs_for_restore": ("production", "development"),
+            },
+        )()
+
+    monkeypatch.setattr(startup_sync_module, "resolve_app_env", lambda: "production")
+    monkeypatch.setattr(
+        startup_sync_module,
+        "build_backup_service_from_config",
+        lambda profile_name=None: _Service(),
+    )
+    monkeypatch.setattr(
+        startup_sync_module,
+        "resolve_default_backup_profile_name",
+        lambda: "prod",
+    )
+
+    with pytest.raises(RuntimeError, match="only restore from its default"):
+        startup_sync_module.assert_restore_allowed(
+            profile_name="dev",
+            confirm_production_restore=True,
+        )
 
 
 def test_find_restore_manifest_path_supports_nested_restore_layout(

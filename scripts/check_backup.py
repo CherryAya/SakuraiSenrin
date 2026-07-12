@@ -26,6 +26,7 @@ def parse_args() -> argparse.Namespace:
         default=3,
         help="max number of snapshots to show",
     )
+    parser.add_argument("--profile", help="backup profile override")
     return parser.parse_args()
 
 
@@ -35,10 +36,14 @@ async def main() -> None:
 
     from src.services.backup import build_backup_service_from_config
 
-    service = build_backup_service_from_config()
+    service = build_backup_service_from_config(args.profile)
     snapshots = await service.list_snapshots()
 
-    logger.success(f"backup healthcheck ok: {len(snapshots)} remote snapshots")
+    profile_name = getattr(service, "profile_name", args.profile or "default")
+    logger.success(
+        "backup healthcheck ok: "
+        f"{len(snapshots)} remote snapshots profile={profile_name}"
+    )
     for snapshot in snapshots[: args.limit]:
         logger.info(
             "snapshot: "

@@ -49,6 +49,9 @@ class BackupManifestFile:
 class BackupManifest:
     run_id: str
     created_at: int
+    app_env: str | None = None
+    backup_profile: str | None = None
+    hostname: str | None = None
     files: list[BackupManifestFile] = field(default_factory=list)
     restic_snapshot_id: str | None = None
 
@@ -60,6 +63,9 @@ class BackupManifest:
         payload = {
             "run_id": self.run_id,
             "created_at": self.created_at,
+            "app_env": self.app_env,
+            "backup_profile": self.backup_profile,
+            "hostname": self.hostname,
             "restic_snapshot_id": self.restic_snapshot_id,
             "bytes_total": self.bytes_total,
             "files": [asdict(file) for file in self.files],
@@ -111,5 +117,17 @@ class SQLiteSnapshotter:
         )
 
 
-def new_backup_manifest(run_id: str) -> BackupManifest:
-    return BackupManifest(run_id=run_id, created_at=get_current_time())
+def new_backup_manifest(
+    run_id: str,
+    *,
+    app_env: str | None = None,
+    backup_profile: str | None = None,
+    hostname: str | None = None,
+) -> BackupManifest:
+    return BackupManifest(
+        run_id=run_id,
+        created_at=get_current_time(),
+        app_env=app_env,
+        backup_profile=backup_profile,
+        hostname=hostname,
+    )

@@ -35,6 +35,7 @@ from src.services.backup import (
     ResticSnapshotInfo,
     build_backup_service_from_config,
     build_default_backup_plan,
+    resolve_default_backup_profile_name,
 )
 from src.services.startup_sync import restore_remote_snapshot_into_local
 
@@ -133,10 +134,16 @@ def _format_snapshot(locale: LocaleCode, snapshot: ResticSnapshotInfo) -> str:
     )
 
 
-def _format_run_result(locale: LocaleCode, result: BackupResult) -> str:
+def _format_run_result(
+    locale: LocaleCode,
+    result: BackupResult,
+    *,
+    profile_name: str,
+) -> str:
     return "\n".join(
         [
             tr(locale, "admin.backup.run.completed"),
+            tr(locale, "admin.backup.profile", profile=profile_name),
             tr(locale, "admin.backup.run.run_id", run_id=result.run_id),
             tr(locale, "admin.backup.run.manifest", path=result.manifest_path),
             tr(
@@ -164,6 +171,23 @@ def _parse_restore_snapshot(raw: str | None) -> str:
     if not snapshot:
         raise ValueError("admin.backup.restore.snapshot_required")
     return snapshot
+
+
+def _parse_restore_args(args: list[str]) -> tuple[str, str | None, bool]:
+    snapshot = _parse_restore_snapshot(args[1] if len(args) > 1 else None)
+    profile_name: str | None = None
+    confirm_production_restore = False
+    for extra in args[2:]:
+        token = extra.strip()
+        if not token:
+            continue
+        if token in {"confirm-production", "--confirm-production-restore"}:
+            confirm_production_restore = True
+            continue
+        if profile_name is None:
+            profile_name = token
+            continue
+    return snapshot, profile_name, confirm_production_restore
 
 
 def _build_progress_sink(bot: Bot, event: MessageEvent) -> CompositeProgressSink:
@@ -194,7 +218,6 @@ async def _(
         )
 
     action = args[0].lower()
-    service = build_backup_service_from_config()
 
     try:
         if action in {"help", "帮助"}:
@@ -208,6 +231,7 @@ async def _(
             return
 
         if action == "check":
+            service = build_backup_service_from_config()
             snapshots = await service.list_snapshots()
             if not snapshots:
                 await finish_with_message(
@@ -226,6 +250,11 @@ async def _(
                 message="\n".join(
                     [
                         tr(locale, "admin.backup.check.ok", count=len(snapshots)),
+                        tr(
+                            locale,
+                            "admin.backup.profile",
+                            profile=service.profile_name,
+                        ),
                         tr(locale, "admin.backup.check.latest"),
                         _format_snapshot(locale, latest),
                     ]
@@ -250,6 +279,7 @@ async def _(
                     source_kind="admin_backup",
                 )
                 return
+            service = build_backup_service_from_config()
             snapshots = await service.list_snapshots()
             if not snapshots:
                 await finish_with_message(
@@ -261,11 +291,12 @@ async def _(
                 )
                 return
             lines = [
+                tr(locale, "admin.backup.profile", profile=service.profile_name),
                 tr(
                     locale,
                     "admin.backup.snapshots.title",
                     count=min(limit, len(snapshots)),
-                )
+                ),
             ]
             for snapshot in snapshots[:limit]:
                 lines.append(_format_snapshot(locale, snapshot))
@@ -279,6 +310,7 @@ async def _(
             return
 
         if action == "run":
+            service = build_backup_service_from_config()
             plan = build_default_backup_plan()
             async with LongTaskRunner(
                 LongTaskSpec(
@@ -303,14 +335,22 @@ async def _(
                 bot,
                 matcher,
                 event=event,
-                message=_format_run_result(locale, result),
+                message=_format_run_result(
+                    locale,
+                    result,
+                    profile_name=service.profile_name,
+                ),
                 source_kind="admin_backup",
             )
             return
 
         if action == "restore":
             try:
-                snapshot = _parse_restore_snapshot(args[1] if len(args) > 1 else None)
+                (
+                    snapshot,
+                    profile_name,
+                    confirm_production_restore,
+                ) = _parse_restore_args(args)
             except ValueError:
                 await finish_with_message(
                     bot,
@@ -332,8 +372,20 @@ async def _(
                 ),
                 sink=_build_progress_sink(bot, event),
             ) as long_task:
-                await long_task.advance("restoring", metadata={"snapshot": snapshot})
-                await restore_remote_snapshot_into_local(snapshot=snapshot)
+                default_profile_name = resolve_default_backup_profile_name()
+                resolved_profile = profile_name or default_profile_name
+                await long_task.advance(
+                    "restoring",
+                    metadata={
+                        "snapshot": snapshot,
+                        "profile": resolved_profile,
+                    },
+                )
+                await restore_remote_snapshot_into_local(
+                    snapshot=snapshot,
+                    profile_name=resolved_profile,
+                    confirm_production_restore=confirm_production_restore,
+                )
             await finish_with_message(
                 bot,
                 matcher,
@@ -341,6 +393,11 @@ async def _(
                 message="\n".join(
                     [
                         tr(locale, "admin.backup.restore.completed"),
+                        tr(
+                            locale,
+                            "admin.backup.profile",
+                            profile=profile_name or default_profile_name,
+                        ),
                         tr(
                             locale,
                             "admin.backup.restore.snapshot",

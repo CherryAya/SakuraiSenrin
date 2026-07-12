@@ -16,6 +16,7 @@ def test_run_backup_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None
     args = run_backup_script.parse_args()
 
     assert args.force is False
+    assert args.profile is None
 
 
 def test_run_restore_parse_args_requires_target(
@@ -30,6 +31,7 @@ def test_run_restore_parse_args_requires_target(
 
     assert args.snapshot == "latest"
     assert args.target == "./data/restore-check"
+    assert args.profile is None
 
 
 def test_run_restore_parse_args_supports_apply_local(
@@ -44,6 +46,7 @@ def test_run_restore_parse_args_supports_apply_local(
 
     assert args.snapshot == "latest"
     assert args.apply_local is True
+    assert args.confirm_production_restore is False
 
 
 @pytest.mark.asyncio
@@ -51,7 +54,7 @@ async def test_run_backup_main_executes_force_flow(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    args = argparse.Namespace(force=True)
+    args = argparse.Namespace(force=True, profile="dev")
     captured: dict[str, Any] = {"info": []}
 
     class _Result:
@@ -92,7 +95,7 @@ async def test_run_backup_main_executes_force_flow(
     monkeypatch.setattr(
         backup_module,
         "build_backup_service_from_config",
-        lambda: _Service(),
+        lambda profile_name=None: _Service(),
     )
     monkeypatch.setattr(
         backup_module,
@@ -108,6 +111,7 @@ async def test_run_backup_main_executes_force_flow(
         "stream_output": True,
     }
     assert "backup completed: backup-1" in str(captured["success"])
+    assert "profile=" in str(captured["success"])
     assert any("manifest:" in str(item) for item in captured["info"])
     assert any("restic snapshot:" in str(item) for item in captured["info"])
 
@@ -116,7 +120,13 @@ async def test_run_backup_main_executes_force_flow(
 async def test_run_restore_main_executes_restore(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    args = argparse.Namespace(snapshot="latest", target="./data/restore-check")
+    args = argparse.Namespace(
+        snapshot="latest",
+        target="./data/restore-check",
+        profile="prod",
+        apply_local=False,
+        confirm_production_restore=False,
+    )
     captured: dict[str, Any] = {}
 
     class _Service:
@@ -139,7 +149,7 @@ async def test_run_restore_main_executes_restore(
     monkeypatch.setattr(
         backup_module,
         "build_backup_service_from_config",
-        lambda: _Service(),
+        lambda profile_name=None: _Service(),
     )
 
     await run_restore_script.main()
@@ -151,17 +161,33 @@ async def test_run_restore_main_executes_restore(
     assert "restore completed: latest -> ./data/restore-check" in str(
         captured["success"]
     )
+    assert "profile=" in str(captured["success"])
 
 
 @pytest.mark.asyncio
 async def test_run_restore_main_can_apply_local_restore(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    args = argparse.Namespace(snapshot="latest", target=None, apply_local=True)
+    args = argparse.Namespace(
+        snapshot="latest",
+        target=None,
+        apply_local=True,
+        profile="prod",
+        confirm_production_restore=False,
+    )
     captured: dict[str, Any] = {}
 
-    async def _restore_remote_snapshot_into_local(*, snapshot: str) -> None:
-        captured["restore"] = {"snapshot": snapshot}
+    async def _restore_remote_snapshot_into_local(
+        *,
+        snapshot: str,
+        profile_name: str | None = None,
+        confirm_production_restore: bool = False,
+    ) -> None:
+        captured["restore"] = {
+            "snapshot": snapshot,
+            "profile_name": profile_name,
+            "confirm_production_restore": confirm_production_restore,
+        }
 
     monkeypatch.setattr(run_restore_script.nonebot, "init", lambda: None)
     monkeypatch.setattr(run_restore_script, "parse_args", lambda: args)
@@ -181,5 +207,9 @@ async def test_run_restore_main_can_apply_local_restore(
 
     await run_restore_script.main()
 
-    assert captured["restore"] == {"snapshot": "latest"}
+    assert captured["restore"] == {
+        "snapshot": "latest",
+        "profile_name": "prod",
+        "confirm_production_restore": False,
+    }
     assert "restore completed and applied locally: latest" in str(captured["success"])
