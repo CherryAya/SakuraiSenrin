@@ -652,6 +652,11 @@ def resolve_default_backup_profile_name() -> str:
     configured = (getattr(config, "BACKUP_REMOTE_PROFILE", None) or "").strip()
     if configured:
         return configured
+    app_env = resolve_app_env()
+    if app_env == "production":
+        return "prod"
+    if app_env == "development":
+        return "dev"
     profiles = _load_backup_profiles()
     if len(profiles) == 1:
         return next(iter(profiles))

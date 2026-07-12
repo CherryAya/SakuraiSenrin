@@ -65,6 +65,10 @@ class GlobalConfig(BaseModel):
     BACKUP_RESTIC_PASSWORD: str | None = None
     BACKUP_REMOTE_PROFILE: str | None = None
     BACKUP_PROFILES_JSON: str | None = None
+    BACKUP_PROD_RESTIC_REPOSITORY: str | None = None
+    BACKUP_PROD_RESTIC_PASSWORD: str | None = None
+    BACKUP_DEV_RESTIC_REPOSITORY: str | None = None
+    BACKUP_DEV_RESTIC_PASSWORD: str | None = None
     BACKUP_LOCAL_ROOT: str = "./data/backup"
     BACKUP_CRON_HOUR: int = 3
     BACKUP_CRON_MINUTE: int = 20
@@ -78,6 +82,10 @@ class GlobalConfig(BaseModel):
     SENTRY_DSN: str | None = None
 
     def backup_profiles(self) -> dict[str, BackupRemoteProfile]:
+        profiles = self._backup_profiles_from_flat_env()
+        if profiles:
+            return profiles
+
         raw = (self.BACKUP_PROFILES_JSON or "").strip()
         if raw:
             payload = json.loads(raw)
@@ -88,9 +96,7 @@ class GlobalConfig(BaseModel):
                 if not isinstance(name, str) or not name.strip():
                     raise ValueError("backup profile name must be non-empty")
                 if not isinstance(item, dict):
-                    raise ValueError(
-                        f"backup profile {name!r} must be a JSON object"
-                    )
+                    raise ValueError(f"backup profile {name!r} must be a JSON object")
                 profile_payload = dict(item)
                 profile_payload.setdefault("name", name)
                 profile = BackupRemoteProfile(**profile_payload)
@@ -99,8 +105,8 @@ class GlobalConfig(BaseModel):
 
         if self.BACKUP_RESTIC_REPOSITORY and self.BACKUP_RESTIC_PASSWORD:
             profile_name = (
-                (self.BACKUP_REMOTE_PROFILE or "default").strip() or "default"
-            )
+                self.BACKUP_REMOTE_PROFILE or "default"
+            ).strip() or "default"
             return {
                 profile_name: BackupRemoteProfile(
                     name=profile_name,
@@ -115,6 +121,39 @@ class GlobalConfig(BaseModel):
                 )
             }
         return {}
+
+    def _backup_profiles_from_flat_env(self) -> dict[str, BackupRemoteProfile]:
+        profiles: dict[str, BackupRemoteProfile] = {}
+        prod_repository = (self.BACKUP_PROD_RESTIC_REPOSITORY or "").strip()
+        prod_password = (self.BACKUP_PROD_RESTIC_PASSWORD or "").strip()
+        if prod_repository and prod_password:
+            profiles["prod"] = BackupRemoteProfile(
+                name="prod",
+                repository=prod_repository,
+                password=prod_password,
+                access_key_id=self.R2_ACCESS_KEY_ID,
+                secret_access_key=self.R2_SECRET_ACCESS_KEY,
+                allowed_app_envs_for_backup=("production",),
+                allowed_app_envs_for_restore=("production", "development"),
+                allow_backup=True,
+                allow_restore=True,
+            )
+
+        dev_repository = (self.BACKUP_DEV_RESTIC_REPOSITORY or "").strip()
+        dev_password = (self.BACKUP_DEV_RESTIC_PASSWORD or "").strip()
+        if dev_repository and dev_password:
+            profiles["dev"] = BackupRemoteProfile(
+                name="dev",
+                repository=dev_repository,
+                password=dev_password,
+                access_key_id=self.R2_ACCESS_KEY_ID,
+                secret_access_key=self.R2_SECRET_ACCESS_KEY,
+                allowed_app_envs_for_backup=("development",),
+                allowed_app_envs_for_restore=("development",),
+                allow_backup=True,
+                allow_restore=True,
+            )
+        return profiles
 
 
 config: GlobalConfig = nonebot.get_plugin_config(GlobalConfig)

@@ -20,6 +20,31 @@ def test_run_backup_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None
     assert args.profile is None
 
 
+def test_resolve_default_backup_profile_name_follows_app_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.services import backup as backup_module
+
+    monkeypatch.setattr(backup_module, "resolve_app_env", lambda: "production")
+    monkeypatch.setattr(
+        backup_module,
+        "_load_backup_profiles",
+        lambda: {
+            "prod": BackupRemoteProfile(
+                name="prod",
+                repository="repo-prod",
+                password="pw-prod",
+            ),
+            "dev": BackupRemoteProfile(
+                name="dev",
+                repository="repo-dev",
+                password="pw-dev",
+            ),
+        },
+    )
+    assert backup_module.resolve_default_backup_profile_name() == "prod"
+
+
 def test_run_restore_parse_args_requires_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

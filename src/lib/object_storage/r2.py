@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 import inspect
 from typing import Any
@@ -77,6 +78,45 @@ class R2ObjectStorageClient:
             region_name="auto",
         )
 
+    def _sync_session(self) -> Any:
+        try:
+            import boto3
+        except ImportError as exc:
+            raise ObjectStorageConfigError("boto3 is required for R2 storage") from exc
+        return boto3.Session()
+
+    def _sync_client_context(self) -> Any:
+        access_key_id, secret_access_key, _, endpoint = self._require_config()
+        return self._sync_session().client(
+            "s3",
+            endpoint_url=endpoint,
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
+            region_name="auto",
+        )
+
+    def _put_bytes_sync(
+        self,
+        bucket: str,
+        normalized_key: str,
+        data: bytes,
+        *,
+        content_type: str | None = None,
+    ) -> dict[str, Any]:
+        extra_args: dict[str, object] = {
+            "ContentLength": len(data),
+        }
+        if content_type:
+            extra_args["ContentType"] = content_type
+        with self._sync_client_context() as client:
+            response = client.put_object(
+                Bucket=bucket,
+                Key=normalized_key,
+                Body=data,
+                **extra_args,
+            )
+        return dict(response)
+
     async def put_bytes(
         self,
         key: str,
@@ -86,18 +126,13 @@ class R2ObjectStorageClient:
     ) -> StorageObject:
         _, _, bucket, _ = self._require_config()
         normalized_key = key.lstrip("/")
-        extra_args: dict[str, object] = {
-            "ContentLength": len(data),
-        }
-        if content_type:
-            extra_args["ContentType"] = content_type
-        async with self._client_context() as client:
-            response = await client.put_object(
-                Bucket=bucket,
-                Key=normalized_key,
-                Body=data,
-                **extra_args,
-            )
+        response = await asyncio.to_thread(
+            self._put_bytes_sync,
+            bucket,
+            normalized_key,
+            data,
+            content_type=content_type,
+        )
         etag = str(response.get("ETag", "")).strip('"') or None
         return StorageObject(
             provider=self.provider,

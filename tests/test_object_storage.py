@@ -180,17 +180,17 @@ async def test_r2_object_storage_put_bytes_sets_content_length() -> None:
         def __init__(self) -> None:
             self.calls: list[dict[str, object]] = []
 
-        async def put_object(self, **kwargs: object) -> dict[str, object]:
+        def put_object(self, **kwargs: object) -> dict[str, object]:
             self.calls.append(kwargs)
             return {"ETag": '"etag-a"'}
 
     fake_client = _FakeR2Client()
 
     class _FakeContext:
-        async def __aenter__(self) -> _FakeR2Client:
+        def __enter__(self) -> _FakeR2Client:
             return fake_client
 
-        async def __aexit__(
+        def __exit__(
             self,
             exc_type: object,
             exc: object,
@@ -199,7 +199,7 @@ async def test_r2_object_storage_put_bytes_sets_content_length() -> None:
             return None
 
     class _TestR2ObjectStorageClient(R2ObjectStorageClient):
-        def _client_context(self) -> _FakeContext:
+        def _sync_client_context(self) -> _FakeContext:
             return _FakeContext()
 
     client = _TestR2ObjectStorageClient(
