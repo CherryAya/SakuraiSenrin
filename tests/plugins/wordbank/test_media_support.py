@@ -55,6 +55,36 @@ def _gif(colors: list[tuple[int, int, int]]) -> bytes:
     return buffer.getvalue()
 
 
+def _animated_webp(colors: list[tuple[int, int, int]]) -> bytes:
+    buffer = BytesIO()
+    frames = [Image.new("RGBA", (16, 16), color) for color in colors]
+    first, *rest = frames
+    first.save(
+        buffer,
+        format="WEBP",
+        save_all=True,
+        append_images=rest,
+        duration=[80] * len(frames),
+        loop=0,
+    )
+    return buffer.getvalue()
+
+
+def _apng(colors: list[tuple[int, int, int]]) -> bytes:
+    buffer = BytesIO()
+    frames = [Image.new("RGBA", (16, 16), color) for color in colors]
+    first, *rest = frames
+    first.save(
+        buffer,
+        format="PNG",
+        save_all=True,
+        append_images=rest,
+        duration=[80] * len(frames),
+        loop=0,
+    )
+    return buffer.getvalue()
+
+
 class _ImageRepo:
     def __init__(self) -> None:
         self.images: list[WordbankImageRecord] = []
@@ -215,6 +245,8 @@ __all__ = [
     "WordbankMediaService",
     "_ImageRepo",
     "_ObjectStorage",
+    "_animated_webp",
+    "_apng",
     "_gif",
     "_jpeg",
     "_png",

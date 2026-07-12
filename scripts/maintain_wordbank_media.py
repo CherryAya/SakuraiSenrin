@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from io import BytesIO
 import json
 from pathlib import Path
 import sys
 from typing import Any
 
 import nonebot
+from PIL import Image, UnidentifiedImageError
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -22,6 +24,12 @@ wordbank_repo: Any = None
 wordbank_media_service: Any = None
 DEFAULT_BATCH_SIZE = 200
 DEFAULT_CONCURRENCY = 8
+
+
+def _is_animated_image(image: Image.Image) -> bool:
+    return bool(
+        getattr(image, "is_animated", False) or getattr(image, "n_frames", 1) > 1
+    )
 
 
 def _load_wordbank_components() -> None:
@@ -86,6 +94,11 @@ def parse_args() -> argparse.Namespace:
         help="refresh local cache size metadata before syncing",
     )
     parser.add_argument(
+        "--migrate-animated-gif",
+        action="store_true",
+        help="rewrite animated media to gif before regular maintenance",
+    )
+    parser.add_argument(
         "--report",
         default="./data/db/wordbank-media-maintenance-report.json",
         help="where to write the maintenance report JSON",
@@ -108,6 +121,7 @@ async def maintain_wordbank_media(
     only_unsynced: bool,
     verify_remote: bool,
     rebuild_cache_metadata: bool,
+    migrate_animated_gif: bool,
 ) -> dict[str, Any]:
     _load_wordbank_components()
     report_rows: list[dict[str, Any]] = []
@@ -141,6 +155,137 @@ async def maintain_wordbank_media(
                 f"fallback to per-object verification: {exc}"
             )
 
+    async def inspect_gif_migration(image: Any) -> dict[str, Any] | None:
+        source_bytes = await wordbank_media_service.load_canonical_storage_bytes(
+            image.canonical_id
+        )
+        if source_bytes is None:
+            return {
+                "candidate": False,
+                "reason": "missing_source_bytes",
+            }
+        try:
+            with Image.open(BytesIO(source_bytes)) as source_image:
+                source_format = str(getattr(source_image, "format", "") or "").upper()
+                source_is_animated = _is_animated_image(source_image)
+        except UnidentifiedImageError:
+            return {
+                "candidate": False,
+                "reason": "unrecognized_image",
+            }
+        return {
+            "candidate": source_is_animated and source_format != "GIF",
+            "reason": "eligible"
+            if source_is_animated and source_format != "GIF"
+            else "",
+            "source_format": source_format or "UNKNOWN",
+            "source_is_animated": source_is_animated,
+        }
+
+    async def migrate_image_to_gif(image: Any) -> Any | None:
+        from src.plugins.wordbank.services.media import (
+            is_remote_uri,
+            prepare_image_bytes,
+        )
+        from src.plugins.wordbank.services.media_models import REMOTE_SYNC_FAILED
+
+        source_bytes = await wordbank_media_service.load_canonical_storage_bytes(
+            image.canonical_id
+        )
+        if source_bytes is None:
+            return None
+        prepared = prepare_image_bytes(source_bytes)
+        if prepared.stored_media.extension != ".gif":
+            return None
+
+        old_storage_path = image.storage_path
+        old_remote_storage_path = image.remote_storage_path
+        old_local_cache_path = image.local_cache_path
+        local_storage_path = await wordbank_media_service.legacy_storage.save_image(
+            prepared,
+            md5_hex=image.md5,
+            keep_original=False,
+        )
+
+        remote_storage_path = ""
+        remote_sync_status = image.remote_sync_status
+        remote_synced_at = image.remote_synced_at
+        remote_etag = ""
+        remote_object_size = 0
+        remote_storage = getattr(wordbank_media_service, "remote_storage", None)
+        if remote_storage is not None:
+            try:
+                stored = await remote_storage.save_prepared_image(
+                    prepared,
+                    md5_hex=image.md5,
+                    keep_original=False,
+                )
+                remote_storage_path = stored.uri
+                remote_sync_status = "synced"
+                remote_synced_at = get_current_time()
+                remote_etag = stored.etag or ""
+                remote_object_size = stored.size
+            except Exception as exc:
+                logger.warning(f"[Wordbank] animated media gif migration failed: {exc}")
+                remote_sync_status = REMOTE_SYNC_FAILED
+        elif old_remote_storage_path:
+            remote_sync_status = REMOTE_SYNC_FAILED
+
+        updated = await wordbank_repo.update_image_remote_sync(
+            image.id,
+            remote_storage_path=remote_storage_path,
+            remote_sync_status=remote_sync_status,
+            remote_synced_at=remote_synced_at,
+            remote_etag=remote_etag,
+            remote_object_size=remote_object_size,
+            storage_path=local_storage_path,
+        )
+        if updated is None:
+            return None
+
+        if old_local_cache_path:
+            await wordbank_media_service.cache_storage.remove_cache_entry(
+                old_local_cache_path
+            )
+        cached = await wordbank_media_service.cache_storage.store_cached_bytes(
+            prepared.stored_media.data,
+            md5_hex=image.md5,
+            extension=prepared.stored_media.extension,
+        )
+        updated = (
+            await wordbank_repo.update_image_cache_metadata(
+                updated.id,
+                local_cache_path=cached.path if cached is not None else "",
+                cache_file_size=cached.size if cached is not None else 0,
+                last_accessed_at=updated.last_accessed_at,
+                cache_last_hit_at=0,
+            )
+            or updated
+        )
+
+        if (
+            old_storage_path
+            and not is_remote_uri(old_storage_path)
+            and old_storage_path != updated.storage_path
+        ):
+            await wordbank_media_service.legacy_storage.delete_image(old_storage_path)
+        if (
+            old_storage_path
+            and is_remote_uri(old_storage_path)
+            and old_storage_path != updated.remote_storage_path
+            and remote_storage is not None
+        ):
+            await remote_storage.delete_image(old_storage_path)
+        if (
+            old_remote_storage_path
+            and old_remote_storage_path != old_storage_path
+            and old_remote_storage_path != updated.remote_storage_path
+            and remote_storage is not None
+        ):
+            await remote_storage.delete_image(old_remote_storage_path)
+
+        return updated
+
     async def process_image(image: Any) -> tuple[dict[str, Any], str]:
         row_report: dict[str, Any] = {
             "id": image.id,
@@ -155,6 +300,48 @@ async def maintain_wordbank_media(
                 working_image = await wordbank_media_service.rebuild_cache_metadata(
                     working_image
                 )
+            if migrate_animated_gif:
+                migration_info = await inspect_gif_migration(working_image)
+                if migration_info is not None:
+                    row_report["migration_source_format"] = migration_info.get(
+                        "source_format", "UNKNOWN"
+                    )
+                    row_report["migration_source_is_animated"] = migration_info.get(
+                        "source_is_animated", False
+                    )
+                    row_report["migration_candidate"] = migration_info["candidate"]
+                    if migration_info.get("reason"):
+                        row_report["migration_reason"] = migration_info["reason"]
+                if migration_info is not None and migration_info["candidate"]:
+                    row_report["migration_target_extension"] = ".gif"
+                    if dry_run:
+                        row_report["action"] = "migrate_inspect"
+                        row_report["remote_sync_status_after"] = (
+                            working_image.remote_sync_status
+                        )
+                        row_report["remote_storage_path_after"] = (
+                            working_image.remote_storage_path
+                        )
+                        row_report["storage_path_after"] = working_image.storage_path
+                        return row_report, "inspect"
+                    migrated = await migrate_image_to_gif(working_image)
+                    if migrated is None:
+                        row_report["action"] = "migrate_failed"
+                        return row_report, "failed"
+                    row_report["action"] = "migrate"
+                    row_report["remote_sync_status_after"] = migrated.remote_sync_status
+                    row_report["remote_storage_path_after"] = (
+                        migrated.remote_storage_path
+                    )
+                    row_report["storage_path_after"] = migrated.storage_path
+                    row_report["remote_synced_at"] = migrated.remote_synced_at
+                    if migrated.remote_sync_status == "failed" and (
+                        bool(working_image.remote_storage_path)
+                        or getattr(wordbank_media_service, "remote_storage", None)
+                        is not None
+                    ):
+                        return row_report, "failed"
+                    return row_report, "synced"
             if dry_run:
                 row_report["action"] = "inspect"
                 row_report["remote_sync_status_after"] = (
@@ -242,6 +429,7 @@ async def maintain_wordbank_media(
         "only_unsynced": only_unsynced,
         "verify_remote": verify_remote,
         "rebuild_cache_metadata": rebuild_cache_metadata,
+        "migrate_animated_gif": migrate_animated_gif,
         "scanned": scanned,
         "synced": synced,
         "failed": failed,
@@ -264,6 +452,7 @@ async def main() -> None:
         only_unsynced=args.only_unsynced,
         verify_remote=args.verify_remote,
         rebuild_cache_metadata=args.rebuild_cache_metadata,
+        migrate_animated_gif=args.migrate_animated_gif,
     )
     report_path = Path(args.report)
     await asyncio.to_thread(write_report, report_path, report)

@@ -80,9 +80,38 @@ async def test_r2_media_storage_saves_gif_as_animated_media(tmp_path: Path) -> N
 
     assert loaded is not None
     assert loaded == storage.objects[key]
-    assert Path(key).suffix == ".webp"
-    assert storage.content_types[key] == "image/webp"
+    assert loaded == data
+    assert Path(key).suffix == ".gif"
+    assert storage.content_types[key] == "image/gif"
     with Image.open(BytesIO(loaded)) as stored_image:
+        assert str(getattr(stored_image, "format", "")).upper() == "GIF"
+        assert getattr(stored_image, "n_frames", 1) > 1
+
+
+async def test_r2_media_storage_rewrites_animated_webp_to_gif(
+    tmp_path: Path,
+) -> None:
+    storage = _ObjectStorage()
+    media_storage = R2WordbankMediaStorage(
+        storage,
+        fallback=LocalWordbankMediaStorage(tmp_path),
+    )
+    data = _animated_webp([(0, 0, 255), (255, 255, 0)])
+    fingerprint = fingerprint_image(data)
+
+    storage_path = await media_storage.save_image(
+        prepare_image_bytes(data),
+        md5_hex=fingerprint.md5,
+        keep_original=False,
+    )
+    key = storage_path.removeprefix("r2://bucket/")
+    loaded = await media_storage.load_bytes(storage_path)
+
+    assert loaded is not None
+    assert Path(key).suffix == ".gif"
+    assert storage.content_types[key] == "image/gif"
+    with Image.open(BytesIO(loaded)) as stored_image:
+        assert str(getattr(stored_image, "format", "")).upper() == "GIF"
         assert getattr(stored_image, "n_frames", 1) > 1
 
 

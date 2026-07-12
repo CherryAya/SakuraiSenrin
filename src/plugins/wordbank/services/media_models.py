@@ -131,19 +131,25 @@ def _build_fingerprint(image: Image.Image, data: bytes) -> ImageFingerprint:
 
 def _build_stored_media(image: Image.Image, data: bytes) -> StoredMedia:
     if _is_animated(image):
-        animated_webp = _encode_animated_webp(image)
-        if animated_webp is not None:
+        if _detect_extension(image) == ".gif":
             return StoredMedia(
-                data=animated_webp,
-                extension=".webp",
-                content_type=WEBP_CONTENT_TYPE,
+                data=data,
+                extension=".gif",
+                content_type="image/gif",
             )
-        resized_webp = _encode_animated_webp(image, resize_to_limit=True)
-        if resized_webp is not None:
+        animated_gif = _encode_animated_gif(image)
+        if animated_gif is not None:
             return StoredMedia(
-                data=resized_webp,
-                extension=".webp",
-                content_type=WEBP_CONTENT_TYPE,
+                data=animated_gif,
+                extension=".gif",
+                content_type="image/gif",
+            )
+        resized_gif = _encode_animated_gif(image, resize_to_limit=True)
+        if resized_gif is not None:
+            return StoredMedia(
+                data=resized_gif,
+                extension=".gif",
+                content_type="image/gif",
             )
         return _fallback_original_media(image, data)
 
@@ -194,7 +200,7 @@ def _encode_static_webp(image: Image.Image) -> bytes | None:
         return None
 
 
-def _encode_animated_webp(
+def _encode_animated_gif(
     image: Image.Image,
     *,
     resize_to_limit: bool = False,
@@ -216,13 +222,12 @@ def _encode_animated_webp(
         first, *rest = frames
         first.save(
             buffer,
-            format="WEBP",
+            format="GIF",
             save_all=True,
             append_images=rest,
             duration=durations,
             loop=loop,
-            quality=82,
-            method=4,
+            disposal=2,
         )
         return buffer.getvalue()
     except Exception:
@@ -262,7 +267,7 @@ def _fallback_original_media(image: Image.Image, data: bytes) -> StoredMedia:
     extension = _detect_extension(image)
     content_type = _detect_content_type(image)
     logger.warning(
-        "[Wordbank] webp encode failed, fallback to original media format: "
+        "[Wordbank] media encode failed, fallback to original media format: "
         f"{extension or DEFAULT_MEDIA_EXTENSION}"
     )
     return StoredMedia(data=data, extension=extension, content_type=content_type)

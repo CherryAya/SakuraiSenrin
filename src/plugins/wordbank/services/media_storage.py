@@ -82,6 +82,8 @@ class WordbankMediaStorage(Protocol):
 
     async def load_bytes(self, storage_path: str) -> bytes | None: ...
 
+    async def delete_image(self, storage_path: str) -> None: ...
+
 
 class LocalWordbankMediaStorage:
     def __init__(self, media_root: Path = DEFAULT_MEDIA_ROOT) -> None:
@@ -124,6 +126,14 @@ class LocalWordbankMediaStorage:
         if not path.is_file():
             return None
         return path.read_bytes()
+
+    async def delete_image(self, storage_path: str) -> None:
+        await asyncio.to_thread(self._delete_image, storage_path)
+
+    def _delete_image(self, storage_path: str) -> None:
+        path = Path(storage_path)
+        if path.exists():
+            path.unlink()
 
 
 class ObjectStorageWordbankMediaStorage:
@@ -285,6 +295,20 @@ class ObjectStorageWordbankMediaStorage:
             fallback_used=False,
         )
         return loaded
+
+    async def delete_image(self, storage_path: str) -> None:
+        key = self._key_from_uri(storage_path)
+        if key is None:
+            if self.fallback is None:
+                return
+            await self.fallback.delete_image(storage_path)
+            return
+        try:
+            await self.object_storage.delete_object(key)
+        except Exception as exc:
+            logger.warning(
+                f"[Wordbank] remote media delete failed for {storage_path}: {exc}"
+            )
 
     async def exists(self, storage_path: str) -> bool:
         key = self._key_from_uri(storage_path)

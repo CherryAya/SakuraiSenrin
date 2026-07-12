@@ -128,8 +128,10 @@ async def test_media_ingest_preserves_animation_bytes_for_gif(
     stored_path = Path(image.storage_path)
     stored_bytes = await asyncio.to_thread(stored_path.read_bytes)
 
-    assert stored_path.suffix == ".webp"
+    assert stored_path.suffix == ".gif"
+    assert stored_bytes == data
     with Image.open(BytesIO(stored_bytes)) as stored_image:
+        assert str(getattr(stored_image, "format", "")).upper() == "GIF"
         assert getattr(stored_image, "n_frames", 1) > 1
 
 
@@ -145,9 +147,40 @@ async def test_media_ingest_detects_gif_by_header_even_when_suffix_is_jpg(
     stored_path = Path(image.storage_path)
     stored_bytes = await asyncio.to_thread(stored_path.read_bytes)
 
-    assert stored_path.suffix == ".webp"
+    assert stored_path.suffix == ".gif"
+    assert stored_bytes == fake_jpg_path.read_bytes()
     with Image.open(BytesIO(stored_bytes)) as stored_image:
-        assert str(getattr(stored_image, "format", "")).upper() == "WEBP"
+        assert str(getattr(stored_image, "format", "")).upper() == "GIF"
+        assert getattr(stored_image, "n_frames", 1) > 1
+
+
+async def test_media_ingest_rewrites_animated_webp_to_gif(
+    tmp_path: Path,
+) -> None:
+    repo = _ImageRepo()
+    service = WordbankMediaService(repo, media_root=tmp_path)
+    data = _animated_webp([(255, 0, 0), (0, 255, 0)])
+
+    image = await service.ingest_image_bytes(data)
+    stored_path = Path(image.storage_path)
+    stored_bytes = await asyncio.to_thread(stored_path.read_bytes)
+
+    assert stored_path.suffix == ".gif"
+    assert stored_bytes != data
+    with Image.open(BytesIO(stored_bytes)) as stored_image:
+        assert str(getattr(stored_image, "format", "")).upper() == "GIF"
+        assert getattr(stored_image, "n_frames", 1) > 1
+
+
+def test_prepare_image_bytes_rewrites_apng_to_gif() -> None:
+    data = _apng([(255, 0, 0), (0, 0, 255)])
+
+    prepared = prepare_image_bytes(data)
+
+    assert prepared.stored_media.extension == ".gif"
+    assert prepared.stored_media.content_type == "image/gif"
+    with Image.open(BytesIO(prepared.stored_media.data)) as stored_image:
+        assert str(getattr(stored_image, "format", "")).upper() == "GIF"
         assert getattr(stored_image, "n_frames", 1) > 1
 
 
@@ -228,21 +261,21 @@ async def test_resolve_canonical_id_short_circuits_on_raw_bytes_md5(
     assert resolved == first.canonical_id
 
 
-def test_prepare_image_bytes_falls_back_to_original_gif_when_webp_encode_fails(
+def test_prepare_image_bytes_falls_back_to_original_animated_webp_when_gif_encode_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    data = _gif([(255, 0, 255), (0, 255, 255)])
+    data = _animated_webp([(255, 0, 255), (0, 255, 255)])
 
     monkeypatch.setattr(
         media_models_module,
-        "_encode_animated_webp",
+        "_encode_animated_gif",
         lambda _image, resize_to_limit=False: None,
     )
 
     prepared = prepare_image_bytes(data)
 
-    assert prepared.stored_media.extension == ".gif"
-    assert prepared.stored_media.content_type == "image/gif"
+    assert prepared.stored_media.extension == ".webp"
+    assert prepared.stored_media.content_type == "image/webp"
     assert prepared.stored_media.data == data
 
 
