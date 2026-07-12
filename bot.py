@@ -10,8 +10,8 @@ import nonebot
 from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter
 from nonebot.adapters.onebot.v11 import Bot
 
-from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.lib.message_api_hooks import install_message_delivery_hooks
+from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.scripts.install import init_fonts
 from src.services.db import init_db
 from src.services.sync import (

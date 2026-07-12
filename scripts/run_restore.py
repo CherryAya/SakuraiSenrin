@@ -58,8 +58,7 @@ async def main() -> None:
     await service.restore(snapshot=args.snapshot, target=Path(args.target))
     profile_name = getattr(service, "profile_name", args.profile or "default")
     logger.success(
-        "restore completed: "
-        f"{args.snapshot} -> {args.target} profile={profile_name}"
+        f"restore completed: {args.snapshot} -> {args.target} profile={profile_name}"
     )
 
 

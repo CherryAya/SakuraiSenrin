@@ -31,10 +31,10 @@ from ._engine import build_virtual_plugin_doc_bundle as build_virtual_plugin_doc
 from ._engine import can_view_node as can_view_node
 from ._engine import collection_demo_filename as collection_demo_filename
 from ._engine import create_docs_meta as create_docs_meta
-from ._engine import filter_features_by_permission as filter_features_by_permission
 from ._engine import feature_command_sections as feature_command_sections
-from ._engine import load_doc_node as load_doc_node
+from ._engine import filter_features_by_permission as filter_features_by_permission
 from ._engine import load_demo_bytes as load_demo_bytes
+from ._engine import load_doc_node as load_doc_node
 from ._engine import load_plugin_doc_bundle as load_plugin_doc_bundle
 from ._engine import load_representative_demo_bytes as load_representative_demo_bytes
 from ._engine import load_virtual_doc_node as load_virtual_doc_node
@@ -80,3 +80,5 @@ from .static_assets import resolve_static_asset_path as resolve_static_asset_pat
 from .static_assets import short_signature as short_signature
 from .static_assets import static_signature as static_signature
 from .static_assets import static_target_key as static_target_key
+from .static_assets import summary_signature as summary_signature
+from .static_assets import summary_target_key as summary_target_key

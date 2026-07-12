@@ -27,13 +27,13 @@ async def test_resolve_forward_sender_prefers_login_nickname() -> None:
         Any,
         SimpleNamespace(
             self_id="99999",
-            call_api=AsyncMock(return_value={"nickname": "测试机器人"}),
+            call_api=AsyncMock(return_value={"nickname": "测试凛凛"}),
         ),
     )
 
     sender = await resolve_forward_sender(bot, fallback_nickname="fallback")
 
-    assert sender == (99999, "测试机器人")
+    assert sender == (99999, "测试凛凛")
 
 
 @pytest.mark.asyncio
@@ -55,13 +55,13 @@ def test_build_custom_forward_nodes_uses_node_custom_segments() -> None:
     nodes = build_custom_forward_nodes(
         (text_message("A"), text_message("B")),
         user_id=99999,
-        nickname="测试机器人",
+        nickname="测试凛凛",
     )
 
     assert len(nodes) == 2
     assert all(node.type == "node" for node in nodes)
     assert nodes[0].data["user_id"] == "99999"
-    assert nodes[0].data["nickname"] == "测试机器人"
+    assert nodes[0].data["nickname"] == "测试凛凛"
     assert str(nodes[0].data["content"]) == "A"
 
 
@@ -86,7 +86,7 @@ async def test_send_custom_forward_uses_group_forward_api() -> None:
         Any,
         SimpleNamespace(
             self_id="99999",
-            call_api=AsyncMock(side_effect=[{"nickname": "测试机器人"}, None]),
+            call_api=AsyncMock(side_effect=[{"nickname": "测试凛凛"}, None]),
         ),
     )
     event = build_group_message_event("#help wordbank")
@@ -112,7 +112,7 @@ async def test_send_custom_forward_uses_private_forward_api() -> None:
         Any,
         SimpleNamespace(
             self_id="99999",
-            call_api=AsyncMock(side_effect=[{"nickname": "测试机器人"}, None]),
+            call_api=AsyncMock(side_effect=[{"nickname": "测试凛凛"}, None]),
         ),
     )
     event = build_private_message_event("#help wordbank")
@@ -135,7 +135,7 @@ async def test_send_custom_forward_accepts_explicit_private_target() -> None:
         Any,
         SimpleNamespace(
             self_id="99999",
-            call_api=AsyncMock(side_effect=[{"nickname": "测试机器人"}, None]),
+            call_api=AsyncMock(side_effect=[{"nickname": "测试凛凛"}, None]),
         ),
     )
 

@@ -704,7 +704,7 @@ class DemoImageRenderer:
         turn_placements: list[_ShowcaseTurnPlacement] = []
         current_bottom = instruction_bottom
         if turns:
-            heading_text = "看看它是怎么工作的"
+            heading_text = "看看它是怎么工作的 👇"
             heading_top = instruction_bottom + max(
                 20, self.theme.demo_heading_gap_top - 20
             )
@@ -1029,23 +1029,24 @@ class DemoImageRenderer:
             520,
             max(
                 300,
-                self._text_width("看看它是怎么工作的", self.capsule_font) + 120,
+                self._text_width("看看它是怎么工作的 👇", self.capsule_font) + 120,
             ),
         )
         capsule_left = (
             layout.demo_rect[0]
             + (layout.demo_rect[2] - layout.demo_rect[0] - capsule_width) // 2
         )
+        capsule_center_y = (layout.instruction_rect[3] + layout.demo_rect[1]) // 2 + 10
         capsule_rect = (
             capsule_left,
-            layout.demo_rect[1] - self.CAPSULE_HEIGHT // 2,
+            capsule_center_y - self.CAPSULE_HEIGHT // 2,
             capsule_left + capsule_width,
-            layout.demo_rect[1] - self.CAPSULE_HEIGHT // 2 + self.CAPSULE_HEIGHT,
+            capsule_center_y + self.CAPSULE_HEIGHT // 2,
         )
         self._draw_capsule_title(
             draw,
             rect=capsule_rect,
-            text="看看它是怎么工作的",
+            text="看看它是怎么工作的 👇",
             fill=(255, 243, 228, 191),
             outline=None,
         )

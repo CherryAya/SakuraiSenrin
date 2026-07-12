@@ -210,7 +210,7 @@ README 仍是首要文档内容载体，但它已经从“最终协议”降级�
 1. 高并发热路径默认使用 `WritePolicy.BUFFERED`，降低 I/O 抖动。
 2. 管理类强一致操作可使用 `WritePolicy.IMMEDIATE`。
 3. 对外 API 调用必须可失败并降级，避免阻塞主流程。
-4. 事件处理需要防止机器人自触发循环（如 `event.user_id == bot.self_id`）。
+4. 事件处理需要防止凛凛自触发循环（如 `event.user_id == bot.self_id`）。
 5. 定时任务需保证：
    - 唯一 `id`
    - 幂等控制

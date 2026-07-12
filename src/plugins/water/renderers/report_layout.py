@@ -15,7 +15,6 @@ GROUP_REPORT_RANK_HEADER_HEIGHT = 58
 GROUP_REPORT_RANK_BODY_TOP_PADDING = 12
 GROUP_REPORT_RANK_ROW_HEIGHT = 44
 GROUP_REPORT_RANK_ROW_GAP = 6
-GROUP_REPORT_RANK_BOTTOM_PADDING = 16
 
 
 def estimate_group_report_left_height(
@@ -27,7 +26,6 @@ def estimate_group_report_left_height(
         int(GROUP_REPORT_LEFT_HEADER_HEIGHT * scale)
         + user_count * int(GROUP_REPORT_USER_CARD_HEIGHT * scale)
         + max(0, user_count - 1) * int(GROUP_REPORT_USER_ROW_GAP * scale)
-        + int(GROUP_REPORT_LEFT_FOOTER_PADDING * scale)
     )
 
 
@@ -45,7 +43,6 @@ def estimate_group_rank_card_height(
         + int(GROUP_REPORT_RANK_BODY_TOP_PADDING * scale)
         + rank_row_count * int(GROUP_REPORT_RANK_ROW_HEIGHT * scale)
         + max(0, rank_row_count - 1) * int(GROUP_REPORT_RANK_ROW_GAP * scale)
-        + int(GROUP_REPORT_RANK_BOTTOM_PADDING * scale)
     )
 
 

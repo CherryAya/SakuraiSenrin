@@ -376,7 +376,7 @@ def _render_group_rank_share_panel(
         )
         legend_inner_left = legend_x + int(12 * scale)
         dot_x = legend_inner_left
-        dot_y = item_y + int(10 * scale)*1.2
+        dot_y = item_y + int(10 * scale) * 1.2
         item_color = slice_colors[legend_rank_map[item.group_id] - 1]
         dot_size = int(10 * scale)
         card.draw.ellipse(

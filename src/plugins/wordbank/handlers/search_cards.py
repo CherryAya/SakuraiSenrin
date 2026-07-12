@@ -48,17 +48,18 @@ CARD_SUMMARY_GAP = 18
 CARD_FOOTER_GAP = 18
 CARD_FOOTER_HEIGHT = 72
 CARD_ITEM_PADDING_X = 22
-CARD_ITEM_PADDING_Y = 20
+CARD_ITEM_PADDING_Y = 22
 CARD_ITEM_RADIUS = 24
-CARD_ITEM_GAP = 14
-CARD_SUBSECTION_GAP = 14
-CARD_RESPONSE_GAP = 14
+CARD_SUBSECTION_GAP = 12
+CARD_RESPONSE_GAP = 12
 CARD_RESPONSE_PADDING_X = 16
-CARD_RESPONSE_PADDING_Y = 10
+CARD_RESPONSE_PADDING_Y = 12
 CARD_RESPONSE_RADIUS = 18
 CARD_BADGE_HEIGHT = 42
 CARD_BADGE_WIDTH = 50
 CARD_BADGE_RADIUS = 16
+CARD_HEADER_PANEL_PADDING_X = 14
+CARD_HEADER_PANEL_PADDING_Y = 8
 CARD_TAG_COLUMN_GAP = 8
 CARD_TAG_ROW_GAP = 8
 CARD_TAG_PADDING_X = 12
@@ -75,9 +76,11 @@ CARD_CHIP_HEIGHT = 28
 CARD_CHIP_PADDING_X = 12
 CARD_CHIP_GAP = 8
 CARD_CHIP_RADIUS = 14
-CARD_META_SEPARATOR_GAP = 12
-CARD_META_SEPARATOR_MARGIN_TOP = 12
-CARD_META_SEPARATOR_MARGIN_BOTTOM = 10
+CARD_META_SEPARATOR_GAP = 6
+CARD_META_SEPARATOR_MARGIN_TOP = 8
+CARD_META_SEPARATOR_MARGIN_BOTTOM = 2
+CARD_GROUP_INSET = 20
+CARD_GROUP_BOTTOM_INSET = CARD_GROUP_INSET - CARD_HEADER_PANEL_PADDING_Y
 TEXTURE_SPACING = 40
 TEXTURE_DOT_RADIUS = 2
 CARD_COLUMNS = 2
@@ -409,35 +412,37 @@ class SearchResultCardRenderer:
             fill=self._mix_color(self.ACCENT_SOFT, self.ACCENT, 0.22),
             outline="",
         )
-        draw.rounded_rectangle(
-            (
-                x + 10,
-                y + 10,
-                x + width - 10,
-                y + CARD_ITEM_PADDING_Y + CARD_BADGE_HEIGHT + 14,
-            ),
-            radius=18,
-            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.18),
-        )
-        inner_x = x + CARD_ITEM_PADDING_X
-        cursor_y = y + CARD_ITEM_PADDING_Y
-        content_width = width - CARD_ITEM_PADDING_X * 2
+        group_x = x + CARD_GROUP_INSET
+        content_width = width - CARD_GROUP_INSET * 2
+        cursor_y = y + CARD_GROUP_INSET
         header_height = self._item_header_height(
             item=item,
             width=content_width,
             locale=locale,
+        )
+        header_panel_top = cursor_y - CARD_HEADER_PANEL_PADDING_Y
+        header_panel_bottom = cursor_y + header_height + CARD_HEADER_PANEL_PADDING_Y
+        draw.rounded_rectangle(
+            (
+                group_x,
+                header_panel_top,
+                group_x + content_width,
+                header_panel_bottom,
+            ),
+            radius=CARD_RESPONSE_RADIUS,
+            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.14),
         )
         self._draw_item_header(
             draw,
             item=item,
             locale=locale,
             absolute_index=absolute_index,
-            x=inner_x,
+            x=group_x,
             y=cursor_y,
             width=content_width,
             height=header_height,
         )
-        cursor_y += header_height + CARD_ITEM_GAP
+        cursor_y = header_panel_bottom + CARD_RESPONSE_GAP
 
         response_items = response_preview_items(item, locale)
         for response_index, response in enumerate(response_items, start=1):
@@ -445,7 +450,7 @@ class SearchResultCardRenderer:
                 response=response,
                 item=item,
                 absolute_index=absolute_index,
-                width=width - CARD_ITEM_PADDING_X * 2,
+                width=content_width,
             )
             self._draw_response_panel(
                 image,
@@ -454,9 +459,9 @@ class SearchResultCardRenderer:
                 item=item,
                 absolute_index=absolute_index,
                 locale=locale,
-                x=inner_x,
+                x=group_x,
                 y=cursor_y,
-                width=width - CARD_ITEM_PADDING_X * 2,
+                width=content_width,
                 height=response_height,
             )
             cursor_y += response_height
@@ -475,9 +480,9 @@ class SearchResultCardRenderer:
                 draw,
                 item=item,
                 locale=locale,
-                x=inner_x,
+                x=group_x,
                 y=cursor_y,
-                width=width - CARD_ITEM_PADDING_X * 2,
+                width=content_width,
                 height=folded_height,
             )
             cursor_y += folded_height + CARD_SUBSECTION_GAP
@@ -498,9 +503,15 @@ class SearchResultCardRenderer:
     ) -> None:
         badge_text = f"{absolute_index:02d}"
         badge_y = y + max(0, int((height - CARD_BADGE_HEIGHT) / 2))
+        badge_x = x + CARD_HEADER_PANEL_PADDING_X
         self._draw_surface_panel(
             draw,
-            bbox=(x, badge_y, x + CARD_BADGE_WIDTH, badge_y + CARD_BADGE_HEIGHT),
+            bbox=(
+                badge_x,
+                badge_y,
+                badge_x + CARD_BADGE_WIDTH,
+                badge_y + CARD_BADGE_HEIGHT,
+            ),
             radius=CARD_BADGE_RADIUS,
             fill=self.ACCENT,
             outline="",
@@ -508,25 +519,19 @@ class SearchResultCardRenderer:
         badge_width = text_width(badge_text, self.item_meta_font)
         draw.text(
             (
-                x + (CARD_BADGE_WIDTH - badge_width) / 2,
+                badge_x + (CARD_BADGE_WIDTH - badge_width) / 2,
                 badge_y
                 + max(
                     7,
-                    int(
-                        (
-                            CARD_BADGE_HEIGHT
-                            - line_height(self.item_meta_font)
-                        )
-                        / 2
-                    ),
+                    int((CARD_BADGE_HEIGHT - line_height(self.item_meta_font)) / 2),
                 ),
             ),
             badge_text,
             font=self.item_meta_font,
             fill=self.BADGE_TEXT,
         )
-        title_x = x + CARD_BADGE_WIDTH + 14
-        title_width = width - CARD_BADGE_WIDTH - 14
+        title_x = badge_x + CARD_BADGE_WIDTH + 14
+        title_width = width - CARD_HEADER_PANEL_PADDING_X * 2 - CARD_BADGE_WIDTH - 14
         title_text = item.trigger_text or tr(locale, "wordbank.search_card.none")
         title_lines = self._wrap_text(
             title_text,
@@ -550,7 +555,7 @@ class SearchResultCardRenderer:
         width: int,
         locale: LocaleCode,
     ) -> int:
-        title_width = width - CARD_BADGE_WIDTH - 14
+        title_width = width - CARD_HEADER_PANEL_PADDING_X * 2 - CARD_BADGE_WIDTH - 14
         title_height = self._wrapped_text_height(
             item.trigger_text or tr(locale, "wordbank.search_card.none"),
             self.item_title_font,
@@ -594,19 +599,7 @@ class SearchResultCardRenderer:
             text_font=self.response_body_font,
             text_fill=self.response_text_fill,
         )
-        meta_y = content_bottom + CARD_META_SEPARATOR_MARGIN_TOP + 2
-        meta_band_top = meta_y - 6
-        meta_band_bottom = y + height - 10
-        draw.rounded_rectangle(
-            (
-                content_x - 2,
-                meta_band_top,
-                x + width - CARD_RESPONSE_PADDING_X + 2,
-                meta_band_bottom,
-            ),
-            radius=14,
-            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.38),
-        )
+        meta_y = content_bottom + CARD_META_SEPARATOR_MARGIN_TOP
         self._draw_response_meta_row(
             draw,
             response=response,
@@ -975,12 +968,33 @@ class SearchResultCardRenderer:
         locale: LocaleCode,
         column_width: int,
     ) -> int:
-        width = column_width - CARD_ITEM_PADDING_X * 2
-        total = CARD_ITEM_PADDING_Y * 2
-        total += self._item_header_height(item=item, width=width, locale=locale)
-        total += CARD_ITEM_GAP
+        width = column_width - CARD_GROUP_INSET * 2
+        return (
+            CARD_GROUP_INSET
+            + CARD_GROUP_BOTTOM_INSET
+            + self._item_content_height(
+                item=item,
+                absolute_index=absolute_index,
+                locale=locale,
+                width=width,
+            )
+        )
+
+    def _item_content_height(
+        self,
+        *,
+        item: WordbankSearchItem,
+        absolute_index: int,
+        locale: LocaleCode,
+        width: int,
+    ) -> int:
+        total = (
+            self._item_header_height(item=item, width=width, locale=locale)
+            + CARD_HEADER_PANEL_PADDING_Y * 2
+        )
+        total += CARD_RESPONSE_GAP
         previews = response_preview_items(item, locale)
-        for response_index, response in enumerate(previews, start=1):
+        for response in previews:
             total += self._response_panel_height(
                 response=response,
                 item=item,

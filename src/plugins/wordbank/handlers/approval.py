@@ -412,9 +412,7 @@ async def _collect_rendered_shape_fields(
             continue
         assert shape is not None
         label = (
-            "触发词:"
-            if label_key == "wordbank.approval.trigger_label"
-            else "响应词:"
+            "触发词:" if label_key == "wordbank.approval.trigger_label" else "响应词:"
         )
         fields.append(
             _RenderedShapeField(

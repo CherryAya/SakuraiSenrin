@@ -243,7 +243,7 @@ async def test_deliver_forward_messages_falls_back_when_bundle_reuse_fails(
                     RuntimeError("bundle-forward-friend-failed"),
                     {"message_id": 101},
                     {"message_id": 102},
-                    {"nickname": "测试机器人"},
+                    {"nickname": "测试凛凛"},
                     {"message_id": 9001},
                 ]
             ),
@@ -331,7 +331,7 @@ async def test_deliver_forward_messages_reordered_batch_resets_prefix_reuse(
                 side_effect=[
                     {"message_id": 301},
                     {"message_id": 302},
-                    {"nickname": "测试机器人"},
+                    {"nickname": "测试凛凛"},
                     {"message_id": 9004},
                 ]
             ),
@@ -440,7 +440,7 @@ async def test_deliver_forward_messages_only_restages_tail_after_prefix_hit(
             call_api=AsyncMock(
                 side_effect=[
                     {"message_id": 202},
-                    {"nickname": "测试机器人"},
+                    {"nickname": "测试凛凛"},
                     {"message_id": 9002},
                 ]
             ),
@@ -578,7 +578,7 @@ async def test_deliver_forward_messages_logs_serialized_payload_summary(
             call_api=AsyncMock(
                 side_effect=[
                     {"message_id": 101},
-                    {"nickname": "测试机器人"},
+                    {"nickname": "测试凛凛"},
                     {"message_id": 9003},
                 ]
             ),
@@ -621,7 +621,7 @@ async def test_deliver_forward_messages_logs_serialized_payload_summary(
     assert merged_logs
     assert "bundle_asset_key=" in merged_logs[0]
     assert "reuse_mode=rebuild_all" in merged_logs[0]
-    assert "'nickname': '测试机器人'" in merged_logs[0]
+    assert "'nickname': '测试凛凛'" in merged_logs[0]
     assert (
         "'content': [{'data': {'text': 'summary'}, 'type': 'text'}]" in merged_logs[0]
     )

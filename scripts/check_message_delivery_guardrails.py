@@ -91,11 +91,7 @@ def _is_matcher_factory_call(node: ast.AST) -> bool:
 def _collect_arg_names(args: ast.arguments) -> tuple[set[str], set[str]]:
     matcher_names: set[str] = set()
     bot_names: set[str] = set()
-    all_args = (
-        list(args.posonlyargs)
-        + list(args.args)
-        + list(args.kwonlyargs)
-    )
+    all_args = list(args.posonlyargs) + list(args.args) + list(args.kwonlyargs)
     if args.vararg is not None:
         all_args.append(args.vararg)
     if args.kwarg is not None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from math import floor
 
 from PIL import Image
 
@@ -17,8 +18,15 @@ def encode_docs_image(
 ) -> bytes:
     buffer = BytesIO()
     rgb = image.convert("RGB")
-    if rgb.width <= WEBP_MAX_DIMENSION and rgb.height <= WEBP_MAX_DIMENSION:
-        rgb.save(buffer, format="WEBP", quality=webp_quality, method=webp_method)
-        return buffer.getvalue()
-    rgb.save(buffer, format="PNG", optimize=True)
+    if rgb.width > WEBP_MAX_DIMENSION or rgb.height > WEBP_MAX_DIMENSION:
+        scale = min(
+            WEBP_MAX_DIMENSION / float(rgb.width),
+            WEBP_MAX_DIMENSION / float(rgb.height),
+        )
+        resized = (
+            max(1, floor(rgb.width * scale)),
+            max(1, floor(rgb.height * scale)),
+        )
+        rgb = rgb.resize(resized, Image.Resampling.LANCZOS)
+    rgb.save(buffer, format="WEBP", quality=webp_quality, method=webp_method)
     return buffer.getvalue()

@@ -184,9 +184,7 @@ def assert_restore_allowed(
                 "from its default backup profile"
             )
         if not confirm_production_restore:
-            raise RuntimeError(
-                "production restore requires explicit confirmation flag"
-            )
+            raise RuntimeError("production restore requires explicit confirmation flag")
 
 
 async def restore_remote_snapshot_into_local(

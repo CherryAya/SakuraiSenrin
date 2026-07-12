@@ -911,13 +911,13 @@ async def test_resolve_forward_sender_prefers_login_nickname() -> None:
         Any,
         SimpleNamespace(
             self_id="99999",
-            call_api=AsyncMock(return_value={"nickname": "测试机器人"}),
+            call_api=AsyncMock(return_value={"nickname": "测试凛凛"}),
         ),
     )
 
     sender = await _resolve_forward_sender(bot)
 
-    assert sender == (99999, "测试机器人")
+    assert sender == (99999, "测试凛凛")
 
 
 @pytest.mark.asyncio
@@ -932,7 +932,7 @@ async def test_send_help_forward_uses_group_forward_api(
                 side_effect=[
                     {"message_id": 101},
                     {"message_id": 102},
-                    {"nickname": "测试机器人"},
+                    {"nickname": "测试凛凛"},
                     {"message_id": 9001},
                 ]
             ),
@@ -964,7 +964,7 @@ async def test_send_help_forward_uses_group_forward_api(
     nodes = bot.call_api.await_args_list[-1].kwargs["messages"]
     assert len(nodes) == 2
     assert all(node.type == "node" for node in nodes)
-    assert nodes[0].data["nickname"] == "测试机器人"
+    assert nodes[0].data["nickname"] == "测试凛凛"
     assert str(nodes[0].data["content"]) == "A"
 
 

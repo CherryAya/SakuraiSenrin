@@ -18,10 +18,15 @@ from src.plugins.wordbank.handlers.search_card_helpers import (
 )
 from src.plugins.wordbank.handlers.search_cards import (
     CARD_CHIP_HEIGHT,
+    CARD_GROUP_BOTTOM_INSET,
+    CARD_GROUP_INSET,
+    CARD_HEADER_PANEL_PADDING_Y,
     CARD_META_SEPARATOR_GAP,
     CARD_META_SEPARATOR_MARGIN_BOTTOM,
     CARD_META_SEPARATOR_MARGIN_TOP,
+    CARD_RESPONSE_GAP,
     CARD_RESPONSE_PADDING_X,
+    CARD_RESPONSE_PADDING_Y,
     SearchCardQuery,
     SearchResultCardRenderer,
     build_search_results_card_plan_entry,
@@ -337,14 +342,15 @@ def test_search_card_renderer_drops_inner_trigger_panel() -> None:
         locale="zh-CN",
         column_width=column_width,
     )
-    width = column_width - 22 * 2
-    expected = 20 * 2
+    width = column_width - CARD_GROUP_INSET * 2
+    expected = CARD_GROUP_INSET + CARD_GROUP_BOTTOM_INSET
     expected += renderer._item_header_height(  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
         item=item,
         width=width,
         locale="zh-CN",
     )
-    expected += 14
+    expected += CARD_HEADER_PANEL_PADDING_Y * 2
+    expected += CARD_RESPONSE_GAP
     previews = response_preview_items(item, "zh-CN")
     expected += sum(
         renderer._response_panel_height(  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
@@ -356,7 +362,7 @@ def test_search_card_renderer_drops_inner_trigger_panel() -> None:
         for preview in previews
     )
     if len(previews) > 1:
-        expected += 14 * (len(previews) - 1)
+        expected += CARD_RESPONSE_GAP * (len(previews) - 1)
 
     assert total_height == expected
     assert not hasattr(renderer, "_draw_trigger_panel")
@@ -485,7 +491,7 @@ def test_search_card_renderer_draws_response_content_before_meta_row() -> None:
         height=180,
     )
 
-    assert recorded["content_y"] == 80 + 10
+    assert recorded["content_y"] == 80 + CARD_RESPONSE_PADDING_Y
     assert recorded["meta_y"] > recorded["content_y"]
 
 
@@ -526,7 +532,7 @@ def test_search_card_renderer_response_panel_height_includes_bottom_meta_area() 
     )
 
     assert height == (
-        10 * 2
+        CARD_RESPONSE_PADDING_Y * 2
         + content_height
         + CARD_META_SEPARATOR_MARGIN_TOP
         + CARD_META_SEPARATOR_GAP

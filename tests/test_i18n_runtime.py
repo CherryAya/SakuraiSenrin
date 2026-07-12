@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
-
-from types import SimpleNamespace
 
 from src.lib.i18n.runtime import (
     finish_i18n,
@@ -14,8 +13,8 @@ from src.lib.i18n.runtime import (
     send_private_i18n,
     tr,
 )
-from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_assets import message_asset_repo
+from src.lib.message_delivery import DeliveryTarget
 from src.repositories.i18n import I18nRepository
 from tests.plugins.water.helpers import build_group_message_event
 
@@ -123,7 +122,12 @@ async def test_send_i18n_prefers_delivery_when_matcher_has_bot(
         fake_deliver_single_message,
     )
 
-    await send_i18n(matcher, event, "remove.leave_success", group_name="测试群")
+    await send_i18n(
+        cast(Any, matcher),
+        event,
+        "remove.leave_success",
+        group_name="测试群",
+    )
 
     assert delivered["target"] == DeliveryTarget(kind="group", target_id="20001")
     assert "测试群" in str(delivered["message"])
@@ -157,7 +161,12 @@ async def test_finish_i18n_prefers_delivery_when_matcher_has_bot(
         fake_deliver_single_message,
     )
 
-    await finish_i18n(matcher, event, "remove.leave_success", group_name="测试群")
+    await finish_i18n(
+        cast(Any, matcher),
+        event,
+        "remove.leave_success",
+        group_name="测试群",
+    )
 
     assert delivered["target"] == DeliveryTarget(kind="group", target_id="20001")
     assert "测试群" in str(delivered["message"])

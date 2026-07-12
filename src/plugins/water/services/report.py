@@ -377,7 +377,7 @@ class WaterReportService:
         )
         group_name = await resolve_group_name(None, snapshot.group_id)
         report_suffix = report_title.removeprefix("Senrin")
-        title = f"{record_day.format('YYYY.MM.DD')} · {group_name}{report_suffix}"
+        title = f"{group_name} | {record_day.format('YYYY.MM.DD')}{report_suffix}"
         range_text = (
             tr(
                 locale,

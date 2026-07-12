@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from nonebot.compat import model_dump
-from nonebot.exception import MockApiException
 from nonebot.adapters import Bot as BaseBot
 from nonebot.adapters.onebot.v11 import Bot as OneBotV11Bot
 from nonebot.adapters.onebot.v11.event import Event
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.compat import model_dump
+from nonebot.exception import MockApiException
 
 from src.lib.message_delivery import (
     DeliveryTarget,
@@ -137,6 +137,6 @@ def install_message_delivery_hooks() -> None:
     global _HOOKS_INSTALLED
     if _HOOKS_INSTALLED:
         return
-    OneBotV11Bot.send_handler = delivery_send_handler
+    setattr(OneBotV11Bot, "send_handler", delivery_send_handler)
     BaseBot.on_calling_api(intercept_message_send_api)
     _HOOKS_INSTALLED = True

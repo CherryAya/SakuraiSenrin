@@ -18,7 +18,7 @@ StaticPermissionProfile = Literal[
     "group_owner",
     "superuser",
 ]
-StaticTargetKind = Literal["dashboard", "feature", "guide", "static"]
+StaticTargetKind = Literal["dashboard", "feature", "guide", "summary", "static"]
 
 
 class StaticAssetManifest(TypedDict):
@@ -56,6 +56,10 @@ def guide_target_key(node: DocNode) -> str:
     return f"guide:{node.slug}"
 
 
+def summary_target_key(node: DocNode) -> str:
+    return f"summary:{node.slug}"
+
+
 def static_target_key(node: DocNode) -> str:
     return f"static:{node.slug}"
 
@@ -78,8 +82,15 @@ def guide_signature(
     feature_slugs: tuple[str, ...],
     child_slugs: tuple[str, ...],
 ) -> str:
-    payload = f"{node.slug}|features:{','.join(feature_slugs)}|children:{','.join(child_slugs)}"
+    payload = (
+        f"{node.slug}|features:{','.join(feature_slugs)}"
+        f"|children:{','.join(child_slugs)}"
+    )
     return short_signature(payload)
+
+
+def summary_signature(node: DocNode) -> str:
+    return short_signature(f"summary|{node.slug}")
 
 
 def static_signature(node: DocNode) -> str:

@@ -39,9 +39,7 @@ async def main() -> None:
         logger.info("backup skipped")
         return
     profile_name = getattr(service, "profile_name", args.profile or "default")
-    logger.success(
-        f"backup completed: {result.run_id} profile={profile_name}"
-    )
+    logger.success(f"backup completed: {result.run_id} profile={profile_name}")
     logger.info(f"manifest: {result.manifest_path}")
     if result.restic_snapshot_id:
         logger.info(f"restic snapshot: {result.restic_snapshot_id}")
