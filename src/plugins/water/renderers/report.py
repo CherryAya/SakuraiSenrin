@@ -636,10 +636,10 @@ def _render_group_rank_trend_panel(
         + max(0, rows - 1) * legend_gap_y
         + int(10 * scale)
     )
-    chart_h_available = max(int(96 * scale), y + h - chart_y - int(10 * scale))
+    chart_h_available = max(int(96 * scale), y + h - chart_y - int(16 * scale))
     chart_h = max(
         int(92 * scale),
-        min(chart_h_available, int(chart_h_available * 0.97)),
+        min(chart_h_available, int(chart_h_available * 0.9)),
     )
     draw_group_rank_trend_chart(
         card,
@@ -668,7 +668,7 @@ async def build_water_group_report_image(
     pad = int(24 * scale)
     gap = int(12 * scale)
     hero_h = int(178 * scale)
-    left_w = int(610 * scale)
+    left_w = int(570 * scale)
     right_w = width - pad * 2 - left_w - gap
     user_card_h = int(118 * scale)
     user_row_gap = int(10 * scale)
@@ -712,6 +712,10 @@ async def build_water_group_report_image(
             int(150 * scale), min(int(right_extra_h * 0.34), int(190 * scale))
         )
         trend_panel_h = right_extra_h - group_rank_panel_gap - share_panel_h
+        trend_panel_trim = int(28 * scale)
+        if trend_panel_h - trend_panel_trim >= int(150 * scale):
+            share_panel_h += trend_panel_trim
+            trend_panel_h -= trend_panel_trim
         if trend_panel_h < int(150 * scale):
             trend_panel_h = 0
             share_panel_h = right_extra_h
@@ -945,7 +949,7 @@ async def build_water_group_report_image(
         tile_scale = 0.72
         tile_w = max(1, int(tile_chart.width * tile_scale))
         tile_h = max(1, int(tile_chart.height * tile_scale))
-        tile_x = text_x + int(168 * scale)
+        tile_x = text_x + int(115 * scale)
         trend_x = tile_x + tile_w - trend_w
         name_right = trend_x - line_gap
         safe_name = _truncate_text_to_width_pixels(
