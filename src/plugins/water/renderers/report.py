@@ -290,9 +290,10 @@ def _render_group_rank_share_panel(
         halign="left",
         font_families=[WATER_THEME.white],
     )
+    share_content_top = y + int(46 * scale)
     pie_size = min(max(int(96 * scale), h - int(92 * scale)), int(w * 0.32))
     pie_x = x + int(18 * scale)
-    pie_y = y + max(int(54 * scale), (h - pie_size) // 2)
+    pie_y = share_content_top
     palette = _group_share_palette(theme)
     highlight_index = next(
         (index for index, item in enumerate(slices) if item.is_focus_group),
@@ -327,9 +328,9 @@ def _render_group_rank_share_panel(
     card.draw_text(
         (
             metric_x,
-            y + int(46 * scale),
+            share_content_top,
             metric_x + metric_w,
-            y + int(80 * scale),
+            share_content_top + int(34 * scale),
         ),
         f"{focus_slice.share_ratio * 100:.1f}%",
         max_fontsize=int(26 * scale),
@@ -342,9 +343,9 @@ def _render_group_rank_share_panel(
     card.draw_text(
         (
             metric_x,
-            y + int(80 * scale),
+            share_content_top + int(34 * scale),
             metric_x + metric_w,
-            y + int(98 * scale),
+            share_content_top + int(52 * scale),
         ),
         tr(locale, "water.report.group_rank.insight.share"),
         max_fontsize=int(9 * scale),
@@ -356,9 +357,9 @@ def _render_group_rank_share_panel(
     card.draw_text(
         (
             metric_x,
-            y + int(98 * scale),
+            share_content_top + int(52 * scale),
             metric_x + metric_w,
-            y + int(114 * scale),
+            share_content_top + int(68 * scale),
         ),
         tr(
             locale,
@@ -577,7 +578,7 @@ def _render_group_rank_trend_panel(
         legend_specs.append((color, item.display_name, item.is_focus_group))
 
     legend_x = x + int(18 * scale)
-    legend_y = y + int(54 * scale)
+    legend_y = y + int(60 * scale)
     legend_w = w - int(36 * scale)
     cols = 3 if len(legend_specs) >= 7 else 2
     rows = max(1, (len(legend_specs) + cols - 1) // cols)
@@ -639,12 +640,12 @@ def _render_group_rank_trend_panel(
         legend_y
         + rows * legend_item_h
         + max(0, rows - 1) * legend_gap_y
-        + int(10 * scale)
+        + int(14 * scale)
     )
     chart_h_available = max(int(96 * scale), y + h - chart_y - int(16 * scale))
     chart_h = max(
         int(92 * scale),
-        min(chart_h_available, int(chart_h_available * 0.9)),
+        min(chart_h_available, int(chart_h_available)),
     )
     draw_group_rank_trend_chart(
         card,
@@ -717,6 +718,7 @@ async def build_water_group_report_image(
             int(150 * scale), min(int(right_extra_h * 0.34), int(190 * scale))
         )
         trend_panel_h = right_extra_h - group_rank_panel_gap - share_panel_h
+        trend_panel_h = max(0, trend_panel_h - int(24 * scale))
         trend_panel_trim = int(28 * scale)
         if trend_panel_h - trend_panel_trim >= int(150 * scale):
             share_panel_h += trend_panel_trim

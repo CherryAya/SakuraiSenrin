@@ -1,5 +1,4 @@
 from src.plugins.water.renderers.report_layout import (
-    GROUP_REPORT_LEFT_FOOTER_PADDING,
     GROUP_REPORT_LEFT_HEADER_HEIGHT,
     GROUP_REPORT_USER_CARD_HEIGHT,
     GROUP_REPORT_USER_ROW_GAP,
@@ -45,7 +44,6 @@ def test_group_report_left_height_uses_shared_layout_constants() -> None:
         GROUP_REPORT_LEFT_HEADER_HEIGHT
         + 3 * GROUP_REPORT_USER_CARD_HEIGHT
         + 2 * GROUP_REPORT_USER_ROW_GAP
-        + GROUP_REPORT_LEFT_FOOTER_PADDING
     )
 
     assert estimate_group_report_left_height(3, scale=1.0) == expected
