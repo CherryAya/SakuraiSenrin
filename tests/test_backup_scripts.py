@@ -8,6 +8,7 @@ import pytest
 
 from scripts import run_backup as run_backup_script
 from scripts import run_restore as run_restore_script
+from src.services.backup import BackupRemoteProfile
 
 
 def test_run_backup_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -213,3 +214,56 @@ async def test_run_restore_main_can_apply_local_restore(
         "confirm_production_restore": False,
     }
     assert "restore completed and applied locally: latest" in str(captured["success"])
+
+
+@pytest.mark.asyncio
+async def test_backup_service_rejects_cross_env_backup_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from src.services import backup as backup_module
+
+    monkeypatch.setattr(backup_module, "resolve_app_env", lambda: "production")
+    monkeypatch.setattr(
+        backup_module,
+        "_load_backup_profiles",
+        lambda: {
+            "prod": BackupRemoteProfile(
+                name="prod",
+                repository="repo-prod",
+                password="pw-prod",
+                allowed_app_envs_for_backup=("production",),
+                allowed_app_envs_for_restore=("production", "development"),
+            ),
+            "dev": BackupRemoteProfile(
+                name="dev",
+                repository="repo-dev",
+                password="pw-dev",
+                allowed_app_envs_for_backup=("development",),
+                allowed_app_envs_for_restore=("development",),
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        backup_module,
+        "resolve_default_backup_profile_name",
+        lambda: "prod",
+    )
+    monkeypatch.setattr(
+        backup_module,
+        "get_registered_backup_databases",
+        lambda: (),
+    )
+    monkeypatch.setattr(
+        backup_module,
+        "ensure_backup_database_registrations_loaded",
+        lambda: None,
+    )
+
+    service = backup_module.build_backup_service_from_config("dev")
+
+    with pytest.raises(RuntimeError, match="cannot backup to profile dev"):
+        await service.run(
+            backup_module.BackupPlan(enabled=True),
+            force=True,
+        )

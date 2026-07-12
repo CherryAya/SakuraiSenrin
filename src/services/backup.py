@@ -58,6 +58,7 @@ class ResticConfig:
     password: str | None
     access_key_id: str | None = None
     secret_access_key: str | None = None
+    allowed_app_envs_for_backup: tuple[str, ...] = ()
     allowed_app_envs_for_restore: tuple[str, ...] = ()
     allow_backup: bool = True
     allow_restore: bool = True
@@ -71,6 +72,7 @@ class BackupRemoteProfile:
     password: str
     access_key_id: str | None = None
     secret_access_key: str | None = None
+    allowed_app_envs_for_backup: tuple[str, ...] = ()
     allowed_app_envs_for_restore: tuple[str, ...] = ()
     allow_backup: bool = True
     allow_restore: bool = True
@@ -144,14 +146,22 @@ class BackupService:
         manifest_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = manifest_dir / f"{run_id}.json"
         staging_manifest_path = staging_dir / "manifest.json"
+        app_env = resolve_app_env()
         if not self.restic.allow_backup:
             raise RuntimeError(
                 f"backup profile {self.profile_name!r} does not allow backup"
             )
+        if (
+            self.restic.allowed_app_envs_for_backup
+            and app_env not in self.restic.allowed_app_envs_for_backup
+        ):
+            raise RuntimeError(
+                f"app_env={app_env} cannot backup to profile {self.profile_name}"
+            )
 
         manifest = new_backup_manifest(
             run_id,
-            app_env=config.APP_ENV,
+            app_env=app_env,
             backup_profile=self.profile_name,
             hostname=socket.gethostname(),
         )
@@ -629,6 +639,7 @@ def build_backup_service_from_config(
             password=profile.password,
             access_key_id=profile.access_key_id,
             secret_access_key=profile.secret_access_key,
+            allowed_app_envs_for_backup=profile.allowed_app_envs_for_backup,
             allowed_app_envs_for_restore=profile.allowed_app_envs_for_restore,
             allow_backup=profile.allow_backup,
             allow_restore=profile.allow_restore,
@@ -691,6 +702,7 @@ def _load_backup_profiles() -> dict[str, BackupRemoteProfile]:
                 password=password,
                 access_key_id=getattr(config, "R2_ACCESS_KEY_ID", None),
                 secret_access_key=getattr(config, "R2_SECRET_ACCESS_KEY", None),
+                allowed_app_envs_for_backup=(resolve_app_env(),),
                 allowed_app_envs_for_restore=(resolve_app_env(),),
                 allow_backup=True,
                 allow_restore=True,

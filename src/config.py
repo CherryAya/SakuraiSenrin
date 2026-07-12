@@ -18,6 +18,7 @@ class BackupRemoteProfile(BaseModel):
     password: str
     access_key_id: str | None = None
     secret_access_key: str | None = None
+    allowed_app_envs_for_backup: tuple[str, ...] = ()
     allowed_app_envs_for_restore: tuple[str, ...] = ()
     allow_backup: bool = True
     allow_restore: bool = True
@@ -107,6 +108,7 @@ class GlobalConfig(BaseModel):
                     password=self.BACKUP_RESTIC_PASSWORD,
                     access_key_id=self.R2_ACCESS_KEY_ID,
                     secret_access_key=self.R2_SECRET_ACCESS_KEY,
+                    allowed_app_envs_for_backup=(self.APP_ENV,),
                     allowed_app_envs_for_restore=(self.APP_ENV,),
                     allow_backup=True,
                     allow_restore=True,
