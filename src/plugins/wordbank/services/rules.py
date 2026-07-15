@@ -339,8 +339,7 @@ def rule_allows(
         if context.message_type != "group" or context.group_id != entry_group_id:
             return False
     elif scope == "all_groups":
-        if context.message_type != "group":
-            return False
+        pass
     elif scope == "self":
         if context.user_id != entry_created_by:
             return False

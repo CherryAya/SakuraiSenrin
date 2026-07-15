@@ -114,6 +114,23 @@ def test_rule_allows_scope_role_and_call_count() -> None:
     )
 
 
+def test_rule_allows_all_groups_in_private_context() -> None:
+    context = RuleContext(
+        group_id="",
+        user_id="10001",
+        message_type="private",
+        sender_role="member",
+    )
+
+    assert rule_allows(
+        scope="all_groups",
+        entry_group_id="20001",
+        entry_created_by="10002",
+        rule={},
+        context=context,
+    )
+
+
 def test_canonicalize_rejects_too_large_call_window() -> None:
     with pytest.raises(RuleError, match="3 个月"):
         canonicalize_rule(
