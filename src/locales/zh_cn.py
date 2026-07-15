@@ -320,7 +320,6 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.reply.target_not_found": "未找到消息 {message_id} 对应的词条记录。",
     "wordbank.reply.view_target_not_found": "未找到消息 {message_id} 对应的词库搜索/详情视图。",
     "wordbank.reply.entry_not_found": "未找到词条 #{entry_id} 的详情，可能已被清理。",
-    "wordbank.reply.unknown_command": "未知回复管理命令: {action}",
     "wordbank.reply.group_command_invalid": "回复搜索结果请输入 详情<group_id> 或 详情 <group_id>；回复组详情请输入 下一页 / 上一页 / 第N页。",
     "wordbank.reply.group_not_in_search_page": "当前搜索结果页里没有 trigger group #{group_id}，请按卡片上的组号展开。",
     "wordbank.reply.info_header": "词条详情 #{entry_id}\n状态: {status}\n启用: {enabled}\n删除时间: {deleted_at}\n范围: {scope}\n群: {group_id}\n创建者: {created_by}\n触发概率: {probability}\n响应权重: {weight}\n来源消息: {message_id} ({message_type})",

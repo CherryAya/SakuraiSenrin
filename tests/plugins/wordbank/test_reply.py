@@ -157,6 +157,7 @@ async def test_reply_info_formats_selected_response_item_detail() -> None:
         locale="zh-CN",
         media_service=cast(WordbankMediaService, SimpleNamespace()),
     )
+    assert message is not None
     rendered = render_message_plan_input(message)
 
     assert not isinstance(message, str)
@@ -246,6 +247,7 @@ async def test_handle_approval_reply_result_supports_pending_batch_reply() -> No
 
     assert outcome.approval_message is None
     assert outcome.completed is True
+    assert outcome.message is not None
     assert "批量通过完成" in outcome.message
     assert "总数: 3" in outcome.message
     assert "通过: 3" in outcome.message
@@ -282,6 +284,7 @@ async def test_handle_approval_reply_result_supports_quick_complement_batch_repl
 
     assert outcome.approval_message is None
     assert outcome.completed is True
+    assert outcome.message is not None
     assert "批量审批完成" in outcome.message
     assert "总数: 4" in outcome.message
     assert "通过: 2" in outcome.message
@@ -356,6 +359,7 @@ async def test_reply_info_renders_image_trigger_and_response() -> None:
         locale="zh-CN",
         media_service=media_service,
     )
+    assert message is not None
     rendered = render_message_plan_input(message)
 
     assert not isinstance(message, str)
@@ -639,6 +643,27 @@ async def test_reply_response_set_returns_permission_error_when_denied() -> None
     assert message == "未找到可修改的词条 #300，或你没有操作权限。"
 
 
+async def test_reply_ignores_non_command_text() -> None:
+    event = _event_with_reply("随便回一句")
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_response_message()),
+        ),
+    )
+
+    message = await handle_reply_command(
+        service,
+        event=event,
+        message=event.message,
+        text="随便回一句",
+        locale="zh-CN",
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
+    )
+
+    assert message is None
+
+
 async def test_approval_reply_approves_response_item() -> None:
     get_message_ref = AsyncMock(return_value=_approval_message())
     approve_response_item = AsyncMock(return_value=True)
@@ -683,6 +708,26 @@ async def test_approval_reply_rejects_response_item() -> None:
     assert outcome.message == "审批已完成：词条 #300 已拒绝。"
     assert outcome.completed
     reject_response_item.assert_awaited_once()
+
+
+async def test_approval_reply_ignores_non_command_text() -> None:
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_approval_message()),
+        ),
+    )
+
+    outcome = await handle_approval_reply_result(
+        service,
+        event=_event_with_reply("随便回一句"),
+        text="随便回一句",
+        locale="zh-CN",
+    )
+
+    assert outcome.message is None
+    assert outcome.completed is False
+    assert outcome.action == ""
 
 
 def test_parse_view_reply_for_search_result_requires_group_from_current_page() -> None:

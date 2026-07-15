@@ -875,7 +875,6 @@ MESSAGE_KEY_NAMES = (
     "wordbank.reply.info",
     "wordbank.reply.target_missing",
     "wordbank.reply.target_not_found",
-    "wordbank.reply.unknown_command",
     "wordbank.reply.view_target_not_found",
     "wordbank.restore.not_found",
     "wordbank.restore.success",

@@ -898,7 +898,6 @@ MessageKey = Literal[
     "wordbank.reply.info_header",
     "wordbank.reply.target_missing",
     "wordbank.reply.target_not_found",
-    "wordbank.reply.unknown_command",
     "wordbank.reply.view_target_not_found",
     "wordbank.restore.not_found",
     "wordbank.restore.success",
@@ -954,7 +953,7 @@ MessageKey = Literal[
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported"
+    "wordbank.vote.supported",
 ]
 
 ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
@@ -1853,7 +1852,6 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.reply.info_header",
     "wordbank.reply.target_missing",
     "wordbank.reply.target_not_found",
-    "wordbank.reply.unknown_command",
     "wordbank.reply.view_target_not_found",
     "wordbank.restore.not_found",
     "wordbank.restore.success",
@@ -1909,5 +1907,5 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported"
+    "wordbank.vote.supported",
 )
