@@ -655,7 +655,7 @@ async def test_passive_rule_priority_and_call_count_pipeline(app: App) -> None:
 
 
 @pytest.mark.asyncio
-async def test_passive_event_at_call_count_is_shared_by_trigger_group(app: App) -> None:
+async def test_passive_event_at_call_count_is_shared_for_same_user(app: App) -> None:
     await _reset_wordbank_runtime()
     first_stage = await wordbank_service.add_message_entry(
         trigger_shape=shape_from_event("event:at"),
@@ -713,7 +713,7 @@ async def test_passive_event_at_call_count_is_shared_by_trigger_group(app: App) 
 
     async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
-        event = build_group_message_event("", message_id=1)
+        event = build_group_message_event("", user_id=10003, message_id=1)
         event.message = Message([MessageSegment.at("99999")])
         event.original_message = Message([MessageSegment.at("99999")])
         event.raw_message = "[CQ:at,qq=99999]"
@@ -724,7 +724,7 @@ async def test_passive_event_at_call_count_is_shared_by_trigger_group(app: App) 
             group_id=event.group_id,
             message=Message(
                 [
-                    MessageSegment.at("10001"),
+                    MessageSegment.at("10003"),
                     MessageSegment.text(" 第二阶段"),
                 ]
             ),

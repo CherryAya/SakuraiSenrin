@@ -183,8 +183,9 @@ class WordbankRepositoryMediaMixin:
         ) as session:
             session.add(WordbankLog(**payload))
 
-    async def count_trigger_group_calls_in_windows(
+    async def count_trigger_group_calls_for_user_in_windows(
         self: Any,
+        user_id: str,
         trigger_group_windows: dict[int, int],
         *,
         now_ts: int | None = None,
@@ -209,6 +210,7 @@ class WordbankRepositoryMediaMixin:
                 await session.execute(
                     select(WordbankLog.trigger_group_id, WordbankLog.created_at).where(
                         WordbankLog.trigger_group_id.in_(trigger_group_ids),
+                        WordbankLog.user_id == user_id,
                         WordbankLog.created_at >= now_ts - max_window,
                         WordbankLog.created_at <= now_ts,
                     )
