@@ -105,7 +105,7 @@ __plugin_meta__ = create_plugin_metadata(
 admin_command_group = CommandGroup("admin")
 admin_group = admin_command_group.command(
     "group",
-    aliases={"群组管理"},
+    aliases={"群组管理", "admin group"},
     permission=SUPERUSER,
     priority=5,
     block=False,

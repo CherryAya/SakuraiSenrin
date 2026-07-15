@@ -9,6 +9,7 @@
 
 ## 用法
 - Help: `admin.group`
+- 命令入口: `#admin.group ...` / `#admin group ...` / `#群组管理 ...`
 
 ## 子功能目录
 - `ban` 封禁群组: 把群标记为封禁状态。
@@ -149,7 +150,7 @@ BOT: [114514|测试群] 已退群
 ### `sync-members-all` 全量同步群成员
 - 摘要: 遍历当前所在全部群，分批同步群成员缓存并向超管汇报进度。
 - 别名: 无
-- 指令: `#admin.group sync-members-all`
+- 指令: `#admin.group sync-members-all` / `#admin group sync-members-all`
 #### 说明
 > [!TIP]
 > 该命令会通过 `get_group_list()` 获取凛凛当前仍在的所有群，然后逐群调用成员列表同步。
@@ -160,7 +161,7 @@ BOT: [114514|测试群] 已退群
 #### 完整流程
 命令入口只做启动与结果提示，详细进度通过私聊超管上报。
 ```demo
-USER: #admin.group sync-members-all
+USER: #admin group sync-members-all
 BOT: 已开始执行群成员全量同步，后续进度会通过超管私聊汇报。
 ```
 #### 失败情况

@@ -75,6 +75,26 @@ async def test_group_decrease_notice_syncs_members_for_kick(
 
 
 @pytest.mark.asyncio
+async def test_group_decrease_notice_syncs_members_for_leave(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sync_mock = AsyncMock()
+    monkeypatch.setattr(notice_group_plugin, "sync_members_from_api", sync_mock)
+    event = build_group_decrease_event(user_id=10002, group_id=20001, sub_type="leave")
+
+    async with app.test_matcher(notice_group_plugin.group_decrease_notice) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+
+    sync_mock.assert_awaited_once_with(
+        bot,
+        "20001",
+        trigger_source="notice_group_decrease:leave",
+    )
+
+
+@pytest.mark.asyncio
 async def test_group_decrease_notice_skips_member_sync_for_kick_me(
     app: App,
     monkeypatch: pytest.MonkeyPatch,

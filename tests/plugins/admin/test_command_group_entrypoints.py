@@ -119,6 +119,37 @@ async def test_admin_group_chinese_alias_hits_matcher(
 
 
 @pytest.mark.asyncio
+async def test_admin_group_space_alias_hits_matcher(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = build_group_message_event("#admin group status 20001", user_id=SUPERUSER_ID)
+
+    from src.plugins.admin import group as group_plugin
+
+    monkeypatch.setattr(
+        group_plugin,
+        "resolve_group_name",
+        AsyncMock(return_value="测试群"),
+    )
+    monkeypatch.setattr(
+        group_plugin.group_repo,
+        "get_group",
+        AsyncMock(return_value=_Group()),
+    )
+
+    async with app.test_matcher(admin_group) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            "[20001|测试群] 当前状态: AUTHORIZED",
+            bot=bot,
+        )
+        ctx.should_finished(admin_group)
+
+
+@pytest.mark.asyncio
 async def test_admin_group_sync_members_all_invokes_runner(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
