@@ -85,6 +85,7 @@ CATALOG: Final[dict[str, str]] = {
     "water.common.group_only": "这条得在群里整，私聊不接这活。",
     "water.common.working": "凛凛开算了，CPU 嗡嗡的，稍等。",
     "water.common.admin_confirm": "这事得群管理层拍板，普通群友先围观。",
+    "water.merge.superuser_only": "这波矩阵合并先不上自动挡，得超管亲自拍板。",
     "water.report.empty": "账本都翻冒烟了，今天这会儿还凑不出一张像样报告。",
     "water.report.cooldown": "这群的报告刚出过，{seconds}s 后再来薅。",
     "water.report.title.today": "Senrin水王日报",

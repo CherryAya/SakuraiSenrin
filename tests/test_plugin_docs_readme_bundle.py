@@ -32,7 +32,7 @@ def test_load_plugin_doc_bundle_parses_real_readme() -> None:
     admin = next(
         feature for feature in bundle.index if feature.slug == "admin-maintenance"
     )
-    assert merge.permission == Permission.GROUP_ADMIN
+    assert merge.permission == Permission.SUPERUSER
     assert admin.permission == Permission.SUPERUSER
     assert "#water ..." not in admin.trigger
     assert "#water season delete <season_id>" in admin.trigger

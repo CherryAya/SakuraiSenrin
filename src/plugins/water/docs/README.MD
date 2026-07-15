@@ -20,7 +20,8 @@
 > [!TIP]
 > 管理能力只有两类：
 >
-> - 群管理可用的 `today-report` 与 `merge-confirm`
+> - 群管理可用的 `today-report`
+> - 仅超管可用的 `merge-confirm`
 > - 仅超管可用的 `admin-maintenance`
 
 > [!TIP]
@@ -34,7 +35,7 @@
 - `today-report`: 群管理主动拉取今日群报告。
 - `achievement`: 查看个人成就与下一步目标。
 - `season-query`: 查看赛季列表、概览、积分、排名与成就。
-- `merge-confirm`: 对矩阵合并建议回复 `yes` / `no`。
+- `merge-confirm`: 超管对矩阵合并建议回复 `yes` / `no`。
 - `admin-maintenance`: 结算、回档、忽略和赛季管理等超管命令。
 
 ## 子功能详情
@@ -195,28 +196,28 @@ BOT: [发送赛季积分图]
 赛季不存在、为空或命名歧义时会提示先看列表。
 
 ### `merge-confirm` 处理矩阵合并建议
-- 摘要: 对智能建议发送 `#water.merge yes/no`。
+- 摘要: 超管对智能建议发送 `#water.merge yes/no`。
 - Advanced: true
 - Priority: 150
 - 别名: merge, 合并建议
 - 指令: `#water.merge yes` / `#water.merge no`
-- 权限: 群管理员
+- 权限: 超级管理员
 - Demo: water-merge-confirm.webp
 #### 说明
 > [!TIP]
-> 系统给出矩阵合并建议后，管理员只需要做一次确认。
+> 系统给出矩阵合并建议后，会默认通知超管，由超管决定是否合并。
 >
 > 常见写法就是 `#water.merge yes` 或 `#water.merge no`。
 #### 前置条件
-当前群存在待确认建议，且执行者是群主、群管理员或超管。
+当前群存在待确认建议，且执行者是超管。
 #### 完整流程
 ```demo
-BOT: 检测到矩阵合并建议...
+BOT: [私聊超管] 检测到矩阵合并建议...
 USER: #water.merge yes
 BOT: 已记录为“同意合并”啦
 ```
 #### 失败情况
-无待确认建议、重复处理或权限不足时会提示。
+无待确认建议、重复处理或非超管操作时会提示。
 
 ### `admin-maintenance` 超管维护命令
 - 摘要: 结算、回档、忽略、状态与赛季管理。

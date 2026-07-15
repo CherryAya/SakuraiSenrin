@@ -19,6 +19,7 @@ from src.lib.message_plan import (
     build_text_plan_entry,
 )
 from src.lib.utils.img import QQAvatar
+from src.logger import logger
 from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
 from src.plugins.wordbank.debug import log_perf, perf_start
 from src.plugins.wordbank.message_model import (
@@ -69,6 +70,13 @@ async def build_shape_plan_entry(
     load_start = perf_start()
     image_bytes_by_id = await _load_shape_image_bytes(shape, media_service)
     payload_stats = _build_image_payload_stats(image_bytes_by_id)
+    _log_missing_image_fallbacks(
+        stage="build_shape_plan_entry",
+        locale=locale,
+        image_bytes_by_id=image_bytes_by_id,
+        media_service=media_service,
+        trace_fields=trace_fields,
+    )
     if trace_sink is not None:
         trace_sink.update(payload_stats)
     if trace_fields is not None:
@@ -106,6 +114,38 @@ async def build_shape_plan_entry(
             **cast(Any, dict(trace_fields)),
         )
     return entry
+
+
+def _log_missing_image_fallbacks(
+    *,
+    stage: str,
+    locale: LocaleCode,
+    image_bytes_by_id: Mapping[int, bytes | None],
+    media_service: WordbankMediaService,
+    trace_fields: Mapping[str, object] | None = None,
+) -> None:
+    missing_image_ids = tuple(
+        image_id
+        for image_id, image_bytes in sorted(image_bytes_by_id.items())
+        if image_bytes is None
+    )
+    if not missing_image_ids:
+        return
+    details = [
+        media_service.describe_canonical_image_state(image_id)
+        for image_id in missing_image_ids
+    ]
+    trace_suffix = ""
+    if trace_fields:
+        trace_suffix = " " + " ".join(
+            f"{key}={value}" for key, value in trace_fields.items()
+        )
+    logger.warning(
+        "[Wordbank] image render fallback | "
+        f"stage={stage} locale={locale} "
+        f"missing_image_ids={missing_image_ids} "
+        f"details={details}{trace_suffix}"
+    )
 
 
 async def build_search_items_text_plan_entry(

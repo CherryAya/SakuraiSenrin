@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -36,7 +36,13 @@ def _media_service() -> WordbankMediaService:
 
     return cast(
         WordbankMediaService,
-        SimpleNamespace(load_canonical_storage_bytes=AsyncMock(side_effect=_load)),
+        SimpleNamespace(
+            load_canonical_storage_bytes=AsyncMock(side_effect=_load),
+            describe_canonical_image_state=lambda image_id: {
+                "canonical_image_id": image_id,
+                "found": True,
+            },
+        ),
     )
 
 
@@ -139,6 +145,44 @@ async def test_build_pending_items_plan_entry_renders_rich_shapes() -> None:
     assert "创建者: 10001" in str(rendered)
     assert "规则: 概率 1 | 角色 管理" in str(rendered)
     assert sum(1 for segment in rendered if segment.type == "image") == 2
+
+
+@pytest.mark.asyncio
+async def test_build_search_items_text_plan_entry_logs_missing_images(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _load(image_id: int) -> bytes | None:
+        if image_id == 8:
+            return None
+        return f"image-{image_id}".encode()
+
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            load_canonical_storage_bytes=AsyncMock(side_effect=_load),
+            describe_canonical_image_state=lambda image_id: {
+                "canonical_image_id": image_id,
+                "found": image_id != 999,
+                "remote_storage_path": "-",
+                "local_cache_path": "-",
+                "remote_sync_status": "failed",
+            },
+        ),
+    )
+    warning_mock = Mock()
+    monkeypatch.setattr(rendering_module.logger, "warning", warning_mock)
+
+    entry = await build_search_items_text_plan_entry(
+        items=[_search_item()],
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    rendered = render_message_plan_entry(entry)
+    assert "图片加载失败" in str(rendered)
+    warning_mock.assert_called_once()
+    assert "image render fallback" in warning_mock.call_args.args[0]
+    assert "missing_image_ids=(8,)" in warning_mock.call_args.args[0]
 
 
 @pytest.mark.asyncio

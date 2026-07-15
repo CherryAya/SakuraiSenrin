@@ -10,6 +10,7 @@ from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+from src.logger import logger
 from src.plugins.water.database import water_repo
 from src.repositories import group_repo, member_repo
 from src.services.info import resolve_group_name
@@ -96,20 +97,11 @@ class MatrixSuggestionService:
             target_matrix_id=candidate.matrix_id,
         )
         locale = await resolve_locale(group_id)
-        await deliver_message_plan(
+        await self._notify_superusers(
             bot,
-            plan=DeliveryPlan(
-                messages=(
-                    await self._build_suggestion_message(
-                        bot,
-                        group_id,
-                        candidate,
-                        locale,
-                    ),
-                ),
-                source_kind="water_matrix_suggestion",
-            ),
-            target=DeliveryTarget(kind="group", target_id=group_id),
+            group_id=group_id,
+            candidate=candidate,
+            locale=locale,
         )
 
     async def _find_best_candidate(
@@ -253,6 +245,39 @@ class MatrixSuggestionService:
             ),
         ]
         return "\n".join(lines)
+
+    async def _notify_superusers(
+        self,
+        bot: Bot,
+        *,
+        group_id: str,
+        candidate: MergeCandidate,
+        locale: LocaleCode,
+    ) -> None:
+        message = await self._build_suggestion_message(
+            bot,
+            group_id,
+            candidate,
+            locale,
+        )
+        for superuser_id in config.SUPERUSERS:
+            try:
+                await deliver_message_plan(
+                    bot,
+                    plan=DeliveryPlan(
+                        messages=(message,),
+                        source_kind="water_matrix_suggestion",
+                    ),
+                    target=DeliveryTarget(
+                        kind="private",
+                        target_id=str(superuser_id),
+                    ),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[Water] failed to notify matrix suggestion superuser "
+                    f"{superuser_id} for group {group_id}: {exc}"
+                )
 
 
 matrix_suggestion_service = MatrixSuggestionService()

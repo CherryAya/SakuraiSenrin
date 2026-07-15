@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from hashlib import md5
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from pybktree import BKTree
 
@@ -103,6 +103,43 @@ class WordbankMediaService(WordbankMediaRuntimeMixin):
         self._remote_load_locks: dict[int, asyncio.Lock] = {}
         self._cache_maintenance_lock = asyncio.Lock()
         self._background_remote_sync_tasks: set[asyncio.Task[None]] = set()
+
+    def describe_canonical_image_state(
+        self,
+        canonical_image_id: int,
+    ) -> dict[str, Any]:
+        image = self._by_canonical_id.get(canonical_image_id)
+        if image is None:
+            return {
+                "canonical_image_id": canonical_image_id,
+                "image_id": "-",
+                "found": False,
+                "remote_provider": self.remote_provider or "-",
+                "remote_enabled": self.remote_storage is not None,
+                "cache_enabled": self.cache_storage.enabled,
+                "storage_path": "-",
+                "remote_storage_path": "-",
+                "local_cache_path": "-",
+                "remote_sync_status": "-",
+                "remote_synced_at": 0,
+                "cache_file_size": 0,
+                "file_size": 0,
+            }
+        return {
+            "canonical_image_id": canonical_image_id,
+            "image_id": image.id,
+            "found": True,
+            "remote_provider": self.remote_provider or "-",
+            "remote_enabled": self.remote_storage is not None,
+            "cache_enabled": self.cache_storage.enabled,
+            "storage_path": image.storage_path or "-",
+            "remote_storage_path": image.remote_storage_path or "-",
+            "local_cache_path": image.local_cache_path or "-",
+            "remote_sync_status": image.remote_sync_status or "-",
+            "remote_synced_at": image.remote_synced_at,
+            "cache_file_size": image.cache_file_size,
+            "file_size": image.file_size,
+        }
 
     async def ingest_image_bytes(
         self,

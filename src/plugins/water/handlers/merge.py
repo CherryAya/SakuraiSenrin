@@ -28,6 +28,12 @@ def is_group_admin_event(event: MessageEvent) -> bool:
     return role in {"owner", "admin"}
 
 
+def is_water_merge_superuser_event(event: MessageEvent) -> bool:
+    if not isinstance(event, GroupMessageEvent):
+        return False
+    return str(event.user_id) in config.SUPERUSERS
+
+
 async def handle_merge_locked(ctx: WaterMergeContext, decision: dict) -> None:
     group_id = str(ctx.event.group_id)
     old_action = str(decision.get("action", ""))

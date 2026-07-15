@@ -61,6 +61,7 @@ from .handlers.commands import (
 from .handlers.rendering import (
     _build_image_payload_stats,
     _load_shape_image_bytes,
+    _log_missing_image_fallbacks,
 )
 from .message_model import (
     format_at_fallback_text,
@@ -690,6 +691,13 @@ def register_wordbank_runtime_handlers(
         )
         image_bytes_by_id = await _load_shape_image_bytes(shape, media_service)
         payload_stats = _build_image_payload_stats(image_bytes_by_id)
+        _log_missing_image_fallbacks(
+            stage="compile_passive_response",
+            locale=locale,
+            image_bytes_by_id=image_bytes_by_id,
+            media_service=media_service,
+            trace_fields={"response_item_id": response.response_item_id},
+        )
         log_perf(
             "plugin.build_passive_message.render_shape.images_loaded",
             start=start,

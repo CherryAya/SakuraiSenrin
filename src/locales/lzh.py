@@ -98,6 +98,7 @@ CATALOG: Final[dict[str, str]] = {
     "water.common.group_only": "此令當於群中用之。",
     "water.common.working": "凜凜方統計中，少待之……",
     "water.common.admin_confirm": "此事須群管理或群主可決。",
+    "water.merge.superuser_only": "矩陣合併之議，今默不直處，須超管決之。",
     "water.report.empty": "凜凜檢賬簿而知，今時尚無可用之報。",
     "water.report.cooldown": "本群之報尚在冷卻，請俟 {seconds}s 後再試。",
     "water.report.title.today": "Senrin水王日報",

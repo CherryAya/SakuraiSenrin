@@ -371,6 +371,19 @@ class WordbankMediaRuntimeMixin:
                 source="miss",
                 bytes=0,
             )
+            logger.warning(
+                "[Wordbank] image load miss | "
+                f"canonical_image_id={canonical_image_id} "
+                f"image_id={refreshed.id} "
+                f"cache_enabled={self.cache_storage.enabled} "
+                f"remote_enabled={self.remote_storage is not None} "
+                f"remote_provider={self.remote_provider or '-'} "
+                f"local_cache_path={refreshed.local_cache_path or '-'} "
+                f"remote_storage_path={refreshed.remote_storage_path or '-'} "
+                f"legacy_storage_path={refreshed.storage_path or '-'} "
+                f"remote_sync_status={refreshed.remote_sync_status or '-'} "
+                f"remote_synced_at={refreshed.remote_synced_at}"
+            )
             return None
         finally:
             lock.release()

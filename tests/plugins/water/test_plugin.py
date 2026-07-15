@@ -724,6 +724,57 @@ async def test_water_today_report_alias_runs(
 
 
 @pytest.mark.asyncio
+async def test_water_merge_requires_superuser(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        water_plugin,
+        "handle_merge_yes",
+        AsyncMock(),
+    )
+
+    event = build_group_message_event("#water.merge yes", role="admin", message_id=1)
+
+    async with app.test_matcher(water_plugin.water_merge) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            "矩阵合并建议默认不会直接处理，需要超管来决定喔~",
+            bot=bot,
+        )
+        ctx.should_finished()
+
+
+@pytest.mark.asyncio
+async def test_water_merge_allows_superuser(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    merge_yes_mock = AsyncMock()
+    monkeypatch.setattr(
+        water_plugin,
+        "handle_merge_yes",
+        merge_yes_mock,
+    )
+
+    event = build_group_message_event(
+        "#water.merge yes",
+        user_id=1,
+        role="member",
+        message_id=1,
+    )
+
+    async with app.test_matcher(water_plugin.water_merge) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_finished()
+
+    merge_yes_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_water_today_report_group_shared_cooldown(
     app: App,
     monkeypatch: pytest.MonkeyPatch,
