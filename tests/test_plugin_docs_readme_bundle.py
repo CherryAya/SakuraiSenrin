@@ -14,7 +14,7 @@ def test_load_plugin_doc_bundle_parses_real_readme() -> None:
     )
 
     assert bundle.title == "吹水记录"
-    assert "群聊活跃度" in bundle.summary
+    assert "大水怪" in bundle.summary
     assert bundle.trigger == "指令触发"
     assert bundle.permission == "普通用户"
     assert len(bundle.index) == 8

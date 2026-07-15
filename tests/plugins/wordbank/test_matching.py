@@ -191,3 +191,23 @@ def test_runtime_index_distinguishes_original_whitespace() -> None:
 
     assert len(exact) == 1
     assert collapsed == []
+
+
+def test_runtime_index_all_groups_matches_private_context() -> None:
+    index = RuntimeIndex.build(
+        [_entry(trigger_group_id=5, trigger_text="晚安", response_text="私聊也命中")]
+    )
+
+    selected = index.select(
+        index.find_message(fingerprint_shape(shape_from_text("晚安"))),
+        context=RuleContext(
+            group_id="",
+            user_id="10086",
+            message_type="private",
+            sender_role="member",
+        ),
+        rng=random.Random(0),
+    )
+
+    assert selected is not None
+    assert selected.response.text == "私聊也命中"

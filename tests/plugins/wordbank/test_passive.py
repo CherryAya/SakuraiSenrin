@@ -34,6 +34,7 @@ from tests.plugins.water.helpers import (
     build_group_increase_event,
     build_group_message_event,
     build_group_poke_event,
+    build_private_message_event,
 )
 
 
@@ -197,6 +198,39 @@ async def test_handle_passive_message_tries_original_message_after_to_me_strip()
     assert match_message.await_args_list[1].args[0] == shape_from_text(
         "凛凛的妙妙小工具"
     )
+
+
+@pytest.mark.asyncio
+async def test_handle_passive_message_passes_private_context() -> None:
+    bot = cast(Bot, SimpleNamespace(self_id="99999"))
+    event = build_private_message_event("晚安", user_id=10086)
+    match_message = AsyncMock(return_value=_selected(response_text="私聊命中"))
+    service = cast(
+        WordbankService,
+        SimpleNamespace(match_message=match_message),
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(
+            resolve_canonical_id_from_hints=lambda _hints: None,
+            resolve_canonical_id=lambda _data, **_kwargs: None,
+        ),
+    )
+
+    response = await handle_passive_message(
+        bot,
+        event,
+        service,
+        media_service,
+    )
+
+    assert response is not None
+    assert response.text == "私聊命中"
+    assert match_message.await_count == 1
+    awaited = match_message.await_args
+    assert awaited is not None
+    assert awaited.kwargs["context"].message_type == "private"
+    assert awaited.kwargs["context"].group_id == ""
 
 
 def test_build_message_match_shapes_deduplicates_same_message_sources() -> None:

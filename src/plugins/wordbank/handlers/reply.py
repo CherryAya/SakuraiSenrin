@@ -96,7 +96,7 @@ _COMPACT_GROUP_VIEW_RE = re.compile(
 
 @dataclass(slots=True, frozen=True)
 class ApprovalReplyOutcome:
-    message: str
+    message: str | None
     approval_message: WordbankMessageRefRecord | None = None
     completed: bool = False
     action: str = ""
@@ -138,7 +138,7 @@ async def handle_reply_command(
     text: str,
     locale: LocaleCode,
     media_service: WordbankMediaService,
-) -> MessagePlanInput:
+) -> MessagePlanInput | None:
     message_id = get_reply_message_id(event)
     if message_id is None:
         return tr(locale, "wordbank.reply.target_missing")
@@ -247,7 +247,7 @@ async def handle_reply_command(
             locale=locale,
         )
 
-    return tr(locale, "wordbank.reply.unknown_command", action=action)
+    return None
 
 
 async def handle_approval_reply(
@@ -256,7 +256,7 @@ async def handle_approval_reply(
     event: MessageEvent,
     text: str,
     locale: LocaleCode,
-) -> str:
+) -> str | None:
     outcome = await handle_approval_reply_result(
         service,
         event=event,
@@ -366,7 +366,7 @@ async def handle_approval_reply_result(
         )
 
     return ApprovalReplyOutcome(
-        tr(locale, "wordbank.reply.unknown_command", action=action),
+        None,
         approval_message=approval_message,
     )
 

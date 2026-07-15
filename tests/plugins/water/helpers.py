@@ -144,6 +144,7 @@ def build_group_increase_event(
     user_id: int = 10002,
     group_id: int = 20001,
     operator_id: int = 10001,
+    sub_type: str = "approve",
     self_id: int = 99999,
     time: int = 1_700_000_000,
 ) -> GroupIncreaseNoticeEvent:
@@ -153,7 +154,7 @@ def build_group_increase_event(
             "self_id": str(self_id),
             "post_type": "notice",
             "notice_type": "group_increase",
-            "sub_type": "approve",
+            "sub_type": sub_type,
             "user_id": user_id,
             "group_id": group_id,
             "operator_id": operator_id,
@@ -166,6 +167,7 @@ def build_group_decrease_event(
     user_id: int = 10002,
     group_id: int = 20001,
     operator_id: int = 10001,
+    sub_type: str = "leave",
     self_id: int = 99999,
     time: int = 1_700_000_000,
 ) -> GroupDecreaseNoticeEvent:
@@ -175,7 +177,7 @@ def build_group_decrease_event(
             "self_id": str(self_id),
             "post_type": "notice",
             "notice_type": "group_decrease",
-            "sub_type": "leave",
+            "sub_type": sub_type,
             "user_id": user_id,
             "group_id": group_id,
             "operator_id": operator_id,

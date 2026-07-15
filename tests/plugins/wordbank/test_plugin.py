@@ -216,7 +216,13 @@ async def test_build_passive_message_keeps_text_when_image_storage_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     media_service = SimpleNamespace(
-        load_canonical_storage_bytes=AsyncMock(return_value=None)
+        load_canonical_storage_bytes=AsyncMock(return_value=None),
+        describe_canonical_image_state=lambda image_id: {
+            "image_id": image_id,
+            "storage_key": f"canonical:{image_id}",
+            "has_remote": False,
+            "has_local_cache": False,
+        },
     )
     monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
     response = PassiveResponse(

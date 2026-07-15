@@ -24,7 +24,12 @@ from src.lib.cache.field import GroupCacheItem
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_plan import MessagePlanInput, finish_with_message
+from src.lib.message_plan import (
+    DeliveryPlan,
+    MessagePlanInput,
+    deliver_message_plan,
+    finish_with_message,
+)
 from src.lib.plugin_docs import (
     DocsRenderContext,
     build_doc_demo_plan_entry,
@@ -34,6 +39,11 @@ from src.lib.plugin_docs import (
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import group_repo
 from src.services.info import resolve_group_name
+from src.services.member_sync_admin import (
+    build_sync_members_all_running_summary,
+    get_active_sync_members_all_state,
+    run_sync_members_for_all_groups,
+)
 
 name = tr("zh-CN", "plugin.admin_group.name")
 description = tr("zh-CN", "plugin.admin_group.description")
@@ -95,7 +105,7 @@ __plugin_meta__ = create_plugin_metadata(
 admin_command_group = CommandGroup("admin")
 admin_group = admin_command_group.command(
     "group",
-    aliases={"群组管理"},
+    aliases={"群组管理", "admin group"},
     permission=SUPERUSER,
     priority=5,
     block=False,
@@ -187,6 +197,60 @@ async def _(
             message=docs_message,
             source_kind="admin_group",
         )
+
+    if command == "sync-members-all":
+        active_state = get_active_sync_members_all_state()
+        if active_state is not None:
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_sync_members_all_running_summary(active_state),
+                source_kind="admin_group",
+            )
+            return
+
+        await deliver_message_plan(
+            bot,
+            plan=DeliveryPlan(
+                messages=(
+                    "已开始执行群成员全量同步。\n"
+                    "后续进度与最终汇总会通过超管私聊合并转发汇报。",
+                ),
+                source_kind="admin_group",
+                allow_asset_reuse=False,
+            ),
+            event=event,
+        )
+        try:
+            state = await run_sync_members_for_all_groups(bot)
+        except Exception as exc:
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=(
+                    "群成员全量同步任务失败。\n"
+                    "详细进度与失败汇总请查看超管私聊。\n"
+                    f"原因：{type(exc).__name__}: {exc}"
+                ),
+                source_kind="admin_group",
+            )
+            return
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=(
+                "群成员全量同步已结束。\n"
+                f"总群数：{state.total_groups}\n"
+                f"成功：{state.succeeded}\n"
+                f"失败：{state.failed}\n"
+                f"跳过：{state.skipped}"
+            ),
+            source_kind="admin_group",
+        )
+        return
 
     handler: Callable[[AdminGroupContext], Awaitable[str]]
     match command:

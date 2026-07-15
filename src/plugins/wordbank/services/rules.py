@@ -339,8 +339,7 @@ def rule_allows(
         if context.message_type != "group" or context.group_id != entry_group_id:
             return False
     elif scope == "all_groups":
-        if context.message_type != "group":
-            return False
+        pass
     elif scope == "self":
         if context.user_id != entry_created_by:
             return False
@@ -392,7 +391,7 @@ def _legacy_study_shortcut_rule(
 ) -> dict[str, Any]:
     if trig_mode == "a":
         if not is_group:
-            return {"scope": "self"}
+            return {"scope": "all_groups" if group_block == "f" else "self"}
         return {"scope": "current_group" if group_block == "t" else "all_groups"}
     if is_group and group_block == "t":
         return {"scope": {"self", "current_group"}}

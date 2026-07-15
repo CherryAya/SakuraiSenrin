@@ -855,6 +855,9 @@ def register_wordbank_runtime_handlers(
                 source_kind="wordbank_command",
             )
             return
+        if msg is None:
+            await matcher.finish()
+            return
         await finish_with_message(
             bot,
             matcher,
@@ -892,6 +895,9 @@ def register_wordbank_runtime_handlers(
                 ),
                 source_kind="wordbank_command",
             )
+            return
+        if outcome.message is None:
+            await matcher.finish()
             return
         if outcome.completed and outcome.approval_message is not None:
             await notify_approval_source(bot, outcome.approval_message, outcome.message)

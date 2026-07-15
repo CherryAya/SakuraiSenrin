@@ -114,6 +114,23 @@ def test_rule_allows_scope_role_and_call_count() -> None:
     )
 
 
+def test_rule_allows_all_groups_in_private_context() -> None:
+    context = RuleContext(
+        group_id="",
+        user_id="10001",
+        message_type="private",
+        sender_role="member",
+    )
+
+    assert rule_allows(
+        scope="all_groups",
+        entry_group_id="20001",
+        entry_created_by="10002",
+        rule={},
+        context=context,
+    )
+
+
 def test_canonicalize_rejects_too_large_call_window() -> None:
     with pytest.raises(RuleError, match="3 个月"):
         canonicalize_rule(
@@ -195,13 +212,20 @@ def test_parse_legacy_study_shortcut_modes() -> None:
     assert parse_legacy_study_text("a t 晚安 做个好梦", is_group=False)[2] == {
         "scope": "self"
     }
+    assert parse_legacy_study_text("a f 晚安 做个好梦", is_group=False)[2] == {
+        "scope": "all_groups"
+    }
 
     assert build_legacy_study_shortcut_rule("a", "t") == {"scope": "current_group"}
+    assert build_legacy_study_shortcut_rule("a", "f") == {"scope": "all_groups"}
     assert build_legacy_study_shortcut_rule("m", "t") == {
         "scope": {"self", "current_group"}
     }
     assert build_legacy_study_shortcut_rule("a", "t", is_group=False) == {
         "scope": "self"
+    }
+    assert build_legacy_study_shortcut_rule("a", "f", is_group=False) == {
+        "scope": "all_groups"
     }
 
 

@@ -89,7 +89,7 @@ class WordbankService:
         self._initialized = False
         self._rebuild_task: asyncio.Task[None] | None = None
         self._dirty_group_ids: set[int] = set()
-        self._call_count_cache: dict[tuple[int, int], _CallCountCacheEntry] = {}
+        self._call_count_cache: dict[tuple[int, str, int], _CallCountCacheEntry] = {}
 
     @property
     def index(self) -> RuntimeIndex:
@@ -922,7 +922,11 @@ class WordbankService:
         now = get_current_time()
         start = perf_start()
         call_count_start = perf_start()
-        call_counts = await self._current_call_counts(candidates, now_ts=now)
+        call_counts = await self._current_call_counts(
+            candidates,
+            user_id=context.user_id,
+            now_ts=now,
+        )
         call_count_ms = elapsed_ms(call_count_start)
         select_start = perf_start()
         selected = self._index.select(
@@ -957,7 +961,11 @@ class WordbankService:
             policy=WritePolicy.IMMEDIATE,
         )
         save_log_ms = elapsed_ms(save_log_start)
-        self._increment_call_count_cache(selected.response, now_ts=now)
+        self._increment_call_count_cache(
+            selected.response,
+            user_id=context.user_id,
+            now_ts=now,
+        )
         log_perf(
             "service.select_and_log.hit",
             start=start,
@@ -976,6 +984,7 @@ class WordbankService:
         self,
         candidates: Sequence[MatchCandidate],
         *,
+        user_id: str,
         now_ts: int,
     ) -> dict[int, int]:
         start = perf_start()
@@ -1000,7 +1009,7 @@ class WordbankService:
                 if window > MAX_CALL_COUNT_WINDOW_SECONDS:
                     skipped_invalid_windows += 1
                     continue
-                cache_key = (trigger_group_id, window)
+                cache_key = (trigger_group_id, user_id, window)
                 cached = self._call_count_cache.get(cache_key)
                 if cached is not None and cached.expires_at >= now_ts:
                     if existing_count is None or cached.count > existing_count:
@@ -1011,9 +1020,12 @@ class WordbankService:
                 if current_window is None or window > current_window:
                     missing_windows[trigger_group_id] = window
         if missing_windows:
-            fresh_counts = await self.repository.count_trigger_group_calls_in_windows(
-                missing_windows,
-                now_ts=now_ts,
+            fresh_counts = (
+                await self.repository.count_trigger_group_calls_for_user_in_windows(
+                    user_id,
+                    missing_windows,
+                    now_ts=now_ts,
+                )
             )
             expires_at = now_ts + self.call_count_cache_ttl_seconds
             for trigger_group_id, window in missing_windows.items():
@@ -1021,7 +1033,7 @@ class WordbankService:
                 existing_count = counts.get(trigger_group_id)
                 if existing_count is None or count > existing_count:
                     counts[trigger_group_id] = count
-                self._call_count_cache[(trigger_group_id, window)] = (
+                self._call_count_cache[(trigger_group_id, user_id, window)] = (
                     _CallCountCacheEntry(
                         count=count,
                         expires_at=expires_at,
@@ -1058,6 +1070,7 @@ class WordbankService:
         self,
         response: RuntimeResponseItem,
         *,
+        user_id: str,
         now_ts: int,
     ) -> None:
         call_count = response.rule.get("call_count")
@@ -1066,7 +1079,7 @@ class WordbankService:
         window = int(call_count.get("window_seconds", 0))
         if window <= 0:
             return
-        cache_key = (response.trigger_group_id, window)
+        cache_key = (response.trigger_group_id, user_id, window)
         cached = self._call_count_cache.get(cache_key)
         if cached is None or cached.expires_at < now_ts:
             return

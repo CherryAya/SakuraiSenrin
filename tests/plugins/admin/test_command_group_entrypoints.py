@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import nonebot
@@ -112,6 +113,118 @@ async def test_admin_group_chinese_alias_hits_matcher(
         ctx.should_call_send(
             event,
             "[20001|测试群] 当前状态: AUTHORIZED",
+            bot=bot,
+        )
+        ctx.should_finished(admin_group)
+
+
+@pytest.mark.asyncio
+async def test_admin_group_space_alias_hits_matcher(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = build_group_message_event("#admin group status 20001", user_id=SUPERUSER_ID)
+
+    from src.plugins.admin import group as group_plugin
+
+    monkeypatch.setattr(
+        group_plugin,
+        "resolve_group_name",
+        AsyncMock(return_value="测试群"),
+    )
+    monkeypatch.setattr(
+        group_plugin.group_repo,
+        "get_group",
+        AsyncMock(return_value=_Group()),
+    )
+
+    async with app.test_matcher(admin_group) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            "[20001|测试群] 当前状态: AUTHORIZED",
+            bot=bot,
+        )
+        ctx.should_finished(admin_group)
+
+
+@pytest.mark.asyncio
+async def test_admin_group_sync_members_all_invokes_runner(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = build_private_message_event(
+        "#admin.group sync-members-all",
+        user_id=SUPERUSER_ID,
+    )
+
+    from src.plugins.admin import group as group_plugin
+
+    monkeypatch.setattr(group_plugin, "get_active_sync_members_all_state", lambda: None)
+    monkeypatch.setattr(
+        group_plugin,
+        "deliver_message_plan",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        group_plugin,
+        "run_sync_members_for_all_groups",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                total_groups=2,
+                succeeded=2,
+                failed=0,
+                skipped=0,
+            )
+        ),
+    )
+
+    async with app.test_matcher(admin_group) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            "群成员全量同步已结束。\n总群数：2\n成功：2\n失败：0\n跳过：0",
+            bot=bot,
+        )
+        ctx.should_finished(admin_group)
+
+
+@pytest.mark.asyncio
+async def test_admin_group_sync_members_all_returns_running_summary(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = build_private_message_event(
+        "#admin.group sync-members-all",
+        user_id=SUPERUSER_ID,
+    )
+
+    from src.plugins.admin import group as group_plugin
+
+    monkeypatch.setattr(
+        group_plugin,
+        "get_active_sync_members_all_state",
+        lambda: object(),
+    )
+    monkeypatch.setattr(
+        group_plugin,
+        "build_sync_members_all_running_summary",
+        lambda state: "已有群成员全量同步任务正在执行。",
+    )
+    monkeypatch.setattr(
+        group_plugin,
+        "run_sync_members_for_all_groups",
+        AsyncMock(return_value=None),
+    )
+
+    async with app.test_matcher(admin_group) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(
+            event,
+            "已有群成员全量同步任务正在执行。",
             bot=bot,
         )
         ctx.should_finished(admin_group)

@@ -319,7 +319,7 @@ class SearchResultCardRenderer:
                 cursor_y + height,
             ),
             radius=CARD_RADIUS,
-            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.62),
+            fill=self._mix_color(self.ACCENT_SOFT, self.BG, 0.62),
             outline="",
         )
         chip_x = CARD_PADDING_X + 16
@@ -430,7 +430,7 @@ class SearchResultCardRenderer:
                 header_panel_bottom,
             ),
             radius=CARD_RESPONSE_RADIUS,
-            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.14),
+            fill=self._mix_color(self.ACCENT_SOFT, self.BG, 0.14),
         )
         self._draw_item_header(
             draw,
@@ -851,7 +851,7 @@ class SearchResultCardRenderer:
     def _response_index_chip(self, text: str) -> SearchCardChip:
         return SearchCardChip(
             text=text,
-            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.18),
+            fill=self._mix_color(self.ACCENT_SOFT, self.BG, 0.18),
             text_fill=self._shade_color(self.ACCENT_DEEP, 0.92),
             outline="",
         )
@@ -872,7 +872,7 @@ class SearchResultCardRenderer:
                 cursor_y + 120,
             ),
             radius=CARD_RADIUS,
-            fill=self._mix_color(self.ACCENT_SOFT, "#FFFFFF", 0.5),
+            fill=self._mix_color(self.ACCENT_SOFT, self.BG, 0.5),
             outline="",
         )
         draw.text(

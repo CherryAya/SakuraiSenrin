@@ -325,7 +325,7 @@ async def test_search_items_expose_trigger_and_response_preview_image_ids(
 
 
 @pytest.mark.asyncio
-async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
+async def test_runtime_selects_response_by_rule_and_call_count_inside_user_namespace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -381,8 +381,9 @@ async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
         },
         policy=WritePolicy.IMMEDIATE,
     )
-    counts = await service.repository.count_trigger_group_calls_in_windows(
-        {gated.trigger_group_id: 60}
+    counts = await service.repository.count_trigger_group_calls_for_user_in_windows(
+        "10002",
+        {gated.trigger_group_id: 60},
     )
     second_service = await _build_service(tmp_path, monkeypatch)
     admin_selected = await second_service.match_message(
@@ -403,7 +404,7 @@ async def test_runtime_selects_response_by_rule_and_call_count_inside_group(
 
 
 @pytest.mark.asyncio
-async def test_call_count_persists_across_service_restart(
+async def test_call_count_persists_across_service_restart_for_same_user(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -443,7 +444,7 @@ async def test_call_count_persists_across_service_restart(
             "trigger_variant_id": gated.trigger_variant_id,
             "response_item_id": gated.response_item_id,
             "group_id": "20001",
-            "user_id": "10002",
+            "user_id": "10003",
             "message_type": "group",
             "created_at": get_current_time(),
         },
@@ -466,7 +467,7 @@ async def test_call_count_persists_across_service_restart(
 
 
 @pytest.mark.asyncio
-async def test_call_count_is_shared_across_responses_in_same_trigger_group(
+async def test_call_count_shared_in_same_trigger_group_for_same_user(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -515,7 +516,7 @@ async def test_call_count_is_shared_across_responses_in_same_trigger_group(
                 "trigger_variant_id": first_stage.trigger_variant_id,
                 "response_item_id": first_stage.response_item_id,
                 "group_id": "20001",
-                "user_id": "10002",
+                "user_id": "10003",
                 "message_type": "event",
                 "created_at": get_current_time(),
             },
@@ -538,7 +539,148 @@ async def test_call_count_is_shared_across_responses_in_same_trigger_group(
 
 
 @pytest.mark.asyncio
-async def test_count_trigger_group_calls_in_windows_counts_across_hot_and_cold_shards(
+async def test_call_count_is_isolated_between_different_users(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+    general = await service.add_message_entry(
+        trigger_shape=shape_from_text("用户隔离"),
+        response_shape=shape_from_text("普通响应"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "current_group",
+            "call_count": {"window_seconds": 60, "min": 0, "max": 1},
+        },
+    )
+    gated = await service.add_message_entry(
+        trigger_shape=shape_from_text("用户隔离"),
+        response_shape=shape_from_text("仅命中过的用户可见"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "current_group",
+            "call_count": {"window_seconds": 60, "min": 2, "max": 9},
+        },
+    )
+    for response_item_id in (general.response_item_id, gated.response_item_id):
+        await service.approve_response_item(
+            response_item_id,
+            actor_user_id="10001",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+    await service.rebuild_index()
+    for _ in range(2):
+        await service.repository.save_log(
+            {
+                "trigger_group_id": gated.trigger_group_id,
+                "trigger_variant_id": gated.trigger_variant_id,
+                "response_item_id": gated.response_item_id,
+                "group_id": "20001",
+                "user_id": "10002",
+                "message_type": "group",
+                "created_at": get_current_time(),
+            },
+            policy=WritePolicy.IMMEDIATE,
+        )
+
+    same_user = await service.match_message(
+        shape_from_text("用户隔离"),
+        context=RuleContext(
+            group_id="20001",
+            user_id="10002",
+            message_type="group",
+            sender_role="member",
+        ),
+    )
+    other_user = await service.match_message(
+        shape_from_text("用户隔离"),
+        context=RuleContext(
+            group_id="20001",
+            user_id="10003",
+            message_type="group",
+            sender_role="member",
+        ),
+    )
+
+    assert same_user is not None
+    assert same_user.response.id == gated.response_item_id
+    assert other_user is not None
+    assert other_user.response.id == general.response_item_id
+
+
+@pytest.mark.asyncio
+async def test_call_count_is_shared_between_group_and_private_for_same_user(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+    general = await service.add_message_entry(
+        trigger_shape=shape_from_text("跨上下文计数"),
+        response_shape=shape_from_text("普通响应"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "self",
+            "call_count": {"window_seconds": 60, "min": 0, "max": 1},
+        },
+    )
+    gated = await service.add_message_entry(
+        trigger_shape=shape_from_text("跨上下文计数"),
+        response_shape=shape_from_text("同用户跨群私聊共享"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+        raw_rule={
+            "scope": "self",
+            "call_count": {"window_seconds": 60, "min": 2, "max": 9},
+        },
+    )
+    for response_item_id in (general.response_item_id, gated.response_item_id):
+        await service.approve_response_item(
+            response_item_id,
+            actor_user_id="10001",
+            actor_group_id="20001",
+            can_moderate_group=True,
+            is_superuser=False,
+        )
+    await service.rebuild_index()
+    for _ in range(2):
+        await service.repository.save_log(
+            {
+                "trigger_group_id": gated.trigger_group_id,
+                "trigger_variant_id": gated.trigger_variant_id,
+                "response_item_id": gated.response_item_id,
+                "group_id": "20001",
+                "user_id": "10001",
+                "message_type": "group",
+                "created_at": get_current_time(),
+            },
+            policy=WritePolicy.IMMEDIATE,
+        )
+
+    selected = await service.match_message(
+        shape_from_text("跨上下文计数"),
+        context=RuleContext(
+            group_id="",
+            user_id="10001",
+            message_type="private",
+            sender_role="member",
+        ),
+    )
+
+    assert selected is not None
+    assert selected.response.id == gated.response_item_id
+
+
+@pytest.mark.asyncio
+async def test_count_trigger_group_calls_for_user_in_windows_counts_across_hot_and_cold_shards(  # noqa: E501
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -594,7 +736,8 @@ async def test_count_trigger_group_calls_in_windows_counts_across_hot_and_cold_s
     archived_manifest_text = (
         tmp_path / "wordbank_db" / "wordbank_logs_manifest.json"
     ).read_text(encoding="utf-8")
-    results = await repository.count_trigger_group_calls_in_windows(
+    results = await repository.count_trigger_group_calls_for_user_in_windows(
+        "10002",
         {
             1: 60 * 60 * 24 * 90,
             2: 60 * 60 * 24 * 30,
@@ -605,6 +748,6 @@ async def test_count_trigger_group_calls_in_windows_counts_across_hot_and_cold_s
     manifest_text = (
         tmp_path / "wordbank_db" / "wordbank_logs_manifest.json"
     ).read_text(encoding="utf-8")
-    assert results == {1: 2, 2: 1}
+    assert results == {1: 1, 2: 0}
     assert '"state": "cold"' in archived_manifest_text
     assert '"state": "warm"' in manifest_text

@@ -19,7 +19,7 @@ from nonebot.adapters.onebot.v11.event import (
     NotifyEvent,
 )
 from nonebot.exception import ActionFailed
-from nonebot.rule import Rule, is_type, to_me
+from nonebot.rule import Rule, is_type
 
 from src.config import config
 from src.database.core.consts import GroupStatus, Permission
@@ -124,26 +124,47 @@ async def ban_user_and_cleanup_groups(ctx: AdminNoticeContext) -> str:
     return msg
 
 
-@on_notice(
+def _should_sync_on_group_decrease(sub_type: str) -> bool:
+    return sub_type in {"leave", "kick"}
+
+
+group_increase_notice = on_notice(
     priority=5,
-    rule=is_type(GroupIncreaseNoticeEvent) & to_me(),
+    rule=is_type(GroupIncreaseNoticeEvent),
     block=False,
-).handle()
+)
+
+
+@group_increase_notice.handle()
 async def _(
     bot: Bot,
     event: GroupIncreaseNoticeEvent,
 ) -> None:
     group_id = str(event.group_id)
-    await sync_members_from_api(bot, group_id)
+    await sync_members_from_api(
+        bot,
+        group_id,
+        trigger_source=f"notice_group_increase:{event.sub_type}",
+    )
 
 
-@on_notice(
-    priority=5, rule=is_type(GroupDecreaseNoticeEvent) & to_me(), block=False
-).handle()
+group_decrease_notice = on_notice(
+    priority=5, rule=is_type(GroupDecreaseNoticeEvent), block=False
+)
+
+
+@group_decrease_notice.handle()
 async def _(
     bot: Bot,
     event: GroupDecreaseNoticeEvent,
 ) -> None:
+    if _should_sync_on_group_decrease(event.sub_type):
+        await sync_members_from_api(
+            bot,
+            str(event.group_id),
+            trigger_source=f"notice_group_decrease:{event.sub_type}",
+        )
+
     if event.sub_type != "kick_me":
         return
 
@@ -171,7 +192,10 @@ async def _(
         await asyncio.sleep(1)
 
 
-@on_notice(priority=5, rule=is_type(GroupBanNoticeEvent), block=False).handle()
+group_ban_notice = on_notice(priority=5, rule=is_type(GroupBanNoticeEvent), block=False)
+
+
+@group_ban_notice.handle()
 async def _(
     bot: Bot,
     event: GroupBanNoticeEvent,
@@ -216,7 +240,10 @@ async def _(
         await asyncio.sleep(1)
 
 
-@on_notice(priority=5, rule=is_rename_group(), block=False).handle()
+group_rename_notice = on_notice(priority=5, rule=is_rename_group(), block=False)
+
+
+@group_rename_notice.handle()
 async def _(event: NotifyEvent) -> None:
     if not event.model_extra:
         return
