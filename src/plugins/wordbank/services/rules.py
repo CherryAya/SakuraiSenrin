@@ -391,7 +391,7 @@ def _legacy_study_shortcut_rule(
 ) -> dict[str, Any]:
     if trig_mode == "a":
         if not is_group:
-            return {"scope": "self"}
+            return {"scope": "all_groups" if group_block == "f" else "self"}
         return {"scope": "current_group" if group_block == "t" else "all_groups"}
     if is_group and group_block == "t":
         return {"scope": {"self", "current_group"}}

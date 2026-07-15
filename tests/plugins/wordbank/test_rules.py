@@ -212,13 +212,20 @@ def test_parse_legacy_study_shortcut_modes() -> None:
     assert parse_legacy_study_text("a t 晚安 做个好梦", is_group=False)[2] == {
         "scope": "self"
     }
+    assert parse_legacy_study_text("a f 晚安 做个好梦", is_group=False)[2] == {
+        "scope": "all_groups"
+    }
 
     assert build_legacy_study_shortcut_rule("a", "t") == {"scope": "current_group"}
+    assert build_legacy_study_shortcut_rule("a", "f") == {"scope": "all_groups"}
     assert build_legacy_study_shortcut_rule("m", "t") == {
         "scope": {"self", "current_group"}
     }
     assert build_legacy_study_shortcut_rule("a", "t", is_group=False) == {
         "scope": "self"
+    }
+    assert build_legacy_study_shortcut_rule("a", "f", is_group=False) == {
+        "scope": "all_groups"
     }
 
 
