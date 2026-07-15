@@ -506,6 +506,7 @@ MessageKey = Literal[
     "water.merge.locked.action.reject",
     "water.merge.no.recorded",
     "water.merge.no_need",
+    "water.merge.superuser_only",
     "water.merge.yes.hint.corrected",
     "water.merge.yes.hint.merged",
     "water.merge.yes.recorded",
@@ -953,7 +954,7 @@ MessageKey = Literal[
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 ]
 
 ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
@@ -1460,6 +1461,7 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "water.merge.locked.action.reject",
     "water.merge.no.recorded",
     "water.merge.no_need",
+    "water.merge.superuser_only",
     "water.merge.yes.hint.corrected",
     "water.merge.yes.hint.merged",
     "water.merge.yes.recorded",
@@ -1907,5 +1909,5 @@ ALL_MESSAGE_KEYS: tuple[MessageKey, ...] = (
     "wordbank.vote.not_found",
     "wordbank.vote.passed",
     "wordbank.vote.status",
-    "wordbank.vote.supported",
+    "wordbank.vote.supported"
 )

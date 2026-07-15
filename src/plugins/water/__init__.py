@@ -90,6 +90,7 @@ from .handlers import (
     handle_water_query,
     handle_water_record,
     is_group_admin_event,
+    is_water_merge_superuser_event,
     water_help_message,
 )
 from .services.matrix_suggestion import matrix_suggestion_service
@@ -1034,12 +1035,12 @@ async def _(
         )
         return
     assert isinstance(event, GroupMessageEvent)
-    if not is_group_admin_event(event):
+    if not is_water_merge_superuser_event(event):
         await finish_with_message(
             bot,
             matcher,
             event=event,
-            message=tr(locale, "water.common.admin_confirm"),
+            message=tr(locale, "water.merge.superuser_only"),
             source_kind="water_merge",
         )
         return

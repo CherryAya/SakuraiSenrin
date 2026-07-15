@@ -18,6 +18,7 @@ from .merge import (
     handle_merge_no,
     handle_merge_yes,
     is_group_admin_event,
+    is_water_merge_superuser_event,
 )
 from .passive import handle_group_increase_notice, handle_water_record
 from .query import (
@@ -49,5 +50,6 @@ __all__ = [
     "handle_water_query",
     "handle_water_record",
     "is_group_admin_event",
+    "is_water_merge_superuser_event",
     "water_help_message",
 ]

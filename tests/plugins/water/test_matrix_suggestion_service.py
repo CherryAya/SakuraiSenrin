@@ -12,7 +12,7 @@ from src.plugins.water.services.matrix_suggestion import (
 
 
 @pytest.mark.asyncio
-async def test_maybe_suggest_sends_group_prompt(
+async def test_maybe_suggest_notifies_superuser(
     app: App, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     service = MatrixSuggestionService()
@@ -60,6 +60,7 @@ async def test_maybe_suggest_sends_group_prompt(
     monkeypatch.setattr(
         suggestion_module, "resolve_locale", AsyncMock(return_value="zh-CN")
     )
+    monkeypatch.setattr(suggestion_module.config, "SUPERUSERS", {"1"})
     monkeypatch.setattr(
         service, "_build_suggestion_message", AsyncMock(return_value="SUGGEST")
     )
@@ -67,8 +68,8 @@ async def test_maybe_suggest_sends_group_prompt(
     async with app.test_api() as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.should_call_api(
-            "send_group_msg",
-            {"group_id": 20001, "message": text_message("SUGGEST")},
+            "send_private_msg",
+            {"user_id": 1, "message": text_message("SUGGEST")},
             result={"message_id": 1},
         )
         await service._maybe_suggest(bot, "20001", trigger="first_record")

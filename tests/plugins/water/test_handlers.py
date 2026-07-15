@@ -22,6 +22,7 @@ from src.plugins.water.handlers.merge import (
     handle_merge_no,
     handle_merge_yes,
     is_group_admin_event,
+    is_water_merge_superuser_event,
 )
 from src.plugins.water.handlers.passive import (
     handle_group_increase_notice,
@@ -209,6 +210,18 @@ def test_is_group_admin_event() -> None:
     assert is_group_admin_event(admin_event) is True
     assert is_group_admin_event(owner_event) is True
     assert is_group_admin_event(superuser_event) is True
+
+
+def test_is_water_merge_superuser_event() -> None:
+    member_event = build_group_message_event("hello", role="member")
+    admin_event = build_group_message_event("hello", role="admin")
+    owner_event = build_group_message_event("hello", role="owner")
+    superuser_event = build_group_message_event("hello", user_id=1, role="member")
+
+    assert is_water_merge_superuser_event(member_event) is False
+    assert is_water_merge_superuser_event(admin_event) is False
+    assert is_water_merge_superuser_event(owner_event) is False
+    assert is_water_merge_superuser_event(superuser_event) is True
 
 
 @pytest.mark.asyncio
