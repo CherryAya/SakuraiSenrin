@@ -516,12 +516,12 @@ async def test_call_count_shared_in_same_trigger_group_for_same_user(
                 "trigger_variant_id": first_stage.trigger_variant_id,
                 "response_item_id": first_stage.response_item_id,
                 "group_id": "20001",
-            "user_id": "10003",
-            "message_type": "event",
-            "created_at": get_current_time(),
-        },
-        policy=WritePolicy.IMMEDIATE,
-    )
+                "user_id": "10003",
+                "message_type": "event",
+                "created_at": get_current_time(),
+            },
+            policy=WritePolicy.IMMEDIATE,
+        )
 
     second_service = await _build_service(tmp_path, monkeypatch)
     selected = await second_service.match_message(

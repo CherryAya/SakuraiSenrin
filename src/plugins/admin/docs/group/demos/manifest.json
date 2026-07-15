@@ -3,10 +3,10 @@
   "locale": "zh-CN",
   "targets": {
     "guide:admin.group": {
-      "normal": "README-guide--667e4adb10.webp",
-      "group_admin": "README-guide--667e4adb10.webp",
-      "group_owner": "README-guide--667e4adb10.webp",
-      "superuser": "README-guide--667e4adb10.webp"
+      "normal": "README-guide--02866ae0f6.webp",
+      "group_admin": "README-guide--02866ae0f6.webp",
+      "group_owner": "README-guide--02866ae0f6.webp",
+      "superuser": "README-guide--02866ae0f6.webp"
     },
     "summary:admin.group": {
       "normal": "README-summary--f6a489ab0e.webp",
@@ -49,6 +49,12 @@
       "group_admin": "admin-group-leave.webp",
       "group_owner": "admin-group-leave.webp",
       "superuser": "admin-group-leave.webp"
+    },
+    "feature:admin.group:sync-members-all": {
+      "normal": "admin-group-sync-members-all.webp",
+      "group_admin": "admin-group-sync-members-all.webp",
+      "group_owner": "admin-group-sync-members-all.webp",
+      "superuser": "admin-group-sync-members-all.webp"
     }
   }
 }
