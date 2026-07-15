@@ -136,7 +136,11 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
         and group
         and not await member_repo.get_member(str(bot.self_id), group_id)
     ):
-        await sync_members_from_api(bot, group_id)
+        await sync_members_from_api(
+            bot,
+            group_id,
+            trigger_source="runtime_backfill",
+        )
         user = await user_repo.get_user(user_id) if is_user_event else None
 
     plugin = matcher.plugin
