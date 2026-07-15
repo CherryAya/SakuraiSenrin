@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
 
@@ -8,11 +9,6 @@ import pytest
 
 from src.services import member_sync_admin as admin_sync_module
 from src.services.sync import MemberSyncReport
-
-
-class _Bot:
-    def __init__(self, groups: list[dict[str, object]]) -> None:
-        self.get_group_list = AsyncMock(return_value=groups)
 
 
 def _build_report(
@@ -37,12 +33,13 @@ def _build_report(
 async def test_run_sync_members_for_all_groups_reports_final_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    bot = _Bot(
-        [
+    get_group_list = AsyncMock(
+        return_value=[
             {"group_id": 20002, "group_name": "B 群"},
             {"group_id": 20001, "group_name": "A 群"},
         ]
     )
+    bot = cast(admin_sync_module.Bot, SimpleNamespace(get_group_list=get_group_list))
     monkeypatch.setattr(admin_sync_module.config, "SUPERUSERS", {"1"})
     monkeypatch.setattr(
         admin_sync_module,
@@ -59,9 +56,7 @@ async def test_run_sync_members_for_all_groups_reports_final_batch(
     monkeypatch.setattr(admin_sync_module, "deliver_message_plan", deliver_mock)
     monkeypatch.setattr(asyncio, "sleep", sleep_mock)
 
-    state = await admin_sync_module.run_sync_members_for_all_groups(
-        cast(admin_sync_module.Bot, bot)
-    )
+    state = await admin_sync_module.run_sync_members_for_all_groups(bot)
 
     assert state.status == "completed"
     assert state.total_groups == 2
@@ -87,7 +82,8 @@ async def test_run_sync_members_for_all_groups_reports_every_ten_groups(
     groups = [
         {"group_id": 20000 + index, "group_name": f"G{index}"} for index in range(10)
     ]
-    bot = _Bot(groups)
+    get_group_list = AsyncMock(return_value=groups)
+    bot = cast(admin_sync_module.Bot, SimpleNamespace(get_group_list=get_group_list))
     monkeypatch.setattr(admin_sync_module.config, "SUPERUSERS", {"1"})
     monkeypatch.setattr(
         admin_sync_module,
@@ -103,9 +99,7 @@ async def test_run_sync_members_for_all_groups_reports_every_ten_groups(
     monkeypatch.setattr(admin_sync_module, "deliver_message_plan", deliver_mock)
     monkeypatch.setattr(asyncio, "sleep", sleep_mock)
 
-    state = await admin_sync_module.run_sync_members_for_all_groups(
-        cast(admin_sync_module.Bot, bot)
-    )
+    state = await admin_sync_module.run_sync_members_for_all_groups(bot)
 
     assert state.completed == 10
     assert deliver_mock.await_count == 2
@@ -120,9 +114,11 @@ async def test_run_sync_members_for_all_groups_reports_every_ten_groups(
 async def test_run_sync_members_for_all_groups_rejects_concurrent_run() -> None:
     await admin_sync_module._sync_members_all_lock.acquire()
     try:
+        bot = cast(
+            admin_sync_module.Bot,
+            SimpleNamespace(get_group_list=AsyncMock(return_value=[])),
+        )
         with pytest.raises(RuntimeError, match="already running"):
-            await admin_sync_module.run_sync_members_for_all_groups(
-                cast(admin_sync_module.Bot, _Bot([]))
-            )
+            await admin_sync_module.run_sync_members_for_all_groups(bot)
     finally:
         admin_sync_module._sync_members_all_lock.release()

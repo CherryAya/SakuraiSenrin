@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
 
@@ -9,18 +10,12 @@ import pytest
 from src.services import sync as sync_module
 
 
-class _Bot:
-    def __init__(self, *, api_list: list[dict[str, object]] | None = None) -> None:
-        self._api_list = api_list if api_list is not None else []
-        self.get_group_member_list = AsyncMock(return_value=self._api_list)
-
-
 @pytest.mark.asyncio
 async def test_sync_members_from_api_returns_success_report(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    bot = _Bot(
-        api_list=[
+    get_group_member_list = AsyncMock(
+        return_value=[
             {
                 "group_id": 20001,
                 "user_id": 10001,
@@ -44,6 +39,10 @@ async def test_sync_members_from_api_returns_success_report(
             },
         ]
     )
+    bot = cast(
+        sync_module.Bot,
+        SimpleNamespace(get_group_member_list=get_group_member_list),
+    )
 
     monkeypatch.setattr(
         sync_module,
@@ -58,7 +57,7 @@ async def test_sync_members_from_api_returns_success_report(
     monkeypatch.setattr(sync_module.member_repo, "save_member", save_member)
 
     report = await sync_module.sync_members_from_api(
-        cast(sync_module.Bot, bot),
+        bot,
         "20001",
         trigger_source="test_case",
     )
@@ -78,8 +77,11 @@ async def test_sync_members_from_api_returns_success_report(
 async def test_sync_members_from_api_returns_failure_report(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    bot = _Bot()
-    bot.get_group_member_list = AsyncMock(side_effect=RuntimeError("boom"))
+    get_group_member_list = AsyncMock(side_effect=RuntimeError("boom"))
+    bot = cast(
+        sync_module.Bot,
+        SimpleNamespace(get_group_member_list=get_group_member_list),
+    )
 
     monkeypatch.setattr(
         sync_module,
@@ -94,7 +96,7 @@ async def test_sync_members_from_api_returns_failure_report(
     monkeypatch.setattr(sync_module.member_repo, "save_member", save_member)
 
     report = await sync_module.sync_members_from_api(
-        cast(sync_module.Bot, bot),
+        bot,
         "20001",
         trigger_source="test_case",
     )
@@ -127,8 +129,10 @@ async def test_sync_members_from_api_serializes_same_group_calls(
         in_flight -= 1
         return []
 
-    bot = _Bot()
-    bot.get_group_member_list = _get_group_member_list  # type: ignore[assignment]
+    bot = cast(
+        sync_module.Bot,
+        SimpleNamespace(get_group_member_list=_get_group_member_list),
+    )
 
     monkeypatch.setattr(
         sync_module,
@@ -139,13 +143,9 @@ async def test_sync_members_from_api_serializes_same_group_calls(
     monkeypatch.setattr(sync_module.group_repo, "save_group", AsyncMock())
     monkeypatch.setattr(sync_module.member_repo, "save_member", AsyncMock())
 
-    task1 = asyncio.create_task(
-        sync_module.sync_members_from_api(cast(sync_module.Bot, bot), "20001")
-    )
+    task1 = asyncio.create_task(sync_module.sync_members_from_api(bot, "20001"))
     await started.wait()
-    task2 = asyncio.create_task(
-        sync_module.sync_members_from_api(cast(sync_module.Bot, bot), "20001")
-    )
+    task2 = asyncio.create_task(sync_module.sync_members_from_api(bot, "20001"))
     await asyncio.sleep(0)
 
     assert call_count == 1
