@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import nonebot
 from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11.event import NotifyEvent
 from nonebug import App
 import pytest
 
@@ -132,3 +133,31 @@ async def test_group_decrease_notice_skips_member_sync_for_kick_me(
 
     sync_mock.assert_not_awaited()
     send_private_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_group_rename_notice_updates_group_name_immediately(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    update_name_mock = AsyncMock()
+    monkeypatch.setattr(notice_group_plugin.group_repo, "update_name", update_name_mock)
+    event = NotifyEvent.model_validate(
+        {
+            "time": 1_700_000_000,
+            "self_id": "99999",
+            "post_type": "notice",
+            "notice_type": "notify",
+            "sub_type": "group_name",
+            "user_id": 10001,
+            "group_id": 20001,
+            "name_new": "新群名",
+            "name_old": "旧群名",
+        }
+    )
+
+    async with app.test_matcher(notice_group_plugin.group_rename_notice) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+
+    update_name_mock.assert_awaited_once_with("20001", "新群名")
