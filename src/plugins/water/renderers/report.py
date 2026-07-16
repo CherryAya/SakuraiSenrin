@@ -647,7 +647,7 @@ def _render_group_rank_trend_panel(
     )
 
 
-async def build_water_group_report_image(
+def _build_water_group_report_image_sync(
     data: WaterGroupReportImageData,
     locale: LocaleCode,
 ) -> bytes | None:
@@ -1274,7 +1274,7 @@ async def build_water_group_report_image(
         time_color=accent,
         footer_color=strong,
     )
-    image = (await asyncio.to_thread(card.save, "PNG")).getvalue()
+    image = card.save("PNG").getvalue()
     logger.debug(
         "[Water][RankRender] type=group_report title={} items={} "
         "rank_items={} elapsed_ms={:.2f} bytes={}",
@@ -1285,6 +1285,14 @@ async def build_water_group_report_image(
         len(image),
     )
     return image
+
+
+async def build_water_group_report_image(
+    data: WaterGroupReportImageData,
+    locale: LocaleCode,
+) -> bytes | None:
+    # Group report rendering is Pillow-heavy and must not block the event loop.
+    return await asyncio.to_thread(_build_water_group_report_image_sync, data, locale)
 
 
 async def build_water_period_rank_image(
