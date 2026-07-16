@@ -139,6 +139,167 @@ async def test_run_daily_group_report_push_renders_parallel_and_sends_serially(
 
 
 @pytest.mark.asyncio
+async def test_run_daily_group_report_push_notifies_superusers_on_start_and_finish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import report as report_module
+
+    monkeypatch.setattr(report_module.config, "SUPERUSERS", {"1"})
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "get_settlement_state",
+        AsyncMock(
+            return_value={
+                "last_success_record_date": 20260613,
+                "latest_record_date": 20260613,
+                "latest_status": "success",
+                "latest_started_at": 0,
+                "latest_finished_at": 0,
+                "ignored_count": 0,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        report_module.group_repo,
+        "get_working_group_ids",
+        AsyncMock(return_value=["20001", "20002"]),
+    )
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "list_daily_report_candidates",
+        AsyncMock(
+            return_value=[
+                WaterDailyReportCandidate(
+                    group_id="20002",
+                    record_date=20260613,
+                    total_msg_count=450,
+                    active_user_count=8,
+                    active_hours=12,
+                    activity_score=610,
+                ),
+                WaterDailyReportCandidate(
+                    group_id="20001",
+                    record_date=20260613,
+                    total_msg_count=320,
+                    active_user_count=7,
+                    active_hours=10,
+                    activity_score=460,
+                ),
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        report_module.water_report_service,
+        "build_group_report_message",
+        AsyncMock(side_effect=[text_message("R2"), text_message("R1")]),
+    )
+    deliver_mock = AsyncMock(return_value=None)
+    sleep_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(report_module, "deliver_message_plan", deliver_mock)
+    monkeypatch.setattr(report_module.asyncio, "sleep", sleep_mock)
+
+    bot = cast(report_module.Bot, SimpleNamespace())
+    result = await water_report_service.run_daily_group_report_push(bot=bot)
+
+    assert result.sent_groups == 2
+    admin_calls = [
+        call
+        for call in deliver_mock.await_args_list
+        if call.kwargs["target"].kind == "private"
+    ]
+    group_calls = [
+        call
+        for call in deliver_mock.await_args_list
+        if call.kwargs["target"].kind == "group"
+    ]
+    assert len(admin_calls) == 2
+    assert len(group_calls) == 2
+    start_plan = admin_calls[0].kwargs["plan"]
+    final_plan = admin_calls[1].kwargs["plan"]
+    assert start_plan.force_forward is True
+    assert len(start_plan.messages) == 1
+    assert "水王日报推送进度" in str(start_plan.messages[0])
+    assert "候选群数：2" in str(start_plan.messages[0])
+    assert "本次为最终汇总" in str(final_plan.messages[0])
+    final_details = "\n".join(str(item) for item in final_plan.messages[1:])
+    assert "[20001] 发送成功" in final_details
+    assert "[20002] 发送成功" in final_details
+    sleep_mock.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_daily_group_report_push_reports_batch_progress_every_ten_groups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import report as report_module
+
+    monkeypatch.setattr(report_module.config, "SUPERUSERS", {"1"})
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "get_settlement_state",
+        AsyncMock(
+            return_value={
+                "last_success_record_date": 20260613,
+                "latest_record_date": 20260613,
+                "latest_status": "success",
+                "latest_started_at": 0,
+                "latest_finished_at": 0,
+                "ignored_count": 0,
+            }
+        ),
+    )
+    candidates = [
+        WaterDailyReportCandidate(
+            group_id=str(20000 + index),
+            record_date=20260613,
+            total_msg_count=500 - index,
+            active_user_count=10 + index,
+            active_hours=6 + index,
+            activity_score=700 - index,
+        )
+        for index in range(11)
+    ]
+    monkeypatch.setattr(
+        report_module.group_repo,
+        "get_working_group_ids",
+        AsyncMock(return_value=[candidate.group_id for candidate in candidates]),
+    )
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "list_daily_report_candidates",
+        AsyncMock(return_value=candidates),
+    )
+    monkeypatch.setattr(
+        report_module.water_report_service,
+        "build_group_report_message",
+        AsyncMock(side_effect=[text_message(f"R{index}") for index in range(11)]),
+    )
+    deliver_mock = AsyncMock(return_value=None)
+    sleep_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(report_module, "deliver_message_plan", deliver_mock)
+    monkeypatch.setattr(report_module.asyncio, "sleep", sleep_mock)
+
+    bot = cast(report_module.Bot, SimpleNamespace())
+    result = await water_report_service.run_daily_group_report_push(bot=bot)
+
+    assert result.sent_groups == 11
+    admin_calls = [
+        call
+        for call in deliver_mock.await_args_list
+        if call.kwargs["target"].kind == "private"
+    ]
+    assert len(admin_calls) == 3
+    start_plan = admin_calls[0].kwargs["plan"]
+    batch_plan = admin_calls[1].kwargs["plan"]
+    final_plan = admin_calls[2].kwargs["plan"]
+    assert len(start_plan.messages) == 1
+    assert len(batch_plan.messages) == 11
+    assert "下次上报：每完成 10 个群或任务结束。" in str(batch_plan.messages[0])
+    assert len(final_plan.messages) == 2
+    assert "本次为最终汇总" in str(final_plan.messages[0])
+
+
+@pytest.mark.asyncio
 async def test_build_card_data_keeps_group_report_core_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

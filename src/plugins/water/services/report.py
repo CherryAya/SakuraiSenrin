@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from time import perf_counter
 from typing import Literal
 
@@ -11,6 +12,7 @@ import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
 from pil_utils import BuildImage
 
+from src.config import config
 from src.lib.cooldown import CooldownIsolateLevel, MemoryCooldown
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -51,6 +53,7 @@ WaterGroupReportWindow = Literal["today_live", "yesterday_settled"]
 REPORT_ACTIVITY_SCORE_FACTOR = 20
 REPORT_ACTIVITY_SCORE_THRESHOLD = 300
 REPORT_PUSH_INTERVAL_SECONDS = 8.0
+REPORT_PUSH_PROGRESS_BATCH_SIZE = 10
 TODAY_REPORT_COOLDOWN_SECONDS = 60
 _today_report_cooldown = MemoryCooldown(
     TODAY_REPORT_COOLDOWN_SECONDS,
@@ -67,6 +70,161 @@ class WaterDailyReportBatchResult:
     skipped_groups: int
     failed_groups: int
     total_elapsed_ms: float
+
+
+@dataclass(slots=True)
+class WaterDailyReportPushState:
+    task_id: str
+    record_date: int
+    started_at: int
+    total_groups: int = 0
+    completed_groups: int = 0
+    rendered_groups: int = 0
+    sent_groups: int = 0
+    skipped_groups: int = 0
+    failed_groups: int = 0
+    status: str = "running"
+    current_group_id: str = ""
+    current_stage: str = "queued"
+    current_stage_started_at: int = 0
+    pending_detail_lines: list[str] = field(default_factory=list)
+    latest_error: str = ""
+
+    @property
+    def remaining_groups(self) -> int:
+        return max(self.total_groups - self.completed_groups, 0)
+
+    @property
+    def elapsed_seconds(self) -> int:
+        return max(get_current_time() - self.started_at, 0)
+
+    @property
+    def stage_elapsed_seconds(self) -> int:
+        started_at = self.current_stage_started_at or self.started_at
+        return max(get_current_time() - started_at, 0)
+
+
+def _format_report_push_time(timestamp: int) -> str:
+    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _format_report_group_label(group_id: str) -> str:
+    return f"[{group_id}]" if group_id else "-"
+
+
+def _format_report_push_status_label(status: str) -> str:
+    return {
+        "running": "运行中",
+        "completed": "已完成",
+        "failed": "已失败",
+    }.get(status, status)
+
+
+def _format_report_push_stage_label(stage: str) -> str:
+    return {
+        "queued": "排队中",
+        "loading_candidates": "加载候选群",
+        "rendering_groups": "渲染日报",
+        "sending_groups": "发送日报",
+        "reporting_progress": "发送进度报告",
+        "finalizing": "发送最终汇总",
+        "failed": "任务失败",
+        "done": "任务完成",
+    }.get(stage, stage)
+
+
+def _build_report_push_detail_line(
+    index: int,
+    total: int,
+    candidate: WaterDailyReportCandidate,
+    *,
+    outcome: str,
+) -> str:
+    prefix = f"[{index:03d}/{max(total, 1):03d}]"
+    group_label = _format_report_group_label(candidate.group_id)
+    metrics = (
+        f"score={candidate.activity_score} "
+        f"msg={candidate.total_msg_count} users={candidate.active_user_count}"
+    )
+    return f"{prefix} {group_label} {outcome} {metrics}"
+
+
+def _build_report_push_overview_text(
+    state: WaterDailyReportPushState,
+    *,
+    final: bool,
+) -> str:
+    lines = [
+        "水王日报推送进度",
+        f"任务 ID：{state.task_id}",
+        f"记录日期：{state.record_date}",
+        f"任务状态：{_format_report_push_status_label(state.status)}",
+        f"候选群数：{state.total_groups}",
+        f"已处理：{state.completed_groups}",
+        f"已渲染：{state.rendered_groups}",
+        f"已发送：{state.sent_groups}",
+        f"跳过：{state.skipped_groups}",
+        f"失败：{state.failed_groups}",
+        f"剩余：{state.remaining_groups}",
+        f"当前群：{_format_report_group_label(state.current_group_id)}",
+        f"当前阶段：{_format_report_push_stage_label(state.current_stage)}",
+        f"当前停留：{state.stage_elapsed_seconds}s",
+        f"开始时间：{_format_report_push_time(state.started_at)}",
+        f"已耗时：{state.elapsed_seconds}s",
+        f"群间间隔：{REPORT_PUSH_INTERVAL_SECONDS}s",
+        (
+            "下次上报：本次为最终汇总。"
+            if final
+            else (
+                f"下次上报：每完成 {REPORT_PUSH_PROGRESS_BATCH_SIZE} 个群或任务结束。"
+            )
+        ),
+    ]
+    if state.latest_error:
+        lines.append(f"任务错误：{state.latest_error}")
+    return "\n".join(lines)
+
+
+def _build_report_push_plan(
+    state: WaterDailyReportPushState,
+    *,
+    final: bool,
+) -> DeliveryPlan:
+    return DeliveryPlan(
+        messages=(
+            _build_report_push_overview_text(state, final=final),
+            *state.pending_detail_lines,
+        ),
+        source_kind="water_daily_report_push_progress",
+        allow_asset_reuse=False,
+        force_forward=True,
+    )
+
+
+async def _notify_report_push_superusers(bot: Bot, plan: DeliveryPlan) -> None:
+    for superuser_id in sorted(config.SUPERUSERS):
+        try:
+            await deliver_message_plan(
+                bot,
+                plan=plan,
+                target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning(
+                "[Water][ReportPush] notify superuser failed "
+                f"user_id={superuser_id} error={type(exc).__name__}: {exc}"
+            )
+
+
+def _set_report_push_stage(
+    state: WaterDailyReportPushState,
+    stage: str,
+    *,
+    group_id: str = "",
+) -> None:
+    state.current_stage = stage
+    state.current_stage_started_at = get_current_time()
+    state.current_group_id = group_id
 
 
 class WaterReportService:
@@ -120,10 +278,18 @@ class WaterReportService:
         task: LongTaskRunner | None = None,
     ) -> WaterDailyReportBatchResult:
         started = perf_counter()
+        push_state = WaterDailyReportPushState(
+            task_id=f"water-daily-report-push-{get_current_time()}",
+            record_date=0,
+            started_at=get_current_time(),
+            current_stage_started_at=get_current_time(),
+        )
         if task is not None:
             await task.advance("loading_candidates")
+        _set_report_push_stage(push_state, "loading_candidates")
         state = await water_repo.get_settlement_state()
         target_date = record_date or int(state["last_success_record_date"])
+        push_state.record_date = target_date
         if target_date <= 0 or int(state["last_success_record_date"]) < target_date:
             logger.warning(
                 "[Water][ReportPush] skipped date={} reason=settlement_not_ready",
@@ -162,6 +328,11 @@ class WaterReportService:
                 total_elapsed_ms=(perf_counter() - started) * 1000,
             )
 
+        push_state.total_groups = len(candidates)
+        await _notify_report_push_superusers(
+            bot,
+            _build_report_push_plan(push_state, final=False),
+        )
         sem = asyncio.Semaphore(4)
         if task is not None:
             await task.advance(
@@ -169,6 +340,7 @@ class WaterReportService:
                 current=0,
                 total=len(candidates),
             )
+        _set_report_push_stage(push_state, "rendering_groups")
 
         async def _render(
             candidate: WaterDailyReportCandidate,
@@ -222,6 +394,20 @@ class WaterReportService:
             for candidate, message in rendered
             if message is not None
         ]
+        push_state.rendered_groups = len(rendered_items)
+        for candidate, message in rendered:
+            if message is not None:
+                continue
+            push_state.skipped_groups += 1
+            push_state.completed_groups += 1
+            push_state.pending_detail_lines.append(
+                _build_report_push_detail_line(
+                    push_state.completed_groups,
+                    push_state.total_groups,
+                    candidate,
+                    outcome="跳过 渲染失败",
+                )
+            )
         sent_groups = 0
         failed_groups = 0
         if task is not None and rendered_items:
@@ -230,8 +416,15 @@ class WaterReportService:
                 current=0,
                 total=len(rendered_items),
             )
+        if rendered_items:
+            _set_report_push_stage(push_state, "sending_groups")
         for candidate, message in rendered_items:
             send_started = perf_counter()
+            _set_report_push_stage(
+                push_state,
+                "sending_groups",
+                group_id=str(candidate.group_id),
+            )
             try:
                 await deliver_message_plan(
                     bot,
@@ -245,6 +438,16 @@ class WaterReportService:
                     ),
                 )
                 sent_groups += 1
+                push_state.sent_groups = sent_groups
+                push_state.completed_groups += 1
+                push_state.pending_detail_lines.append(
+                    _build_report_push_detail_line(
+                        push_state.completed_groups,
+                        push_state.total_groups,
+                        candidate,
+                        outcome="发送成功",
+                    )
+                )
                 if task is not None:
                     await task.advance(
                         "sending_groups",
@@ -262,6 +465,16 @@ class WaterReportService:
                 )
             except Exception:
                 failed_groups += 1
+                push_state.failed_groups = failed_groups
+                push_state.completed_groups += 1
+                push_state.pending_detail_lines.append(
+                    _build_report_push_detail_line(
+                        push_state.completed_groups,
+                        push_state.total_groups,
+                        candidate,
+                        outcome="发送失败",
+                    )
+                )
                 if task is not None:
                     await task.advance(
                         "sending_groups",
@@ -272,6 +485,20 @@ class WaterReportService:
                     "[Water][ReportPush] group={} stage=send failed",
                     candidate.group_id,
                 )
+            if (
+                push_state.completed_groups % REPORT_PUSH_PROGRESS_BATCH_SIZE == 0
+                and push_state.completed_groups < push_state.total_groups
+            ):
+                _set_report_push_stage(
+                    push_state,
+                    "reporting_progress",
+                    group_id=str(candidate.group_id),
+                )
+                await _notify_report_push_superusers(
+                    bot,
+                    _build_report_push_plan(push_state, final=False),
+                )
+                push_state.pending_detail_lines.clear()
             await asyncio.sleep(REPORT_PUSH_INTERVAL_SECONDS)
 
         result = WaterDailyReportBatchResult(
@@ -283,6 +510,14 @@ class WaterReportService:
             failed_groups=failed_groups,
             total_elapsed_ms=(perf_counter() - started) * 1000,
         )
+        push_state.status = "completed"
+        _set_report_push_stage(push_state, "finalizing")
+        await _notify_report_push_superusers(
+            bot,
+            _build_report_push_plan(push_state, final=True),
+        )
+        push_state.pending_detail_lines.clear()
+        _set_report_push_stage(push_state, "done")
         logger.info(
             "[Water][ReportPush] done date={} candidates={} rendered={} sent={} "
             "skipped={} failed={} total_ms={:.2f}",
