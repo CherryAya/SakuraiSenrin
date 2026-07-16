@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import nonebot
 from nonebot.adapters.onebot.v11 import Bot, Message
 from nonebot.adapters.onebot.v11.message import MessageSegment
+from nonebot.exception import ActionFailed
 from nonebug import App
 import pytest
 
@@ -67,6 +68,30 @@ def _should_call_group_send_api(ctx: Any, *, group_id: int, message: Message) ->
 def _should_call_group_poke_api(ctx: Any, *, group_id: int, user_id: int) -> None:
     ctx.should_call_api(
         "group_poke",
+        {
+            "group_id": group_id,
+            "user_id": user_id,
+        },
+        result={},
+    )
+
+
+def _should_fallback_group_poke_api(
+    ctx: Any,
+    *,
+    group_id: int,
+    user_id: int,
+) -> None:
+    ctx.should_call_api(
+        "group_poke",
+        {
+            "group_id": group_id,
+            "user_id": user_id,
+        },
+        exception=ActionFailed("OneBot V11", "group_poke unsupported"),
+    )
+    ctx.should_call_api(
+        "send_poke",
         {
             "group_id": group_id,
             "user_id": user_id,
@@ -454,6 +479,30 @@ async def test_passive_response_pipeline_executes_poke_without_empty_message(
 
         ctx.receive_event(bot, event)
         _should_call_group_poke_api(
+            ctx,
+            group_id=event.group_id,
+            user_id=event.user_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_passive_response_pipeline_falls_back_when_group_poke_unsupported(
+    app: App,
+) -> None:
+    await _reset_wordbank_runtime()
+    await _add_approved_entry(
+        trigger_shape=shape_from_text("晚安"),
+        response_text="",
+        response_shape=shape_from_response_text("[戳触发者]"),
+        raw_rule={"scope": "current_group"},
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_passive) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("晚安", message_id=4)
+
+        ctx.receive_event(bot, event)
+        _should_fallback_group_poke_api(
             ctx,
             group_id=event.group_id,
             user_id=event.user_id,

@@ -805,23 +805,62 @@ def register_wordbank_runtime_handlers(
                     f"{response.response_item_id} reason=invalid_target"
                 )
                 continue
-            if not str(response.group_id).strip().isdigit():
-                logger.debug(
-                    "[Wordbank] passive poke skipped | "
-                    "response_item_id="
-                    f"{response.response_item_id} reason=unsupported_private"
+            group_id = str(response.group_id).strip()
+            api_candidates: list[tuple[str, dict[str, int]]] = []
+            if group_id.isdigit():
+                api_candidates.extend(
+                    (
+                        (
+                            "group_poke",
+                            {
+                                "group_id": int(group_id),
+                                "user_id": int(target_id),
+                            },
+                        ),
+                        (
+                            "send_poke",
+                            {
+                                "group_id": int(group_id),
+                                "user_id": int(target_id),
+                            },
+                        ),
+                    )
                 )
-                continue
-            logger.debug(
-                "[Wordbank] passive poke execute | "
-                f"response_item_id={response.response_item_id} "
-                f"group_id={response.group_id} target_id={target_id}"
-            )
-            await bot.call_api(
-                "group_poke",
-                group_id=int(response.group_id),
-                user_id=int(target_id),
-            )
+            else:
+                api_candidates.extend(
+                    (
+                        ("friend_poke", {"user_id": int(target_id)}),
+                        ("send_poke", {"user_id": int(target_id)}),
+                    )
+                )
+
+            last_exc: Exception | None = None
+            for api_name, payload in api_candidates:
+                try:
+                    logger.debug(
+                        "[Wordbank] passive poke execute | "
+                        f"response_item_id={response.response_item_id} "
+                        f"group_id={response.group_id or '-'} "
+                        f"target_id={target_id} api={api_name}"
+                    )
+                    await bot.call_api(api_name, **payload)
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    logger.debug(
+                        "[Wordbank] passive poke api failed | "
+                        f"response_item_id={response.response_item_id} "
+                        f"group_id={response.group_id or '-'} "
+                        f"target_id={target_id} api={api_name} error={exc}"
+                    )
+            if last_exc is not None:
+                logger.warning(
+                    "[Wordbank] passive poke failed | "
+                    f"response_item_id={response.response_item_id} "
+                    f"group_id={response.group_id or '-'} "
+                    f"target_id={target_id} error={last_exc}"
+                )
 
     @wordbank_reply_command.handle()
     async def _wordbank_reply(
