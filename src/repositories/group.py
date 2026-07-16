@@ -90,6 +90,7 @@ class GroupRepository:
             )
 
     async def _save_immediate(self, ctx: GroupChangeContext) -> None:
+        event_time = get_current_time()
         async with (
             core_db.session() as core_session,
             log_db.session() as log_session,
@@ -112,6 +113,7 @@ class GroupRepository:
                 await group_snapshot_ops.create_group_snapshot(
                     group_id=ctx.group_id,
                     content=ctx.group_name,
+                    created_at=event_time,
                 )
 
             if is_set(ctx.status):

@@ -96,6 +96,20 @@ def _truncate_text_to_width_pixels(
     return f"{candidate}{ellipsis}" if candidate else ellipsis
 
 
+def _rank_label_box_width(
+    rank: int,
+    *,
+    font: FontLike,
+    scale: float,
+) -> int:
+    min_width = int(26 * scale)
+    horizontal_padding = int(8 * scale)
+    return max(
+        min_width,
+        _pixel_text_width(f"#{rank}", font) + horizontal_padding,
+    )
+
+
 def _group_rank_row_fill(
     *,
     is_focus_group: bool,
@@ -659,6 +673,7 @@ async def build_water_group_report_image(
     group_rank_avatar_size = int(28 * scale)
     group_name_font = _load_font(int(10 * scale))
     group_rank_summary_font = _load_font(int(9 * scale))
+    group_rank_label_font = _load_font(int(15 * scale))
     group_rank_summary_max_width = right_w - int(18 * scale)
     visible_group_rank_has_hidden_before = False
     visible_group_rank_has_hidden_after = False
@@ -1056,7 +1071,11 @@ async def build_water_group_report_image(
         count_right = trend_x - int(10 * scale)
         count_left = count_right - int(86 * scale)
         rank_text_left = right_x + int(22 * scale)
-        rank_text_right = rank_text_left + int(26 * scale)
+        rank_text_right = rank_text_left + _rank_label_box_width(
+            item.current_rank,
+            font=group_rank_label_font,
+            scale=scale,
+        )
         avatar_x = rank_text_right + rank_avatar_gap
         name_x = avatar_x + group_rank_avatar_size + rank_avatar_gap
         safe_name = _truncate_text_to_width_pixels(
@@ -1641,6 +1660,7 @@ async def build_water_period_rank_image(
         if group_rank_h:
             report_group_name_font = _load_font(int(9 * scale))
             report_group_name_max_width = width - pad * 2 - int(232 * scale)
+            report_group_rank_label_font = _load_font(int(15 * scale))
             report_group_rank_summary_font = _load_font(int(8 * scale))
             report_group_rank_summary_max_width = width - pad * 2 - int(36 * scale)
             report_group_rank_avatar_size = int(28 * scale)
@@ -1724,7 +1744,13 @@ async def build_water_period_rank_image(
                     (
                         pad + int(24 * scale),
                         rank_y,
-                        pad + int(56 * scale),
+                        pad
+                        + int(24 * scale)
+                        + _rank_label_box_width(
+                            item.current_rank,
+                            font=report_group_rank_label_font,
+                            scale=scale,
+                        ),
                         rank_y + group_rank_row_h,
                     ),
                     f"#{item.current_rank}",
@@ -1735,7 +1761,16 @@ async def build_water_period_rank_image(
                     valign="center",
                     font_families=[SYS_FONT_NAME],
                 )
-                avatar_x = pad + int(54 * scale)
+                avatar_x = (
+                    pad
+                    + int(24 * scale)
+                    + _rank_label_box_width(
+                        item.current_rank,
+                        font=report_group_rank_label_font,
+                        scale=scale,
+                    )
+                    + int(10 * scale)
+                )
                 avatar_y = (
                     rank_y + (group_rank_row_h - report_group_rank_avatar_size) // 2
                 )
@@ -1757,7 +1792,7 @@ async def build_water_period_rank_image(
                 )
                 card.draw_text(
                     (
-                        pad + int(100 * scale),
+                        avatar_x + report_group_rank_avatar_size + int(10 * scale),
                         rank_y,
                         width - pad - int(104 * scale),
                         rank_y + group_rank_row_h,
