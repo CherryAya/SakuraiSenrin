@@ -84,6 +84,7 @@ class UserRepository:
             )
 
     async def _save_immediate(self, ctx: UserChangeContext) -> None:
+        event_time = get_current_time()
         async with (
             core_db.session() as core_session,
             log_db.session() as log_session,
@@ -104,6 +105,7 @@ class UserRepository:
                 await user_snapshot_ops.create_user_snapshot(
                     user_id=ctx.user_id,
                     content=ctx.user_name,
+                    created_at=event_time,
                 )
             if is_set(ctx.permission):
                 await user_ops.update_permission(ctx.user_id, ctx.permission)

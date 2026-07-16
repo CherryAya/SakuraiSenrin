@@ -32,8 +32,10 @@ class UserSnapshotOps(BaseOps[UserSnapshot]):
         self,
         user_id: str,
         content: str,
+        created_at: int,
     ) -> None:
         stmt = sqlite_insert(UserSnapshot).values(
+            created_at=created_at,
             user_id=user_id,
             content=content,
         )
@@ -55,8 +57,10 @@ class GroupSnapshotOps(BaseOps[GroupSnapshot]):
         self,
         group_id: str,
         content: str,
+        created_at: int,
     ) -> None:
         stmt = sqlite_insert(GroupSnapshot).values(
+            created_at=created_at,
             group_id=group_id,
             content=content,
         )
@@ -79,8 +83,10 @@ class MemberSnapshotOps(BaseOps[MemberSnapshot]):
         user_id: str,
         group_id: str,
         content: str,
+        created_at: int,
     ) -> None:
         stmt = sqlite_insert(MemberSnapshot).values(
+            created_at=created_at,
             user_id=user_id,
             group_id=group_id,
             content=content,

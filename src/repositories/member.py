@@ -99,6 +99,7 @@ class MemberRepository:
             )
 
     async def _save_immediate(self, ctx: MemberChangeContext) -> None:
+        event_time = get_current_time()
         async with (
             core_db.session() as core_session,
             log_db.session() as log_session,
@@ -127,6 +128,7 @@ class MemberRepository:
                     user_id=ctx.user_id,
                     group_id=ctx.group_id,
                     content=ctx.group_card,
+                    created_at=event_time,
                 )
             if is_set(ctx.permission):
                 await member_ops.update_permission(
