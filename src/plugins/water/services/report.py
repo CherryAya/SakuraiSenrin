@@ -14,6 +14,7 @@ from pil_utils import BuildImage
 
 from src.config import config
 from src.lib.cooldown import CooldownIsolateLevel, MemoryCooldown
+from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import LongTaskRunner
@@ -25,6 +26,7 @@ from src.logger import logger
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo_models import (
     WaterDailyReportCandidate,
+    WaterDailyReportPreviewItem,
     WaterGroupDailyRankSnapshot,
     WaterGroupReportSnapshot,
 )
@@ -59,6 +61,14 @@ _today_report_cooldown = MemoryCooldown(
     TODAY_REPORT_COOLDOWN_SECONDS,
     isolate_level=CooldownIsolateLevel.GROUP,
 )
+REPORT_DRYRUN_ITEM_KEY_MAP: dict[bool, MessageKey] = {
+    True: "water.admin.report_dryrun.item.pass",
+    False: "water.admin.report_dryrun.item.fail",
+}
+REPORT_DRYRUN_MODE_KEY_MAP: dict[Literal["settled", "live"], MessageKey] = {
+    "settled": "water.admin.report_dryrun.mode.settled",
+    "live": "water.admin.report_dryrun.mode.live",
+}
 
 
 @dataclass(frozen=True)
@@ -70,6 +80,28 @@ class WaterDailyReportBatchResult:
     skipped_groups: int
     failed_groups: int
     total_elapsed_ms: float
+
+
+@dataclass(frozen=True)
+class WaterDailyReportDryRunResult:
+    next_push_at: int
+    record_date: int
+    working_groups: int
+    candidate_groups: int
+    threshold: int
+    threshold_factor: int
+    preview_mode: Literal["settled", "live"]
+    items: tuple[WaterDailyReportPreviewItem, ...]
+
+    @property
+    def estimated_reports(self) -> int:
+        return self.candidate_groups
+
+    @property
+    def coverage_ratio(self) -> float:
+        if self.working_groups <= 0:
+            return 0.0
+        return self.candidate_groups / self.working_groups
 
 
 @dataclass(slots=True)
@@ -228,12 +260,105 @@ def _set_report_push_stage(
 
 
 class WaterReportService:
+    def resolve_next_daily_report_push(
+        self,
+        *,
+        now_ts: int | None = None,
+    ) -> tuple[int, int]:
+        now = arrow.get(now_ts or get_current_time()).to("Asia/Shanghai")
+        next_push = now.floor("day").shift(minutes=40)
+        if now > next_push:
+            next_push = next_push.shift(days=1)
+        record_date = int(next_push.shift(days=-1).format("YYYYMMDD"))
+        return next_push.int_timestamp, record_date
+
     def try_acquire_today_report_cooldown(self, group_id: str) -> tuple[bool, int]:
         result = _today_report_cooldown.acquire(group_id=group_id)
         return result.acquired, result.remaining_seconds
 
     def clear_today_report_cooldowns(self) -> None:
         _today_report_cooldown.clear()
+
+    async def build_daily_report_dry_run(
+        self,
+        *,
+        now_ts: int | None = None,
+    ) -> WaterDailyReportDryRunResult:
+        next_push_at, record_date = self.resolve_next_daily_report_push(
+            now_ts=now_ts,
+        )
+        state = await water_repo.get_settlement_state()
+        last_success_record_date = int(state["last_success_record_date"])
+        preview_mode: Literal["settled", "live"] = (
+            "live" if record_date > last_success_record_date else "settled"
+        )
+        working_group_ids = await group_repo.get_working_group_ids()
+        items = await water_repo.list_daily_report_preview_items(
+            record_date=record_date,
+            working_group_ids=working_group_ids,
+            live=preview_mode == "live",
+        )
+        candidate_groups = sum(
+            1
+            for item in items
+            if item.activity_score >= REPORT_ACTIVITY_SCORE_THRESHOLD
+        )
+        return WaterDailyReportDryRunResult(
+            next_push_at=next_push_at,
+            record_date=record_date,
+            working_groups=len(working_group_ids),
+            candidate_groups=candidate_groups,
+            threshold=REPORT_ACTIVITY_SCORE_THRESHOLD,
+            threshold_factor=REPORT_ACTIVITY_SCORE_FACTOR,
+            preview_mode=preview_mode,
+            items=tuple(items),
+        )
+
+    async def build_daily_report_dry_run_summary(
+        self,
+        *,
+        locale: LocaleCode,
+        now_ts: int | None = None,
+    ) -> str:
+        result = await self.build_daily_report_dry_run(now_ts=now_ts)
+        next_push_text = (
+            arrow.get(result.next_push_at)
+            .to("Asia/Shanghai")
+            .format("YYYY-MM-DD HH:mm:ss")
+        )
+        item_lines = [
+            tr(
+                locale,
+                REPORT_DRYRUN_ITEM_KEY_MAP[item.activity_score >= result.threshold],
+                group_id=item.group_id,
+                score=item.activity_score,
+                msg_count=item.total_msg_count,
+                factor=result.threshold_factor,
+                active_user_count=item.active_user_count,
+            )
+            for item in result.items
+        ]
+        items_text = (
+            "\n".join(item_lines)
+            if item_lines
+            else tr(
+                locale,
+                "water.admin.report_dryrun.empty",
+            )
+        )
+        return tr(
+            locale,
+            "water.admin.report_dryrun.summary",
+            next_push_at=next_push_text,
+            record_date=result.record_date,
+            preview_mode=tr(locale, REPORT_DRYRUN_MODE_KEY_MAP[result.preview_mode]),
+            working_groups=result.working_groups,
+            estimated_reports=result.estimated_reports,
+            coverage=f"{result.coverage_ratio * 100:.1f}%",
+            threshold=result.threshold,
+            factor=result.threshold_factor,
+            items=items_text,
+        )
 
     async def build_group_report_message(
         self,

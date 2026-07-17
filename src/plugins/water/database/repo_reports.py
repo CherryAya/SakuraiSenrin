@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 from .repo_models import (
     NaturalPeriodRankSnapshot,
     WaterDailyReportCandidate,
+    WaterDailyReportPreviewItem,
     WaterGroupDailyRankItem,
     WaterGroupDailyRankSnapshot,
     WaterGroupReportMember,
@@ -169,6 +170,70 @@ class WaterRepositoryReportsMixin:
             len(working_group_ids),
             len(ordered),
             min_activity_score,
+        )
+        return ordered
+
+    async def list_daily_report_preview_items(
+        self,
+        *,
+        record_date: int,
+        working_group_ids: Sequence[str],
+        live: bool = False,
+    ) -> list["WaterDailyReportPreviewItem"]:
+        repo_self = cast("WaterRepository", self)
+        if not working_group_ids:
+            return []
+
+        rows: Sequence[WaterSummaryRecord]
+        if live:
+            await water_writer.flush_now()
+            rows = await repo_self._collect_realtime_daily_rows(
+                scope="global",
+                group_id="",
+                record_date=record_date,
+            )
+        else:
+            rows = await repo_self.get_summaries_in_window(
+                record_date,
+                record_date,
+                group_ids=list(working_group_ids),
+            )
+
+        aggregates = repo_self._build_entity_period_aggregates(
+            rows,
+            lambda item: item.group_id,
+        )
+        ordered = sorted(
+            (
+                WaterDailyReportPreviewItem(
+                    group_id=group_id,
+                    record_date=record_date,
+                    total_msg_count=msg_count,
+                    active_user_count=active_users,
+                    active_hours=active_hours,
+                    activity_score=msg_count + 20 * active_users,
+                )
+                for group_id in working_group_ids
+                for (
+                    msg_count,
+                    active_users,
+                    active_hours,
+                    _hourly_counts,
+                    _group_count,
+                ) in (aggregates.get(group_id, (0, 0, 0, [0] * 24, 0)),)
+            ),
+            key=lambda item: (
+                -item.activity_score,
+                -item.total_msg_count,
+                item.group_id,
+            ),
+        )
+        logger.debug(
+            "[Water][ReportRepo] preview date={} working_groups={} items={} live={}",
+            record_date,
+            len(working_group_ids),
+            len(ordered),
+            live,
         )
         return ordered
 

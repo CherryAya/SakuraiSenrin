@@ -14,6 +14,7 @@ from src.plugins.water.handlers.admin import (
     WaterAdminContext,
     format_settlement_message,
     handle_ignore,
+    handle_report_dryrun,
     handle_season,
     handle_settle,
 )
@@ -244,6 +245,31 @@ async def test_handle_ignore_param_validation_and_success(
 
     assert matcher.finished is not None
     assert "状态: 成功" in matcher.finished
+
+
+@pytest.mark.asyncio
+async def test_handle_report_dryrun_uses_report_service_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.handlers import admin as admin_module
+
+    matcher = DummyMatcher()
+    ctx = _build_admin_ctx(
+        matcher,
+        ["report-dryrun"],
+        event_text="#water report-dryrun",
+    )
+
+    monkeypatch.setattr(
+        admin_module.water_report_service,
+        "build_daily_report_dry_run_summary",
+        AsyncMock(return_value="DRYRUN_OK"),
+    )
+
+    with pytest.raises(MatcherFinished):
+        await handle_report_dryrun(ctx)
+
+    assert matcher.finished == "DRYRUN_OK"
 
 
 @pytest.mark.asyncio

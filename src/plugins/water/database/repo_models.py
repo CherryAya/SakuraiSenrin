@@ -160,6 +160,16 @@ class WaterDailyReportCandidate:
 
 
 @dataclass(frozen=True)
+class WaterDailyReportPreviewItem:
+    group_id: str
+    record_date: int
+    total_msg_count: int
+    active_user_count: int
+    active_hours: int
+    activity_score: int
+
+
+@dataclass(frozen=True)
 class WaterActivitySeasonRecord:
     season_id: str
     name: str
@@ -294,6 +304,7 @@ __all__ = [
     "SeasonUserAggregate",
     "WaterActivitySeasonRecord",
     "WaterDailyReportCandidate",
+    "WaterDailyReportPreviewItem",
     "WaterGroupDailyRankItem",
     "WaterGroupDailyRankSnapshot",
     "WaterGroupReportMember",

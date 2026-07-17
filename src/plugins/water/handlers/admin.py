@@ -26,6 +26,7 @@ from src.lib.plugin_docs import build_doc_demo_plan_entry
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.renderers import render_season_list
+from src.plugins.water.services.report import water_report_service
 from src.plugins.water.services.season import (
     SeasonCreateInput,
     SeasonServiceError,
@@ -284,6 +285,13 @@ async def handle_state(ctx: WaterAdminContext) -> None:
             query_time=arrow.get(get_current_time()).format("YYYY-MM-DD HH:mm:ss"),
         ),
     )
+
+
+async def handle_report_dryrun(ctx: WaterAdminContext) -> None:
+    summary = await water_report_service.build_daily_report_dry_run_summary(
+        locale=ctx.locale,
+    )
+    await _finish_admin(ctx, summary)
 
 
 async def handle_season(ctx: WaterAdminContext) -> None:

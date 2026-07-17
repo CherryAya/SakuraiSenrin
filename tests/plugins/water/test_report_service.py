@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
 
+import arrow
 from pil_utils import BuildImage
 import pytest
 
@@ -12,6 +13,7 @@ from src.lib.message_plan import render_message_plan_input
 from src.lib.messages import text_message
 from src.plugins.water.database.repo_models import (
     WaterDailyReportCandidate,
+    WaterDailyReportPreviewItem,
     WaterGroupDailyRankItem,
     WaterGroupDailyRankSnapshot,
     WaterGroupReportMember,
@@ -20,6 +22,7 @@ from src.plugins.water.database.repo_models import (
 from src.plugins.water.services.report import (
     TODAY_REPORT_COOLDOWN_SECONDS,
     WaterDailyReportBatchResult,
+    WaterDailyReportDryRunResult,
     water_report_service,
 )
 
@@ -34,6 +37,173 @@ def test_today_report_cooldown_is_group_shared() -> None:
     acquired, remain = water_report_service.try_acquire_today_report_cooldown("20001")
     assert acquired is False
     assert 1 <= remain <= TODAY_REPORT_COOLDOWN_SECONDS
+
+
+def test_resolve_next_daily_report_push_uses_current_slot_before_0040() -> None:
+    next_push_at, record_date = water_report_service.resolve_next_daily_report_push(
+        now_ts=arrow.get(
+            "2026-07-16 00:39:59",
+            "YYYY-MM-DD HH:mm:ss",
+            tzinfo="Asia/Shanghai",
+        ).int_timestamp
+    )
+
+    assert (
+        arrow.get(next_push_at).to("Asia/Shanghai").format("YYYY-MM-DD HH:mm:ss")
+        == "2026-07-16 00:40:00"
+    )
+    assert record_date == 20260715
+
+
+def test_resolve_next_daily_report_push_uses_next_slot_after_0040() -> None:
+    next_push_at, record_date = water_report_service.resolve_next_daily_report_push(
+        now_ts=arrow.get(
+            "2026-07-16 00:40:01",
+            "YYYY-MM-DD HH:mm:ss",
+            tzinfo="Asia/Shanghai",
+        ).int_timestamp
+    )
+
+    assert (
+        arrow.get(next_push_at).to("Asia/Shanghai").format("YYYY-MM-DD HH:mm:ss")
+        == "2026-07-17 00:40:00"
+    )
+    assert record_date == 20260716
+
+
+@pytest.mark.asyncio
+async def test_build_daily_report_dry_run_live_preview_when_unsettled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.services import report as report_module
+
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "get_settlement_state",
+        AsyncMock(
+            return_value={
+                "last_success_record_date": 20260715,
+                "latest_record_date": 20260715,
+                "latest_status": "success",
+                "latest_started_at": 0,
+                "latest_finished_at": 0,
+                "ignored_count": 0,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        report_module.group_repo,
+        "get_working_group_ids",
+        AsyncMock(return_value=["20001", "20002", "20003"]),
+    )
+    preview_items = [
+        WaterDailyReportPreviewItem(
+            group_id="20001",
+            record_date=20260716,
+            total_msg_count=120,
+            active_user_count=12,
+            active_hours=8,
+            activity_score=360,
+        ),
+        WaterDailyReportPreviewItem(
+            group_id="20002",
+            record_date=20260716,
+            total_msg_count=80,
+            active_user_count=5,
+            active_hours=4,
+            activity_score=180,
+        ),
+        WaterDailyReportPreviewItem(
+            group_id="20003",
+            record_date=20260716,
+            total_msg_count=0,
+            active_user_count=0,
+            active_hours=0,
+            activity_score=0,
+        ),
+    ]
+    list_preview_mock = AsyncMock(return_value=preview_items)
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "list_daily_report_preview_items",
+        list_preview_mock,
+    )
+
+    result = await water_report_service.build_daily_report_dry_run(
+        now_ts=arrow.get(
+            "2026-07-16 12:00:00",
+            "YYYY-MM-DD HH:mm:ss",
+            tzinfo="Asia/Shanghai",
+        ).int_timestamp,
+    )
+
+    assert isinstance(result, WaterDailyReportDryRunResult)
+    assert result.preview_mode == "live"
+    assert result.record_date == 20260716
+    assert result.working_groups == 3
+    assert result.candidate_groups == 1
+    assert result.coverage_ratio == pytest.approx(1 / 3)
+    list_preview_mock.assert_awaited_once_with(
+        record_date=20260716,
+        working_group_ids=["20001", "20002", "20003"],
+        live=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_daily_report_dry_run_summary_formats_threshold_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dryrun_result = WaterDailyReportDryRunResult(
+        next_push_at=arrow.get(
+            "2026-07-17 00:40:00",
+            "YYYY-MM-DD HH:mm:ss",
+            tzinfo="Asia/Shanghai",
+        ).int_timestamp,
+        record_date=20260716,
+        working_groups=2,
+        candidate_groups=1,
+        threshold=300,
+        threshold_factor=20,
+        preview_mode="live",
+        items=(
+            WaterDailyReportPreviewItem(
+                group_id="20001",
+                record_date=20260716,
+                total_msg_count=140,
+                active_user_count=9,
+                active_hours=6,
+                activity_score=320,
+            ),
+            WaterDailyReportPreviewItem(
+                group_id="20002",
+                record_date=20260716,
+                total_msg_count=60,
+                active_user_count=6,
+                active_hours=3,
+                activity_score=180,
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        water_report_service,
+        "build_daily_report_dry_run",
+        AsyncMock(return_value=dryrun_result),
+    )
+
+    summary = await water_report_service.build_daily_report_dry_run_summary(
+        locale="zh-CN"
+    )
+
+    assert "下一次推送: 2026-07-17 00:40:00" in summary
+    assert "目标日报日期: 20260716" in summary
+    assert "预览模式: 实时预估" in summary
+    assert "工作群总数: 2" in summary
+    assert "预计发送日报: 1" in summary
+    assert "覆盖占比: 50.0%" in summary
+    assert "阈值规则: msg_count + 20 * active_user_count >= 300" in summary
+    assert "[SEND] 群 20001 | score=320 | 140 + 20*9" in summary
+    assert "[SKIP] 群 20002 | score=180 | 60 + 20*6" in summary
 
 
 @pytest.mark.asyncio
