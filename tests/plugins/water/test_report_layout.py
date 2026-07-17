@@ -1,3 +1,7 @@
+from typing import Any, cast
+
+import pytest
+
 from src.plugins.water.renderers.report_layout import (
     GROUP_REPORT_LEFT_HEADER_HEIGHT,
     GROUP_REPORT_USER_CARD_HEIGHT,
@@ -71,3 +75,32 @@ def test_group_report_right_panel_tier_falls_back_to_balanced_without_history() 
     )
 
     assert tier == "balanced"
+
+
+@pytest.mark.asyncio
+async def test_build_group_report_image_offloads_sync_render_to_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.renderers import report as report_module
+
+    captured: dict[str, object] = {}
+
+    async def _fake_to_thread(
+        func: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        captured["func"] = func
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return b"fake-image"
+
+    monkeypatch.setattr(report_module.asyncio, "to_thread", _fake_to_thread)
+
+    data = cast(Any, object())
+    result = await report_module.build_water_group_report_image(data, "zh-CN")
+
+    assert result == b"fake-image"
+    assert captured["func"] is report_module._build_water_group_report_image_sync
+    assert captured["args"] == (data, "zh-CN")
+    assert captured["kwargs"] == {}

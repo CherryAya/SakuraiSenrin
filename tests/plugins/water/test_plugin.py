@@ -28,7 +28,12 @@ nonebot.load_plugin("src.plugins.water")
 
 from src.plugins import water as water_plugin
 from src.plugins.water.services.rank_types import WaterRankQuerySpec
-from tests.plugins.water.helpers import build_group_message_event
+from tests.plugins.water.helpers import (
+    build_group_message_event,
+    build_private_message_event,
+)
+
+WATER_ADMIN_SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 
 
 @pytest.mark.asyncio
@@ -772,6 +777,84 @@ async def test_water_merge_allows_superuser(
         ctx.should_finished()
 
     merge_yes_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_water_admin_report_dryrun_runs_only_for_superuser_private(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dryrun_mock = AsyncMock(return_value="DRYRUN_OK")
+    monkeypatch.setattr(
+        water_plugin.water_report_service,
+        "build_daily_report_dry_run_summary",
+        dryrun_mock,
+    )
+
+    event = build_private_message_event(
+        "#water report-dryrun",
+        user_id=WATER_ADMIN_SUPERUSER_ID,
+        message_id=1,
+    )
+
+    async with app.test_matcher(water_plugin.water_admin) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, "DRYRUN_OK", bot=bot)
+        ctx.should_finished()
+
+    dryrun_mock.assert_awaited_once_with(locale="zh-CN")
+
+
+@pytest.mark.asyncio
+async def test_water_admin_report_dryrun_stays_silent_in_group(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dryrun_mock = AsyncMock(return_value="SHOULD_NOT_RUN")
+    monkeypatch.setattr(
+        water_plugin.water_report_service,
+        "build_daily_report_dry_run_summary",
+        dryrun_mock,
+    )
+
+    event = build_group_message_event(
+        "#water report-dryrun",
+        user_id=WATER_ADMIN_SUPERUSER_ID,
+        role="member",
+        message_id=1,
+    )
+
+    async with app.test_matcher(water_plugin.water_admin) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+
+    dryrun_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_water_admin_report_dryrun_stays_silent_for_non_superuser_private(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dryrun_mock = AsyncMock(return_value="SHOULD_NOT_RUN")
+    monkeypatch.setattr(
+        water_plugin.water_report_service,
+        "build_daily_report_dry_run_summary",
+        dryrun_mock,
+    )
+
+    event = build_private_message_event(
+        "#water report-dryrun",
+        user_id=10001,
+        message_id=1,
+    )
+
+    async with app.test_matcher(water_plugin.water_admin) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+
+    dryrun_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio

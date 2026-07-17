@@ -220,11 +220,11 @@ BOT: 已记录为“同意合并”啦
 无待确认建议、重复处理或非超管操作时会提示。
 
 ### `admin-maintenance` 超管维护命令
-- 摘要: 结算、回档、忽略、状态与赛季管理。
+- 摘要: 结算、回档、忽略、状态、日报预演与赛季管理。
 - Advanced: true
 - Priority: 160
 - 别名: water 管理, 超管命令
-- 指令: `#water help` / `#water settle [YYYYMMDD] [-f|--force]` / `#water pardon <penalty_id>` / `#water ignore <group_id>` / `#water ignored` / `#water state` / `#water season create <season_id> <YYYYMMDD> <YYYYMMDD> <name>` / `#water season publish <season_id>` / `#water season archive <season_id>` / `#water season show <season_id>` / `#water season list [current|published|archived|draft]` / `#water season delete <season_id>`
+- 指令: `#water help` / `#water settle [YYYYMMDD] [-f|--force]` / `#water pardon <penalty_id>` / `#water ignore <group_id>` / `#water ignored` / `#water state` / `#water report-dryrun` / `#water season create <season_id> <YYYYMMDD> <YYYYMMDD> <name>` / `#water season publish <season_id>` / `#water season archive <season_id>` / `#water season show <season_id>` / `#water season list [current|published|archived|draft]` / `#water season delete <season_id>`
 - 权限: 超级管理员
 - Demo: water-admin-maintenance.webp
 #### 说明
@@ -234,6 +234,7 @@ BOT: 已记录为“同意合并”啦
 > 具体参数和可用子命令，以运行时输出的 `#water help` 为准。
 #### 前置条件
 执行者必须是超级管理员。
+`report-dryrun` 仅允许超级管理员私聊触发，群聊里不会响应。
 #### 完整流程
 ```demo
 USER: #water help

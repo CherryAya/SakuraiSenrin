@@ -48,6 +48,7 @@ def test_load_plugin_doc_bundle_parses_water_commands() -> None:
     assert merge.trigger == "`#water.merge yes` / `#water.merge no`"
     assert "`#water help`" in admin.trigger
     assert "`#water ignore <group_id>`" in admin.trigger
+    assert "`#water report-dryrun`" in admin.trigger
     assert "`#water season delete <season_id>`" in admin.trigger
 
 
@@ -58,7 +59,7 @@ def test_demo_image_renderer_wraps_long_admin_command() -> None:
         (
             "`#water help` / `#water settle [YYYYMMDD] [-f|--force]` / "
             "`#water pardon <penalty_id>` / `#water ignore <group_id>` / "
-            "`#water ignored` / `#water state`"
+            "`#water ignored` / `#water state` / `#water report-dryrun`"
         ),
         max_width=320,
         font=renderer.meta_font,  # pyright: ignore[reportPrivateUsage]
