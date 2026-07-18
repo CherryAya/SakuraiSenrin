@@ -26,6 +26,7 @@ from src.plugins.wordbank.message_model import (
     MessageShape,
     format_at_summary_text,
     format_event_summary_text,
+    format_placeholder_summary_text,
 )
 from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
 from src.plugins.wordbank.services.media import WordbankMediaService
@@ -103,6 +104,10 @@ async def build_shape_plan_entry(
         elif atom.kind == "event" and atom.event_name:
             blocks.append(
                 TextBlock(format_event_summary_text(atom.event_name, atom.target_id))
+            )
+        elif atom.kind == "placeholder" and atom.placeholder_name:
+            blocks.append(
+                TextBlock(format_placeholder_summary_text(atom.placeholder_name))
             )
     entry = MessagePlanEntry(blocks=tuple(blocks))
     if trace_fields is not None:

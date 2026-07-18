@@ -15,6 +15,7 @@ from src.plugins.wordbank.message_model import (
     MessageShape,
     format_at_summary_text,
     format_event_summary_text,
+    format_placeholder_summary_text,
 )
 
 
@@ -366,6 +367,13 @@ def _content_blocks_from_shape(
                 SearchCardContentBlock(
                     kind="label",
                     label=f"[{event_label}]",
+                )
+            )
+        elif atom.kind == "placeholder" and atom.placeholder_name:
+            blocks.append(
+                SearchCardContentBlock(
+                    kind="label",
+                    label=format_placeholder_summary_text(atom.placeholder_name),
                 )
             )
     return tuple(blocks)

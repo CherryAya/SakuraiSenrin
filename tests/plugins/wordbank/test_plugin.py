@@ -25,6 +25,7 @@ if nonebot.get_plugin("wordbank") is None:
     nonebot.load_plugin("src.plugins.wordbank")
 
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank import entry_runtime as wordbank_entry_runtime
 from src.plugins.wordbank.handlers import rendering as rendering_module
 from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.handlers.rendering import MISSING_IMAGE_PLACEHOLDER
@@ -33,6 +34,7 @@ from src.plugins.wordbank.message_model import (
     MessageShape,
     combine_shapes,
     shape_from_image,
+    shape_from_response_text,
     shape_from_text,
 )
 
@@ -256,3 +258,92 @@ async def test_build_passive_message_keeps_text_when_image_storage_is_missing(
         "image_max_bytes": 0,
     }
     media_service.load_canonical_storage_bytes.assert_awaited_once_with(7)
+
+
+@pytest.mark.asyncio
+async def test_build_passive_message_renders_profile_text_placeholders(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    media_service = SimpleNamespace(
+        load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
+    )
+    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    monkeypatch.setattr(
+        wordbank_entry_runtime.user_repo,
+        "get_name_by_uid",
+        AsyncMock(return_value="小明"),
+    )
+    monkeypatch.setattr(
+        wordbank_entry_runtime.member_repo,
+        "get_card_by_uid_gid",
+        AsyncMock(return_value="阿明"),
+    )
+    response = PassiveResponse(
+        text="fallback",
+        trigger_group_id=12,
+        trigger_variant_id=21,
+        response_item_id=22,
+        group_id="20001",
+        user_id="10001",
+        message_type="message",
+        response_shape=shape_from_response_text("[账号]-[昵称]-[群名片]"),
+    )
+
+    message, _ = await wordbank_plugin._build_passive_message(
+        response,
+        locale="zh-CN",
+    )
+    rendered = render_message_plan_input(message)
+
+    assert isinstance(rendered, Message)
+    assert all(segment.type == "text" for segment in rendered)
+    assert str(rendered) == "10001-小明-阿明"
+
+
+@pytest.mark.asyncio
+async def test_build_passive_message_renders_profile_combo_with_avatar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeAvatar:
+        def save(self, _fmt: str) -> SimpleNamespace:
+            return SimpleNamespace(getvalue=lambda: b"avatar-bytes")
+
+    media_service = SimpleNamespace(
+        load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
+    )
+    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    monkeypatch.setattr(
+        wordbank_entry_runtime.user_repo,
+        "get_name_by_uid",
+        AsyncMock(return_value="小明"),
+    )
+    monkeypatch.setattr(
+        wordbank_entry_runtime.member_repo,
+        "get_card_by_uid_gid",
+        AsyncMock(return_value="阿明"),
+    )
+    monkeypatch.setattr(
+        wordbank_entry_runtime.QQAvatar,
+        "fetch_user",
+        AsyncMock(return_value=_FakeAvatar()),
+    )
+    response = PassiveResponse(
+        text="fallback",
+        trigger_group_id=12,
+        trigger_variant_id=21,
+        response_item_id=22,
+        group_id="20001",
+        user_id="10001",
+        message_type="message",
+        response_shape=shape_from_response_text("[xx]"),
+    )
+
+    message, _ = await wordbank_plugin._build_passive_message(
+        response,
+        locale="zh-CN",
+    )
+    rendered = render_message_plan_input(message)
+
+    assert isinstance(rendered, Message)
+    assert [segment.type for segment in rendered] == ["text", "image"]
+    assert rendered[0].data["text"] == "小明(阿明)[10001]"

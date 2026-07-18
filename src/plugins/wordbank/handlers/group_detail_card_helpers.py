@@ -17,6 +17,7 @@ from src.plugins.wordbank.message_model import (
     MessageAtom,
     MessageShape,
     format_at_fallback_text,
+    format_placeholder_summary_text,
 )
 
 
@@ -104,6 +105,8 @@ def atom_text(atom: MessageAtom, locale: LocaleCode) -> str:
         return format_at_fallback_text(atom.target_id)
     if atom.kind == "event" and atom.event_name:
         return tr(locale, "wordbank.shape.event_ref", event_name=atom.event_name)
+    if atom.kind == "placeholder" and atom.placeholder_name:
+        return format_placeholder_summary_text(atom.placeholder_name)
     return ""
 
 
