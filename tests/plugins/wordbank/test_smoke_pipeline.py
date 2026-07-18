@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 import nonebot
 from nonebot.adapters.onebot.v11 import Bot, Message
 from nonebot.adapters.onebot.v11.message import MessageSegment
-from nonebot.exception import ActionFailed
 from nonebug import App
 import pytest
 
@@ -62,41 +61,6 @@ def _should_call_group_send_api(ctx: Any, *, group_id: int, message: Message) ->
             "message": message,
         },
         result={"message_id": 1},
-    )
-
-
-def _should_call_group_poke_api(ctx: Any, *, group_id: int, user_id: int) -> None:
-    ctx.should_call_api(
-        "group_poke",
-        {
-            "group_id": group_id,
-            "user_id": user_id,
-        },
-        result={},
-    )
-
-
-def _should_fallback_group_poke_api(
-    ctx: Any,
-    *,
-    group_id: int,
-    user_id: int,
-) -> None:
-    ctx.should_call_api(
-        "group_poke",
-        {
-            "group_id": group_id,
-            "user_id": user_id,
-        },
-        exception=ActionFailed("OneBot V11", "group_poke unsupported"),
-    )
-    ctx.should_call_api(
-        "send_poke",
-        {
-            "group_id": group_id,
-            "user_id": user_id,
-        },
-        result={},
     )
 
 
@@ -427,11 +391,6 @@ async def test_passive_poke_pipeline_mentions_sender_from_response_shape(
             group_id=event.group_id,
             message=text_message(" 别戳啦"),
         )
-        _should_call_group_poke_api(
-            ctx,
-            group_id=event.group_id,
-            user_id=event.user_id,
-        )
 
 
 @pytest.mark.asyncio
@@ -462,7 +421,7 @@ async def test_passive_response_pipeline_renders_sender_at_segment(app: App) -> 
 
 
 @pytest.mark.asyncio
-async def test_passive_response_pipeline_executes_poke_without_empty_message(
+async def test_passive_response_pipeline_skips_disabled_poke_without_empty_message(
     app: App,
 ) -> None:
     await _reset_wordbank_runtime()
@@ -478,15 +437,10 @@ async def test_passive_response_pipeline_executes_poke_without_empty_message(
         event = build_group_message_event("晚安", message_id=3)
 
         ctx.receive_event(bot, event)
-        _should_call_group_poke_api(
-            ctx,
-            group_id=event.group_id,
-            user_id=event.user_id,
-        )
 
 
 @pytest.mark.asyncio
-async def test_passive_response_pipeline_falls_back_when_group_poke_unsupported(
+async def test_passive_response_pipeline_skips_disabled_poke_fallback(
     app: App,
 ) -> None:
     await _reset_wordbank_runtime()
@@ -502,11 +456,6 @@ async def test_passive_response_pipeline_falls_back_when_group_poke_unsupported(
         event = build_group_message_event("晚安", message_id=4)
 
         ctx.receive_event(bot, event)
-        _should_fallback_group_poke_api(
-            ctx,
-            group_id=event.group_id,
-            user_id=event.user_id,
-        )
 
 
 @pytest.mark.asyncio
