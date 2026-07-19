@@ -264,15 +264,15 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
     )
     assert "状态: 待审核" in full_text
     assert "触发词: 晚安" in full_text
-    assert "响应词: 图片消息" in full_text
+    assert "响应词详情:\n" in full_text
     assert "创建者: 10001" in full_text
     assert "提交时间: 2023-11-15 06:13" in full_text
     assert "范围: 当前群" in full_text
     assert "权重: 3" in full_text
     assert "规则: 概率 1" in full_text
     assert "响应模式: 普通响应" in full_text
-    assert not any(segment.type == "image" for segment in segments)
-    load_canonical_storage_bytes.assert_not_awaited()
+    assert any(segment.type == "image" for segment in segments)
+    load_canonical_storage_bytes.assert_awaited_once_with(7)
 
 
 @pytest.mark.asyncio
@@ -305,11 +305,11 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
         "ID: 12\n"
     )
     assert "状态: 待审核" in full_text
-    assert "触发词: 图片消息" in full_text
+    assert "触发词详情:\n" in full_text
     assert "响应词: 做个好梦" in full_text
     assert "响应模式: 普通响应" in full_text
-    assert sum(1 for segment in segments if segment.type == "image") == 0
-    load_canonical_storage_bytes.assert_not_awaited()
+    assert sum(1 for segment in segments if segment.type == "image") == 1
+    load_canonical_storage_bytes.assert_awaited_once_with(8)
 
 
 @pytest.mark.asyncio
@@ -332,12 +332,12 @@ async def test_build_pending_approval_notice_plan_entry_returns_summary() -> Non
     )
     message = render_message_plan_input(entry)
 
-    assert not any(segment.type == "image" for segment in message)
     full_text = _message_text(message)
     assert "回复 y / approve / 通过 可通过" in full_text
     assert "状态: 待审核" in full_text
-    assert "触发词: 图片消息" in full_text
+    assert "触发词详情:\n" in full_text
     assert "规则: 概率 1" in full_text
+    assert any(segment.type == "image" for segment in message)
 
 
 @pytest.mark.asyncio
@@ -381,7 +381,7 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently() 
 
 
 @pytest.mark.asyncio
-async def test_send_pending_approval_notice_sends_detail_as_forward_to_admin() -> None:
+async def test_send_pending_approval_notice_embeds_detail_in_single_message() -> None:
     record_message_ref = AsyncMock(return_value=None)
     deliver_plan = AsyncMock(
         return_value=SimpleNamespace(results=({"message_id": 99},), used_forward=True),
@@ -422,14 +422,13 @@ async def test_send_pending_approval_notice_sends_detail_as_forward_to_admin() -
     assert await_args is not None
     plan = await_args.kwargs["plan"]
     assert plan.force_forward is True
-    assert len(plan.messages) == 2
+    assert len(plan.messages) == 1
     summary_message = render_message_plan_input(plan.messages[0])
-    detail_message = render_message_plan_input(plan.messages[1])
     summary_text = _message_text(summary_message)
     assert "回复 y / approve / 通过 可通过" in summary_text
-    assert "响应词: 图片消息" in summary_text
-    assert any(segment.type == "image" for segment in detail_message)
-    assert "晚安" in str(detail_message)
+    assert "响应词详情:\n" in summary_text
+    assert "晚安" in str(summary_message)
+    assert any(segment.type == "image" for segment in summary_message)
     assert record_message_ref.await_count == 1
 
 

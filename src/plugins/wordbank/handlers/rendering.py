@@ -292,45 +292,81 @@ async def build_pending_item_blocks(
     media_service: WordbankMediaService,
     prefix: str = "\n",
     index: int | None = None,
+    response_mode: str | None = None,
+    forward_node_count: int = 0,
 ) -> tuple[MessagePlanBlock, ...]:
+    blocks: list[MessagePlanBlock] = []
+    leading = prefix
+    for line in _build_pending_item_header_lines(
+        entry_id=entry_id,
+        index=index,
+    ):
+        blocks.append(TextBlock(f"{leading}{line}"))
+        leading = "\n"
+
+    leading = await _append_summary_or_shape_detail_blocks(
+        blocks,
+        shape=trigger_shape,
+        text=trigger_text,
+        media_service=media_service,
+        locale=locale,
+        summary_label="触发词",
+        detail_label="触发词详情",
+        prefix=leading,
+    )
+    leading = await _append_summary_or_shape_detail_blocks(
+        blocks,
+        shape=response_shape,
+        text=response_text,
+        media_service=media_service,
+        locale=locale,
+        summary_label="响应词",
+        detail_label="响应词详情",
+        prefix=leading,
+        response_mode=response_mode,
+        forward_node_count=forward_node_count,
+    )
+    for line in _build_pending_item_footer_lines(
+        created_at=created_at,
+        created_by=created_by,
+        probability=probability,
+        rule=rule,
+        scope=scope,
+        weight=weight,
+    ):
+        blocks.append(TextBlock(f"{leading}{line}"))
+        leading = "\n"
+    return tuple(blocks)
+
+
+def _build_pending_item_header_lines(
+    *,
+    entry_id: int,
+    index: int | None,
+) -> tuple[str, ...]:
     lines: list[str] = []
     if index is not None:
         lines.append(f"序号: {index}")
-    lines.extend(
-        (
-            f"ID: {entry_id}",
-            f"状态: {format_status_label('pending')}",
-            (
-                "触发词: "
-                f"{format_notice_content_summary(trigger_text, shape=trigger_shape)}"
-            ),
-            (
-                "响应词: "
-                f"{format_notice_content_summary(response_text, shape=response_shape)}"
-            ),
-            f"创建者: {created_by or '-'}",
-            f"提交时间: {format_timestamp(created_at)}",
-            f"范围: {format_scope_label(scope)}",
-            f"权重: {weight}",
-            (f"规则: {format_rule_summary(probability=probability, rule=rule)}"),
-        )
+    lines.extend((f"ID: {entry_id}", f"状态: {format_status_label('pending')}"))
+    return tuple(lines)
+
+
+def _build_pending_item_footer_lines(
+    *,
+    created_at: int,
+    created_by: str,
+    probability: float,
+    rule: dict[str, object] | None,
+    scope: str,
+    weight: int,
+) -> tuple[str, ...]:
+    return (
+        f"创建者: {created_by or '-'}",
+        f"提交时间: {format_timestamp(created_at)}",
+        f"范围: {format_scope_label(scope)}",
+        f"权重: {weight}",
+        f"规则: {format_rule_summary(probability=probability, rule=rule)}",
     )
-    blocks: list[MessagePlanBlock] = [TextBlock(prefix + "\n".join(lines))]
-    await _append_labeled_shape_blocks(
-        blocks,
-        shape=trigger_shape,
-        media_service=media_service,
-        locale=locale,
-        label=tr(locale, "wordbank.group.trigger_label"),
-    )
-    await _append_labeled_shape_blocks(
-        blocks,
-        shape=response_shape,
-        media_service=media_service,
-        locale=locale,
-        label=tr(locale, "wordbank.approval.response_label"),
-    )
-    return tuple(blocks)
 
 
 async def build_reply_detail_plan_entry(
@@ -638,6 +674,45 @@ async def _append_labeled_shape_blocks(
             )
         ).blocks
     )
+
+
+async def _append_summary_or_shape_detail_blocks(
+    blocks: list[MessagePlanBlock],
+    *,
+    shape: MessageShape | None,
+    text: str,
+    media_service: WordbankMediaService,
+    locale: LocaleCode,
+    summary_label: str,
+    detail_label: str,
+    prefix: str,
+    response_mode: str | None = None,
+    forward_node_count: int = 0,
+) -> str:
+    if shape is None or shape.is_empty() or not _has_non_text_shape(shape):
+        if response_mode is None:
+            summary_text = format_notice_content_summary(text, shape=shape)
+        else:
+            summary_text = format_notice_content_summary(
+                text,
+                shape=shape,
+                response_mode=response_mode,
+                forward_node_count=forward_node_count,
+            )
+        blocks.append(TextBlock(f"{prefix}{summary_label}: {summary_text}"))
+        return "\n"
+
+    blocks.append(TextBlock(f"{prefix}{detail_label}:\n"))
+    blocks.extend(
+        (
+            await build_shape_plan_entry(
+                shape,
+                media_service,
+                locale=locale,
+            )
+        ).blocks
+    )
+    return "\n"
 
 
 def _format_enabled(enabled: int, locale: LocaleCode) -> str:
