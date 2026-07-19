@@ -26,6 +26,7 @@ from src.plugins.wordbank.message_model import (
     MessageShape,
     format_at_summary_text,
     format_event_summary_text,
+    format_placeholder_summary_text,
 )
 from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
 from src.plugins.wordbank.services.media import WordbankMediaService
@@ -103,6 +104,10 @@ async def build_shape_plan_entry(
         elif atom.kind == "event" and atom.event_name:
             blocks.append(
                 TextBlock(format_event_summary_text(atom.event_name, atom.target_id))
+            )
+        elif atom.kind == "placeholder" and atom.placeholder_name:
+            blocks.append(
+                TextBlock(format_placeholder_summary_text(atom.placeholder_name))
             )
     entry = MessagePlanEntry(blocks=tuple(blocks))
     if trace_fields is not None:
@@ -287,45 +292,77 @@ async def build_pending_item_blocks(
     media_service: WordbankMediaService,
     prefix: str = "\n",
     index: int | None = None,
+    response_mode: str | None = None,
+    forward_node_count: int = 0,
 ) -> tuple[MessagePlanBlock, ...]:
+    blocks: list[MessagePlanBlock] = []
+    leading = prefix
+    for line in _build_pending_item_header_lines(
+        entry_id=entry_id,
+        index=index,
+    ):
+        blocks.append(TextBlock(f"{leading}{line}"))
+        leading = "\n"
+
+    blocks.append(
+        TextBlock(
+            f"{leading}触发词: "
+            f"{format_notice_content_summary(trigger_text, shape=trigger_shape)}"
+        )
+    )
+    blocks.append(
+        TextBlock(
+            "\n响应词: "
+            + format_notice_content_summary(
+                response_text,
+                shape=response_shape,
+                response_mode=response_mode or "normal",
+                forward_node_count=forward_node_count,
+            )
+        )
+    )
+    leading = "\n"
+    for line in _build_pending_item_footer_lines(
+        created_at=created_at,
+        created_by=created_by,
+        probability=probability,
+        rule=rule,
+        scope=scope,
+        weight=weight,
+    ):
+        blocks.append(TextBlock(f"{leading}{line}"))
+        leading = "\n"
+    return tuple(blocks)
+
+
+def _build_pending_item_header_lines(
+    *,
+    entry_id: int,
+    index: int | None,
+) -> tuple[str, ...]:
     lines: list[str] = []
     if index is not None:
         lines.append(f"序号: {index}")
-    lines.extend(
-        (
-            f"ID: {entry_id}",
-            f"状态: {format_status_label('pending')}",
-            (
-                "触发词: "
-                f"{format_notice_content_summary(trigger_text, shape=trigger_shape)}"
-            ),
-            (
-                "响应词: "
-                f"{format_notice_content_summary(response_text, shape=response_shape)}"
-            ),
-            f"创建者: {created_by or '-'}",
-            f"提交时间: {format_timestamp(created_at)}",
-            f"范围: {format_scope_label(scope)}",
-            f"权重: {weight}",
-            (f"规则: {format_rule_summary(probability=probability, rule=rule)}"),
-        )
+    lines.extend((f"ID: {entry_id}", f"状态: {format_status_label('pending')}"))
+    return tuple(lines)
+
+
+def _build_pending_item_footer_lines(
+    *,
+    created_at: int,
+    created_by: str,
+    probability: float,
+    rule: dict[str, object] | None,
+    scope: str,
+    weight: int,
+) -> tuple[str, ...]:
+    return (
+        f"创建者: {created_by or '-'}",
+        f"提交时间: {format_timestamp(created_at)}",
+        f"范围: {format_scope_label(scope)}",
+        f"权重: {weight}",
+        f"规则: {format_rule_summary(probability=probability, rule=rule)}",
     )
-    blocks: list[MessagePlanBlock] = [TextBlock(prefix + "\n".join(lines))]
-    await _append_labeled_shape_blocks(
-        blocks,
-        shape=trigger_shape,
-        media_service=media_service,
-        locale=locale,
-        label=tr(locale, "wordbank.group.trigger_label"),
-    )
-    await _append_labeled_shape_blocks(
-        blocks,
-        shape=response_shape,
-        media_service=media_service,
-        locale=locale,
-        label=tr(locale, "wordbank.approval.response_label"),
-    )
-    return tuple(blocks)
 
 
 async def build_reply_detail_plan_entry(

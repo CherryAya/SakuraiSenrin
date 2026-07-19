@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
@@ -40,7 +41,9 @@ from src.lib.message_plan import (
     finish_with_message,
     normalize_message_plan_entry,
 )
+from src.lib.utils.img import QQAvatar
 from src.logger import logger
+from src.repositories import member_repo, user_repo
 
 from .database.types import WordbankMessageRefRecord
 from .guided_flow import WORDBANK_GUIDED_RECALL_PENDING_KEYS
@@ -64,6 +67,10 @@ from .handlers.rendering import (
     _log_missing_image_fallbacks,
 )
 from .message_model import (
+    PLACEHOLDER_ACCOUNT,
+    PLACEHOLDER_GROUP_CARD,
+    PLACEHOLDER_NICKNAME,
+    PLACEHOLDER_PROFILE_COMBO,
     format_at_fallback_text,
     format_event_summary_text,
     is_response_sender_target,
@@ -295,6 +302,7 @@ def register_wordbank_runtime_handlers(
         if finish_guided_search is None:
             return
         await finish_guided_search(
+            bot,
             matcher,
             state,
             event,
@@ -544,12 +552,13 @@ def register_wordbank_runtime_handlers(
         locale: LocaleCode,
         approval_message: WordbankMessageRefRecord | None = None,
         reviewer_id: str = "",
-    ) -> None:
+        message: str | None = None,
+    ) -> bool:
         context = approval_message
         if context is None:
             context = await _find_creator_submission_context(response_item_id)
         if context is None or not context.user_id:
-            return
+            return False
 
         blocks: list[ReplyRefBlock | AtRefBlock | TextBlock] = []
         if context.source_message_id:
@@ -558,7 +567,8 @@ def register_wordbank_runtime_handlers(
         blocks.append(TextBlock(text=" "))
         blocks.append(
             TextBlock(
-                text=_build_creator_notice_message(
+                text=message
+                or _build_creator_notice_message(
                     action=action,
                     reviewer_id=reviewer_id,
                 )
@@ -579,7 +589,7 @@ def register_wordbank_runtime_handlers(
                         target_id=str(context.group_id),
                     ),
                 )
-                return
+                return True
             await deliver_message_plan(
                 bot,
                 plan=plan,
@@ -588,8 +598,10 @@ def register_wordbank_runtime_handlers(
                     target_id=str(context.user_id),
                 ),
             )
+            return True
         except Exception as exc:
             logger.warning(f"[Wordbank] creator review notice skipped: {exc}")
+            return False
 
     def _message_segment_stats(message: MessagePlanInput) -> tuple[int, int]:
         entry = normalize_message_plan_entry(message)
@@ -626,6 +638,13 @@ def register_wordbank_runtime_handlers(
         target_id: str
 
     @dataclass(slots=True, frozen=True)
+    class PassiveProfilePlaceholderData:
+        account: str
+        nickname: str
+        group_card: str
+        combo_text: str
+
+    @dataclass(slots=True, frozen=True)
     class CompiledPassiveResponse:
         message: MessagePlanInput | None
         image_trace_fields: dict[str, object]
@@ -655,6 +674,56 @@ def register_wordbank_runtime_handlers(
         if is_response_sender_target(target_id):
             return str(response.user_id).strip()
         return str(target_id).strip()
+
+    async def _resolve_passive_profile_placeholder_data(
+        response: PassiveResponse,
+    ) -> PassiveProfilePlaceholderData:
+        account = str(response.user_id).strip()
+        group_id = str(response.group_id).strip()
+        nickname_task = (
+            user_repo.get_name_by_uid(account)
+            if account
+            else asyncio.sleep(0, result=None)
+        )
+        group_card_task = (
+            member_repo.get_card_by_uid_gid(account, group_id)
+            if account and group_id
+            else asyncio.sleep(0, result=None)
+        )
+        nickname_value, group_card_value = await asyncio.gather(
+            nickname_task,
+            group_card_task,
+        )
+        nickname = str(nickname_value or "").strip() or account
+        raw_group_card = str(group_card_value or "").strip()
+        group_card = raw_group_card or nickname
+        combo_text = nickname
+        if raw_group_card and raw_group_card != nickname:
+            combo_text += f"({raw_group_card})"
+        combo_text += f"[{account}]"
+        return PassiveProfilePlaceholderData(
+            account=account,
+            nickname=nickname,
+            group_card=group_card,
+            combo_text=combo_text,
+        )
+
+    async def _render_profile_combo_avatar(account: str) -> bytes | None:
+        if not account:
+            return None
+        try:
+            avatar = await QQAvatar.fetch_user(account, size=160)
+            buffer = await asyncio.to_thread(avatar.save, "PNG")
+            if hasattr(buffer, "getvalue"):
+                return bytes(buffer.getvalue())
+            if isinstance(buffer, (bytes, bytearray)):
+                return bytes(buffer)
+        except Exception as exc:
+            logger.debug(
+                "[Wordbank] passive profile avatar skipped | "
+                f"user_id={account} error={exc}"
+            )
+        return None
 
     async def _compile_passive_response(
         response: PassiveResponse,
@@ -707,6 +776,9 @@ def register_wordbank_runtime_handlers(
         blocks: list[Any] = []
         post_actions: list[PassivePokeAction] = []
         image_segments = 0
+        profile_data: PassiveProfilePlaceholderData | None = None
+        profile_avatar_bytes: bytes | None = None
+        profile_avatar_loaded = False
         for atom in shape.atoms:
             if atom.kind == "text" and atom.text:
                 blocks.append(TextBlock(atom.text))
@@ -733,6 +805,35 @@ def register_wordbank_runtime_handlers(
                 blocks.append(ImageBytesBlock(image_bytes))
                 image_segments += 1
                 continue
+            if atom.kind == "placeholder" and atom.placeholder_name:
+                if profile_data is None:
+                    profile_data = await _resolve_passive_profile_placeholder_data(
+                        response
+                    )
+                if atom.placeholder_name == PLACEHOLDER_ACCOUNT:
+                    if profile_data.account:
+                        blocks.append(TextBlock(profile_data.account))
+                    continue
+                if atom.placeholder_name == PLACEHOLDER_NICKNAME:
+                    if profile_data.nickname:
+                        blocks.append(TextBlock(profile_data.nickname))
+                    continue
+                if atom.placeholder_name == PLACEHOLDER_GROUP_CARD:
+                    if profile_data.group_card:
+                        blocks.append(TextBlock(profile_data.group_card))
+                    continue
+                if atom.placeholder_name == PLACEHOLDER_PROFILE_COMBO:
+                    if profile_data.combo_text:
+                        blocks.append(TextBlock(profile_data.combo_text))
+                    if not profile_avatar_loaded:
+                        profile_avatar_bytes = await _render_profile_combo_avatar(
+                            profile_data.account
+                        )
+                        profile_avatar_loaded = True
+                    if profile_avatar_bytes is not None:
+                        blocks.append(ImageBytesBlock(profile_avatar_bytes))
+                        image_segments += 1
+                    continue
             if atom.kind == "event" and atom.event_name == "event:poke":
                 resolved_target_id = _resolve_passive_target_id(
                     response, atom.target_id
@@ -947,15 +1048,27 @@ def register_wordbank_runtime_handlers(
             await matcher.finish()
             return
         if outcome.completed and outcome.approval_message is not None:
-            await notify_approval_source(bot, outcome.approval_message, outcome.message)
             if outcome.action:
-                await notify_creator_review_result(
+                delivered = await notify_creator_review_result(
                     bot,
                     response_item_id=outcome.approval_message.response_item_id,
                     action=outcome.action,
                     locale=locale,
                     approval_message=outcome.approval_message,
                     reviewer_id=str(event.user_id),
+                    message=outcome.message,
+                )
+                if not delivered:
+                    await notify_approval_source(
+                        bot,
+                        outcome.approval_message,
+                        outcome.message,
+                    )
+            else:
+                await notify_approval_source(
+                    bot,
+                    outcome.approval_message,
+                    outcome.message,
                 )
         elif outcome.completed and outcome.batch_notices:
             await notify_creator_review_results(

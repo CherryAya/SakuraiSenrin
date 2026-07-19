@@ -417,7 +417,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.guided.study.group_block_prompt": "是否开启群组隔离？\nt. 开启，仅当前群聊有效\nf. 关闭，按触发方式跨群或私聊生效\n输入 revoke / recall / exit 可取消本次操作。",
     "wordbank.guided.study.trigger_prompt": "请输入触发词，支持文本或图片消息。\n如果你要添加事件词条，记这几个最常用入口就够了：\n👉 [@] -> 凛凛被 @\n👉 [提及] -> 凛凛被提及\n👉 [戳一戳] -> 凛凛被戳一戳\n👉 [bot加群] -> 凛凛自己进群\n👉 [新人加入] -> 其他成员进群\n👉 [bot退群] -> 凛凛自己退群\n👉 [成员退群] -> 其他成员退群\n也支持把中括号写成中文全角，例如【戳一戳】。\n输入 revoke / recall / exit 可取消本次操作。",
     "wordbank.guided.study.response_prompt": "请输入响应词，支持文本、图片或合并转发消息。\n响应词里这些事件词写法会按普通文本原样发送。\n输入 revoke / recall / exit 可取消本次操作。",
-    "wordbank.guided.study.weight_prompt": "BOT: 请输入响应词权重，1-5 之间的数字，权重越大，发这个词的概率越大\n直接发送 3 可用默认权重。\n输入 revoke / recall / exit 可取消本次操作。",
+    "wordbank.guided.study.weight_prompt": "请输入响应词权重，1-5 之间的数字，权重越大，发这个词的概率越大\n直接发送 3 可用默认权重。\n输入 revoke / recall / exit 可取消本次操作。",
     "wordbank.label.scope": "生效范围",
     "wordbank.label.probability": "概率",
     "wordbank.label.weight": "权重",

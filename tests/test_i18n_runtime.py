@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+from types import SimpleNamespace, TracebackType
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
@@ -50,6 +50,40 @@ async def test_repository_resolve_locale_prefers_group_override(
     assert await repo.resolve_locale("20001") == "lzh"
     assert await repo.resolve_locale("20002") == "x-meme"
     assert await repo.resolve_locale(None) == "x-meme"
+
+
+@pytest.mark.asyncio
+async def test_repository_get_group_locale_caches_missing_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = I18nRepository()
+    get_locale_mock = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(
+        "src.repositories.i18n.core_db.session",
+        lambda commit=False: _FakeSessionContext(),
+    )
+    monkeypatch.setattr(
+        "src.repositories.i18n.GroupLocaleSettingOps.get_locale",
+        get_locale_mock,
+    )
+
+    assert await repo.get_group_locale("20001") is None
+    assert await repo.get_group_locale("20001") is None
+    assert get_locale_mock.await_count == 1
+
+
+class _FakeSessionContext:
+    async def __aenter__(self) -> object:
+        return object()
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        return None
 
 
 @pytest.mark.asyncio

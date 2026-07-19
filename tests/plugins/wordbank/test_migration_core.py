@@ -156,6 +156,31 @@ async def test_legacy_message_to_shape_reports_empty_image_file(
         )
 
 
+@pytest.mark.asyncio
+async def test_legacy_message_to_shape_preserves_fullwidth_trigger_punctuation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path / "db")
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    catalog = build_legacy_image_catalog(image_root, None)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+    media_service = WordbankMediaService(repository, media_root=tmp_path / "media")
+
+    shape = await legacy_message_to_shape(
+        [{"type": "text", "text": "今天？还好吗："}],
+        image_catalog=catalog,
+        media_service=media_service,
+    )
+
+    assert [atom.kind for atom in shape.atoms] == ["text"]
+    assert shape.atoms[0].text == "今天？还好吗："
+
+
 def test_normalize_legacy_scope_and_state() -> None:
     scope, group_id, rule = normalize_legacy_scope(
         priority=1,

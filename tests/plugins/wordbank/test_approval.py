@@ -332,12 +332,12 @@ async def test_build_pending_approval_notice_plan_entry_returns_summary() -> Non
     )
     message = render_message_plan_input(entry)
 
-    assert not any(segment.type == "image" for segment in message)
     full_text = _message_text(message)
     assert "回复 y / approve / 通过 可通过" in full_text
     assert "状态: 待审核" in full_text
     assert "触发词: 图片消息" in full_text
     assert "规则: 概率 1" in full_text
+    assert not any(segment.type == "image" for segment in message)
 
 
 @pytest.mark.asyncio
@@ -381,7 +381,7 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently() 
 
 
 @pytest.mark.asyncio
-async def test_send_pending_approval_notice_sends_detail_as_forward_to_admin() -> None:
+async def test_send_pending_approval_notice_embeds_detail_in_single_message() -> None:
     record_message_ref = AsyncMock(return_value=None)
     deliver_plan = AsyncMock(
         return_value=SimpleNamespace(results=({"message_id": 99},), used_forward=True),
@@ -422,14 +422,13 @@ async def test_send_pending_approval_notice_sends_detail_as_forward_to_admin() -
     assert await_args is not None
     plan = await_args.kwargs["plan"]
     assert plan.force_forward is True
-    assert len(plan.messages) == 2
+    assert len(plan.messages) == 1
     summary_message = render_message_plan_input(plan.messages[0])
-    detail_message = render_message_plan_input(plan.messages[1])
     summary_text = _message_text(summary_message)
     assert "回复 y / approve / 通过 可通过" in summary_text
     assert "响应词: 图片消息" in summary_text
-    assert any(segment.type == "image" for segment in detail_message)
-    assert "晚安" in str(detail_message)
+    assert "晚安" in str(summary_message)
+    assert not any(segment.type == "image" for segment in summary_message)
     assert record_message_ref.await_count == 1
 
 
@@ -716,8 +715,10 @@ async def test_batch_notice_sends_summary_then_forward_details() -> None:
     second_detail = render_message_plan_input(plan.messages[2])
     assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in str(summary_message)
     assert "待审数量: 2" in str(summary_message)
-    assert any(segment.type == "image" for segment in first_detail)
-    assert any(segment.type == "image" for segment in second_detail)
+    assert "响应词: 图片消息" in str(first_detail)
+    assert not any(segment.type == "image" for segment in first_detail)
+    assert "触发词: 图片消息" in str(second_detail)
+    assert not any(segment.type == "image" for segment in second_detail)
     assert record_message_ref.await_count == 1
 
 

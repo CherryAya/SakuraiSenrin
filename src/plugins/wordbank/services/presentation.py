@@ -18,6 +18,7 @@ from src.plugins.wordbank.message_model import (
     MessageAtom,
     MessageShape,
     format_event_summary_text,
+    format_placeholder_summary_text,
     is_response_sender_target,
     shape_to_summary_text,
 )
@@ -387,6 +388,8 @@ def _format_notice_atom(atom: MessageAtom, *, locale: LocaleCode) -> str:
         if atom.event_name == "event:poke":
             return format_event_summary_text(atom.event_name, atom.target_id)
         return _format_notice_event_name(atom.event_name, locale=locale)
+    if atom.kind == "placeholder" and atom.placeholder_name:
+        return format_placeholder_summary_text(atom.placeholder_name)
     return ""
 
 

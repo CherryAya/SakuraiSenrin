@@ -77,6 +77,24 @@ def test_shape_from_response_text_parses_fixed_poke_placeholder() -> None:
     assert shape_to_summary_text(shape) == "戳一戳用户(10002)"
 
 
+def test_shape_from_response_text_parses_profile_placeholders() -> None:
+    shape = shape_from_response_text("[账号] [昵称] [群名片] [xx]")
+
+    assert [atom.kind for atom in shape.atoms] == [
+        "placeholder",
+        "placeholder",
+        "placeholder",
+        "placeholder",
+    ]
+    assert [atom.placeholder_name for atom in shape.atoms] == [
+        "account",
+        "nickname",
+        "group_card",
+        "profile_combo",
+    ]
+    assert shape_to_summary_text(shape) == "[账号] [昵称] [群名片] [xx]"
+
+
 def test_shape_from_response_text_keeps_unrecognized_placeholder_literal() -> None:
     shape = shape_from_response_text("【戳一戳】")
 
@@ -85,5 +103,11 @@ def test_shape_from_response_text_keeps_unrecognized_placeholder_literal() -> No
 
 def test_shape_payload_roundtrip_preserves_response_event_targets() -> None:
     shape = shape_from_response_text("[@触发者] [戳:10002]")
+
+    assert shape_from_payload(shape_to_payload(shape)) == shape
+
+
+def test_shape_payload_roundtrip_preserves_profile_placeholders() -> None:
+    shape = shape_from_response_text("[账号] [昵称] [群名片] [xx]")
 
     assert shape_from_payload(shape_to_payload(shape)) == shape

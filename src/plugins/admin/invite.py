@@ -28,6 +28,7 @@ from nonebot.plugin import CommandGroup, on_fullmatch
 from nonebot.rule import ArgumentParser, to_me
 from PIL import Image, ImageDraw, ImageFont
 
+from src.database.consts import WritePolicy
 from src.database.core.consts import InvitationStatus, Permission
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.demo_theme import SENRIN_V3_ADMIN_INVITE_IMAGE_THEME
@@ -60,7 +61,8 @@ from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
-from src.repositories import group_repo, invite_repo
+from src.repositories import group_repo, invite_repo, user_repo
+from src.services.info import resolve_user_name
 from src.services.runtime_policy import resolve_invitation_transition
 
 name = tr("zh-CN", "plugin.admin_invite.name")
@@ -193,6 +195,7 @@ class InviteContext:
     flag: str | Unset = UNSET
     group_id: str | Unset = UNSET
     invitation_id: int | Unset = UNSET
+    operator_id: str | Unset = UNSET
     silent: bool = False
 
 
@@ -223,6 +226,32 @@ async def _send_reusable_text(
             source_kind="admin_invite",
         ),
         event=event,
+    )
+
+
+async def _ensure_operator_persisted(bot: Bot, operator_id: str) -> None:
+    operator_name = await resolve_user_name(bot, operator_id)
+    await user_repo.save_user(
+        user_id=operator_id,
+        user_name=operator_name,
+        policy=WritePolicy.IMMEDIATE,
+    )
+
+
+def _render_processed_message(ctx: InviteContext, invitation: Any) -> str:
+    operator = invitation.operator
+    operator_name = operator.user_name if operator else "UNKNOWN"
+    operator_id = operator.user_id if operator else (invitation.operator_id or "-")
+    return tr(
+        ctx.locale,
+        "admin.invite.processed",
+        operator_name=operator_name,
+        operator_id=operator_id,
+        status=invitation.status,
+        group_id=invitation.group_id,
+        group_name=invitation.group.group_name,
+        inviter_name=invitation.inviter.user_name,
+        flag=invitation.flag,
     )
 
 
@@ -557,23 +586,12 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         return False
 
     if invitation.status.is_processed:
-        operator = invitation.operator
         if not ctx.silent:
             await _send_reusable_text(
                 ctx.bot,
                 ctx.matcher,
                 ctx.event,
-                message=tr(
-                    ctx.locale,
-                    "admin.invite.processed",
-                    operator_name=operator.user_name,
-                    operator_id=operator.user_id,
-                    status=invitation.status,
-                    group_id=invitation.group_id,
-                    group_name=invitation.group.group_name,
-                    inviter_name=invitation.inviter.user_name,
-                    flag=invitation.flag,
-                ),
+                message=_render_processed_message(ctx, invitation),
             )
         return False
 
@@ -607,9 +625,14 @@ async def handle_invitation(ctx: InviteContext) -> bool:
         else tr(ctx.locale, "admin.invite.action.reject")
     )
 
+    operator_id = str(ctx.operator_id) if is_set(ctx.operator_id) else None
+    if operator_id is not None:
+        await _ensure_operator_persisted(ctx.bot, operator_id)
+
     await invite_repo.update_status(
         invitation_id=invitation.id,
         status=invitation_status,
+        operator_id=operator_id,
     )
     await group_repo.update_status(
         group_id=invitation.group_id,
@@ -721,6 +744,7 @@ async def handle_approve(ctx: AdminInviteContext) -> None:
         group_id=ctx.group_id,
         approve=True,
         locale=ctx.locale,
+        operator_id=ctx.operator_id,
     )
     await handle_invitation(ic_ctx)
 
@@ -735,6 +759,7 @@ async def handle_reject(ctx: AdminInviteContext) -> None:
             group_id=ctx.group_id,
             approve=False,
             locale=ctx.locale,
+            operator_id=ctx.operator_id,
         )
         await handle_invitation(ic_ctx)
         return
@@ -748,6 +773,7 @@ async def handle_reject(ctx: AdminInviteContext) -> None:
             message=tr(ctx.locale, "admin.invite.reject.none"),
             source_kind="admin_invite",
         )
+        return
 
     success_count = 0
     details = []
@@ -760,6 +786,7 @@ async def handle_reject(ctx: AdminInviteContext) -> None:
             approve=False,
             silent=True,
             locale=ctx.locale,
+            operator_id=ctx.operator_id,
         )
         if await handle_invitation(ic_ctx):
             success_count += 1
@@ -794,7 +821,29 @@ async def handle_ignore(ctx: AdminInviteContext) -> None:
                 source_kind="admin_invite",
             )
             return
-        await invite_repo.update_status(inv.id, InvitationStatus.IGNORED)
+        if inv.status.is_processed:
+            await _send_reusable_text(
+                ctx.bot,
+                ctx.matcher,
+                ctx.event,
+                message=_render_processed_message(
+                    InviteContext(
+                        bot=ctx.bot,
+                        event=ctx.event,
+                        matcher=ctx.matcher,
+                        approve=False,
+                        locale=ctx.locale,
+                    ),
+                    inv,
+                ),
+            )
+            return
+        await _ensure_operator_persisted(ctx.bot, ctx.operator_id)
+        await invite_repo.update_status(
+            inv.id,
+            InvitationStatus.IGNORED,
+            operator_id=ctx.operator_id,
+        )
         msg = tr(
             ctx.locale,
             "admin.invite.ignore.done",
@@ -803,7 +852,8 @@ async def handle_ignore(ctx: AdminInviteContext) -> None:
         )
         await _send_reusable_text(ctx.bot, ctx.matcher, ctx.event, message=msg)
         return
-    invs = await invite_repo.ignore_all_pending()
+    await _ensure_operator_persisted(ctx.bot, ctx.operator_id)
+    invs = await invite_repo.ignore_all_pending(operator_id=ctx.operator_id)
     if not invs:
         await finish_with_message(
             ctx.bot,
@@ -812,6 +862,7 @@ async def handle_ignore(ctx: AdminInviteContext) -> None:
             message=tr(ctx.locale, "admin.invite.ignore.none"),
             source_kind="admin_invite",
         )
+        return
 
     details = []
     for inv in invs:
@@ -836,6 +887,8 @@ async def handle_log(ctx: AdminInviteContext) -> None:
 
 @approve_matcher.handle()
 async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
+    if not event.reply:
+        await matcher.finish()
     msg_id = str(event.reply.message_id)  # type: ignore
     ctx = InviteContext(
         bot=bot,
@@ -843,6 +896,7 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         matcher=matcher,
         approve=True,
         msg_id=msg_id,
+        operator_id=str(event.user_id),
         locale=await resolve_locale(),
     )
     await handle_invitation(ctx)
@@ -850,6 +904,8 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
 
 @reject_matcher.handle()
 async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
+    if not event.reply:
+        await matcher.finish()
     msg_id = str(event.reply.message_id)  # type: ignore
     ctx = InviteContext(
         bot=bot,
@@ -857,6 +913,7 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         matcher=matcher,
         approve=False,
         msg_id=msg_id,
+        operator_id=str(event.user_id),
         locale=await resolve_locale(),
     )
     await handle_invitation(ctx)

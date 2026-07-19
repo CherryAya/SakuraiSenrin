@@ -48,7 +48,7 @@ from src.plugins.wordbank.services.presentation import (
     response_mode_label,
 )
 
-from .rendering import build_shape_plan_entry
+from .rendering import build_pending_item_blocks, build_shape_plan_entry
 
 APPROVAL_APPROVE_ALIASES = {"y", "approve", "通过", "同意", "批准"}
 APPROVAL_REJECT_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
@@ -176,14 +176,34 @@ async def build_pending_approval_notice_plan_entry(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> MessagePlanEntry:
-    _ = media_service
-    return build_text_plan_entry(
-        format_pending_approval_notice(
-            result,
-            event=event,
+    blocks: list[MessagePlanBlock] = [
+        TextBlock("新增词条待审核"),
+        TextBlock("\n回复 y / approve / 通过 可通过"),
+        TextBlock("\n回复 n / reject / 拒绝 可驳回"),
+        TextBlock("\n"),
+    ]
+    blocks.extend(
+        await build_pending_item_blocks(
+            entry_id=result.response_item_id,
+            scope=result.scope,
+            trigger_text=result.trigger_text,
+            response_text=result.response_text,
+            created_by=result.created_by or str(event.user_id),
+            created_at=result.created_at or int(getattr(event, "time", 0) or 0),
+            probability=result.probability,
+            weight=result.weight,
+            rule=result.rule,
+            trigger_shape=result.trigger_shape,
+            response_shape=result.response_shape,
             locale=locale,
+            media_service=media_service,
+            prefix="\n",
+            response_mode=result.response_mode,
+            forward_node_count=result.forward_node_count,
         )
     )
+    blocks.append(TextBlock(f"\n响应模式: {response_mode_label(result)}"))
+    return MessagePlanEntry(blocks=tuple(blocks))
 
 
 async def build_pending_batch_approval_notice_plan_entry(
@@ -210,48 +230,27 @@ async def _build_pending_approval_detail_plan_entry(
     media_service: WordbankMediaService,
     index: int | None = None,
 ) -> MessagePlanEntry:
-    lines = []
-    if index is not None:
-        lines.append(f"序号: {index}")
-    lines.extend(
-        (
-            f"ID: {result.response_item_id}",
-            f"状态: {format_status_label(result.status)}",
-            f"触发词: {_trigger_summary(result)}",
-            f"响应词: {_response_summary(result)}",
-            f"创建者: {result.created_by or '-'}",
-            f"提交时间: {format_timestamp(result.created_at)}",
-            f"范围: {format_scope_label(result.scope)}",
-            f"权重: {result.weight}",
-            f"规则: {_rule_summary(result)}",
+    return MessagePlanEntry(
+        blocks=await build_pending_item_blocks(
+            entry_id=result.response_item_id,
+            scope=result.scope,
+            trigger_text=result.trigger_text,
+            response_text=result.response_text,
+            created_by=result.created_by or "-",
+            created_at=result.created_at,
+            probability=result.probability,
+            weight=result.weight,
+            rule=result.rule,
+            trigger_shape=result.trigger_shape,
+            response_shape=result.response_shape,
+            locale=locale,
+            media_service=media_service,
+            prefix="",
+            index=index,
+            response_mode=result.response_mode,
+            forward_node_count=result.forward_node_count,
         )
     )
-    blocks: list[MessagePlanBlock] = [TextBlock("\n".join(lines))]
-    trigger_shape = result.trigger_shape
-    if trigger_shape is not None and _should_render_shape(trigger_shape):
-        blocks.append(TextBlock("\n触发词详情:\n"))
-        blocks.extend(
-            (
-                await build_shape_plan_entry(
-                    trigger_shape,
-                    media_service,
-                    locale=locale,
-                )
-            ).blocks
-        )
-    response_shape = result.response_shape
-    if response_shape is not None and _should_render_shape(response_shape):
-        blocks.append(TextBlock("\n响应词详情:\n"))
-        blocks.extend(
-            (
-                await build_shape_plan_entry(
-                    response_shape,
-                    media_service,
-                    locale=locale,
-                )
-            ).blocks
-        )
-    return MessagePlanEntry(blocks=tuple(blocks))
 
 
 def _forward_message_plan_entry(message: MessageInput) -> MessagePlanEntry:
@@ -288,17 +287,6 @@ async def _build_pending_approval_delivery_plan(
     ]
     if result.response_mode == "forward_whole" and result.forward_source_message_id:
         messages.append(_build_forward_source_entry(result.forward_source_message_id))
-    elif media_service is not None and (
-        _should_render_shape(result.trigger_shape)
-        or _should_render_shape(result.response_shape)
-    ):
-        messages.append(
-            await _build_pending_approval_detail_plan_entry(
-                result,
-                locale=locale,
-                media_service=media_service,
-            )
-        )
     return DeliveryPlan(
         messages=tuple(messages),
         source_kind="wordbank_pending_approval_notice",
@@ -467,22 +455,6 @@ def _embed_rendered_shapes(
             continue
         blocks.extend(field.rendered_entry.blocks)
     return MessagePlanEntry(blocks=tuple(blocks))
-
-
-def _shape_requires_split_detail(shape: MessageShape | None) -> bool:
-    if shape is None or shape.is_empty():
-        return False
-    if any(atom.kind != "text" for atom in shape.atoms):
-        return True
-    if len(shape.atoms) > 1:
-        return True
-    return any("\n" in atom.text for atom in shape.atoms if atom.kind == "text")
-
-
-def _should_split_pending_approval_notice(result: WordbankAddResult) -> bool:
-    return _shape_requires_split_detail(
-        result.trigger_shape
-    ) or _shape_requires_split_detail(result.response_shape)
 
 
 def _pending_results(batch: WordbankBatchAddResult) -> tuple[WordbankAddResult, ...]:

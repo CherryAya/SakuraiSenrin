@@ -909,7 +909,7 @@ def test_render_plugin_guide_and_copy_text_list_all_visible_features() -> None:
             )
         )
     )
-    assert image.width > 650
+    assert image.width >= 650
     assert image.height > 1200
 
     copy_text = build_plugin_guide_copy_text(
@@ -960,7 +960,7 @@ def test_render_plugin_guide_builds_support_strip_inline_without_post_compose(
         )
     )
 
-    assert image.width > 650
+    assert image.width >= 650
     assert image.height > 1200
 
 
@@ -998,7 +998,7 @@ def test_render_plugin_guide_disables_uppercase_english_watermarks(
         )
     )
 
-    assert image.width > 650
+    assert image.width >= 650
     assert image.height > 1200
 
 

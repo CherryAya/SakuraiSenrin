@@ -734,7 +734,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     study_main = next(feature for feature in study.index if feature.slug == "main")
 
     assert add.demo_filename == "wordbank-add.webp"
-    assert len(add.demo_turns) == 35
+    assert len(add.demo_turns) == 37
     assert {turn.section for turn in add.demo_turns if turn.section} == {
         "1. 引导式",
         "2. 合并转发批量响应",
@@ -764,7 +764,9 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert "触发词: 艾特消息" in add.demo_turns[28].text
     assert "触发词: 机器人进群事件" in add.demo_turns[30].text
     assert "触发词: 戳一戳事件" in add.demo_turns[32].text
-    assert "-s 本群 -r 管理 -w 5" in add.demo_turns[33].text
+    assert add.demo_turns[33].text == "#添加词条 [成员退群] => [xx] 退群了"
+    assert "触发词: 退群事件" in add.demo_turns[34].text
+    assert "-s 本群 -r 管理 -w 5" in add.demo_turns[35].text
     assert rank.demo_filename == "wordbank-rank.webp"
     assert rank.demo_turns[0].text == "#苦瓜榜"
     assert "[发送苦瓜榜海报]" in rank.demo_turns[1].text

@@ -14,7 +14,7 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
 
-MessageAtomKind = Literal["text", "image", "at", "event"]
+MessageAtomKind = Literal["text", "image", "at", "event", "placeholder"]
 MessageAtomPayload = dict[str, int | str]
 type MessageInput = (
     Message | MessageSegment | str | list[Any] | tuple[Any, ...] | dict[str, Any]
@@ -24,6 +24,22 @@ _RESPONSE_PLACEHOLDER_RE = re.compile(r"(\[[^\]]+\]|【[^】]+】)")
 EVENT_TRIGGER_ESCAPED_PREFIX = "\\"
 EVENT_TRIGGER_BRACKET_PAIRS = (("[", "]"), ("【", "】"))
 RESPONSE_TARGET_SENDER = "__sender__"
+PLACEHOLDER_ACCOUNT = "account"
+PLACEHOLDER_NICKNAME = "nickname"
+PLACEHOLDER_GROUP_CARD = "group_card"
+PLACEHOLDER_PROFILE_COMBO = "profile_combo"
+PROFILE_PLACEHOLDER_ALIASES = {
+    "账号": PLACEHOLDER_ACCOUNT,
+    "昵称": PLACEHOLDER_NICKNAME,
+    "群名片": PLACEHOLDER_GROUP_CARD,
+    "xx": PLACEHOLDER_PROFILE_COMBO,
+}
+PROFILE_PLACEHOLDER_SUMMARY_TEXT = {
+    PLACEHOLDER_ACCOUNT: "[账号]",
+    PLACEHOLDER_NICKNAME: "[昵称]",
+    PLACEHOLDER_GROUP_CARD: "[群名片]",
+    PLACEHOLDER_PROFILE_COMBO: "[xx]",
+}
 EVENT_TRIGGER_NAMES = frozenset(
     {
         "event:at",
@@ -88,6 +104,7 @@ class MessageAtom:
     canonical_image_id: int | None = None
     target_id: str = ""
     event_name: str = ""
+    placeholder_name: str = ""
 
 
 @dataclass(slots=True, frozen=True)
@@ -333,6 +350,7 @@ def shape_from_payload(payload: str) -> MessageShape:
                 ),
                 target_id=str(item.get("target_id", "") or ""),
                 event_name=str(item.get("event_name", "") or ""),
+                placeholder_name=str(item.get("placeholder_name", "") or ""),
             )
         )
     return MessageShape(tuple(atoms))
@@ -367,6 +385,8 @@ def shape_to_summary_text(shape: MessageShape) -> str:
             parts.append(format_at_summary_text(atom.target_id))
         elif atom.kind == "event" and atom.event_name:
             parts.append(format_event_summary_text(atom.event_name, atom.target_id))
+        elif atom.kind == "placeholder" and atom.placeholder_name:
+            parts.append(format_placeholder_summary_text(atom.placeholder_name))
     return _join_shape_text_parts(parts)
 
 
@@ -382,6 +402,8 @@ def shape_to_search_text(shape: MessageShape) -> str:
                 texts.append(f"{atom.event_name} {atom.target_id}")
             else:
                 texts.append(atom.event_name)
+        elif atom.kind == "placeholder" and atom.placeholder_name:
+            texts.append(f"placeholder {atom.placeholder_name}")
     return _join_shape_text_parts(texts)
 
 
@@ -420,6 +442,13 @@ def format_event_summary_text(event_name: str, target_id: str = "") -> str:
     )
 
 
+def format_placeholder_summary_text(placeholder_name: str) -> str:
+    return PROFILE_PLACEHOLDER_SUMMARY_TEXT.get(
+        placeholder_name,
+        f"[{placeholder_name}]",
+    )
+
+
 def _shape_image_keys(shape: MessageShape) -> str:
     ids = [
         str(atom.canonical_image_id)
@@ -441,6 +470,8 @@ def _atom_payload(atom: MessageAtom) -> MessageAtomPayload:
         payload["target_id"] = atom.target_id
     if atom.event_name:
         payload["event_name"] = atom.event_name
+    if atom.placeholder_name:
+        payload["placeholder_name"] = atom.placeholder_name
     return payload
 
 
@@ -473,6 +504,9 @@ def _parse_response_placeholder(raw_text: str) -> MessageAtom | None:
     compact = re.sub(r"\s+", "", unicodedata.normalize("NFKC", content).strip())
     if compact == "@触发者":
         return MessageAtom(kind="at", target_id=RESPONSE_TARGET_SENDER)
+    placeholder_name = PROFILE_PLACEHOLDER_ALIASES.get(compact)
+    if placeholder_name is not None:
+        return MessageAtom(kind="placeholder", placeholder_name=placeholder_name)
     if compact == "戳触发者":
         return MessageAtom(
             kind="event",
