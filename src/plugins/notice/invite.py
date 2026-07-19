@@ -66,15 +66,13 @@ async def is_invite_request(event: GroupIncreaseNoticeEvent) -> bool:
     return event.sub_type == "invite"
 
 
-async def _ensure_request_dependencies(
+async def _ensure_invitation_dependencies(
     bot: Bot,
-    event: GroupRequestEvent,
     *,
+    inviter_id: str,
+    group_id: str,
     group_name: str,
 ) -> None:
-    inviter_id = str(event.user_id)
-    group_id = str(event.group_id)
-
     inviter = await user_repo.get_user(inviter_id)
     if inviter is None:
         inviter_name = await resolve_user_name(bot, inviter_id)
@@ -91,6 +89,20 @@ async def _ensure_request_dependencies(
             group_name=group_name,
             policy=WritePolicy.IMMEDIATE,
         )
+
+
+async def _ensure_request_dependencies(
+    bot: Bot,
+    event: GroupRequestEvent,
+    *,
+    group_name: str,
+) -> None:
+    await _ensure_invitation_dependencies(
+        bot,
+        inviter_id=str(event.user_id),
+        group_id=str(event.group_id),
+        group_name=group_name,
+    )
 
 
 # [notice.group_increase.invite]
@@ -124,7 +136,14 @@ async def _(
     flag = event.flag if isinstance(event, GroupRequestEvent) else None
     if isinstance(event, GroupRequestEvent):
         await _ensure_request_dependencies(bot, event, group_name=group_name)
-        group = await group_repo.get_group(group_id)
+    else:
+        await _ensure_invitation_dependencies(
+            bot,
+            inviter_id=inviter_id,
+            group_id=group_id,
+            group_name=group_name,
+        )
+    group = await group_repo.get_group(group_id)
     invitation = await invite_repo.create_invitation(
         group_id=group_id,
         inviter_id=inviter_id,
@@ -132,19 +151,32 @@ async def _(
     )
 
     if group and group.status.is_working:
+        await _ensure_invitation_dependencies(
+            bot,
+            inviter_id=str(bot.self_id),
+            group_id=group_id,
+            group_name=group_name,
+        )
         if isinstance(event, GroupRequestEvent):
             await bot.set_group_add_request(
                 flag=event.flag,
                 sub_type=event.sub_type,
                 approve=True,
             )
-            await invite_repo.update_status(
-                invitation.id,
-                status=InvitationStatus.APPROVED,
-            )
+        await invite_repo.update_status(
+            invitation.id,
+            status=InvitationStatus.APPROVED,
+            operator_id=str(bot.self_id),
+        )
         await matcher.finish()
 
     elif group and group.status.is_banned:
+        await _ensure_invitation_dependencies(
+            bot,
+            inviter_id=str(bot.self_id),
+            group_id=group_id,
+            group_name=group_name,
+        )
         if isinstance(event, GroupIncreaseNoticeEvent):
             await bot.set_group_leave(group_id=event.group_id)
         else:
@@ -156,6 +188,7 @@ async def _(
         await invite_repo.update_status(
             invitation.id,
             status=InvitationStatus.REJECTED,
+            operator_id=str(bot.self_id),
         )
         await send_private_i18n(
             bot,

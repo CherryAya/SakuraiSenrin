@@ -43,11 +43,13 @@ class InviteRepository:
         self,
         invitation_id: int,
         status: InvitationStatus,
+        operator_id: str | None = None,
     ) -> Invitation:
         async with core_db.session() as core_session:
             return await InvitationOps(core_session).update_status(
                 invitation_id=invitation_id,
                 status=status,
+                operator_id=operator_id,
             )
 
     async def get_by_message_id(self, message_id: str) -> Invitation | None:
@@ -72,10 +74,20 @@ class InviteRepository:
         async with core_db.session() as core_session:
             return await InvitationOps(core_session).get_by_flag(flag)
 
-    async def ignore_all_pending(self) -> Sequence[Invitation]:
+    async def ignore_all_pending(
+        self,
+        operator_id: str | None = None,
+    ) -> Sequence[Invitation]:
         async with core_db.session() as core_session:
-            return await InvitationOps(core_session).ignore_all_pending()
+            return await InvitationOps(core_session).ignore_all_pending(
+                operator_id=operator_id
+            )
 
-    async def reject_all_pending(self) -> Sequence[Invitation]:
+    async def reject_all_pending(
+        self,
+        operator_id: str | None = None,
+    ) -> Sequence[Invitation]:
         async with core_db.session() as core_session:
-            return await InvitationOps(core_session).reject_all_pending()
+            return await InvitationOps(core_session).reject_all_pending(
+                operator_id=operator_id
+            )

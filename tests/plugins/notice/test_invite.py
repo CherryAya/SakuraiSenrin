@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import nonebot
+from nonebot.adapters.onebot.v11.event import GroupIncreaseNoticeEvent
 import pytest
 
 nonebot.init(
@@ -188,4 +189,72 @@ async def test_notice_invite_request_auto_approves_working_group(
         sub_type="invite",
         approve=True,
     )
-    update_status_mock.assert_awaited_once_with(34, status=InvitationStatus.APPROVED)
+    update_status_mock.assert_awaited_once_with(
+        34,
+        status=InvitationStatus.APPROVED,
+        operator_id="99999",
+    )
+
+
+@pytest.mark.asyncio
+async def test_notice_invite_group_increase_working_group_marks_invitation_processed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    group = SimpleNamespace(status=GroupStatus.AUTHORIZED)
+    create_invitation_mock = AsyncMock(return_value=SimpleNamespace(id=56))
+    update_status_mock = AsyncMock()
+    send_private_i18n_mock = AsyncMock()
+    bot = SimpleNamespace(self_id="99999", set_group_leave=AsyncMock())
+
+    monkeypatch.setattr(
+        notice_invite_plugin.group_repo,
+        "get_group",
+        AsyncMock(return_value=group),
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin,
+        "resolve_group_name",
+        AsyncMock(return_value="已授权群"),
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin.invite_repo,
+        "create_invitation",
+        create_invitation_mock,
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin.invite_repo,
+        "update_status",
+        update_status_mock,
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin.user_repo,
+        "get_user",
+        AsyncMock(return_value=SimpleNamespace(user_id="99999")),
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin,
+        "send_private_i18n",
+        send_private_i18n_mock,
+    )
+
+    event = GroupIncreaseNoticeEvent.model_validate(
+        {
+            "time": 1_700_000_000,
+            "self_id": "99999",
+            "post_type": "notice",
+            "notice_type": "group_increase",
+            "sub_type": "invite",
+            "user_id": 99999,
+            "group_id": 20001,
+            "operator_id": 10001,
+        }
+    )
+
+    await _run_handler(bot=bot, event=event)
+
+    update_status_mock.assert_awaited_once_with(
+        56,
+        status=InvitationStatus.APPROVED,
+        operator_id="99999",
+    )
+    send_private_i18n_mock.assert_not_awaited()

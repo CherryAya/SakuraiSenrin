@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Unpack, cast
 
-from sqlalchemy import CursorResult, delete, func, select, text, update
+from sqlalchemy import CursorResult, case, delete, func, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import aliased, selectinload
 
@@ -254,6 +254,15 @@ class GroupOps(BaseOps[Group]):
         stmt = select(Group.group_name).where(Group.group_id == group_id)
         result = await self.session.execute(stmt)
         return result.scalars().one_or_none()
+
+    async def get_names_by_gids(self, group_ids: Sequence[str]) -> dict[str, str]:
+        if not group_ids:
+            return {}
+        stmt = select(Group.group_id, Group.group_name).where(
+            Group.group_id.in_(group_ids)
+        )
+        result = await self.session.execute(stmt)
+        return {str(group_id): group_name for group_id, group_name in result.all()}
 
     async def get_working_group_ids(self) -> list[str]:
         stmt = select(Group.group_id).where(
@@ -568,6 +577,10 @@ class InvitationOps(BaseOps[Invitation]):
         return record
 
     async def get_by_flag(self, flag: str) -> Invitation | None:
+        pending_first = case(
+            (Invitation.status == InvitationStatus.PENDING, 0),
+            else_=1,
+        )
         stmt = (
             select(Invitation)
             .where(Invitation.flag == flag)
@@ -576,9 +589,10 @@ class InvitationOps(BaseOps[Invitation]):
                 selectinload(Invitation.group),
                 selectinload(Invitation.operator),
             )
+            .order_by(pending_first.asc(), Invitation.created_at.desc())
         )
         result = await self.session.execute(stmt)
-        return result.scalars().one_or_none()
+        return result.scalars().first()
 
     async def get_by_message_id(self, message_id: str) -> Invitation | None:
         stmt = (
@@ -627,6 +641,10 @@ class InvitationOps(BaseOps[Invitation]):
         return result.scalars().all()
 
     async def get_by_group_id(self, group_id: str) -> Invitation | None:
+        pending_first = case(
+            (Invitation.status == InvitationStatus.PENDING, 0),
+            else_=1,
+        )
         stmt = (
             select(Invitation)
             .where(Invitation.group_id == group_id)
@@ -635,6 +653,7 @@ class InvitationOps(BaseOps[Invitation]):
                 selectinload(Invitation.group),
                 selectinload(Invitation.operator),
             )
+            .order_by(pending_first.asc(), Invitation.created_at.desc())
         )
         result = await self.session.execute(stmt)
         return result.scalars().first()
@@ -643,16 +662,29 @@ class InvitationOps(BaseOps[Invitation]):
         self,
         invitation_id: int,
         status: InvitationStatus,
+        operator_id: str | None = None,
     ) -> Invitation:
+        values: dict[str, object] = {
+            "status": status,
+            "updated_at": get_current_time(),
+        }
+        if operator_id is not None:
+            values["operator_id"] = operator_id
         stmt = (
             update(Invitation)
             .where(Invitation.id == invitation_id)
-            .values(status=status, updated_at=get_current_time())
+            .values(**values)
             .returning(Invitation)
         )
         target_result = await self.session.execute(stmt)
         target_invitation = target_result.scalars().one()
 
+        other_values: dict[str, object] = {
+            "status": InvitationStatus.IGNORED,
+            "updated_at": get_current_time(),
+        }
+        if operator_id is not None:
+            other_values["operator_id"] = operator_id
         stmt_others = (
             update(Invitation)
             .where(
@@ -660,27 +692,45 @@ class InvitationOps(BaseOps[Invitation]):
                 Invitation.id != invitation_id,
                 Invitation.status == InvitationStatus.PENDING,
             )
-            .values(status=InvitationStatus.IGNORED, updated_at=get_current_time())
+            .values(**other_values)
         )
         await self.session.execute(stmt_others)
 
         return target_invitation
 
-    async def ignore_all_pending(self) -> Sequence[Invitation]:
+    async def ignore_all_pending(
+        self,
+        operator_id: str | None = None,
+    ) -> Sequence[Invitation]:
+        values: dict[str, object] = {
+            "status": InvitationStatus.IGNORED,
+            "updated_at": get_current_time(),
+        }
+        if operator_id is not None:
+            values["operator_id"] = operator_id
         stmt = (
             update(Invitation)
             .where(Invitation.status == InvitationStatus.PENDING)
-            .values(status=InvitationStatus.IGNORED, updated_at=get_current_time())
+            .values(**values)
             .options(selectinload(Invitation.group))
         ).returning(Invitation)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def reject_all_pending(self) -> Sequence[Invitation]:
+    async def reject_all_pending(
+        self,
+        operator_id: str | None = None,
+    ) -> Sequence[Invitation]:
+        values: dict[str, object] = {
+            "status": InvitationStatus.REJECTED,
+            "updated_at": get_current_time(),
+        }
+        if operator_id is not None:
+            values["operator_id"] = operator_id
         stmt = (
             update(Invitation)
             .where(Invitation.status == InvitationStatus.PENDING)
-            .values(status=InvitationStatus.REJECTED, updated_at=get_current_time())
+            .values(**values)
             .options(selectinload(Invitation.group))
         ).returning(Invitation)
         result = await self.session.execute(stmt)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import nonebot
@@ -26,6 +27,7 @@ if nonebot.get_plugin("admin") is None:
 
 SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 
+from src.database.core.consts import GroupStatus
 from src.database.core.consts import Permission as CorePermission
 from src.lib.i18n.runtime import tr
 from src.lib.message_assets import message_asset_repo
@@ -36,6 +38,7 @@ from src.plugins.admin.i18n import admin_i18n
 from src.plugins.admin.invite import admin_invite
 from src.plugins.admin.user import admin_user
 from tests.plugins.water.helpers import (
+    attach_reply_message,
     build_group_message_event,
     build_private_message_event,
 )
@@ -54,6 +57,22 @@ class _Group:
 class _User:
     user_id = "12345"
     permission = CorePermission.NORMAL
+
+
+class _MatcherFinished(Exception):
+    pass
+
+
+class _DummyMatcher:
+    async def finish(self) -> None:
+        raise _MatcherFinished
+
+
+async def _run_reply_handler(handler: object, *, bot: object, event: object) -> None:
+    try:
+        await handler(bot=bot, event=event, matcher=_DummyMatcher())  # type: ignore[misc]
+    except _MatcherFinished:
+        return
 
 
 @pytest.mark.asyncio
@@ -405,6 +424,154 @@ async def test_admin_invite_log_returns_i18n_notice(
             result={"message_id": 1},
         )
         ctx.should_finished(admin_invite)
+
+
+@pytest.mark.asyncio
+async def test_admin_invite_approve_reply_without_reply_finishes_safely() -> None:
+    from src.plugins.admin import invite as invite_plugin
+
+    event = build_private_message_event("y", user_id=SUPERUSER_ID)
+    bot = SimpleNamespace(self_id="99999")
+
+    await _run_reply_handler(
+        invite_plugin.approve_matcher.handlers[0].call,
+        bot=bot,
+        event=event,
+    )
+
+
+@pytest.mark.asyncio
+async def test_admin_invite_reject_reply_without_reply_finishes_safely() -> None:
+    from src.plugins.admin import invite as invite_plugin
+
+    event = build_private_message_event("n", user_id=SUPERUSER_ID)
+    bot = SimpleNamespace(self_id="99999")
+
+    await _run_reply_handler(
+        invite_plugin.reject_matcher.handlers[0].call,
+        bot=bot,
+        event=event,
+    )
+
+
+@pytest.mark.asyncio
+async def test_admin_invite_reply_persists_operator_when_approving(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.admin import invite as invite_plugin
+
+    event = attach_reply_message(
+        build_private_message_event("y", user_id=SUPERUSER_ID),
+        MessageSegment.text("邀请通知"),
+    )
+    bot = SimpleNamespace(
+        self_id="99999",
+        set_group_add_request=AsyncMock(),
+    )
+    invitation = SimpleNamespace(
+        id=7,
+        flag="flag-7",
+        status=SimpleNamespace(is_processed=False),
+        group=SimpleNamespace(
+            status=GroupStatus.UNAUTHORIZED,
+            group_name="测试群",
+        ),
+        group_id="20001",
+        inviter=SimpleNamespace(user_name="邀请者"),
+    )
+    matcher = SimpleNamespace()
+
+    monkeypatch.setattr(
+        invite_plugin.invite_repo,
+        "get_by_message_id",
+        AsyncMock(return_value=invitation),
+    )
+    monkeypatch.setattr(
+        invite_plugin,
+        "resolve_user_name",
+        AsyncMock(return_value="超管"),
+    )
+    save_user_mock = AsyncMock()
+    monkeypatch.setattr(invite_plugin.user_repo, "save_user", save_user_mock)
+    update_status_mock = AsyncMock()
+    monkeypatch.setattr(invite_plugin.invite_repo, "update_status", update_status_mock)
+    monkeypatch.setattr(
+        invite_plugin.group_repo,
+        "update_status",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        invite_plugin,
+        "deliver_message_plan",
+        AsyncMock(return_value=None),
+    )
+
+    await invite_plugin.handle_invitation(
+        invite_plugin.InviteContext(
+            bot=cast(Bot, bot),
+            event=event,
+            matcher=matcher,  # type: ignore[arg-type]
+            approve=True,
+            msg_id="90001",
+            operator_id=str(SUPERUSER_ID),
+            locale="zh-CN",
+        )
+    )
+
+    save_user_mock.assert_awaited_once()
+    update_status_mock.assert_awaited_once_with(
+        invitation_id=7,
+        status=invite_plugin.InvitationStatus.APPROVED,
+        operator_id=str(SUPERUSER_ID),
+    )
+
+
+@pytest.mark.asyncio
+async def test_admin_invite_processed_message_handles_missing_operator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.admin import invite as invite_plugin
+
+    event = build_private_message_event(
+        "#admin.invite ignore -f flag-9",
+        user_id=SUPERUSER_ID,
+    )
+    matcher = SimpleNamespace()
+    invitation = SimpleNamespace(
+        id=9,
+        flag="flag-9",
+        status=SimpleNamespace(is_processed=True),
+        operator=None,
+        operator_id="42",
+        group=SimpleNamespace(group_name="测试群"),
+        group_id="20001",
+        inviter=SimpleNamespace(user_name="邀请者"),
+    )
+    send_text_mock = AsyncMock()
+
+    monkeypatch.setattr(
+        invite_plugin.invite_repo,
+        "get_by_flag",
+        AsyncMock(return_value=invitation),
+    )
+    monkeypatch.setattr(invite_plugin, "_send_reusable_text", send_text_mock)
+
+    result = await invite_plugin.handle_invitation(
+        invite_plugin.InviteContext(
+            bot=cast(Bot, SimpleNamespace(self_id="99999")),
+            event=event,
+            matcher=matcher,  # type: ignore[arg-type]
+            approve=False,
+            flag="flag-9",
+            locale="zh-CN",
+        )
+    )
+
+    assert result is False
+    send_text_mock.assert_awaited_once()
+    await_args = send_text_mock.await_args
+    assert await_args is not None
+    assert "42" in await_args.kwargs["message"]
 
 
 @pytest.mark.asyncio
