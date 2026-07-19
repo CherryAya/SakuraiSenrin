@@ -212,6 +212,38 @@ async def test_save_group_name_immediate_includes_snapshot_created_at(
     assert captured["snapshot"] == ("20001", "Test Group", 1_780_901_962)
 
 
+async def test_get_group_returns_item_after_db_backfill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.repositories import group as group_module
+
+    class _FakeGroupOps:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        async def get_by_group_id(self, group_id: str) -> object:
+            return type(
+                "_DbGroup",
+                (),
+                {
+                    "group_id": group_id,
+                    "group_name": "测试群",
+                    "status": GroupStatus.AUTHORIZED,
+                },
+            )()
+
+    monkeypatch.setattr(group_module, "GroupOps", _FakeGroupOps)
+    monkeypatch.setattr(group_module.core_db, "session", _FakeSessionContext)
+
+    cache = GroupCache()
+    repo = GroupRepository(cache)
+
+    group = await repo.get_group("20001")
+
+    assert group is not None
+    assert group.status == GroupStatus.AUTHORIZED
+
+
 async def test_save_member_card_immediate_includes_snapshot_created_at(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -6,6 +6,7 @@ from nonebot.adapters.onebot.v11.event import (
     GroupDecreaseNoticeEvent,
     GroupIncreaseNoticeEvent,
     GroupRecallNoticeEvent,
+    GroupRequestEvent,
     PokeNotifyEvent,
 )
 from nonebot.adapters.onebot.v11.message import MessageSegment
@@ -158,6 +159,30 @@ def build_group_increase_event(
             "user_id": user_id,
             "group_id": group_id,
             "operator_id": operator_id,
+        }
+    )
+
+
+def build_group_request_event(
+    *,
+    user_id: int = 10001,
+    group_id: int = 20001,
+    flag: str = "flag-1",
+    sub_type: str = "invite",
+    self_id: int = 99999,
+    time: int = 1_700_000_000,
+) -> GroupRequestEvent:
+    return GroupRequestEvent.model_validate(
+        {
+            "time": time,
+            "self_id": str(self_id),
+            "post_type": "request",
+            "request_type": "group",
+            "sub_type": sub_type,
+            "user_id": user_id,
+            "group_id": group_id,
+            "comment": "",
+            "flag": flag,
         }
     )
 

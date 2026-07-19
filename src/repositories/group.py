@@ -187,10 +187,17 @@ class GroupRepository:
                 group_name=db_group.group_name,
                 status=db_group.status,
             )
+            return self.cache.get(group_id)
 
     async def get_name_by_gid(self, group_id: str) -> str | None:
         async with core_db.session() as session:
             return await GroupOps(session).get_name_by_gid(group_id)
+
+    async def get_names_by_gids(self, group_ids: list[str]) -> dict[str, str]:
+        if not group_ids:
+            return {}
+        async with core_db.session() as session:
+            return await GroupOps(session).get_names_by_gids(group_ids)
 
     async def update_status(self, group_id: str, status: GroupStatus) -> None:
         return await self.save_group(

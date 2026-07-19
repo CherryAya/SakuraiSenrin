@@ -20,15 +20,16 @@ from nonebot.matcher import Matcher
 from nonebot.rule import is_type, to_me
 
 from src.config import config
-from src.database.core.consts import Permission
+from src.database.consts import WritePolicy
+from src.database.core.consts import InvitationStatus, Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, send_private_i18n, tr
 from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import DeliveryPlan, deliver_message_plan
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
-from src.repositories import group_repo, invite_repo
-from src.services.info import resolve_group_name
+from src.repositories import group_repo, invite_repo, user_repo
+from src.services.info import resolve_group_name, resolve_user_name
 
 name = tr("zh-CN", "plugin.notice_invite.name")
 description = tr("zh-CN", "plugin.notice_invite.description")
@@ -65,6 +66,33 @@ async def is_invite_request(event: GroupIncreaseNoticeEvent) -> bool:
     return event.sub_type == "invite"
 
 
+async def _ensure_request_dependencies(
+    bot: Bot,
+    event: GroupRequestEvent,
+    *,
+    group_name: str,
+) -> None:
+    inviter_id = str(event.user_id)
+    group_id = str(event.group_id)
+
+    inviter = await user_repo.get_user(inviter_id)
+    if inviter is None:
+        inviter_name = await resolve_user_name(bot, inviter_id)
+        await user_repo.save_user(
+            user_id=inviter_id,
+            user_name=inviter_name,
+            policy=WritePolicy.IMMEDIATE,
+        )
+
+    group = await group_repo.get_group(group_id)
+    if group is None:
+        await group_repo.save_group(
+            group_id=group_id,
+            group_name=group_name,
+            policy=WritePolicy.IMMEDIATE,
+        )
+
+
 # [notice.group_increase.invite]
 
 
@@ -94,6 +122,9 @@ async def _(
     group = await group_repo.get_group(group_id)
     group_name = await resolve_group_name(bot, group_id)
     flag = event.flag if isinstance(event, GroupRequestEvent) else None
+    if isinstance(event, GroupRequestEvent):
+        await _ensure_request_dependencies(bot, event, group_name=group_name)
+        group = await group_repo.get_group(group_id)
     invitation = await invite_repo.create_invitation(
         group_id=group_id,
         inviter_id=inviter_id,
@@ -105,7 +136,11 @@ async def _(
             await bot.set_group_add_request(
                 flag=event.flag,
                 sub_type=event.sub_type,
-                approve=False,
+                approve=True,
+            )
+            await invite_repo.update_status(
+                invitation.id,
+                status=InvitationStatus.APPROVED,
             )
         await matcher.finish()
 
@@ -118,6 +153,10 @@ async def _(
                 sub_type=event.sub_type,
                 approve=False,
             )
+        await invite_repo.update_status(
+            invitation.id,
+            status=InvitationStatus.REJECTED,
+        )
         await send_private_i18n(
             bot,
             int(inviter_id),
