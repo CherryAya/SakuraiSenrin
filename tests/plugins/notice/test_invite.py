@@ -140,6 +140,9 @@ async def test_notice_invite_request_persists_dependencies_and_reports_pending(
         invitation_id=12,
         message_id="99",
     )
+    await_args = deliver_message_plan_mock.await_args
+    assert await_args is not None
+    assert await_args.kwargs["plan"].allow_asset_reuse is False
 
 
 @pytest.mark.asyncio

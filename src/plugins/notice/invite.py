@@ -239,6 +239,7 @@ async def _(
             plan=DeliveryPlan(
                 messages=(report_message,),
                 source_kind="notice_invite",
+                allow_asset_reuse=False,
             ),
             target=DeliveryTarget(kind="private", target_id=str(super_user_id)),
         )
