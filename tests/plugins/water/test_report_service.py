@@ -286,6 +286,11 @@ async def test_run_daily_group_report_push_renders_parallel_and_sends_serially(
     )
     monkeypatch.setattr(
         report_module.water_report_service,
+        "_build_daily_report_batch_context",
+        AsyncMock(return_value=SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        report_module.water_report_service,
         "build_group_report_message",
         AsyncMock(side_effect=[text_message("R2"), text_message("R1")]),
     )
@@ -357,6 +362,11 @@ async def test_run_daily_group_report_push_notifies_superusers_on_start_and_fini
                 ),
             ]
         ),
+    )
+    monkeypatch.setattr(
+        report_module.water_report_service,
+        "_build_daily_report_batch_context",
+        AsyncMock(return_value=SimpleNamespace()),
     )
     monkeypatch.setattr(
         report_module.water_report_service,
@@ -441,6 +451,11 @@ async def test_run_daily_group_report_push_reports_batch_progress_every_ten_grou
     )
     monkeypatch.setattr(
         report_module.water_report_service,
+        "_build_daily_report_batch_context",
+        AsyncMock(return_value=SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        report_module.water_report_service,
         "build_group_report_message",
         AsyncMock(side_effect=[text_message(f"R{index}") for index in range(11)]),
     )
@@ -475,10 +490,11 @@ async def test_build_card_data_keeps_group_report_core_fields(
 ) -> None:
     from src.plugins.water.services import report as report_module
 
+    batch_names_mock = AsyncMock(return_value={"20001": "测试群"})
     monkeypatch.setattr(
-        report_module,
-        "resolve_group_name",
-        AsyncMock(return_value="测试群"),
+        report_module.group_repo,
+        "get_names_by_gids",
+        batch_names_mock,
     )
     monkeypatch.setattr(
         report_module.water_report_service,
@@ -544,6 +560,7 @@ async def test_build_card_data_keeps_group_report_core_fields(
     assert data.total_msg_count == 42
     assert data.active_user_count == 1
     assert data.top_items[0].display_name == "Alice"
+    batch_names_mock.assert_awaited_once_with(["20001"])
 
 
 @pytest.mark.asyncio
@@ -655,14 +672,16 @@ async def test_build_card_data_includes_group_rank_block(
         has_hidden_after=True,
     )
 
+    batch_names_mock = AsyncMock(
+        return_value={
+            "20001": "测试群",
+            "20002": "隔壁群",
+        }
+    )
     monkeypatch.setattr(
-        report_module,
-        "resolve_group_name",
-        AsyncMock(
-            side_effect=lambda _bot, group_id: (
-                "测试群" if group_id == "20001" else "隔壁群"
-            )
-        ),
+        report_module.group_repo,
+        "get_names_by_gids",
+        batch_names_mock,
     )
     monkeypatch.setattr(
         report_module.water_report_service,
@@ -773,6 +792,7 @@ async def test_build_card_data_includes_group_rank_block(
     assert data.group_rank_focus_msg_count == 42
     assert data.group_rank_prev_gap_msg_count is None
     assert data.group_rank_next_gap_msg_count == 3
+    batch_names_mock.assert_awaited_once_with(["20001", "20002"])
     assert [(item.label, item.value) for item in data.group_rank_insights] == [
         ("本群占比", "51.9%"),
         ("峰值时段", "02:00"),

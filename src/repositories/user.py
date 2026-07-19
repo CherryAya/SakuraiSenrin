@@ -8,9 +8,12 @@ Description: user 相关实现
 
 from dataclasses import dataclass
 
+from sqlalchemy import select
+
 from src.database.consts import WritePolicy
 from src.database.core.consts import Permission
 from src.database.core.ops import UserOps
+from src.database.core.tables import User
 from src.database.instances import core_db, log_db, snapshot_db
 from src.database.log.consts import AuditAction, AuditCategory, AuditContext
 from src.database.log.ops import AuditLogOps
@@ -172,3 +175,13 @@ class UserRepository:
     async def get_name_by_uid(self, user_id: str) -> str | None:
         async with core_db.session() as session:
             return await UserOps(session).get_name_by_uid(user_id)
+
+    async def get_names_by_uids(self, user_ids: list[str]) -> dict[str, str]:
+        if not user_ids:
+            return {}
+        async with core_db.session() as session:
+            stmt = select(User.user_id, User.user_name).where(
+                User.user_id.in_(user_ids)
+            )
+            result = await session.execute(stmt)
+            return {str(user_id): user_name for user_id, user_name in result.all()}
