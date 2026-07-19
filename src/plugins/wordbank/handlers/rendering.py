@@ -304,16 +304,13 @@ async def build_pending_item_blocks(
         blocks.append(TextBlock(f"{leading}{line}"))
         leading = "\n"
 
-    leading = await _append_summary_or_shape_detail_blocks(
-        blocks,
-        shape=trigger_shape,
-        text=trigger_text,
-        media_service=media_service,
-        locale=locale,
-        summary_label="触发词",
-        detail_label="触发词详情",
-        prefix=leading,
+    blocks.append(
+        TextBlock(
+            f"{leading}触发词: "
+            f"{format_notice_content_summary(trigger_text, shape=trigger_shape)}"
+        )
     )
+    leading = "\n"
     leading = await _append_summary_or_shape_detail_blocks(
         blocks,
         shape=response_shape,

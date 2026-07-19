@@ -305,11 +305,11 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
         "ID: 12\n"
     )
     assert "状态: 待审核" in full_text
-    assert "触发词详情:\n" in full_text
+    assert "触发词: 图片消息" in full_text
     assert "响应词: 做个好梦" in full_text
     assert "响应模式: 普通响应" in full_text
-    assert sum(1 for segment in segments if segment.type == "image") == 1
-    load_canonical_storage_bytes.assert_awaited_once_with(8)
+    assert sum(1 for segment in segments if segment.type == "image") == 0
+    load_canonical_storage_bytes.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -335,9 +335,9 @@ async def test_build_pending_approval_notice_plan_entry_returns_summary() -> Non
     full_text = _message_text(message)
     assert "回复 y / approve / 通过 可通过" in full_text
     assert "状态: 待审核" in full_text
-    assert "触发词详情:\n" in full_text
+    assert "触发词: 图片消息" in full_text
     assert "规则: 概率 1" in full_text
-    assert any(segment.type == "image" for segment in message)
+    assert not any(segment.type == "image" for segment in message)
 
 
 @pytest.mark.asyncio
@@ -716,7 +716,8 @@ async def test_batch_notice_sends_summary_then_forward_details() -> None:
     assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in str(summary_message)
     assert "待审数量: 2" in str(summary_message)
     assert any(segment.type == "image" for segment in first_detail)
-    assert any(segment.type == "image" for segment in second_detail)
+    assert "触发词: 图片消息" in str(second_detail)
+    assert not any(segment.type == "image" for segment in second_detail)
     assert record_message_ref.await_count == 1
 
 
