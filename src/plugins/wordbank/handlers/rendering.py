@@ -310,19 +310,18 @@ async def build_pending_item_blocks(
             f"{format_notice_content_summary(trigger_text, shape=trigger_shape)}"
         )
     )
-    leading = "\n"
-    leading = await _append_summary_or_shape_detail_blocks(
-        blocks,
-        shape=response_shape,
-        text=response_text,
-        media_service=media_service,
-        locale=locale,
-        summary_label="响应词",
-        detail_label="响应词详情",
-        prefix=leading,
-        response_mode=response_mode,
-        forward_node_count=forward_node_count,
+    blocks.append(
+        TextBlock(
+            "\n响应词: "
+            + format_notice_content_summary(
+                response_text,
+                shape=response_shape,
+                response_mode=response_mode or "normal",
+                forward_node_count=forward_node_count,
+            )
+        )
     )
+    leading = "\n"
     for line in _build_pending_item_footer_lines(
         created_at=created_at,
         created_by=created_by,
@@ -671,45 +670,6 @@ async def _append_labeled_shape_blocks(
             )
         ).blocks
     )
-
-
-async def _append_summary_or_shape_detail_blocks(
-    blocks: list[MessagePlanBlock],
-    *,
-    shape: MessageShape | None,
-    text: str,
-    media_service: WordbankMediaService,
-    locale: LocaleCode,
-    summary_label: str,
-    detail_label: str,
-    prefix: str,
-    response_mode: str | None = None,
-    forward_node_count: int = 0,
-) -> str:
-    if shape is None or shape.is_empty() or not _has_non_text_shape(shape):
-        if response_mode is None:
-            summary_text = format_notice_content_summary(text, shape=shape)
-        else:
-            summary_text = format_notice_content_summary(
-                text,
-                shape=shape,
-                response_mode=response_mode,
-                forward_node_count=forward_node_count,
-            )
-        blocks.append(TextBlock(f"{prefix}{summary_label}: {summary_text}"))
-        return "\n"
-
-    blocks.append(TextBlock(f"{prefix}{detail_label}:\n"))
-    blocks.extend(
-        (
-            await build_shape_plan_entry(
-                shape,
-                media_service,
-                locale=locale,
-            )
-        ).blocks
-    )
-    return "\n"
 
 
 def _format_enabled(enabled: int, locale: LocaleCode) -> str:

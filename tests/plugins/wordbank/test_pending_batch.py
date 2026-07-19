@@ -58,10 +58,10 @@ async def test_build_pending_detail_message_returns_image_blocks() -> None:
     assert "提交时间: 2023-11-15 06:13" in str(rendered)
     assert "规则: 概率 1 | 角色 管理" in str(rendered)
     assert "触发词: 图片消息" in str(rendered)
-    assert "触发词详情:" not in str(rendered)
+    assert "响应词: 做个好梦" in str(rendered)
     assert "[图片:8]" not in str(rendered)
     assert "[图片:7]" not in str(rendered)
-    assert sum(1 for segment in rendered if segment.type == "image") == 1
+    assert sum(1 for segment in rendered if segment.type == "image") == 0
 
 
 @pytest.mark.asyncio
@@ -136,6 +136,6 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
     assert "序号: 1" in str(rendered_detail)
     assert "状态: 待审核" in str(rendered_detail)
     assert "触发词: 图片消息" in str(rendered_detail)
-    assert "触发词详情:" not in str(rendered_detail)
-    assert sum(1 for segment in rendered_detail if segment.type == "image") == 1
+    assert "响应词: 做个好梦" in str(rendered_detail)
+    assert sum(1 for segment in rendered_detail if segment.type == "image") == 0
     assert record_message_ref.await_count == 1
