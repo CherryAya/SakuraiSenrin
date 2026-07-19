@@ -71,7 +71,6 @@ async def legacy_message_to_shape(
     report: WordbankMigrationReport | None = None,
     preserve_text_newlines: bool = False,
 ) -> MessageShape:
-    from src.plugins.wordbank.message_model import normalize_message_text
 
     event_shape = shape_from_legacy_extra_info(extra_info)
     if event_shape is not None:
@@ -95,10 +94,7 @@ async def legacy_message_to_shape(
             if preserve_text_newlines:
                 text_value = normalize_legacy_message_text_preserving_newlines(raw_text)
             else:
-                text_value = normalize_message_text(
-                    raw_text,
-                    preserve_blank_text=True,
-                )
+                text_value = raw_text
             if text_value:
                 atoms.append(MessageAtom(kind="text", text=text_value))
             continue

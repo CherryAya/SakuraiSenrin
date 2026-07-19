@@ -114,10 +114,26 @@ async def test_export_trigger_fix_plan_dedupes_same_group(
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert report["planned_groups"] == 1
     assert report["planned_variants"] == 1
+    assert report["affected_rows"] == 1
+    assert report["matched_groups"] == 1
     assert len(payload["operations"]) == 1
+    assert payload["affected_legacy_triggers"] == [
+        {
+            "trigger_group_id": 1,
+            "legacy_trigger_id": 7,
+            "current_trigger_text": "今天:好啊",
+            "desired_trigger_text": "今天：好啊",
+        }
+    ]
     assert payload["operations"][0]["trigger_group_id"] == 1
-    assert payload["operations"][0]["legacy_response_ids"] == [11, 12]
     assert payload["operations"][0]["legacy_trigger_ids"] == [7]
+    assert payload["operations"][0]["affected_legacy_triggers"] == [
+        {
+            "legacy_trigger_id": 7,
+            "current_trigger_text": "今天:好啊",
+            "desired_trigger_text": "今天：好啊",
+        }
+    ]
     assert payload["operations"][0]["desired_variant"]["trigger_text"] == "今天：好啊"
 
 

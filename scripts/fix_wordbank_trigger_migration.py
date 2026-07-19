@@ -11,12 +11,32 @@ import json
 from pathlib import Path
 import sqlite3
 import sys
+import types
 from types import SimpleNamespace
 from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+
+def _ensure_pkg(name: str, path: Path) -> bool:
+    if name in sys.modules:
+        return False
+    pkg = types.ModuleType(name)
+    pkg.__path__ = [str(path)]  # type: ignore[attr-defined]
+    sys.modules[name] = pkg
+    return True
+
+
+_TEMP_STUB_MODULES: list[str] = []
+if _ensure_pkg("src.plugins.wordbank", ROOT / "src" / "plugins" / "wordbank"):
+    _TEMP_STUB_MODULES.append("src.plugins.wordbank")
+if _ensure_pkg(
+    "src.plugins.wordbank.database",
+    ROOT / "src" / "plugins" / "wordbank" / "database",
+):
+    _TEMP_STUB_MODULES.append("src.plugins.wordbank.database")
 
 from scripts.migrations.wordbank_legacy_source import (
     _default_legacy_image_mapping_path,
@@ -29,10 +49,6 @@ from scripts.migrations.wordbank_rules import (
     _coerce_int,
     load_legacy_json,
     normalize_legacy_message_text_preserving_newlines,
-    normalize_legacy_probability,
-    normalize_legacy_rules,
-    normalize_legacy_state,
-    normalize_legacy_timestamp,
     shape_from_legacy_extra_info,
 )
 from scripts.migrations.wordbank_types import LegacyPgConfig
@@ -49,11 +65,14 @@ from src.plugins.wordbank.message_model import (
     MessageAtom,
     MessageShape,
     fingerprint_shape,
+    normalize_message_text,
     shape_from_event,
-    shape_from_payload,
     shape_from_text,
     shape_to_payload,
 )
+
+for _module_name in reversed(_TEMP_STUB_MODULES):
+    sys.modules.pop(_module_name, None)
 
 DEFAULT_DB_PATH = ROOT / "data" / "db" / "wordbank_db" / "wordbank_main.db"
 DEFAULT_PLAN_PATH = ROOT / ".devtest" / "wordbank-trigger-fix-plan.json"
@@ -78,7 +97,8 @@ GROUP_SAFE_MATCH_FIELDS = (
 @dataclass(slots=True)
 class TriggerFixExportReport:
     scanned_rows: int = 0
-    matched_rows: int = 0
+    affected_rows: int = 0
+    matched_groups: int = 0
     planned_groups: int = 0
     planned_variants: int = 0
     already_matching_groups: int = 0
@@ -111,7 +131,8 @@ class TriggerFixExportReport:
     def to_dict(self) -> dict[str, object]:
         return {
             "scanned_rows": self.scanned_rows,
-            "matched_rows": self.matched_rows,
+            "affected_rows": self.affected_rows,
+            "matched_groups": self.matched_groups,
             "planned_groups": self.planned_groups,
             "planned_variants": self.planned_variants,
             "already_matching_groups": self.already_matching_groups,
@@ -271,6 +292,7 @@ def _legacy_message_to_shape(
     image_catalog: Any,
     current_image_ids: dict[str, int],
     preserve_text_newlines: bool = False,
+    normalize_text_segments: bool = False,
 ) -> MessageShape:
     event_shape = shape_from_legacy_extra_info(extra_info)
     if event_shape is not None:
@@ -291,11 +313,15 @@ def _legacy_message_to_shape(
         segment_type = str(item.get("type", "") or "").strip().lower()
         if segment_type == "text":
             raw_text = str(item.get("text", "") or "")
-            text_value = (
-                normalize_legacy_message_text_preserving_newlines(raw_text)
-                if preserve_text_newlines
-                else raw_text
-            )
+            if preserve_text_newlines:
+                text_value = normalize_legacy_message_text_preserving_newlines(raw_text)
+            elif normalize_text_segments:
+                text_value = normalize_message_text(
+                    raw_text,
+                    preserve_blank_text=True,
+                )
+            else:
+                text_value = raw_text
             shape = shape_from_text(text_value, preserve_blank_text=True)
             atoms.extend(shape.atoms)
             continue
@@ -338,6 +364,7 @@ def _legacy_trigger_shape(
     *,
     image_catalog: Any,
     current_image_ids: dict[str, int],
+    normalize_text_segments: bool = False,
 ) -> MessageShape:
     return _legacy_message_to_shape(
         row.get("trigger_text"),
@@ -345,183 +372,8 @@ def _legacy_trigger_shape(
         image_catalog=image_catalog,
         current_image_ids=current_image_ids,
         preserve_text_newlines=False,
+        normalize_text_segments=normalize_text_segments,
     )
-
-
-def _response_match_key(
-    *,
-    probability: float,
-    target_scope: str,
-    target_group_id: str,
-    rule: dict[str, Any],
-    response_shape: MessageShape,
-    status: str,
-    enabled: int,
-    deleted_at: int,
-    created_by: str,
-    approved_by: str,
-    weight: int,
-    priority: int,
-    created_at: int,
-) -> tuple[object, ...]:
-    fingerprint = fingerprint_shape(response_shape)
-    return (
-        probability,
-        status,
-        enabled,
-        target_scope,
-        priority,
-        weight,
-        _canonical_rule_json(rule),
-        target_group_id,
-        created_by,
-        approved_by,
-        deleted_at,
-        created_at,
-        fingerprint.summary_text,
-        fingerprint.exact_md5,
-        fingerprint.structure_key,
-        fingerprint.search_text,
-        fingerprint.search_tokens,
-        fingerprint.image_keys,
-    )
-
-
-def _current_response_match_key(
-    row: Mapping[str, Any],
-    *,
-    probability: float,
-) -> tuple[object, ...]:
-    message_shape = shape_from_payload(str(row["message_json"] or "[]"))
-    fingerprint = fingerprint_shape(message_shape)
-    rule = _load_json_dict(row["rule"])
-    return (
-        probability,
-        str(row["status"] or ""),
-        int(row["enabled"] or 0),
-        str(row["scope"] or ""),
-        int(row["priority"] or 0),
-        int(row["weight"] or 0),
-        _canonical_rule_json(rule),
-        str(row["group_id"] or ""),
-        str(row["created_by"] or ""),
-        str(row["approved_by"] or ""),
-        int(row["deleted_at"] or 0),
-        int(row["created_at"] or 0),
-        fingerprint.summary_text,
-        fingerprint.exact_md5,
-        fingerprint.structure_key,
-        fingerprint.search_text,
-        fingerprint.search_tokens,
-        fingerprint.image_keys,
-    )
-
-
-def _load_current_rows(
-    connection: sqlite3.Connection,
-) -> tuple[
-    dict[tuple[object, ...], list[sqlite3.Row]],
-    dict[int, list[sqlite3.Row]],
-]:
-    response_rows = connection.execute(
-        """
-        SELECT
-            ri.*,
-            tg.probability AS group_probability
-        FROM wordbank_response_item ri
-        JOIN wordbank_trigger_group tg
-          ON tg.id = ri.trigger_group_id
-        ORDER BY ri.id ASC
-        """
-    ).fetchall()
-    responses_by_key: dict[tuple[object, ...], list[sqlite3.Row]] = defaultdict(list)
-    for row in response_rows:
-        key = _current_response_match_key(
-            row,
-            probability=float(row["group_probability"]),
-        )
-        responses_by_key[key].append(row)
-
-    variant_rows = connection.execute(
-        """
-        SELECT *
-        FROM wordbank_trigger_variant
-        ORDER BY id ASC
-        """
-    ).fetchall()
-    variants_by_group: dict[int, list[sqlite3.Row]] = defaultdict(list)
-    for row in variant_rows:
-        variants_by_group[int(row["trigger_group_id"])].append(row)
-
-    return responses_by_key, variants_by_group
-
-
-def _load_target_group_id(
-    *,
-    row: Mapping[str, Any],
-    image_catalog: Any,
-    current_image_ids: dict[str, int],
-    responses_by_key: dict[tuple[object, ...], list[sqlite3.Row]],
-) -> tuple[int, MessageShape]:
-    response_shape = _legacy_response_shape(
-        row,
-        image_catalog=image_catalog,
-        current_image_ids=current_image_ids,
-    )
-    state = normalize_legacy_state(
-        approval_status=str(row.get("approval_status", "PENDING")),
-        response_available=bool(row.get("response_available", False)),
-        migration_time=normalize_legacy_timestamp(
-            row.get("created_at"),
-            fallback=0,
-        ),
-    )
-    probability = normalize_legacy_probability(row.get("trigger_config"))
-    created_at = normalize_legacy_timestamp(row.get("created_at"), fallback=0)
-    weight = _coerce_int(row.get("weight", 3), field="weight")
-    priority = _coerce_int(row.get("priority", 3), field="priority")
-    targets = normalize_legacy_rules(
-        priority=priority,
-        response_rule_conditions=_load_json_dict(row.get("response_rule_conditions")),
-        trigger_config=row.get("trigger_config"),
-    )
-    if not targets:
-        raise MigrationError("legacy rule expands to no valid branch")
-
-    group_ids: set[int] = set()
-    for target in targets:
-        key = _response_match_key(
-            probability=probability,
-            target_scope=target.scope,
-            target_group_id=target.group_id,
-            rule=target.rule,
-            response_shape=response_shape,
-            status=state.status,
-            enabled=state.enabled,
-            deleted_at=state.deleted_at,
-            created_by=str(row.get("created_by") or ""),
-            approved_by="",
-            weight=weight,
-            priority=priority,
-            created_at=created_at,
-        )
-        candidates = responses_by_key.get(key, [])
-        if len(candidates) != 1:
-            raise MigrationError(
-                f"response match not unique for target scope={target.scope}"
-            )
-        matched_row = candidates[0]
-        group_ids.add(int(matched_row["trigger_group_id"]))
-
-    if len(group_ids) != 1:
-        raise MigrationError("response matches span multiple trigger groups")
-    group_id = group_ids.pop()
-    trigger_shape = _legacy_trigger_shape(
-        row,
-        image_catalog=image_catalog,
-        current_image_ids=current_image_ids,
-    )
-    return group_id, trigger_shape
 
 
 def _build_document_payload(
@@ -812,6 +664,32 @@ def _row_variant_snapshot(row: sqlite3.Row) -> dict[str, str | int]:
     }
 
 
+def _variant_lookup_key(
+    *,
+    message_json: str,
+    exact_md5: str,
+) -> tuple[str, str]:
+    return message_json, exact_md5
+
+
+def _dedupe_legacy_trigger_rows(
+    legacy_rows: Sequence[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    rows_by_trigger_id: dict[int, Mapping[str, Any]] = {}
+    unknown_rows: list[Mapping[str, Any]] = []
+    for row in legacy_rows:
+        try:
+            trigger_id = _coerce_int(row.get("trigger_id"), field="trigger_id")
+        except MigrationError:
+            unknown_rows.append(row)
+            continue
+        rows_by_trigger_id.setdefault(trigger_id, row)
+    return [
+        *(rows_by_trigger_id[key] for key in sorted(rows_by_trigger_id)),
+        *unknown_rows,
+    ]
+
+
 def _snapshot_matches(
     current: Mapping[str, str | int],
     expected: Mapping[str, str | int],
@@ -867,32 +745,88 @@ def build_trigger_fix_plan(
     image_root: Path,
     mapping_path: Path | None,
 ) -> tuple[dict[str, object], TriggerFixExportReport]:
-    report = TriggerFixExportReport(scanned_rows=len(legacy_rows))
+    deduped_rows = _dedupe_legacy_trigger_rows(legacy_rows)
+    report = TriggerFixExportReport(scanned_rows=len(deduped_rows))
     with sqlite3.connect(str(db_path)) as connection:
         connection.row_factory = sqlite3.Row
         current_image_ids = _current_image_canonical_ids(connection)
-        responses_by_key, variants_by_group = _load_current_rows(connection)
         image_catalog = build_legacy_image_catalog(image_root, mapping_path)
+        variant_rows = connection.execute(
+            """
+            SELECT *
+            FROM wordbank_trigger_variant
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        variants_by_group: dict[int, list[sqlite3.Row]] = defaultdict(list)
+        group_ids_by_variant_key: dict[tuple[str, str], set[int]] = defaultdict(set)
+        for row in variant_rows:
+            group_id = int(row["trigger_group_id"])
+            variants_by_group[group_id].append(row)
+            group_ids_by_variant_key[
+                _variant_lookup_key(
+                    message_json=str(row["message_json"] or "[]"),
+                    exact_md5=str(row["exact_md5"] or ""),
+                )
+            ].add(group_id)
 
         operations_by_group: dict[int, dict[str, object]] = {}
         desired_by_group: dict[int, dict[str, str]] = {}
         conflicting_group_ids: set[int] = set()
         already_matching_group_ids: set[int] = set()
+        affected_triggers: list[dict[str, object]] = []
 
-        for row in legacy_rows:
+        for row in deduped_rows:
             try:
-                group_id, trigger_shape = _load_target_group_id(
+                original_shape = _legacy_trigger_shape(
                     row=row,
                     image_catalog=image_catalog,
                     current_image_ids=current_image_ids,
-                    responses_by_key=responses_by_key,
+                    normalize_text_segments=False,
+                )
+                normalized_shape = _legacy_trigger_shape(
+                    row=row,
+                    image_catalog=image_catalog,
+                    current_image_ids=current_image_ids,
+                    normalize_text_segments=True,
                 )
             except MigrationError as exc:
                 report.add_skip(str(exc))
                 continue
 
-            report.matched_rows += 1
-            desired_variant = _variant_payload_from_shape(trigger_shape)
+            desired_variant = _variant_payload_from_shape(original_shape)
+            normalized_variant = _variant_payload_from_shape(normalized_shape)
+            if desired_variant == normalized_variant:
+                continue
+
+            report.affected_rows += 1
+            candidate_group_ids = group_ids_by_variant_key.get(
+                _variant_lookup_key(
+                    message_json=normalized_variant["message_json"],
+                    exact_md5=normalized_variant["exact_md5"],
+                ),
+                set(),
+            )
+            if not candidate_group_ids:
+                report.add_skip("normalized_trigger_not_found_in_sqlite")
+                continue
+            if len(candidate_group_ids) != 1:
+                report.add_skip("normalized_trigger_matches_multiple_groups")
+                continue
+
+            group_id = next(iter(candidate_group_ids))
+            report.matched_groups += 1
+            affected_triggers.append(
+                {
+                    "trigger_group_id": group_id,
+                    "legacy_trigger_id": _coerce_int(
+                        row.get("trigger_id"),
+                        field="trigger_id",
+                    ),
+                    "current_trigger_text": normalized_variant["trigger_text"],
+                    "desired_trigger_text": desired_variant["trigger_text"],
+                }
+            )
 
             existing_desired = desired_by_group.get(group_id)
             if existing_desired is not None and existing_desired != desired_variant:
@@ -930,18 +864,24 @@ def build_trigger_fix_plan(
                     "trigger_group_id": group_id,
                     "expected_variants": current_snapshots,
                     "desired_variant": desired_variant,
-                    "legacy_response_ids": [],
                     "legacy_trigger_ids": [],
+                    "affected_legacy_triggers": [],
                 }
                 operations_by_group[group_id] = operation
 
             _append_unique_int(
-                cast(list[int], operation["legacy_response_ids"]),
-                row.get("response_id"),
-            )
-            _append_unique_int(
                 cast(list[int], operation["legacy_trigger_ids"]),
                 row.get("trigger_id"),
+            )
+            cast(list[dict[str, object]], operation["affected_legacy_triggers"]).append(
+                {
+                    "legacy_trigger_id": _coerce_int(
+                        row.get("trigger_id"),
+                        field="trigger_id",
+                    ),
+                    "current_trigger_text": normalized_variant["trigger_text"],
+                    "desired_trigger_text": desired_variant["trigger_text"],
+                }
             )
 
         operations = [
@@ -950,8 +890,17 @@ def build_trigger_fix_plan(
             if group_id not in conflicting_group_ids
         ]
         for operation in operations:
-            cast(list[int], operation["legacy_response_ids"]).sort()
             cast(list[int], operation["legacy_trigger_ids"]).sort()
+            cast(
+                list[dict[str, object]],
+                operation["affected_legacy_triggers"],
+            ).sort(key=lambda item: int(cast(int, item["legacy_trigger_id"])))
+        affected_triggers.sort(
+            key=lambda item: (
+                int(cast(int, item["trigger_group_id"])),
+                int(cast(int, item["legacy_trigger_id"])),
+            )
+        )
 
     report.finalize(
         operations=operations,
@@ -962,6 +911,7 @@ def build_trigger_fix_plan(
             "version": PLAN_VERSION,
             "generated_at": get_current_time(),
             "summary": report.to_dict(),
+            "affected_legacy_triggers": affected_triggers,
             "operations": operations,
         },
         report,
