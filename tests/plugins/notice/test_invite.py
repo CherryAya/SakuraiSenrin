@@ -197,6 +197,68 @@ async def test_notice_invite_request_auto_approves_working_group(
 
 
 @pytest.mark.asyncio
+async def test_notice_invite_request_auto_rejects_banned_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    group = SimpleNamespace(status=GroupStatus.BANNED)
+    create_invitation_mock = AsyncMock(return_value=SimpleNamespace(id=78))
+    update_status_mock = AsyncMock()
+    send_private_i18n_mock = AsyncMock()
+    bot = SimpleNamespace(
+        self_id="99999",
+        set_group_add_request=AsyncMock(),
+    )
+
+    monkeypatch.setattr(
+        notice_invite_plugin.group_repo,
+        "get_group",
+        AsyncMock(return_value=group),
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin,
+        "resolve_group_name",
+        AsyncMock(return_value="封禁群"),
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin.invite_repo,
+        "create_invitation",
+        create_invitation_mock,
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin.invite_repo,
+        "update_status",
+        update_status_mock,
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin.user_repo,
+        "get_user",
+        AsyncMock(return_value=SimpleNamespace(user_id="10001")),
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin,
+        "send_private_i18n",
+        send_private_i18n_mock,
+    )
+    monkeypatch.setattr(notice_invite_plugin.asyncio, "sleep", AsyncMock())
+
+    event = build_group_request_event(user_id=10001, group_id=20001, flag="flag-2")
+
+    await _run_handler(bot=bot, event=event)
+
+    bot.set_group_add_request.assert_awaited_once_with(
+        flag="flag-2",
+        sub_type="invite",
+        approve=False,
+    )
+    update_status_mock.assert_awaited_once_with(
+        78,
+        status=InvitationStatus.REJECTED,
+        operator_id="99999",
+    )
+    send_private_i18n_mock.assert_awaited()
+
+
+@pytest.mark.asyncio
 async def test_notice_invite_group_increase_working_group_marks_invitation_processed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -258,3 +320,72 @@ async def test_notice_invite_group_increase_working_group_marks_invitation_proce
         operator_id="99999",
     )
     send_private_i18n_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_notice_invite_group_increase_banned_group_leaves_and_rejects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    group = SimpleNamespace(status=GroupStatus.BANNED)
+    create_invitation_mock = AsyncMock(return_value=SimpleNamespace(id=79))
+    update_status_mock = AsyncMock()
+    send_private_i18n_mock = AsyncMock()
+    bot = SimpleNamespace(
+        self_id="99999",
+        set_group_leave=AsyncMock(),
+    )
+
+    monkeypatch.setattr(
+        notice_invite_plugin.group_repo,
+        "get_group",
+        AsyncMock(return_value=group),
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin,
+        "resolve_group_name",
+        AsyncMock(return_value="封禁群"),
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin.invite_repo,
+        "create_invitation",
+        create_invitation_mock,
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin.invite_repo,
+        "update_status",
+        update_status_mock,
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin.user_repo,
+        "get_user",
+        AsyncMock(return_value=SimpleNamespace(user_id="99999")),
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin,
+        "send_private_i18n",
+        send_private_i18n_mock,
+    )
+    monkeypatch.setattr(notice_invite_plugin.asyncio, "sleep", AsyncMock())
+
+    event = GroupIncreaseNoticeEvent.model_validate(
+        {
+            "time": 1_700_000_000,
+            "self_id": "99999",
+            "post_type": "notice",
+            "notice_type": "group_increase",
+            "sub_type": "invite",
+            "user_id": 99999,
+            "group_id": 20001,
+            "operator_id": 10001,
+        }
+    )
+
+    await _run_handler(bot=bot, event=event)
+
+    bot.set_group_leave.assert_awaited_once_with(group_id=20001)
+    update_status_mock.assert_awaited_once_with(
+        79,
+        status=InvitationStatus.REJECTED,
+        operator_id="99999",
+    )
+    send_private_i18n_mock.assert_awaited()
