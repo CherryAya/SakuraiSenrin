@@ -551,12 +551,13 @@ def register_wordbank_runtime_handlers(
         locale: LocaleCode,
         approval_message: WordbankMessageRefRecord | None = None,
         reviewer_id: str = "",
-    ) -> None:
+        message: str | None = None,
+    ) -> bool:
         context = approval_message
         if context is None:
             context = await _find_creator_submission_context(response_item_id)
         if context is None or not context.user_id:
-            return
+            return False
 
         blocks: list[ReplyRefBlock | AtRefBlock | TextBlock] = []
         if context.source_message_id:
@@ -565,7 +566,8 @@ def register_wordbank_runtime_handlers(
         blocks.append(TextBlock(text=" "))
         blocks.append(
             TextBlock(
-                text=_build_creator_notice_message(
+                text=message
+                or _build_creator_notice_message(
                     action=action,
                     reviewer_id=reviewer_id,
                 )
@@ -586,7 +588,7 @@ def register_wordbank_runtime_handlers(
                         target_id=str(context.group_id),
                     ),
                 )
-                return
+                return True
             await deliver_message_plan(
                 bot,
                 plan=plan,
@@ -595,8 +597,10 @@ def register_wordbank_runtime_handlers(
                     target_id=str(context.user_id),
                 ),
             )
+            return True
         except Exception as exc:
             logger.warning(f"[Wordbank] creator review notice skipped: {exc}")
+            return False
 
     def _message_segment_stats(message: MessagePlanInput) -> tuple[int, int]:
         entry = normalize_message_plan_entry(message)
@@ -1043,15 +1047,27 @@ def register_wordbank_runtime_handlers(
             await matcher.finish()
             return
         if outcome.completed and outcome.approval_message is not None:
-            await notify_approval_source(bot, outcome.approval_message, outcome.message)
             if outcome.action:
-                await notify_creator_review_result(
+                delivered = await notify_creator_review_result(
                     bot,
                     response_item_id=outcome.approval_message.response_item_id,
                     action=outcome.action,
                     locale=locale,
                     approval_message=outcome.approval_message,
                     reviewer_id=str(event.user_id),
+                    message=outcome.message,
+                )
+                if not delivered:
+                    await notify_approval_source(
+                        bot,
+                        outcome.approval_message,
+                        outcome.message,
+                    )
+            else:
+                await notify_approval_source(
+                    bot,
+                    outcome.approval_message,
+                    outcome.message,
                 )
         elif outcome.completed and outcome.batch_notices:
             await notify_creator_review_results(
