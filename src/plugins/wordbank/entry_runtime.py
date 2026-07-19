@@ -302,6 +302,7 @@ def register_wordbank_runtime_handlers(
         if finish_guided_search is None:
             return
         await finish_guided_search(
+            bot,
             matcher,
             state,
             event,

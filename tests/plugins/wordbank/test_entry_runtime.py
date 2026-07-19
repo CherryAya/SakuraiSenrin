@@ -236,6 +236,38 @@ async def test_notify_creator_review_results_merges_batch_notices_by_source_mess
 
 
 @pytest.mark.asyncio
+async def test_send_search_result_view_guided_passes_bot_to_finish_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    finish_guided_search = AsyncMock(return_value=None)
+    exports = _runtime_exports(monkeypatch)
+    bot = cast(Any, SimpleNamespace(self_id="99999"))
+    matcher = cast(Any, SimpleNamespace())
+    event = build_group_message_event("#搜索词条 晚安", message_id=1)
+    state: dict[str, Any] = {}
+
+    await exports["send_search_result_view"](
+        bot,
+        matcher,
+        event,
+        "zh-CN",
+        keyword="晚安",
+        image_scores={7: 0.91},
+        state=state,
+        finish_guided_search=finish_guided_search,
+    )
+
+    finish_guided_search.assert_awaited_once()
+    await_args = finish_guided_search.await_args
+    assert await_args is not None
+    assert await_args.args == (bot, matcher, state, event, "zh-CN")
+    assert await_args.kwargs["page_number"] == 1
+    assert state["wordbank_guided_search_keyword"] == "晚安"
+    assert state["wordbank_guided_search_has_image"] is True
+    assert state["wordbank_guided_search_image_scores"] == {7: 0.91}
+
+
+@pytest.mark.asyncio
 async def test_approval_reply_handler_sends_single_merged_notice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
