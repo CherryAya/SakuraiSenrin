@@ -9,6 +9,7 @@ import pytest
 
 from scripts import export_wordbank_trigger_fix_plan as export_script
 from scripts import fix_wordbank_trigger_migration as fix_script
+from scripts import verify_wordbank_trigger_fix_plan as verify_script
 from scripts.migrations.wordbank_types import LegacyPgConfig
 from src.plugins.wordbank.database.instances import wordbank_main_db
 from src.plugins.wordbank.database.repo import WordbankRepository
@@ -265,3 +266,66 @@ async def test_apply_trigger_fix_plan_skips_when_sqlite_state_changed(
 
     assert row is not None
     assert row[0] == "现在已经被改过"
+
+
+@pytest.mark.asyncio
+async def test_verify_trigger_fix_plan_succeeds_after_apply(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = await _prepare_database(tmp_path, monkeypatch)
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+
+    plan_payload, _ = await asyncio.to_thread(
+        fix_script.build_trigger_fix_plan,
+        db_path=db_path,
+        legacy_rows=[_legacy_row()],
+        image_root=image_root,
+        mapping_path=None,
+    )
+    await asyncio.to_thread(
+        fix_script.apply_trigger_fix_plan,
+        db_path=db_path,
+        plan_payload=plan_payload,
+        dry_run=False,
+    )
+
+    report = await asyncio.to_thread(
+        verify_script.verify_trigger_fix_plan,
+        db_path=db_path,
+        plan_payload=plan_payload,
+    )
+
+    assert report.ok is True
+    assert report.verified_groups == 1
+    assert report.failed_groups == 0
+
+
+@pytest.mark.asyncio
+async def test_verify_trigger_fix_plan_fails_before_apply(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = await _prepare_database(tmp_path, monkeypatch)
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+
+    plan_payload, _ = await asyncio.to_thread(
+        fix_script.build_trigger_fix_plan,
+        db_path=db_path,
+        legacy_rows=[_legacy_row()],
+        image_root=image_root,
+        mapping_path=None,
+    )
+
+    report = await asyncio.to_thread(
+        verify_script.verify_trigger_fix_plan,
+        db_path=db_path,
+        plan_payload=plan_payload,
+    )
+
+    assert report.ok is False
+    assert report.verified_groups == 0
+    assert report.failed_groups == 1
+    assert report.failed_reasons == {"desired_state_mismatch": 1}
