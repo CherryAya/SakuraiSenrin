@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 from pathlib import Path
 import sys
 import traceback
@@ -147,6 +148,7 @@ async def _run_job(
 
 
 async def main() -> None:
+    os.environ["SAKURAI_WATER_WORKER"] = "1"
     nonebot.init()
     from src.plugins.water.services.worker_jobs import (
         WaterWorkerManifest,

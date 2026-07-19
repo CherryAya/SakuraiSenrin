@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -86,10 +87,13 @@ async def run_water_subprocess_job(
         timeout_seconds,
         output_dir,
     )
+    env = dict(os.environ)
+    env["SAKURAI_WATER_WORKER"] = "1"
     started = perf_counter()
     process = await asyncio.create_subprocess_exec(
         *command,
         cwd=str(ROOT),
+        env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -54,6 +55,47 @@ assert water_module.water_recorder.block is False
         capture_output=True,
         text=True,
         check=False,
+    )
+    output = f"{result.stdout}\n{result.stderr}"
+
+    assert result.returncode == 0, output
+
+
+def test_water_worker_mode_import_does_not_register_scheduler_jobs() -> None:
+    script = """
+import os
+import nonebot
+
+os.environ["SAKURAI_WATER_WORKER"] = "1"
+nonebot.init(
+    SUPERUSERS={"1"},
+    IGNORED_USERS=set(),
+    MAIN_GROUP_ID="10001",
+    GITHUB_TOKEN="test-token",
+    GITHUB_REPO="owner/repo",
+    GITHUB_BRANCH="main",
+    command_start={"#", "＃", "井"},
+    command_sep={"."},
+)
+
+nonebot.require("nonebot_plugin_apscheduler")
+from nonebot_plugin_apscheduler import scheduler
+from src.plugins.water.database import water_repo
+
+assert water_repo is not None
+assert scheduler.get_job("water_message_archive") is None
+assert scheduler.get_job("water_summary_archive") is None
+assert scheduler.get_job("water_daily_report_push") is None
+"""
+    env = dict(os.environ)
+    env["SAKURAI_WATER_WORKER"] = "1"
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
     )
     output = f"{result.stdout}\n{result.stderr}"
 
