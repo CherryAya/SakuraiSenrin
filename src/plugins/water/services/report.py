@@ -1093,6 +1093,7 @@ class WaterReportService:
         self,
         record_date: int,
     ) -> WaterDailyReportBatchContext:
+        context_started = perf_counter()
         previous_date = water_repo._previous_date(record_date)
         current_rows_all = tuple(
             await water_repo.get_summaries_in_window(record_date, record_date)
@@ -1110,6 +1111,20 @@ class WaterReportService:
         history_dates, history_by_group = await self._build_group_rank_history_cache(
             end_record_date=record_date,
             group_ids=current_group_ids,
+        )
+        logger.info(
+            (
+                "[Water][ReportPush] batch context date={} current_rows={} "
+                "previous_rows={} distribution_groups={} history_groups={} "
+                "history_days={} elapsed_ms={:.2f}"
+            ),
+            record_date,
+            len(current_rows_all),
+            len(previous_rows_all),
+            len(distribution_items),
+            len(history_by_group),
+            len(history_dates),
+            (perf_counter() - context_started) * 1000,
         )
         return WaterDailyReportBatchContext(
             record_date=record_date,

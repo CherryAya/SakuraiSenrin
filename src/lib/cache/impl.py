@@ -43,12 +43,15 @@ class UserCache(BaseCache[UserCacheItem]):
                 user_id=user_id,
                 name_hash=name_hash,
                 permission=resolve_unset(permission, Permission.NORMAL),
+                display_name=resolve_unset(user_name, ""),
             )
             self.set(user_id, user)
             return
 
         if is_set(user_name) and user.name_hash != hash(user_name):
             user = user.with_name_hash(name_hash)
+        if is_set(user_name):
+            user = user.with_display_name(user_name)
         if is_set(permission):
             user = user.with_permission(permission)
         self.set(user_id, user)
@@ -86,12 +89,15 @@ class GroupCache(BaseCache[GroupCacheItem]):
                 name_hash=name_hash,
                 status=resolve_unset(status, GroupStatus.UNAUTHORIZED),
                 is_all_shut=resolve_unset(is_all_shut, False),
+                display_name=resolve_unset(group_name, ""),
             )
             self.set(group_id, group)
             return
 
         if is_set(group_name) and group.name_hash != hash(group_name):
             group = group.with_name_hash(name_hash)
+        if is_set(group_name):
+            group = group.with_display_name(group_name)
         if is_set(is_all_shut):
             group = group.with_all_shut(is_all_shut)
         if is_set(status):
@@ -113,7 +119,7 @@ class GroupCache(BaseCache[GroupCacheItem]):
         group = self.get(group_id)
         if not group:
             return
-        n_group = group.with_name_hash(hash(group_name))
+        n_group = group.with_name_hash(hash(group_name)).with_display_name(group_name)
         if n_group is not group:
             self.set(group_id, n_group)
 
@@ -139,7 +145,8 @@ class MemberCache(BaseCache[MemberCacheItem]):
     ) -> None:
         key = self._gen_key(user_id, group_id)
         member = self.get(key)
-        new_hash = hash(group_card or "")
+        normalized_group_card = resolve_unset(group_card, "")
+        new_hash = hash(normalized_group_card)
 
         if not member:
             self.set(
@@ -147,11 +154,14 @@ class MemberCache(BaseCache[MemberCacheItem]):
                 MemberCacheItem(
                     card_hash=new_hash,
                     permission=resolve_unset(permission, Permission.NORMAL),
+                    group_card=normalized_group_card,
                 ),
             )
             return
         if is_set(group_card) and member.card_hash != hash(group_card):
             member = member.with_card_hash(new_hash)
+        if is_set(group_card):
+            member = member.with_group_card(group_card)
         if is_set(permission):
             member = member.with_permission(permission)
         self.set(key, member)

@@ -151,6 +151,7 @@ class UserRepository:
                     user_id=str(u.user_id),
                     name_hash=hash(u.user_name),
                     permission=u.permission,
+                    display_name=u.user_name,
                 )
                 for u in users
             },
@@ -173,15 +174,44 @@ class UserRepository:
             return self.cache.get(user_id)
 
     async def get_name_by_uid(self, user_id: str) -> str | None:
+        if item := self.cache.get(user_id):
+            if item.display_name:
+                return item.display_name
         async with core_db.session() as session:
-            return await UserOps(session).get_name_by_uid(user_id)
+            db_user = await UserOps(session).get_by_user_id(user_id)
+        if db_user is None:
+            return None
+        self.cache.upsert_user(
+            user_id=str(db_user.user_id),
+            user_name=db_user.user_name,
+            permission=db_user.permission,
+        )
+        return db_user.user_name or None
 
     async def get_names_by_uids(self, user_ids: list[str]) -> dict[str, str]:
         if not user_ids:
             return {}
+        unique_user_ids = list(dict.fromkeys(user_ids))
+        resolved: dict[str, str] = {}
+        missing_user_ids: list[str] = []
+        for user_id in unique_user_ids:
+            item = self.cache.get(user_id)
+            if item is not None and item.display_name:
+                resolved[user_id] = item.display_name
+                continue
+            missing_user_ids.append(user_id)
+        if not missing_user_ids:
+            return resolved
         async with core_db.session() as session:
-            stmt = select(User.user_id, User.user_name).where(
-                User.user_id.in_(user_ids)
-            )
+            stmt = select(User).where(User.user_id.in_(missing_user_ids))
             result = await session.execute(stmt)
-            return {str(user_id): user_name for user_id, user_name in result.all()}
+            db_users = result.scalars().all()
+        for db_user in db_users:
+            resolved_user_id = str(db_user.user_id)
+            self.cache.upsert_user(
+                user_id=resolved_user_id,
+                user_name=db_user.user_name,
+                permission=db_user.permission,
+            )
+            resolved[resolved_user_id] = db_user.user_name
+        return resolved

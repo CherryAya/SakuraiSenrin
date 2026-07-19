@@ -181,6 +181,7 @@ class MemberRepository:
                 self.cache._gen_key(m.user_id, m.group_id): MemberCacheItem(
                     card_hash=hash(m.group_card),
                     permission=m.permission,
+                    group_card=m.group_card,
                 )
                 for m in members
             },
@@ -208,8 +209,20 @@ class MemberRepository:
             return self.cache.get_member(user_id, group_id)
 
     async def get_card_by_uid_gid(self, user_id: str, group_id: str) -> str | None:
+        if item := self.cache.get_member(user_id, group_id):
+            if item.group_card:
+                return item.group_card
         async with core_db.session() as session:
-            return await MemberOps(session).get_card_by_uid_gid(user_id, group_id)
+            db_member = await MemberOps(session).get_by_uid_gid(user_id, group_id)
+        if db_member is None:
+            return None
+        self.cache.upsert_member(
+            user_id=str(db_member.user_id),
+            group_id=str(db_member.group_id),
+            group_card=db_member.group_card,
+            permission=db_member.permission,
+        )
+        return db_member.group_card or None
 
     async def get_admin_member_by_uid(self, user_id: str) -> Sequence[Member]:
         async with core_db.session() as session:

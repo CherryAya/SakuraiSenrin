@@ -8,9 +8,12 @@ Description: group 相关实现
 
 from dataclasses import dataclass
 
+from sqlalchemy import select
+
 from src.database.consts import WritePolicy
 from src.database.core.consts import GroupStatus
 from src.database.core.ops import GroupOps
+from src.database.core.tables import Group
 from src.database.instances import core_db, log_db, snapshot_db
 from src.database.log.consts import AuditAction, AuditCategory, AuditContext
 from src.database.log.ops import AuditLogOps
@@ -168,6 +171,7 @@ class GroupRepository:
                     name_hash=hash(g.group_name),
                     status=g.status,
                     is_all_shut=False,
+                    display_name=g.group_name,
                 )
                 for g in db_groups
             },
@@ -190,14 +194,47 @@ class GroupRepository:
             return self.cache.get(group_id)
 
     async def get_name_by_gid(self, group_id: str) -> str | None:
+        if item := self.cache.get(group_id):
+            if item.display_name:
+                return item.display_name
         async with core_db.session() as session:
-            return await GroupOps(session).get_name_by_gid(group_id)
+            db_group = await GroupOps(session).get_by_group_id(group_id)
+        if db_group is None:
+            return None
+        self.cache.upsert_group(
+            group_id=str(db_group.group_id),
+            group_name=db_group.group_name,
+            status=db_group.status,
+        )
+        return db_group.group_name or None
 
     async def get_names_by_gids(self, group_ids: list[str]) -> dict[str, str]:
         if not group_ids:
             return {}
+        unique_group_ids = list(dict.fromkeys(group_ids))
+        resolved: dict[str, str] = {}
+        missing_group_ids: list[str] = []
+        for group_id in unique_group_ids:
+            item = self.cache.get(group_id)
+            if item is not None and item.display_name:
+                resolved[group_id] = item.display_name
+                continue
+            missing_group_ids.append(group_id)
+        if not missing_group_ids:
+            return resolved
         async with core_db.session() as session:
-            return await GroupOps(session).get_names_by_gids(group_ids)
+            stmt = select(Group).where(Group.group_id.in_(missing_group_ids))
+            result = await session.execute(stmt)
+            db_groups = result.scalars().all()
+        for db_group in db_groups:
+            resolved_group_id = str(db_group.group_id)
+            self.cache.upsert_group(
+                group_id=resolved_group_id,
+                group_name=db_group.group_name,
+                status=db_group.status,
+            )
+            resolved[resolved_group_id] = db_group.group_name
+        return resolved
 
     async def update_status(self, group_id: str, status: GroupStatus) -> None:
         return await self.save_group(

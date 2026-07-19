@@ -23,12 +23,18 @@ class UserCacheItem:
     user_id: str
     name_hash: int
     permission: Permission
+    display_name: str = ""
     is_self_ignore: bool = False
 
     def with_name_hash(self, new_hash: int) -> Self:
         if self.name_hash == new_hash:
             return self
         return replace(self, name_hash=new_hash)
+
+    def with_display_name(self, new_name: str) -> Self:
+        if self.display_name == new_name:
+            return self
+        return replace(self, display_name=new_name)
 
     def with_permission(self, new_permission: Permission) -> Self:
         if self.permission == new_permission:
@@ -47,12 +53,18 @@ class GroupCacheItem:
     name_hash: int
     status: GroupStatus
     is_all_shut: bool
+    display_name: str = ""
     disabled_plugins: frozenset[str] = field(default_factory=frozenset)
 
     def with_name_hash(self, new_hash: int) -> Self:
         if self.name_hash == new_hash:
             return self
         return replace(self, name_hash=new_hash)
+
+    def with_display_name(self, new_name: str) -> Self:
+        if self.display_name == new_name:
+            return self
+        return replace(self, display_name=new_name)
 
     def with_status(self, new_status: GroupStatus) -> Self:
         if self.status == new_status:
@@ -91,11 +103,17 @@ class BlacklistCacheItem:
 class MemberCacheItem:
     card_hash: int
     permission: Permission
+    group_card: str = ""
 
     def with_card_hash(self, new_hash: int) -> Self:
         if self.card_hash == new_hash:
             return self
         return replace(self, card_hash=new_hash)
+
+    def with_group_card(self, new_card: str) -> Self:
+        if self.group_card == new_card:
+            return self
+        return replace(self, group_card=new_card)
 
     def with_permission(self, new_permission: Permission) -> Self:
         if self.permission == new_permission:
