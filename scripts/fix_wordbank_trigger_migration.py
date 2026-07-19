@@ -1,9 +1,8 @@
-"""Repair legacy wordbank trigger rows in SQLite from the old PostgreSQL source."""
+"""Apply an exported wordbank trigger-fix plan to SQLite without PostgreSQL."""
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -23,7 +22,6 @@ from scripts.migrations.wordbank_legacy_source import (
     _default_legacy_image_mapping_path,
     _default_legacy_image_root,
     build_legacy_image_catalog,
-    fetch_legacy_response_rows,
     load_legacy_pg_config,
 )
 from scripts.migrations.wordbank_rules import (
@@ -58,21 +56,84 @@ from src.plugins.wordbank.message_model import (
 )
 
 DEFAULT_DB_PATH = ROOT / "data" / "db" / "wordbank_db" / "wordbank_main.db"
-DEFAULT_REPORT_PATH = "./data/db/wordbank-trigger-fix-report.json"
+DEFAULT_PLAN_PATH = ROOT / ".devtest" / "wordbank-trigger-fix-plan.json"
+DEFAULT_REPORT_PATH = ROOT / ".devtest" / "wordbank-trigger-fix-apply-report.json"
+PLAN_VERSION = 1
+VARIANT_FIELD_NAMES = (
+    "trigger_text",
+    "message_json",
+    "exact_md5",
+    "structure_key",
+    "search_text",
+    "search_tokens",
+    "image_keys",
+)
+GROUP_SAFE_MATCH_FIELDS = (
+    "structure_key",
+    "search_tokens",
+    "image_keys",
+)
 
 
 @dataclass(slots=True)
-class TriggerFixReport:
+class TriggerFixExportReport:
     scanned_rows: int = 0
     matched_rows: int = 0
+    planned_groups: int = 0
+    planned_variants: int = 0
+    already_matching_groups: int = 0
+    skipped_rows: int = 0
+    skipped_reasons: Counter[str] = field(default_factory=Counter)
+    planned_group_ids: list[int] = field(default_factory=list)
+    already_matching_group_ids: list[int] = field(default_factory=list)
+
+    def add_skip(self, reason: str) -> None:
+        self.skipped_rows += 1
+        self.skipped_reasons[reason] += 1
+
+    def finalize(
+        self,
+        *,
+        operations: Sequence[Mapping[str, object]],
+        already_matching_group_ids: set[int],
+    ) -> None:
+        self.planned_group_ids = sorted(
+            int(cast(int, operation["trigger_group_id"])) for operation in operations
+        )
+        self.planned_groups = len(self.planned_group_ids)
+        self.planned_variants = sum(
+            len(cast(Sequence[object], operation["expected_variants"]))
+            for operation in operations
+        )
+        self.already_matching_group_ids = sorted(already_matching_group_ids)
+        self.already_matching_groups = len(self.already_matching_group_ids)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "scanned_rows": self.scanned_rows,
+            "matched_rows": self.matched_rows,
+            "planned_groups": self.planned_groups,
+            "planned_variants": self.planned_variants,
+            "already_matching_groups": self.already_matching_groups,
+            "skipped_rows": self.skipped_rows,
+            "skipped_reasons": dict(self.skipped_reasons),
+            "planned_group_ids": self.planned_group_ids,
+            "already_matching_group_ids": self.already_matching_group_ids,
+        }
+
+
+@dataclass(slots=True)
+class TriggerFixApplyReport:
+    scanned_operations: int = 0
     updated_groups: int = 0
     updated_variants: int = 0
-    skipped_rows: int = 0
+    already_applied_groups: int = 0
+    skipped_operations: int = 0
     skipped_reasons: Counter[str] = field(default_factory=Counter)
     updated_group_ids: list[int] = field(default_factory=list)
 
     def add_skip(self, reason: str) -> None:
-        self.skipped_rows += 1
+        self.skipped_operations += 1
         self.skipped_reasons[reason] += 1
 
     def add_update(self, group_id: int, variant_count: int) -> None:
@@ -80,13 +141,16 @@ class TriggerFixReport:
         self.updated_variants += variant_count
         self.updated_group_ids.append(group_id)
 
+    def add_already_applied(self) -> None:
+        self.already_applied_groups += 1
+
     def to_dict(self) -> dict[str, object]:
         return {
-            "scanned_rows": self.scanned_rows,
-            "matched_rows": self.matched_rows,
+            "scanned_operations": self.scanned_operations,
             "updated_groups": self.updated_groups,
             "updated_variants": self.updated_variants,
-            "skipped_rows": self.skipped_rows,
+            "already_applied_groups": self.already_applied_groups,
+            "skipped_operations": self.skipped_operations,
             "skipped_reasons": dict(self.skipped_reasons),
             "updated_group_ids": self.updated_group_ids,
         }
@@ -95,68 +159,42 @@ class TriggerFixReport:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--old-repo",
-        default="../sakuraisenrin-old",
-        help="path to the legacy repository root",
-    )
-    parser.add_argument(
-        "--image-root",
-        help=(
-            "path to the recovered image directory; defaults to "
-            "../SakuraiSenrinPic/recovered_files relative to --old-repo"
-        ),
-    )
-    parser.add_argument(
-        "--mapping-file",
-        help=(
-            "path to the legacy image mapping file; defaults to "
-            "../SakuraiSenrinPic/file_mapping.json relative to --old-repo"
-        ),
-    )
-    parser.add_argument(
-        "--pg-host",
-        help="legacy PostgreSQL host override",
-    )
-    parser.add_argument(
-        "--pg-port",
-        type=int,
-        help="legacy PostgreSQL port override",
-    )
-    parser.add_argument(
-        "--pg-user",
-        help="legacy PostgreSQL user override",
-    )
-    parser.add_argument(
-        "--pg-password",
-        help="legacy PostgreSQL password override",
-    )
-    parser.add_argument(
-        "--pg-database",
-        default="senrin_wordbank",
-        help="legacy PostgreSQL database name",
-    )
-    parser.add_argument(
         "--db-path",
         default=str(DEFAULT_DB_PATH),
         help="path to the target wordbank_main.db",
     )
     parser.add_argument(
+        "--input",
+        default=str(DEFAULT_PLAN_PATH),
+        help="path to the exported trigger-fix plan JSON",
+    )
+    parser.add_argument(
         "--report",
-        default=DEFAULT_REPORT_PATH,
-        help="where to write the fix report JSON",
+        default=str(DEFAULT_REPORT_PATH),
+        help="where to write the apply report JSON",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="scan and report without writing changes",
+        help="scan and validate without writing changes",
     )
     return parser.parse_args()
 
 
-def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path | None, Path | None]:
+def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
     old_repo_root = Path(args.old_repo).resolve()
-    image_root = Path(args.image_root).resolve() if args.image_root else None
-    mapping_path = Path(args.mapping_file).resolve() if args.mapping_file else None
+    image_root = (
+        Path(args.image_root).resolve()
+        if args.image_root
+        else _default_legacy_image_root(old_repo_root)
+    )
+    mapping_path = (
+        Path(args.mapping_file).resolve()
+        if args.mapping_file
+        else _default_legacy_image_mapping_path(old_repo_root)
+    )
+    if not mapping_path.is_file():
+        mapping_path = None
     return old_repo_root, image_root, mapping_path
 
 
@@ -399,7 +437,8 @@ def _load_current_rows(
     responses_by_key: dict[tuple[object, ...], list[sqlite3.Row]] = defaultdict(list)
     for row in response_rows:
         key = _current_response_match_key(
-            row, probability=float(row["group_probability"])
+            row,
+            probability=float(row["group_probability"]),
         )
         responses_by_key[key].append(row)
 
@@ -716,23 +755,130 @@ def _rebuild_search_index(connection: sqlite3.Connection) -> None:
         )
 
 
-def fix_wordbank_trigger_migration(
+def _normalize_variant_snapshot(payload: Mapping[str, object]) -> dict[str, str | int]:
+    return {
+        "id": _coerce_int(payload["id"], field="id"),
+        "trigger_group_id": _coerce_int(
+            payload["trigger_group_id"],
+            field="trigger_group_id",
+        ),
+        "trigger_text": str(payload.get("trigger_text") or ""),
+        "message_json": str(payload.get("message_json") or "[]"),
+        "exact_md5": str(payload.get("exact_md5") or ""),
+        "structure_key": str(payload.get("structure_key") or ""),
+        "search_text": str(payload.get("search_text") or ""),
+        "search_tokens": str(payload.get("search_tokens") or ""),
+        "image_keys": str(payload.get("image_keys") or ""),
+    }
+
+
+def _variant_payload_from_shape(shape: MessageShape) -> dict[str, str]:
+    fingerprint = fingerprint_shape(shape)
+    return {
+        "trigger_text": fingerprint.summary_text,
+        "message_json": shape_to_payload(shape),
+        "exact_md5": fingerprint.exact_md5,
+        "structure_key": fingerprint.structure_key,
+        "search_text": fingerprint.search_text,
+        "search_tokens": fingerprint.search_tokens,
+        "image_keys": fingerprint.image_keys,
+    }
+
+
+def _load_plan(path: Path) -> dict[str, object]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("fix plan root must be an object")
+    version = int(payload.get("version", 0) or 0)
+    if version != PLAN_VERSION:
+        raise ValueError(f"unsupported fix plan version: {version}")
+    operations = payload.get("operations")
+    if not isinstance(operations, list):
+        raise ValueError("fix plan missing operations")
+    return payload
+
+
+def _row_variant_snapshot(row: sqlite3.Row) -> dict[str, str | int]:
+    return {
+        "id": int(row["id"]),
+        "trigger_group_id": int(row["trigger_group_id"]),
+        "trigger_text": str(row["trigger_text"] or ""),
+        "message_json": str(row["message_json"] or "[]"),
+        "exact_md5": str(row["exact_md5"] or ""),
+        "structure_key": str(row["structure_key"] or ""),
+        "search_text": str(row["search_text"] or ""),
+        "search_tokens": str(row["search_tokens"] or ""),
+        "image_keys": str(row["image_keys"] or ""),
+    }
+
+
+def _snapshot_matches(
+    current: Mapping[str, str | int],
+    expected: Mapping[str, str | int],
+) -> bool:
+    return all(current[key] == expected[key] for key in current)
+
+
+def _variant_matches_desired(
+    current: Mapping[str, str | int],
+    desired: Mapping[str, str],
+) -> bool:
+    return all(
+        str(current[field_name]) == desired[field_name]
+        for field_name in VARIANT_FIELD_NAMES
+    )
+
+
+def _group_fix_is_safe(
+    current_variants: Sequence[Mapping[str, str | int]],
+    desired: Mapping[str, str],
+) -> bool:
+    return all(
+        str(variant[field_name]) == desired[field_name]
+        for variant in current_variants
+        for field_name in GROUP_SAFE_MATCH_FIELDS
+    )
+
+
+def _desired_variant_payload(
+    payload: Mapping[str, object],
+) -> dict[str, str]:
+    desired: dict[str, str] = {}
+    for field_name in VARIANT_FIELD_NAMES:
+        if field_name not in payload:
+            raise ValueError(f"desired_variant missing field: {field_name}")
+        desired[field_name] = str(payload.get(field_name) or "")
+    return desired
+
+
+def _append_unique_int(target: list[int], value: object) -> None:
+    try:
+        parsed = _coerce_int(value, field="legacy_id")
+    except MigrationError:
+        return
+    if parsed not in target:
+        target.append(parsed)
+
+
+def build_trigger_fix_plan(
     *,
     db_path: Path,
+    legacy_rows: Sequence[Mapping[str, Any]],
     image_root: Path,
     mapping_path: Path | None,
-    pg_config: LegacyPgConfig,
-    dry_run: bool = False,
-) -> TriggerFixReport:
-    report = TriggerFixReport()
-    image_catalog = build_legacy_image_catalog(image_root, mapping_path)
+) -> tuple[dict[str, object], TriggerFixExportReport]:
+    report = TriggerFixExportReport(scanned_rows=len(legacy_rows))
     with sqlite3.connect(str(db_path)) as connection:
         connection.row_factory = sqlite3.Row
         current_image_ids = _current_image_canonical_ids(connection)
         responses_by_key, variants_by_group = _load_current_rows(connection)
-        legacy_rows = asyncio.run(fetch_legacy_response_rows(pg_config))
-        report.scanned_rows = len(legacy_rows)
-        repair_time = get_current_time()
+        image_catalog = build_legacy_image_catalog(image_root, mapping_path)
+
+        operations_by_group: dict[int, dict[str, object]] = {}
+        desired_by_group: dict[int, dict[str, str]] = {}
+        conflicting_group_ids: set[int] = set()
+        already_matching_group_ids: set[int] = set()
+
         for row in legacy_rows:
             try:
                 group_id, trigger_shape = _load_target_group_id(
@@ -741,33 +887,184 @@ def fix_wordbank_trigger_migration(
                     current_image_ids=current_image_ids,
                     responses_by_key=responses_by_key,
                 )
-            except Exception as exc:
-                report.add_skip(f"{type(exc).__name__}: {exc}")
-                continue
-
-            variant_rows = variants_by_group.get(group_id, [])
-            if not variant_rows:
-                report.add_skip(f"group {group_id}: missing trigger variants")
-                continue
-
-            desired_fingerprint = fingerprint_shape(trigger_shape)
-            desired_payload = shape_to_payload(trigger_shape)
-            current_payloads = {
-                shape_to_payload(
-                    shape_from_payload(str(variant_row["message_json"] or "[]"))
-                )
-                for variant_row in variant_rows
-            }
-            if len(current_payloads) > 1:
-                report.add_skip(f"group {group_id}: multiple trigger variants differ")
-                continue
-            if current_payloads == {desired_payload}:
-                report.matched_rows += 1
+            except MigrationError as exc:
+                report.add_skip(str(exc))
                 continue
 
             report.matched_rows += 1
+            desired_variant = _variant_payload_from_shape(trigger_shape)
+
+            existing_desired = desired_by_group.get(group_id)
+            if existing_desired is not None and existing_desired != desired_variant:
+                operations_by_group.pop(group_id, None)
+                desired_by_group.pop(group_id, None)
+                already_matching_group_ids.discard(group_id)
+                conflicting_group_ids.add(group_id)
+                report.add_skip(f"group {group_id}: conflicting_pg_targets")
+                continue
+            if group_id in conflicting_group_ids:
+                report.add_skip(f"group {group_id}: conflicting_pg_targets")
+                continue
+            desired_by_group[group_id] = desired_variant
+
+            current_rows = variants_by_group.get(group_id, [])
+            if not current_rows:
+                report.add_skip(f"group {group_id}: no_current_variants")
+                continue
+
+            current_snapshots = [_row_variant_snapshot(item) for item in current_rows]
+            if all(
+                _variant_matches_desired(snapshot, desired_variant)
+                for snapshot in current_snapshots
+            ):
+                already_matching_group_ids.add(group_id)
+                continue
+
+            if not _group_fix_is_safe(current_snapshots, desired_variant):
+                report.add_skip(f"group {group_id}: incompatible_current_variants")
+                continue
+
+            operation = operations_by_group.get(group_id)
+            if operation is None:
+                operation = {
+                    "trigger_group_id": group_id,
+                    "expected_variants": current_snapshots,
+                    "desired_variant": desired_variant,
+                    "legacy_response_ids": [],
+                    "legacy_trigger_ids": [],
+                }
+                operations_by_group[group_id] = operation
+
+            _append_unique_int(
+                cast(list[int], operation["legacy_response_ids"]),
+                row.get("response_id"),
+            )
+            _append_unique_int(
+                cast(list[int], operation["legacy_trigger_ids"]),
+                row.get("trigger_id"),
+            )
+
+        operations = [
+            operations_by_group[group_id]
+            for group_id in sorted(operations_by_group)
+            if group_id not in conflicting_group_ids
+        ]
+        for operation in operations:
+            cast(list[int], operation["legacy_response_ids"]).sort()
+            cast(list[int], operation["legacy_trigger_ids"]).sort()
+
+    report.finalize(
+        operations=operations,
+        already_matching_group_ids=already_matching_group_ids,
+    )
+    return (
+        {
+            "version": PLAN_VERSION,
+            "generated_at": get_current_time(),
+            "summary": report.to_dict(),
+            "operations": operations,
+        },
+        report,
+    )
+
+
+def apply_trigger_fix_plan(
+    *,
+    db_path: Path,
+    plan_payload: Mapping[str, object],
+    dry_run: bool = False,
+) -> TriggerFixApplyReport:
+    operations_raw = plan_payload.get("operations")
+    if not isinstance(operations_raw, list):
+        raise ValueError("fix plan missing operations")
+
+    report = TriggerFixApplyReport(scanned_operations=len(operations_raw))
+    with sqlite3.connect(str(db_path)) as connection:
+        connection.row_factory = sqlite3.Row
+        repair_time = get_current_time()
+        changed = False
+        for operation_raw in operations_raw:
+            if not isinstance(operation_raw, Mapping):
+                report.add_skip("operation_not_object")
+                continue
+
+            try:
+                group_id = int(operation_raw["trigger_group_id"])
+                expected_variants_raw = operation_raw["expected_variants"]
+                desired_variant_raw = operation_raw["desired_variant"]
+            except Exception as exc:
+                report.add_skip(f"invalid_operation: {type(exc).__name__}")
+                continue
+
+            if not isinstance(expected_variants_raw, list) or not isinstance(
+                desired_variant_raw,
+                Mapping,
+            ):
+                report.add_skip("invalid_operation_shape")
+                continue
+
+            expected_variants = [
+                _normalize_variant_snapshot(
+                    cast(Mapping[str, object], item),
+                )
+                for item in expected_variants_raw
+                if isinstance(item, Mapping)
+            ]
+            if not expected_variants:
+                report.add_skip(f"group {group_id}: expected_variants_empty")
+                continue
+            if len(expected_variants) != len(expected_variants_raw):
+                report.add_skip(f"group {group_id}: invalid_expected_variants")
+                continue
+
+            try:
+                desired_variant = _desired_variant_payload(desired_variant_raw)
+            except ValueError as exc:
+                report.add_skip(f"group {group_id}: {exc}")
+                continue
+
+            variant_ids = [int(item["id"]) for item in expected_variants]
+            rows = connection.execute(
+                f"""
+                SELECT *
+                FROM wordbank_trigger_variant
+                WHERE id IN ({",".join("?" for _ in variant_ids)})
+                ORDER BY id ASC
+                """,
+                variant_ids,
+            ).fetchall()
+            if len(rows) != len(variant_ids):
+                report.add_skip(f"group {group_id}: variant_count_mismatch")
+                continue
+
+            rows_by_id = {int(row["id"]): row for row in rows}
+            expected_by_id = {int(item["id"]): item for item in expected_variants}
+            invalid_group = False
+            current_matches_expected = True
+            current_matches_desired = True
+            for variant_id in variant_ids:
+                row = rows_by_id[variant_id]
+                if int(row["trigger_group_id"]) != group_id:
+                    invalid_group = True
+                    break
+                current_snapshot = _row_variant_snapshot(row)
+                expected_snapshot = expected_by_id[variant_id]
+                if not _snapshot_matches(current_snapshot, expected_snapshot):
+                    current_matches_expected = False
+                if not _variant_matches_desired(current_snapshot, desired_variant):
+                    current_matches_desired = False
+            if invalid_group:
+                report.add_skip(f"group {group_id}: variant_group_mismatch")
+                continue
+            if current_matches_desired:
+                report.add_already_applied()
+                continue
+            if not current_matches_expected:
+                report.add_skip(f"group {group_id}: current_state_mismatch")
+                continue
+
             if not dry_run:
-                for variant_row in variant_rows:
+                for variant_id in variant_ids:
                     connection.execute(
                         """
                         UPDATE wordbank_trigger_variant
@@ -783,15 +1080,15 @@ def fix_wordbank_trigger_migration(
                         WHERE id = ?
                         """,
                         (
-                            desired_fingerprint.summary_text,
-                            desired_payload,
-                            desired_fingerprint.exact_md5,
-                            desired_fingerprint.structure_key,
-                            desired_fingerprint.search_text,
-                            desired_fingerprint.search_tokens,
-                            desired_fingerprint.image_keys,
+                            desired_variant["trigger_text"],
+                            desired_variant["message_json"],
+                            desired_variant["exact_md5"],
+                            desired_variant["structure_key"],
+                            desired_variant["search_text"],
+                            desired_variant["search_tokens"],
+                            desired_variant["image_keys"],
                             repair_time,
-                            int(variant_row["id"]),
+                            variant_id,
                         ),
                     )
                 connection.execute(
@@ -802,9 +1099,10 @@ def fix_wordbank_trigger_migration(
                     """,
                     (repair_time, group_id),
                 )
-            report.add_update(group_id, len(variant_rows))
+                changed = True
+            report.add_update(group_id, len(variant_ids))
 
-        if not dry_run:
+        if changed and not dry_run:
             connection.commit()
             _rebuild_search_index(connection)
             connection.commit()
@@ -813,32 +1111,26 @@ def fix_wordbank_trigger_migration(
 
 def main() -> None:
     args = parse_args()
-    old_repo_root, image_root, mapping_path = resolve_paths(args)
-    image_root = image_root or _default_legacy_image_root(old_repo_root)
-    mapping_path = mapping_path or _default_legacy_image_mapping_path(old_repo_root)
     db_path = Path(args.db_path).resolve()
+    input_path = Path(args.input).resolve()
     report_path = Path(args.report).resolve()
-    pg_config = build_pg_config(args)
+    plan_payload = _load_plan(input_path)
 
     logger.info(
         "[wordbank-trigger-fix] starting "
         + json.dumps(
             {
-                "old_repo": str(old_repo_root),
-                "image_root": str(image_root),
-                "mapping_file": str(mapping_path) if mapping_path else "",
                 "db_path": str(db_path),
+                "input": str(input_path),
                 "dry_run": args.dry_run,
             },
             ensure_ascii=False,
         )
     )
 
-    report = fix_wordbank_trigger_migration(
+    report = apply_trigger_fix_plan(
         db_path=db_path,
-        image_root=image_root,
-        mapping_path=mapping_path,
-        pg_config=pg_config,
+        plan_payload=plan_payload,
         dry_run=args.dry_run,
     )
 
