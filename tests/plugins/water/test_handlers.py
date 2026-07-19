@@ -32,6 +32,7 @@ from src.plugins.water.handlers.passive import (
 from src.plugins.water.handlers.query import handle_my_water_profile
 from src.plugins.water.services.season import SeasonServiceError
 from src.plugins.water.services.settlement import SettlementResult
+from src.plugins.water.services.worker_jobs import WaterWorkerManifest
 from tests.plugins.water.helpers import (
     DummyMatcher,
     MatcherFinished,
@@ -500,19 +501,29 @@ async def test_handle_settle_parses_force_flag(
         event_text="#water.admin settle",
     )
     settle_mock = AsyncMock(
-        return_value=SettlementResult(
-            success=True,
-            skipped=False,
-            record_date=20260304,
-            aggregate_rows=1,
-            unlocked_achievements=0,
-            reason="",
+        return_value=SimpleNamespace(
+            manifest=WaterWorkerManifest(
+                job_name="settlement",
+                job_id="job-1",
+                started_at=1,
+                finished_at=2,
+                status="success",
+                record_date=20260304,
+                metrics={
+                    "aggregate_rows": 1,
+                    "unlocked_achievements": 0,
+                    "forced": False,
+                    "reason": "",
+                },
+            ),
+            exit_code=0,
+            timed_out=False,
         )
     )
 
     monkeypatch.setattr(
-        admin_module.water_settlement_service,
-        "run_daily_settlement",
+        admin_module,
+        "run_water_subprocess_job",
         settle_mock,
     )
 
@@ -524,5 +535,6 @@ async def test_handle_settle_parses_force_flag(
     assert awaited_call is not None
     kwargs = awaited_call.kwargs
     assert kwargs["force"] is True
+    assert kwargs["record_date"] is None
     call_api = cast(Any, ctx.bot.call_api)
     call_api.assert_not_awaited()

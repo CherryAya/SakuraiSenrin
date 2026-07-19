@@ -94,6 +94,7 @@ from .handlers import (
     is_water_merge_superuser_event,
     water_help_message,
 )
+from .services.cron_orchestrator import run_water_subprocess_job
 from .services.matrix_suggestion import matrix_suggestion_service
 from .services.query_router import WaterQuerySpec, water_query_router
 from .services.rank_query import water_rank_query_service
@@ -104,8 +105,11 @@ from .services.rank_types import (
     WaterRankScope,
     WaterRankSubject,
 )
-from .services.report import water_report_service
-from .services.settlement import water_settlement_service
+from .services.report import (
+    build_daily_report_prepare_result_from_manifest,
+    water_report_service,
+)
+from .services.settlement import build_settlement_result_from_manifest
 
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
@@ -452,7 +456,12 @@ async def _water_daily_settlement_job() -> None:
         ) as long_task:
             ensure_restore_not_in_progress(source="water_daily_settlement")
             await long_task.advance("processing_items")
-            result = await water_settlement_service.run_daily_settlement()
+            worker_result = await run_water_subprocess_job("settlement")
+            if worker_result.manifest is None:
+                raise RuntimeError(
+                    f"water settlement manifest missing, exit={worker_result.exit_code}"
+                )
+            result = build_settlement_result_from_manifest(worker_result.manifest)
         if result.success:
             logger.success(
                 "[Water] cron settlement done: "
@@ -490,8 +499,16 @@ async def _water_message_archive_job() -> None:
         ) as long_task:
             ensure_restore_not_in_progress(source="water_message_archive")
             await long_task.advance("archiving")
-            await water_repo.archive_message_shards()
-        logger.success("[Water] cron archive done")
+            worker_result = await run_water_subprocess_job("message_archive")
+            if worker_result.manifest is None:
+                raise RuntimeError(
+                    f"water archive manifest missing, exit={worker_result.exit_code}"
+                )
+        logger.success(
+            "[Water] cron archive done: "
+            f"status={worker_result.manifest.status} "
+            f"elapsed_ms={worker_result.elapsed_ms:.2f}"
+        )
     except Exception as e:
         logger.exception(f"[Water] cron archive failed: {e}")
 
@@ -517,10 +534,17 @@ async def _water_summary_archive_job() -> None:
         ) as long_task:
             ensure_restore_not_in_progress(source="water_summary_archive")
             await long_task.advance("archiving")
-            await water_repo.archive_summary_shards()
-            await long_task.advance("processing_items")
-            pruned = await water_repo.prune_hot_summaries()
-        logger.success(f"[Water] cron summary archive done: pruned={pruned}")
+            worker_result = await run_water_subprocess_job("summary_archive")
+            if worker_result.manifest is None:
+                raise RuntimeError(
+                    "water summary archive manifest missing, "
+                    f"exit={worker_result.exit_code}"
+                )
+        pruned = int(worker_result.manifest.metrics.get("pruned", 0))
+        logger.success(
+            f"[Water] cron summary archive done: pruned={pruned} "
+            f"elapsed_ms={worker_result.elapsed_ms:.2f}"
+        )
     except Exception as e:
         logger.exception(f"[Water] cron summary archive failed: {e}")
 
@@ -549,9 +573,29 @@ async def _water_daily_report_push_job() -> None:
             if not bots:
                 logger.warning("[Water][ReportPush] skipped: no bot connected")
                 return
+            await long_task.advance("preparing")
+            worker_result = await run_water_subprocess_job(
+                "daily_report_prepare",
+                locale="zh-CN",
+            )
+            if worker_result.manifest is None:
+                raise RuntimeError(
+                    f"water report manifest missing, exit={worker_result.exit_code}"
+                )
+            prepared = build_daily_report_prepare_result_from_manifest(
+                worker_result.manifest
+            )
+            if prepared.candidate_groups <= 0:
+                logger.warning(
+                    "[Water][ReportPush] skipped: no report candidates "
+                    f"date={prepared.record_date}"
+                )
+                return
             await long_task.advance("sending")
-            result = await water_report_service.run_daily_group_report_push(
+            result = await water_report_service.send_prepared_daily_group_report_push(
                 bot=cast(Bot, bots[0]),
+                prepared=prepared,
+                output_dir=worker_result.output_dir,
                 locale="zh-CN",
                 task=long_task,
             )
