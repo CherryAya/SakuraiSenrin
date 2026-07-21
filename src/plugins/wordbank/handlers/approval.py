@@ -40,6 +40,7 @@ from src.plugins.wordbank.services.core import (
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import (
     WordbankBatchAddResult,
+    format_notice_content_raw_text,
     format_notice_content_summary,
     format_rule_summary,
     format_scope_label,
@@ -79,14 +80,14 @@ def _event_submit_timestamp(event: MessageEvent, created_at: int) -> str:
 
 
 def _trigger_summary(result: WordbankAddResult) -> str:
-    return format_notice_content_summary(
+    return format_notice_content_raw_text(
         result.trigger_text,
         shape=result.trigger_shape,
     )
 
 
 def _response_summary(result: WordbankAddResult) -> str:
-    return format_notice_content_summary(
+    return format_notice_content_raw_text(
         result.response_text,
         shape=result.response_shape,
         response_mode=result.response_mode,
@@ -111,8 +112,8 @@ def format_pending_approval_notice(
     _ = split_detail, locale
     lines = [
         "新增词条待审核",
-        "回复 y / approve / 通过 可通过",
-        "回复 n / reject / 拒绝 可驳回",
+        "回复 通过 可通过",
+        "回复 拒绝 可驳回",
         "",
         f"ID: {result.response_item_id}",
         f"状态: {format_status_label(result.status)}",
@@ -178,8 +179,8 @@ async def build_pending_approval_notice_plan_entry(
 ) -> MessagePlanEntry:
     blocks: list[MessagePlanBlock] = [
         TextBlock("新增词条待审核"),
-        TextBlock("\n回复 y / approve / 通过 可通过"),
-        TextBlock("\n回复 n / reject / 拒绝 可驳回"),
+        TextBlock("\n回复 通过 可通过"),
+        TextBlock("\n回复 拒绝 可驳回"),
         TextBlock("\n"),
     ]
     blocks.extend(

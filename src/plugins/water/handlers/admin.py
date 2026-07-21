@@ -26,6 +26,7 @@ from src.lib.plugin_docs import build_doc_demo_plan_entry
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.renderers import render_season_list
+from src.plugins.water.services.cron_orchestrator import run_water_subprocess_job
 from src.plugins.water.services.report import water_report_service
 from src.plugins.water.services.season import (
     SeasonCreateInput,
@@ -35,7 +36,7 @@ from src.plugins.water.services.season import (
 )
 from src.plugins.water.services.settlement import (
     SettlementResult,
-    water_settlement_service,
+    build_settlement_result_from_manifest,
 )
 
 DOCS_SOURCE = Path(__file__).resolve().parent.parent / "docs" / "README.MD"
@@ -185,9 +186,32 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
         ),
     ) as long_task:
         await long_task.advance("settling")
-        result = await water_settlement_service.run_daily_settlement(
-            target_day,
+        worker_result = await run_water_subprocess_job(
+            "settlement",
+            record_date=(
+                int(target_day.format("YYYYMMDD")) if target_day is not None else None
+            ),
             force=force,
+            locale=ctx.locale,
+        )
+        result = (
+            build_settlement_result_from_manifest(worker_result.manifest)
+            if worker_result.manifest is not None
+            else SettlementResult(
+                success=False,
+                skipped=False,
+                record_date=(
+                    int(target_day.format("YYYYMMDD")) if target_day is not None else 0
+                ),
+                aggregate_rows=0,
+                unlocked_achievements=0,
+                reason=(
+                    f"subprocess_exit_{worker_result.exit_code}"
+                    if not worker_result.timed_out
+                    else "subprocess_timeout"
+                ),
+                forced=force,
+            )
         )
     await _finish_admin(ctx, format_settlement_message(result, ctx.locale))
 

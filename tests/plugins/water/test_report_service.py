@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pathlib
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
@@ -23,8 +24,10 @@ from src.plugins.water.services.report import (
     TODAY_REPORT_COOLDOWN_SECONDS,
     WaterDailyReportBatchResult,
     WaterDailyReportDryRunResult,
+    WaterDailyReportPrepareResult,
     water_report_service,
 )
+from src.plugins.water.services.worker_jobs import WaterPreparedReportItem
 
 
 def test_today_report_cooldown_is_group_shared() -> None:
@@ -482,6 +485,137 @@ async def test_run_daily_group_report_push_reports_batch_progress_every_ten_grou
     assert "下次上报：每完成 10 个群或任务结束。" in str(batch_plan.messages[0])
     assert len(final_plan.messages) == 2
     assert "本次为最终汇总" in str(final_plan.messages[0])
+
+
+@pytest.mark.asyncio
+async def test_prepare_daily_group_report_push_writes_text_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    from src.plugins.water.services import report as report_module
+
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "get_settlement_state",
+        AsyncMock(
+            return_value={
+                "last_success_record_date": 20260613,
+                "latest_record_date": 20260613,
+                "latest_status": "success",
+                "latest_started_at": 0,
+                "latest_finished_at": 0,
+                "ignored_count": 0,
+            }
+        ),
+    )
+    candidates = [
+        WaterDailyReportCandidate(
+            group_id="20002",
+            record_date=20260613,
+            total_msg_count=450,
+            active_user_count=8,
+            active_hours=12,
+            activity_score=610,
+        ),
+        WaterDailyReportCandidate(
+            group_id="20001",
+            record_date=20260613,
+            total_msg_count=320,
+            active_user_count=7,
+            active_hours=10,
+            activity_score=460,
+        ),
+    ]
+    monkeypatch.setattr(
+        report_module.group_repo,
+        "get_working_group_ids",
+        AsyncMock(return_value=["20001", "20002"]),
+    )
+    monkeypatch.setattr(
+        report_module.water_repo,
+        "list_daily_report_candidates",
+        AsyncMock(return_value=candidates),
+    )
+    monkeypatch.setattr(
+        report_module.water_report_service,
+        "_build_daily_report_batch_context",
+        AsyncMock(return_value=SimpleNamespace()),
+    )
+
+    async def _build_message(**kwargs: object) -> object:
+        return text_message(f"R-{kwargs['group_id']}")
+
+    monkeypatch.setattr(
+        report_module.water_report_service,
+        "build_group_report_message",
+        AsyncMock(side_effect=_build_message),
+    )
+
+    result = await water_report_service.prepare_daily_group_report_push(
+        output_dir=tmp_path,
+    )
+
+    assert isinstance(result, WaterDailyReportPrepareResult)
+    assert result.candidate_groups == 2
+    assert result.rendered_groups == 2
+    assert (tmp_path / "20001.txt").read_text(encoding="utf-8") == "R-20001"
+    assert (tmp_path / "20002.txt").read_text(encoding="utf-8") == "R-20002"
+
+
+@pytest.mark.asyncio
+async def test_send_prepared_daily_group_report_push_reads_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    from src.plugins.water.services import report as report_module
+
+    monkeypatch.setattr(report_module.config, "SUPERUSERS", set())
+    monkeypatch.setattr(report_module.asyncio, "sleep", AsyncMock(return_value=None))
+    deliver_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(report_module, "deliver_message_plan", deliver_mock)
+    (tmp_path / "20001.txt").write_text("R-20001", encoding="utf-8")
+    (tmp_path / "20002.txt").write_text("R-20002", encoding="utf-8")
+    prepared = WaterDailyReportPrepareResult(
+        record_date=20260613,
+        candidate_groups=2,
+        rendered_groups=2,
+        skipped_groups=0,
+        failed_groups=0,
+        total_elapsed_ms=12.0,
+        report_items=(
+            WaterPreparedReportItem(
+                group_id="20002",
+                record_date=20260613,
+                message_kind="text",
+                payload_name="20002.txt",
+                activity_score=610,
+                total_msg_count=450,
+                active_user_count=8,
+            ),
+            WaterPreparedReportItem(
+                group_id="20001",
+                record_date=20260613,
+                message_kind="text",
+                payload_name="20001.txt",
+                activity_score=460,
+                total_msg_count=320,
+                active_user_count=7,
+            ),
+        ),
+    )
+
+    result = await water_report_service.send_prepared_daily_group_report_push(
+        bot=cast(report_module.Bot, SimpleNamespace()),
+        prepared=prepared,
+        output_dir=tmp_path,
+    )
+
+    assert result.sent_groups == 2
+    assert len(deliver_mock.await_args_list) == 2
+    first_plan = deliver_mock.await_args_list[0].kwargs["plan"]
+    second_plan = deliver_mock.await_args_list[1].kwargs["plan"]
+    assert str(render_message_plan_input(first_plan.messages[0])) == "R-20002"
+    assert str(render_message_plan_input(second_plan.messages[0])) == "R-20001"
 
 
 @pytest.mark.asyncio

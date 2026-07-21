@@ -18,6 +18,10 @@ from src.plugins.wordbank.database.types import (
 )
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
+from src.plugins.wordbank.services.presentation import (
+    format_scope_label,
+    format_status_label,
+)
 from src.plugins.wordbank.services.rules import RuleError
 from src.plugins.wordbank.text_parsing import normalize_cq_plain_text
 
@@ -26,6 +30,7 @@ from .approval import (
     APPROVAL_REJECT_ALIASES,
     APPROVAL_REPLY_ALIASES,
 )
+from .group_detail_card_helpers import is_response_visible_in_group_detail
 from .mutation import (
     build_mutation_actor,
     handle_delete,
@@ -44,7 +49,7 @@ from .parsers import (
     parse_response_set_args,
     parse_trigger_set_args,
 )
-from .rendering import build_reply_detail_plan_entry
+from .rendering import GROUP_PAGE_SIZE, build_reply_detail_plan_entry
 
 INFO_ALIASES = {"info", "详情"}
 HISTORY_ALIASES = {"history", "历史", "历史记录", "审批记录", "审批历史"}
@@ -107,6 +112,11 @@ class ApprovalReplyOutcome:
 class ParsedViewReplyCommand:
     trigger_group_id: int
     page: int
+
+
+@dataclass(slots=True, frozen=True)
+class ParsedGroupDetailDeleteCommand:
+    response_item_ids: tuple[int, ...]
 
 
 @dataclass(slots=True, frozen=True)
@@ -742,6 +752,80 @@ def parse_view_reply_for_group_detail(
     )
 
 
+def group_detail_page_response_item_ids(
+    detail: WordbankGroupDetail,
+    *,
+    page: int,
+    page_size: int = GROUP_PAGE_SIZE,
+) -> tuple[int, ...]:
+    start = max(0, (max(page, 1) - 1) * max(page_size, 1))
+    end = start + max(page_size, 1)
+    visible_ids = tuple(
+        response.response_item_id
+        for response in detail.responses
+        if is_response_visible_in_group_detail(response)
+    )
+    return visible_ids[start:end]
+
+
+def _parse_group_detail_delete_targets(text: str) -> tuple[int, ...]:
+    targets = tuple(token for token in re.split(r"[\s,，]+", text.strip()) if token)
+    if not targets:
+        raise RuleError(
+            "删除命令格式不正确，请发送“删除 词条ID [词条ID...]”。",
+            key="wordbank.reply.group_command_invalid",
+        )
+    response_item_ids: list[int] = []
+    for target in targets:
+        if target.isdigit():
+            value = int(target)
+            if value <= 0:
+                raise RuleError(
+                    "删除命令格式不正确，请发送“删除 词条ID [词条ID...]”。",
+                    key="wordbank.reply.group_command_invalid",
+                )
+            if value not in response_item_ids:
+                response_item_ids.append(value)
+            continue
+        start_text, separator, end_text = target.partition("-")
+        if (
+            separator
+            and start_text.isdigit()
+            and end_text.isdigit()
+            and int(start_text) > 0
+            and int(end_text) >= int(start_text)
+        ):
+            for value in range(int(start_text), int(end_text) + 1):
+                if value not in response_item_ids:
+                    response_item_ids.append(value)
+            continue
+        raise RuleError(
+            "删除命令格式不正确，请发送“删除 词条ID [词条ID...]”。",
+            key="wordbank.reply.group_command_invalid",
+        )
+    return tuple(response_item_ids)
+
+
+def parse_group_detail_delete_reply(
+    text: str,
+    *,
+    available_response_item_ids: Sequence[int] | None,
+) -> ParsedGroupDetailDeleteCommand | None:
+    source = normalize_cq_plain_text(text, strip_leading_at=True)
+    action, _, rest = source.partition(" ")
+    if action.casefold() not in {"del", "delete", "remove", "删除"}:
+        return None
+    response_item_ids = _parse_group_detail_delete_targets(rest)
+    if available_response_item_ids is not None and not set(response_item_ids).issubset(
+        set(available_response_item_ids)
+    ):
+        raise RuleError(
+            "当前详情页没有这个词条 ID，请发送图中标注的删除命令。",
+            key="wordbank.reply.group_command_invalid",
+        )
+    return ParsedGroupDetailDeleteCommand(response_item_ids=response_item_ids)
+
+
 def _parse_explicit_group_view_command(
     text: str,
     *,
@@ -806,10 +890,10 @@ def format_entry_detail(
         locale,
         "wordbank.reply.info",
         entry_id=selected.response_item_id,
-        status=selected.status,
+        status=format_status_label(selected.status),
         enabled=_format_enabled(selected.enabled, locale),
         deleted_at=_format_deleted_at(selected.deleted_at),
-        scope=selected.scope,
+        scope=format_scope_label(selected.scope),
         group_id=selected.group_id or "-",
         created_by=selected.created_by,
         trigger_text=detail.trigger_text,
@@ -832,10 +916,10 @@ def format_entry_history(
         locale,
         "wordbank.reply.history",
         entry_id=selected.response_item_id,
-        status=selected.status,
+        status=format_status_label(selected.status),
         enabled=_format_enabled(selected.enabled, locale),
         deleted_at=_format_deleted_at(selected.deleted_at),
-        scope=selected.scope,
+        scope=format_scope_label(selected.scope),
         probability=f"{detail.probability:g}",
         weight=selected.weight,
     )

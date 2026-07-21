@@ -32,13 +32,18 @@ from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import (
     format_creator_leaderboard,
-    format_notice_content_summary,
+    format_notice_content_raw_text,
     format_rule_summary,
     format_scope_label,
     format_status_label,
     format_timestamp,
 )
 
+from .group_detail_card_helpers import (
+    display_group_detail,
+    format_batch_delete_hint,
+    format_response_delete_hint,
+)
 from .group_detail_cards import (
     GroupDetailCardPage,
 )
@@ -307,13 +312,13 @@ async def build_pending_item_blocks(
     blocks.append(
         TextBlock(
             f"{leading}触发词: "
-            f"{format_notice_content_summary(trigger_text, shape=trigger_shape)}"
+            f"{format_notice_content_raw_text(trigger_text, shape=trigger_shape)}"
         )
     )
     blocks.append(
         TextBlock(
             "\n响应词: "
-            + format_notice_content_summary(
+            + format_notice_content_raw_text(
                 response_text,
                 shape=response_shape,
                 response_mode=response_mode or "normal",
@@ -387,10 +392,10 @@ async def build_reply_detail_plan_entry(
                 locale,
                 "wordbank.reply.info_header",
                 entry_id=selected.response_item_id,
-                status=selected.status,
+                status=format_status_label(selected.status),
                 enabled=_format_enabled(selected.enabled, locale),
                 deleted_at=str(selected.deleted_at) if selected.deleted_at else "0",
-                scope=selected.scope,
+                scope=format_scope_label(selected.scope),
                 group_id=selected.group_id or "-",
                 created_by=selected.created_by,
                 probability=f"{detail.probability:g}",
@@ -476,6 +481,7 @@ async def build_group_detail_page_message_plan_entry(
     media_service: WordbankMediaService,
     page_size: int = GROUP_PAGE_SIZE,
 ) -> tuple[MessagePlanEntry, int]:
+    detail = display_group_detail(detail)
     total_pages = max(1, math.ceil(len(detail.responses) / max(page_size, 1)))
     page = min(max(page, 1), total_pages)
     start = (page - 1) * page_size
@@ -532,6 +538,7 @@ async def build_group_detail_page_plan_entry(
     media_service: WordbankMediaService,
     page_size: int = GROUP_PAGE_SIZE,
 ) -> MessagePlanEntry:
+    detail = display_group_detail(detail)
     start = (page - 1) * page_size
     end = start + page_size
     responses = detail.responses[start:end]
@@ -541,7 +548,7 @@ async def build_group_detail_page_plan_entry(
                 locale,
                 "wordbank.group.page_header",
                 group_id=detail.trigger_group_id,
-                status=detail.status,
+                status=format_status_label(detail.status),
                 created_by=detail.created_by,
                 probability=f"{detail.probability:g}",
                 response_count=len(detail.responses),
@@ -576,9 +583,9 @@ async def build_group_detail_page_plan_entry(
                     locale,
                     "wordbank.group.response_header",
                     response_item_id=response.response_item_id,
-                    status=response.status,
+                    status=format_status_label(response.status),
                     enabled=_format_enabled(response.enabled, locale),
-                    scope=response.scope,
+                    scope=format_scope_label(response.scope),
                     weight=response.weight,
                     rule=_format_rule_text(response.rule),
                 )
@@ -594,6 +601,18 @@ async def build_group_detail_page_plan_entry(
                 )
             ).blocks
         )
+        blocks.append(
+            TextBlock("\n" + format_response_delete_hint(response.response_item_id))
+        )
+    batch_delete_hint = format_batch_delete_hint(
+        tuple(
+            response.response_item_id
+            for response in responses
+            if response.response_item_id > 0
+        )
+    )
+    if batch_delete_hint:
+        blocks.append(TextBlock("\n" + batch_delete_hint))
     if page < total_pages:
         blocks.append(
             TextBlock(

@@ -20,6 +20,7 @@ from src.plugins.wordbank.message_model import (
     MessageShape,
     combine_shapes,
     shape_from_image,
+    shape_from_response_text,
     shape_from_text,
 )
 from src.plugins.wordbank.services.core import WordbankAddResult
@@ -46,6 +47,8 @@ def _result(
     response_mode: str = "normal",
     forward_source_message_id: str | None = None,
     forward_node_count: int = 0,
+    status: str = "pending",
+    reused_existing: bool = False,
 ) -> WordbankAddResult:
     return WordbankAddResult(
         trigger_group_id=trigger_group_id,
@@ -56,6 +59,7 @@ def _result(
         scope="current_group",
         probability=1.0,
         weight=3,
+        status=status,
         trigger_shape=trigger_shape,
         response_shape=response_shape,
         created_by=created_by,
@@ -64,6 +68,7 @@ def _result(
         response_mode=response_mode,
         forward_source_message_id=forward_source_message_id,
         forward_node_count=forward_node_count,
+        reused_existing=reused_existing,
     )
 
 
@@ -196,6 +201,75 @@ async def test_build_add_result_message_keeps_plain_text_response() -> None:
 
 
 @pytest.mark.asyncio
+async def test_build_add_result_message_warns_on_duplicate_pending_result() -> None:
+    load_canonical_storage_bytes = AsyncMock()
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    result = _result(
+        response_text="做个好梦",
+        response_shape=shape_from_text("做个好梦"),
+        created_by="10002",
+        created_at=1_700_000_123,
+        reused_existing=True,
+    )
+
+    message = await _build_add_result_message(
+        result,
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    assert str(message) == (
+        "这个 trigger-response pair 已在待审核列表里，请不要重复添加。\n"
+        "ID: 12\n"
+        "状态: 待审核\n"
+        "触发词: 晚安\n"
+        "响应词: 做个好梦\n"
+        "范围: 当前群\n"
+        "规则: 概率 1\n"
+        "权重: 3\n"
+        "已复用现有待审词条，并再次通知管理员审核。"
+    )
+    load_canonical_storage_bytes.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_build_add_result_message_warns_on_duplicate_approved_result() -> None:
+    load_canonical_storage_bytes = AsyncMock()
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    result = _result(
+        response_text="做个好梦",
+        response_shape=shape_from_text("做个好梦"),
+        status="approved",
+        reused_existing=True,
+    )
+
+    message = await _build_add_result_message(
+        result,
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    assert str(message) == (
+        "这个 trigger-response pair 已存在并通过审核，请不要重复添加。\n"
+        "ID: 12\n"
+        "状态: 已通过\n"
+        "触发词: 晚安\n"
+        "响应词: 做个好梦\n"
+        "范围: 当前群\n"
+        "规则: 概率 1\n"
+        "权重: 3\n"
+        "该词条已可直接使用。"
+    )
+    load_canonical_storage_bytes.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_build_add_result_plan_entry_renders_image_response() -> None:
     load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
     media_service = cast(
@@ -218,7 +292,7 @@ async def test_build_add_result_plan_entry_renders_image_response() -> None:
     assert "[图片:7]" not in str(message)
 
 
-def test_format_pending_approval_notice_uses_shape_summary() -> None:
+def test_format_pending_approval_notice_preserves_raw_message_text() -> None:
     result = _result(
         response_text="原始文本",
         response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
@@ -230,9 +304,25 @@ def test_format_pending_approval_notice_uses_shape_summary() -> None:
         locale="zh-CN",
     )
 
-    assert "响应词: 做个好梦" in notice
+    assert "响应词: 原始文本" in notice
     assert "状态: 待审核" in notice
-    assert "原始文本" not in notice
+    assert "做个好梦" not in notice
+
+
+def test_format_pending_approval_notice_summarizes_at_message() -> None:
+    result = _result(
+        response_text="你好 [@触发者]",
+        response_shape=shape_from_response_text("你好 [@触发者]"),
+    )
+
+    notice = format_pending_approval_notice(
+        result,
+        event=_event(),
+        locale="zh-CN",
+    )
+
+    assert "响应词: 你好 艾特触发者" in notice
+    assert "响应词: 你好 [@触发者]" not in notice
 
 
 @pytest.mark.asyncio
@@ -257,14 +347,11 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
     segments = list(message)
     full_text = _message_text(message)
     assert full_text.startswith(
-        "新增词条待审核\n"
-        "回复 y / approve / 通过 可通过\n"
-        "回复 n / reject / 拒绝 可驳回\n\n"
-        "ID: 12\n"
+        "新增词条待审核\n回复 通过 可通过\n回复 拒绝 可驳回\n\nID: 12\n"
     )
     assert "状态: 待审核" in full_text
     assert "触发词: 晚安" in full_text
-    assert "响应词: 图片消息" in full_text
+    assert "响应词: [图片:7]" in full_text
     assert "创建者: 10001" in full_text
     assert "提交时间: 2023-11-15 06:13" in full_text
     assert "范围: 当前群" in full_text
@@ -299,13 +386,10 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
     segments = list(message)
     full_text = _message_text(message)
     assert full_text.startswith(
-        "新增词条待审核\n"
-        "回复 y / approve / 通过 可通过\n"
-        "回复 n / reject / 拒绝 可驳回\n\n"
-        "ID: 12\n"
+        "新增词条待审核\n回复 通过 可通过\n回复 拒绝 可驳回\n\nID: 12\n"
     )
     assert "状态: 待审核" in full_text
-    assert "触发词: 图片消息" in full_text
+    assert "触发词: [图片:8]" in full_text
     assert "响应词: 做个好梦" in full_text
     assert "响应模式: 普通响应" in full_text
     assert sum(1 for segment in segments if segment.type == "image") == 0
@@ -313,7 +397,9 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
 
 
 @pytest.mark.asyncio
-async def test_build_pending_approval_notice_plan_entry_returns_summary() -> None:
+async def test_build_pending_approval_notice_plan_entry_returns_raw_message_text() -> (
+    None
+):
     load_canonical_storage_bytes = AsyncMock(return_value=b"image-bytes")
     media_service = cast(
         WordbankMediaService,
@@ -333,9 +419,9 @@ async def test_build_pending_approval_notice_plan_entry_returns_summary() -> Non
     message = render_message_plan_input(entry)
 
     full_text = _message_text(message)
-    assert "回复 y / approve / 通过 可通过" in full_text
+    assert "回复 通过 可通过" in full_text
     assert "状态: 待审核" in full_text
-    assert "触发词: 图片消息" in full_text
+    assert "触发词: [图片:8]" in full_text
     assert "规则: 概率 1" in full_text
     assert not any(segment.type == "image" for segment in message)
 
@@ -425,8 +511,8 @@ async def test_send_pending_approval_notice_embeds_detail_in_single_message() ->
     assert len(plan.messages) == 1
     summary_message = render_message_plan_input(plan.messages[0])
     summary_text = _message_text(summary_message)
-    assert "回复 y / approve / 通过 可通过" in summary_text
-    assert "响应词: 图片消息" in summary_text
+    assert "回复 通过 可通过" in summary_text
+    assert "响应词: [图片:7]" in summary_text
     assert "晚安" in str(summary_message)
     assert not any(segment.type == "image" for segment in summary_message)
     assert record_message_ref.await_count == 1
@@ -476,7 +562,7 @@ async def test_send_notice_embeds_forward_whole_mode() -> None:
     summary_message = render_message_plan_input(plan.messages[0])
     forward_message = render_message_plan_input(plan.messages[1])
     summary_text = _message_text(summary_message)
-    assert "响应词: 一条合并转发消息（2 条）" in summary_text
+    assert "响应词: 原始合并转发" in summary_text
     assert "响应模式: 一条合并转发消息（2 条）" in summary_text
     forward_segments = list(forward_message)
     assert len(forward_segments) == 1
@@ -511,7 +597,7 @@ def test_format_pending_batch_approval_notice_lists_all_pending_items() -> None:
     )
 
     assert "待审核词条" in notice
-    assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in notice
+    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in notice
     assert "触发词: 晚安" in notice
     assert "创建者: 10001" in notice
     assert "提交时间: 2023-11-15 06:13" in notice
@@ -571,7 +657,7 @@ async def test_build_pending_batch_approval_notice_message_embeds_image_shapes()
     segments = list(message)
     full_text = "".join(str(segment) for segment in segments if segment.type == "text")
     assert "待审核词条" in full_text
-    assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in full_text
+    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in full_text
     assert "触发词: test_forward" in full_text
     assert "创建者: 10001" in full_text
     assert "待审数量: 2" in full_text
@@ -713,11 +799,11 @@ async def test_batch_notice_sends_summary_then_forward_details() -> None:
     summary_message = render_message_plan_input(plan.messages[0])
     first_detail = render_message_plan_input(plan.messages[1])
     second_detail = render_message_plan_input(plan.messages[2])
-    assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in str(summary_message)
+    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in str(summary_message)
     assert "待审数量: 2" in str(summary_message)
-    assert "响应词: 图片消息" in str(first_detail)
+    assert "响应词: &#91;图片:3069&#93;" in str(first_detail)
     assert not any(segment.type == "image" for segment in first_detail)
-    assert "触发词: 图片消息" in str(second_detail)
+    assert "触发词: &#91;图片:3070&#93;" in str(second_detail)
     assert not any(segment.type == "image" for segment in second_detail)
     assert record_message_ref.await_count == 1
 

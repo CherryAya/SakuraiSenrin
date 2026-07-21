@@ -32,3 +32,5 @@ data/db/**
 !data/font/.gitkeep
 !data/image/.gitkeep
 repo-dev
+tools/snowluma-tui/target/
+output/

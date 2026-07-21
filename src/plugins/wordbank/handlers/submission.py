@@ -32,6 +32,15 @@ type SubmissionPayload = WordbankAddResult | WordbankBatchAddResult
 type BatchFeedbackNicknameBuilder = Callable[[LocaleCode], str]
 
 
+def _submission_needs_approval_notice(submission: SubmissionPayload) -> bool:
+    if isinstance(submission, WordbankAddResult):
+        return submission.status == "pending"
+    return any(
+        item.ok and item.result is not None and item.result.status == "pending"
+        for item in submission.items
+    )
+
+
 class SubmissionHandler(Protocol):
     def __call__(
         self,
@@ -134,12 +143,13 @@ async def finalize_submission(
             send_result=send_result,
         )
 
-    schedule_submission_approval_notice(
-        bot,
-        service,
-        event=approval_event,
-        submission=submission,
-        locale=locale,
-        media_service=media_service,
-    )
+    if _submission_needs_approval_notice(submission):
+        schedule_submission_approval_notice(
+            bot,
+            service,
+            event=approval_event,
+            submission=submission,
+            locale=locale,
+            media_service=media_service,
+        )
     await matcher.finish()

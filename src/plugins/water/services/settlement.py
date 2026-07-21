@@ -9,6 +9,7 @@ from loguru import logger
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo_models import DailyAggregateItem
+from src.plugins.water.services.worker_jobs import WaterWorkerManifest
 
 from .achievement import AchievementService
 
@@ -143,6 +144,21 @@ class WaterSettlementService:
             ]
         )
         return unlocked_total
+
+
+def build_settlement_result_from_manifest(
+    manifest: WaterWorkerManifest,
+) -> SettlementResult:
+    metrics = manifest.metrics
+    return SettlementResult(
+        success=manifest.status in {"success", "partial"},
+        skipped=manifest.status == "skipped",
+        record_date=manifest.record_date or 0,
+        aggregate_rows=int(metrics.get("aggregate_rows", 0)),
+        unlocked_achievements=int(metrics.get("unlocked_achievements", 0)),
+        reason=str(metrics.get("reason", manifest.error or "")),
+        forced=bool(metrics.get("forced", False)),
+    )
 
 
 water_settlement_service = WaterSettlementService()

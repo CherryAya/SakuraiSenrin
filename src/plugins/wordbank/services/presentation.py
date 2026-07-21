@@ -55,6 +55,7 @@ class WordbankAddResult:
     response_mode: str = "normal"
     forward_source_message_id: str | None = None
     forward_node_count: int = 0
+    reused_existing: bool = False
 
 
 @dataclass(slots=True, frozen=True)
@@ -246,9 +247,16 @@ def format_creator_leaderboard(
 
 
 def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
-    key = (
-        "wordbank.add.pending" if result.status == "pending" else "wordbank.add.success"
-    )
+    if result.reused_existing and result.status == "pending":
+        key = "wordbank.add.duplicate_pending"
+    elif result.reused_existing and result.status == "approved":
+        key = "wordbank.add.duplicate_approved"
+    else:
+        key = (
+            "wordbank.add.pending"
+            if result.status == "pending"
+            else "wordbank.add.success"
+        )
     return tr(
         locale,
         key,
@@ -328,6 +336,31 @@ def format_notice_content_summary(
             parts.append(summary)
     summary_text = "".join(parts).strip()
     return summary_text or text or "-"
+
+
+def format_notice_content_raw_text(
+    text: str,
+    *,
+    shape: MessageShape | None = None,
+    response_mode: str = "normal",
+    forward_node_count: int = 0,
+) -> str:
+    if shape is not None and any(atom.kind == "at" for atom in shape.atoms):
+        return format_notice_content_summary(
+            text,
+            shape=shape,
+            response_mode=response_mode,
+            forward_node_count=forward_node_count,
+        )
+    if text.strip():
+        return text
+    if response_mode == "forward_whole":
+        return (
+            f"一条合并转发消息（{forward_node_count} 条）"
+            if forward_node_count > 0
+            else "一条合并转发消息"
+        )
+    return "-"
 
 
 def format_timestamp(timestamp: int) -> str:

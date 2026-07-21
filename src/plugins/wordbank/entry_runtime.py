@@ -50,8 +50,10 @@ from .guided_flow import WORDBANK_GUIDED_RECALL_PENDING_KEYS
 from .handlers import (
     PassiveResponse,
     build_group_detail_message,
+    group_detail_page_response_item_ids,
     handle_approval_reply_result,
     handle_reply_command,
+    parse_group_detail_delete_reply,
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
 )
@@ -1138,6 +1140,50 @@ def register_wordbank_runtime_handlers(
                     available_group_ids=view_message.group_ids,
                 )
             else:
+                parsed_delete = parse_group_detail_delete_reply(
+                    event.message.extract_plain_text(),
+                    available_response_item_ids=None,
+                )
+                if parsed_delete is not None:
+                    detail = await service.get_group_detail(
+                        view_message.trigger_group_id
+                    )
+                    if detail is None:
+                        raise RuleError(
+                            tr(
+                                locale,
+                                "wordbank.group.not_found",
+                                group_id=view_message.trigger_group_id,
+                            ),
+                            key="wordbank.group.not_found",
+                            group_id=view_message.trigger_group_id,
+                        )
+                    parse_group_detail_delete_reply(
+                        event.message.extract_plain_text(),
+                        available_response_item_ids=group_detail_page_response_item_ids(
+                            detail,
+                            page=view_message.current_page,
+                        ),
+                    )
+                    delete_handler = await _get_plugin_attr("handle_delete")
+                    messages = [
+                        await delete_handler(
+                            service,
+                            event=event,
+                            response_item_id_text=str(response_item_id),
+                            locale=locale,
+                        )
+                        for response_item_id in parsed_delete.response_item_ids
+                    ]
+                    message = "\n".join(messages)
+                    await finish_with_message(
+                        bot,
+                        matcher,
+                        event=event,
+                        message=message,
+                        source_kind="wordbank_command",
+                    )
+                    return
                 parsed = parse_view_reply_for_group_detail(
                     event.message.extract_plain_text(),
                     trigger_group_id=view_message.trigger_group_id,

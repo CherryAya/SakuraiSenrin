@@ -57,6 +57,7 @@ from src.plugins.wordbank.services.rules import (
 )
 from src.plugins.wordbank.text_parsing import has_meaningful_text, split_command_text
 
+from .group_detail_card_helpers import display_group_detail
 from .media_helpers import (
     build_response_shape_from_message,
     build_shape_from_text_and_images,
@@ -666,6 +667,7 @@ async def build_group_detail_message(
             key="wordbank.group.not_found",
             group_id=trigger_group_id,
         )
+    detail = display_group_detail(detail)
     total_pages = max(1, math.ceil(len(detail.responses) / max(GROUP_PAGE_SIZE, 1)))
     if page > total_pages:
         raise RuleError(

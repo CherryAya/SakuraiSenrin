@@ -401,7 +401,7 @@ async def _reload_water_runtime_state() -> None:
     )
     from src.plugins.water.services.report import water_report_service
 
-    water_plugin._water_plugin_initialized = False
+    setattr(water_plugin, "_water_plugin_initialized", False)
     clear_water_query_cooldowns()
     water_report_service.clear_today_report_cooldowns()
     water_repo._group_matrix_cache.clear()

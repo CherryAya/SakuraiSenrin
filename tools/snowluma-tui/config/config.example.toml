@@ -1,0 +1,28 @@
+display = ":1"
+screen = "0 1920x1080x16"
+vnc_password_file = "~/.vnc/passwd"
+novnc_listen_port = 6081
+qq_path = "/opt/QQ/qq"
+node_path = "node"
+snowluma_entry = "/home/sc/download/snowluma/index.mjs"
+snowluma_cwd = "/home/sc/download/snowluma"
+state_root = "~/.local/state/snowluma-tui"
+log_dir = "~/.local/state/snowluma-tui/logs"
+run_dir = "~/.local/state/snowluma-tui/run"
+tick_ms = 1000
+
+[extra_args]
+xvfb = []
+fluxbox = []
+x11vnc = []
+novnc = []
+qq = []
+snowluma = []
+
+[extra_env]
+xvfb = {}
+fluxbox = {}
+x11vnc = {}
+novnc = {}
+qq = {}
+snowluma = {}
