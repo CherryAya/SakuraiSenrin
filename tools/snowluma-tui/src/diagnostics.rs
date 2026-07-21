@@ -130,3 +130,114 @@ pub fn tail_log(path: &Path, max_lines: usize) -> Result<Vec<String>> {
     }
     Ok(lines)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::BTreeMap,
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::*;
+    use crate::{
+        config::RuntimePaths,
+        service::{HealthCheck, ServiceName, ServiceSpec},
+        state::ServiceRuntimeState,
+    };
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        std::env::temp_dir().join(format!("snowluma-tui-{name}-{stamp}"))
+    }
+
+    #[test]
+    fn diagnostics_report_missing_command_and_stale_pid() {
+        let temp_dir = unique_temp_dir("diagnostics");
+        let paths = RuntimePaths {
+            config_dir: temp_dir.join("config"),
+            config_file: temp_dir.join("config").join("config.toml"),
+            state_root: temp_dir.join("state"),
+            log_dir: temp_dir.join("logs"),
+            run_dir: temp_dir.join("run"),
+        };
+        paths.ensure().expect("paths should be created");
+
+        let spec = ServiceSpec {
+            name: ServiceName::Xvfb,
+            command: "/definitely/missing-binary".to_string(),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+            deps: Vec::new(),
+            cwd: None,
+            health_check: HealthCheck::None,
+            startup_timeout_secs: 1,
+            log_file: paths.log_dir.join("xvfb.log"),
+            state_file: paths.run_dir.join("xvfb.json"),
+        };
+        ServiceRuntimeState::new(
+            ServiceName::Xvfb,
+            999_999,
+            spec.command.clone(),
+            Vec::new(),
+            None,
+            spec.log_file.clone(),
+        )
+        .save_to(&spec.state_file)
+        .expect("runtime state should save");
+
+        let items = collect_diagnostics(&AppConfig::default(), &paths, &[spec]);
+        assert!(
+            items
+                .iter()
+                .any(|item| { item.label == "Command xvfb" && item.status == "missing" })
+        );
+        assert!(
+            items.iter().any(|item| {
+                item.label == "Pid xvfb" && item.status.starts_with("stale (999999)")
+            })
+        );
+
+        fs::remove_dir_all(temp_dir).expect("temp directory should be removable");
+    }
+
+    #[test]
+    fn diagnostics_report_closed_port() {
+        let port = 65500;
+        let temp_dir = unique_temp_dir("diagnostics-port");
+        let paths = RuntimePaths {
+            config_dir: temp_dir.join("config"),
+            config_file: temp_dir.join("config").join("config.toml"),
+            state_root: temp_dir.join("state"),
+            log_dir: temp_dir.join("logs"),
+            run_dir: temp_dir.join("run"),
+        };
+        paths.ensure().expect("paths should be created");
+
+        let spec = ServiceSpec {
+            name: ServiceName::NoVnc,
+            command: "/bin/sh".to_string(),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+            deps: Vec::new(),
+            cwd: None,
+            health_check: HealthCheck::TcpPort(port),
+            startup_timeout_secs: 1,
+            log_file: paths.log_dir.join("novnc.log"),
+            state_file: paths.run_dir.join("novnc.json"),
+        };
+
+        let items = collect_diagnostics(&AppConfig::default(), &paths, &[spec]);
+        assert!(
+            items
+                .iter()
+                .any(|item| item.label == format!("Port {}", port) && item.status == "closed")
+        );
+
+        fs::remove_dir_all(temp_dir).expect("temp directory should be removable");
+    }
+}

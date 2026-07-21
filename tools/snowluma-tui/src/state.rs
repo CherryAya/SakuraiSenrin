@@ -87,7 +87,11 @@ pub fn service_is_alive(pid: i32) -> bool {
 }
 
 pub fn terminate_process_group(pgid: i32, signal: Signal) -> Result<()> {
-    kill(Pid::from_raw(-pgid), signal).or_else(ignore_missing_process)
+    match kill(Pid::from_raw(-pgid), signal) {
+        Ok(()) => Ok(()),
+        Err(Errno::EPERM) => kill(Pid::from_raw(pgid), signal).or_else(ignore_missing_process),
+        Err(error) => ignore_missing_process(error),
+    }
 }
 
 pub fn clean_state_file(path: &Path) -> Result<()> {

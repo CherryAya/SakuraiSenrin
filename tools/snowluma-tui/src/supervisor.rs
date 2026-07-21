@@ -289,3 +289,151 @@ fn health_check_passes(check: &HealthCheck) -> bool {
         HealthCheck::XSocket(path) => Path::new(path).exists(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::BTreeMap,
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::*;
+    use crate::{
+        service::{HealthCheck, ServiceName, ServiceSpec},
+        state::ServiceStatus,
+    };
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        std::env::temp_dir().join(format!("snowluma-tui-{name}-{stamp}"))
+    }
+
+    fn fake_specs(root: &Path) -> Vec<ServiceSpec> {
+        let log_dir = root.join("logs");
+        let run_dir = root.join("run");
+        fs::create_dir_all(&log_dir).expect("log dir should exist");
+        fs::create_dir_all(&run_dir).expect("run dir should exist");
+
+        ServiceName::ALL
+            .into_iter()
+            .map(|name| ServiceSpec {
+                name,
+                command: "/bin/sh".to_string(),
+                args: vec!["-c".to_string(), "exec sleep 30".to_string()],
+                env: BTreeMap::new(),
+                deps: match name {
+                    ServiceName::Xvfb => vec![],
+                    ServiceName::Fluxbox => vec![ServiceName::Xvfb],
+                    ServiceName::X11Vnc => vec![ServiceName::Xvfb],
+                    ServiceName::NoVnc => vec![ServiceName::X11Vnc],
+                    ServiceName::Qq => vec![ServiceName::Xvfb, ServiceName::Fluxbox],
+                    ServiceName::Snowluma => {
+                        vec![ServiceName::Xvfb, ServiceName::Fluxbox, ServiceName::Qq]
+                    }
+                },
+                cwd: None,
+                health_check: HealthCheck::None,
+                startup_timeout_secs: 1,
+                log_file: log_dir.join(format!("{}.log", name.as_str())),
+                state_file: run_dir.join(format!("{}.json", name.as_str())),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn start_service_brings_up_dependencies_and_stop_cleans_state() {
+        let temp_dir = unique_temp_dir("supervisor-start-stop");
+        let supervisor = Supervisor::new(fake_specs(&temp_dir));
+
+        supervisor
+            .start_service(ServiceName::NoVnc)
+            .expect("service with dependencies should start");
+
+        let xvfb = supervisor.status_for(ServiceName::Xvfb);
+        let x11vnc = supervisor.status_for(ServiceName::X11Vnc);
+        let novnc = supervisor.status_for(ServiceName::NoVnc);
+        let qq = supervisor.status_for(ServiceName::Qq);
+
+        assert_eq!(xvfb.status, ServiceStatus::Running);
+        assert_eq!(x11vnc.status, ServiceStatus::Running);
+        assert_eq!(novnc.status, ServiceStatus::Running);
+        assert_eq!(qq.status, ServiceStatus::Stopped);
+
+        supervisor
+            .stop_service(ServiceName::NoVnc)
+            .expect("target service should stop");
+        supervisor
+            .stop_service(ServiceName::X11Vnc)
+            .expect("dependency service should stop");
+        supervisor
+            .stop_service(ServiceName::Xvfb)
+            .expect("root dependency should stop");
+
+        assert_eq!(
+            supervisor.status_for(ServiceName::NoVnc).status,
+            ServiceStatus::Stopped
+        );
+        assert!(!temp_dir.join("run").join("novnc.json").exists());
+
+        fs::remove_dir_all(temp_dir).expect("temp directory should be removable");
+    }
+
+    #[test]
+    fn restart_service_restarts_dependents() {
+        let temp_dir = unique_temp_dir("supervisor-restart");
+        let supervisor = Supervisor::new(fake_specs(&temp_dir));
+
+        supervisor.start_all().expect("all services should start");
+        let first_xvfb_pid = supervisor
+            .status_for(ServiceName::Xvfb)
+            .pid
+            .expect("xvfb pid should exist");
+        let first_snowluma_pid = supervisor
+            .status_for(ServiceName::Snowluma)
+            .pid
+            .expect("snowluma pid should exist");
+
+        supervisor
+            .restart_service(ServiceName::Xvfb)
+            .expect("restarting root dependency should restart dependents");
+
+        let second_xvfb_pid = supervisor
+            .status_for(ServiceName::Xvfb)
+            .pid
+            .expect("xvfb pid should still exist");
+        let second_snowluma_pid = supervisor
+            .status_for(ServiceName::Snowluma)
+            .pid
+            .expect("snowluma pid should still exist");
+
+        assert_ne!(first_xvfb_pid, second_xvfb_pid);
+        assert_ne!(first_snowluma_pid, second_snowluma_pid);
+
+        supervisor.stop_all().expect("services should stop");
+        fs::remove_dir_all(temp_dir).expect("temp directory should be removable");
+    }
+
+    #[test]
+    fn failed_health_check_cleans_state_file() {
+        let temp_dir = unique_temp_dir("supervisor-fail");
+        let mut specs = fake_specs(&temp_dir);
+        let xvfb_spec = specs
+            .iter_mut()
+            .find(|spec| spec.name == ServiceName::Xvfb)
+            .expect("xvfb spec should exist");
+        xvfb_spec.health_check = HealthCheck::TcpPort(65500);
+        xvfb_spec.startup_timeout_secs = 1;
+
+        let supervisor = Supervisor::new(specs);
+        let result = supervisor.start_service(ServiceName::Xvfb);
+        assert!(result.is_err());
+        assert!(!temp_dir.join("run").join("xvfb.json").exists());
+
+        fs::remove_dir_all(temp_dir).expect("temp directory should be removable");
+    }
+}

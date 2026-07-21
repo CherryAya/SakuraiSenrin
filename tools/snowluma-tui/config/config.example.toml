@@ -7,6 +7,8 @@ node_path = "node"
 snowluma_entry = "/home/sc/download/snowluma/index.mjs"
 snowluma_cwd = "/home/sc/download/snowluma"
 state_root = "~/.local/state/snowluma-tui"
+log_dir = "~/.local/state/snowluma-tui/logs"
+run_dir = "~/.local/state/snowluma-tui/run"
 tick_ms = 1000
 
 [extra_args]
@@ -24,4 +26,3 @@ x11vnc = {}
 novnc = {}
 qq = {}
 snowluma = {}
-

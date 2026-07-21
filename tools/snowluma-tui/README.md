@@ -7,7 +7,7 @@
 - 一键启动、停止、重启整套服务
 - 单服务启动、停止、重启
 - 检查 pid、日志、端口和基础依赖
-- 在 TUI 内修改核心配置并保存到用户配置目录
+- 在 TUI 内修改核心配置、日志目录、pid 目录、每服务额外参数和环境变量，并保存到用户配置目录
 
 ## 受管服务
 
@@ -36,6 +36,13 @@ cargo run --manifest-path tools/snowluma-tui/Cargo.toml -- --config-dir /path/to
 
 - 配置文件：`~/.config/snowluma-tui/config.toml`
 - 状态目录：`~/.local/state/snowluma-tui/`
+
+## 配置编辑格式
+
+- `extra_args.<service>` 使用 JSON 数组格式，例如 `["--flag","value"]`
+- `extra_env.<service>` 使用 JSON 对象格式，例如 `{"DISPLAY":":1","FOO":"bar"}`
+- `log_dir` 控制日志目录
+- `run_dir` 控制 pid / runtime state 目录
 
 ## 快捷键
 

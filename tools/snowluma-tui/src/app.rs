@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
@@ -44,8 +44,10 @@ impl Tab {
 
 #[derive(Debug, Clone)]
 pub struct ConfigField {
-    pub label: &'static str,
+    pub key: String,
+    pub label: String,
     pub value: String,
+    pub help: String,
 }
 
 pub struct App {
@@ -260,10 +262,14 @@ impl App {
             .iter()
             .map(|field| ListItem::new(format!("{} = {}", field.label, field.value)))
             .collect::<Vec<_>>();
+        let help_text = fields
+            .get(self.selected_config)
+            .map(|field| field.help.clone())
+            .unwrap_or_else(|| "Select a config field".to_string());
         let list = List::new(items)
             .block(
                 Block::default()
-                    .title("Config (Enter/e to edit, w to save)")
+                    .title(format!("Config (Enter/e edit, w save) | {}", help_text))
                     .borders(Borders::ALL),
             )
             .highlight_style(Style::default().bg(Color::Blue))
@@ -429,48 +435,84 @@ impl App {
     }
 
     fn config_fields(&self) -> Vec<ConfigField> {
-        vec![
-            ConfigField {
-                label: "display",
-                value: self.config.display.clone(),
-            },
-            ConfigField {
-                label: "screen",
-                value: self.config.screen.clone(),
-            },
-            ConfigField {
-                label: "vnc_password_file",
-                value: self.config.vnc_password_file.clone(),
-            },
-            ConfigField {
-                label: "novnc_listen_port",
-                value: self.config.novnc_listen_port.to_string(),
-            },
-            ConfigField {
-                label: "qq_path",
-                value: self.config.qq_path.clone(),
-            },
-            ConfigField {
-                label: "node_path",
-                value: self.config.node_path.clone(),
-            },
-            ConfigField {
-                label: "snowluma_entry",
-                value: self.config.snowluma_entry.clone(),
-            },
-            ConfigField {
-                label: "snowluma_cwd",
-                value: self.config.snowluma_cwd.clone(),
-            },
-            ConfigField {
-                label: "state_root",
-                value: self.config.state_root.clone(),
-            },
-            ConfigField {
-                label: "tick_ms",
-                value: self.config.tick_ms.to_string(),
-            },
-        ]
+        let mut fields = vec![
+            string_field(
+                "display",
+                self.config.display.clone(),
+                "X display, for example :1",
+            ),
+            string_field(
+                "screen",
+                self.config.screen.clone(),
+                "Xvfb screen spec, for example 0 1920x1080x16",
+            ),
+            string_field(
+                "vnc_password_file",
+                self.config.vnc_password_file.clone(),
+                "Path to the x11vnc password file",
+            ),
+            string_field(
+                "novnc_listen_port",
+                self.config.novnc_listen_port.to_string(),
+                "TCP port exposed by noVNC",
+            ),
+            string_field(
+                "qq_path",
+                self.config.qq_path.clone(),
+                "Path to the QQ binary",
+            ),
+            string_field(
+                "node_path",
+                self.config.node_path.clone(),
+                "Node.js executable used for snowluma",
+            ),
+            string_field(
+                "snowluma_entry",
+                self.config.snowluma_entry.clone(),
+                "Path to snowluma index.mjs",
+            ),
+            string_field(
+                "snowluma_cwd",
+                self.config.snowluma_cwd.clone(),
+                "Working directory for the snowluma node process",
+            ),
+            string_field(
+                "state_root",
+                self.config.state_root.clone(),
+                "Base state directory for status and logs",
+            ),
+            string_field(
+                "log_dir",
+                self.config.log_dir.clone(),
+                "Directory for service log files",
+            ),
+            string_field(
+                "run_dir",
+                self.config.run_dir.clone(),
+                "Directory for pid/state files",
+            ),
+            string_field(
+                "tick_ms",
+                self.config.tick_ms.to_string(),
+                "UI polling interval in milliseconds",
+            ),
+        ];
+
+        for service in ServiceName::ALL {
+            let name = service.as_str();
+            fields.push(string_field(
+                &format!("extra_args.{name}"),
+                format_args_for_input(&self.config.args_for(name)),
+                "JSON array string, for example [\"--foo\",\"bar\"]",
+            ));
+            fields.push(string_field(
+                &format!("extra_env.{name}"),
+                format_env_for_input(&self.config.env_for(name)),
+                "JSON object string, for example {\"KEY\":\"VALUE\"}",
+            ));
+        }
+
+        fields
     }
 
     fn begin_edit_current_field(&mut self) {
@@ -482,13 +524,13 @@ impl App {
 
     fn apply_current_field(&mut self) {
         let value = self.input_buffer.trim().to_string();
-        let label = self
+        let key = self
             .config_fields()
             .get(self.selected_config)
-            .map(|field| field.label)
+            .map(|field| field.key.clone())
             .unwrap_or_default();
 
-        let result = match label {
+        let result = match key.as_str() {
             "display" => {
                 self.config.display = value;
                 Ok(())
@@ -525,10 +567,30 @@ impl App {
                 self.config.state_root = value;
                 Ok(())
             }
+            "log_dir" => {
+                self.config.log_dir = value;
+                Ok(())
+            }
+            "run_dir" => {
+                self.config.run_dir = value;
+                Ok(())
+            }
             "tick_ms" => value
                 .parse::<u64>()
                 .map(|tick| self.config.tick_ms = tick)
                 .map_err(|error| anyhow::anyhow!(error)),
+            key if key.starts_with("extra_args.") => {
+                let service = key.trim_start_matches("extra_args.");
+                parse_args_input(&value).map(|parsed| {
+                    self.config.extra_args.insert(service.to_string(), parsed);
+                })
+            }
+            key if key.starts_with("extra_env.") => {
+                let service = key.trim_start_matches("extra_env.");
+                parse_env_input(&value).map(|parsed| {
+                    self.config.extra_env.insert(service.to_string(), parsed);
+                })
+            }
             _ => Ok(()),
         };
 
@@ -549,6 +611,37 @@ impl App {
             .map(|_| "config saved".to_string());
         self.set_message(result);
     }
+}
+
+fn string_field(key: &str, value: String, help: &str) -> ConfigField {
+    ConfigField {
+        key: key.to_string(),
+        label: key.to_string(),
+        value,
+        help: help.to_string(),
+    }
+}
+
+fn format_args_for_input(args: &[String]) -> String {
+    serde_json::to_string(args).unwrap_or_else(|_| "[]".to_string())
+}
+
+fn format_env_for_input(env: &BTreeMap<String, String>) -> String {
+    serde_json::to_string(env).unwrap_or_else(|_| "{}".to_string())
+}
+
+fn parse_args_input(raw: &str) -> Result<Vec<String>> {
+    if raw.is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str::<Vec<String>>(raw).map_err(anyhow::Error::from)
+}
+
+fn parse_env_input(raw: &str) -> Result<BTreeMap<String, String>> {
+    if raw.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    serde_json::from_str::<BTreeMap<String, String>>(raw).map_err(anyhow::Error::from)
 }
 
 struct TableStateAdapter(ratatui::widgets::TableState);
@@ -598,4 +691,24 @@ pub fn config_path_from_args() -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_config_field_helpers_round_trip() {
+        let args = vec!["--foo".to_string(), "bar".to_string()];
+        let env = BTreeMap::from([("DISPLAY".to_string(), ":1".to_string())]);
+
+        assert_eq!(
+            parse_args_input(&format_args_for_input(&args)).expect("args should parse"),
+            args
+        );
+        assert_eq!(
+            parse_env_input(&format_env_for_input(&env)).expect("env should parse"),
+            env
+        );
+    }
 }
