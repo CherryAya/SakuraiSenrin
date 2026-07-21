@@ -44,7 +44,7 @@ from .parsers import (
     parse_response_set_args,
     parse_trigger_set_args,
 )
-from .rendering import build_reply_detail_plan_entry
+from .rendering import GROUP_PAGE_SIZE, build_reply_detail_plan_entry
 
 INFO_ALIASES = {"info", "详情"}
 HISTORY_ALIASES = {"history", "历史", "历史记录", "审批记录", "审批历史"}
@@ -107,6 +107,11 @@ class ApprovalReplyOutcome:
 class ParsedViewReplyCommand:
     trigger_group_id: int
     page: int
+
+
+@dataclass(slots=True, frozen=True)
+class ParsedGroupDetailDeleteCommand:
+    response_item_id: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -740,6 +745,47 @@ def parse_view_reply_for_group_detail(
         _default_i18n_text("wordbank.reply.group_command_invalid"),
         key="wordbank.reply.group_command_invalid",
     )
+
+
+def group_detail_page_response_item_ids(
+    detail: WordbankGroupDetail,
+    *,
+    page: int,
+    page_size: int = GROUP_PAGE_SIZE,
+) -> tuple[int, ...]:
+    start = max(0, (max(page, 1) - 1) * max(page_size, 1))
+    end = start + max(page_size, 1)
+    return tuple(
+        response.response_item_id
+        for response in detail.responses[start:end]
+        if response.response_item_id > 0
+    )
+
+
+def parse_group_detail_delete_reply(
+    text: str,
+    *,
+    available_response_item_ids: Sequence[int] | None,
+) -> ParsedGroupDetailDeleteCommand | None:
+    source = normalize_cq_plain_text(text, strip_leading_at=True)
+    action, _, rest = source.partition(" ")
+    if action.casefold() not in {"del", "delete", "remove", "删除"}:
+        return None
+    response_item_id_text = rest.strip()
+    if not response_item_id_text.isdigit():
+        raise RuleError(
+            "删除命令格式不正确，请发送“删除 词条ID”。",
+            key="wordbank.reply.group_command_invalid",
+        )
+    response_item_id = int(response_item_id_text)
+    if available_response_item_ids is not None and response_item_id not in set(
+        available_response_item_ids
+    ):
+        raise RuleError(
+            "当前详情页没有这个词条 ID，请发送图中标注的删除命令。",
+            key="wordbank.reply.group_command_invalid",
+        )
+    return ParsedGroupDetailDeleteCommand(response_item_id=response_item_id)
 
 
 def _parse_explicit_group_view_command(

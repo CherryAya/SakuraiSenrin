@@ -453,12 +453,12 @@ BOT: [发送苦瓜榜海报]
 - 指令: `wordbank group <group_id> [--page 页码]`
 - Demo: wordbank-search.webp
 #### 说明
-适合从搜索结果继续展开，查看 trigger、本组状态和各条响应详情；详情页内可继续翻页。
+适合从搜索结果继续展开，查看 trigger、本组状态和各条响应详情；详情页内可继续翻页。每条响应会标注自己的删除命令，回复详情图发送 `删除 <response_item_id>`，或直接发送 `#删除词条 <response_item_id>` 即可删除。
 #### 常用示例命令
 - `#wordbank group 271`
 - `#wordbank group 271 --page 3`
 #### 前置条件
-需要知道 `group_id`。
+需要知道 `group_id`。执行删除时，只有超管或该词条创建者有权限。
 #### 完整流程
 ```demo
 USER: #wordbank group 271

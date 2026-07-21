@@ -39,6 +39,7 @@ from src.plugins.wordbank.services.presentation import (
     format_timestamp,
 )
 
+from .group_detail_card_helpers import format_response_delete_hint
 from .group_detail_cards import (
     GroupDetailCardPage,
 )
@@ -593,6 +594,9 @@ async def build_group_detail_page_plan_entry(
                     locale=locale,
                 )
             ).blocks
+        )
+        blocks.append(
+            TextBlock("\n" + format_response_delete_hint(response.response_item_id))
         )
     if page < total_pages:
         blocks.append(

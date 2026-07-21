@@ -661,3 +661,78 @@ async def test_view_reply_matcher_routes_group_detail_reply_to_next_page(
     kwargs = await_args.kwargs
     assert kwargs["trigger_group_id"] == 271
     assert kwargs["page"] == 3
+
+
+@pytest.mark.asyncio
+async def test_view_reply_matcher_routes_group_detail_reply_delete_to_handle_delete(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "initialize_wordbank_plugin",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "handle_delete",
+        AsyncMock(return_value="词条 #300 已删除。"),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin.wordbank_service,
+        "get_message_ref",
+        AsyncMock(
+            return_value=WordbankMessageRefRecord(
+                message_id="90003",
+                ref_kind="view",
+                shard_key="2026_06",
+                context_type="group_detail",
+                trigger_group_id=271,
+                trigger_variant_id=0,
+                response_item_id=0,
+                current_page=1,
+                keyword="",
+                field="",
+                creator_id="",
+                has_image=False,
+                group_ids=(271,),
+                group_id="20001",
+                user_id="10001",
+                message_type="group",
+                source_message_id="",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin.wordbank_service,
+        "get_group_detail",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                responses=(
+                    SimpleNamespace(response_item_id=300),
+                    SimpleNamespace(response_item_id=301),
+                )
+            )
+        ),
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_view_reply_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_group_message_event("[CQ:at,qq=99999] 删除 300")
+        event.to_me = True
+        attach_reply_message(event, message_id=90003)
+
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, "词条 #300 已删除。", bot=bot)
+        ctx.should_finished(wordbank_plugin.wordbank_view_reply_command)
+
+    assert isinstance(wordbank_plugin.handle_delete, AsyncMock)
+    wordbank_plugin.handle_delete.assert_awaited_once()
+    await_args = wordbank_plugin.handle_delete.await_args
+    assert await_args is not None
+    assert await_args.kwargs["response_item_id_text"] == "300"

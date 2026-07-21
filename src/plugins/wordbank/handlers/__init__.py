@@ -53,10 +53,12 @@ from .passive import PassiveResponse, handle_passive_message, handle_passive_not
 from .reply import (
     REPLY_COMMAND_ALIASES,
     ApprovalReplyOutcome,
+    group_detail_page_response_item_ids,
     handle_approval_reply,
     handle_approval_reply_result,
     handle_reply_command,
     is_reply,
+    parse_group_detail_delete_reply,
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
 )
@@ -83,6 +85,7 @@ __all__ = [
     "fetch_first_image_bytes_from_message",
     "fetch_image_bytes_from_message",
     "finalize_submission",
+    "group_detail_page_response_item_ids",
     "handle_add_text_result",
     "handle_add_with_media",
     "handle_add_with_media_result",
@@ -105,6 +108,7 @@ __all__ = [
     "handle_trigger_probability_update",
     "is_reply",
     "localize_command_error",
+    "parse_group_detail_delete_reply",
     "parse_group_view_args",
     "parse_guided_search_creator_filter",
     "parse_guided_search_mode_choice",

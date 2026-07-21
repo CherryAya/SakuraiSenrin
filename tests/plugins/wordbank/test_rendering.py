@@ -271,6 +271,8 @@ async def test_build_group_detail_page_plan_entry_renders_trigger_and_responses(
     rendered = render_message_plan_entry(entry)
     assert "Trigger Group #12" in str(rendered)
     assert "响应 #300" in str(rendered)
+    assert "删除 300" in str(rendered)
+    assert "#删除词条 300" in str(rendered)
     assert sum(1 for segment in rendered if segment.type == "image") == 2
 
 

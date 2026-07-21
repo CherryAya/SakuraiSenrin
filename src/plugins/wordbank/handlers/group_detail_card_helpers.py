@@ -208,6 +208,13 @@ def response_meta_text(
     return f"{meta_line}  ·  {rule_line}"
 
 
+def format_response_delete_hint(response_item_id: int) -> str:
+    return (
+        f"删除命令: 回复本图发送“删除 {response_item_id}” "
+        f"或发送“#删除词条 {response_item_id}”（仅超管 / 创建者）"
+    )
+
+
 def paste_rounded_image(
     image: Image.Image,
     preview: Image.Image,

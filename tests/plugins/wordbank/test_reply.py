@@ -14,9 +14,11 @@ from src.plugins.wordbank.database.types import (
     WordbankResponseItemDetail,
 )
 from src.plugins.wordbank.handlers.reply import (
+    group_detail_page_response_item_ids,
     handle_approval_reply_result,
     handle_reply_command,
     parse_batch_approval_reply,
+    parse_group_detail_delete_reply,
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
 )
@@ -177,6 +179,60 @@ def test_parse_batch_approval_reply_supports_ranges() -> None:
     assert parsed.selected_action == "approve"
     assert parsed.selected_response_item_ids == (101, 103, 104)
     assert parsed.remaining_action == "noop"
+
+
+def test_parse_group_detail_delete_reply_accepts_visible_response_item_id() -> None:
+    parsed = parse_group_detail_delete_reply(
+        "删除 300",
+        available_response_item_ids=(300, 301),
+    )
+
+    assert parsed is not None
+    assert parsed.response_item_id == 300
+
+
+def test_parse_group_detail_delete_reply_rejects_non_visible_response_item_id() -> None:
+    with pytest.raises(RuleError):
+        parse_group_detail_delete_reply(
+            "删除 999",
+            available_response_item_ids=(300, 301),
+        )
+
+
+def test_group_detail_page_response_item_ids_uses_current_page_slice() -> None:
+    detail = WordbankGroupDetail(
+        trigger_group_id=12,
+        status="approved",
+        enabled=1,
+        probability=1.0,
+        group_id="20001",
+        created_by="10001",
+        deleted_at=0,
+        trigger_text="晚安",
+        trigger_shape=shape_from_text("晚安"),
+        trigger_variant_id=120,
+        responses=tuple(
+            WordbankResponseItemDetail(
+                response_item_id=300 + index,
+                status="approved",
+                enabled=1,
+                scope="current_group",
+                weight=3,
+                rule={},
+                group_id="20001",
+                created_by="10001",
+                approved_by="10002",
+                deleted_at=0,
+                response_text=f"做个好梦{index}",
+                response_shape=shape_from_text(f"做个好梦{index}"),
+            )
+            for index in range(12)
+        ),
+        selected_response_item_id=300,
+    )
+
+    assert group_detail_page_response_item_ids(detail, page=1) == tuple(range(300, 310))
+    assert group_detail_page_response_item_ids(detail, page=2) == (310, 311)
 
 
 def test_parse_batch_approval_reply_supports_quick_approve_complement() -> None:
