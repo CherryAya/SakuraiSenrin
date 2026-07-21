@@ -331,10 +331,8 @@ async def test_handle_pending_entries_renders_image_shapes() -> None:
     assert "序号: 1" in str(rendered)
     assert "创建者: 10001" in str(rendered)
     assert "规则: 概率 1 | 角色 管理" in str(rendered)
-    assert "[图片:8]" not in str(rendered)
-    assert "[图片:7]" not in str(rendered)
-    assert "触发词: 图片消息" in str(rendered)
-    assert "响应词: 做个好梦" in str(rendered)
+    assert "触发词: &#91;图片:8&#93;" in str(rendered)
+    assert "响应词: 做个好梦 &#91;图片:7&#93;" in str(rendered)
     assert sum(1 for segment in rendered if segment.type == "image") == 0
 
 

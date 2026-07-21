@@ -32,7 +32,7 @@ from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import (
     format_creator_leaderboard,
-    format_notice_content_summary,
+    format_notice_content_raw_text,
     format_rule_summary,
     format_scope_label,
     format_status_label,
@@ -305,17 +305,13 @@ async def build_pending_item_blocks(
         leading = "\n"
 
     blocks.append(
-        TextBlock(
-            f"{leading}触发词: "
-            f"{format_notice_content_summary(trigger_text, shape=trigger_shape)}"
-        )
+        TextBlock(f"{leading}触发词: {format_notice_content_raw_text(trigger_text)}")
     )
     blocks.append(
         TextBlock(
             "\n响应词: "
-            + format_notice_content_summary(
+            + format_notice_content_raw_text(
                 response_text,
-                shape=response_shape,
                 response_mode=response_mode or "normal",
                 forward_node_count=forward_node_count,
             )

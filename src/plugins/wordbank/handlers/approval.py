@@ -40,6 +40,7 @@ from src.plugins.wordbank.services.core import (
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.presentation import (
     WordbankBatchAddResult,
+    format_notice_content_raw_text,
     format_notice_content_summary,
     format_rule_summary,
     format_scope_label,
@@ -79,16 +80,14 @@ def _event_submit_timestamp(event: MessageEvent, created_at: int) -> str:
 
 
 def _trigger_summary(result: WordbankAddResult) -> str:
-    return format_notice_content_summary(
+    return format_notice_content_raw_text(
         result.trigger_text,
-        shape=result.trigger_shape,
     )
 
 
 def _response_summary(result: WordbankAddResult) -> str:
-    return format_notice_content_summary(
+    return format_notice_content_raw_text(
         result.response_text,
-        shape=result.response_shape,
         response_mode=result.response_mode,
         forward_node_count=result.forward_node_count,
     )

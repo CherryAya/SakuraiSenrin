@@ -330,6 +330,23 @@ def format_notice_content_summary(
     return summary_text or text or "-"
 
 
+def format_notice_content_raw_text(
+    text: str,
+    *,
+    response_mode: str = "normal",
+    forward_node_count: int = 0,
+) -> str:
+    if text.strip():
+        return text
+    if response_mode == "forward_whole":
+        return (
+            f"一条合并转发消息（{forward_node_count} 条）"
+            if forward_node_count > 0
+            else "一条合并转发消息"
+        )
+    return "-"
+
+
 def format_timestamp(timestamp: int) -> str:
     if timestamp <= 0:
         return "-"
