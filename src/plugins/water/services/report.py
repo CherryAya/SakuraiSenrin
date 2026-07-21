@@ -639,9 +639,7 @@ class WaterReportService:
                     current=completed_count,
                     total=len(candidates),
                 )
-        rendered_items = [
-            item for _candidate, item in rendered if item is not None
-        ]
+        rendered_items = [item for _candidate, item in rendered if item is not None]
         push_state.rendered_groups = len(rendered_items)
         skipped_groups = 0
         failed_groups = 0
