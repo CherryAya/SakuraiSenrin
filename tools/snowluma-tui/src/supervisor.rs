@@ -23,6 +23,7 @@ use crate::{
     },
 };
 
+#[derive(Clone)]
 pub struct Supervisor {
     spec_map: BTreeMap<ServiceName, ServiceSpec>,
 }

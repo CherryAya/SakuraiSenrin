@@ -1,4 +1,10 @@
-use std::{collections::BTreeMap, path::PathBuf, time::Duration};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::mpsc::{self, Receiver},
+    thread,
+    time::Duration,
+};
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
@@ -64,6 +70,23 @@ pub struct App {
     editing: bool,
     input_buffer: String,
     should_quit: bool,
+    action_rx: Option<Receiver<ActionOutcome>>,
+    pending_statuses: BTreeMap<ServiceName, ServiceStatus>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ActionRequest {
+    Start(ServiceName),
+    Stop(ServiceName),
+    Restart(ServiceName),
+    StartAll,
+    StopAll,
+    RestartAll,
+}
+
+#[derive(Debug)]
+struct ActionOutcome {
+    message: Result<String, String>,
 }
 
 impl App {
@@ -82,6 +105,8 @@ impl App {
             editing: false,
             input_buffer: String::new(),
             should_quit: false,
+            action_rx: None,
+            pending_statuses: BTreeMap::new(),
             supervisor,
         };
         app.refresh()?;
@@ -93,6 +118,7 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<()> {
         while !self.should_quit {
+            self.poll_action_completion()?;
             terminal.draw(|frame| self.draw(frame))?;
             if event::poll(Duration::from_millis(self.config.tick_ms))? {
                 let event = event::read()?;
@@ -186,7 +212,11 @@ impl App {
         );
 
         let rows = self.statuses.iter().map(|item| {
-            let status_text = match &item.status {
+            let status_text = match self
+                .pending_statuses
+                .get(&item.name)
+                .unwrap_or(&item.status)
+            {
                 ServiceStatus::Stopped => "stopped".to_string(),
                 ServiceStatus::Starting => "starting".to_string(),
                 ServiceStatus::Running => "running".to_string(),
@@ -329,6 +359,22 @@ impl App {
             return self.handle_edit_key(key);
         }
 
+        if self.action_rx.is_some()
+            && matches!(
+                key.code,
+                KeyCode::Char('s')
+                    | KeyCode::Char('x')
+                    | KeyCode::Char('r')
+                    | KeyCode::Char('S')
+                    | KeyCode::Char('X')
+                    | KeyCode::Char('R')
+            )
+        {
+            self.last_message = "service action already running".to_string();
+            self.refresh()?;
+            return Ok(());
+        }
+
         match key.code {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Tab => {
@@ -345,18 +391,33 @@ impl App {
                 let result = self.refresh();
                 self.set_message(result);
             }
-            KeyCode::Char('s') => {
-                self.run_service_action("start", |app, name| app.supervisor.start_service(name))
-            }
-            KeyCode::Char('x') => {
-                self.run_service_action("stop", |app, name| app.supervisor.stop_service(name))
-            }
-            KeyCode::Char('r') => {
-                self.run_service_action("restart", |app, name| app.supervisor.restart_service(name))
-            }
-            KeyCode::Char('S') => self.set_message(self.supervisor.start_all()),
-            KeyCode::Char('X') => self.set_message(self.supervisor.stop_all()),
-            KeyCode::Char('R') => self.set_message(self.supervisor.restart_all()),
+            KeyCode::Char('s') => self.launch_selected_action("start", ActionKind::Start)?,
+            KeyCode::Char('x') => self.launch_selected_action("stop", ActionKind::Stop)?,
+            KeyCode::Char('r') => self.launch_selected_action("restart", ActionKind::Restart)?,
+            KeyCode::Char('S') => self.launch_background_action(
+                ActionRequest::StartAll,
+                "starting all services".to_string(),
+                ServiceName::ALL
+                    .into_iter()
+                    .map(|name| (name, ServiceStatus::Starting))
+                    .collect(),
+            ),
+            KeyCode::Char('X') => self.launch_background_action(
+                ActionRequest::StopAll,
+                "stopping all services".to_string(),
+                ServiceName::ALL
+                    .into_iter()
+                    .map(|name| (name, ServiceStatus::Stopping))
+                    .collect(),
+            ),
+            KeyCode::Char('R') => self.launch_background_action(
+                ActionRequest::RestartAll,
+                "restarting all services".to_string(),
+                ServiceName::ALL
+                    .into_iter()
+                    .map(|name| (name, ServiceStatus::Stopping))
+                    .collect(),
+            ),
             KeyCode::Char('w') if self.active_tab == Tab::Config => self.save_config(),
             KeyCode::Enter | KeyCode::Char('e') if self.active_tab == Tab::Config => {
                 self.begin_edit_current_field()
@@ -413,18 +474,6 @@ impl App {
         self.statuses
             .get(self.selected_service)
             .map(|item| item.name)
-    }
-
-    fn run_service_action(
-        &mut self,
-        verb: &str,
-        action: impl FnOnce(&mut Self, ServiceName) -> Result<()>,
-    ) {
-        let result = self
-            .selected_service_name()
-            .ok_or_else(|| anyhow::anyhow!("no service selected"))
-            .and_then(|name| action(self, name));
-        self.set_message(result.map(|_| format!("{verb} ok")));
     }
 
     fn set_message<T>(&mut self, result: Result<T>) {
@@ -598,6 +647,10 @@ impl App {
     }
 
     fn save_config(&mut self) {
+        if self.action_rx.is_some() {
+            self.last_message = "wait for running service action before saving".to_string();
+            return;
+        }
         let result = self
             .config
             .save_to(&self.paths.config_file)
@@ -610,6 +663,95 @@ impl App {
             })
             .map(|_| "config saved".to_string());
         self.set_message(result);
+    }
+
+    fn launch_selected_action(&mut self, verb: &str, kind: ActionKind) -> Result<()> {
+        let name = self
+            .selected_service_name()
+            .ok_or_else(|| anyhow::anyhow!("no service selected"))?;
+        let request = match kind {
+            ActionKind::Start => ActionRequest::Start(name),
+            ActionKind::Stop => ActionRequest::Stop(name),
+            ActionKind::Restart => ActionRequest::Restart(name),
+        };
+        let pending = match kind {
+            ActionKind::Start => BTreeMap::from([(name, ServiceStatus::Starting)]),
+            ActionKind::Stop | ActionKind::Restart => {
+                BTreeMap::from([(name, ServiceStatus::Stopping)])
+            }
+        };
+        self.launch_background_action(request, format!("{verb} {}...", name.label()), pending);
+        Ok(())
+    }
+
+    fn launch_background_action(
+        &mut self,
+        request: ActionRequest,
+        in_progress_message: String,
+        pending: BTreeMap<ServiceName, ServiceStatus>,
+    ) {
+        let supervisor = self.supervisor.clone();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let message =
+                run_action_request(&supervisor, request).map_err(|error| error.to_string());
+            let _ = tx.send(ActionOutcome { message });
+        });
+        self.action_rx = Some(rx);
+        self.pending_statuses = pending;
+        self.last_message = in_progress_message;
+    }
+
+    fn poll_action_completion(&mut self) -> Result<()> {
+        let Some(receiver) = &self.action_rx else {
+            return Ok(());
+        };
+        if let Ok(outcome) = receiver.try_recv() {
+            self.action_rx = None;
+            self.pending_statuses.clear();
+            self.last_message = match outcome.message {
+                Ok(message) => message,
+                Err(message) => message,
+            };
+            self.refresh()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ActionKind {
+    Start,
+    Stop,
+    Restart,
+}
+
+fn run_action_request(supervisor: &Supervisor, request: ActionRequest) -> Result<String> {
+    match request {
+        ActionRequest::Start(name) => {
+            supervisor.start_service(name)?;
+            Ok(format!("start {} ok", name.label()))
+        }
+        ActionRequest::Stop(name) => {
+            supervisor.stop_service(name)?;
+            Ok(format!("stop {} ok", name.label()))
+        }
+        ActionRequest::Restart(name) => {
+            supervisor.restart_service(name)?;
+            Ok(format!("restart {} ok", name.label()))
+        }
+        ActionRequest::StartAll => {
+            supervisor.start_all()?;
+            Ok("start all ok".to_string())
+        }
+        ActionRequest::StopAll => {
+            supervisor.stop_all()?;
+            Ok("stop all ok".to_string())
+        }
+        ActionRequest::RestartAll => {
+            supervisor.restart_all()?;
+            Ok("restart all ok".to_string())
+        }
     }
 }
 
