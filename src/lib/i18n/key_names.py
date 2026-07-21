@@ -694,6 +694,8 @@ MESSAGE_KEY_NAMES = (
     "water.report.tiles.title",
     "water.report.title.today",
     "water.report.title.yesterday",
+    "wordbank.add.duplicate_approved",
+    "wordbank.add.duplicate_pending",
     "wordbank.add.pending",
     "wordbank.add.processing_with_media",
     "wordbank.add.success",

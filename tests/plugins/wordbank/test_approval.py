@@ -47,6 +47,8 @@ def _result(
     response_mode: str = "normal",
     forward_source_message_id: str | None = None,
     forward_node_count: int = 0,
+    status: str = "pending",
+    reused_existing: bool = False,
 ) -> WordbankAddResult:
     return WordbankAddResult(
         trigger_group_id=trigger_group_id,
@@ -57,6 +59,7 @@ def _result(
         scope="current_group",
         probability=1.0,
         weight=3,
+        status=status,
         trigger_shape=trigger_shape,
         response_shape=response_shape,
         created_by=created_by,
@@ -65,6 +68,7 @@ def _result(
         response_mode=response_mode,
         forward_source_message_id=forward_source_message_id,
         forward_node_count=forward_node_count,
+        reused_existing=reused_existing,
     )
 
 
@@ -192,6 +196,75 @@ async def test_build_add_result_message_keeps_plain_text_response() -> None:
         "规则: 概率 1\n"
         "权重: 3\n"
         "管理员通过前不会触发。"
+    )
+    load_canonical_storage_bytes.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_build_add_result_message_warns_on_duplicate_pending_result() -> None:
+    load_canonical_storage_bytes = AsyncMock()
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    result = _result(
+        response_text="做个好梦",
+        response_shape=shape_from_text("做个好梦"),
+        created_by="10002",
+        created_at=1_700_000_123,
+        reused_existing=True,
+    )
+
+    message = await _build_add_result_message(
+        result,
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    assert str(message) == (
+        "这个 trigger-response pair 已在待审核列表里，请不要重复添加。\n"
+        "ID: 12\n"
+        "状态: 待审核\n"
+        "触发词: 晚安\n"
+        "响应词: 做个好梦\n"
+        "范围: 当前群\n"
+        "规则: 概率 1\n"
+        "权重: 3\n"
+        "已复用现有待审词条，并再次通知管理员审核。"
+    )
+    load_canonical_storage_bytes.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_build_add_result_message_warns_on_duplicate_approved_result() -> None:
+    load_canonical_storage_bytes = AsyncMock()
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=load_canonical_storage_bytes),
+    )
+    result = _result(
+        response_text="做个好梦",
+        response_shape=shape_from_text("做个好梦"),
+        status="approved",
+        reused_existing=True,
+    )
+
+    message = await _build_add_result_message(
+        result,
+        locale="zh-CN",
+        media_service=media_service,
+    )
+
+    assert str(message) == (
+        "这个 trigger-response pair 已存在并通过审核，请不要重复添加。\n"
+        "ID: 12\n"
+        "状态: 已通过\n"
+        "触发词: 晚安\n"
+        "响应词: 做个好梦\n"
+        "范围: 当前群\n"
+        "规则: 概率 1\n"
+        "权重: 3\n"
+        "该词条已可直接使用。"
     )
     load_canonical_storage_bytes.assert_not_awaited()
 

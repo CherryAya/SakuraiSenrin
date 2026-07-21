@@ -211,3 +211,59 @@ async def test_submission_lifecycle_binds_plugin_specific_submission_config(
     assert await_args.kwargs["submission_source_kind"] == "study_submission"
     assert await_args.kwargs["batch_submission_source_kind"] == "study_batch_submission"
     assert await_args.kwargs["batch_feedback_nickname"] == "nickname:zh-CN"
+
+
+@pytest.mark.asyncio
+async def test_finalize_submission_skips_approval_notice_for_reused_approved_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    build_message = AsyncMock(return_value="RESULT")
+    deliver_plan = AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},)))
+    record_submission = AsyncMock(return_value=None)
+    schedule_notice = Mock(return_value=None)
+    matcher = cast(Any, SimpleNamespace(finish=AsyncMock(return_value=None)))
+
+    monkeypatch.setattr(submission_module, "build_add_result_plan_entry", build_message)
+    monkeypatch.setattr(submission_module, "deliver_message_plan", deliver_plan)
+    monkeypatch.setattr(
+        submission_module,
+        "record_submission_approval_message",
+        record_submission,
+    )
+    monkeypatch.setattr(
+        submission_module,
+        "schedule_submission_approval_notice",
+        schedule_notice,
+    )
+
+    result = WordbankAddResult(
+        trigger_group_id=1,
+        trigger_variant_id=2,
+        response_item_id=3,
+        trigger_text="晚安",
+        response_text="做个好梦",
+        scope="current_group",
+        probability=1.0,
+        weight=3,
+        status="approved",
+        trigger_shape=shape_from_text("晚安"),
+        response_shape=shape_from_text("做个好梦"),
+        reused_existing=True,
+    )
+
+    await finalize_submission(
+        matcher,
+        cast(Bot, SimpleNamespace()),
+        build_group_message_event("#wordbank.add", message_id=1),
+        result,
+        locale="zh-CN",
+        service=cast(WordbankService, SimpleNamespace()),
+        media_service=cast(WordbankMediaService, SimpleNamespace()),
+        submission_source_kind="wordbank_submission",
+        batch_submission_source_kind="wordbank_batch_submission",
+        batch_feedback_nickname="回 - 樱井千凛·Senrinです♡",
+    )
+
+    record_submission.assert_awaited_once()
+    schedule_notice.assert_not_called()
+    matcher.finish.assert_awaited_once()

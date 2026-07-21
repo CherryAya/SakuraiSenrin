@@ -27,6 +27,7 @@ from src.plugins.wordbank.database.types import (
     WordbankSearchPage,
     WordbankSearchRequest,
     WordbankTriggerGroupRecord,
+    WordbankTriggerVariantRecord,
 )
 from src.plugins.wordbank.debug import (
     describe_batch_errors,
@@ -257,6 +258,27 @@ class WordbankService:
             is_group=is_group,
             short_trigger=False,
         )
+        normalized_group_id = group_id if is_group else ""
+        reused = await self._build_reused_add_result(
+            trigger_shape=trigger_shape,
+            response_shape=response_shape,
+            scope=rule.scope,
+            group_id=normalized_group_id,
+            rule=dict(rule.rule),
+        )
+        if reused is not None:
+            log_perf(
+                "service.add_message_entry.reused",
+                start=start,
+                trigger_group_id=reused.trigger_group_id,
+                response_item_id=reused.response_item_id,
+                status=reused.status,
+                scope=reused.scope,
+                trigger_atoms=len(trigger_shape.atoms),
+                response_atoms=len(response_shape.atoms),
+                is_group=is_group,
+            )
+            return reused
         created = await self.repository.create_or_append_response(
             trigger_shape=trigger_shape,
             response_shape=response_shape,
@@ -265,7 +287,7 @@ class WordbankService:
             priority=rule.priority,
             trigger_probability=rule.probability,
             weight=rule.weight,
-            group_id=group_id if is_group else "",
+            group_id=normalized_group_id,
             created_by=user_id,
         )
         self.mark_dirty(created.trigger_group_id)
@@ -299,6 +321,90 @@ class WordbankService:
             created_at=created.response_item.created_at,
             rule=dict(rule.rule),
         )
+
+    async def _build_reused_add_result(
+        self,
+        *,
+        trigger_shape: MessageShape,
+        response_shape: MessageShape,
+        scope: str,
+        group_id: str,
+        rule: dict[str, Any],
+    ) -> WordbankAddResult | None:
+        existing_group = await self.repository.find_trigger_group_by_shape(
+            trigger_shape,
+            include_deleted=True,
+        )
+        if existing_group is None or existing_group.deleted_at != 0:
+            return None
+        response_item = self._find_reusable_response_item(
+            existing_group,
+            response_shape=response_shape,
+            scope=scope,
+            group_id=group_id,
+            rule=rule,
+        )
+        if response_item is None:
+            return None
+        trigger_variant = self._pick_matching_trigger_variant(
+            existing_group,
+            trigger_shape=trigger_shape,
+        )
+        return WordbankAddResult(
+            trigger_group_id=existing_group.id,
+            trigger_variant_id=trigger_variant.id,
+            response_item_id=response_item.id,
+            status=response_item.status,
+            created_group=False,
+            trigger_text=trigger_variant.trigger_text,
+            response_text=response_item.text,
+            scope=response_item.scope,
+            probability=existing_group.probability,
+            weight=response_item.weight,
+            trigger_shape=trigger_variant.message_shape,
+            response_shape=response_item.message_shape,
+            created_by=response_item.created_by,
+            created_at=response_item.created_at,
+            rule=dict(response_item.rule),
+            reused_existing=True,
+        )
+
+    @staticmethod
+    def _find_reusable_response_item(
+        group: WordbankTriggerGroupRecord,
+        *,
+        response_shape: MessageShape,
+        scope: str,
+        group_id: str,
+        rule: dict[str, Any],
+    ) -> WordbankResponseItemRecord | None:
+        candidates = [
+            response
+            for response in group.responses
+            if response.deleted_at == 0
+            and response.message_shape == response_shape
+            and response.scope == scope
+            and response.group_id == group_id
+            and response.rule == rule
+            and response.status in {"pending", "approved"}
+        ]
+        if not candidates:
+            return None
+        candidates.sort(
+            key=lambda response: (response.status != "pending", response.id)
+        )
+        return candidates[0]
+
+    @staticmethod
+    def _pick_matching_trigger_variant(
+        group: WordbankTriggerGroupRecord,
+        *,
+        trigger_shape: MessageShape,
+    ) -> WordbankTriggerVariantRecord:
+        for variant in group.trigger_variants:
+            if variant.message_shape == trigger_shape:
+                return variant
+        return group.trigger_variants[0]
 
     async def add_message_entries(
         self,

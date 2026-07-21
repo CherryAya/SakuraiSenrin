@@ -31,6 +31,72 @@ async def test_same_trigger_appends_response_to_existing_group(
     assert len(group_detail.responses) == 2
 
 
+async def test_duplicate_pending_pair_reuses_existing_response_item(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+
+    first = await service.add_message_entry(
+        trigger_shape=shape_from_text("晚安啦"),
+        response_shape=shape_from_text("做个好梦"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    second = await service.add_message_entry(
+        trigger_shape=shape_from_text("晚安啦"),
+        response_shape=shape_from_text("做个好梦"),
+        group_id="20001",
+        user_id="10002",
+        is_group=True,
+    )
+    group_detail = await service.get_group_detail(first.trigger_group_id)
+
+    assert second.reused_existing is True
+    assert second.status == "pending"
+    assert second.response_item_id == first.response_item_id
+    assert group_detail is not None
+    assert len(group_detail.responses) == 1
+
+
+async def test_duplicate_approved_pair_reuses_existing_response_item_without_new_row(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = await _build_service(tmp_path, monkeypatch)
+
+    first = await service.add_message_entry(
+        trigger_shape=shape_from_text("晚安啦"),
+        response_shape=shape_from_text("做个好梦"),
+        group_id="20001",
+        user_id="10001",
+        is_group=True,
+    )
+    approved = await service.approve_response_item(
+        first.response_item_id,
+        actor_user_id="10001",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    second = await service.add_message_entry(
+        trigger_shape=shape_from_text("晚安啦"),
+        response_shape=shape_from_text("做个好梦"),
+        group_id="20001",
+        user_id="10002",
+        is_group=True,
+    )
+    group_detail = await service.get_group_detail(first.trigger_group_id)
+
+    assert approved is True
+    assert second.reused_existing is True
+    assert second.status == "approved"
+    assert second.response_item_id == first.response_item_id
+    assert group_detail is not None
+    assert len(group_detail.responses) == 1
+
+
 async def test_runtime_only_uses_approved_responses_inside_same_group(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

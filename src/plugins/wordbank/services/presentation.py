@@ -55,6 +55,7 @@ class WordbankAddResult:
     response_mode: str = "normal"
     forward_source_message_id: str | None = None
     forward_node_count: int = 0
+    reused_existing: bool = False
 
 
 @dataclass(slots=True, frozen=True)
@@ -246,9 +247,16 @@ def format_creator_leaderboard(
 
 
 def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
-    key = (
-        "wordbank.add.pending" if result.status == "pending" else "wordbank.add.success"
-    )
+    if result.reused_existing and result.status == "pending":
+        key = "wordbank.add.duplicate_pending"
+    elif result.reused_existing and result.status == "approved":
+        key = "wordbank.add.duplicate_approved"
+    else:
+        key = (
+            "wordbank.add.pending"
+            if result.status == "pending"
+            else "wordbank.add.success"
+        )
     return tr(
         locale,
         key,
