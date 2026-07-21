@@ -11,21 +11,15 @@ from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter
 from nonebot.adapters.onebot.v11 import Bot
 
 from src.lib.message_api_hooks import install_message_delivery_hooks
-from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.scripts.install import init_fonts
 from src.services.db import init_db
 from src.services.message_asset_startup import run_startup_message_asset_check
-from src.services.sync import (
-    sync_groups_from_api,
-    sync_users_from_api,
-)
 
 init_fonts()
 nonebot.init()
 install_message_delivery_hooks()
 
 from src.services.backup_scheduler import install_backup_scheduler
-from src.services.startup_sync import run_startup_backup_freshness_check
 
 driver = nonebot.get_driver()
 driver.register_adapter(OneBotV11Adapter)
@@ -35,16 +29,20 @@ install_backup_scheduler()
 @driver.on_startup
 async def _on_startup() -> None:
     await init_db()
+    await run_startup_message_asset_check()
 
 
 @driver.on_bot_connect
 async def _on_bot_connect(bot: Bot) -> None:
+    from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
+    from src.services.startup_sync import run_startup_backup_freshness_check
+    from src.services.sync import sync_groups_from_api, sync_users_from_api
+
     await user_repo.warm_up()
     await group_repo.warm_up()
     await member_repo.warm_up()
     await blacklist_repo.warm_up()
 
-    await run_startup_message_asset_check(bot)
     await run_startup_backup_freshness_check(bot)
 
     await sync_users_from_api(bot)

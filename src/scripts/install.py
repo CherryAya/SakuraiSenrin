@@ -14,31 +14,11 @@ import sys
 
 import skia
 
+from src.lib.terminal_prompt import ask_user_yes_no_with_timeout
 from src.logger import logger
 
 FONT_DIR = Path("./data/font/")
 LOCK_FILE = FONT_DIR / ".fonts_installed.lock"
-
-
-def _ask_user_with_timeout(prompt: str, timeout: int = 5) -> bool:
-    """带超时的终端交互询问"""
-    sys.stdout.write(f"\n{prompt} [Y/n] (默认 {timeout} 秒后跳过): ")
-    sys.stdout.flush()
-
-    if sys.platform == "win32":
-        try:
-            return input().strip().lower() in ["", "y", "yes"]
-        except EOFError:
-            return False
-
-    import select
-
-    rlist, _, _ = select.select([sys.stdin], [], [], timeout)
-    if not rlist:
-        logger.warning("\n⏳ 等待超时，自动跳过。")
-        return False
-
-    return sys.stdin.readline().strip().lower() in ["", "y", "yes"]
 
 
 def _verify_with_skia(fonts: list[Path]) -> bool:
@@ -82,7 +62,12 @@ def _handle_windows(fonts: list[Path]) -> bool:
     logger.warning("👉 请在弹出的文件夹中全选字体 -> 右键 -> 选择【为所有用户安装】")
     logger.warning("=" * 60)
 
-    if not _ask_user_with_timeout("准备好打开文件夹了吗？"):
+    if not ask_user_yes_no_with_timeout(
+        "准备好打开文件夹了吗？",
+        timeout=5,
+        default=False,
+        default_label="跳过",
+    ):
         return False
 
     try:
@@ -92,8 +77,11 @@ def _handle_windows(fonts: list[Path]) -> bool:
             f"无法自动打开文件夹，请手动前往 {FONT_DIR.absolute()} 安装。报错: {e}"
         )
 
-    if _ask_user_with_timeout(
-        "是否已成功执行『右键安装』？(按 Y 进行 Skia 验证)", timeout=60
+    if ask_user_yes_no_with_timeout(
+        "是否已成功执行『右键安装』？(按 Y 进行 Skia 验证)",
+        timeout=60,
+        default=False,
+        default_label="跳过",
     ):
         return True
 
@@ -102,7 +90,12 @@ def _handle_windows(fonts: list[Path]) -> bool:
 
 def _handle_linux(fonts: list[Path]) -> bool:
     """Linux 系统静默安装"""
-    if not _ask_user_with_timeout("是否立即将这些字体安装到系统中？"):
+    if not ask_user_yes_no_with_timeout(
+        "是否立即将这些字体安装到系统中？",
+        timeout=5,
+        default=False,
+        default_label="跳过",
+    ):
         return False
 
     user_font_dir = Path.home() / ".local" / "share" / "fonts"
@@ -134,7 +127,12 @@ def _handle_linux(fonts: list[Path]) -> bool:
 
 def _handle_macos(fonts: list[Path]) -> bool:
     """macOS 系统静默安装"""
-    if not _ask_user_with_timeout("是否立即将这些字体安装到系统中？"):
+    if not ask_user_yes_no_with_timeout(
+        "是否立即将这些字体安装到系统中？",
+        timeout=5,
+        default=False,
+        default_label="跳过",
+    ):
         return False
 
     user_font_dir = Path.home() / "Library" / "Fonts"
