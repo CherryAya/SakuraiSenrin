@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     path::PathBuf,
-    sync::mpsc::{self, Receiver},
+    sync::mpsc::{self, Receiver, Sender},
     thread,
     time::Duration,
 };
@@ -70,7 +70,8 @@ pub struct App {
     editing: bool,
     input_buffer: String,
     should_quit: bool,
-    action_rx: Option<Receiver<ActionOutcome>>,
+    action_rx: Receiver<ActionOutcome>,
+    action_tx: Sender<ActionOutcome>,
     pending_statuses: BTreeMap<ServiceName, ServiceStatus>,
 }
 
@@ -86,12 +87,14 @@ enum ActionRequest {
 
 #[derive(Debug)]
 struct ActionOutcome {
+    affected_services: Vec<ServiceName>,
     message: Result<String, String>,
 }
 
 impl App {
     pub fn new(config: AppConfig, paths: RuntimePaths) -> Result<Self> {
         let supervisor = Supervisor::new(build_service_specs(&config, &paths)?);
+        let (action_tx, action_rx) = mpsc::channel();
         let mut app = Self {
             config,
             paths,
@@ -105,7 +108,8 @@ impl App {
             editing: false,
             input_buffer: String::new(),
             should_quit: false,
-            action_rx: None,
+            action_rx,
+            action_tx,
             pending_statuses: BTreeMap::new(),
             supervisor,
         };
@@ -252,7 +256,7 @@ impl App {
             .selected_service_name()
             .and_then(|name| self.statuses.iter().find(|item| item.name == name))
             .map(|item| {
-                vec![
+                let mut lines = vec![
                     Line::from(format!("Service: {}", item.label)),
                     Line::from(format!(
                         "PID: {}",
@@ -265,7 +269,21 @@ impl App {
                         "Started: {}",
                         item.started_at.clone().unwrap_or_else(|| "-".to_string())
                     )),
-                ]
+                ];
+                if let Some(exit) = &item.exit_state {
+                    lines.push(Line::from(format!(
+                        "Last exit: code={:?} signal={:?} expected_stop={}",
+                        exit.exit_code, exit.signal, exit.expected_stop
+                    )));
+                    lines.push(Line::from(format!("Finished: {}", exit.finished_at)));
+                    if !exit.output_tail.is_empty() {
+                        lines.push(Line::from("Output:"));
+                        for line in exit.output_tail.iter().take(4) {
+                            lines.push(Line::from(format!("  {line}")));
+                        }
+                    }
+                }
+                lines
             })
             .unwrap_or_else(|| vec![Line::from("No service selected")]);
         let paragraph = Paragraph::new(Text::from(detail))
@@ -359,22 +377,6 @@ impl App {
             return self.handle_edit_key(key);
         }
 
-        if self.action_rx.is_some()
-            && matches!(
-                key.code,
-                KeyCode::Char('s')
-                    | KeyCode::Char('x')
-                    | KeyCode::Char('r')
-                    | KeyCode::Char('S')
-                    | KeyCode::Char('X')
-                    | KeyCode::Char('R')
-            )
-        {
-            self.last_message = "service action already running".to_string();
-            self.refresh()?;
-            return Ok(());
-        }
-
         match key.code {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Tab => {
@@ -394,30 +396,9 @@ impl App {
             KeyCode::Char('s') => self.launch_selected_action("start", ActionKind::Start)?,
             KeyCode::Char('x') => self.launch_selected_action("stop", ActionKind::Stop)?,
             KeyCode::Char('r') => self.launch_selected_action("restart", ActionKind::Restart)?,
-            KeyCode::Char('S') => self.launch_background_action(
-                ActionRequest::StartAll,
-                "starting all services".to_string(),
-                ServiceName::ALL
-                    .into_iter()
-                    .map(|name| (name, ServiceStatus::Starting))
-                    .collect(),
-            ),
-            KeyCode::Char('X') => self.launch_background_action(
-                ActionRequest::StopAll,
-                "stopping all services".to_string(),
-                ServiceName::ALL
-                    .into_iter()
-                    .map(|name| (name, ServiceStatus::Stopping))
-                    .collect(),
-            ),
-            KeyCode::Char('R') => self.launch_background_action(
-                ActionRequest::RestartAll,
-                "restarting all services".to_string(),
-                ServiceName::ALL
-                    .into_iter()
-                    .map(|name| (name, ServiceStatus::Stopping))
-                    .collect(),
-            ),
+            KeyCode::Char('S') => self.launch_action(ActionRequest::StartAll)?,
+            KeyCode::Char('X') => self.launch_action(ActionRequest::StopAll)?,
+            KeyCode::Char('R') => self.launch_action(ActionRequest::RestartAll)?,
             KeyCode::Char('w') if self.active_tab == Tab::Config => self.save_config(),
             KeyCode::Enter | KeyCode::Char('e') if self.active_tab == Tab::Config => {
                 self.begin_edit_current_field()
@@ -647,7 +628,7 @@ impl App {
     }
 
     fn save_config(&mut self) {
-        if self.action_rx.is_some() {
+        if !self.pending_statuses.is_empty() {
             self.last_message = "wait for running service action before saving".to_string();
             return;
         }
@@ -674,48 +655,77 @@ impl App {
             ActionKind::Stop => ActionRequest::Stop(name),
             ActionKind::Restart => ActionRequest::Restart(name),
         };
-        let pending = match kind {
-            ActionKind::Start => BTreeMap::from([(name, ServiceStatus::Starting)]),
-            ActionKind::Stop | ActionKind::Restart => {
-                BTreeMap::from([(name, ServiceStatus::Stopping)])
-            }
-        };
-        self.launch_background_action(request, format!("{verb} {}...", name.label()), pending);
+        self.launch_action_with_message(
+            request,
+            format!("{verb} {}...", name.label()),
+            match kind {
+                ActionKind::Start => ServiceStatus::Starting,
+                ActionKind::Stop | ActionKind::Restart => ServiceStatus::Stopping,
+            },
+        )?;
         Ok(())
     }
 
-    fn launch_background_action(
+    fn launch_action(&mut self, request: ActionRequest) -> Result<()> {
+        let (message, status) = action_context(&request);
+        self.launch_action_with_message(request, message, status)
+    }
+
+    fn launch_action_with_message(
         &mut self,
         request: ActionRequest,
         in_progress_message: String,
-        pending: BTreeMap<ServiceName, ServiceStatus>,
-    ) {
+        pending_status: ServiceStatus,
+    ) -> Result<()> {
+        let scope = action_scope(&self.supervisor, &request);
+        if self.action_conflicts(&scope) {
+            self.last_message = "another action already touches one of those services".to_string();
+            return Ok(());
+        }
+        let pending = scope
+            .iter()
+            .map(|service| (*service, pending_status.clone()))
+            .collect::<BTreeMap<_, _>>();
+        self.pending_statuses.extend(pending);
+
         let supervisor = self.supervisor.clone();
-        let (tx, rx) = mpsc::channel();
+        let tx = self.action_tx.clone();
         thread::spawn(move || {
             let message =
                 run_action_request(&supervisor, request).map_err(|error| error.to_string());
-            let _ = tx.send(ActionOutcome { message });
+            let _ = tx.send(ActionOutcome {
+                affected_services: scope,
+                message,
+            });
         });
-        self.action_rx = Some(rx);
-        self.pending_statuses = pending;
         self.last_message = in_progress_message;
+        Ok(())
     }
 
     fn poll_action_completion(&mut self) -> Result<()> {
-        let Some(receiver) = &self.action_rx else {
-            return Ok(());
-        };
-        if let Ok(outcome) = receiver.try_recv() {
-            self.action_rx = None;
-            self.pending_statuses.clear();
-            self.last_message = match outcome.message {
-                Ok(message) => message,
-                Err(message) => message,
-            };
-            self.refresh()?;
+        loop {
+            match self.action_rx.try_recv() {
+                Ok(outcome) => {
+                    for service in outcome.affected_services {
+                        self.pending_statuses.remove(&service);
+                    }
+                    self.last_message = match outcome.message {
+                        Ok(message) => message,
+                        Err(message) => message,
+                    };
+                    self.refresh()?;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+            }
         }
         Ok(())
+    }
+
+    fn action_conflicts(&self, scope: &[ServiceName]) -> bool {
+        scope
+            .iter()
+            .any(|service| self.pending_statuses.contains_key(service))
     }
 }
 
@@ -752,6 +762,40 @@ fn run_action_request(supervisor: &Supervisor, request: ActionRequest) -> Result
             supervisor.restart_all()?;
             Ok("restart all ok".to_string())
         }
+    }
+}
+
+fn action_scope(supervisor: &Supervisor, request: &ActionRequest) -> Vec<ServiceName> {
+    match request {
+        ActionRequest::Start(name) => supervisor.start_sequence(*name),
+        ActionRequest::Stop(name) => supervisor.stop_sequence(*name),
+        ActionRequest::Restart(name) => supervisor.restart_sequence(*name),
+        ActionRequest::StartAll | ActionRequest::StopAll | ActionRequest::RestartAll => {
+            ServiceName::ALL.to_vec()
+        }
+    }
+}
+
+fn action_context(request: &ActionRequest) -> (String, ServiceStatus) {
+    match request {
+        ActionRequest::Start(name) => (
+            format!("starting {}", name.label()),
+            ServiceStatus::Starting,
+        ),
+        ActionRequest::Stop(name) => (
+            format!("stopping {}", name.label()),
+            ServiceStatus::Stopping,
+        ),
+        ActionRequest::Restart(name) => (
+            format!("restarting {}", name.label()),
+            ServiceStatus::Stopping,
+        ),
+        ActionRequest::StartAll => ("starting all services".to_string(), ServiceStatus::Starting),
+        ActionRequest::StopAll => ("stopping all services".to_string(), ServiceStatus::Stopping),
+        ActionRequest::RestartAll => (
+            "restarting all services".to_string(),
+            ServiceStatus::Stopping,
+        ),
     }
 }
 

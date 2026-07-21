@@ -26,6 +26,8 @@ pub struct ServiceSpec {
     pub startup_timeout_secs: u64,
     pub log_file: PathBuf,
     pub state_file: PathBuf,
+    pub exit_file: PathBuf,
+    pub stop_marker_file: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -79,11 +81,10 @@ pub fn build_service_specs(config: &AppConfig, paths: &RuntimePaths) -> Result<V
             name: ServiceName::Xvfb,
             command: "Xvfb".to_string(),
             args: extend_args(
-                vec![
-                    config.display.clone(),
-                    "-screen".to_string(),
-                    config.screen.clone(),
-                ],
+                extend_args(
+                    vec![config.display.clone(), "-screen".to_string()],
+                    split_tokens(&config.screen),
+                ),
                 config.args_for("xvfb"),
             ),
             env: config.env_for("xvfb"),
@@ -93,6 +94,8 @@ pub fn build_service_specs(config: &AppConfig, paths: &RuntimePaths) -> Result<V
             startup_timeout_secs: 8,
             log_file: paths.log_dir.join("xvfb.log"),
             state_file: paths.run_dir.join("xvfb.json"),
+            exit_file: paths.run_dir.join("xvfb.exit.json"),
+            stop_marker_file: paths.run_dir.join("xvfb.stop"),
         },
         ServiceSpec {
             name: ServiceName::Fluxbox,
@@ -108,6 +111,8 @@ pub fn build_service_specs(config: &AppConfig, paths: &RuntimePaths) -> Result<V
             startup_timeout_secs: 5,
             log_file: paths.log_dir.join("fluxbox.log"),
             state_file: paths.run_dir.join("fluxbox.json"),
+            exit_file: paths.run_dir.join("fluxbox.exit.json"),
+            stop_marker_file: paths.run_dir.join("fluxbox.stop"),
         },
         ServiceSpec {
             name: ServiceName::X11Vnc,
@@ -120,6 +125,8 @@ pub fn build_service_specs(config: &AppConfig, paths: &RuntimePaths) -> Result<V
                     vnc_password.display().to_string(),
                     "-forever".to_string(),
                     "-shared".to_string(),
+                    "-noxdamage".to_string(),
+                    "-noshm".to_string(),
                 ],
                 config.args_for("x11vnc"),
             ),
@@ -130,6 +137,8 @@ pub fn build_service_specs(config: &AppConfig, paths: &RuntimePaths) -> Result<V
             startup_timeout_secs: 10,
             log_file: paths.log_dir.join("x11vnc.log"),
             state_file: paths.run_dir.join("x11vnc.json"),
+            exit_file: paths.run_dir.join("x11vnc.exit.json"),
+            stop_marker_file: paths.run_dir.join("x11vnc.stop"),
         },
         ServiceSpec {
             name: ServiceName::NoVnc,
@@ -150,6 +159,8 @@ pub fn build_service_specs(config: &AppConfig, paths: &RuntimePaths) -> Result<V
             startup_timeout_secs: 10,
             log_file: paths.log_dir.join("novnc.log"),
             state_file: paths.run_dir.join("novnc.json"),
+            exit_file: paths.run_dir.join("novnc.exit.json"),
+            stop_marker_file: paths.run_dir.join("novnc.stop"),
         },
         ServiceSpec {
             name: ServiceName::Qq,
@@ -170,6 +181,8 @@ pub fn build_service_specs(config: &AppConfig, paths: &RuntimePaths) -> Result<V
             startup_timeout_secs: 5,
             log_file: paths.log_dir.join("qq.log"),
             state_file: paths.run_dir.join("qq.json"),
+            exit_file: paths.run_dir.join("qq.exit.json"),
+            stop_marker_file: paths.run_dir.join("qq.stop"),
         },
         ServiceSpec {
             name: ServiceName::Snowluma,
@@ -185,6 +198,8 @@ pub fn build_service_specs(config: &AppConfig, paths: &RuntimePaths) -> Result<V
             startup_timeout_secs: 5,
             log_file: paths.log_dir.join("snowluma.log"),
             state_file: paths.run_dir.join("snowluma.json"),
+            exit_file: paths.run_dir.join("snowluma.exit.json"),
+            stop_marker_file: paths.run_dir.join("snowluma.stop"),
         },
     ])
 }
@@ -192,6 +207,10 @@ pub fn build_service_specs(config: &AppConfig, paths: &RuntimePaths) -> Result<V
 fn extend_args(mut base: Vec<String>, extra: Vec<String>) -> Vec<String> {
     base.extend(extra);
     base
+}
+
+fn split_tokens(raw: &str) -> Vec<String> {
+    raw.split_whitespace().map(ToString::to_string).collect()
 }
 
 fn with_display(display: String, mut env: BTreeMap<String, String>) -> BTreeMap<String, String> {
@@ -231,5 +250,13 @@ mod tests {
         );
         assert!(dependents_for(ServiceName::Qq).contains(&ServiceName::Snowluma));
         assert!(dependents_for(ServiceName::NoVnc).is_empty());
+    }
+
+    #[test]
+    fn xvfb_screen_is_split_into_two_args() {
+        assert_eq!(
+            split_tokens("0 1920x1080x16"),
+            vec!["0".to_string(), "1920x1080x16".to_string()]
+        );
     }
 }

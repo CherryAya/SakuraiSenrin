@@ -178,6 +178,8 @@ mod tests {
             startup_timeout_secs: 1,
             log_file: paths.log_dir.join("xvfb.log"),
             state_file: paths.run_dir.join("xvfb.json"),
+            exit_file: paths.run_dir.join("xvfb.exit.json"),
+            stop_marker_file: paths.run_dir.join("xvfb.stop"),
         };
         ServiceRuntimeState::new(
             ServiceName::Xvfb,
@@ -229,6 +231,8 @@ mod tests {
             startup_timeout_secs: 1,
             log_file: paths.log_dir.join("novnc.log"),
             state_file: paths.run_dir.join("novnc.json"),
+            exit_file: paths.run_dir.join("novnc.exit.json"),
+            stop_marker_file: paths.run_dir.join("novnc.stop"),
         };
 
         let items = collect_diagnostics(&AppConfig::default(), &paths, &[spec]);
