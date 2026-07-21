@@ -305,13 +305,17 @@ async def build_pending_item_blocks(
         leading = "\n"
 
     blocks.append(
-        TextBlock(f"{leading}触发词: {format_notice_content_raw_text(trigger_text)}")
+        TextBlock(
+            f"{leading}触发词: "
+            f"{format_notice_content_raw_text(trigger_text, shape=trigger_shape)}"
+        )
     )
     blocks.append(
         TextBlock(
             "\n响应词: "
             + format_notice_content_raw_text(
                 response_text,
+                shape=response_shape,
                 response_mode=response_mode or "normal",
                 forward_node_count=forward_node_count,
             )

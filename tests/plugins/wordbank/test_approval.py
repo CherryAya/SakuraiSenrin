@@ -20,6 +20,7 @@ from src.plugins.wordbank.message_model import (
     MessageShape,
     combine_shapes,
     shape_from_image,
+    shape_from_response_text,
     shape_from_text,
 )
 from src.plugins.wordbank.services.core import WordbankAddResult
@@ -233,6 +234,22 @@ def test_format_pending_approval_notice_preserves_raw_message_text() -> None:
     assert "响应词: 原始文本" in notice
     assert "状态: 待审核" in notice
     assert "做个好梦" not in notice
+
+
+def test_format_pending_approval_notice_summarizes_at_message() -> None:
+    result = _result(
+        response_text="你好 [@触发者]",
+        response_shape=shape_from_response_text("你好 [@触发者]"),
+    )
+
+    notice = format_pending_approval_notice(
+        result,
+        event=_event(),
+        locale="zh-CN",
+    )
+
+    assert "响应词: 你好 艾特触发者" in notice
+    assert "响应词: 你好 [@触发者]" not in notice
 
 
 @pytest.mark.asyncio

@@ -333,9 +333,17 @@ def format_notice_content_summary(
 def format_notice_content_raw_text(
     text: str,
     *,
+    shape: MessageShape | None = None,
     response_mode: str = "normal",
     forward_node_count: int = 0,
 ) -> str:
+    if shape is not None and any(atom.kind == "at" for atom in shape.atoms):
+        return format_notice_content_summary(
+            text,
+            shape=shape,
+            response_mode=response_mode,
+            forward_node_count=forward_node_count,
+        )
     if text.strip():
         return text
     if response_mode == "forward_whole":

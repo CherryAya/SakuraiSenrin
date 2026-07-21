@@ -82,12 +82,14 @@ def _event_submit_timestamp(event: MessageEvent, created_at: int) -> str:
 def _trigger_summary(result: WordbankAddResult) -> str:
     return format_notice_content_raw_text(
         result.trigger_text,
+        shape=result.trigger_shape,
     )
 
 
 def _response_summary(result: WordbankAddResult) -> str:
     return format_notice_content_raw_text(
         result.response_text,
+        shape=result.response_shape,
         response_mode=result.response_mode,
         forward_node_count=result.forward_node_count,
     )
