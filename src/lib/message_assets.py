@@ -6,7 +6,16 @@ import json
 from typing import Literal
 
 from nonebot.adapters.onebot.v11.message import Message
-from sqlalchemy import Integer, String, Text, UniqueConstraint, select, text
+from sqlalchemy import (
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    delete,
+    func,
+    select,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.lib.backup import register_backup_database
@@ -70,6 +79,7 @@ register_backup_database(message_asset_db)
 
 AssetKind = Literal["single_message", "forward_node", "forward_bundle"]
 MessageShapeKind = Literal["plain", "rich", "contains_reply", "contains_at"]
+_MESSAGE_ASSET_REUSE_BLOCKED = False
 
 
 @dataclass(slots=True, frozen=True)
@@ -105,6 +115,18 @@ def _short_key(value: str, *, length: int = 12) -> str:
     if not value:
         return "-"
     return value[:length]
+
+
+def is_message_asset_reuse_blocked() -> bool:
+    return _MESSAGE_ASSET_REUSE_BLOCKED
+
+
+def set_message_asset_reuse_blocked(blocked: bool, *, reason: str = "") -> None:
+    global _MESSAGE_ASSET_REUSE_BLOCKED
+    _MESSAGE_ASSET_REUSE_BLOCKED = blocked
+    logger.info(
+        f"[MessageAsset] reuse gate updated blocked={blocked} reason={reason or '-'}"
+    )
 
 
 def serialize_message(message: Message | str) -> str:
@@ -191,6 +213,12 @@ class MessageAssetRepository:
         )
 
     async def get_asset(self, asset_key: str) -> MessageAssetRecord | None:
+        if is_message_asset_reuse_blocked():
+            logger.debug(
+                "[MessageAsset] reuse blocked "
+                f"asset_key={_short_key(asset_key)} reason=startup_confirmation_pending"
+            )
+            return None
         async with message_asset_db.read_session() as session:
             row = (
                 await session.execute(
@@ -216,6 +244,11 @@ class MessageAssetRepository:
             f"sort={row.forward_sort_key}"
         )
         return self._to_record(row)
+
+    async def count_assets(self) -> int:
+        async with message_asset_db.read_session() as session:
+            total = await session.scalar(select(func.count()).select_from(MessageAsset))
+        return int(total or 0)
 
     async def get_asset_by_kind(
         self,
@@ -377,6 +410,14 @@ class MessageAssetRepository:
                 f"asset_key={_short_key(asset_key)} "
                 f"message_id={row.message_id or '-'} error={last_verify_error or '-'}"
             )
+
+    async def clear_all_assets(self) -> int:
+        async with message_asset_db.write_session() as session:
+            total = await session.scalar(select(func.count()).select_from(MessageAsset))
+            deleted_count = int(total or 0)
+            await session.execute(delete(MessageAsset))
+            logger.info(f"[MessageAsset] cleared all assets rows={deleted_count}")
+            return deleted_count
 
 
 message_asset_repo = MessageAssetRepository()

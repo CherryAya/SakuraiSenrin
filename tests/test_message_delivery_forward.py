@@ -11,8 +11,10 @@ import pytest
 from src.lib.message_assets import (
     MessageAsset,
     MessageAssetRecord,
+    is_message_asset_reuse_blocked,
     message_asset_db,
     message_asset_repo,
+    set_message_asset_reuse_blocked,
 )
 from src.lib.message_delivery import (
     DEFAULT_FORWARD_REUSE_POLICY,
@@ -105,6 +107,27 @@ async def test_get_asset_filters_stale_rows(
 
     asset = await message_asset_repo.get_asset("asset-key")
 
+    assert asset is None
+
+
+@pytest.mark.asyncio
+async def test_get_asset_short_circuits_when_reuse_is_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    @asynccontextmanager
+    async def fake_read_session() -> AsyncIterator[_FakeReadSession]:
+        raise AssertionError("read_session should not be used while reuse is blocked")
+        yield _FakeReadSession(None)
+
+    monkeypatch.setattr(message_asset_db, "read_session", fake_read_session)
+    set_message_asset_reuse_blocked(True, reason="test_startup_gate")
+
+    try:
+        asset = await message_asset_repo.get_asset("asset-key")
+    finally:
+        set_message_asset_reuse_blocked(False, reason="test_cleanup")
+
+    assert is_message_asset_reuse_blocked() is False
     assert asset is None
 
 

@@ -9,6 +9,10 @@ from nonebot.matcher import Matcher
 from nonebot.permission import SUPERUSER
 
 from src.lib.message_plan import finish_with_message
+from src.services.message_asset_startup import (
+    handle_message_asset_startup_reply,
+    is_message_asset_startup_reply_text,
+)
 from src.services.startup_sync import (
     handle_startup_sync_reply,
     is_startup_sync_reply_text,
@@ -18,7 +22,10 @@ from src.services.startup_sync import (
 async def _is_startup_sync_reply(event: MessageEvent) -> bool:
     if event.reply is None:
         return False
-    return is_startup_sync_reply_text(event.message.extract_plain_text())
+    plain_text = event.message.extract_plain_text()
+    return is_startup_sync_reply_text(
+        plain_text
+    ) or is_message_asset_startup_reply_text(plain_text)
 
 
 startup_sync_reply = on_message(
@@ -42,6 +49,12 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         reply_message_id=str(message_id),
         text=event.message.extract_plain_text(),
     )
+    if result is None:
+        result = await handle_message_asset_startup_reply(
+            bot,
+            reply_message_id=str(message_id),
+            text=event.message.extract_plain_text(),
+        )
     if result is not None:
         await finish_with_message(
             bot,

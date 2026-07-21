@@ -14,6 +14,7 @@ from src.lib.message_api_hooks import install_message_delivery_hooks
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.scripts.install import init_fonts
 from src.services.db import init_db
+from src.services.message_asset_startup import run_startup_message_asset_check
 from src.services.sync import (
     sync_groups_from_api,
     sync_users_from_api,
@@ -43,6 +44,7 @@ async def _on_bot_connect(bot: Bot) -> None:
     await member_repo.warm_up()
     await blacklist_repo.warm_up()
 
+    await run_startup_message_asset_check(bot)
     await run_startup_backup_freshness_check(bot)
 
     await sync_users_from_api(bot)
