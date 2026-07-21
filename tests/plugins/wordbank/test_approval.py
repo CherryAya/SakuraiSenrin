@@ -347,10 +347,7 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
     segments = list(message)
     full_text = _message_text(message)
     assert full_text.startswith(
-        "新增词条待审核\n"
-        "回复 y / approve / 通过 可通过\n"
-        "回复 n / reject / 拒绝 可驳回\n\n"
-        "ID: 12\n"
+        "新增词条待审核\n回复 通过 可通过\n回复 拒绝 可驳回\n\nID: 12\n"
     )
     assert "状态: 待审核" in full_text
     assert "触发词: 晚安" in full_text
@@ -389,10 +386,7 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
     segments = list(message)
     full_text = _message_text(message)
     assert full_text.startswith(
-        "新增词条待审核\n"
-        "回复 y / approve / 通过 可通过\n"
-        "回复 n / reject / 拒绝 可驳回\n\n"
-        "ID: 12\n"
+        "新增词条待审核\n回复 通过 可通过\n回复 拒绝 可驳回\n\nID: 12\n"
     )
     assert "状态: 待审核" in full_text
     assert "触发词: [图片:8]" in full_text
@@ -425,7 +419,7 @@ async def test_build_pending_approval_notice_plan_entry_returns_raw_message_text
     message = render_message_plan_input(entry)
 
     full_text = _message_text(message)
-    assert "回复 y / approve / 通过 可通过" in full_text
+    assert "回复 通过 可通过" in full_text
     assert "状态: 待审核" in full_text
     assert "触发词: [图片:8]" in full_text
     assert "规则: 概率 1" in full_text
@@ -517,7 +511,7 @@ async def test_send_pending_approval_notice_embeds_detail_in_single_message() ->
     assert len(plan.messages) == 1
     summary_message = render_message_plan_input(plan.messages[0])
     summary_text = _message_text(summary_message)
-    assert "回复 y / approve / 通过 可通过" in summary_text
+    assert "回复 通过 可通过" in summary_text
     assert "响应词: [图片:7]" in summary_text
     assert "晚安" in str(summary_message)
     assert not any(segment.type == "image" for segment in summary_message)
@@ -603,7 +597,7 @@ def test_format_pending_batch_approval_notice_lists_all_pending_items() -> None:
     )
 
     assert "待审核词条" in notice
-    assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in notice
+    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in notice
     assert "触发词: 晚安" in notice
     assert "创建者: 10001" in notice
     assert "提交时间: 2023-11-15 06:13" in notice
@@ -663,7 +657,7 @@ async def test_build_pending_batch_approval_notice_message_embeds_image_shapes()
     segments = list(message)
     full_text = "".join(str(segment) for segment in segments if segment.type == "text")
     assert "待审核词条" in full_text
-    assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in full_text
+    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in full_text
     assert "触发词: test_forward" in full_text
     assert "创建者: 10001" in full_text
     assert "待审数量: 2" in full_text
@@ -805,7 +799,7 @@ async def test_batch_notice_sends_summary_then_forward_details() -> None:
     summary_message = render_message_plan_input(plan.messages[0])
     first_detail = render_message_plan_input(plan.messages[1])
     second_detail = render_message_plan_input(plan.messages[2])
-    assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in str(summary_message)
+    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in str(summary_message)
     assert "待审数量: 2" in str(summary_message)
     assert "响应词: &#91;图片:3069&#93;" in str(first_detail)
     assert not any(segment.type == "image" for segment in first_detail)

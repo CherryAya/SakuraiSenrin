@@ -28,6 +28,8 @@ from src.plugins.wordbank.message_model import MessageShape
 from .group_detail_card_helpers import (
     build_copyright_text,
     centered_text_origin,
+    display_group_detail,
+    format_batch_delete_hint,
     format_response_delete_hint,
     line_height,
     measure_preview_size,
@@ -49,7 +51,7 @@ CARD_FLOW_GAP = 12
 CARD_RADIUS = 24
 CARD_TEXT_INSET = 24
 CARD_IMAGE_RADIUS = 24
-CARD_FOOTER_HEIGHT = 118
+CARD_FOOTER_HEIGHT = 150
 CARD_FOOTER_LINE_GAP = 6
 CARD_PREVIEW_MAX_HEIGHT = 350
 TEXTURE_SPACING = 40
@@ -135,6 +137,14 @@ class GroupDetailCardRenderer:
         page_data: GroupDetailCardPage,
         locale: LocaleCode,
     ) -> bytes:
+        page_data = GroupDetailCardPage(
+            detail=display_group_detail(page_data.detail),
+            page=page_data.page,
+            total_pages=page_data.total_pages,
+            page_size=page_data.page_size,
+            start_index=page_data.start_index,
+            responses=page_data.responses,
+        )
         height = self._measure_height(page_data, locale)
         image = Image.new("RGB", (CARD_WIDTH, height), self.theme.bg)
         draw = ImageDraw.Draw(image)
@@ -835,6 +845,13 @@ class GroupDetailCardRenderer:
             group_id=page_data.detail.trigger_group_id,
             example_page=example_page,
         )
+        batch_delete_text = format_batch_delete_hint(
+            tuple(
+                response.response_item_id
+                for response in page_data.responses
+                if response.response_item_id > 0
+            )
+        )
         draw.text(
             centered_text_origin(
                 draw,
@@ -882,6 +899,20 @@ class GroupDetailCardRenderer:
             font=self.footer_font,
             fill=self.ACCENT_DEEP,
         )
+        if batch_delete_text:
+            batch_y = command_y + line_height(self.footer_font) + CARD_FOOTER_LINE_GAP
+            draw.text(
+                centered_text_origin(
+                    draw,
+                    batch_delete_text,
+                    self.footer_font,
+                    canvas_width=CARD_WIDTH,
+                    y=batch_y,
+                ),
+                batch_delete_text,
+                font=self.footer_font,
+                fill=self.ACCENT_DEEP,
+            )
 
     def _summary_block_height(
         self,

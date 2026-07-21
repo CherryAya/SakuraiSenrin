@@ -183,12 +183,12 @@ def test_parse_batch_approval_reply_supports_ranges() -> None:
 
 def test_parse_group_detail_delete_reply_accepts_visible_response_item_id() -> None:
     parsed = parse_group_detail_delete_reply(
-        "删除 300",
+        "删除 300 301",
         available_response_item_ids=(300, 301),
     )
 
     assert parsed is not None
-    assert parsed.response_item_id == 300
+    assert parsed.response_item_ids == (300, 301)
 
 
 def test_parse_group_detail_delete_reply_rejects_non_visible_response_item_id() -> None:
@@ -197,6 +197,16 @@ def test_parse_group_detail_delete_reply_rejects_non_visible_response_item_id() 
             "删除 999",
             available_response_item_ids=(300, 301),
         )
+
+
+def test_parse_group_detail_delete_reply_supports_ranges() -> None:
+    parsed = parse_group_detail_delete_reply(
+        "删除 300-302 305",
+        available_response_item_ids=(300, 301, 302, 305),
+    )
+
+    assert parsed is not None
+    assert parsed.response_item_ids == (300, 301, 302, 305)
 
 
 def test_group_detail_page_response_item_ids_uses_current_page_slice() -> None:
@@ -446,7 +456,7 @@ async def test_reply_history_returns_status_summary() -> None:
 
     assert isinstance(message, str)
     assert "词条 #300 状态摘要" in message
-    assert "管理员审核通过后才变为 approved" in message
+    assert "管理员审核通过后才会变为已通过" in message
 
 
 async def test_reply_delete_and_restore_use_response_item_id() -> None:

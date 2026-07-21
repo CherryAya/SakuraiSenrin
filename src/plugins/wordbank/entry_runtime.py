@@ -1166,12 +1166,16 @@ def register_wordbank_runtime_handlers(
                         ),
                     )
                     delete_handler = await _get_plugin_attr("handle_delete")
-                    message = await delete_handler(
-                        service,
-                        event=event,
-                        response_item_id_text=str(parsed_delete.response_item_id),
-                        locale=locale,
-                    )
+                    messages = [
+                        await delete_handler(
+                            service,
+                            event=event,
+                            response_item_id_text=str(response_item_id),
+                            locale=locale,
+                        )
+                        for response_item_id in parsed_delete.response_item_ids
+                    ]
+                    message = "\n".join(messages)
                     await finish_with_message(
                         bot,
                         matcher,

@@ -457,9 +457,60 @@ def test_parse_group_view_args_supports_page_flag_and_positional_page() -> None:
 
 @pytest.mark.asyncio
 async def test_build_group_detail_message_renders_requested_page() -> None:
-    responses = tuple(
+    responses = (
+        *(
+            SimpleNamespace(
+                response_item_id=index,
+                status="approved",
+                enabled=1,
+                scope="current_group",
+                weight=3,
+                rule={},
+                group_id="20001",
+                created_by="10001",
+                approved_by="10002",
+                deleted_at=0,
+                response_text=f"响应{index}",
+                response_shape=shape_from_text(f"响应{index}"),
+            )
+            for index in range(1, 11)
+        ),
         SimpleNamespace(
-            response_item_id=index,
+            response_item_id=11,
+            status="pending",
+            enabled=1,
+            scope="current_group",
+            weight=3,
+            rule={},
+            group_id="20001",
+            created_by="10001",
+            approved_by="",
+            deleted_at=0,
+            response_text="待审核响应11",
+            response_shape=combine_shapes(
+                shape_from_text("待审核响应11"),
+                shape_from_image(11),
+            ),
+        ),
+        SimpleNamespace(
+            response_item_id=12,
+            status="approved",
+            enabled=0,
+            scope="current_group",
+            weight=3,
+            rule={},
+            group_id="20001",
+            created_by="10001",
+            approved_by="10002",
+            deleted_at=0,
+            response_text="未启用响应12",
+            response_shape=combine_shapes(
+                shape_from_text("未启用响应12"),
+                shape_from_image(12),
+            ),
+        ),
+        SimpleNamespace(
+            response_item_id=13,
             status="approved",
             enabled=1,
             scope="current_group",
@@ -469,14 +520,29 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
             created_by="10001",
             approved_by="10002",
             deleted_at=0,
-            response_text=f"响应{index}",
-            response_shape=(
-                combine_shapes(shape_from_text(f"响应{index}"), shape_from_image(index))
-                if index >= 11
-                else shape_from_text(f"响应{index}")
+            response_text="响应13",
+            response_shape=combine_shapes(
+                shape_from_text("响应13"),
+                shape_from_image(13),
             ),
-        )
-        for index in range(1, 13)
+        ),
+        SimpleNamespace(
+            response_item_id=14,
+            status="approved",
+            enabled=1,
+            scope="current_group",
+            weight=3,
+            rule={},
+            group_id="20001",
+            created_by="10001",
+            approved_by="10002",
+            deleted_at=1,
+            response_text="已删除响应14",
+            response_shape=combine_shapes(
+                shape_from_text("已删除响应14"),
+                shape_from_image(14),
+            ),
+        ),
     )
     detail = SimpleNamespace(
         trigger_group_id=271,
@@ -514,14 +580,16 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
     rendered = render_message_plan_input(message)
 
     assert total_pages == 2
-    assert returned_detail is detail
+    assert returned_detail is not detail
+    assert tuple(
+        response.response_item_id for response in returned_detail.responses
+    ) == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13)
     assert len(rendered) == 1
     assert rendered[0].type == "image"
     load_bytes = cast(AsyncMock, media_service.load_canonical_storage_bytes)
     assert load_bytes.await_args_list == [
         call(7),
-        call(11),
-        call(12),
+        call(13),
     ]
 
 

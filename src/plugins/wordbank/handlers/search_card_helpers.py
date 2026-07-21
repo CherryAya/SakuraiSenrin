@@ -17,6 +17,7 @@ from src.plugins.wordbank.message_model import (
     format_event_summary_text,
     format_placeholder_summary_text,
 )
+from src.plugins.wordbank.services.presentation import format_status_label
 
 
 @dataclass(slots=True, frozen=True)
@@ -256,7 +257,11 @@ def folded_preview_note(item: WordbankSearchItem, locale: LocaleCode) -> str:
 
 
 def status_chip_label(locale: LocaleCode, status: str) -> str:
-    return tr(locale, "wordbank.search_card.status", status=status).replace("状态 ", "")
+    return tr(
+        locale,
+        "wordbank.search_card.status",
+        status=format_status_label(status),
+    ).replace("状态 ", "")
 
 
 def scope_chip_label(scope: str) -> str:

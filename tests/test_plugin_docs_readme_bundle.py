@@ -776,14 +776,14 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
         "`wordbank trigger set <group_id> <新触发内容>`"
     )
     assert trigger.demo_turns[0].text == "#wordbank trigger prob 271 0.3"
-    assert "重新进入 pending" in trigger.demo_turns[4].text
+    assert "重新进入待审核" in trigger.demo_turns[4].text
     assert response.demo_filename == "wordbank-response.webp"
     assert (
         response.trigger == "`wordbank response weight <id> <1-5>`；"
         "`wordbank response set <id> <新响应内容>`"
     )
     assert response.demo_turns[0].text == "#wordbank response weight 12 5"
-    assert "重新进入 pending" in response.demo_turns[4].text
+    assert "重新进入待审核" in response.demo_turns[4].text
     assert passive.demo_turns[-1].speaker == "SYSTEM"
     assert "group_recall" in passive.demo_turns[-1].text
     assert reply.demo_filename == "wordbank-reply-shortcut.webp"
@@ -792,10 +792,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert pending.demo_filename == "wordbank-approval-pending.webp"
     assert pending.demo_turns[0].text == "#待审核词条 晚安"
     assert pending.demo_turns[1].text == "[一条合并转发消息]"
-    assert (
-        "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n"
-        in pending.demo_turns[2].text
-    )
+    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in pending.demo_turns[2].text
     assert pending.demo_turns[4].text == "[回复待审核首节点] @凛凛 通过 1-2"
     assert approve.demo_filename == "wordbank-approval-approve.webp"
     assert approve.permission == Permission.GROUP_ADMIN
@@ -804,7 +801,7 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert reject.permission == Permission.GROUP_ADMIN
     assert approval_reply.demo_filename == "wordbank-approval-approval-reply.webp"
     assert approval_reply.permission == Permission.GROUP_ADMIN
-    assert "[回复审批通知] @凛凛 y" in approval_reply.demo_turns[1].text
+    assert "[回复审批通知] @凛凛 通过" in approval_reply.demo_turns[1].text
     assert approval_reply.demo_turns[5].text == "[回复待审核首节点] @凛凛 通过 1 3-5"
     assert "批量通过完成" in approval_reply.demo_turns[6].text
     assert study_main.demo_filename == "study-main.webp"

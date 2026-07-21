@@ -681,7 +681,7 @@ async def test_view_reply_matcher_routes_group_detail_reply_delete_to_handle_del
     monkeypatch.setattr(
         wordbank_plugin,
         "handle_delete",
-        AsyncMock(return_value="词条 #300 已删除。"),
+        AsyncMock(side_effect=["词条 #300 已删除。", "词条 #301 已删除。"]),
     )
     monkeypatch.setattr(
         wordbank_plugin.wordbank_service,
@@ -714,8 +714,18 @@ async def test_view_reply_matcher_routes_group_detail_reply_delete_to_handle_del
         AsyncMock(
             return_value=SimpleNamespace(
                 responses=(
-                    SimpleNamespace(response_item_id=300),
-                    SimpleNamespace(response_item_id=301),
+                    SimpleNamespace(
+                        response_item_id=300,
+                        status="approved",
+                        enabled=1,
+                        deleted_at=0,
+                    ),
+                    SimpleNamespace(
+                        response_item_id=301,
+                        status="approved",
+                        enabled=1,
+                        deleted_at=0,
+                    ),
                 )
             )
         ),
@@ -723,16 +733,17 @@ async def test_view_reply_matcher_routes_group_detail_reply_delete_to_handle_del
 
     async with app.test_matcher(wordbank_plugin.wordbank_view_reply_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
-        event = build_group_message_event("[CQ:at,qq=99999] 删除 300")
+        event = build_group_message_event("[CQ:at,qq=99999] 删除 300 301")
         event.to_me = True
         attach_reply_message(event, message_id=90003)
 
         ctx.receive_event(bot, event)
-        ctx.should_call_send(event, "词条 #300 已删除。", bot=bot)
+        ctx.should_call_send(event, "词条 #300 已删除。\n词条 #301 已删除。", bot=bot)
         ctx.should_finished(wordbank_plugin.wordbank_view_reply_command)
 
     assert isinstance(wordbank_plugin.handle_delete, AsyncMock)
-    wordbank_plugin.handle_delete.assert_awaited_once()
-    await_args = wordbank_plugin.handle_delete.await_args
-    assert await_args is not None
-    assert await_args.kwargs["response_item_id_text"] == "300"
+    assert wordbank_plugin.handle_delete.await_count == 2
+    assert [
+        call.kwargs["response_item_id_text"]
+        for call in wordbank_plugin.handle_delete.await_args_list
+    ] == ["300", "301"]

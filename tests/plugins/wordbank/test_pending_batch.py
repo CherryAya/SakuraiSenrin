@@ -128,7 +128,7 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
     summary_message = render_message_plan_input(plan.messages[0])
     rendered_detail = render_message_plan_input(plan.messages[1])
     assert "待审核词条" in str(summary_message)
-    assert "回复我发送：通过 1 2 5-8、拒绝 all，或直接用 y / n" in str(summary_message)
+    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in str(summary_message)
     assert "后续节点按“序号”字段对应批量处理编号。" in str(summary_message)
     assert "本页数量: 1" in str(summary_message)
     assert "序号: 1" in str(rendered_detail)

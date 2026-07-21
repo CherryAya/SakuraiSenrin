@@ -253,6 +253,9 @@ async def test_build_reply_detail_plan_entry_renders_selected_response() -> None
 
     rendered = render_message_plan_entry(entry)
     assert "来源消息: 123 (group)" in str(rendered)
+    assert "状态: 已通过" in str(rendered)
+    assert "启用: 是" in str(rendered)
+    assert "范围: 当前群" in str(rendered)
     assert sum(1 for segment in rendered if segment.type == "image") == 2
 
 
@@ -269,11 +272,86 @@ async def test_build_group_detail_page_plan_entry_renders_trigger_and_responses(
     )
 
     rendered = render_message_plan_entry(entry)
-    assert "Trigger Group #12" in str(rendered)
+    assert "词条组 #12" in str(rendered)
     assert "响应 #300" in str(rendered)
     assert "删除 300" in str(rendered)
     assert "#删除词条 300" in str(rendered)
+    assert "批量删除示例" not in str(rendered)
     assert sum(1 for segment in rendered if segment.type == "image") == 2
+
+
+@pytest.mark.asyncio
+async def test_group_detail_page_filters_hidden_and_disabled_responses() -> None:
+    detail = WordbankGroupDetail(
+        trigger_group_id=12,
+        status="approved",
+        enabled=1,
+        probability=1.0,
+        group_id="20001",
+        created_by="10001",
+        deleted_at=0,
+        trigger_text="晚安",
+        trigger_shape=shape_from_text("晚安"),
+        trigger_variant_id=120,
+        responses=(
+            WordbankResponseItemDetail(
+                response_item_id=300,
+                status="approved",
+                enabled=1,
+                scope="current_group",
+                weight=3,
+                rule={},
+                group_id="20001",
+                created_by="10001",
+                approved_by="10002",
+                deleted_at=0,
+                response_text="可见",
+                response_shape=shape_from_text("可见"),
+            ),
+            WordbankResponseItemDetail(
+                response_item_id=301,
+                status="pending",
+                enabled=1,
+                scope="current_group",
+                weight=3,
+                rule={},
+                group_id="20001",
+                created_by="10001",
+                approved_by="",
+                deleted_at=0,
+                response_text="待审核",
+                response_shape=shape_from_text("待审核"),
+            ),
+            WordbankResponseItemDetail(
+                response_item_id=302,
+                status="approved",
+                enabled=0,
+                scope="current_group",
+                weight=3,
+                rule={},
+                group_id="20001",
+                created_by="10001",
+                approved_by="10002",
+                deleted_at=0,
+                response_text="未启用",
+                response_shape=shape_from_text("未启用"),
+            ),
+        ),
+        selected_response_item_id=300,
+    )
+
+    entry = await build_group_detail_page_plan_entry(
+        detail=detail,
+        page=1,
+        total_pages=1,
+        locale="zh-CN",
+        media_service=_media_service(),
+    )
+
+    rendered = render_message_plan_entry(entry)
+    assert "可见" in str(rendered)
+    assert "待审核" not in str(rendered)
+    assert "未启用" not in str(rendered)
 
 
 @pytest.mark.asyncio

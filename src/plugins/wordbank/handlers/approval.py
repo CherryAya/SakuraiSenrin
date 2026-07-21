@@ -112,8 +112,8 @@ def format_pending_approval_notice(
     _ = split_detail, locale
     lines = [
         "新增词条待审核",
-        "回复 y / approve / 通过 可通过",
-        "回复 n / reject / 拒绝 可驳回",
+        "回复 通过 可通过",
+        "回复 拒绝 可驳回",
         "",
         f"ID: {result.response_item_id}",
         f"状态: {format_status_label(result.status)}",
@@ -179,8 +179,8 @@ async def build_pending_approval_notice_plan_entry(
 ) -> MessagePlanEntry:
     blocks: list[MessagePlanBlock] = [
         TextBlock("新增词条待审核"),
-        TextBlock("\n回复 y / approve / 通过 可通过"),
-        TextBlock("\n回复 n / reject / 拒绝 可驳回"),
+        TextBlock("\n回复 通过 可通过"),
+        TextBlock("\n回复 拒绝 可驳回"),
         TextBlock("\n"),
     ]
     blocks.extend(
