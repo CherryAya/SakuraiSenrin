@@ -32,7 +32,10 @@ from .approval import (
 )
 from .group_detail_card_helpers import is_response_visible_in_group_detail
 from .mutation import (
+    APPROVAL_OVERRIDE_TOKENS,
     build_mutation_actor,
+    build_repeat_review_prompt,
+    format_entry_history,
     handle_delete,
     handle_response_content_update,
     handle_response_weight_update,
@@ -124,6 +127,33 @@ class ParsedBatchApprovalCommand:
     selected_action: str
     selected_response_item_ids: tuple[int, ...]
     remaining_action: str = "noop"
+
+
+def _build_override_action_aliases(
+    action_aliases: set[str],
+) -> set[tuple[str, bool]]:
+    variants: set[tuple[str, bool]] = set()
+    for alias in action_aliases:
+        variants.add((alias, False))
+        for override_token in APPROVAL_OVERRIDE_TOKENS:
+            variants.add((f"{override_token} {alias}", True))
+            variants.add((f"{alias} {override_token}", True))
+            variants.add((f"{override_token}{alias}", True))
+            variants.add((f"{alias}{override_token}", True))
+    return variants
+
+
+APPROVAL_ACTION_VARIANTS = {
+    action_text: ("approve", allow_overwrite)
+    for action_text, allow_overwrite in _build_override_action_aliases(
+        APPROVAL_APPROVE_ALIASES
+    )
+} | {
+    action_text: ("reject", allow_overwrite)
+    for action_text, allow_overwrite in _build_override_action_aliases(
+        APPROVAL_REJECT_ALIASES
+    )
+}
 
 
 async def is_reply(event: MessageEvent) -> bool:
@@ -316,14 +346,16 @@ async def handle_approval_reply_result(
             locale=locale,
         )
 
-    action = normalize_reply_command(text)
-    if action in APPROVAL_APPROVE_ALIASES:
+    parsed_action = parse_approval_reply_action(text)
+    if parsed_action is not None and parsed_action[0] == "approve":
+        allow_overwrite = parsed_action[1]
         ok = await service.approve_response_item(
             approval_message.response_item_id,
             actor_user_id=actor.user_id,
             actor_group_id=actor.group_id,
             can_moderate_group=actor.can_moderate_group,
             is_superuser=actor.is_superuser,
+            allow_overwrite=allow_overwrite,
         )
         if ok:
             return ApprovalReplyOutcome(
@@ -336,6 +368,21 @@ async def handle_approval_reply_result(
                 completed=True,
                 action="approve",
             )
+        if not allow_overwrite:
+            prompt = await build_repeat_review_prompt(
+                service,
+                response_item_id=approval_message.response_item_id,
+                locale=locale,
+                requested_action="approve",
+                continue_hint="通过 覆盖",
+                alternative_hint="拒绝 覆盖",
+            )
+            if prompt is not None:
+                return ApprovalReplyOutcome(
+                    prompt,
+                    approval_message=approval_message,
+                    action="approve",
+                )
         return ApprovalReplyOutcome(
             tr(
                 locale,
@@ -346,13 +393,15 @@ async def handle_approval_reply_result(
             action="approve",
         )
 
-    if action in APPROVAL_REJECT_ALIASES:
+    if parsed_action is not None and parsed_action[0] == "reject":
+        allow_overwrite = parsed_action[1]
         ok = await service.reject_response_item(
             approval_message.response_item_id,
             actor_user_id=actor.user_id,
             actor_group_id=actor.group_id,
             can_moderate_group=actor.can_moderate_group,
             is_superuser=actor.is_superuser,
+            allow_overwrite=allow_overwrite,
         )
         if ok:
             return ApprovalReplyOutcome(
@@ -365,6 +414,21 @@ async def handle_approval_reply_result(
                 completed=True,
                 action="reject",
             )
+        if not allow_overwrite:
+            prompt = await build_repeat_review_prompt(
+                service,
+                response_item_id=approval_message.response_item_id,
+                locale=locale,
+                requested_action="reject",
+                continue_hint="拒绝 覆盖",
+                alternative_hint="通过 覆盖",
+            )
+            if prompt is not None:
+                return ApprovalReplyOutcome(
+                    prompt,
+                    approval_message=approval_message,
+                    action="reject",
+                )
         return ApprovalReplyOutcome(
             tr(
                 locale,
@@ -515,6 +579,11 @@ async def _handle_batch_approval_reply_result(
 def normalize_reply_command(text: str) -> str:
     normalized = normalize_cq_plain_text(text, strip_leading_at=True)
     return " ".join(normalized.casefold().strip().split())
+
+
+def parse_approval_reply_action(text: str) -> tuple[str, bool] | None:
+    normalized = normalize_reply_command(text)
+    return APPROVAL_ACTION_VARIANTS.get(normalized)
 
 
 def parse_batch_approval_reply(
@@ -902,26 +971,6 @@ def format_entry_detail(
         weight=selected.weight,
         message_id=response_message.message_id,
         message_type=response_message.message_type,
-    )
-
-
-def format_entry_history(
-    detail: WordbankGroupDetail,
-    *,
-    locale: LocaleCode,
-) -> str:
-    selected = detail.selected_response
-    assert selected is not None
-    return tr(
-        locale,
-        "wordbank.reply.history",
-        entry_id=selected.response_item_id,
-        status=format_status_label(selected.status),
-        enabled=_format_enabled(selected.enabled, locale),
-        deleted_at=_format_deleted_at(selected.deleted_at),
-        scope=format_scope_label(selected.scope),
-        probability=f"{detail.probability:g}",
-        weight=selected.weight,
     )
 
 

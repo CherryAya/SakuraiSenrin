@@ -241,6 +241,9 @@ class WordbankService:
         user_id: str,
         is_group: bool,
         raw_rule: dict[str, Any] | None = None,
+        response_mode: str = "normal",
+        forward_source_message_id: str | None = None,
+        forward_node_count: int = 0,
     ) -> WordbankAddResult:
         start = perf_start()
         if trigger_shape.is_empty():
@@ -289,6 +292,9 @@ class WordbankService:
             weight=rule.weight,
             group_id=normalized_group_id,
             created_by=user_id,
+            response_mode=response_mode,
+            forward_source_message_id=forward_source_message_id,
+            forward_node_count=forward_node_count,
         )
         self.mark_dirty(created.trigger_group_id)
         log_perf(
@@ -320,6 +326,9 @@ class WordbankService:
             created_by=user_id,
             created_at=created.response_item.created_at,
             rule=dict(rule.rule),
+            response_mode=created.response_item.response_mode,
+            forward_source_message_id=created.response_item.forward_source_message_id,
+            forward_node_count=created.response_item.forward_node_count,
         )
 
     async def _build_reused_add_result(
@@ -366,6 +375,9 @@ class WordbankService:
             created_by=response_item.created_by,
             created_at=response_item.created_at,
             rule=dict(response_item.rule),
+            response_mode=response_item.response_mode,
+            forward_source_message_id=response_item.forward_source_message_id,
+            forward_node_count=response_item.forward_node_count,
             reused_existing=True,
         )
 
@@ -415,6 +427,9 @@ class WordbankService:
         user_id: str,
         is_group: bool,
         raw_rule: dict[str, Any] | None = None,
+        response_mode: str = "normal",
+        forward_source_message_id: str | None = None,
+        forward_node_count: int = 0,
     ) -> WordbankBatchAddResult:
         start = perf_start()
         items: list[WordbankBatchAddItemResult] = []
@@ -433,6 +448,9 @@ class WordbankService:
                     group_id=group_id,
                     user_id=user_id,
                     is_group=is_group,
+                    response_mode=response_mode,
+                    forward_source_message_id=forward_source_message_id,
+                    forward_node_count=forward_node_count,
                 )
             except Exception as exc:
                 items.append(
@@ -642,6 +660,7 @@ class WordbankService:
         actor_group_id: str,
         can_moderate_group: bool,
         is_superuser: bool,
+        allow_overwrite: bool = False,
     ) -> bool:
         response_item = await self._get_response_item_for_mutation(response_item_id)
         ok = await self.repository.approve_response_item(
@@ -650,6 +669,7 @@ class WordbankService:
             actor_group_id=actor_group_id,
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
+            allow_overwrite=allow_overwrite,
         )
         if ok and response_item is not None:
             self.mark_dirty(response_item.trigger_group_id)
@@ -663,6 +683,7 @@ class WordbankService:
         actor_group_id: str,
         can_moderate_group: bool,
         is_superuser: bool,
+        allow_overwrite: bool = False,
     ) -> bool:
         response_item = await self._get_response_item_for_mutation(response_item_id)
         ok = await self.repository.reject_response_item(
@@ -671,6 +692,7 @@ class WordbankService:
             actor_group_id=actor_group_id,
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
+            allow_overwrite=allow_overwrite,
         )
         if ok and response_item is not None:
             self.mark_dirty(response_item.trigger_group_id)
@@ -854,6 +876,17 @@ class WordbankService:
         return await self.repository.get_group_detail(
             trigger_group_id,
             response_item_id=response_item_id,
+        )
+
+    async def get_response_item_record(
+        self,
+        response_item_id: int,
+        *,
+        include_deleted: bool = False,
+    ) -> WordbankResponseItemRecord | None:
+        return await self.repository.get_response_item_record(
+            response_item_id,
+            include_deleted=include_deleted,
         )
 
     async def search(

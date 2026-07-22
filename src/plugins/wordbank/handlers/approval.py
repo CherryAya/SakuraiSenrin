@@ -21,17 +21,12 @@ from src.lib.message_plan import (
     MessagePlanBlock,
     MessagePlanEntry,
     MessagePlanInput,
-    RawMessageBlock,
     TextBlock,
     build_text_plan_entry,
     deliver_message_plan,
 )
 from src.logger import logger
-from src.plugins.wordbank.message_model import (
-    MessageInput,
-    MessageShape,
-    iter_message_segments,
-)
+from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services import format_add_result
 from src.plugins.wordbank.services.core import (
     WordbankAddResult,
@@ -49,7 +44,7 @@ from src.plugins.wordbank.services.presentation import (
     response_mode_label,
 )
 
-from .rendering import build_pending_item_blocks, build_shape_plan_entry
+from .rendering import build_pending_item_plan_entries, build_shape_plan_entry
 
 APPROVAL_APPROVE_ALIASES = {"y", "approve", "通过", "同意", "批准"}
 APPROVAL_REJECT_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
@@ -177,34 +172,14 @@ async def build_pending_approval_notice_plan_entry(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> MessagePlanEntry:
-    blocks: list[MessagePlanBlock] = [
-        TextBlock("新增词条待审核"),
-        TextBlock("\n回复 通过 可通过"),
-        TextBlock("\n回复 拒绝 可驳回"),
-        TextBlock("\n"),
-    ]
-    blocks.extend(
-        await build_pending_item_blocks(
-            entry_id=result.response_item_id,
-            scope=result.scope,
-            trigger_text=result.trigger_text,
-            response_text=result.response_text,
-            created_by=result.created_by or str(event.user_id),
-            created_at=result.created_at or int(getattr(event, "time", 0) or 0),
-            probability=result.probability,
-            weight=result.weight,
-            rule=result.rule,
-            trigger_shape=result.trigger_shape,
-            response_shape=result.response_shape,
+    _ = media_service
+    return build_text_plan_entry(
+        format_pending_approval_notice(
+            result,
+            event=event,
             locale=locale,
-            media_service=media_service,
-            prefix="\n",
-            response_mode=result.response_mode,
-            forward_node_count=result.forward_node_count,
         )
     )
-    blocks.append(TextBlock(f"\n响应模式: {response_mode_label(result)}"))
-    return MessagePlanEntry(blocks=tuple(blocks))
 
 
 async def build_pending_batch_approval_notice_plan_entry(
@@ -230,44 +205,32 @@ async def _build_pending_approval_detail_plan_entry(
     locale: LocaleCode,
     media_service: WordbankMediaService,
     index: int | None = None,
-) -> MessagePlanEntry:
-    return MessagePlanEntry(
-        blocks=await build_pending_item_blocks(
-            entry_id=result.response_item_id,
-            scope=result.scope,
-            trigger_text=result.trigger_text,
-            response_text=result.response_text,
-            created_by=result.created_by or "-",
-            created_at=result.created_at,
-            probability=result.probability,
-            weight=result.weight,
-            rule=result.rule,
-            trigger_shape=result.trigger_shape,
-            response_shape=result.response_shape,
-            locale=locale,
-            media_service=media_service,
-            prefix="",
-            index=index,
-            response_mode=result.response_mode,
-            forward_node_count=result.forward_node_count,
-        )
+) -> tuple[MessagePlanInput, ...]:
+    return await build_pending_item_plan_entries(
+        entry_id=result.response_item_id,
+        scope=result.scope,
+        trigger_text=result.trigger_text,
+        response_text=result.response_text,
+        created_by=result.created_by or "-",
+        created_at=result.created_at,
+        probability=result.probability,
+        weight=result.weight,
+        rule=result.rule,
+        trigger_shape=result.trigger_shape,
+        response_shape=result.response_shape,
+        locale=locale,
+        media_service=media_service,
+        prefix="",
+        index=index,
+        response_mode=result.response_mode,
+        forward_source_message_id=result.forward_source_message_id,
+        forward_node_count=result.forward_node_count,
     )
 
 
-def _forward_message_plan_entry(message: MessageInput) -> MessagePlanEntry:
-    rendered = Message()
-    for segment in iter_message_segments(message):
-        rendered += segment
-    return MessagePlanEntry(blocks=(RawMessageBlock(rendered),))
-
-
 def _build_forward_source_entry(source_message_id: str) -> MessagePlanEntry:
-    return MessagePlanEntry(
-        blocks=(
-            RawMessageBlock(
-                Message((MessageSegment("forward", {"id": source_message_id}),))
-            ),
-        )
+    return MessagePlanEntry.from_message(
+        Message([MessageSegment.forward(source_message_id)])
     )
 
 
@@ -286,8 +249,39 @@ async def _build_pending_approval_delivery_plan(
             media_service=cast(WordbankMediaService, media_service),
         )
     ]
-    if result.response_mode == "forward_whole" and result.forward_source_message_id:
-        messages.append(_build_forward_source_entry(result.forward_source_message_id))
+    if media_service is not None:
+        messages.extend(
+            await _build_pending_approval_detail_plan_entry(
+                result,
+                locale=locale,
+                media_service=media_service,
+            )
+        )
+    else:
+        messages.append(
+            build_text_plan_entry(
+                "\n".join(
+                    (
+                        f"ID: {result.response_item_id}",
+                        f"状态: {format_status_label(result.status)}",
+                        f"触发词: {_trigger_summary(result)}",
+                        f"响应词: {_response_summary(result)}",
+                        f"创建者: {result.created_by or str(event.user_id)}",
+                        (
+                            "提交时间: "
+                            f"{_event_submit_timestamp(event, result.created_at)}"
+                        ),
+                        f"范围: {format_scope_label(result.scope)}",
+                        f"权重: {result.weight}",
+                        f"规则: {_rule_summary(result)}",
+                    )
+                )
+            )
+        )
+        if result.response_mode == "forward_whole" and result.forward_source_message_id:
+            messages.append(
+                _build_forward_source_entry(result.forward_source_message_id)
+            )
     return DeliveryPlan(
         messages=tuple(messages),
         source_kind="wordbank_pending_approval_notice",
@@ -313,7 +307,7 @@ async def _build_pending_batch_approval_delivery_plan(
     ]
     if media_service is not None:
         for index, result in enumerate(pending_results, start=1):
-            messages.append(
+            messages.extend(
                 await _build_pending_approval_detail_plan_entry(
                     result,
                     locale=locale,
@@ -340,10 +334,18 @@ async def _build_pending_batch_approval_delivery_plan(
                             f"范围: {format_scope_label(result.scope)}",
                             f"权重: {result.weight}",
                             f"规则: {_rule_summary(result)}",
+                            f"响应模式: {response_mode_label(result)}",
                         )
                     )
                 )
             )
+            if (
+                result.response_mode == "forward_whole"
+                and result.forward_source_message_id
+            ):
+                messages.append(
+                    _build_forward_source_entry(result.forward_source_message_id)
+                )
     return DeliveryPlan(
         messages=tuple(messages),
         source_kind="wordbank_pending_approval_notice",

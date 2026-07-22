@@ -30,6 +30,7 @@ from .types import (
     WordbankDeleteVoteRecord,
     WordbankGroupDetail,
     WordbankImageRecord,
+    WordbankReviewHistoryEntry,
     WordbankMessageRefKind,
     WordbankMessageRefRecord,
     WordbankMessageRouteRecord,
@@ -43,6 +44,33 @@ from .types import (
 
 
 class WordbankRepositoryRecordsMixin:
+    @staticmethod
+    def _decode_review_history(review_history_json: str) -> tuple[WordbankReviewHistoryEntry, ...]:
+        raw_items = json.loads(review_history_json or "[]")
+        records: list[WordbankReviewHistoryEntry] = []
+        if not isinstance(raw_items, list):
+            return ()
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            action = str(item.get("action", "") or "").strip()
+            actor_user_id = str(item.get("actor_user_id", "") or "").strip()
+            created_at = int(item.get("created_at", 0) or 0)
+            previous_status = str(item.get("previous_status", "") or "").strip()
+            overwritten = bool(item.get("overwritten", False))
+            if not action or created_at <= 0:
+                continue
+            records.append(
+                WordbankReviewHistoryEntry(
+                    action=action,
+                    actor_user_id=actor_user_id,
+                    created_at=created_at,
+                    previous_status=previous_status,
+                    overwritten=overwritten,
+                )
+            )
+        return tuple(records)
+
     @staticmethod
     def _to_trigger_variant_record(
         row: WordbankTriggerVariant,
@@ -84,6 +112,12 @@ class WordbankRepositoryRecordsMixin:
             search_tokens=row.search_tokens,
             image_keys=row.image_keys,
             created_at=row.created_at,
+            response_mode=row.response_mode or "normal",
+            forward_source_message_id=row.forward_source_message_id or None,
+            forward_node_count=row.forward_node_count or 0,
+            review_history=WordbankRepositoryRecordsMixin._decode_review_history(
+                row.review_history_json
+            ),
         )
 
     @classmethod
@@ -248,6 +282,9 @@ class WordbankRepositoryRecordsMixin:
             created_at=response.created_at,
             rule=dict(response.rule or {}),
             response_item_ids=(response.id,),
+            response_mode=response.response_mode or "normal",
+            forward_source_message_id=response.forward_source_message_id or None,
+            forward_node_count=response.forward_node_count or 0,
             preview_responses=(
                 WordbankSearchPreviewResponse(
                     response_item_id=response.id,
@@ -304,6 +341,10 @@ class WordbankRepositoryRecordsMixin:
                 deleted_at=response.deleted_at,
                 response_text=response.text,
                 response_shape=shape_from_payload(response.message_json),
+                response_mode=response.response_mode or "normal",
+                forward_source_message_id=response.forward_source_message_id or None,
+                forward_node_count=response.forward_node_count or 0,
+                review_history=cls._decode_review_history(response.review_history_json),
             )
             for response in bundle.responses
         )

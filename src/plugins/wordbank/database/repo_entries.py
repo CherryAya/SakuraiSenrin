@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import json
 from typing import Any
 
 import arrow
@@ -48,6 +49,33 @@ from .types import (
 
 
 class WordbankRepositoryEntriesMixin:
+    @staticmethod
+    def _append_review_history_json(
+        review_history_json: str,
+        *,
+        action: str,
+        actor_user_id: str,
+        created_at: int,
+        previous_status: str,
+        overwritten: bool,
+    ) -> str:
+        try:
+            payload = json.loads(review_history_json or "[]")
+        except json.JSONDecodeError:
+            payload = []
+        if not isinstance(payload, list):
+            payload = []
+        payload.append(
+            {
+                "action": action,
+                "actor_user_id": actor_user_id,
+                "created_at": created_at,
+                "previous_status": previous_status,
+                "overwritten": overwritten,
+            }
+        )
+        return json.dumps(payload, ensure_ascii=False)
+
     async def reset_all_data(
         self: Any,
         *,
@@ -487,6 +515,9 @@ class WordbankRepositoryEntriesMixin:
             response.search_text = response_fingerprint.search_text
             response.search_tokens = response_fingerprint.search_tokens
             response.image_keys = response_fingerprint.image_keys
+            response.response_mode = "normal"
+            response.forward_source_message_id = ""
+            response.forward_node_count = 0
             response.updated_at = now
             await session.flush()
             await self._refresh_group_in_session(session, response.trigger_group_id)
@@ -500,15 +531,20 @@ class WordbankRepositoryEntriesMixin:
         actor_group_id: str,
         can_moderate_group: bool,
         is_superuser: bool,
+        allow_overwrite: bool = False,
     ) -> bool:
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
             response = await session.get(WordbankResponseItem, response_item_id)
-            if (
-                response is None
-                or response.status != "pending"
-                or response.deleted_at != 0
-            ):
+            if response is None or response.deleted_at != 0:
+                return False
+            if not allow_overwrite and response.status != "pending":
+                return False
+            if allow_overwrite and response.status not in {
+                "pending",
+                "approved",
+                "rejected",
+            }:
                 return False
             group = await session.get(WordbankTriggerGroup, response.trigger_group_id)
             if group is None or not self._group_allows_review(
@@ -518,9 +554,18 @@ class WordbankRepositoryEntriesMixin:
                 is_superuser=is_superuser,
             ):
                 return False
+            previous_status = response.status
             response.status = "approved"
             response.enabled = 1
             response.approved_by = actor_user_id
+            response.review_history_json = self._append_review_history_json(
+                response.review_history_json,
+                action="approve",
+                actor_user_id=actor_user_id,
+                created_at=now,
+                previous_status=previous_status,
+                overwritten=allow_overwrite and previous_status != "pending",
+            )
             response.updated_at = now
             await session.flush()
             await self._refresh_group_in_session(session, response.trigger_group_id)
@@ -534,15 +579,20 @@ class WordbankRepositoryEntriesMixin:
         actor_group_id: str,
         can_moderate_group: bool,
         is_superuser: bool,
+        allow_overwrite: bool = False,
     ) -> bool:
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
             response = await session.get(WordbankResponseItem, response_item_id)
-            if (
-                response is None
-                or response.status != "pending"
-                or response.deleted_at != 0
-            ):
+            if response is None or response.deleted_at != 0:
+                return False
+            if not allow_overwrite and response.status != "pending":
+                return False
+            if allow_overwrite and response.status not in {
+                "pending",
+                "approved",
+                "rejected",
+            }:
                 return False
             group = await session.get(WordbankTriggerGroup, response.trigger_group_id)
             if group is None or not self._group_allows_review(
@@ -552,9 +602,18 @@ class WordbankRepositoryEntriesMixin:
                 is_superuser=is_superuser,
             ):
                 return False
+            previous_status = response.status
             response.status = "rejected"
             response.enabled = 0
             response.approved_by = actor_user_id
+            response.review_history_json = self._append_review_history_json(
+                response.review_history_json,
+                action="reject",
+                actor_user_id=actor_user_id,
+                created_at=now,
+                previous_status=previous_status,
+                overwritten=allow_overwrite and previous_status != "pending",
+            )
             response.updated_at = now
             await session.flush()
             await self._refresh_group_in_session(session, response.trigger_group_id)

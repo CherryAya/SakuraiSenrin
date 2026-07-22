@@ -9,7 +9,13 @@ import pytest
 from src.lib.message_plan import render_message_plan_input
 from src.lib.messages import empty_message, text_message
 from src.plugins.wordbank import entry_commands as entry_commands_module
-from src.plugins.wordbank.database.types import WordbankSearchItem, WordbankSearchPage
+from src.plugins.wordbank.database.types import (
+    WordbankGroupDetail,
+    WordbankResponseItemDetail,
+    WordbankReviewHistoryEntry,
+    WordbankSearchItem,
+    WordbankSearchPage,
+)
 from src.plugins.wordbank.handlers import commands as commands_module
 from src.plugins.wordbank.handlers.commands import (
     build_group_detail_message,
@@ -89,6 +95,46 @@ def _search_item(*, trigger_group_id: int = 12) -> WordbankSearchItem:
         probability=1.0,
         weight=3,
         created_by="10001",
+    )
+
+
+def _reviewed_group_detail(*, status: str = "approved") -> WordbankGroupDetail:
+    return WordbankGroupDetail(
+        trigger_group_id=12,
+        status=status,
+        enabled=1 if status == "approved" else 0,
+        probability=1.0,
+        group_id="20001",
+        created_by="10001",
+        deleted_at=0,
+        trigger_text="晚安",
+        trigger_shape=shape_from_text("晚安"),
+        trigger_variant_id=120,
+        responses=(
+            WordbankResponseItemDetail(
+                response_item_id=12,
+                status=status,
+                enabled=1 if status == "approved" else 0,
+                scope="current_group",
+                weight=3,
+                rule={},
+                group_id="20001",
+                created_by="10001",
+                approved_by="10002",
+                deleted_at=0,
+                response_text="做个好梦",
+                response_shape=shape_from_text("做个好梦"),
+                review_history=(
+                    WordbankReviewHistoryEntry(
+                        action="approve" if status == "approved" else "reject",
+                        actor_user_id="10002",
+                        created_at=1_700_000_000,
+                        previous_status="pending",
+                    ),
+                ),
+            ),
+        ),
+        selected_response_item_id=12,
     )
 
 
@@ -283,6 +329,72 @@ async def test_dispatch_wordbank_command_with_outcome_returns_reject_metadata() 
 
 
 @pytest.mark.asyncio
+async def test_dispatch_wordbank_command_with_outcome_prompts_before_overwrite() -> (
+    None
+):
+    event = build_group_message_event(
+        "#wordbank approve 12",
+        role="admin",
+        user_id=10002,
+    )
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            approve_response_item=AsyncMock(return_value=False),
+            get_response_item_record=AsyncMock(
+                return_value=SimpleNamespace(trigger_group_id=12)
+            ),
+            get_group_detail=AsyncMock(return_value=_reviewed_group_detail()),
+        ),
+    )
+
+    message, outcome = await dispatch_wordbank_command_with_outcome(
+        service,
+        event=event,
+        text="approve 12",
+        locale="zh-CN",
+    )
+
+    assert isinstance(message, str)
+    assert "词条 #12 已经被审批过。" in message
+    assert "如需继续通过，请继续发送：通过词条 12 覆盖" in message
+    assert "如需改为另一结果，请继续发送：拒绝词条 12 覆盖" in message
+    assert outcome is not None
+    assert outcome.completed is False
+    assert outcome.action == "approve"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_wordbank_command_with_outcome_supports_overwrite() -> None:
+    event = build_group_message_event(
+        "#wordbank reject 12 覆盖",
+        role="admin",
+        user_id=10002,
+    )
+    reject_response_item = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            reject_response_item=reject_response_item,
+        ),
+    )
+
+    message, outcome = await dispatch_wordbank_command_with_outcome(
+        service,
+        event=event,
+        text="reject 12 覆盖",
+        locale="zh-CN",
+    )
+
+    assert isinstance(message, str)
+    assert "词条 #12 已拒绝" in message
+    assert outcome is not None
+    assert outcome.completed is True
+    assert reject_response_item.await_args is not None
+    assert reject_response_item.await_args.kwargs["allow_overwrite"] is True
+
+
+@pytest.mark.asyncio
 async def test_handle_pending_entries_renders_image_shapes() -> None:
     service = cast(
         WordbankService,
@@ -331,9 +443,10 @@ async def test_handle_pending_entries_renders_image_shapes() -> None:
     assert "序号: 1" in str(rendered)
     assert "创建者: 10001" in str(rendered)
     assert "规则: 概率 1 | 角色 管理" in str(rendered)
-    assert "触发词: &#91;图片:8&#93;" in str(rendered)
-    assert "响应词: 做个好梦 &#91;图片:7&#93;" in str(rendered)
-    assert sum(1 for segment in rendered if segment.type == "image") == 0
+    assert "触发词:" in str(rendered)
+    assert "响应词:" in str(rendered)
+    assert "做个好梦" in str(rendered)
+    assert sum(1 for segment in rendered if segment.type == "image") == 2
 
 
 @pytest.mark.asyncio

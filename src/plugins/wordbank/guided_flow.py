@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
 from typing import Any
 
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -661,6 +660,15 @@ async def finish_guided_add(
                 group_id=str(getattr(event, "group_id", "")),
                 user_id=str(event.user_id),
                 is_group=isinstance(event, GroupMessageEvent),
+                response_mode="forward_split",
+                forward_source_message_id=str(
+                    state.get("wordbank_guided_response_forward_source_message_id", "")
+                    or ""
+                )
+                or None,
+                forward_node_count=int(
+                    state.get("wordbank_guided_response_forward_node_count", 0) or 0
+                ),
             )
             batch_errors = describe_batch_errors(
                 [item.error for item in batch.items if not item.ok]
@@ -675,32 +683,6 @@ async def finish_guided_add(
                     _default_i18n_text("wordbank.error.response_empty"),
                     key="wordbank.error.response_empty",
                 )
-            source_message_id = str(
-                state.get("wordbank_guided_response_forward_source_message_id", "")
-                or ""
-            )
-            node_count = int(
-                state.get("wordbank_guided_response_forward_node_count", 0) or 0
-            )
-            batch = replace(
-                batch,
-                items=tuple(
-                    replace(
-                        item,
-                        result=(
-                            replace(
-                                item.result,
-                                response_mode="forward_split",
-                                forward_source_message_id=source_message_id or None,
-                                forward_node_count=node_count,
-                            )
-                            if item.result is not None
-                            else None
-                        ),
-                    )
-                    for item in batch.items
-                ),
-            )
             await finalize_submission(
                 matcher,
                 bot,
@@ -719,6 +701,7 @@ async def finish_guided_add(
                     _default_i18n_text("wordbank.error.response_empty"),
                     key="wordbank.error.response_empty",
                 )
+            forward_messages = state.get("wordbank_guided_response_forward_messages")
             result = await handle_guided_add_shape_result(
                 wordbank_service,
                 event=event,
@@ -726,23 +709,20 @@ async def finish_guided_add(
                 response_shape=response_shape,
                 scope_text=str(state.get("wordbank_guided_scope", "")),
                 advanced_text=event.message.extract_plain_text(),
-            )
-            forward_messages = state.get("wordbank_guided_response_forward_messages")
-            if isinstance(forward_messages, tuple) and forward_messages:
-                result = replace(
-                    result,
-                    response_mode="forward_whole",
-                    forward_source_message_id=str(
-                        state.get(
-                            "wordbank_guided_response_forward_source_message_id", ""
-                        )
-                        or ""
-                    )
-                    or None,
-                    forward_node_count=int(
-                        state.get("wordbank_guided_response_forward_node_count", 0) or 0
-                    ),
+                response_mode=(
+                    "forward_whole"
+                    if isinstance(forward_messages, tuple) and forward_messages
+                    else "normal"
+                ),
+                forward_source_message_id=str(
+                    state.get("wordbank_guided_response_forward_source_message_id", "")
+                    or ""
                 )
+                or None,
+                forward_node_count=int(
+                    state.get("wordbank_guided_response_forward_node_count", 0) or 0
+                ),
+            )
     except (RuleError, ValueError) as exc:
         raise exc
     await finalize_submission(

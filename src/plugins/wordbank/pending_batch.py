@@ -7,7 +7,7 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     DeliveryPlan,
-    MessagePlanEntry,
+    MessagePlanInput,
     build_text_plan_entry,
     deliver_message_plan,
 )
@@ -15,7 +15,7 @@ from src.plugins.wordbank.database.types import WordbankSearchItem
 from src.plugins.wordbank.handlers.approval import extract_sent_message_id
 from src.plugins.wordbank.handlers.mutation import build_mutation_actor
 from src.plugins.wordbank.handlers.parsers import actor_can_review, parse_search_args
-from src.plugins.wordbank.handlers.rendering import build_pending_item_blocks
+from src.plugins.wordbank.handlers.rendering import build_pending_item_plan_entries
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
 
@@ -61,25 +61,26 @@ async def _build_pending_detail_message(
     index: int,
     locale: LocaleCode,
     media_service: WordbankMediaService,
-) -> MessagePlanEntry:
-    return MessagePlanEntry(
-        blocks=await build_pending_item_blocks(
-            entry_id=_response_item_id(item),
-            scope=item.scope,
-            trigger_text=item.trigger_text,
-            response_text=item.response_text,
-            created_by=item.created_by,
-            created_at=item.created_at,
-            probability=item.probability,
-            weight=item.weight,
-            rule=item.rule,
-            trigger_shape=item.trigger_shape,
-            response_shape=item.response_shape,
-            locale=locale,
-            media_service=media_service,
-            prefix="",
-            index=index,
-        )
+) -> tuple[MessagePlanInput, ...]:
+    return await build_pending_item_plan_entries(
+        entry_id=_response_item_id(item),
+        scope=item.scope,
+        trigger_text=item.trigger_text,
+        response_text=item.response_text,
+        created_by=item.created_by,
+        created_at=item.created_at,
+        probability=item.probability,
+        weight=item.weight,
+        rule=item.rule,
+        trigger_shape=item.trigger_shape,
+        response_shape=item.response_shape,
+        locale=locale,
+        media_service=media_service,
+        prefix="",
+        index=index,
+        response_mode=item.response_mode,
+        forward_source_message_id=item.forward_source_message_id,
+        forward_node_count=item.forward_node_count,
     )
 
 
@@ -139,15 +140,16 @@ async def send_pending_entries_review(
         has_more=has_more,
         keyword=parsed.keyword,
     )
-    detail_messages = [
-        await _build_pending_detail_message(
-            item,
-            index=index,
-            locale=locale,
-            media_service=media_service,
+    detail_messages: list[MessagePlanInput] = []
+    for index, item in enumerate(items, start=1):
+        detail_messages.extend(
+            await _build_pending_detail_message(
+                item,
+                index=index,
+                locale=locale,
+                media_service=media_service,
+            )
         )
-        for index, item in enumerate(items, start=1)
-    ]
     plan_result = await deliver_message_plan(
         bot,
         plan=DeliveryPlan(

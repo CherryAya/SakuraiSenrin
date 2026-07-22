@@ -315,6 +315,9 @@ async def handle_guided_add_shape_result(
     response_shape: MessageShape,
     scope_text: str,
     advanced_text: str = "",
+    response_mode: str = "normal",
+    forward_source_message_id: str | None = None,
+    forward_node_count: int = 0,
 ) -> WordbankAddResult:
     is_group = isinstance(event, GroupMessageEvent)
     scope = parse_guided_scope_choice(scope_text, is_group=is_group)
@@ -327,6 +330,9 @@ async def handle_guided_add_shape_result(
         group_id=str(getattr(event, "group_id", "")),
         user_id=str(event.user_id),
         is_group=is_group,
+        response_mode=response_mode,
+        forward_source_message_id=forward_source_message_id,
+        forward_node_count=forward_node_count,
     )
 
 

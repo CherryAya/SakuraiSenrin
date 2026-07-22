@@ -8,12 +8,16 @@ from dataclasses import replace
 import math
 from typing import Any, cast
 
+from nonebot.adapters.onebot.v11 import Message
+from nonebot.adapters.onebot.v11.message import MessageSegment
+
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     ImageBytesBlock,
     MessagePlanBlock,
     MessagePlanEntry,
+    MessagePlanInput,
     TextBlock,
     build_preferred_message_plan,
     build_text_plan_entry,
@@ -263,6 +267,8 @@ async def build_pending_items_plan_entry(
                 locale=locale,
                 media_service=media_service,
                 index=index,
+                response_mode=item.response_mode,
+                forward_node_count=item.forward_node_count,
             )
         )
     if has_more:
@@ -309,22 +315,25 @@ async def build_pending_item_blocks(
         blocks.append(TextBlock(f"{leading}{line}"))
         leading = "\n"
 
-    blocks.append(
-        TextBlock(
-            f"{leading}触发词: "
-            f"{format_notice_content_raw_text(trigger_text, shape=trigger_shape)}"
-        )
+    await _append_pending_shape_field_blocks(
+        blocks,
+        label="触发词:",
+        text=trigger_text,
+        shape=trigger_shape,
+        media_service=media_service,
+        locale=locale,
+        prefix=leading,
     )
-    blocks.append(
-        TextBlock(
-            "\n响应词: "
-            + format_notice_content_raw_text(
-                response_text,
-                shape=response_shape,
-                response_mode=response_mode or "normal",
-                forward_node_count=forward_node_count,
-            )
-        )
+    await _append_pending_shape_field_blocks(
+        blocks,
+        label="响应词:",
+        text=response_text,
+        shape=response_shape,
+        media_service=media_service,
+        locale=locale,
+        prefix="\n",
+        response_mode=response_mode or "normal",
+        forward_node_count=forward_node_count,
     )
     leading = "\n"
     for line in _build_pending_item_footer_lines(
@@ -338,6 +347,59 @@ async def build_pending_item_blocks(
         blocks.append(TextBlock(f"{leading}{line}"))
         leading = "\n"
     return tuple(blocks)
+
+
+async def build_pending_item_plan_entries(
+    *,
+    entry_id: int,
+    scope: str,
+    trigger_text: str,
+    response_text: str,
+    created_by: str,
+    created_at: int,
+    probability: float,
+    weight: int,
+    rule: dict[str, object] | None,
+    trigger_shape: MessageShape | None,
+    response_shape: MessageShape | None,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+    prefix: str = "\n",
+    index: int | None = None,
+    response_mode: str | None = None,
+    forward_source_message_id: str | None = None,
+    forward_node_count: int = 0,
+) -> tuple[MessagePlanInput, ...]:
+    entries: list[MessagePlanInput] = [
+        MessagePlanEntry(
+            blocks=await build_pending_item_blocks(
+                entry_id=entry_id,
+                scope=scope,
+                trigger_text=trigger_text,
+                response_text=response_text,
+                created_by=created_by,
+                created_at=created_at,
+                probability=probability,
+                weight=weight,
+                rule=rule,
+                trigger_shape=trigger_shape,
+                response_shape=response_shape,
+                locale=locale,
+                media_service=media_service,
+                prefix=prefix,
+                index=index,
+                response_mode=response_mode,
+                forward_node_count=forward_node_count,
+            )
+        )
+    ]
+    if response_mode == "forward_whole" and forward_source_message_id:
+        entries.append(
+            MessagePlanEntry.from_message(
+                Message((MessageSegment("forward", {"id": forward_source_message_id}),))
+            )
+        )
+    return tuple(entries)
 
 
 def _build_pending_item_header_lines(
@@ -367,6 +429,40 @@ def _build_pending_item_footer_lines(
         f"范围: {format_scope_label(scope)}",
         f"权重: {weight}",
         f"规则: {format_rule_summary(probability=probability, rule=rule)}",
+    )
+
+
+async def _append_pending_shape_field_blocks(
+    blocks: list[MessagePlanBlock],
+    *,
+    label: str,
+    text: str,
+    shape: MessageShape | None,
+    media_service: WordbankMediaService,
+    locale: LocaleCode,
+    prefix: str,
+    response_mode: str = "normal",
+    forward_node_count: int = 0,
+) -> None:
+    summary_text = format_notice_content_raw_text(
+        text,
+        shape=shape,
+        response_mode=response_mode,
+        forward_node_count=forward_node_count,
+    )
+    if response_mode == "forward_whole" or not _shape_contains_image(shape):
+        blocks.append(TextBlock(f"{prefix}{label} {summary_text}"))
+        return
+    assert shape is not None
+    blocks.append(TextBlock(f"{prefix}{label}\n"))
+    blocks.extend(
+        (
+            await build_shape_plan_entry(
+                shape,
+                media_service,
+                locale=locale,
+            )
+        ).blocks
     )
 
 
@@ -431,6 +527,14 @@ def _has_non_text_shape(shape: MessageShape | None) -> bool:
         shape is not None
         and not shape.is_empty()
         and any(atom.kind != "text" for atom in shape.atoms)
+    )
+
+
+def _shape_contains_image(shape: MessageShape | None) -> bool:
+    return (
+        shape is not None
+        and not shape.is_empty()
+        and any(atom.kind == "image" for atom in shape.atoms)
     )
 
 
