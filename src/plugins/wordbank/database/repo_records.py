@@ -84,6 +84,9 @@ class WordbankRepositoryRecordsMixin:
             search_tokens=row.search_tokens,
             image_keys=row.image_keys,
             created_at=row.created_at,
+            response_mode=row.response_mode or "normal",
+            forward_source_message_id=row.forward_source_message_id or None,
+            forward_node_count=row.forward_node_count or 0,
         )
 
     @classmethod
@@ -248,6 +251,9 @@ class WordbankRepositoryRecordsMixin:
             created_at=response.created_at,
             rule=dict(response.rule or {}),
             response_item_ids=(response.id,),
+            response_mode=response.response_mode or "normal",
+            forward_source_message_id=response.forward_source_message_id or None,
+            forward_node_count=response.forward_node_count or 0,
             preview_responses=(
                 WordbankSearchPreviewResponse(
                     response_item_id=response.id,
@@ -304,6 +310,9 @@ class WordbankRepositoryRecordsMixin:
                 deleted_at=response.deleted_at,
                 response_text=response.text,
                 response_shape=shape_from_payload(response.message_json),
+                response_mode=response.response_mode or "normal",
+                forward_source_message_id=response.forward_source_message_id or None,
+                forward_node_count=response.forward_node_count or 0,
             )
             for response in bundle.responses
         )

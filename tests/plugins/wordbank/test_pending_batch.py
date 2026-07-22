@@ -42,24 +42,29 @@ async def test_build_pending_detail_message_returns_image_blocks() -> None:
         created_at=1_700_000_000,
         rule={"roles": "admin"},
         response_item_ids=(300,),
+        response_mode="forward_split",
+        forward_source_message_id="456",
+        forward_node_count=2,
     )
 
-    entry = await _build_pending_detail_message(
+    entries = await _build_pending_detail_message(
         item,
         index=1,
         locale="zh-CN",
         media_service=media_service,
     )
 
-    rendered = render_message_plan_input(entry)
+    assert len(entries) == 1
+    rendered = render_message_plan_input(entries[0])
     assert "序号: 1" in str(rendered)
     assert "状态: 待审核" in str(rendered)
     assert "创建者: 10001" in str(rendered)
     assert "提交时间: 2023-11-15 06:13" in str(rendered)
     assert "规则: 概率 1 | 角色 管理" in str(rendered)
-    assert "触发词: &#91;图片:8&#93;" in str(rendered)
-    assert "响应词: 做个好梦 &#91;图片:7&#93;" in str(rendered)
-    assert sum(1 for segment in rendered if segment.type == "image") == 0
+    assert "触发词:" in str(rendered)
+    assert "响应词:" in str(rendered)
+    assert "做个好梦" in str(rendered)
+    assert sum(1 for segment in rendered if segment.type == "image") == 2
 
 
 @pytest.mark.asyncio
@@ -80,6 +85,9 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
         created_at=1_700_000_000,
         rule={"roles": "admin"},
         response_item_ids=(300,),
+        response_mode="forward_split",
+        forward_source_message_id="456",
+        forward_node_count=2,
     )
     record_message_ref = AsyncMock(return_value=None)
     service = cast(
@@ -133,7 +141,83 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
     assert "本页数量: 1" in str(summary_message)
     assert "序号: 1" in str(rendered_detail)
     assert "状态: 待审核" in str(rendered_detail)
-    assert "触发词: &#91;图片:8&#93;" in str(rendered_detail)
-    assert "响应词: 做个好梦 &#91;图片:7&#93;" in str(rendered_detail)
-    assert sum(1 for segment in rendered_detail if segment.type == "image") == 0
+    assert "触发词:" in str(rendered_detail)
+    assert "响应词:" in str(rendered_detail)
+    assert "做个好梦" in str(rendered_detail)
+    assert sum(1 for segment in rendered_detail if segment.type == "image") == 2
     assert record_message_ref.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_send_pending_entries_review_appends_forward_source_for_forward_whole(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    item = WordbankSearchItem(
+        trigger_group_id=12,
+        status="pending",
+        trigger_text="test_forward",
+        response_text="原始合并转发",
+        trigger_shape=shape_from_text("test_forward"),
+        response_shape=shape_from_text("原始合并转发"),
+        scope="current_group",
+        probability=1.0,
+        weight=3,
+        created_by="10001",
+        created_at=1_700_000_000,
+        rule={"roles": "admin"},
+        response_item_ids=(300,),
+        response_mode="forward_whole",
+        forward_source_message_id="456",
+        forward_node_count=2,
+    )
+    record_message_ref = AsyncMock(return_value=None)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            list_pending_entries=AsyncMock(return_value=[item]),
+            record_message_ref=record_message_ref,
+        ),
+    )
+    media_service = cast(
+        WordbankMediaService,
+        SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=b"bytes")),
+    )
+    deliver_plan = AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},)))
+    monkeypatch.setattr(
+        pending_batch_module,
+        "build_mutation_actor",
+        lambda event: SimpleNamespace(
+            group_id="10001",
+            can_moderate_group=True,
+            is_superuser=False,
+        ),
+    )
+    monkeypatch.setattr(pending_batch_module, "deliver_message_plan", deliver_plan)
+
+    bot = cast(Bot, SimpleNamespace())
+    event = build_group_message_event("#wordbank.pending", message_id=1)
+
+    await send_pending_entries_review(
+        bot,
+        event,
+        text="#wordbank.pending",
+        locale="zh-CN",
+        service=service,
+        media_service=media_service,
+        source_kind="wordbank_approval",
+        fallback_nickname="回 - 樱井千凛·Senrinです♡",
+    )
+
+    assert deliver_plan.await_count == 1
+    await_args = deliver_plan.await_args
+    assert await_args is not None
+    plan = await_args.kwargs["plan"]
+    assert len(plan.messages) == 3
+    detail_message = render_message_plan_input(plan.messages[1])
+    forward_message = render_message_plan_input(plan.messages[2])
+    assert "序号: 1" in str(detail_message)
+    assert "响应词: 原始合并转发" in str(detail_message)
+    forward_segments = list(forward_message)
+    assert len(forward_segments) == 1
+    assert forward_segments[0].type == "forward"
+    assert forward_segments[0].data["id"] == "456"

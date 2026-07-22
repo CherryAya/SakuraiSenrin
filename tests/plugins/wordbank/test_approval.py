@@ -508,13 +508,17 @@ async def test_send_pending_approval_notice_embeds_detail_in_single_message() ->
     assert await_args is not None
     plan = await_args.kwargs["plan"]
     assert plan.force_forward is True
-    assert len(plan.messages) == 1
+    assert len(plan.messages) == 2
     summary_message = render_message_plan_input(plan.messages[0])
+    detail_message = render_message_plan_input(plan.messages[1])
     summary_text = _message_text(summary_message)
     assert "回复 通过 可通过" in summary_text
     assert "响应词: [图片:7]" in summary_text
     assert "晚安" in str(summary_message)
     assert not any(segment.type == "image" for segment in summary_message)
+    assert "ID: 12" in str(detail_message)
+    assert "响应词:" in str(detail_message)
+    assert any(segment.type == "image" for segment in detail_message)
     assert record_message_ref.await_count == 1
 
 
@@ -558,12 +562,15 @@ async def test_send_notice_embeds_forward_whole_mode() -> None:
     assert await_args is not None
     plan = await_args.kwargs["plan"]
     assert plan.force_forward is True
-    assert len(plan.messages) == 2
+    assert len(plan.messages) == 3
     summary_message = render_message_plan_input(plan.messages[0])
-    forward_message = render_message_plan_input(plan.messages[1])
+    detail_message = render_message_plan_input(plan.messages[1])
+    forward_message = render_message_plan_input(plan.messages[2])
     summary_text = _message_text(summary_message)
     assert "响应词: 原始合并转发" in summary_text
     assert "响应模式: 一条合并转发消息（2 条）" in summary_text
+    assert "ID: 12" in str(detail_message)
+    assert "响应词: 原始合并转发" in str(detail_message)
     forward_segments = list(forward_message)
     assert len(forward_segments) == 1
     assert forward_segments[0].type == "forward"
@@ -801,10 +808,12 @@ async def test_batch_notice_sends_summary_then_forward_details() -> None:
     second_detail = render_message_plan_input(plan.messages[2])
     assert "回复我发送：通过 1 2 5-8、拒绝 全部" in str(summary_message)
     assert "待审数量: 2" in str(summary_message)
-    assert "响应词: &#91;图片:3069&#93;" in str(first_detail)
-    assert not any(segment.type == "image" for segment in first_detail)
-    assert "触发词: &#91;图片:3070&#93;" in str(second_detail)
-    assert not any(segment.type == "image" for segment in second_detail)
+    assert "序号: 1" in str(first_detail)
+    assert "响应词:" in str(first_detail)
+    assert any(segment.type == "image" for segment in first_detail)
+    assert "序号: 2" in str(second_detail)
+    assert "触发词:" in str(second_detail)
+    assert any(segment.type == "image" for segment in second_detail)
     assert record_message_ref.await_count == 1
 
 

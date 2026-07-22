@@ -241,6 +241,9 @@ class WordbankService:
         user_id: str,
         is_group: bool,
         raw_rule: dict[str, Any] | None = None,
+        response_mode: str = "normal",
+        forward_source_message_id: str | None = None,
+        forward_node_count: int = 0,
     ) -> WordbankAddResult:
         start = perf_start()
         if trigger_shape.is_empty():
@@ -289,6 +292,9 @@ class WordbankService:
             weight=rule.weight,
             group_id=normalized_group_id,
             created_by=user_id,
+            response_mode=response_mode,
+            forward_source_message_id=forward_source_message_id,
+            forward_node_count=forward_node_count,
         )
         self.mark_dirty(created.trigger_group_id)
         log_perf(
@@ -320,6 +326,9 @@ class WordbankService:
             created_by=user_id,
             created_at=created.response_item.created_at,
             rule=dict(rule.rule),
+            response_mode=created.response_item.response_mode,
+            forward_source_message_id=created.response_item.forward_source_message_id,
+            forward_node_count=created.response_item.forward_node_count,
         )
 
     async def _build_reused_add_result(
@@ -366,6 +375,9 @@ class WordbankService:
             created_by=response_item.created_by,
             created_at=response_item.created_at,
             rule=dict(response_item.rule),
+            response_mode=response_item.response_mode,
+            forward_source_message_id=response_item.forward_source_message_id,
+            forward_node_count=response_item.forward_node_count,
             reused_existing=True,
         )
 
@@ -415,6 +427,9 @@ class WordbankService:
         user_id: str,
         is_group: bool,
         raw_rule: dict[str, Any] | None = None,
+        response_mode: str = "normal",
+        forward_source_message_id: str | None = None,
+        forward_node_count: int = 0,
     ) -> WordbankBatchAddResult:
         start = perf_start()
         items: list[WordbankBatchAddItemResult] = []
@@ -433,6 +448,9 @@ class WordbankService:
                     group_id=group_id,
                     user_id=user_id,
                     is_group=is_group,
+                    response_mode=response_mode,
+                    forward_source_message_id=forward_source_message_id,
+                    forward_node_count=forward_node_count,
                 )
             except Exception as exc:
                 items.append(

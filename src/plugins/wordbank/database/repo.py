@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from src.lib.db.schema import SchemaPatch
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -104,6 +105,9 @@ class WordbankRepository(
         deleted_at: int = 0,
         created_at: int | None = None,
         updated_at: int | None = None,
+        response_mode: str = "normal",
+        forward_source_message_id: str | None = None,
+        forward_node_count: int = 0,
     ) -> WordbankCreatedResponse:
         now = get_current_time()
         created_at = created_at or now
@@ -149,6 +153,9 @@ class WordbankRepository(
                 search_text=response_fingerprint.search_text,
                 search_tokens=response_fingerprint.search_tokens,
                 image_keys=response_fingerprint.image_keys,
+                response_mode=response_mode,
+                forward_source_message_id=forward_source_message_id or "",
+                forward_node_count=forward_node_count,
                 created_at=created_at,
                 updated_at=updated_at,
             )
@@ -195,6 +202,9 @@ class WordbankRepository(
         deleted_at: int,
         created_at: int,
         updated_at: int,
+        response_mode: str = "normal",
+        forward_source_message_id: str | None = None,
+        forward_node_count: int = 0,
     ) -> WordbankCreatedResponse:
         return await self.create_or_append_response(
             trigger_shape=trigger_shape,
@@ -212,6 +222,9 @@ class WordbankRepository(
             deleted_at=deleted_at,
             created_at=created_at,
             updated_at=updated_at,
+            response_mode=response_mode,
+            forward_source_message_id=forward_source_message_id,
+            forward_node_count=forward_node_count,
         )
 
     async def _upsert_message_route(
@@ -229,3 +242,85 @@ class WordbankRepository(
                 },
             )
             await session.execute(stmt)
+
+
+async def _add_wordbank_response_item_response_mode(session: object) -> None:
+    pragma_result = await session.execute(  # type: ignore[attr-defined]
+        text("PRAGMA table_info(wordbank_response_item)")
+    )
+    columns = {
+        str(row[1])
+        for row in pragma_result.fetchall()  # type: ignore[attr-defined]
+    }
+    if "response_mode" in columns:
+        return
+    await session.execute(  # type: ignore[attr-defined]
+        text(
+            """
+            ALTER TABLE wordbank_response_item
+            ADD COLUMN response_mode VARCHAR(32) NOT NULL DEFAULT 'normal'
+            """
+        )
+    )
+
+
+async def _add_wordbank_response_item_forward_source_message_id(
+    session: object,
+) -> None:
+    pragma_result = await session.execute(  # type: ignore[attr-defined]
+        text("PRAGMA table_info(wordbank_response_item)")
+    )
+    columns = {
+        str(row[1])
+        for row in pragma_result.fetchall()  # type: ignore[attr-defined]
+    }
+    if "forward_source_message_id" in columns:
+        return
+    await session.execute(  # type: ignore[attr-defined]
+        text(
+            """
+            ALTER TABLE wordbank_response_item
+            ADD COLUMN forward_source_message_id VARCHAR(128) NOT NULL DEFAULT ''
+            """
+        )
+    )
+
+
+async def _add_wordbank_response_item_forward_node_count(session: object) -> None:
+    pragma_result = await session.execute(  # type: ignore[attr-defined]
+        text("PRAGMA table_info(wordbank_response_item)")
+    )
+    columns = {
+        str(row[1])
+        for row in pragma_result.fetchall()  # type: ignore[attr-defined]
+    }
+    if "forward_node_count" in columns:
+        return
+    await session.execute(  # type: ignore[attr-defined]
+        text(
+            """
+            ALTER TABLE wordbank_response_item
+            ADD COLUMN forward_node_count INTEGER NOT NULL DEFAULT 0
+            """
+        )
+    )
+
+
+wordbank_main_db.patch_registry.register(
+    SchemaPatch(
+        patch_id="wordbank_response_item:add_response_mode:v1",
+        apply=_add_wordbank_response_item_response_mode,
+    )
+)
+wordbank_main_db.patch_registry.register(
+    SchemaPatch(
+        patch_id="wordbank_response_item:add_forward_source_message_id:v1",
+        apply=_add_wordbank_response_item_forward_source_message_id,
+    )
+)
+wordbank_main_db.patch_registry.register(
+    SchemaPatch(
+        patch_id="wordbank_response_item:add_forward_node_count:v1",
+        apply=_add_wordbank_response_item_forward_node_count,
+    )
+)

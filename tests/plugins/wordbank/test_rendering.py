@@ -142,11 +142,12 @@ async def test_build_pending_items_plan_entry_renders_rich_shapes() -> None:
     rendered = render_message_plan_entry(entry)
     assert "待审核词条" in str(rendered)
     assert "序号: 1" in str(rendered)
-    assert "触发词: &#91;图片:8&#93;" in str(rendered)
-    assert "响应词: 做个好梦 &#91;图片:7&#93;" in str(rendered)
+    assert "触发词:" in str(rendered)
+    assert "响应词:" in str(rendered)
+    assert "做个好梦" in str(rendered)
     assert "创建者: 10001" in str(rendered)
     assert "规则: 概率 1 | 角色 管理" in str(rendered)
-    assert sum(1 for segment in rendered if segment.type == "image") == 0
+    assert sum(1 for segment in rendered if segment.type == "image") == 2
 
 
 @pytest.mark.asyncio

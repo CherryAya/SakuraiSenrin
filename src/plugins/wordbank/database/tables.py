@@ -120,6 +120,21 @@ class WordbankResponseItem(WordbankMainBase, TimeMixin):
     search_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
     search_tokens: Mapped[str] = mapped_column(Text, nullable=False, default="")
     image_keys: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    response_mode: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="normal",
+    )
+    forward_source_message_id: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        default="",
+    )
+    forward_node_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
 
 
 class WordbankImage(WordbankMainBase, TimeMixin):

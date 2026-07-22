@@ -487,6 +487,9 @@ class WordbankRepositoryEntriesMixin:
             response.search_text = response_fingerprint.search_text
             response.search_tokens = response_fingerprint.search_tokens
             response.image_keys = response_fingerprint.image_keys
+            response.response_mode = "normal"
+            response.forward_source_message_id = ""
+            response.forward_node_count = 0
             response.updated_at = now
             await session.flush()
             await self._refresh_group_in_session(session, response.trigger_group_id)

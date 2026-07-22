@@ -164,7 +164,11 @@ async def test_init_all_tables_creates_fts_and_clears_wordbank_patch_chain(
         }
 
     assert service.repository is not None
-    assert wordbank_main_db.patch_registry.patches == []
+    assert {patch.patch_id for patch in wordbank_main_db.patch_registry.patches} == {
+        "wordbank_response_item:add_response_mode:v1",
+        "wordbank_response_item:add_forward_source_message_id:v1",
+        "wordbank_response_item:add_forward_node_count:v1",
+    }
     assert wordbank_log_db.patch_registry.patches == []
     assert wordbank_message_route_db.patch_registry.patches == []
     assert wordbank_message_ref_db.patch_registry.patches == []

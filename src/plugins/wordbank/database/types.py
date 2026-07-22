@@ -56,6 +56,9 @@ class WordbankResponseItemPayload(TypedDict):
     search_text: str
     search_tokens: str
     image_keys: str
+    response_mode: str
+    forward_source_message_id: str
+    forward_node_count: int
     created_at: int
     updated_at: int
 
@@ -173,6 +176,9 @@ class WordbankResponseItemRecord:
     search_tokens: str
     image_keys: str
     created_at: int
+    response_mode: str = "normal"
+    forward_source_message_id: str | None = None
+    forward_node_count: int = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -291,6 +297,9 @@ class WordbankSearchItem:
     )
     trigger_preview_image_id: int | None = None
     response_preview_image_id: int | None = None
+    response_mode: str = "normal"
+    forward_source_message_id: str | None = None
+    forward_node_count: int = 0
 
     @property
     def has_more_responses(self) -> bool:
@@ -380,6 +389,9 @@ class WordbankResponseItemDetail:
     deleted_at: int
     response_text: str
     response_shape: MessageShape
+    response_mode: str = "normal"
+    forward_source_message_id: str | None = None
+    forward_node_count: int = 0
 
 
 @dataclass(slots=True, frozen=True)

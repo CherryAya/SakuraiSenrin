@@ -27,16 +27,28 @@ async def test_repository_import_message_entry_preserves_group_and_response_stat
         deleted_at=0,
         created_at=1700000000,
         updated_at=1700001234,
+        response_mode="forward_whole",
+        forward_source_message_id="456",
+        forward_node_count=2,
     )
     await repository.rebuild_search_index()
     page = await repository.search_page(
         WordbankSearchRequest(keyword="旧版", field="all"),
+    )
+    detail = await repository.get_group_detail(
+        imported.trigger_group_id,
+        response_item_id=imported.response_item_id,
     )
 
     assert imported.status == "approved"
     assert imported.probability == 0.75
     assert imported.trigger_group.trigger_variants[0].trigger_text == "旧版触发"
     assert page.items[0].trigger_group_id == imported.trigger_group_id
+    assert detail is not None
+    assert detail.selected_response is not None
+    assert detail.selected_response.response_mode == "forward_whole"
+    assert detail.selected_response.forward_source_message_id == "456"
+    assert detail.selected_response.forward_node_count == 2
 
 
 @pytest.mark.asyncio
@@ -66,6 +78,9 @@ async def test_repository_updates_trigger_probability_and_response_content(
         deleted_at=0,
         created_at=1700000000,
         updated_at=1700001234,
+        response_mode="forward_whole",
+        forward_source_message_id="456",
+        forward_node_count=2,
     )
 
     updated_probability = await repository.update_trigger_probability(
@@ -96,6 +111,9 @@ async def test_repository_updates_trigger_probability_and_response_content(
     assert detail.selected_response is not None
     assert detail.selected_response.response_text == "已修改响应"
     assert detail.selected_response.status == "pending"
+    assert detail.selected_response.response_mode == "normal"
+    assert detail.selected_response.forward_source_message_id is None
+    assert detail.selected_response.forward_node_count == 0
 
 
 @pytest.mark.asyncio
