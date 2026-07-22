@@ -347,7 +347,7 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
     segments = list(message)
     full_text = _message_text(message)
     assert full_text.startswith(
-        "新增词条待审核\n回复 通过 可通过\n回复 拒绝 可驳回\n\nID: 12\n"
+        "新增词条待审核\n回复 y / 通过 可通过\n回复 n / 拒绝 可驳回\n\nID: 12\n"
     )
     assert "状态: 待审核" in full_text
     assert "触发词: 晚安" in full_text
@@ -386,7 +386,7 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
     segments = list(message)
     full_text = _message_text(message)
     assert full_text.startswith(
-        "新增词条待审核\n回复 通过 可通过\n回复 拒绝 可驳回\n\nID: 12\n"
+        "新增词条待审核\n回复 y / 通过 可通过\n回复 n / 拒绝 可驳回\n\nID: 12\n"
     )
     assert "状态: 待审核" in full_text
     assert "触发词: [图片:8]" in full_text
@@ -419,7 +419,7 @@ async def test_build_pending_approval_notice_plan_entry_returns_raw_message_text
     message = render_message_plan_input(entry)
 
     full_text = _message_text(message)
-    assert "回复 通过 可通过" in full_text
+    assert "回复 y / 通过 可通过" in full_text
     assert "状态: 待审核" in full_text
     assert "触发词: [图片:8]" in full_text
     assert "规则: 概率 1" in full_text
@@ -512,8 +512,8 @@ async def test_send_pending_approval_notice_embeds_detail_in_single_message() ->
     detail_message = render_message_plan_input(plan.messages[0])
     detail_text = _message_text(detail_message)
     assert "新增词条待审核" in detail_text
-    assert "回复 通过 可通过" in detail_text
-    assert "回复 拒绝 可驳回" in detail_text
+    assert "回复 y / 通过 可通过" in detail_text
+    assert "回复 n / 拒绝 可驳回" in detail_text
     assert "ID: 12" in str(detail_message)
     assert "响应词:" in str(detail_message)
     assert "[图片:7]" not in str(detail_message)

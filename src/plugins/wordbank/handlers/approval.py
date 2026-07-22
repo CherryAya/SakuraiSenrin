@@ -108,8 +108,8 @@ def format_pending_approval_notice(
     _ = split_detail, locale
     lines = [
         "新增词条待审核",
-        "回复 通过 可通过",
-        "回复 拒绝 可驳回",
+        "回复 y / 通过 可通过",
+        "回复 n / 拒绝 可驳回",
         "",
         f"ID: {result.response_item_id}",
         f"状态: {format_status_label(result.status)}",
@@ -291,8 +291,8 @@ async def _build_pending_approval_delivery_plan(
                     intro_text="\n".join(
                         (
                             "新增词条待审核",
-                            "回复 通过 可通过",
-                            "回复 拒绝 可驳回",
+                            "回复 y / 通过 可通过",
+                            "回复 n / 拒绝 可驳回",
                         )
                     ),
                 ),
@@ -305,8 +305,8 @@ async def _build_pending_approval_delivery_plan(
                 "\n".join(
                     (
                         "新增词条待审核",
-                        "回复 通过 可通过",
-                        "回复 拒绝 可驳回",
+                        "回复 y / 通过 可通过",
+                        "回复 n / 拒绝 可驳回",
                         "",
                         f"ID: {result.response_item_id}",
                         f"状态: {format_status_label(result.status)}",
