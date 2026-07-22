@@ -45,7 +45,9 @@ from .types import (
 
 class WordbankRepositoryRecordsMixin:
     @staticmethod
-    def _decode_review_history(review_history_json: str) -> tuple[WordbankReviewHistoryEntry, ...]:
+    def _decode_review_history(
+        review_history_json: str,
+    ) -> tuple[WordbankReviewHistoryEntry, ...]:
         raw_items = json.loads(review_history_json or "[]")
         records: list[WordbankReviewHistoryEntry] = []
         if not isinstance(raw_items, list):
