@@ -50,6 +50,7 @@ from .guided_flow import WORDBANK_GUIDED_RECALL_PENDING_KEYS
 from .handlers import (
     PassiveResponse,
     build_group_detail_message,
+    get_reply_message_ids,
     group_detail_page_response_item_ids,
     handle_approval_reply_result,
     handle_reply_command,
@@ -1105,8 +1106,8 @@ def register_wordbank_runtime_handlers(
                 source_kind="wordbank_command",
             )
             return
-        reply_message_id = getattr(reply, "message_id", None)
-        if reply_message_id is None:
+        reply_message_ids = get_reply_message_ids(event)
+        if not reply_message_ids:
             await finish_with_message(
                 bot,
                 matcher,
@@ -1116,10 +1117,16 @@ def register_wordbank_runtime_handlers(
             )
             return
         service = await _get_wordbank_service()
-        view_message = await service.get_message_ref(
-            str(reply_message_id),
-            expected_kind="view",
-        )
+        view_message = None
+        matched_reply_message_id = reply_message_ids[0]
+        for reply_message_id in reply_message_ids:
+            view_message = await service.get_message_ref(
+                reply_message_id,
+                expected_kind="view",
+            )
+            if view_message is not None:
+                matched_reply_message_id = reply_message_id
+                break
         if view_message is None:
             await finish_with_message(
                 bot,
@@ -1128,7 +1135,7 @@ def register_wordbank_runtime_handlers(
                 message=tr(
                     locale,
                     "wordbank.reply.view_target_not_found",
-                    message_id=reply_message_id,
+                    message_id=matched_reply_message_id,
                 ),
                 source_kind="wordbank_command",
             )

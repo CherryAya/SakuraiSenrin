@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
 
-from nonebot.adapters.onebot.v11.event import GroupMessageEvent
+from nonebot.adapters.onebot.v11.event import GroupMessageEvent, PrivateMessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 import pytest
 
@@ -33,12 +33,27 @@ from src.plugins.wordbank.message_model import (
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import RuleError
-from tests.plugins.water.helpers import build_group_message_event
+from tests.plugins.water.helpers import (
+    build_group_message_event,
+    build_private_message_event,
+)
 
 
 def _event_with_reply(message: str = "详情") -> GroupMessageEvent:
     event = build_group_message_event(message, role="admin")
     setattr(event, "reply", SimpleNamespace(message_id=90001))
+    return event
+
+
+def _private_event_with_reply(
+    message: str = "y",
+    *,
+    reply_message_id: int = 123,
+    reply_real_id: int = 90001,
+) -> PrivateMessageEvent:
+    event = build_private_message_event(message, user_id=1)
+    reply = SimpleNamespace(message_id=reply_message_id, real_id=reply_real_id)
+    setattr(event, "reply", reply)
     return event
 
 
@@ -814,6 +829,40 @@ async def test_approval_reply_approves_response_item() -> None:
 
     assert outcome.message == "审批已完成：词条 #300 已通过。"
     assert outcome.completed
+    approve_response_item.assert_awaited_once()
+
+
+async def test_approval_reply_uses_private_reply_real_id_when_message_id_differs() -> (
+    None
+):
+    async def _get_message_ref(
+        message_id: str,
+        *,
+        expected_kind: str | None = None,
+    ) -> WordbankMessageRefRecord | None:
+        assert expected_kind == "approval"
+        if message_id == "90001":
+            return _approval_message()
+        return None
+
+    approve_response_item = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(side_effect=_get_message_ref),
+            approve_response_item=approve_response_item,
+        ),
+    )
+
+    outcome = await handle_approval_reply_result(
+        service,
+        event=_private_event_with_reply(),
+        text="y",
+        locale="zh-CN",
+    )
+
+    assert outcome.message == "审批已完成：词条 #300 已通过。"
+    assert outcome.completed is True
     approve_response_item.assert_awaited_once()
 
 

@@ -74,6 +74,7 @@ from .guided_flow import (
 )
 from .handlers import (
     SubmissionLifecycle,
+    get_reply_message_ids,
     is_reply,
     localize_command_error,
     record_batch_submission_approval_message,  # noqa: F401
@@ -395,19 +396,20 @@ async def _wordbank_media_maintenance_job() -> None:
 
 
 async def is_wordbank_approval_reply(event: MessageEvent) -> bool:
-    if event.reply is None:
-        return False
-    message_id = getattr(event.reply, "message_id", None)
-    if message_id is None:
+    message_ids = get_reply_message_ids(event)
+    if not message_ids:
         return False
     await initialize_wordbank_plugin()
-    return (
-        await wordbank_service.get_message_ref(
-            str(message_id),
-            expected_kind="approval",
-        )
-        is not None
-    )
+    for message_id in message_ids:
+        if (
+            await wordbank_service.get_message_ref(
+                message_id,
+                expected_kind="approval",
+            )
+            is not None
+        ):
+            return True
+    return False
 
 
 async def is_direct_wordbank_approval_reply(event: MessageEvent) -> bool:
@@ -417,35 +419,37 @@ async def is_direct_wordbank_approval_reply(event: MessageEvent) -> bool:
 
 
 async def is_wordbank_response_reply(event: MessageEvent) -> bool:
-    if event.reply is None:
-        return False
-    message_id = getattr(event.reply, "message_id", None)
-    if message_id is None:
+    message_ids = get_reply_message_ids(event)
+    if not message_ids:
         return False
     await initialize_wordbank_plugin()
-    return (
-        await wordbank_service.get_message_ref(
-            str(message_id),
-            expected_kind="response",
-        )
-        is not None
-    )
+    for message_id in message_ids:
+        if (
+            await wordbank_service.get_message_ref(
+                message_id,
+                expected_kind="response",
+            )
+            is not None
+        ):
+            return True
+    return False
 
 
 async def is_wordbank_view_reply(event: MessageEvent) -> bool:
-    if event.reply is None:
-        return False
-    message_id = getattr(event.reply, "message_id", None)
-    if message_id is None:
+    message_ids = get_reply_message_ids(event)
+    if not message_ids:
         return False
     await initialize_wordbank_plugin()
-    return (
-        await wordbank_service.get_message_ref(
-            str(message_id),
-            expected_kind="view",
-        )
-        is not None
-    )
+    for message_id in message_ids:
+        if (
+            await wordbank_service.get_message_ref(
+                message_id,
+                expected_kind="view",
+            )
+            is not None
+        ):
+            return True
+    return False
 
 
 wordbank_command = on_command(

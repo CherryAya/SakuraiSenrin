@@ -464,6 +464,10 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently() 
     targets = [call.kwargs["target"].target_id for call in deliver_plan.await_args_list]
     assert sorted(targets) == ["1", "2"]
     assert record_message_ref.await_count == 2
+    recorded_message_ids = [
+        call.kwargs["message_id"] for call in record_message_ref.await_args_list
+    ]
+    assert sorted(recorded_message_ids) == ["1", "2"]
 
 
 @pytest.mark.asyncio
