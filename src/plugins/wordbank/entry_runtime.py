@@ -1026,6 +1026,14 @@ def register_wordbank_runtime_handlers(
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         service = await _get_wordbank_service()
+        logger.debug(
+            "[Wordbank][approval_reply] handler triggered"
+            f" | event_message_id={getattr(event, 'message_id', '-')}"
+            f" event_user_id={getattr(event, 'user_id', '-')}"
+            f" event_group_id={getattr(event, 'group_id', '-') or '-'}"
+            f" reply_candidates={get_reply_message_ids(event)}"
+            f" plain_text={event.message.extract_plain_text().strip()!r}"
+        )
         try:
             outcome = await handle_approval_reply_result(
                 service,

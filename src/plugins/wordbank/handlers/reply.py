@@ -12,6 +12,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import MessagePlanInput
+from src.logger import logger
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
     WordbankMessageRefKind,
@@ -166,6 +167,8 @@ def get_reply_message_ids(event: MessageEvent) -> tuple[str, ...]:
     if reply is None:
         return ()
     message_ids: list[str] = []
+    raw_message_id = getattr(reply, "message_id", None)
+    raw_real_id = getattr(reply, "real_id", None)
     for attr_name in ("real_id", "message_id"):
         message_id = getattr(reply, attr_name, None)
         if message_id is None:
@@ -173,6 +176,15 @@ def get_reply_message_ids(event: MessageEvent) -> tuple[str, ...]:
         message_id_text = str(message_id)
         if message_id_text and message_id_text not in message_ids:
             message_ids.append(message_id_text)
+    logger.debug(
+        "[Wordbank][reply] resolved reply ids"
+        f" | event_message_id={getattr(event, 'message_id', '-')}"
+        f" event_user_id={getattr(event, 'user_id', '-')}"
+        f" event_group_id={getattr(event, 'group_id', '-') or '-'}"
+        f" raw_reply_message_id={raw_message_id if raw_message_id is not None else '-'}"
+        f" raw_reply_real_id={raw_real_id if raw_real_id is not None else '-'}"
+        f" candidates={tuple(message_ids)}"
+    )
     return tuple(message_ids)
 
 
@@ -190,12 +202,33 @@ async def _get_message_ref_by_reply_ids(
     expected_kind: WordbankMessageRefKind,
 ) -> WordbankMessageRefRecord | None:
     for message_id in message_ids:
+        logger.debug(
+            "[Wordbank][reply] lookup message ref"
+            f" | expected_kind={expected_kind}"
+            f" reply_message_id={message_id}"
+        )
         message_ref = await service.get_message_ref(
             message_id,
             expected_kind=expected_kind,
         )
         if message_ref is not None:
+            logger.debug(
+                "[Wordbank][reply] lookup message ref hit"
+                f" | expected_kind={expected_kind}"
+                f" reply_message_id={message_id}"
+                f" stored_message_id={message_ref.message_id}"
+                f" response_item_id={message_ref.response_item_id}"
+                f" trigger_group_id={message_ref.trigger_group_id}"
+                f" source_message_id={message_ref.source_message_id or '-'}"
+                f" context_type={message_ref.context_type or '-'}"
+                f" message_type={message_ref.message_type}"
+            )
             return message_ref
+        logger.debug(
+            "[Wordbank][reply] lookup message ref miss"
+            f" | expected_kind={expected_kind}"
+            f" reply_message_id={message_id}"
+        )
     return None
 
 
@@ -350,6 +383,15 @@ async def handle_approval_reply_result(
     message_ids = get_reply_message_ids(event)
     if not message_ids:
         return ApprovalReplyOutcome(tr(locale, "wordbank.reply.target_missing"))
+    logger.debug(
+        "[Wordbank][approval_reply] received reply"
+        f" | event_message_id={getattr(event, 'message_id', '-')}"
+        f" event_user_id={getattr(event, 'user_id', '-')}"
+        f" event_group_id={getattr(event, 'group_id', '-') or '-'}"
+        f" event_type={'group' if getattr(event, 'group_id', None) else 'private'}"
+        f" reply_candidates={message_ids}"
+        f" text={text.strip()!r}"
+    )
 
     approval_message = await _get_message_ref_by_reply_ids(
         service,
@@ -357,6 +399,11 @@ async def handle_approval_reply_result(
         expected_kind="approval",
     )
     if approval_message is None:
+        logger.debug(
+            "[Wordbank][approval_reply] approval ref not found"
+            f" | event_message_id={getattr(event, 'message_id', '-')}"
+            f" reply_candidates={message_ids}"
+        )
         return ApprovalReplyOutcome(
             tr(
                 locale,
@@ -364,9 +411,28 @@ async def handle_approval_reply_result(
                 message_id=message_ids[0],
             )
         )
+    logger.debug(
+        "[Wordbank][approval_reply] matched approval ref"
+        f" | event_message_id={getattr(event, 'message_id', '-')}"
+        f" reply_candidates={message_ids}"
+        f" matched_message_id={approval_message.message_id}"
+        f" response_item_id={approval_message.response_item_id}"
+        f" trigger_group_id={approval_message.trigger_group_id}"
+        f" source_message_id={approval_message.source_message_id or '-'}"
+        f" context_type={approval_message.context_type or '-'}"
+        f" message_type={approval_message.message_type}"
+    )
 
     actor = build_mutation_actor(event)
     if not actor_can_review(actor):
+        logger.debug(
+            "[Wordbank][approval_reply] actor cannot review"
+            f" | actor_user_id={actor.user_id}"
+            f" actor_group_id={actor.group_id or '-'}"
+            f" is_superuser={actor.is_superuser}"
+            f" can_moderate_group={actor.can_moderate_group}"
+            f" response_item_id={approval_message.response_item_id}"
+        )
         return ApprovalReplyOutcome(
             tr(locale, "wordbank.approval.permission_denied"),
             approval_message=approval_message,
@@ -382,6 +448,12 @@ async def handle_approval_reply_result(
         )
 
     parsed_action = parse_approval_reply_action(text)
+    logger.debug(
+        "[Wordbank][approval_reply] parsed action"
+        f" | response_item_id={approval_message.response_item_id}"
+        f" text={text.strip()!r}"
+        f" parsed_action={parsed_action}"
+    )
     if parsed_action is not None and parsed_action[0] == "approve":
         allow_overwrite = parsed_action[1]
         ok = await service.approve_response_item(

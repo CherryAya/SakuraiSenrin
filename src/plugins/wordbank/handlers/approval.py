@@ -534,6 +534,15 @@ async def send_pending_approval_notice(
     source_message_id = str(getattr(event, "message_id", "") or "")
     group_id = str(getattr(event, "group_id", "") or "")
     user_id = str(event.user_id)
+    logger.debug(
+        "[Wordbank][approval_notice] broadcast pending notice"
+        f" | superuser_count={len(config.SUPERUSERS)}"
+        f" response_item_id={result.response_item_id}"
+        f" trigger_group_id={result.trigger_group_id}"
+        f" source_message_id={source_message_id or '-'}"
+        f" source_group_id={group_id or '-'}"
+        f" source_user_id={user_id}"
+    )
     await asyncio.gather(
         *(
             _send_single_pending_approval_notice(
@@ -571,7 +580,24 @@ async def _send_single_pending_approval_notice(
         send_result = plan_result.results[0]
         message_id = extract_sent_message_id(send_result)
         if message_id is None:
+            logger.debug(
+                "[Wordbank][approval_notice] pending notice missing message id"
+                f" | superuser_id={superuser_id}"
+                f" response_item_id={result.response_item_id}"
+                f" trigger_group_id={result.trigger_group_id}"
+                f" source_message_id={source_message_id or '-'}"
+            )
             return
+        logger.debug(
+            "[Wordbank][approval_notice] delivered pending notice"
+            f" | superuser_id={superuser_id}"
+            f" approval_message_id={message_id}"
+            f" response_item_id={result.response_item_id}"
+            f" trigger_group_id={result.trigger_group_id}"
+            f" source_message_id={source_message_id or '-'}"
+            f" source_group_id={group_id or '-'}"
+            f" source_user_id={user_id}"
+        )
         await service.record_message_ref(
             ref_kind="approval",
             message_id=message_id,
@@ -581,6 +607,14 @@ async def _send_single_pending_approval_notice(
             user_id=user_id,
             source_message_id=source_message_id,
             message_type="approval",
+        )
+        logger.debug(
+            "[Wordbank][approval_notice] recorded pending notice ref"
+            f" | superuser_id={superuser_id}"
+            f" approval_message_id={message_id}"
+            f" response_item_id={result.response_item_id}"
+            f" trigger_group_id={result.trigger_group_id}"
+            f" source_message_id={source_message_id or '-'}"
         )
     except Exception as exc:
         logger.warning(f"[Wordbank] approval notice skipped for {superuser_id}: {exc}")
@@ -637,6 +671,15 @@ async def send_pending_batch_approval_notice(
     user_id = str(event.user_id)
     response_item_ids = tuple(result.response_item_id for result in pending_results)
     first_result = pending_results[0]
+    logger.debug(
+        "[Wordbank][approval_notice] broadcast pending batch notice"
+        f" | superuser_count={len(config.SUPERUSERS)}"
+        f" trigger_group_id={first_result.trigger_group_id}"
+        f" response_item_ids={response_item_ids}"
+        f" source_message_id={source_message_id or '-'}"
+        f" source_group_id={group_id or '-'}"
+        f" source_user_id={user_id}"
+    )
 
     await asyncio.gather(
         *(
@@ -677,7 +720,24 @@ async def _send_single_pending_batch_approval_notice(
         send_result = plan_result.results[0]
         message_id = extract_sent_message_id(send_result)
         if message_id is None:
+            logger.debug(
+                "[Wordbank][approval_notice] pending batch notice missing message id"
+                f" | superuser_id={superuser_id}"
+                f" trigger_group_id={first_result.trigger_group_id}"
+                f" response_item_ids={response_item_ids}"
+                f" source_message_id={source_message_id or '-'}"
+            )
             return
+        logger.debug(
+            "[Wordbank][approval_notice] delivered pending batch notice"
+            f" | superuser_id={superuser_id}"
+            f" approval_message_id={message_id}"
+            f" trigger_group_id={first_result.trigger_group_id}"
+            f" response_item_ids={response_item_ids}"
+            f" source_message_id={source_message_id or '-'}"
+            f" source_group_id={group_id or '-'}"
+            f" source_user_id={user_id}"
+        )
         await service.record_message_ref(
             ref_kind="approval",
             message_id=message_id,
@@ -689,6 +749,14 @@ async def _send_single_pending_batch_approval_notice(
             context_type="pending_batch",
             message_type="approval_batch",
             group_ids=response_item_ids,
+        )
+        logger.debug(
+            "[Wordbank][approval_notice] recorded pending batch ref"
+            f" | superuser_id={superuser_id}"
+            f" approval_message_id={message_id}"
+            f" trigger_group_id={first_result.trigger_group_id}"
+            f" response_item_ids={response_item_ids}"
+            f" source_message_id={source_message_id or '-'}"
         )
     except Exception as exc:
         logger.warning(

@@ -401,13 +401,23 @@ async def is_wordbank_approval_reply(event: MessageEvent) -> bool:
         return False
     await initialize_wordbank_plugin()
     for message_id in message_ids:
-        if (
-            await wordbank_service.get_message_ref(
-                message_id,
-                expected_kind="approval",
-            )
-            is not None
-        ):
+        message_ref = await wordbank_service.get_message_ref(
+            message_id,
+            expected_kind="approval",
+        )
+        logger.debug(
+            "[Wordbank][approval_reply] matcher lookup"
+            f" | event_message_id={getattr(event, 'message_id', '-')}"
+            f" event_user_id={getattr(event, 'user_id', '-')}"
+            f" event_group_id={getattr(event, 'group_id', '-') or '-'}"
+            f" reply_message_id={message_id}"
+            f" matched={message_ref is not None}"
+            f" matched_response_item_id="
+            f"{message_ref.response_item_id if message_ref is not None else '-'}"
+            f" matched_source_message_id="
+            f"{message_ref.source_message_id if message_ref is not None else '-'}"
+        )
+        if message_ref is not None:
             return True
     return False
 
