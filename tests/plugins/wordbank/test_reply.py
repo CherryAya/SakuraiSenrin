@@ -12,6 +12,7 @@ from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
     WordbankMessageRefRecord,
     WordbankResponseItemDetail,
+    WordbankReviewHistoryEntry,
 )
 from src.plugins.wordbank.handlers.reply import (
     group_detail_page_response_item_ids,
@@ -133,6 +134,68 @@ def _group_detail() -> WordbankGroupDetail:
                 deleted_at=0,
                 response_text="做个好梦",
                 response_shape=shape_from_text("做个好梦"),
+            ),
+        ),
+        selected_response_item_id=300,
+    )
+
+
+def _review_history_entry(
+    *,
+    action: str = "approve",
+    actor_user_id: str = "10002",
+    created_at: int = 1_700_000_000,
+    previous_status: str = "pending",
+    overwritten: bool = False,
+) -> WordbankReviewHistoryEntry:
+    return WordbankReviewHistoryEntry(
+        action=action,
+        actor_user_id=actor_user_id,
+        created_at=created_at,
+        previous_status=previous_status,
+        overwritten=overwritten,
+    )
+
+
+def _reviewed_group_detail(*, status: str = "approved") -> WordbankGroupDetail:
+    current_action = "approve" if status == "approved" else "reject"
+    previous_status = "rejected" if status == "approved" else "approved"
+    alternate_action = "reject" if status == "approved" else "approve"
+    return WordbankGroupDetail(
+        trigger_group_id=12,
+        status=status,
+        enabled=1 if status == "approved" else 0,
+        probability=1.0,
+        group_id="20001",
+        created_by="10001",
+        deleted_at=0,
+        trigger_text="晚安",
+        trigger_shape=shape_from_text("晚安"),
+        trigger_variant_id=120,
+        responses=(
+            WordbankResponseItemDetail(
+                response_item_id=300,
+                status=status,
+                enabled=1 if status == "approved" else 0,
+                scope="current_group",
+                weight=3,
+                rule={},
+                group_id="20001",
+                created_by="10001",
+                approved_by="10002",
+                deleted_at=0,
+                response_text="做个好梦",
+                response_shape=shape_from_text("做个好梦"),
+                review_history=(
+                    _review_history_entry(action=current_action),
+                    _review_history_entry(
+                        action=alternate_action,
+                        actor_user_id="10003",
+                        created_at=1_700_000_100,
+                        previous_status=previous_status,
+                        overwritten=True,
+                    ),
+                ),
             ),
         ),
         selected_response_item_id=300,
@@ -457,6 +520,7 @@ async def test_reply_history_returns_status_summary() -> None:
     assert isinstance(message, str)
     assert "词条 #300 状态摘要" in message
     assert "管理员审核通过后才会变为已通过" in message
+    assert "审批历史:" in message
 
 
 async def test_reply_delete_and_restore_use_response_item_id() -> None:
@@ -774,6 +838,61 @@ async def test_approval_reply_rejects_response_item() -> None:
     assert outcome.message == "审批已完成：词条 #300 已拒绝。"
     assert outcome.completed
     reject_response_item.assert_awaited_once()
+
+
+async def test_approval_reply_prompts_before_overwriting_review() -> None:
+    approve_response_item = AsyncMock(return_value=False)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_approval_message()),
+            get_response_item_record=AsyncMock(
+                return_value=SimpleNamespace(trigger_group_id=12)
+            ),
+            get_group_detail=AsyncMock(return_value=_reviewed_group_detail()),
+            approve_response_item=approve_response_item,
+        ),
+    )
+
+    outcome = await handle_approval_reply_result(
+        service,
+        event=_event_with_reply("通过"),
+        text="通过",
+        locale="zh-CN",
+    )
+
+    assert outcome.message is not None
+    assert "词条 #300 已经被审批过。" in outcome.message
+    assert "审批历史:" in outcome.message
+    assert "继续审批将覆盖此前结果。" in outcome.message
+    assert "如需继续通过，请继续发送：通过 覆盖" in outcome.message
+    assert "如需改为另一结果，请继续发送：拒绝 覆盖" in outcome.message
+    assert outcome.completed is False
+    assert approve_response_item.await_args is not None
+    assert approve_response_item.await_args.kwargs["allow_overwrite"] is False
+
+
+async def test_approval_reply_supports_overwrite_confirmation() -> None:
+    reject_response_item = AsyncMock(return_value=True)
+    service = cast(
+        WordbankService,
+        SimpleNamespace(
+            get_message_ref=AsyncMock(return_value=_approval_message()),
+            reject_response_item=reject_response_item,
+        ),
+    )
+
+    outcome = await handle_approval_reply_result(
+        service,
+        event=_event_with_reply("拒绝 覆盖"),
+        text="拒绝 覆盖",
+        locale="zh-CN",
+    )
+
+    assert outcome.message == "审批已完成：词条 #300 已拒绝。"
+    assert outcome.completed is True
+    assert reject_response_item.await_args is not None
+    assert reject_response_item.await_args.kwargs["allow_overwrite"] is True
 
 
 async def test_approval_reply_ignores_non_command_text() -> None:

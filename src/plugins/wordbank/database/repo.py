@@ -108,6 +108,7 @@ class WordbankRepository(
         response_mode: str = "normal",
         forward_source_message_id: str | None = None,
         forward_node_count: int = 0,
+        review_history_json: str = "[]",
     ) -> WordbankCreatedResponse:
         now = get_current_time()
         created_at = created_at or now
@@ -156,6 +157,7 @@ class WordbankRepository(
                 response_mode=response_mode,
                 forward_source_message_id=forward_source_message_id or "",
                 forward_node_count=forward_node_count,
+                review_history_json=review_history_json,
                 created_at=created_at,
                 updated_at=updated_at,
             )
@@ -205,6 +207,7 @@ class WordbankRepository(
         response_mode: str = "normal",
         forward_source_message_id: str | None = None,
         forward_node_count: int = 0,
+        review_history_json: str = "[]",
     ) -> WordbankCreatedResponse:
         return await self.create_or_append_response(
             trigger_shape=trigger_shape,
@@ -225,6 +228,7 @@ class WordbankRepository(
             response_mode=response_mode,
             forward_source_message_id=forward_source_message_id,
             forward_node_count=forward_node_count,
+            review_history_json=review_history_json,
         )
 
     async def _upsert_message_route(
@@ -306,6 +310,23 @@ async def _add_wordbank_response_item_forward_node_count(session: object) -> Non
     )
 
 
+async def _add_wordbank_response_item_review_history_json(session: object) -> None:
+    pragma_result = await session.execute(  # type: ignore[attr-defined]
+        text("PRAGMA table_info(wordbank_response_item)")
+    )
+    columns = {str(row[1]) for row in pragma_result.fetchall()}  # type: ignore[attr-defined]
+    if "review_history_json" in columns:
+        return
+    await session.execute(  # type: ignore[attr-defined]
+        text(
+            """
+            ALTER TABLE wordbank_response_item
+            ADD COLUMN review_history_json TEXT NOT NULL DEFAULT '[]'
+            """
+        )
+    )
+
+
 wordbank_main_db.patch_registry.register(
     SchemaPatch(
         patch_id="wordbank_response_item:add_response_mode:v1",
@@ -322,5 +343,11 @@ wordbank_main_db.patch_registry.register(
     SchemaPatch(
         patch_id="wordbank_response_item:add_forward_node_count:v1",
         apply=_add_wordbank_response_item_forward_node_count,
+    )
+)
+wordbank_main_db.patch_registry.register(
+    SchemaPatch(
+        patch_id="wordbank_response_item:add_review_history_json:v1",
+        apply=_add_wordbank_response_item_review_history_json,
     )
 )

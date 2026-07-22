@@ -59,6 +59,7 @@ class WordbankResponseItemPayload(TypedDict):
     response_mode: str
     forward_source_message_id: str
     forward_node_count: int
+    review_history_json: str
     created_at: int
     updated_at: int
 
@@ -155,6 +156,15 @@ class WordbankTriggerVariantRecord:
 
 
 @dataclass(slots=True, frozen=True)
+class WordbankReviewHistoryEntry:
+    action: str
+    actor_user_id: str
+    created_at: int
+    previous_status: str = ""
+    overwritten: bool = False
+
+
+@dataclass(slots=True, frozen=True)
 class WordbankResponseItemRecord:
     id: int
     trigger_group_id: int
@@ -179,6 +189,9 @@ class WordbankResponseItemRecord:
     response_mode: str = "normal"
     forward_source_message_id: str | None = None
     forward_node_count: int = 0
+    review_history: tuple[WordbankReviewHistoryEntry, ...] = dataclass_field(
+        default_factory=tuple
+    )
 
 
 @dataclass(slots=True, frozen=True)
@@ -392,6 +405,9 @@ class WordbankResponseItemDetail:
     response_mode: str = "normal"
     forward_source_message_id: str | None = None
     forward_node_count: int = 0
+    review_history: tuple[WordbankReviewHistoryEntry, ...] = dataclass_field(
+        default_factory=tuple
+    )
 
 
 @dataclass(slots=True, frozen=True)

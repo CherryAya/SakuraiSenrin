@@ -135,6 +135,11 @@ class WordbankResponseItem(WordbankMainBase, TimeMixin):
         nullable=False,
         default=0,
     )
+    review_history_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
 
 
 class WordbankImage(WordbankMainBase, TimeMixin):

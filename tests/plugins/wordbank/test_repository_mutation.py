@@ -117,6 +117,72 @@ async def test_repository_updates_trigger_probability_and_response_content(
 
 
 @pytest.mark.asyncio
+async def test_repository_review_history_tracks_initial_review_and_overwrite(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    repository = WordbankRepository()
+    await repository.init_all_tables()
+
+    imported = await repository.import_message_entry(
+        trigger_shape=shape_from_text("待审触发"),
+        response_shape=shape_from_text("待审响应"),
+        rule={},
+        scope="current_group",
+        priority=30,
+        trigger_probability=1.0,
+        weight=3,
+        group_id="20001",
+        created_by="10001",
+        status="pending",
+        enabled=1,
+        approved_by="",
+        deleted_at=0,
+        created_at=1700000000,
+        updated_at=1700001234,
+    )
+
+    approved = await repository.approve_response_item(
+        imported.response_item_id,
+        actor_user_id="10002",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+    )
+    overwritten = await repository.reject_response_item(
+        imported.response_item_id,
+        actor_user_id="10003",
+        actor_group_id="20001",
+        can_moderate_group=True,
+        is_superuser=False,
+        allow_overwrite=True,
+    )
+    detail = await repository.get_group_detail(
+        imported.trigger_group_id,
+        response_item_id=imported.response_item_id,
+    )
+
+    assert approved is True
+    assert overwritten is True
+    assert detail is not None
+    assert detail.selected_response is not None
+    assert detail.selected_response.status == "rejected"
+    assert len(detail.selected_response.review_history) == 2
+    first, second = detail.selected_response.review_history
+    assert first.action == "approve"
+    assert first.actor_user_id == "10002"
+    assert first.previous_status == "pending"
+    assert first.overwritten is False
+    assert second.action == "reject"
+    assert second.actor_user_id == "10003"
+    assert second.previous_status == "approved"
+    assert second.overwritten is True
+
+
+@pytest.mark.asyncio
 async def test_repository_trigger_updates_require_superuser(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

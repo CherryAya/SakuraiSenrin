@@ -660,6 +660,7 @@ class WordbankService:
         actor_group_id: str,
         can_moderate_group: bool,
         is_superuser: bool,
+        allow_overwrite: bool = False,
     ) -> bool:
         response_item = await self._get_response_item_for_mutation(response_item_id)
         ok = await self.repository.approve_response_item(
@@ -668,6 +669,7 @@ class WordbankService:
             actor_group_id=actor_group_id,
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
+            allow_overwrite=allow_overwrite,
         )
         if ok and response_item is not None:
             self.mark_dirty(response_item.trigger_group_id)
@@ -681,6 +683,7 @@ class WordbankService:
         actor_group_id: str,
         can_moderate_group: bool,
         is_superuser: bool,
+        allow_overwrite: bool = False,
     ) -> bool:
         response_item = await self._get_response_item_for_mutation(response_item_id)
         ok = await self.repository.reject_response_item(
@@ -689,6 +692,7 @@ class WordbankService:
             actor_group_id=actor_group_id,
             can_moderate_group=can_moderate_group,
             is_superuser=is_superuser,
+            allow_overwrite=allow_overwrite,
         )
         if ok and response_item is not None:
             self.mark_dirty(response_item.trigger_group_id)
@@ -872,6 +876,17 @@ class WordbankService:
         return await self.repository.get_group_detail(
             trigger_group_id,
             response_item_id=response_item_id,
+        )
+
+    async def get_response_item_record(
+        self,
+        response_item_id: int,
+        *,
+        include_deleted: bool = False,
+    ) -> WordbankResponseItemRecord | None:
+        return await self.repository.get_response_item_record(
+            response_item_id,
+            include_deleted=include_deleted,
         )
 
     async def search(

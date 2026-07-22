@@ -3,15 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.plugins.wordbank.database.types import (
+    WordbankGroupDetail,
+    WordbankReviewHistoryEntry,
+)
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
+from src.plugins.wordbank.services.presentation import (
+    format_scope_label,
+    format_status_label,
+    format_timestamp,
+)
 from src.plugins.wordbank.services.rules import RuleError
+from src.plugins.wordbank.text_parsing import normalize_cq_plain_text
 
 from .parsers import (
     MutationActor,
@@ -31,6 +42,22 @@ class ApprovalMutationOutcome:
     response_item_id: int = 0
 
 
+APPROVAL_OVERRIDE_TOKENS = {"continue", "override", "继续", "覆盖"}
+_APPROVAL_OVERRIDE_PATTERN = "|".join(
+    sorted(
+        (re.escape(token) for token in APPROVAL_OVERRIDE_TOKENS),
+        key=len,
+        reverse=True,
+    )
+)
+_APPROVAL_TARGET_RE = re.compile(
+    rf"^(?:(?P<prefix>{_APPROVAL_OVERRIDE_PATTERN})\s*)?"
+    rf"(?P<id>\d+)"
+    rf"(?:\s*(?P<suffix>{_APPROVAL_OVERRIDE_PATTERN}))?$",
+    re.IGNORECASE,
+)
+
+
 def build_mutation_actor(event: MessageEvent) -> MutationActor:
     user_id = str(event.user_id)
     group_id = str(getattr(event, "group_id", ""))
@@ -44,6 +71,100 @@ def build_mutation_actor(event: MessageEvent) -> MutationActor:
         group_id=group_id,
         can_moderate_group=can_moderate_group,
         is_superuser=user_id in config.SUPERUSERS,
+    )
+
+
+def parse_approval_target(text: str) -> tuple[int, bool] | None:
+    normalized = " ".join(
+        normalize_cq_plain_text(text, strip_leading_at=True).strip().split()
+    )
+    if not normalized:
+        return None
+    match = _APPROVAL_TARGET_RE.fullmatch(normalized)
+    if match is None:
+        return None
+    return int(match.group("id")), bool(match.group("prefix") or match.group("suffix"))
+
+
+def format_entry_history(
+    detail: WordbankGroupDetail,
+    *,
+    locale: LocaleCode,
+) -> str:
+    selected = detail.selected_response
+    assert selected is not None
+    lines = [
+        tr(
+            locale,
+            "wordbank.reply.history",
+            entry_id=selected.response_item_id,
+            status=format_status_label(selected.status),
+            enabled=_format_enabled(selected.enabled, locale),
+            deleted_at=_format_deleted_at(selected.deleted_at),
+            scope=format_scope_label(selected.scope),
+            probability=f"{detail.probability:g}",
+            weight=selected.weight,
+        ),
+        "审批历史:",
+        *_format_review_history_lines(selected.review_history),
+    ]
+    if selected.approved_by:
+        lines.append(f"当前审批人: {selected.approved_by}")
+    return "\n".join(lines)
+
+
+def _format_review_history_lines(
+    review_history: tuple[WordbankReviewHistoryEntry, ...],
+) -> tuple[str, ...]:
+    if not review_history:
+        return ("- 暂无审批历史记录。",)
+    lines: list[str] = []
+    for index, entry in enumerate(review_history, start=1):
+        action_label = "通过" if entry.action == "approve" else "拒绝"
+        line = (
+            f"{index}. {format_timestamp(entry.created_at)} "
+            f"{entry.actor_user_id or '管理员'} {action_label}"
+        )
+        if entry.overwritten and entry.previous_status:
+            line += f"（覆盖此前{format_status_label(entry.previous_status)}）"
+        lines.append(line)
+    return tuple(lines)
+
+
+async def build_repeat_review_prompt(
+    service: WordbankService,
+    *,
+    response_item_id: int,
+    locale: LocaleCode,
+    requested_action: str,
+    continue_hint: str,
+    alternative_hint: str,
+) -> str | None:
+    response_item = await service.get_response_item_record(
+        response_item_id,
+        include_deleted=True,
+    )
+    if response_item is None:
+        return None
+    detail = await service.get_group_detail(
+        response_item.trigger_group_id,
+        response_item_id=response_item_id,
+    )
+    if detail is None or detail.selected_response is None:
+        return None
+    selected = detail.selected_response
+    if selected.deleted_at != 0 or selected.status not in {"approved", "rejected"}:
+        return None
+    requested_label = "通过" if requested_action == "approve" else "拒绝"
+    return "\n".join(
+        (
+            f"词条 #{selected.response_item_id} 已经被审批过。",
+            format_entry_history(detail, locale=locale),
+            "",
+            "继续审批将覆盖此前结果。",
+            f"如需继续{requested_label}，请继续发送：{continue_hint}",
+            f"如需改为另一结果，请继续发送：{alternative_hint}",
+        )
     )
 
 
@@ -70,20 +191,22 @@ async def handle_approve_result(
     response_item_id_text: str,
     locale: LocaleCode,
 ) -> ApprovalMutationOutcome:
-    if not response_item_id_text.isdigit():
+    parsed_target = parse_approval_target(response_item_id_text)
+    if parsed_target is None:
         return ApprovalMutationOutcome(tr(locale, "wordbank.error.entry_id_numeric"))
     actor = build_mutation_actor(event)
     if not actor_can_review(actor):
         return ApprovalMutationOutcome(
             tr(locale, "wordbank.approval.permission_denied")
         )
-    response_item_id = int(response_item_id_text)
+    response_item_id, allow_overwrite = parsed_target
     if await service.approve_response_item(
         response_item_id,
         actor_user_id=actor.user_id,
         actor_group_id=actor.group_id,
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
+        allow_overwrite=allow_overwrite,
     ):
         return ApprovalMutationOutcome(
             tr(locale, "wordbank.approval.approved", entry_id=response_item_id),
@@ -91,6 +214,21 @@ async def handle_approve_result(
             action="approve",
             response_item_id=response_item_id,
         )
+    if not allow_overwrite:
+        prompt = await build_repeat_review_prompt(
+            service,
+            response_item_id=response_item_id,
+            locale=locale,
+            requested_action="approve",
+            continue_hint=f"通过词条 {response_item_id} 覆盖",
+            alternative_hint=f"拒绝词条 {response_item_id} 覆盖",
+        )
+        if prompt is not None:
+            return ApprovalMutationOutcome(
+                prompt,
+                action="approve",
+                response_item_id=response_item_id,
+            )
     return ApprovalMutationOutcome(
         tr(locale, "wordbank.approval.not_found", entry_id=response_item_id),
         action="approve",
@@ -121,20 +259,22 @@ async def handle_reject_result(
     response_item_id_text: str,
     locale: LocaleCode,
 ) -> ApprovalMutationOutcome:
-    if not response_item_id_text.isdigit():
+    parsed_target = parse_approval_target(response_item_id_text)
+    if parsed_target is None:
         return ApprovalMutationOutcome(tr(locale, "wordbank.error.entry_id_numeric"))
     actor = build_mutation_actor(event)
     if not actor_can_review(actor):
         return ApprovalMutationOutcome(
             tr(locale, "wordbank.approval.permission_denied")
         )
-    response_item_id = int(response_item_id_text)
+    response_item_id, allow_overwrite = parsed_target
     if await service.reject_response_item(
         response_item_id,
         actor_user_id=actor.user_id,
         actor_group_id=actor.group_id,
         can_moderate_group=actor.can_moderate_group,
         is_superuser=actor.is_superuser,
+        allow_overwrite=allow_overwrite,
     ):
         return ApprovalMutationOutcome(
             tr(locale, "wordbank.approval.rejected", entry_id=response_item_id),
@@ -142,6 +282,21 @@ async def handle_reject_result(
             action="reject",
             response_item_id=response_item_id,
         )
+    if not allow_overwrite:
+        prompt = await build_repeat_review_prompt(
+            service,
+            response_item_id=response_item_id,
+            locale=locale,
+            requested_action="reject",
+            continue_hint=f"拒绝词条 {response_item_id} 覆盖",
+            alternative_hint=f"通过词条 {response_item_id} 覆盖",
+        )
+        if prompt is not None:
+            return ApprovalMutationOutcome(
+                prompt,
+                action="reject",
+                response_item_id=response_item_id,
+            )
     return ApprovalMutationOutcome(
         tr(locale, "wordbank.approval.not_found", entry_id=response_item_id),
         action="reject",
@@ -217,6 +372,17 @@ async def handle_trigger_probability_update(
             probability=f"{probability:g}",
         )
     return tr(locale, "wordbank.mutation.trigger_not_found", group_id=trigger_group_id)
+
+
+def _format_enabled(enabled: int, locale: LocaleCode = "zh-CN") -> str:
+    return tr(
+        locale,
+        "wordbank.state.enabled" if enabled else "wordbank.state.disabled",
+    )
+
+
+def _format_deleted_at(deleted_at: int) -> str:
+    return str(deleted_at) if deleted_at else "0"
 
 
 async def handle_trigger_content_update(
