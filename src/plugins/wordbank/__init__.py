@@ -410,6 +410,12 @@ async def is_wordbank_approval_reply(event: MessageEvent) -> bool:
     )
 
 
+async def is_direct_wordbank_approval_reply(event: MessageEvent) -> bool:
+    if not await is_reply(event):
+        return False
+    return await is_wordbank_approval_reply(event)
+
+
 async def is_wordbank_response_reply(event: MessageEvent) -> bool:
     if event.reply is None:
         return False
@@ -502,7 +508,7 @@ wordbank_reply_command = on_message(
     block=True,
 )
 wordbank_approval_reply_command = on_message(
-    rule=to_me() & is_reply & is_wordbank_approval_reply,
+    rule=is_direct_wordbank_approval_reply,
     priority=5,
     block=True,
 )

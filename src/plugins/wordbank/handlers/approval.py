@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -24,6 +24,7 @@ from src.lib.message_plan import (
     TextBlock,
     build_text_plan_entry,
     deliver_message_plan,
+    normalize_message_plan_entry,
 )
 from src.logger import logger
 from src.plugins.wordbank.message_model import MessageShape
@@ -205,6 +206,7 @@ async def _build_pending_approval_detail_plan_entry(
     locale: LocaleCode,
     media_service: WordbankMediaService,
     index: int | None = None,
+    prefix: str = "",
 ) -> tuple[MessagePlanInput, ...]:
     return await build_pending_item_plan_entries(
         entry_id=result.response_item_id,
@@ -220,7 +222,7 @@ async def _build_pending_approval_detail_plan_entry(
         response_shape=result.response_shape,
         locale=locale,
         media_service=media_service,
-        prefix="",
+        prefix=prefix,
         index=index,
         response_mode=result.response_mode,
         forward_source_message_id=result.forward_source_message_id,
@@ -234,6 +236,41 @@ def _build_forward_source_entry(source_message_id: str) -> MessagePlanEntry:
     )
 
 
+def _prepend_notice_intro(
+    entries: tuple[MessagePlanInput, ...],
+    *,
+    intro_text: str,
+) -> tuple[MessagePlanInput, ...]:
+    if not entries:
+        return (build_text_plan_entry(intro_text),)
+    first_entry = normalize_message_plan_entry(entries[0])
+    return (
+        MessagePlanEntry(
+            blocks=(TextBlock(intro_text), *first_entry.blocks),
+        ),
+        *entries[1:],
+    )
+
+
+def _append_response_mode_line(
+    entries: tuple[MessagePlanInput, ...],
+    *,
+    result: WordbankAddResult,
+) -> tuple[MessagePlanInput, ...]:
+    if not entries:
+        return entries
+    first_entry = normalize_message_plan_entry(entries[0])
+    return (
+        MessagePlanEntry(
+            blocks=(
+                *first_entry.blocks,
+                TextBlock(f"\n响应模式: {response_mode_label(result)}"),
+            ),
+        ),
+        *entries[1:],
+    )
+
+
 async def _build_pending_approval_delivery_plan(
     result: WordbankAddResult,
     *,
@@ -241,27 +278,36 @@ async def _build_pending_approval_delivery_plan(
     locale: LocaleCode,
     media_service: WordbankMediaService | None,
 ) -> DeliveryPlan:
-    messages: list[MessagePlanInput] = [
-        await build_pending_approval_notice_plan_entry(
-            result,
-            event=event,
-            locale=locale,
-            media_service=cast(WordbankMediaService, media_service),
-        )
-    ]
     if media_service is not None:
-        messages.extend(
-            await _build_pending_approval_detail_plan_entry(
-                result,
-                locale=locale,
-                media_service=media_service,
+        messages = list(
+            _append_response_mode_line(
+                _prepend_notice_intro(
+                    await _build_pending_approval_detail_plan_entry(
+                        result,
+                        locale=locale,
+                        media_service=media_service,
+                        prefix="\n\n",
+                    ),
+                    intro_text="\n".join(
+                        (
+                            "新增词条待审核",
+                            "回复 通过 可通过",
+                            "回复 拒绝 可驳回",
+                        )
+                    ),
+                ),
+                result=result,
             )
         )
     else:
-        messages.append(
+        messages = [
             build_text_plan_entry(
                 "\n".join(
                     (
+                        "新增词条待审核",
+                        "回复 通过 可通过",
+                        "回复 拒绝 可驳回",
+                        "",
                         f"ID: {result.response_item_id}",
                         f"状态: {format_status_label(result.status)}",
                         f"触发词: {_trigger_summary(result)}",
@@ -274,10 +320,11 @@ async def _build_pending_approval_delivery_plan(
                         f"范围: {format_scope_label(result.scope)}",
                         f"权重: {result.weight}",
                         f"规则: {_rule_summary(result)}",
+                        f"响应模式: {response_mode_label(result)}",
                     )
                 )
             )
-        )
+        ]
         if result.response_mode == "forward_whole" and result.forward_source_message_id:
             messages.append(
                 _build_forward_source_entry(result.forward_source_message_id)
@@ -285,7 +332,6 @@ async def _build_pending_approval_delivery_plan(
     return DeliveryPlan(
         messages=tuple(messages),
         source_kind="wordbank_pending_approval_notice",
-        force_forward=True,
     )
 
 
@@ -349,7 +395,6 @@ async def _build_pending_batch_approval_delivery_plan(
     return DeliveryPlan(
         messages=tuple(messages),
         source_kind="wordbank_pending_approval_notice",
-        force_forward=True,
     )
 
 

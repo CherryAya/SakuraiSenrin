@@ -507,17 +507,16 @@ async def test_send_pending_approval_notice_embeds_detail_in_single_message() ->
     await_args = deliver_plan.await_args
     assert await_args is not None
     plan = await_args.kwargs["plan"]
-    assert plan.force_forward is True
-    assert len(plan.messages) == 2
-    summary_message = render_message_plan_input(plan.messages[0])
-    detail_message = render_message_plan_input(plan.messages[1])
-    summary_text = _message_text(summary_message)
-    assert "回复 通过 可通过" in summary_text
-    assert "响应词: [图片:7]" in summary_text
-    assert "晚安" in str(summary_message)
-    assert not any(segment.type == "image" for segment in summary_message)
+    assert plan.should_forward is False
+    assert len(plan.messages) == 1
+    detail_message = render_message_plan_input(plan.messages[0])
+    detail_text = _message_text(detail_message)
+    assert "新增词条待审核" in detail_text
+    assert "回复 通过 可通过" in detail_text
+    assert "回复 拒绝 可驳回" in detail_text
     assert "ID: 12" in str(detail_message)
     assert "响应词:" in str(detail_message)
+    assert "[图片:7]" not in str(detail_message)
     assert any(segment.type == "image" for segment in detail_message)
     assert record_message_ref.await_count == 1
 
@@ -561,14 +560,13 @@ async def test_send_notice_embeds_forward_whole_mode() -> None:
     await_args = deliver_plan.await_args
     assert await_args is not None
     plan = await_args.kwargs["plan"]
-    assert plan.force_forward is True
-    assert len(plan.messages) == 3
-    summary_message = render_message_plan_input(plan.messages[0])
-    detail_message = render_message_plan_input(plan.messages[1])
-    forward_message = render_message_plan_input(plan.messages[2])
-    summary_text = _message_text(summary_message)
-    assert "响应词: 原始合并转发" in summary_text
-    assert "响应模式: 一条合并转发消息（2 条）" in summary_text
+    assert plan.should_forward is True
+    assert len(plan.messages) == 2
+    detail_message = render_message_plan_input(plan.messages[0])
+    forward_message = render_message_plan_input(plan.messages[1])
+    detail_text = _message_text(detail_message)
+    assert "新增词条待审核" in detail_text
+    assert "响应词: 原始合并转发" in detail_text
     assert "ID: 12" in str(detail_message)
     assert "响应词: 原始合并转发" in str(detail_message)
     forward_segments = list(forward_message)
@@ -727,7 +725,7 @@ async def test_send_pending_batch_approval_notice_records_pending_batch_context(
     targets = [call.kwargs["target"].target_id for call in deliver_plan.await_args_list]
     assert sorted(targets) == ["1", "2"]
     first_plan = deliver_plan.await_args_list[0].kwargs["plan"]
-    assert first_plan.force_forward is True
+    assert first_plan.should_forward is True
     assert len(first_plan.messages) == 3
     first_message = render_message_plan_input(first_plan.messages[0])
     assert "待审核词条" in str(first_message)
@@ -801,7 +799,7 @@ async def test_batch_notice_sends_summary_then_forward_details() -> None:
     await_args = deliver_plan.await_args
     assert await_args is not None
     plan = await_args.kwargs["plan"]
-    assert plan.force_forward is True
+    assert plan.should_forward is True
     assert len(plan.messages) == 3
     summary_message = render_message_plan_input(plan.messages[0])
     first_detail = render_message_plan_input(plan.messages[1])
