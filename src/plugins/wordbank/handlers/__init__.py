@@ -53,6 +53,7 @@ from .passive import PassiveResponse, handle_passive_message, handle_passive_not
 from .reply import (
     REPLY_COMMAND_ALIASES,
     ApprovalReplyOutcome,
+    get_reply_message_ids,
     group_detail_page_response_item_ids,
     handle_approval_reply,
     handle_approval_reply_result,
@@ -85,6 +86,7 @@ __all__ = [
     "fetch_first_image_bytes_from_message",
     "fetch_image_bytes_from_message",
     "finalize_submission",
+    "get_reply_message_ids",
     "group_detail_page_response_item_ids",
     "handle_add_text_result",
     "handle_add_with_media",

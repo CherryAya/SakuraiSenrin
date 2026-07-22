@@ -38,6 +38,7 @@ from tests.plugins.water.helpers import (
     attach_reply_message,
     build_group_message_event,
     build_group_poke_event,
+    build_private_message_event,
 )
 
 
@@ -568,6 +569,72 @@ async def test_wordbank_approval_reply_matcher_accepts_plain_reply_without_at(
         bot = ctx.create_bot(base=Bot, self_id="99999")
         event = build_group_message_event("y", role="admin", message_id=1)
         attach_reply_message(event, message_id=90001)
+
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, "审批已完成：词条 #300 已通过。", bot=bot)
+        ctx.should_finished(wordbank_plugin.wordbank_approval_reply_command)
+
+
+@pytest.mark.asyncio
+async def test_wordbank_approval_reply_matcher_accepts_private_reply_real_id(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "initialize_wordbank_plugin",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin,
+        "resolve_locale",
+        AsyncMock(return_value="zh-CN"),
+    )
+    monkeypatch.setattr(
+        wordbank_plugin.wordbank_service,
+        "get_message_ref",
+        AsyncMock(
+            side_effect=lambda message_id, expected_kind=None: (
+                WordbankMessageRefRecord(
+                    message_id="90001",
+                    ref_kind="approval",
+                    shard_key="2026_06",
+                    trigger_group_id=12,
+                    trigger_variant_id=0,
+                    response_item_id=300,
+                    group_id="20001",
+                    user_id="10001",
+                    message_type="approval",
+                    source_message_id="1",
+                    context_type="",
+                    current_page=1,
+                    keyword="",
+                    field="",
+                    creator_id="",
+                    has_image=False,
+                    group_ids=(),
+                )
+                if message_id == "90001"
+                else None
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        wordbank_runtime_module,
+        "handle_approval_reply_result",
+        AsyncMock(
+            return_value=ApprovalReplyOutcome(
+                message="审批已完成：词条 #300 已通过。",
+            )
+        ),
+    )
+
+    async with app.test_matcher(wordbank_plugin.wordbank_approval_reply_command) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        event = build_private_message_event("y", user_id=1, message_id=1)
+        attach_reply_message(event, message_id=123, user_id=2)
+        assert event.reply is not None
+        event.reply.real_id = 90001
 
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, "审批已完成：词条 #300 已通过。", bot=bot)

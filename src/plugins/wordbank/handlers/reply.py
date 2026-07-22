@@ -14,6 +14,7 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import MessagePlanInput
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
+    WordbankMessageRefKind,
     WordbankMessageRefRecord,
 )
 from src.plugins.wordbank.services.core import WordbankService
@@ -160,14 +161,42 @@ async def is_reply(event: MessageEvent) -> bool:
     return event.reply is not None
 
 
-def get_reply_message_id(event: MessageEvent) -> str | None:
+def get_reply_message_ids(event: MessageEvent) -> tuple[str, ...]:
     reply = event.reply
     if reply is None:
+        return ()
+    message_ids: list[str] = []
+    for attr_name in ("real_id", "message_id"):
+        message_id = getattr(reply, attr_name, None)
+        if message_id is None:
+            continue
+        message_id_text = str(message_id)
+        if message_id_text and message_id_text not in message_ids:
+            message_ids.append(message_id_text)
+    return tuple(message_ids)
+
+
+def get_reply_message_id(event: MessageEvent) -> str | None:
+    message_ids = get_reply_message_ids(event)
+    if not message_ids:
         return None
-    message_id = getattr(reply, "message_id", None)
-    if message_id is None:
-        return None
-    return str(message_id)
+    return message_ids[0]
+
+
+async def _get_message_ref_by_reply_ids(
+    service: WordbankService,
+    message_ids: Sequence[str],
+    *,
+    expected_kind: WordbankMessageRefKind,
+) -> WordbankMessageRefRecord | None:
+    for message_id in message_ids:
+        message_ref = await service.get_message_ref(
+            message_id,
+            expected_kind=expected_kind,
+        )
+        if message_ref is not None:
+            return message_ref
+    return None
 
 
 async def handle_reply_command(
@@ -179,16 +208,21 @@ async def handle_reply_command(
     locale: LocaleCode,
     media_service: WordbankMediaService,
 ) -> MessagePlanInput | None:
-    message_id = get_reply_message_id(event)
-    if message_id is None:
+    message_ids = get_reply_message_ids(event)
+    if not message_ids:
         return tr(locale, "wordbank.reply.target_missing")
 
-    response_message = await service.get_message_ref(
-        message_id,
+    response_message = await _get_message_ref_by_reply_ids(
+        service,
+        message_ids,
         expected_kind="response",
     )
     if response_message is None:
-        return tr(locale, "wordbank.reply.target_not_found", message_id=message_id)
+        return tr(
+            locale,
+            "wordbank.reply.target_not_found",
+            message_id=message_ids[0],
+        )
 
     action = normalize_reply_command(text)
     if action in INFO_ALIASES:
@@ -313,12 +347,13 @@ async def handle_approval_reply_result(
     text: str,
     locale: LocaleCode,
 ) -> ApprovalReplyOutcome:
-    message_id = get_reply_message_id(event)
-    if message_id is None:
+    message_ids = get_reply_message_ids(event)
+    if not message_ids:
         return ApprovalReplyOutcome(tr(locale, "wordbank.reply.target_missing"))
 
-    approval_message = await service.get_message_ref(
-        message_id,
+    approval_message = await _get_message_ref_by_reply_ids(
+        service,
+        message_ids,
         expected_kind="approval",
     )
     if approval_message is None:
@@ -326,7 +361,7 @@ async def handle_approval_reply_result(
             tr(
                 locale,
                 "wordbank.approval.reply_target_not_found",
-                message_id=message_id,
+                message_id=message_ids[0],
             )
         )
 
