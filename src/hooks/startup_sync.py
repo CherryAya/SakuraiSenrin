@@ -7,6 +7,7 @@ from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.matcher import Matcher
 from nonebot.permission import SUPERUSER
+from nonebot.rule import to_me
 
 from src.lib.message_plan import finish_with_message
 from src.lib.reply_router import (
@@ -38,7 +39,7 @@ startup_sync_reply = on_message(
     priority=5,
     block=False,
     permission=SUPERUSER,
-    rule=build_reply_rule("startup_sync.restore"),
+    rule=to_me() & build_reply_rule("startup_sync.restore"),
 )
 
 
