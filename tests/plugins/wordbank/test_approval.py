@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11.event import MessageEvent
 import pytest
 
+from src.lib.admin_notifications import AdminNotificationTarget
 from src.lib.message_plan import render_message_plan_input
 from src.plugins.wordbank.handlers.approval import (
     build_add_result_plan_entry,
@@ -78,6 +79,46 @@ def _event() -> MessageEvent:
 
 async def _build_add_result_message(*args: Any, **kwargs: Any) -> Any:
     return render_message_plan_input(await build_add_result_plan_entry(*args, **kwargs))
+
+
+def _install_admin_notification_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+    approval_module: Any,
+    *,
+    targets: tuple[AdminNotificationTarget, ...],
+    deliver_plan: AsyncMock,
+) -> None:
+    monkeypatch.setattr(
+        approval_module,
+        "resolve_admin_notification_targets",
+        lambda: targets,
+    )
+
+    async def _deliver(
+        bot: Any,
+        *,
+        plan: Any,
+        on_delivered: Any = None,
+    ) -> tuple[object, ...]:
+        deliveries: list[object] = []
+        for target in targets:
+            plan_result = await deliver_plan(
+                bot,
+                plan=plan,
+                target=target.delivery_target,
+            )
+            if on_delivered is not None:
+                maybe_awaitable = on_delivered(target, plan_result)
+                if maybe_awaitable is not None:
+                    await maybe_awaitable
+            deliveries.append(plan_result)
+        return tuple(deliveries)
+
+    monkeypatch.setattr(
+        approval_module,
+        "deliver_admin_notification_plan",
+        _deliver,
+    )
 
 
 async def _build_pending_approval_notice_message(*args: Any, **kwargs: Any) -> Any:
@@ -347,8 +388,12 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
     segments = list(message)
     full_text = _message_text(message)
     assert full_text.startswith(
-        "新增词条待审核\n回复 y / 通过 可通过\n回复 n / 拒绝 可驳回\n\nID: 12\n"
+        "新增词条待审核\n回复 y / 通过 可通过\n回复 n / 拒绝 可驳回\n"
     )
+    assert "主动命令: #通过词条 12" in full_text
+    assert "主动命令: #驳回词条 12" in full_text
+    assert "查看列表: #待审核词条" in full_text
+    assert "\n\nID: 12\n" in full_text
     assert "状态: 待审核" in full_text
     assert "触发词: 晚安" in full_text
     assert "响应词: [图片:7]" in full_text
@@ -386,8 +431,12 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
     segments = list(message)
     full_text = _message_text(message)
     assert full_text.startswith(
-        "新增词条待审核\n回复 y / 通过 可通过\n回复 n / 拒绝 可驳回\n\nID: 12\n"
+        "新增词条待审核\n回复 y / 通过 可通过\n回复 n / 拒绝 可驳回\n"
     )
+    assert "主动命令: #通过词条 12" in full_text
+    assert "主动命令: #驳回词条 12" in full_text
+    assert "查看列表: #待审核词条" in full_text
+    assert "\n\nID: 12\n" in full_text
     assert "状态: 待审核" in full_text
     assert "触发词: [图片:8]" in full_text
     assert "响应词: 做个好梦" in full_text
@@ -427,7 +476,9 @@ async def test_build_pending_approval_notice_plan_entry_returns_raw_message_text
 
 
 @pytest.mark.asyncio
-async def test_send_pending_approval_notice_sends_all_superusers_concurrently() -> None:
+async def test_send_pending_approval_notice_sends_all_superusers_concurrently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     record_message_ref = AsyncMock(return_value=None)
     deliver_plan = AsyncMock(
         side_effect=[
@@ -444,22 +495,23 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently() 
 
     from src.plugins.wordbank.handlers import approval as approval_module
 
-    original_superusers = approval_module.config.SUPERUSERS
-    original_deliver = approval_module.deliver_message_plan
-    approval_module.config.SUPERUSERS = {"1", "2"}
-    approval_module.deliver_message_plan = deliver_plan
-    try:
-        await send_pending_approval_notice(
-            bot,
-            service,
-            event=_event(),
-            result=result,
-            locale="zh-CN",
-            media_service=None,
-        )
-    finally:
-        approval_module.config.SUPERUSERS = original_superusers
-        approval_module.deliver_message_plan = original_deliver
+    _install_admin_notification_delivery(
+        monkeypatch,
+        approval_module,
+        targets=(
+            AdminNotificationTarget(channel="private_superuser", target_id="1"),
+            AdminNotificationTarget(channel="private_superuser", target_id="2"),
+        ),
+        deliver_plan=deliver_plan,
+    )
+    await send_pending_approval_notice(
+        bot,
+        service,
+        event=_event(),
+        result=result,
+        locale="zh-CN",
+        media_service=None,
+    )
 
     targets = [call.kwargs["target"].target_id for call in deliver_plan.await_args_list]
     assert sorted(targets) == ["1", "2"]
@@ -471,7 +523,9 @@ async def test_send_pending_approval_notice_sends_all_superusers_concurrently() 
 
 
 @pytest.mark.asyncio
-async def test_send_pending_approval_notice_embeds_detail_in_single_message() -> None:
+async def test_send_pending_approval_notice_embeds_detail_in_single_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     record_message_ref = AsyncMock(return_value=None)
     deliver_plan = AsyncMock(
         return_value=SimpleNamespace(results=({"message_id": 99},), used_forward=True),
@@ -490,22 +544,20 @@ async def test_send_pending_approval_notice_embeds_detail_in_single_message() ->
 
     from src.plugins.wordbank.handlers import approval as approval_module
 
-    original_superusers = approval_module.config.SUPERUSERS
-    original_deliver = approval_module.deliver_message_plan
-    approval_module.config.SUPERUSERS = {"1"}
-    approval_module.deliver_message_plan = deliver_plan
-    try:
-        await send_pending_approval_notice(
-            bot,
-            service,
-            event=_event(),
-            result=result,
-            locale="zh-CN",
-            media_service=media_service,
-        )
-    finally:
-        approval_module.config.SUPERUSERS = original_superusers
-        approval_module.deliver_message_plan = original_deliver
+    _install_admin_notification_delivery(
+        monkeypatch,
+        approval_module,
+        targets=(AdminNotificationTarget(channel="private_superuser", target_id="1"),),
+        deliver_plan=deliver_plan,
+    )
+    await send_pending_approval_notice(
+        bot,
+        service,
+        event=_event(),
+        result=result,
+        locale="zh-CN",
+        media_service=media_service,
+    )
 
     assert deliver_plan.await_count == 1
     await_args = deliver_plan.await_args
@@ -526,7 +578,9 @@ async def test_send_pending_approval_notice_embeds_detail_in_single_message() ->
 
 
 @pytest.mark.asyncio
-async def test_send_notice_embeds_forward_whole_mode() -> None:
+async def test_send_notice_embeds_forward_whole_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     record_message_ref = AsyncMock(return_value=None)
     deliver_plan = AsyncMock(
         return_value=SimpleNamespace(results=({"message_id": 88},), used_forward=True),
@@ -543,22 +597,20 @@ async def test_send_notice_embeds_forward_whole_mode() -> None:
 
     from src.plugins.wordbank.handlers import approval as approval_module
 
-    original_superusers = approval_module.config.SUPERUSERS
-    original_deliver = approval_module.deliver_message_plan
-    approval_module.config.SUPERUSERS = {"1"}
-    approval_module.deliver_message_plan = deliver_plan
-    try:
-        await send_pending_approval_notice(
-            bot,
-            service,
-            event=_event(),
-            result=result,
-            locale="zh-CN",
-            media_service=None,
-        )
-    finally:
-        approval_module.config.SUPERUSERS = original_superusers
-        approval_module.deliver_message_plan = original_deliver
+    _install_admin_notification_delivery(
+        monkeypatch,
+        approval_module,
+        targets=(AdminNotificationTarget(channel="private_superuser", target_id="1"),),
+        deliver_plan=deliver_plan,
+    )
+    await send_pending_approval_notice(
+        bot,
+        service,
+        event=_event(),
+        result=result,
+        locale="zh-CN",
+        media_service=None,
+    )
 
     assert deliver_plan.await_count == 1
     await_args = deliver_plan.await_args
@@ -607,6 +659,8 @@ def test_format_pending_batch_approval_notice_lists_all_pending_items() -> None:
 
     assert "待审核词条" in notice
     assert "回复我发送：通过 1 2 5-8、拒绝 全部" in notice
+    assert "主动命令：#待审核词条" in notice
+    assert "按 ID 处理：#通过词条 <ID> / #驳回词条 <ID>" in notice
     assert "触发词: 晚安" in notice
     assert "创建者: 10001" in notice
     assert "提交时间: 2023-11-15 06:13" in notice
@@ -667,6 +721,8 @@ async def test_build_pending_batch_approval_notice_message_embeds_image_shapes()
     full_text = "".join(str(segment) for segment in segments if segment.type == "text")
     assert "待审核词条" in full_text
     assert "回复我发送：通过 1 2 5-8、拒绝 全部" in full_text
+    assert "主动命令：#待审核词条" in full_text
+    assert "按 ID 处理：#通过词条 <ID> / #驳回词条 <ID>" in full_text
     assert "触发词: test_forward" in full_text
     assert "创建者: 10001" in full_text
     assert "待审数量: 2" in full_text
@@ -675,9 +731,9 @@ async def test_build_pending_batch_approval_notice_message_embeds_image_shapes()
 
 
 @pytest.mark.asyncio
-async def test_send_pending_batch_approval_notice_records_pending_batch_context() -> (
-    None
-):
+async def test_send_pending_batch_approval_notice_records_pending_batch_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     record_message_ref = AsyncMock(return_value=None)
     deliver_plan = AsyncMock(
         side_effect=[
@@ -709,24 +765,27 @@ async def test_send_pending_batch_approval_notice_records_pending_batch_context(
 
     from src.plugins.wordbank.handlers import approval as approval_module
 
-    original_superusers = approval_module.config.SUPERUSERS
-    original_deliver = approval_module.deliver_message_plan
-    approval_module.config.SUPERUSERS = {"1", "2"}
-    approval_module.deliver_message_plan = deliver_plan
-    try:
-        await send_pending_batch_approval_notice(
-            bot,
-            service,
-            event=_event(),
-            batch=batch,
-            locale="zh-CN",
-        )
-    finally:
-        approval_module.config.SUPERUSERS = original_superusers
-        approval_module.deliver_message_plan = original_deliver
+    _install_admin_notification_delivery(
+        monkeypatch,
+        approval_module,
+        targets=(
+            AdminNotificationTarget(channel="private_superuser", target_id="1"),
+            AdminNotificationTarget(channel="private_superuser", target_id="2"),
+        ),
+        deliver_plan=deliver_plan,
+    )
+    await send_pending_batch_approval_notice(
+        bot,
+        service,
+        event=_event(),
+        batch=batch,
+        locale="zh-CN",
+    )
 
     assert deliver_plan.await_count == 2
-    targets = [call.kwargs["target"].target_id for call in deliver_plan.await_args_list]
+    targets = [
+        call.kwargs["target"].target_id for call in deliver_plan.await_args_list
+    ]
     assert sorted(targets) == ["1", "2"]
     first_plan = deliver_plan.await_args_list[0].kwargs["plan"]
     assert first_plan.should_forward is True
@@ -740,7 +799,9 @@ async def test_send_pending_batch_approval_notice_records_pending_batch_context(
 
 
 @pytest.mark.asyncio
-async def test_batch_notice_sends_summary_then_forward_details() -> None:
+async def test_batch_notice_sends_summary_then_forward_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     record_message_ref = AsyncMock(return_value=None)
     deliver_plan = AsyncMock(
         return_value=SimpleNamespace(results=({"message_id": 2},), used_forward=True),
@@ -782,22 +843,20 @@ async def test_batch_notice_sends_summary_then_forward_details() -> None:
 
     from src.plugins.wordbank.handlers import approval as approval_module
 
-    original_superusers = approval_module.config.SUPERUSERS
-    original_deliver = approval_module.deliver_message_plan
-    approval_module.config.SUPERUSERS = {"1"}
-    approval_module.deliver_message_plan = deliver_plan
-    try:
-        await send_pending_batch_approval_notice(
-            bot,
-            service,
-            event=_event(),
-            batch=batch,
-            locale="zh-CN",
-            media_service=media_service,
-        )
-    finally:
-        approval_module.config.SUPERUSERS = original_superusers
-        approval_module.deliver_message_plan = original_deliver
+    _install_admin_notification_delivery(
+        monkeypatch,
+        approval_module,
+        targets=(AdminNotificationTarget(channel="private_superuser", target_id="1"),),
+        deliver_plan=deliver_plan,
+    )
+    await send_pending_batch_approval_notice(
+        bot,
+        service,
+        event=_event(),
+        batch=batch,
+        locale="zh-CN",
+        media_service=media_service,
+    )
 
     assert deliver_plan.await_count == 1
     await_args = deliver_plan.await_args
@@ -809,6 +868,8 @@ async def test_batch_notice_sends_summary_then_forward_details() -> None:
     first_detail = render_message_plan_input(plan.messages[1])
     second_detail = render_message_plan_input(plan.messages[2])
     assert "回复我发送：通过 1 2 5-8、拒绝 全部" in str(summary_message)
+    assert "主动命令：#待审核词条" in str(summary_message)
+    assert "按 ID 处理：#通过词条 <ID> / #驳回词条 <ID>" in str(summary_message)
     assert "待审数量: 2" in str(summary_message)
     assert "序号: 1" in str(first_detail)
     assert "响应词:" in str(first_detail)

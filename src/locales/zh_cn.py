@@ -287,7 +287,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.approval.pending_title": "待审核词条 (第 {page} 页):",
     "wordbank.approval.pending_item": "#{entry_id} [{scope}] {trigger_text} => {response_text}  提交者: {created_by}",
     "wordbank.approval.pending_more": "还有更多待审核词条，可使用 --page {next_page} --limit {limit} 查看下一页。",
-    "wordbank.approval.pending_batch_instruction": "回复我发送：通过 1 2 5-8、拒绝 全部",
+    "wordbank.approval.pending_batch_instruction": "回复我发送：通过 1 2 5-8、拒绝 全部\n主动命令：#待审核词条\n按 ID 处理：#通过词条 <ID> / #驳回词条 <ID>",
     "wordbank.approval.pending_detail_hint": "详细触发词 / 响应词见下一条合并转发。",
     "wordbank.approval.pending_forward_nickname": "待审核词条",
     "wordbank.approval.trigger_label": "触发:",

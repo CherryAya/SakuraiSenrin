@@ -11,19 +11,22 @@ from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import MessageSegment
 
-from src.config import config
+from src.lib.admin_notifications import (
+    AdminNotificationTarget,
+    deliver_admin_notification_plan,
+    resolve_admin_notification_targets,
+)
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import (
     DeliveryPlan,
+    DeliveryPlanResult,
     MessagePlanBlock,
     MessagePlanEntry,
     MessagePlanInput,
     TextBlock,
     build_text_plan_entry,
-    deliver_message_plan,
     normalize_message_plan_entry,
     render_delivery_plan_messages,
 )
@@ -145,6 +148,9 @@ def format_pending_approval_notice(
         "新增词条待审核",
         "回复 y / 通过 可通过",
         "回复 n / 拒绝 可驳回",
+        f"主动命令: #通过词条 {result.response_item_id}",
+        f"主动命令: #驳回词条 {result.response_item_id}",
+        "查看列表: #待审核词条",
         "",
         f"ID: {result.response_item_id}",
         f"状态: {format_status_label(result.status)}",
@@ -184,6 +190,14 @@ def format_pending_batch_approval_notice(
         f"待审数量: {len(pending_results)}",
     ]
     return "\n".join(lines)
+
+
+def _notification_origin_from_target(
+    target: AdminNotificationTarget,
+) -> tuple[str, str]:
+    if target.channel == "private_superuser":
+        return "private", target.target_id
+    return "group", target.target_id
 
 
 async def build_add_result_plan_entry(
@@ -571,53 +585,53 @@ async def send_pending_approval_notice(
     user_id = str(event.user_id)
     logger.debug(
         "[Wordbank][approval_notice] broadcast pending notice"
-        f" | superuser_count={len(config.SUPERUSERS)}"
+        f" | notify_target_count={len(resolve_admin_notification_targets())}"
         f" response_item_id={result.response_item_id}"
         f" trigger_group_id={result.trigger_group_id}"
         f" source_message_id={source_message_id or '-'}"
         f" source_group_id={group_id or '-'}"
         f" source_user_id={user_id}"
     )
-    await asyncio.gather(
-        *(
-            _send_single_pending_approval_notice(
-                bot,
-                service,
-                superuser_id=superuser_id,
-                plan=plan,
-                result=result,
-                group_id=group_id,
-                user_id=user_id,
-                source_message_id=source_message_id,
-            )
-            for superuser_id in config.SUPERUSERS
+    fallback_messages = render_delivery_plan_messages(plan)
+    async def _on_delivered(
+        target: AdminNotificationTarget,
+        plan_result: DeliveryPlanResult,
+    ) -> None:
+        await _record_pending_approval_notice_delivery(
+            bot,
+            service,
+            target=target,
+            plan_result=plan_result,
+            result=result,
+            group_id=group_id,
+            user_id=user_id,
+            source_message_id=source_message_id,
+            fallback_messages=fallback_messages,
         )
-    )
+
+    await deliver_admin_notification_plan(bot, plan=plan, on_delivered=_on_delivered)
 
 
-async def _send_single_pending_approval_notice(
+async def _record_pending_approval_notice_delivery(
     bot: Bot,
     service: WordbankService,
     *,
-    superuser_id: str,
-    plan: DeliveryPlan,
+    target: AdminNotificationTarget,
+    plan_result: DeliveryPlanResult,
     result: WordbankAddResult,
     group_id: str,
     user_id: str,
     source_message_id: str,
+    fallback_messages: tuple[Message, ...],
 ) -> None:
     try:
-        plan_result = await deliver_message_plan(
-            bot,
-            plan=plan,
-            target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
-        )
         send_result = plan_result.results[0]
         message_id = extract_sent_message_id(send_result)
         if message_id is None:
             logger.debug(
                 "[Wordbank][approval_notice] pending notice missing message id"
-                f" | superuser_id={superuser_id}"
+                f" | channel={target.channel}"
+                f" target_id={target.target_id}"
                 f" response_item_id={result.response_item_id}"
                 f" trigger_group_id={result.trigger_group_id}"
                 f" source_message_id={source_message_id or '-'}"
@@ -625,7 +639,8 @@ async def _send_single_pending_approval_notice(
             return
         logger.debug(
             "[Wordbank][approval_notice] delivered pending notice"
-            f" | superuser_id={superuser_id}"
+            f" | channel={target.channel}"
+            f" target_id={target.target_id}"
             f" approval_message_id={message_id}"
             f" response_item_id={result.response_item_id}"
             f" trigger_group_id={result.trigger_group_id}"
@@ -643,8 +658,10 @@ async def _send_single_pending_approval_notice(
             source_message_id=source_message_id,
             message_type="approval",
         )
-        fallback_messages = render_delivery_plan_messages(plan)
         if fallback_messages:
+            origin_message_type, origin_target_id = _notification_origin_from_target(
+                target
+            )
             await record_reply_context_from_send_result(
                 bot,
                 send_result=send_result,
@@ -657,20 +674,24 @@ async def _send_single_pending_approval_notice(
                     message_type="approval",
                 ),
                 source_kind="wordbank_pending_approval_notice",
-                origin_message_type="private",
-                origin_target_id=str(superuser_id),
+                origin_message_type=origin_message_type,
+                origin_target_id=origin_target_id,
                 fallback_message=fallback_messages[0],
             )
         logger.debug(
             "[Wordbank][approval_notice] recorded pending notice ref"
-            f" | superuser_id={superuser_id}"
+            f" | channel={target.channel}"
+            f" target_id={target.target_id}"
             f" approval_message_id={message_id}"
             f" response_item_id={result.response_item_id}"
             f" trigger_group_id={result.trigger_group_id}"
             f" source_message_id={source_message_id or '-'}"
         )
     except Exception as exc:
-        logger.warning(f"[Wordbank] approval notice skipped for {superuser_id}: {exc}")
+        logger.warning(
+            "[Wordbank] approval notice record skipped "
+            f"channel={target.channel} target_id={target.target_id}: {exc}"
+        )
 
 
 def schedule_pending_approval_notice(
@@ -726,56 +747,55 @@ async def send_pending_batch_approval_notice(
     first_result = pending_results[0]
     logger.debug(
         "[Wordbank][approval_notice] broadcast pending batch notice"
-        f" | superuser_count={len(config.SUPERUSERS)}"
+        f" | notify_target_count={len(resolve_admin_notification_targets())}"
         f" trigger_group_id={first_result.trigger_group_id}"
         f" response_item_ids={response_item_ids}"
         f" source_message_id={source_message_id or '-'}"
         f" source_group_id={group_id or '-'}"
         f" source_user_id={user_id}"
     )
-
-    await asyncio.gather(
-        *(
-            _send_single_pending_batch_approval_notice(
-                bot,
-                service,
-                superuser_id=superuser_id,
-                plan=plan,
-                first_result=first_result,
-                response_item_ids=response_item_ids,
-                group_id=group_id,
-                user_id=user_id,
-                source_message_id=source_message_id,
-            )
-            for superuser_id in config.SUPERUSERS
+    fallback_messages = render_delivery_plan_messages(plan)
+    async def _on_delivered(
+        target: AdminNotificationTarget,
+        plan_result: DeliveryPlanResult,
+    ) -> None:
+        await _record_pending_batch_approval_notice_delivery(
+            bot,
+            service,
+            target=target,
+            plan_result=plan_result,
+            first_result=first_result,
+            response_item_ids=response_item_ids,
+            group_id=group_id,
+            user_id=user_id,
+            source_message_id=source_message_id,
+            fallback_messages=fallback_messages,
         )
-    )
+
+    await deliver_admin_notification_plan(bot, plan=plan, on_delivered=_on_delivered)
 
 
-async def _send_single_pending_batch_approval_notice(
+async def _record_pending_batch_approval_notice_delivery(
     bot: Bot,
     service: WordbankService,
     *,
-    superuser_id: str,
-    plan: DeliveryPlan,
+    target: AdminNotificationTarget,
+    plan_result: DeliveryPlanResult,
     first_result: WordbankAddResult,
     response_item_ids: tuple[int, ...],
     group_id: str,
     user_id: str,
     source_message_id: str,
+    fallback_messages: tuple[Message, ...],
 ) -> None:
     try:
-        plan_result = await deliver_message_plan(
-            bot,
-            plan=plan,
-            target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
-        )
         send_result = plan_result.results[0]
         message_id = extract_sent_message_id(send_result)
         if message_id is None:
             logger.debug(
                 "[Wordbank][approval_notice] pending batch notice missing message id"
-                f" | superuser_id={superuser_id}"
+                f" | channel={target.channel}"
+                f" target_id={target.target_id}"
                 f" trigger_group_id={first_result.trigger_group_id}"
                 f" response_item_ids={response_item_ids}"
                 f" source_message_id={source_message_id or '-'}"
@@ -783,7 +803,8 @@ async def _send_single_pending_batch_approval_notice(
             return
         logger.debug(
             "[Wordbank][approval_notice] delivered pending batch notice"
-            f" | superuser_id={superuser_id}"
+            f" | channel={target.channel}"
+            f" target_id={target.target_id}"
             f" approval_message_id={message_id}"
             f" trigger_group_id={first_result.trigger_group_id}"
             f" response_item_ids={response_item_ids}"
@@ -803,8 +824,10 @@ async def _send_single_pending_batch_approval_notice(
             message_type="approval_batch",
             group_ids=response_item_ids,
         )
-        fallback_messages = render_delivery_plan_messages(plan)
         if fallback_messages:
+            origin_message_type, origin_target_id = _notification_origin_from_target(
+                target
+            )
             await record_reply_context_from_send_result(
                 bot,
                 send_result=send_result,
@@ -819,13 +842,14 @@ async def _send_single_pending_batch_approval_notice(
                     group_ids=response_item_ids,
                 ),
                 source_kind="wordbank_pending_approval_notice",
-                origin_message_type="private",
-                origin_target_id=str(superuser_id),
+                origin_message_type=origin_message_type,
+                origin_target_id=origin_target_id,
                 fallback_message=fallback_messages[0],
             )
         logger.debug(
             "[Wordbank][approval_notice] recorded pending batch ref"
-            f" | superuser_id={superuser_id}"
+            f" | channel={target.channel}"
+            f" target_id={target.target_id}"
             f" approval_message_id={message_id}"
             f" trigger_group_id={first_result.trigger_group_id}"
             f" response_item_ids={response_item_ids}"
@@ -833,7 +857,8 @@ async def _send_single_pending_batch_approval_notice(
         )
     except Exception as exc:
         logger.warning(
-            f"[Wordbank] batch approval notice skipped for {superuser_id}: {exc}"
+            "[Wordbank] batch approval notice record skipped "
+            f"channel={target.channel} target_id={target.target_id}: {exc}"
         )
 
 
