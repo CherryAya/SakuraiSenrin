@@ -10,9 +10,14 @@ from src.lib.message_plan import (
     MessagePlanInput,
     build_text_plan_entry,
     deliver_message_plan,
+    render_delivery_plan_messages,
 )
+from src.lib.reply_router import record_reply_context_from_send_result
 from src.plugins.wordbank.database.types import WordbankSearchItem
-from src.plugins.wordbank.handlers.approval import extract_sent_message_id
+from src.plugins.wordbank.handlers.approval import (
+    _build_wordbank_approval_reply_context_spec,
+    extract_sent_message_id,
+)
 from src.plugins.wordbank.handlers.mutation import build_mutation_actor
 from src.plugins.wordbank.handlers.parsers import actor_can_review, parse_search_args
 from src.plugins.wordbank.handlers.rendering import build_pending_item_plan_entries
@@ -175,3 +180,35 @@ async def send_pending_entries_review(
             message_type="approval_batch",
             group_ids=tuple(_response_item_id(item) for item in items),
         )
+        fallback_messages = render_delivery_plan_messages(
+            DeliveryPlan(
+                messages=(build_text_plan_entry(summary), *detail_messages),
+                source_kind=source_kind,
+                fallback_nickname=fallback_nickname,
+                force_forward=True,
+            )
+        )
+        if fallback_messages:
+            event_message_type = (
+                "group" if getattr(event, "group_id", None) is not None else "private"
+            )
+            await record_reply_context_from_send_result(
+                bot,
+                send_result=send_result,
+                context_spec=_build_wordbank_approval_reply_context_spec(
+                    trigger_group_id=items[0].trigger_group_id,
+                    response_item_id=_response_item_id(items[0]),
+                    group_id=str(getattr(event, "group_id", "") or ""),
+                    user_id=str(event.user_id),
+                    source_message_id=str(getattr(event, "message_id", "") or ""),
+                    message_type="approval_batch",
+                    context_type="pending_batch",
+                    group_ids=tuple(_response_item_id(item) for item in items),
+                ),
+                source_kind=source_kind,
+                origin_message_type=event_message_type,
+                origin_target_id=(
+                    str(getattr(event, "group_id", "") or "") or str(event.user_id)
+                ),
+                fallback_message=fallback_messages[0],
+            )
