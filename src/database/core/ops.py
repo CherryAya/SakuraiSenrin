@@ -609,6 +609,20 @@ class InvitationOps(BaseOps[Invitation]):
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def get_by_id(self, id: int) -> Invitation | None:
+        stmt = (
+            select(Invitation)
+            .where(Invitation.id == id)
+            .options(
+                selectinload(Invitation.inviter),
+                selectinload(Invitation.group),
+                selectinload(Invitation.messages),
+                selectinload(Invitation.operator),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().one_or_none()
+
     async def get_by_status(self, status: InvitationStatus) -> Sequence[Invitation]:
         subq = (
             select(

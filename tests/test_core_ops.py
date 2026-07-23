@@ -9,6 +9,7 @@ from src.database.core.consts import GroupStatus, InvitationStatus, Permission
 from src.database.core.ops import GroupOps, InvitationOps, UserOps
 from src.database.core.tables import Group, Invitation, User
 from src.database.instances import core_db
+from src.repositories.invite import InviteRepository
 
 
 class _FakeConnection:
@@ -122,3 +123,29 @@ async def test_invitation_ops_get_by_group_and_flag_prefer_pending_records() -> 
         assert by_group.id == pending.id
         assert by_flag is not None
         assert by_flag.id == pending.id
+
+
+@pytest.mark.asyncio
+async def test_invite_repository_get_by_id_eager_loads_relationships() -> None:
+    async with core_db.session() as session:
+        await session.execute(delete(Invitation))
+        await session.execute(delete(Group))
+        await session.execute(delete(User))
+
+        user_ops = UserOps(session)
+        group_ops = GroupOps(session)
+        invitation_ops = InvitationOps(session)
+
+        await user_ops.add_user("u-inviter-3", "Inviter3", Permission.NORMAL)
+        await group_ops.add_group("g-3", "测试群3", GroupStatus.AUTHORIZED)
+        invitation = await invitation_ops.create_invitation("g-3", "u-inviter-3", "f-3")
+        await session.flush()
+
+        invitation_id = invitation.id
+
+    invitation = await InviteRepository().get_by_id(invitation_id)
+
+    assert invitation is not None
+    assert invitation.group.group_name == "测试群3"
+    assert invitation.group.status is GroupStatus.AUTHORIZED
+    assert invitation.inviter.user_name == "Inviter3"
