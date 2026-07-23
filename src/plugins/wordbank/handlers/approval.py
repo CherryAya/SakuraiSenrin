@@ -25,7 +25,9 @@ from src.lib.message_plan import (
     build_text_plan_entry,
     deliver_message_plan,
     normalize_message_plan_entry,
+    render_delivery_plan_messages,
 )
+from src.lib.reply_router import ReplyContextSpec, record_reply_context_from_send_result
 from src.logger import logger
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.services import format_add_result
@@ -68,6 +70,39 @@ def extract_sent_message_id(result: Any) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _build_wordbank_approval_reply_context_spec(
+    *,
+    trigger_group_id: int,
+    response_item_id: int,
+    group_id: str,
+    user_id: str,
+    source_message_id: str,
+    message_type: str,
+    context_type: str = "",
+    group_ids: tuple[int, ...] = (),
+) -> ReplyContextSpec:
+    return ReplyContextSpec(
+        context_kind="wordbank.approval",
+        payload={
+            "ref_kind": "approval",
+            "trigger_group_id": trigger_group_id,
+            "trigger_variant_id": 0,
+            "response_item_id": response_item_id,
+            "group_id": group_id,
+            "user_id": user_id,
+            "message_type": message_type,
+            "source_message_id": source_message_id,
+            "context_type": context_type,
+            "current_page": 1,
+            "keyword": "",
+            "field": "",
+            "creator_id": "",
+            "has_image": False,
+            "group_ids": list(group_ids),
+        },
+    )
 
 
 def _event_submit_timestamp(event: MessageEvent, created_at: int) -> str:
@@ -608,6 +643,24 @@ async def _send_single_pending_approval_notice(
             source_message_id=source_message_id,
             message_type="approval",
         )
+        fallback_messages = render_delivery_plan_messages(plan)
+        if fallback_messages:
+            await record_reply_context_from_send_result(
+                bot,
+                send_result=send_result,
+                context_spec=_build_wordbank_approval_reply_context_spec(
+                    trigger_group_id=result.trigger_group_id,
+                    response_item_id=result.response_item_id,
+                    group_id=group_id,
+                    user_id=user_id,
+                    source_message_id=source_message_id,
+                    message_type="approval",
+                ),
+                source_kind="wordbank_pending_approval_notice",
+                origin_message_type="private",
+                origin_target_id=str(superuser_id),
+                fallback_message=fallback_messages[0],
+            )
         logger.debug(
             "[Wordbank][approval_notice] recorded pending notice ref"
             f" | superuser_id={superuser_id}"
@@ -750,6 +803,26 @@ async def _send_single_pending_batch_approval_notice(
             message_type="approval_batch",
             group_ids=response_item_ids,
         )
+        fallback_messages = render_delivery_plan_messages(plan)
+        if fallback_messages:
+            await record_reply_context_from_send_result(
+                bot,
+                send_result=send_result,
+                context_spec=_build_wordbank_approval_reply_context_spec(
+                    trigger_group_id=first_result.trigger_group_id,
+                    response_item_id=first_result.response_item_id,
+                    group_id=group_id,
+                    user_id=user_id,
+                    source_message_id=source_message_id,
+                    message_type="approval_batch",
+                    context_type="pending_batch",
+                    group_ids=response_item_ids,
+                ),
+                source_kind="wordbank_pending_approval_notice",
+                origin_message_type="private",
+                origin_target_id=str(superuser_id),
+                fallback_message=fallback_messages[0],
+            )
         logger.debug(
             "[Wordbank][approval_notice] recorded pending batch ref"
             f" | superuser_id={superuser_id}"

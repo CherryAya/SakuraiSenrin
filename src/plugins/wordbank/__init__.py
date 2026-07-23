@@ -37,6 +37,7 @@ from src.lib.long_task import (
 )
 from src.lib.message_plan import MessagePlanInput
 from src.lib.plugin_meta import create_plugin_metadata
+from src.lib.reply_router import build_reply_rule
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.services.startup_sync import ensure_restore_not_in_progress
@@ -74,8 +75,6 @@ from .guided_flow import (
 )
 from .handlers import (
     SubmissionLifecycle,
-    get_reply_message_ids,
-    is_reply,
     localize_command_error,
     record_batch_submission_approval_message,  # noqa: F401
     record_submission_approval_message,  # noqa: F401
@@ -204,6 +203,10 @@ async def initialize_wordbank_plugin() -> None:
     )
 
 
+async def _initialize_wordbank_plugin() -> None:
+    await initialize_wordbank_plugin()
+
+
 async def _start_guided_add(
     matcher: Matcher,
     event: MessageEvent,
@@ -215,7 +218,7 @@ async def _start_guided_add(
         event,
         state,
         locale,
-        initialize_plugin=initialize_wordbank_plugin,
+        initialize_plugin=_initialize_wordbank_plugin,
     )
 
 
@@ -233,7 +236,7 @@ async def _start_guided_add_with_trigger_image(
         locale,
         arg,
         media_service=wordbank_media_service,
-        initialize_plugin=initialize_wordbank_plugin,
+        initialize_plugin=_initialize_wordbank_plugin,
     )
 
 
@@ -335,7 +338,7 @@ driver = get_driver()
 
 
 @driver.on_startup
-async def _initialize_wordbank_plugin() -> None:
+async def _initialize_wordbank_plugin_hook() -> None:
     await initialize_wordbank_plugin()
 
 
@@ -395,73 +398,6 @@ async def _wordbank_media_maintenance_job() -> None:
         logger.exception(f"[Wordbank] media maintenance failed: {exc}")
 
 
-async def is_wordbank_approval_reply(event: MessageEvent) -> bool:
-    message_ids = get_reply_message_ids(event)
-    if not message_ids:
-        return False
-    await initialize_wordbank_plugin()
-    for message_id in message_ids:
-        message_ref = await wordbank_service.get_message_ref(
-            message_id,
-            expected_kind="approval",
-        )
-        logger.debug(
-            "[Wordbank][approval_reply] matcher lookup"
-            f" | event_message_id={getattr(event, 'message_id', '-')}"
-            f" event_user_id={getattr(event, 'user_id', '-')}"
-            f" event_group_id={getattr(event, 'group_id', '-') or '-'}"
-            f" reply_message_id={message_id}"
-            f" matched={message_ref is not None}"
-            f" matched_response_item_id="
-            f"{message_ref.response_item_id if message_ref is not None else '-'}"
-            f" matched_source_message_id="
-            f"{message_ref.source_message_id if message_ref is not None else '-'}"
-        )
-        if message_ref is not None:
-            return True
-    return False
-
-
-async def is_direct_wordbank_approval_reply(event: MessageEvent) -> bool:
-    if not await is_reply(event):
-        return False
-    return await is_wordbank_approval_reply(event)
-
-
-async def is_wordbank_response_reply(event: MessageEvent) -> bool:
-    message_ids = get_reply_message_ids(event)
-    if not message_ids:
-        return False
-    await initialize_wordbank_plugin()
-    for message_id in message_ids:
-        if (
-            await wordbank_service.get_message_ref(
-                message_id,
-                expected_kind="response",
-            )
-            is not None
-        ):
-            return True
-    return False
-
-
-async def is_wordbank_view_reply(event: MessageEvent) -> bool:
-    message_ids = get_reply_message_ids(event)
-    if not message_ids:
-        return False
-    await initialize_wordbank_plugin()
-    for message_id in message_ids:
-        if (
-            await wordbank_service.get_message_ref(
-                message_id,
-                expected_kind="view",
-            )
-            is not None
-        ):
-            return True
-    return False
-
-
 wordbank_command = on_command(
     "wordbank",
     aliases={"词库", "wordbank.help"},
@@ -517,17 +453,17 @@ wordbank_restore_command = on_command(
     block=True,
 )
 wordbank_reply_command = on_message(
-    rule=to_me() & is_reply & is_wordbank_response_reply,
+    rule=to_me() & build_reply_rule("wordbank.response"),
     priority=5,
     block=True,
 )
 wordbank_approval_reply_command = on_message(
-    rule=is_direct_wordbank_approval_reply,
+    rule=build_reply_rule("wordbank.approval"),
     priority=5,
     block=True,
 )
 wordbank_view_reply_command = on_message(
-    rule=to_me() & is_reply & is_wordbank_view_reply,
+    rule=to_me() & build_reply_rule("wordbank.view"),
     priority=6,
     block=True,
 )
@@ -542,7 +478,7 @@ runtime_exports = register_wordbank_runtime_handlers(
     wordbank_notice=wordbank_notice,
     wordbank_add_command=wordbank_add_command,
     wordbank_command=wordbank_command,
-    initialize_plugin=initialize_wordbank_plugin,
+    initialize_plugin=_initialize_wordbank_plugin,
     build_error_message=_wordbank_error_message,
     cancel_guided_resources=_cancel_guided_resources,
     guided_locale=wordbank_guided_locale,
@@ -618,7 +554,7 @@ async def _start_guided_search(
         event,
         state,
         locale,
-        initialize_plugin=initialize_wordbank_plugin,
+        initialize_plugin=_initialize_wordbank_plugin,
     )
 
 
@@ -762,7 +698,7 @@ register_wordbank_command_handlers(
     wordbank_reject_command=wordbank_reject_command,
     wordbank_delete_command=wordbank_delete_command,
     wordbank_restore_command=wordbank_restore_command,
-    initialize_plugin=initialize_wordbank_plugin,
+    initialize_plugin=_initialize_wordbank_plugin,
     build_error_message=_wordbank_error_message,
     finalize_submission=_wordbank_submission_lifecycle.finalize,
     collect_search_query_content=_collect_search_query_content,

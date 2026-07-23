@@ -53,6 +53,7 @@ from .passive import PassiveResponse, handle_passive_message, handle_passive_not
 from .reply import (
     REPLY_COMMAND_ALIASES,
     ApprovalReplyOutcome,
+    build_wordbank_reply_context_spec,
     get_reply_message_ids,
     group_detail_page_response_item_ids,
     handle_approval_reply,
@@ -62,6 +63,7 @@ from .reply import (
     parse_group_detail_delete_reply,
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
+    wordbank_message_ref_from_reply_target,
 )
 from .submission import SubmissionHandler, SubmissionLifecycle, finalize_submission
 
@@ -79,6 +81,7 @@ __all__ = [
     "build_message_shape_from_message",
     "build_pending_approval_notice_plan_entry",
     "build_pending_batch_approval_notice_plan_entry",
+    "build_wordbank_reply_context_spec",
     "dispatch_wordbank_command",
     "dispatch_wordbank_command_with_outcome",
     "extract_image_urls",
@@ -124,4 +127,5 @@ __all__ = [
     "send_pending_approval_notice",
     "send_pending_batch_approval_notice",
     "wordbank_help_text",
+    "wordbank_message_ref_from_reply_target",
 ]

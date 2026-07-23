@@ -40,6 +40,13 @@ from src.lib.message_plan import (
     deliver_message_plan,
     finish_with_message,
     normalize_message_plan_entry,
+    render_message_plan_input,
+)
+from src.lib.reply_router import (
+    ReplyRoute,
+    dispatch_reply_route,
+    record_reply_context_from_send_result,
+    register_reply_route,
 )
 from src.lib.utils.img import QQAvatar
 from src.logger import logger
@@ -48,8 +55,10 @@ from src.repositories import member_repo, user_repo
 from .database.types import WordbankMessageRefRecord
 from .guided_flow import WORDBANK_GUIDED_RECALL_PENDING_KEYS
 from .handlers import (
+    ApprovalReplyOutcome,
     PassiveResponse,
     build_group_detail_message,
+    build_wordbank_reply_context_spec,
     get_reply_message_ids,
     group_detail_page_response_item_ids,
     handle_approval_reply_result,
@@ -57,6 +66,7 @@ from .handlers import (
     parse_group_detail_delete_reply,
     parse_view_reply_for_group_detail,
     parse_view_reply_for_search_result,
+    wordbank_message_ref_from_reply_target,
 )
 from .handlers.commands import (
     ParsedSearch,
@@ -129,6 +139,9 @@ def register_wordbank_runtime_handlers(
     async def _record_passive_response_message(
         response: PassiveResponse,
         send_result: Any,
+        *,
+        bot: Bot | None = None,
+        fallback_message: MessagePlanInput | None = None,
     ) -> None:
         message_id = _extract_sent_message_id(send_result)
         if message_id is None:
@@ -145,6 +158,29 @@ def register_wordbank_runtime_handlers(
                 user_id=response.user_id,
                 message_type=response.message_type,
             )
+            if bot is not None and fallback_message is not None:
+                await record_reply_context_from_send_result(
+                    bot,
+                    send_result=send_result,
+                    context_spec=build_wordbank_reply_context_spec(
+                        context_kind="wordbank.response",
+                        ref_kind="response",
+                        trigger_group_id=response.trigger_group_id,
+                        trigger_variant_id=response.trigger_variant_id,
+                        response_item_id=response.response_item_id,
+                        group_id=response.group_id,
+                        user_id=response.user_id,
+                        message_type=response.message_type,
+                    ),
+                    source_kind="wordbank_response",
+                    origin_message_type=response.message_type,
+                    origin_target_id=(
+                        response.group_id
+                        if response.message_type == "group"
+                        else response.user_id
+                    ),
+                    fallback_message=render_message_plan_input(fallback_message),
+                )
         except Exception as exc:
             logger.warning(f"[Wordbank] response message record skipped: {exc}")
 
@@ -162,7 +198,9 @@ def register_wordbank_runtime_handlers(
 
     async def _record_view_message(
         *,
+        bot: Bot | None = None,
         send_result: Any,
+        fallback_message: MessagePlanInput | None = None,
         event: MessageEvent,
         context_type: str,
         trigger_group_id: int,
@@ -193,19 +231,49 @@ def register_wordbank_runtime_handlers(
                 user_id=str(event.user_id),
                 message_type=_event_message_type(event),
             )
+            if bot is not None and fallback_message is not None:
+                await record_reply_context_from_send_result(
+                    bot,
+                    send_result=send_result,
+                    context_spec=build_wordbank_reply_context_spec(
+                        context_kind="wordbank.view",
+                        ref_kind="view",
+                        trigger_group_id=trigger_group_id,
+                        group_id=str(getattr(event, "group_id", "") or ""),
+                        user_id=str(event.user_id),
+                        message_type=_event_message_type(event),
+                        context_type=context_type,
+                        current_page=current_page,
+                        keyword=keyword,
+                        field=field,
+                        creator_id=creator_id,
+                        has_image=has_image,
+                        group_ids=group_ids,
+                    ),
+                    source_kind="wordbank_view",
+                    origin_message_type=_event_message_type(event),
+                    origin_target_id=(
+                        str(getattr(event, "group_id", "") or "") or str(event.user_id)
+                    ),
+                    fallback_message=render_message_plan_input(fallback_message),
+                )
         except Exception as exc:
             logger.warning(f"[Wordbank] view message record skipped: {exc}")
 
     async def _record_search_result_view_message(
         *,
+        bot: Bot | None = None,
         send_result: Any,
+        fallback_message: MessagePlanInput | None = None,
         event: MessageEvent,
         parsed: ParsedSearch,
         page: Any,
         has_image: bool,
     ) -> None:
         await _record_view_message(
+            bot=bot,
             send_result=send_result,
+            fallback_message=fallback_message,
             event=event,
             context_type="search_result",
             trigger_group_id=0,
@@ -219,14 +287,18 @@ def register_wordbank_runtime_handlers(
 
     async def _record_group_detail_view_message(
         *,
+        bot: Bot | None = None,
         send_result: Any,
+        fallback_message: MessagePlanInput | None = None,
         event: MessageEvent,
         trigger_group_id: int,
         page: int,
         has_image: bool,
     ) -> None:
         await _record_view_message(
+            bot=bot,
             send_result=send_result,
+            fallback_message=fallback_message,
             event=event,
             context_type="group_detail",
             trigger_group_id=trigger_group_id,
@@ -284,7 +356,9 @@ def register_wordbank_runtime_handlers(
             )
             send_result = plan_result.results[0]
             await _record_search_result_view_message(
+                bot=bot,
                 send_result=send_result,
+                fallback_message=message,
                 event=event,
                 parsed=parsed,
                 page=page,
@@ -342,7 +416,9 @@ def register_wordbank_runtime_handlers(
         )
         send_result = plan_result.results[0]
         await _record_group_detail_view_message(
+            bot=bot,
             send_result=send_result,
+            fallback_message=message,
             event=event,
             trigger_group_id=trigger_group_id,
             page=page,
@@ -974,6 +1050,167 @@ def register_wordbank_runtime_handlers(
         #             f"target_id={target_id} error={last_exc}"
         #         )
 
+    async def _legacy_is_wordbank_response_reply(event: MessageEvent) -> bool:
+        reply_message_ids = get_reply_message_ids(event)
+        if not reply_message_ids:
+            return False
+        service = await _get_wordbank_service()
+        for reply_message_id in reply_message_ids:
+            if (
+                await service.get_message_ref(
+                    reply_message_id,
+                    expected_kind="response",
+                )
+                is not None
+            ):
+                return True
+        return False
+
+    async def _legacy_is_wordbank_approval_reply(event: MessageEvent) -> bool:
+        reply_message_ids = get_reply_message_ids(event)
+        if not reply_message_ids:
+            return False
+        service = await _get_wordbank_service()
+        for reply_message_id in reply_message_ids:
+            if (
+                await service.get_message_ref(
+                    reply_message_id,
+                    expected_kind="approval",
+                )
+                is not None
+            ):
+                return True
+        return False
+
+    async def _legacy_is_wordbank_view_reply(event: MessageEvent) -> bool:
+        reply_message_ids = get_reply_message_ids(event)
+        if not reply_message_ids:
+            return False
+        service = await _get_wordbank_service()
+        for reply_message_id in reply_message_ids:
+            if (
+                await service.get_message_ref(
+                    reply_message_id,
+                    expected_kind="view",
+                )
+                is not None
+            ):
+                return True
+        return False
+
+    async def _handle_registered_wordbank_response_reply(
+        bot: Bot,
+        event: MessageEvent,
+        target: object,
+    ) -> MessagePlanInput | None:
+        _ = bot
+        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+        service = await _get_wordbank_service()
+        media_service = await _get_wordbank_media_service()
+        return await handle_reply_command(
+            service,
+            event=event,
+            message=event.message,
+            text=event.message.extract_plain_text(),
+            locale=locale,
+            media_service=media_service,
+            response_message=(
+                None
+                if target is None
+                else wordbank_message_ref_from_reply_target(cast(Any, target))
+            ),
+        )
+
+    async def _handle_registered_wordbank_approval_reply(
+        bot: Bot,
+        event: MessageEvent,
+        target: object,
+    ) -> ApprovalReplyOutcome:
+        _ = bot
+        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+        service = await _get_wordbank_service()
+        return await handle_approval_reply_result(
+            service,
+            event=event,
+            text=event.message.extract_plain_text(),
+            locale=locale,
+            approval_message=(
+                None
+                if target is None
+                else wordbank_message_ref_from_reply_target(cast(Any, target))
+            ),
+        )
+
+    async def _handle_registered_wordbank_view_reply(
+        bot: Bot,
+        event: MessageEvent,
+        target: object,
+    ) -> WordbankMessageRefRecord:
+        _ = (bot, event)
+        if target is None:
+            reply_message_ids = get_reply_message_ids(event)
+            if not reply_message_ids:
+                raise RuntimeError("wordbank view reply target missing")
+            service = await _get_wordbank_service()
+            for reply_message_id in reply_message_ids:
+                view_message = await service.get_message_ref(
+                    reply_message_id,
+                    expected_kind="view",
+                )
+                if view_message is not None:
+                    return view_message
+            raise RuntimeError("wordbank view reply target not found")
+        return wordbank_message_ref_from_reply_target(cast(Any, target))
+
+    async def _legacy_wordbank_response_handler(
+        bot: Bot,
+        event: MessageEvent,
+    ) -> MessagePlanInput | None:
+        return await _handle_registered_wordbank_response_reply(bot, event, None)
+
+    async def _legacy_wordbank_approval_handler(
+        bot: Bot,
+        event: MessageEvent,
+    ) -> ApprovalReplyOutcome:
+        return await _handle_registered_wordbank_approval_reply(bot, event, None)
+
+    async def _legacy_wordbank_view_handler(
+        bot: Bot,
+        event: MessageEvent,
+    ) -> WordbankMessageRefRecord:
+        return await _handle_registered_wordbank_view_reply(bot, event, None)
+
+    register_reply_route(
+        ReplyRoute(
+            name="wordbank.response",
+            context_kinds=("wordbank.response",),
+            text_matcher=lambda _text: True,
+            handler=_handle_registered_wordbank_response_reply,
+            legacy_rule=_legacy_is_wordbank_response_reply,
+            legacy_handler=_legacy_wordbank_response_handler,
+        )
+    )
+    register_reply_route(
+        ReplyRoute(
+            name="wordbank.approval",
+            context_kinds=("wordbank.approval",),
+            text_matcher=lambda _text: True,
+            handler=_handle_registered_wordbank_approval_reply,
+            legacy_rule=_legacy_is_wordbank_approval_reply,
+            legacy_handler=_legacy_wordbank_approval_handler,
+        )
+    )
+    register_reply_route(
+        ReplyRoute(
+            name="wordbank.view",
+            context_kinds=("wordbank.view",),
+            text_matcher=lambda _text: True,
+            handler=_handle_registered_wordbank_view_reply,
+            legacy_rule=_legacy_is_wordbank_view_reply,
+            legacy_handler=_legacy_wordbank_view_handler,
+        )
+    )
+
     @wordbank_reply_command.handle()
     async def _wordbank_reply(
         bot: Bot,
@@ -982,17 +1219,8 @@ def register_wordbank_runtime_handlers(
     ) -> None:
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        service = await _get_wordbank_service()
-        media_service = await _get_wordbank_media_service()
         try:
-            msg = await handle_reply_command(
-                service,
-                event=event,
-                message=event.message,
-                text=event.message.extract_plain_text(),
-                locale=locale,
-                media_service=media_service,
-            )
+            msg = await dispatch_reply_route("wordbank.response", bot, event)
         except (RuleError, ValueError) as exc:
             await finish_with_message(
                 bot,
@@ -1025,22 +1253,8 @@ def register_wordbank_runtime_handlers(
     ) -> None:
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        service = await _get_wordbank_service()
-        logger.debug(
-            "[Wordbank][approval_reply] handler triggered"
-            f" | event_message_id={getattr(event, 'message_id', '-')}"
-            f" event_user_id={getattr(event, 'user_id', '-')}"
-            f" event_group_id={getattr(event, 'group_id', '-') or '-'}"
-            f" reply_candidates={get_reply_message_ids(event)}"
-            f" plain_text={event.message.extract_plain_text().strip()!r}"
-        )
         try:
-            outcome = await handle_approval_reply_result(
-                service,
-                event=event,
-                text=event.message.extract_plain_text(),
-                locale=locale,
-            )
+            outcome = await dispatch_reply_route("wordbank.approval", bot, event)
         except (RuleError, ValueError) as exc:
             await finish_with_message(
                 bot,
@@ -1054,6 +1268,9 @@ def register_wordbank_runtime_handlers(
                 ),
                 source_kind="wordbank_command",
             )
+            return
+        if outcome is None:
+            await matcher.finish()
             return
         if outcome.message is None:
             await matcher.finish()
@@ -1104,37 +1321,11 @@ def register_wordbank_runtime_handlers(
     ) -> None:
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        reply = event.reply
-        if reply is None:
-            await finish_with_message(
-                bot,
-                matcher,
-                event=event,
-                message=tr(locale, "wordbank.reply.target_missing"),
-                source_kind="wordbank_command",
-            )
-            return
-        reply_message_ids = get_reply_message_ids(event)
-        if not reply_message_ids:
-            await finish_with_message(
-                bot,
-                matcher,
-                event=event,
-                message=tr(locale, "wordbank.reply.target_missing"),
-                source_kind="wordbank_command",
-            )
-            return
         service = await _get_wordbank_service()
-        view_message = None
-        matched_reply_message_id = reply_message_ids[0]
-        for reply_message_id in reply_message_ids:
-            view_message = await service.get_message_ref(
-                reply_message_id,
-                expected_kind="view",
-            )
-            if view_message is not None:
-                matched_reply_message_id = reply_message_id
-                break
+        view_message = cast(
+            WordbankMessageRefRecord | None,
+            await dispatch_reply_route("wordbank.view", bot, event),
+        )
         if view_message is None:
             await finish_with_message(
                 bot,
@@ -1143,7 +1334,7 @@ def register_wordbank_runtime_handlers(
                 message=tr(
                     locale,
                     "wordbank.reply.view_target_not_found",
-                    message_id=matched_reply_message_id,
+                    message_id=(get_reply_message_ids(event) or ("",))[0],
                 ),
                 source_kind="wordbank_command",
             )
@@ -1316,6 +1507,8 @@ def register_wordbank_runtime_handlers(
             await (await _get_plugin_attr("_record_passive_response_message"))(
                 response,
                 send_result,
+                bot=bot,
+                fallback_message=message,
             )
         record_ms = elapsed_ms(record_start)
         log_perf(
@@ -1466,6 +1659,8 @@ def register_wordbank_runtime_handlers(
             await (await _get_plugin_attr("_record_passive_response_message"))(
                 response,
                 send_result,
+                bot=bot,
+                fallback_message=message,
             )
         record_ms = elapsed_ms(record_start)
         log_perf(

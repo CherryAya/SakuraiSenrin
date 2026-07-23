@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -15,6 +16,11 @@ from src.config import config
 from src.lib.db.manager import db_manager
 from src.lib.long_task import LoggerProgressSink, LongTaskRunner, LongTaskSpec
 from src.lib.message_delivery import DeliveryTarget, deliver_single_message
+from src.lib.reply_router import (
+    ReplyContextSpec,
+    ResolvedReplyTarget,
+    record_reply_context_from_send_result,
+)
 from src.logger import logger
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.services.backup import (
@@ -75,6 +81,45 @@ def resolve_startup_sync_reply_decision(text: str) -> bool | None:
     return None
 
 
+def build_startup_sync_reply_context(
+    pending: PendingStartupRestore,
+) -> ReplyContextSpec:
+    return ReplyContextSpec(
+        context_kind="startup_sync.restore",
+        payload={
+            "snapshot_id": pending.snapshot_id,
+            "remote_latest_at": pending.remote_latest_at,
+            "local_latest_at": pending.local_latest_at,
+            "prompt_message_id": pending.prompt_message_id,
+            "profile_name": pending.profile_name,
+        },
+    )
+
+
+def pending_startup_restore_from_payload(
+    payload: Mapping[str, object],
+) -> PendingStartupRestore:
+    def _as_int(value: object) -> int:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        return 0
+
+    snapshot_id = str(payload.get("snapshot_id", "") or "")
+    profile_name = str(payload.get("profile_name", "") or "")
+    prompt_message_id = str(payload.get("prompt_message_id", "") or "")
+    remote_latest_at = _as_int(payload.get("remote_latest_at", 0))
+    local_latest_at = _as_int(payload.get("local_latest_at", 0))
+    return PendingStartupRestore(
+        snapshot_id=snapshot_id,
+        remote_latest_at=remote_latest_at,
+        local_latest_at=local_latest_at,
+        prompt_message_id=prompt_message_id,
+        profile_name=profile_name,
+    )
+
+
 async def run_startup_backup_freshness_check(bot: Bot) -> None:
     global _startup_check_completed
     if _startup_check_completed:
@@ -126,13 +171,18 @@ async def run_startup_backup_freshness_check(bot: Bot) -> None:
 
 
 async def handle_startup_sync_reply(
-    bot: Bot, *, reply_message_id: str, text: str
+    bot: Bot,
+    *,
+    reply_message_id: str,
+    text: str,
+    pending: PendingStartupRestore | None = None,
 ) -> str | None:
     _ = bot
     decision = resolve_startup_sync_reply_decision(text)
     if decision is None:
         return None
-    pending = _pending_restore_by_prompt.pop(reply_message_id, None)
+    if pending is None:
+        pending = _pending_restore_by_prompt.pop(reply_message_id, None)
     if pending is None:
         return None
     if not decision:
@@ -152,6 +202,23 @@ async def handle_startup_sync_reply(
     return (
         "远端快照已恢复到本地，并已刷新运行时状态。"
         "建议确认业务数据后再继续高风险写入操作。"
+    )
+
+
+async def handle_startup_sync_reply_target(
+    bot: Bot,
+    *,
+    target: ResolvedReplyTarget,
+    text: str,
+) -> str | None:
+    pending = pending_startup_restore_from_payload(target.payload)
+    if pending.prompt_message_id:
+        _pending_restore_by_prompt.pop(pending.prompt_message_id, None)
+    return await handle_startup_sync_reply(
+        bot,
+        reply_message_id=target.resolved_reply_message_id,
+        text=text,
+        pending=pending,
     )
 
 
@@ -296,12 +363,22 @@ async def _notify_superusers_for_remote_restore(
         message_id = send_result.message_id
         if not message_id:
             continue
-        _pending_restore_by_prompt[message_id] = PendingStartupRestore(
+        pending = PendingStartupRestore(
             snapshot_id=snapshot.id,
             remote_latest_at=remote_latest_at,
             local_latest_at=local_latest_at,
             prompt_message_id=message_id,
             profile_name=resolve_default_backup_profile_name(),
+        )
+        _pending_restore_by_prompt[message_id] = pending
+        await record_reply_context_from_send_result(
+            bot,
+            send_result=send_result,
+            context_spec=build_startup_sync_reply_context(pending),
+            source_kind="startup_sync",
+            origin_message_type="private",
+            origin_target_id=str(superuser_id),
+            fallback_message=prompt,
         )
 
 
@@ -444,10 +521,13 @@ def _parse_restic_snapshot_time(raw_time: str | None) -> int | None:
 
 
 __all__ = [
+    "build_startup_sync_reply_context",
     "ensure_restore_not_in_progress",
     "handle_startup_sync_reply",
+    "handle_startup_sync_reply_target",
     "is_restore_in_progress",
     "is_startup_sync_reply_text",
+    "pending_startup_restore_from_payload",
     "resolve_startup_sync_reply_decision",
     "restore_latest_remote_snapshot_into_local",
     "restore_remote_snapshot_into_local",

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import re
+from typing import Any
 
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
@@ -12,6 +13,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import MessagePlanInput
+from src.lib.reply_router import ReplyContextSpec, ResolvedReplyTarget
 from src.logger import logger
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
@@ -162,6 +164,93 @@ async def is_reply(event: MessageEvent) -> bool:
     return event.reply is not None
 
 
+def build_wordbank_reply_context_spec(
+    *,
+    context_kind: str,
+    ref_kind: WordbankMessageRefKind,
+    trigger_group_id: int,
+    trigger_variant_id: int = 0,
+    response_item_id: int = 0,
+    group_id: str = "",
+    user_id: str = "",
+    message_type: str = "",
+    source_message_id: str = "",
+    context_type: str = "",
+    current_page: int = 1,
+    keyword: str = "",
+    field: str = "",
+    creator_id: str = "",
+    has_image: bool = False,
+    group_ids: Sequence[int] = (),
+) -> ReplyContextSpec:
+    return ReplyContextSpec(
+        context_kind=context_kind,
+        payload={
+            "ref_kind": ref_kind,
+            "trigger_group_id": trigger_group_id,
+            "trigger_variant_id": trigger_variant_id,
+            "response_item_id": response_item_id,
+            "group_id": group_id,
+            "user_id": user_id,
+            "message_type": message_type,
+            "source_message_id": source_message_id,
+            "context_type": context_type,
+            "current_page": current_page,
+            "keyword": keyword,
+            "field": field,
+            "creator_id": creator_id,
+            "has_image": has_image,
+            "group_ids": list(group_ids),
+        },
+    )
+
+
+def wordbank_message_ref_from_reply_target(
+    target: ResolvedReplyTarget,
+) -> WordbankMessageRefRecord:
+    return _wordbank_message_ref_from_payload(
+        target.payload,
+        message_id=target.record.message_id,
+    )
+
+
+def _wordbank_message_ref_from_payload(
+    payload: Mapping[str, Any],
+    *,
+    message_id: str,
+) -> WordbankMessageRefRecord:
+    raw_group_ids = payload.get("group_ids", ())
+    group_ids: tuple[int, ...] = ()
+    if isinstance(raw_group_ids, Sequence) and not isinstance(raw_group_ids, str):
+        group_ids = tuple(
+            int(item)
+            for item in raw_group_ids
+            if isinstance(item, int) or (isinstance(item, str) and item.isdigit())
+        )
+    ref_kind = payload.get("ref_kind", "response")
+    if ref_kind not in {"response", "approval", "view"}:
+        ref_kind = "response"
+    return WordbankMessageRefRecord(
+        message_id=message_id,
+        ref_kind=ref_kind,
+        shard_key="",
+        trigger_group_id=int(payload.get("trigger_group_id", 0) or 0),
+        trigger_variant_id=int(payload.get("trigger_variant_id", 0) or 0),
+        response_item_id=int(payload.get("response_item_id", 0) or 0),
+        group_id=str(payload.get("group_id", "") or ""),
+        user_id=str(payload.get("user_id", "") or ""),
+        message_type=str(payload.get("message_type", "") or ""),
+        source_message_id=str(payload.get("source_message_id", "") or ""),
+        context_type=str(payload.get("context_type", "") or ""),
+        current_page=int(payload.get("current_page", 1) or 1),
+        keyword=str(payload.get("keyword", "") or ""),
+        field=str(payload.get("field", "") or ""),
+        creator_id=str(payload.get("creator_id", "") or ""),
+        has_image=bool(payload.get("has_image", False)),
+        group_ids=group_ids,
+    )
+
+
 def get_reply_message_ids(event: MessageEvent) -> tuple[str, ...]:
     reply = event.reply
     if reply is None:
@@ -240,22 +329,24 @@ async def handle_reply_command(
     text: str,
     locale: LocaleCode,
     media_service: WordbankMediaService,
+    response_message: WordbankMessageRefRecord | None = None,
 ) -> MessagePlanInput | None:
-    message_ids = get_reply_message_ids(event)
-    if not message_ids:
-        return tr(locale, "wordbank.reply.target_missing")
-
-    response_message = await _get_message_ref_by_reply_ids(
-        service,
-        message_ids,
-        expected_kind="response",
-    )
     if response_message is None:
-        return tr(
-            locale,
-            "wordbank.reply.target_not_found",
-            message_id=message_ids[0],
+        message_ids = get_reply_message_ids(event)
+        if not message_ids:
+            return tr(locale, "wordbank.reply.target_missing")
+
+        response_message = await _get_message_ref_by_reply_ids(
+            service,
+            message_ids,
+            expected_kind="response",
         )
+        if response_message is None:
+            return tr(
+                locale,
+                "wordbank.reply.target_not_found",
+                message_id=message_ids[0],
+            )
 
     action = normalize_reply_command(text)
     if action in INFO_ALIASES:
@@ -379,49 +470,51 @@ async def handle_approval_reply_result(
     event: MessageEvent,
     text: str,
     locale: LocaleCode,
+    approval_message: WordbankMessageRefRecord | None = None,
 ) -> ApprovalReplyOutcome:
-    message_ids = get_reply_message_ids(event)
-    if not message_ids:
-        return ApprovalReplyOutcome(tr(locale, "wordbank.reply.target_missing"))
-    logger.debug(
-        "[Wordbank][approval_reply] received reply"
-        f" | event_message_id={getattr(event, 'message_id', '-')}"
-        f" event_user_id={getattr(event, 'user_id', '-')}"
-        f" event_group_id={getattr(event, 'group_id', '-') or '-'}"
-        f" event_type={'group' if getattr(event, 'group_id', None) else 'private'}"
-        f" reply_candidates={message_ids}"
-        f" text={text.strip()!r}"
-    )
-
-    approval_message = await _get_message_ref_by_reply_ids(
-        service,
-        message_ids,
-        expected_kind="approval",
-    )
     if approval_message is None:
+        message_ids = get_reply_message_ids(event)
+        if not message_ids:
+            return ApprovalReplyOutcome(tr(locale, "wordbank.reply.target_missing"))
         logger.debug(
-            "[Wordbank][approval_reply] approval ref not found"
+            "[Wordbank][approval_reply] received reply"
+            f" | event_message_id={getattr(event, 'message_id', '-')}"
+            f" event_user_id={getattr(event, 'user_id', '-')}"
+            f" event_group_id={getattr(event, 'group_id', '-') or '-'}"
+            f" event_type={'group' if getattr(event, 'group_id', None) else 'private'}"
+            f" reply_candidates={message_ids}"
+            f" text={text.strip()!r}"
+        )
+
+        approval_message = await _get_message_ref_by_reply_ids(
+            service,
+            message_ids,
+            expected_kind="approval",
+        )
+        if approval_message is None:
+            logger.debug(
+                "[Wordbank][approval_reply] approval ref not found"
+                f" | event_message_id={getattr(event, 'message_id', '-')}"
+                f" reply_candidates={message_ids}"
+            )
+            return ApprovalReplyOutcome(
+                tr(
+                    locale,
+                    "wordbank.approval.reply_target_not_found",
+                    message_id=message_ids[0],
+                )
+            )
+        logger.debug(
+            "[Wordbank][approval_reply] matched approval ref"
             f" | event_message_id={getattr(event, 'message_id', '-')}"
             f" reply_candidates={message_ids}"
+            f" matched_message_id={approval_message.message_id}"
+            f" response_item_id={approval_message.response_item_id}"
+            f" trigger_group_id={approval_message.trigger_group_id}"
+            f" source_message_id={approval_message.source_message_id or '-'}"
+            f" context_type={approval_message.context_type or '-'}"
+            f" message_type={approval_message.message_type}"
         )
-        return ApprovalReplyOutcome(
-            tr(
-                locale,
-                "wordbank.approval.reply_target_not_found",
-                message_id=message_ids[0],
-            )
-        )
-    logger.debug(
-        "[Wordbank][approval_reply] matched approval ref"
-        f" | event_message_id={getattr(event, 'message_id', '-')}"
-        f" reply_candidates={message_ids}"
-        f" matched_message_id={approval_message.message_id}"
-        f" response_item_id={approval_message.response_item_id}"
-        f" trigger_group_id={approval_message.trigger_group_id}"
-        f" source_message_id={approval_message.source_message_id or '-'}"
-        f" context_type={approval_message.context_type or '-'}"
-        f" message_type={approval_message.message_type}"
-    )
 
     actor = build_mutation_actor(event)
     if not actor_can_review(actor):
