@@ -15,15 +15,16 @@ import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
 from pil_utils import BuildImage
 
-from src.config import config
+from src.config import config as config
+from src.lib.admin_notifications import deliver_admin_notification_plan
 from src.lib.cooldown import CooldownIsolateLevel, MemoryCooldown
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import LongTaskRunner
-from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import (
     DeliveryPlan,
+    DeliveryTarget,
     ImageBytesBlock,
     MessagePlanInput,
     RawMessageBlock,
@@ -279,18 +280,7 @@ def _build_report_push_plan(
 
 
 async def _notify_report_push_superusers(bot: Bot, plan: DeliveryPlan) -> None:
-    for superuser_id in sorted(config.SUPERUSERS):
-        try:
-            await deliver_message_plan(
-                bot,
-                plan=plan,
-                target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
-            )
-        except Exception as exc:  # pragma: no cover - defensive logging
-            logger.warning(
-                "[Water][ReportPush] notify superuser failed "
-                f"user_id={superuser_id} error={type(exc).__name__}: {exc}"
-            )
+    await deliver_admin_notification_plan(bot, plan=plan)
 
 
 def _set_report_push_stage(

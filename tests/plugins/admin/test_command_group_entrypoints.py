@@ -188,6 +188,11 @@ async def test_admin_group_sync_members_all_invokes_runner(
     )
     monkeypatch.setattr(
         group_plugin,
+        "deliver_admin_notification_plan",
+        AsyncMock(return_value=()),
+    )
+    monkeypatch.setattr(
+        group_plugin,
         "run_sync_members_for_all_groups",
         AsyncMock(
             return_value=SimpleNamespace(

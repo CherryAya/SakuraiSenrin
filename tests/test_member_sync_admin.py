@@ -51,9 +51,13 @@ async def test_run_sync_members_for_all_groups_reports_final_batch(
             ]
         ),
     )
-    deliver_mock = AsyncMock(return_value=None)
+    deliver_mock = AsyncMock(return_value=())
     sleep_mock = AsyncMock(return_value=None)
-    monkeypatch.setattr(admin_sync_module, "deliver_message_plan", deliver_mock)
+    monkeypatch.setattr(
+        admin_sync_module,
+        "deliver_admin_notification_plan",
+        deliver_mock,
+    )
     monkeypatch.setattr(asyncio, "sleep", sleep_mock)
 
     state = await admin_sync_module.run_sync_members_for_all_groups(bot)
@@ -94,9 +98,13 @@ async def test_run_sync_members_for_all_groups_reports_every_ten_groups(
             ]
         ),
     )
-    deliver_mock = AsyncMock(return_value=None)
+    deliver_mock = AsyncMock(return_value=())
     sleep_mock = AsyncMock(return_value=None)
-    monkeypatch.setattr(admin_sync_module, "deliver_message_plan", deliver_mock)
+    monkeypatch.setattr(
+        admin_sync_module,
+        "deliver_admin_notification_plan",
+        deliver_mock,
+    )
     monkeypatch.setattr(asyncio, "sleep", sleep_mock)
 
     state = await admin_sync_module.run_sync_members_for_all_groups(bot)

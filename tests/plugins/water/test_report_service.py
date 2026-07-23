@@ -376,23 +376,25 @@ async def test_run_daily_group_report_push_notifies_superusers_on_start_and_fini
         "build_group_report_message",
         AsyncMock(side_effect=[text_message("R2"), text_message("R1")]),
     )
-    deliver_mock = AsyncMock(return_value=None)
+    group_deliver_mock = AsyncMock(return_value=None)
+    admin_deliver_mock = AsyncMock(return_value=())
     sleep_mock = AsyncMock(return_value=None)
-    monkeypatch.setattr(report_module, "deliver_message_plan", deliver_mock)
+    monkeypatch.setattr(report_module, "deliver_message_plan", group_deliver_mock)
+    monkeypatch.setattr(
+        report_module,
+        "deliver_admin_notification_plan",
+        admin_deliver_mock,
+    )
     monkeypatch.setattr(report_module.asyncio, "sleep", sleep_mock)
 
     bot = cast(report_module.Bot, SimpleNamespace())
     result = await water_report_service.run_daily_group_report_push(bot=bot)
 
     assert result.sent_groups == 2
-    admin_calls = [
-        call
-        for call in deliver_mock.await_args_list
-        if call.kwargs["target"].kind == "private"
-    ]
+    admin_calls = list(admin_deliver_mock.await_args_list)
     group_calls = [
         call
-        for call in deliver_mock.await_args_list
+        for call in group_deliver_mock.await_args_list
         if call.kwargs["target"].kind == "group"
     ]
     assert len(admin_calls) == 2
@@ -462,20 +464,22 @@ async def test_run_daily_group_report_push_reports_batch_progress_every_ten_grou
         "build_group_report_message",
         AsyncMock(side_effect=[text_message(f"R{index}") for index in range(11)]),
     )
-    deliver_mock = AsyncMock(return_value=None)
+    group_deliver_mock = AsyncMock(return_value=None)
+    admin_deliver_mock = AsyncMock(return_value=())
     sleep_mock = AsyncMock(return_value=None)
-    monkeypatch.setattr(report_module, "deliver_message_plan", deliver_mock)
+    monkeypatch.setattr(report_module, "deliver_message_plan", group_deliver_mock)
+    monkeypatch.setattr(
+        report_module,
+        "deliver_admin_notification_plan",
+        admin_deliver_mock,
+    )
     monkeypatch.setattr(report_module.asyncio, "sleep", sleep_mock)
 
     bot = cast(report_module.Bot, SimpleNamespace())
     result = await water_report_service.run_daily_group_report_push(bot=bot)
 
     assert result.sent_groups == 11
-    admin_calls = [
-        call
-        for call in deliver_mock.await_args_list
-        if call.kwargs["target"].kind == "private"
-    ]
+    admin_calls = list(admin_deliver_mock.await_args_list)
     assert len(admin_calls) == 3
     start_plan = admin_calls[0].kwargs["plan"]
     batch_plan = admin_calls[1].kwargs["plan"]

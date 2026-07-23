@@ -14,11 +14,11 @@ from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import FriendRequestEvent
 from nonebot.plugin import on_request
 
-from src.config import config
 from src.database.consts import WritePolicy
 from src.database.core.consts import Permission
+from src.lib.admin_notifications import deliver_admin_notification_i18n
 from src.lib.consts import TriggerType
-from src.lib.i18n.runtime import send_private_i18n, tr
+from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import user_repo
@@ -73,11 +73,11 @@ async def _(
             policy=WritePolicy.IMMEDIATE,
         )
 
-    for super_user_id in config.SUPERUSERS:
-        await send_private_i18n(
-            bot,
-            int(super_user_id),
-            "notice.user.friend_request",
-            user_id=str(event.user_id),
-        )
-        await asyncio.sleep(1)
+    await deliver_admin_notification_i18n(
+        bot,
+        locale=await resolve_locale(None),
+        key="notice.user.friend_request",
+        source_kind="notice_user_friend_request",
+        inter_target_delay_seconds=1,
+        user_id=str(event.user_id),
+    )
