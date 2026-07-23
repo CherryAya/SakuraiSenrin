@@ -183,3 +183,49 @@ async def test_resolve_reply_target_dedupes_same_payload_hash_candidates() -> No
     assert resolved is not None
     assert resolved.resolved_by == "message_hash"
     assert resolved.record.payload["entry_id"] == 300
+
+
+@pytest.mark.asyncio
+async def test_resolve_reply_target_reuses_get_msg_snapshot_across_routes() -> None:
+    message_hash = build_reply_message_hash("审批消息", sender_bot_id="99999")
+    await reply_context_repo.upsert_context(
+        context_kind="route.approval",
+        message_id="90001",
+        message_hash=message_hash,
+        sender_bot_id="99999",
+        origin_message_type="private",
+        origin_target_id="1",
+        source_kind="test",
+        payload={"entry_id": 1},
+    )
+    event = build_group_message_event("y", role="admin")
+    attach_reply_message(event, message_id=123, user_id=2)
+    get_msg = AsyncMock(
+        return_value={
+            "message": [{"type": "text", "data": {"text": "审批消息"}}],
+            "sender": {"user_id": "99999"},
+        }
+    )
+    bot = cast(Any, SimpleNamespace(self_id="99999", call_api=get_msg))
+
+    first = await resolve_reply_target(
+        bot,
+        event,
+        allowed_context_kinds=("route.response",),
+    )
+    second = await resolve_reply_target(
+        bot,
+        event,
+        allowed_context_kinds=("route.approval",),
+    )
+    third = await resolve_reply_target(
+        bot,
+        event,
+        allowed_context_kinds=("route.view",),
+    )
+
+    assert first is None
+    assert second is not None
+    assert second.resolved_by == "message_hash"
+    assert third is None
+    assert get_msg.await_count == 1

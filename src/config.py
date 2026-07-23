@@ -30,6 +30,9 @@ class GlobalConfig(BaseModel):
     IGNORED_USERS: set[str]
     MAIN_GROUP_ID: str
     HELP_SUPPORT_GROUPS: str = ""
+    ADMIN_NOTIFY_PRIVATE_ENABLED: bool = True
+    ADMIN_NOTIFY_GROUP_ENABLED: bool = False
+    ADMIN_NOTIFY_GROUP_IDS: tuple[str, ...] = ()
     DEBUG: bool = False
     DEV_TEST_GROUPS: set[str] = set()
     DEV_TEST_USERS: set[str] = set()

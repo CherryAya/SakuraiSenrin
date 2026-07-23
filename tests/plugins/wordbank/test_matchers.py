@@ -568,7 +568,8 @@ async def test_wordbank_approval_reply_matcher_accepts_plain_reply_without_at(
     async with app.test_matcher(wordbank_plugin.wordbank_approval_reply_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         event = build_group_message_event("y", role="admin", message_id=1)
-        attach_reply_message(event, message_id=90001)
+        attach_reply_message(event, message_id=90001, user_id=99999)
+        event.to_me = True
 
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, "审批已完成：词条 #300 已通过。", bot=bot)
@@ -632,9 +633,10 @@ async def test_wordbank_approval_reply_matcher_accepts_private_reply_real_id(
     async with app.test_matcher(wordbank_plugin.wordbank_approval_reply_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         event = build_private_message_event("y", user_id=1, message_id=1)
-        attach_reply_message(event, message_id=123, user_id=2)
+        attach_reply_message(event, message_id=123, user_id=99999)
         assert event.reply is not None
         event.reply.real_id = 90001
+        event.to_me = True
 
         ctx.receive_event(bot, event)
         ctx.should_call_send(event, "审批已完成：词条 #300 已通过。", bot=bot)

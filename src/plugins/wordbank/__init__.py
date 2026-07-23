@@ -458,7 +458,7 @@ wordbank_reply_command = on_message(
     block=True,
 )
 wordbank_approval_reply_command = on_message(
-    rule=build_reply_rule("wordbank.approval"),
+    rule=to_me() & build_reply_rule("wordbank.approval"),
     priority=5,
     block=True,
 )

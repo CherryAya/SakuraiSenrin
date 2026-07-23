@@ -35,7 +35,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.approval.response_label": "響應:",
     "wordbank.add.duplicate_pending": "此 trigger-response pair 已在待審列中，請勿重複添加。\nID: {entry_id}\n狀態: {status}\n觸發詞: {trigger_text}\n響應詞: {response_text}\n範圍: {scope}\n規則: 概率 {probability}\n權重: {weight}\n已復用舊待審詞條，並再告管理員審之。",
     "wordbank.add.duplicate_approved": "此 trigger-response pair 已存且經審通過，請勿重複添加。\nID: {entry_id}\n狀態: {status}\n觸發詞: {trigger_text}\n響應詞: {response_text}\n範圍: {scope}\n規則: 概率 {probability}\n權重: {weight}\n此詞條今可直用。",
-    "wordbank.approval.pending_batch_instruction": "覆我發之：通過 1 2 5-8、拒絕 all，或直用 y / n",
+    "wordbank.approval.pending_batch_instruction": "覆我發之：通過 1 2 5-8、拒絕 all，或直用 y / n\n主動命令：#待審核詞條\n按 ID 處置：#通過詞條 <ID> / #駁回詞條 <ID>",
     "wordbank.approval.pending_detail_hint": "詳觸發詞 / 響應詞見下一條合併轉發。",
     "wordbank.approval.pending_forward_nickname": "待審詞條",
     "wordbank.approval.batch.title.approve": "批量通過畢",

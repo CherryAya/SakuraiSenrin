@@ -576,6 +576,60 @@ def _event_cache(
     return cache
 
 
+def _event_snapshot_cache(
+    event: MessageEvent,
+) -> dict[str, ReplyMessageSnapshot | None]:
+    cache = getattr(event, "__reply_router_snapshot_cache__", None)
+    if isinstance(cache, dict):
+        return cache
+    cache = {}
+    setattr(event, "__reply_router_snapshot_cache__", cache)
+    return cache
+
+
+def _event_hash_cache(event: MessageEvent) -> dict[tuple[str, str], str]:
+    cache = getattr(event, "__reply_router_hash_cache__", None)
+    if isinstance(cache, dict):
+        return cache
+    cache = {}
+    setattr(event, "__reply_router_hash_cache__", cache)
+    return cache
+
+
+async def _fetch_reply_message_snapshot_cached(
+    bot: Bot,
+    event: MessageEvent,
+    *,
+    message_id: str,
+) -> ReplyMessageSnapshot | None:
+    cache = _event_snapshot_cache(event)
+    if message_id in cache:
+        return cache[message_id]
+    snapshot = await fetch_reply_message_snapshot(bot, message_id=message_id)
+    cache[message_id] = snapshot
+    return snapshot
+
+
+def _build_reply_message_hash_cached(
+    event: MessageEvent,
+    *,
+    message_id: str,
+    message: Message | Sequence[object] | str,
+    sender_bot_id: str,
+) -> str:
+    cache_key = (message_id, sender_bot_id)
+    cache = _event_hash_cache(event)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    message_hash = build_reply_message_hash(
+        message,
+        sender_bot_id=sender_bot_id,
+    )
+    cache[cache_key] = message_hash
+    return message_hash
+
+
 async def resolve_reply_target(
     bot: Bot,
     event: MessageEvent,
@@ -632,7 +686,11 @@ async def resolve_reply_target(
         return None
     bot_id = str(bot.self_id)
     for reply_message_id in reply_message_ids:
-        snapshot = await fetch_reply_message_snapshot(bot, message_id=reply_message_id)
+        snapshot = await _fetch_reply_message_snapshot_cached(
+            bot,
+            event,
+            message_id=reply_message_id,
+        )
         if snapshot is None:
             continue
         if snapshot.sender_user_id != bot_id:
@@ -643,8 +701,10 @@ async def resolve_reply_target(
                 f"{bot_id} actual_sender_id={snapshot.sender_user_id or '-'}"
             )
             continue
-        message_hash = build_reply_message_hash(
-            snapshot.message,
+        message_hash = _build_reply_message_hash_cached(
+            event,
+            message_id=reply_message_id,
+            message=snapshot.message,
             sender_bot_id=bot_id,
         )
         logger.debug(

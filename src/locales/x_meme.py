@@ -30,7 +30,7 @@ CATALOG: Final[dict[str, str]] = {
     "wordbank.approval.response_label": "响应:",
     "wordbank.add.duplicate_pending": "这个 trigger-response pair 已经在待审核里了，别重复塞。\nID: {entry_id}\n状态: {status}\n触发词: {trigger_text}\n响应词: {response_text}\n范围: {scope}\n规则: 概率 {probability}\n权重: {weight}\n这次直接复用老待审词条，再去敲管理员一遍。",
     "wordbank.add.duplicate_approved": "这个 trigger-response pair 早就过审了，别重复塞。\nID: {entry_id}\n状态: {status}\n触发词: {trigger_text}\n响应词: {response_text}\n范围: {scope}\n规则: 概率 {probability}\n权重: {weight}\n这条现在就能直接用。",
-    "wordbank.approval.pending_batch_instruction": "回我发：通过 1 2 5-8、拒绝 all，或者直接 y / n",
+    "wordbank.approval.pending_batch_instruction": "回我发：通过 1 2 5-8、拒绝 all，或者直接 y / n\n主动命令：#待审核词条\n按 ID 处理：#通过词条 <ID> / #驳回词条 <ID>",
     "wordbank.approval.pending_detail_hint": "详细触发词 / 响应词看下一条合并转发。",
     "wordbank.approval.pending_forward_nickname": "待审核词条",
     "wordbank.approval.batch.title.approve": "批量通过完事",

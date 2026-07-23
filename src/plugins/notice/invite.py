@@ -6,9 +6,7 @@ LastEditTime: 2026-03-03 12:24:46
 Description: 邀请通知处理
 """
 
-import asyncio
 from pathlib import Path
-import random
 
 from nonebot import on_notice, on_request
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -22,12 +20,17 @@ from nonebot.rule import is_type, to_me
 from src.config import config
 from src.database.consts import WritePolicy
 from src.database.core.consts import InvitationStatus, Permission
+from src.lib.admin_notifications import (
+    AdminNotificationTarget,
+    deliver_admin_notification_plan,
+)
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, send_private_i18n, tr
-from src.lib.message_delivery import DeliveryTarget
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+from src.lib.message_plan import DeliveryPlan, DeliveryPlanResult
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
+from src.lib.reply_router import ReplyContextSpec, record_reply_context_from_send_result
+from src.logger import logger
 from src.repositories import group_repo, invite_repo, user_repo
 from src.services.info import resolve_group_name, resolve_user_name
 
@@ -103,6 +106,75 @@ async def _ensure_request_dependencies(
         group_id=str(event.group_id),
         group_name=group_name,
     )
+
+
+def _build_invite_reply_context_spec(
+    *,
+    invitation_id: int,
+    group_id: str,
+    inviter_id: str,
+    flag: str | None,
+) -> ReplyContextSpec:
+    return ReplyContextSpec(
+        context_kind="admin.invite.approval",
+        payload={
+            "invitation_id": invitation_id,
+            "group_id": group_id,
+            "inviter_id": inviter_id,
+            "flag": flag or "",
+        },
+    )
+
+
+def _notification_origin_from_target(
+    target: AdminNotificationTarget,
+) -> tuple[str, str]:
+    if target.channel == "private_superuser":
+        return "private", target.target_id
+    return "group", target.target_id
+
+
+async def _record_invitation_notice_delivery(
+    bot: Bot,
+    *,
+    invitation_id: int,
+    group_id: str,
+    inviter_id: str,
+    flag: str | None,
+    report_message: str,
+    target: AdminNotificationTarget,
+    plan_result: DeliveryPlanResult,
+) -> None:
+    send_result = plan_result.results[0]
+    message_id = getattr(send_result, "message_id", None)
+    if not message_id:
+        return
+    await invite_repo.add_message_record(
+        invitation_id=invitation_id,
+        message_id=str(message_id),
+    )
+    origin_message_type, origin_target_id = _notification_origin_from_target(target)
+    try:
+        await record_reply_context_from_send_result(
+            bot,
+            send_result=send_result,
+            context_spec=_build_invite_reply_context_spec(
+                invitation_id=invitation_id,
+                group_id=group_id,
+                inviter_id=inviter_id,
+                flag=flag,
+            ),
+            source_kind="notice_invite",
+            origin_message_type=origin_message_type,
+            origin_target_id=origin_target_id,
+            fallback_message=report_message,
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning(
+            "[NoticeInvite] reply context record skipped "
+            f"invitation_id={invitation_id} channel={target.channel} "
+            f"target_id={target.target_id} error={type(exc).__name__}: {exc}"
+        )
 
 
 # [notice.group_increase.invite]
@@ -200,17 +272,21 @@ async def _(
             inviter_id=inviter_id,
             main_group_id=config.MAIN_GROUP_ID,
         )
-        for superuser in config.SUPERUSERS:
-            await send_private_i18n(
-                bot,
-                int(superuser),
-                "notice.invite.auto_reject.details",
-                locale_group_id=group_id,
-                group_id=group_id,
-                group_name=group_name,
-                inviter_id=inviter_id,
-            )
-            await asyncio.sleep(1)
+        detail_message = tr(
+            await resolve_locale(group_id),
+            "notice.invite.auto_reject.details",
+            group_id=group_id,
+            group_name=group_name,
+            inviter_id=inviter_id,
+        )
+        await deliver_admin_notification_plan(
+            bot,
+            plan=DeliveryPlan(
+                messages=(detail_message,),
+                source_kind="notice_invite_auto_reject",
+                allow_asset_reuse=False,
+            ),
+        )
         await matcher.finish()
 
     await send_private_i18n(
@@ -233,23 +309,28 @@ async def _(
         inviter_id=inviter_id,
         flag=flag,
     )
-    for super_user_id in config.SUPERUSERS:
-        plan_result = await deliver_message_plan(
-            bot,
-            plan=DeliveryPlan(
-                messages=(report_message,),
-                source_kind="notice_invite",
-                allow_asset_reuse=False,
-            ),
-            target=DeliveryTarget(kind="private", target_id=str(super_user_id)),
-        )
-        send_result = plan_result.results[0]
-        message_id = send_result.message_id
-        if not message_id:
-            continue
 
-        await invite_repo.add_message_record(
+    async def _on_delivered(
+        target: AdminNotificationTarget,
+        plan_result: DeliveryPlanResult,
+    ) -> None:
+        await _record_invitation_notice_delivery(
+            bot,
             invitation_id=invitation.id,
-            message_id=str(message_id),
+            group_id=group_id,
+            inviter_id=inviter_id,
+            flag=flag,
+            report_message=report_message,
+            target=target,
+            plan_result=plan_result,
         )
-        await asyncio.sleep(random.randint(1, 3))
+
+    await deliver_admin_notification_plan(
+        bot,
+        plan=DeliveryPlan(
+            messages=(report_message,),
+            source_kind="notice_invite",
+            allow_asset_reuse=False,
+        ),
+        on_delivered=_on_delivered,
+    )

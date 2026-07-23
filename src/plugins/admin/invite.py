@@ -24,7 +24,7 @@ from nonebot.exception import ParserExit
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
-from nonebot.plugin import CommandGroup, on_fullmatch
+from nonebot.plugin import CommandGroup, on_message
 from nonebot.rule import ArgumentParser, to_me
 from PIL import Image, ImageDraw, ImageFont
 
@@ -58,6 +58,12 @@ from src.lib.plugin_docs import (
     create_docs_meta,
 )
 from src.lib.plugin_meta import create_plugin_metadata
+from src.lib.reply_router import (
+    ReplyRoute,
+    build_reply_rule,
+    dispatch_reply_route,
+    register_reply_route,
+)
 from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
@@ -125,8 +131,77 @@ __plugin_meta__ = create_plugin_metadata(
 )
 
 
-async def is_reply(event: MessageEvent) -> bool:
-    return event.reply is not None
+APPROVE_REPLY_ALIASES = {"y", "approve", "通过", "同意", "批准"}
+REJECT_REPLY_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
+
+
+def _normalize_reply_text(text: str) -> str:
+    return text.strip().lower()
+
+
+def _is_approve_reply_text(text: str) -> bool:
+    normalized = _normalize_reply_text(text)
+    return normalized in APPROVE_REPLY_ALIASES
+
+
+def _is_reject_reply_text(text: str) -> bool:
+    normalized = _normalize_reply_text(text)
+    return normalized in REJECT_REPLY_ALIASES
+
+
+def _get_reply_message_ids(event: MessageEvent) -> tuple[str, ...]:
+    reply = getattr(event, "reply", None)
+    if reply is None:
+        return ()
+    message_ids: list[str] = []
+    for attr_name in ("real_id", "message_id"):
+        value = getattr(reply, attr_name, None)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text and text not in message_ids:
+            message_ids.append(text)
+    return tuple(message_ids)
+
+
+async def _legacy_invitation_from_reply(event: MessageEvent) -> Any | None:
+    for message_id in _get_reply_message_ids(event):
+        invitation = await invite_repo.get_by_message_id(message_id)
+        if invitation is not None:
+            return invitation
+    return None
+
+
+async def _legacy_is_invitation_reply(event: MessageEvent) -> bool:
+    return await _legacy_invitation_from_reply(event) is not None
+
+
+async def _handle_registered_invite_reply_target(
+    bot: Bot,
+    event: MessageEvent,
+    target: object,
+) -> int | None:
+    _ = (bot, event)
+    payload = getattr(target, "payload", {})
+    if not isinstance(payload, dict):
+        return None
+    raw_invitation_id = payload.get("invitation_id", 0)
+    if isinstance(raw_invitation_id, int):
+        return raw_invitation_id
+    if isinstance(raw_invitation_id, str) and raw_invitation_id.isdigit():
+        return int(raw_invitation_id)
+    return None
+
+
+async def _legacy_handle_invite_reply(
+    bot: Bot,
+    event: MessageEvent,
+) -> int | None:
+    _ = bot
+    invitation = await _legacy_invitation_from_reply(event)
+    if invitation is None:
+        return None
+    return int(invitation.id)
 
 
 # fmt: off
@@ -165,18 +240,35 @@ admin_invite = admin_command_group.command(
     block=False,
 )
 
-approve_matcher = on_fullmatch(
-    ("y", "approve", "通过", "同意", "批准"),
-    ignorecase=True,
-    rule=to_me() & is_reply,
+register_reply_route(
+    ReplyRoute(
+        name="admin.invite.approve",
+        context_kinds=("admin.invite.approval",),
+        text_matcher=_is_approve_reply_text,
+        handler=_handle_registered_invite_reply_target,
+        legacy_rule=_legacy_is_invitation_reply,
+        legacy_handler=_legacy_handle_invite_reply,
+    )
+)
+register_reply_route(
+    ReplyRoute(
+        name="admin.invite.reject",
+        context_kinds=("admin.invite.approval",),
+        text_matcher=_is_reject_reply_text,
+        handler=_handle_registered_invite_reply_target,
+        legacy_rule=_legacy_is_invitation_reply,
+        legacy_handler=_legacy_handle_invite_reply,
+    )
+)
+
+approve_matcher = on_message(
+    rule=to_me() & build_reply_rule("admin.invite.approve"),
     permission=SUPERUSER,
     priority=5,
     block=False,
 )
-reject_matcher = on_fullmatch(
-    ("n", "reject", "拒绝", "驳回", "反对"),
-    ignorecase=True,
-    rule=to_me() & is_reply,
+reject_matcher = on_message(
+    rule=to_me() & build_reply_rule("admin.invite.reject"),
     permission=SUPERUSER,
     priority=5,
     block=False,
@@ -887,34 +979,34 @@ async def handle_log(ctx: AdminInviteContext) -> None:
 
 @approve_matcher.handle()
 async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
-    if not event.reply:
+    invitation_id = await dispatch_reply_route("admin.invite.approve", bot, event)
+    if invitation_id is None:
         await matcher.finish()
-    msg_id = str(event.reply.message_id)  # type: ignore
     ctx = InviteContext(
         bot=bot,
         event=event,
         matcher=matcher,
         approve=True,
-        msg_id=msg_id,
+        invitation_id=invitation_id,
         operator_id=str(event.user_id),
-        locale=await resolve_locale(),
+        locale=await resolve_locale(str(getattr(event, "group_id", "")) or None),
     )
     await handle_invitation(ctx)
 
 
 @reject_matcher.handle()
 async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
-    if not event.reply:
+    invitation_id = await dispatch_reply_route("admin.invite.reject", bot, event)
+    if invitation_id is None:
         await matcher.finish()
-    msg_id = str(event.reply.message_id)  # type: ignore
     ctx = InviteContext(
         bot=bot,
         event=event,
         matcher=matcher,
         approve=False,
-        msg_id=msg_id,
+        invitation_id=invitation_id,
         operator_id=str(event.user_id),
-        locale=await resolve_locale(),
+        locale=await resolve_locale(str(getattr(event, "group_id", "")) or None),
     )
     await handle_invitation(ctx)
 
