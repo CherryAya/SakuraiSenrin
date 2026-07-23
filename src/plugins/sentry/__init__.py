@@ -17,8 +17,9 @@ from sentry_sdk.types import Event, Hint
 
 from src.config import config
 from src.database.core.consts import Permission
+from src.lib.admin_notifications import deliver_admin_notification_i18n
 from src.lib.consts import TriggerType
-from src.lib.i18n.runtime import send_private_i18n, tr
+from src.lib.i18n.runtime import tr
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.logger import logger
@@ -79,14 +80,13 @@ def _should_drop_event(hint: Hint) -> bool:
 
 async def notify_admin(error_message: str) -> None:
     try:
-        bot = cast(Bot, get_bot())
-        for user_id in config.SUPERUSERS:
-            await send_private_i18n(
-                bot,
-                int(user_id),
-                "sentry.alert",
-                error_message=error_message,
-            )
+        await deliver_admin_notification_i18n(
+            cast(Bot, get_bot()),
+            locale="zh-CN",
+            key="sentry.alert",
+            source_kind="sentry_alert",
+            error_message=error_message,
+        )
     except Exception as e:
         logger.error(f"Sentry 报警发送失败: {e}")
 

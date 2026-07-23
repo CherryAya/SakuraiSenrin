@@ -6,11 +6,10 @@ from datetime import datetime
 
 from nonebot.adapters.onebot.v11.bot import Bot
 
-from src.config import config
-from src.lib.message_delivery import DeliveryTarget
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
+from src.config import config as config
+from src.lib.admin_notifications import deliver_admin_notification_plan
+from src.lib.message_plan import DeliveryPlan
 from src.lib.utils.common import get_current_time
-from src.logger import logger
 from src.services.sync import MemberSyncReport, sync_members_from_api
 
 SYNC_MEMBERS_ALL_BATCH_SIZE = 10
@@ -196,18 +195,7 @@ def _build_progress_plan(
 
 
 async def _notify_superusers(bot: Bot, plan: DeliveryPlan) -> None:
-    for superuser_id in sorted(config.SUPERUSERS):
-        try:
-            await deliver_message_plan(
-                bot,
-                plan=plan,
-                target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
-            )
-        except Exception as exc:  # pragma: no cover - defensive logging
-            logger.warning(
-                "[MemberSyncAdmin] notify superuser failed "
-                f"user_id={superuser_id} error={type(exc).__name__}: {exc}"
-            )
+    await deliver_admin_notification_plan(bot, plan=plan)
 
 
 def _set_stage(

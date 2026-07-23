@@ -387,9 +387,7 @@ async def test_build_pending_approval_notice_message_embeds_image_response() -> 
 
     segments = list(message)
     full_text = _message_text(message)
-    assert full_text.startswith(
-        "新增词条待审核\n回复 y / 通过 可通过\n回复 n / 拒绝 可驳回\n"
-    )
+    assert full_text.startswith("新增词条待审核\n回复 y 可通过\n回复 n 可驳回\n")
     assert "主动命令: #通过词条 12" in full_text
     assert "主动命令: #驳回词条 12" in full_text
     assert "查看列表: #待审核词条" in full_text
@@ -430,9 +428,7 @@ async def test_build_pending_approval_notice_message_rebuilds_image_trigger() ->
 
     segments = list(message)
     full_text = _message_text(message)
-    assert full_text.startswith(
-        "新增词条待审核\n回复 y / 通过 可通过\n回复 n / 拒绝 可驳回\n"
-    )
+    assert full_text.startswith("新增词条待审核\n回复 y 可通过\n回复 n 可驳回\n")
     assert "主动命令: #通过词条 12" in full_text
     assert "主动命令: #驳回词条 12" in full_text
     assert "查看列表: #待审核词条" in full_text
@@ -468,7 +464,7 @@ async def test_build_pending_approval_notice_plan_entry_returns_raw_message_text
     message = render_message_plan_input(entry)
 
     full_text = _message_text(message)
-    assert "回复 y / 通过 可通过" in full_text
+    assert "回复 y 可通过" in full_text
     assert "状态: 待审核" in full_text
     assert "触发词: [图片:8]" in full_text
     assert "规则: 概率 1" in full_text
@@ -568,8 +564,8 @@ async def test_send_pending_approval_notice_embeds_detail_in_single_message(
     detail_message = render_message_plan_input(plan.messages[0])
     detail_text = _message_text(detail_message)
     assert "新增词条待审核" in detail_text
-    assert "回复 y / 通过 可通过" in detail_text
-    assert "回复 n / 拒绝 可驳回" in detail_text
+    assert "回复 y 可通过" in detail_text
+    assert "回复 n 可驳回" in detail_text
     assert "ID: 12" in str(detail_message)
     assert "响应词:" in str(detail_message)
     assert "[图片:7]" not in str(detail_message)
@@ -658,7 +654,7 @@ def test_format_pending_batch_approval_notice_lists_all_pending_items() -> None:
     )
 
     assert "待审核词条" in notice
-    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in notice
+    assert "回复我发送：y 1 2 5-8、n 全部（也兼容 通过 / 拒绝）" in notice
     assert "主动命令：#待审核词条" in notice
     assert "按 ID 处理：#通过词条 <ID> / #驳回词条 <ID>" in notice
     assert "触发词: 晚安" in notice
@@ -720,7 +716,7 @@ async def test_build_pending_batch_approval_notice_message_embeds_image_shapes()
     segments = list(message)
     full_text = "".join(str(segment) for segment in segments if segment.type == "text")
     assert "待审核词条" in full_text
-    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in full_text
+    assert "回复我发送：y 1 2 5-8、n 全部（也兼容 通过 / 拒绝）" in full_text
     assert "主动命令：#待审核词条" in full_text
     assert "按 ID 处理：#通过词条 <ID> / #驳回词条 <ID>" in full_text
     assert "触发词: test_forward" in full_text
@@ -761,7 +757,7 @@ async def test_send_pending_batch_approval_notice_records_pending_batch_context(
             ),
         ),
     )
-    bot = cast(Any, SimpleNamespace())
+    bot = cast(Any, SimpleNamespace(self_id="99999"))
 
     from src.plugins.wordbank.handlers import approval as approval_module
 
@@ -783,9 +779,7 @@ async def test_send_pending_batch_approval_notice_records_pending_batch_context(
     )
 
     assert deliver_plan.await_count == 2
-    targets = [
-        call.kwargs["target"].target_id for call in deliver_plan.await_args_list
-    ]
+    targets = [call.kwargs["target"].target_id for call in deliver_plan.await_args_list]
     assert sorted(targets) == ["1", "2"]
     first_plan = deliver_plan.await_args_list[0].kwargs["plan"]
     assert first_plan.should_forward is True
@@ -839,7 +833,7 @@ async def test_batch_notice_sends_summary_then_forward_details(
             ),
         ),
     )
-    bot = cast(Any, SimpleNamespace())
+    bot = cast(Any, SimpleNamespace(self_id="99999"))
 
     from src.plugins.wordbank.handlers import approval as approval_module
 
@@ -867,7 +861,7 @@ async def test_batch_notice_sends_summary_then_forward_details(
     summary_message = render_message_plan_input(plan.messages[0])
     first_detail = render_message_plan_input(plan.messages[1])
     second_detail = render_message_plan_input(plan.messages[2])
-    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in str(summary_message)
+    assert "回复我发送：y 1 2 5-8、n 全部（也兼容 通过 / 拒绝）" in str(summary_message)
     assert "主动命令：#待审核词条" in str(summary_message)
     assert "按 ID 处理：#通过词条 <ID> / #驳回词条 <ID>" in str(summary_message)
     assert "待审数量: 2" in str(summary_message)

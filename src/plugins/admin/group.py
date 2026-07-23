@@ -20,6 +20,7 @@ from nonebot.permission import SUPERUSER
 from nonebot.plugin import CommandGroup
 
 from src.database.core.consts import GroupStatus, Permission
+from src.lib.admin_notifications import deliver_admin_notification_plan
 from src.lib.cache.field import GroupCacheItem
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
@@ -215,7 +216,7 @@ async def _(
             plan=DeliveryPlan(
                 messages=(
                     "已开始执行群成员全量同步。\n"
-                    "后续进度与最终汇总会通过超管私聊合并转发汇报。",
+                    "后续进度与最终汇总会通过管理员通知汇报。",
                 ),
                 source_kind="admin_group",
                 allow_asset_reuse=False,
@@ -231,12 +232,26 @@ async def _(
                 event=event,
                 message=(
                     "群成员全量同步任务失败。\n"
-                    "详细进度与失败汇总请查看超管私聊。\n"
+                    "详细进度与失败汇总请查看管理员通知。\n"
                     f"原因：{type(exc).__name__}: {exc}"
                 ),
                 source_kind="admin_group",
             )
             return
+        await deliver_admin_notification_plan(
+            bot,
+            plan=DeliveryPlan(
+                messages=(
+                    "群成员全量同步已结束。\n"
+                    f"总群数：{state.total_groups}\n"
+                    f"成功：{state.succeeded}\n"
+                    f"失败：{state.failed}\n"
+                    f"跳过：{state.skipped}",
+                ),
+                source_kind="admin_group_sync_members_all_finish",
+                allow_asset_reuse=False,
+            ),
+        )
         await finish_with_message(
             bot,
             matcher,

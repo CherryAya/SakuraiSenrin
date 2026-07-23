@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
@@ -7,6 +8,9 @@ from typing import Literal
 from nonebot.adapters.onebot.v11.bot import Bot
 
 from src.config import config
+from src.lib.i18n.keys import MessageKey
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import DeliveryPlan, DeliveryPlanResult, deliver_message_plan
 from src.logger import logger
@@ -81,12 +85,12 @@ async def deliver_admin_notification_plan(
     *,
     plan: DeliveryPlan,
     on_delivered: AdminNotificationCallback | None = None,
+    inter_target_delay_seconds: float = 0.0,
 ) -> tuple[AdminNotificationDelivery, ...]:
     targets = resolve_admin_notification_targets()
     if not targets:
         logger.warning(
-            "[AdminNotify] no targets configured "
-            f"source_kind={plan.source_kind or '-'}"
+            f"[AdminNotify] no targets configured source_kind={plan.source_kind or '-'}"
         )
         return ()
 
@@ -123,12 +127,40 @@ async def deliver_admin_notification_plan(
                 plan_result=plan_result,
             )
         )
+        if inter_target_delay_seconds > 0:
+            await asyncio.sleep(inter_target_delay_seconds)
     return tuple(deliveries)
+
+
+async def deliver_admin_notification_i18n(
+    bot: Bot,
+    *,
+    locale: LocaleCode,
+    key: MessageKey,
+    source_kind: str,
+    on_delivered: AdminNotificationCallback | None = None,
+    allow_asset_reuse: bool = False,
+    force_forward: bool | None = None,
+    inter_target_delay_seconds: float = 0.0,
+    **params: object,
+) -> tuple[AdminNotificationDelivery, ...]:
+    return await deliver_admin_notification_plan(
+        bot,
+        plan=DeliveryPlan(
+            messages=(tr(locale, key, **params),),
+            source_kind=source_kind,
+            allow_asset_reuse=allow_asset_reuse,
+            force_forward=force_forward,
+        ),
+        on_delivered=on_delivered,
+        inter_target_delay_seconds=inter_target_delay_seconds,
+    )
 
 
 __all__ = [
     "AdminNotificationDelivery",
     "AdminNotificationTarget",
+    "deliver_admin_notification_i18n",
     "deliver_admin_notification_plan",
     "parse_admin_notification_group_ids",
     "resolve_admin_notification_targets",

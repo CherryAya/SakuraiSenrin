@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.lib.admin_notifications import (
+    deliver_admin_notification_i18n,
     deliver_admin_notification_plan,
     parse_admin_notification_group_ids,
     resolve_admin_notification_targets,
@@ -112,3 +113,45 @@ async def test_deliver_admin_notification_plan_invokes_callback_for_each_route(
     targets = [call.kwargs["target"].target_id for call in deliver_mock.await_args_list]
     assert targets == ["1", "20001"]
     assert callback.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_deliver_admin_notification_i18n_builds_translated_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib import admin_notifications as notify_module
+
+    monkeypatch.setattr(notify_module.config, "SUPERUSERS", {"1"})
+    monkeypatch.setattr(
+        notify_module.config,
+        "ADMIN_NOTIFY_PRIVATE_ENABLED",
+        True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        notify_module.config,
+        "ADMIN_NOTIFY_GROUP_ENABLED",
+        False,
+        raising=False,
+    )
+    deliver_mock = AsyncMock(
+        return_value=SimpleNamespace(
+            results=(SimpleNamespace(message_id="10"),),
+            used_forward=False,
+        )
+    )
+    monkeypatch.setattr(notify_module, "deliver_message_plan", deliver_mock)
+    bot = cast(Any, SimpleNamespace())
+
+    await deliver_admin_notification_i18n(
+        bot,
+        locale="zh-CN",
+        key="notice.user.friend_request",
+        source_kind="test_notify_i18n",
+        user_id="12345",
+    )
+
+    await_args = deliver_mock.await_args
+    assert await_args is not None
+    assert await_args.kwargs["plan"].source_kind == "test_notify_i18n"
+    assert await_args.kwargs["plan"].messages == ("收到了新的好友请求，已同意：12345",)

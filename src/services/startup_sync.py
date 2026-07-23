@@ -12,10 +12,14 @@ from typing import Any, cast
 
 from nonebot.adapters.onebot.v11 import Bot
 
-from src.config import config
+from src.config import config as config
+from src.lib.admin_notifications import (
+    AdminNotificationTarget,
+    deliver_admin_notification_plan,
+)
 from src.lib.db.manager import db_manager
 from src.lib.long_task import LoggerProgressSink, LongTaskRunner, LongTaskSpec
-from src.lib.message_delivery import DeliveryTarget, deliver_single_message
+from src.lib.message_plan import DeliveryPlan, DeliveryPlanResult
 from src.lib.reply_router import (
     ReplyContextSpec,
     ResolvedReplyTarget,
@@ -347,39 +351,47 @@ async def _notify_superusers_for_remote_restore(
         "回复 y / 同步 / 恢复 可立即用最新远端快照覆盖本地数据库；"
         "回复 n / 跳过 / 取消 则继续使用本地数据。"
     )
-    for superuser_id in config.SUPERUSERS:
-        try:
-            send_result = await deliver_single_message(
-                bot,
-                target=DeliveryTarget(kind="private", target_id=str(superuser_id)),
-                message=prompt,
-                source_kind="startup_sync",
-            )
-        except Exception as exc:
-            logger.warning(
-                f"[StartupSync] failed to notify superuser {superuser_id}: {exc}"
-            )
-            continue
-        message_id = send_result.message_id
+
+    async def _on_delivered(
+        target: AdminNotificationTarget,
+        plan_result: DeliveryPlanResult,
+    ) -> None:
+        if not plan_result.results:
+            return
+        send_result = plan_result.results[0]
+        message_id = getattr(send_result, "message_id", None)
         if not message_id:
-            continue
+            return
         pending = PendingStartupRestore(
             snapshot_id=snapshot.id,
             remote_latest_at=remote_latest_at,
             local_latest_at=local_latest_at,
-            prompt_message_id=message_id,
+            prompt_message_id=str(message_id),
             profile_name=resolve_default_backup_profile_name(),
         )
-        _pending_restore_by_prompt[message_id] = pending
+        _pending_restore_by_prompt[str(message_id)] = pending
+        origin_message_type = (
+            "private" if target.channel == "private_superuser" else "group"
+        )
         await record_reply_context_from_send_result(
             bot,
             send_result=send_result,
             context_spec=build_startup_sync_reply_context(pending),
             source_kind="startup_sync",
-            origin_message_type="private",
-            origin_target_id=str(superuser_id),
+            origin_message_type=origin_message_type,
+            origin_target_id=target.target_id,
             fallback_message=prompt,
         )
+
+    await deliver_admin_notification_plan(
+        bot,
+        plan=DeliveryPlan(
+            messages=(prompt,),
+            source_kind="startup_sync",
+            allow_asset_reuse=False,
+        ),
+        on_delivered=_on_delivered,
+    )
 
 
 async def _apply_restore_manifest(

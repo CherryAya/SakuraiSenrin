@@ -11,12 +11,12 @@ from nonebot.matcher import Matcher
 from nonebot.plugin import on_command
 from nonebot.typing import T_State
 
-from src.config import config
+from src.config import config as config
 from src.database.core.consts import GroupStatus, Permission
+from src.lib.admin_notifications import deliver_admin_notification_plan
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import (
     DeliveryPlan,
     deliver_message_plan,
@@ -97,15 +97,13 @@ async def notify_superusers(
         operator_id=operator_id,
         reason=reason,
     )
-    for superuser in config.SUPERUSERS:
-        await deliver_message_plan(
-            bot,
-            plan=DeliveryPlan(
-                messages=(message,),
-                source_kind="remove_notice",
-            ),
-            target=DeliveryTarget(kind="private", target_id=str(superuser)),
-        )
+    await deliver_admin_notification_plan(
+        bot,
+        plan=DeliveryPlan(
+            messages=(message,),
+            source_kind="remove_notice",
+        ),
+    )
 
 
 async def perform_remove(

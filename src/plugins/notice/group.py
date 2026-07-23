@@ -6,7 +6,6 @@ LastEditTime: 2026-03-02 19:26:30
 Description: 群聊通知处理
 """
 
-import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,15 +20,10 @@ from nonebot.adapters.onebot.v11.event import (
 from nonebot.exception import ActionFailed
 from nonebot.rule import Rule, is_type
 
-from src.config import config
 from src.database.core.consts import GroupStatus, Permission
+from src.lib.admin_notifications import deliver_admin_notification_i18n
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG, TriggerType
-from src.lib.i18n.runtime import (
-    format_duration,
-    resolve_locale,
-    send_private_i18n,
-    tr,
-)
+from src.lib.i18n.runtime import format_duration, resolve_locale, tr
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
 from src.repositories import blacklist_repo, group_repo, member_repo
@@ -178,18 +172,18 @@ async def _(
     )
     group_name = await resolve_group_name(bot, str(event.group_id))
 
-    for superuser in config.SUPERUSERS:
-        await send_private_i18n(
-            bot,
-            int(superuser),
-            "notice.group.kick.details",
-            locale_group_id=str(event.group_id),
-            group_id=str(event.group_id),
-            group_name=group_name,
-            operator_id=event.operator_id,
-            extra=msg.strip(),
-        )
-        await asyncio.sleep(1)
+    await deliver_admin_notification_i18n(
+        bot,
+        locale=await resolve_locale(str(event.group_id)),
+        key="notice.group.kick.details",
+        source_kind="notice_group_kick",
+        inter_target_delay_seconds=1,
+        locale_group_id=str(event.group_id),
+        group_id=str(event.group_id),
+        group_name=group_name,
+        operator_id=event.operator_id,
+        extra=msg.strip(),
+    )
 
 
 group_ban_notice = on_notice(priority=5, rule=is_type(GroupBanNoticeEvent), block=False)
@@ -225,19 +219,19 @@ async def _(
     ban_duration = format_duration(locale, event.duration)
     group_name = await resolve_group_name(bot, str(event.group_id))
 
-    for superuser in config.SUPERUSERS:
-        await send_private_i18n(
-            bot,
-            int(superuser),
-            "notice.group.ban.details",
-            locale_group_id=str(event.group_id),
-            group_id=str(event.group_id),
-            group_name=group_name,
-            operator_id=event.operator_id,
-            ban_duration=ban_duration,
-            extra=msg.strip(),
-        )
-        await asyncio.sleep(1)
+    await deliver_admin_notification_i18n(
+        bot,
+        locale=locale,
+        key="notice.group.ban.details",
+        source_kind="notice_group_ban",
+        inter_target_delay_seconds=1,
+        locale_group_id=str(event.group_id),
+        group_id=str(event.group_id),
+        group_name=group_name,
+        operator_id=event.operator_id,
+        ban_duration=ban_duration,
+        extra=msg.strip(),
+    )
 
 
 group_rename_notice = on_notice(priority=5, rule=is_rename_group(), block=False)

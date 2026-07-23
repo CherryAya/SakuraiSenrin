@@ -101,7 +101,7 @@ async def test_group_decrease_notice_skips_member_sync_for_kick_me(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     sync_mock = AsyncMock()
-    send_private_mock = AsyncMock(return_value={"message_id": 1})
+    notify_mock = AsyncMock(return_value=())
     monkeypatch.setattr(notice_group_plugin, "sync_members_from_api", sync_mock)
     monkeypatch.setattr(
         notice_group_plugin,
@@ -115,8 +115,8 @@ async def test_group_decrease_notice_skips_member_sync_for_kick_me(
     )
     monkeypatch.setattr(
         notice_group_plugin,
-        "send_private_i18n",
-        send_private_mock,
+        "deliver_admin_notification_i18n",
+        notify_mock,
     )
     monkeypatch.setattr(asyncio, "sleep", AsyncMock(return_value=None))
     event = build_group_decrease_event(
@@ -132,7 +132,7 @@ async def test_group_decrease_notice_skips_member_sync_for_kick_me(
         ctx.receive_event(bot, event)
 
     sync_mock.assert_not_awaited()
-    send_private_mock.assert_awaited_once()
+    notify_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio

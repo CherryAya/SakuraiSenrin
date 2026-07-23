@@ -16,13 +16,13 @@ Sentry 主动推送运行时异常
 > [!TIP]
 > 插件初始化时会先注册 Sentry SDK。
 >
-> 只有异常进入 `before_send` 后，才会继续异步通知所有超级管理员。
+> 只有异常进入 `before_send` 后，才会继续异步通过管理员通知发出告警。
 ## 前置条件
 需要先配好有效的 `SENTRY_DSN`。
 ## 完整流程
 ```demo
 SYSTEM: 某个插件抛出了未捕获异常。
-BOT: [私聊超管] Sentry 异常告警
+BOT: [管理员通知] Sentry 异常告警
 Type: ValueError
 Value: invalid season id
 ```

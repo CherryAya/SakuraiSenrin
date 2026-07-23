@@ -6,11 +6,10 @@ from dataclasses import dataclass
 from nonebot.adapters.onebot.v11.bot import Bot
 
 from src.config import config
+from src.lib.admin_notifications import deliver_admin_notification_plan
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.message_delivery import DeliveryTarget
-from src.lib.message_plan import DeliveryPlan, deliver_message_plan
-from src.logger import logger
+from src.lib.message_plan import DeliveryPlan
 from src.plugins.water.database import water_repo
 from src.repositories import group_repo, member_repo
 from src.services.info import resolve_group_name
@@ -260,24 +259,13 @@ class MatrixSuggestionService:
             candidate,
             locale,
         )
-        for superuser_id in config.SUPERUSERS:
-            try:
-                await deliver_message_plan(
-                    bot,
-                    plan=DeliveryPlan(
-                        messages=(message,),
-                        source_kind="water_matrix_suggestion",
-                    ),
-                    target=DeliveryTarget(
-                        kind="private",
-                        target_id=str(superuser_id),
-                    ),
-                )
-            except Exception as exc:
-                logger.warning(
-                    "[Water] failed to notify matrix suggestion superuser "
-                    f"{superuser_id} for group {group_id}: {exc}"
-                )
+        await deliver_admin_notification_plan(
+            bot,
+            plan=DeliveryPlan(
+                messages=(message,),
+                source_kind="water_matrix_suggestion",
+            ),
+        )
 
 
 matrix_suggestion_service = MatrixSuggestionService()
