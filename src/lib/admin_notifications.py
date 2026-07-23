@@ -37,13 +37,22 @@ class AdminNotificationDelivery:
     plan_result: DeliveryPlanResult
 
 
-def parse_admin_notification_group_ids(raw: str) -> tuple[str, ...]:
-    text = raw.strip()
-    if not text:
+def parse_admin_notification_group_ids(raw: object) -> tuple[str, ...]:
+    if raw is None:
         return ()
-    payload = json.loads(text)
-    if not isinstance(payload, list):
-        raise ValueError("ADMIN_NOTIFY_GROUP_IDS_JSON must be a JSON array")
+
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return ()
+        payload = json.loads(text)
+        if not isinstance(payload, (list, tuple)):
+            raise ValueError("ADMIN_NOTIFY_GROUP_IDS_JSON must be a JSON array")
+    elif isinstance(raw, (list, tuple, set, frozenset)):
+        payload = raw
+    else:
+        raise ValueError("ADMIN_NOTIFY_GROUP_IDS must be an array-like value")
+
     group_ids: list[str] = []
     for item in payload:
         value = str(item).strip()
@@ -63,9 +72,12 @@ def resolve_admin_notification_targets() -> tuple[AdminNotificationTarget, ...]:
                 )
             )
     if getattr(config, "ADMIN_NOTIFY_GROUP_ENABLED", False):
-        for group_id in parse_admin_notification_group_ids(
-            str(getattr(config, "ADMIN_NOTIFY_GROUP_IDS_JSON", "") or "")
-        ):
+        configured_group_ids = getattr(config, "ADMIN_NOTIFY_GROUP_IDS", ())
+        legacy_group_ids_json = getattr(config, "ADMIN_NOTIFY_GROUP_IDS_JSON", "")
+        raw_group_ids: object = configured_group_ids
+        if not raw_group_ids and legacy_group_ids_json:
+            raw_group_ids = str(legacy_group_ids_json)
+        for group_id in parse_admin_notification_group_ids(raw_group_ids):
             targets.append(
                 AdminNotificationTarget(
                     channel="group",

@@ -15,13 +15,20 @@ from src.lib.message_plan import DeliveryPlan
 
 
 def test_parse_admin_notification_group_ids_dedupes_and_trims() -> None:
-    assert parse_admin_notification_group_ids('["10001", " 10002 ", "10001", ""]') == (
+    assert parse_admin_notification_group_ids(["10001", " 10002 ", 10001, ""]) == (
         "10001",
         "10002",
     )
 
 
-def test_parse_admin_notification_group_ids_rejects_non_array() -> None:
+def test_parse_admin_notification_group_ids_supports_legacy_json_string() -> None:
+    assert parse_admin_notification_group_ids('["10001", "10002"]') == (
+        "10001",
+        "10002",
+    )
+
+
+def test_parse_admin_notification_group_ids_rejects_non_array_json() -> None:
     with pytest.raises(ValueError, match="JSON array"):
         parse_admin_notification_group_ids('{"group_id":"10001"}')
 
@@ -46,8 +53,8 @@ def test_resolve_admin_notification_targets_supports_private_and_group(
     )
     monkeypatch.setattr(
         notify_module.config,
-        "ADMIN_NOTIFY_GROUP_IDS_JSON",
-        '["20001", "20002"]',
+        "ADMIN_NOTIFY_GROUP_IDS",
+        ("20001", "20002"),
         raising=False,
     )
 
@@ -82,8 +89,8 @@ async def test_deliver_admin_notification_plan_invokes_callback_for_each_route(
     )
     monkeypatch.setattr(
         notify_module.config,
-        "ADMIN_NOTIFY_GROUP_IDS_JSON",
-        '["20001"]',
+        "ADMIN_NOTIFY_GROUP_IDS",
+        ("20001",),
         raising=False,
     )
     deliver_mock = AsyncMock(
@@ -112,3 +119,42 @@ async def test_deliver_admin_notification_plan_invokes_callback_for_each_route(
     targets = [call.kwargs["target"].target_id for call in deliver_mock.await_args_list]
     assert targets == ["1", "20001"]
     assert callback.await_count == 2
+
+
+def test_resolve_admin_notification_targets_falls_back_to_legacy_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib import admin_notifications as notify_module
+
+    monkeypatch.setattr(notify_module.config, "SUPERUSERS", set())
+    monkeypatch.setattr(
+        notify_module.config,
+        "ADMIN_NOTIFY_PRIVATE_ENABLED",
+        False,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        notify_module.config,
+        "ADMIN_NOTIFY_GROUP_ENABLED",
+        True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        notify_module.config,
+        "ADMIN_NOTIFY_GROUP_IDS",
+        (),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        notify_module.config,
+        "ADMIN_NOTIFY_GROUP_IDS_JSON",
+        '["30001", "30002"]',
+        raising=False,
+    )
+
+    targets = resolve_admin_notification_targets()
+
+    assert [(item.channel, item.target_id) for item in targets] == [
+        ("group", "30001"),
+        ("group", "30002"),
+    ]

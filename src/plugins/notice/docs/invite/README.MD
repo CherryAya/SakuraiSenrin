@@ -76,7 +76,7 @@ BOT: [私聊超管] 黑名单群组发起邀请，已自动拒绝。
 > - 超管私聊
 > - 通知群
 >
-> 可通过 `ADMIN_NOTIFY_PRIVATE_ENABLED`、`ADMIN_NOTIFY_GROUP_ENABLED`、`ADMIN_NOTIFY_GROUP_IDS_JSON` 控制是否开启及投递目标。
+> 可通过 `ADMIN_NOTIFY_PRIVATE_ENABLED`、`ADMIN_NOTIFY_GROUP_ENABLED`、`ADMIN_NOTIFY_GROUP_IDS` 控制是否开启及投递目标。
 
 > [!TIP]
 > 通知消息里会同时附带两类处理方式：
