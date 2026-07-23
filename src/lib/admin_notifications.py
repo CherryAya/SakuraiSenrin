@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-import json
 from typing import Literal
 
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -41,14 +40,7 @@ def parse_admin_notification_group_ids(raw: object) -> tuple[str, ...]:
     if raw is None:
         return ()
 
-    if isinstance(raw, str):
-        text = raw.strip()
-        if not text:
-            return ()
-        payload = json.loads(text)
-        if not isinstance(payload, (list, tuple)):
-            raise ValueError("ADMIN_NOTIFY_GROUP_IDS_JSON must be a JSON array")
-    elif isinstance(raw, (list, tuple, set, frozenset)):
+    if isinstance(raw, (list, tuple, set, frozenset)):
         payload = raw
     else:
         raise ValueError("ADMIN_NOTIFY_GROUP_IDS must be an array-like value")
@@ -72,12 +64,9 @@ def resolve_admin_notification_targets() -> tuple[AdminNotificationTarget, ...]:
                 )
             )
     if getattr(config, "ADMIN_NOTIFY_GROUP_ENABLED", False):
-        configured_group_ids = getattr(config, "ADMIN_NOTIFY_GROUP_IDS", ())
-        legacy_group_ids_json = getattr(config, "ADMIN_NOTIFY_GROUP_IDS_JSON", "")
-        raw_group_ids: object = configured_group_ids
-        if not raw_group_ids and legacy_group_ids_json:
-            raw_group_ids = str(legacy_group_ids_json)
-        for group_id in parse_admin_notification_group_ids(raw_group_ids):
+        for group_id in parse_admin_notification_group_ids(
+            getattr(config, "ADMIN_NOTIFY_GROUP_IDS", ())
+        ):
             targets.append(
                 AdminNotificationTarget(
                     channel="group",
