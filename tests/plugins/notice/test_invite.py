@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import sys
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 
 import nonebot
@@ -58,6 +59,32 @@ async def _run_handler(
         return
 
 
+def _install_admin_notification_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    deliver_mock: AsyncMock,
+) -> None:
+    async def _deliver(
+        bot: object,
+        *,
+        plan: object,
+        on_delivered: Any = None,
+    ) -> tuple[object, ...]:
+        target = SimpleNamespace(channel="private_superuser", target_id="1")
+        plan_result = await deliver_mock(bot, plan=plan, target=target)
+        if on_delivered is not None:
+            maybe_awaitable = on_delivered(target, plan_result)
+            if maybe_awaitable is not None:
+                await maybe_awaitable
+        return (plan_result,)
+
+    monkeypatch.setattr(
+        notice_invite_plugin,
+        "deliver_admin_notification_plan",
+        _deliver,
+    )
+
+
 @pytest.mark.asyncio
 async def test_notice_invite_request_persists_dependencies_and_reports_pending(
     monkeypatch: pytest.MonkeyPatch,
@@ -105,13 +132,11 @@ async def test_notice_invite_request_persists_dependencies_and_reports_pending(
         "send_private_i18n",
         send_private_i18n_mock,
     )
-    monkeypatch.setattr(
-        notice_invite_plugin,
-        "deliver_message_plan",
-        deliver_message_plan_mock,
+    _install_admin_notification_delivery(
+        monkeypatch,
+        deliver_mock=deliver_message_plan_mock,
     )
     monkeypatch.setattr(notice_invite_plugin, "resolve_locale", resolve_locale_mock)
-    monkeypatch.setattr(notice_invite_plugin.asyncio, "sleep", AsyncMock())
 
     event = build_group_request_event(user_id=10001, group_id=20001, flag="flag-1")
     bot = SimpleNamespace(self_id="99999")
@@ -242,7 +267,12 @@ async def test_notice_invite_request_auto_rejects_banned_group(
         "send_private_i18n",
         send_private_i18n_mock,
     )
-    monkeypatch.setattr(notice_invite_plugin.asyncio, "sleep", AsyncMock())
+    _install_admin_notification_delivery(
+        monkeypatch,
+        deliver_mock=AsyncMock(
+            return_value=SimpleNamespace(results=[SimpleNamespace(message_id="100")])
+        ),
+    )
 
     event = build_group_request_event(user_id=10001, group_id=20001, flag="flag-2")
 
@@ -368,7 +398,12 @@ async def test_notice_invite_group_increase_banned_group_leaves_and_rejects(
         "send_private_i18n",
         send_private_i18n_mock,
     )
-    monkeypatch.setattr(notice_invite_plugin.asyncio, "sleep", AsyncMock())
+    _install_admin_notification_delivery(
+        monkeypatch,
+        deliver_mock=AsyncMock(
+            return_value=SimpleNamespace(results=[SimpleNamespace(message_id="101")])
+        ),
+    )
 
     event = GroupIncreaseNoticeEvent.model_validate(
         {

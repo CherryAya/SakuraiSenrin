@@ -614,7 +614,7 @@ CATALOG: Final[dict[str, str]] = {
     "notice.invite.auto_reject.event_name": "自动拒绝",
     "notice.invite.auto_reject.details": "黑名单群组发起邀请，已自动拒绝\n群号：{group_id}\n群名：{group_name}\n邀请者：{inviter_id}",
     "notice.invite.received": "📩 谢谢您对凛凛发起的邀请 ^_^\n群号：{group_id}\n群名：{group_name}\n邀请者：{inviter_id}\n\n======重要提示======\n请及时加入反馈群「{main_group_id}」并联系群管【加入白名单】\n请及时加入反馈群「{main_group_id}」并联系群管【加入白名单】\n请及时加入反馈群「{main_group_id}」并联系群管【加入白名单】\n===================\n\n否则凛凛将无法在您的群聊中发送消息哦~\n另外，任何形式的禁言是不被允许的！如需要凛凛退出群聊，切勿直接移除，还请发送【#remove】指令。\n祝旅途愉快，每一种境遇都是命运的付赠品，还请好好珍惜，也希望能和凛凛相处的开心。\n—— 来自 SakuraiSenrin (•◡•) /💕",
-    "notice.invite.report": "📩 新的邀请事件通知\n群号：{group_id}\n群名：{group_name}\n邀请者：{inviter_id}\n邀请 flag：{flag}\n\n回复 y 以同意，发送 n 以拒绝。",
+    "notice.invite.report": "📩 新的邀请事件通知\n群号：{group_id}\n群名：{group_name}\n邀请者：{inviter_id}\n邀请 flag：{flag}\n\n回复 y 可同意\n回复 n 可拒绝\n主动命令：#admin.invite approve -g {group_id}\n主动命令：#admin.invite reject -g {group_id}\n查看列表：#admin.invite list",
     "notice.user.superuser_event": "用户事件通知\n用户：{user_id}",
     "notice.user.friend_request": "收到了新的好友请求，已同意：{user_id}",
     "water.common.group_only": "这个命令要在群里用喔~",
