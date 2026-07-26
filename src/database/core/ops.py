@@ -546,6 +546,7 @@ class InvitationOps(BaseOps[Invitation]):
         group_id: str,
         inviter_id: str,
         flag: str | None,
+        sub_type: str = "invite",
     ) -> Invitation:
         event_time = get_current_time()
 
@@ -553,6 +554,7 @@ class InvitationOps(BaseOps[Invitation]):
             group_id=group_id,
             inviter_id=inviter_id,
             flag=flag,
+            sub_type=sub_type,
             status=InvitationStatus.PENDING,
             created_at=event_time,
             updated_at=event_time,

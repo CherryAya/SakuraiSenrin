@@ -220,6 +220,7 @@ async def _(
         group_id=group_id,
         inviter_id=inviter_id,
         flag=flag,
+        sub_type=event.sub_type,
     )
 
     if group and group.status.is_working:

@@ -174,6 +174,7 @@ async def test_notice_invite_request_persists_dependencies_and_reports_pending(
         group_id="20001",
         inviter_id="10001",
         flag="flag-1",
+        sub_type="invite",
     )
     send_private_i18n_mock.assert_awaited_once()
     add_message_record_mock.assert_awaited_once_with(
@@ -504,6 +505,7 @@ async def test_notice_invite_request_matcher_handles_group_request_event(
         group_id="20001",
         inviter_id="10001",
         flag="flag-1",
+        sub_type="invite",
     )
     send_private_i18n_mock.assert_awaited_once()
     deliver_admin_notification_mock.assert_awaited_once()

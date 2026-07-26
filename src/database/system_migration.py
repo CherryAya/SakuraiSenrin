@@ -328,7 +328,6 @@ async def migrate_legacy_system_data(
         ],
         dropped_fields={
             "group_info": ["remark", "effective_time"],
-            "invitation_info": ["sub_type"],
             "plugin_info": [
                 "plugin_raw_name",
                 "plugin_metadata_name",
@@ -407,6 +406,7 @@ async def migrate_legacy_system_data(
             inviter_id=row.inviter_id,
             operator_id=row.operator_id,
             flag=row.flag,
+            sub_type=row.sub_type,
             status=map_legacy_invitation_status(row.status),
             created_at=normalize_legacy_timestamp(row.create_time),
             updated_at=normalize_legacy_timestamp(row.update_time),

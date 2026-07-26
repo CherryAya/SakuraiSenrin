@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 
 import arrow
 import nonebot
@@ -9,6 +10,8 @@ from sqlalchemy import Integer, String, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from src.database.core.tables import CoreBase
+from src.database.patches import build_core_patch_registry
 from src.lib.db.batch import BatchWriter
 from src.lib.db.connectors import ColdPolicy, EventStore, StateStore
 from src.lib.db.schema import SchemaPatch
@@ -74,6 +77,54 @@ async def test_state_store_patch_registry_is_idempotent(
 
     assert int(patch_rows.scalar() or 0) == 1
     assert int(marker_rows.scalar() or 0) == 1
+
+
+@pytest.mark.asyncio
+async def test_core_patch_registry_adds_invitation_sub_type_to_legacy_schema(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+
+    db = StateStore(namespace="legacy_invitation_patch", filename="core.db")
+    db.patch_registry = build_core_patch_registry()
+
+    db_path = db.base_dir / db.filename
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE biz_invitation (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id VARCHAR(32) NOT NULL,
+                inviter_id VARCHAR(32) NOT NULL,
+                operator_id VARCHAR(32),
+                flag VARCHAR(32),
+                status VARCHAR(32) NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """
+        )
+        connection.commit()
+
+    await db.init_schema(CoreBase)
+
+    async with db.read_session() as session:
+        column_rows = await session.execute(text("PRAGMA table_info(biz_invitation)"))
+        patch_rows = await session.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM _schema_patch
+                WHERE patch_id = 'core:add_invitation_sub_type:v1'
+                """
+            )
+        )
+
+    columns = {str(row[1]) for row in column_rows.fetchall()}
+    assert "sub_type" in columns
+    assert int(patch_rows.scalar() or 0) == 1
 
 
 @pytest.mark.asyncio

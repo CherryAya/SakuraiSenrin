@@ -705,7 +705,7 @@ async def handle_invitation(ctx: InviteContext) -> bool:
     if flag := invitation.flag:
         await ctx.bot.set_group_add_request(
             flag=flag,
-            sub_type="invite",
+            sub_type=invitation.sub_type,
             approve=ctx.approve,
         )
     elif not ctx.approve:

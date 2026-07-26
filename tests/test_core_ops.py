@@ -74,8 +74,18 @@ async def test_invitation_ops_update_status_sets_operator_and_ignores_siblings()
         await user_ops.add_user("u-operator", "Operator", Permission.SUPERUSER)
         await group_ops.add_group("g-1", "测试群", GroupStatus.UNAUTHORIZED)
 
-        first = await invitation_ops.create_invitation("g-1", "u-inviter", "flag-1")
-        await invitation_ops.create_invitation("g-1", "u-inviter", "flag-2")
+        first = await invitation_ops.create_invitation(
+            "g-1",
+            "u-inviter",
+            "flag-1",
+            "invite",
+        )
+        await invitation_ops.create_invitation(
+            "g-1",
+            "u-inviter",
+            "flag-2",
+            "invite",
+        )
         await session.flush()
 
         await invitation_ops.update_status(
@@ -110,10 +120,20 @@ async def test_invitation_ops_get_by_group_and_flag_prefer_pending_records() -> 
         await user_ops.add_user("u-inviter-2", "Inviter2", Permission.NORMAL)
         await group_ops.add_group("g-2", "测试群2", GroupStatus.UNAUTHORIZED)
 
-        processed = await invitation_ops.create_invitation("g-2", "u-inviter-2", "f-1")
+        processed = await invitation_ops.create_invitation(
+            "g-2",
+            "u-inviter-2",
+            "f-1",
+            "invite",
+        )
         await session.flush()
         await invitation_ops.update_status(processed.id, InvitationStatus.REJECTED)
-        pending = await invitation_ops.create_invitation("g-2", "u-inviter-2", "f-1")
+        pending = await invitation_ops.create_invitation(
+            "g-2",
+            "u-inviter-2",
+            "f-1",
+            "invite",
+        )
         await session.flush()
 
         by_group = await invitation_ops.get_by_group_id("g-2")
@@ -138,7 +158,12 @@ async def test_invite_repository_get_by_id_eager_loads_relationships() -> None:
 
         await user_ops.add_user("u-inviter-3", "Inviter3", Permission.NORMAL)
         await group_ops.add_group("g-3", "测试群3", GroupStatus.AUTHORIZED)
-        invitation = await invitation_ops.create_invitation("g-3", "u-inviter-3", "f-3")
+        invitation = await invitation_ops.create_invitation(
+            "g-3",
+            "u-inviter-3",
+            "f-3",
+            "invite",
+        )
         await session.flush()
 
         invitation_id = invitation.id
@@ -149,3 +174,4 @@ async def test_invite_repository_get_by_id_eager_loads_relationships() -> None:
     assert invitation.group.group_name == "测试群3"
     assert invitation.group.status is GroupStatus.AUTHORIZED
     assert invitation.inviter.user_name == "Inviter3"
+    assert invitation.sub_type == "invite"

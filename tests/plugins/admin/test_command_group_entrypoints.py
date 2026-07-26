@@ -476,6 +476,7 @@ async def test_admin_invite_reply_persists_operator_when_approving(
     invitation = SimpleNamespace(
         id=7,
         flag="flag-7",
+        sub_type="invite:manual-review",
         status=SimpleNamespace(is_processed=False),
         group=SimpleNamespace(
             status=GroupStatus.UNAUTHORIZED,
@@ -523,6 +524,11 @@ async def test_admin_invite_reply_persists_operator_when_approving(
         )
     )
 
+    bot.set_group_add_request.assert_awaited_once_with(
+        flag="flag-7",
+        sub_type="invite:manual-review",
+        approve=True,
+    )
     save_user_mock.assert_awaited_once()
     update_status_mock.assert_awaited_once_with(
         invitation_id=7,
