@@ -65,7 +65,7 @@ __plugin_meta__ = create_plugin_metadata(
 )
 
 
-async def is_invite_request(event: GroupIncreaseNoticeEvent) -> bool:
+async def is_invite_request(event: GroupRequestEvent) -> bool:
     return event.sub_type == "invite"
 
 
