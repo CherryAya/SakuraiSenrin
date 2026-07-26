@@ -858,6 +858,75 @@ async def test_water_admin_report_dryrun_stays_silent_for_non_superuser_private(
 
 
 @pytest.mark.asyncio
+async def test_water_admin_report_push_runs_only_for_superuser_private(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    push_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr("src.plugins.water.entry_plugin.handle_report_push", push_mock)
+
+    event = build_private_message_event(
+        "#water report-push 20260725",
+        user_id=WATER_ADMIN_SUPERUSER_ID,
+        message_id=1,
+    )
+
+    async with app.test_matcher(water_plugin.water_admin) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+        ctx.should_finished()
+
+    push_mock.assert_awaited_once()
+    awaited_call = push_mock.await_args
+    assert awaited_call is not None
+    admin_ctx = awaited_call.args[0]
+    assert admin_ctx.args == ["report-push", "20260725"]
+
+
+@pytest.mark.asyncio
+async def test_water_admin_report_push_stays_silent_in_group(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    push_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr("src.plugins.water.entry_plugin.handle_report_push", push_mock)
+
+    event = build_group_message_event(
+        "#water report-push 20260725",
+        user_id=WATER_ADMIN_SUPERUSER_ID,
+        role="member",
+        message_id=1,
+    )
+
+    async with app.test_matcher(water_plugin.water_admin) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+
+    push_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_water_admin_report_push_stays_silent_for_non_superuser_private(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    push_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr("src.plugins.water.entry_plugin.handle_report_push", push_mock)
+
+    event = build_private_message_event(
+        "#water report-push 20260725",
+        user_id=10001,
+        message_id=1,
+    )
+
+    async with app.test_matcher(water_plugin.water_admin) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+
+    push_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_water_today_report_group_shared_cooldown(
     app: App,
     monkeypatch: pytest.MonkeyPatch,

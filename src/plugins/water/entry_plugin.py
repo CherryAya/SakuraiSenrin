@@ -85,6 +85,7 @@ from .handlers import (
     handle_merge_yes,
     handle_pardon,
     handle_report_dryrun,
+    handle_report_push,
     handle_season,
     handle_settle,
     handle_state,
@@ -1138,8 +1139,19 @@ async def _(
     args = text.split()
     action = args[0].lower().removeprefix(".")
     _ = event
-    dryrun_actions = {"report-dryrun", "report_dryrun", "日报预演"}
-    if action in dryrun_actions and getattr(event, "message_type", "") != "private":
+    private_only_actions = {
+        "report-dryrun",
+        "report_dryrun",
+        "日报预演",
+        "report-push",
+        "report_push",
+        "日报重推",
+        "日报补发",
+    }
+    if (
+        action in private_only_actions
+        and getattr(event, "message_type", "") != "private"
+    ):
         return
 
     handler: Callable[[WaterAdminContext], Awaitable[None]]
@@ -1158,6 +1170,8 @@ async def _(
             handler = handle_state
         case "report-dryrun" | "report_dryrun" | "日报预演":
             handler = handle_report_dryrun
+        case "report-push" | "report_push" | "日报重推" | "日报补发":
+            handler = handle_report_push
         case "season":
             handler = handle_season
         case _:

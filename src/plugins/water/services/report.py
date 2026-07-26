@@ -530,16 +530,22 @@ class WaterReportService:
             )
 
         working_group_ids = await group_repo.get_working_group_ids()
+        candidate_query_started = perf_counter()
         candidates = await water_repo.list_daily_report_candidates(
             record_date=target_date,
             min_activity_score=REPORT_ACTIVITY_SCORE_THRESHOLD,
             working_group_ids=working_group_ids,
         )
+        candidate_query_elapsed_ms = (perf_counter() - candidate_query_started) * 1000
         logger.info(
-            "[Water][ReportPush] start date={} working_groups={} candidates={}",
+            (
+                "[Water][ReportPush] start date={} working_groups={} candidates={} "
+                "candidate_query_ms={:.2f}"
+            ),
             target_date,
             len(working_group_ids),
             len(candidates),
+            candidate_query_elapsed_ms,
         )
         if not candidates:
             return WaterDailyReportPrepareResult(
@@ -552,7 +558,9 @@ class WaterReportService:
                 report_items=(),
             )
 
+        batch_context_started = perf_counter()
         batch_context = await self._build_daily_report_batch_context(target_date)
+        batch_context_elapsed_ms = (perf_counter() - batch_context_started) * 1000
         push_state.total_groups = len(candidates)
         sem = asyncio.Semaphore(4)
         if task is not None:
@@ -613,6 +621,7 @@ class WaterReportService:
                     )
                     return candidate, None
 
+        render_started = perf_counter()
         rendered: list[
             tuple[WaterDailyReportCandidate, WaterPreparedReportItem | None]
         ] = []
@@ -623,12 +632,28 @@ class WaterReportService:
             start=1,
         ):
             rendered.append(await render_task)
+            if (
+                completed_count == 1
+                or completed_count == len(candidates)
+                or completed_count % 10 == 0
+            ):
+                logger.info(
+                    (
+                        "[Water][ReportPush] render progress date={} completed={}/{} "
+                        "elapsed_ms={:.2f}"
+                    ),
+                    target_date,
+                    completed_count,
+                    len(candidates),
+                    (perf_counter() - render_started) * 1000,
+                )
             if task is not None:
                 await task.advance(
                     "rendering_groups",
                     current=completed_count,
                     total=len(candidates),
                 )
+        render_elapsed_ms = (perf_counter() - render_started) * 1000
         rendered_items = [item for _candidate, item in rendered if item is not None]
         push_state.rendered_groups = len(rendered_items)
         skipped_groups = 0
@@ -650,13 +675,17 @@ class WaterReportService:
         logger.info(
             (
                 "[Water][ReportPush] prepared date={} candidates={} rendered={} "
-                "skipped={} failed={} output_dir={}"
+                "skipped={} failed={} candidate_query_ms={:.2f} "
+                "batch_context_ms={:.2f} render_total_ms={:.2f} output_dir={}"
             ),
             target_date,
             len(candidates),
             len(rendered_items),
             skipped_groups,
             failed_groups,
+            candidate_query_elapsed_ms,
+            batch_context_elapsed_ms,
+            render_elapsed_ms,
             output_dir,
         )
         return WaterDailyReportPrepareResult(

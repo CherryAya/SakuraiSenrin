@@ -27,7 +27,11 @@ from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.renderers import render_season_list
 from src.plugins.water.services.cron_orchestrator import run_water_subprocess_job
-from src.plugins.water.services.report import water_report_service
+from src.plugins.water.services.report import (
+    WaterDailyReportBatchResult,
+    build_daily_report_prepare_result_from_manifest,
+    water_report_service,
+)
 from src.plugins.water.services.season import (
     SeasonCreateInput,
     SeasonServiceError,
@@ -88,6 +92,15 @@ def water_help_message(locale: LocaleCode) -> str:
     )
 
 
+def _parse_yyyymmdd(date_arg: str) -> arrow.Arrow | None:
+    if len(date_arg) != 8 or not date_arg.isdigit():
+        return None
+    try:
+        return arrow.get(date_arg, "YYYYMMDD")
+    except ValueError:
+        return None
+
+
 def format_settlement_message(result: SettlementResult, locale: LocaleCode) -> str:
     if result.success:
         mode = tr(
@@ -130,6 +143,36 @@ def format_settlement_message(result: SettlementResult, locale: LocaleCode) -> s
     )
 
 
+def format_report_push_message(
+    result: WaterDailyReportBatchResult,
+    locale: LocaleCode,
+) -> str:
+    if result.candidate_groups <= 0:
+        return format_report_push_skipped_message(result.record_date, locale)
+    return tr(
+        locale,
+        "water.admin.report_push.success",
+        record_date=result.record_date,
+        candidate_groups=result.candidate_groups,
+        rendered_groups=result.rendered_groups,
+        sent_groups=result.sent_groups,
+        skipped_groups=result.skipped_groups,
+        failed_groups=result.failed_groups,
+        elapsed_seconds=f"{result.total_elapsed_ms / 1000:.1f}",
+    )
+
+
+def format_report_push_skipped_message(
+    record_date: int,
+    locale: LocaleCode,
+) -> str:
+    return tr(
+        locale,
+        "water.admin.report_push.skipped",
+        record_date=record_date,
+    )
+
+
 async def handle_help(ctx: WaterAdminContext) -> None:
     await _finish_admin(ctx, water_help_message(ctx.locale))
 
@@ -155,7 +198,8 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
         date_arg = arg
 
     if date_arg is not None:
-        if len(date_arg) != 8 or not date_arg.isdigit():
+        target_day = _parse_yyyymmdd(date_arg)
+        if target_day is None:
             await _finish_admin(
                 ctx,
                 _build_error_demo(
@@ -163,16 +207,7 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
                     tr(ctx.locale, "water.admin.settle.date_invalid"),
                 ),
             )
-        try:
-            target_day = arrow.get(date_arg, "YYYYMMDD")
-        except ValueError:
-            await _finish_admin(
-                ctx,
-                _build_error_demo(
-                    ctx.locale,
-                    tr(ctx.locale, "water.admin.settle.date_parse_failed"),
-                ),
-            )
+            return
 
     async with LongTaskRunner(
         LongTaskSpec(
@@ -214,6 +249,91 @@ async def handle_settle(ctx: WaterAdminContext) -> None:
             )
         )
     await _finish_admin(ctx, format_settlement_message(result, ctx.locale))
+
+
+async def handle_report_push(ctx: WaterAdminContext) -> None:
+    if len(ctx.args) < 2:
+        await _finish_admin(
+            ctx,
+            _build_error_demo(
+                ctx.locale,
+                tr(ctx.locale, "water.admin.report_push.missing"),
+            ),
+        )
+        return
+    if len(ctx.args) > 2:
+        await _finish_admin(
+            ctx,
+            _build_error_demo(
+                ctx.locale,
+                tr(ctx.locale, "water.admin.report_push.args_multiple_date"),
+            ),
+        )
+        return
+
+    target_day = _parse_yyyymmdd(ctx.args[1])
+    if target_day is None:
+        await _finish_admin(
+            ctx,
+            _build_error_demo(
+                ctx.locale,
+                tr(ctx.locale, "water.admin.report_push.date_invalid"),
+            ),
+        )
+        return
+
+    target_record_date = int(target_day.format("YYYYMMDD"))
+    async with LongTaskRunner(
+        LongTaskSpec(
+            task_name="water.admin.report_push",
+            source_kind="water_admin_report_push",
+            prompt=tr(ctx.locale, "water.admin.report_push.running"),
+        ),
+        sink=CompositeProgressSink(
+            LoggerProgressSink(),
+            MessageEventProgressSink(ctx.bot, ctx.event),
+        ),
+    ) as long_task:
+        await long_task.advance("preparing")
+        worker_result = await run_water_subprocess_job(
+            "daily_report_prepare",
+            record_date=target_record_date,
+            locale=ctx.locale,
+        )
+        if worker_result.manifest is None:
+            reason = (
+                tr(ctx.locale, "water.admin.report_push.reason.subprocess_timeout")
+                if worker_result.timed_out
+                else f"subprocess_exit_{worker_result.exit_code}"
+            )
+            await _finish_admin(
+                ctx,
+                tr(
+                    ctx.locale,
+                    "water.admin.report_push.failed",
+                    record_date=target_record_date,
+                    reason=reason,
+                ),
+            )
+            return
+        prepared = build_daily_report_prepare_result_from_manifest(
+            worker_result.manifest
+        )
+        if prepared.candidate_groups <= 0:
+            await _finish_admin(
+                ctx,
+                format_report_push_skipped_message(prepared.record_date, ctx.locale),
+            )
+            return
+        await long_task.advance("sending")
+        result = await water_report_service.send_prepared_daily_group_report_push(
+            bot=ctx.bot,
+            prepared=prepared,
+            output_dir=worker_result.output_dir,
+            locale=ctx.locale,
+            task=long_task,
+        )
+    await _finish_admin(ctx, format_report_push_message(result, ctx.locale))
 
 
 async def handle_pardon(ctx: WaterAdminContext) -> None:
