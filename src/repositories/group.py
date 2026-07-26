@@ -40,6 +40,7 @@ class GroupChangeContext:
     group_name: str | Unset = UNSET
     status: GroupStatus | Unset = UNSET
     is_all_shut: bool | Unset = UNSET
+    pre_ban_status: GroupStatus | None | Unset = UNSET
     is_new: bool = False
 
     def resolve_name(self, default: str = "") -> str:
@@ -54,6 +55,18 @@ class GroupChangeContext:
     def resolve_shut(self, default: bool = False) -> bool:
         return resolve_unset(self.is_all_shut, default)
 
+    def resolve_pre_ban(
+        self,
+        default: GroupStatus | None = None,
+    ) -> GroupStatus | None:
+        return resolve_unset(self.pre_ban_status, default)
+
+
+@dataclass(slots=True, frozen=True)
+class GroupRestoreResult:
+    restored_status: GroupStatus
+    used_fallback: bool = False
+
 
 class GroupRepository:
     def __init__(self, cache: GroupCache) -> None:
@@ -67,6 +80,7 @@ class GroupRepository:
                     "group_id": ctx.group_id,
                     "group_name": ctx.resolve_name(),
                     "status": ctx.resolve_status(),
+                    "pre_ban_status": ctx.resolve_pre_ban(),
                     "created_at": event_time,
                     "updated_at": event_time,
                 },
@@ -83,11 +97,12 @@ class GroupRepository:
                 },
             )
 
-        if is_set(ctx.status):
+        if is_set(ctx.status) or is_set(ctx.pre_ban_status):
             await group_update_status_writer.add(
                 {
                     "group_id": ctx.group_id,
-                    "status": ctx.status,
+                    "status": ctx.resolve_status(),
+                    "pre_ban_status": ctx.resolve_pre_ban(),
                     "updated_at": event_time,
                 },
             )
@@ -119,14 +134,31 @@ class GroupRepository:
                     created_at=event_time,
                 )
 
-            if is_set(ctx.status):
-                await group_ops.update_status(ctx.group_id, ctx.status)
+            if is_set(ctx.status) or is_set(ctx.pre_ban_status):
+                await group_ops.update_status_with_pre_ban(
+                    ctx.group_id,
+                    ctx.resolve_status(),
+                    ctx.resolve_pre_ban(),
+                )
                 await audit_log_ops.create_audit_log(
                     target_id=ctx.group_id,
                     context_type=AuditContext.GROUP,
                     category=AuditCategory.PERMISSION,
                     action=AuditAction.CHANGE,
                 )
+
+    async def _hydrate_cache_item(self, group_id: str) -> GroupCacheItem | None:
+        async with core_db.session() as session:
+            db_group = await GroupOps(session).get_by_group_id(group_id)
+        if db_group is None:
+            return None
+        self.cache.upsert_group(
+            group_id=str(db_group.group_id),
+            group_name=db_group.group_name,
+            status=db_group.status,
+            pre_ban_status=getattr(db_group, "pre_ban_status", None),
+        )
+        return self.cache.get(group_id)
 
     async def save_group(
         self,
@@ -144,9 +176,31 @@ class GroupRepository:
         """
         ctx = GroupChangeContext(group_id, group_name, status, is_all_shut)
         old_item = self.cache.get(group_id)
+        if old_item is None:
+            old_item = await self._hydrate_cache_item(group_id)
         ctx.is_new = old_item is None
 
-        self.cache.upsert_group(group_id, group_name, status, is_all_shut)
+        next_pre_ban_status: GroupStatus | None | Unset = UNSET
+        if old_item is not None and is_set(status):
+            if status.is_banned:
+                if not old_item.status.is_banned:
+                    next_pre_ban_status = old_item.status
+                else:
+                    next_pre_ban_status = old_item.pre_ban_status
+            elif old_item.status.is_banned:
+                next_pre_ban_status = None
+            else:
+                next_pre_ban_status = old_item.pre_ban_status
+        if is_set(next_pre_ban_status):
+            ctx.pre_ban_status = next_pre_ban_status
+
+        self.cache.upsert_group(
+            group_id,
+            group_name,
+            status,
+            is_all_shut,
+            ctx.pre_ban_status,
+        )
         if not ctx.is_new and old_item:
             if is_set(group_name) and old_item.name_hash == hash(group_name):
                 ctx.group_name = UNSET
@@ -154,6 +208,11 @@ class GroupRepository:
                 ctx.status = UNSET
             if is_set(is_all_shut) and old_item.is_all_shut == is_all_shut:
                 ctx.is_all_shut = UNSET
+            if (
+                is_set(ctx.pre_ban_status)
+                and old_item.pre_ban_status == ctx.resolve_pre_ban()
+            ):
+                ctx.pre_ban_status = UNSET
 
         if policy == WritePolicy.BUFFERED:
             await self._save_buffered(ctx)
@@ -172,6 +231,7 @@ class GroupRepository:
                     status=g.status,
                     is_all_shut=False,
                     display_name=g.group_name,
+                    pre_ban_status=g.pre_ban_status,
                 )
                 for g in db_groups
             },
@@ -181,17 +241,7 @@ class GroupRepository:
         if item := self.cache.get(group_id):
             return item
 
-        async with core_db.session() as session:
-            db_group = await GroupOps(session).get_by_group_id(group_id)
-            if not db_group:
-                return None
-
-            self.cache.upsert_group(
-                group_id=str(db_group.group_id),
-                group_name=db_group.group_name,
-                status=db_group.status,
-            )
-            return self.cache.get(group_id)
+        return await self._hydrate_cache_item(group_id)
 
     async def get_name_by_gid(self, group_id: str) -> str | None:
         if item := self.cache.get(group_id):
@@ -205,6 +255,7 @@ class GroupRepository:
             group_id=str(db_group.group_id),
             group_name=db_group.group_name,
             status=db_group.status,
+            pre_ban_status=getattr(db_group, "pre_ban_status", None),
         )
         return db_group.group_name or None
 
@@ -232,6 +283,7 @@ class GroupRepository:
                 group_id=resolved_group_id,
                 group_name=db_group.group_name,
                 status=db_group.status,
+                pre_ban_status=getattr(db_group, "pre_ban_status", None),
             )
             resolved[resolved_group_id] = db_group.group_name
         return resolved
@@ -248,6 +300,25 @@ class GroupRepository:
             group_id=group_id,
             group_name=group_name,
             policy=WritePolicy.IMMEDIATE,
+        )
+
+    async def restore_pre_ban_status(
+        self,
+        group_id: str,
+    ) -> GroupRestoreResult | None:
+        group = await self.get_group(group_id)
+        if group is None:
+            return None
+        restored_status = group.pre_ban_status or GroupStatus.UNAUTHORIZED
+        used_fallback = group.pre_ban_status is None
+        await self.save_group(
+            group_id=group_id,
+            status=restored_status,
+            policy=WritePolicy.IMMEDIATE,
+        )
+        return GroupRestoreResult(
+            restored_status=restored_status,
+            used_fallback=used_fallback,
         )
 
     def update_all_shut(self, group_id: str, is_shut: bool) -> None:

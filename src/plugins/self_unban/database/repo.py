@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, or_, select
 
 from src.lib.utils.common import get_current_time
 
@@ -24,6 +24,25 @@ class SelfUnbanRepository:
                 SelfUnbanAttempt.subject_type == subject_type,
                 SelfUnbanAttempt.subject_id == subject_id,
                 SelfUnbanAttempt.consumes_quota == 1,
+            )
+            result = await session.execute(stmt)
+            return int(result.scalar_one() or 0)
+
+    async def count_user_consumed_attempts(self, requester_user_id: str) -> int:
+        async with self_unban_db.read_session() as session:
+            stmt = select(func.count(SelfUnbanAttempt.id)).where(
+                SelfUnbanAttempt.consumes_quota == 1,
+                or_(
+                    and_(
+                        SelfUnbanAttempt.subject_type == "user",
+                        SelfUnbanAttempt.subject_id == requester_user_id,
+                    ),
+                    and_(
+                        SelfUnbanAttempt.subject_type == "group",
+                        SelfUnbanAttempt.requester_user_id == requester_user_id,
+                        SelfUnbanAttempt.result == "approved",
+                    ),
+                ),
             )
             result = await session.execute(stmt)
             return int(result.scalar_one() or 0)

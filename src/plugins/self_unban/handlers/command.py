@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -21,17 +20,13 @@ from src.lib.message_plan import (
 )
 from src.lib.plugin_docs import DocsRenderContext, build_readme_docs_plan_entry
 from src.plugins.self_unban.services import (
+    ManagedBannedGroupOption,
     PreparedSelfUnbanRequest,
+    SelfUnbanSelectionSession,
     self_unban_service,
 )
 
 DOCS_SOURCE = Path(__file__).resolve().parents[1] / "docs" / "README.MD"
-
-
-@dataclass(slots=True, frozen=True)
-class ParsedSelfUnbanCommand:
-    action: str
-    group_id: str | None = None
 
 
 def build_docs(locale: LocaleCode) -> MessagePlanInput:
@@ -45,42 +40,42 @@ def build_docs(locale: LocaleCode) -> MessagePlanInput:
     )
 
 
-def _parse_args(
-    argv: list[str],
-    event: MessageEvent,
-    locale: LocaleCode,
-) -> ParsedSelfUnbanCommand | str | None:
-    if not argv or argv[0].lower() in {"help", "帮助"}:
-        return None
+def _is_cancelled(text: str) -> bool:
+    return text.strip().lower() in {"取消", "cancel", "exit", "quit"}
 
-    action = argv[0].lower()
-    if action in {"group", "群", "群聊"}:
-        if len(argv) != 1:
-            return tr(locale, "self_unban.args_error")
-        return ParsedSelfUnbanCommand(action="group")
 
-    if action not in {"user", "me", "用户", "自己"}:
-        return tr(locale, "self_unban.args_error")
+def _build_kind_prompt(session: SelfUnbanSelectionSession) -> str:
+    return tr(
+        session.locale,
+        "self_unban.prompt.kind",
+        self_label=(
+            tr(session.locale, "self_unban.prompt.kind.self")
+            if session.user_candidate is not None
+            else tr(session.locale, "self_unban.prompt.kind.self_unavailable")
+        ),
+        group_label=(
+            tr(session.locale, "self_unban.prompt.kind.group")
+            if session.group_candidates
+            else tr(session.locale, "self_unban.prompt.kind.group_unavailable")
+        ),
+    )
 
-    group_id: str | None = None
-    index = 1
-    while index < len(argv):
-        token = argv[index].lower()
-        if token not in {"-g", "--group"}:
-            return tr(locale, "self_unban.args_error")
-        if group_id is not None or index + 1 >= len(argv):
-            return tr(locale, "self_unban.args_error")
-        raw_group_id = argv[index + 1].strip()
-        if not raw_group_id.isdigit():
-            return tr(locale, "self_unban.args_error")
-        group_id = raw_group_id
-        index += 2
 
-    if group_id is None and isinstance(event, GroupMessageEvent):
-        group_id = str(event.group_id)
-    if group_id is None:
-        group_id = GLOBAL_GROUP_FLAG
-    return ParsedSelfUnbanCommand(action="user", group_id=group_id)
+def _build_group_prompt(session: SelfUnbanSelectionSession) -> str:
+    lines = [tr(session.locale, "self_unban.prompt.group_select")]
+    for option in session.group_candidates:
+        lines.append(
+            tr(
+                session.locale,
+                "self_unban.prompt.group_select.item",
+                index=option.index,
+                group_name=option.group_name,
+                group_id=option.group_id,
+                user_remaining=option.prepared.user_remaining_attempts_before,
+                group_remaining=option.prepared.group_remaining_attempts_before,
+            )
+        )
+    return "\n".join(lines)
 
 
 def _build_reason_prompt(prepared: PreparedSelfUnbanRequest) -> str:
@@ -88,20 +83,40 @@ def _build_reason_prompt(prepared: PreparedSelfUnbanRequest) -> str:
         return tr(
             prepared.locale,
             "self_unban.prompt.reason.group",
-            remaining=prepared.remaining_attempts_before,
+            group_name=prepared.target_group_name or prepared.subject_id,
+            group_id=prepared.subject_id,
+            user_remaining=prepared.user_remaining_attempts_before,
+            group_remaining=prepared.group_remaining_attempts_before,
         )
     if prepared.scope_group_id == GLOBAL_GROUP_FLAG:
         return tr(
             prepared.locale,
             "self_unban.prompt.reason.user_global",
-            remaining=prepared.remaining_attempts_before,
+            remaining=prepared.user_remaining_attempts_before,
         )
     return tr(
         prepared.locale,
         "self_unban.prompt.reason.user_group",
         group_id=prepared.scope_group_id,
-        remaining=prepared.remaining_attempts_before,
+        remaining=prepared.user_remaining_attempts_before,
     )
+
+
+def _resolve_group_option(
+    session: SelfUnbanSelectionSession,
+    raw_text: str,
+) -> ManagedBannedGroupOption | None:
+    normalized = raw_text.strip()
+    if not normalized:
+        return None
+    if normalized.isdigit():
+        for option in session.group_candidates:
+            if normalized in {str(option.index), option.group_id}:
+                return option
+    for option in session.group_candidates:
+        if normalized == option.group_name:
+            return option
+    return None
 
 
 def register_handlers(matcher: type[Matcher]) -> None:
@@ -117,8 +132,7 @@ def register_handlers(matcher: type[Matcher]) -> None:
             return
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         argv = arg.extract_plain_text().strip().split()
-        parsed = _parse_args(argv, event, locale)
-        if parsed is None:
+        if argv and argv[0].lower() in {"help", "帮助"}:
             await finish_with_message(
                 bot,
                 matcher,
@@ -127,58 +141,163 @@ def register_handlers(matcher: type[Matcher]) -> None:
                 source_kind="self_unban_command",
             )
             return
-        if isinstance(parsed, str):
+        if argv:
             await finish_with_message(
                 bot,
                 matcher,
                 event=event,
-                message=parsed,
+                message=tr(locale, "self_unban.args_error"),
                 source_kind="self_unban_command",
             )
             return
 
-        if parsed.action == "group":
-            if not isinstance(event, GroupMessageEvent):
-                await finish_with_message(
-                    bot,
-                    matcher,
-                    event=event,
-                    message=tr(locale, "self_unban.group.only_in_group"),
-                    source_kind="self_unban_command",
-                )
-                return
-            prepared_or_error = await self_unban_service.prepare_group_request(
-                event=event,
-                locale=locale,
-            )
-        else:
-            source_hint = (
-                "group_scope"
-                if parsed.group_id != GLOBAL_GROUP_FLAG
-                else "private_global"
-            )
-            prepared_or_error = await self_unban_service.prepare_user_request(
-                requester_user_id=str(event.user_id),
-                scope_group_id=parsed.group_id or GLOBAL_GROUP_FLAG,
-                locale=locale,
-                source_hint=source_hint,
-            )
-
-        if isinstance(prepared_or_error, str):
+        session_or_error = await self_unban_service.prepare_selection_session(
+            requester_user_id=str(event.user_id),
+            locale=locale,
+            current_group_id=(
+                str(event.group_id) if isinstance(event, GroupMessageEvent) else None
+            ),
+        )
+        if isinstance(session_or_error, str):
             await finish_with_message(
                 bot,
                 matcher,
                 event=event,
-                message=prepared_or_error,
+                message=session_or_error,
                 source_kind="self_unban_command",
             )
             return
 
-        state["self_unban_stage"] = "reason"
-        state["self_unban_prepared"] = prepared_or_error
+        session = session_or_error
+        state["self_unban_session"] = session
+        if session.user_candidate is not None and not session.group_candidates:
+            state["self_unban_stage"] = "reason"
+            state["self_unban_prepared"] = session.user_candidate
+            await reject_with_message(
+                matcher,
+                message=_build_reason_prompt(session.user_candidate),
+            )
+            return
+        if session.user_candidate is None and len(session.group_candidates) == 1:
+            prepared = session.group_candidates[0].prepared
+            state["self_unban_stage"] = "reason"
+            state["self_unban_prepared"] = prepared
+            await reject_with_message(
+                matcher,
+                message=_build_reason_prompt(prepared),
+            )
+            return
+        if session.user_candidate is None:
+            state["self_unban_stage"] = "group_choice"
+            await reject_with_message(
+                matcher,
+                message=_build_group_prompt(session),
+            )
+            return
+
+        state["self_unban_stage"] = "target_kind"
         await reject_with_message(
             matcher,
-            message=_build_reason_prompt(prepared_or_error),
+            message=_build_kind_prompt(session),
+        )
+
+    @matcher.handle()
+    async def _select_kind(
+        bot: Bot,
+        matcher: Matcher,
+        event: MessageEvent,
+        state: T_State,
+    ) -> None:
+        if state.get("self_unban_stage") != "target_kind":
+            return
+        session = state.get("self_unban_session")
+        if not isinstance(session, SelfUnbanSelectionSession):
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr("zh-CN", "self_unban.args_error"),
+                source_kind="self_unban_command",
+            )
+            return
+        text = event.message.extract_plain_text().strip()
+        if _is_cancelled(text):
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr(session.locale, "interaction.cancelled"),
+                source_kind="self_unban_command",
+            )
+            return
+        normalized = text.lower()
+        if normalized in {"1", "自己", "自助解封自己", "user", "me"}:
+            if session.user_candidate is None:
+                await reject_with_message(
+                    matcher,
+                    message=_build_kind_prompt(session),
+                )
+                return
+            state["self_unban_stage"] = "reason"
+            state["self_unban_prepared"] = session.user_candidate
+            await reject_with_message(
+                matcher,
+                message=_build_reason_prompt(session.user_candidate),
+            )
+            return
+        if normalized in {"2", "群", "群聊", "group"} and session.group_candidates:
+            state["self_unban_stage"] = "group_choice"
+            await reject_with_message(
+                matcher,
+                message=_build_group_prompt(session),
+            )
+            return
+        await reject_with_message(
+            matcher,
+            message=tr(session.locale, "self_unban.invalid_kind_choice"),
+        )
+
+    @matcher.handle()
+    async def _select_group(
+        bot: Bot,
+        matcher: Matcher,
+        event: MessageEvent,
+        state: T_State,
+    ) -> None:
+        if state.get("self_unban_stage") != "group_choice":
+            return
+        session = state.get("self_unban_session")
+        if not isinstance(session, SelfUnbanSelectionSession):
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr("zh-CN", "self_unban.args_error"),
+                source_kind="self_unban_command",
+            )
+            return
+        text = event.message.extract_plain_text().strip()
+        if _is_cancelled(text):
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr(session.locale, "interaction.cancelled"),
+                source_kind="self_unban_command",
+            )
+            return
+        option = _resolve_group_option(session, text)
+        if option is None:
+            await reject_with_message(
+                matcher,
+                message=tr(session.locale, "self_unban.invalid_group_choice"),
+            )
+            return
+        state["self_unban_stage"] = "reason"
+        state["self_unban_prepared"] = option.prepared
+        await reject_with_message(
+            matcher,
+            message=_build_reason_prompt(option.prepared),
         )
 
     @matcher.handle()
@@ -200,16 +319,27 @@ def register_handlers(matcher: type[Matcher]) -> None:
                 source_kind="self_unban_command",
             )
             return
+        text = event.message.extract_plain_text()
+        if _is_cancelled(text):
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=tr(prepared.locale, "interaction.cancelled"),
+                source_kind="self_unban_command",
+            )
+            return
         result = await self_unban_service.submit_request(
             bot,
             prepared=prepared,
-            reason=event.message.extract_plain_text(),
+            reason=text,
         )
         if result.should_retry:
             await reject_with_message(
                 matcher,
                 message=result.final_message,
             )
+            return
         await finish_with_message(
             bot,
             matcher,

@@ -227,6 +227,7 @@ async def _flush_create_member(batch_data: list[MemberPayload]) -> None:
                 "group_id": item["group_id"],
                 "group_name": "",
                 "status": GroupStatus.UNAUTHORIZED,
+                "pre_ban_status": None,
                 "created_at": item["updated_at"],
                 "updated_at": item["updated_at"],
             }

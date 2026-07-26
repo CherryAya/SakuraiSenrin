@@ -54,6 +54,7 @@ class GroupCacheItem:
     status: GroupStatus
     is_all_shut: bool
     display_name: str = ""
+    pre_ban_status: GroupStatus | None = None
     disabled_plugins: frozenset[str] = field(default_factory=frozenset)
 
     def with_name_hash(self, new_hash: int) -> Self:
@@ -70,6 +71,11 @@ class GroupCacheItem:
         if self.status == new_status:
             return self
         return replace(self, status=new_status)
+
+    def with_pre_ban_status(self, new_status: GroupStatus | None) -> Self:
+        if self.pre_ban_status == new_status:
+            return self
+        return replace(self, pre_ban_status=new_status)
 
     def with_all_shut(self, is_shut: bool) -> Self:
         if self.is_all_shut == is_shut:

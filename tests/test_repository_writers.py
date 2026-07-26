@@ -124,6 +124,34 @@ async def test_save_group_name_buffered_includes_created_at(
     ]
 
 
+async def test_save_group_status_buffered_tracks_pre_ban_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.repositories import group as group_module
+
+    writer = _CaptureWriter()
+    monkeypatch.setattr(group_module, "get_current_time", lambda: 1_780_901_962)
+    monkeypatch.setattr(group_module, "group_update_status_writer", writer)
+
+    cache = GroupCache()
+    cache.upsert_group("20001", "Old Group", GroupStatus.AUTHORIZED, False)
+    repo = GroupRepository(cache)
+    await repo.save_group(
+        group_id="20001",
+        status=GroupStatus.BANNED,
+        policy=WritePolicy.BUFFERED,
+    )
+
+    assert writer.items == [
+        {
+            "group_id": "20001",
+            "status": GroupStatus.BANNED,
+            "pre_ban_status": GroupStatus.AUTHORIZED,
+            "updated_at": 1_780_901_962,
+        }
+    ]
+
+
 async def test_save_member_card_buffered_includes_insert_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -247,6 +275,56 @@ async def test_save_group_name_immediate_includes_snapshot_created_at(
 
     assert captured["group_update"] == ("20001", "Test Group")
     assert captured["snapshot"] == ("20001", "Test Group", 1_780_901_962)
+
+
+async def test_restore_pre_ban_status_restores_cached_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.repositories import group as group_module
+
+    captured: dict[str, object] = {}
+
+    class _FakeGroupOps:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        async def update_status_with_pre_ban(
+            self,
+            group_id: str,
+            status: GroupStatus,
+            pre_ban_status: GroupStatus | None,
+        ) -> None:
+            captured["group_update"] = (group_id, status, pre_ban_status)
+
+    class _FakeAuditLogOps:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        async def create_audit_log(self, **_kwargs: object) -> None:
+            captured["audit"] = True
+
+    monkeypatch.setattr(group_module, "GroupOps", _FakeGroupOps)
+    monkeypatch.setattr(group_module, "AuditLogOps", _FakeAuditLogOps)
+    monkeypatch.setattr(group_module.core_db, "session", _FakeSessionContext)
+    monkeypatch.setattr(group_module.log_db, "session", _FakeSessionContext)
+    monkeypatch.setattr(group_module.snapshot_db, "session", _FakeSessionContext)
+
+    cache = GroupCache()
+    cache.upsert_group(
+        "20001",
+        "Old Group",
+        GroupStatus.BANNED,
+        False,
+        pre_ban_status=GroupStatus.DORMANT,
+    )
+    repo = GroupRepository(cache)
+
+    result = await repo.restore_pre_ban_status("20001")
+
+    assert result is not None
+    assert result.restored_status is GroupStatus.DORMANT
+    assert result.used_fallback is False
+    assert captured["group_update"] == ("20001", GroupStatus.DORMANT, None)
 
 
 async def test_get_group_returns_item_after_db_backfill(

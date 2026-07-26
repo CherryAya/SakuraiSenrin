@@ -79,6 +79,7 @@ class GroupCache(BaseCache[GroupCacheItem]):
         group_name: str | Unset = UNSET,
         status: GroupStatus | Unset = UNSET,
         is_all_shut: bool | Unset = UNSET,
+        pre_ban_status: GroupStatus | None | Unset = UNSET,
     ) -> None:
         group = self.get(group_id)
         name_hash = hash(group_name)
@@ -90,6 +91,7 @@ class GroupCache(BaseCache[GroupCacheItem]):
                 status=resolve_unset(status, GroupStatus.UNAUTHORIZED),
                 is_all_shut=resolve_unset(is_all_shut, False),
                 display_name=resolve_unset(group_name, ""),
+                pre_ban_status=resolve_unset(pre_ban_status, None),
             )
             self.set(group_id, group)
             return
@@ -102,6 +104,8 @@ class GroupCache(BaseCache[GroupCacheItem]):
             group = group.with_all_shut(is_all_shut)
         if is_set(status):
             group = group.with_status(status)
+        if is_set(pre_ban_status):
+            group = group.with_pre_ban_status(pre_ban_status)
         self.set(group_id, group)
 
     def set_plugin_state(self, group_id: str, plugin_name: str, enabled: bool) -> None:

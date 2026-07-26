@@ -105,6 +105,10 @@ class Group(CoreBase, TimeMixin):
         default=GroupStatus.UNAUTHORIZED,
         nullable=False,
     )
+    pre_ban_status: Mapped[GroupStatus | None] = mapped_column(
+        SQLAEnum(GroupStatus),
+        nullable=True,
+    )
 
     last_operator_id: Mapped[str | None] = mapped_column(
         ForeignKey("biz_user.user_id", ondelete="SET NULL"),
