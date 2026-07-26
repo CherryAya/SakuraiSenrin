@@ -304,7 +304,11 @@ async def test_notice_invite_request_auto_rejects_banned_group(
         status=InvitationStatus.REJECTED,
         operator_id="99999",
     )
-    send_private_i18n_mock.assert_awaited()
+    send_private_i18n_mock.assert_awaited_once()
+    await_args = send_private_i18n_mock.await_args
+    assert await_args is not None
+    assert await_args.args[2] == "notice.invite.auto_reject"
+    assert await_args.kwargs["main_group_id"] == "10001"
 
 
 @pytest.mark.asyncio
