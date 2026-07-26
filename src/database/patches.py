@@ -40,12 +40,54 @@ async def _add_group_locale_setting(session: AsyncSession) -> None:
     )
 
 
+async def _add_invitation_sub_type(session: AsyncSession) -> None:
+    pragma_result = await session.execute(text("PRAGMA table_info(biz_invitation)"))
+    columns = {str(row[1]) for row in pragma_result.fetchall()}
+    if "sub_type" in columns:
+        return
+    await session.execute(
+        text(
+            """
+            ALTER TABLE biz_invitation
+            ADD COLUMN sub_type VARCHAR(16) NOT NULL DEFAULT 'invite'
+            """
+        )
+    )
+
+
+async def _add_group_pre_ban_status(session: AsyncSession) -> None:
+    pragma_result = await session.execute(text("PRAGMA table_info(biz_group)"))
+    columns = {str(row[1]) for row in pragma_result.fetchall()}
+    if "pre_ban_status" in columns:
+        return
+    await session.execute(
+        text(
+            """
+            ALTER TABLE biz_group
+            ADD COLUMN pre_ban_status VARCHAR(16)
+            """
+        )
+    )
+
+
 def build_core_patch_registry() -> PatchRegistry:
     registry = PatchRegistry()
     registry.register(
         SchemaPatch(
             patch_id="core:add_group_locale_setting:v1",
             apply=_add_group_locale_setting,
+        )
+    )
+    registry.register(
+        SchemaPatch(
+            patch_id="core:add_invitation_sub_type:v1",
+            apply=_add_invitation_sub_type,
+        )
+    )
+    registry.register(
+        SchemaPatch(
+            patch_id="core:add_group_pre_ban_status:v1",
+            apply=_add_group_pre_ban_status,
         )
     )
     return registry

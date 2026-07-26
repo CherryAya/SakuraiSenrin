@@ -20,12 +20,14 @@ class InviteRepository:
         group_id: str,
         inviter_id: str,
         flag: str | None,
+        sub_type: str = "invite",
     ) -> Invitation:
         async with core_db.session() as core_session:
             return await InvitationOps(core_session).create_invitation(
                 group_id=group_id,
                 inviter_id=inviter_id,
                 flag=flag,
+                sub_type=sub_type,
             )
 
     async def add_message_record(

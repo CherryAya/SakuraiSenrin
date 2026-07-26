@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
+from sqlalchemy import select
 
 from src.database.core.consts import GroupStatus, InvitationStatus
+from src.database.core.tables import Invitation
 from src.database.system_migration import (
     build_legacy_system_data,
     map_legacy_group_status,
@@ -125,3 +127,13 @@ async def test_migrate_legacy_system_data_creates_placeholders_and_banned_groups
     assert report.placeholder_users == 1
     assert report.placeholder_groups == 1
     assert report.status_counts["new_group"]["BANNED"] == 1
+    assert "invitation_info" not in report.dropped_fields
+
+    from src.database.instances import core_db
+
+    async with core_db.session(commit=False) as session:
+        result = await session.execute(select(Invitation))
+        invitation = result.scalars().one()
+
+    assert invitation is not None
+    assert invitation.sub_type == "invite"

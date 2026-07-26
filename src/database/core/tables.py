@@ -105,6 +105,10 @@ class Group(CoreBase, TimeMixin):
         default=GroupStatus.UNAUTHORIZED,
         nullable=False,
     )
+    pre_ban_status: Mapped[GroupStatus | None] = mapped_column(
+        SQLAEnum(GroupStatus),
+        nullable=True,
+    )
 
     last_operator_id: Mapped[str | None] = mapped_column(
         ForeignKey("biz_user.user_id", ondelete="SET NULL"),
@@ -181,6 +185,7 @@ class Invitation(CoreBase, TimeMixin):
         nullable=True,
     )
     flag: Mapped[str | None] = mapped_column(String(32))
+    sub_type: Mapped[str] = mapped_column(String(16), nullable=False, default="invite")
     status: Mapped[InvitationStatus] = mapped_column(
         SQLAEnum(InvitationStatus),
         default=InvitationStatus.PENDING,

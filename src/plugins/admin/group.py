@@ -132,8 +132,15 @@ async def unban_group(ctx: AdminGroupContext) -> str:
     if not ctx.group.status.is_banned:
         return tr(ctx.locale, "admin.group.not_banned")
 
-    await group_repo.update_status(ctx.group.group_id, GroupStatus.UNAUTHORIZED)
-    return tr(ctx.locale, "admin.group.unbanned")
+    restore_result = await group_repo.restore_pre_ban_status(ctx.group.group_id)
+    if restore_result is None:
+        return tr(ctx.locale, "admin.group.not_banned")
+    message_key = (
+        "admin.group.unbanned_fallback"
+        if restore_result.used_fallback
+        else "admin.group.unbanned"
+    )
+    return tr(ctx.locale, message_key, status=restore_result.restored_status)
 
 
 async def auth_group(ctx: AdminGroupContext) -> str:

@@ -4,6 +4,7 @@ from collections.abc import Iterator
 import importlib
 import sys
 from types import ModuleType, SimpleNamespace
+from typing import ClassVar
 from unittest.mock import AsyncMock
 
 from nonebot import message as message_module
@@ -161,3 +162,39 @@ async def test_runtime_check_blocks_events_while_restore_is_in_progress(
         ctx.receive_event(bot, event)
 
     handler_mock.assert_not_awaited()
+
+
+@pytest.mark.usefixtures("_isolated_processor_module")
+@pytest.mark.asyncio
+async def test_runtime_check_allows_no_check_plugin_on_group_cache_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    processor_module = importlib.import_module("src.hooks.processor")
+    monkeypatch.setattr(
+        processor_module,
+        "config",
+        SimpleNamespace(
+            DEBUG=False,
+            DEV_TEST_GROUPS=set(),
+            DEV_TEST_USERS=set(),
+            IGNORED_USERS=set(),
+            SUPERUSERS={"1"},
+        ),
+    )
+
+    class _Meta:
+        extra: ClassVar[dict[str, bool]] = {"no_check": True}
+
+    class _Plugin:
+        metadata = _Meta()
+
+    class _Matcher:
+        plugin = _Plugin()
+
+    event = build_group_message_event("#ping", user_id=10001, group_id=30001)
+
+    await processor_module._runtime_action(
+        bot=SimpleNamespace(self_id="99999"),
+        event=event,
+        matcher=_Matcher(),
+    )

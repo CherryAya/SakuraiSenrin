@@ -21,6 +21,7 @@ class UserUpdateKwargs(TypedDict):
 class GroupUpdateKwargs(TypedDict):
     group_name: NotRequired[str]
     status: NotRequired[GroupStatus]
+    pre_ban_status: NotRequired[GroupStatus | None]
 
 
 class MemberUpdateKwargs(TypedDict):
@@ -49,6 +50,7 @@ class GroupPayload(TypedDict):
     group_id: str
     group_name: str
     status: GroupStatus
+    pre_ban_status: NotRequired[GroupStatus | None]
 
 
 class MemberPayload(TypedDict):
@@ -93,6 +95,7 @@ class BulkUpdateGroupStatusPayload(TypedDict):
 
     group_id: str
     status: GroupStatus
+    pre_ban_status: GroupStatus | None
 
 
 class BulkUpdateMemberCardPayload(TypedDict):

@@ -7,7 +7,10 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import nonebot
+from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.event import GroupIncreaseNoticeEvent
+from nonebot.matcher import matchers as matcher_manager
+from nonebug import App
 import pytest
 
 nonebot.init(
@@ -57,6 +60,18 @@ async def _run_handler(
         )
     except _MatcherFinished:
         return
+
+
+def _get_notice_invite_request_matcher() -> type:
+    for matchers in matcher_manager.values():
+        for matcher in matchers:
+            plugin = getattr(matcher, "plugin", None)
+            if (
+                getattr(plugin, "module_name", None) == "src.plugins.notice.invite"
+                and matcher.type == "request"
+            ):
+                return matcher
+    raise AssertionError("notice invite request matcher not found")
 
 
 def _install_admin_notification_delivery(
@@ -159,6 +174,7 @@ async def test_notice_invite_request_persists_dependencies_and_reports_pending(
         group_id="20001",
         inviter_id="10001",
         flag="flag-1",
+        sub_type="invite",
     )
     send_private_i18n_mock.assert_awaited_once()
     add_message_record_mock.assert_awaited_once_with(
@@ -427,3 +443,69 @@ async def test_notice_invite_group_increase_banned_group_leaves_and_rejects(
         operator_id="99999",
     )
     send_private_i18n_mock.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_notice_invite_request_matcher_handles_group_request_event(
+    app: App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matcher = _get_notice_invite_request_matcher()
+    group_get_mock = AsyncMock(side_effect=[None, None, None])
+    user_get_mock = AsyncMock(return_value=None)
+    save_user_mock = AsyncMock()
+    save_group_mock = AsyncMock()
+    resolve_user_name_mock = AsyncMock(return_value="邀请者")
+    resolve_group_name_mock = AsyncMock(return_value="测试群")
+    create_invitation_mock = AsyncMock(return_value=SimpleNamespace(id=12))
+    send_private_i18n_mock = AsyncMock()
+    deliver_admin_notification_mock = AsyncMock(return_value=())
+
+    monkeypatch.setattr(notice_invite_plugin.group_repo, "get_group", group_get_mock)
+    monkeypatch.setattr(notice_invite_plugin.user_repo, "get_user", user_get_mock)
+    monkeypatch.setattr(notice_invite_plugin.user_repo, "save_user", save_user_mock)
+    monkeypatch.setattr(notice_invite_plugin.group_repo, "save_group", save_group_mock)
+    monkeypatch.setattr(
+        notice_invite_plugin,
+        "resolve_user_name",
+        resolve_user_name_mock,
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin,
+        "resolve_group_name",
+        resolve_group_name_mock,
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin.invite_repo,
+        "create_invitation",
+        create_invitation_mock,
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin,
+        "send_private_i18n",
+        send_private_i18n_mock,
+    )
+    monkeypatch.setattr(
+        notice_invite_plugin,
+        "deliver_admin_notification_plan",
+        deliver_admin_notification_mock,
+    )
+
+    event = build_group_request_event(user_id=10001, group_id=20001, flag="flag-1")
+
+    async with app.test_matcher(matcher) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="99999")
+        ctx.receive_event(bot, event)
+
+    resolve_group_name_mock.assert_awaited_once_with(bot, "20001")
+    resolve_user_name_mock.assert_awaited_once_with(bot, "10001")
+    save_user_mock.assert_awaited_once()
+    save_group_mock.assert_awaited_once()
+    create_invitation_mock.assert_awaited_once_with(
+        group_id="20001",
+        inviter_id="10001",
+        flag="flag-1",
+        sub_type="invite",
+    )
+    send_private_i18n_mock.assert_awaited_once()
+    deliver_admin_notification_mock.assert_awaited_once()

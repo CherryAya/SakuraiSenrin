@@ -177,6 +177,8 @@ class GroupOps(BaseOps[Group]):
             "created_at": event_time,
             "updated_at": event_time,
         }
+        if "pre_ban_status" in kwargs:
+            group_payload["pre_ban_status"] = kwargs["pre_ban_status"]
 
         stmt = sqlite_insert(Group).values(group_payload)
         update_set = {"updated_at": event_time}
@@ -199,6 +201,7 @@ class GroupOps(BaseOps[Group]):
             set_={
                 "group_name": stmt.excluded.group_name,
                 "status": stmt.excluded.status,
+                "pre_ban_status": stmt.excluded.pre_ban_status,
                 "updated_at": stmt.excluded.updated_at,
             },
         )
@@ -238,6 +241,7 @@ class GroupOps(BaseOps[Group]):
         sql = f"""
             UPDATE {Group.__tablename__}
             SET {Group.status.key} = :status,
+                {Group.pre_ban_status.key} = :pre_ban_status,
                 {Group.updated_at.key} = :updated_at
             WHERE {Group.group_id.key} = :group_id
         """
@@ -285,6 +289,18 @@ class GroupOps(BaseOps[Group]):
 
     async def update_status(self, group_id: str, status: GroupStatus) -> Group:
         return await self._upsert_group(group_id, status=status)
+
+    async def update_status_with_pre_ban(
+        self,
+        group_id: str,
+        status: GroupStatus,
+        pre_ban_status: GroupStatus | None,
+    ) -> Group:
+        return await self._upsert_group(
+            group_id,
+            status=status,
+            pre_ban_status=pre_ban_status,
+        )
 
     async def update_name(self, group_id: str, group_name: str) -> Group:
         return await self._upsert_group(group_id, group_name=group_name)
@@ -546,6 +562,7 @@ class InvitationOps(BaseOps[Invitation]):
         group_id: str,
         inviter_id: str,
         flag: str | None,
+        sub_type: str = "invite",
     ) -> Invitation:
         event_time = get_current_time()
 
@@ -553,6 +570,7 @@ class InvitationOps(BaseOps[Invitation]):
             group_id=group_id,
             inviter_id=inviter_id,
             flag=flag,
+            sub_type=sub_type,
             status=InvitationStatus.PENDING,
             created_at=event_time,
             updated_at=event_time,

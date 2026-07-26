@@ -29,6 +29,7 @@ SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 
 from src.database.core.consts import GroupStatus
 from src.database.core.consts import Permission as CorePermission
+from src.lib.cache.field import GroupCacheItem
 from src.lib.i18n.runtime import tr
 from src.lib.message_assets import message_asset_repo
 from src.lib.messages import empty_message, text_message
@@ -104,6 +105,40 @@ async def test_admin_group_dot_form_hits_matcher(
             bot=bot,
         )
         ctx.should_finished(admin_group)
+
+
+@pytest.mark.asyncio
+async def test_admin_group_unban_restores_previous_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.admin import group as group_plugin
+
+    monkeypatch.setattr(
+        group_plugin.group_repo,
+        "restore_pre_ban_status",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                restored_status=GroupStatus.AUTHORIZED,
+                used_fallback=False,
+            )
+        ),
+    )
+
+    message = await group_plugin.unban_group(
+        group_plugin.AdminGroupContext(
+            bot=cast(Bot, SimpleNamespace()),
+            group=GroupCacheItem(
+                group_id="20001",
+                name_hash=hash("测试群"),
+                status=GroupStatus.BANNED,
+                is_all_shut=False,
+                display_name="测试群",
+            ),
+            locale="zh-CN",
+        )
+    )
+
+    assert message == "已解封，状态恢复为已授权"
 
 
 @pytest.mark.asyncio
@@ -476,6 +511,7 @@ async def test_admin_invite_reply_persists_operator_when_approving(
     invitation = SimpleNamespace(
         id=7,
         flag="flag-7",
+        sub_type="invite:manual-review",
         status=SimpleNamespace(is_processed=False),
         group=SimpleNamespace(
             status=GroupStatus.UNAUTHORIZED,
@@ -523,6 +559,11 @@ async def test_admin_invite_reply_persists_operator_when_approving(
         )
     )
 
+    bot.set_group_add_request.assert_awaited_once_with(
+        flag="flag-7",
+        sub_type="invite:manual-review",
+        approve=True,
+    )
     save_user_mock.assert_awaited_once()
     update_status_mock.assert_awaited_once_with(
         invitation_id=7,
