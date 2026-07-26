@@ -174,7 +174,6 @@ async def test_remove_succeeds_for_admin(
             },
             result={"message_id": 1},
         )
-        ctx.should_call_send(third, "已从当前群聊退出: 测试群", bot=bot)
         ctx.should_finished()
 
     update_status.assert_awaited_once_with("20001", remove_plugin.GroupStatus.LEFT)

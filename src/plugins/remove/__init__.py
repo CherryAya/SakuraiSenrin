@@ -156,13 +156,7 @@ async def perform_remove(
         operator_id=event.get_user_id(),
         reason=reason_text,
     )
-    await finish_with_message(
-        bot,
-        matcher,
-        event=event,
-        message=tr(locale, "remove.leave_success", group_name=group_name),
-        source_kind="remove_command",
-    )
+    await matcher.finish()
 
 
 @remove_matcher.handle()

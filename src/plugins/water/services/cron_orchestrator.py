@@ -21,6 +21,8 @@ from .worker_jobs import (
 ROOT = Path(__file__).resolve().parents[4]
 WATER_JOB_SCRIPT = ROOT / "scripts" / "run_water_job.py"
 WATER_JOB_OUTPUT_ROOT = Path(tempfile.gettempdir()) / "sakurai-water-jobs"
+DEFAULT_WATER_JOB_TIMEOUT_SECONDS = 900
+DAILY_REPORT_PREPARE_TIMEOUT_SECONDS = 1800
 
 
 @dataclass(slots=True, frozen=True)
@@ -55,8 +57,17 @@ async def run_water_subprocess_job(
     record_date: int | None = None,
     force: bool = False,
     locale: str | None = None,
-    timeout_seconds: int = 900,
+    timeout_seconds: int | None = None,
 ) -> WaterSubprocessResult:
+    resolved_timeout_seconds = (
+        timeout_seconds
+        if timeout_seconds is not None
+        else (
+            DAILY_REPORT_PREPARE_TIMEOUT_SECONDS
+            if job_name == "daily_report_prepare"
+            else DEFAULT_WATER_JOB_TIMEOUT_SECONDS
+        )
+    )
     job_id = build_water_job_id(job_name)
     output_dir = WATER_JOB_OUTPUT_ROOT / job_id
     await asyncio.to_thread(shutil.rmtree, output_dir, True)
@@ -71,7 +82,7 @@ async def run_water_subprocess_job(
         "--output-dir",
         str(output_dir),
         "--timeout-seconds",
-        str(timeout_seconds),
+        str(resolved_timeout_seconds),
     ]
     if record_date is not None:
         command.extend(["--record-date", str(record_date)])
@@ -84,7 +95,7 @@ async def run_water_subprocess_job(
         "[Water][Worker] start job={} job_id={} timeout={}s output_dir={}",
         job_name,
         job_id,
-        timeout_seconds,
+        resolved_timeout_seconds,
         output_dir,
     )
     env = dict(os.environ)
@@ -101,10 +112,16 @@ async def run_water_subprocess_job(
     try:
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             process.communicate(),
-            timeout=timeout_seconds,
+            timeout=resolved_timeout_seconds,
         )
     except TimeoutError:
         timed_out = True
+        logger.warning(
+            "[Water][Worker] timeout job={} job_id={} timeout={}s",
+            job_name,
+            job_id,
+            resolved_timeout_seconds,
+        )
         process.kill()
         stdout_bytes, stderr_bytes = await process.communicate()
     elapsed_ms = (perf_counter() - started) * 1000

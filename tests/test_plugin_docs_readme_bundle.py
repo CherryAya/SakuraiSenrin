@@ -35,6 +35,7 @@ def test_load_plugin_doc_bundle_parses_real_readme() -> None:
     assert merge.permission == Permission.SUPERUSER
     assert admin.permission == Permission.SUPERUSER
     assert "#water ..." not in admin.trigger
+    assert "#water report-push <YYYYMMDD>" in admin.trigger
     assert "#water season delete <season_id>" in admin.trigger
     assert profile.hero is True
     assert profile.priority == 10

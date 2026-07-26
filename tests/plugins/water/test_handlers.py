@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -15,6 +16,7 @@ from src.plugins.water.handlers.admin import (
     format_settlement_message,
     handle_ignore,
     handle_report_dryrun,
+    handle_report_push,
     handle_season,
     handle_settle,
 )
@@ -30,6 +32,7 @@ from src.plugins.water.handlers.passive import (
     handle_water_record,
 )
 from src.plugins.water.handlers.query import handle_my_water_profile
+from src.plugins.water.services.report import WaterDailyReportBatchResult
 from src.plugins.water.services.season import SeasonServiceError
 from src.plugins.water.services.settlement import SettlementResult
 from src.plugins.water.services.worker_jobs import WaterWorkerManifest
@@ -271,6 +274,100 @@ async def test_handle_report_dryrun_uses_report_service_summary(
         await handle_report_dryrun(ctx)
 
     assert matcher.finished == "DRYRUN_OK"
+
+
+@pytest.mark.asyncio
+async def test_handle_report_push_runs_prepare_and_send(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.handlers import admin as admin_module
+
+    matcher = DummyMatcher()
+    ctx = _build_admin_ctx(
+        matcher,
+        ["report-push", "20260725"],
+        event_text="#water report-push 20260725",
+    )
+
+    worker_mock = AsyncMock(
+        return_value=SimpleNamespace(
+            manifest=WaterWorkerManifest(
+                job_name="daily_report_prepare",
+                job_id="job-1",
+                started_at=1,
+                finished_at=2,
+                status="success",
+                record_date=20260725,
+                metrics={
+                    "candidate_groups": 2,
+                    "rendered_groups": 2,
+                    "skipped_groups": 0,
+                    "failed_groups": 0,
+                    "total_elapsed_ms": 12.0,
+                },
+                report_items=(),
+            ),
+            output_dir=Path("/tmp/water-report-push-job-1"),
+            exit_code=0,
+            timed_out=False,
+        )
+    )
+    send_mock = AsyncMock(
+        return_value=WaterDailyReportBatchResult(
+            record_date=20260725,
+            candidate_groups=2,
+            rendered_groups=2,
+            sent_groups=2,
+            skipped_groups=0,
+            failed_groups=0,
+            total_elapsed_ms=3456.0,
+        )
+    )
+    monkeypatch.setattr(admin_module, "run_water_subprocess_job", worker_mock)
+    monkeypatch.setattr(
+        admin_module.water_report_service,
+        "send_prepared_daily_group_report_push",
+        send_mock,
+    )
+
+    with pytest.raises(MatcherFinished):
+        await handle_report_push(ctx)
+
+    worker_mock.assert_awaited_once_with(
+        "daily_report_prepare",
+        record_date=20260725,
+        locale="zh-CN",
+    )
+    send_mock.assert_awaited_once()
+    assert matcher.finished is not None
+    assert "状态: 完成" in matcher.finished
+    assert "日报日期: 20260725" in matcher.finished
+    assert "已发送: 2" in matcher.finished
+
+
+@pytest.mark.asyncio
+async def test_handle_report_push_requires_valid_single_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.handlers import admin as admin_module
+
+    matcher = DummyMatcher()
+    ctx = _build_admin_ctx(
+        matcher,
+        ["report-push", "20260725", "20260724"],
+        event_text="#water report-push 20260725 20260724",
+    )
+    worker_mock = AsyncMock()
+    monkeypatch.setattr(admin_module, "run_water_subprocess_job", worker_mock)
+
+    with pytest.raises(MatcherFinished):
+        await handle_report_push(ctx)
+
+    worker_mock.assert_not_awaited()
+    assert matcher.finished is not None
+    assert "参数错误: report-push 仅允许一个日期参数，格式 YYYYMMDD。" in str(
+        matcher.finished
+    )
 
 
 @pytest.mark.asyncio
