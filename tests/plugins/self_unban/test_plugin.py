@@ -254,13 +254,22 @@ async def test_self_unban_invalid_group_choice_rejects_again(
         AsyncMock(return_value=session),
     )
     first = build_private_message_event("#self.unban", user_id=10001)
-    second = build_private_message_event("999", user_id=10001, message_id=2)
+    second = build_private_message_event("2", user_id=10001, message_id=2)
+    third = build_private_message_event("999", user_id=10001, message_id=3)
 
     async with app.test_matcher(self_unban_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, first)
         ctx.should_call_send(
             first,
+            "请选择要解封的对象类型：\n1. 解封自己（当前不可用）\n2. 解封群聊",
+            bot=bot,
+        )
+        ctx.should_rejected()
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(
+            second,
             (
                 "请选择要解封的群聊，回复序号、群号或群名：\n"
                 "1. 测试群（20001）- 你的剩余额度 2 次 / 本群剩余额度 2 次\n"
@@ -270,9 +279,9 @@ async def test_self_unban_invalid_group_choice_rejects_again(
         )
         ctx.should_rejected()
 
-        ctx.receive_event(bot, second)
+        ctx.receive_event(bot, third)
         ctx.should_call_send(
-            second,
+            third,
             "群聊选择无效，请回复列表中的序号、群号或群名。",
             bot=bot,
         )
@@ -323,12 +332,21 @@ async def test_self_unban_no_check_bypasses_runtime_blacklist_block(
         AsyncMock(return_value=session),
     )
     event = build_private_message_event("#自助解封", user_id=10001)
+    second = build_private_message_event("1", user_id=10001, message_id=2)
 
     async with app.test_matcher(self_unban_matcher) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
         ctx.receive_event(bot, event)
         ctx.should_call_send(
             event,
+            "请选择要解封的对象类型：\n1. 解封自己\n2. 解封群聊（当前不可用）",
+            bot=bot,
+        )
+        ctx.should_rejected()
+
+        ctx.receive_event(bot, second)
+        ctx.should_call_send(
+            second,
             (
                 "请输入本次全局自助解封理由（至少 10 个字）。"
                 "本次通过后会消耗 1 次额度，当前剩余 2 次。"

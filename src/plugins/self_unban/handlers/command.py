@@ -170,31 +170,6 @@ def register_handlers(matcher: type[Matcher]) -> None:
 
         session = session_or_error
         state["self_unban_session"] = session
-        if session.user_candidate is not None and not session.group_candidates:
-            state["self_unban_stage"] = "reason"
-            state["self_unban_prepared"] = session.user_candidate
-            await reject_with_message(
-                matcher,
-                message=_build_reason_prompt(session.user_candidate),
-            )
-            return
-        if session.user_candidate is None and len(session.group_candidates) == 1:
-            prepared = session.group_candidates[0].prepared
-            state["self_unban_stage"] = "reason"
-            state["self_unban_prepared"] = prepared
-            await reject_with_message(
-                matcher,
-                message=_build_reason_prompt(prepared),
-            )
-            return
-        if session.user_candidate is None:
-            state["self_unban_stage"] = "group_choice"
-            await reject_with_message(
-                matcher,
-                message=_build_group_prompt(session),
-            )
-            return
-
         state["self_unban_stage"] = "target_kind"
         await reject_with_message(
             matcher,
