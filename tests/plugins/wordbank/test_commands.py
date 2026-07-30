@@ -1617,18 +1617,20 @@ async def test_handle_study_shortcut_result_parses_response_placeholders() -> No
         WordbankService,
         SimpleNamespace(add_message_entry=add_message_entry),
     )
-    event = build_group_message_event("#study 晚安 => [@触发者] [戳触发者]")
+    event = build_group_message_event("#study 晚安 => [@触发者] [头像] [戳触发者]")
 
     await commands_module.handle_study_shortcut_result(
         service,
         event=event,
-        text="晚安 => [@触发者] [戳触发者]",
+        text="晚安 => [@触发者] [头像] [戳触发者]",
     )
 
     assert add_message_entry.await_args is not None
     kwargs = add_message_entry.await_args.kwargs
     assert kwargs["trigger_shape"] == shape_from_text("晚安")
-    assert kwargs["response_shape"] == shape_from_response_text("[@触发者] [戳触发者]")
+    assert kwargs["response_shape"] == shape_from_response_text(
+        "[@触发者] [头像] [戳触发者]"
+    )
 
 
 @pytest.mark.asyncio
@@ -1682,17 +1684,21 @@ async def test_handle_add_text_result_parses_sender_response_placeholders() -> N
         WordbankService,
         SimpleNamespace(add_message_entry=add_message_entry),
     )
-    event = build_group_message_event("#wordbank add 晚安 => [@触发者] [戳触发者]")
+    event = build_group_message_event(
+        "#wordbank add 晚安 => [@触发者] [头像] [戳触发者]"
+    )
 
     await handle_add_text_result(
         service,
         event=event,
-        text="晚安 => [@触发者] [戳触发者]",
+        text="晚安 => [@触发者] [头像] [戳触发者]",
     )
 
     assert add_message_entry.await_args is not None
     kwargs = add_message_entry.await_args.kwargs
-    assert kwargs["response_shape"] == shape_from_response_text("[@触发者] [戳触发者]")
+    assert kwargs["response_shape"] == shape_from_response_text(
+        "[@触发者] [头像] [戳触发者]"
+    )
 
 
 @pytest.mark.asyncio

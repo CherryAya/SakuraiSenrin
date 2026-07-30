@@ -194,5 +194,6 @@ def test_guided_response_prompt_mentions_response_only_placeholders() -> None:
     assert "[账号]" in prompt
     assert "[昵称]" in prompt
     assert "[群名片]" in prompt
+    assert "[头像]" in prompt
     assert "[xx]" in prompt
     assert "触发者头像" in prompt

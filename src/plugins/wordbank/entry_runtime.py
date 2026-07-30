@@ -81,6 +81,7 @@ from .handlers.rendering import (
 )
 from .message_model import (
     PLACEHOLDER_ACCOUNT,
+    PLACEHOLDER_AVATAR,
     PLACEHOLDER_GROUP_CARD,
     PLACEHOLDER_NICKNAME,
     PLACEHOLDER_PROFILE_COMBO,
@@ -787,7 +788,7 @@ def register_wordbank_runtime_handlers(
             combo_text=combo_text,
         )
 
-    async def _render_profile_combo_avatar(account: str) -> bytes | None:
+    async def _render_profile_avatar(account: str) -> bytes | None:
         if not account:
             return None
         try:
@@ -905,7 +906,17 @@ def register_wordbank_runtime_handlers(
                     if profile_data.combo_text:
                         blocks.append(TextBlock(profile_data.combo_text))
                     if not profile_avatar_loaded:
-                        profile_avatar_bytes = await _render_profile_combo_avatar(
+                        profile_avatar_bytes = await _render_profile_avatar(
+                            profile_data.account
+                        )
+                        profile_avatar_loaded = True
+                    if profile_avatar_bytes is not None:
+                        blocks.append(ImageBytesBlock(profile_avatar_bytes))
+                        image_segments += 1
+                    continue
+                if atom.placeholder_name == PLACEHOLDER_AVATAR:
+                    if not profile_avatar_loaded:
+                        profile_avatar_bytes = await _render_profile_avatar(
                             profile_data.account
                         )
                         profile_avatar_loaded = True
