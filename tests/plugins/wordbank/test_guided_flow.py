@@ -190,6 +190,8 @@ def test_guided_response_prompt_mentions_response_only_placeholders() -> None:
     prompt = tr("zh-CN", "wordbank.guided.add.response_prompt")
 
     assert "仅响应词生效" in prompt
+    assert "\n- " not in prompt
+    assert "\n👉 [@触发者]" in prompt
     assert "[@触发者]" in prompt
     assert "[账号]" in prompt
     assert "[昵称]" in prompt
