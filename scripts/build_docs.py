@@ -9,6 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import lru_cache
+from hashlib import sha256
 from importlib import import_module
 from io import BytesIO
 import json
@@ -77,6 +78,15 @@ DOCS_ROOTS = (
     ROOT / "src" / "plugins",
     ROOT / "src" / "hooks",
 )
+BUILD_CACHE_VERSION = 1
+BUILD_CACHE_HISTORY_LIMIT = 50
+
+
+@dataclass(slots=True, frozen=True)
+class BuildContentFingerprint:
+    input_hash: str
+    output_hash: str
+    content_hash: str
 
 
 @dataclass(slots=True, frozen=True)
@@ -216,6 +226,174 @@ def _timed_call[T](
     started_at = perf_counter()
     result = func(*args, **kwargs)
     return result, (perf_counter() - started_at) * 1000
+
+
+def _build_docs_cache_path(*, root: Path | None = None) -> Path:
+    return (root or ROOT) / "output" / "build_docs_cache.json"
+
+
+def _path_sort_key(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return path.resolve().as_posix()
+
+
+def _iter_unique_existing_files(paths: list[Path]) -> tuple[Path, ...]:
+    seen: set[Path] = set()
+    files: list[Path] = []
+    for path in sorted(paths, key=_path_sort_key):
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if resolved in seen or not resolved.is_file():
+            continue
+        seen.add(resolved)
+        files.append(resolved)
+    return tuple(files)
+
+
+def _hash_files(paths: list[Path], *, extra: dict[str, object] | None = None) -> str:
+    digest = sha256()
+    payload = json.dumps(
+        extra or {},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest.update(b"extra\0")
+    digest.update(payload.encode("utf-8"))
+    digest.update(b"\0")
+    for path in _iter_unique_existing_files(paths):
+        display = _path_sort_key(path)
+        data = path.read_bytes()
+        digest.update(display.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(len(data)).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(sha256(data).hexdigest().encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _collect_build_input_paths() -> list[Path]:
+    paths: list[Path] = [Path(__file__), ROOT / "src" / "lib" / "demo_theme.py"]
+    paths.extend(iter_readmes())
+    plugin_docs_root = ROOT / "src" / "lib" / "plugin_docs"
+    if plugin_docs_root.is_dir():
+        paths.extend(plugin_docs_root.rglob("*.py"))
+    i18n_root = ROOT / "src" / "lib" / "i18n"
+    if i18n_root.is_dir():
+        paths.extend(i18n_root.rglob("*.py"))
+    locales_root = ROOT / "src" / "locales"
+    if locales_root.is_dir():
+        paths.extend(locales_root.rglob("*.py"))
+    assets_root = ROOT / "src" / "lib" / "assets"
+    if assets_root.is_dir():
+        support_qr_asset = _support_qr_asset_path(root=ROOT).resolve()
+        paths.extend(
+            path
+            for path in assets_root.iterdir()
+            if path.is_file() and path.resolve() != support_qr_asset
+        )
+    for root in DOCS_ROOTS:
+        if root.is_dir():
+            paths.extend(root.rglob("*.py"))
+    return paths
+
+
+def _collect_build_output_paths() -> list[Path]:
+    paths: list[Path] = []
+    support_qr_path = _support_qr_asset_path(root=ROOT)
+    if support_qr_path.exists():
+        paths.append(support_qr_path)
+    for docs_root in DOCS_ROOTS:
+        if not docs_root.is_dir():
+            continue
+        for demos_dir in docs_root.glob("**/demos"):
+            if not demos_dir.is_dir():
+                continue
+            paths.extend(path for path in demos_dir.iterdir() if path.is_file())
+    return paths
+
+
+def _build_input_hash(*, columns: int) -> str:
+    return _hash_files(
+        _collect_build_input_paths(),
+        extra={
+            "cache_version": BUILD_CACHE_VERSION,
+            "columns": columns,
+            "help_support_groups": os.getenv("HELP_SUPPORT_GROUPS", "").strip(),
+        },
+    )
+
+
+def _build_output_hash() -> str:
+    return _hash_files(
+        _collect_build_output_paths(),
+        extra={"cache_version": BUILD_CACHE_VERSION},
+    )
+
+
+def _build_content_fingerprint(*, columns: int) -> BuildContentFingerprint:
+    input_hash = _build_input_hash(columns=columns)
+    output_hash = _build_output_hash()
+    content_hash = sha256(f"{input_hash}:{output_hash}".encode("ascii")).hexdigest()
+    return BuildContentFingerprint(
+        input_hash=input_hash,
+        output_hash=output_hash,
+        content_hash=content_hash,
+    )
+
+
+def _read_build_cache() -> dict[str, Any]:
+    cache_path = _build_docs_cache_path(root=ROOT)
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _build_cache_matches(fingerprint: BuildContentFingerprint) -> bool:
+    latest = _read_build_cache().get("latest")
+    if not isinstance(latest, dict):
+        return False
+    return (
+        latest.get("version") == BUILD_CACHE_VERSION
+        and latest.get("input_hash") == fingerprint.input_hash
+        and latest.get("output_hash") == fingerprint.output_hash
+        and latest.get("content_hash") == fingerprint.content_hash
+    )
+
+
+def _write_build_cache(fingerprint: BuildContentFingerprint, *, columns: int) -> None:
+    cache_path = _build_docs_cache_path(root=ROOT)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    prior = _read_build_cache()
+    history = prior.get("history")
+    if not isinstance(history, list):
+        history = []
+    record = {
+        "version": BUILD_CACHE_VERSION,
+        "created_at": datetime.fromtimestamp(get_current_time())
+        .replace(microsecond=0)
+        .isoformat(),
+        "columns": columns,
+        "input_hash": fingerprint.input_hash,
+        "output_hash": fingerprint.output_hash,
+        "content_hash": fingerprint.content_hash,
+    }
+    payload = {
+        "version": BUILD_CACHE_VERSION,
+        "latest": record,
+        "history": [record, *history][:BUILD_CACHE_HISTORY_LIMIT],
+    }
+    cache_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _relative_root(path: Path) -> str:
@@ -1238,9 +1416,17 @@ def build(
     columns: int = 2,
     profile: bool = False,
     profile_top: int = 10,
+    force: bool = False,
 ) -> int:
     phase_profiler = Profiler(enabled=profile, top_n=profile_top)
     _reset_caches()
+    starting_fingerprint = _build_content_fingerprint(columns=columns)
+    if not force and _build_cache_matches(starting_fingerprint):
+        _write_line(
+            "build: content unchanged, skipping "
+            f"(hash={starting_fingerprint.content_hash[:12]})"
+        )
+        return 0
     generated, generated_ms = _timed_call(
         generate,
         workers=workers,
@@ -1281,6 +1467,9 @@ def build(
     )
     phase_profiler.record("build.phase", "validate", validate_ms)
     phase_profiler.report_stage("build.phase")
+    if validated == 0:
+        _reset_caches()
+        _write_build_cache(_build_content_fingerprint(columns=columns), columns=columns)
     return validated
 
 
@@ -1542,6 +1731,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=2,
         help="number of columns in each collection image (default: %(default)s)",
     )
+    build_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="ignore the build content cache and rebuild all docs assets",
+    )
     _add_profile_args(build_parser)
     compose_parser = subparsers.add_parser(
         "compose",
@@ -1606,6 +1800,7 @@ def main() -> int:
                 columns=args.columns,
                 profile=args.profile,
                 profile_top=args.profile_top,
+                force=args.force,
             )
         case "compose":
             return compose(

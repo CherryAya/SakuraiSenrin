@@ -854,6 +854,7 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
             columns=4,
             profile=True,
             profile_top=7,
+            force=True,
         )
         == 0
     )
@@ -898,6 +899,138 @@ def test_plugin_docs_build_runs_generate_compose_and_validate_in_order(
     ]
 
 
+def _write_build_cache_sample_readme(root: Path) -> Path:
+    docs_root = root / "src" / "plugins" / "sample" / "docs"
+    docs_root.mkdir(parents=True)
+    (docs_root / "README.MD").write_text(
+        """
+# 测试插件
+
+## 概览
+用于测试 build cache。
+
+## 权限与触发
+- 触发方式: 指令触发
+- 权限: 普通用户
+
+## 子功能目录
+- `alpha` Alpha 功能: 第一个功能。
+
+## 子功能详情
+### `alpha` Alpha 功能
+- 摘要: 第一个功能。
+- 指令: `#alpha`
+#### 说明
+alpha
+#### 前置条件
+无
+#### 完整流程
+```demo
+USER: #alpha
+BOT: Alpha 完成
+```
+#### 失败情况
+无
+""".strip(),
+        encoding="utf-8",
+    )
+    return docs_root
+
+
+def test_plugin_docs_build_skips_when_cached_content_hash_matches(
+    tmp_path: Path,
+    monkeypatch: Any,
+    capsys: Any,
+) -> None:
+    _write_build_cache_sample_readme(tmp_path)
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "generate",
+        lambda **kwargs: calls.append("generate") or 0,
+    )
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "compose",
+        lambda **kwargs: calls.append("compose") or 0,
+    )
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "build_help_assets",
+        lambda **kwargs: calls.append("help-assets") or 0,
+    )
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "validate",
+        lambda **kwargs: calls.append("validate") or 0,
+    )
+
+    assert plugin_docs_script.build(workers=1, columns=2) == 0
+    assert calls == ["generate", "compose", "help-assets", "validate"]
+    calls.clear()
+
+    assert plugin_docs_script.build(workers=1, columns=2) == 0
+
+    assert calls == []
+    assert "content unchanged, skipping" in capsys.readouterr().out
+    cache_path = plugin_docs_script._build_docs_cache_path(  # pyright: ignore[reportPrivateUsage]
+        root=tmp_path
+    )
+    cache_payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert cache_payload["latest"]["content_hash"]
+    assert len(cache_payload["history"]) == 1
+
+
+def test_plugin_docs_build_rebuilds_when_output_hash_changes(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    docs_root = _write_build_cache_sample_readme(tmp_path)
+    demos_dir = docs_root / "demos"
+    demos_dir.mkdir()
+    monkeypatch.setattr(plugin_docs_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "DOCS_ROOTS",
+        (tmp_path / "src" / "plugins",),
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "generate",
+        lambda **kwargs: calls.append("generate") or 0,
+    )
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "compose",
+        lambda **kwargs: calls.append("compose") or 0,
+    )
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "build_help_assets",
+        lambda **kwargs: calls.append("help-assets") or 0,
+    )
+    monkeypatch.setattr(
+        plugin_docs_script,
+        "validate",
+        lambda **kwargs: calls.append("validate") or 0,
+    )
+
+    assert plugin_docs_script.build(workers=1, columns=2) == 0
+    calls.clear()
+    (demos_dir / "manual.webp").write_bytes(b"changed-output")
+
+    assert plugin_docs_script.build(workers=1, columns=2) == 0
+
+    assert calls == ["generate", "compose", "help-assets", "validate"]
+
+
 def test_build_parser_accepts_profile_options() -> None:
     args = plugin_docs_script.build_parser().parse_args(
         [
@@ -906,6 +1039,7 @@ def test_build_parser_accepts_profile_options() -> None:
             "4",
             "--columns",
             "3",
+            "--force",
             "--profile",
             "--profile-top",
             "6",
@@ -915,6 +1049,7 @@ def test_build_parser_accepts_profile_options() -> None:
     assert args.action == "build"
     assert args.workers == 4
     assert args.columns == 3
+    assert args.force is True
     assert args.profile is True
     assert args.profile_top == 6
 
@@ -946,7 +1081,7 @@ def test_build_profile_emits_phase_summary(
     monkeypatch.setattr(plugin_docs_script, "build_help_assets", lambda **kwargs: 0)
     monkeypatch.setattr(plugin_docs_script, "validate", lambda **kwargs: 0)
 
-    assert plugin_docs_script.build(profile=True, profile_top=3) == 0
+    assert plugin_docs_script.build(profile=True, profile_top=3, force=True) == 0
 
     captured = capsys.readouterr().out
     assert "[profile:build.phase] " in captured

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "targets": {
+    "feature:self_unban:self": {
+      "normal": "self-unban-self.webp",
+      "group_admin": "self-unban-self.webp",
+      "group_owner": "self-unban-self.webp",
+      "superuser": "self-unban-self.webp"
+    },
+    "feature:self_unban:group": {
+      "normal": "self-unban-group.webp",
+      "group_admin": "self-unban-group.webp",
+      "group_owner": "self-unban-group.webp",
+      "superuser": "self-unban-group.webp"
+    }
+  }
+}

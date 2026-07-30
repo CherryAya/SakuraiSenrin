@@ -78,9 +78,10 @@ def test_shape_from_response_text_parses_fixed_poke_placeholder() -> None:
 
 
 def test_shape_from_response_text_parses_profile_placeholders() -> None:
-    shape = shape_from_response_text("[账号] [昵称] [群名片] [xx]")
+    shape = shape_from_response_text("[账号] [昵称] [群名片] [头像] [xx]")
 
     assert [atom.kind for atom in shape.atoms] == [
+        "placeholder",
         "placeholder",
         "placeholder",
         "placeholder",
@@ -90,9 +91,10 @@ def test_shape_from_response_text_parses_profile_placeholders() -> None:
         "account",
         "nickname",
         "group_card",
+        "avatar",
         "profile_combo",
     ]
-    assert shape_to_summary_text(shape) == "[账号] [昵称] [群名片] [xx]"
+    assert shape_to_summary_text(shape) == "[账号] [昵称] [群名片] [头像] [xx]"
 
 
 def test_shape_from_response_text_keeps_unrecognized_placeholder_literal() -> None:
@@ -108,6 +110,6 @@ def test_shape_payload_roundtrip_preserves_response_event_targets() -> None:
 
 
 def test_shape_payload_roundtrip_preserves_profile_placeholders() -> None:
-    shape = shape_from_response_text("[账号] [昵称] [群名片] [xx]")
+    shape = shape_from_response_text("[账号] [昵称] [群名片] [头像] [xx]")
 
     assert shape_from_payload(shape_to_payload(shape)) == shape

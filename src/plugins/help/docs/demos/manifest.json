@@ -4,9 +4,9 @@
   "targets": {
     "dashboard:index": {
       "normal": "help-index.webp",
-      "group_admin": "help-index--fe5a50f6d6.webp",
-      "group_owner": "help-index--fe5a50f6d6.webp",
-      "superuser": "help-index--f5e054fc29.webp"
+      "group_admin": "help-index--c49652509b.webp",
+      "group_owner": "help-index--c49652509b.webp",
+      "superuser": "help-index--515140fe38.webp"
     },
     "feature:help:main": {
       "normal": "help-main.webp",

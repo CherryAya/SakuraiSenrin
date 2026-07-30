@@ -184,3 +184,18 @@ def test_guided_scope_prompt_uses_private_variant_in_private_chat() -> None:
         "wordbank.guided.add.scope_prompt",
     )
     assert guided_scope_prompt(locale="zh-CN", is_group=False) == PRIVATE_SCOPE_PROMPT
+
+
+def test_guided_response_prompt_mentions_response_only_placeholders() -> None:
+    prompt = tr("zh-CN", "wordbank.guided.add.response_prompt")
+
+    assert "仅响应词生效" in prompt
+    assert "\n- " not in prompt
+    assert "\n👉 [@触发者]" in prompt
+    assert "[@触发者]" in prompt
+    assert "[账号]" in prompt
+    assert "[昵称]" in prompt
+    assert "[群名片]" in prompt
+    assert "[头像]" in prompt
+    assert "[xx]" in prompt
+    assert "触发者头像" in prompt
