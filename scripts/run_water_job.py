@@ -69,6 +69,8 @@ async def _run_job(
         WaterWorkerManifest,
     )
 
+    await water_repo.init_all_tables()
+
     started_at = get_current_time()
     typed_job_name = cast(WaterWorkerJobName, job_name)
     if job_name == "settlement":
