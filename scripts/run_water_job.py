@@ -18,8 +18,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.lib.i18n.types import LocaleCode
+from src.lib.trace_log import (
+    configure_logging,
+    log_trace_event,
+    new_trace_id,
+    shutdown_logging,
+)
 from src.lib.utils.common import get_current_time
 from src.logger import logger
+from src.services.db import init_db
 
 if TYPE_CHECKING:
     from src.plugins.water.services.worker_jobs import WaterWorkerManifest
@@ -73,6 +80,17 @@ async def _run_job(
 
     started_at = get_current_time()
     typed_job_name = cast(WaterWorkerJobName, job_name)
+    trace_id = log_trace_event(
+        event_name="worker_job",
+        source_kind="water_worker",
+        component="water.worker",
+        status="started",
+        summary=f"Starting water worker job {job_name}.",
+        trace_id=new_trace_id(f"water_worker_{job_name}"),
+        job_id=job_id,
+        record_date=record_date,
+        payload_json={"force": force},
+    )
     if job_name == "settlement":
         result = await water_settlement_service.run_daily_settlement(
             force=force,
@@ -85,6 +103,17 @@ async def _run_job(
         status = "skipped" if result.skipped else "success"
         if not result.success and not result.skipped:
             status = "failed"
+        log_trace_event(
+            event_name="worker_job",
+            source_kind="water_worker",
+            component="water.worker",
+            status=status,
+            summary=f"Finished water worker job {job_name}.",
+            trace_id=trace_id,
+            job_id=job_id,
+            record_date=result.record_date,
+            payload_json={"reason": result.reason},
+        )
         return WaterWorkerManifest(
             job_name=typed_job_name,
             job_id=job_id,
@@ -102,6 +131,15 @@ async def _run_job(
         )
     if job_name == "message_archive":
         await water_repo.archive_message_shards()
+        log_trace_event(
+            event_name="worker_job",
+            source_kind="water_worker",
+            component="water.worker",
+            status="success",
+            summary=f"Finished water worker job {job_name}.",
+            trace_id=trace_id,
+            job_id=job_id,
+        )
         return WaterWorkerManifest(
             job_name=typed_job_name,
             job_id=job_id,
@@ -112,6 +150,16 @@ async def _run_job(
     if job_name == "summary_archive":
         await water_repo.archive_summary_shards()
         pruned = await water_repo.prune_hot_summaries()
+        log_trace_event(
+            event_name="worker_job",
+            source_kind="water_worker",
+            component="water.worker",
+            status="success",
+            summary=f"Finished water worker job {job_name}.",
+            trace_id=trace_id,
+            job_id=job_id,
+            payload_json={"pruned": pruned},
+        )
         return WaterWorkerManifest(
             job_name=typed_job_name,
             job_id=job_id,
@@ -130,6 +178,21 @@ async def _run_job(
         status = "skipped"
     elif prepared.failed_groups > 0 or prepared.skipped_groups > 0:
         status = "partial"
+    log_trace_event(
+        event_name="worker_job",
+        source_kind="water_worker",
+        component="water.worker",
+        status=status,
+        summary=f"Finished water worker job {job_name}.",
+        trace_id=trace_id,
+        job_id=job_id,
+        record_date=prepared.record_date,
+        payload_json={
+            "candidate_groups": prepared.candidate_groups,
+            "failed_groups": prepared.failed_groups,
+            "skipped_groups": prepared.skipped_groups,
+        },
+    )
     return WaterWorkerManifest(
         job_name=typed_job_name,
         job_id=job_id,
@@ -150,15 +213,18 @@ async def _run_job(
 
 
 async def main() -> None:
+    args = parse_args()
     os.environ["SAKURAI_WATER_WORKER"] = "1"
+    os.environ["SAKURAI_LOG_ROLE"] = f"worker-water-{args.job}"
     nonebot.init()
+    configure_logging(log_role=os.environ["SAKURAI_LOG_ROLE"])
+    await init_db()
     from src.plugins.water.services.worker_jobs import (
         WaterWorkerManifest,
         build_water_job_id,
         write_water_worker_manifest,
     )
 
-    args = parse_args()
     job_name = args.job
     job_id = args.job_id or build_water_job_id(job_name)
     output_dir = _resolve_output_dir(job_id, args.output_dir)
@@ -176,6 +242,16 @@ async def main() -> None:
         )
     except Exception:
         logger.exception("[Water][Worker] job failed")
+        log_trace_event(
+            event_name="worker_job",
+            source_kind="water_worker",
+            component="water.worker",
+            status="failed",
+            summary=f"Water worker job {job_name} failed.",
+            level="ERROR",
+            job_id=job_id,
+            record_date=args.record_date,
+        )
         manifest = WaterWorkerManifest(
             job_name=job_name,
             job_id=job_id,
@@ -193,6 +269,7 @@ async def main() -> None:
         manifest.status,
         manifest_path,
     )
+    await shutdown_logging()
 
 
 if __name__ == "__main__":

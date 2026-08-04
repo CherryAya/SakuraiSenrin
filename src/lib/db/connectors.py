@@ -28,6 +28,7 @@ import zstandard as zstd
 
 from src.lib.consts import GLOBAL_DB_ROOT
 from src.lib.db.backup import BackupSource
+from src.lib.trace_log import log_trace_event
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 
@@ -295,6 +296,14 @@ class SegmentStore(BaseDB):
         async with self._get_lock(f"schema:{shard_marker}"):
             if shard_marker in self._initialized_shards:
                 return
+            trace_id = log_trace_event(
+                event_name="initialize_shard_schema",
+                source_kind="segment_schema",
+                component=f"{self.namespace}.{self.prefix}",
+                status="started",
+                summary=f"Initializing shard schema for {shard_key}.",
+                shard_key=shard_key,
+            )
             async with db_manager.open(str(db_path), commit=True) as session:
                 engine = session.bind
                 assert isinstance(engine, AsyncEngine)
@@ -303,6 +312,15 @@ class SegmentStore(BaseDB):
                     await conn.run_sync(PatchBase.metadata.create_all)
                 await self.patch_registry.apply_all(session, get_current_time())
             self._initialized_shards.add(shard_marker)
+            log_trace_event(
+                event_name="initialize_shard_schema",
+                source_kind="segment_schema",
+                component=f"{self.namespace}.{self.prefix}",
+                status="success",
+                summary=f"Initialized shard schema for {shard_key}.",
+                trace_id=trace_id,
+                shard_key=shard_key,
+            )
 
     def _compress_file(self, source: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -397,6 +415,14 @@ class SegmentStore(BaseDB):
                 entry.state = SegmentState.HOT
                 entry.updated_at = get_current_time()
                 self._save_manifest()
+                log_trace_event(
+                    event_name="create_shard_placeholder",
+                    source_kind="segment_online",
+                    component=f"{self.namespace}.{self.prefix}",
+                    status="success",
+                    summary=f"Created online shard placeholder for {shard_key}.",
+                    shard_key=shard_key,
+                )
             return create_if_missing
         if policy == ColdPolicy.DENY:
             raise FileNotFoundError(f"Cold shard is offline: {archive_path.name}")
@@ -411,10 +437,27 @@ class SegmentStore(BaseDB):
             safe_archive = self._safe_resolve(archive_path)
             safe_db = self._safe_resolve(db_path)
             logger.info(f"唤醒冷库: 正在解压 {safe_archive.name}")
+            trace_id = log_trace_event(
+                event_name="hydrate_shard",
+                source_kind="segment_online",
+                component=f"{self.namespace}.{self.prefix}",
+                status="started",
+                summary=f"Hydrating cold shard {shard_key}.",
+                shard_key=shard_key,
+            )
             await asyncio.to_thread(self._decompress_file, safe_archive, safe_db)
             await self._touch_segment(shard_key, state=SegmentState.WARM)
             await self._ensure_budget()
             logger.success(f"冷库解压完成: {safe_db.name}")
+            log_trace_event(
+                event_name="hydrate_shard",
+                source_kind="segment_online",
+                component=f"{self.namespace}.{self.prefix}",
+                status="success",
+                summary=f"Hydrated cold shard {shard_key}.",
+                trace_id=trace_id,
+                shard_key=shard_key,
+            )
             return True
 
     @asynccontextmanager
@@ -488,6 +531,18 @@ class SegmentStore(BaseDB):
             keys.append(curr.strftime(self.fmt))
             curr = curr.shift(months=1)
         shard_keys = list(dict.fromkeys(keys))
+        log_trace_event(
+            event_name="map_reduce",
+            source_kind="segment_scan",
+            component=f"{self.namespace}.{self.prefix}",
+            status="started",
+            summary=(
+                f"Scanning {len(shard_keys)} shard(s) from "
+                f"{start_time.strftime('%Y-%m')} to {end_time.strftime('%Y-%m')}."
+            ),
+            batch_size=len(shard_keys),
+            payload_json={"shard_keys": shard_keys},
+        )
         semaphore = asyncio.Semaphore(self.map_reduce_concurrency)
 
         async def _run(key: str) -> T | None:
@@ -531,12 +586,29 @@ class SegmentStore(BaseDB):
                 safe_db = self._safe_resolve(db_file)
                 safe_archive = self._safe_resolve(archive_path)
                 logger.info(f"归档冷库: {safe_db.name} -> {safe_archive.name}")
+                trace_id = log_trace_event(
+                    event_name="archive_shard",
+                    source_kind="segment_archive",
+                    component=f"{self.namespace}.{self.prefix}",
+                    status="started",
+                    summary=f"Archiving shard {file_key}.",
+                    shard_key=file_key,
+                )
                 await asyncio.to_thread(self._compress_file, safe_db, safe_archive)
                 await db_manager.dispose(str(safe_db))
                 await asyncio.to_thread(os.remove, safe_db)
                 await asyncio.to_thread(self._cleanup_sqlite_sidecars, safe_db)
                 await self._touch_segment(file_key, state=SegmentState.COLD)
                 logger.success(f"归档完成，已释放原始磁盘占用: {safe_db.name}")
+                log_trace_event(
+                    event_name="archive_shard",
+                    source_kind="segment_archive",
+                    component=f"{self.namespace}.{self.prefix}",
+                    status="success",
+                    summary=f"Archived shard {file_key}.",
+                    trace_id=trace_id,
+                    shard_key=file_key,
+                )
         await self._ensure_budget()
 
     def iter_backup_sources(self) -> list[BackupSource]:

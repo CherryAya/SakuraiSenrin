@@ -11,6 +11,7 @@ from src.database.instances import core_db, log_db, snapshot_db
 from src.database.log.tables import LogBase
 from src.database.snapshot.tables import SnapshotBase
 from src.lib.message_assets import MessageAssetBase, message_asset_db
+from src.lib.trace_log import mark_trace_logging_ready
 
 
 async def init_db() -> None:
@@ -18,3 +19,4 @@ async def init_db() -> None:
     await log_db.init(LogBase)
     await snapshot_db.init(SnapshotBase)
     await message_asset_db.init(MessageAssetBase)
+    mark_trace_logging_ready()

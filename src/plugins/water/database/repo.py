@@ -12,6 +12,7 @@ from sqlalchemy import delete
 from src.database.consts import WritePolicy
 from src.lib.db.connectors import ColdPolicy
 from src.lib.db.manager import db_manager
+from src.lib.trace_log import log_trace_event
 from src.lib.utils.common import get_current_time
 
 from .instances import water_core_db, water_message, water_summary
@@ -628,9 +629,35 @@ class WaterRepository(
     async def _save_immediate(self, ctx: WaterMessageContext) -> None:
         dt = arrow.get(ctx.created_at).to("Asia/Shanghai").datetime
         time_ctx = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        shard_key = time_ctx.strftime("%Y_%m")
+        trace_id = log_trace_event(
+            event_name="save_message_immediate",
+            source_kind="water_message",
+            component="water.repo",
+            status="started",
+            summary=f"Saving water message immediately to shard {shard_key}.",
+            shard_key=shard_key,
+            group_id=ctx.group_id,
+            user_id=ctx.user_id,
+            record_date=ctx.to_payload()["record_date"],
+            batch_size=1,
+        )
 
         async with water_message.write_session(time_ctx=time_ctx) as session:
             await WaterMessageOps(session).bulk_insert_water_message([ctx.to_payload()])
+        log_trace_event(
+            event_name="save_message_immediate",
+            source_kind="water_message",
+            component="water.repo",
+            status="success",
+            summary=f"Saved water message immediately to shard {shard_key}.",
+            trace_id=trace_id,
+            shard_key=shard_key,
+            group_id=ctx.group_id,
+            user_id=ctx.user_id,
+            record_date=ctx.to_payload()["record_date"],
+            batch_size=1,
+        )
 
     async def save_message(
         self,
@@ -666,13 +693,53 @@ class WaterRepository(
                 hot_payloads.append(item)
 
         for route_key, chunk in routed.items():
+            trace_id = log_trace_event(
+                event_name="save_summary_batch",
+                source_kind="water_summary",
+                component="water.repo",
+                status="started",
+                summary=f"Saving water summary batch to shard {route_key}.",
+                shard_key=route_key,
+                batch_size=len(chunk),
+                record_date=int(chunk[0]["record_date"]),
+            )
             route_ctx = arrow.get(route_key, "YYYY_MM").datetime
             async with water_summary.write_session(time_ctx=route_ctx) as session:
                 await WaterArchivedSummaryOps(session).bulk_upsert_summary(chunk)
+            log_trace_event(
+                event_name="save_summary_batch",
+                source_kind="water_summary",
+                component="water.repo",
+                status="success",
+                summary=f"Saved water summary batch to shard {route_key}.",
+                trace_id=trace_id,
+                shard_key=route_key,
+                batch_size=len(chunk),
+                record_date=int(chunk[0]["record_date"]),
+            )
 
         if hot_payloads:
+            trace_id = log_trace_event(
+                event_name="save_hot_summary_batch",
+                source_kind="water_summary",
+                component="water.repo",
+                status="started",
+                summary="Saving water hot summary batch to core store.",
+                batch_size=len(hot_payloads),
+                record_date=int(hot_payloads[0]["record_date"]),
+            )
             async with water_core_db.session(commit=True) as session:
                 await WaterSummaryOps(session).bulk_upsert_summary(hot_payloads)
+            log_trace_event(
+                event_name="save_hot_summary_batch",
+                source_kind="water_summary",
+                component="water.repo",
+                status="success",
+                summary="Saved water hot summary batch to core store.",
+                trace_id=trace_id,
+                batch_size=len(hot_payloads),
+                record_date=int(hot_payloads[0]["record_date"]),
+            )
 
     async def import_message_batch(
         self,

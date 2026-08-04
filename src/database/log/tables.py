@@ -55,3 +55,45 @@ class PluginUsageLog(LogBase):
     status: Mapped[str] = mapped_column(String(32), default="SUCCESS")
     cost_ms: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class TraceEventLog(LogBase):
+    __tablename__ = "sys_trace_log"
+    __table_args__ = (
+        Index("idx_trace_id_created", "trace_id", "created_at"),
+        Index("idx_trace_component_created", "component", "created_at"),
+        Index(
+            "idx_trace_source_status_created",
+            "source_kind",
+            "status",
+            "created_at",
+        ),
+        Index(
+            "idx_trace_record_component_created",
+            "record_date",
+            "component",
+            "created_at",
+        ),
+        Index("idx_trace_job_id", "job_id"),
+        Index("idx_trace_shard_key", "shard_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trace_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    parent_trace_id: Mapped[str | None] = mapped_column(String(64))
+    source_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    component: Mapped[str] = mapped_column(String(64), nullable=False)
+    level: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    group_id: Mapped[str | None] = mapped_column(String(32))
+    user_id: Mapped[str | None] = mapped_column(String(32))
+    job_id: Mapped[str | None] = mapped_column(String(64))
+    shard_key: Mapped[str | None] = mapped_column(String(32))
+    log_role: Mapped[str | None] = mapped_column(String(32))
+    record_date: Mapped[int | None] = mapped_column(Integer)
+    batch_size: Mapped[int | None] = mapped_column(Integer)
+    attempt: Mapped[int | None] = mapped_column(Integer)
+    payload_json: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)

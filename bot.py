@@ -11,12 +11,14 @@ from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter
 from nonebot.adapters.onebot.v11 import Bot
 
 from src.lib.message_api_hooks import install_message_delivery_hooks
+from src.lib.trace_log import configure_logging, shutdown_logging
 from src.scripts.install import init_fonts
 from src.services.db import init_db
 from src.services.message_asset_startup import run_startup_message_asset_check
 
 init_fonts()
 nonebot.init()
+configure_logging(log_role="app")
 install_message_delivery_hooks()
 
 from src.services.backup_scheduler import install_backup_scheduler
@@ -30,6 +32,11 @@ install_backup_scheduler()
 async def _on_startup() -> None:
     await init_db()
     await run_startup_message_asset_check()
+
+
+@driver.on_shutdown
+async def _on_shutdown() -> None:
+    await shutdown_logging()
 
 
 @driver.on_bot_connect

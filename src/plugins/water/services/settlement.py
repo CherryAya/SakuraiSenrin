@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import arrow
 from loguru import logger
 
+from src.lib.trace_log import log_trace_event, new_trace_id
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo_models import DailyAggregateItem
@@ -52,6 +53,17 @@ class WaterSettlementService:
         else:
             target = target_date.floor("day")
         record_date = int(target.format("YYYYMMDD"))
+        trace_id = new_trace_id("water_settlement")
+        log_trace_event(
+            event_name="daily_settlement",
+            source_kind="water_settlement",
+            component="water.settlement",
+            status="started",
+            summary=f"Starting water settlement for {record_date}.",
+            trace_id=trace_id,
+            record_date=record_date,
+            payload_json={"force": force},
+        )
 
         started, reason = await water_repo.try_start_settlement_job(
             record_date,
@@ -60,6 +72,16 @@ class WaterSettlementService:
         if not started:
             logger.warning(
                 f"[Water] settle skipped date={record_date}, reason={reason}"
+            )
+            log_trace_event(
+                event_name="daily_settlement",
+                source_kind="water_settlement",
+                component="water.settlement",
+                status="skipped",
+                summary=f"Skipped water settlement for {record_date}: {reason}.",
+                trace_id=trace_id,
+                record_date=record_date,
+                payload_json={"force": force, "reason": reason},
             )
             return SettlementResult(
                 success=False,
@@ -85,6 +107,17 @@ class WaterSettlementService:
             logger.success(
                 f"[Water] settle completed date={record_date}, rows={len(aggregates)}"
             )
+            log_trace_event(
+                event_name="daily_settlement",
+                source_kind="water_settlement",
+                component="water.settlement",
+                status="success",
+                summary=f"Completed water settlement for {record_date}.",
+                trace_id=trace_id,
+                record_date=record_date,
+                batch_size=len(aggregates),
+                payload_json={"unlocked_achievements": unlocked},
+            )
             return SettlementResult(
                 success=True,
                 skipped=False,
@@ -96,6 +129,17 @@ class WaterSettlementService:
             )
         except Exception as e:
             await water_repo.mark_settlement_failed(record_date, str(e))
+            log_trace_event(
+                event_name="daily_settlement",
+                source_kind="water_settlement",
+                component="water.settlement",
+                status="failed",
+                summary=f"Water settlement for {record_date} failed.",
+                level="ERROR",
+                trace_id=trace_id,
+                record_date=record_date,
+                payload_json={"error": repr(e)},
+            )
             raise
 
     async def _trigger_achievements(

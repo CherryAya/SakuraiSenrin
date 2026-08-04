@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
-from sqlalchemy import CursorResult, select
+from sqlalchemy import CursorResult, Table, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.db.ops import BaseOps
@@ -19,8 +19,8 @@ from src.lib.types import UNSET, Unset, is_set
 from src.lib.utils.common import get_current_time
 
 from .base import BaseAuditEnum
-from .tables import AuditLog, PluginUsageLog
-from .types import AuditLogPayload, PluginUsageLogPayload
+from .tables import AuditLog, PluginUsageLog, TraceEventLog
+from .types import AuditLogPayload, PluginUsageLogPayload, TraceEventLogPayload
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -104,3 +104,47 @@ class PluginUsageLogOps(BaseOps[PluginUsageLog]):
         stmt = sqlite_insert(PluginUsageLog).values(plugin_usage_logs)
         result = await self.session.execute(stmt)
         return cast(CursorResult, result).rowcount
+
+
+class TraceEventLogOps(BaseOps[TraceEventLog]):
+    async def bulk_create_trace_event_logs(
+        self,
+        trace_event_logs: list[TraceEventLogPayload],
+    ) -> int:
+        if not trace_event_logs:
+            return 0
+        table = cast(Table, TraceEventLog.__table__)
+        stmt = sqlite_insert(table).values(trace_event_logs)
+        result = await self.session.execute(stmt)
+        return cast(CursorResult, result).rowcount
+
+    async def query_trace_events(
+        self,
+        *,
+        trace_id: str | None = None,
+        component: str | None = None,
+        source_kind: str | None = None,
+        status: str | None = None,
+        record_date: int | None = None,
+        job_id: str | None = None,
+        shard_key: str | None = None,
+        limit: int = 100,
+    ) -> Sequence[TraceEventLog]:
+        stmt = select(TraceEventLog)
+        if trace_id is not None:
+            stmt = stmt.where(TraceEventLog.trace_id == trace_id)
+        if component is not None:
+            stmt = stmt.where(TraceEventLog.component == component)
+        if source_kind is not None:
+            stmt = stmt.where(TraceEventLog.source_kind == source_kind)
+        if status is not None:
+            stmt = stmt.where(TraceEventLog.status == status)
+        if record_date is not None:
+            stmt = stmt.where(TraceEventLog.record_date == record_date)
+        if job_id is not None:
+            stmt = stmt.where(TraceEventLog.job_id == job_id)
+        if shard_key is not None:
+            stmt = stmt.where(TraceEventLog.shard_key == shard_key)
+        stmt = stmt.order_by(TraceEventLog.created_at.desc()).limit(limit)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()

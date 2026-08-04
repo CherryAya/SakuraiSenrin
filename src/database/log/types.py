@@ -31,3 +31,25 @@ class PluginUsageLogPayload(TypedDict):
     command: NotRequired[str]
     status: str
     cost_ms: int
+
+
+class TraceEventLogPayload(TypedDict):
+    created_at: int
+
+    trace_id: str
+    source_kind: str
+    component: str
+    level: str
+    event_name: str
+    status: str
+    summary: str
+    parent_trace_id: str | None
+    group_id: str | None
+    user_id: str | None
+    job_id: str | None
+    shard_key: str | None
+    log_role: str | None
+    record_date: int | None
+    batch_size: int | None
+    attempt: int | None
+    payload_json: dict | None

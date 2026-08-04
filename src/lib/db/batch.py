@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 import arrow
 from loguru import logger
 
+from src.lib.trace_log import log_trace_event, new_trace_id
 from src.lib.utils.common import get_current_time
 
 if TYPE_CHECKING:
@@ -63,6 +64,7 @@ class BatchWriter[T]:
         max_retries: int = 3,
         retry_backoff: float = 0.2,
         dedupe_key: Callable[[T], str] | None = None,
+        trace_persist: bool = True,
     ) -> None:
         self.queue: asyncio.Queue[T] = asyncio.Queue()
         self.flush_callback = flush_callback
@@ -83,6 +85,7 @@ class BatchWriter[T]:
         self._flush_lock = asyncio.Lock()
         self._is_flushing = False
         self._last_error: Exception | None = None
+        self._trace_persist = trace_persist
 
     @property
     def worker_name(self) -> str:
@@ -99,6 +102,15 @@ class BatchWriter[T]:
             self._task = asyncio.create_task(self._worker())
             self._worker_name = getattr(self.flush_callback, "__name__", "Unknown")
             logger.debug(f"BatchWriter worker [{self._worker_name}] started/restarted.")
+            log_trace_event(
+                event_name="worker_started",
+                source_kind="batch_writer",
+                component=self.worker_name,
+                status="started",
+                summary=f"BatchWriter worker {self.worker_name} started.",
+                payload_json={"batch_size": self.config.batch_size},
+                persist=self._trace_persist,
+            )
 
     def _mark_busy(self) -> None:
         self._idle_event.clear()
@@ -218,11 +230,34 @@ class BatchWriter[T]:
             self._buffer = []
             self._is_flushing = True
             last_error: Exception | None = None
+            trace_id = new_trace_id(self.worker_name)
+
+            log_trace_event(
+                event_name="flush_started",
+                source_kind="batch_writer",
+                component=self.worker_name,
+                status="started",
+                summary=f"BatchWriter {self.worker_name} flush started.",
+                trace_id=trace_id,
+                batch_size=len(batch),
+                persist=self._trace_persist,
+            )
 
             try:
                 for attempts in range(1, self.config.max_retries + 1):
                     try:
                         await self.flush_callback(list(batch))
+                        log_trace_event(
+                            event_name="flush_finished",
+                            source_kind="batch_writer",
+                            component=self.worker_name,
+                            status="success",
+                            summary=f"BatchWriter {self.worker_name} flush succeeded.",
+                            trace_id=trace_id,
+                            batch_size=len(batch),
+                            attempt=attempts,
+                            persist=self._trace_persist,
+                        )
                         return FlushResult(
                             flushed=len(batch),
                             attempts=attempts,
@@ -233,6 +268,22 @@ class BatchWriter[T]:
                         logger.error(
                             f"BatchWriter {self.worker_name} flush attempt "
                             f"{attempts} failed: {e}"
+                        )
+                        log_trace_event(
+                            event_name="flush_retry",
+                            source_kind="batch_writer",
+                            component=self.worker_name,
+                            status="retry",
+                            summary=(
+                                f"BatchWriter {self.worker_name} flush attempt "
+                                f"{attempts} failed."
+                            ),
+                            level="ERROR",
+                            trace_id=trace_id,
+                            batch_size=len(batch),
+                            attempt=attempts,
+                            payload_json={"error": repr(e)},
+                            persist=self._trace_persist,
                         )
                         if attempts < self.config.max_retries:
                             await asyncio.sleep(self.config.retry_backoff * attempts)
@@ -249,6 +300,21 @@ class BatchWriter[T]:
                 logger.error(
                     f"BatchWriter {self.worker_name} moved batch to dead letter "
                     f"after {self.config.max_retries} attempts: {last_error}"
+                )
+                log_trace_event(
+                    event_name="flush_dead_letter",
+                    source_kind="batch_writer",
+                    component=self.worker_name,
+                    status="dead_letter",
+                    summary=(
+                        f"BatchWriter {self.worker_name} moved batch to dead letter."
+                    ),
+                    level="ERROR",
+                    trace_id=trace_id,
+                    batch_size=len(batch),
+                    attempt=self.config.max_retries,
+                    payload_json={"error": repr(last_error)},
+                    persist=self._trace_persist,
                 )
                 self._last_error = last_error
                 return FlushResult(
@@ -267,6 +333,8 @@ async def execute_batch_write[PayloadT: Mapping[str, Any], OpsT: BaseOps[Any]](
     ops_class: type[OpsT],
     method: Callable[[OpsT, list[PayloadT]], Awaitable[Any]],
     time_field: str,
+    *,
+    emit_trace: bool = True,
 ) -> None:
     """按时间戳对批量数据进行分组路由，并写入对应的分片数据库。"""
     if not batch:
@@ -282,13 +350,51 @@ async def execute_batch_write[PayloadT: Mapping[str, Any], OpsT: BaseOps[Any]](
         route_map[route_ctx].append(item)
 
     for time_ctx, grouped_items in route_map.items():
+        shard_key = time_ctx.strftime("%Y_%m")
+        trace_id: str | None = None
+        if emit_trace:
+            trace_id = log_trace_event(
+                event_name="route_batch",
+                source_kind="segment_write",
+                component=f"{db_instance.namespace}.{db_instance.prefix}",
+                status="started",
+                summary=f"[{logger_name}] routing batch to shard {shard_key}.",
+                shard_key=shard_key,
+                batch_size=len(grouped_items),
+                payload_json={"ops_class": logger_name},
+            )
         try:
             async with db_instance.write_session(time_ctx=time_ctx) as session:
                 ops_instance = ops_class(session)
                 await method(ops_instance, grouped_items)
+            if emit_trace:
+                log_trace_event(
+                    event_name="route_batch",
+                    source_kind="segment_write",
+                    component=f"{db_instance.namespace}.{db_instance.prefix}",
+                    status="success",
+                    summary=f"[{logger_name}] batch written to shard {shard_key}.",
+                    trace_id=trace_id,
+                    shard_key=shard_key,
+                    batch_size=len(grouped_items),
+                    payload_json={"ops_class": logger_name},
+                )
         except Exception as e:
             logger.error(
                 f"[{logger_name}] 落盘至 "
                 f"{time_ctx.strftime('%Y_%m')} 分片时发生错误: {e}"
             )
+            if emit_trace:
+                log_trace_event(
+                    event_name="route_batch",
+                    source_kind="segment_write",
+                    component=f"{db_instance.namespace}.{db_instance.prefix}",
+                    status="failed",
+                    summary=f"[{logger_name}] batch write to shard {shard_key} failed.",
+                    level="ERROR",
+                    trace_id=trace_id,
+                    shard_key=shard_key,
+                    batch_size=len(grouped_items),
+                    payload_json={"ops_class": logger_name, "error": repr(e)},
+                )
             raise
