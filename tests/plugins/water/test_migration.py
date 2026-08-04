@@ -21,6 +21,7 @@ from src.plugins.water.database.tables import (
     WaterHourlyCounter,
     WaterUserAchievement,
 )
+from src.plugins.water.database.writers import water_writer
 from src.plugins.water.migration import (
     LegacyWaterMigrationProgressPayload,
     LegacyWaterRow,
@@ -33,6 +34,7 @@ from src.plugins.water.migration import (
     rebuild_water_runtime_from_messages,
     reset_current_water_runtime,
 )
+from src.plugins.water.services.settlement import water_settlement_service
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -218,8 +220,8 @@ async def test_import_legacy_water_rows_aggregates_same_hour_records() -> None:
     )
 
     inserted = await import_legacy_water_rows(rows, chunk_size=10)
-
     assert inserted == 2
+
     async with water_message.read_session(
         time_ctx=arrow.get("2026-01-15", "YYYY-MM-DD").datetime
     ) as session:
@@ -232,6 +234,95 @@ async def test_import_legacy_water_rows_aggregates_same_hour_records() -> None:
         ).all()
 
     assert counts == [(8, 2), (9, 1)]
+
+
+@pytest.mark.asyncio
+async def test_buffered_cross_month_messages_settle_full_august_day() -> None:
+    await water_repo.save_message(
+        group_id="20001",
+        user_id="10001",
+        created_at=arrow.get("2026-07-31T23:10:00+08:00").int_timestamp,
+    )
+    await water_repo.save_message(
+        group_id="20001",
+        user_id="10001",
+        created_at=arrow.get("2026-08-01T00:10:00+08:00").int_timestamp,
+    )
+    await water_repo.save_message(
+        group_id="20001",
+        user_id="10001",
+        created_at=arrow.get("2026-08-01T13:10:00+08:00").int_timestamp,
+    )
+    await water_repo.save_message(
+        group_id="20001",
+        user_id="10001",
+        created_at=arrow.get("2026-08-01T23:10:00+08:00").int_timestamp,
+    )
+    await water_writer.flush_now()
+
+    async with water_message.read_session(
+        time_ctx=arrow.get("2026-07-31", "YYYY-MM-DD").datetime
+    ) as session:
+        july_rows = (
+            await session.execute(
+                select(
+                    WaterHourlyCounter.record_date,
+                    WaterHourlyCounter.hour,
+                    WaterHourlyCounter.msg_count,
+                ).order_by(
+                    WaterHourlyCounter.record_date.asc(),
+                    WaterHourlyCounter.hour.asc(),
+                )
+            )
+        ).all()
+
+    async with water_message.read_session(
+        time_ctx=arrow.get("2026-08-01", "YYYY-MM-DD").datetime
+    ) as session:
+        august_rows = (
+            await session.execute(
+                select(
+                    WaterHourlyCounter.record_date,
+                    WaterHourlyCounter.hour,
+                    WaterHourlyCounter.msg_count,
+                ).order_by(
+                    WaterHourlyCounter.record_date.asc(),
+                    WaterHourlyCounter.hour.asc(),
+                )
+            )
+        ).all()
+
+    assert july_rows == [(20260731, 23, 1)]
+    assert august_rows == [
+        (20260801, 0, 1),
+        (20260801, 13, 1),
+        (20260801, 23, 1),
+    ]
+
+    result = await water_settlement_service.run_daily_settlement(
+        arrow.get("2026-08-01", "YYYY-MM-DD")
+    )
+
+    assert result.success is True
+    assert result.record_date == 20260801
+    assert result.aggregate_rows == 1
+
+    async with water_core_db.session(commit=False) as session:
+        summary = await session.get(
+            WaterDailySummary,
+            {
+                "group_id": "20001",
+                "user_id": "10001",
+                "record_date": 20260801,
+            },
+        )
+
+    assert summary is not None
+    assert summary.msg_count == 3
+    assert summary.active_hours == 3
+    assert summary.hourly_counts[0] == 1
+    assert summary.hourly_counts[13] == 1
+    assert summary.hourly_counts[23] == 1
 
 
 @pytest.mark.asyncio
