@@ -30,6 +30,67 @@ class WaterSettlementService:
     def __init__(self) -> None:
         self.achievement_service = AchievementService()
 
+    @staticmethod
+    def _collect_covered_hours(aggregates: list[DailyAggregateItem]) -> list[int]:
+        hourly_totals = [0] * 24
+        for row in aggregates:
+            hourly_counts = list(getattr(row, "hourly_counts", [0] * 24))[:24]
+            if len(hourly_counts) < 24:
+                hourly_counts.extend([0] * (24 - len(hourly_counts)))
+            for hour, count in enumerate(hourly_counts):
+                hourly_totals[hour] += int(count)
+        return [hour for hour, count in enumerate(hourly_totals) if count > 0]
+
+    def _warn_if_hour_coverage_looks_truncated(
+        self,
+        *,
+        record_date: int,
+        trace_id: str,
+        aggregates: list[DailyAggregateItem],
+    ) -> None:
+        covered_hours = self._collect_covered_hours(aggregates)
+        if not covered_hours:
+            return
+
+        max_hour = covered_hours[-1]
+        expected_prefix = list(range(max_hour + 1))
+        if covered_hours != expected_prefix or max_hour > 2:
+            return
+
+        total_msg_count = sum(int(getattr(row, "msg_count", 0)) for row in aggregates)
+        active_group_count = len(
+            {str(getattr(row, "group_id", "")) for row in aggregates}
+        )
+        active_user_count = len(
+            {str(getattr(row, "user_id", "")) for row in aggregates}
+        )
+
+        logger.warning(
+            "[Water] suspicious hour coverage detected date={} covered_hours={} "
+            "groups={} users={} total_msgs={}",
+            record_date,
+            covered_hours,
+            active_group_count,
+            active_user_count,
+            total_msg_count,
+        )
+        log_trace_event(
+            event_name="hour_coverage_anomaly",
+            source_kind="water_settlement",
+            component="water.settlement",
+            status="warning",
+            summary=f"Suspicious hour coverage detected for {record_date}.",
+            level="WARNING",
+            trace_id=trace_id,
+            record_date=record_date,
+            payload_json={
+                "covered_hours": covered_hours,
+                "active_group_count": active_group_count,
+                "active_user_count": active_user_count,
+                "total_msg_count": total_msg_count,
+            },
+        )
+
     async def run_daily_settlement(
         self,
         target_date: arrow.Arrow | None = None,
@@ -94,6 +155,11 @@ class WaterSettlementService:
             )
         try:
             aggregates = await water_repo.collect_daily_aggregates(target)
+            self._warn_if_hour_coverage_looks_truncated(
+                record_date=record_date,
+                trace_id=trace_id,
+                aggregates=aggregates,
+            )
             await water_repo.apply_daily_settlement(
                 target,
                 aggregates,
