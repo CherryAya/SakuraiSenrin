@@ -7,7 +7,7 @@ import asyncio
 import json
 from pathlib import Path
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import nonebot
 from sqlalchemy import select
@@ -19,8 +19,30 @@ if str(ROOT) not in sys.path:
 from src.database.core.tables import Member, User
 from src.database.instances import core_db
 from src.lib.plugin_docs.meta import resolve_support_groups
-from src.plugins.water.database.instances import water_core_db
-from src.plugins.water.database.tables import WaterGlobalLevel
+
+if TYPE_CHECKING:
+    from src.lib.db.connectors import StateStore
+    from src.plugins.water.database.tables import WaterGlobalLevel
+
+water_core_db: "StateStore" | None = None
+WaterGlobalLevel: type["WaterGlobalLevel"] | None = None
+
+
+def _load_water_components() -> None:
+    global water_core_db
+    global WaterGlobalLevel
+    if water_core_db is not None and WaterGlobalLevel is not None:
+        return
+
+    from src.plugins.water.database.instances import (
+        water_core_db as loaded_water_core_db,
+    )
+    from src.plugins.water.database.tables import (
+        WaterGlobalLevel as loaded_water_global_level,
+    )
+
+    water_core_db = loaded_water_core_db
+    WaterGlobalLevel = loaded_water_global_level
 
 
 def parse_args() -> argparse.Namespace:
@@ -89,6 +111,7 @@ async def fetch_feedback_group_water_levels(
     *,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
+    _load_water_components()
     support_groups = resolve_support_groups()
     support_group_map = {
         str(group.group_id).strip(): str(group.title).strip()
@@ -134,6 +157,8 @@ async def fetch_feedback_group_water_levels(
         )
 
     user_ids = list(members_by_user.keys())
+    assert water_core_db is not None
+    assert WaterGlobalLevel is not None
     async with water_core_db.session(commit=False) as session:
         stmt = (
             select(
