@@ -93,6 +93,7 @@ class WordbankLeaderboardCardItem:
     user_id: str
     display_name: str
     approved_count: int
+    score: float
     current_rank: int
     share: float
     latest_created_at: int
@@ -101,6 +102,7 @@ class WordbankLeaderboardCardItem:
     all_groups_count: int
     self_count: int
     private_only_count: int
+    self_in_current_group_count: int
     avatar: BuildImage | None = None
 
 

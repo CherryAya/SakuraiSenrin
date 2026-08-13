@@ -974,7 +974,7 @@ class WordbankService:
             )
         )
         items: list[WordbankLeaderboardCardItem] = []
-        total_approved_count = max(snapshot.total_approved_count, 1)
+        total_score = max(sum(item.score for item in snapshot.items), 1.0)
         for index, (row, display_name) in enumerate(
             zip(snapshot.items, names, strict=False),
             start=1,
@@ -984,18 +984,20 @@ class WordbankService:
                     user_id=row.created_by,
                     display_name=display_name,
                     approved_count=row.approved_count,
+                    score=row.score,
                     current_rank=index,
-                    share=row.approved_count / total_approved_count,
+                    share=row.score / total_score,
                     latest_created_at=row.latest_created_at,
                     group_count=row.group_count,
                     current_group_count=row.current_group_count,
                     all_groups_count=row.all_groups_count,
                     self_count=row.self_count,
                     private_only_count=row.private_only_count,
+                    self_in_current_group_count=row.self_in_current_group_count,
                 )
             )
-        champion_count = items[0].approved_count if items else 0
-        runner_up_count = items[1].approved_count if len(items) > 1 else 0
+        champion_score = items[0].score if items else 0.0
+        runner_up_score = items[1].score if len(items) > 1 else 0.0
         return WordbankLeaderboardCardData(
             title=tr(locale, "wordbank.rank.title"),
             subtitle=tr(
@@ -1013,10 +1015,10 @@ class WordbankService:
             generated_at=generated_at,
             total_creator_count=snapshot.total_creator_count,
             total_approved_count=snapshot.total_approved_count,
-            champion_gap=max(0, champion_count - runner_up_count),
+            champion_gap=int(round(max(0.0, champion_score - runner_up_score) * 10)),
             top_share=(
-                champion_count / snapshot.total_approved_count
-                if snapshot.total_approved_count > 0
+                champion_score / total_score
+                if total_score > 0
                 else 0.0
             ),
             items=tuple(items),

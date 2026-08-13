@@ -223,7 +223,8 @@ class WordbankRepositoryEntriesMixin:
             query_end_ts = range_start.shift(months=3).int_timestamp
         else:
             earliest_stmt = select(func.min(WordbankResponseItem.created_at)).where(
-                WordbankResponseItem.status == "approved"
+                WordbankResponseItem.status == "approved",
+                WordbankResponseItem.deleted_at == 0,
             )
             async with wordbank_main_db.read_session() as session:
                 earliest_created_at = await session.scalar(earliest_stmt)
@@ -235,6 +236,7 @@ class WordbankRepositoryEntriesMixin:
         range_start_ts = range_start.int_timestamp
         filters = (
             WordbankResponseItem.status == "approved",
+            WordbankResponseItem.deleted_at == 0,
             WordbankResponseItem.created_at >= range_start_ts,
             WordbankResponseItem.created_at < query_end_ts,
         )
@@ -242,6 +244,16 @@ class WordbankRepositoryEntriesMixin:
             select(
                 WordbankResponseItem.created_by.label("created_by"),
                 func.count(WordbankResponseItem.id).label("approved_count"),
+                func.sum(
+                    case(
+                        (WordbankResponseItem.scope == "all_groups", 1.0),
+                        (WordbankResponseItem.scope == "current_group", 0.7),
+                        (WordbankResponseItem.scope == "self", 0.5),
+                        (WordbankResponseItem.scope == "private_only", 0.5),
+                        (WordbankResponseItem.scope == "self_in_current_group", 0.5),
+                        else_=0.0,
+                    )
+                ).label("score"),
                 func.max(WordbankResponseItem.created_at).label("latest_created_at"),
                 func.count(
                     func.distinct(func.nullif(WordbankResponseItem.group_id, ""))
@@ -270,11 +282,19 @@ class WordbankRepositoryEntriesMixin:
                         else_=0,
                     )
                 ).label("private_only_count"),
+                func.sum(
+                    case(
+                        (WordbankResponseItem.scope == "self_in_current_group", 1),
+                        else_=0,
+                    )
+                ).label("self_in_current_group_count"),
             )
             .where(*filters)
             .group_by(WordbankResponseItem.created_by)
             .order_by(
+                text("score DESC"),
                 text("approved_count DESC"),
+                text("all_groups_count DESC"),
                 text("latest_created_at DESC"),
                 WordbankResponseItem.created_by.asc(),
             )
@@ -293,12 +313,16 @@ class WordbankRepositoryEntriesMixin:
             WordbankCreatorLeaderboardItem(
                 created_by=str(row.created_by or ""),
                 approved_count=int(row.approved_count or 0),
+                score=float(row.score or 0.0),
                 latest_created_at=int(row.latest_created_at or 0),
                 group_count=int(row.group_count or 0),
                 current_group_count=int(row.current_group_count or 0),
                 all_groups_count=int(row.all_groups_count or 0),
                 self_count=int(row.self_count or 0),
                 private_only_count=int(row.private_only_count or 0),
+                self_in_current_group_count=int(
+                    row.self_in_current_group_count or 0
+                ),
             )
             for row in rows
         )

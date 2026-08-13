@@ -339,12 +339,14 @@ class WordbankSearchPage:
 class WordbankCreatorLeaderboardItem:
     created_by: str
     approved_count: int
+    score: float
     latest_created_at: int
     group_count: int = 0
     current_group_count: int = 0
     all_groups_count: int = 0
     self_count: int = 0
     private_only_count: int = 0
+    self_in_current_group_count: int = 0
 
 
 @dataclass(slots=True, frozen=True)

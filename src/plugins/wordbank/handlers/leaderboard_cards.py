@@ -296,7 +296,7 @@ class WordbankLeaderboardCardRenderer:
         chip_y = cursor_y + 212
         self._draw_scope_chips(draw, champion, locale, x=avatar_x + 160, y=chip_y)
 
-        count_text = str(champion.approved_count)
+        count_text = f"{champion.score:.1f}"
         count_w = int(draw.textlength(count_text, font=self.hero_count_font))
         count_x = CARD_WIDTH - PADDING_X - 42 - count_w
         draw.text(
@@ -378,7 +378,7 @@ class WordbankLeaderboardCardRenderer:
                 y=cursor_y + 88,
             )
 
-            count_text = str(item.approved_count)
+            count_text = f"{item.score:.1f}"
             count_w = int(draw.textlength(count_text, font=self.row_value_font))
             count_x = CARD_WIDTH - PADDING_X - 34 - count_w
             draw.text(
