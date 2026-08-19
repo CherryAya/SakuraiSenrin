@@ -135,7 +135,7 @@ async def _write_cache_files(
     locale: str,
     limit: int,
 ) -> list[Path]:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
     cache_specs = (
         ("user", "global", "total"),
         ("group", "global", "total"),
@@ -176,7 +176,9 @@ async def _load_card_data_from_cache(
     cache_file: Path,
     hydrate_avatars: bool,
 ) -> Any:
-    payload = json.loads(cache_file.read_text(encoding="utf-8"))
+    payload = json.loads(
+        await asyncio.to_thread(cache_file.read_text, encoding="utf-8")
+    )
     WaterPeriodRankCardData = runtime["WaterPeriodRankCardData"]
     WaterRankCardItem = runtime["WaterRankCardItem"]
     water_rank_service = runtime["water_rank_service"]
@@ -232,7 +234,7 @@ async def _render_images_from_cache(
     hydrate_avatars: bool,
     locale: str,
 ) -> list[Path]:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
     build_water_period_rank_image = runtime["build_water_period_rank_image"]
     rendered: list[Path] = []
     for subject in ("user", "group"):

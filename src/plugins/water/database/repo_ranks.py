@@ -448,7 +448,7 @@ class WaterRepositoryRanksMixin:
         self,
         subject: WaterRankSubject,
         summaries: Sequence[WaterSummaryRecord],
-    ) -> dict[str, tuple[int, int, int, list[int], int]]:
+    ) -> dict[str, tuple[int, int, int, list[int], int, list[int]]]:
         repo_self = cast("WaterRepository", self)
         if subject == "user":
             return repo_self._build_entity_period_aggregates(

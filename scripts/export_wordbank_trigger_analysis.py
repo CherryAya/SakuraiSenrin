@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
 
 from src.database.core.tables import User
 from src.database.instances import core_db
+from src.lib.utils.common import get_current_time
 
 DEFAULT_OUTPUT_DIR = ROOT / "output" / "wordbank-trigger-analysis"
 DEFAULT_PREFIX = "wordbank-trigger-analysis"
@@ -457,7 +458,7 @@ def _build_payload(
         )
     )
     return {
-        "generated_at": arrow.now("Asia/Shanghai").int_timestamp,
+        "generated_at": get_current_time(),
         "score_rules": dict(SCOPE_SCORES),
         "triggers": trigger_summaries,
         "summary_rows": summary_rows,
@@ -488,24 +489,24 @@ def _build_html(payload: dict[str, Any], *, summary_only: bool) -> str:
         '<meta charset="utf-8">',
         "<title>Wordbank Trigger Analysis</title>",
         "<style>",
-        "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #2c3440; background: #f7f9fc; line-height: 1.5; position: relative; }",
+        "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #2c3440; background: #f7f9fc; line-height: 1.5; position: relative; }",  # noqa: E501
         "h1, h2, h3 { margin: 0 0 12px; }",
         "p { margin: 8px 0 12px; }",
-        "table { border-collapse: collapse; width: 100%; background: rgba(255,255,255,0.7); margin: 12px 0 20px; }",
-        "th, td { border: 1px solid #e4e8f1; padding: 8px 10px; text-align: left; vertical-align: top; }",
+        "table { border-collapse: collapse; width: 100%; background: rgba(255,255,255,0.7); margin: 12px 0 20px; }",  # noqa: E501
+        "th, td { border: 1px solid #e4e8f1; padding: 8px 10px; text-align: left; vertical-align: top; }",  # noqa: E501
         "th { background: #edf3fb; color: #617796; }",
-        ".page-head { margin-bottom: 24px; padding-right: 240px; position: relative; z-index: 1; }",
+        ".page-head { margin-bottom: 24px; padding-right: 240px; position: relative; z-index: 1; }",  # noqa: E501
         ".page-head p { color: #748297; }",
-        ".page-deco { position: fixed; top: 12px; right: 24px; width: 188px; max-width: 18vw; opacity: 0.92; pointer-events: none; user-select: none; }",
-        ".trigger-block { border-top: 1px solid #dde5f1; padding: 16px 0 4px; margin: 22px 0; }",
+        ".page-deco { position: fixed; top: 12px; right: 24px; width: 188px; max-width: 18vw; opacity: 0.92; pointer-events: none; user-select: none; }",  # noqa: E501
+        ".trigger-block { border-top: 1px solid #dde5f1; padding: 16px 0 4px; margin: 22px 0; }",  # noqa: E501
         ".trigger-block h2 { color: #667fa3; }",
         ".trigger-block h3 { color: #8a738e; }",
         ".trigger-meta { color: #758499; }",
         ".summary-table { margin-bottom: 28px; }",
         "ol { margin: 8px 0 20px 20px; padding: 0; }",
         "li { margin: 6px 0; }",
-        ".summary-table tr:nth-child(even) td { background: rgba(241, 246, 252, 0.45); }",
-        ".trigger-block table tr:nth-child(even) td { background: rgba(251, 243, 248, 0.28); }",
+        ".summary-table tr:nth-child(even) td { background: rgba(241, 246, 252, 0.45); }",  # noqa: E501
+        ".trigger-block table tr:nth-child(even) td { background: rgba(251, 243, 248, 0.28); }",  # noqa: E501
         "</style>",
         "</head>",
         "<body>",
@@ -513,11 +514,11 @@ def _build_html(payload: dict[str, Any], *, summary_only: bool) -> str:
         '<div class="page-head">',
         "<h1>Wordbank Trigger Analysis</h1>",
         f"<p>生成时间：{_format_time(int(payload['generated_at']))}</p>",
-        "<p>积分规则：all_groups=1.0, current_group=0.7, self/private_only/self_in_current_group=0.5</p>",
+        "<p>积分规则：all_groups=1.0, current_group=0.7, self/private_only/self_in_current_group=0.5</p>",  # noqa: E501
         "</div>",
         "<h2>汇总</h2>",
         '<table class="summary-table">',
-        "<tr><th>Trigger</th><th>Response 总数</th><th>创建者总数</th><th>总积分</th><th>贡献最大者</th><th>最早创建者</th></tr>",
+        "<tr><th>Trigger</th><th>Response 总数</th><th>创建者总数</th><th>总积分</th><th>贡献最大者</th><th>最早创建者</th></tr>",  # noqa: E501
     ]
     for row in payload["summary_rows"]:
         parts.append(
@@ -527,7 +528,7 @@ def _build_html(payload: dict[str, Any], *, summary_only: bool) -> str:
             f"<td>{row['creator_count']}</td>"
             f"<td>{row['total_score']}</td>"
             f"<td>{row['top_creator_name']} ({row['top_creator_response_count']})</td>"
-            f"<td>{row['earliest_creator_name']} ({_format_time(int(row['earliest_created_at']))})</td>"
+            f"<td>{row['earliest_creator_name']} ({_format_time(int(row['earliest_created_at']))})</td>"  # noqa: E501
             "</tr>"
         )
     parts.append("</table>")
@@ -548,7 +549,7 @@ def _build_html(payload: dict[str, Any], *, summary_only: bool) -> str:
         parts.append("<h3>按创建数量排序</h3>")
         parts.append("<table>")
         parts.append(
-            "<tr><th>排名</th><th>创建者</th><th>数量</th><th>积分</th><th>最早创建</th><th>最晚创建</th><th>Scope 拆分</th></tr>"
+            "<tr><th>排名</th><th>创建者</th><th>数量</th><th>积分</th><th>最早创建</th><th>最晚创建</th><th>Scope 拆分</th></tr>"  # noqa: E501
         )
         for index, creator in enumerate(trigger["creators_by_count"], start=1):
             scope_breakdown = creator["scope_breakdown"]
@@ -560,7 +561,7 @@ def _build_html(payload: dict[str, Any], *, summary_only: bool) -> str:
                 f"<td>{round(float(creator['score_total']), 2)}</td>"
                 f"<td>{_format_time(int(creator['first_created_at']))}</td>"
                 f"<td>{_format_time(int(creator['last_created_at']))}</td>"
-                f"<td>all={scope_breakdown['all_groups']}, current={scope_breakdown['current_group']}, self={scope_breakdown['self']}, private={scope_breakdown['private_only']}, self+group={scope_breakdown['self_in_current_group']}</td>"
+                f"<td>all={scope_breakdown['all_groups']}, current={scope_breakdown['current_group']}, self={scope_breakdown['self']}, private={scope_breakdown['private_only']}, self+group={scope_breakdown['self_in_current_group']}</td>"  # noqa: E501
                 "</tr>"
             )
         parts.append("</table>")
@@ -579,7 +580,7 @@ def _build_html(payload: dict[str, Any], *, summary_only: bool) -> str:
             parts.append("<h3>Response 明细（按积分排序）</h3>")
             parts.append("<table>")
             parts.append(
-                "<tr><th>排名</th><th>Response ID</th><th>创建者</th><th>积分</th><th>Scope</th><th>创建时间</th><th>文本预览</th></tr>"
+                "<tr><th>排名</th><th>Response ID</th><th>创建者</th><th>积分</th><th>Scope</th><th>创建时间</th><th>文本预览</th></tr>"  # noqa: E501
             )
             for index, response in enumerate(trigger["responses"], start=1):
                 parts.append(
@@ -603,7 +604,7 @@ async def main() -> None:
     args = parse_args()
     trigger_names = _normalize_triggers(list(args.triggers))
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
 
     nonebot.init()
     global wordbank_repo

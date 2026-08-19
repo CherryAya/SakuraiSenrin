@@ -76,7 +76,9 @@ async def _init_runtime() -> dict[str, Any]:
         "QQAvatar": QQAvatar,
         "wordbank_repo": wordbank_repo,
         "wordbank_service": wordbank_service,
-        "render_wordbank_leaderboard_card_bytes": render_wordbank_leaderboard_card_bytes,
+        "render_wordbank_leaderboard_card_bytes": (
+            render_wordbank_leaderboard_card_bytes
+        ),
     }
 
 
@@ -135,7 +137,7 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 async def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
 
     runtime = await _init_runtime()
     QQAvatar = runtime["QQAvatar"]

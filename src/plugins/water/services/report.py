@@ -1403,6 +1403,7 @@ class WaterReportService:
                         active_hours,
                         hourly_counts,
                         group_count,
+                        daily_msg_counts,
                     )
                     for entity_id, (
                         msg_count,
@@ -1410,6 +1411,7 @@ class WaterReportService:
                         active_hours,
                         hourly_counts,
                         group_count,
+                        daily_msg_counts,
                     ) in current_aggregates.items()
                 ),
                 key=water_repo._natural_rank_sort_key,

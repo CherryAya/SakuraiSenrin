@@ -408,9 +408,14 @@ class WaterRepository(
 
         previous_total_msg_count = sum(
             msg_count
-            for msg_count, _active_days, _active_hours, _hourly, _group_count, *_rest in (
-                previous_aggregates.values()
-            )
+            for (
+                msg_count,
+                _active_days,
+                _active_hours,
+                _hourly,
+                _group_count,
+                *_rest,
+            ) in (previous_aggregates.values())
         )
         return NaturalRankOverview(
             total_msg_count=total_msg_count,
