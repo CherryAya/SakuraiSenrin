@@ -45,6 +45,7 @@ async def test_bulk_update_group_statuses_updates_group_table() -> None:
             {
                 "group_id": "20001",
                 "status": GroupStatus.AUTHORIZED,
+                "pre_ban_status": None,
                 "updated_at": 1_780_901_962,
             }
         ]

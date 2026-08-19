@@ -30,6 +30,12 @@ SECTION_GAP = 24
 ROW_GAP = 16
 FOOTER_HEIGHT = 72
 SENRIN_MASCOT_PATH = Path("data/image/senrin-v3-transparent.png")
+SCOPE_CHIP_HEIGHT = 34
+SCOPE_CHIP_RADIUS = 17
+SCOPE_CHIP_PADDING_X = 16
+SCOPE_CHIP_GAP = 12
+RANK_CAPSULE_HEIGHT = 36
+RANK_CAPSULE_PADDING_X = 18
 
 
 class WordbankLeaderboardCardRenderer:
@@ -104,10 +110,10 @@ class WordbankLeaderboardCardRenderer:
         height += 132
         height += 152 + SECTION_GAP
         if data.items:
-            height += 268 + SECTION_GAP
+            height += 280 + SECTION_GAP
             row_count = max(0, len(data.items) - 1)
             if row_count:
-                height += row_count * 124 + max(0, row_count - 1) * ROW_GAP
+                height += row_count * 132 + max(0, row_count - 1) * ROW_GAP
         else:
             height += 190
         height += FOOTER_HEIGHT + PADDING_Y
@@ -244,7 +250,7 @@ class WordbankLeaderboardCardRenderer:
         cursor_y: int,
     ) -> int:
         champion = data.items[0]
-        box_h = 268
+        box_h = 280
         draw.rounded_rectangle(
             (PADDING_X, cursor_y, CARD_WIDTH - PADDING_X, cursor_y + box_h),
             radius=38,
@@ -293,10 +299,10 @@ class WordbankLeaderboardCardRenderer:
             font=self.hero_meta_font,
             fill=self.MUTED,
         )
-        chip_y = cursor_y + 212
+        chip_y = cursor_y + 224
         self._draw_scope_chips(draw, champion, locale, x=avatar_x + 160, y=chip_y)
 
-        count_text = str(champion.approved_count)
+        count_text = f"{champion.score:.1f}"
         count_w = int(draw.textlength(count_text, font=self.hero_count_font))
         count_x = CARD_WIDTH - PADDING_X - 42 - count_w
         draw.text(
@@ -305,14 +311,20 @@ class WordbankLeaderboardCardRenderer:
             font=self.hero_count_font,
             fill=self.ACCENT_DEEP,
         )
+        gap_text = tr(
+            locale,
+            "wordbank.rank.hero.gap",
+            gap=max(0, data.champion_gap),
+        )
+        gap_width = self._measure_rank_capsule_width(draw, gap_text)
         self._draw_rank_capsule(
             draw,
-            x=CARD_WIDTH - PADDING_X - 240,
+            x=CARD_WIDTH - PADDING_X - 42 - gap_width,
             y=cursor_y + 166,
-            text=tr(locale, "wordbank.rank.hero.gap", gap=max(0, data.champion_gap)),
+            text=gap_text,
             fill=self.theme.hero_stat_fill,
             fg=self.ACCENT_DEEP,
-            width=198,
+            width=gap_width,
         )
         return cursor_y + box_h
 
@@ -325,7 +337,7 @@ class WordbankLeaderboardCardRenderer:
         cursor_y: int,
     ) -> int:
         for item in data.items[1:]:
-            row_h = 124
+            row_h = 132
             fill, capsule_fill, capsule_fg = self._row_theme(item.current_rank)
             draw.rounded_rectangle(
                 (PADDING_X, cursor_y, CARD_WIDTH - PADDING_X, cursor_y + row_h),
@@ -375,10 +387,10 @@ class WordbankLeaderboardCardRenderer:
                 item,
                 locale,
                 x=PADDING_X + 220,
-                y=cursor_y + 88,
+                y=cursor_y + 94,
             )
 
-            count_text = str(item.approved_count)
+            count_text = f"{item.score:.1f}"
             count_w = int(draw.textlength(count_text, font=self.row_value_font))
             count_x = CARD_WIDTH - PADDING_X - 34 - count_w
             draw.text(
@@ -463,19 +475,20 @@ class WordbankLeaderboardCardRenderer:
     ) -> None:
         cursor_x = x
         for label, bg, fg in self._scope_chips(locale, item)[:2]:
-            width = int(draw.textlength(label, font=self.row_chip_font)) + 28
-            draw.rounded_rectangle(
-                (cursor_x, y, cursor_x + width, y + 30),
-                radius=15,
+            width = (
+                int(draw.textlength(label, font=self.row_chip_font))
+                + SCOPE_CHIP_PADDING_X * 2
+            )
+            self._draw_scope_chip(
+                draw,
+                x=cursor_x,
+                y=y,
+                width=width,
+                label=label,
                 fill=bg,
+                fg=fg,
             )
-            draw.text(
-                (cursor_x + 14, y + 6),
-                label,
-                font=self.row_chip_font,
-                fill=fg,
-            )
-            cursor_x += width + 10
+            cursor_x += width + SCOPE_CHIP_GAP
 
     def _scope_chips(
         self,
@@ -514,6 +527,33 @@ class WordbankLeaderboardCardRenderer:
             if count > 0
         ]
 
+    def _draw_scope_chip(
+        self,
+        draw: ImageDraw.ImageDraw,
+        *,
+        x: int,
+        y: int,
+        width: int,
+        label: str,
+        fill: str,
+        fg: str,
+    ) -> None:
+        draw.rounded_rectangle(
+            (x, y, x + width, y + SCOPE_CHIP_HEIGHT),
+            radius=SCOPE_CHIP_RADIUS,
+            fill=fill,
+        )
+        bbox = draw.textbbox((0, 0), label, font=self.row_chip_font)
+        text_x = x + width / 2
+        text_y = y + (SCOPE_CHIP_HEIGHT - (bbox[3] - bbox[1])) / 2 - bbox[1] - 1
+        draw.text(
+            (text_x, text_y),
+            label,
+            font=self.row_chip_font,
+            fill=fg,
+            anchor="ma",
+        )
+
     def _row_theme(self, rank: int) -> tuple[str, str, str]:
         if rank == 2:
             return (
@@ -542,18 +582,26 @@ class WordbankLeaderboardCardRenderer:
         fg: str,
         width: int,
     ) -> None:
-        height = 36
         draw.rounded_rectangle(
-            (x, y, x + width, y + height),
-            radius=height // 2,
+            (x, y, x + width, y + RANK_CAPSULE_HEIGHT),
+            radius=RANK_CAPSULE_HEIGHT // 2,
             fill=fill,
         )
         draw.text(
-            (x + width / 2, y + height / 2),
+            (x + width / 2, y + RANK_CAPSULE_HEIGHT / 2),
             text,
             font=self.row_rank_font,
             fill=fg,
             anchor="mm",
+        )
+
+    def _measure_rank_capsule_width(
+        self,
+        draw: ImageDraw.ImageDraw,
+        text: str,
+    ) -> int:
+        return int(draw.textlength(text, font=self.row_rank_font)) + (
+            RANK_CAPSULE_PADDING_X * 2
         )
 
     def _paste_avatar(

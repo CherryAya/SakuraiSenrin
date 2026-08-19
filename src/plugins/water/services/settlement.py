@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import arrow
 from loguru import logger
 
+from src.lib.trace_log import log_trace_event, new_trace_id
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo_models import DailyAggregateItem
@@ -28,6 +29,67 @@ class SettlementResult:
 class WaterSettlementService:
     def __init__(self) -> None:
         self.achievement_service = AchievementService()
+
+    @staticmethod
+    def _collect_covered_hours(aggregates: list[DailyAggregateItem]) -> list[int]:
+        hourly_totals = [0] * 24
+        for row in aggregates:
+            hourly_counts = list(getattr(row, "hourly_counts", [0] * 24))[:24]
+            if len(hourly_counts) < 24:
+                hourly_counts.extend([0] * (24 - len(hourly_counts)))
+            for hour, count in enumerate(hourly_counts):
+                hourly_totals[hour] += int(count)
+        return [hour for hour, count in enumerate(hourly_totals) if count > 0]
+
+    def _warn_if_hour_coverage_looks_truncated(
+        self,
+        *,
+        record_date: int,
+        trace_id: str,
+        aggregates: list[DailyAggregateItem],
+    ) -> None:
+        covered_hours = self._collect_covered_hours(aggregates)
+        if not covered_hours:
+            return
+
+        max_hour = covered_hours[-1]
+        expected_prefix = list(range(max_hour + 1))
+        if covered_hours != expected_prefix or max_hour > 2:
+            return
+
+        total_msg_count = sum(int(getattr(row, "msg_count", 0)) for row in aggregates)
+        active_group_count = len(
+            {str(getattr(row, "group_id", "")) for row in aggregates}
+        )
+        active_user_count = len(
+            {str(getattr(row, "user_id", "")) for row in aggregates}
+        )
+
+        logger.warning(
+            "[Water] suspicious hour coverage detected date={} covered_hours={} "
+            "groups={} users={} total_msgs={}",
+            record_date,
+            covered_hours,
+            active_group_count,
+            active_user_count,
+            total_msg_count,
+        )
+        log_trace_event(
+            event_name="hour_coverage_anomaly",
+            source_kind="water_settlement",
+            component="water.settlement",
+            status="warning",
+            summary=f"Suspicious hour coverage detected for {record_date}.",
+            level="WARNING",
+            trace_id=trace_id,
+            record_date=record_date,
+            payload_json={
+                "covered_hours": covered_hours,
+                "active_group_count": active_group_count,
+                "active_user_count": active_user_count,
+                "total_msg_count": total_msg_count,
+            },
+        )
 
     async def run_daily_settlement(
         self,
@@ -52,6 +114,17 @@ class WaterSettlementService:
         else:
             target = target_date.floor("day")
         record_date = int(target.format("YYYYMMDD"))
+        trace_id = new_trace_id("water_settlement")
+        log_trace_event(
+            event_name="daily_settlement",
+            source_kind="water_settlement",
+            component="water.settlement",
+            status="started",
+            summary=f"Starting water settlement for {record_date}.",
+            trace_id=trace_id,
+            record_date=record_date,
+            payload_json={"force": force},
+        )
 
         started, reason = await water_repo.try_start_settlement_job(
             record_date,
@@ -60,6 +133,16 @@ class WaterSettlementService:
         if not started:
             logger.warning(
                 f"[Water] settle skipped date={record_date}, reason={reason}"
+            )
+            log_trace_event(
+                event_name="daily_settlement",
+                source_kind="water_settlement",
+                component="water.settlement",
+                status="skipped",
+                summary=f"Skipped water settlement for {record_date}: {reason}.",
+                trace_id=trace_id,
+                record_date=record_date,
+                payload_json={"force": force, "reason": reason},
             )
             return SettlementResult(
                 success=False,
@@ -72,6 +155,11 @@ class WaterSettlementService:
             )
         try:
             aggregates = await water_repo.collect_daily_aggregates(target)
+            self._warn_if_hour_coverage_looks_truncated(
+                record_date=record_date,
+                trace_id=trace_id,
+                aggregates=aggregates,
+            )
             await water_repo.apply_daily_settlement(
                 target,
                 aggregates,
@@ -85,6 +173,17 @@ class WaterSettlementService:
             logger.success(
                 f"[Water] settle completed date={record_date}, rows={len(aggregates)}"
             )
+            log_trace_event(
+                event_name="daily_settlement",
+                source_kind="water_settlement",
+                component="water.settlement",
+                status="success",
+                summary=f"Completed water settlement for {record_date}.",
+                trace_id=trace_id,
+                record_date=record_date,
+                batch_size=len(aggregates),
+                payload_json={"unlocked_achievements": unlocked},
+            )
             return SettlementResult(
                 success=True,
                 skipped=False,
@@ -96,6 +195,17 @@ class WaterSettlementService:
             )
         except Exception as e:
             await water_repo.mark_settlement_failed(record_date, str(e))
+            log_trace_event(
+                event_name="daily_settlement",
+                source_kind="water_settlement",
+                component="water.settlement",
+                status="failed",
+                summary=f"Water settlement for {record_date} failed.",
+                level="ERROR",
+                trace_id=trace_id,
+                record_date=record_date,
+                payload_json={"error": repr(e)},
+            )
             raise
 
     async def _trigger_achievements(

@@ -9,6 +9,7 @@ Description: water db writers
 import arrow
 
 from src.lib.db.batch import BatchWriter, execute_batch_write
+from src.lib.trace_log import log_trace_event
 
 from .instances import water_message
 from .ops import WaterMessageOps
@@ -18,6 +19,14 @@ from .types import WaterMessagePayload, WaterMessageWritePayload
 async def _flush_water_logs(batch: list[WaterMessageWritePayload]) -> None:
     if not batch:
         return
+    trace_id = log_trace_event(
+        event_name="flush_water_logs",
+        source_kind="water_writer",
+        component="water.writer",
+        status="started",
+        summary="Flushing buffered water logs.",
+        batch_size=len(batch),
+    )
 
     grouped_payloads: dict[str, list[WaterMessagePayload]] = {}
     for item in batch:
@@ -54,6 +63,16 @@ async def _flush_water_logs(batch: list[WaterMessageWritePayload]) -> None:
         ops_class=WaterMessageOps,
         method=_write_grouped,
         time_field="created_at",
+    )
+    log_trace_event(
+        event_name="flush_water_logs",
+        source_kind="water_writer",
+        component="water.writer",
+        status="success",
+        summary="Flushed buffered water logs.",
+        trace_id=trace_id,
+        batch_size=len(batch),
+        payload_json={"route_keys": sorted(grouped_payloads)},
     )
 
 

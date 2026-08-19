@@ -30,7 +30,7 @@ HELP_SUPPORT_GROUPS: tuple[SupportGroupLink, ...] = (
     ),
     SupportGroupLink(
         title="❄️No Senrin No Life❄️｜原来你也喜欢凛凛？",
-        group_id="729530250",
+        group_id="427842039",
         url="https://qm.qq.com/q/JrIxb24HsI",
     ),
 )

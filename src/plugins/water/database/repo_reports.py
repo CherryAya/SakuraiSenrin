@@ -155,6 +155,7 @@ class WaterRepositoryReportsMixin:
                     active_hours,
                     _hourly_counts,
                     _group_count,
+                    _daily_msg_counts,
                 ) in aggregates.items()
                 if msg_count + 20 * active_users >= min_activity_score
             ),
@@ -220,7 +221,8 @@ class WaterRepositoryReportsMixin:
                     active_hours,
                     _hourly_counts,
                     _group_count,
-                ) in (aggregates.get(group_id, (0, 0, 0, [0] * 24, 0)),)
+                    _daily_msg_counts,
+                ) in (aggregates.get(group_id, (0, 0, 0, [0] * 24, 0, [])),)
             ),
             key=lambda item: (
                 -item.activity_score,
@@ -396,6 +398,7 @@ class WaterRepositoryReportsMixin:
                         active_hours,
                         hourly_counts,
                         group_count,
+                        daily_msg_counts,
                     )
                     for entity_id, (
                         msg_count,
@@ -403,6 +406,7 @@ class WaterRepositoryReportsMixin:
                         active_hours,
                         hourly_counts,
                         group_count,
+                        daily_msg_counts,
                     ) in current_aggregates.items()
                 ),
                 key=repo_self._natural_rank_sort_key,
@@ -463,6 +467,7 @@ class WaterRepositoryReportsMixin:
                     active_hours,
                     hourly_counts,
                     group_count,
+                    daily_msg_counts,
                 )
                 for user_id, (
                     msg_count,
@@ -470,6 +475,7 @@ class WaterRepositoryReportsMixin:
                     active_hours,
                     hourly_counts,
                     group_count,
+                    daily_msg_counts,
                 ) in current_aggregates.items()
             ),
             key=repo_self._natural_rank_sort_key,
@@ -498,6 +504,7 @@ class WaterRepositoryReportsMixin:
                 active_hours,
                 hourly_counts,
                 _group_count,
+                daily_msg_counts,
             ) in enumerate(ordered_current, 1)
         ]
         current_hourly = repo_self._sum_hourly(current_rows)
@@ -560,6 +567,7 @@ class WaterRepositoryReportsMixin:
                     active_hours,
                     hourly_counts,
                     group_count,
+                    daily_msg_counts,
                 )
                 for entity_id, (
                     msg_count,
@@ -567,6 +575,7 @@ class WaterRepositoryReportsMixin:
                     active_hours,
                     hourly_counts,
                     group_count,
+                    daily_msg_counts,
                 ) in current_aggregates.items()
             ),
             key=repo_self._natural_rank_sort_key,
@@ -583,6 +592,7 @@ class WaterRepositoryReportsMixin:
             _active_hours,
             aggregate_hourly_counts,
             _group_count,
+            _daily_msg_counts,
         ) in enumerate(ordered_current, 1):
             entity_hourly_counts = group_hourly_counts.get(
                 entity_id, aggregate_hourly_counts
@@ -661,6 +671,7 @@ class WaterRepositoryReportsMixin:
                     active_hours,
                     hourly_counts,
                     group_count,
+                    daily_msg_counts,
                 )
                 for entity_id, (
                     msg_count,
@@ -668,6 +679,7 @@ class WaterRepositoryReportsMixin:
                     active_hours,
                     hourly_counts,
                     group_count,
+                    daily_msg_counts,
                 ) in current_aggregates.items()
             ),
             key=repo_self._natural_rank_sort_key,
@@ -691,6 +703,7 @@ class WaterRepositoryReportsMixin:
                 _active_hours,
                 _aggregate_hourly_counts,
                 _group_count,
+                _daily_msg_counts,
             ) in enumerate(ordered_current, 1)
         ]
 

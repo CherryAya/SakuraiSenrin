@@ -37,7 +37,17 @@ async def test_run_daily_settlement_success_path(
     from src.plugins.water.services import settlement as settlement_module
 
     aggregates = [
-        type("Agg", (), {"user_id": "u1", "matrix_id": "m1", "msg_count": 10})(),
+        type(
+            "Agg",
+            (),
+            {
+                "group_id": "g1",
+                "user_id": "u1",
+                "matrix_id": "m1",
+                "msg_count": 10,
+                "hourly_counts": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1] + [0] * 13,
+            },
+        )(),
     ]
 
     monkeypatch.setattr(
@@ -109,7 +119,17 @@ async def test_run_daily_settlement_force_result_flag(
     from src.plugins.water.services import settlement as settlement_module
 
     aggregates = [
-        type("Agg", (), {"user_id": "u1", "matrix_id": "m1", "msg_count": 10})(),
+        type(
+            "Agg",
+            (),
+            {
+                "group_id": "g1",
+                "user_id": "u1",
+                "matrix_id": "m1",
+                "msg_count": 10,
+                "hourly_counts": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1] + [0] * 13,
+            },
+        )(),
     ]
 
     monkeypatch.setattr(
@@ -165,6 +185,123 @@ async def test_run_daily_settlement_defaults_to_yesterday(
     result = await service.run_daily_settlement()
 
     assert result.record_date == 20260612
+
+
+@pytest.mark.asyncio
+async def test_run_daily_settlement_emits_warning_for_prefix_only_early_hours(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = WaterSettlementService()
+
+    from src.plugins.water.services import settlement as settlement_module
+
+    trace_events: list[dict[str, object]] = []
+    aggregates = [
+        type(
+            "Agg",
+            (),
+            {
+                "group_id": "g1",
+                "user_id": "u1",
+                "matrix_id": "m1",
+                "msg_count": 3,
+                "hourly_counts": [1, 2] + [0] * 22,
+            },
+        )(),
+    ]
+
+    monkeypatch.setattr(
+        settlement_module.water_repo,
+        "try_start_settlement_job",
+        AsyncMock(return_value=(True, "started")),
+    )
+    monkeypatch.setattr(
+        settlement_module.water_repo,
+        "collect_daily_aggregates",
+        AsyncMock(return_value=aggregates),
+    )
+    monkeypatch.setattr(
+        settlement_module.water_repo,
+        "apply_daily_settlement",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        settlement_module.water_repo,
+        "mark_settlement_success",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(service, "_trigger_achievements", AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        settlement_module,
+        "log_trace_event",
+        lambda **kwargs: trace_events.append(dict(kwargs)) or "trace-id",
+    )
+
+    result = await service.run_daily_settlement(arrow.get("2026-08-01", "YYYY-MM-DD"))
+
+    assert result.success is True
+    assert any(
+        event["event_name"] == "hour_coverage_anomaly" and event["status"] == "warning"
+        for event in trace_events
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_daily_settlement_does_not_warn_for_non_prefix_hours(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = WaterSettlementService()
+
+    from src.plugins.water.services import settlement as settlement_module
+
+    trace_events: list[dict[str, object]] = []
+    aggregates = [
+        type(
+            "Agg",
+            (),
+            {
+                "group_id": "g1",
+                "user_id": "u1",
+                "matrix_id": "m1",
+                "msg_count": 3,
+                "hourly_counts": [1, 0, 0, 0, 0, 0, 1] + [0] * 17,
+            },
+        )(),
+    ]
+
+    monkeypatch.setattr(
+        settlement_module.water_repo,
+        "try_start_settlement_job",
+        AsyncMock(return_value=(True, "started")),
+    )
+    monkeypatch.setattr(
+        settlement_module.water_repo,
+        "collect_daily_aggregates",
+        AsyncMock(return_value=aggregates),
+    )
+    monkeypatch.setattr(
+        settlement_module.water_repo,
+        "apply_daily_settlement",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        settlement_module.water_repo,
+        "mark_settlement_success",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(service, "_trigger_achievements", AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        settlement_module,
+        "log_trace_event",
+        lambda **kwargs: trace_events.append(dict(kwargs)) or "trace-id",
+    )
+
+    result = await service.run_daily_settlement(arrow.get("2026-08-01", "YYYY-MM-DD"))
+
+    assert result.success is True
+    assert not any(
+        event["event_name"] == "hour_coverage_anomaly" for event in trace_events
+    )
 
 
 @pytest.mark.asyncio

@@ -243,7 +243,7 @@ BOT: 操作完成
     assert "权限" not in str(with_demo)
     assert "子功能目录" not in str(with_demo)
     assert "反馈与交流群" in str(with_demo)
-    assert "群号 729530250" in str(with_demo)
+    assert "群号 427842039" in str(with_demo)
     assert any(segment.type == "image" for segment in with_demo)
 
 

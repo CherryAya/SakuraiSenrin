@@ -12,6 +12,7 @@ from sqlalchemy import delete
 from src.database.consts import WritePolicy
 from src.lib.db.connectors import ColdPolicy
 from src.lib.db.manager import db_manager
+from src.lib.trace_log import log_trace_event
 from src.lib.utils.common import get_current_time
 
 from .instances import water_core_db, water_message, water_summary
@@ -259,8 +260,13 @@ class WaterRepository(
     def _build_entity_period_aggregates(
         summaries: Sequence[WaterSummaryRecord],
         entity_key_resolver: Callable[[WaterSummaryRecord], str],
-    ) -> dict[str, tuple[int, int, int, list[int], int]]:
+    ) -> dict[str, tuple[int, int, int, list[int], int, list[int]]]:
+        if not summaries:
+            return {}
+        ordered_dates = sorted({int(item.record_date) for item in summaries})
+        date_index = {record_date: idx for idx, record_date in enumerate(ordered_dates)}
         by_entity: dict[str, _PeriodAggregateBucket] = {}
+        daily_by_entity: dict[str, list[int]] = {}
         for item in summaries:
             entity_id = str(entity_key_resolver(item))
             bucket = by_entity.setdefault(
@@ -273,10 +279,14 @@ class WaterRepository(
                     group_ids=set(),
                 ),
             )
+            daily_counts = daily_by_entity.setdefault(
+                entity_id, [0] * len(ordered_dates)
+            )
             bucket.msg_count += int(item.msg_count)
             bucket.active_days.add(int(item.record_date))
             bucket.active_hours += int(item.active_hours)
             bucket.group_ids.add(str(item.group_id))
+            daily_counts[date_index[int(item.record_date)]] += int(item.msg_count)
             for hour, count in enumerate(item.hourly_counts):
                 bucket.hourly_counts[hour] += int(count)
         return {
@@ -286,6 +296,7 @@ class WaterRepository(
                 data.active_hours,
                 data.hourly_counts,
                 len(data.group_ids),
+                daily_by_entity.get(entity_id, [0] * len(ordered_dates)),
             )
             for entity_id, data in by_entity.items()
             if data.msg_count > 0
@@ -324,8 +335,19 @@ class WaterRepository(
         return hourly
 
     @staticmethod
+    def _sum_daily_msg_counts(items: Sequence[WaterSummaryRecord]) -> list[int]:
+        if not items:
+            return []
+        daily: dict[int, int] = defaultdict(int)
+        for item in items:
+            daily[int(item.record_date)] += int(item.msg_count)
+        return [daily[record_date] for record_date in sorted(daily)]
+
+    @staticmethod
     def _natural_rank_sort_key(
-        item: tuple[str, int, int, int, list[int], int] | tuple[str, int, int, int],
+        item: tuple[str, int, int, int, list[int], int]
+        | tuple[str, int, int, int, list[int], int, list[int]]
+        | tuple[str, int, int, int],
     ) -> tuple[int, int, int, str]:
         entity_id, msg_count, active_days, active_hours, *_rest = item
         return (-msg_count, -active_days, -active_hours, entity_id)
@@ -334,6 +356,7 @@ class WaterRepository(
     def _build_previous_rank_map(
         cls,
         aggregates: Mapping[str, tuple[int, int, int, list[int], int]]
+        | Mapping[str, tuple[int, int, int, list[int], int, list[int]]]
         | Mapping[str, tuple[int, int, int, list[int]]],
         target_entity_ids: Sequence[str],
     ) -> dict[str, int]:
@@ -362,8 +385,12 @@ class WaterRepository(
 
     @staticmethod
     def _build_natural_overview_from_aggregates(
-        current_aggregates: Mapping[str, tuple[int, int, int, list[int], int]],
-        previous_aggregates: Mapping[str, tuple[int, int, int, list[int], int]],
+        current_aggregates: Mapping[str, tuple[int, int, int, list[int], int]]
+        | Mapping[str, tuple[int, int, int, list[int], int, list[int]]],
+        previous_aggregates: Mapping[str, tuple[int, int, int, list[int], int]]
+        | Mapping[str, tuple[int, int, int, list[int], int, list[int]]],
+        *,
+        daily_msg_counts: list[int],
     ) -> NaturalRankOverview:
         hourly_counts = [0] * 24
         total_msg_count = 0
@@ -373,6 +400,7 @@ class WaterRepository(
             _active_hours,
             entity_hourly,
             _group_count,
+            *_rest,
         ) in current_aggregates.values():
             total_msg_count += msg_count
             for hour, count in enumerate(entity_hourly):
@@ -380,14 +408,20 @@ class WaterRepository(
 
         previous_total_msg_count = sum(
             msg_count
-            for msg_count, _active_days, _active_hours, _hourly, _group_count in (
-                previous_aggregates.values()
-            )
+            for (
+                msg_count,
+                _active_days,
+                _active_hours,
+                _hourly,
+                _group_count,
+                *_rest,
+            ) in (previous_aggregates.values())
         )
         return NaturalRankOverview(
             total_msg_count=total_msg_count,
             active_entity_count=len(current_aggregates),
             hourly_counts=hourly_counts,
+            daily_msg_counts=daily_msg_counts,
             previous_total_msg_count=previous_total_msg_count,
         )
 
@@ -628,9 +662,35 @@ class WaterRepository(
     async def _save_immediate(self, ctx: WaterMessageContext) -> None:
         dt = arrow.get(ctx.created_at).to("Asia/Shanghai").datetime
         time_ctx = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        shard_key = time_ctx.strftime("%Y_%m")
+        trace_id = log_trace_event(
+            event_name="save_message_immediate",
+            source_kind="water_message",
+            component="water.repo",
+            status="started",
+            summary=f"Saving water message immediately to shard {shard_key}.",
+            shard_key=shard_key,
+            group_id=ctx.group_id,
+            user_id=ctx.user_id,
+            record_date=ctx.to_payload()["record_date"],
+            batch_size=1,
+        )
 
         async with water_message.write_session(time_ctx=time_ctx) as session:
             await WaterMessageOps(session).bulk_insert_water_message([ctx.to_payload()])
+        log_trace_event(
+            event_name="save_message_immediate",
+            source_kind="water_message",
+            component="water.repo",
+            status="success",
+            summary=f"Saved water message immediately to shard {shard_key}.",
+            trace_id=trace_id,
+            shard_key=shard_key,
+            group_id=ctx.group_id,
+            user_id=ctx.user_id,
+            record_date=ctx.to_payload()["record_date"],
+            batch_size=1,
+        )
 
     async def save_message(
         self,
@@ -666,13 +726,53 @@ class WaterRepository(
                 hot_payloads.append(item)
 
         for route_key, chunk in routed.items():
+            trace_id = log_trace_event(
+                event_name="save_summary_batch",
+                source_kind="water_summary",
+                component="water.repo",
+                status="started",
+                summary=f"Saving water summary batch to shard {route_key}.",
+                shard_key=route_key,
+                batch_size=len(chunk),
+                record_date=int(chunk[0]["record_date"]),
+            )
             route_ctx = arrow.get(route_key, "YYYY_MM").datetime
             async with water_summary.write_session(time_ctx=route_ctx) as session:
                 await WaterArchivedSummaryOps(session).bulk_upsert_summary(chunk)
+            log_trace_event(
+                event_name="save_summary_batch",
+                source_kind="water_summary",
+                component="water.repo",
+                status="success",
+                summary=f"Saved water summary batch to shard {route_key}.",
+                trace_id=trace_id,
+                shard_key=route_key,
+                batch_size=len(chunk),
+                record_date=int(chunk[0]["record_date"]),
+            )
 
         if hot_payloads:
+            trace_id = log_trace_event(
+                event_name="save_hot_summary_batch",
+                source_kind="water_summary",
+                component="water.repo",
+                status="started",
+                summary="Saving water hot summary batch to core store.",
+                batch_size=len(hot_payloads),
+                record_date=int(hot_payloads[0]["record_date"]),
+            )
             async with water_core_db.session(commit=True) as session:
                 await WaterSummaryOps(session).bulk_upsert_summary(hot_payloads)
+            log_trace_event(
+                event_name="save_hot_summary_batch",
+                source_kind="water_summary",
+                component="water.repo",
+                status="success",
+                summary="Saved water hot summary batch to core store.",
+                trace_id=trace_id,
+                batch_size=len(hot_payloads),
+                record_date=int(hot_payloads[0]["record_date"]),
+            )
 
     async def import_message_batch(
         self,
