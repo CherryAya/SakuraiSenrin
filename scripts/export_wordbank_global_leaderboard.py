@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
-from dataclasses import asdict, replace
+from dataclasses import replace
 import json
 from pathlib import Path
 import sys
@@ -167,7 +167,9 @@ async def main() -> None:
 
     json_path = _json_path(output_dir, args.prefix, args.period)
     csv_path = _csv_path(output_dir, args.prefix, args.period)
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     _write_csv(csv_path, rows)
 
     image_path: Path | None = None
@@ -178,7 +180,10 @@ async def main() -> None:
         )
         if render_data.items:
             avatars = await asyncio.gather(
-                *(QQAvatar.fetch_user(item.user_id, size=160) for item in render_data.items),
+                *(
+                    QQAvatar.fetch_user(item.user_id, size=160)
+                    for item in render_data.items
+                ),
                 return_exceptions=True,
             )
             render_data = replace(

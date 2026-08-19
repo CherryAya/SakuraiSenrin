@@ -260,8 +260,13 @@ class WaterRepository(
     def _build_entity_period_aggregates(
         summaries: Sequence[WaterSummaryRecord],
         entity_key_resolver: Callable[[WaterSummaryRecord], str],
-    ) -> dict[str, tuple[int, int, int, list[int], int]]:
+    ) -> dict[str, tuple[int, int, int, list[int], int, list[int]]]:
+        if not summaries:
+            return {}
+        ordered_dates = sorted({int(item.record_date) for item in summaries})
+        date_index = {record_date: idx for idx, record_date in enumerate(ordered_dates)}
         by_entity: dict[str, _PeriodAggregateBucket] = {}
+        daily_by_entity: dict[str, list[int]] = {}
         for item in summaries:
             entity_id = str(entity_key_resolver(item))
             bucket = by_entity.setdefault(
@@ -274,10 +279,14 @@ class WaterRepository(
                     group_ids=set(),
                 ),
             )
+            daily_counts = daily_by_entity.setdefault(
+                entity_id, [0] * len(ordered_dates)
+            )
             bucket.msg_count += int(item.msg_count)
             bucket.active_days.add(int(item.record_date))
             bucket.active_hours += int(item.active_hours)
             bucket.group_ids.add(str(item.group_id))
+            daily_counts[date_index[int(item.record_date)]] += int(item.msg_count)
             for hour, count in enumerate(item.hourly_counts):
                 bucket.hourly_counts[hour] += int(count)
         return {
@@ -287,6 +296,7 @@ class WaterRepository(
                 data.active_hours,
                 data.hourly_counts,
                 len(data.group_ids),
+                daily_by_entity.get(entity_id, [0] * len(ordered_dates)),
             )
             for entity_id, data in by_entity.items()
             if data.msg_count > 0
@@ -325,8 +335,19 @@ class WaterRepository(
         return hourly
 
     @staticmethod
+    def _sum_daily_msg_counts(items: Sequence[WaterSummaryRecord]) -> list[int]:
+        if not items:
+            return []
+        daily: dict[int, int] = defaultdict(int)
+        for item in items:
+            daily[int(item.record_date)] += int(item.msg_count)
+        return [daily[record_date] for record_date in sorted(daily)]
+
+    @staticmethod
     def _natural_rank_sort_key(
-        item: tuple[str, int, int, int, list[int], int] | tuple[str, int, int, int],
+        item: tuple[str, int, int, int, list[int], int]
+        | tuple[str, int, int, int, list[int], int, list[int]]
+        | tuple[str, int, int, int],
     ) -> tuple[int, int, int, str]:
         entity_id, msg_count, active_days, active_hours, *_rest = item
         return (-msg_count, -active_days, -active_hours, entity_id)
@@ -335,6 +356,7 @@ class WaterRepository(
     def _build_previous_rank_map(
         cls,
         aggregates: Mapping[str, tuple[int, int, int, list[int], int]]
+        | Mapping[str, tuple[int, int, int, list[int], int, list[int]]]
         | Mapping[str, tuple[int, int, int, list[int]]],
         target_entity_ids: Sequence[str],
     ) -> dict[str, int]:
@@ -363,8 +385,12 @@ class WaterRepository(
 
     @staticmethod
     def _build_natural_overview_from_aggregates(
-        current_aggregates: Mapping[str, tuple[int, int, int, list[int], int]],
-        previous_aggregates: Mapping[str, tuple[int, int, int, list[int], int]],
+        current_aggregates: Mapping[str, tuple[int, int, int, list[int], int]]
+        | Mapping[str, tuple[int, int, int, list[int], int, list[int]]],
+        previous_aggregates: Mapping[str, tuple[int, int, int, list[int], int]]
+        | Mapping[str, tuple[int, int, int, list[int], int, list[int]]],
+        *,
+        daily_msg_counts: list[int],
     ) -> NaturalRankOverview:
         hourly_counts = [0] * 24
         total_msg_count = 0
@@ -374,6 +400,7 @@ class WaterRepository(
             _active_hours,
             entity_hourly,
             _group_count,
+            *_rest,
         ) in current_aggregates.values():
             total_msg_count += msg_count
             for hour, count in enumerate(entity_hourly):
@@ -381,7 +408,7 @@ class WaterRepository(
 
         previous_total_msg_count = sum(
             msg_count
-            for msg_count, _active_days, _active_hours, _hourly, _group_count in (
+            for msg_count, _active_days, _active_hours, _hourly, _group_count, *_rest in (
                 previous_aggregates.values()
             )
         )
@@ -389,6 +416,7 @@ class WaterRepository(
             total_msg_count=total_msg_count,
             active_entity_count=len(current_aggregates),
             hourly_counts=hourly_counts,
+            daily_msg_counts=daily_msg_counts,
             previous_total_msg_count=previous_total_msg_count,
         )
 

@@ -320,9 +320,7 @@ class WordbankRepositoryEntriesMixin:
                 all_groups_count=int(row.all_groups_count or 0),
                 self_count=int(row.self_count or 0),
                 private_only_count=int(row.private_only_count or 0),
-                self_in_current_group_count=int(
-                    row.self_in_current_group_count or 0
-                ),
+                self_in_current_group_count=int(row.self_in_current_group_count or 0),
             )
             for row in rows
         )

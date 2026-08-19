@@ -20,6 +20,7 @@ from src.plugins.water.renderers import (
     WaterPeriodRankCardData,
     WaterRankCardItem,
 )
+from src.plugins.water.renderers.report import build_water_period_rank_image
 from src.plugins.water.services.rank import WaterRankService
 from src.plugins.water.services.rank_query import water_rank_query_service
 from src.plugins.water.services.rank_types import (
@@ -123,6 +124,7 @@ def _build_snapshot(
             total_msg_count=total_msg_count,
             active_entity_count=active_entity_count,
             hourly_counts=[5] * 24,
+            daily_msg_counts=[total_msg_count],
             previous_total_msg_count=previous_total_msg_count,
         ),
     )
@@ -308,6 +310,7 @@ async def test_build_day_rank_data_uses_i18n_labels(
                     total_msg_count=20,
                     active_entity_count=3,
                     hourly_counts=[1] * 24,
+                    daily_msg_counts=[20],
                     previous_total_msg_count=10,
                 ),
             )
@@ -360,6 +363,7 @@ async def _fake_total_snapshot(
             total_msg_count=500,
             active_entity_count=8,
             hourly_counts=[2] * 24,
+            daily_msg_counts=[500],
             previous_total_msg_count=300,
         ),
     )
@@ -396,10 +400,13 @@ async def test_build_total_rank_lines_uses_period_model(
                 badge="53d",
                 range_text="2026.04.01 - 2026.05.23",
                 compare_text="对比区间 2026.02.08 - 2026.03.31",
+                start_date=20260401,
+                end_date=20260523,
                 generated_at=1,
                 total_msg_count=420,
                 active_entity_count=66,
                 hourly_counts=[1] * 24,
+                daily_msg_counts=[10] * 24,
                 peak_hour=0,
                 previous_total_msg_count=390,
                 top_items=[
@@ -412,6 +419,7 @@ async def test_build_total_rank_lines_uses_period_model(
                         active_days=15,
                         active_hours=28,
                         hourly_counts=[1] * 24,
+                        daily_msg_counts=[5, 10, 15],
                         current_rank=1,
                         trend=3,
                     )
@@ -464,6 +472,7 @@ async def test_rank_query_service_routes_day_and_non_day(
                     total_msg_count=20,
                     active_entity_count=3,
                     hourly_counts=[1] * 24,
+                    daily_msg_counts=[20],
                     previous_total_msg_count=10,
                 ),
             )
@@ -516,6 +525,73 @@ async def test_rank_query_service_routes_day_and_non_day(
         str(render_message_plan_input(period_message))
         == "凛凛翻了翻账本，这个周期还没有可用结算数据喔。"
     )
+
+
+@pytest.mark.asyncio
+async def test_build_water_period_rank_image_uses_bucket_histogram(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.plugins.water.renderers import report as report_module
+
+    calls: list[dict[str, Any]] = []
+
+    def _capture_bucket_histogram(*args: Any, **kwargs: Any) -> None:
+        calls.append(kwargs)
+
+    def _fail_hourly_histogram(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("period rank renderer should not use hourly histogram")
+
+    monkeypatch.setattr(
+        report_module, "draw_bucket_histogram", _capture_bucket_histogram
+    )
+    monkeypatch.setattr(report_module, "draw_hourly_histogram", _fail_hourly_histogram)
+
+    image = await build_water_period_rank_image(
+        WaterPeriodRankCardData(
+            period="total",
+            title="用户榜 · 全局总榜",
+            badge="365d",
+            range_text="2025.08.13 - 2026.08.12",
+            compare_text="对比区间 2024.08.13 - 2025.08.12",
+            start_date=20250813,
+            end_date=20260812,
+            generated_at=1,
+            total_msg_count=420,
+            active_entity_count=66,
+            hourly_counts=[hour + 1 for hour in range(24)],
+            daily_msg_counts=[day + 1 for day in range(48)],
+            peak_hour=23,
+            previous_total_msg_count=390,
+            top_items=[
+                WaterRankCardItem(
+                    entity_id="10001",
+                    display_name="Alice",
+                    secondary_label="用户 10001",
+                    avatar=None,
+                    msg_count=120,
+                    active_days=15,
+                    active_hours=28,
+                    hourly_counts=[24 - hour for hour in range(24)],
+                    daily_msg_counts=[day + 1 for day in range(48)],
+                    current_rank=1,
+                    trend=3,
+                )
+            ],
+            champion_gap=30,
+            champion_share=120 / 420,
+        ),
+        "zh-CN",
+    )
+
+    assert image is not None
+    assert len(calls) == 2
+    assert len(calls[0]["values"]) == 50
+    assert sum(calls[0]["values"]) == sum(range(1, 49))
+    assert len(calls[1]["values"]) == 50
+    assert calls[1]["values"] != [hour + 1 for hour in range(24)]
+    assert sum(calls[1]["values"]) == sum(range(1, 49))
+    assert calls[1]["labels"][0] == "2025-08-13"
+    assert [label for label in calls[1]["labels"] if label][-1] == "2025-09-29"
 
 
 @pytest.mark.asyncio
@@ -1088,6 +1164,7 @@ def _build_fake_natural_items(
                 active_days=max(1, 12 - idx),
                 active_hours=max(1, 36 - idx * 3),
                 hourly_counts=[((hour + idx) % 6) + 1 for hour in range(24)],
+                daily_msg_counts=[idx + day + 1 for day in range(12)],
                 current_rank=idx + 1,
                 trend=1 - idx,
                 group_count=idx + 2 if subject == "matrix" else 0,
@@ -1103,6 +1180,7 @@ def _build_fake_overview(items: list[NaturalRankItem]) -> NaturalRankOverview:
         hourly_counts=[
             sum(item.hourly_counts[hour] for item in items) for hour in range(24)
         ],
+        daily_msg_counts=[sum(item.msg_count for item in items)],
         previous_total_msg_count=max(0, sum(item.msg_count for item in items) - 60),
     )
 

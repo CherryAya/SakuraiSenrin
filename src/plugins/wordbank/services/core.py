@@ -1015,12 +1015,8 @@ class WordbankService:
             generated_at=generated_at,
             total_creator_count=snapshot.total_creator_count,
             total_approved_count=snapshot.total_approved_count,
-            champion_gap=int(round(max(0.0, champion_score - runner_up_score) * 10)),
-            top_share=(
-                champion_score / total_score
-                if total_score > 0
-                else 0.0
-            ),
+            champion_gap=round(max(0.0, champion_score - runner_up_score) * 10),
+            top_share=(champion_score / total_score if total_score > 0 else 0.0),
             items=tuple(items),
             range_start=snapshot.range_start,
             range_end=snapshot.range_end,

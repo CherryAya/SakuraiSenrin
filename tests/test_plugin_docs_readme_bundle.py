@@ -554,7 +554,7 @@ def test_support_text_block_contains_group_ids_only() -> None:
     assert "反馈与交流群" in block
     assert "如需进一步支持" not in block
     assert "群号 1107576103" in block
-    assert "群号 729530250" in block
+    assert "群号 427842039" in block
 
 
 def test_load_plugin_doc_bundle_preserves_inline_backticks_in_meta_value() -> None:

@@ -303,6 +303,101 @@ def draw_hourly_histogram(
             )
 
 
+def draw_bucket_histogram(
+    card: BuildImage,
+    *,
+    x: int,
+    y: int,
+    w: int,
+    h: int,
+    values: list[int],
+    axis_color: str,
+    label_color: str,
+    scale: float,
+    labels: list[str] | None = None,
+    min_visible_ratio: float = 0.06,
+    caption: str | None = None,
+    show_scale_labels: bool = False,
+) -> None:
+    buckets = [int(item) for item in values]
+    bucket_count = len(buckets)
+    if bucket_count <= 0:
+        return
+    chart_h = h - int(18 * scale)
+    max_count = max(buckets) or 1
+    bar_gap = max(2, int(2 * scale))
+    bar_w = max(3, int((w - bar_gap * max(0, bucket_count - 1)) / bucket_count))
+    palette = WATER_THEME.tile_base_colors
+    peak_bucket = (
+        max(range(bucket_count), key=lambda idx: buckets[idx]) if buckets else 0
+    )
+    card.draw.line(
+        (x, y + chart_h, x + w, y + chart_h),
+        fill=axis_color,
+        width=max(1, int(1 * scale)),
+    )
+    if caption:
+        card.draw_text(
+            (x, y - int(14 * scale), x + w, y),
+            caption,
+            max_fontsize=int(10 * scale),
+            min_fontsize=int(7 * scale),
+            fill=label_color,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+    if show_scale_labels:
+        card.draw_text(
+            (x - int(6 * scale), y - int(16 * scale), x + int(54 * scale), y),
+            f"{max_count:,}",
+            max_fontsize=int(9 * scale),
+            min_fontsize=int(7 * scale),
+            fill=label_color,
+            halign="left",
+            font_families=[SYS_FONT_NAME],
+        )
+    for bucket_index, count in enumerate(buckets):
+        bx = x + bucket_index * (bar_w + bar_gap)
+        normalized = count / max_count if max_count > 0 else 0.0
+        bh = (
+            max(2, int(max(min_visible_ratio, normalized) * (chart_h - int(6 * scale))))
+            if count > 0
+            else 2
+        )
+        by = y + chart_h - bh
+        base_fill = palette[(bucket_index // 6) % len(palette)]
+        fill = (
+            WATER_THEME.overview_highlight_bar
+            if bucket_index == peak_bucket and count > 0
+            else mix_hex(base_fill, WATER_THEME.white, 0.08 + normalized * 0.28)
+        )
+        card.draw_rounded_rectangle(
+            (bx, by, bx + bar_w, y + chart_h),
+            radius=max(2, int(3 * scale)),
+            fill=fill,
+        )
+        if labels is not None and bucket_index < len(labels) and labels[bucket_index]:
+            label_text = labels[bucket_index]
+            label_half_w = max(
+                int(24 * scale),
+                int(len(label_text) * 4.5 * scale),
+            )
+            card.draw_text(
+                (
+                    max(x, bx - label_half_w),
+                    y + chart_h + int(4 * scale),
+                    min(x + w, bx + bar_w + label_half_w),
+                    y + h,
+                ),
+                label_text,
+                max_fontsize=int(9 * scale),
+                min_fontsize=int(5 * scale),
+                fill=label_color,
+                halign="center",
+                font_families=[SYS_FONT_NAME],
+            )
+
+
 def draw_donut_chart(
     card: BuildImage,
     *,

@@ -369,6 +369,7 @@ class WaterRepositoryRanksMixin:
                     active_hours,
                     hourly_counts,
                     group_count,
+                    daily_msg_counts,
                 )
                 for entity_id, (
                     msg_count,
@@ -376,6 +377,7 @@ class WaterRepositoryRanksMixin:
                     active_hours,
                     hourly_counts,
                     group_count,
+                    daily_msg_counts,
                 ) in current_aggregates.items()
             ),
             key=repo_self._natural_rank_sort_key,
@@ -398,6 +400,7 @@ class WaterRepositoryRanksMixin:
                     else None
                 ),
                 group_count=group_count,
+                daily_msg_counts=daily_msg_counts,
             )
             for current_rank, (
                 entity_id,
@@ -406,11 +409,13 @@ class WaterRepositoryRanksMixin:
                 active_hours,
                 hourly_counts,
                 group_count,
+                daily_msg_counts,
             ) in enumerate(ordered_current, 1)
         ]
         overview = repo_self._build_natural_overview_from_aggregates(
             current_aggregates,
             previous_aggregates,
+            daily_msg_counts=repo_self._sum_daily_msg_counts(current_rows),
         )
         return NaturalPeriodRankSnapshot(
             leaderboard=leaderboard,

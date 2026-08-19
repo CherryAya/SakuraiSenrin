@@ -51,6 +51,7 @@ class WaterRankCardItem:
     current_rank: int
     trend: int | None
     group_count: int = 0
+    daily_msg_counts: list[int] = field(default_factory=list)
 
     @property
     def user_id(self) -> str:
@@ -68,10 +69,13 @@ class WaterPeriodRankCardData:
     badge: str
     range_text: str
     compare_text: str
+    start_date: int
+    end_date: int
     generated_at: int
     total_msg_count: int
     active_entity_count: int
     hourly_counts: list[int]
+    daily_msg_counts: list[int]
     peak_hour: int
     previous_total_msg_count: int
     top_items: list[WaterRankCardItem]

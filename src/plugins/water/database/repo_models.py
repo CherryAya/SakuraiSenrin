@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import floor, sqrt
 from secrets import token_hex
 
@@ -42,6 +42,7 @@ class NaturalRankItem:
     current_rank: int
     trend: int | None
     group_count: int = 0
+    daily_msg_counts: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -67,6 +68,7 @@ class NaturalRankOverview:
     total_msg_count: int
     active_entity_count: int
     hourly_counts: list[int]
+    daily_msg_counts: list[int]
     previous_total_msg_count: int
 
     @property

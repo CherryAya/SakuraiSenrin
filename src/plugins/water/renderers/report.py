@@ -6,6 +6,7 @@ import asyncio
 from time import perf_counter
 from typing import Any
 
+import arrow
 from PIL import ImageFont
 from pil_utils import BuildImage
 
@@ -18,6 +19,7 @@ from .common import (
     SYS_FONT_NAME,
     WATER_THEME,
     build_avatar_fallback,
+    draw_bucket_histogram,
     draw_group_rank_trend_chart,
     draw_hourly_histogram,
     draw_pie_chart,
@@ -107,6 +109,102 @@ def _rank_label_box_width(
     return max(
         min_width,
         _pixel_text_width(f"#{rank}", font) + horizontal_padding,
+    )
+
+
+def _bucket_labels_24() -> list[str]:
+    return [f"{hour:02d}" for hour in range(24)]
+
+
+def _compress_daily_counts(values: list[int], bucket_count: int = 24) -> list[int]:
+    if bucket_count <= 0:
+        return []
+    if not values:
+        return [0] * bucket_count
+    if len(values) <= bucket_count:
+        return [*map(int, values), *([0] * (bucket_count - len(values)))]
+    chunk = max(1, (len(values) + bucket_count - 1) // bucket_count)
+    buckets: list[int] = []
+    for start in range(0, len(values), chunk):
+        buckets.append(sum(int(item) for item in values[start : start + chunk]))
+    if len(buckets) > bucket_count:
+        merged: list[int] = []
+        step = len(buckets) / bucket_count
+        cursor = 0.0
+        while len(merged) < bucket_count:
+            next_cursor = cursor + step
+            left = int(cursor)
+            right = int(next_cursor)
+            if right <= left:
+                right = left + 1
+            merged.append(sum(buckets[left:right]))
+            cursor = next_cursor
+        return merged
+    if len(buckets) < bucket_count:
+        buckets.extend([0] * (bucket_count - len(buckets)))
+    return buckets[:bucket_count]
+
+
+def _sparse_bucket_labels(bucket_count: int) -> list[str]:
+    return [""] * bucket_count
+
+
+def _bucket_labels_for_days(
+    start_date: int,
+    total_days: int,
+    bucket_count: int = 24,
+) -> list[str]:
+    if total_days <= 0:
+        return [""] * bucket_count
+    start = arrow.get(str(start_date), "YYYYMMDD")
+    if total_days <= bucket_count:
+        return [
+            start.shift(days=idx).format("YYYY-MM-DD") for idx in range(total_days)
+        ] + [""] * (bucket_count - total_days)
+    labels = [""] * bucket_count
+    label_slots = min(6, bucket_count)
+    anchor_indexes = sorted(
+        {
+            round((bucket_count - 1) * idx / max(1, label_slots - 1))
+            for idx in range(label_slots)
+        }
+    )
+    start_year = start.year
+    for bucket_index in anchor_indexes:
+        relative = bucket_index / max(1, bucket_count - 1)
+        day_index = min(total_days - 1, round((total_days - 1) * relative))
+        current = start.shift(days=day_index)
+        labels[bucket_index] = (
+            current.format("YYYY-MM-DD")
+            if current.year != start_year or bucket_index in {0, bucket_count - 1}
+            else current.format("MM-DD")
+        )
+    labels[0] = start.format("YYYY-MM-DD")
+    labels[bucket_count - 1] = start.shift(days=total_days - 1).format("YYYY-MM-DD")
+    return labels
+
+
+def _format_period_board_summary(
+    template: str,
+    item: Any,
+) -> str:
+    active_days = max(1, int(item.active_days or 0))
+    msg_count = int(item.msg_count or 0)
+    return template.format(
+        msg_count=msg_count,
+        active_days=active_days,
+        avg_daily=f"{msg_count / active_days:.1f}",
+        group_count=int(getattr(item, "group_count", 0) or 0),
+    )
+
+
+def _format_period_active_hours(
+    template: str,
+    item: Any,
+) -> str:
+    return template.format(
+        active_hours=int(item.active_hours or 0),
+        group_count=int(getattr(item, "group_count", 0) or 0),
     )
 
 
@@ -1303,20 +1401,25 @@ async def build_water_period_rank_image(
     try:
         theme = WATER_THEME
         scale = 2.0
-        width = int(760 * scale)
+        width = int(720 * scale)
         pad = int(24 * scale)
         gap = int(12 * scale)
         hero_h = int(160 * scale)
         champion_h = int(130 * scale)
         tiles_h = int(152 * scale)
-        overview_h = int(168 * scale)
-        footer_h = int(50 * scale)
-        row_h = int(86 * scale)
-        row_gap = int(8 * scale)
+        overview_h = int(170 * scale)
+        footer_h = int(70 * scale)
+        row_h = int(96 * scale)
+        row_gap = int(6 * scale)
         board_header_h = int(34 * scale)
         group_rank_header_h = int(34 * scale)
         group_rank_row_h = int(42 * scale)
         group_rank_row_gap = int(6 * scale)
+        row_bucket_count = 50
+        row_chart_w = int(252 * scale)
+        row_chart_h = int(58 * scale)
+        row_chart_right_pad = int(88 * scale)
+        row_text_gap = int(10 * scale)
         show_tiles = bool(data.report_tile_title)
         show_overview = data.report_show_overview
         board_h = (
@@ -1342,7 +1445,6 @@ async def build_water_period_rank_image(
             )
         height = (
             pad * 2
-            + hero_h
             + gap
             + champion_h
             + (gap if show_tiles else 0)
@@ -1384,7 +1486,7 @@ async def build_water_period_rank_image(
                 y + int(40 * scale),
             ),
             data.title,
-            max_fontsize=int(28 * scale),
+            max_fontsize=int(35 * scale),
             min_fontsize=int(18 * scale),
             fill=deep,
             halign="left",
@@ -1528,7 +1630,6 @@ async def build_water_period_rank_image(
                 ),
             }.items()
         }
-        tile_renderer = WaterRankRenderer()
         for item in data.top_items:
             rank_theme = rank_themes.get(
                 item.current_rank,
@@ -1552,7 +1653,7 @@ async def build_water_period_rank_image(
                 fill=bg,
             )
             badge_x = left_x + int(24 * scale)
-            badge_y = row_y + int(16 * scale)
+            badge_y = row_y + int(12 * scale)
             badge_w = int(44 * scale)
             badge_h = int(22 * scale)
             card.draw_rounded_rectangle(
@@ -1572,7 +1673,7 @@ async def build_water_period_rank_image(
             )
             avatar_size = int(52 * scale)
             avatar_x = badge_x
-            avatar_y = row_y + int(44 * scale)
+            avatar_y = row_y + int(38 * scale)
             avatar = item.avatar or build_avatar_fallback(
                 avatar_size,
                 item.display_name[:1] or "?",
@@ -1585,12 +1686,14 @@ async def build_water_period_rank_image(
                 alpha=True,
             )
             text_x = avatar_x + avatar_size + int(12 * scale)
+            chart_x = left_x + left_w - row_chart_w - row_chart_right_pad
+            text_right = chart_x - row_text_gap
             card.draw_text(
                 (
                     text_x,
-                    row_y + int(16 * scale),
-                    left_x + int(300 * scale),
-                    row_y + int(40 * scale),
+                    row_y + int(12 * scale),
+                    text_right,
+                    row_y + int(36 * scale),
                 ),
                 item.display_name,
                 max_fontsize=int(16 * scale),
@@ -1602,11 +1705,11 @@ async def build_water_period_rank_image(
             card.draw_text(
                 (
                     text_x,
-                    row_y + int(42 * scale),
-                    left_x + int(300 * scale),
-                    row_y + int(64 * scale),
+                    row_y + int(38 * scale),
+                    text_right,
+                    row_y + int(60 * scale),
                 ),
-                tr(locale, "water.report.board.summary", msg_count=item.msg_count),
+                _format_period_board_summary(data.board_summary_label, item),
                 max_fontsize=int(11 * scale),
                 min_fontsize=int(8 * scale),
                 fill=accent,
@@ -1616,37 +1719,40 @@ async def build_water_period_rank_image(
             card.draw_text(
                 (
                     text_x,
-                    row_y + int(66 * scale),
-                    left_x + int(300 * scale),
+                    row_y + int(62 * scale),
+                    text_right,
                     row_y + int(84 * scale),
                 ),
-                tr(
-                    locale,
-                    "water.report.board.active_hours",
-                    active_hours=item.active_hours,
-                ),
+                _format_period_active_hours(data.board_active_hours_label, item),
                 max_fontsize=int(10 * scale),
                 min_fontsize=int(8 * scale),
                 fill=hint,
                 halign="left",
                 font_families=[SYS_FONT_NAME],
             )
-            tile_chart = tile_renderer._generate_tile_chart(item.hourly_counts)
-            tile_w = int(tile_chart.width * 0.72)
-            tile_h = int(tile_chart.height * 0.72)
-            card.paste(
-                tile_chart.resize((tile_w, tile_h)),
-                (
-                    left_x + left_w - tile_w - int(28 * scale),
-                    row_y + (row_h - tile_h) // 2,
+            chart_w = row_chart_w
+            chart_h = row_chart_h
+            chart_y = row_y + int(36 * scale)
+            draw_bucket_histogram(
+                card,
+                x=chart_x,
+                y=chart_y,
+                w=chart_w,
+                h=chart_h,
+                values=_compress_daily_counts(
+                    item.daily_msg_counts,
+                    bucket_count=row_bucket_count,
                 ),
-                alpha=True,
+                axis_color=line,
+                label_color=hint,
+                scale=scale * 0.72,
+                labels=_sparse_bucket_labels(row_bucket_count),
             )
             trend_text, trend_color = format_trend(item.trend)
             trend_w = int(56 * scale)
             trend_h = int(24 * scale)
-            trend_x = left_x + left_w - trend_w - int(28 * scale)
-            trend_y = row_y + int(12 * scale)
+            trend_x = left_x + left_w - trend_w - int(24 * scale)
+            trend_y = row_y + int(8 * scale)
             card.draw_rounded_rectangle(
                 (trend_x, trend_y, trend_x + trend_w, trend_y + trend_h),
                 radius=trend_h // 2,
@@ -1868,6 +1974,16 @@ async def build_water_period_rank_image(
 
         if show_overview:
             y += gap
+            overview_bucket_count = 50
+            daily_counts = _compress_daily_counts(
+                data.daily_msg_counts,
+                bucket_count=overview_bucket_count,
+            )
+            day_labels = _bucket_labels_for_days(
+                data.start_date,
+                len(data.daily_msg_counts),
+                bucket_count=overview_bucket_count,
+            )
             card.draw_rounded_rectangle(
                 (pad, y, width - pad, y + overview_h),
                 radius=int(20 * scale),
@@ -1880,7 +1996,7 @@ async def build_water_period_rank_image(
                     width - pad,
                     y + int(30 * scale),
                 ),
-                data.overview_title,
+                tr(locale, "water.image.period.overview.title"),
                 max_fontsize=int(18 * scale),
                 min_fontsize=int(12 * scale),
                 fill=deep,
@@ -1891,32 +2007,29 @@ async def build_water_period_rank_image(
                 (
                     pad + int(18 * scale),
                     y + int(32 * scale),
-                    width - pad,
+                    width - pad - int(18 * scale),
                     y + int(52 * scale),
                 ),
-                tr(
-                    locale,
-                    "water.image.period.overview.peak_hour",
-                    start=f"{data.peak_hour:02d}",
-                    end=f"{data.peak_hour:02d}",
-                ),
+                tr(locale, "water.image.period.stats.total_msg_count")
+                + f" {short_exp(data.total_msg_count)} 条",
                 max_fontsize=int(11 * scale),
                 min_fontsize=int(8 * scale),
-                fill=accent,
-                halign="left",
+                fill=hint,
+                halign="right",
                 font_families=[SYS_FONT_NAME],
             )
-            draw_hourly_histogram(
+            draw_bucket_histogram(
                 card,
                 x=pad + int(18 * scale),
                 y=y + int(58 * scale),
                 w=width - pad * 2 - int(36 * scale),
                 h=overview_h - int(76 * scale),
-                hourly_counts=data.hourly_counts,
-                bar_color=strong,
+                values=daily_counts,
                 axis_color=line,
                 label_color=hint,
                 scale=scale,
+                labels=day_labels,
+                show_scale_labels=False,
             )
             y += overview_h + gap
         else:
