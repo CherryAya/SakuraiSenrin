@@ -483,7 +483,15 @@ async def ensure_forward_node(
 
 async def _resolve_reusable_forward_prefix_length(
     batch: ForwardBatchDescriptor,
+    *,
+    allow_asset_reuse: bool,
 ) -> int:
+    if not allow_asset_reuse:
+        logger.debug(
+            "[MessageDelivery] forward prefix reuse skipped "
+            "reason=reuse_disabled"
+        )
+        return 0
     if not batch.node_asset_keys:
         logger.debug("[MessageDelivery] forward prefix reuse empty batch")
         return 0
@@ -551,6 +559,7 @@ async def deliver_forward_messages(
     event: MessageEvent | None = None,
     target: DeliveryTarget | None = None,
     reuse_policy: ForwardReusePolicy = DEFAULT_FORWARD_REUSE_POLICY,
+    allow_asset_reuse: bool = True,
 ) -> DeliveryResult:
     batch = build_forward_batch_descriptor(messages, policy=reuse_policy)
     delivery_target = target
@@ -567,7 +576,7 @@ async def deliver_forward_messages(
     )
     from src.lib.onebot_forward import send_custom_forward
 
-    if bundle_asset_key:
+    if bundle_asset_key and allow_asset_reuse:
         bundle_asset = await message_asset_repo.get_forward_bundle_asset(
             bundle_asset_key
         )
@@ -604,7 +613,10 @@ async def deliver_forward_messages(
                     last_verify_error=str(exc),
                 )
 
-    reusable_prefix_length = await _resolve_reusable_forward_prefix_length(batch)
+    reusable_prefix_length = await _resolve_reusable_forward_prefix_length(
+        batch,
+        allow_asset_reuse=allow_asset_reuse,
+    )
     reuse_mode = "prefix_hit" if reusable_prefix_length > 0 else "rebuild_all"
     logger.debug(
         "[MessageDelivery] merged forward path "
