@@ -222,6 +222,7 @@ async def deliver_message_plan(
             fallback_nickname=plan.fallback_nickname,
             event=event,
             target=delivery_target,
+            allow_asset_reuse=plan.allow_asset_reuse,
         )
         return DeliveryPlanResult(
             wait_result=wait_result,
