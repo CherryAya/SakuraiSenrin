@@ -14,7 +14,7 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
 
-MessageAtomKind = Literal["text", "image", "at", "event", "placeholder"]
+MessageAtomKind = Literal["text", "image", "face", "at", "event", "placeholder"]
 MessageAtomPayload = dict[str, int | str]
 type MessageInput = (
     Message | MessageSegment | str | list[Any] | tuple[Any, ...] | dict[str, Any]
@@ -105,6 +105,7 @@ class MessageAtom:
     kind: MessageAtomKind
     text: str = ""
     canonical_image_id: int | None = None
+    face_id: int | None = None
     target_id: str = ""
     event_name: str = ""
     placeholder_name: str = ""
@@ -289,6 +290,10 @@ def shape_from_message_input(
                     MessageAtom(kind="image", canonical_image_id=canonical_image_id)
                 )
             image_index += 1
+        elif segment.type == "face":
+            face_id = _coerce_face_id(segment.data.get("id"))
+            if face_id is not None:
+                atoms.append(MessageAtom(kind="face", face_id=face_id))
         elif segment.type == "at":
             target_id = str(segment.data.get("qq", "") or "").strip()
             if target_id:
@@ -308,6 +313,10 @@ def shape_from_forward_message(message: MessageInput) -> MessageShape:
                 atoms.append(MessageAtom(kind="text", text=raw_text))
         elif segment.type == "image":
             atoms.append(MessageAtom(kind="image"))
+        elif segment.type == "face":
+            face_id = _coerce_face_id(segment.data.get("id"))
+            if face_id is not None:
+                atoms.append(MessageAtom(kind="face", face_id=face_id))
         elif segment.type == "at":
             target_id = str(segment.data.get("qq", "") or "").strip()
             if target_id:
@@ -351,6 +360,9 @@ def shape_from_payload(payload: str) -> MessageShape:
                     if item.get("canonical_image_id") is not None
                     else None
                 ),
+                face_id=(
+                    int(item["face_id"]) if item.get("face_id") is not None else None
+                ),
                 target_id=str(item.get("target_id", "") or ""),
                 event_name=str(item.get("event_name", "") or ""),
                 placeholder_name=str(item.get("placeholder_name", "") or ""),
@@ -384,6 +396,8 @@ def shape_to_summary_text(shape: MessageShape) -> str:
                     image_id=atom.canonical_image_id,
                 )
             )
+        elif atom.kind == "face" and atom.face_id is not None:
+            parts.append(format_face_summary_text(atom.face_id))
         elif atom.kind == "at" and atom.target_id:
             parts.append(format_at_summary_text(atom.target_id))
         elif atom.kind == "event" and atom.event_name:
@@ -400,6 +414,8 @@ def shape_to_search_text(shape: MessageShape) -> str:
             texts.append(atom.text)
         elif atom.kind == "at" and atom.target_id:
             texts.append(f"at {atom.target_id}")
+        elif atom.kind == "face" and atom.face_id is not None:
+            texts.append(f"face {atom.face_id}")
         elif atom.kind == "event" and atom.event_name:
             if atom.target_id:
                 texts.append(f"{atom.event_name} {atom.target_id}")
@@ -414,6 +430,10 @@ def format_at_fallback_text(target_id: str) -> str:
     if target_id == "all":
         return "@全体成员"
     return f"@用户({target_id})"
+
+
+def format_face_summary_text(face_id: int) -> str:
+    return f"[表情 ID：{face_id}]"
 
 
 def is_response_sender_target(target_id: str) -> bool:
@@ -469,6 +489,8 @@ def _atom_payload(atom: MessageAtom) -> MessageAtomPayload:
         payload["text"] = atom.text
     if atom.canonical_image_id is not None:
         payload["canonical_image_id"] = atom.canonical_image_id
+    if atom.face_id is not None:
+        payload["face_id"] = atom.face_id
     if atom.target_id:
         payload["target_id"] = atom.target_id
     if atom.event_name:
@@ -493,6 +515,14 @@ def normalize_text(text: str, *, casefold: bool = True) -> str:
     normalized = unicodedata.normalize("NFKC", text).strip()
     normalized = _SPACE_RE.sub(" ", normalized)
     return normalized.casefold() if casefold else normalized
+
+
+def _coerce_face_id(value: object) -> int | None:
+    try:
+        face_id = int(str(value or "").strip())
+    except (TypeError, ValueError):
+        return None
+    return face_id if face_id >= 0 else None
 
 
 def _append_response_text_atom(atoms: list[MessageAtom], text: str) -> None:

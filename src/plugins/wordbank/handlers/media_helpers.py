@@ -366,6 +366,9 @@ async def build_response_shape_from_message(
                 atoms.append(shape_from_image(canonical_image_id).atoms[0])
             image_index += 1
             continue
+        if segment.type == "face":
+            atoms.extend(shape_from_message_input(Message([segment])).atoms)
+            continue
         if segment.type == "at":
             target_id = str(segment.data.get("qq", "") or "").strip()
             if target_id:

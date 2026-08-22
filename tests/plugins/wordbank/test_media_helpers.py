@@ -173,6 +173,22 @@ async def test_build_response_shape_from_message_preserves_native_at_and_placeho
 
 
 @pytest.mark.asyncio
+async def test_build_response_shape_from_message_preserves_face() -> None:
+    shape = await media_helpers.build_response_shape_from_message(
+        None,
+        Message(
+            [
+                MessageSegment.text("你好"),
+                MessageSegment.face(14),
+            ]
+        ),
+    )
+
+    assert [atom.kind for atom in shape.atoms] == ["text", "face"]
+    assert shape.atoms[1].face_id == 14
+
+
+@pytest.mark.asyncio
 async def test_build_response_shape_from_message_degrades_unsafe_native_at(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

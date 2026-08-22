@@ -124,8 +124,12 @@ async def legacy_message_to_shape(
                 atoms.append(MessageAtom(kind="at", target_id=target_id))
             continue
         if segment_type == "face":
-            face_id = str(item.get("id", "") or "").strip()
-            atoms.append(MessageAtom(kind="text", text=f"[face:{face_id}]"))
+            try:
+                face_id = int(str(item.get("id", "") or "").strip())
+            except (TypeError, ValueError):
+                continue
+            if face_id >= 0:
+                atoms.append(MessageAtom(kind="face", face_id=face_id))
             continue
 
     return MessageShape(tuple(atoms))

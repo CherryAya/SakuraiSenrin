@@ -19,6 +19,7 @@ from src.plugins.wordbank.message_model import (
     MessageAtom,
     MessageShape,
     format_at_fallback_text,
+    format_face_summary_text,
     format_placeholder_summary_text,
 )
 from src.plugins.wordbank.services.presentation import (
@@ -139,6 +140,8 @@ def summary_chips(
 def atom_text(atom: MessageAtom, locale: LocaleCode) -> str:
     if atom.kind == "text":
         return atom.text
+    if atom.kind == "face" and atom.face_id is not None:
+        return format_face_summary_text(atom.face_id)
     if atom.kind == "at" and atom.target_id:
         return format_at_fallback_text(atom.target_id)
     if atom.kind == "event" and atom.event_name:
