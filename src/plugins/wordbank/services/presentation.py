@@ -18,6 +18,7 @@ from src.plugins.wordbank.message_model import (
     MessageAtom,
     MessageShape,
     format_event_summary_text,
+    format_face_summary_text,
     format_placeholder_summary_text,
     is_response_sender_target,
     shape_to_summary_text,
@@ -413,6 +414,8 @@ def _format_notice_atom(atom: MessageAtom, *, locale: LocaleCode) -> str:
         return atom.text
     if atom.kind == "image":
         return ""
+    if atom.kind == "face" and atom.face_id is not None:
+        return format_face_summary_text(atom.face_id)
     if atom.kind == "at":
         return (
             "艾特触发者"

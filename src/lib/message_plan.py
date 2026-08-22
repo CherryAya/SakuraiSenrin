@@ -30,6 +30,11 @@ class ImageBytesBlock:
 
 
 @dataclass(slots=True, frozen=True)
+class FaceBlock:
+    face_id: int
+
+
+@dataclass(slots=True, frozen=True)
 class AtRefBlock:
     target_id: str
 
@@ -45,7 +50,12 @@ class RawMessageBlock:
 
 
 type MessagePlanBlock = (
-    TextBlock | ImageBytesBlock | AtRefBlock | ReplyRefBlock | RawMessageBlock
+    TextBlock
+    | ImageBytesBlock
+    | FaceBlock
+    | AtRefBlock
+    | ReplyRefBlock
+    | RawMessageBlock
 )
 
 
@@ -163,6 +173,9 @@ def render_message_plan_entry(entry: MessagePlanEntry) -> Message:
             continue
         if isinstance(block, ImageBytesBlock):
             message += MessageSegment.image(block.image_bytes)
+            continue
+        if isinstance(block, FaceBlock):
+            message += MessageSegment.face(block.face_id)
             continue
         if isinstance(block, AtRefBlock):
             if block.target_id:

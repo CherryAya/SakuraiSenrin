@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock, Mock
 
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
 import pytest
 
 from src.lib.message_plan import render_message_plan_entry
@@ -24,6 +25,7 @@ from src.plugins.wordbank.handlers.search_cards import SearchCardQuery
 from src.plugins.wordbank.message_model import (
     combine_shapes,
     shape_from_image,
+    shape_from_message,
     shape_from_text,
 )
 from src.plugins.wordbank.services.core import WordbankLeaderboardCardData
@@ -129,6 +131,18 @@ async def test_build_search_items_text_plan_entry_renders_rich_shapes() -> None:
     assert "[图片:8]" not in str(rendered)
     assert "[图片:7]" not in str(rendered)
     assert sum(1 for segment in rendered if segment.type == "image") == 2
+
+
+@pytest.mark.asyncio
+async def test_build_shape_plan_entry_renders_face_segment() -> None:
+    entry = await rendering_module.build_shape_plan_entry(
+        shape_from_message(Message([MessageSegment.face(8)])),
+        _media_service(),
+    )
+
+    rendered = render_message_plan_entry(entry)
+    assert rendered[0].type == "face"
+    assert rendered[0].data["id"] == "8"
 
 
 @pytest.mark.asyncio

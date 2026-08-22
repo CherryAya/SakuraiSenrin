@@ -31,6 +31,7 @@ from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import (
     AtRefBlock,
     DeliveryPlan,
+    FaceBlock,
     ImageBytesBlock,
     MessagePlanEntry,
     MessagePlanInput,
@@ -862,6 +863,9 @@ def register_wordbank_runtime_handlers(
         for atom in shape.atoms:
             if atom.kind == "text" and atom.text:
                 blocks.append(TextBlock(atom.text))
+                continue
+            if atom.kind == "face" and atom.face_id is not None:
+                blocks.append(FaceBlock(atom.face_id))
                 continue
             if atom.kind == "at" and atom.target_id:
                 resolved_target_id = _resolve_passive_target_id(

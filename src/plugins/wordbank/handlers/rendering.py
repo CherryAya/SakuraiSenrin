@@ -14,6 +14,7 @@ from nonebot.adapters.onebot.v11.message import MessageSegment
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
+    FaceBlock,
     ImageBytesBlock,
     MessagePlanBlock,
     MessagePlanEntry,
@@ -101,6 +102,8 @@ async def build_shape_plan_entry(
     for atom in shape.atoms:
         if atom.kind == "text" and atom.text:
             blocks.append(TextBlock(atom.text))
+        elif atom.kind == "face" and atom.face_id is not None:
+            blocks.append(FaceBlock(atom.face_id))
         elif atom.kind == "at" and atom.target_id:
             blocks.append(TextBlock(format_at_summary_text(atom.target_id)))
         elif atom.kind == "image" and atom.canonical_image_id is not None:

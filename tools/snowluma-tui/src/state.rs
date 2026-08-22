@@ -1,5 +1,7 @@
 use std::{
     fs,
+    fs::File,
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -134,9 +136,40 @@ pub fn read_tail_lines(path: &Path, max_lines: usize) -> Result<Vec<String>> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let content =
-        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
-    let mut lines: Vec<String> = content.lines().map(ToString::to_string).collect();
+
+    const TAIL_READ_BYTES: u64 = 256 * 1024;
+    let mut file =
+        File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let file_len = file
+        .metadata()
+        .with_context(|| format!("failed to stat {}", path.display()))?
+        .len();
+    let start = file_len.saturating_sub(TAIL_READ_BYTES);
+    file.seek(SeekFrom::Start(start))
+        .with_context(|| format!("failed to seek {}", path.display()))?;
+
+    let mut bytes = Vec::with_capacity((file_len - start) as usize);
+    file.read_to_end(&mut bytes)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+
+    // A window can begin in the middle of a line. Drop that partial line so
+    // callers never mistake truncated content for a complete log entry.
+    if start > 0 {
+        if let Some(newline) = bytes.iter().position(|byte| *byte == b'\n') {
+            bytes.drain(..=newline);
+        } else {
+            bytes.clear();
+        }
+    }
+
+    let content = String::from_utf8_lossy(&bytes);
+    let mut lines: Vec<String> = content
+        .split('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line).to_string())
+        .collect();
+    if lines.last().is_some_and(String::is_empty) {
+        lines.pop();
+    }
     if lines.len() > max_lines {
         lines = lines.split_off(lines.len() - max_lines);
     }
@@ -152,10 +185,44 @@ fn ignore_missing_process(error: Errno) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::*;
+
+    fn temp_log_path(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        std::env::temp_dir().join(format!("snowluma-tui-{name}-{stamp}.log"))
+    }
 
     #[test]
     fn missing_process_is_treated_as_not_running() {
         assert!(!service_is_alive(999_999));
+    }
+
+    #[test]
+    fn read_tail_lines_reads_only_the_end_of_large_logs() {
+        let path = temp_log_path("large-tail");
+        let mut content = vec![b'x'; 512 * 1024];
+        content.extend_from_slice(b"\nold-tail\nlatest\n");
+        fs::write(&path, content).expect("log should be written");
+
+        let lines = read_tail_lines(&path, 2).expect("tail should be readable");
+
+        assert_eq!(lines, vec!["old-tail", "latest"]);
+        fs::remove_file(path).expect("temporary log should be removable");
+    }
+
+    #[test]
+    fn read_tail_lines_replaces_invalid_utf8() {
+        let path = temp_log_path("invalid-utf8");
+        fs::write(&path, b"ok\ninvalid: \xFF\nlatest\n").expect("log should be written");
+
+        let lines = read_tail_lines(&path, 3).expect("invalid utf8 should be tolerated");
+
+        assert_eq!(lines, vec!["ok", "invalid: \u{FFFD}", "latest"]);
+        fs::remove_file(path).expect("temporary log should be removable");
     }
 }

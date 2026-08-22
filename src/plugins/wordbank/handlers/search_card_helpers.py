@@ -15,6 +15,7 @@ from src.plugins.wordbank.message_model import (
     MessageShape,
     format_at_summary_text,
     format_event_summary_text,
+    format_face_summary_text,
     format_placeholder_summary_text,
 )
 from src.plugins.wordbank.services.presentation import format_status_label
@@ -357,6 +358,13 @@ def _content_blocks_from_shape(
                 SearchCardContentBlock(
                     kind="image",
                     image_id=atom.canonical_image_id,
+                )
+            )
+        elif atom.kind == "face" and atom.face_id is not None:
+            blocks.append(
+                SearchCardContentBlock(
+                    kind="label",
+                    label=format_face_summary_text(atom.face_id),
                 )
             )
         elif atom.kind == "at" and atom.target_id:

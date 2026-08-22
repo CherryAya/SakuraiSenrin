@@ -9,7 +9,7 @@ use anyhow::Result;
 use crate::{
     config::{AppConfig, RuntimePaths},
     service::{HealthCheck, ServiceSpec},
-    state::{ServiceRuntimeState, service_is_alive},
+    state::{ServiceRuntimeState, read_tail_lines, service_is_alive},
 };
 
 #[derive(Debug, Clone)]
@@ -120,11 +120,7 @@ pub fn tail_log(path: &Path, max_lines: usize) -> Result<Vec<String>> {
     if !path.exists() {
         return Ok(vec!["<log file not created yet>".to_string()]);
     }
-    let content = std::fs::read_to_string(path)?;
-    let mut lines: Vec<String> = content.lines().map(ToString::to_string).collect();
-    if lines.len() > max_lines {
-        lines = lines.split_off(lines.len() - max_lines);
-    }
+    let mut lines = read_tail_lines(path, max_lines)?;
     if lines.is_empty() {
         lines.push("<log file is empty>".to_string());
     }
