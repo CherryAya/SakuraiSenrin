@@ -208,12 +208,12 @@ async def _load_feedback_group_members() -> tuple[
 
 
 def _build_result_rows(
-    rows: list[tuple[str, int, int, int]],
+    rows: list[tuple[str, int, int, int, int]],
     *,
     members_by_user: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
-    for index, (user_id, level, exp, season_exp) in enumerate(rows, start=1):
+    for index, (user_id, level, exp, season_exp, msg_count) in enumerate(rows, start=1):
         member_info = members_by_user[str(user_id)]
         result.append(
             {
@@ -223,6 +223,7 @@ def _build_result_rows(
                 "level": int(level),
                 "exp": int(exp),
                 "season_exp": int(season_exp),
+                "msg_count": int(msg_count),
                 "groups": ", ".join(member_info["groups"]),
             }
         )
@@ -262,7 +263,7 @@ async def fetch_feedback_group_water_levels(
         level_rows = (await session.execute(stmt)).all()
 
     normalized_rows = [
-        (str(user_id), int(level), int(exp), int(season_exp))
+        (str(user_id), int(level), int(exp), int(season_exp), 0)
         for user_id, level, exp, season_exp in level_rows
     ]
     return _build_result_rows(normalized_rows, members_by_user=members_by_user)
@@ -276,11 +277,17 @@ def _aggregate_recomputed_rows(
 ) -> list[dict[str, Any]]:
     exp_by_user: dict[str, int] = defaultdict(int)
     season_exp_by_user: dict[str, int] = defaultdict(int)
+    msg_count_by_user: dict[str, int] = defaultdict(int)
     for row in summaries:
         if row.user_id not in members_by_user:
             continue
-        delta = _calc_personal_delta_exp(int(row.msg_count), int(row.active_hours))
-        if row.msg_count > 1000 and row.active_hours <= 2:
+        msg_count = int(row.msg_count)
+        active_hours = int(row.active_hours)
+        msg_count_by_user[row.user_id] += msg_count
+        if msg_count <= 3:
+            continue
+        delta = _calc_personal_delta_exp(msg_count, active_hours)
+        if msg_count > 1000 and active_hours <= 2:
             continue
         exp_by_user[row.user_id] += delta
         season_exp_by_user[row.user_id] += delta
@@ -291,6 +298,7 @@ def _aggregate_recomputed_rows(
             _calc_level(exp),
             exp,
             season_exp_by_user[user_id],
+            msg_count_by_user[user_id],
         )
         for user_id, exp in exp_by_user.items()
     ]
