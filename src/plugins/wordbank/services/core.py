@@ -958,7 +958,7 @@ class WordbankService:
         *,
         period: WordbankRankPeriod = "month",
         locale: LocaleCode,
-        limit: int = 10,
+        limit: int | None = 10,
         now_ts: int | None = None,
     ) -> WordbankLeaderboardCardData:
         generated_at = now_ts or get_current_time()

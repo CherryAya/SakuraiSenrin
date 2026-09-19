@@ -8,12 +8,14 @@ from collections import defaultdict
 import json
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, Literal
 
 import arrow
 import nonebot
 from nonebot import logger
 from sqlalchemy import select
+
+from src.lib.i18n.types import LocaleCode
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -24,7 +26,12 @@ from src.lib.utils.common import get_current_time
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--limit", type=int, default=100, help="top-N rows per board")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=100,
+        help="top-N rows per board; 0 means export all rows",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -45,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def _fetch_global_rows(limit: int) -> list[dict[str, Any]]:
+async def _fetch_global_rows(limit: int | None) -> list[dict[str, Any]]:
     from src.database.core.tables import CoreBase, Group, User
     from src.database.instances import core_db
     from src.plugins.water.database import water_repo
@@ -70,20 +77,19 @@ async def _fetch_global_rows(limit: int) -> list[dict[str, Any]]:
         }
 
     async with water_core_db.session(commit=False) as session:
-        levels = (
-            await session.execute(
-                select(
-                    WaterGlobalLevel.user_id,
-                    WaterGlobalLevel.level,
-                    WaterGlobalLevel.exp,
-                    WaterGlobalLevel.season_exp,
-                ).order_by(
-                    WaterGlobalLevel.level.desc(),
-                    WaterGlobalLevel.exp.desc(),
-                    WaterGlobalLevel.user_id.asc(),
-                ).limit(max(1, limit))
-            )
-        ).all()
+        level_stmt = select(
+            WaterGlobalLevel.user_id,
+            WaterGlobalLevel.level,
+            WaterGlobalLevel.exp,
+            WaterGlobalLevel.season_exp,
+        ).order_by(
+            WaterGlobalLevel.level.desc(),
+            WaterGlobalLevel.exp.desc(),
+            WaterGlobalLevel.user_id.asc(),
+        )
+        if limit is not None:
+            level_stmt = level_stmt.limit(max(1, limit))
+        levels = (await session.execute(level_stmt)).all()
         user_ids = [str(row.user_id) for row in levels]
         totals = (
             await session.execute(
@@ -136,12 +142,14 @@ async def _fetch_global_rows(limit: int) -> list[dict[str, Any]]:
     ]
 
 
-async def _fetch_feedback_rows(limit: int) -> list[dict[str, Any]]:
+async def _fetch_feedback_rows(limit: int | None) -> list[dict[str, Any]]:
     from scripts.export_feedback_group_water_levels import (
         recompute_feedback_group_water_levels,
     )
 
-    return await recompute_feedback_group_water_levels(limit=max(1, limit))
+    return await recompute_feedback_group_water_levels(
+        limit=None if limit is None else max(1, limit)
+    )
 
 
 async def _load_group_members(
@@ -348,17 +356,17 @@ async def _build_user_profiles(
 
     return {
         "groups": [
-            {"group_id": gid, "group_name": gname}
-            for gid, gname in group_map.items()
+            {"group_id": gid, "group_name": gname} for gid, gname in group_map.items()
         ],
         "profiles": profiles,
     }
 
+
 async def _fetch_wordbank_rows(
     *,
-    limit: int,
-    locale: str,
-    period: str,
+    limit: int | None,
+    locale: LocaleCode,
+    period: Literal["week", "month", "season", "total"],
 ) -> list[dict[str, Any]]:
     from src.plugins.wordbank.database import wordbank_repo
     from src.plugins.wordbank.services import wordbank_service
@@ -367,7 +375,7 @@ async def _fetch_wordbank_rows(
     data = await wordbank_service.build_creator_leaderboard(
         period=period,
         locale=locale,
-        limit=max(1, limit),
+        limit=None if limit is None else max(1, limit),
     )
     return [
         {
@@ -392,12 +400,13 @@ async def _fetch_wordbank_rows(
 async def main() -> None:
     args = parse_args()
     nonebot.init()
+    export_limit = None if args.limit <= 0 else args.limit
 
     global_rows, feedback_rows, wordbank_rows = await asyncio.gather(
-        _fetch_global_rows(args.limit),
-        _fetch_feedback_rows(args.limit),
+        _fetch_global_rows(export_limit),
+        _fetch_feedback_rows(export_limit),
         _fetch_wordbank_rows(
-            limit=args.limit,
+            limit=export_limit,
             locale=args.locale,
             period=args.wordbank_period,
         ),
@@ -417,9 +426,7 @@ async def main() -> None:
     async with core_db.session(commit=False) as session:
         all_group_ids = [
             str(group_id)
-            for group_id, in (
-                await session.execute(select(Group.group_id))
-            ).all()
+            for (group_id,) in (await session.execute(select(Group.group_id))).all()
         ]
 
     support_group_ids = []

@@ -25,7 +25,11 @@ from src.lib.message_plan import (
 )
 from src.lib.utils.img import QQAvatar
 from src.logger import logger
-from src.plugins.wordbank.database.types import WordbankGroupDetail, WordbankSearchItem
+from src.plugins.wordbank.database.types import (
+    WordbankGroupDetail,
+    WordbankResponseItemDetail,
+    WordbankSearchItem,
+)
 from src.plugins.wordbank.debug import log_perf, perf_start
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -257,7 +261,7 @@ async def build_pending_items_plan_entry(
         blocks.extend(
             await build_pending_item_blocks(
                 entry_id=response_item_id,
-                scope=item.scope,
+                scope=format_scope_label(item),
                 trigger_text=item.trigger_text,
                 response_text=item.response_text,
                 created_by=item.created_by,
@@ -429,7 +433,7 @@ def _build_pending_item_footer_lines(
     return (
         f"创建者: {created_by or '-'}",
         f"提交时间: {format_timestamp(created_at)}",
-        f"范围: {format_scope_label(scope)}",
+        f"范围: {scope}",
         f"权重: {weight}",
         f"规则: {format_rule_summary(probability=probability, rule=rule)}",
     )
@@ -477,7 +481,7 @@ async def build_reply_detail_plan_entry(
     message_id: str,
     message_type: str,
 ) -> MessagePlanEntry:
-    selected = detail.selected_response
+    selected: WordbankResponseItemDetail | None = detail.selected_response
     if selected is None:
         return MessagePlanEntry(
             blocks=(
@@ -491,16 +495,16 @@ async def build_reply_detail_plan_entry(
                 locale,
                 "wordbank.reply.info_header",
                 entry_id=selected.response_item_id,
-                status=format_status_label(selected.status),
-                enabled=_format_enabled(selected.enabled, locale),
-                deleted_at=str(selected.deleted_at) if selected.deleted_at else "0",
-                scope=format_scope_label(selected.scope),
+                # status=format_status_label(selected.status),
+                # enabled=_format_enabled(selected.enabled, locale),
+                # deleted_at=str(selected.deleted_at) if selected.deleted_at else "0",
+                scope=format_scope_label(selected),
                 group_id=selected.group_id or "-",
                 created_by=selected.created_by,
                 probability=f"{detail.probability:g}",
                 weight=selected.weight,
-                message_id=message_id,
-                message_type=message_type,
+                # message_id=message_id,
+                # message_type=message_type,
             )
         )
     ]
@@ -692,7 +696,7 @@ async def build_group_detail_page_plan_entry(
                     response_item_id=response.response_item_id,
                     status=format_status_label(response.status),
                     enabled=_format_enabled(response.enabled, locale),
-                    scope=format_scope_label(response.scope),
+                    scope=format_scope_label(response),
                     weight=response.weight,
                     rule=_format_rule_text(response.rule),
                 )

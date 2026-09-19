@@ -284,7 +284,7 @@ def _aggregate_recomputed_rows(
         msg_count = int(row.msg_count)
         active_hours = int(row.active_hours)
         msg_count_by_user[row.user_id] += msg_count
-        if msg_count <= 3:
+        if msg_count <= 10:
             continue
         delta = _calc_personal_delta_exp(msg_count, active_hours)
         if msg_count > 1000 and active_hours <= 2:

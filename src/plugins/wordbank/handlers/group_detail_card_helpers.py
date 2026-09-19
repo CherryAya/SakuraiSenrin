@@ -239,7 +239,7 @@ def response_meta_text(
         response_item_id=response.response_item_id,
         status=format_status_label(response.status),
         enabled=format_enabled(response.enabled, locale),
-        scope=format_scope_label(response.scope),
+        scope=format_scope_label(response),
         weight=response.weight,
     )
     rule_line = (

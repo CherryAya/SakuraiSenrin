@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import cast
 import sys
+from typing import cast
 
 # Add project root to path
 project_root = Path(__file__).parent.parent

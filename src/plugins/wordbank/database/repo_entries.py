@@ -204,7 +204,7 @@ class WordbankRepositoryEntriesMixin:
         self: Any,
         *,
         period: WordbankRankPeriod,
-        limit: int = 10,
+        limit: int | None = 10,
         now_ts: int | None = None,
     ) -> WordbankCreatorLeaderboardSnapshot:
         now = arrow.get(now_ts or get_current_time()).to("Asia/Shanghai")
@@ -298,8 +298,9 @@ class WordbankRepositoryEntriesMixin:
                 text("latest_created_at DESC"),
                 WordbankResponseItem.created_by.asc(),
             )
-            .limit(max(1, limit))
         )
+        if limit is not None:
+            base_stmt = base_stmt.limit(max(1, limit))
         stats_stmt = select(
             func.count(WordbankResponseItem.id),
             func.count(func.distinct(WordbankResponseItem.created_by)),
