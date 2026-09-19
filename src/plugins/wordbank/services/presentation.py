@@ -12,6 +12,7 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.plugins.wordbank.database.types import (
     WordbankRankPeriod,
+    WordbankResponseItemDetail,
     WordbankSearchItem,
 )
 from src.plugins.wordbank.message_model import (
@@ -278,7 +279,7 @@ def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
             forward_node_count=result.forward_node_count,
             locale=locale,
         ),
-        scope=format_scope_label(result.scope),
+        scope=format_scope_label(result),
         probability=f"{result.probability:g}",
         weight=result.weight,
     )
@@ -372,14 +373,29 @@ def format_timestamp(timestamp: int) -> str:
     return arrow.get(timestamp).to("Asia/Shanghai").format("YYYY-MM-DD HH:mm")
 
 
-def format_scope_label(scope: str) -> str:
-    return {
-        "current_group": "当前群",
-        "all_groups": "所有群",
-        "self": "仅自己",
-        "private_only": "仅私聊",
-        "self_in_current_group": "自己+当前群",
-    }.get(scope, scope or "-")
+def format_scope_label(
+    detail: WordbankResponseItemDetail | WordbankAddResult | WordbankSearchItem | None,
+) -> str:
+    if not detail:
+        return "-"
+    group_id = (
+        detail.group_id
+        if isinstance(detail, WordbankResponseItemDetail)
+        else detail.trigger_group_id
+    )
+    match detail.scope:
+        case "current_group":
+            return f"当前群({group_id})"
+        case "all_groups":
+            return "所有群"
+        case "self":
+            return f"仅自己:{detail.created_by}"
+        case "private_only":
+            return "仅私聊"
+        case "self_in_current_group":
+            return f"自己({detail.created_by})+当前群({group_id})"
+        case _:
+            return "-"
 
 
 def format_rule_summary(

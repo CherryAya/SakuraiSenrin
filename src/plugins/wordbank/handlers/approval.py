@@ -158,7 +158,7 @@ def format_pending_approval_notice(
         f"响应词: {_response_summary(result)}",
         f"创建者: {result.created_by or str(event.user_id)}",
         f"提交时间: {_event_submit_timestamp(event, result.created_at)}",
-        f"范围: {format_scope_label(result.scope)}",
+        f"范围: {format_scope_label(result)}",
         f"权重: {result.weight}",
         f"规则: {_rule_summary(result)}",
         f"响应模式: {response_mode_label(result)}",
@@ -183,7 +183,7 @@ def format_pending_batch_approval_notice(
         f"触发词: {_trigger_summary(first_result)}",
         f"创建者: {first_result.created_by or str(event.user_id)}",
         f"提交时间: {_event_submit_timestamp(event, first_result.created_at)}",
-        f"范围: {format_scope_label(first_result.scope)}",
+        f"范围: {format_scope_label(first_result)}",
         f"权重: {first_result.weight}",
         f"规则: {_rule_summary(first_result)}",
         f"响应模式: {response_mode_label(first_result)}",
@@ -366,7 +366,7 @@ async def _build_pending_approval_delivery_plan(
                             "提交时间: "
                             f"{_event_submit_timestamp(event, result.created_at)}"
                         ),
-                        f"范围: {format_scope_label(result.scope)}",
+                        f"范围: {format_scope_label(result)}",
                         f"权重: {result.weight}",
                         f"规则: {_rule_summary(result)}",
                         f"响应模式: {response_mode_label(result)}",
@@ -426,7 +426,7 @@ async def _build_pending_batch_approval_delivery_plan(
                                 "提交时间: "
                                 f"{_event_submit_timestamp(event, result.created_at)}"
                             ),
-                            f"范围: {format_scope_label(result.scope)}",
+                            f"范围: {format_scope_label(result)}",
                             f"权重: {result.weight}",
                             f"规则: {_rule_summary(result)}",
                             f"响应模式: {response_mode_label(result)}",

@@ -488,8 +488,7 @@ async def _resolve_reusable_forward_prefix_length(
 ) -> int:
     if not allow_asset_reuse:
         logger.debug(
-            "[MessageDelivery] forward prefix reuse skipped "
-            "reason=reuse_disabled"
+            "[MessageDelivery] forward prefix reuse skipped reason=reuse_disabled"
         )
         return 0
     if not batch.node_asset_keys:
