@@ -50,6 +50,7 @@ from src.repositories import member_repo, user_repo
 
 from . import views
 from .database.types import WordbankMessageRefRecord
+from .debug import log_perf, perf_start
 from .guided_flow import WORDBANK_GUIDED_RECALL_PENDING_KEYS
 from .handlers import (
     ApprovalReplyOutcome,
@@ -64,6 +65,7 @@ from .handlers import (
     wordbank_message_ref_from_reply_target,
 )
 from .handlers import mutation as handlers_mutation
+from .handlers import passive as handlers_passive
 from .handlers.rendering import (
     _build_image_payload_stats,
     _load_shape_image_bytes,
@@ -98,26 +100,6 @@ def register_wordbank_runtime_handlers(
     cancel_guided_resources: Callable[..., Awaitable[None]],
     guided_locale: Callable[[Mapping[str, Any]], LocaleCode],
 ) -> dict[str, Any]:
-    async def _get_plugin_attr(name: str) -> Any:
-        from src.plugins import wordbank as wordbank_plugin
-
-        return getattr(wordbank_plugin, name)
-
-    async def _get_runtime_attr(name: str, fallback: Any) -> Any:
-        try:
-            return await _get_plugin_attr(name)
-        except Exception:
-            return fallback
-
-    async def _get_wordbank_service() -> Any:
-        return await _get_runtime_attr("wordbank_service", wordbank_service)
-
-    async def _get_wordbank_media_service() -> Any:
-        return await _get_runtime_attr(
-            "wordbank_media_service",
-            wordbank_media_service,
-        )
-
     async def notify_approval_source(
         bot: Bot,
         approval_message: WordbankMessageRefRecord,
@@ -160,7 +142,7 @@ def register_wordbank_runtime_handlers(
     async def _find_creator_submission_context(
         response_item_id: int,
     ) -> WordbankMessageRefRecord | None:
-        service = await _get_wordbank_service()
+        service = wordbank_service
         refs = await service.list_message_refs_by_response_item_ids(
             (response_item_id,),
             expected_kind="approval",
@@ -173,7 +155,7 @@ def register_wordbank_runtime_handlers(
     async def _find_creator_submission_contexts(
         response_item_ids: tuple[int, ...],
     ) -> dict[int, WordbankMessageRefRecord]:
-        service = await _get_wordbank_service()
+        service = wordbank_service
         refs = await service.list_message_refs_by_response_item_ids(
             response_item_ids,
             expected_kind="approval",
@@ -500,13 +482,8 @@ def register_wordbank_runtime_handlers(
         *,
         locale: LocaleCode,
     ) -> CompiledPassiveResponse:
-        from src.plugins.wordbank.debug import log_perf as default_log_perf
-        from src.plugins.wordbank.debug import perf_start as default_perf_start
-
-        log_perf = await _get_runtime_attr("log_perf", default_log_perf)
-        perf_start = await _get_runtime_attr("perf_start", default_perf_start)
         start = perf_start()
-        media_service = await _get_wordbank_media_service()
+        media_service = wordbank_media_service
         shape = response.response_shape
         if shape is None or shape.is_empty():
             text_value = response.text
@@ -758,7 +735,7 @@ def register_wordbank_runtime_handlers(
         reply_message_ids = get_reply_message_ids(event)
         if not reply_message_ids:
             return False
-        service = await _get_wordbank_service()
+        service = wordbank_service
         for reply_message_id in reply_message_ids:
             if (
                 await service.get_message_ref(
@@ -774,7 +751,7 @@ def register_wordbank_runtime_handlers(
         reply_message_ids = get_reply_message_ids(event)
         if not reply_message_ids:
             return False
-        service = await _get_wordbank_service()
+        service = wordbank_service
         for reply_message_id in reply_message_ids:
             if (
                 await service.get_message_ref(
@@ -790,7 +767,7 @@ def register_wordbank_runtime_handlers(
         reply_message_ids = get_reply_message_ids(event)
         if not reply_message_ids:
             return False
-        service = await _get_wordbank_service()
+        service = wordbank_service
         for reply_message_id in reply_message_ids:
             if (
                 await service.get_message_ref(
@@ -809,8 +786,8 @@ def register_wordbank_runtime_handlers(
     ) -> MessagePlanInput | None:
         _ = bot
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        service = await _get_wordbank_service()
-        media_service = await _get_wordbank_media_service()
+        service = wordbank_service
+        media_service = wordbank_media_service
         return await handle_reply_command(
             service,
             event=event,
@@ -832,7 +809,7 @@ def register_wordbank_runtime_handlers(
     ) -> ApprovalReplyOutcome:
         _ = bot
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        service = await _get_wordbank_service()
+        service = wordbank_service
         return await handle_approval_reply_result(
             service,
             event=event,
@@ -855,7 +832,7 @@ def register_wordbank_runtime_handlers(
             reply_message_ids = get_reply_message_ids(event)
             if not reply_message_ids:
                 raise RuntimeError("wordbank view reply target missing")
-            service = await _get_wordbank_service()
+            service = wordbank_service
             for reply_message_id in reply_message_ids:
                 view_message = await service.get_message_ref(
                     reply_message_id,
@@ -1025,7 +1002,7 @@ def register_wordbank_runtime_handlers(
     ) -> None:
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        service = await _get_wordbank_service()
+        service = wordbank_service
         view_message = cast(
             WordbankMessageRefRecord | None,
             await dispatch_reply_route("wordbank.view", bot, event),
@@ -1128,10 +1105,10 @@ def register_wordbank_runtime_handlers(
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         try:
-            service = await _get_wordbank_service()
-            media_service = await _get_wordbank_media_service()
+            service = wordbank_service
+            media_service = wordbank_media_service
             handle_start = perf_start()
-            response = await (await _get_plugin_attr("handle_passive_message"))(
+            response = await handlers_passive.handle_passive_message(
                 bot,
                 event,
                 service,
@@ -1282,9 +1259,9 @@ def register_wordbank_runtime_handlers(
         await initialize_plugin()
         locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
         try:
-            service = await _get_wordbank_service()
+            service = wordbank_service
             handle_start = perf_start()
-            response = await (await _get_plugin_attr("handle_passive_notice"))(
+            response = await handlers_passive.handle_passive_notice(
                 bot,
                 event,
                 service,

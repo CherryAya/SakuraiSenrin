@@ -30,10 +30,13 @@ if nonebot.get_plugin("wordbank") is None:
 from src.lib.i18n.runtime import tr
 from src.lib.message_assets import message_asset_repo
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank import bootstrap as bootstrap_module
 from src.plugins.wordbank import entry_commands
+from src.plugins.wordbank import services as services_module
 from src.plugins.wordbank import views as views_module
 from src.plugins.wordbank.handlers import commands as handlers_commands
 from src.plugins.wordbank.handlers import media_helpers as handlers_media_helpers
+from src.plugins.wordbank.handlers import passive as handlers_passive
 from src.plugins.wordbank.handlers import submission as wordbank_submission_handlers
 from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.message_model import shape_from_text
@@ -63,7 +66,7 @@ async def test_wordbank_add_without_args_enters_guided_trigger_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -92,7 +95,7 @@ async def test_wordbank_add_guided_exit_cancels_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -130,7 +133,7 @@ async def test_wordbank_add_guided_forward_reply_prompts_import_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -196,7 +199,7 @@ async def test_wordbank_add_direct_success_records_submission(
     schedule_pending = Mock()
 
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -269,7 +272,7 @@ async def test_wordbank_search_command_preserves_keyword_whitespace(
     send_search = AsyncMock(return_value=None)
 
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -352,7 +355,7 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
     schedule_pending = Mock()
 
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -437,12 +440,12 @@ async def test_wordbank_passive_matcher_sends_response(
     record_message = AsyncMock(return_value=None)
 
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_passive,
         "handle_passive_message",
         AsyncMock(return_value=response),
     )
@@ -487,12 +490,12 @@ async def test_wordbank_notice_matcher_sends_response(
     record_message = AsyncMock(return_value=None)
 
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_passive,
         "handle_passive_notice",
         AsyncMock(return_value=response),
     )
@@ -525,7 +528,7 @@ async def test_wordbank_approval_reply_matcher_accepts_plain_reply_without_at(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -535,7 +538,7 @@ async def test_wordbank_approval_reply_matcher_accepts_plain_reply_without_at(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_plugin.wordbank_service,
+        services_module.wordbank_service,
         "get_message_ref",
         AsyncMock(
             return_value=WordbankMessageRefRecord(
@@ -586,7 +589,7 @@ async def test_wordbank_approval_reply_matcher_accepts_private_reply_real_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -596,7 +599,7 @@ async def test_wordbank_approval_reply_matcher_accepts_private_reply_real_id(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_plugin.wordbank_service,
+        services_module.wordbank_service,
         "get_message_ref",
         AsyncMock(
             side_effect=lambda message_id, expected_kind=None: (

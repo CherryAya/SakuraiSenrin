@@ -27,6 +27,7 @@ if nonebot.get_plugin("wordbank") is None:
     sys.modules.pop("src.plugins.wordbank", None)
     nonebot.load_plugin("src.plugins.wordbank")
 
+from src.plugins.wordbank import guided_flow as guided_flow_module
 from src.plugins.wordbank.forward_batch import ResponseInputPayload
 from src.plugins.wordbank.guided_flow import (
     PRIVATE_SCOPE_PROMPT,
@@ -78,7 +79,8 @@ async def test_guided_forward_choice_uses_saved_response_event(
     build_payload = AsyncMock(return_value=payload)
 
     monkeypatch.setattr(
-        "src.plugins.wordbank.guided_flow.build_response_input_payload",
+        guided_flow_module,
+        "build_response_input_payload",
         build_payload,
     )
 

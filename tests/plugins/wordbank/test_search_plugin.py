@@ -28,8 +28,10 @@ if nonebot.get_plugin("wordbank") is None:
 from src.lib.i18n.runtime import tr
 from src.lib.messages import text_message
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank import bootstrap as bootstrap_module
 from src.plugins.wordbank import entry_commands, wordbank_search_command
 from src.plugins.wordbank import guided_flow as guided_flow_module
+from src.plugins.wordbank import services as services_module
 from src.plugins.wordbank import views as views_module
 from src.plugins.wordbank.database.types import (
     WordbankMessageRefRecord,
@@ -91,7 +93,7 @@ async def test_wordbank_search_without_args_routes_to_guided_entry(
 ) -> None:
     start_guided = AsyncMock(return_value=None)
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -117,7 +119,7 @@ async def test_wordbank_search_image_only_runs_unified_search_flow(
 ) -> None:
     handle_command = AsyncMock(return_value=None)
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -151,7 +153,7 @@ async def test_guided_search_dimension_selection_prompts_for_query_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -181,7 +183,7 @@ async def test_guided_search_creator_only_prompts_for_creator_account(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -212,7 +214,7 @@ async def test_guided_search_query_stage_accepts_image_message(
     finish_guided_search = AsyncMock(return_value=None)
 
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -232,7 +234,7 @@ async def test_guided_search_query_stage_accepts_image_message(
         AsyncMock(return_value=b"image-bytes"),
     )
     monkeypatch.setattr(
-        wordbank_plugin.wordbank_media_service,
+        services_module.wordbank_media_service,
         "search_similar_images",
         lambda _data: (SimpleNamespace(canonical_id=7, score=0.91),),
     )
@@ -274,7 +276,7 @@ async def test_guided_search_creator_stage_finishes_with_bot_argument(
     finish_guided_search = AsyncMock(return_value=None)
 
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -466,7 +468,7 @@ async def test_handle_search_session_delete_refreshes_current_page(
 
     state = {
         "wordbank_guided_search_stage": (
-            wordbank_plugin.WORDBANK_GUIDED_SEARCH_STAGE_PAGE
+            guided_flow_module.WORDBANK_GUIDED_SEARCH_STAGE_PAGE
         ),
         "wordbank_guided_search_current_page": 1,
         "wordbank_guided_search_total_pages": 2,
@@ -521,7 +523,7 @@ async def test_handle_search_session_delete_uses_response_level_index(
 
     state = {
         "wordbank_guided_search_stage": (
-            wordbank_plugin.WORDBANK_GUIDED_SEARCH_STAGE_PAGE
+            guided_flow_module.WORDBANK_GUIDED_SEARCH_STAGE_PAGE
         ),
         "wordbank_guided_search_current_page": 1,
         "wordbank_guided_search_total_pages": 2,
@@ -555,7 +557,7 @@ async def test_view_reply_matcher_routes_search_result_reply_to_group_detail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -570,7 +572,7 @@ async def test_view_reply_matcher_routes_search_result_reply_to_group_detail(
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin.wordbank_service,
+        services_module.wordbank_service,
         "get_message_ref",
         AsyncMock(
             return_value=WordbankMessageRefRecord(
@@ -612,7 +614,7 @@ async def test_view_reply_matcher_routes_group_detail_reply_to_next_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -628,7 +630,7 @@ async def test_view_reply_matcher_routes_group_detail_reply_to_next_page(
         send_group_detail_view,
     )
     monkeypatch.setattr(
-        wordbank_plugin.wordbank_service,
+        services_module.wordbank_service,
         "get_message_ref",
         AsyncMock(
             return_value=WordbankMessageRefRecord(
@@ -674,7 +676,7 @@ async def test_view_reply_matcher_routes_group_detail_reply_delete_to_handle_del
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        wordbank_plugin,
+        bootstrap_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
@@ -689,7 +691,7 @@ async def test_view_reply_matcher_routes_group_detail_reply_delete_to_handle_del
         AsyncMock(side_effect=["词条 #300 已删除。", "词条 #301 已删除。"]),
     )
     monkeypatch.setattr(
-        wordbank_plugin.wordbank_service,
+        services_module.wordbank_service,
         "get_message_ref",
         AsyncMock(
             return_value=WordbankMessageRefRecord(
@@ -714,7 +716,7 @@ async def test_view_reply_matcher_routes_group_detail_reply_delete_to_handle_del
         ),
     )
     monkeypatch.setattr(
-        wordbank_plugin.wordbank_service,
+        services_module.wordbank_service,
         "get_group_detail",
         AsyncMock(
             return_value=SimpleNamespace(

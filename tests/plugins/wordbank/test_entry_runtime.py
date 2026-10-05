@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.plugins.wordbank import services as services_module
 from src.plugins.wordbank import views as views_module
 from src.plugins.wordbank.database.types import WordbankMessageRefRecord
 from src.plugins.wordbank.entry_runtime import register_wordbank_runtime_handlers
@@ -61,7 +62,6 @@ def _runtime_exports(
     list_message_refs_by_response_item_ids: AsyncMock | None = None,
     deliver_message_plan: AsyncMock | None = None,
 ) -> dict[str, Any]:
-    from src.plugins import wordbank as wordbank_plugin
     from src.plugins.wordbank import entry_runtime as runtime_module
 
     service = cast(
@@ -79,7 +79,7 @@ def _runtime_exports(
         "wordbank_service",
         service,
     )
-    monkeypatch.setattr(wordbank_plugin, "wordbank_service", service, raising=False)
+    monkeypatch.setattr(services_module, "wordbank_service", service, raising=False)
     monkeypatch.setattr(
         runtime_module,
         "deliver_message_plan",
@@ -118,13 +118,12 @@ def _runtime_with_command_stub(
     *,
     deliver_message_plan: AsyncMock | None = None,
 ) -> tuple[dict[str, Any], Any]:
-    from src.plugins import wordbank as wordbank_plugin
     from src.plugins.wordbank import entry_runtime as runtime_module
 
     approval_reply_command = _CommandStub()
     service = cast(Any, SimpleNamespace())
     monkeypatch.setattr(runtime_module, "wordbank_service", service)
-    monkeypatch.setattr(wordbank_plugin, "wordbank_service", service, raising=False)
+    monkeypatch.setattr(services_module, "wordbank_service", service, raising=False)
     monkeypatch.setattr(
         runtime_module,
         "deliver_message_plan",

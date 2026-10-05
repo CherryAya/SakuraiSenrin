@@ -35,6 +35,7 @@ from src.lib.messages import text_message
 from src.lib.utils.common import get_current_time
 from src.plugins import study as study_plugin
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank import bootstrap as bootstrap_module
 from src.plugins.wordbank.handlers import submission as wordbank_submission_handlers
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -76,11 +77,11 @@ async def _cancel_pending_rebuild() -> None:
 
 
 async def _reset_wordbank_runtime() -> None:
-    wordbank_plugin._wordbank_initialized = False
+    bootstrap_module._wordbank_initialized = False
     wordbank_service._initialized = False
     wordbank_service._index.groups.clear()
     wordbank_service._index.exact_match.clear()
-    await wordbank_plugin.initialize_wordbank_plugin()
+    await bootstrap_module.initialize_wordbank_plugin()
     await wordbank_service.repository.reset_all_data(
         include_images=True,
         include_logs=True,

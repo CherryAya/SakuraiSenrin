@@ -25,6 +25,7 @@ if nonebot.get_plugin("wordbank") is None:
     nonebot.load_plugin("src.plugins.wordbank")
 
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank import bootstrap as bootstrap_module
 from src.plugins.wordbank import entry_runtime as wordbank_entry_runtime
 from src.plugins.wordbank.handlers import rendering as rendering_module
 from src.plugins.wordbank.handlers.passive import PassiveResponse
@@ -43,14 +44,14 @@ from src.plugins.wordbank.message_model import (
 async def test_initialize_wordbank_plugin_is_idempotent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(wordbank_plugin, "_wordbank_initialized", False)
+    monkeypatch.setattr(bootstrap_module, "_wordbank_initialized", False)
     service = SimpleNamespace(initialize=AsyncMock())
     media_service = SimpleNamespace(rebuild_cache=AsyncMock())
-    monkeypatch.setattr(wordbank_plugin, "wordbank_service", service)
-    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    monkeypatch.setattr(bootstrap_module, "wordbank_service", service)
+    monkeypatch.setattr(bootstrap_module, "wordbank_media_service", media_service)
 
-    await wordbank_plugin.initialize_wordbank_plugin()
-    await wordbank_plugin.initialize_wordbank_plugin()
+    await bootstrap_module.initialize_wordbank_plugin()
+    await bootstrap_module.initialize_wordbank_plugin()
 
     service.initialize.assert_awaited_once()
     media_service.rebuild_cache.assert_awaited_once()
@@ -63,7 +64,7 @@ async def test_build_passive_message_rebuilds_text_and_image_segments(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     response = PassiveResponse(
         text="fallback",
         trigger_group_id=12,
@@ -102,7 +103,7 @@ async def test_build_passive_message_degrades_legacy_unsafe_at_target(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     response = PassiveResponse(
         text="fallback",
         trigger_group_id=12,
@@ -137,7 +138,7 @@ async def test_build_passive_message_renders_sender_at_from_response_shape(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     response = PassiveResponse(
         text="fallback",
         trigger_group_id=12,
@@ -173,14 +174,14 @@ async def test_build_passive_message_logs_render_shape_stages(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     events: dict[str, dict[str, object]] = {}
 
     def _capture(stage: str, *, start: float | None = None, **fields: object) -> None:
         _ = start
         events[stage] = fields
 
-    monkeypatch.setattr(wordbank_plugin, "log_perf", _capture)
+    monkeypatch.setattr(wordbank_entry_runtime, "log_perf", _capture)
     monkeypatch.setattr(rendering_module, "log_perf", _capture)
     response = PassiveResponse(
         text="fallback",
@@ -226,7 +227,7 @@ async def test_build_passive_message_keeps_text_when_image_storage_is_missing(
             "has_local_cache": False,
         },
     )
-    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     response = PassiveResponse(
         text="fallback",
         trigger_group_id=12,
@@ -267,7 +268,7 @@ async def test_build_passive_message_renders_profile_text_placeholders(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     monkeypatch.setattr(
         wordbank_entry_runtime.user_repo,
         "get_name_by_uid",
@@ -311,7 +312,7 @@ async def test_build_passive_message_renders_profile_combo_with_avatar(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     monkeypatch.setattr(
         wordbank_entry_runtime.user_repo,
         "get_name_by_uid",
@@ -360,7 +361,7 @@ async def test_build_passive_message_renders_avatar_placeholder(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_plugin, "wordbank_media_service", media_service)
+    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     monkeypatch.setattr(
         wordbank_entry_runtime.user_repo,
         "get_name_by_uid",
