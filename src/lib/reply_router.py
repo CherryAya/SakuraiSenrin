@@ -68,8 +68,6 @@ ReplyResolveReason = Literal[
 ]
 ReplyTextMatcher = Callable[[str], bool]
 ReplyRouteHandler = Callable[[Bot, MessageEvent, "ResolvedReplyTarget"], Awaitable[Any]]
-ReplyLegacyRule = Callable[[MessageEvent], Awaitable[bool]]
-ReplyLegacyHandler = Callable[[Bot, MessageEvent], Awaitable[Any]]
 
 
 @dataclass(slots=True, frozen=True)
@@ -116,8 +114,6 @@ class ReplyRoute:
     context_kinds: tuple[str, ...]
     text_matcher: ReplyTextMatcher
     handler: ReplyRouteHandler
-    legacy_rule: ReplyLegacyRule | None = None
-    legacy_handler: ReplyLegacyHandler | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -780,20 +776,12 @@ def build_reply_rule(route_name: str) -> Callable[[Bot, MessageEvent], Awaitable
         text = event.message.extract_plain_text()
         if not route.text_matcher(text):
             return False
-        if route.legacy_rule is not None and await route.legacy_rule(event):
-            logger.debug(
-                "[ReplyRouter] rule matched via legacy bridge "
-                f"name={route_name} {_event_log_fields(event)}"
-            )
-            return True
         target = await resolve_reply_target(
             bot,
             event,
             allowed_context_kinds=route.context_kinds,
         )
         if target is None:
-            if route.legacy_rule is not None:
-                return await route.legacy_rule(event)
             return False
         logger.debug(
             "[ReplyRouter] rule matched "
@@ -813,20 +801,6 @@ async def dispatch_reply_route(
     route = get_reply_route(route_name)
     if route is None:
         raise RuntimeError(f"reply route {route_name!r} is not registered")
-    if (
-        route.legacy_rule is not None
-        and route.legacy_handler is not None
-        and await route.legacy_rule(event)
-    ):
-        direct_target = await resolve_reply_target(
-            bot,
-            event,
-            allowed_context_kinds=route.context_kinds,
-            allow_hash_fallback=False,
-        )
-        if direct_target is not None:
-            return await route.handler(bot, event, direct_target)
-        return await route.legacy_handler(bot, event)
     target = await resolve_reply_target(
         bot,
         event,
@@ -837,8 +811,6 @@ async def dispatch_reply_route(
             "[ReplyRouter] dispatch skipped reason=target_not_resolved "
             f"name={route_name} {_event_log_fields(event)}"
         )
-        if route.legacy_handler is not None:
-            return await route.legacy_handler(bot, event)
         return None
     logger.debug(
         "[ReplyRouter] dispatch matched "
@@ -851,8 +823,6 @@ async def dispatch_reply_route(
 __all__ = [
     "ReplyContextRecord",
     "ReplyContextSpec",
-    "ReplyLegacyHandler",
-    "ReplyLegacyRule",
     "ReplyRoute",
     "ReplyRouteHandler",
     "ReplyTextMatcher",

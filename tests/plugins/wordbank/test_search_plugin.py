@@ -36,7 +36,6 @@ from src.plugins.wordbank import lifecycle as lifecycle_module
 from src.plugins.wordbank import services as services_module
 from src.plugins.wordbank import views as views_module
 from src.plugins.wordbank.database.types import (
-    WordbankMessageRefRecord,
     WordbankSearchItem,
     WordbankSearchPage,
 )
@@ -44,6 +43,7 @@ from src.plugins.wordbank.handlers import commands as handlers_commands
 from src.plugins.wordbank.handlers import media_helpers as handlers_media_helpers
 from src.plugins.wordbank.handlers import mutation as handlers_mutation
 from tests.plugins.water.helpers import attach_reply_message, build_group_message_event
+from tests.plugins.wordbank.conftest import seed_reply_context
 
 _SEARCH_DIMENSIONS_PROMPT = tr("zh-CN", "wordbank.guided.search.mode_prompt")
 _SEARCH_QUERY_PROMPT = tr("zh-CN", "wordbank.guided.search.keyword_prompt")
@@ -573,30 +573,21 @@ async def test_view_reply_matcher_routes_search_result_reply_to_group_detail(
         "send_group_detail_view",
         AsyncMock(return_value=None),
     )
-    monkeypatch.setattr(
-        services_module.wordbank_service,
-        "get_message_ref",
-        AsyncMock(
-            return_value=WordbankMessageRefRecord(
-                message_id="90001",
-                ref_kind="view",
-                shard_key="2026_06",
-                context_type="search_result",
-                trigger_group_id=0,
-                trigger_variant_id=0,
-                response_item_id=0,
-                current_page=1,
-                keyword="jrlp",
-                field="all",
-                creator_id="",
-                has_image=False,
-                group_ids=(271,),
-                group_id="20001",
-                user_id="10001",
-                message_type="group",
-                source_message_id="",
-            )
-        ),
+    await seed_reply_context(
+        message_id=90001,
+        context_kind="wordbank.view",
+        payload={
+            "ref_kind": "view",
+            "context_type": "search_result",
+            "trigger_group_id": 0,
+            "current_page": 1,
+            "keyword": "jrlp",
+            "field": "all",
+            "group_ids": [271],
+            "group_id": "20001",
+            "user_id": "10001",
+            "message_type": "group",
+        },
     )
 
     async with app.test_matcher(wordbank_plugin.wordbank_view_reply_command) as ctx:
@@ -631,30 +622,19 @@ async def test_view_reply_matcher_routes_group_detail_reply_to_next_page(
         "send_group_detail_view",
         send_group_detail_view,
     )
-    monkeypatch.setattr(
-        services_module.wordbank_service,
-        "get_message_ref",
-        AsyncMock(
-            return_value=WordbankMessageRefRecord(
-                message_id="90002",
-                ref_kind="view",
-                shard_key="2026_06",
-                context_type="group_detail",
-                trigger_group_id=271,
-                trigger_variant_id=0,
-                response_item_id=0,
-                current_page=2,
-                keyword="",
-                field="",
-                creator_id="",
-                has_image=False,
-                group_ids=(271,),
-                group_id="20001",
-                user_id="10001",
-                message_type="group",
-                source_message_id="",
-            )
-        ),
+    await seed_reply_context(
+        message_id=90002,
+        context_kind="wordbank.view",
+        payload={
+            "ref_kind": "view",
+            "context_type": "group_detail",
+            "trigger_group_id": 271,
+            "current_page": 2,
+            "group_ids": [271],
+            "group_id": "20001",
+            "user_id": "10001",
+            "message_type": "group",
+        },
     )
 
     async with app.test_matcher(wordbank_plugin.wordbank_view_reply_command) as ctx:
@@ -692,30 +672,19 @@ async def test_view_reply_matcher_routes_group_detail_reply_delete_to_handle_del
         "handle_delete",
         AsyncMock(side_effect=["词条 #300 已删除。", "词条 #301 已删除。"]),
     )
-    monkeypatch.setattr(
-        services_module.wordbank_service,
-        "get_message_ref",
-        AsyncMock(
-            return_value=WordbankMessageRefRecord(
-                message_id="90003",
-                ref_kind="view",
-                shard_key="2026_06",
-                context_type="group_detail",
-                trigger_group_id=271,
-                trigger_variant_id=0,
-                response_item_id=0,
-                current_page=1,
-                keyword="",
-                field="",
-                creator_id="",
-                has_image=False,
-                group_ids=(271,),
-                group_id="20001",
-                user_id="10001",
-                message_type="group",
-                source_message_id="",
-            )
-        ),
+    await seed_reply_context(
+        message_id=90003,
+        context_kind="wordbank.view",
+        payload={
+            "ref_kind": "view",
+            "context_type": "group_detail",
+            "trigger_group_id": 271,
+            "current_page": 1,
+            "group_ids": [271],
+            "group_id": "20001",
+            "user_id": "10001",
+            "message_type": "group",
+        },
     )
     monkeypatch.setattr(
         services_module.wordbank_service,

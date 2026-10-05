@@ -60,6 +60,7 @@ from src.lib.plugin_docs import (
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.reply_router import (
     ReplyRoute,
+    ResolvedReplyTarget,
     build_reply_rule,
     dispatch_reply_route,
     register_reply_route,
@@ -149,59 +150,19 @@ def _is_reject_reply_text(text: str) -> bool:
     return normalized in REJECT_REPLY_ALIASES
 
 
-def _get_reply_message_ids(event: MessageEvent) -> tuple[str, ...]:
-    reply = getattr(event, "reply", None)
-    if reply is None:
-        return ()
-    message_ids: list[str] = []
-    for attr_name in ("real_id", "message_id"):
-        value = getattr(reply, attr_name, None)
-        if value is None:
-            continue
-        text = str(value).strip()
-        if text and text not in message_ids:
-            message_ids.append(text)
-    return tuple(message_ids)
-
-
-async def _legacy_invitation_from_reply(event: MessageEvent) -> Any | None:
-    for message_id in _get_reply_message_ids(event):
-        invitation = await invite_repo.get_by_message_id(message_id)
-        if invitation is not None:
-            return invitation
-    return None
-
-
-async def _legacy_is_invitation_reply(event: MessageEvent) -> bool:
-    return await _legacy_invitation_from_reply(event) is not None
-
-
 async def _handle_registered_invite_reply_target(
     bot: Bot,
     event: MessageEvent,
-    target: object,
+    target: ResolvedReplyTarget,
 ) -> int | None:
     _ = (bot, event)
-    payload = getattr(target, "payload", {})
-    if not isinstance(payload, dict):
-        return None
+    payload = target.payload
     raw_invitation_id = payload.get("invitation_id", 0)
     if isinstance(raw_invitation_id, int):
         return raw_invitation_id
     if isinstance(raw_invitation_id, str) and raw_invitation_id.isdigit():
         return int(raw_invitation_id)
     return None
-
-
-async def _legacy_handle_invite_reply(
-    bot: Bot,
-    event: MessageEvent,
-) -> int | None:
-    _ = bot
-    invitation = await _legacy_invitation_from_reply(event)
-    if invitation is None:
-        return None
-    return int(invitation.id)
 
 
 # fmt: off
@@ -246,8 +207,6 @@ register_reply_route(
         context_kinds=("admin.invite.approval",),
         text_matcher=_is_approve_reply_text,
         handler=_handle_registered_invite_reply_target,
-        legacy_rule=_legacy_is_invitation_reply,
-        legacy_handler=_legacy_handle_invite_reply,
     )
 )
 register_reply_route(
@@ -256,8 +215,6 @@ register_reply_route(
         context_kinds=("admin.invite.approval",),
         text_matcher=_is_reject_reply_text,
         handler=_handle_registered_invite_reply_target,
-        legacy_rule=_legacy_is_invitation_reply,
-        legacy_handler=_legacy_handle_invite_reply,
     )
 )
 

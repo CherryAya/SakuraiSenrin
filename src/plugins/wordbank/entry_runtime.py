@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
@@ -28,6 +28,7 @@ from src.lib.message_plan import (
 )
 from src.lib.reply_router import (
     ReplyRoute,
+    ResolvedReplyTarget,
     dispatch_reply_route,
     register_reply_route,
 )
@@ -73,61 +74,10 @@ from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError
 
 
-async def _legacy_is_wordbank_response_reply(event: MessageEvent) -> bool:
-    reply_message_ids = get_reply_message_ids(event)
-    if not reply_message_ids:
-        return False
-    service = wordbank_service
-    for reply_message_id in reply_message_ids:
-        if (
-            await service.get_message_ref(
-                reply_message_id,
-                expected_kind="response",
-            )
-            is not None
-        ):
-            return True
-    return False
-
-
-async def _legacy_is_wordbank_approval_reply(event: MessageEvent) -> bool:
-    reply_message_ids = get_reply_message_ids(event)
-    if not reply_message_ids:
-        return False
-    service = wordbank_service
-    for reply_message_id in reply_message_ids:
-        if (
-            await service.get_message_ref(
-                reply_message_id,
-                expected_kind="approval",
-            )
-            is not None
-        ):
-            return True
-    return False
-
-
-async def _legacy_is_wordbank_view_reply(event: MessageEvent) -> bool:
-    reply_message_ids = get_reply_message_ids(event)
-    if not reply_message_ids:
-        return False
-    service = wordbank_service
-    for reply_message_id in reply_message_ids:
-        if (
-            await service.get_message_ref(
-                reply_message_id,
-                expected_kind="view",
-            )
-            is not None
-        ):
-            return True
-    return False
-
-
 async def _handle_registered_wordbank_response_reply(
     bot: Bot,
     event: MessageEvent,
-    target: object,
+    target: ResolvedReplyTarget,
 ) -> MessagePlanInput | None:
     _ = bot
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
@@ -140,18 +90,14 @@ async def _handle_registered_wordbank_response_reply(
         text=event.message.extract_plain_text(),
         locale=locale,
         media_service=media_service,
-        response_message=(
-            None
-            if target is None
-            else wordbank_message_ref_from_reply_target(cast(Any, target))
-        ),
+        response_message=wordbank_message_ref_from_reply_target(target),
     )
 
 
 async def _handle_registered_wordbank_approval_reply(
     bot: Bot,
     event: MessageEvent,
-    target: object,
+    target: ResolvedReplyTarget,
 ) -> ApprovalReplyOutcome:
     _ = bot
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
@@ -161,55 +107,17 @@ async def _handle_registered_wordbank_approval_reply(
         event=event,
         text=event.message.extract_plain_text(),
         locale=locale,
-        approval_message=(
-            None
-            if target is None
-            else wordbank_message_ref_from_reply_target(cast(Any, target))
-        ),
+        approval_message=wordbank_message_ref_from_reply_target(target),
     )
 
 
 async def _handle_registered_wordbank_view_reply(
     bot: Bot,
     event: MessageEvent,
-    target: object,
+    target: ResolvedReplyTarget,
 ) -> WordbankMessageRefRecord:
     _ = (bot, event)
-    if target is None:
-        reply_message_ids = get_reply_message_ids(event)
-        if not reply_message_ids:
-            raise RuntimeError("wordbank view reply target missing")
-        service = wordbank_service
-        for reply_message_id in reply_message_ids:
-            view_message = await service.get_message_ref(
-                reply_message_id,
-                expected_kind="view",
-            )
-            if view_message is not None:
-                return view_message
-        raise RuntimeError("wordbank view reply target not found")
-    return wordbank_message_ref_from_reply_target(cast(Any, target))
-
-
-async def _legacy_wordbank_response_handler(
-    bot: Bot,
-    event: MessageEvent,
-) -> MessagePlanInput | None:
-    return await _handle_registered_wordbank_response_reply(bot, event, None)
-
-
-async def _legacy_wordbank_approval_handler(
-    bot: Bot,
-    event: MessageEvent,
-) -> ApprovalReplyOutcome:
-    return await _handle_registered_wordbank_approval_reply(bot, event, None)
-
-
-async def _legacy_wordbank_view_handler(
-    bot: Bot,
-    event: MessageEvent,
-) -> WordbankMessageRefRecord:
-    return await _handle_registered_wordbank_view_reply(bot, event, None)
+    return wordbank_message_ref_from_reply_target(target)
 
 
 register_reply_route(
@@ -218,8 +126,6 @@ register_reply_route(
         context_kinds=("wordbank.response",),
         text_matcher=lambda _text: True,
         handler=_handle_registered_wordbank_response_reply,
-        legacy_rule=_legacy_is_wordbank_response_reply,
-        legacy_handler=_legacy_wordbank_response_handler,
     )
 )
 register_reply_route(
@@ -228,8 +134,6 @@ register_reply_route(
         context_kinds=("wordbank.approval",),
         text_matcher=lambda _text: True,
         handler=_handle_registered_wordbank_approval_reply,
-        legacy_rule=_legacy_is_wordbank_approval_reply,
-        legacy_handler=_legacy_wordbank_approval_handler,
     )
 )
 register_reply_route(
@@ -238,8 +142,6 @@ register_reply_route(
         context_kinds=("wordbank.view",),
         text_matcher=lambda _text: True,
         handler=_handle_registered_wordbank_view_reply,
-        legacy_rule=_legacy_is_wordbank_view_reply,
-        legacy_handler=_legacy_wordbank_view_handler,
     )
 )
 

@@ -8,8 +8,8 @@ import pytest
 
 from src.lib.messages import text_message
 from src.plugins.wordbank import entry_runtime as wordbank_runtime_module
-from src.plugins.wordbank.database.types import WordbankMessageRefRecord
 from src.plugins.wordbank.handlers.reply import ApprovalReplyOutcome
+from tests.plugins.wordbank.conftest import seed_reply_context
 
 nonebot.init(
     SUPERUSERS={"1"},
@@ -33,7 +33,6 @@ from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank import entry_commands
 from src.plugins.wordbank import entry_commands as entry_commands_module
 from src.plugins.wordbank import lifecycle as lifecycle_module
-from src.plugins.wordbank import services as services_module
 from src.plugins.wordbank import views as views_module
 from src.plugins.wordbank.handlers import commands as handlers_commands
 from src.plugins.wordbank.handlers import media_helpers as handlers_media_helpers
@@ -538,30 +537,18 @@ async def test_wordbank_approval_reply_matcher_accepts_plain_reply_without_at(
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
     )
-    monkeypatch.setattr(
-        services_module.wordbank_service,
-        "get_message_ref",
-        AsyncMock(
-            return_value=WordbankMessageRefRecord(
-                message_id="90001",
-                ref_kind="approval",
-                shard_key="2026_06",
-                trigger_group_id=12,
-                trigger_variant_id=0,
-                response_item_id=300,
-                group_id="20001",
-                user_id="10001",
-                message_type="approval",
-                source_message_id="1",
-                context_type="",
-                current_page=1,
-                keyword="",
-                field="",
-                creator_id="",
-                has_image=False,
-                group_ids=(),
-            )
-        ),
+    await seed_reply_context(
+        message_id=90001,
+        context_kind="wordbank.approval",
+        payload={
+            "ref_kind": "approval",
+            "trigger_group_id": 12,
+            "response_item_id": 300,
+            "group_id": "20001",
+            "user_id": "10001",
+            "message_type": "approval",
+            "source_message_id": "1",
+        },
     )
     monkeypatch.setattr(
         wordbank_runtime_module,
@@ -600,35 +587,6 @@ async def test_wordbank_approval_reply_matcher_accepts_private_reply_real_id(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        services_module.wordbank_service,
-        "get_message_ref",
-        AsyncMock(
-            side_effect=lambda message_id, expected_kind=None: (
-                WordbankMessageRefRecord(
-                    message_id="90001",
-                    ref_kind="approval",
-                    shard_key="2026_06",
-                    trigger_group_id=12,
-                    trigger_variant_id=0,
-                    response_item_id=300,
-                    group_id="20001",
-                    user_id="10001",
-                    message_type="approval",
-                    source_message_id="1",
-                    context_type="",
-                    current_page=1,
-                    keyword="",
-                    field="",
-                    creator_id="",
-                    has_image=False,
-                    group_ids=(),
-                )
-                if message_id == "90001"
-                else None
-            )
-        ),
-    )
-    monkeypatch.setattr(
         wordbank_runtime_module,
         "handle_approval_reply_result",
         AsyncMock(
@@ -636,6 +594,19 @@ async def test_wordbank_approval_reply_matcher_accepts_private_reply_real_id(
                 message="审批已完成：词条 #300 已通过。",
             )
         ),
+    )
+    await seed_reply_context(
+        message_id=90001,
+        context_kind="wordbank.approval",
+        payload={
+            "ref_kind": "approval",
+            "trigger_group_id": 12,
+            "response_item_id": 300,
+            "group_id": "20001",
+            "user_id": "10001",
+            "message_type": "approval",
+            "source_message_id": "1",
+        },
     )
 
     async with app.test_matcher(wordbank_plugin.wordbank_approval_reply_command) as ctx:
