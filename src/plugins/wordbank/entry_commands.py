@@ -166,7 +166,7 @@ async def handle_wordbank_command_message(
         Awaitable[None],
     ]
     | None,
-    notify_creator_review_result: Callable[..., Awaitable[None]],
+    notify_creator_review_result: Callable[..., Awaitable[bool]],
     forced_action: str | None = None,
     state: T_State | None = None,
 ) -> None:
@@ -410,7 +410,7 @@ def register_wordbank_command_handlers(
     register_guided_checkpoint: Callable[..., None],
     guided_locale: Callable[[T_State], LocaleCode],
     copy_guided_state: Callable[..., dict[str, Any]],
-    notify_creator_review_result: Callable[..., Awaitable[None]],
+    notify_creator_review_result: Callable[..., Awaitable[bool]],
     record_guided_forward_response_choice: Callable[
         [Matcher, MessageEvent, T_State, LocaleCode, Bot],
         Awaitable[None],

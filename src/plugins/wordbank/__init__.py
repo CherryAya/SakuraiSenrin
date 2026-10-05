@@ -64,6 +64,7 @@ from .matchers import (
     wordbank_search_command,
     wordbank_view_reply_command,
 )
+from .notify import notify_creator_review_result
 
 name = tr("zh-CN", "plugin.wordbank.name")
 description = tr("zh-CN", "plugin.wordbank.description")
@@ -137,7 +138,7 @@ register_wordbank_command_handlers(
     register_guided_checkpoint=register_guided_checkpoint,
     guided_locale=wordbank_guided_locale,
     copy_guided_state=copy_guided_state,
-    notify_creator_review_result=runtime_exports["notify_creator_review_result"],
+    notify_creator_review_result=notify_creator_review_result,
     record_guided_forward_response_choice=_record_guided_forward_response_choice,
     send_pending_entries_view=_send_pending_entries_view,
     resolve_locale_fn=resolve_locale,

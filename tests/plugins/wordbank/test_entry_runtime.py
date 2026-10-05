@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.plugins.wordbank import notify as notify_module
 from src.plugins.wordbank import services as services_module
 from src.plugins.wordbank import views as views_module
 from src.plugins.wordbank.database.types import WordbankMessageRefRecord
@@ -80,12 +81,13 @@ def _runtime_exports(
         service,
     )
     monkeypatch.setattr(services_module, "wordbank_service", service, raising=False)
-    monkeypatch.setattr(
-        runtime_module,
-        "deliver_message_plan",
-        deliver_message_plan
-        or AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},))),
+    plan_stub = deliver_message_plan or AsyncMock(
+        return_value=SimpleNamespace(results=({"message_id": 1},))
     )
+    monkeypatch.setattr(runtime_module, "deliver_message_plan", plan_stub)
+    # 审核通知逻辑已迁至 notify 模块，需要同步打桩
+    monkeypatch.setattr(notify_module, "wordbank_service", service)
+    monkeypatch.setattr(notify_module, "deliver_message_plan", plan_stub)
     return register_wordbank_runtime_handlers(
         wordbank_reply_command=SimpleNamespace(handle=lambda: lambda fn: fn),
         wordbank_approval_reply_command=SimpleNamespace(handle=lambda: lambda fn: fn),
@@ -124,11 +126,15 @@ def _runtime_with_command_stub(
     service = cast(Any, SimpleNamespace())
     monkeypatch.setattr(runtime_module, "wordbank_service", service)
     monkeypatch.setattr(services_module, "wordbank_service", service, raising=False)
+    plan_stub = deliver_message_plan or AsyncMock(
+        return_value=SimpleNamespace(results=({"message_id": 1},))
+    )
+    monkeypatch.setattr(runtime_module, "deliver_message_plan", plan_stub)
     monkeypatch.setattr(
-        runtime_module,
+        notify_module,
         "deliver_message_plan",
-        deliver_message_plan
-        or AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},))),
+        plan_stub,
+        raising=False,
     )
     finish_with_message = AsyncMock(return_value=None)
     monkeypatch.setattr(runtime_module, "finish_with_message", finish_with_message)
@@ -154,9 +160,9 @@ async def test_notify_creator_review_result_replies_and_mentions_creator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     deliver_plan = AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},)))
-    exports = _runtime_exports(monkeypatch, deliver_message_plan=deliver_plan)
+    _runtime_exports(monkeypatch, deliver_message_plan=deliver_plan)
 
-    await exports["notify_creator_review_result"](
+    await notify_module.notify_creator_review_result(
         cast(Any, SimpleNamespace()),
         response_item_id=300,
         action="approve",
@@ -183,13 +189,13 @@ async def test_notify_creator_review_result_uses_approval_message_context_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     deliver_plan = AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},)))
-    exports = _runtime_exports(
+    _runtime_exports(
         monkeypatch,
         list_message_refs_by_response_item_ids=AsyncMock(return_value=[]),
         deliver_message_plan=deliver_plan,
     )
 
-    await exports["notify_creator_review_result"](
+    await notify_module.notify_creator_review_result(
         cast(Any, SimpleNamespace()),
         response_item_id=300,
         action="reject",
@@ -210,7 +216,7 @@ async def test_notify_creator_review_results_merges_batch_notices_by_source_mess
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     deliver_plan = AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},)))
-    exports = _runtime_exports(
+    _runtime_exports(
         monkeypatch,
         list_message_refs_by_response_item_ids=AsyncMock(
             return_value=[_approval_batch_submission_message()]
@@ -218,7 +224,7 @@ async def test_notify_creator_review_results_merges_batch_notices_by_source_mess
         deliver_message_plan=deliver_plan,
     )
 
-    await exports["notify_creator_review_results"](
+    await notify_module.notify_creator_review_results(
         cast(Any, SimpleNamespace()),
         notices=((301, "approve"), (302, "approve"), (303, "approve")),
         locale="zh-CN",
@@ -346,6 +352,7 @@ async def test_approval_reply_handler_falls_back_to_source_notice(
     finish_with_message = AsyncMock(return_value=None)
     approval_reply_command = _CommandStub()
     monkeypatch.setattr(runtime_module, "deliver_message_plan", deliver_plan)
+    monkeypatch.setattr(notify_module, "deliver_message_plan", deliver_plan)
     monkeypatch.setattr(runtime_module, "finish_with_message", finish_with_message)
     monkeypatch.setattr(
         runtime_module,
