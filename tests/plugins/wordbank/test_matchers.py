@@ -30,6 +30,9 @@ if nonebot.get_plugin("wordbank") is None:
 from src.lib.i18n.runtime import tr
 from src.lib.message_assets import message_asset_repo
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank import views as views_module
+from src.plugins.wordbank.handlers import commands as handlers_commands
+from src.plugins.wordbank.handlers import media_helpers as handlers_media_helpers
 from src.plugins.wordbank.handlers import submission as wordbank_submission_handlers
 from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.message_model import shape_from_text
@@ -202,7 +205,7 @@ async def test_wordbank_add_direct_success_records_submission(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_commands,
         "handle_add_text_result",
         handle_add,
     )
@@ -222,7 +225,7 @@ async def test_wordbank_add_direct_success_records_submission(
         schedule_pending,
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_media_helpers,
         "fetch_first_image_bytes_from_message",
         AsyncMock(return_value=None),
     )
@@ -275,13 +278,13 @@ async def test_wordbank_search_command_preserves_keyword_whitespace(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_media_helpers,
         "fetch_first_image_bytes_from_message",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_send_search_result_view",
+        views_module,
+        "send_search_result_view",
         send_search,
     )
 
@@ -358,7 +361,7 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_commands,
         "handle_add_with_media_result",
         handle_add,
     )
@@ -378,12 +381,12 @@ async def test_wordbank_add_direct_media_submission_sends_processing_hint(
         schedule_pending,
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_media_helpers,
         "extract_image_urls",
         lambda _message: ["https://example.test/image.png"],
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_media_helpers,
         "fetch_first_image_bytes_from_message",
         AsyncMock(return_value=b"image-bytes"),
     )
@@ -443,8 +446,8 @@ async def test_wordbank_passive_matcher_sends_response(
         AsyncMock(return_value=response),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_record_passive_response_message",
+        views_module,
+        "record_passive_response_message",
         record_message,
     )
 
@@ -493,8 +496,8 @@ async def test_wordbank_notice_matcher_sends_response(
         AsyncMock(return_value=response),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_record_passive_response_message",
+        views_module,
+        "record_passive_response_message",
         record_message,
     )
 

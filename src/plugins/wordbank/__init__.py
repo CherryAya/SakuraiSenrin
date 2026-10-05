@@ -27,13 +27,9 @@ from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import (
-    CompositeProgressSink,
     LoggerProgressSink,
     LongTaskRunner,
-    LongTaskSink,
     LongTaskSpec,
-    MatcherProgressSink,
-    MessageEventProgressSink,
 )
 from src.lib.message_plan import MessagePlanInput
 from src.lib.plugin_meta import create_plugin_metadata
@@ -43,6 +39,7 @@ from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.services.startup_sync import ensure_restore_not_in_progress
 
 from . import guided_flow as guided_flow
+from . import views
 from .docs_support import (
     DOCS_SOURCE,
     wordbank_docs_meta,
@@ -56,7 +53,6 @@ from .guided_flow import (
     collect_search_query_content,
     copy_guided_state,
     finish_guided_add,
-    finish_guided_search,
     guided_search_stage,
     handle_search_session_event,
     record_guided_forward_response_choice,
@@ -64,7 +60,6 @@ from .guided_flow import (
     record_guided_trigger,
     register_guided_checkpoint,
     reject_guided_error,
-    resolve_search_delete_target_map,
     start_guided_add,
     start_guided_add_with_trigger_image,
     start_guided_search,
@@ -73,7 +68,11 @@ from .guided_flow import (
 from .guided_flow import (
     WORDBANK_GUIDED_SEARCH_STAGE_PAGE as WORDBANK_GUIDED_SEARCH_STAGE_PAGE,
 )
+from .guided_flow import (
+    resolve_search_delete_target_map as resolve_search_delete_target_map,
+)
 from .handlers import (
+    PassiveResponse,
     SubmissionLifecycle,
     localize_command_error,
     record_batch_submission_approval_message,  # noqa: F401
@@ -319,7 +318,7 @@ async def _send_pending_entries_view(
             prompt=tr(locale, "wordbank.view.processing"),
             threshold_ms=800,
         ),
-        sink=_build_wordbank_progress_sink(bot=bot, event=event),
+        sink=views.build_progress_sink(bot=bot, event=event),
     ) as long_task:
         await long_task.advance("rendering")
         await send_pending_entries_review(
@@ -485,44 +484,6 @@ runtime_exports = register_wordbank_runtime_handlers(
 )
 
 
-async def _finish_guided_search(
-    bot: Bot | None,
-    matcher: Matcher,
-    state: T_State,
-    event: MessageEvent,
-    locale: LocaleCode,
-    *,
-    page_number: int,
-    clamp_page: bool = False,
-) -> None:
-    async with LongTaskRunner(
-        LongTaskSpec(
-            task_name="wordbank.search.guided_view",
-            source_kind="wordbank_view",
-            prompt=tr(locale, "wordbank.view.processing"),
-            threshold_ms=800,
-        ),
-        sink=_build_wordbank_progress_sink(
-            bot=bot,
-            event=event,
-            matcher=matcher,
-        ),
-    ) as long_task:
-        await long_task.advance("rendering")
-        await finish_guided_search(
-            bot,
-            matcher,
-            state,
-            event,
-            locale,
-            page_number=page_number,
-            clamp_page=clamp_page,
-            wordbank_service=wordbank_service,
-            media_service=wordbank_media_service,
-            record_search_result_view_message=_record_search_result_view_message,
-        )
-
-
 async def _handle_search_session_event(
     bot: Bot,
     matcher: Matcher,
@@ -537,8 +498,8 @@ async def _handle_search_session_event(
         state,
         locale,
         wordbank_service=wordbank_service,
-        send_group_detail_view=_send_group_detail_view,
-        finish_guided_search_fn=_finish_guided_search,
+        send_group_detail_view=views.send_group_detail_view,
+        finish_guided_search_fn=views.finish_guided_search_view,
         build_error_message=_wordbank_error_message,
     )
 
@@ -558,22 +519,8 @@ async def _start_guided_search(
     )
 
 
-def _build_wordbank_progress_sink(
-    *,
-    bot: Bot | None,
-    event: MessageEvent,
-    matcher: Matcher | None = None,
-) -> CompositeProgressSink:
-    sinks: list[LongTaskSink] = [LoggerProgressSink()]
-    if bot is not None:
-        sinks.append(MessageEventProgressSink(bot, event))
-    elif matcher is not None:
-        sinks.append(MatcherProgressSink(matcher))
-    return CompositeProgressSink(*sinks)
-
-
 async def _finish_guided_add(
-    bot: Any,
+    bot: Bot,
     matcher: Matcher,
     event: MessageEvent,
     state: T_State,
@@ -588,97 +535,8 @@ async def _finish_guided_add(
     )
 
 
-async def _send_search_result_view(
-    bot: Any,
-    matcher: Matcher,
-    event: MessageEvent,
-    locale: LocaleCode,
-    *,
-    keyword: str,
-    image_scores: dict[int, float] | None = None,
-    state: T_State | None = None,
-) -> None:
-    if state is not None:
-        await runtime_exports["send_search_result_view"](
-            bot,
-            matcher,
-            event,
-            locale,
-            keyword=keyword,
-            image_scores=image_scores,
-            state=state,
-            finish_guided_search=_finish_guided_search,
-        )
-        return
-    async with LongTaskRunner(
-        LongTaskSpec(
-            task_name="wordbank.search.direct_view",
-            source_kind="wordbank_view",
-            prompt=tr(locale, "wordbank.view.processing"),
-            threshold_ms=800,
-        ),
-        sink=_build_wordbank_progress_sink(bot=bot, event=event, matcher=matcher),
-    ) as long_task:
-        await long_task.advance("rendering")
-        await runtime_exports["send_search_result_view"](
-            bot,
-            matcher,
-            event,
-            locale,
-            keyword=keyword,
-            image_scores=image_scores,
-            state=None,
-            finish_guided_search=_finish_guided_search,
-        )
-
-
-async def _send_group_detail_view(
-    bot: Any,
-    matcher: Matcher,
-    event: MessageEvent,
-    locale: LocaleCode,
-    *,
-    trigger_group_id: int,
-    page: int,
-    finish_after_send: bool = True,
-) -> None:
-    async with LongTaskRunner(
-        LongTaskSpec(
-            task_name="wordbank.group.detail_view",
-            source_kind="wordbank_view",
-            prompt=tr(locale, "wordbank.view.processing"),
-            threshold_ms=800,
-        ),
-        sink=_build_wordbank_progress_sink(bot=bot, event=event, matcher=matcher),
-    ) as long_task:
-        await long_task.advance("rendering")
-        await runtime_exports["send_group_detail_view"](
-            bot,
-            matcher,
-            event,
-            locale,
-            trigger_group_id=trigger_group_id,
-            page=page,
-            finish_after_send=finish_after_send,
-        )
-
-
-async def _record_search_result_view_message(*args: Any, **kwargs: Any) -> None:
-    await runtime_exports["record_search_result_view_message"](*args, **kwargs)
-
-
-async def _record_passive_response_message(*args: Any, **kwargs: Any) -> None:
-    await runtime_exports["record_passive_response_message"](*args, **kwargs)
-
-
-async def _resolve_search_delete_target_map(
-    *args: Any, **kwargs: Any
-) -> tuple[tuple[str, int], ...]:
-    return await resolve_search_delete_target_map(*args, **kwargs)
-
-
 async def _build_passive_message(
-    response: Any,
+    response: PassiveResponse,
     *,
     locale: LocaleCode,
 ) -> tuple[MessagePlanInput, dict[str, object]]:
@@ -705,8 +563,6 @@ register_wordbank_command_handlers(
     start_guided_add=_start_guided_add,
     start_guided_add_with_trigger_image=_start_guided_add_with_trigger_image,
     finish_guided_add=_finish_guided_add,
-    start_guided_search=_start_guided_search,
-    finish_guided_search=_finish_guided_search,
     handle_search_session_event=_handle_search_session_event,
     record_guided_trigger=_record_guided_trigger,
     record_guided_response=_record_guided_response,
@@ -715,8 +571,8 @@ register_wordbank_command_handlers(
     register_guided_checkpoint=register_guided_checkpoint,
     guided_locale=wordbank_guided_locale,
     copy_guided_state=copy_guided_state,
-    send_group_detail_view=_send_group_detail_view,
-    send_search_result_view=_send_search_result_view,
+    notify_creator_review_result=runtime_exports["notify_creator_review_result"],
+    record_guided_forward_response_choice=_record_guided_forward_response_choice,
     send_pending_entries_view=_send_pending_entries_view,
     resolve_locale_fn=resolve_locale,
     handle_wordbank_command_message_fn=lambda *args, **kwargs: (

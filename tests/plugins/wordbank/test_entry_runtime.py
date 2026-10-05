@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.plugins.wordbank import views as views_module
 from src.plugins.wordbank.database.types import WordbankMessageRefRecord
 from src.plugins.wordbank.entry_runtime import register_wordbank_runtime_handlers
 from src.plugins.wordbank.handlers.reply import ApprovalReplyOutcome
@@ -240,13 +241,14 @@ async def test_send_search_result_view_guided_passes_bot_to_finish_handler(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     finish_guided_search = AsyncMock(return_value=None)
-    exports = _runtime_exports(monkeypatch)
+    _runtime_exports(monkeypatch)
+    monkeypatch.setattr(views_module, "finish_guided_search_view", finish_guided_search)
     bot = cast(Any, SimpleNamespace(self_id="99999"))
     matcher = cast(Any, SimpleNamespace())
     event = build_group_message_event("#搜索词条 晚安", message_id=1)
     state: dict[str, Any] = {}
 
-    await exports["send_search_result_view"](
+    await views_module.send_search_result_view(
         bot,
         matcher,
         event,
@@ -254,7 +256,6 @@ async def test_send_search_result_view_guided_passes_bot_to_finish_handler(
         keyword="晚安",
         image_scores={7: 0.91},
         state=state,
-        finish_guided_search=finish_guided_search,
     )
 
     finish_guided_search.assert_awaited_once()

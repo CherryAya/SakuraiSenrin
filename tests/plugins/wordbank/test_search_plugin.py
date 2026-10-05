@@ -29,6 +29,7 @@ from src.lib.i18n.runtime import tr
 from src.lib.messages import text_message
 from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank import guided_flow as guided_flow_module
+from src.plugins.wordbank import views as views_module
 from src.plugins.wordbank import wordbank_search_command
 from src.plugins.wordbank.database.types import (
     WordbankMessageRefRecord,
@@ -99,7 +100,7 @@ async def test_wordbank_search_without_args_routes_to_guided_entry(
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
     )
-    monkeypatch.setattr(wordbank_plugin, "_start_guided_search", start_guided)
+    monkeypatch.setattr(guided_flow_module, "start_guided_search", start_guided)
 
     async with app.test_matcher(wordbank_search_command) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
@@ -221,8 +222,8 @@ async def test_guided_search_query_stage_accepts_image_message(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_finish_guided_search",
+        views_module,
+        "finish_guided_search_view",
         finish_guided_search,
     )
     monkeypatch.setattr(
@@ -283,8 +284,8 @@ async def test_guided_search_creator_stage_finishes_with_bot_argument(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_finish_guided_search",
+        views_module,
+        "finish_guided_search_view",
         finish_guided_search,
     )
 
@@ -347,7 +348,7 @@ async def test_finish_guided_search_finishes_with_rendered_card(
     }
     event = build_group_message_event("#搜索词条 晚安")
 
-    await wordbank_plugin._finish_guided_search(
+    await views_module.finish_guided_search_view(
         bot,
         cast(Matcher, matcher),
         state,
@@ -408,8 +409,8 @@ async def test_finish_guided_search_keeps_search_session_when_results_exist(
         AsyncMock(return_value=(("1-1", 12),)),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_record_search_result_view_message",
+        views_module,
+        "record_search_result_view_message",
         AsyncMock(return_value=None),
     )
 
@@ -422,7 +423,7 @@ async def test_finish_guided_search_keeps_search_session_when_results_exist(
     }
     event = build_group_message_event("#搜索词条 晚安")
 
-    await wordbank_plugin._finish_guided_search(
+    await views_module.finish_guided_search_view(
         bot,
         cast(Matcher, matcher),
         state,
@@ -458,8 +459,8 @@ async def test_handle_search_session_delete_refreshes_current_page(
         AsyncMock(return_value="词条 #12 已删除。"),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_finish_guided_search",
+        views_module,
+        "finish_guided_search_view",
         AsyncMock(return_value=None),
     )
 
@@ -495,9 +496,9 @@ async def test_handle_search_session_delete_refreshes_current_page(
     assert matcher.sent == []
     assert isinstance(handlers_mutation.handle_delete, AsyncMock)
     handlers_mutation.handle_delete.assert_awaited_once()
-    assert isinstance(wordbank_plugin._finish_guided_search, AsyncMock)
-    wordbank_plugin._finish_guided_search.assert_awaited_once()
-    await_args = wordbank_plugin._finish_guided_search.await_args
+    assert isinstance(views_module.finish_guided_search_view, AsyncMock)
+    views_module.finish_guided_search_view.assert_awaited_once()
+    await_args = views_module.finish_guided_search_view.await_args
     assert await_args is not None
     assert await_args.kwargs["page_number"] == 1
     assert await_args.kwargs["clamp_page"] is True
@@ -513,8 +514,8 @@ async def test_handle_search_session_delete_uses_response_level_index(
     handle_delete = AsyncMock(return_value="词条 #22 已删除。")
     monkeypatch.setattr(handlers_mutation, "handle_delete", handle_delete)
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_finish_guided_search",
+        views_module,
+        "finish_guided_search_view",
         AsyncMock(return_value=None),
     )
 
@@ -564,8 +565,8 @@ async def test_view_reply_matcher_routes_search_result_reply_to_group_detail(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_send_group_detail_view",
+        views_module,
+        "send_group_detail_view",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
@@ -601,8 +602,8 @@ async def test_view_reply_matcher_routes_search_result_reply_to_group_detail(
         attach_reply_message(event, message_id=90001)
         ctx.receive_event(bot, event)
 
-    assert isinstance(wordbank_plugin._send_group_detail_view, AsyncMock)
-    wordbank_plugin._send_group_detail_view.assert_awaited_once()
+    assert isinstance(views_module.send_group_detail_view, AsyncMock)
+    views_module.send_group_detail_view.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -622,8 +623,8 @@ async def test_view_reply_matcher_routes_group_detail_reply_to_next_page(
     )
     send_group_detail_view = AsyncMock(return_value=None)
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_send_group_detail_view",
+        views_module,
+        "send_group_detail_view",
         send_group_detail_view,
     )
     monkeypatch.setattr(

@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
     FriendRecallNoticeEvent,
-    GroupMessageEvent,
     GroupRecallNoticeEvent,
     MessageEvent,
     NoticeEvent,
@@ -20,12 +19,10 @@ from nonebot.matcher import Matcher
 from src.database.core.consts import Permission
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.interaction import clear_interaction_errors
 from src.lib.interactive_recall import (
     find_recall_session,
     is_supported_recall_notice,
     rebuild_temp_matcher,
-    register_root_message,
 )
 from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import (
@@ -41,25 +38,22 @@ from src.lib.message_plan import (
     deliver_message_plan,
     finish_with_message,
     normalize_message_plan_entry,
-    render_message_plan_input,
 )
 from src.lib.reply_router import (
     ReplyRoute,
     dispatch_reply_route,
-    record_reply_context_from_send_result,
     register_reply_route,
 )
 from src.lib.utils.img import QQAvatar
 from src.logger import logger
 from src.repositories import member_repo, user_repo
 
+from . import views
 from .database.types import WordbankMessageRefRecord
 from .guided_flow import WORDBANK_GUIDED_RECALL_PENDING_KEYS
 from .handlers import (
     ApprovalReplyOutcome,
     PassiveResponse,
-    build_group_detail_message,
-    build_wordbank_reply_context_spec,
     get_reply_message_ids,
     group_detail_page_response_item_ids,
     handle_approval_reply_result,
@@ -70,12 +64,6 @@ from .handlers import (
     wordbank_message_ref_from_reply_target,
 )
 from .handlers import mutation as handlers_mutation
-from .handlers.commands import (
-    ParsedSearch,
-    execute_search_page,
-    parse_search_args,
-    render_search_page_message,
-)
 from .handlers.rendering import (
     _build_image_payload_stats,
     _load_shape_image_bytes,
@@ -129,306 +117,6 @@ def register_wordbank_runtime_handlers(
             "wordbank_media_service",
             wordbank_media_service,
         )
-
-    def _extract_sent_message_id(result: Any) -> str | None:
-        if isinstance(result, dict):
-            value = result.get("message_id")
-        else:
-            value = getattr(result, "message_id", None)
-        if value is None:
-            return None
-        return str(value)
-
-    async def _record_passive_response_message(
-        response: PassiveResponse,
-        send_result: Any,
-        *,
-        bot: Bot | None = None,
-        fallback_message: MessagePlanInput | None = None,
-    ) -> None:
-        message_id = _extract_sent_message_id(send_result)
-        if message_id is None:
-            return
-        try:
-            service = await _get_wordbank_service()
-            await service.record_message_ref(
-                ref_kind="response",
-                message_id=message_id,
-                trigger_group_id=response.trigger_group_id,
-                trigger_variant_id=response.trigger_variant_id,
-                response_item_id=response.response_item_id,
-                group_id=response.group_id,
-                user_id=response.user_id,
-                message_type=response.message_type,
-            )
-            if bot is not None and fallback_message is not None:
-                await record_reply_context_from_send_result(
-                    bot,
-                    send_result=send_result,
-                    context_spec=build_wordbank_reply_context_spec(
-                        context_kind="wordbank.response",
-                        ref_kind="response",
-                        trigger_group_id=response.trigger_group_id,
-                        trigger_variant_id=response.trigger_variant_id,
-                        response_item_id=response.response_item_id,
-                        group_id=response.group_id,
-                        user_id=response.user_id,
-                        message_type=response.message_type,
-                    ),
-                    source_kind="wordbank_response",
-                    origin_message_type=response.message_type,
-                    origin_target_id=(
-                        response.group_id
-                        if response.message_type == "group"
-                        else response.user_id
-                    ),
-                    fallback_message=render_message_plan_input(fallback_message),
-                )
-        except Exception as exc:
-            logger.warning(f"[Wordbank] response message record skipped: {exc}")
-
-    def _event_message_type(event: MessageEvent) -> str:
-        return "group" if isinstance(event, GroupMessageEvent) else "private"
-
-    def _notice_delivery_target(event: NoticeEvent) -> DeliveryTarget:
-        group_id = str(getattr(event, "group_id", "") or "")
-        if group_id:
-            return DeliveryTarget(kind="group", target_id=group_id)
-        return DeliveryTarget(
-            kind="private",
-            target_id=str(getattr(event, "user_id", "")),
-        )
-
-    async def _record_view_message(
-        *,
-        bot: Bot | None = None,
-        send_result: Any,
-        fallback_message: MessagePlanInput | None = None,
-        event: MessageEvent,
-        context_type: str,
-        trigger_group_id: int,
-        current_page: int,
-        keyword: str,
-        field: str,
-        creator_id: str,
-        has_image: bool,
-        group_ids: Sequence[int],
-    ) -> None:
-        message_id = _extract_sent_message_id(send_result)
-        if message_id is None:
-            return
-        try:
-            service = await _get_wordbank_service()
-            await service.record_message_ref(
-                ref_kind="view",
-                message_id=message_id,
-                context_type=context_type,
-                trigger_group_id=trigger_group_id,
-                current_page=current_page,
-                keyword=keyword,
-                field=field,
-                creator_id=creator_id,
-                has_image=has_image,
-                group_ids=group_ids,
-                group_id=str(getattr(event, "group_id", "") or ""),
-                user_id=str(event.user_id),
-                message_type=_event_message_type(event),
-            )
-            if bot is not None and fallback_message is not None:
-                await record_reply_context_from_send_result(
-                    bot,
-                    send_result=send_result,
-                    context_spec=build_wordbank_reply_context_spec(
-                        context_kind="wordbank.view",
-                        ref_kind="view",
-                        trigger_group_id=trigger_group_id,
-                        group_id=str(getattr(event, "group_id", "") or ""),
-                        user_id=str(event.user_id),
-                        message_type=_event_message_type(event),
-                        context_type=context_type,
-                        current_page=current_page,
-                        keyword=keyword,
-                        field=field,
-                        creator_id=creator_id,
-                        has_image=has_image,
-                        group_ids=group_ids,
-                    ),
-                    source_kind="wordbank_view",
-                    origin_message_type=_event_message_type(event),
-                    origin_target_id=(
-                        str(getattr(event, "group_id", "") or "") or str(event.user_id)
-                    ),
-                    fallback_message=render_message_plan_input(fallback_message),
-                )
-        except Exception as exc:
-            logger.warning(f"[Wordbank] view message record skipped: {exc}")
-
-    async def _record_search_result_view_message(
-        *,
-        bot: Bot | None = None,
-        send_result: Any,
-        fallback_message: MessagePlanInput | None = None,
-        event: MessageEvent,
-        parsed: ParsedSearch,
-        page: Any,
-        has_image: bool,
-    ) -> None:
-        await _record_view_message(
-            bot=bot,
-            send_result=send_result,
-            fallback_message=fallback_message,
-            event=event,
-            context_type="search_result",
-            trigger_group_id=0,
-            current_page=parsed.page,
-            keyword=parsed.keyword,
-            field=parsed.field,
-            creator_id=parsed.creator_id,
-            has_image=has_image,
-            group_ids=[item.trigger_group_id for item in page.items],
-        )
-
-    async def _record_group_detail_view_message(
-        *,
-        bot: Bot | None = None,
-        send_result: Any,
-        fallback_message: MessagePlanInput | None = None,
-        event: MessageEvent,
-        trigger_group_id: int,
-        page: int,
-        has_image: bool,
-    ) -> None:
-        await _record_view_message(
-            bot=bot,
-            send_result=send_result,
-            fallback_message=fallback_message,
-            event=event,
-            context_type="group_detail",
-            trigger_group_id=trigger_group_id,
-            current_page=page,
-            keyword="",
-            field="",
-            creator_id="",
-            has_image=has_image,
-            group_ids=[trigger_group_id],
-        )
-
-    def _group_detail_has_image(detail: Any) -> bool:
-        if any(atom.kind == "image" for atom in detail.trigger_shape.atoms):
-            return True
-        return any(
-            atom.kind == "image"
-            for response in detail.responses
-            for atom in response.response_shape.atoms
-        )
-
-    async def send_search_result_view(
-        bot: Bot,
-        matcher: Matcher,
-        event: MessageEvent,
-        locale: LocaleCode,
-        *,
-        keyword: str,
-        image_scores: dict[int, float] | None = None,
-        state: Any = None,
-        finish_guided_search: Callable[..., Awaitable[None]] | None = None,
-    ) -> None:
-        parsed = parse_search_args(keyword)
-        service = await _get_wordbank_service()
-        media_service = await _get_wordbank_media_service()
-        if state is None:
-            page = await execute_search_page(
-                service,
-                parsed=parsed,
-                image_scores=image_scores,
-            )
-            message = await render_search_page_message(
-                page,
-                parsed=parsed,
-                locale=locale,
-                has_image=image_scores is not None,
-                media_service=media_service,
-            )
-            plan_result = await deliver_message_plan(
-                bot,
-                plan=DeliveryPlan(
-                    messages=(message,),
-                    source_kind="wordbank_view",
-                ),
-                event=event,
-            )
-            send_result = plan_result.results[0]
-            await _record_search_result_view_message(
-                bot=bot,
-                send_result=send_result,
-                fallback_message=message,
-                event=event,
-                parsed=parsed,
-                page=page,
-                has_image=image_scores is not None,
-            )
-            await matcher.finish()
-            return
-
-        clear_interaction_errors(state)
-        state["wordbank_locale"] = locale
-        state["wordbank_guided_search_field"] = parsed.field
-        state["wordbank_guided_search_keyword"] = parsed.keyword
-        state["wordbank_guided_search_creator_id"] = parsed.creator_id
-        state["wordbank_guided_search_has_image"] = image_scores is not None
-        state["wordbank_guided_search_image_scores"] = dict(image_scores or {})
-        state["wordbank_guided_search_requires_creator"] = False
-        register_root_message(state, event)
-        if finish_guided_search is None:
-            return
-        await finish_guided_search(
-            bot,
-            matcher,
-            state,
-            event,
-            locale,
-            page_number=parsed.page,
-        )
-
-    async def send_group_detail_view(
-        bot: Bot,
-        matcher: Matcher,
-        event: MessageEvent,
-        locale: LocaleCode,
-        *,
-        trigger_group_id: int,
-        page: int,
-        finish_after_send: bool = True,
-    ) -> None:
-        service = await _get_wordbank_service()
-        media_service = await _get_wordbank_media_service()
-        message, detail, _ = await build_group_detail_message(
-            service,
-            trigger_group_id=trigger_group_id,
-            page=page,
-            locale=locale,
-            media_service=media_service,
-        )
-        plan_result = await deliver_message_plan(
-            bot,
-            plan=DeliveryPlan(
-                messages=(message,),
-                source_kind="wordbank_view",
-            ),
-            event=event,
-        )
-        send_result = plan_result.results[0]
-        await _record_group_detail_view_message(
-            bot=bot,
-            send_result=send_result,
-            fallback_message=message,
-            event=event,
-            trigger_group_id=trigger_group_id,
-            page=page,
-            has_image=_group_detail_has_image(detail),
-        )
-        if finish_after_send:
-            await matcher.finish()
 
     async def notify_approval_source(
         bot: Bot,
@@ -1411,7 +1099,7 @@ def register_wordbank_runtime_handlers(
                     trigger_group_id=view_message.trigger_group_id,
                     current_page=view_message.current_page,
                 )
-            await (await _get_plugin_attr("_send_group_detail_view"))(
+            await views.send_group_detail_view(
                 bot,
                 matcher,
                 event,
@@ -1520,7 +1208,7 @@ def register_wordbank_runtime_handlers(
         action_ms = elapsed_ms(action_start) if compiled.post_actions else 0.0
         record_start = perf_start()
         if send_result is not None:
-            await (await _get_plugin_attr("_record_passive_response_message"))(
+            await views.record_passive_response_message(
                 response,
                 send_result,
                 bot=bot,
@@ -1571,7 +1259,7 @@ def register_wordbank_runtime_handlers(
                             messages=((tr(locale, "interaction.cancelled")),),
                             source_kind="wordbank_notice",
                         ),
-                        target=_notice_delivery_target(recall_event),
+                        target=views.notice_delivery_target(recall_event),
                     )
                     return
                 rebuild_temp_matcher(
@@ -1586,7 +1274,7 @@ def register_wordbank_runtime_handlers(
                         messages=((checkpoint.prompt),),
                         source_kind="wordbank_notice",
                     ),
-                    target=_notice_delivery_target(recall_event),
+                    target=views.notice_delivery_target(recall_event),
                 )
                 return
 
@@ -1653,7 +1341,7 @@ def register_wordbank_runtime_handlers(
                     messages=(message,),
                     source_kind="wordbank_response",
                 ),
-                target=_notice_delivery_target(event),
+                target=views.notice_delivery_target(event),
             )
             send_result = plan_result.results[0]
             send_ms = elapsed_ms(send_start)
@@ -1672,7 +1360,7 @@ def register_wordbank_runtime_handlers(
         action_ms = elapsed_ms(action_start) if compiled.post_actions else 0.0
         record_start = perf_start()
         if send_result is not None:
-            await (await _get_plugin_attr("_record_passive_response_message"))(
+            await views.record_passive_response_message(
                 response,
                 send_result,
                 bot=bot,
@@ -1697,10 +1385,6 @@ def register_wordbank_runtime_handlers(
         )
 
     return {
-        "send_group_detail_view": send_group_detail_view,
-        "send_search_result_view": send_search_result_view,
-        "record_search_result_view_message": _record_search_result_view_message,
-        "record_passive_response_message": _record_passive_response_message,
         "notify_approval_source": notify_approval_source,
         "notify_creator_review_result": notify_creator_review_result,
         "notify_creator_review_results": notify_creator_review_results,

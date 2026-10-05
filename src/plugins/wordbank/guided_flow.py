@@ -1044,7 +1044,7 @@ async def handle_search_session_event(
             return
         clear_interaction_errors(state)
         await send_group_detail_view(
-            bot,
+            _require_guided_bot(bot, matcher),
             matcher,
             event,
             locale,
@@ -1104,7 +1104,7 @@ async def handle_search_session_event(
             )
         clear_interaction_errors(state)
         await finish_guided_search_fn(
-            bot,
+            _require_guided_bot(bot, matcher),
             matcher,
             state,
             event,
@@ -1126,7 +1126,7 @@ async def handle_search_session_event(
         return
     clear_interaction_errors(state)
     await finish_guided_search_fn(
-        bot,
+        _require_guided_bot(bot, matcher),
         matcher,
         state,
         event,

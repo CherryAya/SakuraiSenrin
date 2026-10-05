@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Protocol
 
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -38,7 +39,7 @@ class ErrorBuilder(Protocol):
 class InitializePlugin(Protocol):
     """幂等的插件初始化入口。"""
 
-    async def __call__(self) -> None: ...
+    def __call__(self) -> Awaitable[None]: ...
 
 
 class RecordViewMessage(Protocol):
@@ -60,7 +61,7 @@ class SendGroupDetailView(Protocol):
 
     async def __call__(
         self,
-        bot: Bot | None,
+        bot: Bot,
         matcher: Matcher,
         event: MessageEvent,
         locale: LocaleCode,
@@ -76,7 +77,7 @@ class FinishGuidedSearch(Protocol):
 
     async def __call__(
         self,
-        bot: Bot | None,
+        bot: Bot,
         matcher: Matcher,
         state: T_State,
         event: MessageEvent,

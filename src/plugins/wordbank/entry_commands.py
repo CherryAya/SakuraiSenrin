@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from inspect import isawaitable
 from typing import Any
 
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -29,6 +28,8 @@ from src.lib.message_plan import (
     pause_with_message,
 )
 
+from . import guided_flow as guided_flow_module
+from . import views
 from .guided_flow import (
     WORDBANK_GUIDED_SEARCH_STAGE_CREATOR,
     WORDBANK_GUIDED_SEARCH_STAGE_DIMENSIONS,
@@ -44,6 +45,8 @@ from .handlers import (
     dispatch_wordbank_command_with_outcome,
     parse_group_view_args,
 )
+from .handlers import commands as handlers_commands
+from .handlers import media_helpers as handlers_media_helpers
 from .handlers.commands import (
     PENDING_ALIASES,
     RANK_ALIASES,
@@ -170,11 +173,6 @@ def register_wordbank_command_handlers(
         Awaitable[None],
     ],
     finish_guided_add: Callable[[Bot, Matcher, MessageEvent, T_State], Awaitable[None]],
-    start_guided_search: Callable[
-        [Matcher, MessageEvent, T_State, LocaleCode],
-        Awaitable[None],
-    ],
-    finish_guided_search: Callable[..., Awaitable[None]],
     handle_search_session_event: Callable[
         [Bot, Matcher, MessageEvent, T_State, LocaleCode],
         Awaitable[None],
@@ -194,8 +192,11 @@ def register_wordbank_command_handlers(
     register_guided_checkpoint: Callable[..., None],
     guided_locale: Callable[[T_State], LocaleCode],
     copy_guided_state: Callable[..., dict[str, Any]],
-    send_group_detail_view: Callable[..., Awaitable[None]],
-    send_search_result_view: Callable[..., Awaitable[None]],
+    notify_creator_review_result: Callable[..., Awaitable[None]],
+    record_guided_forward_response_choice: Callable[
+        [Matcher, MessageEvent, T_State, LocaleCode, Bot],
+        Awaitable[None],
+    ],
     resolve_locale_fn: Callable[[str | None], Awaitable[LocaleCode]] = resolve_locale,
     handle_wordbank_command_message_fn: Callable[..., Awaitable[None]] | None = None,
     send_pending_entries_view: Callable[
@@ -204,15 +205,6 @@ def register_wordbank_command_handlers(
     ]
     | None = None,
 ) -> None:
-    async def _call_dynamic(name: str, *args: Any, **kwargs: Any) -> Any:
-        from src.plugins import wordbank as wordbank_plugin
-
-        target = getattr(wordbank_plugin, name)
-        result = target(*args, **kwargs)
-        if isawaitable(result):
-            return await result
-        return result
-
     async def handle_wordbank_command_message(
         bot: Bot,
         matcher: Matcher,
@@ -236,7 +228,7 @@ def register_wordbank_command_handlers(
             and parsed_session_command.action == "detail"
             and parsed_session_command.trigger_group_id is not None
         ):
-            await send_group_detail_view(
+            await views.send_group_detail_view(
                 bot,
                 matcher,
                 event,
@@ -247,10 +239,9 @@ def register_wordbank_command_handlers(
             return
         if action in {"add", "添加", "学习"}:
             try:
-                has_images = bool(await _call_dynamic("extract_image_urls", arg))
+                has_images = bool(handlers_media_helpers.extract_image_urls(arg))
                 if not has_images:
-                    result = await _call_dynamic(
-                        "handle_add_text_result",
+                    result = await handlers_commands.handle_add_text_result(
                         wordbank_service,
                         event=event,
                         text=rest,
@@ -269,27 +260,28 @@ def register_wordbank_command_handlers(
                         ),
                     )
                     async with long_task:
-                        data = await _call_dynamic(
-                            "fetch_first_image_bytes_from_message",
-                            arg,
-                            task=long_task,
+                        data = await (
+                            handlers_media_helpers.fetch_first_image_bytes_from_message(
+                                arg,
+                                task=long_task,
+                            )
                         )
                         if data is None:
-                            result = await _call_dynamic(
-                                "handle_add_text_result",
+                            result = await handlers_commands.handle_add_text_result(
                                 wordbank_service,
                                 event=event,
                                 text=rest,
                             )
                         else:
-                            result = await _call_dynamic(
-                                "handle_add_with_media_result",
-                                wordbank_service,
-                                wordbank_media_service,
-                                event=event,
-                                image_bytes=data,
-                                text=rest,
-                                task=long_task,
+                            result = (
+                                await handlers_commands.handle_add_with_media_result(
+                                    wordbank_service,
+                                    wordbank_media_service,
+                                    event=event,
+                                    image_bytes=data,
+                                    text=rest,
+                                    task=long_task,
+                                )
                             )
                         await long_task.advance("submitting")
             except (RuleError, ValueError) as exc:
@@ -324,8 +316,7 @@ def register_wordbank_command_handlers(
                 )
                 return
             try:
-                await _call_dynamic(
-                    "_send_search_result_view",
+                await views.send_search_result_view(
                     bot,
                     matcher,
                     event,
@@ -350,8 +341,7 @@ def register_wordbank_command_handlers(
         if action in {"详情", *GROUP_ALIASES}:
             try:
                 parsed_group = parse_group_view_args(rest)
-                await _call_dynamic(
-                    "_send_group_detail_view",
+                await views.send_group_detail_view(
                     bot,
                     matcher,
                     event,
@@ -388,8 +378,7 @@ def register_wordbank_command_handlers(
                 media_service=wordbank_media_service,
             )
             if outcome is not None and outcome.completed and outcome.action:
-                await _call_dynamic(
-                    "notify_creator_review_result",
+                await notify_creator_review_result(
                     bot,
                     response_item_id=outcome.response_item_id,
                     action=outcome.action,
@@ -444,9 +433,8 @@ def register_wordbank_command_handlers(
         if has_meaningful_text(text):
             first, tail = split_command_text(text)
             if first in {"add", "添加", "学习"} and not has_meaningful_text(tail):
-                if await _call_dynamic("extract_image_urls", arg):
-                    await _call_dynamic(
-                        "_start_guided_add_with_trigger_image",
+                if handlers_media_helpers.extract_image_urls(arg):
+                    await start_guided_add_with_trigger_image(
                         matcher,
                         event,
                         state,
@@ -454,9 +442,7 @@ def register_wordbank_command_handlers(
                         arg,
                     )
                 else:
-                    await _call_dynamic(
-                        "_start_guided_add", matcher, event, state, locale
-                    )
+                    await start_guided_add(matcher, event, state, locale)
                 return
         await initialize_plugin()
         handler = handle_wordbank_command_message_fn or handle_wordbank_command_message
@@ -486,8 +472,7 @@ def register_wordbank_command_handlers(
         locale = state.get("wordbank_locale", "zh-CN")
         await _abort_guided_on_revoke(matcher, event, locale)
         if state.get("wordbank_guided_response_forward_pending"):
-            await _call_dynamic(
-                "_record_guided_forward_response_choice",
+            await record_guided_forward_response_choice(
                 matcher,
                 event,
                 state,
@@ -607,9 +592,7 @@ def register_wordbank_command_handlers(
     ) -> None:
         locale = state.get("wordbank_locale", "zh-CN")
         await _abort_guided_on_revoke(matcher, event, locale)
-        await _call_dynamic(
-            "_handle_search_session_event", bot, matcher, event, state, locale
-        )
+        await handle_search_session_event(bot, matcher, event, state, locale)
 
     @wordbank_add_command.handle()
     async def _wordbank_add_root(
@@ -623,13 +606,12 @@ def register_wordbank_command_handlers(
         locale = await resolve_locale_fn(str(getattr(event, "group_id", "")) or None)
         await _abort_guided_on_revoke(matcher, event, locale)
         plain_text = arg.extract_plain_text()
-        has_images = bool(await _call_dynamic("extract_image_urls", arg))
+        has_images = bool(handlers_media_helpers.extract_image_urls(arg))
         if not has_meaningful_text(plain_text) and not has_images:
-            await _call_dynamic("_start_guided_add", matcher, event, state, locale)
+            await start_guided_add(matcher, event, state, locale)
             return
         if not has_meaningful_text(plain_text) and has_images:
-            await _call_dynamic(
-                "_start_guided_add_with_trigger_image",
+            await start_guided_add_with_trigger_image(
                 matcher,
                 event,
                 state,
@@ -667,8 +649,7 @@ def register_wordbank_command_handlers(
         locale = state.get("wordbank_locale", "zh-CN")
         await _abort_guided_on_revoke(matcher, event, locale)
         if state.get("wordbank_guided_response_forward_pending"):
-            await _call_dynamic(
-                "_record_guided_forward_response_choice",
+            await record_guided_forward_response_choice(
                 matcher,
                 event,
                 state,
@@ -710,9 +691,15 @@ def register_wordbank_command_handlers(
         await initialize_plugin()
         locale = await resolve_locale_fn(str(getattr(event, "group_id", "")) or None)
         await _abort_guided_on_revoke(matcher, event, locale)
-        has_images = bool(await _call_dynamic("extract_image_urls", arg))
+        has_images = bool(handlers_media_helpers.extract_image_urls(arg))
         if not has_meaningful_text(arg.extract_plain_text()) and not has_images:
-            await _call_dynamic("_start_guided_search", matcher, event, state, locale)
+            await guided_flow_module.start_guided_search(
+                matcher,
+                event,
+                state,
+                locale,
+                initialize_plugin=initialize_plugin,
+            )
             return
         handler = handle_wordbank_command_message_fn or handle_wordbank_command_message
         if not has_images:
@@ -771,8 +758,7 @@ def register_wordbank_command_handlers(
                 message=tr(locale, "wordbank.guided.search.creator_prompt"),
             )
             return
-        await _call_dynamic(
-            "_finish_guided_search",
+        await views.finish_guided_search_view(
             bot,
             matcher,
             state,
@@ -824,8 +810,7 @@ def register_wordbank_command_handlers(
                 message=tr(locale, "wordbank.guided.search.creator_prompt"),
             )
             return
-        await _call_dynamic(
-            "_finish_guided_search",
+        await views.finish_guided_search_view(
             bot,
             matcher,
             state,
@@ -870,8 +855,7 @@ def register_wordbank_command_handlers(
                 tr(locale, "wordbank.error.guided_search_creator_empty"),
             )
             return
-        await _call_dynamic(
-            "_finish_guided_search",
+        await views.finish_guided_search_view(
             bot,
             matcher,
             state,
@@ -889,9 +873,7 @@ def register_wordbank_command_handlers(
     ) -> None:
         locale = state.get("wordbank_locale", "zh-CN")
         await _abort_guided_on_revoke(matcher, event, locale)
-        await _call_dynamic(
-            "_handle_search_session_event", bot, matcher, event, state, locale
-        )
+        await handle_search_session_event(bot, matcher, event, state, locale)
 
     def _register_forced_command(matcher_obj: Any, action: str) -> None:
         @matcher_obj.handle()
