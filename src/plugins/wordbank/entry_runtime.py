@@ -69,6 +69,7 @@ from .handlers import (
     parse_view_reply_for_search_result,
     wordbank_message_ref_from_reply_target,
 )
+from .handlers import mutation as handlers_mutation
 from .handlers.commands import (
     ParsedSearch,
     execute_search_page,
@@ -1386,7 +1387,7 @@ def register_wordbank_runtime_handlers(
                             page=view_message.current_page,
                         ),
                     )
-                    delete_handler = await _get_plugin_attr("handle_delete")
+                    delete_handler = handlers_mutation.handle_delete
                     messages = [
                         await delete_handler(
                             service,

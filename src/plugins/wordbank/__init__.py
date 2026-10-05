@@ -486,7 +486,7 @@ runtime_exports = register_wordbank_runtime_handlers(
 
 
 async def _finish_guided_search(
-    bot: Bot,
+    bot: Bot | None,
     matcher: Matcher,
     state: T_State,
     event: MessageEvent,

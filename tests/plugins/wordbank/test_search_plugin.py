@@ -28,12 +28,16 @@ if nonebot.get_plugin("wordbank") is None:
 from src.lib.i18n.runtime import tr
 from src.lib.messages import text_message
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank import guided_flow as guided_flow_module
 from src.plugins.wordbank import wordbank_search_command
 from src.plugins.wordbank.database.types import (
     WordbankMessageRefRecord,
     WordbankSearchItem,
     WordbankSearchPage,
 )
+from src.plugins.wordbank.handlers import commands as handlers_commands
+from src.plugins.wordbank.handlers import media_helpers as handlers_media_helpers
+from src.plugins.wordbank.handlers import mutation as handlers_mutation
 from tests.plugins.water.helpers import attach_reply_message, build_group_message_event
 
 _SEARCH_DIMENSIONS_PROMPT = tr("zh-CN", "wordbank.guided.search.mode_prompt")
@@ -222,7 +226,7 @@ async def test_guided_search_query_stage_accepts_image_message(
         finish_guided_search,
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_media_helpers,
         "fetch_first_image_bytes_from_message",
         AsyncMock(return_value=b"image-bytes"),
     )
@@ -317,7 +321,7 @@ async def test_finish_guided_search_finishes_with_rendered_card(
     call_api = _fallback_send_group_side_effect()
     bot = cast(Bot, SimpleNamespace(self_id="99999", call_api=call_api))
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_commands,
         "execute_search_page",
         AsyncMock(
             return_value=WordbankSearchPage(
@@ -329,7 +333,7 @@ async def test_finish_guided_search_finishes_with_rendered_card(
         ),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_commands,
         "render_search_page_message",
         AsyncMock(return_value=text_message("CARD")),
     )
@@ -369,7 +373,7 @@ async def test_finish_guided_search_keeps_search_session_when_results_exist(
     call_api = _fallback_send_group_side_effect()
     bot = cast(Bot, SimpleNamespace(self_id="99999", call_api=call_api))
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_commands,
         "execute_search_page",
         AsyncMock(
             return_value=WordbankSearchPage(
@@ -394,13 +398,13 @@ async def test_finish_guided_search_keeps_search_session_when_results_exist(
         ),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_commands,
         "render_search_page_message",
         AsyncMock(return_value=text_message("CARD")),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_resolve_search_delete_target_map",
+        guided_flow_module,
+        "resolve_search_delete_target_map",
         AsyncMock(return_value=(("1-1", 12),)),
     )
     monkeypatch.setattr(
@@ -449,7 +453,7 @@ async def test_handle_search_session_delete_refreshes_current_page(
     call_api = _fallback_send_group_side_effect()
     bot = cast(Bot, SimpleNamespace(self_id="99999", call_api=call_api))
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_mutation,
         "handle_delete",
         AsyncMock(return_value="词条 #12 已删除。"),
     )
@@ -489,8 +493,8 @@ async def test_handle_search_session_delete_refreshes_current_page(
         "message": text_message("词条 #12 已删除。"),
     }
     assert matcher.sent == []
-    assert isinstance(wordbank_plugin.handle_delete, AsyncMock)
-    wordbank_plugin.handle_delete.assert_awaited_once()
+    assert isinstance(handlers_mutation.handle_delete, AsyncMock)
+    handlers_mutation.handle_delete.assert_awaited_once()
     assert isinstance(wordbank_plugin._finish_guided_search, AsyncMock)
     wordbank_plugin._finish_guided_search.assert_awaited_once()
     await_args = wordbank_plugin._finish_guided_search.await_args
@@ -507,7 +511,7 @@ async def test_handle_search_session_delete_uses_response_level_index(
     call_api = _fallback_send_group_side_effect()
     bot = cast(Bot, SimpleNamespace(self_id="99999", call_api=call_api))
     handle_delete = AsyncMock(return_value="词条 #22 已删除。")
-    monkeypatch.setattr(wordbank_plugin, "handle_delete", handle_delete)
+    monkeypatch.setattr(handlers_mutation, "handle_delete", handle_delete)
     monkeypatch.setattr(
         wordbank_plugin,
         "_finish_guided_search",
@@ -679,7 +683,7 @@ async def test_view_reply_matcher_routes_group_detail_reply_delete_to_handle_del
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        handlers_mutation,
         "handle_delete",
         AsyncMock(side_effect=["词条 #300 已删除。", "词条 #301 已删除。"]),
     )
@@ -741,9 +745,9 @@ async def test_view_reply_matcher_routes_group_detail_reply_delete_to_handle_del
         ctx.should_call_send(event, "词条 #300 已删除。\n词条 #301 已删除。", bot=bot)
         ctx.should_finished(wordbank_plugin.wordbank_view_reply_command)
 
-    assert isinstance(wordbank_plugin.handle_delete, AsyncMock)
-    assert wordbank_plugin.handle_delete.await_count == 2
+    assert isinstance(handlers_mutation.handle_delete, AsyncMock)
+    assert handlers_mutation.handle_delete.await_count == 2
     assert [
         call.kwargs["response_item_id_text"]
-        for call in wordbank_plugin.handle_delete.await_args_list
+        for call in handlers_mutation.handle_delete.await_args_list
     ] == ["300", "301"]

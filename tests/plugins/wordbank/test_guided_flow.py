@@ -38,6 +38,7 @@ from src.plugins.wordbank.guided_flow import (
 )
 from src.plugins.wordbank.message_model import shape_from_text
 from src.plugins.wordbank.services import wordbank_media_service
+from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.presentation import WordbankBatchAddResult
 
 
@@ -162,7 +163,9 @@ async def test_finish_guided_add_uses_saved_submission_source_event(
     add_message_entries = AsyncMock(return_value=batch)
     finalize_submission = AsyncMock(return_value=None)
 
-    service = SimpleNamespace(add_message_entries=add_message_entries)
+    service = cast(
+        WordbankService, SimpleNamespace(add_message_entries=add_message_entries)
+    )
 
     await finish_guided_add(
         bot,
