@@ -295,9 +295,12 @@ async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_wate
     fake_plugins.__path__ = []  # type: ignore[attr-defined]
 
     fake_wordbank = types.ModuleType("src.plugins.wordbank")
-    fake_wordbank._wordbank_initialized = True  # type: ignore[attr-defined]
+    # 初始化状态与服务已分别下沉到 lifecycle / services 子模块
+    fake_wordbank_lifecycle = types.ModuleType("src.plugins.wordbank.lifecycle")
+    fake_wordbank_lifecycle._wordbank_initialized = True  # type: ignore[attr-defined]
+    fake_wordbank_services = types.ModuleType("src.plugins.wordbank.services")
     setattr(
-        fake_wordbank,
+        fake_wordbank_services,
         "wordbank_service",
         types.SimpleNamespace(
             _rebuild_task=None,
@@ -306,7 +309,11 @@ async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_wate
             _initialized=True,
         ),
     )
-    setattr(fake_wordbank, "wordbank_media_service", types.SimpleNamespace())
+    setattr(
+        fake_wordbank_services,
+        "wordbank_media_service",
+        types.SimpleNamespace(),
+    )
 
     fake_water = types.ModuleType("src.plugins.water")
     fake_water._water_plugin_initialized = True  # type: ignore[attr-defined]
@@ -339,6 +346,16 @@ async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_wate
 
     monkeypatch.setitem(sys.modules, "src.plugins", fake_plugins)
     monkeypatch.setitem(sys.modules, "src.plugins.wordbank", fake_wordbank)
+    monkeypatch.setitem(
+        sys.modules,
+        "src.plugins.wordbank.lifecycle",
+        fake_wordbank_lifecycle,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "src.plugins.wordbank.services",
+        fake_wordbank_services,
+    )
     monkeypatch.setitem(sys.modules, "src.plugins.water", fake_water)
     monkeypatch.setitem(sys.modules, "src.plugins.water.services", fake_water_services)
     monkeypatch.setitem(
@@ -372,8 +389,12 @@ async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_wate
     monkeypatch.setattr(startup_sync_module.group_repo, "warm_up", _warm_group)
     monkeypatch.setattr(startup_sync_module.member_repo, "warm_up", _warm_member)
     monkeypatch.setattr(startup_sync_module.blacklist_repo, "warm_up", _warm_blacklist)
-    setattr(fake_wordbank, "initialize_wordbank_plugin", _init_wordbank)
-    cast(Any, fake_wordbank.wordbank_media_service).rebuild_cache = _media_rebuild  # type: ignore[attr-defined]
+    setattr(fake_wordbank_lifecycle, "initialize_wordbank_plugin", _init_wordbank)
+    setattr(fake_wordbank_lifecycle, "reset_wordbank_initialized", lambda: None)
+    cast(
+        Any,
+        fake_wordbank_services.wordbank_media_service,  # type: ignore[attr-defined]
+    ).rebuild_cache = _media_rebuild
     setattr(fake_water, "initialize_water_plugin", _init_water)
     setattr(
         fake_water,
@@ -394,8 +415,8 @@ async def test_reload_runtime_state_after_restore_reloads_core_wordbank_and_wate
         "water-report-cooldown-clear",
         "water",
     ]
-    assert fake_wordbank.wordbank_service._dirty_group_ids == set()
-    assert fake_wordbank.wordbank_service._call_count_cache == {}
-    assert fake_wordbank.wordbank_service._initialized is False
+    assert fake_wordbank_services.wordbank_service._dirty_group_ids == set()
+    assert fake_wordbank_services.wordbank_service._call_count_cache == {}
+    assert fake_wordbank_services.wordbank_service._initialized is False
     assert fake_water.matrix_suggestion_service._first_record_seen_cache == set()
     assert fake_water.water_repo._group_matrix_cache == {}

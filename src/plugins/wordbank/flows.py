@@ -19,7 +19,6 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import LongTaskRunner, LongTaskSpec
 
 from . import views
-from .bootstrap import _initialize_wordbank_plugin
 from .errors import build_wordbank_error_message
 from .guided_flow import (
     WORDBANK_GUIDED_RECALL_PENDING_KEYS,
@@ -35,6 +34,14 @@ from .guided_flow import (
     start_guided_search,
 )
 from .handlers import SubmissionLifecycle
+from .handlers.commands import (
+    RANK_ALIASES,
+    RESPONSE_ALIASES,
+    SET_ALIASES,
+    TRIGGER_ALIASES,
+    split_command_text,
+)
+from .lifecycle import _initialize_wordbank_plugin
 from .pending_batch import send_pending_entries_review
 from .services import wordbank_media_service, wordbank_service
 
@@ -229,3 +236,34 @@ async def _finish_guided_add(
         finalize_submission=_wordbank_submission_lifecycle.finalize,
         wordbank_service=wordbank_service,
     )
+
+
+def _build_wordbank_command_progress_spec(
+    action: str,
+    *,
+    rest: str,
+    locale: LocaleCode,
+) -> LongTaskSpec | None:
+    if action in RANK_ALIASES:
+        return LongTaskSpec(
+            task_name="wordbank.rank.view",
+            source_kind="wordbank_command",
+            prompt=tr(locale, "wordbank.view.processing"),
+            threshold_ms=800,
+        )
+    sub_action, _ = split_command_text(rest)
+    if action in TRIGGER_ALIASES and sub_action in SET_ALIASES:
+        return LongTaskSpec(
+            task_name="wordbank.trigger.set",
+            source_kind="wordbank_command",
+            prompt=tr(locale, "wordbank.mutation.processing"),
+            threshold_ms=800,
+        )
+    if action in RESPONSE_ALIASES and sub_action in SET_ALIASES:
+        return LongTaskSpec(
+            task_name="wordbank.response.set",
+            source_kind="wordbank_command",
+            prompt=tr(locale, "wordbank.mutation.processing"),
+            threshold_ms=800,
+        )
+    return None

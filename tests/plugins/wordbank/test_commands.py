@@ -8,7 +8,7 @@ import pytest
 
 from src.lib.message_plan import render_message_plan_input
 from src.lib.messages import empty_message, text_message
-from src.plugins.wordbank import entry_commands as entry_commands_module
+from src.plugins.wordbank import flows as flows_module
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
     WordbankResponseItemDetail,
@@ -210,7 +210,7 @@ def test_parse_rank_period_supports_default_and_aliases() -> None:
 
 def test_wordbank_command_progress_spec_marks_rank_as_long_task() -> None:
     assert (
-        entry_commands_module._build_wordbank_command_progress_spec(
+        flows_module._build_wordbank_command_progress_spec(
             "rank",
             rest="周榜",
             locale="zh-CN",
@@ -218,7 +218,7 @@ def test_wordbank_command_progress_spec_marks_rank_as_long_task() -> None:
         is not None
     )
     assert (
-        entry_commands_module._build_wordbank_command_progress_spec(
+        flows_module._build_wordbank_command_progress_spec(
             "trigger",
             rest="set 12 [CQ:image,file=a.png]",
             locale="zh-CN",
@@ -226,7 +226,7 @@ def test_wordbank_command_progress_spec_marks_rank_as_long_task() -> None:
         is not None
     )
     assert (
-        entry_commands_module._build_wordbank_command_progress_spec(
+        flows_module._build_wordbank_command_progress_spec(
             "response",
             rest="set 12 新响应",
             locale="zh-CN",
@@ -234,7 +234,7 @@ def test_wordbank_command_progress_spec_marks_rank_as_long_task() -> None:
         is not None
     )
     assert (
-        entry_commands_module._build_wordbank_command_progress_spec(
+        flows_module._build_wordbank_command_progress_spec(
             "approve",
             rest="1",
             locale="zh-CN",

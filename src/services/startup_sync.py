@@ -446,7 +446,7 @@ async def _reload_runtime_state_after_restore() -> None:
 
 
 async def _reload_wordbank_runtime_state() -> None:
-    from src.plugins.wordbank import bootstrap
+    from src.plugins.wordbank import lifecycle
     from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
 
     try:
@@ -456,7 +456,7 @@ async def _reload_wordbank_runtime_state() -> None:
     except Exception:
         empty_index = None
 
-    bootstrap.reset_wordbank_initialized()
+    lifecycle.reset_wordbank_initialized()
     if (
         wordbank_service._rebuild_task is not None
         and not wordbank_service._rebuild_task.done()
@@ -470,7 +470,7 @@ async def _reload_wordbank_runtime_state() -> None:
     else:
         setattr(cast(Any, wordbank_service), "_index", None)
     wordbank_service._initialized = False
-    await bootstrap.initialize_wordbank_plugin()
+    await lifecycle.initialize_wordbank_plugin()
     await wordbank_media_service.rebuild_cache()
 
 

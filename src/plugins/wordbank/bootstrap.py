@@ -1,4 +1,4 @@
-"""wordbank 插件生命周期与定时任务（初始化、事件归档、媒体维护）。"""
+"""wordbank 定时任务与启动钩子（依赖 nonebot driver / apscheduler）。"""
 
 from __future__ import annotations
 
@@ -7,47 +7,13 @@ from nonebot import get_driver, require
 from src.config import config
 from src.lib.long_task import LoggerProgressSink, LongTaskRunner, LongTaskSpec
 from src.logger import logger
-from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 from src.services.startup_sync import ensure_restore_not_in_progress
 
+from .lifecycle import initialize_wordbank_plugin
 from .services import wordbank_media_service, wordbank_service
 
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
-
-_wordbank_initialized = False
-
-
-async def initialize_wordbank_plugin() -> None:
-    global _wordbank_initialized
-    if _wordbank_initialized:
-        log_perf("plugin.initialize.cached", initialized=True)
-        return
-    start = perf_start()
-    service_start = perf_start()
-    await wordbank_service.initialize()
-    service_ms = elapsed_ms(service_start)
-    media_start = perf_start()
-    await wordbank_media_service.rebuild_cache()
-    media_ms = elapsed_ms(media_start)
-    _wordbank_initialized = True
-    log_perf(
-        "plugin.initialize.done",
-        start=start,
-        service_initialize_ms=f"{service_ms:.2f}",
-        media_rebuild_ms=f"{media_ms:.2f}",
-    )
-
-
-def reset_wordbank_initialized() -> None:
-    """复位初始化标记，供运行时重载流程强制重新初始化。"""
-    global _wordbank_initialized
-    _wordbank_initialized = False
-
-
-async def _initialize_wordbank_plugin() -> None:
-    await initialize_wordbank_plugin()
-
 
 driver = get_driver()
 

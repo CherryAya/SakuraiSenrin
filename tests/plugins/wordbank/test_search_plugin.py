@@ -28,9 +28,11 @@ if nonebot.get_plugin("wordbank") is None:
 from src.lib.i18n.runtime import tr
 from src.lib.messages import text_message
 from src.plugins import wordbank as wordbank_plugin
-from src.plugins.wordbank import bootstrap as bootstrap_module
 from src.plugins.wordbank import entry_commands, wordbank_search_command
+from src.plugins.wordbank import entry_commands as entry_commands_module
+from src.plugins.wordbank import flows as flows_module
 from src.plugins.wordbank import guided_flow as guided_flow_module
+from src.plugins.wordbank import lifecycle as lifecycle_module
 from src.plugins.wordbank import services as services_module
 from src.plugins.wordbank import views as views_module
 from src.plugins.wordbank.database.types import (
@@ -93,12 +95,12 @@ async def test_wordbank_search_without_args_routes_to_guided_entry(
 ) -> None:
     start_guided = AsyncMock(return_value=None)
     monkeypatch.setattr(
-        bootstrap_module,
+        lifecycle_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        entry_commands_module,
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
     )
@@ -119,12 +121,12 @@ async def test_wordbank_search_image_only_runs_unified_search_flow(
 ) -> None:
     handle_command = AsyncMock(return_value=None)
     monkeypatch.setattr(
-        bootstrap_module,
+        lifecycle_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        entry_commands_module,
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
     )
@@ -153,12 +155,12 @@ async def test_guided_search_dimension_selection_prompts_for_query_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        bootstrap_module,
+        lifecycle_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        entry_commands_module,
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
     )
@@ -183,12 +185,12 @@ async def test_guided_search_creator_only_prompts_for_creator_account(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        bootstrap_module,
+        lifecycle_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        entry_commands_module,
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
     )
@@ -214,12 +216,12 @@ async def test_guided_search_query_stage_accepts_image_message(
     finish_guided_search = AsyncMock(return_value=None)
 
     monkeypatch.setattr(
-        bootstrap_module,
+        lifecycle_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        entry_commands_module,
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
     )
@@ -276,12 +278,12 @@ async def test_guided_search_creator_stage_finishes_with_bot_argument(
     finish_guided_search = AsyncMock(return_value=None)
 
     monkeypatch.setattr(
-        bootstrap_module,
+        lifecycle_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        entry_commands_module,
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
     )
@@ -482,7 +484,7 @@ async def test_handle_search_session_delete_refreshes_current_page(
     }
     event = build_group_message_event("del 1-1")
 
-    await wordbank_plugin._handle_search_session_event(
+    await flows_module._handle_search_session_event(
         bot,
         cast(Matcher, matcher),
         event,
@@ -537,7 +539,7 @@ async def test_handle_search_session_delete_uses_response_level_index(
     }
     event = build_group_message_event("del 1-2")
 
-    await wordbank_plugin._handle_search_session_event(
+    await flows_module._handle_search_session_event(
         bot,
         cast(Matcher, matcher),
         event,
@@ -557,12 +559,12 @@ async def test_view_reply_matcher_routes_search_result_reply_to_group_detail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        bootstrap_module,
+        lifecycle_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        entry_commands_module,
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
     )
@@ -614,12 +616,12 @@ async def test_view_reply_matcher_routes_group_detail_reply_to_next_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        bootstrap_module,
+        lifecycle_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        entry_commands_module,
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
     )
@@ -676,12 +678,12 @@ async def test_view_reply_matcher_routes_group_detail_reply_delete_to_handle_del
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        bootstrap_module,
+        lifecycle_module,
         "initialize_wordbank_plugin",
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
+        entry_commands_module,
         "resolve_locale",
         AsyncMock(return_value="zh-CN"),
     )

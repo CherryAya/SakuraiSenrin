@@ -25,8 +25,8 @@ if nonebot.get_plugin("wordbank") is None:
     nonebot.load_plugin("src.plugins.wordbank")
 
 from src.plugins import wordbank as wordbank_plugin
-from src.plugins.wordbank import bootstrap as bootstrap_module
 from src.plugins.wordbank import entry_runtime as wordbank_entry_runtime
+from src.plugins.wordbank import lifecycle as lifecycle_module
 from src.plugins.wordbank.handlers import rendering as rendering_module
 from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.handlers.rendering import MISSING_IMAGE_PLACEHOLDER
@@ -44,14 +44,14 @@ from src.plugins.wordbank.message_model import (
 async def test_initialize_wordbank_plugin_is_idempotent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(bootstrap_module, "_wordbank_initialized", False)
+    monkeypatch.setattr(lifecycle_module, "_wordbank_initialized", False)
     service = SimpleNamespace(initialize=AsyncMock())
     media_service = SimpleNamespace(rebuild_cache=AsyncMock())
-    monkeypatch.setattr(bootstrap_module, "wordbank_service", service)
-    monkeypatch.setattr(bootstrap_module, "wordbank_media_service", media_service)
+    monkeypatch.setattr(lifecycle_module, "wordbank_service", service)
+    monkeypatch.setattr(lifecycle_module, "wordbank_media_service", media_service)
 
-    await bootstrap_module.initialize_wordbank_plugin()
-    await bootstrap_module.initialize_wordbank_plugin()
+    await lifecycle_module.initialize_wordbank_plugin()
+    await lifecycle_module.initialize_wordbank_plugin()
 
     service.initialize.assert_awaited_once()
     media_service.rebuild_cache.assert_awaited_once()
