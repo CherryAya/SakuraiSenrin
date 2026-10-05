@@ -30,6 +30,7 @@ if nonebot.get_plugin("wordbank") is None:
 from src.lib.i18n.runtime import tr
 from src.lib.message_assets import message_asset_repo
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank import entry_commands
 from src.plugins.wordbank import views as views_module
 from src.plugins.wordbank.handlers import commands as handlers_commands
 from src.plugins.wordbank.handlers import media_helpers as handlers_media_helpers
@@ -310,8 +311,8 @@ async def test_wordbank_rank_command_routes_to_forced_rank_action(
     handle_command = AsyncMock(return_value=None)
 
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_handle_wordbank_command_message",
+        entry_commands,
+        "handle_wordbank_command_message",
         handle_command,
     )
 

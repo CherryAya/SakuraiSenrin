@@ -170,17 +170,6 @@ async def _collect_search_query_content(
     )
 
 
-async def _handle_wordbank_command_message(*args: Any, **kwargs: Any) -> None:
-    handler = getattr(
-        register_wordbank_command_handlers,
-        "_handle_wordbank_command_message",
-        None,
-    )
-    if handler is None:
-        raise RuntimeError("wordbank command handler is not registered")
-    await handler(*args, **kwargs)
-
-
 async def initialize_wordbank_plugin() -> None:
     global _wordbank_initialized
     if _wordbank_initialized:
@@ -575,7 +564,4 @@ register_wordbank_command_handlers(
     record_guided_forward_response_choice=_record_guided_forward_response_choice,
     send_pending_entries_view=_send_pending_entries_view,
     resolve_locale_fn=resolve_locale,
-    handle_wordbank_command_message_fn=lambda *args, **kwargs: (
-        _handle_wordbank_command_message(*args, **kwargs)
-    ),
 )

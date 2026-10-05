@@ -150,6 +150,224 @@ async def _run_wordbank_command_with_optional_progress(
         return await work()
 
 
+async def handle_wordbank_command_message(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message,
+    *,
+    initialize_plugin: Callable[[], Awaitable[None]],
+    resolve_locale_fn: Callable[[str | None], Awaitable[LocaleCode]],
+    build_error_message: ErrorBuilder,
+    collect_search_query_content: SearchQueryCollector,
+    finalize_submission: SubmissionHandler,
+    send_pending_entries_view: Callable[
+        [Bot, MessageEvent, str, LocaleCode],
+        Awaitable[None],
+    ]
+    | None,
+    notify_creator_review_result: Callable[..., Awaitable[None]],
+    forced_action: str | None = None,
+    state: T_State | None = None,
+) -> None:
+    await initialize_plugin()
+    locale = await resolve_locale_fn(str(getattr(event, "group_id", "")) or None)
+    text = build_forced_command_text(forced_action, arg.extract_plain_text())
+    action, rest = split_command_text(text)
+    search_image_scores: dict[int, float] | None = None
+    try:
+        parsed_session_command = parse_search_session_command(text)
+    except RuleError:
+        parsed_session_command = None
+    if (
+        parsed_session_command is not None
+        and parsed_session_command.action == "detail"
+        and parsed_session_command.trigger_group_id is not None
+    ):
+        await views.send_group_detail_view(
+            bot,
+            matcher,
+            event,
+            locale,
+            trigger_group_id=parsed_session_command.trigger_group_id,
+            page=parsed_session_command.page or 1,
+        )
+        return
+    if action in {"add", "添加", "学习"}:
+        try:
+            has_images = bool(handlers_media_helpers.extract_image_urls(arg))
+            if not has_images:
+                result = await handlers_commands.handle_add_text_result(
+                    wordbank_service,
+                    event=event,
+                    text=rest,
+                )
+            else:
+                long_task = LongTaskRunner(
+                    LongTaskSpec(
+                        task_name="wordbank.add.media_submission",
+                        source_kind="wordbank_command",
+                        prompt=tr(locale, "wordbank.add.processing_with_media"),
+                        threshold_ms=800,
+                    ),
+                    sink=CompositeProgressSink(
+                        LoggerProgressSink(),
+                        MessageEventProgressSink(bot, event),
+                    ),
+                )
+                async with long_task:
+                    data = await (
+                        handlers_media_helpers.fetch_first_image_bytes_from_message(
+                            arg,
+                            task=long_task,
+                        )
+                    )
+                    if data is None:
+                        result = await handlers_commands.handle_add_text_result(
+                            wordbank_service,
+                            event=event,
+                            text=rest,
+                        )
+                    else:
+                        result = await handlers_commands.handle_add_with_media_result(
+                            wordbank_service,
+                            wordbank_media_service,
+                            event=event,
+                            image_bytes=data,
+                            text=rest,
+                            task=long_task,
+                        )
+                    await long_task.advance("submitting")
+        except (RuleError, ValueError) as exc:
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_error_message(exc, locale, default_feature="add"),
+                source_kind="wordbank_command",
+            )
+            return
+        await finalize_submission(matcher, bot, event, result, locale)
+        return
+    if action in {"search", "find", "查询", "搜索"}:
+        try:
+            (
+                keyword,
+                has_image,
+                search_image_scores,
+            ) = await collect_search_query_content(arg, keyword_text=rest)
+        except (RuleError, ValueError) as exc:
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_error_message(
+                    exc,
+                    locale,
+                    default_feature="search",
+                ),
+                source_kind="wordbank_command",
+            )
+            return
+        try:
+            await views.send_search_result_view(
+                bot,
+                matcher,
+                event,
+                locale,
+                keyword=keyword,
+                image_scores=search_image_scores if has_image else None,
+                state=state,
+            )
+        except (RuleError, ValueError) as exc:
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_error_message(
+                    exc,
+                    locale,
+                    default_feature="search",
+                ),
+                source_kind="wordbank_command",
+            )
+        return
+    if action in {"详情", *GROUP_ALIASES}:
+        try:
+            parsed_group = parse_group_view_args(rest)
+            await views.send_group_detail_view(
+                bot,
+                matcher,
+                event,
+                locale,
+                trigger_group_id=parsed_group.trigger_group_id,
+                page=parsed_group.page,
+            )
+        except (RuleError, ValueError) as exc:
+            await finish_with_message(
+                bot,
+                matcher,
+                event=event,
+                message=build_error_message(
+                    exc,
+                    locale,
+                    default_feature="reply-shortcut",
+                ),
+                source_kind="wordbank_command",
+            )
+        return
+    if action in PENDING_ALIASES and send_pending_entries_view is not None:
+        await send_pending_entries_view(bot, event, rest, locale)
+        await matcher.finish()
+        return
+
+    async def _dispatch_command() -> MessagePlanInput:
+        message, outcome = await dispatch_wordbank_command_with_outcome(
+            wordbank_service,
+            event=event,
+            text=text,
+            locale=locale,
+            raw_message=arg,
+            search_image_scores=search_image_scores,
+            media_service=wordbank_media_service,
+        )
+        if outcome is not None and outcome.completed and outcome.action:
+            await notify_creator_review_result(
+                bot,
+                response_item_id=outcome.response_item_id,
+                action=outcome.action,
+                locale=locale,
+                reviewer_id=str(event.user_id),
+            )
+        return message
+
+    try:
+        msg = await _run_wordbank_command_with_optional_progress(
+            action,
+            rest=rest,
+            bot=bot,
+            event=event,
+            locale=locale,
+            work=_dispatch_command,
+        )
+    except (RuleError, ValueError) as exc:
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=build_error_message(exc, locale),
+            source_kind="wordbank_command",
+        )
+        return
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message=msg,
+        source_kind="wordbank_command",
+    )
+
+
 def register_wordbank_command_handlers(
     *,
     wordbank_command: Any,
@@ -198,14 +416,13 @@ def register_wordbank_command_handlers(
         Awaitable[None],
     ],
     resolve_locale_fn: Callable[[str | None], Awaitable[LocaleCode]] = resolve_locale,
-    handle_wordbank_command_message_fn: Callable[..., Awaitable[None]] | None = None,
     send_pending_entries_view: Callable[
         [Bot, MessageEvent, str, LocaleCode],
         Awaitable[None],
     ]
     | None = None,
 ) -> None:
-    async def handle_wordbank_command_message(
+    async def _dispatch_command_message(
         bot: Bot,
         matcher: Matcher,
         event: MessageEvent,
@@ -214,210 +431,22 @@ def register_wordbank_command_handlers(
         forced_action: str | None = None,
         state: T_State | None = None,
     ) -> None:
-        await initialize_plugin()
-        locale = await resolve_locale_fn(str(getattr(event, "group_id", "")) or None)
-        text = build_forced_command_text(forced_action, arg.extract_plain_text())
-        action, rest = split_command_text(text)
-        search_image_scores: dict[int, float] | None = None
-        try:
-            parsed_session_command = parse_search_session_command(text)
-        except RuleError:
-            parsed_session_command = None
-        if (
-            parsed_session_command is not None
-            and parsed_session_command.action == "detail"
-            and parsed_session_command.trigger_group_id is not None
-        ):
-            await views.send_group_detail_view(
-                bot,
-                matcher,
-                event,
-                locale,
-                trigger_group_id=parsed_session_command.trigger_group_id,
-                page=parsed_session_command.page or 1,
-            )
-            return
-        if action in {"add", "添加", "学习"}:
-            try:
-                has_images = bool(handlers_media_helpers.extract_image_urls(arg))
-                if not has_images:
-                    result = await handlers_commands.handle_add_text_result(
-                        wordbank_service,
-                        event=event,
-                        text=rest,
-                    )
-                else:
-                    long_task = LongTaskRunner(
-                        LongTaskSpec(
-                            task_name="wordbank.add.media_submission",
-                            source_kind="wordbank_command",
-                            prompt=tr(locale, "wordbank.add.processing_with_media"),
-                            threshold_ms=800,
-                        ),
-                        sink=CompositeProgressSink(
-                            LoggerProgressSink(),
-                            MessageEventProgressSink(bot, event),
-                        ),
-                    )
-                    async with long_task:
-                        data = await (
-                            handlers_media_helpers.fetch_first_image_bytes_from_message(
-                                arg,
-                                task=long_task,
-                            )
-                        )
-                        if data is None:
-                            result = await handlers_commands.handle_add_text_result(
-                                wordbank_service,
-                                event=event,
-                                text=rest,
-                            )
-                        else:
-                            result = (
-                                await handlers_commands.handle_add_with_media_result(
-                                    wordbank_service,
-                                    wordbank_media_service,
-                                    event=event,
-                                    image_bytes=data,
-                                    text=rest,
-                                    task=long_task,
-                                )
-                            )
-                        await long_task.advance("submitting")
-            except (RuleError, ValueError) as exc:
-                await finish_with_message(
-                    bot,
-                    matcher,
-                    event=event,
-                    message=build_error_message(exc, locale, default_feature="add"),
-                    source_kind="wordbank_command",
-                )
-                return
-            await finalize_submission(matcher, bot, event, result, locale)
-            return
-        if action in {"search", "find", "查询", "搜索"}:
-            try:
-                (
-                    keyword,
-                    has_image,
-                    search_image_scores,
-                ) = await collect_search_query_content(arg, keyword_text=rest)
-            except (RuleError, ValueError) as exc:
-                await finish_with_message(
-                    bot,
-                    matcher,
-                    event=event,
-                    message=build_error_message(
-                        exc,
-                        locale,
-                        default_feature="search",
-                    ),
-                    source_kind="wordbank_command",
-                )
-                return
-            try:
-                await views.send_search_result_view(
-                    bot,
-                    matcher,
-                    event,
-                    locale,
-                    keyword=keyword,
-                    image_scores=search_image_scores if has_image else None,
-                    state=state,
-                )
-            except (RuleError, ValueError) as exc:
-                await finish_with_message(
-                    bot,
-                    matcher,
-                    event=event,
-                    message=build_error_message(
-                        exc,
-                        locale,
-                        default_feature="search",
-                    ),
-                    source_kind="wordbank_command",
-                )
-            return
-        if action in {"详情", *GROUP_ALIASES}:
-            try:
-                parsed_group = parse_group_view_args(rest)
-                await views.send_group_detail_view(
-                    bot,
-                    matcher,
-                    event,
-                    locale,
-                    trigger_group_id=parsed_group.trigger_group_id,
-                    page=parsed_group.page,
-                )
-            except (RuleError, ValueError) as exc:
-                await finish_with_message(
-                    bot,
-                    matcher,
-                    event=event,
-                    message=build_error_message(
-                        exc,
-                        locale,
-                        default_feature="reply-shortcut",
-                    ),
-                    source_kind="wordbank_command",
-                )
-            return
-        if action in PENDING_ALIASES and send_pending_entries_view is not None:
-            await send_pending_entries_view(bot, event, rest, locale)
-            await matcher.finish()
-            return
-
-        async def _dispatch_command() -> MessagePlanInput:
-            message, outcome = await dispatch_wordbank_command_with_outcome(
-                wordbank_service,
-                event=event,
-                text=text,
-                locale=locale,
-                raw_message=arg,
-                search_image_scores=search_image_scores,
-                media_service=wordbank_media_service,
-            )
-            if outcome is not None and outcome.completed and outcome.action:
-                await notify_creator_review_result(
-                    bot,
-                    response_item_id=outcome.response_item_id,
-                    action=outcome.action,
-                    locale=locale,
-                    reviewer_id=str(event.user_id),
-                )
-            return message
-
-        try:
-            msg = await _run_wordbank_command_with_optional_progress(
-                action,
-                rest=rest,
-                bot=bot,
-                event=event,
-                locale=locale,
-                work=_dispatch_command,
-            )
-        except (RuleError, ValueError) as exc:
-            await finish_with_message(
-                bot,
-                matcher,
-                event=event,
-                message=build_error_message(exc, locale),
-                source_kind="wordbank_command",
-            )
-            return
-        await finish_with_message(
+        """绑定注册期依赖后转交模块级命令分发器（可直接被测试替换）。"""
+        await handle_wordbank_command_message(
             bot,
             matcher,
-            event=event,
-            message=msg,
-            source_kind="wordbank_command",
+            event,
+            arg,
+            initialize_plugin=initialize_plugin,
+            resolve_locale_fn=resolve_locale_fn,
+            build_error_message=build_error_message,
+            collect_search_query_content=collect_search_query_content,
+            finalize_submission=finalize_submission,
+            send_pending_entries_view=send_pending_entries_view,
+            notify_creator_review_result=notify_creator_review_result,
+            forced_action=forced_action,
+            state=state,
         )
-
-    setattr(
-        register_wordbank_command_handlers,
-        "_handle_wordbank_command_message",
-        handle_wordbank_command_message,
-    )
 
     @wordbank_command.handle()
     async def _wordbank_root(
@@ -445,7 +474,7 @@ def register_wordbank_command_handlers(
                     await start_guided_add(matcher, event, state, locale)
                 return
         await initialize_plugin()
-        handler = handle_wordbank_command_message_fn or handle_wordbank_command_message
+        handler = _dispatch_command_message
         await handler(bot, matcher, event, arg, state=state)
 
     @wordbank_command.handle()
@@ -619,7 +648,7 @@ def register_wordbank_command_handlers(
                 arg,
             )
             return
-        handler = handle_wordbank_command_message_fn or handle_wordbank_command_message
+        handler = _dispatch_command_message
         await handler(
             bot,
             matcher,
@@ -701,7 +730,7 @@ def register_wordbank_command_handlers(
                 initialize_plugin=initialize_plugin,
             )
             return
-        handler = handle_wordbank_command_message_fn or handle_wordbank_command_message
+        handler = _dispatch_command_message
         if not has_images:
             arg_for_handler = Message()
             arg_for_handler += MessageSegment.text(
@@ -883,9 +912,7 @@ def register_wordbank_command_handlers(
             event: MessageEvent,
             arg: Message = CommandArg(),
         ) -> None:
-            handler = (
-                handle_wordbank_command_message_fn or handle_wordbank_command_message
-            )
+            handler = _dispatch_command_message
             await handler(
                 bot,
                 matcher,

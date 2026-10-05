@@ -28,9 +28,9 @@ if nonebot.get_plugin("wordbank") is None:
 from src.lib.i18n.runtime import tr
 from src.lib.messages import text_message
 from src.plugins import wordbank as wordbank_plugin
+from src.plugins.wordbank import entry_commands, wordbank_search_command
 from src.plugins.wordbank import guided_flow as guided_flow_module
 from src.plugins.wordbank import views as views_module
-from src.plugins.wordbank import wordbank_search_command
 from src.plugins.wordbank.database.types import (
     WordbankMessageRefRecord,
     WordbankSearchItem,
@@ -127,8 +127,8 @@ async def test_wordbank_search_image_only_runs_unified_search_flow(
         AsyncMock(return_value="zh-CN"),
     )
     monkeypatch.setattr(
-        wordbank_plugin,
-        "_handle_wordbank_command_message",
+        entry_commands,
+        "handle_wordbank_command_message",
         handle_command,
     )
 
