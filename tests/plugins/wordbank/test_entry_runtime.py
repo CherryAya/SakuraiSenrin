@@ -5,11 +5,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.plugins.wordbank import notify as notify_module
-from src.plugins.wordbank import services as services_module
 from src.plugins.wordbank import views as views_module
 from src.plugins.wordbank.database.types import WordbankMessageRefRecord
-from src.plugins.wordbank.entry_runtime import register_wordbank_runtime_handlers
-from src.plugins.wordbank.handlers.reply import ApprovalReplyOutcome
 from tests.plugins.water.helpers import build_group_message_event
 
 
@@ -57,14 +54,13 @@ def _approval_batch_submission_message() -> WordbankMessageRefRecord:
     )
 
 
-def _runtime_exports(
+def _stub_notify(
     monkeypatch: pytest.MonkeyPatch,
     *,
     list_message_refs_by_response_item_ids: AsyncMock | None = None,
     deliver_message_plan: AsyncMock | None = None,
-) -> dict[str, Any]:
-    from src.plugins.wordbank import entry_runtime as runtime_module
-
+) -> AsyncMock:
+    """给 notify 模块打桩：业务 service + 统一投递入口。"""
     service = cast(
         Any,
         SimpleNamespace(
@@ -74,93 +70,19 @@ def _runtime_exports(
             )
         ),
     )
-
-    monkeypatch.setattr(
-        runtime_module,
-        "wordbank_service",
-        service,
-    )
-    monkeypatch.setattr(services_module, "wordbank_service", service, raising=False)
-    plan_stub = deliver_message_plan or AsyncMock(
-        return_value=SimpleNamespace(results=({"message_id": 1},))
-    )
-    monkeypatch.setattr(runtime_module, "deliver_message_plan", plan_stub)
-    # 审核通知逻辑已迁至 notify 模块，需要同步打桩
     monkeypatch.setattr(notify_module, "wordbank_service", service)
-    monkeypatch.setattr(notify_module, "deliver_message_plan", plan_stub)
-    return register_wordbank_runtime_handlers(
-        wordbank_reply_command=SimpleNamespace(handle=lambda: lambda fn: fn),
-        wordbank_approval_reply_command=SimpleNamespace(handle=lambda: lambda fn: fn),
-        wordbank_view_reply_command=SimpleNamespace(handle=lambda: lambda fn: fn),
-        wordbank_passive=SimpleNamespace(handle=lambda: lambda fn: fn),
-        wordbank_notice=SimpleNamespace(handle=lambda: lambda fn: fn),
-        wordbank_add_command=SimpleNamespace(handle=lambda: lambda fn: fn),
-        wordbank_command=SimpleNamespace(handle=lambda: lambda fn: fn),
-        initialize_plugin=AsyncMock(return_value=None),
-        build_error_message=lambda *args, **kwargs: "ERR",
-        cancel_guided_resources=AsyncMock(return_value=None),
-        guided_locale=lambda state: "zh-CN",
-    )
-
-
-class _CommandStub:
-    def __init__(self) -> None:
-        self.handlers: list[Any] = []
-
-    def handle(self) -> Any:
-        def _decorator(fn: Any) -> Any:
-            self.handlers.append(fn)
-            return fn
-
-        return _decorator
-
-
-def _runtime_with_command_stub(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    deliver_message_plan: AsyncMock | None = None,
-) -> tuple[dict[str, Any], Any]:
-    from src.plugins.wordbank import entry_runtime as runtime_module
-
-    approval_reply_command = _CommandStub()
-    service = cast(Any, SimpleNamespace())
-    monkeypatch.setattr(runtime_module, "wordbank_service", service)
-    monkeypatch.setattr(services_module, "wordbank_service", service, raising=False)
     plan_stub = deliver_message_plan or AsyncMock(
         return_value=SimpleNamespace(results=({"message_id": 1},))
     )
-    monkeypatch.setattr(runtime_module, "deliver_message_plan", plan_stub)
-    monkeypatch.setattr(
-        notify_module,
-        "deliver_message_plan",
-        plan_stub,
-        raising=False,
-    )
-    finish_with_message = AsyncMock(return_value=None)
-    monkeypatch.setattr(runtime_module, "finish_with_message", finish_with_message)
-
-    exports = register_wordbank_runtime_handlers(
-        wordbank_reply_command=_CommandStub(),
-        wordbank_approval_reply_command=approval_reply_command,
-        wordbank_view_reply_command=_CommandStub(),
-        wordbank_passive=_CommandStub(),
-        wordbank_notice=_CommandStub(),
-        wordbank_add_command=_CommandStub(),
-        wordbank_command=_CommandStub(),
-        initialize_plugin=AsyncMock(return_value=None),
-        build_error_message=lambda *args, **kwargs: "ERR",
-        cancel_guided_resources=AsyncMock(return_value=None),
-        guided_locale=lambda state: "zh-CN",
-    )
-    return exports, finish_with_message
+    monkeypatch.setattr(notify_module, "deliver_message_plan", plan_stub)
+    return plan_stub
 
 
 @pytest.mark.asyncio
 async def test_notify_creator_review_result_replies_and_mentions_creator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    deliver_plan = AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},)))
-    _runtime_exports(monkeypatch, deliver_message_plan=deliver_plan)
+    deliver_plan = _stub_notify(monkeypatch)
 
     await notify_module.notify_creator_review_result(
         cast(Any, SimpleNamespace()),
@@ -188,11 +110,9 @@ async def test_notify_creator_review_result_replies_and_mentions_creator(
 async def test_notify_creator_review_result_uses_approval_message_context_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    deliver_plan = AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},)))
-    _runtime_exports(
+    deliver_plan = _stub_notify(
         monkeypatch,
         list_message_refs_by_response_item_ids=AsyncMock(return_value=[]),
-        deliver_message_plan=deliver_plan,
     )
 
     await notify_module.notify_creator_review_result(
@@ -215,13 +135,11 @@ async def test_notify_creator_review_result_uses_approval_message_context_first(
 async def test_notify_creator_review_results_merges_batch_notices_by_source_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    deliver_plan = AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},)))
-    _runtime_exports(
+    deliver_plan = _stub_notify(
         monkeypatch,
         list_message_refs_by_response_item_ids=AsyncMock(
             return_value=[_approval_batch_submission_message()]
         ),
-        deliver_message_plan=deliver_plan,
     )
 
     await notify_module.notify_creator_review_results(
@@ -246,7 +164,6 @@ async def test_send_search_result_view_guided_passes_bot_to_finish_handler(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     finish_guided_search = AsyncMock(return_value=None)
-    _runtime_exports(monkeypatch)
     monkeypatch.setattr(views_module, "finish_guided_search_view", finish_guided_search)
     bot = cast(Any, SimpleNamespace(self_id="99999"))
     matcher = cast(Any, SimpleNamespace())
@@ -271,126 +188,3 @@ async def test_send_search_result_view_guided_passes_bot_to_finish_handler(
     assert state["wordbank_guided_search_keyword"] == "晚安"
     assert state["wordbank_guided_search_has_image"] is True
     assert state["wordbank_guided_search_image_scores"] == {7: 0.91}
-
-
-@pytest.mark.asyncio
-async def test_approval_reply_handler_sends_single_merged_notice(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.plugins.wordbank import entry_runtime as runtime_module
-
-    deliver_plan = AsyncMock(return_value=SimpleNamespace(results=({"message_id": 1},)))
-    _, finish_with_message = _runtime_with_command_stub(
-        monkeypatch,
-        deliver_message_plan=deliver_plan,
-    )
-    approval_reply_command = _CommandStub()
-    monkeypatch.setattr(
-        runtime_module,
-        "deliver_message_plan",
-        deliver_plan,
-    )
-    monkeypatch.setattr(runtime_module, "finish_with_message", finish_with_message)
-    monkeypatch.setattr(
-        runtime_module,
-        "handle_approval_reply_result",
-        AsyncMock(
-            return_value=ApprovalReplyOutcome(
-                message="词条 #300 已通过审核，稍后会参与被动匹配。",
-                approval_message=_approval_submission_message(),
-                completed=True,
-                action="approve",
-            )
-        ),
-    )
-
-    register_wordbank_runtime_handlers(
-        wordbank_reply_command=_CommandStub(),
-        wordbank_approval_reply_command=approval_reply_command,
-        wordbank_view_reply_command=_CommandStub(),
-        wordbank_passive=_CommandStub(),
-        wordbank_notice=_CommandStub(),
-        wordbank_add_command=_CommandStub(),
-        wordbank_command=_CommandStub(),
-        initialize_plugin=AsyncMock(return_value=None),
-        build_error_message=lambda *args, **kwargs: "ERR",
-        cancel_guided_resources=AsyncMock(return_value=None),
-        guided_locale=lambda state: "zh-CN",
-    )
-    handler = approval_reply_command.handlers[0]
-
-    await handler(
-        cast(Any, SimpleNamespace()),
-        cast(Any, SimpleNamespace()),
-        build_group_message_event("[CQ:at,qq=99999] y", role="admin"),
-    )
-
-    assert deliver_plan.await_count == 1
-    await_args = deliver_plan.await_args
-    assert await_args is not None
-    plan = await_args.kwargs["plan"]
-    assert plan.source_kind == "wordbank_creator_review_notice"
-    blocks = plan.messages[0].blocks
-    assert blocks[0].message_id == "456"
-    assert blocks[1].target_id == "10001"
-    assert blocks[3].text == "词条 #300 已通过审核，稍后会参与被动匹配。"
-    assert finish_with_message.await_count == 1
-
-
-@pytest.mark.asyncio
-async def test_approval_reply_handler_falls_back_to_source_notice(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.plugins.wordbank import entry_runtime as runtime_module
-
-    deliver_plan = AsyncMock(
-        side_effect=[
-            RuntimeError("boom"),
-            SimpleNamespace(results=({"message_id": 1},)),
-        ]
-    )
-    finish_with_message = AsyncMock(return_value=None)
-    approval_reply_command = _CommandStub()
-    monkeypatch.setattr(runtime_module, "deliver_message_plan", deliver_plan)
-    monkeypatch.setattr(notify_module, "deliver_message_plan", deliver_plan)
-    monkeypatch.setattr(runtime_module, "finish_with_message", finish_with_message)
-    monkeypatch.setattr(
-        runtime_module,
-        "handle_approval_reply_result",
-        AsyncMock(
-            return_value=ApprovalReplyOutcome(
-                message="词条 #300 已拒绝。",
-                approval_message=_approval_submission_message(),
-                completed=True,
-                action="reject",
-            )
-        ),
-    )
-
-    register_wordbank_runtime_handlers(
-        wordbank_reply_command=_CommandStub(),
-        wordbank_approval_reply_command=approval_reply_command,
-        wordbank_view_reply_command=_CommandStub(),
-        wordbank_passive=_CommandStub(),
-        wordbank_notice=_CommandStub(),
-        wordbank_add_command=_CommandStub(),
-        wordbank_command=_CommandStub(),
-        initialize_plugin=AsyncMock(return_value=None),
-        build_error_message=lambda *args, **kwargs: "ERR",
-        cancel_guided_resources=AsyncMock(return_value=None),
-        guided_locale=lambda state: "zh-CN",
-    )
-    handler = approval_reply_command.handlers[0]
-
-    await handler(
-        cast(Any, SimpleNamespace()),
-        cast(Any, SimpleNamespace()),
-        build_group_message_event("[CQ:at,qq=99999] n", role="admin"),
-    )
-
-    assert deliver_plan.await_count == 2
-    first_plan = deliver_plan.await_args_list[0].kwargs["plan"]
-    second_plan = deliver_plan.await_args_list[1].kwargs["plan"]
-    assert first_plan.source_kind == "wordbank_creator_review_notice"
-    assert second_plan.source_kind == "wordbank_approval_source_notice"
-    assert finish_with_message.await_count == 1

@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
@@ -46,6 +46,7 @@ from src.lib.reply_router import (
 from src.logger import logger
 
 from .database.types import WordbankGroupDetail
+from .debug import elapsed_ms, log_perf, perf_start
 from .guided_flow import finish_guided_search as _guided_finish_guided_search
 from .handlers import (
     build_group_detail_message,
@@ -57,7 +58,13 @@ from .handlers.commands import (
     parse_search_args,
     render_search_page_message,
 )
-from .handlers.passive import PassiveResponse
+from .handlers.passive import (
+    CompiledPassiveResponse,
+    PassiveResponse,
+    compile_passive_response,
+    execute_passive_post_actions,
+    message_segment_stats,
+)
 from .services import wordbank_media_service, wordbank_service
 
 if TYPE_CHECKING:
@@ -502,3 +509,109 @@ async def finish_guided_search_view(
             wordbank_service=wordbank_service,
             record_search_result_view_message=record_search_result_view_message,
         )
+
+
+async def deliver_passive_response(
+    bot: Bot,
+    response: PassiveResponse,
+    *,
+    locale: LocaleCode,
+    source_kind: str,
+    log_prefix: str,
+    event: MessageEvent | None = None,
+    target: DeliveryTarget | None = None,
+    handle_ms: float = 0.0,
+) -> CompiledPassiveResponse:
+    """编译并投递被动响应，随后登记消息引用。
+
+    统一 passive / notice 两条入口的投递循环：编译 → 发送 → 后续动作 → 记录。
+    `event` 与 `target` 二选一（受 `deliver_message_plan` 的投递约束）。
+    返回编译结果，调用方可据此复用（例如判断是否有可见输出）。
+    """
+    start = perf_start()
+    build_start = perf_start()
+    compiled = await compile_passive_response(
+        response,
+        locale=locale,
+        media_service=wordbank_media_service,
+    )
+    build_ms = elapsed_ms(build_start)
+    message = compiled.message
+    image_trace_fields = compiled.image_trace_fields
+    post_action_count = len(compiled.post_actions)
+    if message is None and not compiled.post_actions:
+        log_perf(
+            f"{log_prefix}.no_output",
+            start=start,
+            message_type=response.message_type,
+            response_item_id=response.response_item_id,
+            handle_ms=f"{handle_ms:.2f}",
+            build_ms=f"{build_ms:.2f}",
+        )
+        return compiled
+    segment_count, image_segment_count = (
+        message_segment_stats(message) if message is not None else (0, 0)
+    )
+    send_result: Any = None
+    send_ms = 0.0
+    if message is not None:
+        log_perf(
+            f"{log_prefix}.send.begin",
+            message_type=response.message_type,
+            response_item_id=response.response_item_id,
+            segment_count=segment_count,
+            image_segment_count=image_segment_count,
+            post_action_count=post_action_count,
+            **cast(Any, image_trace_fields),
+        )
+        send_start = perf_start()
+        plan_result = await deliver_message_plan(
+            bot,
+            plan=DeliveryPlan(
+                messages=(message,),
+                source_kind=source_kind,
+            ),
+            event=event,
+            target=target,
+        )
+        send_result = plan_result.results[0]
+        send_ms = elapsed_ms(send_start)
+        log_perf(
+            f"{log_prefix}.send.done",
+            start=send_start,
+            message_type=response.message_type,
+            response_item_id=response.response_item_id,
+            segment_count=segment_count,
+            image_segment_count=image_segment_count,
+            post_action_count=post_action_count,
+            **cast(Any, image_trace_fields),
+        )
+    action_start = perf_start()
+    await execute_passive_post_actions(bot, response, compiled.post_actions)
+    action_ms = elapsed_ms(action_start) if compiled.post_actions else 0.0
+    record_start = perf_start()
+    if send_result is not None:
+        await record_passive_response_message(
+            response,
+            send_result,
+            bot=bot,
+            fallback_message=message,
+        )
+    record_ms = elapsed_ms(record_start)
+    log_perf(
+        f"{log_prefix}.sent",
+        start=start,
+        message_type=response.message_type,
+        trigger_group_id=response.trigger_group_id,
+        response_item_id=response.response_item_id,
+        segment_count=segment_count,
+        image_segment_count=image_segment_count,
+        post_action_count=post_action_count,
+        handle_ms=f"{handle_ms:.2f}",
+        build_ms=f"{build_ms:.2f}",
+        send_ms=f"{send_ms:.2f}",
+        action_ms=f"{action_ms:.2f}",
+        record_ms=f"{record_ms:.2f}",
+        **cast(Any, image_trace_fields),
+    )
+    return compiled

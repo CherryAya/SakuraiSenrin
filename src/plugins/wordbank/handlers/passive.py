@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import asyncio
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -15,11 +17,39 @@ from nonebot.adapters.onebot.v11.event import (
     NoticeEvent,
 )
 
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.interaction import is_revoke_signal
+from src.lib.message_plan import (
+    AtRefBlock,
+    FaceBlock,
+    ImageBytesBlock,
+    MessagePlanEntry,
+    MessagePlanInput,
+    RawMessageBlock,
+    ReplyRefBlock,
+    TextBlock,
+    normalize_message_plan_entry,
+)
+from src.lib.utils.img import QQAvatar
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
+from src.plugins.wordbank.handlers.rendering import (
+    _build_image_payload_stats,
+    _load_shape_image_bytes,
+    _log_missing_image_fallbacks,
+)
 from src.plugins.wordbank.message_model import (
+    PLACEHOLDER_ACCOUNT,
+    PLACEHOLDER_AVATAR,
+    PLACEHOLDER_GROUP_CARD,
+    PLACEHOLDER_NICKNAME,
+    PLACEHOLDER_PROFILE_COMBO,
     MessageShape,
+    format_at_fallback_text,
+    format_event_summary_text,
+    is_response_sender_target,
+    is_safe_executable_at_target,
     shape_from_event,
     shape_from_message,
     shape_to_payload,
@@ -28,6 +58,7 @@ from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.matching import SelectedMatch
 from src.plugins.wordbank.services.media import MediaError, WordbankMediaService
 from src.plugins.wordbank.services.rules import Role, RuleContext
+from src.repositories import member_repo, user_repo
 
 MAX_PASSIVE_IMAGES = 4
 MAX_IMAGE_DOWNLOAD_BYTES = 4 * 1024 * 1024
@@ -489,3 +520,335 @@ async def handle_passive_notice(
         event_triggers=len(event_triggers),
     )
     return None
+
+
+# ---------------------------------------------------------------------------
+# 被动响应编译与投递
+#
+# 把 `PassiveResponse` 编译为可投递的消息规划，并统一 passive / notice 两条
+# 入口的投递循环。原本这两份循环内联在 entry_runtime 的闭包里，逻辑重复。
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True, frozen=True)
+class PassivePokeAction:
+    """待执行的被动戳一戳动作。"""
+
+    target_id: str
+
+
+@dataclass(slots=True, frozen=True)
+class PassiveProfilePlaceholderData:
+    """`[账号]` / `[昵称]` / `[群名片]` / `[xx]` 占位符的解析结果。"""
+
+    account: str
+    nickname: str
+    group_card: str
+    combo_text: str
+
+
+@dataclass(slots=True, frozen=True)
+class CompiledPassiveResponse:
+    """编译后的被动响应：消息规划 + 图片埋点 + 后续动作。"""
+
+    message: MessagePlanInput | None
+    image_trace_fields: dict[str, object]
+    post_actions: tuple[PassivePokeAction, ...] = ()
+
+
+def message_segment_stats(message: MessagePlanInput) -> tuple[int, int]:
+    """统计消息规划里的有效段数与图片段数。"""
+    entry = normalize_message_plan_entry(message)
+    segment_count = 0
+    image_count = 0
+    for block in entry.blocks:
+        if isinstance(block, TextBlock):
+            if block.text:
+                segment_count += 1
+            continue
+        if isinstance(block, ImageBytesBlock):
+            segment_count += 1
+            image_count += 1
+            continue
+        if isinstance(block, ReplyRefBlock):
+            if block.message_id.isdigit():
+                segment_count += 1
+            continue
+        if isinstance(block, RawMessageBlock):
+            raw_segments = list(block.message)
+            segment_count += len(raw_segments)
+            image_count += sum(1 for segment in raw_segments if segment.type == "image")
+            continue
+        segment_count += 1
+    return (
+        segment_count,
+        image_count,
+    )
+
+
+def _image_payload_trace_fields(
+    trace_fields: Mapping[str, object] | None,
+) -> dict[str, object]:
+    """从图片统计里挑出需要落日志的埋点字段。"""
+    if trace_fields is None:
+        return {}
+    payload: dict[str, object] = {}
+    for key in (
+        "requested_image_ids",
+        "loaded_image_ids",
+        "loaded_image_sizes",
+        "loaded_count",
+        "missing_count",
+        "image_total_bytes",
+        "image_max_bytes",
+    ):
+        value = trace_fields.get(key)
+        if value is not None:
+            payload[key] = value
+    return payload
+
+
+def _resolve_passive_target_id(response: PassiveResponse, target_id: str) -> str:
+    if is_response_sender_target(target_id):
+        return str(response.user_id).strip()
+    return str(target_id).strip()
+
+
+async def _resolve_passive_profile_placeholder_data(
+    response: PassiveResponse,
+) -> PassiveProfilePlaceholderData:
+    account = str(response.user_id).strip()
+    group_id = str(response.group_id).strip()
+    nickname_task = (
+        user_repo.get_name_by_uid(account) if account else asyncio.sleep(0, result=None)
+    )
+    group_card_task = (
+        member_repo.get_card_by_uid_gid(account, group_id)
+        if account and group_id
+        else asyncio.sleep(0, result=None)
+    )
+    nickname_value, group_card_value = await asyncio.gather(
+        nickname_task,
+        group_card_task,
+    )
+    nickname = str(nickname_value or "").strip() or account
+    raw_group_card = str(group_card_value or "").strip()
+    group_card = raw_group_card or nickname
+    combo_text = nickname
+    if raw_group_card and raw_group_card != nickname:
+        combo_text += f"({raw_group_card})"
+    combo_text += f"[{account}]"
+    return PassiveProfilePlaceholderData(
+        account=account,
+        nickname=nickname,
+        group_card=group_card,
+        combo_text=combo_text,
+    )
+
+
+async def _render_profile_avatar(account: str) -> bytes | None:
+    if not account:
+        return None
+    try:
+        avatar = await QQAvatar.fetch_user(account, size=160)
+        buffer = await asyncio.to_thread(avatar.save, "PNG")
+        if hasattr(buffer, "getvalue"):
+            return bytes(buffer.getvalue())
+        if isinstance(buffer, (bytes, bytearray)):
+            return bytes(buffer)
+    except Exception as exc:
+        logger.debug(
+            f"[Wordbank] passive profile avatar skipped | user_id={account} error={exc}"
+        )
+    return None
+
+
+async def compile_passive_response(
+    response: PassiveResponse,
+    *,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> CompiledPassiveResponse:
+    """把被动响应编译为消息规划。
+
+    `media_service` 必须显式传入：调用方持有 service 单例，避免在渲染层隐式
+    依赖全局注册表，也便于测试替换。
+    """
+    start = perf_start()
+    shape = response.response_shape
+    if shape is None or shape.is_empty():
+        text_value = response.text
+        log_perf(
+            "passive.build_passive_message.text_only",
+            start=start,
+            response_item_id=response.response_item_id,
+        )
+        if not text_value:
+            return CompiledPassiveResponse(message=None, image_trace_fields={})
+        return CompiledPassiveResponse(
+            message=text_value,
+            image_trace_fields={},
+        )
+    image_atom_count = sum(1 for atom in shape.atoms if atom.kind == "image")
+    log_perf(
+        "passive.build_passive_message.render_shape.begin",
+        response_item_id=response.response_item_id,
+        atom_count=len(shape.atoms),
+        image_atom_count=image_atom_count,
+    )
+    image_bytes_by_id = await _load_shape_image_bytes(shape, media_service)
+    payload_stats = _build_image_payload_stats(image_bytes_by_id)
+    _log_missing_image_fallbacks(
+        stage="compile_passive_response",
+        locale=locale,
+        image_bytes_by_id=image_bytes_by_id,
+        media_service=media_service,
+        trace_fields={"response_item_id": response.response_item_id},
+    )
+    log_perf(
+        "passive.build_passive_message.render_shape.images_loaded",
+        start=start,
+        response_item_id=response.response_item_id,
+        **cast(Any, payload_stats),
+    )
+    blocks: list[Any] = []
+    post_actions: list[PassivePokeAction] = []
+    image_segments = 0
+    profile_data: PassiveProfilePlaceholderData | None = None
+    profile_avatar_bytes: bytes | None = None
+    profile_avatar_loaded = False
+    for atom in shape.atoms:
+        if atom.kind == "text" and atom.text:
+            blocks.append(TextBlock(atom.text))
+            continue
+        if atom.kind == "face" and atom.face_id is not None:
+            blocks.append(FaceBlock(atom.face_id))
+            continue
+        if atom.kind == "at" and atom.target_id:
+            resolved_target_id = _resolve_passive_target_id(response, atom.target_id)
+            if resolved_target_id:
+                if is_safe_executable_at_target(resolved_target_id):
+                    blocks.append(AtRefBlock(resolved_target_id))
+                else:
+                    blocks.append(
+                        TextBlock(format_at_fallback_text(resolved_target_id))
+                    )
+            continue
+        if atom.kind == "image" and atom.canonical_image_id is not None:
+            image_bytes = image_bytes_by_id.get(atom.canonical_image_id)
+            if image_bytes is None:
+                blocks.append(TextBlock(tr(locale, "wordbank.render.image_missing")))
+                continue
+            blocks.append(ImageBytesBlock(image_bytes))
+            image_segments += 1
+            continue
+        if atom.kind == "placeholder" and atom.placeholder_name:
+            if profile_data is None:
+                profile_data = await _resolve_passive_profile_placeholder_data(response)
+            if atom.placeholder_name == PLACEHOLDER_ACCOUNT:
+                if profile_data.account:
+                    blocks.append(TextBlock(profile_data.account))
+                continue
+            if atom.placeholder_name == PLACEHOLDER_NICKNAME:
+                if profile_data.nickname:
+                    blocks.append(TextBlock(profile_data.nickname))
+                continue
+            if atom.placeholder_name == PLACEHOLDER_GROUP_CARD:
+                if profile_data.group_card:
+                    blocks.append(TextBlock(profile_data.group_card))
+                continue
+            if atom.placeholder_name == PLACEHOLDER_PROFILE_COMBO:
+                if profile_data.combo_text:
+                    blocks.append(TextBlock(profile_data.combo_text))
+                if not profile_avatar_loaded:
+                    profile_avatar_bytes = await _render_profile_avatar(
+                        profile_data.account
+                    )
+                    profile_avatar_loaded = True
+                if profile_avatar_bytes is not None:
+                    blocks.append(ImageBytesBlock(profile_avatar_bytes))
+                    image_segments += 1
+                continue
+            if atom.placeholder_name == PLACEHOLDER_AVATAR:
+                if not profile_avatar_loaded:
+                    profile_avatar_bytes = await _render_profile_avatar(
+                        profile_data.account
+                    )
+                    profile_avatar_loaded = True
+                if profile_avatar_bytes is not None:
+                    blocks.append(ImageBytesBlock(profile_avatar_bytes))
+                    image_segments += 1
+                continue
+        if atom.kind == "event" and atom.event_name == "event:poke":
+            resolved_target_id = _resolve_passive_target_id(response, atom.target_id)
+            if resolved_target_id:
+                post_actions.append(PassivePokeAction(target_id=resolved_target_id))
+                continue
+            logger.debug(
+                "[Wordbank] passive poke skipped | "
+                f"response_item_id={response.response_item_id} reason=empty_target"
+            )
+            continue
+        if atom.kind == "event" and atom.event_name:
+            blocks.append(
+                TextBlock(format_event_summary_text(atom.event_name, atom.target_id))
+            )
+    message: MessagePlanInput | None = None
+    if blocks:
+        message = MessagePlanEntry(blocks=tuple(blocks))
+    log_perf(
+        "passive.build_passive_message.render_shape.segment_built",
+        segments=len(blocks),
+        image_segments=image_segments,
+        post_action_count=len(post_actions),
+        **cast(Any, payload_stats),
+        response_item_id=response.response_item_id,
+    )
+    image_trace_fields = _image_payload_trace_fields(payload_stats)
+    log_perf(
+        "passive.build_passive_message.rendered_shape",
+        start=start,
+        response_item_id=response.response_item_id,
+        atoms=len(shape.atoms),
+        segments=len(blocks),
+        post_action_count=len(post_actions),
+        **cast(Any, image_trace_fields),
+    )
+    return CompiledPassiveResponse(
+        message=message,
+        image_trace_fields=image_trace_fields,
+        post_actions=tuple(post_actions),
+    )
+
+
+async def build_passive_message(
+    response: PassiveResponse,
+    *,
+    locale: LocaleCode,
+    media_service: WordbankMediaService,
+) -> tuple[MessagePlanInput, dict[str, object]]:
+    """兼容旧接口：返回 `(消息规划, 图片埋点)`。"""
+    compiled = await compile_passive_response(
+        response,
+        locale=locale,
+        media_service=media_service,
+    )
+    return (
+        compiled.message or MessagePlanEntry(blocks=()),
+        compiled.image_trace_fields,
+    )
+
+
+async def execute_passive_post_actions(
+    bot: Bot,
+    response: PassiveResponse,
+    actions: tuple[PassivePokeAction, ...],
+) -> None:
+    if not actions:
+        return
+    # 暂时关闭主动戳一戳执行，保留被动事件匹配与正常消息投递不变。
+    logger.info(
+        "[Wordbank] passive poke disabled | "
+        f"response_item_id={response.response_item_id} action_count={len(actions)}"
+    )
+    return

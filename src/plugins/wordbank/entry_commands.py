@@ -29,7 +29,18 @@ from src.lib.message_plan import (
 )
 
 from . import guided_flow as guided_flow_module
-from . import views
+from . import (
+    views,
+    wordbank_add_command,
+    wordbank_approve_command,
+    wordbank_command,
+    wordbank_delete_command,
+    wordbank_pending_command,
+    wordbank_rank_command,
+    wordbank_reject_command,
+    wordbank_restore_command,
+    wordbank_search_command,
+)
 from .errors import build_wordbank_error_message
 from .flows import (
     _build_wordbank_command_progress_spec,
@@ -76,17 +87,6 @@ from .handlers.parsers import (
     parse_search_session_command,
 )
 from .lifecycle import _initialize_wordbank_plugin
-from .matchers import (
-    wordbank_add_command,
-    wordbank_approve_command,
-    wordbank_command,
-    wordbank_delete_command,
-    wordbank_pending_command,
-    wordbank_rank_command,
-    wordbank_reject_command,
-    wordbank_restore_command,
-    wordbank_search_command,
-)
 from .notify import notify_creator_review_result
 from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError

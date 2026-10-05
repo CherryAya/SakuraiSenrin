@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
 from typing import Any, cast
 
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -18,42 +15,43 @@ from nonebot.matcher import Matcher
 
 from src.database.core.consts import Permission
 from src.lib.i18n.runtime import resolve_locale, tr
-from src.lib.i18n.types import LocaleCode
 from src.lib.interactive_recall import (
     find_recall_session,
     is_supported_recall_notice,
     rebuild_temp_matcher,
 )
 from src.lib.message_plan import (
-    AtRefBlock,
     DeliveryPlan,
-    FaceBlock,
-    ImageBytesBlock,
-    MessagePlanEntry,
     MessagePlanInput,
-    RawMessageBlock,
-    ReplyRefBlock,
-    TextBlock,
     deliver_message_plan,
     finish_with_message,
-    normalize_message_plan_entry,
 )
 from src.lib.reply_router import (
     ReplyRoute,
     dispatch_reply_route,
     register_reply_route,
 )
-from src.lib.utils.img import QQAvatar
 from src.logger import logger
-from src.repositories import member_repo, user_repo
 
-from . import views
+from . import (
+    views,
+    wordbank_add_command,
+    wordbank_approval_reply_command,
+    wordbank_command,
+    wordbank_notice,
+    wordbank_passive,
+    wordbank_reply_command,
+    wordbank_view_reply_command,
+)
 from .database.types import WordbankMessageRefRecord
-from .debug import log_perf, perf_start
-from .guided_flow import WORDBANK_GUIDED_RECALL_PENDING_KEYS
+from .errors import build_wordbank_error_message
+from .guided_flow import (
+    WORDBANK_GUIDED_RECALL_PENDING_KEYS,
+    cancel_guided_resources,
+    wordbank_guided_locale,
+)
 from .handlers import (
     ApprovalReplyOutcome,
-    PassiveResponse,
     get_reply_message_ids,
     group_detail_page_response_item_ids,
     handle_approval_reply_result,
@@ -65,22 +63,7 @@ from .handlers import (
 )
 from .handlers import mutation as handlers_mutation
 from .handlers import passive as handlers_passive
-from .handlers.rendering import (
-    _build_image_payload_stats,
-    _load_shape_image_bytes,
-    _log_missing_image_fallbacks,
-)
-from .message_model import (
-    PLACEHOLDER_ACCOUNT,
-    PLACEHOLDER_AVATAR,
-    PLACEHOLDER_GROUP_CARD,
-    PLACEHOLDER_NICKNAME,
-    PLACEHOLDER_PROFILE_COMBO,
-    format_at_fallback_text,
-    format_event_summary_text,
-    is_response_sender_target,
-    is_safe_executable_at_target,
-)
+from .lifecycle import initialize_wordbank_plugin
 from .notify import (
     notify_approval_source,
     notify_creator_review_result,
@@ -90,1027 +73,493 @@ from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError
 
 
-def register_wordbank_runtime_handlers(
-    *,
-    wordbank_reply_command: Any,
-    wordbank_approval_reply_command: Any,
-    wordbank_view_reply_command: Any,
-    wordbank_passive: Any,
-    wordbank_notice: Any,
-    wordbank_add_command: Any,
-    wordbank_command: Any,
-    initialize_plugin: Callable[[], Awaitable[None]],
-    build_error_message: Callable[..., MessagePlanInput],
-    cancel_guided_resources: Callable[..., Awaitable[None]],
-    guided_locale: Callable[[Mapping[str, Any]], LocaleCode],
-) -> dict[str, Any]:
-
-    def _message_segment_stats(message: MessagePlanInput) -> tuple[int, int]:
-        entry = normalize_message_plan_entry(message)
-        segment_count = 0
-        image_count = 0
-        for block in entry.blocks:
-            if isinstance(block, TextBlock):
-                if block.text:
-                    segment_count += 1
-                continue
-            if isinstance(block, ImageBytesBlock):
-                segment_count += 1
-                image_count += 1
-                continue
-            if isinstance(block, ReplyRefBlock):
-                if block.message_id.isdigit():
-                    segment_count += 1
-                continue
-            if isinstance(block, RawMessageBlock):
-                raw_segments = list(block.message)
-                segment_count += len(raw_segments)
-                image_count += sum(
-                    1 for segment in raw_segments if segment.type == "image"
-                )
-                continue
-            segment_count += 1
-        return (
-            segment_count,
-            image_count,
-        )
-
-    @dataclass(slots=True, frozen=True)
-    class PassivePokeAction:
-        target_id: str
-
-    @dataclass(slots=True, frozen=True)
-    class PassiveProfilePlaceholderData:
-        account: str
-        nickname: str
-        group_card: str
-        combo_text: str
-
-    @dataclass(slots=True, frozen=True)
-    class CompiledPassiveResponse:
-        message: MessagePlanInput | None
-        image_trace_fields: dict[str, object]
-        post_actions: tuple[PassivePokeAction, ...] = ()
-
-    def _image_payload_trace_fields(
-        trace_fields: Mapping[str, object] | None,
-    ) -> dict[str, object]:
-        if trace_fields is None:
-            return {}
-        payload: dict[str, object] = {}
-        for key in (
-            "requested_image_ids",
-            "loaded_image_ids",
-            "loaded_image_sizes",
-            "loaded_count",
-            "missing_count",
-            "image_total_bytes",
-            "image_max_bytes",
+async def _legacy_is_wordbank_response_reply(event: MessageEvent) -> bool:
+    reply_message_ids = get_reply_message_ids(event)
+    if not reply_message_ids:
+        return False
+    service = wordbank_service
+    for reply_message_id in reply_message_ids:
+        if (
+            await service.get_message_ref(
+                reply_message_id,
+                expected_kind="response",
+            )
+            is not None
         ):
-            value = trace_fields.get(key)
-            if value is not None:
-                payload[key] = value
-        return payload
+            return True
+    return False
 
-    def _resolve_passive_target_id(response: PassiveResponse, target_id: str) -> str:
-        if is_response_sender_target(target_id):
-            return str(response.user_id).strip()
-        return str(target_id).strip()
 
-    async def _resolve_passive_profile_placeholder_data(
-        response: PassiveResponse,
-    ) -> PassiveProfilePlaceholderData:
-        account = str(response.user_id).strip()
-        group_id = str(response.group_id).strip()
-        nickname_task = (
-            user_repo.get_name_by_uid(account)
-            if account
-            else asyncio.sleep(0, result=None)
-        )
-        group_card_task = (
-            member_repo.get_card_by_uid_gid(account, group_id)
-            if account and group_id
-            else asyncio.sleep(0, result=None)
-        )
-        nickname_value, group_card_value = await asyncio.gather(
-            nickname_task,
-            group_card_task,
-        )
-        nickname = str(nickname_value or "").strip() or account
-        raw_group_card = str(group_card_value or "").strip()
-        group_card = raw_group_card or nickname
-        combo_text = nickname
-        if raw_group_card and raw_group_card != nickname:
-            combo_text += f"({raw_group_card})"
-        combo_text += f"[{account}]"
-        return PassiveProfilePlaceholderData(
-            account=account,
-            nickname=nickname,
-            group_card=group_card,
-            combo_text=combo_text,
-        )
-
-    async def _render_profile_avatar(account: str) -> bytes | None:
-        if not account:
-            return None
-        try:
-            avatar = await QQAvatar.fetch_user(account, size=160)
-            buffer = await asyncio.to_thread(avatar.save, "PNG")
-            if hasattr(buffer, "getvalue"):
-                return bytes(buffer.getvalue())
-            if isinstance(buffer, (bytes, bytearray)):
-                return bytes(buffer)
-        except Exception as exc:
-            logger.debug(
-                "[Wordbank] passive profile avatar skipped | "
-                f"user_id={account} error={exc}"
-            )
-        return None
-
-    async def _compile_passive_response(
-        response: PassiveResponse,
-        *,
-        locale: LocaleCode,
-    ) -> CompiledPassiveResponse:
-        start = perf_start()
-        media_service = wordbank_media_service
-        shape = response.response_shape
-        if shape is None or shape.is_empty():
-            text_value = response.text
-            log_perf(
-                "plugin.build_passive_message.text_only",
-                start=start,
-                response_item_id=response.response_item_id,
-            )
-            if not text_value:
-                return CompiledPassiveResponse(message=None, image_trace_fields={})
-            return CompiledPassiveResponse(
-                message=text_value,
-                image_trace_fields={},
-            )
-        image_atom_count = sum(1 for atom in shape.atoms if atom.kind == "image")
-        log_perf(
-            "plugin.build_passive_message.render_shape.begin",
-            response_item_id=response.response_item_id,
-            atom_count=len(shape.atoms),
-            image_atom_count=image_atom_count,
-        )
-        image_bytes_by_id = await _load_shape_image_bytes(shape, media_service)
-        payload_stats = _build_image_payload_stats(image_bytes_by_id)
-        _log_missing_image_fallbacks(
-            stage="compile_passive_response",
-            locale=locale,
-            image_bytes_by_id=image_bytes_by_id,
-            media_service=media_service,
-            trace_fields={"response_item_id": response.response_item_id},
-        )
-        log_perf(
-            "plugin.build_passive_message.render_shape.images_loaded",
-            start=start,
-            response_item_id=response.response_item_id,
-            **cast(Any, payload_stats),
-        )
-        blocks: list[Any] = []
-        post_actions: list[PassivePokeAction] = []
-        image_segments = 0
-        profile_data: PassiveProfilePlaceholderData | None = None
-        profile_avatar_bytes: bytes | None = None
-        profile_avatar_loaded = False
-        for atom in shape.atoms:
-            if atom.kind == "text" and atom.text:
-                blocks.append(TextBlock(atom.text))
-                continue
-            if atom.kind == "face" and atom.face_id is not None:
-                blocks.append(FaceBlock(atom.face_id))
-                continue
-            if atom.kind == "at" and atom.target_id:
-                resolved_target_id = _resolve_passive_target_id(
-                    response, atom.target_id
-                )
-                if resolved_target_id:
-                    if is_safe_executable_at_target(resolved_target_id):
-                        blocks.append(AtRefBlock(resolved_target_id))
-                    else:
-                        blocks.append(
-                            TextBlock(format_at_fallback_text(resolved_target_id))
-                        )
-                continue
-            if atom.kind == "image" and atom.canonical_image_id is not None:
-                image_bytes = image_bytes_by_id.get(atom.canonical_image_id)
-                if image_bytes is None:
-                    blocks.append(
-                        TextBlock(tr(locale, "wordbank.render.image_missing"))
-                    )
-                    continue
-                blocks.append(ImageBytesBlock(image_bytes))
-                image_segments += 1
-                continue
-            if atom.kind == "placeholder" and atom.placeholder_name:
-                if profile_data is None:
-                    profile_data = await _resolve_passive_profile_placeholder_data(
-                        response
-                    )
-                if atom.placeholder_name == PLACEHOLDER_ACCOUNT:
-                    if profile_data.account:
-                        blocks.append(TextBlock(profile_data.account))
-                    continue
-                if atom.placeholder_name == PLACEHOLDER_NICKNAME:
-                    if profile_data.nickname:
-                        blocks.append(TextBlock(profile_data.nickname))
-                    continue
-                if atom.placeholder_name == PLACEHOLDER_GROUP_CARD:
-                    if profile_data.group_card:
-                        blocks.append(TextBlock(profile_data.group_card))
-                    continue
-                if atom.placeholder_name == PLACEHOLDER_PROFILE_COMBO:
-                    if profile_data.combo_text:
-                        blocks.append(TextBlock(profile_data.combo_text))
-                    if not profile_avatar_loaded:
-                        profile_avatar_bytes = await _render_profile_avatar(
-                            profile_data.account
-                        )
-                        profile_avatar_loaded = True
-                    if profile_avatar_bytes is not None:
-                        blocks.append(ImageBytesBlock(profile_avatar_bytes))
-                        image_segments += 1
-                    continue
-                if atom.placeholder_name == PLACEHOLDER_AVATAR:
-                    if not profile_avatar_loaded:
-                        profile_avatar_bytes = await _render_profile_avatar(
-                            profile_data.account
-                        )
-                        profile_avatar_loaded = True
-                    if profile_avatar_bytes is not None:
-                        blocks.append(ImageBytesBlock(profile_avatar_bytes))
-                        image_segments += 1
-                    continue
-            if atom.kind == "event" and atom.event_name == "event:poke":
-                resolved_target_id = _resolve_passive_target_id(
-                    response, atom.target_id
-                )
-                if resolved_target_id:
-                    post_actions.append(PassivePokeAction(target_id=resolved_target_id))
-                    continue
-                logger.debug(
-                    "[Wordbank] passive poke skipped | "
-                    f"response_item_id={response.response_item_id} reason=empty_target"
-                )
-                continue
-            if atom.kind == "event" and atom.event_name:
-                blocks.append(
-                    TextBlock(
-                        format_event_summary_text(atom.event_name, atom.target_id)
-                    )
-                )
-        message: MessagePlanInput | None = None
-        if blocks:
-            message = MessagePlanEntry(blocks=tuple(blocks))
-        log_perf(
-            "plugin.build_passive_message.render_shape.segment_built",
-            segments=len(blocks),
-            image_segments=image_segments,
-            post_action_count=len(post_actions),
-            **cast(Any, payload_stats),
-            response_item_id=response.response_item_id,
-        )
-        image_trace_fields = _image_payload_trace_fields(payload_stats)
-        log_perf(
-            "plugin.build_passive_message.rendered_shape",
-            start=start,
-            response_item_id=response.response_item_id,
-            atoms=len(shape.atoms),
-            segments=len(blocks),
-            post_action_count=len(post_actions),
-            **cast(Any, image_trace_fields),
-        )
-        return CompiledPassiveResponse(
-            message=message,
-            image_trace_fields=image_trace_fields,
-            post_actions=tuple(post_actions),
-        )
-
-    async def _build_passive_message(
-        response: PassiveResponse,
-        *,
-        locale: LocaleCode,
-    ) -> tuple[MessagePlanInput, dict[str, object]]:
-        compiled = await _compile_passive_response(response, locale=locale)
-        return (
-            compiled.message or MessagePlanEntry(blocks=()),
-            compiled.image_trace_fields,
-        )
-
-    async def _execute_passive_post_actions(
-        bot: Bot,
-        response: PassiveResponse,
-        actions: tuple[PassivePokeAction, ...],
-    ) -> None:
-        if not actions:
-            return
-        # Temporarily disable active poke execution while keeping passive
-        # event matching and normal message delivery unchanged.
-        logger.info(
-            "[Wordbank] passive poke disabled | "
-            f"response_item_id={response.response_item_id} action_count={len(actions)}"
-        )
-        return
-
-        # for action in actions:
-        #     target_id = str(action.target_id).strip()
-        #     if not target_id.isdigit():
-        #         logger.debug(
-        #             "[Wordbank] passive poke skipped | "
-        #             "response_item_id="
-        #             f"{response.response_item_id} reason=invalid_target"
-        #         )
-        #         continue
-        #     group_id = str(response.group_id).strip()
-        #     api_candidates: list[tuple[str, dict[str, int]]] = []
-        #     if group_id.isdigit():
-        #         api_candidates.extend(
-        #             (
-        #                 (
-        #                     "group_poke",
-        #                     {
-        #                         "group_id": int(group_id),
-        #                         "user_id": int(target_id),
-        #                     },
-        #                 ),
-        #                 (
-        #                     "send_poke",
-        #                     {
-        #                         "group_id": int(group_id),
-        #                         "user_id": int(target_id),
-        #                     },
-        #                 ),
-        #             )
-        #         )
-        #     else:
-        #         api_candidates.extend(
-        #             (
-        #                 ("friend_poke", {"user_id": int(target_id)}),
-        #                 ("send_poke", {"user_id": int(target_id)}),
-        #             )
-        #         )
-        #
-        #     last_exc: Exception | None = None
-        #     for api_name, payload in api_candidates:
-        #         try:
-        #             logger.debug(
-        #                 "[Wordbank] passive poke execute | "
-        #                 f"response_item_id={response.response_item_id} "
-        #                 f"group_id={response.group_id or '-'} "
-        #                 f"target_id={target_id} api={api_name}"
-        #             )
-        #             await bot.call_api(api_name, **payload)
-        #             last_exc = None
-        #             break
-        #         except Exception as exc:
-        #             last_exc = exc
-        #             logger.debug(
-        #                 "[Wordbank] passive poke api failed | "
-        #                 f"response_item_id={response.response_item_id} "
-        #                 f"group_id={response.group_id or '-'} "
-        #                 f"target_id={target_id} api={api_name} error={exc}"
-        #             )
-        #     if last_exc is not None:
-        #         logger.warning(
-        #             "[Wordbank] passive poke failed | "
-        #             f"response_item_id={response.response_item_id} "
-        #             f"group_id={response.group_id or '-'} "
-        #             f"target_id={target_id} error={last_exc}"
-        #         )
-
-    async def _legacy_is_wordbank_response_reply(event: MessageEvent) -> bool:
-        reply_message_ids = get_reply_message_ids(event)
-        if not reply_message_ids:
-            return False
-        service = wordbank_service
-        for reply_message_id in reply_message_ids:
-            if (
-                await service.get_message_ref(
-                    reply_message_id,
-                    expected_kind="response",
-                )
-                is not None
-            ):
-                return True
+async def _legacy_is_wordbank_approval_reply(event: MessageEvent) -> bool:
+    reply_message_ids = get_reply_message_ids(event)
+    if not reply_message_ids:
         return False
+    service = wordbank_service
+    for reply_message_id in reply_message_ids:
+        if (
+            await service.get_message_ref(
+                reply_message_id,
+                expected_kind="approval",
+            )
+            is not None
+        ):
+            return True
+    return False
 
-    async def _legacy_is_wordbank_approval_reply(event: MessageEvent) -> bool:
-        reply_message_ids = get_reply_message_ids(event)
-        if not reply_message_ids:
-            return False
-        service = wordbank_service
-        for reply_message_id in reply_message_ids:
-            if (
-                await service.get_message_ref(
-                    reply_message_id,
-                    expected_kind="approval",
-                )
-                is not None
-            ):
-                return True
+
+async def _legacy_is_wordbank_view_reply(event: MessageEvent) -> bool:
+    reply_message_ids = get_reply_message_ids(event)
+    if not reply_message_ids:
         return False
+    service = wordbank_service
+    for reply_message_id in reply_message_ids:
+        if (
+            await service.get_message_ref(
+                reply_message_id,
+                expected_kind="view",
+            )
+            is not None
+        ):
+            return True
+    return False
 
-    async def _legacy_is_wordbank_view_reply(event: MessageEvent) -> bool:
-        reply_message_ids = get_reply_message_ids(event)
-        if not reply_message_ids:
-            return False
-        service = wordbank_service
-        for reply_message_id in reply_message_ids:
-            if (
-                await service.get_message_ref(
-                    reply_message_id,
-                    expected_kind="view",
-                )
-                is not None
-            ):
-                return True
-        return False
 
-    async def _handle_registered_wordbank_response_reply(
-        bot: Bot,
-        event: MessageEvent,
-        target: object,
-    ) -> MessagePlanInput | None:
-        _ = bot
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        service = wordbank_service
-        media_service = wordbank_media_service
-        return await handle_reply_command(
-            service,
-            event=event,
-            message=event.message,
-            text=event.message.extract_plain_text(),
-            locale=locale,
-            media_service=media_service,
-            response_message=(
-                None
-                if target is None
-                else wordbank_message_ref_from_reply_target(cast(Any, target))
-            ),
-        )
-
-    async def _handle_registered_wordbank_approval_reply(
-        bot: Bot,
-        event: MessageEvent,
-        target: object,
-    ) -> ApprovalReplyOutcome:
-        _ = bot
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        service = wordbank_service
-        return await handle_approval_reply_result(
-            service,
-            event=event,
-            text=event.message.extract_plain_text(),
-            locale=locale,
-            approval_message=(
-                None
-                if target is None
-                else wordbank_message_ref_from_reply_target(cast(Any, target))
-            ),
-        )
-
-    async def _handle_registered_wordbank_view_reply(
-        bot: Bot,
-        event: MessageEvent,
-        target: object,
-    ) -> WordbankMessageRefRecord:
-        _ = (bot, event)
-        if target is None:
-            reply_message_ids = get_reply_message_ids(event)
-            if not reply_message_ids:
-                raise RuntimeError("wordbank view reply target missing")
-            service = wordbank_service
-            for reply_message_id in reply_message_ids:
-                view_message = await service.get_message_ref(
-                    reply_message_id,
-                    expected_kind="view",
-                )
-                if view_message is not None:
-                    return view_message
-            raise RuntimeError("wordbank view reply target not found")
-        return wordbank_message_ref_from_reply_target(cast(Any, target))
-
-    async def _legacy_wordbank_response_handler(
-        bot: Bot,
-        event: MessageEvent,
-    ) -> MessagePlanInput | None:
-        return await _handle_registered_wordbank_response_reply(bot, event, None)
-
-    async def _legacy_wordbank_approval_handler(
-        bot: Bot,
-        event: MessageEvent,
-    ) -> ApprovalReplyOutcome:
-        return await _handle_registered_wordbank_approval_reply(bot, event, None)
-
-    async def _legacy_wordbank_view_handler(
-        bot: Bot,
-        event: MessageEvent,
-    ) -> WordbankMessageRefRecord:
-        return await _handle_registered_wordbank_view_reply(bot, event, None)
-
-    register_reply_route(
-        ReplyRoute(
-            name="wordbank.response",
-            context_kinds=("wordbank.response",),
-            text_matcher=lambda _text: True,
-            handler=_handle_registered_wordbank_response_reply,
-            legacy_rule=_legacy_is_wordbank_response_reply,
-            legacy_handler=_legacy_wordbank_response_handler,
-        )
-    )
-    register_reply_route(
-        ReplyRoute(
-            name="wordbank.approval",
-            context_kinds=("wordbank.approval",),
-            text_matcher=lambda _text: True,
-            handler=_handle_registered_wordbank_approval_reply,
-            legacy_rule=_legacy_is_wordbank_approval_reply,
-            legacy_handler=_legacy_wordbank_approval_handler,
-        )
-    )
-    register_reply_route(
-        ReplyRoute(
-            name="wordbank.view",
-            context_kinds=("wordbank.view",),
-            text_matcher=lambda _text: True,
-            handler=_handle_registered_wordbank_view_reply,
-            legacy_rule=_legacy_is_wordbank_view_reply,
-            legacy_handler=_legacy_wordbank_view_handler,
-        )
+async def _handle_registered_wordbank_response_reply(
+    bot: Bot,
+    event: MessageEvent,
+    target: object,
+) -> MessagePlanInput | None:
+    _ = bot
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    service = wordbank_service
+    media_service = wordbank_media_service
+    return await handle_reply_command(
+        service,
+        event=event,
+        message=event.message,
+        text=event.message.extract_plain_text(),
+        locale=locale,
+        media_service=media_service,
+        response_message=(
+            None
+            if target is None
+            else wordbank_message_ref_from_reply_target(cast(Any, target))
+        ),
     )
 
-    @wordbank_reply_command.handle()
-    async def _wordbank_reply(
-        bot: Bot,
-        matcher: Matcher,
-        event: MessageEvent,
-    ) -> None:
-        await initialize_plugin()
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        try:
-            msg = await dispatch_reply_route("wordbank.response", bot, event)
-        except (RuleError, ValueError) as exc:
-            await finish_with_message(
-                bot,
-                matcher,
-                event=event,
-                message=build_error_message(
-                    exc,
-                    locale,
-                    default_feature="reply-shortcut",
-                ),
-                source_kind="wordbank_command",
+
+async def _handle_registered_wordbank_approval_reply(
+    bot: Bot,
+    event: MessageEvent,
+    target: object,
+) -> ApprovalReplyOutcome:
+    _ = bot
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    service = wordbank_service
+    return await handle_approval_reply_result(
+        service,
+        event=event,
+        text=event.message.extract_plain_text(),
+        locale=locale,
+        approval_message=(
+            None
+            if target is None
+            else wordbank_message_ref_from_reply_target(cast(Any, target))
+        ),
+    )
+
+
+async def _handle_registered_wordbank_view_reply(
+    bot: Bot,
+    event: MessageEvent,
+    target: object,
+) -> WordbankMessageRefRecord:
+    _ = (bot, event)
+    if target is None:
+        reply_message_ids = get_reply_message_ids(event)
+        if not reply_message_ids:
+            raise RuntimeError("wordbank view reply target missing")
+        service = wordbank_service
+        for reply_message_id in reply_message_ids:
+            view_message = await service.get_message_ref(
+                reply_message_id,
+                expected_kind="view",
             )
-            return
-        if msg is None:
-            await matcher.finish()
-            return
+            if view_message is not None:
+                return view_message
+        raise RuntimeError("wordbank view reply target not found")
+    return wordbank_message_ref_from_reply_target(cast(Any, target))
+
+
+async def _legacy_wordbank_response_handler(
+    bot: Bot,
+    event: MessageEvent,
+) -> MessagePlanInput | None:
+    return await _handle_registered_wordbank_response_reply(bot, event, None)
+
+
+async def _legacy_wordbank_approval_handler(
+    bot: Bot,
+    event: MessageEvent,
+) -> ApprovalReplyOutcome:
+    return await _handle_registered_wordbank_approval_reply(bot, event, None)
+
+
+async def _legacy_wordbank_view_handler(
+    bot: Bot,
+    event: MessageEvent,
+) -> WordbankMessageRefRecord:
+    return await _handle_registered_wordbank_view_reply(bot, event, None)
+
+
+register_reply_route(
+    ReplyRoute(
+        name="wordbank.response",
+        context_kinds=("wordbank.response",),
+        text_matcher=lambda _text: True,
+        handler=_handle_registered_wordbank_response_reply,
+        legacy_rule=_legacy_is_wordbank_response_reply,
+        legacy_handler=_legacy_wordbank_response_handler,
+    )
+)
+register_reply_route(
+    ReplyRoute(
+        name="wordbank.approval",
+        context_kinds=("wordbank.approval",),
+        text_matcher=lambda _text: True,
+        handler=_handle_registered_wordbank_approval_reply,
+        legacy_rule=_legacy_is_wordbank_approval_reply,
+        legacy_handler=_legacy_wordbank_approval_handler,
+    )
+)
+register_reply_route(
+    ReplyRoute(
+        name="wordbank.view",
+        context_kinds=("wordbank.view",),
+        text_matcher=lambda _text: True,
+        handler=_handle_registered_wordbank_view_reply,
+        legacy_rule=_legacy_is_wordbank_view_reply,
+        legacy_handler=_legacy_wordbank_view_handler,
+    )
+)
+
+
+@wordbank_reply_command.handle()
+async def _wordbank_reply(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+) -> None:
+    await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    try:
+        msg = await dispatch_reply_route("wordbank.response", bot, event)
+    except (RuleError, ValueError) as exc:
         await finish_with_message(
             bot,
             matcher,
             event=event,
-            message=msg,
+            message=build_wordbank_error_message(
+                exc,
+                locale,
+                default_feature="reply-shortcut",
+            ),
             source_kind="wordbank_command",
         )
+        return
+    if msg is None:
+        await matcher.finish()
+        return
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message=msg,
+        source_kind="wordbank_command",
+    )
 
-    @wordbank_approval_reply_command.handle()
-    async def _wordbank_approval_reply(
-        bot: Bot,
-        matcher: Matcher,
-        event: MessageEvent,
-    ) -> None:
-        await initialize_plugin()
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        try:
-            outcome = await dispatch_reply_route("wordbank.approval", bot, event)
-        except (RuleError, ValueError) as exc:
-            await finish_with_message(
+
+@wordbank_approval_reply_command.handle()
+async def _wordbank_approval_reply(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+) -> None:
+    await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    try:
+        outcome = await dispatch_reply_route("wordbank.approval", bot, event)
+    except (RuleError, ValueError) as exc:
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=build_wordbank_error_message(
+                exc,
+                locale,
+                default_feature="approval-reply",
+                actor_permission=Permission.GROUP_ADMIN,
+            ),
+            source_kind="wordbank_command",
+        )
+        return
+    if outcome is None:
+        await matcher.finish()
+        return
+    if outcome.message is None:
+        await matcher.finish()
+        return
+    if outcome.completed and outcome.approval_message is not None:
+        if outcome.action:
+            delivered = await notify_creator_review_result(
                 bot,
-                matcher,
-                event=event,
-                message=build_error_message(
-                    exc,
-                    locale,
-                    default_feature="approval-reply",
-                    actor_permission=Permission.GROUP_ADMIN,
-                ),
-                source_kind="wordbank_command",
+                response_item_id=outcome.approval_message.response_item_id,
+                action=outcome.action,
+                locale=locale,
+                approval_message=outcome.approval_message,
+                reviewer_id=str(event.user_id),
+                message=outcome.message,
             )
-            return
-        if outcome is None:
-            await matcher.finish()
-            return
-        if outcome.message is None:
-            await matcher.finish()
-            return
-        if outcome.completed and outcome.approval_message is not None:
-            if outcome.action:
-                delivered = await notify_creator_review_result(
-                    bot,
-                    response_item_id=outcome.approval_message.response_item_id,
-                    action=outcome.action,
-                    locale=locale,
-                    approval_message=outcome.approval_message,
-                    reviewer_id=str(event.user_id),
-                    message=outcome.message,
-                )
-                if not delivered:
-                    await notify_approval_source(
-                        bot,
-                        outcome.approval_message,
-                        outcome.message,
-                    )
-            else:
+            if not delivered:
                 await notify_approval_source(
                     bot,
                     outcome.approval_message,
                     outcome.message,
                 )
-        elif outcome.completed and outcome.batch_notices:
-            await notify_creator_review_results(
+        else:
+            await notify_approval_source(
                 bot,
-                notices=outcome.batch_notices,
-                locale=locale,
-                reviewer_id=str(event.user_id),
+                outcome.approval_message,
+                outcome.message,
             )
+    elif outcome.completed and outcome.batch_notices:
+        await notify_creator_review_results(
+            bot,
+            notices=outcome.batch_notices,
+            locale=locale,
+            reviewer_id=str(event.user_id),
+        )
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message=outcome.message,
+        source_kind="wordbank_command",
+    )
+
+
+@wordbank_view_reply_command.handle()
+async def _wordbank_view_reply(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+) -> None:
+    await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    service = wordbank_service
+    view_message = cast(
+        WordbankMessageRefRecord | None,
+        await dispatch_reply_route("wordbank.view", bot, event),
+    )
+    if view_message is None:
         await finish_with_message(
             bot,
             matcher,
             event=event,
-            message=outcome.message,
+            message=tr(
+                locale,
+                "wordbank.reply.view_target_not_found",
+                message_id=(get_reply_message_ids(event) or ("",))[0],
+            ),
+            source_kind="wordbank_command",
+        )
+        return
+    try:
+        if view_message.context_type == "search_result":
+            parsed = parse_view_reply_for_search_result(
+                event.message.extract_plain_text(),
+                available_group_ids=view_message.group_ids,
+            )
+        else:
+            parsed_delete = parse_group_detail_delete_reply(
+                event.message.extract_plain_text(),
+                available_response_item_ids=None,
+            )
+            if parsed_delete is not None:
+                detail = await service.get_group_detail(view_message.trigger_group_id)
+                if detail is None:
+                    raise RuleError(
+                        tr(
+                            locale,
+                            "wordbank.group.not_found",
+                            group_id=view_message.trigger_group_id,
+                        ),
+                        key="wordbank.group.not_found",
+                        group_id=view_message.trigger_group_id,
+                    )
+                parse_group_detail_delete_reply(
+                    event.message.extract_plain_text(),
+                    available_response_item_ids=group_detail_page_response_item_ids(
+                        detail,
+                        page=view_message.current_page,
+                    ),
+                )
+                delete_handler = handlers_mutation.handle_delete
+                messages = [
+                    await delete_handler(
+                        service,
+                        event=event,
+                        response_item_id_text=str(response_item_id),
+                        locale=locale,
+                    )
+                    for response_item_id in parsed_delete.response_item_ids
+                ]
+                message = "\n".join(messages)
+                await finish_with_message(
+                    bot,
+                    matcher,
+                    event=event,
+                    message=message,
+                    source_kind="wordbank_command",
+                )
+                return
+            parsed = parse_view_reply_for_group_detail(
+                event.message.extract_plain_text(),
+                trigger_group_id=view_message.trigger_group_id,
+                current_page=view_message.current_page,
+            )
+        await views.send_group_detail_view(
+            bot,
+            matcher,
+            event,
+            locale,
+            trigger_group_id=parsed.trigger_group_id,
+            page=parsed.page,
+        )
+    except (RuleError, ValueError) as exc:
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=build_wordbank_error_message(
+                exc,
+                locale,
+                default_feature="reply-shortcut",
+            ),
             source_kind="wordbank_command",
         )
 
-    @wordbank_view_reply_command.handle()
-    async def _wordbank_view_reply(
-        bot: Bot,
-        matcher: Matcher,
-        event: MessageEvent,
-    ) -> None:
-        await initialize_plugin()
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        service = wordbank_service
-        view_message = cast(
-            WordbankMessageRefRecord | None,
-            await dispatch_reply_route("wordbank.view", bot, event),
-        )
-        if view_message is None:
-            await finish_with_message(
-                bot,
-                matcher,
-                event=event,
-                message=tr(
-                    locale,
-                    "wordbank.reply.view_target_not_found",
-                    message_id=(get_reply_message_ids(event) or ("",))[0],
-                ),
-                source_kind="wordbank_command",
-            )
-            return
-        try:
-            if view_message.context_type == "search_result":
-                parsed = parse_view_reply_for_search_result(
-                    event.message.extract_plain_text(),
-                    available_group_ids=view_message.group_ids,
-                )
-            else:
-                parsed_delete = parse_group_detail_delete_reply(
-                    event.message.extract_plain_text(),
-                    available_response_item_ids=None,
-                )
-                if parsed_delete is not None:
-                    detail = await service.get_group_detail(
-                        view_message.trigger_group_id
-                    )
-                    if detail is None:
-                        raise RuleError(
-                            tr(
-                                locale,
-                                "wordbank.group.not_found",
-                                group_id=view_message.trigger_group_id,
-                            ),
-                            key="wordbank.group.not_found",
-                            group_id=view_message.trigger_group_id,
-                        )
-                    parse_group_detail_delete_reply(
-                        event.message.extract_plain_text(),
-                        available_response_item_ids=group_detail_page_response_item_ids(
-                            detail,
-                            page=view_message.current_page,
-                        ),
-                    )
-                    delete_handler = handlers_mutation.handle_delete
-                    messages = [
-                        await delete_handler(
-                            service,
-                            event=event,
-                            response_item_id_text=str(response_item_id),
-                            locale=locale,
-                        )
-                        for response_item_id in parsed_delete.response_item_ids
-                    ]
-                    message = "\n".join(messages)
-                    await finish_with_message(
-                        bot,
-                        matcher,
-                        event=event,
-                        message=message,
-                        source_kind="wordbank_command",
-                    )
-                    return
-                parsed = parse_view_reply_for_group_detail(
-                    event.message.extract_plain_text(),
-                    trigger_group_id=view_message.trigger_group_id,
-                    current_page=view_message.current_page,
-                )
-            await views.send_group_detail_view(
-                bot,
-                matcher,
-                event,
-                locale,
-                trigger_group_id=parsed.trigger_group_id,
-                page=parsed.page,
-            )
-        except (RuleError, ValueError) as exc:
-            await finish_with_message(
-                bot,
-                matcher,
-                event=event,
-                message=build_error_message(
-                    exc,
-                    locale,
-                    default_feature="reply-shortcut",
-                ),
-                source_kind="wordbank_command",
-            )
 
-    @wordbank_passive.handle()
-    async def _wordbank_passive(bot: Bot, event: MessageEvent) -> None:
-        from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
+@wordbank_passive.handle()
+async def _wordbank_passive(bot: Bot, event: MessageEvent) -> None:
+    from .debug import elapsed_ms, log_perf, perf_start
 
-        start = perf_start()
-        await initialize_plugin()
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        try:
-            service = wordbank_service
-            media_service = wordbank_media_service
-            handle_start = perf_start()
-            response = await handlers_passive.handle_passive_message(
-                bot,
-                event,
-                service,
-                media_service,
-            )
-            handle_ms = elapsed_ms(handle_start)
-        except Exception as exc:
-            logger.warning(f"[Wordbank] passive match skipped: {exc}")
-            return
-        if not response:
-            log_perf(
-                "plugin.passive.handle.no_match",
-                start=start,
-                handle_ms=f"{handle_ms:.2f}",
-            )
-            return
-        build_start = perf_start()
-        compiled = await _compile_passive_response(
-            response,
-            locale=locale,
+    start = perf_start()
+    await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    try:
+        handle_start = perf_start()
+        response = await handlers_passive.handle_passive_message(
+            bot,
+            event,
+            wordbank_service,
+            wordbank_media_service,
         )
-        build_ms = elapsed_ms(build_start)
-        message = compiled.message
-        image_trace_fields = compiled.image_trace_fields
-        post_action_count = len(compiled.post_actions)
-        if message is None and not compiled.post_actions:
-            log_perf(
-                "plugin.passive.handle.no_output",
-                start=start,
-                message_type=response.message_type,
-                response_item_id=response.response_item_id,
-                handle_ms=f"{handle_ms:.2f}",
-                build_ms=f"{build_ms:.2f}",
-            )
-            return
-        segment_count, image_segment_count = (
-            _message_segment_stats(message) if message is not None else (0, 0)
-        )
-        send_result: Any = None
-        send_ms = 0.0
-        if message is not None:
-            log_perf(
-                "plugin.passive.handle.send.begin",
-                message_type=response.message_type,
-                response_item_id=response.response_item_id,
-                segment_count=segment_count,
-                image_segment_count=image_segment_count,
-                post_action_count=post_action_count,
-                **cast(Any, image_trace_fields),
-            )
-            send_start = perf_start()
-            plan_result = await deliver_message_plan(
-                bot,
-                plan=DeliveryPlan(
-                    messages=(message,),
-                    source_kind="wordbank_response",
-                ),
-                event=event,
-            )
-            send_result = plan_result.results[0]
-            send_ms = elapsed_ms(send_start)
-            log_perf(
-                "plugin.passive.handle.send.done",
-                start=send_start,
-                message_type=response.message_type,
-                response_item_id=response.response_item_id,
-                segment_count=segment_count,
-                image_segment_count=image_segment_count,
-                post_action_count=post_action_count,
-                **cast(Any, image_trace_fields),
-            )
-        action_start = perf_start()
-        await _execute_passive_post_actions(bot, response, compiled.post_actions)
-        action_ms = elapsed_ms(action_start) if compiled.post_actions else 0.0
-        record_start = perf_start()
-        if send_result is not None:
-            await views.record_passive_response_message(
-                response,
-                send_result,
-                bot=bot,
-                fallback_message=message,
-            )
-        record_ms = elapsed_ms(record_start)
+        handle_ms = elapsed_ms(handle_start)
+    except Exception as exc:
+        logger.warning(f"[Wordbank] passive match skipped: {exc}")
+        return
+    if not response:
         log_perf(
-            "plugin.passive.handle.sent",
+            "plugin.passive.handle.no_match",
             start=start,
-            message_type=response.message_type,
-            trigger_group_id=response.trigger_group_id,
-            response_item_id=response.response_item_id,
-            segment_count=segment_count,
-            image_segment_count=image_segment_count,
-            post_action_count=post_action_count,
             handle_ms=f"{handle_ms:.2f}",
-            build_ms=f"{build_ms:.2f}",
-            send_ms=f"{send_ms:.2f}",
-            action_ms=f"{action_ms:.2f}",
-            record_ms=f"{record_ms:.2f}",
-            **cast(Any, image_trace_fields),
         )
+        return
+    await views.deliver_passive_response(
+        bot,
+        response,
+        locale=locale,
+        source_kind="wordbank_response",
+        log_prefix="plugin.passive.handle",
+        event=event,
+        handle_ms=handle_ms,
+    )
 
-    @wordbank_notice.handle()
-    async def _wordbank_notice(bot: Bot, event: NoticeEvent) -> None:
-        from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
 
-        if is_supported_recall_notice(event):
-            recall_event = cast(GroupRecallNoticeEvent | FriendRecallNoticeEvent, event)
-            for matcher_source in (wordbank_add_command, wordbank_command):
-                session = find_recall_session(matcher_source, recall_event)
-                if session is None:
-                    continue
-                state = session.matcher_cls._default_state
-                locale = guided_locale(state)
-                checkpoint = session.checkpoint
-                await cancel_guided_resources(
-                    state,
-                    checkpoint.cleanup_keys
-                    if checkpoint is not None and not session.is_root_message
-                    else WORDBANK_GUIDED_RECALL_PENDING_KEYS,
-                )
-                session.matcher_cls.destroy()
-                if session.is_root_message or checkpoint is None:
-                    await deliver_message_plan(
-                        bot,
-                        plan=DeliveryPlan(
-                            messages=((tr(locale, "interaction.cancelled")),),
-                            source_kind="wordbank_notice",
-                        ),
-                        target=views.notice_delivery_target(recall_event),
-                    )
-                    return
-                rebuild_temp_matcher(
-                    session.matcher_cls,
-                    matcher_source,
-                    step_index=checkpoint.step_index,
-                    state=checkpoint.state_snapshot,
-                )
+@wordbank_notice.handle()
+async def _wordbank_notice(bot: Bot, event: NoticeEvent) -> None:
+    from .debug import elapsed_ms, log_perf, perf_start
+
+    if is_supported_recall_notice(event):
+        recall_event = cast(GroupRecallNoticeEvent | FriendRecallNoticeEvent, event)
+        for matcher_source in (wordbank_add_command, wordbank_command):
+            session = find_recall_session(matcher_source, recall_event)
+            if session is None:
+                continue
+            state = session.matcher_cls._default_state
+            locale = wordbank_guided_locale(state)
+            checkpoint = session.checkpoint
+            await cancel_guided_resources(
+                state,
+                checkpoint.cleanup_keys
+                if checkpoint is not None and not session.is_root_message
+                else WORDBANK_GUIDED_RECALL_PENDING_KEYS,
+            )
+            session.matcher_cls.destroy()
+            if session.is_root_message or checkpoint is None:
                 await deliver_message_plan(
                     bot,
                     plan=DeliveryPlan(
-                        messages=((checkpoint.prompt),),
+                        messages=((tr(locale, "interaction.cancelled")),),
                         source_kind="wordbank_notice",
                     ),
                     target=views.notice_delivery_target(recall_event),
                 )
                 return
-
-        start = perf_start()
-        await initialize_plugin()
-        locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-        try:
-            service = wordbank_service
-            handle_start = perf_start()
-            response = await handlers_passive.handle_passive_notice(
-                bot,
-                event,
-                service,
+            rebuild_temp_matcher(
+                session.matcher_cls,
+                matcher_source,
+                step_index=checkpoint.step_index,
+                state=checkpoint.state_snapshot,
             )
-            handle_ms = elapsed_ms(handle_start)
-        except Exception as exc:
-            logger.warning(f"[Wordbank] passive notice skipped: {exc}")
-            return
-        if not response:
-            log_perf(
-                "plugin.notice.handle.no_match",
-                start=start,
-                handle_ms=f"{handle_ms:.2f}",
-            )
-            return
-        build_start = perf_start()
-        compiled = await _compile_passive_response(
-            response,
-            locale=locale,
-        )
-        build_ms = elapsed_ms(build_start)
-        message = compiled.message
-        image_trace_fields = compiled.image_trace_fields
-        post_action_count = len(compiled.post_actions)
-        if message is None and not compiled.post_actions:
-            log_perf(
-                "plugin.notice.handle.no_output",
-                start=start,
-                message_type=response.message_type,
-                response_item_id=response.response_item_id,
-                handle_ms=f"{handle_ms:.2f}",
-                build_ms=f"{build_ms:.2f}",
-            )
-            return
-        segment_count, image_segment_count = (
-            _message_segment_stats(message) if message is not None else (0, 0)
-        )
-        send_result: Any = None
-        send_ms = 0.0
-        if message is not None:
-            log_perf(
-                "plugin.notice.handle.send.begin",
-                message_type=response.message_type,
-                response_item_id=response.response_item_id,
-                segment_count=segment_count,
-                image_segment_count=image_segment_count,
-                post_action_count=post_action_count,
-                **cast(Any, image_trace_fields),
-            )
-            send_start = perf_start()
-            plan_result = await deliver_message_plan(
+            await deliver_message_plan(
                 bot,
                 plan=DeliveryPlan(
-                    messages=(message,),
-                    source_kind="wordbank_response",
+                    messages=((checkpoint.prompt),),
+                    source_kind="wordbank_notice",
                 ),
-                target=views.notice_delivery_target(event),
+                target=views.notice_delivery_target(recall_event),
             )
-            send_result = plan_result.results[0]
-            send_ms = elapsed_ms(send_start)
-            log_perf(
-                "plugin.notice.handle.send.done",
-                start=send_start,
-                message_type=response.message_type,
-                response_item_id=response.response_item_id,
-                segment_count=segment_count,
-                image_segment_count=image_segment_count,
-                post_action_count=post_action_count,
-                **cast(Any, image_trace_fields),
-            )
-        action_start = perf_start()
-        await _execute_passive_post_actions(bot, response, compiled.post_actions)
-        action_ms = elapsed_ms(action_start) if compiled.post_actions else 0.0
-        record_start = perf_start()
-        if send_result is not None:
-            await views.record_passive_response_message(
-                response,
-                send_result,
-                bot=bot,
-                fallback_message=message,
-            )
-        record_ms = elapsed_ms(record_start)
-        log_perf(
-            "plugin.notice.handle.sent",
-            start=start,
-            message_type=response.message_type,
-            trigger_group_id=response.trigger_group_id,
-            response_item_id=response.response_item_id,
-            segment_count=segment_count,
-            image_segment_count=image_segment_count,
-            post_action_count=post_action_count,
-            handle_ms=f"{handle_ms:.2f}",
-            build_ms=f"{build_ms:.2f}",
-            send_ms=f"{send_ms:.2f}",
-            action_ms=f"{action_ms:.2f}",
-            record_ms=f"{record_ms:.2f}",
-            **cast(Any, image_trace_fields),
-        )
+            return
 
-    return {
-        "_build_passive_message": _build_passive_message,
-    }
+    start = perf_start()
+    await initialize_wordbank_plugin()
+    locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
+    try:
+        handle_start = perf_start()
+        response = await handlers_passive.handle_passive_notice(
+            bot,
+            event,
+            wordbank_service,
+        )
+        handle_ms = elapsed_ms(handle_start)
+    except Exception as exc:
+        logger.warning(f"[Wordbank] passive notice skipped: {exc}")
+        return
+    if not response:
+        log_perf(
+            "plugin.notice.handle.no_match",
+            start=start,
+            handle_ms=f"{handle_ms:.2f}",
+        )
+        return
+    await views.deliver_passive_response(
+        bot,
+        response,
+        locale=locale,
+        source_kind="wordbank_response",
+        log_prefix="plugin.notice.handle",
+        target=views.notice_delivery_target(event),
+        handle_ms=handle_ms,
+    )

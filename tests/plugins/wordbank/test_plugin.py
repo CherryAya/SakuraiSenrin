@@ -1,5 +1,6 @@
 import sys
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import nonebot
@@ -24,9 +25,8 @@ if nonebot.get_plugin("wordbank") is None:
     sys.modules.pop("src.plugins.wordbank", None)
     nonebot.load_plugin("src.plugins.wordbank")
 
-from src.plugins import wordbank as wordbank_plugin
-from src.plugins.wordbank import entry_runtime as wordbank_entry_runtime
 from src.plugins.wordbank import lifecycle as lifecycle_module
+from src.plugins.wordbank.handlers import passive as passive_module
 from src.plugins.wordbank.handlers import rendering as rendering_module
 from src.plugins.wordbank.handlers.passive import PassiveResponse
 from src.plugins.wordbank.handlers.rendering import MISSING_IMAGE_PLACEHOLDER
@@ -64,7 +64,6 @@ async def test_build_passive_message_rebuilds_text_and_image_segments(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     response = PassiveResponse(
         text="fallback",
         trigger_group_id=12,
@@ -76,9 +75,10 @@ async def test_build_passive_message_rebuilds_text_and_image_segments(
         response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
     )
 
-    message, image_trace_fields = await wordbank_plugin._build_passive_message(
+    message, image_trace_fields = await passive_module.build_passive_message(
         response,
         locale="zh-CN",
+        media_service=cast(Any, media_service),
     )
     rendered = render_message_plan_input(message)
 
@@ -103,7 +103,6 @@ async def test_build_passive_message_degrades_legacy_unsafe_at_target(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     response = PassiveResponse(
         text="fallback",
         trigger_group_id=12,
@@ -120,9 +119,10 @@ async def test_build_passive_message_degrades_legacy_unsafe_at_target(
         ),
     )
 
-    message, _ = await wordbank_plugin._build_passive_message(
+    message, _ = await passive_module.build_passive_message(
         response,
         locale="zh-CN",
+        media_service=cast(Any, media_service),
     )
     rendered = render_message_plan_input(message)
 
@@ -138,7 +138,6 @@ async def test_build_passive_message_renders_sender_at_from_response_shape(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     response = PassiveResponse(
         text="fallback",
         trigger_group_id=12,
@@ -155,9 +154,10 @@ async def test_build_passive_message_renders_sender_at_from_response_shape(
         ),
     )
 
-    message, _ = await wordbank_plugin._build_passive_message(
+    message, _ = await passive_module.build_passive_message(
         response,
         locale="zh-CN",
+        media_service=cast(Any, media_service),
     )
     rendered = render_message_plan_input(message)
 
@@ -174,14 +174,13 @@ async def test_build_passive_message_logs_render_shape_stages(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     events: dict[str, dict[str, object]] = {}
 
     def _capture(stage: str, *, start: float | None = None, **fields: object) -> None:
         _ = start
         events[stage] = fields
 
-    monkeypatch.setattr(wordbank_entry_runtime, "log_perf", _capture)
+    monkeypatch.setattr(passive_module, "log_perf", _capture)
     monkeypatch.setattr(rendering_module, "log_perf", _capture)
     response = PassiveResponse(
         text="fallback",
@@ -194,22 +193,23 @@ async def test_build_passive_message_logs_render_shape_stages(
         response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
     )
 
-    message, image_trace_fields = await wordbank_plugin._build_passive_message(
+    message, image_trace_fields = await passive_module.build_passive_message(
         response,
         locale="zh-CN",
+        media_service=cast(Any, media_service),
     )
     rendered = render_message_plan_input(message)
 
     assert isinstance(rendered, Message)
     assert image_trace_fields["image_total_bytes"] == len(b"image-bytes")
-    assert "plugin.build_passive_message.render_shape.begin" in events
-    assert events["plugin.build_passive_message.render_shape.images_loaded"][
+    assert "passive.build_passive_message.render_shape.begin" in events
+    assert events["passive.build_passive_message.render_shape.images_loaded"][
         "loaded_image_sizes"
     ] == (len(b"image-bytes"),)
-    assert events["plugin.build_passive_message.render_shape.segment_built"][
+    assert events["passive.build_passive_message.render_shape.segment_built"][
         "image_total_bytes"
     ] == len(b"image-bytes")
-    assert events["plugin.build_passive_message.rendered_shape"][
+    assert events["passive.build_passive_message.rendered_shape"][
         "image_max_bytes"
     ] == len(b"image-bytes")
 
@@ -227,7 +227,6 @@ async def test_build_passive_message_keeps_text_when_image_storage_is_missing(
             "has_local_cache": False,
         },
     )
-    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     response = PassiveResponse(
         text="fallback",
         trigger_group_id=12,
@@ -239,9 +238,10 @@ async def test_build_passive_message_keeps_text_when_image_storage_is_missing(
         response_shape=combine_shapes(shape_from_text("做个好梦"), shape_from_image(7)),
     )
 
-    message, image_trace_fields = await wordbank_plugin._build_passive_message(
+    message, image_trace_fields = await passive_module.build_passive_message(
         response,
         locale="zh-CN",
+        media_service=cast(Any, media_service),
     )
     rendered = render_message_plan_input(message)
 
@@ -268,14 +268,13 @@ async def test_build_passive_message_renders_profile_text_placeholders(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     monkeypatch.setattr(
-        wordbank_entry_runtime.user_repo,
+        passive_module.user_repo,
         "get_name_by_uid",
         AsyncMock(return_value="小明"),
     )
     monkeypatch.setattr(
-        wordbank_entry_runtime.member_repo,
+        passive_module.member_repo,
         "get_card_by_uid_gid",
         AsyncMock(return_value="阿明"),
     )
@@ -290,9 +289,10 @@ async def test_build_passive_message_renders_profile_text_placeholders(
         response_shape=shape_from_response_text("[账号]-[昵称]-[群名片]"),
     )
 
-    message, _ = await wordbank_plugin._build_passive_message(
+    message, _ = await passive_module.build_passive_message(
         response,
         locale="zh-CN",
+        media_service=cast(Any, media_service),
     )
     rendered = render_message_plan_input(message)
 
@@ -312,19 +312,18 @@ async def test_build_passive_message_renders_profile_combo_with_avatar(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     monkeypatch.setattr(
-        wordbank_entry_runtime.user_repo,
+        passive_module.user_repo,
         "get_name_by_uid",
         AsyncMock(return_value="小明"),
     )
     monkeypatch.setattr(
-        wordbank_entry_runtime.member_repo,
+        passive_module.member_repo,
         "get_card_by_uid_gid",
         AsyncMock(return_value="阿明"),
     )
     monkeypatch.setattr(
-        wordbank_entry_runtime.QQAvatar,
+        passive_module.QQAvatar,
         "fetch_user",
         AsyncMock(return_value=_FakeAvatar()),
     )
@@ -339,9 +338,10 @@ async def test_build_passive_message_renders_profile_combo_with_avatar(
         response_shape=shape_from_response_text("[xx]"),
     )
 
-    message, _ = await wordbank_plugin._build_passive_message(
+    message, _ = await passive_module.build_passive_message(
         response,
         locale="zh-CN",
+        media_service=cast(Any, media_service),
     )
     rendered = render_message_plan_input(message)
 
@@ -361,19 +361,18 @@ async def test_build_passive_message_renders_avatar_placeholder(
     media_service = SimpleNamespace(
         load_canonical_storage_bytes=AsyncMock(return_value=b"image-bytes")
     )
-    monkeypatch.setattr(wordbank_entry_runtime, "wordbank_media_service", media_service)
     monkeypatch.setattr(
-        wordbank_entry_runtime.user_repo,
+        passive_module.user_repo,
         "get_name_by_uid",
         AsyncMock(return_value="小明"),
     )
     monkeypatch.setattr(
-        wordbank_entry_runtime.member_repo,
+        passive_module.member_repo,
         "get_card_by_uid_gid",
         AsyncMock(return_value="阿明"),
     )
     monkeypatch.setattr(
-        wordbank_entry_runtime.QQAvatar,
+        passive_module.QQAvatar,
         "fetch_user",
         AsyncMock(return_value=_FakeAvatar()),
     )
@@ -388,9 +387,10 @@ async def test_build_passive_message_renders_avatar_placeholder(
         response_shape=shape_from_response_text("[头像]"),
     )
 
-    message, _ = await wordbank_plugin._build_passive_message(
+    message, _ = await passive_module.build_passive_message(
         response,
         locale="zh-CN",
+        media_service=cast(Any, media_service),
     )
     rendered = render_message_plan_input(message)
 
