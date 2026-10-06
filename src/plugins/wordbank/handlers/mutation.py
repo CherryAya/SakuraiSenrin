@@ -21,16 +21,11 @@ from src.plugins.wordbank.services.presentation import (
     format_status_label,
     format_timestamp,
 )
-from src.plugins.wordbank.services.rules import RuleError
 from src.plugins.wordbank.text_parsing import normalize_cq_plain_text
 
 from .parsers import (
     MutationActor,
     actor_can_review,
-    parse_response_set_args,
-    parse_response_weight_args,
-    parse_trigger_probability_args,
-    parse_trigger_set_args,
 )
 
 
@@ -481,97 +476,3 @@ async def handle_response_content_update(
             entry_id=response_item_id,
         )
     return tr(locale, "wordbank.mutation.response_not_found", entry_id=response_item_id)
-
-
-async def handle_trigger_command(
-    service: WordbankService,
-    media_service: WordbankMediaService,
-    *,
-    event: MessageEvent,
-    text: str,
-    raw_message: Message | None,
-    locale: LocaleCode,
-    help_text: str,
-) -> str:
-    action, _, rest = text.partition(" ")
-    action = action.lower()
-    if action in {"prob", "probability", "概率"}:
-        parsed = parse_trigger_probability_args(rest)
-        return await handle_trigger_probability_update(
-            service,
-            event=event,
-            trigger_group_id=parsed.trigger_group_id,
-            probability=parsed.probability,
-            locale=locale,
-        )
-    if action in {"set", "edit", "修改"}:
-        if raw_message is None:
-            raise RuntimeError("wordbank raw message is required for trigger set")
-        parsed = parse_trigger_set_args(rest)
-        return await handle_trigger_content_update(
-            service,
-            media_service,
-            event=event,
-            trigger_group_id=parsed.trigger_group_id,
-            text=parsed.text,
-            raw_message=raw_message,
-            locale=locale,
-        )
-    raise RuleError(
-        tr(
-            "zh-CN",
-            "wordbank.error.unknown_subcommand",
-            action=f"trigger {action}".strip(),
-            help=help_text,
-        ),
-        key="wordbank.error.unknown_subcommand",
-        action=f"trigger {action}".strip(),
-        help=help_text,
-    )
-
-
-async def handle_response_command(
-    service: WordbankService,
-    media_service: WordbankMediaService,
-    *,
-    event: MessageEvent,
-    text: str,
-    raw_message: Message | None,
-    locale: LocaleCode,
-    help_text: str,
-) -> str:
-    action, _, rest = text.partition(" ")
-    action = action.lower()
-    if action in {"weight", "权重"}:
-        parsed = parse_response_weight_args(rest)
-        return await handle_response_weight_update(
-            service,
-            event=event,
-            response_item_id=parsed.response_item_id,
-            weight=parsed.weight,
-            locale=locale,
-        )
-    if action in {"set", "edit", "修改"}:
-        if raw_message is None:
-            raise RuntimeError("wordbank raw message is required for response set")
-        parsed = parse_response_set_args(rest)
-        return await handle_response_content_update(
-            service,
-            media_service,
-            event=event,
-            response_item_id=parsed.response_item_id,
-            text=parsed.text,
-            raw_message=raw_message,
-            locale=locale,
-        )
-    raise RuleError(
-        tr(
-            "zh-CN",
-            "wordbank.error.unknown_subcommand",
-            action=f"response {action}".strip(),
-            help=help_text,
-        ),
-        key="wordbank.error.unknown_subcommand",
-        action=f"response {action}".strip(),
-        help=help_text,
-    )

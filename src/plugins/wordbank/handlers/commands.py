@@ -21,7 +21,6 @@ from src.plugins.wordbank.database.types import (
 )
 from src.plugins.wordbank.handlers.parsers import (
     ParsedSearch,
-    actor_can_review,
     localize_wordbank_error,
     parse_add_media_args,
     parse_guided_advanced_options,
@@ -86,7 +85,6 @@ from .rendering import (
     GROUP_PAGE_SIZE,
     build_creator_leaderboard_card_plan_entry,
     build_group_detail_page_message_plan_entry,
-    build_pending_items_plan_entry,
     build_search_results_card_plan_entry,
 )
 
@@ -124,10 +122,6 @@ WORD_BANK_LABEL_KEYS: dict[str, MessageKey] = {
 
 def _label(name: str) -> str:
     return tr("zh-CN", WORD_BANK_LABEL_KEYS[name])
-
-
-def _split_command(text: str) -> tuple[str, str]:
-    return split_command_text(text)
 
 
 def combine_response_shape_with_image(
@@ -681,38 +675,6 @@ async def build_group_detail_message(
     return message, detail, total_pages
 
 
-async def handle_pending_entries(
-    service: WordbankService,
-    *,
-    event: MessageEvent,
-    text: str,
-    locale: LocaleCode,
-    media_service: WordbankMediaService,
-) -> MessagePlanInput:
-    actor = build_mutation_actor(event)
-    if not actor_can_review(actor):
-        return tr(locale, "wordbank.approval.permission_denied")
-    parsed = parse_search_args(text)
-    offset = (parsed.page - 1) * parsed.limit
-    items = await service.list_pending_entries(
-        keyword=parsed.keyword,
-        limit=parsed.limit + 1,
-        offset=offset,
-        actor_group_id=actor.group_id,
-        can_moderate_group=actor.can_moderate_group,
-        is_superuser=actor.is_superuser,
-    )
-    has_more = len(items) > parsed.limit
-    return await build_pending_items_plan_entry(
-        items=items[: parsed.limit],
-        locale=locale,
-        media_service=media_service,
-        page=parsed.page,
-        limit=parsed.limit,
-        has_more=has_more,
-    )
-
-
 async def handle_creator_leaderboard(
     service: WordbankService,
     *,
@@ -836,7 +798,7 @@ async def handle_trigger_command(
     raw_message: Message | None,
     locale: LocaleCode,
 ) -> str:
-    action, rest = _split_command(text)
+    action, rest = split_command_text(text)
     if action in PROBABILITY_ALIASES:
         parsed = parse_trigger_probability_args(rest)
         return await handle_trigger_probability_update(
@@ -880,7 +842,7 @@ async def handle_response_command(
     raw_message: Message | None,
     locale: LocaleCode,
 ) -> str:
-    action, rest = _split_command(text)
+    action, rest = split_command_text(text)
     if action in WEIGHT_ALIASES:
         parsed = parse_response_weight_args(rest)
         return await handle_response_weight_update(
@@ -923,13 +885,13 @@ async def dispatch_wordbank_command(
     service: WordbankService,
     *,
     event: MessageEvent,
-    text: str,
+    action: str,
+    rest: str,
     locale: LocaleCode,
     raw_message: Message | None = None,
     search_image_scores: dict[int, float] | None = None,
     media_service: WordbankMediaService | None = None,
 ) -> MessagePlanInput:
-    action, rest = _split_command(text)
     if not action or action in {"help", "帮助"}:
         return wordbank_help_text(locale)
     if action in ADD_ALIASES:
@@ -949,16 +911,8 @@ async def dispatch_wordbank_command(
             media_service=media_service,
         )
     if action in PENDING_ALIASES:
-        if media_service is None:
-            raise RuntimeError(
-                "wordbank media service is required for pending rendering"
-            )
-        return await handle_pending_entries(
-            service,
-            event=event,
-            text=rest,
-            locale=locale,
-            media_service=media_service,
+        raise RuntimeError(
+            "pending commands must be handled by the unified batch view flow"
         )
     if action in RANK_ALIASES:
         return await handle_creator_leaderboard(
@@ -1030,13 +984,13 @@ async def dispatch_wordbank_command_with_outcome(
     service: WordbankService,
     *,
     event: MessageEvent,
-    text: str,
+    action: str,
+    rest: str,
     locale: LocaleCode,
     raw_message: Message | None = None,
     search_image_scores: dict[int, float] | None = None,
     media_service: WordbankMediaService | None = None,
 ) -> tuple[MessagePlanInput, ApprovalMutationOutcome | None]:
-    action, rest = _split_command(text)
     if action in APPROVE_ALIASES:
         outcome = await handle_approve_result(
             service,
@@ -1057,7 +1011,8 @@ async def dispatch_wordbank_command_with_outcome(
         await dispatch_wordbank_command(
             service,
             event=event,
-            text=text,
+            action=action,
+            rest=rest,
             locale=locale,
             raw_message=raw_message,
             search_image_scores=search_image_scores,

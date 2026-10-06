@@ -27,7 +27,6 @@ from src.plugins.wordbank.handlers.commands import (
     handle_delete,
     handle_guided_add_shape_result,
     handle_guided_study_shape_result,
-    handle_pending_entries,
     handle_response_content_update,
     handle_response_weight_update,
     handle_study_media_with_rule_result,
@@ -257,7 +256,8 @@ async def test_dispatch_wordbank_command_routes_rank_to_leaderboard_handler(
     message = await dispatch_wordbank_command(
         cast(WordbankService, SimpleNamespace()),
         event=build_group_message_event("#wordbank rank 周榜"),
-        text="rank 周榜",
+        action="rank",
+        rest="周榜",
         locale="zh-CN",
     )
 
@@ -287,7 +287,8 @@ async def test_dispatch_wordbank_command_with_outcome_returns_approve_metadata()
     message, outcome = await dispatch_wordbank_command_with_outcome(
         service,
         event=event,
-        text="approve 12",
+        action="approve",
+        rest="12",
         locale="zh-CN",
     )
 
@@ -316,7 +317,8 @@ async def test_dispatch_wordbank_command_with_outcome_returns_reject_metadata() 
     message, outcome = await dispatch_wordbank_command_with_outcome(
         service,
         event=event,
-        text="reject 12",
+        action="reject",
+        rest="12",
         locale="zh-CN",
     )
 
@@ -351,7 +353,8 @@ async def test_dispatch_wordbank_command_with_outcome_prompts_before_overwrite()
     message, outcome = await dispatch_wordbank_command_with_outcome(
         service,
         event=event,
-        text="approve 12",
+        action="approve",
+        rest="12",
         locale="zh-CN",
     )
 
@@ -382,7 +385,8 @@ async def test_dispatch_wordbank_command_with_outcome_supports_overwrite() -> No
     message, outcome = await dispatch_wordbank_command_with_outcome(
         service,
         event=event,
-        text="reject 12 覆盖",
+        action="reject",
+        rest="12 覆盖",
         locale="zh-CN",
     )
 
@@ -392,61 +396,6 @@ async def test_dispatch_wordbank_command_with_outcome_supports_overwrite() -> No
     assert outcome.completed is True
     assert reject_response_item.await_args is not None
     assert reject_response_item.await_args.kwargs["allow_overwrite"] is True
-
-
-@pytest.mark.asyncio
-async def test_handle_pending_entries_renders_image_shapes() -> None:
-    service = cast(
-        WordbankService,
-        SimpleNamespace(
-            list_pending_entries=AsyncMock(
-                return_value=[
-                    WordbankSearchItem(
-                        trigger_group_id=12,
-                        status="pending",
-                        trigger_text="[图片:8]",
-                        response_text="做个好梦 [图片:7]",
-                        trigger_shape=shape_from_image(8),
-                        response_shape=combine_shapes(
-                            shape_from_text("做个好梦"),
-                            shape_from_image(7),
-                        ),
-                        scope="current_group",
-                        probability=1.0,
-                        weight=3,
-                        created_by="10001",
-                        created_at=1_700_000_000,
-                        rule={"roles": "admin"},
-                        response_item_ids=(300,),
-                    )
-                ]
-            )
-        ),
-    )
-    media_service = cast(
-        WordbankMediaService,
-        SimpleNamespace(load_canonical_storage_bytes=AsyncMock(return_value=b"bytes")),
-    )
-    event = build_group_message_event("#待审核词条", role="admin", user_id=10002)
-
-    message = await handle_pending_entries(
-        service,
-        event=event,
-        text="",
-        locale="zh-CN",
-        media_service=media_service,
-    )
-    rendered = render_message_plan_input(message)
-
-    assert not isinstance(message, str)
-    assert "待审核词条 (第 1 页):" in str(rendered)
-    assert "序号: 1" in str(rendered)
-    assert "创建者: 10001" in str(rendered)
-    assert "规则: 概率 1 | 角色 管理" in str(rendered)
-    assert "触发词:" in str(rendered)
-    assert "响应词:" in str(rendered)
-    assert "做个好梦" in str(rendered)
-    assert sum(1 for segment in rendered if segment.type == "image") == 2
 
 
 @pytest.mark.asyncio
@@ -469,7 +418,8 @@ async def test_dispatch_wordbank_command_formats_search_with_locale() -> None:
     message = await dispatch_wordbank_command(
         service,
         event=event,
-        text="search 晚安",
+        action="search",
+        rest="晚安",
         locale="zh-CN",
         media_service=cast(
             WordbankMediaService,
@@ -534,7 +484,8 @@ async def test_dispatch_wordbank_command_rejects_add_subcommand() -> None:
         await dispatch_wordbank_command(
             service,
             event=event,
-            text="add [图片触发] => 做个好梦",
+            action="add",
+            rest="[图片触发] => 做个好梦",
             locale="zh-CN",
         )
 
@@ -547,7 +498,8 @@ async def test_dispatch_wordbank_command_rejects_disabled_vote_subcommand() -> N
     message = await dispatch_wordbank_command(
         service,
         event=event,
-        text="support 3",
+        action="support",
+        rest="3",
         locale="zh-CN",
         media_service=cast(
             WordbankMediaService,
@@ -1256,7 +1208,8 @@ async def test_dispatch_wordbank_command_routes_trigger_set_to_handler(
     message = await dispatch_wordbank_command(
         service,
         event=event,
-        text="trigger set 18 新触发",
+        action="trigger",
+        rest="set 18 新触发",
         raw_message=raw_message,
         locale="zh-CN",
         media_service=media_service,
@@ -1294,7 +1247,8 @@ async def test_dispatch_wordbank_command_routes_response_set_to_handler(
     message = await dispatch_wordbank_command(
         service,
         event=event,
-        text="response set 18 新响应",
+        action="response",
+        rest="set 18 新响应",
         raw_message=raw_message,
         locale="zh-CN",
         media_service=media_service,
@@ -1323,7 +1277,8 @@ async def test_dispatch_wordbank_command_requires_raw_message_for_trigger_set() 
         await dispatch_wordbank_command(
             cast(WordbankService, SimpleNamespace()),
             event=event,
-            text="trigger set 18 新触发",
+            action="trigger",
+            rest="set 18 新触发",
             raw_message=None,
             locale="zh-CN",
             media_service=cast(WordbankMediaService, SimpleNamespace()),
@@ -1343,7 +1298,8 @@ async def test_dispatch_wordbank_command_requires_raw_message_for_response_set()
         await dispatch_wordbank_command(
             cast(WordbankService, SimpleNamespace()),
             event=event,
-            text="response set 18 新响应",
+            action="response",
+            rest="set 18 新响应",
             raw_message=None,
             locale="zh-CN",
             media_service=cast(WordbankMediaService, SimpleNamespace()),

@@ -43,7 +43,6 @@ from .media_helpers import (
     fetch_image_bytes_from_message,
 )
 from .parsers import (
-    build_forced_command_text,
     parse_group_view_args,
     parse_guided_search_creator_filter,
     parse_guided_search_mode_choice,
@@ -76,7 +75,6 @@ __all__ = [
     "SubmissionHandler",
     "SubmissionLifecycle",
     "build_add_result_plan_entry",
-    "build_forced_command_text",
     "build_group_detail_message",
     "build_message_shape_from_message",
     "build_pending_approval_notice_plan_entry",

@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot.typing import T_State
@@ -63,7 +62,6 @@ from .guided_flow import (
 )
 from .handlers import (
     GROUP_ALIASES,
-    build_forced_command_text,
     dispatch_wordbank_command_with_outcome,
     parse_group_view_args,
 )
@@ -85,9 +83,7 @@ from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError
 from .text_parsing import (
     has_meaningful_text,
-    rest_after_token,
     split_command_text,
-    tokenize_shell_like,
 )
 
 ErrorBuilder = Callable[..., MessagePlanInput]
@@ -104,16 +100,6 @@ async def _abort_guided_on_revoke(
         matcher,
         message=tr(locale, "interaction.cancelled"),
     )
-
-
-def _raw_rest_after_first_token(text: str) -> str:
-    source = text.lstrip()
-    if not source:
-        return ""
-    tokens = tokenize_shell_like(source)
-    if not tokens:
-        return ""
-    return rest_after_token(source, tokens[0]).lstrip()
 
 
 async def _run_wordbank_command_with_optional_progress(
@@ -145,13 +131,16 @@ async def handle_wordbank_command_message(
     event: MessageEvent,
     arg: Message,
     *,
-    forced_action: str | None = None,
+    action: str | None = None,
     state: T_State | None = None,
 ) -> None:
     await _initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
-    text = build_forced_command_text(forced_action, arg.extract_plain_text())
-    action, rest = split_command_text(text)
+    text = arg.extract_plain_text()
+    if action is None:
+        action, rest = split_command_text(text)
+    else:
+        rest = text
     search_image_scores: dict[int, float] | None = None
     try:
         parsed_session_command = parse_search_session_command(text)
@@ -309,7 +298,8 @@ async def handle_wordbank_command_message(
         message, outcome = await dispatch_wordbank_command_with_outcome(
             wordbank_service,
             event=event,
-            text=text,
+            action=action,
+            rest=rest,
             locale=locale,
             raw_message=arg,
             search_image_scores=search_image_scores,
@@ -572,7 +562,7 @@ async def _wordbank_add_root(
         matcher,
         event,
         arg,
-        forced_action="add",
+        action="add",
         state=state,
     )
 
@@ -653,19 +643,12 @@ async def _wordbank_search_root(
         )
         return
     handler = handle_wordbank_command_message
-    if not has_images:
-        arg_for_handler = Message()
-        arg_for_handler += MessageSegment.text(
-            _raw_rest_after_first_token(event.raw_message)
-        )
-    else:
-        arg_for_handler = arg
     await handler(
         bot,
         matcher,
         event,
-        arg_for_handler,
-        forced_action="search",
+        arg,
+        action="search",
         state=state,
     )
 
@@ -836,37 +819,61 @@ async def _wordbank_search_session(
     )
 
 
-def _register_forced_command(matcher_obj: Any, action: str) -> None:
-    @matcher_obj.handle()
-    async def _forced_command(
-        bot: Bot,
-        matcher: Matcher,
-        event: MessageEvent,
-        arg: Message = CommandArg(),
-    ) -> None:
-        handler = handle_wordbank_command_message
-        await handler(
-            bot,
-            matcher,
-            event,
-            arg,
-            forced_action=action,
-        )
+@wordbank_pending_command.handle()
+async def _wordbank_pending_root(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await handle_wordbank_command_message(bot, matcher, event, arg, action="pending")
 
 
-_register_forced_command(wordbank_pending_command, "pending")
+@wordbank_rank_command.handle()
+async def _wordbank_rank_root(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await handle_wordbank_command_message(bot, matcher, event, arg, action="rank")
 
 
-_register_forced_command(wordbank_rank_command, "rank")
+@wordbank_approve_command.handle()
+async def _wordbank_approve_root(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await handle_wordbank_command_message(bot, matcher, event, arg, action="approve")
 
 
-_register_forced_command(wordbank_approve_command, "approve")
+@wordbank_reject_command.handle()
+async def _wordbank_reject_root(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await handle_wordbank_command_message(bot, matcher, event, arg, action="reject")
 
 
-_register_forced_command(wordbank_reject_command, "reject")
+@wordbank_delete_command.handle()
+async def _wordbank_delete_root(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await handle_wordbank_command_message(bot, matcher, event, arg, action="delete")
 
 
-_register_forced_command(wordbank_delete_command, "delete")
-
-
-_register_forced_command(wordbank_restore_command, "restore")
+@wordbank_restore_command.handle()
+async def _wordbank_restore_root(
+    bot: Bot,
+    matcher: Matcher,
+    event: MessageEvent,
+    arg: Message = CommandArg(),
+) -> None:
+    await handle_wordbank_command_message(bot, matcher, event, arg, action="restore")

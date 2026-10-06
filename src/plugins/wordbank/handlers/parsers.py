@@ -949,15 +949,6 @@ def parse_study_media_prefix(text: str, *, is_group: bool) -> ParsedStudyMediaPr
     return ParsedStudyMediaPrefix(source=text, raw_rule={})
 
 
-def build_forced_command_text(action: str | None, text: str) -> str:
-    action = (action or "").strip()
-    if not action:
-        return text
-    if not text:
-        return action
-    return f"{action} {text}"
-
-
 def localize_wordbank_error(exc: Exception, locale: LocaleCode) -> str:
     if isinstance(exc, WordbankUserError):
         return exc.localize(locale)

@@ -145,7 +145,7 @@ async def test_wordbank_search_image_only_runs_unified_search_flow(
     handle_command.assert_awaited_once()
     await_args = handle_command.await_args
     assert await_args is not None
-    assert await_args.kwargs["forced_action"] == "search"
+    assert await_args.kwargs["action"] == "search"
 
 
 @pytest.mark.asyncio
