@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.lib.message_assets import is_message_asset_reuse_blocked
-from src.lib.terminal_prompt import _parse_yes_no
+from src.lib.terminal_prompt import _parse_yes_no, build_yes_no_prompt_text
 from src.services import message_asset_startup as startup_module
 
 
@@ -16,6 +16,28 @@ def _reset_startup_state() -> None:
 def test_terminal_prompt_empty_input_uses_default_value() -> None:
     assert _parse_yes_no("", default=False) is False
     assert _parse_yes_no("", default=True) is True
+
+
+def test_terminal_prompt_text_is_localized() -> None:
+    zh_text = build_yes_no_prompt_text("prompt", timeout=5, default=True)
+    lzh_text = build_yes_no_prompt_text("prompt", timeout=5, default=True, locale="lzh")
+
+    assert "[Y/n]" in zh_text
+    assert "默认 5 秒后确认" in zh_text
+    assert lzh_text != zh_text
+    assert "默 5 秒後確認" in lzh_text
+
+
+def test_terminal_prompt_text_uses_explicit_default_label() -> None:
+    text = build_yes_no_prompt_text(
+        "prompt",
+        timeout=3,
+        default=False,
+        default_label="清空缓存",
+    )
+
+    assert "默认 3 秒后清空缓存" in text
+    assert "取消" not in text
 
 
 @pytest.mark.asyncio
@@ -36,7 +58,7 @@ async def test_run_startup_message_asset_check_keeps_cache_after_terminal_confir
     monkeypatch.setattr(
         startup_module,
         "ask_user_yes_no_with_timeout",
-        lambda prompt, *, timeout, default, default_label: True,
+        lambda prompt, *, timeout, default, default_label, locale: True,
     )
     _reset_startup_state()
 
@@ -64,7 +86,7 @@ async def test_run_startup_message_asset_check_clears_cache_on_terminal_timeout(
     monkeypatch.setattr(
         startup_module,
         "ask_user_yes_no_with_timeout",
-        lambda prompt, *, timeout, default, default_label: False,
+        lambda prompt, *, timeout, default, default_label, locale: False,
     )
     _reset_startup_state()
 

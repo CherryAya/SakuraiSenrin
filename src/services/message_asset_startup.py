@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.message_assets import (
     message_asset_repo,
     set_message_asset_reuse_blocked,
@@ -28,15 +29,17 @@ async def run_startup_message_asset_check() -> None:
         True,
         reason="startup_terminal_confirmation_pending",
     )
+    locale = await resolve_locale(None)
     keep_cache = ask_user_yes_no_with_timeout(
-        (
-            "检测到上一次进程留下的消息缓存。"
-            f" 当前共有 {asset_count} 条记录。"
-            " 服务端重启后历史 msgid 可能已失效，是否保留缓存？"
+        tr(
+            locale,
+            "startup.asset_cache.prompt",
+            count=asset_count,
         ),
         timeout=MESSAGE_ASSET_CONFIRM_TIMEOUT_SECONDS,
         default=False,
-        default_label="清空缓存",
+        default_label=tr(locale, "startup.asset_cache.clear_label"),
+        locale=locale,
     )
     if keep_cache:
         set_message_asset_reuse_blocked(False, reason="startup_message_asset_kept")

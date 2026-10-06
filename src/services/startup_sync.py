@@ -18,6 +18,7 @@ from src.lib.admin_notifications import (
     deliver_admin_notification_plan,
 )
 from src.lib.db.manager import db_manager
+from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.long_task import LoggerProgressSink, LongTaskRunner, LongTaskSpec
 from src.lib.message_plan import DeliveryPlan, DeliveryPlanResult
 from src.lib.reply_router import (
@@ -202,11 +203,10 @@ async def handle_startup_sync_reply(
         )
     except Exception as exc:
         logger.exception(f"[StartupSync] restore failed: {exc}")
-        return f"启动同步失败: {exc}"
-    return (
-        "远端快照已恢复到本地，并已刷新运行时状态。"
-        "建议确认业务数据后再继续高风险写入操作。"
-    )
+        locale = await resolve_locale(None)
+        return tr(locale, "startup.sync.failed", error=str(exc))
+    locale = await resolve_locale(None)
+    return tr(locale, "startup.sync.restore.completed")
 
 
 async def handle_startup_sync_reply_target(
@@ -343,13 +343,13 @@ async def _notify_superusers_for_remote_restore(
     remote_latest_at: int,
     local_latest_at: int,
 ) -> None:
-    prompt = (
-        "检测到远端备份比本地新。\n"
-        f"本地最新时间戳: {local_latest_at}\n"
-        f"远端最新时间戳: {remote_latest_at}\n"
-        f"快照: {snapshot.short_id or snapshot.id}\n"
-        "回复 y / 同步 / 恢复 可立即用最新远端快照覆盖本地数据库；"
-        "回复 n / 跳过 / 取消 则继续使用本地数据。"
+    locale = await resolve_locale(None)
+    prompt = tr(
+        locale,
+        "startup.sync.remote_restore.notice",
+        local_latest_at=local_latest_at,
+        remote_latest_at=remote_latest_at,
+        snapshot_id=snapshot.short_id or snapshot.id,
     )
 
     async def _on_delivered(

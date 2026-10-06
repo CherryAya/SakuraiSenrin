@@ -88,7 +88,7 @@ async def notify_admin(error_message: str) -> None:
             error_message=error_message,
         )
     except Exception as e:
-        logger.error(f"Sentry 报警发送失败: {e}")
+        logger.error(tr("zh-CN", "sentry.alert.send_failed", error=str(e)))
 
 
 def before_send_handler(event: Event, hint: Hint) -> Event | None:

@@ -739,6 +739,30 @@ CATALOG: Final[dict[str, str]] = {
     ("wordbank.approval.pending_more"): (
         "还有更多待审核词条，可使用 --page {next_page} --limit {limit} 查看下一页。"
     ),
+    ("startup.sync.remote_restore.notice"): (
+        "检测到远端备份比本地新。\n本地最新时间戳: {local_latest_at}\n"
+        "远端最新时间戳: {remote_latest_at}\n快照: {snapshot_id}\n"
+        "回复 y / 同步 / 恢复 可立即用最新远端快照覆盖本地数据库；"
+        "回复 n / 跳过 / 取消 则继续使用本地数据。"
+    ),
+    ("startup.sync.failed"): ("启动同步失败: {error}"),
+    ("startup.sync.restore.completed"): (
+        "远端快照已恢复到本地，并已刷新运行时状态。"
+        "建议确认业务数据后再继续高风险写入操作。"
+    ),
+    ("startup.asset_cache.prompt"): (
+        "检测到上一次进程留下的消息缓存。 当前共有 {count} 条记录。"
+        " 服务端重启后历史 msgid 可能已失效，是否保留缓存？"
+    ),
+    ("startup.asset_cache.clear_label"): ("清空缓存"),
+    ("terminal.prompt.confirm"): ("确认"),
+    ("terminal.prompt.cancel"): ("取消"),
+    ("terminal.prompt.default_hint"): ("] (默认 {timeout} 秒后{default_text}): "),
+    ("terminal.prompt.timeout_default_applied"): ("\n⏳ 等待超时，按默认选项继续。"),
+    ("terminal.prompt.no_input_default_applied"): (
+        "\n⏳ 未读取到终端输入，按默认选项继续。"
+    ),
+    ("sentry.alert.send_failed"): ("Sentry 报警发送失败: {error}"),
     ("wordbank.approval.pending_batch_instruction"): (
         "回复我发送：y 1 2 5-8、n 全部（也兼容 通过 / 拒绝）\n"
         "主动命令：#待审核词条\n"
