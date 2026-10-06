@@ -15,6 +15,8 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from src.lib.consts import MAPLE_FONT_PATH
 from src.lib.demo_theme import DEFAULT_DEMO_THEME, SENRIN_V3_THEME, get_demo_theme
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 
 from .command_layout import (
     CommandLayout,
@@ -56,6 +58,7 @@ class DemoCollectionJob:
     output: Path
     tiles: tuple[DemoCollectionTile, ...]
     columns: int
+    locale: LocaleCode = "zh-CN"
 
 
 @dataclass(slots=True, frozen=True)
@@ -98,10 +101,11 @@ class DemoCollectionRenderer:
     CARD_BOTTOM_MARGIN = 64
     COMMAND_INDENT_PX = 48
 
-    def __init__(self, *, columns: int) -> None:
+    def __init__(self, *, columns: int, locale: LocaleCode = "zh-CN") -> None:
         self.theme_name = SENRIN_V3_THEME.name
         self.theme = DEFAULT_DEMO_THEME
         self.columns = max(1, min(columns, 2))
+        self.locale: LocaleCode = locale
         try:
             self.title_font = ImageFont.truetype(MAPLE_FONT_PATH, 64)
             self.summary_font = ImageFont.truetype(MAPLE_FONT_PATH, 32)
@@ -168,7 +172,8 @@ class DemoCollectionRenderer:
         max_width = self.CANVAS_WIDTH - self.OUTER_MARGIN * 2
         summary_lines = tuple(
             self._wrap_inline_text(
-                summary.strip() or "浏览该模块下的所有说明卡片。",
+                summary.strip()
+                or tr(self.locale, "docs.render.collection.module_summary_fallback"),
                 self.summary_font,
                 max_width=max_width,
                 max_lines=3,
@@ -205,7 +210,8 @@ class DemoCollectionRenderer:
         )
         summary_lines = tuple(
             self._wrap_inline_text(
-                tile.summary.strip() or "查看该子功能的用途、常见用法和关键边界。",
+                tile.summary.strip()
+                or tr(self.locale, "docs.render.collection.tile_summary_fallback"),
                 self.tile_summary_font,
                 max_width=content_width,
                 max_lines=3,
@@ -310,7 +316,11 @@ class DemoCollectionRenderer:
                 font=self.summary_font,
                 fill=self.theme.hint,
             )
-        count_text = f"{tile_count:02d} 个功能卡片"
+        count_text = tr(
+            self.locale,
+            "docs.render.collection.card_count",
+            count=f"{tile_count:02d}",
+        )
         count_width = self._text_width(count_text, self.tile_command_font) + 40
         chip_height = 48
         chip_right = self.CANVAS_WIDTH - self.OUTER_MARGIN
@@ -403,7 +413,7 @@ class DemoCollectionRenderer:
         demo_label_y = demo_y
         draw.text(
             (title_x, demo_label_y),
-            "查看 demo",
+            tr(self.locale, "docs.render.collection.view_demo"),
             fill=self.theme.hint,
             font=self.tile_summary_font,
         )
@@ -922,7 +932,7 @@ class DemoCollectionRenderer:
 
 
 def render_collection_png(job: DemoCollectionJob) -> bytes:
-    renderer = DemoCollectionRenderer(columns=job.columns)
+    renderer = DemoCollectionRenderer(columns=job.columns, locale=job.locale)
     return renderer.render(
         title=job.bundle.title,
         summary=job.bundle.summary,

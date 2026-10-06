@@ -715,10 +715,12 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             render_code_chip=False,
         )
         if demo_card_rect is not None:
+            capsule_text = tr(locale, "docs.render.demo.how_it_works_short")
             capsule_width = min(
                 500,
                 max(
-                    300, self._text_width("看看它是怎么工作的", self.capsule_font) + 120
+                    300,
+                    self._text_width(capsule_text, self.capsule_font) + 120,
                 ),
             )
             capsule_top = demo_card_rect[1] - self.CAPSULE_HEIGHT // 2
@@ -739,7 +741,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             self._draw_capsule_title(
                 draw,
                 rect=capsule_rect,
-                text="看看它是怎么工作的",
+                text=capsule_text,
                 fill=(255, 243, 228, 191),
                 outline=None,
             )
@@ -772,18 +774,19 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             )
             title_x = badge_rect[2] + 18
             title_y = badge_rect[1] + 4
+            section_title_text = tr(locale, self.DEFAULT_SECTION_TITLE_KEY)
             self._draw_text(
                 draw,
                 x=title_x,
                 y=title_y,
-                text=self.DEFAULT_SECTION_TITLE,
+                text=section_title_text,
                 font=self.instruction_font,
                 fill=self.theme.deep,
             )
             self._draw_text(
                 draw,
                 x=title_x
-                + self._text_width(self.DEFAULT_SECTION_TITLE, self.instruction_font)
+                + self._text_width(section_title_text, self.instruction_font)
                 + 14,
                 y=title_y + 8,
                 text=self.STEP_LABELS[0],
@@ -1687,7 +1690,9 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             draw,
             x=content_left,
             y=cursor_y,
-            lines=(split_inline_text_spans("查看 demo"),),
+            lines=(
+                split_inline_text_spans(tr(locale, "docs.render.collection.view_demo")),
+            ),
             font=self.note_font,
             fill=self.theme.hint,
             line_height=self._line_height_for_font(self.note_font),

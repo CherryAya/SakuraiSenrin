@@ -165,7 +165,7 @@ def build_feature_copy_text(
         node.title,
         feature.title,
         "",
-        "命令：",
+        tr(locale, "docs.render.feature.command_label"),
         *(
             section
             for section in feature_command_sections(
@@ -183,7 +183,12 @@ def build_feature_copy_text(
         support_note=support_note,
     )
     if note_items:
-        lines.extend(["", f"说明：{note_items[0]}"])
+        lines.extend(
+            [
+                "",
+                f"{tr(locale, 'docs.render.feature.description_label')}{note_items[0]}",
+            ]
+        )
     lines.extend(["", support_text_block(locale)])
     return "\n".join(lines).strip()
 
@@ -200,7 +205,9 @@ def build_plugin_guide_copy_text(
     lines = [node.title, ""]
 
     for feature in features:
-        lines.append(f"👉 {feature.title}")
+        lines.append(
+            tr(locale, "docs.render.plugin_summary.entry_marker", title=feature.title)
+        )
         for command in feature_command_sections(
             node.bundle,
             feature,
@@ -214,9 +221,11 @@ def build_plugin_guide_copy_text(
         lines.append("")
 
     if child_nodes:
-        lines.append("子模块")
+        lines.append(tr(locale, "docs.render.guide.child_module_label"))
         for child in child_nodes:
-            lines.append(f"👉 {child.title}")
+            lines.append(
+                tr(locale, "docs.render.plugin_summary.entry_marker", title=child.title)
+            )
             lines.append(f"  {node_help_command(child)}")
             summary = normalize_inline_text(child.summary)
             if summary:
@@ -254,7 +263,7 @@ def build_simple_leaf_copy_text(
     lines = [
         node.title,
         "",
-        "命令：",
+        tr(locale, "docs.render.feature.command_label"),
         *feature_command_sections(
             node.bundle,
             feature,
@@ -269,7 +278,12 @@ def build_simple_leaf_copy_text(
         support_note=support_note,
     )
     if note_items:
-        lines.extend(["", f"说明：{note_items[0]}"])
+        lines.extend(
+            [
+                "",
+                f"{tr(locale, 'docs.render.feature.description_label')}{note_items[0]}",
+            ]
+        )
     lines.extend(["", support_text_block(locale)])
     return "\n".join(lines).strip()
 
@@ -289,11 +303,12 @@ def build_static_entry_copy_text(
     lines.extend(
         [
             "",
-            "这是一个静态社区入口说明页，不提供子功能级 help。",
-            "实际可触发内容由社区词条或运行时数据决定。",
-            "help 只负责暴露这个入口本身，不为每个社区词条派生独立命令说明。",
+            tr(locale, "docs.render.static_entry.summary_line1"),
+            tr(locale, "docs.render.static_entry.summary_line2"),
+            tr(locale, "docs.render.static_entry.summary_line3"),
             "",
-            f"说明：{support_note(locale)}",
+            f"{tr(locale, 'docs.render.feature.description_label')}"
+            f"{support_note(locale)}",
             "",
             support_text_block(locale),
         ]

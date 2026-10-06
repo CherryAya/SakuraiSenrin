@@ -297,8 +297,8 @@ def _help_home_section_style(section: HelpHomeSectionKind) -> dict[str, str]:
     }[section]
 
 
-def _resolve_main_group_id() -> str:
-    return resolve_main_group_id_impl()
+def _resolve_main_group_id(locale: LocaleCode = "zh-CN") -> str:
+    return resolve_main_group_id_impl(locale)
 
 
 def create_docs_meta(
@@ -691,13 +691,13 @@ def render_doc_node_overview_plan_entry(
     visible_features = filter_features_by_permission(node.features, actor_permission)
 
     if visible_children:
-        lines.append("可用子模块：")
+        lines.append(tr(locale, "docs.render.node.children_title"))
         for child in visible_children:
             lines.append(child.title)
             lines.append(f"#help {child.title}")
         lines.append("")
     elif visible_features:
-        lines.append("可用功能：")
+        lines.append(tr(locale, "docs.render.node.features_title"))
         for feature in visible_features:
             lines.append(feature.title)
             lines.extend(
@@ -811,7 +811,7 @@ def render_doc_feature_plan_entry(
         node.title,
         feature.title,
         "",
-        "命令：",
+        tr(locale, "docs.render.feature.command_label"),
         *_format_feature_command_lines(
             node.bundle,
             feature,
@@ -819,7 +819,7 @@ def render_doc_feature_plan_entry(
             locale=locale,
         ),
         "",
-        "说明：",
+        tr(locale, "docs.render.feature.description_label"),
     ]
     for index, note in enumerate(
         _feature_notice_items(feature, locale=locale),
@@ -1124,14 +1124,7 @@ def load_representative_demo_bytes(
 
 
 def _permission_label(permission: Permission) -> str:
-    labels = {
-        Permission.NONE: "权限开放",
-        Permission.NORMAL: "普通用户",
-        Permission.GROUP_ADMIN: "群管理",
-        Permission.GROUP_OWNER: "群主",
-        Permission.SUPERUSER: "超级用户",
-    }
-    return labels.get(permission, "普通用户")
+    return permission.label
 
 
 def render_demo_png(
@@ -1546,7 +1539,9 @@ def build_doc_demo_plan_entry(
     if not text:
         return build_image_plan_entry(image_bytes)
     return append_image_plan_entry(
-        build_text_plan_entry(f"{text}\n参考示例如下：\n"),
+        build_text_plan_entry(
+            f"{text}{tr(locale, 'docs.render.feature.reference_example')}"
+        ),
         image_bytes,
     )
 

@@ -203,11 +203,12 @@ class DemoImageRenderer:
     OUTER_MARGIN = DEFAULT_DEMO_THEME.outer_margin
     FONT_FAMILIES: ClassVar[list[str]] = [MAPLE_FONT_NAME]
     COMMAND_INDENT_PX = 48
-    DEFAULT_SECTION_TITLE = "流程演示"
     DEMO_SECTION_TITLE_PAD_X = 26
     DEMO_SECTION_TITLE_PAD_Y = 16
     SUBCARD_RADIUS = 22
     CAPSULE_HEIGHT = 68
+    DEFAULT_SECTION_TITLE_KEY = "docs.render.demo.section_title"
+    NONE_MARKER = "无"
     WATERMARK_ALPHA = 14
     WATERMARK_ALPHA_LARGE = 10
     WATERMARK_SPACING = 1
@@ -509,13 +510,16 @@ class DemoImageRenderer:
         pills_list = [
             ("PLUGIN DOCS", self.theme.pill_blue_bg, self.theme.pill_blue_text),
             (
-                plugin_trigger or "文档指引",
+                plugin_trigger or tr(locale, "docs.render.demo.trigger_fallback"),
                 self.theme.pill_blue_bg,
                 self.theme.pill_blue_text,
             ),
             (plugin_author, self.theme.pill_pink_bg, self.theme.pill_pink_text),
         ]
-        if feature_permission.strip() and feature_permission != "普通用户":
+        if feature_permission.strip() and feature_permission != tr(
+            locale,
+            "docs.render.demo.permission_hidden_label",
+        ):
             pills_list.insert(
                 1,
                 (
@@ -547,7 +551,8 @@ class DemoImageRenderer:
         plugin_lines = (
             tuple(
                 self._wrap_inline_text(
-                    normalized_plugin_title or "插件文档",
+                    normalized_plugin_title
+                    or tr(locale, "docs.render.demo.plugin_title_fallback"),
                     max_width=text_max_width,
                     font=self.kicker_font,
                 )[:1]
@@ -567,7 +572,11 @@ class DemoImageRenderer:
             ),
         )
 
-        title_text = feature_title.strip() or plugin_title.strip() or "功能说明"
+        title_text = (
+            feature_title.strip()
+            or plugin_title.strip()
+            or tr(locale, "docs.render.demo.feature_title_fallback")
+        )
         title_lines = tuple(
             self._wrap_inline_text(
                 title_text,
@@ -603,7 +612,7 @@ class DemoImageRenderer:
         summary_source = (
             feature_summary.strip()
             or feature_overview.strip()
-            or "查看触发方式、前置条件与实机演示。"
+            or tr(locale, "docs.render.demo.feature_summary_fallback")
         )
         summary_lines = tuple(
             self._wrap_inline_text(
@@ -755,7 +764,7 @@ class DemoImageRenderer:
         turn_placements: list[_ShowcaseTurnPlacement] = []
         current_bottom = instruction_bottom
         if turns:
-            heading_text = "看看它是怎么工作的 👇"
+            heading_text = tr(locale, "docs.render.demo.how_it_works")
             heading_top = instruction_bottom + max(
                 20, self.theme.demo_heading_gap_top - 20
             )
@@ -798,7 +807,10 @@ class DemoImageRenderer:
                 content_right = section_right - inner_pad_right
                 section_top = y_cursor
                 turn_top = section_top + inner_pad_top
-                normalized_title = section_title or self.DEFAULT_SECTION_TITLE
+                normalized_title = section_title or tr(
+                    locale,
+                    self.DEFAULT_SECTION_TITLE_KEY,
+                )
                 tag_rect = (
                     content_left,
                     section_top + 16,
@@ -1076,11 +1088,12 @@ class DemoImageRenderer:
     ) -> None:
         if layout.demo_heading_rect is None:
             return
+        capsule_text = tr(locale, "docs.render.demo.how_it_works")
         capsule_width = min(
             520,
             max(
                 300,
-                self._text_width("看看它是怎么工作的 👇", self.capsule_font) + 120,
+                self._text_width(capsule_text, self.capsule_font) + 120,
             ),
         )
         capsule_left = (
@@ -1097,7 +1110,7 @@ class DemoImageRenderer:
         self._draw_capsule_title(
             draw,
             rect=capsule_rect,
-            text="看看它是怎么工作的 👇",
+            text=capsule_text,
             fill=(255, 243, 228, 191),
             outline=None,
         )
@@ -1776,7 +1789,7 @@ class DemoImageRenderer:
 
     def _split_note_lines(self, text: str) -> tuple[str, ...]:
         raw_lines = [line.strip(" -") for line in text.splitlines()]
-        return tuple(line for line in raw_lines if line and line != "无")
+        return tuple(line for line in raw_lines if line and line != self.NONE_MARKER)
 
     def _split_bot_detail_text(self, text: str) -> tuple[str, str]:
         lines = [line.rstrip() for line in text.splitlines()]

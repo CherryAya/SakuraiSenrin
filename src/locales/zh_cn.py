@@ -142,6 +142,44 @@ CATALOG: Final[dict[str, str]] = {
     ("docs.feature.not_found"): ("未找到子功能文档: {query}"),
     ("docs.help.description"): ("统一汇总插件文档，并按 metadata.docs 自动注册。"),
     ("docs.help.content"): ("#help\n#help <插件名>"),
+    ("docs.render.node.children_title"): ("可用子模块："),
+    ("docs.render.node.features_title"): ("可用功能："),
+    ("docs.render.feature.command_label"): ("命令："),
+    ("docs.render.feature.description_label"): ("说明："),
+    ("docs.render.feature.reference_example"): ("\n参考示例如下：\n"),
+    ("docs.render.guide.child_module_label"): ("子模块"),
+    ("docs.render.plugin_summary.entry_marker"): ("👉 {title}"),
+    ("docs.render.collection.module_summary_fallback"): (
+        "浏览该模块下的所有说明卡片。"
+    ),
+    ("docs.render.collection.tile_summary_fallback"): (
+        "查看该子功能的用途、常见用法和关键边界。"
+    ),
+    ("docs.render.collection.card_count"): ("{count} 个功能卡片"),
+    ("docs.render.collection.view_demo"): ("查看 demo"),
+    ("docs.render.static_entry.summary_line1"): (
+        "这是一个静态社区入口说明页，不提供子功能级 help。"
+    ),
+    ("docs.render.static_entry.summary_line2"): (
+        "实际可触发内容由社区词条或运行时数据决定。"
+    ),
+    ("docs.render.static_entry.summary_line3"): (
+        "help 只负责暴露这个入口本身，不为每个社区词条派生独立命令说明。"
+    ),
+    ("docs.render.demo.plugin_title_fallback"): ("插件文档"),
+    ("docs.render.demo.feature_title_fallback"): ("功能说明"),
+    ("docs.render.demo.section_title"): ("流程演示"),
+    ("docs.render.demo.trigger_fallback"): ("文档指引"),
+    ("docs.render.demo.feature_summary_fallback"): (
+        "查看触发方式、前置条件与实机演示。"
+    ),
+    ("docs.render.demo.how_it_works"): ("看看它是怎么工作的 👇"),
+    ("docs.render.demo.how_it_works_short"): ("看看它是怎么工作的"),
+    ("docs.render.demo.permission_hidden_label"): ("普通用户"),
+    ("docs.render.support.section_title"): ("反馈与交流群"),
+    ("docs.render.support.group_id_label"): ("群号 {group_id}"),
+    ("docs.render.support.unconfigured"): ("未配置"),
+    ("help.forward.wait_prompt"): ("正在整理帮助内容，请稍等一下。"),
     ("help.index.title"): ("===== 插件帮助索引 ====="),
     ("help.index.header"): ("📖 ===== 帮助文档 ====="),
     ("help.index.prefix"): ("命令前缀: #help / #帮助"),

@@ -42,7 +42,7 @@ def support_note(locale: LocaleCode) -> str:
 
 def support_bundle(locale: LocaleCode) -> HelpSupportBundle:
     return HelpSupportBundle(
-        title="反馈与交流群",
+        title=tr(locale, "docs.render.support.section_title"),
         tip_text=support_note(locale),
         groups=resolve_support_groups(),
         qr_asset_path=HELP_SUPPORT_QR_ASSET,
@@ -52,7 +52,14 @@ def support_bundle(locale: LocaleCode) -> HelpSupportBundle:
 def support_text_block(locale: LocaleCode) -> str:
     bundle = support_bundle(locale)
     lines = [bundle.title, ""]
-    lines.extend(f"群号 {group.group_id}" for group in bundle.groups)
+    lines.extend(
+        tr(
+            locale,
+            "docs.render.support.group_id_label",
+            group_id=group.group_id,
+        )
+        for group in bundle.groups
+    )
     return "\n".join(lines).strip()
 
 
@@ -74,11 +81,12 @@ def resolve_support_groups() -> tuple[SupportGroupLink, ...]:
     return parsed or HELP_SUPPORT_GROUPS
 
 
-def resolve_main_group_id() -> str:
+def resolve_main_group_id(locale: LocaleCode = "zh-CN") -> str:
+    unconfigured = tr(locale, "docs.render.support.unconfigured")
     groups = resolve_support_groups()
     if not groups:
-        return "未配置"
-    return groups[0].group_id or "未配置"
+        return unconfigured
+    return groups[0].group_id or unconfigured
 
 
 def _parse_support_groups_json(raw: str) -> tuple[SupportGroupLink, ...]:
@@ -103,7 +111,7 @@ def _parse_support_groups_json(raw: str) -> tuple[SupportGroupLink, ...]:
         groups.append(
             SupportGroupLink(
                 title=title,
-                group_id=group_id or "未配置",
+                group_id=group_id or tr("zh-CN", "docs.render.support.unconfigured"),
                 url=url,
             )
         )

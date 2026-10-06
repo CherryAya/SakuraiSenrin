@@ -81,7 +81,6 @@ from src.lib.plugin_meta import create_plugin_metadata
 name = tr("zh-CN", "plugin.help.name")
 description = tr("zh-CN", "plugin.help.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
-HELP_FORWARD_WAIT_PROMPT = "正在整理帮助内容，请稍等一下。"
 HELP_FORWARD_FALLBACK_NICKNAME = "SakuraiSenrin"
 
 
@@ -595,9 +594,15 @@ def _compose_plugin_guide_messages(
         )
 
     if child_entries:
-        child_lines = ["子模块"]
+        child_lines = [tr(locale, "docs.render.guide.child_module_label")]
         for child_entry in child_entries:
-            child_lines.append(f"👉 {child_entry.node.title}")
+            child_lines.append(
+                tr(
+                    locale,
+                    "docs.render.plugin_summary.entry_marker",
+                    title=child_entry.node.title,
+                )
+            )
             child_lines.append(f"#help {child_entry.node.slug}")
             child_summary = child_entry.node.summary.strip()
             if child_summary:
@@ -636,6 +641,8 @@ async def _deliver_help_plan(
     matcher: Matcher,
     event: MessageEvent,
     plan: DeliveryPlan,
+    *,
+    locale: LocaleCode = "zh-CN",
 ) -> None:
     if not plan.should_forward:
         await finish_with_message(
@@ -652,7 +659,7 @@ async def _deliver_help_plan(
             task_name="help.forward_delivery",
             source_kind=plan.source_kind or "help",
             prompt=plan.wait_message
-            or _build_text_plan_entry(HELP_FORWARD_WAIT_PROMPT),
+            or _build_text_plan_entry(tr(locale, "help.forward.wait_prompt")),
             threshold_ms=800,
         ),
         sink=CompositeProgressSink(
@@ -897,6 +904,7 @@ async def _(
             _single_message_plan(
                 _build_index_message(authorized_entries, locale, actor_permission)
             ),
+            locale=locale,
         )
         return
 
@@ -963,4 +971,4 @@ async def _(
         actor_permission=actor_permission,
         all_entries=entries,
     )
-    await _deliver_help_plan(bot, matcher, event, docs_plan)
+    await _deliver_help_plan(bot, matcher, event, docs_plan, locale=locale)

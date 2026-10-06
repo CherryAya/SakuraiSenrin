@@ -22,14 +22,7 @@ from src.lib.plugin_docs.models import (
 
 
 def permission_label(permission: Permission) -> str:
-    labels = {
-        Permission.NONE: "权限开放",
-        Permission.NORMAL: "普通用户",
-        Permission.GROUP_ADMIN: "群管理",
-        Permission.GROUP_OWNER: "群主",
-        Permission.SUPERUSER: "超级用户",
-    }
-    return labels.get(permission, "普通用户")
+    return permission.label
 
 
 def feature_command_for_display_text(
