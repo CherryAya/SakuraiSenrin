@@ -173,7 +173,7 @@ class MemberRepository:
             await self._save_immediate(ctx)
 
     async def warm_up(self) -> None:
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             members = await MemberOps(session).get_all()
 
         self.cache.set_batch(
@@ -195,7 +195,7 @@ class MemberRepository:
         if item := self.cache.get_member(user_id, group_id):
             return item
 
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             db_member = await MemberOps(session).get_by_uid_gid(user_id, group_id)
             if not db_member:
                 return None
@@ -212,7 +212,7 @@ class MemberRepository:
         if item := self.cache.get_member(user_id, group_id):
             if item.group_card:
                 return item.group_card
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             db_member = await MemberOps(session).get_by_uid_gid(user_id, group_id)
         if db_member is None:
             return None
@@ -225,15 +225,15 @@ class MemberRepository:
         return db_member.group_card or None
 
     async def get_admin_member_by_uid(self, user_id: str) -> Sequence[Member]:
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             return await MemberOps(session).get_admin_by_uid(user_id)
 
     async def get_distinct_user_count(self, group_id: str) -> int:
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             return await MemberOps(session).get_distinct_user_count(group_id)
 
     async def get_intersection_user_count(self, group_a: str, group_b: str) -> int:
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             return await MemberOps(session).get_intersection_user_count(
                 group_a,
                 group_b,

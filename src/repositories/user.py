@@ -143,7 +143,7 @@ class UserRepository:
             await self._save_immediate(ctx)
 
     async def warm_up(self) -> None:
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             users = await UserOps(session).get_all()
         self.cache.set_batch(
             {
@@ -161,7 +161,7 @@ class UserRepository:
         if item := self.cache.get(user_id):
             return item
 
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             db_user = await UserOps(session).get_by_user_id(user_id)
             if not db_user:
                 return None
@@ -177,7 +177,7 @@ class UserRepository:
         if item := self.cache.get(user_id):
             if item.display_name:
                 return item.display_name
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             db_user = await UserOps(session).get_by_user_id(user_id)
         if db_user is None:
             return None
@@ -202,7 +202,7 @@ class UserRepository:
             missing_user_ids.append(user_id)
         if not missing_user_ids:
             return resolved
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             stmt = select(User).where(User.user_id.in_(missing_user_ids))
             result = await session.execute(stmt)
             db_users = result.scalars().all()

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 import sqlite3
 
@@ -327,6 +329,200 @@ async def test_event_store_archives_to_zstd_and_hydrates_with_manifest(
     assert not online_wal.exists()
     assert not online_shm.exists()
     assert '"state": "cold"' in manifest_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_segment_store_treats_current_month_as_active_at_cst_month_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：月初 00:30 CST 时 UTC 仍在上个月，当月分片必须被判为 active。
+
+    历史故障：active 判定用 UTC，导致 1 号凌晨当月分片被判为冷分片并被归档删除。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    # 2026-09-01 00:30 +08:00 == 2026-08-31 16:30 UTC
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-09-01 00:30:00+08:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_tz", prefix="events", fmt="%Y_%m", active_window_months=2
+    )
+    assert db._is_active_shard("2026_09") is True
+    assert db._is_active_shard("2026_08") is True
+    assert db._is_active_shard("2026_07") is False
+
+
+@pytest.mark.asyncio
+async def test_segment_store_archiver_skips_current_month_shard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：1 号凌晨跑归档任务，不得归档当月分片。"""
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-09-01 00:30:00+08:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_skip", prefix="events", fmt="%Y_%m", active_window_months=2
+    )
+    await db.init_schema(_ShardBase)
+
+    september = arrow.get("2026-09-01 00:10:00+08:00").datetime
+    async with db.write_session(time_ctx=september) as session:
+        session.add(_ShardModel(value="day1"))
+
+    await db.run_archiver_task()
+
+    db_dir = tmp_path / "framework_skip"
+    assert (db_dir / "events_2026_09.db").is_file()
+    assert not list(db_dir.glob("*.db.zst"))
+
+    async with db.read_session(time_ctx=september) as session:
+        total = await session.execute(select(func.count(_ShardModel.id)))
+    assert int(total.scalar() or 0) == 1
+
+
+@pytest.mark.asyncio
+async def test_segment_store_archiver_does_not_drop_inflight_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：归档不得丢弃在途写事务的数据。
+
+    历史故障：归档任务在写事务飞行途中 unlink 分片文件，导致写入落到已删除的
+    inode，数据静默丢失；或重连到新建空库报 "no such table"。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-09-01 12:00:00+08:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_race", prefix="events", fmt="%Y_%m", active_window_months=2
+    )
+    await db.init_schema(_ShardBase)
+
+    september = arrow.get("2026-09-01 00:00:00+08:00").datetime
+    async with db.write_session(time_ctx=september) as session:
+        session.add(_ShardModel(value="before"))
+
+    async def slow_writer() -> None:
+        async with db.write_session(time_ctx=september) as session:
+            session.add(_ShardModel(value="in-flight"))
+            await asyncio.sleep(0.3)
+
+    task = asyncio.create_task(slow_writer())
+    await asyncio.sleep(0.1)
+
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-11-15 12:00:00+08:00").int_timestamp,
+    )
+    await db.run_archiver_task()
+    await task
+
+    # 无论落在在线分片还是归档里，两条数据都必须可读回。
+    async with db.read_session(
+        time_ctx=september,
+        cold_policy=ColdPolicy.HYDRATE,
+    ) as session:
+        rows = (
+            (await session.execute(select(_ShardModel.value).order_by(_ShardModel.id)))
+            .scalars()
+            .all()
+        )
+    assert list(rows) == ["before", "in-flight"]
+
+
+@pytest.mark.asyncio
+async def test_segment_store_reinitializes_schema_after_shard_file_deleted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：分片文件被删除后必须重建 schema 并可继续写入。
+
+    历史故障：_initialized_shards 只记路径不记文件身份，文件重建后不再执行
+    create_all，导致该分片整月 "no such table" 写不进去且不自愈。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-09-01 12:00:00+08:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_heal", prefix="events", fmt="%Y_%m", active_window_months=2
+    )
+    await db.init_schema(_ShardBase)
+
+    september = arrow.get("2026-09-01 00:00:00+08:00").datetime
+    async with db.write_session(time_ctx=september) as session:
+        session.add(_ShardModel(value="first"))
+    await db.flush_manifest()
+
+    db_path = tmp_path / "framework_heal" / "events_2026_09.db"
+    db_path.unlink()
+
+    async with db.write_session(time_ctx=september) as session:
+        session.add(_ShardModel(value="second"))
+
+    assert db_path.is_file()
+    async with db.read_session(time_ctx=september) as session:
+        rows = (
+            (await session.execute(select(_ShardModel.value).order_by(_ShardModel.id)))
+            .scalars()
+            .all()
+        )
+    assert list(rows) == ["second"]
+
+
+@pytest.mark.asyncio
+async def test_segment_store_manifest_write_is_atomic_under_concurrency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """manifest 走 tmp + os.replace，并发 touch 后仍必须是合法 JSON。"""
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-09-01 12:00:00+08:00").int_timestamp,
+    )
+
+    db = EventStore(namespace="framework_manifest", prefix="events", fmt="%Y_%m")
+    await db.init_schema(_ShardBase)
+
+    async with db.write_session(time_ctx=arrow.get("2026-09-01").datetime) as session:
+        session.add(_ShardModel(value="x"))
+
+    await asyncio.gather(*(db._touch_segment("2026_09") for _ in range(50)))
+    await db.flush_manifest()
+
+    db_dir = tmp_path / "framework_manifest"
+    payload = json.loads((db_dir / "events_manifest.json").read_text(encoding="utf-8"))
+    assert "2026_09" in payload["segments"]
+    assert not list(db_dir.glob("*.tmp"))
 
 
 def test_database_manager_uses_debug_sql_echo_from_config(

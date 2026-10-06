@@ -32,7 +32,7 @@ class BlacklistRepository:
         self.cache = cache
 
     async def warm_up(self) -> None:
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             data = await BlacklistOps(session).get_all()
         self.cache.set_batch(
             {
@@ -51,7 +51,7 @@ class BlacklistRepository:
         if item := self.cache.get_ban(user_id, group_id):
             return item
 
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             db_item = await BlacklistOps(session).get_by_uid_and_gid(
                 target_user_id=user_id,
                 group_id=group_id,

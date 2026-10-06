@@ -148,7 +148,7 @@ class GroupRepository:
                 )
 
     async def _hydrate_cache_item(self, group_id: str) -> GroupCacheItem | None:
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             db_group = await GroupOps(session).get_by_group_id(group_id)
         if db_group is None:
             return None
@@ -220,7 +220,7 @@ class GroupRepository:
             await self._save_immediate(ctx)
 
     async def warm_up(self) -> None:
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             db_groups = await GroupOps(session).get_all()
 
         self.cache.set_batch(
@@ -247,7 +247,7 @@ class GroupRepository:
         if item := self.cache.get(group_id):
             if item.display_name:
                 return item.display_name
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             db_group = await GroupOps(session).get_by_group_id(group_id)
         if db_group is None:
             return None
@@ -273,7 +273,7 @@ class GroupRepository:
             missing_group_ids.append(group_id)
         if not missing_group_ids:
             return resolved
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             stmt = select(Group).where(Group.group_id.in_(missing_group_ids))
             result = await session.execute(stmt)
             db_groups = result.scalars().all()
@@ -328,5 +328,5 @@ class GroupRepository:
         )
 
     async def get_working_group_ids(self) -> list[str]:
-        async with core_db.session() as session:
+        async with core_db.session(commit=False) as session:
             return await GroupOps(session).get_working_group_ids()

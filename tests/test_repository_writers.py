@@ -19,6 +19,9 @@ class _CaptureWriter:
 
 
 class _FakeSessionContext:
+    def __init__(self, commit: bool = True, *_args: object, **_kwargs: object) -> None:
+        self.commit = commit
+
     async def __aenter__(self) -> object:
         return object()
 
@@ -53,7 +56,12 @@ class _FakeExecuteSession:
 
 
 class _FakeExecuteSessionContext:
-    def __init__(self, session: _FakeExecuteSession) -> None:
+    def __init__(
+        self,
+        session: _FakeExecuteSession,
+        *_args: object,
+        **_kwargs: object,
+    ) -> None:
         self._session = session
 
     async def __aenter__(self) -> _FakeExecuteSession:
@@ -420,7 +428,7 @@ async def test_get_names_by_uids_only_queries_cache_misses(
     monkeypatch.setattr(
         user_module.core_db,
         "session",
-        lambda: _FakeExecuteSessionContext(db_session),
+        lambda *a, **k: _FakeExecuteSessionContext(db_session, *a, **k),
     )
 
     cache = UserCache()
@@ -458,7 +466,7 @@ async def test_get_names_by_gids_only_queries_cache_misses(
     monkeypatch.setattr(
         group_module.core_db,
         "session",
-        lambda: _FakeExecuteSessionContext(db_session),
+        lambda *a, **k: _FakeExecuteSessionContext(db_session, *a, **k),
     )
 
     cache = GroupCache()

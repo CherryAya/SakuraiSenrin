@@ -22,7 +22,7 @@ class InviteRepository:
         flag: str | None,
         sub_type: str = "invite",
     ) -> Invitation:
-        async with core_db.session() as core_session:
+        async with core_db.session(commit=True) as core_session:
             return await InvitationOps(core_session).create_invitation(
                 group_id=group_id,
                 inviter_id=inviter_id,
@@ -35,7 +35,7 @@ class InviteRepository:
         invitation_id: int,
         message_id: str,
     ) -> InvitationMessage:
-        async with core_db.session() as core_session:
+        async with core_db.session(commit=True) as core_session:
             return await InvitationOps(core_session).add_message_record(
                 invitation_id=invitation_id,
                 message_id=message_id,
@@ -47,7 +47,7 @@ class InviteRepository:
         status: InvitationStatus,
         operator_id: str | None = None,
     ) -> Invitation:
-        async with core_db.session() as core_session:
+        async with core_db.session(commit=True) as core_session:
             return await InvitationOps(core_session).update_status(
                 invitation_id=invitation_id,
                 status=status,
@@ -55,32 +55,32 @@ class InviteRepository:
             )
 
     async def get_by_message_id(self, message_id: str) -> Invitation | None:
-        async with core_db.session() as core_session:
+        async with core_db.session(commit=False) as core_session:
             return await InvitationOps(core_session).get_by_message_id(
                 message_id=message_id,
             )
 
     async def get_by_status(self, status: InvitationStatus) -> Sequence[Invitation]:
-        async with core_db.session() as core_session:
+        async with core_db.session(commit=False) as core_session:
             return await InvitationOps(core_session).get_by_status(status)
 
     async def get_by_id(self, invitation_id: int) -> Invitation | None:
-        async with core_db.session() as core_session:
+        async with core_db.session(commit=False) as core_session:
             return await InvitationOps(core_session).get_by_id(invitation_id)
 
     async def get_by_group_id(self, group_id: str) -> Invitation | None:
-        async with core_db.session() as core_session:
+        async with core_db.session(commit=False) as core_session:
             return await InvitationOps(core_session).get_by_group_id(group_id)
 
     async def get_by_flag(self, flag: str) -> Invitation | None:
-        async with core_db.session() as core_session:
+        async with core_db.session(commit=False) as core_session:
             return await InvitationOps(core_session).get_by_flag(flag)
 
     async def ignore_all_pending(
         self,
         operator_id: str | None = None,
     ) -> Sequence[Invitation]:
-        async with core_db.session() as core_session:
+        async with core_db.session(commit=True) as core_session:
             return await InvitationOps(core_session).ignore_all_pending(
                 operator_id=operator_id
             )
@@ -89,7 +89,7 @@ class InviteRepository:
         self,
         operator_id: str | None = None,
     ) -> Sequence[Invitation]:
-        async with core_db.session() as core_session:
+        async with core_db.session(commit=True) as core_session:
             return await InvitationOps(core_session).reject_all_pending(
                 operator_id=operator_id
             )

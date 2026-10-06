@@ -65,7 +65,7 @@ async def _(
         "nickname", ""
     )
     user_id = str(event.user_id)
-    if not user_repo.get_user(user_id):
+    if not await user_repo.get_user(user_id):
         await user_repo.save_user(
             user_id=user_id,
             user_name=user_name,
