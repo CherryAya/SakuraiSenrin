@@ -505,9 +505,6 @@ async def finish_guided_search_view(
             locale,
             page_number=page_number,
             clamp_page=clamp_page,
-            media_service=wordbank_media_service,
-            wordbank_service=wordbank_service,
-            record_search_result_view_message=record_search_result_view_message,
         )
 
 

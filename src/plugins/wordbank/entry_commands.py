@@ -44,15 +44,8 @@ from . import (
 from .errors import build_wordbank_error_message
 from .flows import (
     _build_wordbank_command_progress_spec,
-    _collect_search_query_content,
     _finish_guided_add,
-    _handle_search_session_event,
-    _record_guided_forward_response_choice,
-    _record_guided_response,
-    _record_guided_trigger,
     _send_pending_entries_view,
-    _start_guided_add,
-    _start_guided_add_with_trigger_image,
     _wordbank_submission_lifecycle,
 )
 from .guided_flow import (
@@ -244,7 +237,9 @@ async def handle_wordbank_command_message(
                 keyword,
                 has_image,
                 search_image_scores,
-            ) = await _collect_search_query_content(arg, keyword_text=rest)
+            ) = await guided_flow_module.collect_search_query_content(
+                arg, keyword_text=rest
+            )
         except (RuleError, ValueError) as exc:
             await finish_with_message(
                 bot,
@@ -305,7 +300,7 @@ async def handle_wordbank_command_message(
                 source_kind="wordbank_command",
             )
         return
-    if action in PENDING_ALIASES and _send_pending_entries_view is not None:
+    if action in PENDING_ALIASES:
         await _send_pending_entries_view(bot, event, rest, locale)
         await matcher.finish()
         return
@@ -372,7 +367,7 @@ async def _wordbank_root(
         first, tail = split_command_text(text)
         if first in {"add", "添加", "学习"} and not has_meaningful_text(tail):
             if handlers_media_helpers.extract_image_urls(arg):
-                await _start_guided_add_with_trigger_image(
+                await guided_flow_module.start_guided_add_with_trigger_image(
                     matcher,
                     event,
                     state,
@@ -380,7 +375,7 @@ async def _wordbank_root(
                     arg,
                 )
             else:
-                await _start_guided_add(matcher, event, state, locale)
+                await guided_flow_module.start_guided_add(matcher, event, state, locale)
             return
     await _initialize_wordbank_plugin()
     handler = handle_wordbank_command_message
@@ -397,7 +392,7 @@ async def _wordbank_guided_trigger(
         return
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    await _record_guided_trigger(matcher, event, state, locale)
+    await guided_flow_module.record_guided_trigger(matcher, event, state, locale)
 
 
 @wordbank_command.handle()
@@ -412,15 +407,15 @@ async def _wordbank_guided_response(
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
     if state.get("wordbank_guided_response_forward_pending"):
-        await _record_guided_forward_response_choice(
+        await guided_flow_module.record_guided_forward_response_choice(
             matcher,
             event,
             state,
             locale,
-            bot,
+            bot=bot,
         )
         return
-    await _record_guided_response(matcher, event, state, locale)
+    await guided_flow_module.record_guided_response(matcher, event, state, locale)
 
 
 async def _handle_scope_step(
@@ -537,7 +532,13 @@ async def _wordbank_session(
 ) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    await _handle_search_session_event(bot, matcher, event, state, locale)
+    await guided_flow_module.handle_search_session_event(
+        bot,
+        matcher,
+        event,
+        state,
+        locale,
+    )
 
 
 @wordbank_add_command.handle()
@@ -554,10 +555,10 @@ async def _wordbank_add_root(
     plain_text = arg.extract_plain_text()
     has_images = bool(handlers_media_helpers.extract_image_urls(arg))
     if not has_meaningful_text(plain_text) and not has_images:
-        await _start_guided_add(matcher, event, state, locale)
+        await guided_flow_module.start_guided_add(matcher, event, state, locale)
         return
     if not has_meaningful_text(plain_text) and has_images:
-        await _start_guided_add_with_trigger_image(
+        await guided_flow_module.start_guided_add_with_trigger_image(
             matcher,
             event,
             state,
@@ -584,7 +585,7 @@ async def _wordbank_add_trigger(
 ) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    await _record_guided_trigger(matcher, event, state, locale)
+    await guided_flow_module.record_guided_trigger(matcher, event, state, locale)
 
 
 @wordbank_add_command.handle()
@@ -597,15 +598,15 @@ async def _wordbank_add_response(
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
     if state.get("wordbank_guided_response_forward_pending"):
-        await _record_guided_forward_response_choice(
+        await guided_flow_module.record_guided_forward_response_choice(
             matcher,
             event,
             state,
             locale,
-            bot,
+            bot=bot,
         )
         return
-    await _record_guided_response(matcher, event, state, locale)
+    await guided_flow_module.record_guided_response(matcher, event, state, locale)
 
 
 @wordbank_add_command.handle()
@@ -649,7 +650,6 @@ async def _wordbank_search_root(
             event,
             state,
             locale,
-            initialize_plugin=_initialize_wordbank_plugin,
         )
         return
     handler = handle_wordbank_command_message
@@ -730,7 +730,11 @@ async def _wordbank_search_query(
     if guided_search_stage(state) != WORDBANK_GUIDED_SEARCH_STAGE_QUERY:
         return
     try:
-        keyword, has_image, image_scores = await _collect_search_query_content(
+        (
+            keyword,
+            has_image,
+            image_scores,
+        ) = await guided_flow_module.collect_search_query_content(
             event.message,
             keyword_text=event.message.extract_plain_text(),
         )
@@ -823,7 +827,13 @@ async def _wordbank_search_session(
 ) -> None:
     locale = state.get("wordbank_locale", "zh-CN")
     await _abort_guided_on_revoke(matcher, event, locale)
-    await _handle_search_session_event(bot, matcher, event, state, locale)
+    await guided_flow_module.handle_search_session_event(
+        bot,
+        matcher,
+        event,
+        state,
+        locale,
+    )
 
 
 def _register_forced_command(matcher_obj: Any, action: str) -> None:

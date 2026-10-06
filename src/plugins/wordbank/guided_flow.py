@@ -37,13 +37,6 @@ from src.lib.message_plan import (
     pause_with_message,
 )
 from src.logger import logger
-from src.plugins.wordbank.contracts import (
-    ErrorBuilder,
-    FinishGuidedSearch,
-    InitializePlugin,
-    RecordViewMessage,
-    SendGroupDetailView,
-)
 from src.plugins.wordbank.debug import (
     describe_batch_errors,
     describe_message_segments,
@@ -73,7 +66,9 @@ from src.plugins.wordbank.handlers.parsers import (
 )
 from src.plugins.wordbank.handlers.reply import parse_view_reply_for_search_result
 from src.plugins.wordbank.handlers.submission import SubmissionHandler
+from src.plugins.wordbank.lifecycle import initialize_wordbank_plugin
 from src.plugins.wordbank.message_model import MessageShape
+from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
 from src.plugins.wordbank.services.rules import RuleError
 from src.plugins.wordbank.text_parsing import (
     has_meaningful_text,
@@ -82,8 +77,6 @@ from src.plugins.wordbank.text_parsing import (
 
 if TYPE_CHECKING:
     from src.plugins.wordbank.database.types import WordbankSearchPage
-    from src.plugins.wordbank.services.core import WordbankService
-    from src.plugins.wordbank.services.media import WordbankMediaService
 
 GUIDED_MAX_ERRORS = 3
 WORDBANK_GUIDED_STEP_TRIGGER = 1
@@ -295,8 +288,6 @@ async def record_guided_trigger(
     event: MessageEvent,
     state: T_State,
     locale: LocaleCode,
-    *,
-    media_service: WordbankMediaService,
 ) -> None:
     plain_text = event.message.extract_plain_text()
     if has_meaningful_text(plain_text) and len(event.message) == 1:
@@ -316,7 +307,7 @@ async def record_guided_trigger(
         )
         async with long_task:
             shape = await build_message_shape_from_message(
-                media_service,
+                wordbank_media_service,
                 event.message,
                 task=long_task,
             )
@@ -350,8 +341,6 @@ async def record_guided_response(
     event: MessageEvent,
     state: T_State,
     locale: LocaleCode,
-    *,
-    media_service: WordbankMediaService,
 ) -> None:
     if is_forward_input(event):
         state["wordbank_guided_response_forward_pending"] = True
@@ -391,7 +380,7 @@ async def record_guided_response(
     )
     async with long_task:
         shape = await build_response_shape_from_message(
-            media_service,
+            wordbank_media_service,
             event.message,
             task=long_task,
         )
@@ -433,7 +422,6 @@ async def record_guided_forward_response_choice(
     state: T_State,
     locale: LocaleCode,
     *,
-    media_service: WordbankMediaService,
     bot: Bot,
 ) -> None:
     if not bool(state.get("wordbank_guided_response_forward_pending", False)):
@@ -475,7 +463,7 @@ async def record_guided_forward_response_choice(
             payload = await build_response_input_payload(
                 bot,
                 response_event,
-                media_service=media_service,
+                media_service=wordbank_media_service,
                 task=long_task,
             )
         if payload.input_kind != "forward":
@@ -527,7 +515,7 @@ async def record_guided_forward_response_choice(
             payload = await build_response_input_payload(
                 bot,
                 response_event,
-                media_service=media_service,
+                media_service=wordbank_media_service,
                 task=long_task,
             )
         if payload.input_kind != "forward":
@@ -576,21 +564,12 @@ async def start_guided_add_with_trigger_image(
     state: T_State,
     locale: LocaleCode,
     arg: Message,
-    *,
-    media_service: WordbankMediaService,
-    initialize_plugin: InitializePlugin,
 ) -> None:
-    await initialize_plugin()
+    await initialize_wordbank_plugin()
     state["wordbank_locale"] = locale
-    shape = await build_message_shape_from_message(media_service, arg)
+    shape = await build_message_shape_from_message(wordbank_media_service, arg)
     if shape.is_empty():
-        await start_guided_add(
-            matcher,
-            event,
-            state,
-            locale,
-            initialize_plugin=initialize_plugin,
-        )
+        await start_guided_add(matcher, event, state, locale)
         return
     clear_interaction_errors(state)
     register_root_message(state, event)
@@ -606,10 +585,8 @@ async def start_guided_add(
     event: MessageEvent,
     state: T_State,
     locale: LocaleCode,
-    *,
-    initialize_plugin: InitializePlugin,
 ) -> None:
-    await initialize_plugin()
+    await initialize_wordbank_plugin()
     state["wordbank_locale"] = locale
     register_root_message(state, event)
     await pause_with_message(
@@ -625,7 +602,6 @@ async def finish_guided_add(
     state: T_State,
     *,
     finalize_submission: SubmissionHandler,
-    wordbank_service: WordbankService,
 ) -> None:
     locale = wordbank_guided_locale(state)
     source_event = _guided_submission_source_event(state)
@@ -770,7 +746,6 @@ async def collect_search_query_content(
     *,
     keyword_text: str,
     allow_image: bool = True,
-    media_service: WordbankMediaService,
 ) -> tuple[str, bool, dict[int, float]]:
     normalized_keyword = normalize_cq_plain_text(
         keyword_text,
@@ -784,7 +759,7 @@ async def collect_search_query_content(
         return keyword, False, {}
     image_scores = {
         match.canonical_id: match.score
-        for match in media_service.search_similar_images(data)
+        for match in wordbank_media_service.search_similar_images(data)
     }
     return keyword, True, image_scores
 
@@ -845,7 +820,7 @@ def guided_search_delete_target_map(state: Mapping[str, Any]) -> dict[str, int]:
 
 
 async def resolve_search_delete_target_map(
-    page: WordbankSearchPage, *, wordbank_service: WordbankService
+    page: WordbankSearchPage,
 ) -> tuple[tuple[str, int], ...]:
     target_pairs: list[tuple[str, int]] = []
     for group_index, item in enumerate(page.items, start=1):
@@ -883,10 +858,8 @@ async def start_guided_search(
     event: MessageEvent,
     state: T_State,
     locale: LocaleCode,
-    *,
-    initialize_plugin: InitializePlugin,
 ) -> None:
-    await initialize_plugin()
+    await initialize_wordbank_plugin()
     clear_interaction_errors(state)
     state["wordbank_locale"] = locale
     state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_DIMENSIONS
@@ -912,10 +885,12 @@ async def finish_guided_search(
     *,
     page_number: int,
     clamp_page: bool = False,
-    wordbank_service: WordbankService,
-    media_service: WordbankMediaService,
-    record_search_result_view_message: RecordViewMessage,
 ) -> None:
+    # 局部导入：views 依赖 guided_flow，模块级导入会成环。
+    from src.plugins.wordbank import views as views_module
+
+    record_search_result_view_message = views_module.record_search_result_view_message
+
     image_scores = (
         guided_search_image_scores(state)
         if bool(state.get("wordbank_guided_search_has_image"))
@@ -948,7 +923,7 @@ async def finish_guided_search(
         parsed=parsed,
         locale=locale,
         has_image=bool(state.get("wordbank_guided_search_has_image")),
-        media_service=media_service,
+        media_service=wordbank_media_service,
     )
     state["wordbank_guided_search_stage"] = WORDBANK_GUIDED_SEARCH_STAGE_PAGE
     state["wordbank_guided_search_current_page"] = parsed.page
@@ -960,10 +935,7 @@ async def finish_guided_search(
     )
     state[
         "wordbank_guided_search_delete_target_map"
-    ] = await resolve_search_delete_target_map(
-        page,
-        wordbank_service=wordbank_service,
-    )
+    ] = await resolve_search_delete_target_map(page)
     delivery_bot = _require_guided_bot(bot, matcher)
     plan_result = await deliver_message_plan(
         delivery_bot,
@@ -999,12 +971,15 @@ async def handle_search_session_event(
     event: MessageEvent,
     state: T_State,
     locale: LocaleCode,
-    *,
-    wordbank_service: WordbankService,
-    send_group_detail_view: SendGroupDetailView,
-    finish_guided_search_fn: FinishGuidedSearch,
-    build_error_message: ErrorBuilder,
 ) -> None:
+    # 局部导入：views/errors 依赖 guided_flow，模块级导入会成环。
+    from src.plugins.wordbank import views as views_module
+    from src.plugins.wordbank.errors import build_wordbank_error_message
+
+    build_error_message = build_wordbank_error_message
+    send_group_detail_view = views_module.send_group_detail_view
+    finish_guided_search_fn = views_module.finish_guided_search_view
+
     if guided_search_stage(state) != WORDBANK_GUIDED_SEARCH_STAGE_PAGE:
         return
     try:

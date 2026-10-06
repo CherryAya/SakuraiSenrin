@@ -30,7 +30,6 @@ from src.lib.messages import text_message
 from src.plugins import wordbank as wordbank_plugin
 from src.plugins.wordbank import entry_commands, wordbank_search_command
 from src.plugins.wordbank import entry_commands as entry_commands_module
-from src.plugins.wordbank import flows as flows_module
 from src.plugins.wordbank import guided_flow as guided_flow_module
 from src.plugins.wordbank import lifecycle as lifecycle_module
 from src.plugins.wordbank import services as services_module
@@ -484,7 +483,7 @@ async def test_handle_search_session_delete_refreshes_current_page(
     }
     event = build_group_message_event("del 1-1")
 
-    await flows_module._handle_search_session_event(
+    await guided_flow_module.handle_search_session_event(
         bot,
         cast(Matcher, matcher),
         event,
@@ -539,7 +538,7 @@ async def test_handle_search_session_delete_uses_response_level_index(
     }
     event = build_group_message_event("del 1-2")
 
-    await flows_module._handle_search_session_event(
+    await guided_flow_module.handle_search_session_event(
         bot,
         cast(Matcher, matcher),
         event,

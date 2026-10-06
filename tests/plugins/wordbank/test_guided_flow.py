@@ -89,7 +89,6 @@ async def test_guided_forward_choice_uses_saved_response_event(
         event,
         state,
         "zh-CN",
-        media_service=wordbank_media_service,
         bot=bot,
     )
 
@@ -168,6 +167,7 @@ async def test_finish_guided_add_uses_saved_submission_source_event(
     service = cast(
         WordbankService, SimpleNamespace(add_message_entries=add_message_entries)
     )
+    monkeypatch.setattr(guided_flow_module, "wordbank_service", service)
 
     await finish_guided_add(
         bot,
@@ -175,7 +175,6 @@ async def test_finish_guided_add_uses_saved_submission_source_event(
         weight_event,
         state,
         finalize_submission=finalize_submission,
-        wordbank_service=service,
     )
 
     finalize_submission.assert_awaited_once()
