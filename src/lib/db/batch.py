@@ -9,22 +9,20 @@ Description: 批量处理器
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import arrow
 from loguru import logger
 
 from src.lib.trace_log import log_trace_event, new_trace_id
 from src.lib.utils.common import get_current_time
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from .connectors import SegmentStore
     from .ops import BaseOps
+
+from .alias import AliasStore
 
 
 @dataclass(slots=True, frozen=True)
@@ -329,72 +327,27 @@ class BatchWriter[T]:
 
 async def execute_batch_write[PayloadT: Mapping[str, Any], OpsT: BaseOps[Any]](
     batch: Sequence[PayloadT],
-    db_instance: SegmentStore,
+    db_instance: AliasStore[OpsT] | SegmentStore,
     ops_class: type[OpsT],
     method: Callable[[OpsT, list[PayloadT]], Awaitable[Any]],
     time_field: str,
     *,
     emit_trace: bool = True,
 ) -> None:
-    """按时间戳对批量数据进行分组路由，并写入对应的分片数据库。"""
+    """按时间戳分组路由并写入对应分片。
+
+    分组与路由逻辑已收敛到 AliasStore.write_batch：原先这里手算
+    ``arrow.get(ts).to("Asia/Shanghai")`` 再 ``replace(day=1)``，与
+    SegmentStore 的时区口径是两套实现，正是历史时区错位 bug 的来源。
+
+    兼容层：若传入的是物理 SegmentStore，则在此包一层 AliasStore。调用点
+    迁移完成后可直接传 AliasStore 并省略 ops_class/time_field。
+    """
     if not batch:
         return
-
-    logger_name = ops_class.__name__
-    route_map: dict[datetime, list[PayloadT]] = defaultdict(list)
-
-    for item in batch:
-        ts = item[time_field]
-        dt = arrow.get(ts).to("Asia/Shanghai").datetime
-        route_ctx = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        route_map[route_ctx].append(item)
-
-    for time_ctx, grouped_items in route_map.items():
-        shard_key = time_ctx.strftime("%Y_%m")
-        trace_id: str | None = None
-        if emit_trace:
-            trace_id = log_trace_event(
-                event_name="route_batch",
-                source_kind="segment_write",
-                component=f"{db_instance.namespace}.{db_instance.prefix}",
-                status="started",
-                summary=f"[{logger_name}] routing batch to shard {shard_key}.",
-                shard_key=shard_key,
-                batch_size=len(grouped_items),
-                payload_json={"ops_class": logger_name},
-            )
-        try:
-            async with db_instance.write_session(time_ctx=time_ctx) as session:
-                ops_instance = ops_class(session)
-                await method(ops_instance, grouped_items)
-            if emit_trace:
-                log_trace_event(
-                    event_name="route_batch",
-                    source_kind="segment_write",
-                    component=f"{db_instance.namespace}.{db_instance.prefix}",
-                    status="success",
-                    summary=f"[{logger_name}] batch written to shard {shard_key}.",
-                    trace_id=trace_id,
-                    shard_key=shard_key,
-                    batch_size=len(grouped_items),
-                    payload_json={"ops_class": logger_name},
-                )
-        except Exception as e:
-            logger.error(
-                f"[{logger_name}] 落盘至 "
-                f"{time_ctx.strftime('%Y_%m')} 分片时发生错误: {e}"
-            )
-            if emit_trace:
-                log_trace_event(
-                    event_name="route_batch",
-                    source_kind="segment_write",
-                    component=f"{db_instance.namespace}.{db_instance.prefix}",
-                    status="failed",
-                    summary=f"[{logger_name}] batch write to shard {shard_key} failed.",
-                    level="ERROR",
-                    trace_id=trace_id,
-                    shard_key=shard_key,
-                    batch_size=len(grouped_items),
-                    payload_json={"ops_class": logger_name, "error": repr(e)},
-                )
-            raise
+    alias = (
+        db_instance
+        if isinstance(db_instance, AliasStore)
+        else AliasStore(db_instance, ops_class=ops_class, time_field=time_field)
+    )
+    await alias.write_batch(batch, method=method, emit_trace=emit_trace)

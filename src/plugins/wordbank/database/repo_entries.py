@@ -22,7 +22,6 @@ from .instances import (
     wordbank_message_ref_db,
     wordbank_message_route_db,
 )
-from .repo_shared import message_ref_time_ctx
 from .tables import (
     WordbankDeleteVote,
     WordbankDeleteVoteSupport,
@@ -84,9 +83,7 @@ class WordbankRepositoryEntriesMixin:
     ) -> None:
         route_rows = await self.list_message_ref_routes()
         for shard_key in {route.shard_key for route in route_rows}:
-            async with wordbank_message_ref_db.write_session(
-                time_ctx=message_ref_time_ctx(shard_key)
-            ) as session:
+            async with wordbank_message_ref_db.write_session_for(shard_key) as session:
                 await session.execute(delete(WordbankMessageRef))
         async with wordbank_message_route_db.write_session() as session:
             await session.execute(delete(WordbankMessageRoute))
@@ -94,8 +91,8 @@ class WordbankRepositoryEntriesMixin:
             for source in wordbank_log_db.iter_backup_sources():
                 if source.shard_key is None:
                     continue
-                async with wordbank_log_db.write_session(
-                    time_ctx=message_ref_time_ctx(source.shard_key)
+                async with wordbank_log_db.write_session_for(
+                    source.shard_key,
                 ) as session:
                     await session.execute(delete(WordbankLog))
         async with wordbank_main_db.write_session() as session:

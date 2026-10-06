@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 import sqlite3
+from typing import Any
 
 import arrow
 import nonebot
@@ -17,6 +18,7 @@ from src.database.core.tables import CoreBase
 from src.database.patches import build_core_patch_registry
 from src.lib.db.batch import BatchWriter
 from src.lib.db.connectors import ColdPolicy, EventStore, StateStore
+from src.lib.db.ops import BaseOps
 from src.lib.db.schema import SchemaPatch
 
 
@@ -40,6 +42,14 @@ class _ShardModel(_ShardBase):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     value: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class _ShardOps(BaseOps[_ShardModel]):
+    """AliasStore 测试用最小 ops。"""
+
+    async def add_value(self, value: str) -> None:
+        self.session.add(_ShardModel(value=value))
+        await self.session.flush()
 
 
 @pytest.mark.asyncio
@@ -708,6 +718,146 @@ async def test_segment_store_health_reports_shard_states(
     assert health["2026_04"]["online"] is True
     assert health["2026_04"]["is_active"] is True
     assert health["2026_04"]["size_bytes"] > 0
+
+
+@pytest.mark.asyncio
+async def test_alias_store_routes_by_payload_timestamp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """alias 只需 payload 的时间字段，业务侧不再手算分片键。"""
+    from src.lib.db import connectors as connectors_module
+    from src.lib.db.alias import AliasStore
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-09-15 12:00:00+08:00").int_timestamp,
+    )
+
+    store = EventStore(namespace="alias_rt", prefix="events", fmt="%Y_%m")
+    await store.init_schema(_ShardBase)
+    alias: AliasStore[Any] = AliasStore(
+        store,
+        ops_class=_ShardOps,
+        time_field="created_at",
+    )
+
+    # 时间戳 / record_date 字符串 / record_date 整数 / 分片键，四种形态一致
+    ts = arrow.get("2026-08-15 10:00:00+08:00").int_timestamp
+    assert alias.shard_key_for(ts) == "2026_08"
+    assert alias.shard_key_for("20260815") == "2026_08"
+    assert alias.shard_key_for(20260815) == "2026_08"
+    assert alias.shard_key_for("2026_08") == "2026_08"
+
+    payloads = [
+        {"created_at": ts, "value": "aug"},
+        {
+            "created_at": arrow.get("2026-09-02 10:00:00+08:00").int_timestamp,
+            "value": "sep",
+        },
+    ]
+
+    async def _insert(ops: Any, rows: list[dict[str, Any]]) -> int:
+        for row in rows:
+            ops.session.add(_ShardModel(value=row["value"]))
+        await ops.session.flush()
+        return len(rows)
+
+    written = await alias.write_batch(payloads, method=_insert)
+    assert written == 2
+
+    db_dir = tmp_path / "alias_rt"
+    assert (db_dir / "events_2026_08.db").is_file()
+    assert (db_dir / "events_2026_09.db").is_file()
+
+
+@pytest.mark.asyncio
+async def test_alias_store_write_batch_uses_store_timezone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：CST 月初 8 小时内写入必须落在当月分片。"""
+    from src.lib.db import connectors as connectors_module
+    from src.lib.db.alias import AliasStore
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    # 2026-09-01 07:00 +08:00
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-09-01 07:00:00+08:00").int_timestamp,
+    )
+
+    store = EventStore(namespace="alias_tz", prefix="events", fmt="%Y_%m")
+    await store.init_schema(_ShardBase)
+    alias: AliasStore[Any] = AliasStore(
+        store,
+        ops_class=_ShardOps,
+        time_field="created_at",
+    )
+
+    ts = arrow.get("2026-09-01 07:00:00+08:00").int_timestamp
+    assert alias.shard_key_for(ts) == "2026_09"
+
+    async def _insert(ops: Any, rows: list[dict[str, Any]]) -> int:
+        ops.session.add(_ShardModel(value=rows[0]["value"]))
+        await ops.session.flush()
+        return 1
+
+    await alias.write_batch([{"created_at": ts, "value": "x"}], method=_insert)
+    assert (tmp_path / "alias_tz" / "events_2026_09.db").is_file()
+
+
+@pytest.mark.asyncio
+async def test_alias_store_scan_shards_bounds_concurrency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """scan_shards 应限制并发度，取代原先无上限的裸 gather。"""
+    from src.lib.db import connectors as connectors_module
+    from src.lib.db.alias import AliasStore
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-06-15 12:00:00+08:00").int_timestamp,
+    )
+
+    store = EventStore(
+        namespace="alias_scan",
+        prefix="events",
+        fmt="%Y_%m",
+        map_reduce_concurrency=2,
+    )
+    await store.init_schema(_ShardBase)
+    alias: AliasStore[Any] = AliasStore(
+        store,
+        ops_class=_ShardOps,
+        time_field="created_at",
+    )
+
+    keys = ["2026_01", "2026_02", "2026_03", "2026_04", "2026_05"]
+    for key in keys:
+        async with alias.write_session_for(key) as session:
+            session.add(_ShardModel(value=key))
+
+    active = 0
+    peak = 0
+
+    async def _probe(_session: Any) -> list[str]:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.02)
+        active -= 1
+        return ["ok"]
+
+    results = await alias.scan_shards(keys, _probe, concurrency=2)
+    assert len(results) == len(keys)
+    assert peak <= 2
 
 
 def test_database_manager_uses_debug_sql_echo_from_config(

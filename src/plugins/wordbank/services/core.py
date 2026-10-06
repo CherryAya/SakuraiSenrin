@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 import json
 import random
 from typing import Any
@@ -15,6 +14,7 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.logger import logger
+from src.plugins.wordbank.database.instances import wordbank_message_ref_db
 from src.plugins.wordbank.database.repo import WordbankRepository
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
@@ -806,7 +806,7 @@ class WordbankService:
         if not message_id:
             return
         now = get_current_time()
-        shard_key = datetime.fromtimestamp(now, UTC).strftime("%Y_%m")
+        shard_key = wordbank_message_ref_db.shard_key_for(now)
         start = perf_start()
         await self.repository.record_message_ref(
             {

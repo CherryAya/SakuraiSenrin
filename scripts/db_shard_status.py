@@ -19,6 +19,20 @@ import sys
 from types import SimpleNamespace
 from typing import Any
 
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.lib.db.alias import AliasStore
+from src.lib.db.connectors import SegmentStore
+from src.lib.db.ops import BaseOps
+
+
+class _NoopOps(BaseOps[Any]):
+    """运维脚本只读健康快照，不需要真实 ops。"""
+
+    def __init__(self, session: Any) -> None:
+        self.session = session
+
 
 def _load_stores() -> dict[str, Any]:
     """加载所有已注册的分片库实例（含 StateStore 之外的分片库）。"""
@@ -53,13 +67,13 @@ def _load_stores() -> dict[str, Any]:
         ensure_backup_database_registrations_loaded,
         get_registered_backup_databases,
     )
-    from src.lib.db.connectors import SegmentStore
 
     ensure_backup_database_registrations_loaded()
     stores: dict[str, Any] = {}
     for db in get_registered_backup_databases():
         if isinstance(db, SegmentStore):
-            stores[f"{db.namespace}/{db.prefix}"] = db
+            alias = AliasStore(db, ops_class=_NoopOps, time_field="created_at")
+            stores[f"{db.namespace}/{db.prefix}"] = alias
     return stores
 
 

@@ -315,14 +315,14 @@ class SegmentStore(BaseDB):
         """按本 store 的业务时区取「当前时刻」。"""
         return arrow.get(get_current_time()).to(self.tz)
 
-    def _to_local(self, moment: datetime) -> arrow.Arrow:
+    def _to_local(self, moment: datetime | arrow.Arrow) -> arrow.Arrow:
         """把任意 datetime 归一化到本 store 的业务时区。
 
         调用方可能传 naive datetime（本业务时区的墙钟时间）、aware datetime
-        （绝对时刻），或两者混用；这里统一成「同一个绝对时刻在 store 时区的
-        表示」，保证分片枚举与写入路由口径一致。
+        或 arrow.Arrow（绝对时刻），或三者混用；这里统一成「同一个绝对时刻在
+        store 时区的表示」，保证分片枚举与写入路由口径一致。
         """
-        raw = arrow.get(moment)
+        raw = moment if isinstance(moment, arrow.Arrow) else arrow.get(moment)
         if raw.tzinfo is None:
             return raw.replace(tzinfo=self.tz)
         return raw.to(self.tz)

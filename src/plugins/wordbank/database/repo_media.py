@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import or_, select
@@ -178,9 +177,7 @@ class WordbankRepositoryMediaMixin:
         if policy == WritePolicy.BUFFERED:
             await wordbank_log_writer.add(payload)
             return
-        async with wordbank_log_db.write_session(
-            time_ctx=datetime.fromtimestamp(payload["created_at"], UTC)
-        ) as session:
+        async with wordbank_log_db.write_session_for(payload["created_at"]) as session:
             session.add(WordbankLog(**payload))
 
     async def count_trigger_group_calls_for_user_in_windows(
@@ -201,8 +198,6 @@ class WordbankRepositoryMediaMixin:
             return {}
         now_ts = get_current_time() if now_ts is None else now_ts
         max_window = max(normalized_windows.values())
-        start_time = datetime.fromtimestamp(now_ts - max_window, UTC)
-        end_time = datetime.fromtimestamp(now_ts, UTC)
         trigger_group_ids = tuple(normalized_windows)
 
         async def _query_shard(session: AsyncSession) -> list[tuple[int, int]]:
@@ -221,9 +216,9 @@ class WordbankRepositoryMediaMixin:
                 for trigger_group_id, created_at in rows
             ]
 
-        shard_results = await wordbank_log_db.map_reduce(
-            start_time,
-            end_time,
+        shard_results = await wordbank_log_db.scan(
+            now_ts - max_window,
+            now_ts,
             _query_shard,
             cold_policy=wordbank_log_db.cold_policy,
         )

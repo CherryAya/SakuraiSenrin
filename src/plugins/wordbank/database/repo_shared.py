@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 import json
 import re
 import unicodedata
@@ -74,14 +73,6 @@ def merge_image_keys(image_keys_values: Sequence[str]) -> str:
 def first_image_id(image_keys: str) -> int | None:
     parsed = parse_image_keys(image_keys)
     return parsed[0] if parsed else None
-
-
-def message_ref_shard_key_from_timestamp(timestamp: int) -> str:
-    return datetime.fromtimestamp(timestamp, UTC).strftime(_MESSAGE_REF_SHARD_FMT)
-
-
-def message_ref_time_ctx(shard_key: str) -> datetime:
-    return datetime.strptime(shard_key, _MESSAGE_REF_SHARD_FMT).replace(tzinfo=UTC)
 
 
 def decode_group_ids(group_ids_json: str) -> tuple[int, ...]:
@@ -158,8 +149,6 @@ __all__ = [
     "first_image_id",
     "group_status_from_responses",
     "merge_image_keys",
-    "message_ref_shard_key_from_timestamp",
-    "message_ref_time_ctx",
     "normalize_search_text",
     "parse_image_keys",
     "representative_response",

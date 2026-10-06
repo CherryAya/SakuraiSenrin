@@ -9,7 +9,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from .instances import wordbank_message_ref_db, wordbank_message_route_db
-from .repo_shared import message_ref_time_ctx
 from .tables import WordbankMessageRef, WordbankMessageRoute
 from .types import (
     WordbankMessageRefKind,
@@ -26,9 +25,7 @@ class WordbankRepositoryMessageRefsMixin:
         message_id: str,
         shard_key: str,
     ) -> None:
-        async with wordbank_message_ref_db.write_session(
-            time_ctx=message_ref_time_ctx(shard_key)
-        ) as session:
+        async with wordbank_message_ref_db.write_session_for(shard_key) as session:
             await session.execute(
                 delete(WordbankMessageRef).where(
                     WordbankMessageRef.message_id == message_id
@@ -40,8 +37,8 @@ class WordbankRepositoryMessageRefsMixin:
         payload: WordbankMessageRefPayload,
     ) -> None:
         previous_route = await self.get_message_ref_route(payload["message_id"])
-        async with wordbank_message_ref_db.write_session(
-            time_ctx=message_ref_time_ctx(payload["shard_key"])
+        async with wordbank_message_ref_db.write_session_for(
+            payload["shard_key"],
         ) as session:
             stmt = sqlite_insert(WordbankMessageRef).values(payload)
             stmt = stmt.on_conflict_do_update(
@@ -125,8 +122,8 @@ class WordbankRepositoryMessageRefsMixin:
             return None
         if expected_kind is not None and route.ref_kind != expected_kind:
             return None
-        async with wordbank_message_ref_db.read_session(
-            time_ctx=message_ref_time_ctx(route.shard_key)
+        async with wordbank_message_ref_db.read_session_for(
+            route.shard_key,
         ) as session:
             row = (
                 await session.execute(
@@ -158,9 +155,7 @@ class WordbankRepositoryMessageRefsMixin:
         shard_keys = tuple({route.shard_key for route in route_rows})
         records: list[WordbankMessageRefRecord] = []
         for shard_key in shard_keys:
-            async with wordbank_message_ref_db.read_session(
-                time_ctx=message_ref_time_ctx(shard_key)
-            ) as session:
+            async with wordbank_message_ref_db.read_session_for(shard_key) as session:
                 stmt = select(WordbankMessageRef).order_by(
                     WordbankMessageRef.updated_at.desc(),
                     WordbankMessageRef.id.desc(),

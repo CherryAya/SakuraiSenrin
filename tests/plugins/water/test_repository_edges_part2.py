@@ -64,13 +64,13 @@ async def test_get_first_summary_record_date_uses_scope_filter(
                 return 20260201
             raise AssertionError(f"unexpected shard {self._session.shard_key}")
 
-    def _fake_summary_read_session(**kwargs: Any) -> _ShardSessionCtx:
-        shard_key = repo_module.arrow.get(kwargs["time_ctx"]).format("YYYY_MM")
+    def _fake_summary_read_session(moment: Any, **_kwargs: Any) -> _ShardSessionCtx:
+        shard_key = repo_module.water_summary.shard_key_for(moment)
         return _ShardSessionCtx(shard_key)
 
     monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
     monkeypatch.setattr(
-        repo_module.water_summary, "read_session", _fake_summary_read_session
+        repo_module.water_summary, "read_session_for", _fake_summary_read_session
     )
     monkeypatch.setattr(repo_module, "WaterGroupMatrixMapOps", FakeMapOps)
     monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
@@ -132,7 +132,7 @@ async def test_get_today_leaderboard_flushes_realtime_buffer_first(
 
     monkeypatch.setattr(repo_module, "get_current_time", lambda: 1_781_913_600)
     monkeypatch.setattr(repo_module.water_writer, "flush_now", flush_mock)
-    monkeypatch.setattr(repo_module.water_message, "read_session", _fake_session)
+    monkeypatch.setattr(repo_module.water_message, "read_session_for", _fake_session)
     monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
     monkeypatch.setattr(repo_module, "WaterMessageOps", FakeMessageOps)
     monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)
@@ -188,7 +188,7 @@ async def test_get_today_leaderboard_uses_shanghai_local_day(
 
     monkeypatch.setattr(repo_module, "get_current_time", lambda: 1_781_323_200)
     monkeypatch.setattr(repo_module.water_writer, "flush_now", AsyncMock())
-    monkeypatch.setattr(repo_module.water_message, "read_session", _fake_session)
+    monkeypatch.setattr(repo_module.water_message, "read_session_for", _fake_session)
     monkeypatch.setattr(repo_module.water_core_db, "session", _fake_session)
     monkeypatch.setattr(repo_module, "WaterMessageOps", FakeMessageOps)
     monkeypatch.setattr(repo_module, "WaterSummaryOps", FakeSummaryOps)

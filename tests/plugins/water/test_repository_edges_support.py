@@ -22,8 +22,9 @@ class _DummySessionCtx:
         return False
 
 
-def _fake_session(**kwargs: Any) -> _DummySessionCtx:
-    _ = kwargs
+def _fake_session(*args: Any, **kwargs: Any) -> _DummySessionCtx:
+    """同时兼容 store.session(commit=...) 与 alias.read_session_for(moment)。"""
+    _ = (args, kwargs)
     return _DummySessionCtx()
 
 

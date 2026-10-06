@@ -98,15 +98,10 @@ class WaterRepositoryAdminMixin:
 
         from src.lib.db.connectors import ColdPolicy
 
-        stats_per_shard = await water_message.map_reduce(
+        stats_per_shard, hourly_per_shard = await water_message.scan_pair(
             day_start.datetime,
             day_end.datetime,
             _stats_in_shard,
-            cold_policy=ColdPolicy.HYDRATE,
-        )
-        hourly_per_shard = await water_message.map_reduce(
-            day_start.datetime,
-            day_end.datetime,
             _hourly_in_shard,
             cold_policy=ColdPolicy.HYDRATE,
         )

@@ -63,7 +63,7 @@ class WaterRepositoryRanksMixin:
         yesterday_int = int(now.shift(days=-1).format("YYYYMMDD"))
 
         async def _fetch_today() -> Sequence[Row[tuple[str, int]]]:
-            async with water_message.read_session(time_ctx=now.datetime) as session:
+            async with water_message.read_session_for(now) as session:
                 return (
                     await _repo_module()
                     .WaterMessageOps(session)
@@ -109,7 +109,7 @@ class WaterRepositoryRanksMixin:
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 
-        async with water_message.read_session(time_ctx=now.datetime) as session:
+        async with water_message.read_session_for(now) as session:
             return (
                 await _repo_module()
                 .WaterMessageOps(session)
@@ -130,7 +130,7 @@ class WaterRepositoryRanksMixin:
         start_ts = now.floor("day").int_timestamp
         end_ts = now.ceil("day").int_timestamp
 
-        async with water_message.read_session(time_ctx=now.datetime) as session:
+        async with water_message.read_session_for(now) as session:
             raw_timestamps = (
                 await _repo_module()
                 .WaterMessageOps(session)

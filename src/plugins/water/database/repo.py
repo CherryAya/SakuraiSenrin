@@ -182,22 +182,20 @@ class WaterRepository(
         preserve_order: bool = True,
     ) -> list[WaterSummaryRecord]:
         month_keys = self._iter_month_keys(start_date, end_date)
-
-        async def _query_for_key(shard_key: str) -> list[WaterSummaryRecord]:
-            time_ctx = arrow.get(shard_key, "YYYY_MM").datetime
-            async with water_summary.read_session(
-                time_ctx=time_ctx,
-                cold_policy=ColdPolicy.HYDRATE,
-            ) as session:
-                return await WaterArchivedSummaryOps(session).get_summaries_in_window(
-                    start_date=start_date,
-                    end_date=end_date,
-                    group_ids=group_ids,
-                    user_id=user_id,
-                    preserve_order=preserve_order,
-                )
-
-        results = await asyncio.gather(*(_query_for_key(key) for key in month_keys))
+        if not month_keys:
+            return []
+        # 并发度由 AliasStore 收口，取代原先无上限的裸 gather
+        results = await water_summary.scan_shards(
+            month_keys,
+            lambda session: WaterArchivedSummaryOps(session).get_summaries_in_window(
+                start_date=start_date,
+                end_date=end_date,
+                group_ids=group_ids,
+                user_id=user_id,
+                preserve_order=preserve_order,
+            ),
+            cold_policy=ColdPolicy.HYDRATE,
+        )
         return self._merge_summary_records(*results)
 
     async def _get_archived_first_summary_record_date(
@@ -210,9 +208,8 @@ class WaterRepository(
             return None
         month_keys = self._iter_month_keys(19000101, end_date)
         for shard_key in month_keys:
-            time_ctx = arrow.get(shard_key, "YYYY_MM").datetime
-            async with water_summary.read_session(
-                time_ctx=time_ctx,
+            async with water_summary.read_session_for(
+                shard_key,
                 cold_policy=ColdPolicy.HYDRATE,
             ) as session:
                 first_date = await WaterArchivedSummaryOps(
@@ -660,9 +657,7 @@ class WaterRepository(
         await water_writer.add(ctx.to_write_payload())
 
     async def _save_immediate(self, ctx: WaterMessageContext) -> None:
-        dt = arrow.get(ctx.created_at).to("Asia/Shanghai").datetime
-        time_ctx = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        shard_key = time_ctx.strftime("%Y_%m")
+        shard_key = water_message.shard_key_for(ctx.created_at)
         trace_id = log_trace_event(
             event_name="save_message_immediate",
             source_kind="water_message",
@@ -676,7 +671,7 @@ class WaterRepository(
             batch_size=1,
         )
 
-        async with water_message.write_session(time_ctx=time_ctx) as session:
+        async with water_message.write_session_for(ctx.created_at) as session:
             await WaterMessageOps(session).bulk_insert_water_message([ctx.to_payload()])
         log_trace_event(
             event_name="save_message_immediate",
@@ -713,42 +708,40 @@ class WaterRepository(
     async def save_summary_batch(self, summaries: list[WaterSummaryPayload]) -> None:
         if not summaries:
             return
-        routed: dict[str, list[WaterSummaryPayload]] = defaultdict(list)
-        hot_payloads: list[WaterSummaryPayload] = []
-        for item in summaries:
-            route_ctx = (
-                arrow.get(str(item["record_date"]), "YYYYMMDD")
-                .to("Asia/Shanghai")
-                .floor("month")
-            )
-            routed[route_ctx.format("YYYY_MM")].append(item)
-            if self._is_hot_summary_date(int(item["record_date"])):
-                hot_payloads.append(item)
-
-        for route_key, chunk in routed.items():
+        hot_payloads: list[WaterSummaryPayload] = [
+            item
+            for item in summaries
+            if self._is_hot_summary_date(int(item["record_date"]))
+        ]
+        # 归档分片写入：按 record_date 自动路由，业务侧不再手算 route_key
+        archived_payloads = [
+            item
+            for item in summaries
+            if not self._is_hot_summary_date(int(item["record_date"]))
+        ]
+        if archived_payloads:
             trace_id = log_trace_event(
                 event_name="save_summary_batch",
                 source_kind="water_summary",
                 component="water.repo",
                 status="started",
-                summary=f"Saving water summary batch to shard {route_key}.",
-                shard_key=route_key,
-                batch_size=len(chunk),
-                record_date=int(chunk[0]["record_date"]),
+                summary="Saving water summary batch to archived shards.",
+                batch_size=len(archived_payloads),
+                record_date=int(archived_payloads[0]["record_date"]),
             )
-            route_ctx = arrow.get(route_key, "YYYY_MM").datetime
-            async with water_summary.write_session(time_ctx=route_ctx) as session:
-                await WaterArchivedSummaryOps(session).bulk_upsert_summary(chunk)
+            await water_summary.write_batch(
+                archived_payloads,
+                method=WaterArchivedSummaryOps.bulk_upsert_summary,
+            )
             log_trace_event(
                 event_name="save_summary_batch",
                 source_kind="water_summary",
                 component="water.repo",
                 status="success",
-                summary=f"Saved water summary batch to shard {route_key}.",
+                summary="Saved water summary batch to archived shards.",
                 trace_id=trace_id,
-                shard_key=route_key,
-                batch_size=len(chunk),
-                record_date=int(chunk[0]["record_date"]),
+                batch_size=len(archived_payloads),
+                record_date=int(archived_payloads[0]["record_date"]),
             )
 
         if hot_payloads:
@@ -780,24 +773,12 @@ class WaterRepository(
     ) -> int:
         if not messages:
             return 0
-
-        routed: dict[str, list[WaterMessagePayload]] = defaultdict(list)
-        for item in messages:
-            route_ctx = (
-                arrow.get(str(item["record_date"]), "YYYYMMDD")
-                .to("Asia/Shanghai")
-                .floor("month")
-            )
-            routed[route_ctx.format("YYYY_MM")].append(item)
-
-        inserted = 0
-        for route_key, chunk in routed.items():
-            route_ctx = arrow.get(route_key, "YYYY_MM").datetime
-            async with water_message.write_session(time_ctx=route_ctx) as session:
-                inserted += await WaterMessageOps(session).bulk_insert_water_message(
-                    chunk
-                )
-        return inserted
+        # 按 record_date 自动路由到当月分片，业务侧不再手算 route_key
+        return await water_message.write_batch(
+            messages,
+            method=WaterMessageOps.bulk_insert_water_message,
+            time_field="record_date",
+        )
 
     async def reset_runtime_data(self, *, preserve_seasons: bool = True) -> None:
         async with water_core_db.session(commit=True) as session:
@@ -846,7 +827,5 @@ class WaterRepository(
         self._group_matrix_cache.clear()
         self._group_matrix_locks.clear()
         self._merge_state_locks.clear()
-        water_message._initialized_shards.clear()
-        water_message._manifest = None
-        water_summary._initialized_shards.clear()
-        water_summary._manifest = None
+        water_message.reset_runtime_state()
+        water_summary.reset_runtime_state()

@@ -734,15 +734,10 @@ class WaterRepositoryReportsMixin:
                 start_ts, end_ts
             )
 
-        stats_per_shard = await water_message.map_reduce(
+        stats_per_shard, hourly_per_shard = await water_message.scan_pair(
             now.datetime,
             now.datetime,
             _stats_in_shard,
-            cold_policy=ColdPolicy.HYDRATE,
-        )
-        hourly_per_shard = await water_message.map_reduce(
-            now.datetime,
-            now.datetime,
             _hourly_in_shard,
             cold_policy=ColdPolicy.HYDRATE,
         )

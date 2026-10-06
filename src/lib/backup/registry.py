@@ -5,6 +5,7 @@ from __future__ import annotations
 from importlib import import_module
 from pathlib import Path
 import sys
+from typing import Any
 
 from src.lib.db.connectors import BaseDB
 from src.logger import logger
@@ -14,11 +15,17 @@ _registered_database_ids: set[int] = set()
 _attempted_modules: set[str] = set()
 
 
-def register_backup_database(db: BaseDB) -> None:
-    db_id = id(db)
+def register_backup_database(db: BaseDB | Any) -> None:
+    """注册备份源。
+
+    接受 BaseDB，也接受 AliasStore（内部解包为其物理 SegmentStore），
+    这样 instances.py 只需把逻辑名注册一次。
+    """
+    physical = getattr(db, "store", db)
+    db_id = id(physical)
     if db_id in _registered_database_ids:
         return
-    _registered_databases.append(db)
+    _registered_databases.append(physical)
     _registered_database_ids.add(db_id)
 
 
