@@ -274,18 +274,6 @@ def _state_message_shape(state: Mapping[str, Any], key: str) -> MessageShape | N
     return value if isinstance(value, MessageShape) else None
 
 
-def _is_truthy_state_flag(state: T_State, key: str) -> bool:
-    return bool(state.get(key, False))
-
-
-def _enter_study_weight_step(state: T_State) -> None:
-    state["study_weight_pending"] = True
-
-
-def _leave_study_weight_step(state: T_State) -> None:
-    state.pop("study_weight_pending", None)
-
-
 def _contains_study_pair_separator(text: str) -> bool:
     return any(sep in text for sep in ("=>", "->", "回答", "回复"))
 
@@ -565,7 +553,7 @@ async def _record_study_response(
     state["study_response_shape"] = shape
     state["study_submission_source_event"] = event
     state["study_weight_after_preloaded_trigger"] = True
-    _enter_study_weight_step(state)
+    state["study_weight_pending"] = True
     _register_study_checkpoint(
         state,
         event,
@@ -588,7 +576,7 @@ async def _record_study_forward_response_choice(
 ) -> None:
     from src.plugins.wordbank.services import wordbank_media_service
 
-    if not _is_truthy_state_flag(state, "study_forward_response_pending"):
+    if not state.get("study_forward_response_pending"):
         return
     choice = event.message.extract_plain_text().strip().lower()
     state_keys = _study_state_keys(state)
@@ -640,7 +628,7 @@ async def _record_study_forward_response_choice(
         state["study_response_shape"] = payload.whole_shape
         state["study_submission_source_event"] = response_event
         state["study_weight_after_preloaded_trigger"] = True
-        _enter_study_weight_step(state)
+        state["study_weight_pending"] = True
         state.pop("study_forward_response_pending", None)
         state.pop("study_forward_response_event", None)
         state.pop("study_forward_split_shapes", None)
@@ -696,7 +684,7 @@ async def _record_study_forward_response_choice(
         state["study_forward_split_shapes"] = payload.split_shapes
         state["study_submission_source_event"] = response_event
         state["study_weight_after_preloaded_trigger"] = True
-        _enter_study_weight_step(state)
+        state["study_weight_pending"] = True
         state.pop("study_forward_response_pending", None)
         state.pop("study_forward_response_event", None)
         first_shape = payload.split_shapes[0] if payload.split_shapes else None
@@ -744,7 +732,7 @@ async def _record_study_weight_and_finish(
         )
         return
     clear_interaction_errors(state)
-    _leave_study_weight_step(state)
+    state.pop("study_weight_pending", None)
     _register_study_checkpoint(
         state,
         event,
@@ -1024,7 +1012,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
 
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    if _is_truthy_state_flag(state, "study_mode_prefilled"):
+    if state.get("study_mode_prefilled"):
         state.pop("study_mode_prefilled", None)
         return
     text = event.message.extract_plain_text()
@@ -1042,7 +1030,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
     state["study_trig_mode"] = text
     mode_keep_keys = ("study_trigger_preloaded",)
     mode_cleanup_keys = STUDY_RECALL_PENDING_KEYS
-    if _is_truthy_state_flag(state, "study_trigger_preloaded"):
+    if state.get("study_trigger_preloaded"):
         mode_keep_keys = (
             "study_trigger_preloaded",
             "study_trigger_shape",
@@ -1070,7 +1058,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
 
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    if _is_truthy_state_flag(state, "study_group_prefilled"):
+    if state.get("study_group_prefilled"):
         state.pop("study_group_prefilled", None)
         return
     text = event.message.extract_plain_text()
@@ -1091,7 +1079,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
         "study_trigger_preloaded",
     )
     cleanup_keys = STUDY_RECALL_PENDING_KEYS
-    if _is_truthy_state_flag(state, "study_trigger_preloaded"):
+    if state.get("study_trigger_preloaded"):
         keep_keys = (
             "study_trig_mode",
             "study_trigger_preloaded",
@@ -1105,7 +1093,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
         snapshot=_copy_study_state(state, keep_keys=keep_keys),
         cleanup_keys=cleanup_keys,
     )
-    if _is_truthy_state_flag(state, "study_trigger_preloaded"):
+    if state.get("study_trigger_preloaded"):
         state["study_response_after_preloaded_trigger"] = True
         await pause_with_message(
             matcher,
@@ -1127,11 +1115,11 @@ def _study_locale(state: T_State) -> LocaleCode:
 async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    if _is_truthy_state_flag(state, "study_weight_pending"):
+    if state.get("study_weight_pending"):
         return
-    if _is_truthy_state_flag(state, "study_weight_after_preloaded_trigger"):
+    if state.get("study_weight_after_preloaded_trigger"):
         return
-    if _is_truthy_state_flag(state, "study_response_after_preloaded_trigger"):
+    if state.get("study_response_after_preloaded_trigger"):
         state.pop("study_response_after_preloaded_trigger", None)
         await _record_study_response(bot, matcher, event, state, locale)
         return
@@ -1142,9 +1130,9 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
 async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    if _is_truthy_state_flag(state, "study_weight_pending"):
+    if state.get("study_weight_pending"):
         return
-    if _is_truthy_state_flag(state, "study_forward_response_pending"):
+    if state.get("study_forward_response_pending"):
         await _record_study_forward_response_choice(
             bot,
             matcher,
@@ -1162,7 +1150,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
 async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    if not _is_truthy_state_flag(state, "study_weight_pending"):
+    if not state.get("study_weight_pending"):
         return
     await _record_study_weight_and_finish(bot, matcher, event, state, locale)
 
