@@ -45,36 +45,6 @@ class SearchCardResponseRenderItem:
     blocks: tuple[SearchCardContentBlock, ...]
 
 
-def safe_field_label(locale: LocaleCode, key: str) -> str:
-    labels = {
-        "scope": {
-            "zh-CN": "范围",
-            "lzh": "範圍",
-            "x-meme": "范围",
-        },
-        "probability": {
-            "zh-CN": "概率",
-            "lzh": "概率",
-            "x-meme": "概率",
-        },
-        "weight": {
-            "zh-CN": "权重",
-            "lzh": "權重",
-            "x-meme": "权重",
-        },
-    }
-    locale_labels = labels.get(key, {})
-    return locale_labels.get(locale, locale_labels.get("zh-CN", key))
-
-
-def safe_meta_label(locale: LocaleCode) -> str:
-    return {
-        "zh-CN": "配置",
-        "lzh": "配置",
-        "x-meme": "配置",
-    }.get(locale, "配置")
-
-
 def build_search_card_footer_text(year: int) -> str:
     return f"© 2020-{year} SakuraiSenrin"
 

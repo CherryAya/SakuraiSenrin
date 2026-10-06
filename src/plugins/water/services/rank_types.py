@@ -122,10 +122,33 @@ class WaterRankQuerySpec:
         )
 
     def normalized_command(self, locale: LocaleCode = "zh-CN") -> str:
-        return (
-            f"#水王 {subject_label(self.subject, locale)} "
-            f"{scope_label(self.scope, locale)} {period_label(self.period, locale)}"
+        return rank_command_suggestion(
+            self.subject,
+            self.scope,
+            self.period,
+            locale=locale,
         )
+
+
+def rank_command_suggestion(
+    subject: WaterRankSubject,
+    scope: WaterRankScope,
+    period: WaterRankPeriod | None,
+    *,
+    locale: LocaleCode = "zh-CN",
+) -> str:
+    """Build a copy-pasteable rank command example for the current locale."""
+    params = {
+        "subject": subject_label(subject, locale),
+        "scope": scope_label(scope, locale),
+        "period": period_label(period, locale) if period is not None else "",
+    }
+    key: MessageKey = (
+        "water.command.rank_suggestion"
+        if period is not None
+        else "water.command.rank_suggestion_period"
+    )
+    return tr(locale, key, **params)
 
 
 def _build_rank_shortcuts() -> tuple[WaterRankShortcut, ...]:

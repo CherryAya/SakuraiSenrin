@@ -35,6 +35,7 @@ from src.plugins.water.services.rank_types import (
     is_rank_period_allowed,
     is_valid_rank_combo,
     period_label,
+    rank_command_suggestion,
     scope_label,
     subject_label,
     suggest_scope_for_subject,
@@ -421,9 +422,11 @@ class WaterQueryRouter:
         lines = []
         if scope is not None and not is_valid_rank_combo(subject, scope):
             suggested_scope = suggest_scope_for_subject(subject)
-            suggestion = (
-                f"#水王 {subject_label(subject, locale)} "
-                f"{scope_label(suggested_scope, locale)} <时间>"
+            suggestion = rank_command_suggestion(
+                subject,
+                suggested_scope,
+                None,
+                locale=locale,
             )
             lines.append(
                 tr(
@@ -462,13 +465,11 @@ class WaterQueryRouter:
         period: WaterRankPeriod | None,
     ) -> str:
         suggested_scope = suggest_scope_for_subject(subject)
-        suggestion = (
-            f"#水王 {subject_label(subject, locale)} "
-            f"{scope_label(suggested_scope, locale)} "
-            f"{period_label(period, locale)}"
-            if period is not None
-            else f"#水王 {subject_label(subject, locale)} "
-            f"{scope_label(suggested_scope, locale)} <时间>"
+        suggestion = rank_command_suggestion(
+            subject,
+            suggested_scope,
+            period,
+            locale=locale,
         )
         return tr(
             locale,
@@ -874,7 +875,11 @@ class WaterQueryRouter:
             return tr(
                 locale,
                 "water.query.rank.error.shortcut_with_args",
-                command=f"#{alias}" if alias else "#今日水王",
+                command=(
+                    f"#{alias}"
+                    if alias
+                    else tr(locale, "water.command.today_rank_fallback")
+                ),
             )
         if head == "invalid_period":
             return tr(
@@ -886,10 +891,11 @@ class WaterQueryRouter:
             )
         if head == "invalid_combo" and spec is not None:
             suggested_scope = suggest_scope_for_subject(spec.subject)
-            suggestion = (
-                f"#水王 {subject_label(spec.subject, locale)} "
-                f"{scope_label(suggested_scope, locale)} "
-                f"{period_label(spec.period, locale)}"
+            suggestion = rank_command_suggestion(
+                spec.subject,
+                suggested_scope,
+                spec.period,
+                locale=locale,
             )
             return tr(
                 locale,
