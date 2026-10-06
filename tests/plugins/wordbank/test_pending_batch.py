@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 from nonebot.adapters.onebot.v11 import Bot
 import pytest
 
+from src.lib.i18n.runtime import tr
 from src.lib.message_plan import render_message_plan_input
 from src.plugins.wordbank import pending_batch as pending_batch_module
 from src.plugins.wordbank.database.types import WordbankSearchItem
@@ -137,8 +138,12 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
     rendered_detail = render_message_plan_input(plan.messages[1])
     assert "待审核词条" in str(summary_message)
     assert "回复我发送：通过 1 2 5-8、拒绝 全部" in str(summary_message)
-    assert "后续节点按“序号”字段对应批量处理编号。" in str(summary_message)
-    assert "本页数量: 1" in str(summary_message)
+    assert tr("zh-CN", "wordbank.approval.pending_batch_index_hint") in str(
+        summary_message
+    )
+    assert tr("zh-CN", "wordbank.approval.pending_page_count", count=1) in str(
+        summary_message
+    )
     assert "序号: 1" in str(rendered_detail)
     assert "状态: 待审核" in str(rendered_detail)
     assert "触发词:" in str(rendered_detail)

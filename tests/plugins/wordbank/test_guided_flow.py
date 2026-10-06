@@ -30,7 +30,7 @@ if nonebot.get_plugin("wordbank") is None:
 from src.plugins.wordbank import guided_flow as guided_flow_module
 from src.plugins.wordbank.forward_batch import ResponseInputPayload
 from src.plugins.wordbank.guided_flow import (
-    PRIVATE_SCOPE_PROMPT,
+    PRIVATE_SCOPE_PROMPT_KEY,
     copy_guided_state,
     finish_guided_add,
     guided_response_state_keys,
@@ -187,7 +187,18 @@ def test_guided_scope_prompt_uses_private_variant_in_private_chat() -> None:
         "zh-CN",
         "wordbank.guided.add.scope_prompt",
     )
-    assert guided_scope_prompt(locale="zh-CN", is_group=False) == PRIVATE_SCOPE_PROMPT
+    assert guided_scope_prompt(locale="zh-CN", is_group=False) == tr(
+        "zh-CN",
+        PRIVATE_SCOPE_PROMPT_KEY,
+    )
+    assert guided_scope_prompt(locale="lzh", is_group=False) == tr(
+        "lzh",
+        PRIVATE_SCOPE_PROMPT_KEY,
+    )
+    assert guided_scope_prompt(locale="lzh", is_group=False) != guided_scope_prompt(
+        locale="zh-CN",
+        is_group=False,
+    )
 
 
 def test_guided_response_prompt_mentions_response_only_placeholders() -> None:

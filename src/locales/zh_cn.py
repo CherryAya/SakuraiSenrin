@@ -1038,6 +1038,17 @@ CATALOG: Final[dict[str, str]] = {
         "4. 仅私聊\n"
         "输入 revoke / recall / exit 可取消本次操作。"
     ),
+    ("wordbank.guided.add.scope_prompt_private"): (
+        "请选择生效范围：\n"
+        "1. 仅自己（默认）\n"
+        "2. 全局响应\n"
+        "输入 revoke / recall / exit 可取消本次操作。"
+    ),
+    ("wordbank.approval.pending_batch_index_hint"): (
+        "后续节点按“序号”字段对应批量处理编号。"
+    ),
+    ("wordbank.approval.pending_page_count"): ("本页数量: {count}"),
+    ("wordbank.approval.pending_filter"): ("筛选: {keyword}"),
     ("wordbank.guided.add.advanced_prompt"): (
         "是否需要高级选项？发送 n 跳过；需要请直接输入参数，例如 -s 本群 -p 0.5 -w 3 -r 管理 --call 60:0:3\n"
         "也兼容英文值，例如 current_group、admin。\n"

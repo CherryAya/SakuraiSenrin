@@ -43,11 +43,11 @@ def _build_pending_batch_summary(
     lines = [
         tr(locale, "wordbank.approval.pending_title", page=page),
         tr(locale, "wordbank.approval.pending_batch_instruction"),
-        "后续节点按“序号”字段对应批量处理编号。",
-        f"本页数量: {len(items)}",
+        tr(locale, "wordbank.approval.pending_batch_index_hint"),
+        tr(locale, "wordbank.approval.pending_page_count", count=len(items)),
     ]
     if keyword:
-        lines.append(f"筛选: {keyword}")
+        lines.append(tr(locale, "wordbank.approval.pending_filter", keyword=keyword))
     if has_more:
         lines.append(
             tr(

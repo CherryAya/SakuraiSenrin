@@ -104,12 +104,7 @@ WORDBANK_GUIDED_RECALL_PENDING_KEYS = (
     "wordbank_guided_search_group_ids",
     "wordbank_guided_search_delete_target_map",
 )
-PRIVATE_SCOPE_PROMPT = (
-    "请选择生效范围：\n"
-    "1. 仅自己（默认）\n"
-    "2. 全局响应\n"
-    "输入 revoke / recall / exit 可取消本次操作。"
-)
+PRIVATE_SCOPE_PROMPT_KEY = "wordbank.guided.add.scope_prompt_private"
 
 
 def _resolve_guided_bot(bot: Bot | None, matcher: Matcher) -> Bot | None:
@@ -245,8 +240,7 @@ def guided_prompt_for_step(
 def guided_scope_prompt(*, locale: LocaleCode, is_group: bool) -> str:
     if is_group:
         return tr(locale, "wordbank.guided.add.scope_prompt")
-    _ = locale
-    return PRIVATE_SCOPE_PROMPT
+    return tr(locale, PRIVATE_SCOPE_PROMPT_KEY)
 
 
 def register_guided_checkpoint(
