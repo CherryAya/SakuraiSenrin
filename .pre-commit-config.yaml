@@ -20,3 +20,9 @@ repos:
         language: system
         types: [python]
         entry: python3 scripts/check_matcher_bot_injection.py
+      - id: hardcoded-user-strings-check
+        name: "hardcoded-user-strings-check"
+        description: 用户可见文案必须走 i18n，不允许硬编码中文字面量
+        language: system
+        files: ^src/(?!database/|scripts/|locales/)
+        entry: python3 scripts/check_hardcoded_user_strings.py
