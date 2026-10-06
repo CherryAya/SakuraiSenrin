@@ -261,7 +261,7 @@ async def build_pending_items_plan_entry(
         blocks.extend(
             await build_pending_item_blocks(
                 entry_id=response_item_id,
-                scope=format_scope_label(item),
+                scope=format_scope_label(item, locale=locale),
                 trigger_text=item.trigger_text,
                 response_text=item.response_text,
                 created_by=item.created_by,
@@ -318,13 +318,14 @@ async def build_pending_item_blocks(
     for line in _build_pending_item_header_lines(
         entry_id=entry_id,
         index=index,
+        locale=locale,
     ):
         blocks.append(TextBlock(f"{leading}{line}"))
         leading = "\n"
 
     await _append_pending_shape_field_blocks(
         blocks,
-        label="触发词:",
+        label=tr(locale, "wordbank.field.trigger_label"),
         text=trigger_text,
         shape=trigger_shape,
         media_service=media_service,
@@ -333,7 +334,7 @@ async def build_pending_item_blocks(
     )
     await _append_pending_shape_field_blocks(
         blocks,
-        label="响应词:",
+        label=tr(locale, "wordbank.field.response_label"),
         text=response_text,
         shape=response_shape,
         media_service=media_service,
@@ -350,6 +351,7 @@ async def build_pending_item_blocks(
         rule=rule,
         scope=scope,
         weight=weight,
+        locale=locale,
     ):
         blocks.append(TextBlock(f"{leading}{line}"))
         leading = "\n"
@@ -413,11 +415,23 @@ def _build_pending_item_header_lines(
     *,
     entry_id: int,
     index: int | None,
+    locale: LocaleCode,
 ) -> tuple[str, ...]:
     lines: list[str] = []
     if index is not None:
-        lines.append(f"序号: {index}")
-    lines.extend((f"ID: {entry_id}", f"状态: {format_status_label('pending')}"))
+        lines.append(
+            tr(locale, "wordbank.field.index", value=index),
+        )
+    lines.extend(
+        (
+            tr(locale, "wordbank.field.entry_id", value=entry_id),
+            tr(
+                locale,
+                "wordbank.field.status",
+                value=format_status_label("pending", locale=locale),
+            ),
+        )
+    )
     return tuple(lines)
 
 
@@ -429,13 +443,30 @@ def _build_pending_item_footer_lines(
     rule: dict[str, object] | None,
     scope: str,
     weight: int,
+    locale: LocaleCode,
 ) -> tuple[str, ...]:
     return (
-        f"创建者: {created_by or '-'}",
-        f"提交时间: {format_timestamp(created_at)}",
-        f"范围: {scope}",
-        f"权重: {weight}",
-        f"规则: {format_rule_summary(probability=probability, rule=rule)}",
+        tr(
+            locale,
+            "wordbank.field.created_by",
+            value=created_by or "-",
+        ),
+        tr(
+            locale,
+            "wordbank.field.created_at",
+            value=format_timestamp(created_at),
+        ),
+        tr(locale, "wordbank.field.scope", value=scope),
+        tr(locale, "wordbank.field.weight", value=weight),
+        tr(
+            locale,
+            "wordbank.field.rule",
+            value=format_rule_summary(
+                probability=probability,
+                rule=rule,
+                locale=locale,
+            ),
+        ),
     )
 
 
@@ -495,10 +526,10 @@ async def build_reply_detail_plan_entry(
                 locale,
                 "wordbank.reply.info_header",
                 entry_id=selected.response_item_id,
-                # status=format_status_label(selected.status),
+                # status=format_status_label(selected.status, locale=locale),
                 # enabled=_format_enabled(selected.enabled, locale),
                 # deleted_at=str(selected.deleted_at) if selected.deleted_at else "0",
-                scope=format_scope_label(selected),
+                scope=format_scope_label(selected, locale=locale),
                 group_id=selected.group_id or "-",
                 created_by=selected.created_by,
                 probability=f"{detail.probability:g}",
@@ -659,7 +690,7 @@ async def build_group_detail_page_plan_entry(
                 locale,
                 "wordbank.group.page_header",
                 group_id=detail.trigger_group_id,
-                status=format_status_label(detail.status),
+                status=format_status_label(detail.status, locale=locale),
                 created_by=detail.created_by,
                 probability=f"{detail.probability:g}",
                 response_count=len(detail.responses),
@@ -694,9 +725,9 @@ async def build_group_detail_page_plan_entry(
                     locale,
                     "wordbank.group.response_header",
                     response_item_id=response.response_item_id,
-                    status=format_status_label(response.status),
+                    status=format_status_label(response.status, locale=locale),
                     enabled=_format_enabled(response.enabled, locale),
-                    scope=format_scope_label(response),
+                    scope=format_scope_label(response, locale=locale),
                     weight=response.weight,
                     rule=_format_rule_text(response.rule),
                 )
@@ -713,14 +744,21 @@ async def build_group_detail_page_plan_entry(
             ).blocks
         )
         blocks.append(
-            TextBlock("\n" + format_response_delete_hint(response.response_item_id))
+            TextBlock(
+                "\n"
+                + format_response_delete_hint(
+                    response.response_item_id,
+                    locale=locale,
+                )
+            )
         )
     batch_delete_hint = format_batch_delete_hint(
         tuple(
             response.response_item_id
             for response in responses
             if response.response_item_id > 0
-        )
+        ),
+        locale=locale,
     )
     if batch_delete_hint:
         blocks.append(TextBlock("\n" + batch_delete_hint))

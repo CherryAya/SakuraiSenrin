@@ -453,6 +453,7 @@ class GroupDetailCardRenderer:
         self._draw_response_delete_hint(
             draw,
             response,
+            locale=locale,
             x=inner_x + CARD_TEXT_INSET,
             y=body_y,
         )
@@ -645,10 +646,14 @@ class GroupDetailCardRenderer:
         draw: ImageDraw.ImageDraw,
         response: WordbankResponseItemDetail,
         *,
+        locale: LocaleCode,
         x: int,
         y: int,
     ) -> int:
-        hint = format_response_delete_hint(response.response_item_id)
+        hint = format_response_delete_hint(
+            response.response_item_id,
+            locale=locale,
+        )
         box_padding_x = 16
         box_padding_y = 12
         lines = wrap_text(
@@ -685,10 +690,14 @@ class GroupDetailCardRenderer:
     def _response_delete_hint_height(
         self,
         response: WordbankResponseItemDetail,
+        *,
+        locale: LocaleCode,
     ) -> int:
-        _ = response
         text_height = self._wrapped_text_height(
-            format_response_delete_hint(response.response_item_id),
+            format_response_delete_hint(
+                response.response_item_id,
+                locale=locale,
+            ),
             self.item_meta_font,
             max_width=RESPONSE_TEXT_WIDTH - 32,
             max_lines=3,
@@ -724,7 +733,7 @@ class GroupDetailCardRenderer:
         total += CARD_FLOW_GAP
         total += self._response_meta_height(response, locale=locale)
         total += 14
-        total += self._response_delete_hint_height(response)
+        total += self._response_delete_hint_height(response, locale=locale)
         return total
 
     def _draw_shape_flow(
@@ -850,7 +859,8 @@ class GroupDetailCardRenderer:
                 response.response_item_id
                 for response in page_data.responses
                 if response.response_item_id > 0
-            )
+            ),
+            locale=locale,
         )
         draw.text(
             centered_text_origin(

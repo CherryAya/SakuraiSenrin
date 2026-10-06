@@ -113,27 +113,89 @@ def _event_submit_timestamp(event: MessageEvent, created_at: int) -> str:
     return format_timestamp(created_at or fallback)
 
 
-def _trigger_summary(result: WordbankAddResult) -> str:
+def _field(locale: LocaleCode, key: MessageKey, value: object) -> str:
+    return tr(locale, key, value=value)
+
+
+def _trigger_summary(result: WordbankAddResult, *, locale: LocaleCode) -> str:
     return format_notice_content_raw_text(
         result.trigger_text,
         shape=result.trigger_shape,
+        locale=locale,
     )
 
 
-def _response_summary(result: WordbankAddResult) -> str:
+def _response_summary(result: WordbankAddResult, *, locale: LocaleCode) -> str:
     return format_notice_content_raw_text(
         result.response_text,
         shape=result.response_shape,
         response_mode=result.response_mode,
         forward_node_count=result.forward_node_count,
+        locale=locale,
     )
 
 
-def _rule_summary(result: WordbankAddResult) -> str:
+def _rule_summary(result: WordbankAddResult, *, locale: LocaleCode) -> str:
     return format_rule_summary(
         probability=result.probability,
         rule=result.rule,
+        locale=locale,
     )
+
+
+def _pending_single_lines(
+    result: WordbankAddResult,
+    *,
+    event: MessageEvent,
+    locale: LocaleCode,
+    with_index: int | None = None,
+) -> list[str]:
+    lines: list[str] = []
+    if with_index is not None:
+        lines.append(_field(locale, "wordbank.field.index", with_index))
+    lines.extend(
+        (
+            _field(locale, "wordbank.field.entry_id", result.response_item_id),
+            _field(
+                locale,
+                "wordbank.field.status",
+                format_status_label(result.status, locale=locale),
+            ),
+            _field(
+                locale,
+                "wordbank.field.trigger",
+                _trigger_summary(result, locale=locale),
+            ),
+            _field(
+                locale,
+                "wordbank.field.response",
+                _response_summary(result, locale=locale),
+            ),
+            _field(
+                locale,
+                "wordbank.field.created_by",
+                result.created_by or str(event.user_id),
+            ),
+            _field(
+                locale,
+                "wordbank.field.created_at",
+                _event_submit_timestamp(event, result.created_at),
+            ),
+            _field(
+                locale,
+                "wordbank.field.scope",
+                format_scope_label(result, locale=locale),
+            ),
+            _field(locale, "wordbank.field.weight", result.weight),
+            _field(locale, "wordbank.field.rule", _rule_summary(result, locale=locale)),
+            _field(
+                locale,
+                "wordbank.field.response_mode",
+                response_mode_label(result, locale=locale),
+            ),
+        )
+    )
+    return lines
 
 
 def format_pending_approval_notice(
@@ -143,25 +205,23 @@ def format_pending_approval_notice(
     locale: LocaleCode,
     split_detail: bool = False,
 ) -> str:
-    _ = split_detail, locale
+    _ = split_detail
     lines = [
-        "新增词条待审核",
-        "回复 y 可通过",
-        "回复 n 可驳回",
-        f"主动命令: #通过词条 {result.response_item_id}",
-        f"主动命令: #驳回词条 {result.response_item_id}",
-        "查看列表: #待审核词条",
+        tr(locale, "wordbank.approval.pending_lead"),
+        *tr(locale, "wordbank.approval.pending_reply_hint").split("\n"),
+        tr(
+            locale,
+            "wordbank.approval.pending_command_approve",
+            entry_id=result.response_item_id,
+        ),
+        tr(
+            locale,
+            "wordbank.approval.pending_command_reject",
+            entry_id=result.response_item_id,
+        ),
+        tr(locale, "wordbank.approval.pending_command_list"),
         "",
-        f"ID: {result.response_item_id}",
-        f"状态: {format_status_label(result.status)}",
-        f"触发词: {_trigger_summary(result)}",
-        f"响应词: {_response_summary(result)}",
-        f"创建者: {result.created_by or str(event.user_id)}",
-        f"提交时间: {_event_submit_timestamp(event, result.created_at)}",
-        f"范围: {format_scope_label(result)}",
-        f"权重: {result.weight}",
-        f"规则: {_rule_summary(result)}",
-        f"响应模式: {response_mode_label(result)}",
+        *_pending_single_lines(result, event=event, locale=locale),
     ]
     return "\n".join(lines)
 
@@ -173,21 +233,45 @@ def format_pending_batch_approval_notice(
     locale: LocaleCode,
     split_detail: bool = False,
 ) -> str:
-    _ = split_detail, locale
+    _ = split_detail
     pending_results = _pending_results(batch)
     first_result = pending_results[0]
     lines = [
         tr(locale, "wordbank.approval.pending_title", page=1),
         tr(locale, "wordbank.approval.pending_batch_instruction"),
         "",
-        f"触发词: {_trigger_summary(first_result)}",
-        f"创建者: {first_result.created_by or str(event.user_id)}",
-        f"提交时间: {_event_submit_timestamp(event, first_result.created_at)}",
-        f"范围: {format_scope_label(first_result)}",
-        f"权重: {first_result.weight}",
-        f"规则: {_rule_summary(first_result)}",
-        f"响应模式: {response_mode_label(first_result)}",
-        f"待审数量: {len(pending_results)}",
+        _field(
+            locale,
+            "wordbank.field.trigger",
+            _trigger_summary(first_result, locale=locale),
+        ),
+        _field(
+            locale,
+            "wordbank.field.created_by",
+            first_result.created_by or str(event.user_id),
+        ),
+        _field(
+            locale,
+            "wordbank.field.created_at",
+            _event_submit_timestamp(event, first_result.created_at),
+        ),
+        _field(
+            locale,
+            "wordbank.field.scope",
+            format_scope_label(first_result, locale=locale),
+        ),
+        _field(locale, "wordbank.field.weight", first_result.weight),
+        _field(
+            locale,
+            "wordbank.field.rule",
+            _rule_summary(first_result, locale=locale),
+        ),
+        _field(
+            locale,
+            "wordbank.field.response_mode",
+            response_mode_label(first_result, locale=locale),
+        ),
+        _field(locale, "wordbank.field.pending_count", len(pending_results)),
     ]
     return "\n".join(lines)
 
@@ -305,6 +389,7 @@ def _append_response_mode_line(
     entries: tuple[MessagePlanInput, ...],
     *,
     result: WordbankAddResult,
+    locale: LocaleCode,
 ) -> tuple[MessagePlanInput, ...]:
     if not entries:
         return entries
@@ -313,10 +398,27 @@ def _append_response_mode_line(
         MessagePlanEntry(
             blocks=(
                 *first_entry.blocks,
-                TextBlock(f"\n响应模式: {response_mode_label(result)}"),
+                TextBlock(
+                    "\n"
+                    + _field(
+                        locale,
+                        "wordbank.field.response_mode",
+                        response_mode_label(result, locale=locale),
+                    )
+                ),
             ),
         ),
         *entries[1:],
+    )
+
+
+def _notice_intro_text(result: WordbankAddResult, *, locale: LocaleCode) -> str:
+    _ = result
+    return "\n".join(
+        (
+            tr(locale, "wordbank.approval.pending_lead"),
+            *tr(locale, "wordbank.approval.pending_reply_hint").split("\n"),
+        )
     )
 
 
@@ -337,15 +439,10 @@ async def _build_pending_approval_delivery_plan(
                         media_service=media_service,
                         prefix="\n\n",
                     ),
-                    intro_text="\n".join(
-                        (
-                            "新增词条待审核",
-                            "回复 y 可通过",
-                            "回复 n 可驳回",
-                        )
-                    ),
+                    intro_text=_notice_intro_text(result, locale=locale),
                 ),
                 result=result,
+                locale=locale,
             )
         )
     else:
@@ -353,23 +450,14 @@ async def _build_pending_approval_delivery_plan(
             build_text_plan_entry(
                 "\n".join(
                     (
-                        "新增词条待审核",
-                        "回复 y 可通过",
-                        "回复 n 可驳回",
+                        tr(locale, "wordbank.approval.pending_lead"),
+                        *tr(locale, "wordbank.approval.pending_reply_hint").split("\n"),
                         "",
-                        f"ID: {result.response_item_id}",
-                        f"状态: {format_status_label(result.status)}",
-                        f"触发词: {_trigger_summary(result)}",
-                        f"响应词: {_response_summary(result)}",
-                        f"创建者: {result.created_by or str(event.user_id)}",
-                        (
-                            "提交时间: "
-                            f"{_event_submit_timestamp(event, result.created_at)}"
+                        *_pending_single_lines(
+                            result,
+                            event=event,
+                            locale=locale,
                         ),
-                        f"范围: {format_scope_label(result)}",
-                        f"权重: {result.weight}",
-                        f"规则: {_rule_summary(result)}",
-                        f"响应模式: {response_mode_label(result)}",
                     )
                 )
             )
@@ -415,21 +503,11 @@ async def _build_pending_batch_approval_delivery_plan(
             messages.append(
                 build_text_plan_entry(
                     "\n".join(
-                        (
-                            f"序号: {index}",
-                            f"ID: {result.response_item_id}",
-                            f"状态: {format_status_label(result.status)}",
-                            f"触发词: {_trigger_summary(result)}",
-                            f"响应词: {_response_summary(result)}",
-                            f"创建者: {result.created_by or str(event.user_id)}",
-                            (
-                                "提交时间: "
-                                f"{_event_submit_timestamp(event, result.created_at)}"
-                            ),
-                            f"范围: {format_scope_label(result)}",
-                            f"权重: {result.weight}",
-                            f"规则: {_rule_summary(result)}",
-                            f"响应模式: {response_mode_label(result)}",
+                        _pending_single_lines(
+                            result,
+                            event=event,
+                            locale=locale,
+                            with_index=index,
                         )
                     )
                 )
@@ -496,8 +574,11 @@ async def _collect_rendered_shape_fields(
         if not _should_render_shape(shape):
             continue
         assert shape is not None
-        label = (
-            "触发词:" if label_key == "wordbank.approval.trigger_label" else "响应词:"
+        label = tr(
+            locale,
+            "wordbank.field.trigger_label"
+            if label_key == "wordbank.approval.trigger_label"
+            else "wordbank.field.response_label",
         )
         fields.append(
             _RenderedShapeField(

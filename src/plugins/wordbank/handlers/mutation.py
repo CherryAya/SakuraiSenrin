@@ -93,37 +93,62 @@ def format_entry_history(
             locale,
             "wordbank.reply.history",
             entry_id=selected.response_item_id,
-            # status=format_status_label(selected.status),
+            # status=format_status_label(selected.status, locale=locale),
             # enabled=_format_enabled(selected.enabled, locale),
             # deleted_at=_format_deleted_at(selected.deleted_at),
-            scope=format_scope_label(selected),
+            scope=format_scope_label(selected, locale=locale),
             probability=f"{detail.probability:g}",
             weight=selected.weight,
         ),
-        "审批历史:",
-        *_format_review_history_lines(selected.review_history),
+        tr(locale, "wordbank.reply.history.review_history"),
+        *_format_review_history_lines(selected.review_history, locale=locale),
     ]
     if selected.approved_by:
-        lines.append(f"当前审批人: {selected.approved_by}")
+        lines.append(
+            tr(
+                locale,
+                "wordbank.reply.history.approver",
+                approved_by=selected.approved_by,
+            )
+        )
     return "\n".join(lines)
 
 
 def _format_review_history_lines(
     review_history: tuple[WordbankReviewHistoryEntry, ...],
+    *,
+    locale: LocaleCode,
 ) -> tuple[str, ...]:
     if not review_history:
-        return ("- 暂无审批历史记录。",)
+        return (tr(locale, "wordbank.reply.history.review_history_empty"),)
     lines: list[str] = []
     for index, entry in enumerate(review_history, start=1):
-        action_label = "通过" if entry.action == "approve" else "拒绝"
+        action_label = review_action_label(entry.action, locale=locale)
+        actor_label = entry.actor_user_id or tr(
+            locale,
+            "wordbank.reply.history.reviewer_fallback",
+        )
         line = (
             f"{index}. {format_timestamp(entry.created_at)} "
-            f"{entry.actor_user_id or '管理员'} {action_label}"
+            f"{actor_label} {action_label}"
         )
         if entry.overwritten and entry.previous_status:
-            line += f"（覆盖此前{format_status_label(entry.previous_status)}）"
+            line += tr(
+                locale,
+                "wordbank.reply.history.overwritten_status",
+                status=format_status_label(entry.previous_status, locale=locale),
+            )
         lines.append(line)
     return tuple(lines)
+
+
+def review_action_label(action: str, *, locale: LocaleCode) -> str:
+    return tr(
+        locale,
+        "wordbank.review.action.approve"
+        if action == "approve"
+        else "wordbank.review.action.reject",
+    )
 
 
 async def build_repeat_review_prompt(
@@ -150,15 +175,28 @@ async def build_repeat_review_prompt(
     selected = detail.selected_response
     if selected.deleted_at != 0 or selected.status not in {"approved", "rejected"}:
         return None
-    requested_label = "通过" if requested_action == "approve" else "拒绝"
+    requested_label = review_action_label(requested_action, locale=locale)
     return "\n".join(
         (
-            f"词条 #{selected.response_item_id} 已经被审批过。",
+            tr(
+                locale,
+                "wordbank.review.overwrite.lead",
+                entry_id=selected.response_item_id,
+            ),
             format_entry_history(detail, locale=locale),
             "",
-            "继续审批将覆盖此前结果。",
-            f"如需继续{requested_label}，请继续发送：{continue_hint}",
-            f"如需改为另一结果，请继续发送：{alternative_hint}",
+            tr(locale, "wordbank.review.overwrite.continue_hint"),
+            tr(
+                locale,
+                "wordbank.review.overwrite.continue",
+                action=requested_label,
+                hint=continue_hint,
+            ),
+            tr(
+                locale,
+                "wordbank.review.overwrite.alternative",
+                hint=alternative_hint,
+            ),
         )
     )
 
@@ -215,8 +253,16 @@ async def handle_approve_result(
             response_item_id=response_item_id,
             locale=locale,
             requested_action="approve",
-            continue_hint=f"通过词条 {response_item_id} 覆盖",
-            alternative_hint=f"拒绝词条 {response_item_id} 覆盖",
+            continue_hint=tr(
+                locale,
+                "wordbank.reviewer_overwrite.approve_hint",
+                entry_id=response_item_id,
+            ),
+            alternative_hint=tr(
+                locale,
+                "wordbank.reviewer_overwrite.reject_hint",
+                entry_id=response_item_id,
+            ),
         )
         if prompt is not None:
             return ApprovalMutationOutcome(
@@ -283,8 +329,16 @@ async def handle_reject_result(
             response_item_id=response_item_id,
             locale=locale,
             requested_action="reject",
-            continue_hint=f"拒绝词条 {response_item_id} 覆盖",
-            alternative_hint=f"通过词条 {response_item_id} 覆盖",
+            continue_hint=tr(
+                locale,
+                "wordbank.reviewer_overwrite.reject_hint",
+                entry_id=response_item_id,
+            ),
+            alternative_hint=tr(
+                locale,
+                "wordbank.reviewer_overwrite.approve_hint",
+                entry_id=response_item_id,
+            ),
         )
         if prompt is not None:
             return ApprovalMutationOutcome(

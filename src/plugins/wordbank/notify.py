@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from nonebot.adapters.onebot.v11.bot import Bot
 
+from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_delivery import DeliveryTarget
 from src.lib.message_plan import (
@@ -97,38 +98,79 @@ def _build_creator_notice_message(
     *,
     action: str,
     reviewer_id: str,
+    locale: LocaleCode,
 ) -> str:
-    reviewer = reviewer_id or "管理员"
-    if action == "approve":
-        return f"管理员 {reviewer} 已通过该词条。"
-    return f"管理员 {reviewer} 已拒绝该词条。"
+    reviewer = reviewer_id or tr(
+        locale,
+        "wordbank.creator_notice.reviewer_fallback",
+    )
+    return tr(
+        locale,
+        "wordbank.creator_notice.single.approved"
+        if action == "approve"
+        else "wordbank.creator_notice.single.rejected",
+        reviewer=reviewer,
+    )
 
 
 def _build_creator_batch_notice_message(
     *,
     notices: tuple[tuple[int, str], ...],
     reviewer_id: str,
+    locale: LocaleCode,
 ) -> str:
-    reviewer = reviewer_id or "管理员"
+    reviewer = reviewer_id or tr(
+        locale,
+        "wordbank.creator_notice.reviewer_fallback",
+    )
     approved_ids = [
         response_item_id for response_item_id, action in notices if action == "approve"
     ]
     rejected_ids = [
         response_item_id for response_item_id, action in notices if action == "reject"
     ]
+    approved_entries = ", ".join(f"#{item_id}" for item_id in approved_ids)
+    rejected_entries = ", ".join(f"#{item_id}" for item_id in rejected_ids)
     if approved_ids and not rejected_ids:
-        entries = ", ".join(f"#{item_id}" for item_id in approved_ids)
-        return f"管理员 {reviewer} 已批量通过 {len(approved_ids)} 条词条：{entries}。"
+        return tr(
+            locale,
+            "wordbank.creator_notice.batch.approved",
+            reviewer=reviewer,
+            count=len(approved_ids),
+            entries=approved_entries,
+        )
     if rejected_ids and not approved_ids:
-        entries = ", ".join(f"#{item_id}" for item_id in rejected_ids)
-        return f"管理员 {reviewer} 已批量拒绝 {len(rejected_ids)} 条词条：{entries}。"
+        return tr(
+            locale,
+            "wordbank.creator_notice.batch.rejected",
+            reviewer=reviewer,
+            count=len(rejected_ids),
+            entries=rejected_entries,
+        )
     lines = [
-        f"管理员 {reviewer} 已处理 {len(notices)} 条词条。",
+        tr(
+            locale,
+            "wordbank.creator_notice.batch.mixed",
+            reviewer=reviewer,
+            count=len(notices),
+        ),
     ]
     if approved_ids:
-        lines.append("通过: " + ", ".join(f"#{item_id}" for item_id in approved_ids))
+        lines.append(
+            tr(
+                locale,
+                "wordbank.creator_notice.batch.approved_line",
+                entries=approved_entries,
+            )
+        )
     if rejected_ids:
-        lines.append("拒绝: " + ", ".join(f"#{item_id}" for item_id in rejected_ids))
+        lines.append(
+            tr(
+                locale,
+                "wordbank.creator_notice.batch.rejected_line",
+                entries=rejected_entries,
+            )
+        )
     return "\n".join(lines)
 
 
@@ -139,7 +181,6 @@ async def notify_creator_review_results(
     locale: LocaleCode,
     reviewer_id: str = "",
 ) -> None:
-    _ = locale
     if not notices:
         return
     contexts = await _find_creator_submission_contexts(
@@ -175,6 +216,7 @@ async def notify_creator_review_results(
                 text=_build_creator_batch_notice_message(
                     notices=tuple(context_notices),
                     reviewer_id=reviewer_id,
+                    locale=locale,
                 )
             )
         )
@@ -233,6 +275,7 @@ async def notify_creator_review_result(
             or _build_creator_notice_message(
                 action=action,
                 reviewer_id=reviewer_id,
+                locale=locale,
             )
         )
     )

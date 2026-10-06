@@ -14,6 +14,7 @@ from time import monotonic
 from nonebot.adapters.onebot.v11.bot import Bot
 
 from src.database.core.consts import Permission
+from src.lib.display import fallback_group_name
 from src.lib.types import UNSET
 from src.lib.utils.common import get_current_time
 from src.logger import logger
@@ -109,9 +110,7 @@ async def sync_groups_from_api(bot: Bot) -> None:
 
 
 def _fallback_group_name(group_id: str) -> str:
-    if not group_id:
-        return "群聊"
-    return f"群聊_{group_id[-4:]}"
+    return fallback_group_name(group_id)
 
 
 async def _resolve_sync_group_name(bot: Bot, group_id: str) -> str:

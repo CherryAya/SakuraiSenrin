@@ -24,11 +24,12 @@ nonebot.init(
     command_start={"#", "/"},
     command_sep={"."},
 )
-sys.modules.pop("src.plugins.notice.invite", None)
-sys.modules.pop("src.plugins.notice.group", None)
-sys.modules.pop("src.plugins.notice.user", None)
-sys.modules.pop("src.plugins.notice", None)
-nonebot.load_plugin("src.plugins.notice")
+if nonebot.get_plugin("notice") is None:
+    sys.modules.pop("src.plugins.notice.invite", None)
+    sys.modules.pop("src.plugins.notice.group", None)
+    sys.modules.pop("src.plugins.notice.user", None)
+    sys.modules.pop("src.plugins.notice", None)
+    nonebot.load_plugin("src.plugins.notice")
 
 notice_invite_plugin = importlib.import_module("src.plugins.notice.invite")
 

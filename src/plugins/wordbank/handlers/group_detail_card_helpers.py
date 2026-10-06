@@ -23,6 +23,7 @@ from src.plugins.wordbank.message_model import (
     format_placeholder_summary_text,
 )
 from src.plugins.wordbank.services.presentation import (
+    ROLE_LABEL_KEYS,
     format_scope_label,
     format_status_label,
 )
@@ -39,25 +40,28 @@ def format_enabled(enabled: int, locale: LocaleCode) -> str:
     )
 
 
-def format_rule_text(rule: dict[str, Any]) -> str:
+def format_rule_text(rule: dict[str, Any], *, locale: LocaleCode) -> str:
     parts: list[str] = []
     role = str(rule.get("roles", "") or "").strip()
-    if role:
-        role_label = {
-            "owner": "群主",
-            "admin": "管理",
-            "member": "成员",
-            "any": "不限",
-        }.get(role, role)
-        if role_label != "不限":
-            parts.append(f"角色 {role_label}")
+    if role and role != "any":
+        role_key = ROLE_LABEL_KEYS.get(role)
+        role_label = tr(locale, role_key) if role_key else role
+        parts.append(tr(locale, "wordbank.rule.role", role=role_label))
     call_count = rule.get("call_count")
     if isinstance(call_count, dict):
         window_seconds = int(call_count.get("window_seconds", 0))
         min_count = int(call_count.get("min", 0))
         max_count = int(call_count.get("max", 0))
         if window_seconds > 0:
-            parts.append(f"频率 {window_seconds}s/{min_count}-{max_count or '不限'}")
+            parts.append(
+                tr(
+                    locale,
+                    "wordbank.rule.call_count",
+                    window=window_seconds,
+                    min_count=min_count,
+                    max_count=max_count or tr(locale, "wordbank.rule.role.any"),
+                )
+            )
     return " | ".join(parts) if parts else "-"
 
 
@@ -121,7 +125,7 @@ def summary_chips(
             locale,
             "wordbank.group.card.summary",
             group_id=detail.trigger_group_id,
-            status=format_status_label(detail.status),
+            status=format_status_label(detail.status, locale=locale),
             created_by=detail.created_by,
         ),
         tr(
@@ -237,32 +241,45 @@ def response_meta_text(
         locale,
         "wordbank.group.card.response_label",
         response_item_id=response.response_item_id,
-        status=format_status_label(response.status),
+        status=format_status_label(response.status, locale=locale),
         enabled=format_enabled(response.enabled, locale),
-        scope=format_scope_label(response),
+        scope=format_scope_label(response, locale=locale),
         weight=response.weight,
     )
     rule_line = (
         f"{tr(locale, 'wordbank.group.card.rule_label')}: "
-        f"{format_rule_text(response.rule)}"
+        f"{format_rule_text(response.rule, locale=locale)}"
     )
     return f"{meta_line}  ·  {rule_line}"
 
 
-def format_response_delete_hint(response_item_id: int) -> str:
-    return (
-        f"删除命令: 回复本图发送“删除 {response_item_id}” "
-        f"或发送“#删除词条 {response_item_id}”（仅超管 / 创建者）"
+def format_response_delete_hint(
+    response_item_id: int,
+    *,
+    locale: LocaleCode,
+) -> str:
+    return tr(
+        locale,
+        "wordbank.group.card.delete_hint",
+        entry_id=response_item_id,
     )
 
 
-def format_batch_delete_hint(response_item_ids: tuple[int, ...]) -> str:
+def format_batch_delete_hint(
+    response_item_ids: tuple[int, ...],
+    *,
+    locale: LocaleCode,
+) -> str:
     if len(response_item_ids) < 2:
         return ""
     sample_ids = " ".join(
         str(response_item_id) for response_item_id in response_item_ids
     )
-    return f"批量删除示例: 回复本图发送“删除 {sample_ids}”"
+    return tr(
+        locale,
+        "wordbank.group.card.batch_delete_hint",
+        sample_ids=sample_ids,
+    )
 
 
 def paste_rounded_image(

@@ -42,6 +42,7 @@ from src.repositories import group_repo
 from src.services.info import resolve_group_name
 from src.services.member_sync_admin import (
     build_sync_members_all_running_summary,
+    build_sync_members_completion_summary,
     get_active_sync_members_all_state,
     run_sync_members_for_all_groups,
 )
@@ -213,7 +214,10 @@ async def _(
                 bot,
                 matcher,
                 event=event,
-                message=build_sync_members_all_running_summary(active_state),
+                message=build_sync_members_all_running_summary(
+                    active_state,
+                    locale=locale,
+                ),
                 source_kind="admin_group",
             )
             return
@@ -221,40 +225,32 @@ async def _(
         await deliver_message_plan(
             bot,
             plan=DeliveryPlan(
-                messages=(
-                    "已开始执行群成员全量同步。\n"
-                    "后续进度与最终汇总会通过管理员通知汇报。",
-                ),
+                messages=(tr(locale, "admin.sync_members.started"),),
                 source_kind="admin_group",
                 allow_asset_reuse=False,
             ),
             event=event,
         )
         try:
-            state = await run_sync_members_for_all_groups(bot)
+            state = await run_sync_members_for_all_groups(bot, locale=locale)
         except Exception as exc:
             await finish_with_message(
                 bot,
                 matcher,
                 event=event,
-                message=(
-                    "群成员全量同步任务失败。\n"
-                    "详细进度与失败汇总请查看管理员通知。\n"
-                    f"原因：{type(exc).__name__}: {exc}"
+                message=tr(
+                    locale,
+                    "admin.sync_members.failed",
+                    reason=f"{type(exc).__name__}: {exc}",
                 ),
                 source_kind="admin_group",
             )
             return
+        summary = build_sync_members_completion_summary(state, locale=locale)
         await deliver_admin_notification_plan(
             bot,
             plan=DeliveryPlan(
-                messages=(
-                    "群成员全量同步已结束。\n"
-                    f"总群数：{state.total_groups}\n"
-                    f"成功：{state.succeeded}\n"
-                    f"失败：{state.failed}\n"
-                    f"跳过：{state.skipped}",
-                ),
+                messages=(summary,),
                 source_kind="admin_group_sync_members_all_finish",
                 allow_asset_reuse=False,
             ),
@@ -263,13 +259,7 @@ async def _(
             bot,
             matcher,
             event=event,
-            message=(
-                "群成员全量同步已结束。\n"
-                f"总群数：{state.total_groups}\n"
-                f"成功：{state.succeeded}\n"
-                f"失败：{state.failed}\n"
-                f"跳过：{state.skipped}"
-            ),
+            message=summary,
             source_kind="admin_group",
         )
         return

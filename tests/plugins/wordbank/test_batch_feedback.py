@@ -7,6 +7,7 @@ from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 from nonebot.matcher import Matcher
 import pytest
 
+from src.lib import long_task as long_task_module
 from src.lib.message_plan import (
     MessagePlanEntry,
     RawMessageBlock,
@@ -128,13 +129,23 @@ async def test_send_batch_add_feedback_emits_long_task_prompt_for_slow_detail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     build_message = AsyncMock(return_value=MessagePlanEntry.from_message("详情节点"))
+    # 等价 mock：把长任务阈值睡眠换成单次让出事件循环，避免真等 800ms。
+    real_sleep = asyncio.sleep
+
+    async def _fake_sleep(_seconds: float) -> None:
+        await real_sleep(0)
+
+    sleep_mock = AsyncMock(side_effect=_fake_sleep)
+    monkeypatch.setattr(long_task_module.asyncio, "sleep", sleep_mock)
 
     async def _deliver_plan(*args: object, **kwargs: object) -> object:
         plan = kwargs["plan"]
         assert isinstance(plan, batch_feedback_module.DeliveryPlan)
         if str(plan.messages[0]).startswith("已完成合并转发响应导入，正在整理详情"):
             return SimpleNamespace(results=({"message_id": 1},))
-        await asyncio.sleep(0.85)
+        # 多让出几轮事件循环，模拟详情投递比阈值更"慢"，触发长任务提示。
+        for _ in range(5):
+            await real_sleep(0)
         return SimpleNamespace(results=({"message_id": 2},))
 
     matcher = cast(Matcher, SimpleNamespace(send=AsyncMock()))

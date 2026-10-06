@@ -46,6 +46,8 @@ CATALOG: Final[dict[str, str]] = {
     ("alert.tip.empty_details"): ("无详细说明"),
     ("avatar.default.user"): ("人"),
     ("avatar.default.group"): ("群"),
+    ("common.group_name_fallback"): ("群聊_{suffix}"),
+    ("common.group_name_fallback_plain"): ("群聊"),
     ("enum.trigger.command"): ("指令触发"),
     ("enum.trigger.passive"): ("被动触发"),
     ("enum.trigger.event"): ("事件触发"),
@@ -388,7 +390,7 @@ CATALOG: Final[dict[str, str]] = {
         "本群额度已用 {group_used}/{limit} 次，剩余 {group_remaining} 次。"
     ),
     ("self_unban.group.success_fallback"): (
-        "已解除群 {group_name}（{group_id}）封禁，当前状态回退为{status}。\n"
+        "已解除群 {group_name}（{group_id}）封禁，当前状态为{status}。\n"
         "由于不知道封禁前是什么状态，就直接恢复到默认值啦！\n"
         "你的额度已用 {user_used}/{limit} 次，剩余 {user_remaining} 次。\n"
         "本群额度已用 {group_used}/{limit} 次，剩余 {group_remaining} 次。"
@@ -511,9 +513,7 @@ CATALOG: Final[dict[str, str]] = {
     ("picsearch.result.unknown_similarity"): ("未知"),
     ("picsearch.result.unknown_source"): ("未提供"),
     ("plugin.study.name"): ("词库模块（传统版）"),
-    ("plugin.study.description"): (
-        "词库快捷学习入口。"
-    ),
+    ("plugin.study.description"): ("词库快捷学习入口。"),
     ("plugin.study.docs"): (
         "#study a|m t|f 触发词 响应词\n"
         "#study 触发词 => 响应词\n"
@@ -542,7 +542,7 @@ CATALOG: Final[dict[str, str]] = {
         "  不带参数发送 wordbank add / wordbank.add / 添加词条 会进入四步引导\n"
         "  流程: 触发词 -> 响应词 -> 生效范围 -> 高级选项\n"
         "  触发词步骤支持文本或图片消息；响应词步骤支持文本、图片或合并转发消息，文本+图片会保存为图文回复\n"
-        "  添加后状态为待审核，审核通过前不会参与被动匹配；高级选项和图片场景细节请查看 #help 词库模块\n"
+        "  添加后的词条需要进行审核；高级选项和图片场景细节请查看 #help 词库模块\n"
         "  可选: -s 本群|全局|自己|私聊  (也兼容 current_group|all_groups|self|private_only)\n"
         "  可选: -p 0.0-1.0  -w 1-5  -r 群主|管理|成员  (也兼容 owner|admin|member)\n"
         "  可选: --call window:min:max  (window 最多 3 个月)\n"
@@ -608,7 +608,7 @@ CATALOG: Final[dict[str, str]] = {
         "该词条已可直接使用。"
     ),
     ("wordbank.add.processing_with_media"): (
-        "已收到图片，正在入库并生成词条，预计需要 5 到 8 秒，请稍等。"
+        "正在下载图片，预计需要 5 到 8 秒，请稍等。"
     ),
     ("wordbank.view.processing"): ("正在整理词库内容，请稍等。"),
     ("wordbank.search.empty"): ("第 {page} 页没有找到匹配词条。"),
@@ -658,9 +658,7 @@ CATALOG: Final[dict[str, str]] = {
     ("wordbank.restore.not_found"): (
         "未找到可恢复的词条 #{entry_id}，或你没有操作权限。"
     ),
-    ("wordbank.approval.permission_denied"): (
-        "需要当前群管理员/群主或超级用户才能审核词条。"
-    ),
+    ("wordbank.approval.permission_denied"): ("只有超管才能审核词条。"),
     ("wordbank.approval.notice"): (
         "新增词条待审核\n"
         "ID: {entry_id}\n"
@@ -685,10 +683,8 @@ CATALOG: Final[dict[str, str]] = {
         "\n"
         "请回复本条消息发送 y 进行通过；发送 n 进行驳回。"
     ),
-    ("wordbank.approval.approved"): (
-        "词条 #{entry_id} 已通过审核，稍后会参与被动匹配。"
-    ),
-    ("wordbank.approval.rejected"): ("词条 #{entry_id} 已拒绝，不会参与被动匹配。"),
+    ("wordbank.approval.approved"): ("词条 #{entry_id} 已通过审核。"),
+    ("wordbank.approval.rejected"): ("词条 #{entry_id} 已拒绝"),
     ("wordbank.approval.not_found"): (
         "未找到待审核词条 #{entry_id}，或你没有审核权限。"
     ),
@@ -710,10 +706,40 @@ CATALOG: Final[dict[str, str]] = {
         "主动命令：#待审核词条\n"
         "按 ID 处理：#通过词条 <ID> / #驳回词条 <ID>"
     ),
+    ("wordbank.approval.pending_lead"): ("新增词条待审核"),
+    ("wordbank.approval.pending_lead_task"): ("待审核词条"),
+    ("wordbank.approval.pending_reply_hint"): ("回复 y 可通过\n回复 n 可驳回"),
+    ("wordbank.approval.pending_command_approve"): ("主动命令: #通过词条 {entry_id}"),
+    ("wordbank.approval.pending_command_reject"): ("主动命令: #驳回词条 {entry_id}"),
+    ("wordbank.approval.pending_command_list"): ("查看列表: #待审核词条"),
     ("wordbank.approval.pending_detail_hint"): (
         "详细触发词 / 响应词见下一条合并转发。"
     ),
     ("wordbank.approval.pending_forward_nickname"): ("待审核词条"),
+    ("wordbank.review.overwrite.lead"): ("词条 #{entry_id} 已经被审批过。"),
+    ("wordbank.review.overwrite.continue_hint"): ("继续审批将覆盖此前结果。"),
+    ("wordbank.review.overwrite.continue"): ("如需继续{action}，请继续发送：{hint}"),
+    ("wordbank.review.overwrite.alternative"): ("如需改为另一结果，请继续发送：{hint}"),
+    ("wordbank.review.action.approve"): ("通过"),
+    ("wordbank.review.action.reject"): ("拒绝"),
+    ("wordbank.reviewer_overwrite.approve_hint"): ("通过词条 {entry_id} 覆盖"),
+    ("wordbank.reviewer_overwrite.reject_hint"): ("拒绝词条 {entry_id} 覆盖"),
+    ("wordbank.reviewer_overwrite.reply_approve_hint"): ("通过 覆盖"),
+    ("wordbank.reviewer_overwrite.reply_reject_hint"): ("拒绝 覆盖"),
+    ("wordbank.creator_notice.reviewer_fallback"): ("管理员"),
+    ("wordbank.creator_notice.single.approved"): ("管理员 {reviewer} 已通过该词条。"),
+    ("wordbank.creator_notice.single.rejected"): ("管理员 {reviewer} 已拒绝该词条。"),
+    ("wordbank.creator_notice.batch.approved"): (
+        "管理员 {reviewer} 已批量通过 {count} 条词条：{entries}。"
+    ),
+    ("wordbank.creator_notice.batch.rejected"): (
+        "管理员 {reviewer} 已批量拒绝 {count} 条词条：{entries}。"
+    ),
+    ("wordbank.creator_notice.batch.mixed"): (
+        "管理员 {reviewer} 已处理 {count} 条词条。"
+    ),
+    ("wordbank.creator_notice.batch.approved_line"): ("通过: {entries}"),
+    ("wordbank.creator_notice.batch.rejected_line"): ("拒绝: {entries}"),
     ("wordbank.approval.trigger_label"): ("触发:"),
     ("wordbank.approval.response_label"): ("响应:"),
     ("wordbank.approval.batch.title.approve"): ("批量通过完成"),
@@ -755,6 +781,10 @@ CATALOG: Final[dict[str, str]] = {
     ("wordbank.batch_add.unknown_error"): ("未知错误"),
     ("wordbank.batch_add.forward_nickname"): ("词库"),
     ("wordbank.batch_add.study_forward_nickname"): ("学习词库"),
+    ("wordbank.batch.index_seq"): ("序号: {index}"),
+    ("wordbank.batch.pending_followup"): ("后续节点按“序号”字段对应批量处理编号。"),
+    ("wordbank.batch.count"): ("本页数量: {count}"),
+    ("wordbank.batch.filter_keyword"): ("筛选: {keyword}"),
     ("wordbank.reply.target_missing"): ("请回复一条词库自动回复后再使用该快捷命令。"),
     ("wordbank.reply.target_not_found"): ("未找到消息 {message_id} 对应的词条记录。"),
     ("wordbank.reply.view_target_not_found"): (
@@ -764,10 +794,13 @@ CATALOG: Final[dict[str, str]] = {
         "未找到词条 #{entry_id} 的详情，可能已被清理。"
     ),
     ("wordbank.reply.group_command_invalid"): (
-        "回复搜索结果请输入 详情<group_id> 或 详情 <group_id>；回复组详情请输入 下一页 / 上一页 / 第N页。"
+        "删除命令格式不正确，请发送“删除 词条ID [词条ID...]”；回复搜索结果请使用详情<group_id> 或 下一页/上一页/第N页。"
     ),
     ("wordbank.reply.group_not_in_search_page"): (
         "当前搜索结果页里没有 trigger group #{group_id}，请按卡片上的组号展开。"
+    ),
+    ("wordbank.reply.group_detail_delete_out_of_page"): (
+        "当前详情页没有这个词条 ID，请发送图中标注的删除命令。"
     ),
     ("wordbank.reply.info_header"): (
         "词条详情 #{entry_id}\n"
@@ -804,7 +837,20 @@ CATALOG: Final[dict[str, str]] = {
         "触发概率: {probability}\n"
         "响应权重: {weight}\n"
     ),
+    ("wordbank.reply.history.review_history"): ("审批历史:"),
+    ("wordbank.reply.history.review_history_empty"): ("- 暂无审批历史记录。"),
+    ("wordbank.reply.history.reviewer_fallback"): ("管理员"),
+    ("wordbank.reply.history.approver"): ("当前审批人: {approved_by}"),
+    ("wordbank.reply.history.overwritten_status"): ("（覆盖此前{status}）"),
     ("wordbank.group.not_found"): ("未找到 trigger group #{group_id}。"),
+    ("wordbank.group.summary_chips.active_count"): ("当前有效"),
+    ("wordbank.group.summary_chips.group_id"): ("#组{group_id}"),
+    ("wordbank.group.card.batch_delete_hint"): (
+        "批量删除示例: 回复本图发送“删除 {sample_ids}”"
+    ),
+    ("wordbank.group.card.delete_hint"): (
+        "删除命令: 回复本图发送“删除 {entry_id}” 或发送“#删除词条 {entry_id}”（仅超管 / 创建者）"
+    ),
     ("wordbank.group.card.title"): ("词条组详情"),
     ("wordbank.group.card.page"): ("第 {page} / {total_pages} 页"),
     ("wordbank.group.card.summary"): (
@@ -939,7 +985,7 @@ CATALOG: Final[dict[str, str]] = {
         "👉 [@触发者] -> @触发者\n"
         "👉 [账号] -> 触发者账号\n"
         "👉 [昵称] -> 触发者昵称\n"
-        "👉 [群名片] -> 触发者群名片，没有时回退为昵称\n"
+        "👉 [群名片] -> 触发者群名片，为空则使用昵称\n"
         "👉 [头像] -> 触发者头像\n"
         "👉 [xx] -> 昵称(群名片)[账号]，并附带触发者头像\n"
         "👉 [戳触发者] -> 戳一戳触发者\n"
@@ -1009,7 +1055,7 @@ CATALOG: Final[dict[str, str]] = {
         "👉 [@触发者] -> @触发者\n"
         "👉 [账号] -> 触发者账号\n"
         "👉 [昵称] -> 触发者昵称\n"
-        "👉 [群名片] -> 触发者群名片，没有时回退为昵称\n"
+        "👉 [群名片] -> 触发者群名片，为空则使用昵称\n"
         "👉 [头像] -> 触发者头像\n"
         "👉 [xx] -> 昵称(群名片)[账号]，并附带触发者头像\n"
         "👉 [戳触发者] -> 戳一戳触发者\n"
@@ -1109,6 +1155,59 @@ CATALOG: Final[dict[str, str]] = {
     ("wordbank.mutation.trigger_probability_updated"): (
         "trigger group #{group_id} 的触发概率已更新为 {probability}。"
     ),
+    ("wordbank.field.entry_id"): ("ID: {value}"),
+    ("wordbank.field.index"): ("序号: {value}"),
+    ("wordbank.field.status"): ("状态: {value}"),
+    ("wordbank.field.trigger"): ("触发词: {value}"),
+    ("wordbank.field.response"): ("响应词: {value}"),
+    ("wordbank.field.trigger_label"): ("触发词:"),
+    ("wordbank.field.response_label"): ("响应词:"),
+    ("wordbank.field.created_by"): ("创建者: {value}"),
+    ("wordbank.field.created_at"): ("提交时间: {value}"),
+    ("wordbank.field.scope"): ("范围: {value}"),
+    ("wordbank.field.weight"): ("权重: {value}"),
+    ("wordbank.field.rule"): ("规则: {value}"),
+    ("wordbank.field.response_mode"): ("响应模式: {value}"),
+    ("wordbank.field.pending_count"): ("待审数量: {value}"),
+    ("wordbank.field.active_command"): ("主动命令: {value}"),
+    ("wordbank.field.view_list"): ("查看列表: {value}"),
+    ("wordbank.status.pending"): ("待审核"),
+    ("wordbank.status.approved"): ("已通过"),
+    ("wordbank.status.rejected"): ("已拒绝"),
+    ("wordbank.scope.current_group"): ("当前群({group_id})"),
+    ("wordbank.scope.all_groups"): ("所有群"),
+    ("wordbank.scope.self"): ("仅自己:{created_by}"),
+    ("wordbank.scope.private_only"): ("仅私聊"),
+    ("wordbank.scope.self_in_current_group"): ("自己({created_by})+当前群({group_id})"),
+    ("wordbank.response_mode.forward_whole"): ("一条合并转发消息"),
+    ("wordbank.response_mode.forward_whole_count"): ("一条合并转发消息（{count} 条）"),
+    ("wordbank.response_mode.forward_split"): ("拆分导入"),
+    ("wordbank.response_mode.forward_split_count"): ("拆分导入（{count} 条）"),
+    ("wordbank.response_mode.normal"): ("普通响应"),
+    ("wordbank.notice_content.image_single"): ("图片消息"),
+    ("wordbank.notice_content.image_multi"): ("{count} 张图片"),
+    ("wordbank.rule.probability"): ("概率 {value}"),
+    ("wordbank.rule.role"): ("角色 {role}"),
+    ("wordbank.rule.call_count"): ("频率 {window}s/{min_count}-{max_count}"),
+    ("wordbank.rule.role.owner"): ("群主"),
+    ("wordbank.rule.role.admin"): ("管理"),
+    ("wordbank.rule.role.member"): ("成员"),
+    ("wordbank.rule.role.any"): ("不限"),
+    ("wordbank.at.sender"): ("艾特触发者"),
+    ("wordbank.at.user"): ("艾特某位用户"),
+    ("wordbank.event.at"): ("艾特消息"),
+    ("wordbank.event.mention"): ("提及消息"),
+    ("wordbank.event.poke"): ("戳一戳事件"),
+    ("wordbank.event.join"): ("新人加入事件"),
+    ("wordbank.event.bot_join"): ("机器人进群事件"),
+    ("wordbank.event.member_join"): ("其他成员进群事件"),
+    ("wordbank.event.group_join"): ("入群事件"),
+    ("wordbank.event.group_increase"): ("群成员增加事件"),
+    ("wordbank.event.leave"): ("退群事件"),
+    ("wordbank.event.bot_leave"): ("机器人退群事件"),
+    ("wordbank.event.member_leave"): ("其他成员退群事件"),
+    ("wordbank.event.group_leave"): ("离群事件"),
+    ("wordbank.event.group_decrease"): ("群成员减少事件"),
     ("wordbank.mutation.trigger_content_updated"): (
         "trigger group #{group_id} 的触发词已更新，该组响应已重新进入待审核。"
     ),
@@ -1146,6 +1245,53 @@ CATALOG: Final[dict[str, str]] = {
     ("wordbank.error.call_non_negative"): ("调用次数上下限不能小于 0"),
     ("wordbank.error.call_min_lte_max"): ("调用次数最小值不能大于最大值"),
     ("wordbank.error.rule_unknown"): ("规则包含不支持字段: {fields}"),
+    ("water.report_push.title"): ("水王日报推送进度"),
+    ("water.report_push.task_id"): ("任务 ID：{value}"),
+    ("water.report_push.record_date"): ("记录日期：{value}"),
+    ("water.report_push.status"): ("任务状态：{value}"),
+    ("water.report_push.total_groups"): ("候选群数：{value}"),
+    ("water.report_push.completed_groups"): ("已处理：{value}"),
+    ("water.report_push.rendered_groups"): ("已渲染：{value}"),
+    ("water.report_push.sent_groups"): ("已发送：{value}"),
+    ("water.report_push.skipped_groups"): ("跳过：{value}"),
+    ("water.report_push.failed_groups"): ("失败：{value}"),
+    ("water.report_push.remaining_groups"): ("剩余：{value}"),
+    ("water.report_push.current_group"): ("当前群：{value}"),
+    ("water.report_push.current_stage"): ("当前阶段：{value}"),
+    ("water.report_push.stage_elapsed"): ("当前停留：{value}s"),
+    ("water.report_push.started_at"): ("开始时间：{value}"),
+    ("water.report_push.elapsed"): ("已耗时：{value}s"),
+    ("water.report_push.group_interval"): ("群间间隔：{value}s"),
+    ("water.report_push.next_final"): ("下次上报：本次为最终汇总。"),
+    ("water.report_push.next_interval"): (
+        "下次上报：每完成 {batch_size} 个群或任务结束。"
+    ),
+    ("water.report_push.latest_error"): ("任务错误：{value}"),
+    ("water.report_push.status.running"): ("运行中"),
+    ("water.report_push.status.completed"): ("已完成"),
+    ("water.report_push.status.failed"): ("已失败"),
+    ("water.report_push.stage.queued"): ("排队中"),
+    ("water.report_push.stage.loading_candidates"): ("加载候选群"),
+    ("water.report_push.stage.rendering_groups"): ("渲染日报"),
+    ("water.report_push.stage.sending_groups"): ("发送日报"),
+    ("water.report_push.stage.reporting_progress"): ("发送进度报告"),
+    ("water.report_push.stage.finalizing"): ("发送最终汇总"),
+    ("water.report_push.stage.failed"): ("任务失败"),
+    ("water.report_push.stage.done"): ("任务完成"),
+    ("water.report_push.outcome.skipped_render_failed"): ("跳过 渲染失败"),
+    ("water.report_push.outcome.sent"): ("发送成功"),
+    ("water.report_push.outcome.send_failed"): ("发送失败"),
+    ("water.unit.messages"): ("{value} 条"),
+    ("water.unit.people"): ("{value} 人"),
+    ("water.profile.field.group"): ("群组: {value}"),
+    ("water.profile.field.matrix"): ("矩阵: {value}"),
+    ("water.profile.field.global_rank"): ("全局排行: {value}"),
+    ("water.profile.field.group_rank"): ("群内排行: {value}"),
+    ("water.profile.field.matrix_rank"): ("矩阵排行: {value}"),
+    ("water.profile.field.matrix_total_rank"): ("矩阵总排行: {value}"),
+    ("water.profile.field.group_active_rank"): ("群活跃排行: {value}"),
+    ("water.profile.field.current_achievements"): ("当前成就: {value}"),
+    ("water.profile.field.history_achievements"): ("历史成就: {value}"),
     ("plugin.water.name"): ("吹水记录"),
     ("plugin.water.description"): ("群聊活跃记录、画像、榜单与活动赛季。"),
     ("plugin.water.docs"): (
@@ -1245,6 +1391,60 @@ CATALOG: Final[dict[str, str]] = {
     ),
     ("admin.group.not_found"): ("[{group_id}|{group_name}] 数据库中不存在该群组记录"),
     ("admin.group.result"): ("[{group_id}|{group_name}] {message}"),
+    ("admin.sync_members.started"): (
+        "已开始执行群成员全量同步。\n后续进度与最终汇总会通过管理员通知汇报。"
+    ),
+    ("admin.sync_members.failed"): (
+        "群成员全量同步任务失败。\n详细进度与失败汇总请查看管理员通知。\n原因：{reason}"
+    ),
+    ("admin.sync_members.completed"): ("群成员全量同步已结束。"),
+    ("admin.sync_members.summary.total"): ("总群数：{count}"),
+    ("admin.sync_members.summary.succeeded"): ("成功：{count}"),
+    ("admin.sync_members.summary.failed"): ("失败：{count}"),
+    ("admin.sync_members.summary.skipped"): ("跳过：{count}"),
+    ("admin.sync_members.idle"): ("当前没有正在执行的群成员全量同步任务。"),
+    ("admin.sync_members.running"): ("已有群成员全量同步任务正在执行。"),
+    ("admin.sync_members.report.title"): ("群成员全量同步进度"),
+    ("admin.sync_members.field.task_id"): ("任务 ID：{value}"),
+    ("admin.sync_members.field.status"): ("任务状态：{value}"),
+    ("admin.sync_members.field.total_groups"): ("总群数：{value}"),
+    ("admin.sync_members.field.completed"): ("已处理：{value}"),
+    ("admin.sync_members.field.succeeded"): ("成功：{value}"),
+    ("admin.sync_members.field.failed"): ("失败：{value}"),
+    ("admin.sync_members.field.skipped"): ("跳过：{value}"),
+    ("admin.sync_members.field.remaining"): ("剩余：{value}"),
+    ("admin.sync_members.field.current_group"): ("当前群：{value}"),
+    ("admin.sync_members.field.current_stage"): ("当前阶段：{value}"),
+    ("admin.sync_members.field.stage_elapsed"): ("当前停留：{value}s"),
+    ("admin.sync_members.field.started_at"): ("开始时间：{value}"),
+    ("admin.sync_members.field.elapsed"): ("已耗时：{value}s"),
+    ("admin.sync_members.field.interval"): ("群间间隔：{value}s"),
+    ("admin.sync_members.field.fixed_interval"): ("固定间隔：{value}s/群"),
+    ("admin.sync_members.field.latest_error"): ("任务错误：{value}"),
+    ("admin.sync_members.next_report.final"): ("下次上报：本次为最终汇总。"),
+    ("admin.sync_members.next_report.batch"): (
+        "下次上报：每完成 {count} 个群或任务结束。"
+    ),
+    ("admin.sync_members.failure_summary.title"): ("失败摘要："),
+    ("admin.sync_members.failure_summary.more"): ("其余 {count} 个失败群请看明细。"),
+    ("admin.sync_members.detail.ok"): (
+        "{prefix} {group} 成功 members={members} elapsed={elapsed}s source={source}"
+    ),
+    ("admin.sync_members.detail.failed"): (
+        "{prefix} {group} 失败 members={members} elapsed={elapsed}s "
+        "source={source} error={error_type}: {error_reason}"
+    ),
+    ("admin.sync_members.status.running"): ("运行中"),
+    ("admin.sync_members.status.completed"): ("已完成"),
+    ("admin.sync_members.status.failed"): ("已失败"),
+    ("admin.sync_members.stage.queued"): ("排队中"),
+    ("admin.sync_members.stage.loading_group_list"): ("拉取群列表"),
+    ("admin.sync_members.stage.syncing_group"): ("拉取成员列表"),
+    ("admin.sync_members.stage.reporting_progress"): ("发送进度报告"),
+    ("admin.sync_members.stage.waiting_between_groups"): ("群间等待"),
+    ("admin.sync_members.stage.finalizing"): ("发送最终汇总"),
+    ("admin.sync_members.stage.failed"): ("任务失败"),
+    ("admin.sync_members.stage.done"): ("任务完成"),
     ("admin.user.action_superuser"): ("无法操作超级用户"),
     ("admin.user.action_banned"): ("已处于封禁状态"),
     ("admin.user.duration.permanent"): ("永久"),

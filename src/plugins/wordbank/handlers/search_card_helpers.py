@@ -18,7 +18,11 @@ from src.plugins.wordbank.message_model import (
     format_face_summary_text,
     format_placeholder_summary_text,
 )
-from src.plugins.wordbank.services.presentation import format_status_label
+from src.plugins.wordbank.services.presentation import (
+    ROLE_LABEL_KEYS,
+    SCOPE_LABEL_KEYS,
+    format_status_label,
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -258,21 +262,14 @@ def folded_preview_note(item: WordbankSearchItem, locale: LocaleCode) -> str:
 
 
 def status_chip_label(locale: LocaleCode, status: str) -> str:
-    return tr(
-        locale,
-        "wordbank.search_card.status",
-        status=format_status_label(status),
-    ).replace("状态 ", "")
+    return format_status_label(status, locale=locale).strip()
 
 
-def scope_chip_label(scope: str) -> str:
-    return {
-        "all_groups": "全局",
-        "current_group": "当前群",
-        "self": "仅自己",
-        "private_only": "仅私聊",
-        "self_in_current_group": "自己+当前群",
-    }.get(scope, scope or "-")
+def scope_chip_label(locale: LocaleCode, scope: str) -> str:
+    key = SCOPE_LABEL_KEYS.get(scope)
+    if key is None:
+        return scope or "-"
+    return tr(locale, key, group_id="", created_by="").strip()
 
 
 def probability_chip_text(probability: float) -> str:
@@ -287,19 +284,17 @@ def weight_chip_text(weight: int) -> str:
     return f"W:{weight}"
 
 
-def response_rule_chips(rule: dict[str, object] | None) -> tuple[str, ...]:
+def response_rule_chips(
+    rule: dict[str, object] | None,
+    *,
+    locale: LocaleCode,
+) -> tuple[str, ...]:
     payload = dict(rule or {})
     chips: list[str] = []
     role = str(payload.get("roles", "") or "").strip()
-    if role:
-        role_label = {
-            "owner": "群主",
-            "admin": "管理",
-            "member": "成员",
-            "any": "",
-        }.get(role, role)
-        if role_label:
-            chips.append(role_label)
+    if role and role != "any":
+        role_key = ROLE_LABEL_KEYS.get(role)
+        chips.append(tr(locale, role_key) if role_key else role)
     call_count = payload.get("call_count")
     if isinstance(call_count, dict):
         window_seconds = int(call_count.get("window_seconds", 0) or 0)

@@ -771,10 +771,14 @@ class SearchResultCardRenderer:
                 status_chip_label(locale, response.status),
                 response.status,
             ),
-            self._scope_chip(scope_chip_label(response.scope), response.scope),
+            self._scope_chip(
+                scope_chip_label(locale, response.scope),
+                response.scope,
+            ),
         ]
         chips.extend(
-            self._neutral_chip(text) for text in response_rule_chips(response.rule)
+            self._neutral_chip(text)
+            for text in response_rule_chips(response.rule, locale=locale)
         )
         return tuple(chips)
 

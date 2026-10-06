@@ -190,25 +190,122 @@ def _format_report_group_label(group_id: str) -> str:
     return f"[{group_id}]" if group_id else "-"
 
 
-def _format_report_push_status_label(status: str) -> str:
-    return {
-        "running": "运行中",
-        "completed": "已完成",
-        "failed": "已失败",
-    }.get(status, status)
+WATER_REPORT_PUSH_STATUS_KEYS: dict[str, MessageKey] = {
+    "running": "water.report_push.status.running",
+    "completed": "water.report_push.status.completed",
+    "failed": "water.report_push.status.failed",
+}
+
+WATER_REPORT_PUSH_STAGE_KEYS: dict[str, MessageKey] = {
+    "queued": "water.report_push.stage.queued",
+    "loading_candidates": "water.report_push.stage.loading_candidates",
+    "rendering_groups": "water.report_push.stage.rendering_groups",
+    "sending_groups": "water.report_push.stage.sending_groups",
+    "reporting_progress": "water.report_push.stage.reporting_progress",
+    "finalizing": "water.report_push.stage.finalizing",
+    "failed": "water.report_push.stage.failed",
+    "done": "water.report_push.stage.done",
+}
 
 
-def _format_report_push_stage_label(stage: str) -> str:
-    return {
-        "queued": "排队中",
-        "loading_candidates": "加载候选群",
-        "rendering_groups": "渲染日报",
-        "sending_groups": "发送日报",
-        "reporting_progress": "发送进度报告",
-        "finalizing": "发送最终汇总",
-        "failed": "任务失败",
-        "done": "任务完成",
-    }.get(stage, stage)
+def _format_report_push_status_label(status: str, *, locale: LocaleCode) -> str:
+    key = WATER_REPORT_PUSH_STATUS_KEYS.get(status)
+    return tr(locale, key) if key else status
+
+
+def _format_report_push_stage_label(stage: str, *, locale: LocaleCode) -> str:
+    key = WATER_REPORT_PUSH_STAGE_KEYS.get(stage)
+    return tr(locale, key) if key else stage
+
+
+def _build_report_push_overview_text(
+    state: WaterDailyReportPushState,
+    *,
+    final: bool,
+    locale: LocaleCode,
+) -> str:
+    lines = [
+        tr(locale, "water.report_push.title"),
+        tr(locale, "water.report_push.task_id", value=state.task_id),
+        tr(locale, "water.report_push.record_date", value=state.record_date),
+        tr(
+            locale,
+            "water.report_push.status",
+            value=_format_report_push_status_label(state.status, locale=locale),
+        ),
+        tr(locale, "water.report_push.total_groups", value=state.total_groups),
+        tr(locale, "water.report_push.completed_groups", value=state.completed_groups),
+        tr(locale, "water.report_push.rendered_groups", value=state.rendered_groups),
+        tr(locale, "water.report_push.sent_groups", value=state.sent_groups),
+        tr(locale, "water.report_push.skipped_groups", value=state.skipped_groups),
+        tr(locale, "water.report_push.failed_groups", value=state.failed_groups),
+        tr(locale, "water.report_push.remaining_groups", value=state.remaining_groups),
+        tr(
+            locale,
+            "water.report_push.current_group",
+            value=_format_report_group_label(state.current_group_id),
+        ),
+        tr(
+            locale,
+            "water.report_push.current_stage",
+            value=_format_report_push_stage_label(state.current_stage, locale=locale),
+        ),
+        tr(
+            locale, "water.report_push.stage_elapsed", value=state.stage_elapsed_seconds
+        ),
+        tr(
+            locale,
+            "water.report_push.started_at",
+            value=_format_report_push_time(state.started_at),
+        ),
+        tr(locale, "water.report_push.elapsed", value=state.elapsed_seconds),
+        tr(
+            locale,
+            "water.report_push.group_interval",
+            value=REPORT_PUSH_INTERVAL_SECONDS,
+        ),
+        (
+            tr(locale, "water.report_push.next_final")
+            if final
+            else tr(
+                locale,
+                "water.report_push.next_interval",
+                batch_size=REPORT_PUSH_PROGRESS_BATCH_SIZE,
+            )
+        ),
+    ]
+    if state.latest_error:
+        lines.append(
+            tr(locale, "water.report_push.latest_error", value=state.latest_error)
+        )
+    return "\n".join(lines)
+
+
+def _build_report_push_plan(
+    state: WaterDailyReportPushState,
+    *,
+    final: bool,
+    locale: LocaleCode,
+) -> DeliveryPlan:
+    return DeliveryPlan(
+        messages=(
+            _build_report_push_overview_text(state, final=final, locale=locale),
+            *state.pending_detail_lines,
+        ),
+        source_kind="water_daily_report_push_progress",
+        allow_asset_reuse=False,
+        force_forward=True,
+    )
+
+
+async def _notify_report_push_superusers(
+    bot: Bot,
+    plan: DeliveryPlan,
+    *,
+    locale: LocaleCode,
+) -> None:
+    _ = locale
+    await deliver_admin_notification_plan(bot, plan=plan)
 
 
 def _build_report_push_detail_line(
@@ -225,62 +322,6 @@ def _build_report_push_detail_line(
         f"msg={candidate.total_msg_count} users={candidate.active_user_count}"
     )
     return f"{prefix} {group_label} {outcome} {metrics}"
-
-
-def _build_report_push_overview_text(
-    state: WaterDailyReportPushState,
-    *,
-    final: bool,
-) -> str:
-    lines = [
-        "水王日报推送进度",
-        f"任务 ID：{state.task_id}",
-        f"记录日期：{state.record_date}",
-        f"任务状态：{_format_report_push_status_label(state.status)}",
-        f"候选群数：{state.total_groups}",
-        f"已处理：{state.completed_groups}",
-        f"已渲染：{state.rendered_groups}",
-        f"已发送：{state.sent_groups}",
-        f"跳过：{state.skipped_groups}",
-        f"失败：{state.failed_groups}",
-        f"剩余：{state.remaining_groups}",
-        f"当前群：{_format_report_group_label(state.current_group_id)}",
-        f"当前阶段：{_format_report_push_stage_label(state.current_stage)}",
-        f"当前停留：{state.stage_elapsed_seconds}s",
-        f"开始时间：{_format_report_push_time(state.started_at)}",
-        f"已耗时：{state.elapsed_seconds}s",
-        f"群间间隔：{REPORT_PUSH_INTERVAL_SECONDS}s",
-        (
-            "下次上报：本次为最终汇总。"
-            if final
-            else (
-                f"下次上报：每完成 {REPORT_PUSH_PROGRESS_BATCH_SIZE} 个群或任务结束。"
-            )
-        ),
-    ]
-    if state.latest_error:
-        lines.append(f"任务错误：{state.latest_error}")
-    return "\n".join(lines)
-
-
-def _build_report_push_plan(
-    state: WaterDailyReportPushState,
-    *,
-    final: bool,
-) -> DeliveryPlan:
-    return DeliveryPlan(
-        messages=(
-            _build_report_push_overview_text(state, final=final),
-            *state.pending_detail_lines,
-        ),
-        source_kind="water_daily_report_push_progress",
-        allow_asset_reuse=False,
-        force_forward=True,
-    )
-
-
-async def _notify_report_push_superusers(bot: Bot, plan: DeliveryPlan) -> None:
-    await deliver_admin_notification_plan(bot, plan=plan)
 
 
 def _set_report_push_stage(
@@ -669,7 +710,10 @@ class WaterReportService:
                     push_state.completed_groups,
                     push_state.total_groups,
                     candidate,
-                    outcome="跳过 渲染失败",
+                    outcome=tr(
+                        locale,
+                        "water.report_push.outcome.skipped_render_failed",
+                    ),
                 )
             )
         logger.info(
@@ -728,7 +772,8 @@ class WaterReportService:
             _set_report_push_stage(push_state, "sending_groups")
             await _notify_report_push_superusers(
                 bot,
-                _build_report_push_plan(push_state, final=False),
+                _build_report_push_plan(push_state, final=False, locale=locale),
+                locale=locale,
             )
         sent_groups = 0
         failed_send_groups = 0
@@ -778,7 +823,7 @@ class WaterReportService:
                             active_user_count=item.active_user_count,
                             active_hours=0,
                         ),
-                        outcome="发送成功",
+                        outcome=tr(locale, "water.report_push.outcome.sent"),
                     )
                 )
                 if task is not None:
@@ -814,7 +859,7 @@ class WaterReportService:
                             active_user_count=item.active_user_count,
                             active_hours=0,
                         ),
-                        outcome="发送失败",
+                        outcome=tr(locale, "water.report_push.outcome.send_failed"),
                     )
                 )
                 if task is not None:
@@ -838,7 +883,8 @@ class WaterReportService:
                 )
                 await _notify_report_push_superusers(
                     bot,
-                    _build_report_push_plan(push_state, final=False),
+                    _build_report_push_plan(push_state, final=False, locale=locale),
+                    locale=locale,
                 )
                 push_state.pending_detail_lines.clear()
             await asyncio.sleep(REPORT_PUSH_INTERVAL_SECONDS)
@@ -856,7 +902,8 @@ class WaterReportService:
         _set_report_push_stage(push_state, "finalizing")
         await _notify_report_push_superusers(
             bot,
-            _build_report_push_plan(push_state, final=True),
+            _build_report_push_plan(push_state, final=True, locale=locale),
+            locale=locale,
         )
         push_state.pending_detail_lines.clear()
         _set_report_push_stage(push_state, "done")
@@ -971,17 +1018,20 @@ class WaterReportService:
                 group_rank_snapshot=group_rank_snapshot,
                 distribution_items=distribution_items,
                 trend_group_ids=trend_group_ids,
+                locale=locale,
             )
         trend_group_ids = self._select_trend_group_ids(group_rank_snapshot)
         group_rank_items = await self._build_group_rank_items(
             group_rank_snapshot,
             group_name_map=group_name_map,
+            locale=locale,
         )
         group_share_slices = await self._build_group_share_slices(
             snapshot,
             group_rank_snapshot,
             distribution_items=distribution_items,
             group_name_map=group_name_map,
+            locale=locale,
         )
         (
             group_rank_trend_labels,
@@ -993,6 +1043,7 @@ class WaterReportService:
             trend_group_ids=trend_group_ids,
             group_name_map=group_name_map,
             batch_context=batch_context,
+            locale=locale,
         )
         group_rank_metrics = self._build_group_rank_metrics(
             group_rank_snapshot,
@@ -1022,7 +1073,11 @@ class WaterReportService:
         )
         group_name = group_name_map.get(
             snapshot.group_id,
-            f"群聊_{snapshot.group_id[-4:]}",
+            tr(
+                locale,
+                "water.profile.group_name_fallback",
+                group_suffix=snapshot.group_id[-4:],
+            ),
         )
         report_suffix = report_title.removeprefix("Senrin")
         title = f"{group_name} | {record_day.format('YYYY.MM.DD')}{report_suffix}"
@@ -1188,6 +1243,7 @@ class WaterReportService:
         snapshot: WaterGroupDailyRankSnapshot | None,
         *,
         group_name_map: dict[str, str],
+        locale: LocaleCode = "zh-CN",
     ) -> list[WaterGroupDailyRankCardItem] | None:
         if snapshot is None:
             return None
@@ -1201,6 +1257,7 @@ class WaterReportService:
                 display_name=self._get_report_group_name(
                     group_name_map,
                     item.group_id,
+                    locale=locale,
                 ),
                 avatar=self._normalize_avatar(avatars[idx]),
                 msg_count=item.msg_count,
@@ -1218,6 +1275,7 @@ class WaterReportService:
         *,
         distribution_items: list[WaterGroupDailyRankItem],
         group_name_map: dict[str, str],
+        locale: LocaleCode = "zh-CN",
     ) -> list[WaterGroupShareSlice]:
         if not distribution_items:
             return []
@@ -1233,6 +1291,7 @@ class WaterReportService:
                 display_name=self._get_report_group_name(
                     group_name_map,
                     item.group_id,
+                    locale=locale,
                 ),
                 msg_count=item.msg_count,
                 share_ratio=item.msg_count / total_msg_count,
@@ -1250,6 +1309,7 @@ class WaterReportService:
         trend_group_ids: list[str] | None = None,
         group_name_map: dict[str, str] | None = None,
         batch_context: WaterDailyReportBatchContext | None = None,
+        locale: LocaleCode = "zh-CN",
     ) -> tuple[list[str], list[WaterGroupRankTrendSeries]]:
         trend_group_ids = trend_group_ids or self._select_trend_group_ids(
             group_rank_snapshot
@@ -1301,6 +1361,7 @@ class WaterReportService:
                 display_name=self._get_report_group_name(
                     resolved_group_name_map,
                     group_id,
+                    locale=locale,
                 ),
                 ranks=[rank for _record_date, rank in history[group_id]],
                 is_focus_group=group_id == focus_group_id,
@@ -1442,6 +1503,7 @@ class WaterReportService:
         group_rank_snapshot: WaterGroupDailyRankSnapshot | None,
         distribution_items: list[WaterGroupDailyRankItem],
         trend_group_ids: list[str],
+        locale: LocaleCode = "zh-CN",
     ) -> dict[str, str]:
         ordered_group_ids: list[str] = [snapshot.group_id]
         if group_rank_snapshot is not None:
@@ -1460,7 +1522,14 @@ class WaterReportService:
             unique_group_ids.append(group_id)
         resolved = await group_repo.get_names_by_gids(unique_group_ids)
         return {
-            group_id: resolved.get(group_id, f"群聊_{group_id[-4:]}")
+            group_id: resolved.get(
+                group_id,
+                tr(
+                    locale,
+                    "water.profile.group_name_fallback",
+                    group_suffix=group_id[-4:],
+                ),
+            )
             for group_id in unique_group_ids
         }
 
@@ -1468,8 +1537,17 @@ class WaterReportService:
     def _get_report_group_name(
         group_name_map: dict[str, str],
         group_id: str,
+        *,
+        locale: LocaleCode = "zh-CN",
     ) -> str:
-        return group_name_map.get(group_id, f"群聊_{group_id[-4:]}")
+        return group_name_map.get(
+            group_id,
+            tr(
+                locale,
+                "water.profile.group_name_fallback",
+                group_suffix=group_id[-4:],
+            ),
+        )
 
     @staticmethod
     def _select_trend_group_ids(

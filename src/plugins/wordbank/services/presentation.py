@@ -36,6 +36,54 @@ WORDBANK_RANK_PERIOD_LABEL_KEYS: dict[WordbankRankPeriod, MessageKey] = {
     "total": "wordbank.rank.period.total",
 }
 
+STATUS_LABEL_KEYS: dict[str, MessageKey] = {
+    "pending": "wordbank.status.pending",
+    "approved": "wordbank.status.approved",
+    "rejected": "wordbank.status.rejected",
+}
+
+SCOPE_LABEL_KEYS: dict[str, MessageKey] = {
+    "current_group": "wordbank.scope.current_group",
+    "all_groups": "wordbank.scope.all_groups",
+    "self": "wordbank.scope.self",
+    "private_only": "wordbank.scope.private_only",
+    "self_in_current_group": "wordbank.scope.self_in_current_group",
+}
+
+ROLE_LABEL_KEYS: dict[str, MessageKey] = {
+    "owner": "wordbank.rule.role.owner",
+    "admin": "wordbank.rule.role.admin",
+    "member": "wordbank.rule.role.member",
+    "any": "wordbank.rule.role.any",
+}
+
+RESPONSE_MODE_LABEL_KEYS: dict[str, tuple[MessageKey, MessageKey]] = {
+    "forward_whole": (
+        "wordbank.response_mode.forward_whole",
+        "wordbank.response_mode.forward_whole_count",
+    ),
+    "forward_split": (
+        "wordbank.response_mode.forward_split",
+        "wordbank.response_mode.forward_split_count",
+    ),
+}
+
+NOTICE_EVENT_LABEL_KEYS: dict[str, MessageKey] = {
+    "event:at": "wordbank.event.at",
+    "event:mention": "wordbank.event.mention",
+    "event:poke": "wordbank.event.poke",
+    "event:join": "wordbank.event.join",
+    "event:bot_join": "wordbank.event.bot_join",
+    "event:member_join": "wordbank.event.member_join",
+    "event:group_join": "wordbank.event.group_join",
+    "event:group_increase": "wordbank.event.group_increase",
+    "event:leave": "wordbank.event.leave",
+    "event:bot_leave": "wordbank.event.bot_leave",
+    "event:member_leave": "wordbank.event.member_leave",
+    "event:group_leave": "wordbank.event.group_leave",
+    "event:group_decrease": "wordbank.event.group_decrease",
+}
+
 
 @dataclass(slots=True, frozen=True)
 class WordbankAddResult:
@@ -265,7 +313,7 @@ def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
         locale,
         key,
         entry_id=result.response_item_id,
-        status=format_status_label(result.status),
+        status=format_status_label(result.status, locale=locale),
         trigger_text=format_notice_content_summary(
             result.trigger_text,
             shape=result.trigger_shape,
@@ -279,28 +327,24 @@ def format_add_result(result: WordbankAddResult, *, locale: LocaleCode) -> str:
             forward_node_count=result.forward_node_count,
             locale=locale,
         ),
-        scope=format_scope_label(result),
+        scope=format_scope_label(result, locale=locale),
         probability=f"{result.probability:g}",
         weight=result.weight,
     )
 
 
-def response_mode_label(result: WordbankAddResult) -> str:
-    if result.response_mode == "forward_whole":
-        count = result.forward_node_count or 0
-        return f"一条合并转发消息（{count} 条）" if count > 0 else "一条合并转发消息"
-    if result.response_mode == "forward_split":
-        count = result.forward_node_count or 0
-        return f"拆分导入（{count} 条）" if count > 0 else "拆分导入"
-    return "普通响应"
+def response_mode_label(result: WordbankAddResult, *, locale: LocaleCode) -> str:
+    count = result.forward_node_count or 0
+    keys = RESPONSE_MODE_LABEL_KEYS.get(result.response_mode)
+    if keys is None:
+        return tr(locale, "wordbank.response_mode.normal")
+    plain_key, count_key = keys
+    return tr(locale, count_key if count > 0 else plain_key, count=count)
 
 
-def format_status_label(status: str) -> str:
-    return {
-        "pending": "待审核",
-        "approved": "已通过",
-        "rejected": "已拒绝",
-    }.get(status, status or "-")
+def format_status_label(status: str, *, locale: LocaleCode) -> str:
+    key = STATUS_LABEL_KEYS.get(status)
+    return tr(locale, key) if key else (status or "-")
 
 
 def format_response_summary(
@@ -322,17 +366,25 @@ def format_notice_content_summary(
     locale: LocaleCode = "zh-CN",
 ) -> str:
     if response_mode == "forward_whole":
-        return (
-            f"一条合并转发消息（{forward_node_count} 条）"
+        return tr(
+            locale,
+            "wordbank.response_mode.forward_whole_count"
             if forward_node_count > 0
-            else "一条合并转发消息"
+            else "wordbank.response_mode.forward_whole",
+            count=forward_node_count,
         )
     if shape is None or shape.is_empty():
         return text or "-"
     atoms = shape.atoms
     if all(atom.kind == "image" for atom in atoms):
         count = sum(1 for atom in atoms if atom.kind == "image")
-        return "图片消息" if count <= 1 else f"{count} 张图片"
+        return tr(
+            locale,
+            "wordbank.notice_content.image_single"
+            if count <= 1
+            else "wordbank.notice_content.image_multi",
+            count=count,
+        )
     parts: list[str] = []
     for atom in atoms:
         summary = _format_notice_atom(atom, locale=locale)
@@ -348,6 +400,7 @@ def format_notice_content_raw_text(
     shape: MessageShape | None = None,
     response_mode: str = "normal",
     forward_node_count: int = 0,
+    locale: LocaleCode = "zh-CN",
 ) -> str:
     if shape is not None and any(atom.kind == "at" for atom in shape.atoms):
         return format_notice_content_summary(
@@ -355,14 +408,17 @@ def format_notice_content_raw_text(
             shape=shape,
             response_mode=response_mode,
             forward_node_count=forward_node_count,
+            locale=locale,
         )
     if text.strip():
         return text
     if response_mode == "forward_whole":
-        return (
-            f"一条合并转发消息（{forward_node_count} 条）"
+        return tr(
+            locale,
+            "wordbank.response_mode.forward_whole_count"
             if forward_node_count > 0
-            else "一条合并转发消息"
+            else "wordbank.response_mode.forward_whole",
+            count=forward_node_count,
         )
     return "-"
 
@@ -375,6 +431,8 @@ def format_timestamp(timestamp: int) -> str:
 
 def format_scope_label(
     detail: WordbankResponseItemDetail | WordbankAddResult | WordbankSearchItem | None,
+    *,
+    locale: LocaleCode,
 ) -> str:
     if not detail:
         return "-"
@@ -383,45 +441,50 @@ def format_scope_label(
         if isinstance(detail, WordbankResponseItemDetail)
         else detail.trigger_group_id
     )
-    match detail.scope:
-        case "current_group":
-            return f"当前群({group_id})"
-        case "all_groups":
-            return "所有群"
-        case "self":
-            return f"仅自己:{detail.created_by}"
-        case "private_only":
-            return "仅私聊"
-        case "self_in_current_group":
-            return f"自己({detail.created_by})+当前群({group_id})"
-        case _:
-            return "-"
+    if detail.scope not in SCOPE_LABEL_KEYS:
+        return "-"
+    return tr(
+        locale,
+        SCOPE_LABEL_KEYS[detail.scope],
+        group_id=group_id,
+        created_by=detail.created_by,
+    )
 
 
 def format_rule_summary(
     *,
     probability: float,
     rule: dict[str, object] | None = None,
+    locale: LocaleCode,
 ) -> str:
-    parts = [f"概率 {probability:g}"]
+    parts = [
+        tr(
+            locale,
+            "wordbank.rule.probability",
+            value=f"{probability:g}",
+        )
+    ]
     payload = dict(rule or {})
     role = str(payload.get("roles", "") or "").strip()
-    if role:
-        role_label = {
-            "owner": "群主",
-            "admin": "管理",
-            "member": "成员",
-            "any": "不限",
-        }.get(role, role)
-        if role_label != "不限":
-            parts.append(f"角色 {role_label}")
+    if role and role != "any":
+        role_key = ROLE_LABEL_KEYS.get(role)
+        role_label = tr(locale, role_key) if role_key else role
+        parts.append(tr(locale, "wordbank.rule.role", role=role_label))
     call_count = payload.get("call_count")
     if isinstance(call_count, dict):
         window_seconds = int(call_count.get("window_seconds", 0) or 0)
         min_count = int(call_count.get("min", 0) or 0)
         max_count = int(call_count.get("max", 0) or 0)
         if window_seconds > 0:
-            parts.append(f"频率 {window_seconds}s/{min_count}-{max_count or 'inf'}")
+            parts.append(
+                tr(
+                    locale,
+                    "wordbank.rule.call_count",
+                    window=window_seconds,
+                    min_count=min_count,
+                    max_count=max_count or "inf",
+                )
+            )
     return " | ".join(parts)
 
 
@@ -433,10 +496,11 @@ def _format_notice_atom(atom: MessageAtom, *, locale: LocaleCode) -> str:
     if atom.kind == "face" and atom.face_id is not None:
         return format_face_summary_text(atom.face_id)
     if atom.kind == "at":
-        return (
-            "艾特触发者"
+        return tr(
+            locale,
+            "wordbank.at.sender"
             if is_response_sender_target(atom.target_id)
-            else "艾特某位用户"
+            else "wordbank.at.user",
         )
     if atom.kind == "event" and atom.event_name:
         if atom.event_name == "event:poke":
@@ -448,19 +512,5 @@ def _format_notice_atom(atom: MessageAtom, *, locale: LocaleCode) -> str:
 
 
 def _format_notice_event_name(event_name: str, *, locale: LocaleCode) -> str:
-    _ = locale
-    return {
-        "event:at": "艾特消息",
-        "event:mention": "提及消息",
-        "event:poke": "戳一戳事件",
-        "event:join": "新人加入事件",
-        "event:bot_join": "机器人进群事件",
-        "event:member_join": "其他成员进群事件",
-        "event:group_join": "入群事件",
-        "event:group_increase": "群成员增加事件",
-        "event:leave": "退群事件",
-        "event:bot_leave": "机器人退群事件",
-        "event:member_leave": "其他成员退群事件",
-        "event:group_leave": "离群事件",
-        "event:group_decrease": "群成员减少事件",
-    }.get(event_name, event_name)
+    key = NOTICE_EVENT_LABEL_KEYS.get(event_name)
+    return tr(locale, key) if key else event_name

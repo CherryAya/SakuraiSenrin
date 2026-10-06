@@ -878,19 +878,31 @@ def _build_water_group_report_image_sync(
     stats = [
         (
             tr(locale, "water.image.period.stats.total_msg_count"),
-            f"{short_exp(data.total_msg_count)} 条",
+            tr(
+                locale,
+                "water.unit.messages",
+                value=short_exp(data.total_msg_count),
+            ),
             strong,
             theme.stat_total_bg,
         ),
         (
             tr(locale, "water.image.period.stats.active_user_count"),
-            f"{data.active_user_count} 人",
+            tr(
+                locale,
+                "water.unit.people",
+                value=data.active_user_count,
+            ),
             blue,
             theme.stat_active_bg,
         ),
         (
             tr(locale, "water.image.period.stats.delta"),
-            f"{format_delta(delta_msg)} 条",
+            tr(
+                locale,
+                "water.unit.messages",
+                value=format_delta(delta_msg),
+            ),
             mint if delta_msg >= 0 else strong,
             theme.stat_delta_positive_bg
             if delta_msg >= 0
@@ -1528,19 +1540,31 @@ async def build_water_period_rank_image(
         stats = [
             (
                 tr(locale, "water.image.period.stats.total_msg_count"),
-                f"{short_exp(data.total_msg_count)} 条",
+                tr(
+                    locale,
+                    "water.unit.messages",
+                    value=short_exp(data.total_msg_count),
+                ),
                 strong,
                 theme.stat_total_bg,
             ),
             (
                 tr(locale, "water.image.period.stats.active_user_count"),
-                f"{data.active_user_count} 人",
+                tr(
+                    locale,
+                    "water.unit.people",
+                    value=data.active_user_count,
+                ),
                 blue,
                 theme.stat_active_bg,
             ),
             (
                 tr(locale, "water.image.period.stats.delta"),
-                f"{format_delta(delta_msg)} 条",
+                tr(
+                    locale,
+                    "water.unit.messages",
+                    value=format_delta(delta_msg),
+                ),
                 mint if delta_msg >= 0 else strong,
                 theme.stat_delta_positive_bg
                 if delta_msg >= 0
@@ -2011,7 +2035,12 @@ async def build_water_period_rank_image(
                     y + int(52 * scale),
                 ),
                 tr(locale, "water.image.period.stats.total_msg_count")
-                + f" {short_exp(data.total_msg_count)} 条",
+                + " "
+                + tr(
+                    locale,
+                    "water.unit.messages",
+                    value=short_exp(data.total_msg_count),
+                ),
                 max_fontsize=int(11 * scale),
                 min_fontsize=int(8 * scale),
                 fill=hint,

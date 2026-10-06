@@ -63,6 +63,48 @@ def build_trace_footer_left_text(
     return " · ".join(footer_parts)
 
 
+_SHADOW_PATCH_MARGIN_FACTOR = 2
+
+
+def _blurred_shape_patch(
+    *,
+    canvas_size: tuple[int, int],
+    shape_rect: tuple[int, int, int, int],
+    shadow_blur: int,
+    shape: Literal["rounded_rectangle", "ellipse"],
+    fill: tuple[int, int, int, int],
+    radius: int = 0,
+) -> tuple[Image.Image, tuple[int, int]]:
+    """在局部图上绘制并高斯模糊形状，返回待合成补丁与其左上角原点。
+
+    形状模糊半径之外的像素本就全透明，故局部模糊与整图逐字节一致；超长画布
+    上重复整图模糊代价极高，这里只处理形状包围盒（外扩 ``2 * radius``）。
+    """
+    margin = max(0, shadow_blur) * _SHADOW_PATCH_MARGIN_FACTOR
+    canvas_width, canvas_height = canvas_size
+    left = max(0, shape_rect[0] - margin)
+    top = max(0, shape_rect[1] - margin)
+    right = min(canvas_width, shape_rect[2] + margin)
+    bottom = min(canvas_height, shape_rect[3] + margin)
+    patch = Image.new(
+        "RGBA",
+        (max(1, right - left), max(1, bottom - top)),
+        (0, 0, 0, 0),
+    )
+    local_rect = (
+        shape_rect[0] - left,
+        shape_rect[1] - top,
+        shape_rect[2] - left,
+        shape_rect[3] - top,
+    )
+    draw = ImageDraw.Draw(patch)
+    if shape == "ellipse":
+        draw.ellipse(local_rect, fill=fill)
+    else:
+        draw.rounded_rectangle(local_rect, radius=radius, fill=fill)
+    return patch.filter(ImageFilter.GaussianBlur(shadow_blur)), (left, top)
+
+
 @dataclass(slots=True, frozen=True)
 class _TurnSpec:
     turn: DocsDemoTurn
@@ -189,6 +231,8 @@ class DemoImageRenderer:
             theme_name=self.theme_name,
             impression_color=self.impression_color,
         )
+        # 文本测量缓存：同一渲染器内相同 (字体, 文本) 的 bbox 结果一致。
+        self._text_bbox_cache: dict[tuple[int, str], tuple[int, int, int, int]] = {}
         try:
             self.kicker_font = ImageFont.truetype(MAPLE_FONT_PATH, 24)
             self.eyebrow_font = ImageFont.truetype(MAPLE_FONT_PATH, 20)
@@ -305,6 +349,7 @@ class DemoImageRenderer:
             turns=turns,
             locale=locale,
             generated_at=generated_at,
+            render_image=False,
         )
         return result.errors
 
@@ -326,6 +371,7 @@ class DemoImageRenderer:
         turns: Sequence[DocsDemoTurn],
         locale: LocaleCode = "zh-CN",
         generated_at: datetime | None = None,
+        render_image: bool = True,
     ) -> DemoRenderAuditResult:
         layout = self._measure_layout(
             plugin_title=plugin_title,
@@ -344,13 +390,18 @@ class DemoImageRenderer:
             locale=locale,
             generated_at=generated_at,
         )
+        # 仅审计布局时跳过绘制与编码：返回与正式渲染同尺寸的空白画布，
+        # 让上层合成路径行为一致，但不付出绘制/编码超长画布的代价。
         image = Image.new("RGBA", (self.WIDTH, layout.total_height), self.theme.page_bg)
-        self._paint_background(image)
-        draw = ImageDraw.Draw(image)
-        self._draw_hero(image, draw, layout)
-        self._draw_instruction_card(image, draw, layout)
-        self._draw_demo(image, draw, layout, locale=locale)
-        self._draw_footer(draw, layout)
+        data = b""
+        if render_image:
+            self._paint_background(image)
+            draw = ImageDraw.Draw(image)
+            self._draw_hero(image, draw, layout)
+            self._draw_instruction_card(image, draw, layout)
+            self._draw_demo(image, draw, layout, locale=locale)
+            self._draw_footer(draw, layout)
+            data = encode_docs_image(image, webp_quality=88, webp_method=6)
         errors: list[str] = []
         canvas = (0, 0, self.WIDTH, layout.total_height)
         hero_safe = (
@@ -404,7 +455,7 @@ class DemoImageRenderer:
                     )
                 prior_rects.append((f"turn {index} {name}", rect))
         return DemoRenderAuditResult(
-            data=encode_docs_image(image, webp_quality=88, webp_method=6),
+            data=data,
             image=image,
             errors=tuple(errors),
         )
@@ -1354,17 +1405,23 @@ class DemoImageRenderer:
         shadow_blur: int,
         fill: str,
     ) -> None:
-        shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
-        shadow_draw = ImageDraw.Draw(shadow)
         shadow_rect = (
             rect[0],
             rect[1] + shadow_offset_y,
             rect[2],
             rect[3] + shadow_offset_y,
         )
-        shadow_draw.rounded_rectangle(shadow_rect, radius=radius, fill=shadow_color)
-        shadow = shadow.filter(ImageFilter.GaussianBlur(shadow_blur))
-        image.alpha_composite(shadow)
+        # 只在阴影包围盒的局部图上做高斯模糊：整画布模糊在长图下代价极高，而
+        # 模糊半径外的像素本就是全透明，局部结果与整图逐字节一致。
+        patch, origin = _blurred_shape_patch(
+            canvas_size=image.size,
+            shape_rect=shadow_rect,
+            shadow_blur=shadow_blur,
+            shape="rounded_rectangle",
+            fill=shadow_color,
+            radius=radius,
+        )
+        image.alpha_composite(patch, dest=origin)
         ImageDraw.Draw(image).rounded_rectangle(rect, radius=radius, fill=fill)
 
     def _draw_panel_outline(
@@ -1458,17 +1515,20 @@ class DemoImageRenderer:
             anchor_left + anchor_size,
             anchor_top + anchor_size,
         )
-        shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
-        shadow_draw = ImageDraw.Draw(shadow)
         shadow_rect = (
             anchor_rect[0],
             anchor_rect[1] + self.theme.instruction_shadow_offset_y,
             anchor_rect[2],
             anchor_rect[3] + self.theme.instruction_shadow_offset_y,
         )
-        shadow_draw.ellipse(shadow_rect, fill=self.theme.standee_anchor_shadow)
-        shadow = shadow.filter(ImageFilter.GaussianBlur(20))
-        image.alpha_composite(shadow)
+        patch, origin = _blurred_shape_patch(
+            canvas_size=image.size,
+            shape_rect=shadow_rect,
+            shadow_blur=20,
+            shape="ellipse",
+            fill=self.theme.standee_anchor_shadow,
+        )
+        image.alpha_composite(patch, dest=origin)
         ImageDraw.Draw(image).ellipse(
             anchor_rect,
             fill=self.theme.standee_anchor_fill,
@@ -2401,9 +2461,25 @@ class DemoImageRenderer:
         if not text:
             return (0, 0, 0, self._font_line_height(font))
         if not self._contains_emoji(text):
-            draw = ImageDraw.Draw(Image.new("RGB", (10, 10), self.theme.panel_bg))
-            bbox = draw.textbbox((0, 0), text, font=font)
-            return int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+            # font.getbbox 按单行处理换行，与 textbbox 的换行语义不同，需排除。
+            key = (id(font), text)
+            cached = self._text_bbox_cache.get(key)
+            if cached is None:
+                if "\n" in text:
+                    draw = ImageDraw.Draw(
+                        Image.new("RGB", (10, 10), self.theme.panel_bg)
+                    )
+                    bbox = draw.textbbox((0, 0), text, font=font)
+                else:
+                    bbox = font.getbbox(text)
+                cached = (
+                    int(bbox[0]),
+                    int(bbox[1]),
+                    int(bbox[2]),
+                    int(bbox[3]),
+                )
+                self._text_bbox_cache[key] = cached
+            return cached
         text_image = Text2Image.from_text(
             text,
             self._font_size(font),

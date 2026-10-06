@@ -203,6 +203,8 @@ async def test_runtime_incremental_refresh_only_touches_dirty_group(
     )
     called: list[int] = []
     service._dirty_group_ids.clear()
+    # 关闭防抖并直接等待后台重建任务，避免真睡等待。
+    service.debounce_seconds = 0.0
 
     async def _spy_refresh(trigger_group_id: int) -> None:
         called.append(trigger_group_id)
@@ -216,7 +218,9 @@ async def test_runtime_incremental_refresh_only_touches_dirty_group(
         can_moderate_group=True,
         is_superuser=False,
     )
-    await asyncio.sleep(0.05)
+    rebuild_task = service._rebuild_task
+    assert rebuild_task is not None
+    await rebuild_task
 
     assert called == [first.trigger_group_id]
     assert second.trigger_group_id not in called

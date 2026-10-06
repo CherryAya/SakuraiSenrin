@@ -8,9 +8,30 @@ from nonebot.adapters.onebot.v11.bot import Bot
 
 from src.config import config as config
 from src.lib.admin_notifications import deliver_admin_notification_plan
+from src.lib.display import fallback_group_name, format_group_label
+from src.lib.i18n.keys import MessageKey
+from src.lib.i18n.runtime import tr
+from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import DeliveryPlan
 from src.lib.utils.common import get_current_time
 from src.services.sync import MemberSyncReport, sync_members_from_api
+
+SYNC_STATUS_LABEL_KEYS: dict[str, MessageKey] = {
+    "running": "admin.sync_members.status.running",
+    "completed": "admin.sync_members.status.completed",
+    "failed": "admin.sync_members.status.failed",
+}
+
+SYNC_STAGE_LABEL_KEYS: dict[str, MessageKey] = {
+    "queued": "admin.sync_members.stage.queued",
+    "loading_group_list": "admin.sync_members.stage.loading_group_list",
+    "syncing_group": "admin.sync_members.stage.syncing_group",
+    "reporting_progress": "admin.sync_members.stage.reporting_progress",
+    "waiting_between_groups": "admin.sync_members.stage.waiting_between_groups",
+    "finalizing": "admin.sync_members.stage.finalizing",
+    "failed": "admin.sync_members.stage.failed",
+    "done": "admin.sync_members.stage.done",
+}
 
 SYNC_MEMBERS_ALL_BATCH_SIZE = 10
 SYNC_MEMBERS_ALL_INTERVAL_SECONDS = 6
@@ -57,26 +78,41 @@ def get_active_sync_members_all_state() -> SyncMembersAllTaskState | None:
 
 def build_sync_members_all_running_summary(
     state: SyncMembersAllTaskState | None,
+    *,
+    locale: LocaleCode = "zh-CN",
 ) -> str:
     if state is None:
-        return "当前没有正在执行的群成员全量同步任务。"
+        return tr(locale, "admin.sync_members.idle")
+    field = _build_field_lines(state, locale=locale)
+    field.insert(0, tr(locale, "admin.sync_members.running"))
+    field.insert(
+        -3,
+        tr(
+            locale,
+            "admin.sync_members.field.fixed_interval",
+            value=SYNC_MEMBERS_ALL_INTERVAL_SECONDS,
+        ),
+    )
+    return "\n".join(field)
+
+
+def build_sync_members_completion_summary(
+    state: SyncMembersAllTaskState,
+    *,
+    locale: LocaleCode = "zh-CN",
+) -> str:
+    """Build the short completion summary shared by admin notice and matcher."""
     return "\n".join(
         [
-            "已有群成员全量同步任务正在执行。",
-            f"任务 ID：{state.task_id}",
-            f"任务状态：{_format_status_label(state.status)}",
-            f"总群数：{state.total_groups}",
-            f"已处理：{state.completed}",
-            f"成功：{state.succeeded}",
-            f"失败：{state.failed}",
-            f"跳过：{state.skipped}",
-            f"剩余：{state.remaining}",
-            "当前群："
-            f"{_format_group_label(state.current_group_id, state.current_group_name)}",
-            f"当前阶段：{_format_stage_label(state.current_stage)}",
-            f"当前停留：{state.stage_elapsed_seconds}s",
-            f"已耗时：{state.elapsed_seconds}s",
-            f"固定间隔：{SYNC_MEMBERS_ALL_INTERVAL_SECONDS}s/群",
+            tr(locale, "admin.sync_members.completed"),
+            tr(
+                locale,
+                "admin.sync_members.summary.total",
+                count=state.total_groups,
+            ),
+            tr(locale, "admin.sync_members.summary.succeeded", count=state.succeeded),
+            tr(locale, "admin.sync_members.summary.failed", count=state.failed),
+            tr(locale, "admin.sync_members.summary.skipped", count=state.skipped),
         ]
     )
 
@@ -85,63 +121,118 @@ def _format_task_time(timestamp: int) -> str:
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _format_group_label(group_id: str, group_name: str) -> str:
-    if not group_id:
-        return "-"
-    safe_name = group_name or f"群聊_{group_id[-4:]}"
-    return f"[{group_id}|{safe_name}]"
+def _format_status_label(status: str, *, locale: LocaleCode = "zh-CN") -> str:
+    key = SYNC_STATUS_LABEL_KEYS.get(status)
+    return tr(locale, key) if key is not None else status
 
 
-def _format_status_label(status: str) -> str:
-    return {
-        "running": "运行中",
-        "completed": "已完成",
-        "failed": "已失败",
-    }.get(status, status)
+def _format_stage_label(stage: str, *, locale: LocaleCode = "zh-CN") -> str:
+    key = SYNC_STAGE_LABEL_KEYS.get(stage)
+    return tr(locale, key) if key is not None else stage
 
 
-def _format_stage_label(stage: str) -> str:
-    return {
-        "queued": "排队中",
-        "loading_group_list": "拉取群列表",
-        "syncing_group": "拉取成员列表",
-        "reporting_progress": "发送进度报告",
-        "waiting_between_groups": "群间等待",
-        "finalizing": "发送最终汇总",
-        "failed": "任务失败",
-        "done": "任务完成",
-    }.get(stage, stage)
+def _field(
+    locale: LocaleCode,
+    key: MessageKey,
+    value: object,
+) -> str:
+    return tr(locale, key, value=value)
+
+
+def _build_field_lines(
+    state: SyncMembersAllTaskState,
+    *,
+    locale: LocaleCode,
+) -> list[str]:
+    return [
+        _field(locale, "admin.sync_members.field.task_id", state.task_id),
+        _field(
+            locale,
+            "admin.sync_members.field.status",
+            _format_status_label(state.status, locale=locale),
+        ),
+        _field(locale, "admin.sync_members.field.total_groups", state.total_groups),
+        _field(locale, "admin.sync_members.field.completed", state.completed),
+        _field(locale, "admin.sync_members.field.succeeded", state.succeeded),
+        _field(locale, "admin.sync_members.field.failed", state.failed),
+        _field(locale, "admin.sync_members.field.skipped", state.skipped),
+        _field(locale, "admin.sync_members.field.remaining", state.remaining),
+        _field(
+            locale,
+            "admin.sync_members.field.current_group",
+            format_group_label(
+                state.current_group_id,
+                state.current_group_name,
+                locale=locale,
+            ),
+        ),
+        _field(
+            locale,
+            "admin.sync_members.field.current_stage",
+            _format_stage_label(state.current_stage, locale=locale),
+        ),
+        _field(
+            locale,
+            "admin.sync_members.field.stage_elapsed",
+            state.stage_elapsed_seconds,
+        ),
+        _field(locale, "admin.sync_members.field.elapsed", state.elapsed_seconds),
+    ]
 
 
 def _build_detail_line(
     index: int,
     total: int,
     report: MemberSyncReport,
+    *,
+    locale: LocaleCode = "zh-CN",
 ) -> str:
     prefix = f"[{index:03d}/{max(total, 1):03d}]"
-    group_label = _format_group_label(report.group_id, report.group_name)
+    group_label = format_group_label(
+        report.group_id,
+        report.group_name,
+        locale=locale,
+    )
+    elapsed = f"{report.elapsed_ms / 1000:.2f}s"
     if report.ok:
-        return (
-            f"{prefix} {group_label} 成功 "
-            f"members={report.member_total} elapsed={report.elapsed_ms / 1000:.2f}s "
-            f"source={report.trigger_source}"
+        return tr(
+            locale,
+            "admin.sync_members.detail.ok",
+            prefix=prefix,
+            group=group_label,
+            members=report.member_total,
+            elapsed=elapsed,
+            source=report.trigger_source,
         )
-    return (
-        f"{prefix} {group_label} 失败 "
-        f"members={report.member_total} elapsed={report.elapsed_ms / 1000:.2f}s "
-        f"source={report.trigger_source} "
-        f"error={report.error_type or 'Unknown'}: {report.error_reason or '-'}"
+    return tr(
+        locale,
+        "admin.sync_members.detail.failed",
+        prefix=prefix,
+        group=group_label,
+        members=report.member_total,
+        elapsed=elapsed,
+        source=report.trigger_source,
+        error_type=report.error_type or "Unknown",
+        error_reason=report.error_reason or "-",
     )
 
 
-def _build_failure_summary(state: SyncMembersAllTaskState) -> list[str]:
+def _build_failure_summary(
+    state: SyncMembersAllTaskState,
+    *,
+    locale: LocaleCode = "zh-CN",
+) -> list[str]:
     if not state.failure_summaries:
         return []
     visible = state.failure_summaries[:5]
-    lines = ["失败摘要：", *visible]
+    lines = [tr(locale, "admin.sync_members.failure_summary.title"), *visible]
     if len(state.failure_summaries) > len(visible):
         lines.append(
-            f"其余 {len(state.failure_summaries) - len(visible)} 个失败群请看明细。"
+            tr(
+                locale,
+                "admin.sync_members.failure_summary.more",
+                count=len(state.failure_summaries) - len(visible),
+            )
         )
     return lines
 
@@ -150,33 +241,44 @@ def _build_overview_text(
     state: SyncMembersAllTaskState,
     *,
     final: bool,
+    locale: LocaleCode = "zh-CN",
 ) -> str:
     lines = [
-        "群成员全量同步进度",
-        f"任务 ID：{state.task_id}",
-        f"任务状态：{_format_status_label(state.status)}",
-        f"总群数：{state.total_groups}",
-        f"已处理：{state.completed}",
-        f"成功：{state.succeeded}",
-        f"失败：{state.failed}",
-        f"跳过：{state.skipped}",
-        f"剩余：{state.remaining}",
-        "当前群："
-        f"{_format_group_label(state.current_group_id, state.current_group_name)}",
-        f"当前阶段：{_format_stage_label(state.current_stage)}",
-        f"当前停留：{state.stage_elapsed_seconds}s",
-        f"开始时间：{_format_task_time(state.started_at)}",
-        f"已耗时：{state.elapsed_seconds}s",
-        f"群间间隔：{SYNC_MEMBERS_ALL_INTERVAL_SECONDS}s",
-        (
-            "下次上报：本次为最终汇总。"
-            if final
-            else f"下次上报：每完成 {SYNC_MEMBERS_ALL_BATCH_SIZE} 个群或任务结束。"
-        ),
+        tr(locale, "admin.sync_members.report.title"),
+        *_build_field_lines(state, locale=locale),
     ]
+    lines.extend(
+        [
+            _field(
+                locale,
+                "admin.sync_members.field.started_at",
+                _format_task_time(state.started_at),
+            ),
+            _field(
+                locale,
+                "admin.sync_members.field.interval",
+                SYNC_MEMBERS_ALL_INTERVAL_SECONDS,
+            ),
+            (
+                tr(locale, "admin.sync_members.next_report.final")
+                if final
+                else tr(
+                    locale,
+                    "admin.sync_members.next_report.batch",
+                    count=SYNC_MEMBERS_ALL_BATCH_SIZE,
+                )
+            ),
+        ]
+    )
     if state.latest_error:
-        lines.append(f"任务错误：{state.latest_error}")
-    lines.extend(_build_failure_summary(state))
+        lines.append(
+            _field(
+                locale,
+                "admin.sync_members.field.latest_error",
+                state.latest_error,
+            )
+        )
+    lines.extend(_build_failure_summary(state, locale=locale))
     return "\n".join(lines)
 
 
@@ -184,8 +286,12 @@ def _build_progress_plan(
     state: SyncMembersAllTaskState,
     *,
     final: bool,
+    locale: LocaleCode = "zh-CN",
 ) -> DeliveryPlan:
-    messages = [_build_overview_text(state, final=final), *state.pending_detail_lines]
+    messages = [
+        _build_overview_text(state, final=final, locale=locale),
+        *state.pending_detail_lines,
+    ]
     return DeliveryPlan(
         messages=tuple(messages),
         source_kind="admin_group_sync_members_all_progress",
@@ -211,7 +317,11 @@ def _set_stage(
     state.current_group_name = group_name
 
 
-async def run_sync_members_for_all_groups(bot: Bot) -> SyncMembersAllTaskState:
+async def run_sync_members_for_all_groups(
+    bot: Bot,
+    *,
+    locale: LocaleCode = "zh-CN",
+) -> SyncMembersAllTaskState:
     global _active_sync_members_all_state
     if _sync_members_all_lock.locked():
         raise RuntimeError("sync members all task already running")
@@ -239,7 +349,10 @@ async def run_sync_members_for_all_groups(bot: Bot) -> SyncMembersAllTaskState:
                     state.skipped += 1
                     continue
                 seen_group_ids.add(group_id)
-                group_name = str(info.get("group_name", "") or f"群聊_{group_id[-4:]}")
+                group_name = str(
+                    info.get("group_name", "")
+                    or fallback_group_name(group_id, locale=locale)
+                )
                 groups.append((group_id, group_name))
             groups.sort(key=lambda item: int(item[0]))
             state.total_groups = len(groups)
@@ -261,13 +374,23 @@ async def run_sync_members_for_all_groups(bot: Bot) -> SyncMembersAllTaskState:
                     state.succeeded += 1
                 else:
                     state.failed += 1
+                    group_label = format_group_label(
+                        report.group_id,
+                        report.group_name,
+                        locale=locale,
+                    )
                     state.failure_summaries.append(
-                        f"{_format_group_label(report.group_id, report.group_name)} "
+                        f"{group_label} "
                         f"{report.error_type or 'Unknown'}: "
                         f"{report.error_reason or '-'}"
                     )
                 state.pending_detail_lines.append(
-                    _build_detail_line(index, state.total_groups, report)
+                    _build_detail_line(
+                        index,
+                        state.total_groups,
+                        report,
+                        locale=locale,
+                    )
                 )
 
                 if state.completed % SYNC_MEMBERS_ALL_BATCH_SIZE == 0:
@@ -279,7 +402,7 @@ async def run_sync_members_for_all_groups(bot: Bot) -> SyncMembersAllTaskState:
                     )
                     await _notify_superusers(
                         bot,
-                        _build_progress_plan(state, final=False),
+                        _build_progress_plan(state, final=False, locale=locale),
                     )
                     state.pending_detail_lines.clear()
 
@@ -296,7 +419,7 @@ async def run_sync_members_for_all_groups(bot: Bot) -> SyncMembersAllTaskState:
             _set_stage(state, "finalizing")
             await _notify_superusers(
                 bot,
-                _build_progress_plan(state, final=True),
+                _build_progress_plan(state, final=True, locale=locale),
             )
             state.pending_detail_lines.clear()
             _set_stage(state, "done")
@@ -307,7 +430,7 @@ async def run_sync_members_for_all_groups(bot: Bot) -> SyncMembersAllTaskState:
             _set_stage(state, "failed")
             await _notify_superusers(
                 bot,
-                _build_progress_plan(state, final=True),
+                _build_progress_plan(state, final=True, locale=locale),
             )
             raise
         finally:

@@ -22,7 +22,8 @@ async def test_fetch_image_bytes_from_message_runs_concurrently(
         nonlocal current, max_running
         current += 1
         max_running = max(max_running, current)
-        await asyncio.sleep(0.01)
+        # 让出事件循环而不是真睡，等价制造并发重叠窗口。
+        await asyncio.sleep(0)
         current -= 1
         return url.encode("utf-8")
 
@@ -54,7 +55,8 @@ async def test_ingest_image_bytes_items_runs_concurrently_and_preserves_order() 
         nonlocal current, max_running
         current += 1
         max_running = max(max_running, current)
-        await asyncio.sleep(0.01)
+        # 让出事件循环而不是真睡，等价制造并发重叠窗口。
+        await asyncio.sleep(0)
         current -= 1
         return SimpleNamespace(canonical_id=int(data.decode("utf-8")))
 

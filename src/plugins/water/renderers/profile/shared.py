@@ -81,25 +81,45 @@ def build_my_water_text_fallback(
         data.achievement_items,
         locale,
     )
+    current_text = "、".join(current_achievements[:6]) or "-"
+    history_text = (
+        "；".join(
+            f"{title}({date_text})" for title, date_text in history_achievements[:5]
+        )
+        or "-"
+    )
     return "\n".join(
         [
             f"{data.username}",
-            f"群组: {data.group_name}",
-            f"矩阵: {data.matrix_id}",
-            f"全局排行: {format_profile_rank(data.global_rank, locale)}",
-            f"群内排行: {format_profile_rank(data.group_user_rank, locale)}",
-            f"矩阵排行: {format_profile_rank(data.matrix_user_rank, locale)}",
-            f"矩阵总排行: {format_profile_rank(data.matrix_rank, locale)}",
-            f"群活跃排行: {format_profile_rank(data.group_rank, locale)}",
-            "当前成就: " + ("、".join(current_achievements[:6]) or "-"),
-            "历史成就: "
-            + (
-                "；".join(
-                    f"{title}({date_text})"
-                    for title, date_text in history_achievements[:5]
-                )
-                or "-"
+            tr(locale, "water.profile.field.group", value=data.group_name),
+            tr(locale, "water.profile.field.matrix", value=data.matrix_id),
+            tr(
+                locale,
+                "water.profile.field.global_rank",
+                value=format_profile_rank(data.global_rank, locale),
             ),
+            tr(
+                locale,
+                "water.profile.field.group_rank",
+                value=format_profile_rank(data.group_user_rank, locale),
+            ),
+            tr(
+                locale,
+                "water.profile.field.matrix_rank",
+                value=format_profile_rank(data.matrix_user_rank, locale),
+            ),
+            tr(
+                locale,
+                "water.profile.field.matrix_total_rank",
+                value=format_profile_rank(data.matrix_rank, locale),
+            ),
+            tr(
+                locale,
+                "water.profile.field.group_active_rank",
+                value=format_profile_rank(data.group_rank, locale),
+            ),
+            tr(locale, "water.profile.field.current_achievements", value=current_text),
+            tr(locale, "water.profile.field.history_achievements", value=history_text),
         ]
     )
 

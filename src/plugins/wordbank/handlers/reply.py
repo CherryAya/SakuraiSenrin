@@ -563,8 +563,14 @@ async def handle_approval_reply_result(
                 response_item_id=approval_message.response_item_id,
                 locale=locale,
                 requested_action="approve",
-                continue_hint="通过 覆盖",
-                alternative_hint="拒绝 覆盖",
+                continue_hint=tr(
+                    locale,
+                    "wordbank.reviewer_overwrite.reply_approve_hint",
+                ),
+                alternative_hint=tr(
+                    locale,
+                    "wordbank.reviewer_overwrite.reply_reject_hint",
+                ),
             )
             if prompt is not None:
                 return ApprovalReplyOutcome(
@@ -609,8 +615,14 @@ async def handle_approval_reply_result(
                 response_item_id=approval_message.response_item_id,
                 locale=locale,
                 requested_action="reject",
-                continue_hint="拒绝 覆盖",
-                alternative_hint="通过 覆盖",
+                continue_hint=tr(
+                    locale,
+                    "wordbank.reviewer_overwrite.reply_reject_hint",
+                ),
+                alternative_hint=tr(
+                    locale,
+                    "wordbank.reviewer_overwrite.reply_approve_hint",
+                ),
             )
             if prompt is not None:
                 return ApprovalReplyOutcome(
@@ -1030,7 +1042,7 @@ def _parse_group_detail_delete_targets(text: str) -> tuple[int, ...]:
     targets = tuple(token for token in re.split(r"[\s,，]+", text.strip()) if token)
     if not targets:
         raise RuleError(
-            "删除命令格式不正确，请发送“删除 词条ID [词条ID...]”。",
+            _default_i18n_text("wordbank.reply.group_command_invalid"),
             key="wordbank.reply.group_command_invalid",
         )
     response_item_ids: list[int] = []
@@ -1039,7 +1051,7 @@ def _parse_group_detail_delete_targets(text: str) -> tuple[int, ...]:
             value = int(target)
             if value <= 0:
                 raise RuleError(
-                    "删除命令格式不正确，请发送“删除 词条ID [词条ID...]”。",
+                    _default_i18n_text("wordbank.reply.group_command_invalid"),
                     key="wordbank.reply.group_command_invalid",
                 )
             if value not in response_item_ids:
@@ -1058,7 +1070,7 @@ def _parse_group_detail_delete_targets(text: str) -> tuple[int, ...]:
                     response_item_ids.append(value)
             continue
         raise RuleError(
-            "删除命令格式不正确，请发送“删除 词条ID [词条ID...]”。",
+            _default_i18n_text("wordbank.reply.group_command_invalid"),
             key="wordbank.reply.group_command_invalid",
         )
     return tuple(response_item_ids)
@@ -1078,8 +1090,8 @@ def parse_group_detail_delete_reply(
         set(available_response_item_ids)
     ):
         raise RuleError(
-            "当前详情页没有这个词条 ID，请发送图中标注的删除命令。",
-            key="wordbank.reply.group_command_invalid",
+            _default_i18n_text("wordbank.reply.group_detail_delete_out_of_page"),
+            key="wordbank.reply.group_detail_delete_out_of_page",
         )
     return ParsedGroupDetailDeleteCommand(response_item_ids=response_item_ids)
 

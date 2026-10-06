@@ -38,6 +38,10 @@ from src.plugins.admin.group import admin_group
 from src.plugins.admin.i18n import admin_i18n
 from src.plugins.admin.invite import admin_invite
 from src.plugins.admin.user import admin_user
+from src.services.member_sync_admin import (
+    SyncMembersAllTaskState,
+    build_sync_members_completion_summary,
+)
 from tests.plugins.water.helpers import (
     attach_reply_message,
     build_group_message_event,
@@ -244,7 +248,17 @@ async def test_admin_group_sync_members_all_invokes_runner(
         ctx.receive_event(bot, event)
         ctx.should_call_send(
             event,
-            "群成员全量同步已结束。\n总群数：2\n成功：2\n失败：0\n跳过：0",
+            build_sync_members_completion_summary(
+                cast(
+                    SyncMembersAllTaskState,
+                    SimpleNamespace(
+                        total_groups=2,
+                        succeeded=2,
+                        failed=0,
+                        skipped=0,
+                    ),
+                ),
+            ),
             bot=bot,
         )
         ctx.should_finished(admin_group)
@@ -270,7 +284,10 @@ async def test_admin_group_sync_members_all_returns_running_summary(
     monkeypatch.setattr(
         group_plugin,
         "build_sync_members_all_running_summary",
-        lambda state: "已有群成员全量同步任务正在执行。",
+        lambda state, *, locale: tr(
+            locale,
+            "admin.sync_members.running",
+        ),
     )
     monkeypatch.setattr(
         group_plugin,
@@ -283,7 +300,7 @@ async def test_admin_group_sync_members_all_returns_running_summary(
         ctx.receive_event(bot, event)
         ctx.should_call_send(
             event,
-            "已有群成员全量同步任务正在执行。",
+            tr("zh-CN", "admin.sync_members.running"),
             bot=bot,
         )
         ctx.should_finished(admin_group)

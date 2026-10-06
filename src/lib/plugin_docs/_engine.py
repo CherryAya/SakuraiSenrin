@@ -1185,6 +1185,7 @@ def render_demo_png_with_audit(
     feature: FeatureDoc,
     *,
     generated_at: datetime | None = None,
+    render_image: bool = True,
 ) -> tuple[bytes, tuple[str, ...]]:
     result = DemoImageRenderer(
         impression_color=bundle.impression_color
@@ -1204,6 +1205,7 @@ def render_demo_png_with_audit(
         turns=feature.demo_turns,
         locale="zh-CN",
         generated_at=generated_at,
+        render_image=render_image,
     )
     return result.data, result.errors
 
@@ -1437,11 +1439,13 @@ def audit_demo_layout(
     *,
     generated_at: datetime | None = None,
 ) -> tuple[str, ...]:
-    _, errors = render_demo_png_with_audit(
+    image, errors = render_demo_png_with_audit(
         bundle,
         feature,
         generated_at=generated_at,
+        render_image=False,
     )
+    _ = image
     return errors
 
 
