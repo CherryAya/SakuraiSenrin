@@ -23,9 +23,3 @@ class WordbankUserError(ValueError):
 
     def localize(self, locale: LocaleCode) -> str:
         return tr(locale, self.key, **self.params)
-
-
-def format_wordbank_error(exc: Exception, locale: LocaleCode) -> str:
-    if isinstance(exc, WordbankUserError):
-        return exc.localize(locale)
-    return str(exc)

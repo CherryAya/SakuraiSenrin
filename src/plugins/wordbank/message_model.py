@@ -81,23 +81,6 @@ EVENT_TRIGGER_ALIASES = {
     "凛凛退群": "event:bot_leave",
     "成员离群": "event:member_leave",
 }
-EVENT_TRIGGER_DISPLAY_LINES = (
-    "event:at / [@] / 【@】 / [at] / 【at】 -> @到凛凛",
-    "event:mention / [提及] / 【提及】 -> 提及凛凛",
-    "event:poke / [戳一戳] / 【戳一戳】 -> 戳一戳",
-    "event:bot_join / [bot加群] / 【bot加群】 -> 凛凛自己进群",
-    "event:member_join / [成员加群] / 【成员加群】 -> 其他人进群",
-    "event:join / [新人加入] / 【新人加入】 / [新成员加入]",
-    " / 【新成员加入】 / [有人加群] / 【有人加群】 -> 入群",
-    "event:group_join -> 入群",
-    "event:group_increase -> 群成员增加",
-    "event:bot_leave / [bot退群] / 【bot退群】 -> 凛凛自己退群",
-    "event:member_leave / [成员离群] / 【成员离群】 -> 其他人退群",
-    "event:leave / [成员退群] / 【成员退群】 / [有人退群]",
-    " / 【有人退群】 / [离群] / 【离群】 -> 离群",
-    "event:group_leave -> 离群",
-    "event:group_decrease -> 群成员减少",
-)
 
 
 @dataclass(slots=True, frozen=True)
@@ -188,10 +171,6 @@ def unescape_trigger_text_literal(text: str) -> str:
     if len(text) >= 2 and text[1] == EVENT_TRIGGER_ESCAPED_PREFIX:
         return text[1:]
     return text[1:]
-
-
-def event_trigger_display_lines() -> tuple[str, ...]:
-    return EVENT_TRIGGER_DISPLAY_LINES
 
 
 def _resolve_event_trigger_alias(normalized: str) -> str | None:
@@ -301,26 +280,6 @@ def shape_from_message_input(
     for event_name in event_names:
         if event_name:
             atoms.append(MessageAtom(kind="event", event_name=event_name))
-    return MessageShape(tuple(atoms))
-
-
-def shape_from_forward_message(message: MessageInput) -> MessageShape:
-    atoms: list[MessageAtom] = []
-    for segment in iter_message_segments(message):
-        if segment.type == "text":
-            raw_text = str(segment.data.get("text", ""))
-            if is_valid_message_text(raw_text, preserve_blank_text=False):
-                atoms.append(MessageAtom(kind="text", text=raw_text))
-        elif segment.type == "image":
-            atoms.append(MessageAtom(kind="image"))
-        elif segment.type == "face":
-            face_id = _coerce_face_id(segment.data.get("id"))
-            if face_id is not None:
-                atoms.append(MessageAtom(kind="face", face_id=face_id))
-        elif segment.type == "at":
-            target_id = str(segment.data.get("qq", "") or "").strip()
-            if target_id:
-                atoms.append(MessageAtom(kind="at", target_id=target_id))
     return MessageShape(tuple(atoms))
 
 

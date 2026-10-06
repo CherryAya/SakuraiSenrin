@@ -22,9 +22,6 @@ from src.plugins.wordbank.database.types import (
 )
 from src.plugins.wordbank.services.core import WordbankService
 from src.plugins.wordbank.services.media import WordbankMediaService
-from src.plugins.wordbank.services.presentation import (
-    format_scope_label,
-)
 from src.plugins.wordbank.services.rules import RuleError
 from src.plugins.wordbank.text_parsing import normalize_cq_plain_text
 
@@ -274,13 +271,6 @@ def get_reply_message_ids(event: MessageEvent) -> tuple[str, ...]:
         f" candidates={tuple(message_ids)}"
     )
     return tuple(message_ids)
-
-
-def get_reply_message_id(event: MessageEvent) -> str | None:
-    message_ids = get_reply_message_ids(event)
-    if not message_ids:
-        return None
-    return message_ids[0]
 
 
 async def _get_message_ref_by_reply_ids(
@@ -1143,33 +1133,6 @@ async def _load_group_detail(
     return await service.get_group_detail(
         response_message.trigger_group_id,
         response_item_id=response_message.response_item_id,
-    )
-
-
-def format_entry_detail(
-    detail: WordbankGroupDetail,
-    response_message: WordbankMessageRefRecord,
-    *,
-    locale: LocaleCode,
-) -> str:
-    selected = detail.selected_response
-    assert selected is not None
-    return tr(
-        locale,
-        "wordbank.reply.info",
-        entry_id=selected.response_item_id,
-        # status=format_status_label(selected.status),
-        # enabled=_format_enabled(selected.enabled, locale),
-        # deleted_at=_format_deleted_at(selected.deleted_at),
-        scope=format_scope_label(selected),
-        # group_id=selected.group_id or "-",
-        created_by=selected.created_by,
-        # trigger_text=detail.trigger_text,
-        # response_text=selected.response_text,
-        probability=f"{detail.probability:g}",
-        weight=selected.weight,
-        # message_id=response_message.message_id,
-        # message_type=response_message.message_type,
     )
 
 

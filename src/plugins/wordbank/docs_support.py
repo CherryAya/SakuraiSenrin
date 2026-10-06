@@ -63,27 +63,6 @@ def wordbank_error_feature(exc: Exception, default_feature: str | None) -> str |
     return default_feature
 
 
-def build_wordbank_error_demo(
-    locale: LocaleCode,
-    message: str,
-    *,
-    feature_query: str | None,
-    source: Path = DOCS_SOURCE,
-    actor_permission: Permission = Permission.NORMAL,
-) -> MessagePlanEntry:
-    return build_doc_demo_plan_entry(
-        source=source,
-        name=tr("zh-CN", "plugin.wordbank.name"),
-        description=tr("zh-CN", "plugin.wordbank.description"),
-        trigger=TriggerType.COMMAND,
-        permission=Permission.NORMAL,
-        actor_permission=actor_permission,
-        locale=locale,
-        feature_query=feature_query,
-        prefix_text=message,
-    )
-
-
 def wordbank_error_message(
     exc: Exception,
     locale: LocaleCode,

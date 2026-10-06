@@ -156,17 +156,6 @@ async def build_response_shape_from_command_message(
     return shape
 
 
-async def handle_add_text(
-    service: WordbankService,
-    *,
-    event: MessageEvent,
-    text: str,
-    locale: LocaleCode,
-) -> WordbankAddResult:
-    result = await handle_add_text_result(service, event=event, text=text)
-    return result
-
-
 async def handle_add_text_result(
     service: WordbankService,
     *,
