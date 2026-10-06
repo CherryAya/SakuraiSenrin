@@ -315,6 +315,18 @@ class SegmentStore(BaseDB):
         """按本 store 的业务时区取「当前时刻」。"""
         return arrow.get(get_current_time()).to(self.tz)
 
+    def _to_local(self, moment: datetime) -> arrow.Arrow:
+        """把任意 datetime 归一化到本 store 的业务时区。
+
+        调用方可能传 naive datetime（本业务时区的墙钟时间）、aware datetime
+        （绝对时刻），或两者混用；这里统一成「同一个绝对时刻在 store 时区的
+        表示」，保证分片枚举与写入路由口径一致。
+        """
+        raw = arrow.get(moment)
+        if raw.tzinfo is None:
+            return raw.replace(tzinfo=self.tz)
+        return raw.to(self.tz)
+
     def _lock_key(self, shard_key: str) -> str:
         return f"shard:{shard_key}"
 
@@ -760,10 +772,16 @@ class SegmentStore(BaseDB):
         *,
         cold_policy: ColdPolicy | None = None,
     ) -> list[T]:
-        curr = arrow.get(start_time).floor("month")
-        end = arrow.get(end_time).floor("month")
+        # 分片按 self.tz 切分，窗口边界必须先归一化到同一时区再取月，否则每月
+        # 1 号 00:00-08:00 CST 期间会漏掉当月分片（此时 UTC 仍在上个月）。
+        start_local = self._to_local(start_time)
+        end_local = self._to_local(end_time)
+        curr = start_local.floor("month")
+        end = end_local.floor("month")
         months_span = (
-            (end_time.year - start_time.year) * 12 + end_time.month - start_time.month
+            (end_local.year - start_local.year) * 12
+            + end_local.month
+            - start_local.month
         )
         # Store-level safety guard for generic shard scans. Business modules should
         # enforce their own narrower windows before reaching this layer.
@@ -789,7 +807,7 @@ class SegmentStore(BaseDB):
             status="started",
             summary=(
                 f"Scanning {len(shard_keys)} shard(s) from "
-                f"{start_time.strftime('%Y-%m')} to {end_time.strftime('%Y-%m')}."
+                f"{start_local.strftime('%Y-%m')} to {end_local.strftime('%Y-%m')}."
             ),
             batch_size=len(shard_keys),
             payload_json={"shard_keys": shard_keys},

@@ -5,11 +5,15 @@ from typing import cast
 
 from src.database.core.ops import GroupLocaleSettingOps, PluginConfigOps
 from src.database.instances import core_db
-from src.lib.i18n.types import LocaleCode
+from src.lib.i18n.types import (
+    DEFAULT_LOCALE_CODE,
+    SUPPORTED_LOCALE_CODES,
+    LocaleCode,
+)
 
-DEFAULT_LOCALE: LocaleCode = "zh-CN"
+DEFAULT_LOCALE: LocaleCode = DEFAULT_LOCALE_CODE
 PLUGIN_NAME = "core.i18n"
-SUPPORTED_LOCALES = {"zh-CN", "lzh", "x-meme"}
+SUPPORTED_LOCALES = SUPPORTED_LOCALE_CODES
 
 
 @dataclass(slots=True)

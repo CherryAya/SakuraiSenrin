@@ -12,7 +12,7 @@ from nonebot.matcher import Matcher
 from nonebot.typing import T_State
 
 from src.lib.i18n.runtime import tr
-from src.lib.i18n.types import LocaleCode
+from src.lib.i18n.types import LocaleCode, normalize_locale_code
 from src.lib.interaction import clear_interaction_errors, reject_or_abort_on_error
 from src.lib.interactive_recall import (
     INTERACTION_ROOT_MESSAGE_ID,
@@ -165,8 +165,7 @@ async def reject_guided_error(
 
 
 def wordbank_guided_locale(state: Mapping[str, Any]) -> LocaleCode:
-    locale = state.get("wordbank_locale", "zh-CN")
-    return locale if locale in {"zh-CN", "lzh", "x-meme"} else "zh-CN"
+    return normalize_locale_code(state.get("wordbank_locale"))
 
 
 def copy_guided_state(

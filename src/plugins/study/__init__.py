@@ -28,7 +28,7 @@ from nonebot.typing import T_State
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
-from src.lib.i18n.types import LocaleCode
+from src.lib.i18n.types import LocaleCode, normalize_locale_code
 from src.lib.interaction import (
     abort_if_revoke_signal,
     clear_interaction_errors,
@@ -269,9 +269,22 @@ def _register_study_checkpoint(
     )
 
 
-def _state_message_shape(state: Mapping[str, Any], key: str) -> MessageShape | None:
+def _state_value[T](
+    state: Mapping[str, Any],
+    key: str,
+    expected: type[T],
+) -> T | None:
+    """按声明类型收窄读取 state。
+
+    T_State 经由 recall 快照（见 ``rebuild_temp_matcher``）在 matcher 之间重建，
+    键存在不等于值类型可信，因此非 bool 状态一律走本函数收窄。
+    """
     value = state.get(key)
-    return value if isinstance(value, MessageShape) else None
+    return value if isinstance(value, expected) else None
+
+
+def _study_locale(state: Mapping[str, Any]) -> LocaleCode:
+    return normalize_locale_code(state.get("study_locale"))
 
 
 def _contains_study_pair_separator(text: str) -> bool:
@@ -280,16 +293,6 @@ def _contains_study_pair_separator(text: str) -> bool:
 
 def _study_state_keys(state: Mapping[str, Any]) -> list[str]:
     return sorted(str(key) for key in state.keys() if str(key).startswith("study_"))
-
-
-def _study_forward_response_event(state: Mapping[str, Any]) -> MessageEvent | None:
-    value = state.get("study_forward_response_event")
-    return value if isinstance(value, MessageEvent) else None
-
-
-def _study_submission_source_event(state: Mapping[str, Any]) -> MessageEvent | None:
-    value = state.get("study_submission_source_event")
-    return value if isinstance(value, MessageEvent) else None
 
 
 async def _start_guided_study_from_partial_args(
@@ -584,7 +587,7 @@ async def _record_study_forward_response_choice(
         "[Study][guided] forward response choice | "
         f"choice={choice or '-'} state_keys={state_keys}"
     )
-    response_event = _study_forward_response_event(state)
+    response_event = _state_value(state, "study_forward_response_event", MessageEvent)
     if response_event is None:
         logger.debug(
             "[Study][guided] forward response choice missing response_event | "
@@ -773,9 +776,11 @@ async def _finish_guided_study(
     try:
         state_keys = _study_state_keys(state)
         logger.debug(f"[Study][guided] finish start | state_keys={state_keys}")
-        source_event = _study_submission_source_event(state)
-        trigger_shape = _state_message_shape(state, "study_trigger_shape")
-        response_shape = _state_message_shape(state, "study_response_shape")
+        source_event = _state_value(
+            state, "study_submission_source_event", MessageEvent
+        )
+        trigger_shape = _state_value(state, "study_trigger_shape", MessageShape)
+        response_shape = _state_value(state, "study_response_shape", MessageShape)
         if trigger_shape is None or trigger_shape.is_empty():
             raise RuleError(
                 _default_i18n_text("wordbank.error.trigger_empty"),
@@ -1106,11 +1111,6 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
     )
 
 
-def _study_locale(state: T_State) -> LocaleCode:
-    locale = state.get("study_locale", "zh-CN")
-    return locale if locale in {"zh-CN", "lzh", "x-meme"} else "zh-CN"
-
-
 @study_command.handle()
 async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> None:
     locale = _study_locale(state)
@@ -1141,7 +1141,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
             locale,
         )
         return
-    if not _state_message_shape(state, "study_trigger_shape"):
+    if not _state_value(state, "study_trigger_shape", MessageShape):
         return
     await _record_study_response(bot, matcher, event, state, locale)
 

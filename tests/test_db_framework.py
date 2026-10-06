@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 import json
 from pathlib import Path
 import sqlite3
@@ -523,6 +524,59 @@ async def test_segment_store_manifest_write_is_atomic_under_concurrency(
     payload = json.loads((db_dir / "events_manifest.json").read_text(encoding="utf-8"))
     assert "2026_09" in payload["segments"]
     assert not list(db_dir.glob("*.tmp"))
+
+
+@pytest.mark.asyncio
+async def test_segment_store_map_reduce_includes_current_month_shard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：CST 月初窗口扫描必须包含当月分片。
+
+    历史故障：map_reduce 用 UTC floor 取月，导致 9/1 00:00-08:00 CST 期间
+    漏掉当月分片，wordbank 触发计数漏算、限流规则失效 8 小时。
+    """
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    # 2026-09-01 07:30 +08:00
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-09-01 07:30:00+08:00").int_timestamp,
+    )
+
+    db = EventStore(namespace="framework_scan", prefix="events", fmt="%Y_%m")
+    await db.init_schema(_ShardBase)
+
+    # 当月分片里放一条数据
+    september = arrow.get("2026-09-01 00:10:00+08:00").datetime
+    async with db.write_session(time_ctx=september) as session:
+        session.add(_ShardModel(value="new-month"))
+
+    # wordbank 风格的 UTC-aware 90 天窗口
+    now_ts = arrow.get("2026-09-01 07:30:00+08:00").int_timestamp
+    start_time = datetime.fromtimestamp(now_ts - 90 * 86400, UTC)
+    end_time = datetime.fromtimestamp(now_ts, UTC)
+
+    results = await db.map_reduce(
+        start_time,
+        end_time,
+        lambda _session: _session.execute(
+            select(_ShardModel.value).where(_ShardModel.value == "new-month")
+        ),
+    )
+    assert any(rows.scalars().all() == ["new-month"] for rows in results)
+
+    # naive 输入（store 时区墙钟）也必须正确
+    results_naive = await db.map_reduce(
+        arrow.get("2026-08-25").datetime,
+        arrow.get("2026-09-05").datetime,
+        lambda _session: _session.execute(
+            select(_ShardModel.value).where(_ShardModel.value == "new-month")
+        ),
+    )
+    assert any(rows.scalars().all() == ["new-month"] for rows in results_naive)
 
 
 @pytest.mark.asyncio

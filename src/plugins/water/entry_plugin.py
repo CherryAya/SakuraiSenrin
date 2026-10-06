@@ -34,7 +34,7 @@ from src.lib.cooldown import (
     build_cooldown_dependency,
 )
 from src.lib.i18n.runtime import resolve_locale, tr
-from src.lib.i18n.types import LocaleCode
+from src.lib.i18n.types import LocaleCode, normalize_locale_code
 from src.lib.interaction import (
     abort_if_revoke_signal,
     clear_interaction_errors,
@@ -276,8 +276,7 @@ def _copy_water_state(
 
 
 def _water_rank_locale(state: T_State) -> LocaleCode:
-    locale = state.get("water_rank_locale", "zh-CN")
-    return locale if locale in {"zh-CN", "lzh", "x-meme"} else "zh-CN"
+    return normalize_locale_code(state.get("water_rank_locale"))
 
 
 def _water_rank_subject(state: T_State) -> WaterRankSubject | None:
