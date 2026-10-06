@@ -11,6 +11,7 @@ import re
 from typing import Any
 
 from src.lib.utils.common import get_current_time
+from src.locales.zh_cn import CATALOG as ZH_CATALOG
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENDPOINT_PATH = ROOT / "docs" / "development" / "long-task-progress.json"
@@ -19,18 +20,34 @@ RUNTIME_SCAN_ROOTS = (
     Path("src/services"),
     Path("src/hooks"),
 )
-WAIT_PROMPT_PATTERN = re.compile(
-    r"(请稍候|请稍等|请稍后|处理中|执行中|整理中|搜索中|加载中)"
+WAIT_PROMPT_PATTERN = re.compile(f"({ZH_CATALOG['i18n.wait_prompt_words']})")
+
+# Wait-prompt message keys. This is an explicit allowlist rather than a suffix
+# match because some `.running` / `.processing` keys are status *labels*
+# (e.g. `admin.sync_members.status.running`) and must not be treated as
+# long-task prompts. Every key below is validated against the catalog so the
+# allowlist can never drift out of sync with the i18n catalogs.
+WAIT_I18N_KEYS = frozenset(
+    {
+        "admin.backup.restore.running",
+        "admin.backup.run.running",
+        "admin.invite.list.processing",
+        "admin.sync_members.started",
+        "picsearch.searching",
+        "water.admin.report_push.running",
+        "water.admin.settle.running",
+        "water.common.working",
+        "water.rank.working",
+        "wordbank.add.processing_with_media",
+        "wordbank.mutation.processing",
+        "wordbank.view.processing",
+    }
 )
-WAIT_I18N_KEYS = {
-    "admin.backup.restore.running",
-    "admin.backup.run.running",
-    "picsearch.searching",
-    "water.admin.settle.running",
-    "water.common.working",
-    "water.rank.working",
-    "wordbank.add.processing_with_media",
-}
+_UNKNOWN_WAIT_KEYS = WAIT_I18N_KEYS - set(ZH_CATALOG)
+if _UNKNOWN_WAIT_KEYS:  # pragma: no cover - guards against catalog drift
+    raise ValueError(
+        f"WAIT_I18N_KEYS references unknown message keys: {sorted(_UNKNOWN_WAIT_KEYS)}"
+    )
 HEAVY_DELIVERY_PATTERN = re.compile(
     r"(deliver_message_plan\(|matcher\.(?:finish|send|pause|reject)\()"
 )

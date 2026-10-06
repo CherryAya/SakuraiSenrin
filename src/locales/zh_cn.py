@@ -5,6 +5,9 @@ from src.lib.i18n.types import LocaleCode
 LOCALE: Final[LocaleCode] = "zh-CN"
 CATALOG: Final[dict[str, str]] = {
     ("i18n.missing"): ("[missing:{key}]"),
+    ("i18n.wait_prompt_words"): (
+        "请稍候|请稍等|请稍后|处理中|执行中|整理中|搜索中|加载中"
+    ),
     ("i18n.duration.zero"): ("0秒"),
     ("i18n.duration.day"): ("{count}天"),
     ("i18n.duration.hour"): ("{count}小时"),
