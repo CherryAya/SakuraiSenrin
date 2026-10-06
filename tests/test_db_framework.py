@@ -525,6 +525,137 @@ async def test_segment_store_manifest_write_is_atomic_under_concurrency(
     assert not list(db_dir.glob("*.tmp"))
 
 
+@pytest.mark.asyncio
+async def test_segment_store_seals_oversized_active_shard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """对齐 ES ILM 的 max_primary_shard_size：活跃分片超阈值也要 seal。"""
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-09-15 12:00:00+08:00").int_timestamp,
+    )
+    # 阈值设成 0 MB，使任何非空分片都算超限，无需真的造大数据
+    monkeypatch.setattr(connectors_module, "SEGMENT_SIZE_ROLLOVER_MB", 0)
+
+    db = EventStore(namespace="framework_rollover", prefix="events", fmt="%Y_%m")
+    await db.init_schema(_ShardBase)
+
+    september = arrow.get("2026-09-10 00:00:00+08:00").datetime
+    async with db.write_session(time_ctx=september) as session:
+        session.add(_ShardModel(value="row-0"))
+
+    # 2026_09 仍在活跃窗口内，但体积已超阈值
+    db_dir = tmp_path / "framework_rollover"
+    assert db._is_active_shard("2026_09") is True
+    await db.run_archiver_task()
+
+    assert not (db_dir / "events_2026_09.db").exists()
+    assert (db_dir / "events_2026_09.db.zst").is_file()
+
+    async with db.read_session(
+        time_ctx=september,
+        cold_policy=ColdPolicy.HYDRATE,
+    ) as session:
+        total = await session.execute(select(func.count(_ShardModel.id)))
+    assert int(total.scalar() or 0) == 1
+
+
+@pytest.mark.asyncio
+async def test_segment_store_retention_removes_archived_shards_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """对齐 ES ILM delete 阶段：只删超期归档，绝不碰在线分片。"""
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-04-10 12:00:00+08:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_retention",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+        retention_months=3,
+    )
+    await db.init_schema(_ShardBase)
+
+    january = arrow.get("2026-01-08").datetime
+    async with db.write_session(time_ctx=january) as session:
+        session.add(_ShardModel(value="old"))
+
+    # 4 月：1 月已出活跃窗口 -> 归档；保留期 3 个月，1 月仍在保留期内
+    await db.run_archiver_task()
+    db_dir = tmp_path / "framework_retention"
+    assert (db_dir / "events_2026_01.db.zst").is_file()
+
+    # 推进到 5 月：保留期边界退到 2 月，1 月超出保留期应被回收
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-05-20 12:00:00+08:00").int_timestamp,
+    )
+    await db.run_archiver_task()
+    assert not (db_dir / "events_2026_01.db.zst").exists()
+    assert not (db_dir / "events_2026_01.db").exists()
+
+    # 在线分片不受影响
+    april = arrow.get("2026-04-05").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_ShardModel(value="current"))
+    assert (db_dir / "events_2026_04.db").is_file()
+
+
+@pytest.mark.asyncio
+async def test_segment_store_health_reports_shard_states(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """分片健康快照（对应 _cat/indices）应能反映在线/归档/活跃状态。"""
+    from src.lib.db import connectors as connectors_module
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-04-10 12:00:00+08:00").int_timestamp,
+    )
+
+    db = EventStore(
+        namespace="framework_health",
+        prefix="events",
+        fmt="%Y_%m",
+        active_window_months=1,
+    )
+    await db.init_schema(_ShardBase)
+
+    january = arrow.get("2026-01-08").datetime
+    async with db.write_session(time_ctx=january) as session:
+        session.add(_ShardModel(value="old"))
+    april = arrow.get("2026-04-05").datetime
+    async with db.write_session(time_ctx=april) as session:
+        session.add(_ShardModel(value="current"))
+
+    await db.run_archiver_task()
+    health = {row["shard"]: row for row in db.shard_health()}
+
+    assert health["2026_01"]["archived"] is True
+    assert health["2026_01"]["online"] is False
+    assert health["2026_01"]["archived_at"] > 0
+    assert health["2026_04"]["online"] is True
+    assert health["2026_04"]["is_active"] is True
+    assert health["2026_04"]["size_bytes"] > 0
+
+
 def test_database_manager_uses_debug_sql_echo_from_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

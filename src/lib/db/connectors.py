@@ -46,6 +46,13 @@ DEFAULT_SEGMENT_TZ = "Asia/Shanghai"
 # 是分片文件本身，因此允许延迟落盘。
 MANIFEST_FLUSH_INTERVAL = 5.0
 
+# 单个活跃分片的体积上限（MB）。对齐 ES ILM 的 max_primary_shard_size：按时间
+# 切分之外再加一道体积闸门，避免某个月数据暴涨把单文件撑到不可控。
+DEFAULT_MAX_SEGMENT_SIZE_MB = 512
+
+# 超过该阈值的分片在下次巡检时会被强制 seal（转为 COLD）。
+SEGMENT_SIZE_ROLLOVER_MB = 256
+
 # 两阶段归档的中间态后缀。归档先把分片 rename 成该后缀，压缩成功后再删除。
 ARCHIVE_STAGING_SUFFIX = ".archiving"
 
@@ -77,6 +84,7 @@ class SegmentManifestEntry:
     last_access_at: int = 0
     hydrated_at: int = 0
     updated_at: int = 0
+    archived_at: int = 0
 
 
 @dataclass(slots=True)
@@ -111,6 +119,7 @@ class SegmentManifest:
                 last_access_at=int(value.get("last_access_at", 0)),
                 hydrated_at=int(value.get("hydrated_at", 0)),
                 updated_at=int(value.get("updated_at", 0)),
+                archived_at=int(value.get("archived_at", 0)),
             )
             for key, value in payload.get("segments", {}).items()
         }
@@ -119,6 +128,12 @@ class SegmentManifest:
 
 @dataclass(slots=True)
 class SegmentConfig:
+    """分片生命周期策略（对应 ES 的 ILM policy）。
+
+    原先是 dead code：字段与 SegmentStore 上的同名参数重复且无人引用。这里保留
+    为「策略的单一描述」，供 ILM 校验与文档使用，避免再出现两套阈值来源。
+    """
+
     granularity: str = "month"
     hot_window: int = 2
     warm_ttl_seconds: int = 24 * 60 * 60
@@ -126,6 +141,8 @@ class SegmentConfig:
     cold_policy: ColdPolicy = ColdPolicy.DENY
     archive_codec: ArchiveCodec = ArchiveCodec.ZSTD
     map_reduce_concurrency: int = 4
+    max_segment_size_mb: int = DEFAULT_MAX_SEGMENT_SIZE_MB
+    retention_months: int = 0
 
 
 @dataclass
@@ -213,6 +230,15 @@ class StateStore(BaseDB):
         ]
 
 
+def _safe_size(path: Path | None) -> int:
+    if path is None:
+        return 0
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
 class _ReentrantShardLock:
     """按 task 可重入的分片锁。
 
@@ -257,6 +283,8 @@ class SegmentStore(BaseDB):
     warm_budget_mb: int = 512
     archive_codec: ArchiveCodec = ArchiveCodec.ZSTD
     tz: str = DEFAULT_SEGMENT_TZ
+    max_segment_size_mb: int = DEFAULT_MAX_SEGMENT_SIZE_MB
+    retention_months: int = 0
     _locks: dict[str, _ReentrantShardLock] = field(default_factory=dict)
     _initialized_shards: dict[str, tuple[int, int]] = field(default_factory=dict)
     _manifest: SegmentManifest | None = field(default=None, init=False, repr=False)
@@ -551,6 +579,42 @@ class SegmentStore(BaseDB):
             entry.size_bytes = 0
         await self.flush_manifest()
 
+    async def _mark_archived(self, shard_key: str) -> None:
+        """记录归档完成时间，供 retention 判定使用。"""
+        entry = self._load_manifest().segments.get(shard_key)
+        if entry is None:
+            return
+        entry.archived_at = get_current_time()
+        entry.updated_at = entry.archived_at
+
+    def shard_health(self) -> list[dict[str, Any]]:
+        """分片健康快照，对应 ES 的 _cat/indices + _cluster/health。
+
+        只读，不触碰磁盘以外的状态；供运维脚本与启动自检使用。
+        """
+        manifest = self._load_manifest()
+        rows: list[dict[str, Any]] = []
+        for shard_key, entry in sorted(manifest.segments.items()):
+            db_path = Path(entry.path)
+            archive_path = Path(entry.archive_path) if entry.archive_path else None
+            rows.append(
+                {
+                    "shard": shard_key,
+                    "state": entry.state.value,
+                    "is_active": self._is_active_shard(shard_key),
+                    "online": db_path.exists(),
+                    "archived": bool(archive_path and archive_path.exists()),
+                    "size_bytes": (
+                        entry.size_bytes
+                        if db_path.exists()
+                        else _safe_size(archive_path)
+                    ),
+                    "last_access_at": entry.last_access_at,
+                    "archived_at": entry.archived_at,
+                },
+            )
+        return rows
+
     def _shard_key_for_path(self, db_path: Path) -> str | None:
         name = db_path.name
         marker = f"{self.prefix}_"
@@ -758,25 +822,91 @@ class SegmentStore(BaseDB):
         return [result for result in results if result is not None]
 
     async def run_archiver_task(self) -> None:
-        # 归档窗口与分片路由共用同一时区，避免月初 UTC/CST 错位把当月分片误归档。
+        """ILM 巡检：hot -> warm -> cold，并按保留期回收。
+
+        对应 ES 的 ILM：hot 是可写索引，warm 是刚压缩完仍可被唤回的，cold 只剩
+        归档。这里在时间窗口之外再加一道体积闸门（active 分片超过阈值也 seal），
+        以及一条 delete 阶段（retention_months > 0 时删除超期归档）。
+        """
         now = self._tz_now()
-        active_keys = [
+        active_keys = {
             now.shift(months=-offset).strftime(self.fmt)
             for offset in range(self.active_window_months)
-        ]
+        }
         for db_file in self.base_dir.glob(f"{self.prefix}_*.db"):
             file_key = db_file.stem.removeprefix(f"{self.prefix}_")
             if not file_key:
                 continue
-            if file_key in active_keys or self._is_active_shard(file_key):
+            size_mb = await asyncio.to_thread(
+                lambda: db_file.stat().st_size / (1024 * 1024)
+            )
+            # active_keys 之外，或虽在窗口内但体积已超阈值，都需要 seal。
+            oversized = size_mb >= SEGMENT_SIZE_ROLLOVER_MB
+            if file_key in active_keys and not oversized:
                 await self._touch_segment(file_key, state=SegmentState.HOT)
                 continue
-            await self._archive_shard(file_key)
+            if file_key in active_keys and oversized:
+                logger.warning(
+                    f"分片 {file_key} 已达 {size_mb:.1f}MB，超过 "
+                    f"{SEGMENT_SIZE_ROLLOVER_MB}MB 阈值，将被 seal",
+                )
+            await self._archive_shard(file_key, force=oversized)
         await self._ensure_budget()
+        if self.retention_months > 0:
+            await self._enforce_retention(now)
         await self.flush_manifest()
 
-    async def _archive_shard(self, shard_key: str) -> bool:
+    async def _enforce_retention(self, now: arrow.Arrow) -> None:
+        """ILM delete 阶段：删除超过保留期的归档文件。
+
+        只删 .db.zst 归档，绝不碰在线 .db；且删除前必须确认分片不在活跃窗口内。
+        """
+        manifest = self._load_manifest()
+        cutoff = now.shift(months=-self.retention_months).strftime(self.fmt)
+        removed = 0
+        freed = 0
+        for shard_key, entry in list(manifest.segments.items()):
+            if entry.state == SegmentState.HOT:
+                continue
+            if shard_key >= cutoff:
+                continue
+            archive_path = entry.archive_path
+            if not archive_path:
+                continue
+            path = Path(archive_path)
+            if not await asyncio.to_thread(path.exists):
+                manifest.segments.pop(shard_key, None)
+                continue
+            size = await asyncio.to_thread(lambda: path.stat().st_size)
+            async with self._shard_lock(shard_key):
+                with suppress(OSError):
+                    await asyncio.to_thread(os.remove, path)
+                    removed += 1
+                    freed += size
+            manifest.segments.pop(shard_key, None)
+            logger.info(f"保留期回收: {path.name} ({size / 1024 / 1024:.1f}MB)")
+        if removed:
+            logger.success(
+                f"保留期回收完成: 删除 {removed} 个归档，释放 "
+                f"{freed / 1024 / 1024:.1f}MB",
+            )
+            log_trace_event(
+                event_name="retention_sweep",
+                source_kind="segment_lifecycle",
+                component=f"{self.namespace}.{self.prefix}",
+                status="success",
+                summary=f"Removed {removed} archived segment(s) past retention.",
+                payload_json={
+                    "removed": removed,
+                    "freed_bytes": freed,
+                    "retention_months": self.retention_months,
+                },
+            )
+
+    async def _archive_shard(self, shard_key: str, *, force: bool = False) -> bool:
         """两阶段归档单个分片。
+
+        force=True 时用于「体积闸门 seal 活跃分片」，会跳过活跃窗口保护。
 
         阶段一（持锁）：释放引擎并把分片原子 rename 成 staging。
         阶段二（不持锁）：压缩 staging 到 .db.zst，成功后删除，失败则改回原名。
@@ -798,7 +928,8 @@ class SegmentStore(BaseDB):
         try:
             async with self._shard_lock(shard_key):
                 # 归档期间可能正好跨月，重新确认一次，避免删掉刚转成活跃的分片。
-                if self._is_active_shard(shard_key):
+                # force=True 表示「按体积闸门主动 seal 活跃分片」，跳过该保护。
+                if not force and self._is_active_shard(shard_key):
                     await self._touch_segment(shard_key, state=SegmentState.HOT)
                     return False
                 if not await asyncio.to_thread(db_path.exists):
@@ -831,15 +962,19 @@ class SegmentStore(BaseDB):
             with suppress(OSError):
                 await asyncio.to_thread(os.remove, safe_staging)
             async with self._shard_lock(shard_key):
-                await self._touch_segment(
-                    shard_key,
-                    state=(
-                        SegmentState.HOT
-                        if self._is_active_shard(shard_key)
-                        else SegmentState.COLD
-                    ),
-                    durable=True,
-                )
+                db_path, _ = self._get_file_paths(shard_key)
+                if await asyncio.to_thread(db_path.exists):
+                    await self._touch_segment(
+                        shard_key,
+                        state=SegmentState.HOT,
+                    )
+                else:
+                    await self._touch_segment(
+                        shard_key,
+                        state=SegmentState.COLD,
+                        durable=True,
+                    )
+                    await self._mark_archived(shard_key)
             logger.success(f"归档完成，已释放原始磁盘占用: {safe_db.name}")
             log_trace_event(
                 event_name="archive_shard",
