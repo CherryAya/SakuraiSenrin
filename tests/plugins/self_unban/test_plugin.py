@@ -346,9 +346,7 @@ async def test_self_unban_no_check_bypasses_runtime_blacklist_block(
         ctx.receive_event(bot, second)
         ctx.should_call_send(
             second,
-            (
-                "请输入本次解封理由（至少 10 个字）。当前剩余额度 2 次。"
-            ),
+            ("请输入本次解封理由（至少 10 个字）。当前剩余额度 2 次。"),
             bot=bot,
         )
         ctx.should_rejected()
