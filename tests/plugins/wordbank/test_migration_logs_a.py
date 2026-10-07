@@ -58,7 +58,7 @@ async def test_migrate_legacy_rows_imports_response_logs_into_current_log_schema
         reset_target=True,
     )
 
-    async with wordbank_log_db.read_session(time_ctx=call_time) as session:
+    async with wordbank_log_db.read_session_for(call_time) as session:
         logs = (
             (
                 await session.execute(
@@ -134,7 +134,7 @@ async def test_migrate_legacy_rows_backfills_trigger_logs_into_wordbank_log(
         reset_target=True,
     )
 
-    async with wordbank_log_db.read_session(time_ctx=call_time) as session:
+    async with wordbank_log_db.read_session_for(call_time) as session:
         logs = (
             (
                 await session.execute(
@@ -222,7 +222,7 @@ async def test_migrate_legacy_rows_deduplicates_trigger_log_against_response_log
         reset_target=True,
     )
 
-    async with wordbank_log_db.read_session(time_ctx=call_time) as session:
+    async with wordbank_log_db.read_session_for(call_time) as session:
         logs = (
             (
                 await session.execute(

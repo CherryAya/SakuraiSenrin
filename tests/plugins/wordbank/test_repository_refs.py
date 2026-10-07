@@ -147,7 +147,7 @@ async def test_init_all_tables_creates_fts_and_clears_wordbank_patch_chain(
                 )
             ).all()
         }
-    async with wordbank_message_ref_db.read_session() as session:
+    async with wordbank_message_ref_db.store.read_session() as session:
         ref_objects = {
             row[0]
             for row in (

@@ -173,16 +173,16 @@ async def test_import_legacy_water_rows_routes_multiple_months() -> None:
     assert (water_message.base_dir / "logs_2026_01.db").exists()
     assert (water_message.base_dir / "logs_2026_02.db").exists()
 
-    async with water_message.read_session(
-        time_ctx=arrow.get("2026-01-15", "YYYY-MM-DD").datetime
+    async with water_message.read_session_for(
+        arrow.get("2026-01-15", "YYYY-MM-DD").datetime
     ) as session:
         jan_count = await session.scalar(
             select(func.sum(WaterHourlyCounter.msg_count)).select_from(
                 WaterHourlyCounter
             )
         )
-    async with water_message.read_session(
-        time_ctx=arrow.get("2026-02-01", "YYYY-MM-DD").datetime
+    async with water_message.read_session_for(
+        arrow.get("2026-02-01", "YYYY-MM-DD").datetime
     ) as session:
         feb_count = await session.scalar(
             select(func.sum(WaterHourlyCounter.msg_count)).select_from(
@@ -222,8 +222,8 @@ async def test_import_legacy_water_rows_aggregates_same_hour_records() -> None:
     inserted = await import_legacy_water_rows(rows, chunk_size=10)
     assert inserted == 2
 
-    async with water_message.read_session(
-        time_ctx=arrow.get("2026-01-15", "YYYY-MM-DD").datetime
+    async with water_message.read_session_for(
+        arrow.get("2026-01-15", "YYYY-MM-DD").datetime
     ) as session:
         counts = (
             await session.execute(
@@ -260,8 +260,8 @@ async def test_buffered_cross_month_messages_settle_full_august_day() -> None:
     )
     await water_writer.flush_now()
 
-    async with water_message.read_session(
-        time_ctx=arrow.get("2026-07-31", "YYYY-MM-DD").datetime
+    async with water_message.read_session_for(
+        arrow.get("2026-07-31", "YYYY-MM-DD").datetime
     ) as session:
         july_rows = (
             await session.execute(
@@ -276,8 +276,8 @@ async def test_buffered_cross_month_messages_settle_full_august_day() -> None:
             )
         ).all()
 
-    async with water_message.read_session(
-        time_ctx=arrow.get("2026-08-01", "YYYY-MM-DD").datetime
+    async with water_message.read_session_for(
+        arrow.get("2026-08-01", "YYYY-MM-DD").datetime
     ) as session:
         august_rows = (
             await session.execute(
@@ -345,8 +345,8 @@ async def test_import_legacy_water_rows_splits_large_sqlite_batches(
     inserted = await import_legacy_water_rows(rows, chunk_size=100)
 
     assert inserted == 30
-    async with water_message.read_session(
-        time_ctx=arrow.get("2026-01-15", "YYYY-MM-DD").datetime
+    async with water_message.read_session_for(
+        arrow.get("2026-01-15", "YYYY-MM-DD").datetime
     ) as session:
         stored_count = await session.scalar(
             select(func.count()).select_from(WaterHourlyCounter)

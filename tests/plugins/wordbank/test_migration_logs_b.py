@@ -160,7 +160,7 @@ async def test_migrate_legacy_wordbank_wrapper_imports_response_logs(
         image_root=image_root,
     )
 
-    async with wordbank_log_db.read_session(time_ctx=call_time) as session:
+    async with wordbank_log_db.read_session_for(call_time) as session:
         logs = (
             (
                 await session.execute(

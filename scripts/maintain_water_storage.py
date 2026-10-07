@@ -208,8 +208,7 @@ async def _flush_summary_payloads(
 
     written = 0
     for shard_key, shard_payloads in routed.items():
-        route_ctx = arrow.get(shard_key, "YYYY_MM").datetime
-        async with water_summary.write_session(time_ctx=route_ctx) as session:
+        async with water_summary.write_session_for(shard_key) as session:
             for chunk in split_list(shard_payloads, 100):
                 written += await WaterArchivedSummaryOps(session).bulk_upsert_summary(
                     chunk
@@ -228,8 +227,7 @@ async def drop_redundant_log_indexes() -> dict[str, Any]:
     touched: dict[str, list[str]] = {}
     for db_path in sorted(water_message.base_dir.glob(f"{water_message.prefix}_*.db")):
         shard_key = db_path.stem.removeprefix(f"{water_message.prefix}_")
-        time_ctx = arrow.get(shard_key, "YYYY_MM").datetime
-        async with water_message.write_session(time_ctx=time_ctx) as session:
+        async with water_message.write_session_for(shard_key) as session:
             existing = (
                 await session.execute(text("PRAGMA index_list('water_hourly_counter')"))
             ).all()
