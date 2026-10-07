@@ -1,3 +1,8 @@
+# 本文件的 mixin 方法把 self 显式 cast 成组合后的宿主类（如 WaterRepository），
+# 再调用同一次实例上的内部辅助方法。这些方法是该仓库层的实现细节，刻意不公开；
+# 但它们与调用方是同一个对象，不构成越权访问。pyright 无法表达「同一实例上的
+# mixin 内部协作」，故在此显式豁免。
+# pyright: reportPrivateUsage=false
 """Response card drawing helpers for wordbank treemap rendering."""
 
 from __future__ import annotations

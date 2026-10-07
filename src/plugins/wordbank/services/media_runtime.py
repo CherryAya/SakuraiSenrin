@@ -1,5 +1,13 @@
 """Runtime cache/load/sync mixin for the wordbank media service."""
 
+# 本 mixin 的所有方法都以 ``self: _MediaRuntimeHost`` 显式声明宿主类型，运行时
+# state（_by_id / _cache_image / _remote_load_locks 等）由 media.py 的 __init__
+# 初始化、经 _MediaRuntimeHost Protocol 声明。Protocol 把这些成员标成下划线私有名，
+# 而定义方是另一个类，pyright 因此对每次访问报 reportPrivateUsage。
+# 这是自引用 Protocol 的固有产物，不是访问越界：mixin 与宿主本就是同一实例，
+# 无法改成 public（这些成员刻意不对插件层暴露），只能在此显式豁免。
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 import asyncio
