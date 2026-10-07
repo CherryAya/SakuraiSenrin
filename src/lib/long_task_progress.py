@@ -8,7 +8,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import re
-from typing import Any
+from typing import TypedDict
 
 from src.lib.utils.common import get_current_time
 from src.locales.zh_cn import CATALOG as ZH_CATALOG
@@ -69,6 +69,50 @@ HEAVY_SIGNAL_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
 )
+
+
+class LongTaskTargetStatus(TypedDict):
+    slug: str
+    label: str
+    path: str
+    category: str
+    description: str
+    status: str
+    exists: bool
+    has_runner: bool
+    has_logger_sink: bool
+    has_message_event_sink: bool
+    has_matcher_sink: bool
+    missing: list[str]
+
+
+class LongTaskSummary(TypedDict):
+    total_targets: int
+    complete_targets: int
+    partial_targets: int
+    missing_file_targets: int
+    legacy_wait_candidates: int
+    heavy_path_candidates: int
+
+
+class LongTaskCandidateRow(TypedDict):
+    path: str
+    line: int
+    snippet: str
+
+
+class LongTaskHeavyPathRow(LongTaskCandidateRow):
+    reasons: list[str]
+
+
+class LongTaskProgressReport(TypedDict):
+    version: int
+    generated_at: str
+    root: str
+    summary: LongTaskSummary
+    targets: list[LongTaskTargetStatus]
+    legacy_wait_candidates: list[LongTaskCandidateRow]
+    heavy_path_candidates: list[LongTaskHeavyPathRow]
 
 
 @dataclass(slots=True, frozen=True)
@@ -420,7 +464,7 @@ def _extract_scoped_source(source: str, target: LongTaskAuditTarget) -> str:
     return "\n".join("\n".join(lines[start:end]) for start, end in merged)
 
 
-def _target_status(root: Path, target: LongTaskAuditTarget) -> dict[str, Any]:
+def _target_status(root: Path, target: LongTaskAuditTarget) -> LongTaskTargetStatus:
     path = root / target.path
     source = _extract_scoped_source(_read_text(path), target)
     exists = path.is_file()
@@ -563,8 +607,10 @@ def build_long_task_progress_report(
     *,
     root: Path = ROOT,
     targets: tuple[LongTaskAuditTarget, ...] = DEFAULT_LONG_TASK_AUDIT_TARGETS,
-) -> dict[str, Any]:
-    target_rows = [_target_status(root, target) for target in targets]
+) -> LongTaskProgressReport:
+    target_rows: list[LongTaskTargetStatus] = [
+        _target_status(root, target) for target in targets
+    ]
     legacy_candidates = _collect_legacy_wait_candidates(root)
     heavy_path_candidates = _collect_heavy_path_candidates(root, targets=targets)
     complete_count = sum(1 for row in target_rows if row["status"] == "complete")
@@ -611,11 +657,11 @@ def write_long_task_progress_endpoint(
     *,
     root: Path = ROOT,
     targets: tuple[LongTaskAuditTarget, ...] = DEFAULT_LONG_TASK_AUDIT_TARGETS,
-) -> dict[str, Any]:
+) -> LongTaskProgressReport:
     payload = build_long_task_progress_report(root=root, targets=targets)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",  # type: ignore[arg-type]
         encoding="utf-8",
     )
     return payload

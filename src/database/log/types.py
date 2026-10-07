@@ -8,6 +8,8 @@ Description: log db 基本类型
 
 from typing import NotRequired, TypedDict
 
+from src.lib.types import JsonObject
+
 
 class AuditLogPayload(TypedDict):
     created_at: int
@@ -19,7 +21,7 @@ class AuditLogPayload(TypedDict):
     category: str
     action: str
     summary: NotRequired[str]
-    meta_data: NotRequired[dict]
+    meta_data: NotRequired[JsonObject]
 
 
 class PluginUsageLogPayload(TypedDict):
@@ -52,4 +54,4 @@ class TraceEventLogPayload(TypedDict):
     record_date: int | None
     batch_size: int | None
     attempt: int | None
-    payload_json: dict | None
+    payload_json: JsonObject | None

@@ -3,13 +3,17 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from secrets import token_hex
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from src.database.log.types import TraceEventLogPayload
+from src.lib.types import JsonObject
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 
 if TYPE_CHECKING:
+    # loguru 的 Record 只存在于 __init__.pyi，运行时不可导入。
+    from loguru import Record
+
     from src.lib.db.batch import BatchWriter
 
 TRACE_PAYLOAD_EXTRA_KEY = "sakurai_trace_payload"
@@ -77,8 +81,8 @@ def new_trace_id(component: str) -> str:
     return f"{prefix}_{token_hex(6)}"
 
 
-def _format_file_record(record: dict[str, Any]) -> str:
-    extra = record["extra"]
+def _format_file_record(record: Record) -> str:
+    extra: dict[str, object] = record["extra"]
     trace_id = extra.get("trace_id", "-")
     component = extra.get("component", record["name"])
     event_name = extra.get("event_name", "-")
@@ -109,7 +113,7 @@ def configure_logging(*, log_role: str = _DEFAULT_LOG_ROLE) -> None:
             enqueue=True,
             backtrace=False,
             diagnose=False,
-            format=cast(Any, _format_file_record),
+            format=_format_file_record,
         )
 
     if _trace_sink_id is None:
@@ -164,7 +168,7 @@ def build_trace_payload(
     record_date: int | None = None,
     batch_size: int | None = None,
     attempt: int | None = None,
-    payload_json: dict[str, Any] | None = None,
+    payload_json: JsonObject | None = None,
 ) -> TraceEventLogPayload:
     payload: TraceEventLogPayload = {
         "created_at": get_current_time(),
@@ -224,7 +228,7 @@ def log_trace_event(
     record_date: int | None = None,
     batch_size: int | None = None,
     attempt: int | None = None,
-    payload_json: dict[str, Any] | None = None,
+    payload_json: JsonObject | None = None,
     persist: bool = True,
 ) -> str:
     payload = build_trace_payload(
@@ -263,7 +267,7 @@ def log_trace_event(
 def _trace_log_sink(message: object) -> None:
     if not _trace_logging_ready:
         return
-    record = cast(dict[str, Any], getattr(message, "record"))
+    record = cast("Record", getattr(message, "record"))
     if not record["extra"].get(TRACE_PERSIST_EXTRA_KEY, True):
         return
     payload = record["extra"].get(TRACE_PAYLOAD_EXTRA_KEY)

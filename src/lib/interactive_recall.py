@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
 
 from nonebot.adapters.onebot.v11.event import (
     FriendRecallNoticeEvent,
@@ -15,6 +14,8 @@ from nonebot.adapters.onebot.v11.event import (
 from nonebot.matcher import Matcher, matchers
 from nonebot.rule import Rule
 from nonebot.typing import T_State
+
+from src.lib.message_plan import MessagePlanInput
 
 RecallCleanup = Callable[[], Awaitable[None] | None]
 
@@ -27,8 +28,8 @@ INTERACTION_RECALL_CHECKPOINT = "__interaction_recall_checkpoint__"
 class RecallCheckpoint:
     message_id: str
     step_index: int
-    prompt: Any
-    state_snapshot: dict[str, Any]
+    prompt: MessagePlanInput
+    state_snapshot: dict[str, object]
     cleanup_keys: tuple[str, ...] = ()
 
 
@@ -53,7 +54,7 @@ def set_interaction_session_key(state: T_State, event: MessageEvent) -> str:
     return session_key
 
 
-def get_interaction_session_key(state: Mapping[str, Any]) -> str | None:
+def get_interaction_session_key(state: Mapping[str, object]) -> str | None:
     value = state.get(INTERACTION_SESSION_KEY)
     return str(value) if value is not None else None
 
@@ -68,8 +69,8 @@ def register_recall_checkpoint(
     *,
     message_id: str | int,
     step_index: int,
-    prompt: Any,
-    state_snapshot: Mapping[str, Any],
+    prompt: MessagePlanInput,
+    state_snapshot: Mapping[str, object],
     cleanup_keys: Iterable[str] = (),
 ) -> None:
     state[INTERACTION_RECALL_CHECKPOINT] = RecallCheckpoint(
@@ -81,7 +82,7 @@ def register_recall_checkpoint(
     )
 
 
-def get_recall_checkpoint(state: Mapping[str, Any]) -> RecallCheckpoint | None:
+def get_recall_checkpoint(state: Mapping[str, object]) -> RecallCheckpoint | None:
     checkpoint = state.get(INTERACTION_RECALL_CHECKPOINT)
     return checkpoint if isinstance(checkpoint, RecallCheckpoint) else None
 
@@ -125,7 +126,7 @@ def find_recall_session(
 
 
 async def cancel_state_resources(
-    state: Mapping[str, Any],
+    state: Mapping[str, object],
     cleanup_keys: Iterable[str],
     *,
     cleaners: Mapping[str, RecallCleanup],
@@ -144,7 +145,7 @@ def rebuild_temp_matcher(
     matcher_source: type[Matcher],
     *,
     step_index: int,
-    state: Mapping[str, Any],
+    state: Mapping[str, object],
 ) -> type[Matcher]:
     return matcher_source.new(
         type_=matcher_template.type,
