@@ -27,19 +27,22 @@ from nonebot.typing import T_State
 
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
+from src.lib.guided_state import (
+    cancel_guided_state_resources,
+    copy_guided_state_snapshot,
+    guided_locale,
+    state_keys_with_prefix,
+    state_value,
+)
 from src.lib.i18n.runtime import resolve_locale, tr
-from src.lib.i18n.types import LocaleCode, normalize_locale_code
+from src.lib.i18n.types import LocaleCode
 from src.lib.interaction import (
     abort_if_revoke_signal,
     clear_interaction_errors,
     record_interaction_error,
 )
 from src.lib.interactive_recall import (
-    INTERACTION_ROOT_MESSAGE_ID,
-    INTERACTION_SESSION_KEY,
-    cancel_state_resources,
     find_recall_session,
-    get_interaction_session_key,
     is_supported_recall_notice,
     rebuild_temp_matcher,
     register_recall_checkpoint,
@@ -246,26 +249,12 @@ def _copy_study_state(
     *,
     keep_keys: tuple[str, ...],
 ) -> dict[str, Any]:
-    snapshot: dict[str, Any] = {}
-    for key, value in state.items():
-        if key.startswith("__nonebug"):
-            snapshot[key] = value
-    session_key = get_interaction_session_key(state)
-    if session_key is not None:
-        snapshot[INTERACTION_SESSION_KEY] = session_key
-    if "study_locale" in state:
-        snapshot["study_locale"] = state["study_locale"]
-    if INTERACTION_ROOT_MESSAGE_ID in state:
-        snapshot[INTERACTION_ROOT_MESSAGE_ID] = state[INTERACTION_ROOT_MESSAGE_ID]
-    if "study_submission_source_event" in state:
-        snapshot["study_submission_source_event"] = state[
-            "study_submission_source_event"
-        ]
-    for key in keep_keys:
-        if key in state:
-            snapshot[key] = state[key]
-    clear_interaction_errors(snapshot)
-    return snapshot
+    return copy_guided_state_snapshot(
+        state,
+        locale_key="study_locale",
+        source_event_key="study_submission_source_event",
+        keep_keys=keep_keys,
+    )
 
 
 def _prompt_for_step(locale: LocaleCode, step_index: int) -> str:
@@ -322,22 +311,8 @@ def _guided_media_task(
     )
 
 
-def _state_value[T](
-    state: Mapping[str, Any],
-    key: str,
-    expected: type[T],
-) -> T | None:
-    """按声明类型收窄读取 state。
-
-    T_State 经由 recall 快照（见 ``rebuild_temp_matcher``）在 matcher 之间重建，
-    键存在不等于值类型可信，因此非 bool 状态一律走本函数收窄。
-    """
-    value = state.get(key)
-    return value if isinstance(value, expected) else None
-
-
 def _study_locale(state: Mapping[str, Any]) -> LocaleCode:
-    return normalize_locale_code(state.get("study_locale"))
+    return guided_locale(state, locale_key="study_locale")
 
 
 def _contains_study_pair_separator(text: str) -> bool:
@@ -345,7 +320,7 @@ def _contains_study_pair_separator(text: str) -> bool:
 
 
 def _study_state_keys(state: Mapping[str, Any]) -> list[str]:
-    return sorted(str(key) for key in state.keys() if str(key).startswith("study_"))
+    return state_keys_with_prefix(state, "study_")
 
 
 async def _start_guided_study_from_partial_args(
@@ -444,11 +419,7 @@ async def _cancel_study_resources(
     state: Mapping[str, Any],
     cleanup_keys: tuple[str, ...] = STUDY_RECALL_PENDING_KEYS,
 ) -> None:
-    await cancel_state_resources(
-        state,
-        cleanup_keys,
-        cleaners={},
-    )
+    await cancel_guided_state_resources(state, cleanup_keys)
 
 
 async def _record_study_trigger(
@@ -609,7 +580,7 @@ async def _record_study_forward_response_choice(
         "[Study][guided] forward response choice | "
         f"choice={choice or '-'} state_keys={state_keys}"
     )
-    response_event = _state_value(state, "study_forward_response_event", MessageEvent)
+    response_event = state_value(state, "study_forward_response_event", MessageEvent)
     if response_event is None:
         logger.debug(
             "[Study][guided] forward response choice missing response_event | "
@@ -776,11 +747,9 @@ async def _finish_guided_study(
     try:
         state_keys = _study_state_keys(state)
         logger.debug(f"[Study][guided] finish start | state_keys={state_keys}")
-        source_event = _state_value(
-            state, "study_submission_source_event", MessageEvent
-        )
-        trigger_shape = _state_value(state, "study_trigger_shape", MessageShape)
-        response_shape = _state_value(state, "study_response_shape", MessageShape)
+        source_event = state_value(state, "study_submission_source_event", MessageEvent)
+        trigger_shape = state_value(state, "study_trigger_shape", MessageShape)
+        response_shape = state_value(state, "study_response_shape", MessageShape)
         if trigger_shape is None or trigger_shape.is_empty():
             raise RuleError(
                 _default_i18n_text("wordbank.error.trigger_empty"),
@@ -1156,7 +1125,7 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
             locale,
         )
         return
-    if not _state_value(state, "study_trigger_shape", MessageShape):
+    if not state_value(state, "study_trigger_shape", MessageShape):
         return
     await _record_study_response(bot, matcher, event, state, locale)
 

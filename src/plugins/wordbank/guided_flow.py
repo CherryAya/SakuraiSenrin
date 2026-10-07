@@ -11,14 +11,17 @@ from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 from nonebot.typing import T_State
 
+from src.lib.guided_state import (
+    cancel_guided_state_resources,
+    copy_guided_state_snapshot,
+    guided_locale,
+    state_keys_with_prefix,
+    state_value,
+)
 from src.lib.i18n.runtime import tr
-from src.lib.i18n.types import LocaleCode, normalize_locale_code
+from src.lib.i18n.types import LocaleCode
 from src.lib.interaction import clear_interaction_errors, reject_or_abort_on_error
 from src.lib.interactive_recall import (
-    INTERACTION_ROOT_MESSAGE_ID,
-    INTERACTION_SESSION_KEY,
-    cancel_state_resources,
-    get_interaction_session_key,
     register_recall_checkpoint,
     register_root_message,
 )
@@ -131,22 +134,19 @@ def _require_guided_bot(bot: Bot | None, matcher: Matcher) -> Bot:
 
 
 def state_message_shape(state: Mapping[str, Any], key: str) -> MessageShape | None:
-    value = state.get(key)
-    return value if isinstance(value, MessageShape) else None
+    return state_value(state, key, MessageShape)
 
 
 def _guided_state_keys(state: Mapping[str, Any]) -> list[str]:
-    return sorted(str(key) for key in state.keys() if str(key).startswith("wordbank_"))
+    return state_keys_with_prefix(state, "wordbank_")
 
 
 def _guided_forward_response_event(state: Mapping[str, Any]) -> MessageEvent | None:
-    value = state.get("wordbank_guided_response_forward_event")
-    return value if isinstance(value, MessageEvent) else None
+    return state_value(state, "wordbank_guided_response_forward_event", MessageEvent)
 
 
 def _guided_submission_source_event(state: Mapping[str, Any]) -> MessageEvent | None:
-    value = state.get("wordbank_guided_submission_source_event")
-    return value if isinstance(value, MessageEvent) else None
+    return state_value(state, "wordbank_guided_submission_source_event", MessageEvent)
 
 
 async def reject_guided_error(
@@ -165,7 +165,7 @@ async def reject_guided_error(
 
 
 def wordbank_guided_locale(state: Mapping[str, Any]) -> LocaleCode:
-    return normalize_locale_code(state.get("wordbank_locale"))
+    return guided_locale(state, locale_key="wordbank_locale")
 
 
 def copy_guided_state(
@@ -173,26 +173,12 @@ def copy_guided_state(
     *,
     keep_keys: tuple[str, ...],
 ) -> dict[str, Any]:
-    snapshot: dict[str, Any] = {}
-    for key, value in state.items():
-        if key.startswith("__nonebug"):
-            snapshot[key] = value
-    session_key = get_interaction_session_key(state)
-    if session_key is not None:
-        snapshot[INTERACTION_SESSION_KEY] = session_key
-    if "wordbank_locale" in state:
-        snapshot["wordbank_locale"] = state["wordbank_locale"]
-    if INTERACTION_ROOT_MESSAGE_ID in state:
-        snapshot[INTERACTION_ROOT_MESSAGE_ID] = state[INTERACTION_ROOT_MESSAGE_ID]
-    if "wordbank_guided_submission_source_event" in state:
-        snapshot["wordbank_guided_submission_source_event"] = state[
-            "wordbank_guided_submission_source_event"
-        ]
-    for key in keep_keys:
-        if key in state:
-            snapshot[key] = state[key]
-    clear_interaction_errors(snapshot)
-    return snapshot
+    return copy_guided_state_snapshot(
+        state,
+        locale_key="wordbank_locale",
+        source_event_key="wordbank_guided_submission_source_event",
+        keep_keys=keep_keys,
+    )
 
 
 def guided_response_state_keys(state: Mapping[str, Any]) -> tuple[str, ...]:
@@ -269,11 +255,7 @@ async def cancel_guided_resources(
     state: Mapping[str, Any],
     cleanup_keys: tuple[str, ...] = WORDBANK_GUIDED_RECALL_PENDING_KEYS,
 ) -> None:
-    await cancel_state_resources(
-        state,
-        cleanup_keys,
-        cleaners={},
-    )
+    await cancel_guided_state_resources(state, cleanup_keys)
 
 
 async def record_guided_trigger(
