@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace, TracebackType
 from typing import Any
@@ -32,13 +31,13 @@ def _install_fake_components(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         maintain_script,
         "water_message",
-        SimpleNamespace(base_dir=Path("."), prefix="logs", write_session=None),
+        SimpleNamespace(base_dir=Path("."), prefix="logs", write_session_for=None),
         raising=False,
     )
     monkeypatch.setattr(
         maintain_script,
         "water_summary",
-        SimpleNamespace(write_session=None),
+        SimpleNamespace(write_session_for=None),
         raising=False,
     )
     monkeypatch.setattr(
@@ -99,9 +98,8 @@ async def test_flush_summary_payloads_routes_by_month(
             _ = (exc_type, exc, tb)
             return False
 
-    def _fake_write_session(*, time_ctx: datetime) -> _FakeSessionCtx:
-        shard_key = time_ctx.strftime("%Y_%m")
-        return _FakeSessionCtx(shard_key)
+    def _fake_write_session(moment: str) -> _FakeSessionCtx:
+        return _FakeSessionCtx(moment)
 
     class FakeArchivedSummaryOps:
         def __init__(self, session: object) -> None:
@@ -116,7 +114,7 @@ async def test_flush_summary_payloads_routes_by_month(
 
     monkeypatch.setattr(
         maintain_script.water_summary,
-        "write_session",
+        "write_session_for",
         _fake_write_session,
     )
     monkeypatch.setattr(
