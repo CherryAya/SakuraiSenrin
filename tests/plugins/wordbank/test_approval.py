@@ -167,7 +167,9 @@ async def test_build_add_result_message_rebuilds_shape_with_image() -> None:
     assert full_text.startswith(
         "词条已提交审核\nID: 12\n状态: 待审核\n触发词: 晚安\n响应词:\n"
     )
-    assert "\n范围: 当前群\n规则: 概率 1\n权重: 3\n管理员通过前不会触发。" in full_text
+    assert (
+        "\n范围: 当前群(10)\n规则: 概率 1\n权重: 3\n管理员通过前不会触发。" in full_text
+    )
     assert "做个好梦" in full_text
     assert any(segment.type == "image" for segment in segments)
     assert "消息回复如下" not in str(message)
@@ -199,7 +201,9 @@ async def test_build_add_result_message_rebuilds_trigger_and_response_shapes() -
     full_text = "".join(text_values)
     assert full_text.startswith("词条已提交审核\nID: 12\n状态: 待审核\n触发词:\n")
     assert "\n响应词:\n" in full_text
-    assert "\n范围: 当前群\n规则: 概率 1\n权重: 3\n管理员通过前不会触发。" in full_text
+    assert (
+        "\n范围: 当前群(10)\n规则: 概率 1\n权重: 3\n管理员通过前不会触发。" in full_text
+    )
     assert sum(1 for segment in segments if segment.type == "image") == 2
     assert "[图片:8]" not in str(message)
     assert "[图片:7]" not in str(message)
@@ -233,7 +237,7 @@ async def test_build_add_result_message_keeps_plain_text_response() -> None:
         "状态: 待审核\n"
         "触发词: 晚安\n"
         "响应词: 做个好梦\n"
-        "范围: 当前群\n"
+        "范围: 当前群(10)\n"
         "规则: 概率 1\n"
         "权重: 3\n"
         "管理员通过前不会触发。"
@@ -268,7 +272,7 @@ async def test_build_add_result_message_warns_on_duplicate_pending_result() -> N
         "状态: 待审核\n"
         "触发词: 晚安\n"
         "响应词: 做个好梦\n"
-        "范围: 当前群\n"
+        "范围: 当前群(10)\n"
         "规则: 概率 1\n"
         "权重: 3\n"
         "已复用现有待审词条，并再次通知管理员审核。"
@@ -302,7 +306,7 @@ async def test_build_add_result_message_warns_on_duplicate_approved_result() -> 
         "状态: 已通过\n"
         "触发词: 晚安\n"
         "响应词: 做个好梦\n"
-        "范围: 当前群\n"
+        "范围: 当前群(10)\n"
         "规则: 概率 1\n"
         "权重: 3\n"
         "该词条已可直接使用。"

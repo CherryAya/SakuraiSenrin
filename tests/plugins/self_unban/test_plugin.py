@@ -153,7 +153,7 @@ async def test_self_unban_guided_group_flow_prompts_select_and_finishes(
         ctx.receive_event(bot, first)
         ctx.should_call_send(
             first,
-            "请选择要解封的对象类型：\n1. 解封自己\n2. 解封群聊",
+            "请问需要解封的是：\n1. 解封自己\n2. 解封群聊",
             bot=bot,
         )
         ctx.should_rejected()
@@ -173,8 +173,7 @@ async def test_self_unban_guided_group_flow_prompts_select_and_finishes(
         ctx.should_call_send(
             third,
             (
-                "请输入群 测试群（20001）的自助解封理由（至少 10 个字）。"
-                "本次通过后会同时消耗你 1 次额度和本群 1 次额度。"
+                "请输入群 测试群（20001）的自助解封理由（至少 10 个字）"
                 "你当前剩余 2 次，本群剩余 1 次。"
             ),
             bot=bot,
@@ -262,7 +261,7 @@ async def test_self_unban_invalid_group_choice_rejects_again(
         ctx.receive_event(bot, first)
         ctx.should_call_send(
             first,
-            "请选择要解封的对象类型：\n1. 解封自己（当前不可用）\n2. 解封群聊",
+            "请问需要解封的是：\n1. 解封自己（当前不可用）\n2. 解封群聊",
             bot=bot,
         )
         ctx.should_rejected()
@@ -339,7 +338,7 @@ async def test_self_unban_no_check_bypasses_runtime_blacklist_block(
         ctx.receive_event(bot, event)
         ctx.should_call_send(
             event,
-            "请选择要解封的对象类型：\n1. 解封自己\n2. 解封群聊（当前不可用）",
+            "请问需要解封的是：\n1. 解封自己\n2. 解封群聊（当前不可用）",
             bot=bot,
         )
         ctx.should_rejected()
@@ -348,8 +347,7 @@ async def test_self_unban_no_check_bypasses_runtime_blacklist_block(
         ctx.should_call_send(
             second,
             (
-                "请输入本次全局自助解封理由（至少 10 个字）。"
-                "本次通过后会消耗 1 次额度，当前剩余 2 次。"
+                "请输入本次解封理由（至少 10 个字）。当前剩余额度 2 次。"
             ),
             bot=bot,
         )

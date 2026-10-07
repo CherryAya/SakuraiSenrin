@@ -534,8 +534,10 @@ async def test_reply_history_returns_status_summary() -> None:
 
     assert isinstance(message, str)
     assert "词条 #300 状态摘要" in message
-    assert "管理员审核通过后才会变为已通过" in message
+    assert "范围: 当前群(20001)" in message
     assert "审批历史:" in message
+    assert "- 暂无审批历史记录。" in message
+    assert "当前审批人: 10002" in message
 
 
 async def test_reply_delete_and_restore_use_response_item_id() -> None:

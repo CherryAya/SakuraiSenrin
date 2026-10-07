@@ -267,10 +267,13 @@ async def test_build_reply_detail_plan_entry_renders_selected_response() -> None
     )
 
     rendered = render_message_plan_entry(entry)
-    assert "来源消息: 123 (group)" in str(rendered)
-    assert "状态: 已通过" in str(rendered)
-    assert "启用: 是" in str(rendered)
-    assert "范围: 当前群" in str(rendered)
+    # info_header 只保留范围/创建者/概率/权重，状态、启用、来源消息已下线
+    assert "词条详情 #300" in str(rendered)
+    assert "范围: 当前群(20001)" in str(rendered)
+    assert "创建者: 10001" in str(rendered)
+    assert "触发概率: 1" in str(rendered)
+    assert "响应权重: 3" in str(rendered)
+    assert "来源消息: 123 (group)" not in str(rendered)
     assert sum(1 for segment in rendered if segment.type == "image") == 2
 
 

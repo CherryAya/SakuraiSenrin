@@ -137,7 +137,9 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
     summary_message = render_message_plan_input(plan.messages[0])
     rendered_detail = render_message_plan_input(plan.messages[1])
     assert "待审核词条" in str(summary_message)
-    assert "回复我发送：通过 1 2 5-8、拒绝 全部" in str(summary_message)
+    assert tr("zh-CN", "wordbank.approval.pending_batch_instruction") in str(
+        summary_message
+    )
     assert tr("zh-CN", "wordbank.approval.pending_batch_index_hint") in str(
         summary_message
     )
