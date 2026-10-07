@@ -22,7 +22,7 @@ from src.plugins.wordbank.message_model import (
 )
 from src.plugins.wordbank.services.errors import WordbankUserError
 
-FORWARD_BATCH_NODE_LIMIT = 50
+FORWARD_BATCH_NODE_LIMIT = 100
 FORWARD_BATCH_MAX_DEPTH = 3
 FORWARD_NODE_BUILD_CONCURRENCY = min(max(1, cpu_count() or 1), 8)
 

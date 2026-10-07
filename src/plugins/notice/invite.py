@@ -76,7 +76,10 @@ async def _ensure_invitation_dependencies(
     group_id: str,
     group_name: str,
 ) -> None:
+    # 运行时同步只更新缓存，biz_user / biz_group 的数据库行可能尚未落库，
+    # 而 biz_invitation 的外键校验的是数据库行，因此必须显式确保父行存在。
     inviter = await user_repo.get_user(inviter_id)
+    inviter_name = ""
     if inviter is None:
         inviter_name = await resolve_user_name(bot, inviter_id)
         await user_repo.save_user(
@@ -84,6 +87,9 @@ async def _ensure_invitation_dependencies(
             user_name=inviter_name,
             policy=WritePolicy.IMMEDIATE,
         )
+    else:
+        inviter_name = str(getattr(inviter, "display_name", "") or "")
+    await user_repo.ensure_persisted(inviter_id, inviter_name)
 
     group = await group_repo.get_group(group_id)
     if group is None:
@@ -92,6 +98,7 @@ async def _ensure_invitation_dependencies(
             group_name=group_name,
             policy=WritePolicy.IMMEDIATE,
         )
+    await group_repo.ensure_persisted(group_id, group_name)
 
 
 async def _ensure_request_dependencies(

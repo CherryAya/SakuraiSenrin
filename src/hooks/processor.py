@@ -14,11 +14,16 @@ from nonebot.adapters.onebot.v11.event import (
 )
 from nonebot.exception import IgnoredException
 from nonebot.matcher import Matcher
-from nonebot.message import run_preprocessor
+from nonebot.message import run_postprocessor, run_preprocessor
 
 from src.config import config
 from src.database.core.consts import Permission
 from src.lib.consts import GLOBAL_GROUP_FLAG, TriggerType
+from src.lib.error_context import (
+    ErrorContext,
+    bind_error_context,
+    reset_error_context,
+)
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs import create_docs_meta
@@ -67,6 +72,23 @@ __plugin_meta__ = create_plugin_metadata(
         ),
     },
 )
+
+
+def _bind_event_context(event: Event, matcher: Matcher) -> ErrorContext:
+    """把当前事件来源信息绑定到异常上下文，供异常上报补全现场。"""
+    sender = getattr(event, "sender", None)
+    module = getattr(matcher, "module", None)
+    return bind_error_context(
+        group_id=str(getattr(event, "group_id", "") or ""),
+        user_id=str(getattr(event, "user_id", "") or ""),
+        user_name=str(
+            getattr(sender, "card", "") or getattr(sender, "nickname", "") or ""
+        ),
+        message_id=str(getattr(event, "message_id", "") or ""),
+        message_type=str(getattr(event, "message_type", "") or ""),
+        event_type=type(event).__name__,
+        matcher_module=str(getattr(module, "__name__", "") or ""),
+    )
 
 
 async def _runtime_sync(bot: Bot, event: Event) -> None:
@@ -174,6 +196,19 @@ async def _runtime_check(bot: Bot, event: Event, matcher: Matcher) -> None:
             raise IgnoredException(tr(locale, "hook.processor.user_group_banned"))
 
 
+async def _enrich_group_context(event: Event) -> None:
+    """同步后补全群名，让异常通报里群信息可读。"""
+    group_id = str(getattr(event, "group_id", "") or "")
+    if not group_id:
+        return
+    try:
+        group_name = await group_repo.get_name_by_gid(group_id)
+    except Exception:  # pragma: no cover - 上下文补全失败不应影响主流程
+        return
+    if group_name:
+        bind_error_context(group_name=group_name)
+
+
 @run_preprocessor
 async def _runtime_action(bot: Bot, event: Event, matcher: Matcher) -> None:
     if is_restore_in_progress():
@@ -181,5 +216,18 @@ async def _runtime_action(bot: Bot, event: Event, matcher: Matcher) -> None:
         raise IgnoredException(
             tr(_runtime_locale(group_id), "hook.processor.restore_in_progress")
         )
+    _bind_event_context(event, matcher)
     await _runtime_sync(bot, event)
+    await _enrich_group_context(event)
     await _runtime_check(bot, event, matcher)
+
+
+@run_postprocessor
+async def _runtime_cleanup(
+    bot: Bot,
+    event: Event,
+    matcher: Matcher,
+    exception: Exception | None = None,
+) -> None:
+    # 事件处理结束后清空上下文，避免同一 worker 复用上下文造成串味。
+    reset_error_context()

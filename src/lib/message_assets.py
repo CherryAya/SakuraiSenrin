@@ -16,6 +16,7 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.lib.backup import register_backup_database
@@ -300,46 +301,57 @@ class MessageAssetRepository:
     ) -> MessageAssetRecord:
         now = get_current_time()
         async with message_asset_db.write_session() as session:
+            # 使用 SQLite 原生 upsert，避免 SELECT-then-INSERT 在并发下
+            # 同时判定为不存在而触发 uq_message_asset_asset_key 冲突。
+            # 这里的预查询只用于日志区分 create/update，不参与写入决策。
+            existed = (
+                await session.execute(
+                    select(MessageAsset.id).where(MessageAsset.asset_key == asset_key)
+                )
+            ).scalar_one_or_none()
+            action = "update" if existed is not None else "create"
+            insert_stmt = sqlite_insert(MessageAsset).values(
+                asset_key=asset_key,
+                content_hash=content_hash,
+                asset_kind=asset_kind,
+                source_kind=source_kind,
+                message_id=message_id,
+                sender_bot_id=sender_bot_id,
+                origin_message_type=origin_message_type,
+                origin_target_id=origin_target_id,
+                message_shape_kind=message_shape_kind,
+                forward_context_key=forward_context_key,
+                forward_sort_key=forward_sort_key,
+                status=status,
+                last_verify_error=last_verify_error,
+                created_at=now,
+                updated_at=now,
+            )
+            update_columns = {
+                "content_hash": content_hash,
+                "asset_kind": asset_kind,
+                "source_kind": source_kind,
+                "message_id": message_id,
+                "sender_bot_id": sender_bot_id,
+                "origin_message_type": origin_message_type,
+                "origin_target_id": origin_target_id,
+                "message_shape_kind": message_shape_kind,
+                "forward_context_key": forward_context_key,
+                "forward_sort_key": forward_sort_key,
+                "status": status,
+                "last_verify_error": last_verify_error,
+                "updated_at": now,
+            }
+            stmt = insert_stmt.on_conflict_do_update(
+                index_elements=[MessageAsset.asset_key],
+                set_=update_columns,
+            )
+            await session.execute(stmt)
             row = (
                 await session.execute(
                     select(MessageAsset).where(MessageAsset.asset_key == asset_key)
                 )
-            ).scalar_one_or_none()
-            action = "create" if row is None else "update"
-            if row is None:
-                row = MessageAsset(
-                    asset_key=asset_key,
-                    content_hash=content_hash,
-                    asset_kind=asset_kind,
-                    source_kind=source_kind,
-                    message_id=message_id,
-                    sender_bot_id=sender_bot_id,
-                    origin_message_type=origin_message_type,
-                    origin_target_id=origin_target_id,
-                    message_shape_kind=message_shape_kind,
-                    forward_context_key=forward_context_key,
-                    forward_sort_key=forward_sort_key,
-                    status=status,
-                    last_verify_error=last_verify_error,
-                    created_at=now,
-                    updated_at=now,
-                )
-                session.add(row)
-            else:
-                row.content_hash = content_hash
-                row.asset_kind = asset_kind
-                row.source_kind = source_kind
-                row.message_id = message_id
-                row.sender_bot_id = sender_bot_id
-                row.origin_message_type = origin_message_type
-                row.origin_target_id = origin_target_id
-                row.message_shape_kind = message_shape_kind
-                row.forward_context_key = forward_context_key
-                row.forward_sort_key = forward_sort_key
-                row.status = status
-                row.last_verify_error = last_verify_error
-                row.updated_at = now
-            await session.flush()
+            ).scalar_one()
             logger.debug(
                 "[MessageAsset] upsert asset "
                 f"action={action} asset_key={_short_key(asset_key)} "

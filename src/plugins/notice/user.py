@@ -10,6 +10,7 @@ import asyncio
 from pathlib import Path
 import random
 
+from nonebot.adapters.onebot.v11 import ActionFailed
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import FriendRequestEvent
 from nonebot.plugin import on_request
@@ -21,6 +22,7 @@ from src.lib.consts import TriggerType
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.plugin_docs import create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
+from src.logger import logger
 from src.repositories import user_repo
 
 name = tr("zh-CN", "plugin.notice_user.name")
@@ -59,12 +61,29 @@ async def _(
     bot: Bot,
     event: FriendRequestEvent,
 ) -> None:
+    user_id = str(event.user_id)
+    # 延迟等待期间事件上下文可能失效，先做有效性校验，避免把非法 user_id 传给 API。
+    if not user_id.isdigit() or int(user_id) < 1:
+        logger.warning(
+            f"[NoticeUser] friend request skipped reason=invalid_user_id "
+            f"user_id={user_id or '-'} flag={event.flag}"
+        )
+        return
+
     await asyncio.sleep(random.randint(10, 20))
     await bot.set_friend_add_request(flag=event.flag, approve=True)
-    user_name: str = (await bot.get_stranger_info(user_id=event.user_id)).get(
-        "nickname", ""
-    )
-    user_id = str(event.user_id)
+
+    user_name = ""
+    try:
+        stranger_info = await bot.get_stranger_info(user_id=int(user_id))
+        user_name = str(stranger_info.get("nickname", "") or "")
+    except ActionFailed as exc:
+        # 拉取资料失败不应中断后续入库与通报。
+        logger.warning(
+            f"[NoticeUser] get_stranger_info failed user_id={user_id} "
+            f"error={type(exc).__name__}: {exc}"
+        )
+
     if not await user_repo.get_user(user_id):
         await user_repo.save_user(
             user_id=user_id,
@@ -72,6 +91,7 @@ async def _(
             permission=Permission.NORMAL,
             policy=WritePolicy.IMMEDIATE,
         )
+    await user_repo.ensure_persisted(user_id, user_name)
 
     await deliver_admin_notification_i18n(
         bot,
