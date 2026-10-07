@@ -212,8 +212,7 @@ async def test_water_achievement_command_runs_through_query_long_task(
 ) -> None:
     build_message = AsyncMock(return_value=text_message("ACH_OK"))
     monkeypatch.setattr(
-        water_plugin,
-        "build_my_achievements_message",
+        "src.plugins.water.entry_plugin.build_my_achievements_message",
         build_message,
     )
     monkeypatch.setattr(
@@ -472,8 +471,7 @@ async def test_water_query_guided_intro_uses_resolved_locale(
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
     monkeypatch.setattr(
-        water_plugin,
-        "resolve_locale",
+        "src.plugins.water.entry_plugin.resolve_locale",
         AsyncMock(return_value="lzh"),
     )
 
@@ -734,8 +732,7 @@ async def test_water_merge_requires_superuser(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        water_plugin,
-        "handle_merge_yes",
+        "src.plugins.water.entry_plugin.handle_merge_yes",
         AsyncMock(),
     )
 
@@ -759,8 +756,7 @@ async def test_water_merge_allows_superuser(
 ) -> None:
     merge_yes_mock = AsyncMock()
     monkeypatch.setattr(
-        water_plugin,
-        "handle_merge_yes",
+        "src.plugins.water.entry_plugin.handle_merge_yes",
         merge_yes_mock,
     )
 
