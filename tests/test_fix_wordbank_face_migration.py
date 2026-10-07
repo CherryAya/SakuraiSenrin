@@ -1,3 +1,5 @@
+# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# pyright: reportPrivateUsage=false
 from pathlib import Path
 import sqlite3
 

@@ -14,6 +14,10 @@
     "**/.pytest_cache",
     "**/.ruff_cache",
     "**/.venv",
-    "**/.devtest", "**/node_modules", "**/__pycache__", "**/.*"
+    "**/.devtest",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    "src/scripts"
   ]
 }

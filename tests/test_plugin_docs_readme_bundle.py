@@ -1,3 +1,5 @@
+# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# pyright: reportPrivateUsage=false
 import src.lib.plugin_docs.meta as plugin_docs_meta_module
 from tests.test_plugin_docs_support import *
 

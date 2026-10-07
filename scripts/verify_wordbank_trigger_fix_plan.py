@@ -1,4 +1,6 @@
 """Verify that a wordbank trigger-fix plan has been fully applied to SQLite."""
+# 测试/脚本需直接验证内部不变量，故关闭跨模块私有符号告警
+# pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
