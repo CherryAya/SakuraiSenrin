@@ -147,6 +147,29 @@ STUDY_RECALL_PENDING_KEYS: tuple[str, ...] = (
     "study_weight_pending",
 )
 
+# region recall 快照保留键
+# 流程按「触发词 → 回答 → 权重」推进，每一步确认后都需要在撤回重建时恢复已确认
+# 的状态。集中声明避免各处理函数散落手写、彼此漏字段。
+# TRIGGER 步骤时尚未确认回答，故不含 trigger/response shape。
+STUDY_SNAPSHOT_KEYS_AFTER_TRIGGER: tuple[str, ...] = (
+    "study_trig_mode",
+    "study_group_block",
+    "study_trigger_preloaded",
+    "study_response_after_preloaded_trigger",
+)
+# RESPONSE 步骤确认回答后追加 trigger shape 与后续步骤标记。
+STUDY_SNAPSHOT_KEYS_AFTER_RESPONSE: tuple[str, ...] = (
+    *STUDY_SNAPSHOT_KEYS_AFTER_TRIGGER,
+    "study_trigger_shape",
+    "study_weight_after_preloaded_trigger",
+)
+# WEIGHT 步骤只差提交本身，需再带上 response shape 供最终落库。
+STUDY_SNAPSHOT_KEYS_AFTER_WEIGHT: tuple[str, ...] = (
+    *STUDY_SNAPSHOT_KEYS_AFTER_RESPONSE,
+    "study_response_shape",
+)
+# endregion
+
 
 @lru_cache(maxsize=1)
 def _build_study_submission_lifecycle() -> SubmissionLifecycle:
@@ -459,12 +482,7 @@ async def _record_study_trigger(
     locale = _study_locale(state)
     snapshot = _copy_study_state(
         state,
-        keep_keys=(
-            "study_trig_mode",
-            "study_group_block",
-            "study_trigger_preloaded",
-            "study_response_after_preloaded_trigger",
-        ),
+        keep_keys=STUDY_SNAPSHOT_KEYS_AFTER_TRIGGER,
     )
     state["study_trigger_shape"] = shape
     _register_study_checkpoint(
@@ -500,14 +518,7 @@ async def _record_study_response(
         locale = _study_locale(state)
         snapshot = _copy_study_state(
             state,
-            keep_keys=(
-                "study_trig_mode",
-                "study_group_block",
-                "study_trigger_shape",
-                "study_trigger_preloaded",
-                "study_response_after_preloaded_trigger",
-                "study_weight_after_preloaded_trigger",
-            ),
+            keep_keys=STUDY_SNAPSHOT_KEYS_AFTER_RESPONSE,
         )
         _register_study_checkpoint(
             state,
@@ -554,14 +565,7 @@ async def _record_study_response(
     locale = _study_locale(state)
     snapshot = _copy_study_state(
         state,
-        keep_keys=(
-            "study_trig_mode",
-            "study_group_block",
-            "study_trigger_shape",
-            "study_trigger_preloaded",
-            "study_response_after_preloaded_trigger",
-            "study_weight_after_preloaded_trigger",
-        ),
+        keep_keys=STUDY_SNAPSHOT_KEYS_AFTER_RESPONSE,
     )
     state["study_response_shape"] = shape
     state["study_submission_source_event"] = event
@@ -739,15 +743,7 @@ async def _record_study_weight_and_finish(
         locale=locale,
         snapshot=_copy_study_state(
             state,
-            keep_keys=(
-                "study_trig_mode",
-                "study_group_block",
-                "study_trigger_shape",
-                "study_response_shape",
-                "study_trigger_preloaded",
-                "study_response_after_preloaded_trigger",
-                "study_weight_after_preloaded_trigger",
-            ),
+            keep_keys=STUDY_SNAPSHOT_KEYS_AFTER_WEIGHT,
         ),
     )
     await _finish_guided_study(bot, matcher, event, state, locale)
@@ -1029,20 +1025,19 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
         return
     clear_interaction_errors(state)
     state["study_trig_mode"] = text
-    mode_keep_keys = ("study_trigger_preloaded",)
-    mode_cleanup_keys = STUDY_RECALL_PENDING_KEYS
-    if state.get("study_trigger_preloaded"):
-        mode_keep_keys = (
-            "study_trigger_preloaded",
-            "study_trigger_shape",
-        )
+    # 触发词已预载时需连同 shape 一起保留，否则重建后丢失预载结果。
+    mode_keep_keys = (
+        ("study_trigger_preloaded", "study_trigger_shape")
+        if state.get("study_trigger_preloaded")
+        else ("study_trigger_preloaded",)
+    )
     _register_study_checkpoint(
         state,
         event,
         step_index=STUDY_STEP_MODE,
         locale=locale,
         snapshot=_copy_study_state(state, keep_keys=mode_keep_keys),
-        cleanup_keys=mode_cleanup_keys,
+        cleanup_keys=STUDY_RECALL_PENDING_KEYS,
     )
     await pause_with_message(
         matcher,
@@ -1075,26 +1070,25 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
         return
     clear_interaction_errors(state)
     state["study_group_block"] = text
+    trigger_preloaded = bool(state.get("study_trigger_preloaded"))
     keep_keys = (
-        "study_trig_mode",
-        "study_trigger_preloaded",
-    )
-    cleanup_keys = STUDY_RECALL_PENDING_KEYS
-    if state.get("study_trigger_preloaded"):
-        keep_keys = (
+        (
             "study_trig_mode",
             "study_trigger_preloaded",
             "study_trigger_shape",
         )
+        if trigger_preloaded
+        else ("study_trig_mode", "study_trigger_preloaded")
+    )
     _register_study_checkpoint(
         state,
         event,
         step_index=STUDY_STEP_GROUP_BLOCK,
         locale=locale,
         snapshot=_copy_study_state(state, keep_keys=keep_keys),
-        cleanup_keys=cleanup_keys,
+        cleanup_keys=STUDY_RECALL_PENDING_KEYS,
     )
-    if state.get("study_trigger_preloaded"):
+    if trigger_preloaded:
         state["study_response_after_preloaded_trigger"] = True
         await pause_with_message(
             matcher,
