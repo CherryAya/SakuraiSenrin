@@ -156,6 +156,7 @@ async def test_save_group_status_buffered_tracks_pre_ban_status(
             "status": GroupStatus.BANNED,
             "pre_ban_status": GroupStatus.AUTHORIZED,
             "updated_at": 1_780_901_962,
+            "operator_id": "",
         }
     ]
 

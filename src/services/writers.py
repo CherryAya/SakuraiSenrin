@@ -105,6 +105,7 @@ async def _flush_update_user_perm(batch_data: list[BulkUpdateUserPermPayload]) -
             "category": AuditCategory.PERMISSION.value,
             "action": AuditAction.CHANGE.value,
             "created_at": d["updated_at"],
+            "operator_id": d.get("operator_id") or "",
         }
         for d in final_data
     ]
@@ -190,6 +191,7 @@ async def _flush_update_group_status(
             "category": AuditCategory.ACCESS.value,
             "action": AuditAction.CHANGE.value,
             "created_at": d["updated_at"],
+            "operator_id": d.get("operator_id") or "",
         }
         for d in final_data
     ]
@@ -307,6 +309,7 @@ async def _flush_update_member_permission(
             "category": AuditCategory.PERMISSION.value,
             "action": AuditAction.CHANGE.value,
             "created_at": d["updated_at"],
+            "operator_id": d.get("operator_id") or "",
         }
         for d in final_data
     ]

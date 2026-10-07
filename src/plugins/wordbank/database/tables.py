@@ -361,6 +361,14 @@ class WordbankLog(WordbankLogBase):
             "created_at",
         ),
         Index("idx_wordbank_log_group_time", "group_id", "created_at"),
+        # count_trigger_group_calls_for_user_in_windows 按
+        # (trigger_group_id, user_id, created_at) 过滤，位于消息热路径
+        Index(
+            "idx_wordbank_log_trigger_user_time",
+            "trigger_group_id",
+            "user_id",
+            "created_at",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

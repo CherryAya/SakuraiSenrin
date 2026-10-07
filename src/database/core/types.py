@@ -80,6 +80,7 @@ class BulkUpdateUserPermPayload(TypedDict):
 
     user_id: str
     permission: Permission
+    operator_id: NotRequired[str]
 
 
 class BulkUpdateGroupNamePayload(TypedDict):
@@ -96,6 +97,7 @@ class BulkUpdateGroupStatusPayload(TypedDict):
     group_id: str
     status: GroupStatus
     pre_ban_status: GroupStatus | None
+    operator_id: NotRequired[str]
 
 
 class BulkUpdateMemberCardPayload(TypedDict):
@@ -114,6 +116,7 @@ class BulkUpdateMemberPermPayload(TypedDict):
     group_id: str
     user_id: str
     permission: Permission
+    operator_id: NotRequired[str]
 
 
 class GroupLocaleSettingPayload(TypedDict):

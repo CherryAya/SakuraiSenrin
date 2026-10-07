@@ -94,6 +94,37 @@ async def _add_water_group_stats_indexes(session: AsyncSession) -> None:
     )
 
 
+async def _add_water_query_indexes(session: AsyncSession) -> None:
+    """补齐实际查询所需、但 ORM 元数据未声明的索引。
+
+    只 CREATE IF NOT EXISTS；已由 metadata.create_all 建过的库不会重复建。
+    """
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_water_penalty_user_date
+            ON water_penalty_log (user_id, record_date)
+            """
+        )
+    )
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_water_summary_date
+            ON water_daily_summary (record_date)
+            """
+        )
+    )
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_water_merge_first_seen
+            ON water_matrix_merge_state (first_seen_at)
+            """
+        )
+    )
+
+
 def build_water_message_patch_registry() -> PatchRegistry:
     registry = PatchRegistry()
     registry.register(
@@ -128,6 +159,12 @@ def build_water_core_patch_registry() -> PatchRegistry:
         SchemaPatch(
             patch_id="water_group_stats:create_indexes:v4",
             apply=_add_water_group_stats_indexes,
+        )
+    )
+    registry.register(
+        SchemaPatch(
+            patch_id="water_core:add_query_indexes:v5",
+            apply=_add_water_query_indexes,
         )
     )
     return registry

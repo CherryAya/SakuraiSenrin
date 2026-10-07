@@ -449,14 +449,16 @@ class AliasStore[OpsT: BaseOps[Any]]:
         return self._store
 
     def __getattr__(self, item: str) -> Any:
-        """把未显式代理的内部成员转给底层 store。
+        """不做隐式代理：私有成员与拼错的名字都直接报错。
 
-        迁移期 scripts/ 与测试会直接触碰 ``_initialized_shards`` 之类的内部
-        成员；这些属于 store 实现细节，alias 只做转发，不做语义解释。
+        迁移期曾对全部属性无条件转发（``getattr(self._store, item)``），那会让
+        ``_manifest`` / ``_initialized_shards`` 之类的实现细节被业务层静默穿透，
+        拼错属性名也不会在开发期暴露。需要访问 store 时请显式用 ``.store``；
+        需要跨层读取的只读属性已在上面逐个显式代理。
         """
-        if item.startswith("__"):
-            raise AttributeError(item)
-        return getattr(self._store, item)
+        raise AttributeError(
+            f"AliasStore 不做隐式代理（{item!r}）；如需访问物理 store 请用 .store",
+        )
 
 
 def build_alias[OpsT: BaseOps[Any]](

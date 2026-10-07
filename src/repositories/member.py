@@ -40,6 +40,8 @@ class MemberChangeContext:
     permission: Permission | Unset = UNSET
     persisted_permission: Permission = Permission.NORMAL
     is_new: bool = False
+    # 操作者：权限变更需可归因，审计表 operator_id 依赖它
+    operator_id: str = ""
 
     def resolve_card(self, default: str = "") -> str:
         return resolve_unset(self.group_card, default)
@@ -95,6 +97,7 @@ class MemberRepository:
                     "user_id": ctx.user_id,
                     "permission": ctx.resolve_perm(),
                     "updated_at": event_time,
+                    "operator_id": ctx.operator_id,
                 }
             )
 
@@ -139,8 +142,10 @@ class MemberRepository:
                 await audit_log_ops.create_audit_log(
                     target_id=ctx.user_id,
                     context_type=AuditContext.GROUP,
+                    context_id=ctx.group_id,
                     category=AuditCategory.PERMISSION,
                     action=AuditAction.CHANGE,
+                    operator_id=ctx.operator_id,
                 )
 
     async def save_member(
@@ -150,8 +155,10 @@ class MemberRepository:
         group_card: str | Unset = UNSET,
         permission: Permission | Unset = UNSET,
         policy: WritePolicy = WritePolicy.BUFFERED,
+        operator_id: str = "",
     ) -> None:
         ctx = MemberChangeContext(user_id, group_id, group_card, permission)
+        ctx.operator_id = operator_id
         old_item = self.cache.get_member(user_id, group_id)
         ctx.is_new = old_item is None
         if old_item is not None:

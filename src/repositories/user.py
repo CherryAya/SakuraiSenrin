@@ -40,6 +40,8 @@ class UserChangeContext:
     user_name: str | Unset = UNSET
     permission: Permission | Unset = UNSET
     is_new: bool = False
+    # 操作者：权限/状态变更需可归因，审计表 operator_id 依赖它
+    operator_id: str = ""
 
     def resolve_name(self, default: str = "") -> str:
         return resolve_unset(self.user_name, default)
@@ -83,6 +85,7 @@ class UserRepository:
                     "user_id": ctx.user_id,
                     "permission": ctx.permission,
                     "updated_at": event_time,
+                    "operator_id": ctx.operator_id,
                 },
             )
 
@@ -117,6 +120,7 @@ class UserRepository:
                     context_type=AuditContext.USER,
                     category=AuditCategory.PERMISSION,
                     action=AuditAction.GRANT,
+                    operator_id=ctx.operator_id,
                 )
 
     async def save_user(
@@ -125,8 +129,10 @@ class UserRepository:
         user_name: str | Unset = UNSET,
         permission: Permission | Unset = UNSET,
         policy: WritePolicy = WritePolicy.BUFFERED,
+        operator_id: str = "",
     ) -> None:
         ctx = UserChangeContext(user_id, user_name, permission)
+        ctx.operator_id = operator_id
         old_item = self.cache.get(user_id)
         ctx.is_new = old_item is None
         self.cache.upsert_user(user_id, user_name, permission)
@@ -141,6 +147,24 @@ class UserRepository:
             await self._save_buffered(ctx)
         elif policy == WritePolicy.IMMEDIATE:
             await self._save_immediate(ctx)
+
+    async def ensure_persisted(self, user_id: str, user_name: str) -> None:
+        """确保 biz_user 中存在该用户的数据库行。
+
+        运行时同步走 WritePolicy.BUFFERED，只更新缓存不落库；
+        而外键约束校验的是数据库行。若仅依赖缓存判断存在性，
+        后续对外键表的 IMMEDIATE 写入会因父行缺失而失败。
+        """
+        if not user_id:
+            return
+        async with core_db.session(commit=True) as session:
+            existing = await UserOps(session).get_by_user_id(user_id)
+            if existing is not None:
+                return
+            await UserOps(session).add_user(
+                user_id=user_id,
+                user_name=user_name or user_id,
+            )
 
     async def warm_up(self) -> None:
         async with core_db.session(commit=False) as session:

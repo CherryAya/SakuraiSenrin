@@ -42,6 +42,8 @@ class GroupChangeContext:
     is_all_shut: bool | Unset = UNSET
     pre_ban_status: GroupStatus | None | Unset = UNSET
     is_new: bool = False
+    # 操作者：状态变更需可归因，审计表 operator_id 依赖它
+    operator_id: str = ""
 
     def resolve_name(self, default: str = "") -> str:
         return resolve_unset(self.group_name, default)
@@ -104,6 +106,7 @@ class GroupRepository:
                     "status": ctx.resolve_status(),
                     "pre_ban_status": ctx.resolve_pre_ban(),
                     "updated_at": event_time,
+                    "operator_id": ctx.operator_id,
                 },
             )
 
@@ -143,8 +146,12 @@ class GroupRepository:
                 await audit_log_ops.create_audit_log(
                     target_id=ctx.group_id,
                     context_type=AuditContext.GROUP,
-                    category=AuditCategory.PERMISSION,
+                    # 与 buffered 路径（writers.py:190）保持一致：群授权/封禁属
+                    # 访问控制，不是操作者权限变更
+                    category=AuditCategory.ACCESS,
                     action=AuditAction.CHANGE,
+                    context_id=ctx.group_id,
+                    operator_id=ctx.operator_id,
                 )
 
     async def _hydrate_cache_item(self, group_id: str) -> GroupCacheItem | None:
@@ -167,6 +174,7 @@ class GroupRepository:
         status: GroupStatus | Unset = UNSET,
         is_all_shut: bool | Unset = UNSET,
         policy: WritePolicy = WritePolicy.BUFFERED,
+        operator_id: str = "",
     ) -> None:
         """
         Write-Behind:
@@ -175,6 +183,7 @@ class GroupRepository:
         3. 策略分流 (Buffered / Immediate)
         """
         ctx = GroupChangeContext(group_id, group_name, status, is_all_shut)
+        ctx.operator_id = operator_id
         old_item = self.cache.get(group_id)
         if old_item is None:
             old_item = await self._hydrate_cache_item(group_id)
@@ -242,6 +251,23 @@ class GroupRepository:
             return item
 
         return await self._hydrate_cache_item(group_id)
+
+    async def ensure_persisted(self, group_id: str, group_name: str) -> None:
+        """确保 biz_group 中存在该群的数据库行。
+
+        运行时同步默认走 WritePolicy.BUFFERED，只更新缓存不落库；
+        外键约束校验的是数据库行，仅依赖缓存判断会导致后续写入失败。
+        """
+        if not group_id:
+            return
+        async with core_db.session(commit=True) as session:
+            existing = await GroupOps(session).get_by_group_id(group_id)
+            if existing is not None:
+                return
+            await GroupOps(session).add_group(
+                group_id=group_id,
+                group_name=group_name or group_id,
+            )
 
     async def get_name_by_gid(self, group_id: str) -> str | None:
         if item := self.cache.get(group_id):
