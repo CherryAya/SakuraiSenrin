@@ -180,6 +180,10 @@ STUDY_SNAPSHOT_KEYS_AFTER_WEIGHT: tuple[str, ...] = (
 
 
 # region 引导步骤处理
+# 本区与 wordbank/guided_flow.py 的 record_guided_* 系列刻意保持各自实现：
+# study 独有「触发词预载」概念（study_trigger_preloaded）、五步权重流程，以及
+# 合并转发选择后的权重步时序；强行统一会让调用方参数膨胀到 8-10 个字段而更难读。
+# 两边共享的 state 内核已收敛到 src/lib/guided_state.py。
 @lru_cache(maxsize=1)
 def _build_study_submission_lifecycle() -> SubmissionLifecycle:
     from src.plugins.wordbank.services import wordbank_media_service, wordbank_service

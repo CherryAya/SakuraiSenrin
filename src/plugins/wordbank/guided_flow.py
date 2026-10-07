@@ -81,6 +81,11 @@ from src.plugins.wordbank.text_parsing import (
 if TYPE_CHECKING:
     from src.plugins.wordbank.database.types import WordbankSearchPage
 
+# 与 src/plugins/study/__init__.py 的 record_study_* 系列刻意保持各自实现：
+# study 独有「触发词预载」概念与五步权重流程，wordbank 独有 scope/advanced 步骤与
+# 转发来源消息追踪，强行统一会让调用方参数膨胀而更难读。
+# 两边共享的 state 内核已收敛到 src/lib/guided_state.py。
+
 GUIDED_MAX_ERRORS = 3
 WORDBANK_GUIDED_STEP_TRIGGER = 1
 WORDBANK_GUIDED_STEP_RESPONSE = 2
