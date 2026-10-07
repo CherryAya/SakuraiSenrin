@@ -89,6 +89,8 @@ force-sort-within-sections = true
 extra-standard-library = ["typing_extensions"]
 
 [tool.ruff.lint.per-file-ignores]
+# 第三方类型存根：只描述签名，不含可交付的运行时逻辑
+"stubs/**" = ["ALL"]
 "src/locales/*.py" = ["E501"]
 "src/lib/i18n/keys.py" = ["E501"]
 "src/lib/i18n/runtime.py" = ["TID251"]

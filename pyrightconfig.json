@@ -3,10 +3,14 @@
   "venv": ".venv",
   "pythonVersion": "3.12",
   "typeCheckingMode": "strict",
+  "extraPaths": [
+    "stubs"
+  ],
   "include": [
     "bot.py",
     "scripts",
     "src",
+    "stubs",
     "tests"
   ],
   "exclude": [
