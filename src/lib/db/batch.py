@@ -138,7 +138,6 @@ class BatchWriter[T]:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._worker())
             self._worker_name = getattr(self.flush_callback, "__name__", "Unknown")
-            self._health.worker_name = self._worker_name
             logger.debug(f"BatchWriter worker [{self._worker_name}] started/restarted.")
             log_trace_event(
                 event_name="worker_started",

@@ -1277,15 +1277,12 @@ async def test_build_rank_message_renders_all_legal_combinations(
 
     async def _fake_display_names(
         subject: str,
-        items: list[object],
+        items: list[Any],
         locale: str,
     ) -> dict[str, str]:
         _ = locale
         prefix = {"user": "用户", "group": "群聊"}.get(subject, "矩阵")
-        return {
-            str(getattr(item, "entity_id")): f"{prefix} {item.entity_id}"
-            for item in items
-        }
+        return {str(item.entity_id): f"{prefix} {item.entity_id}" for item in items}
 
     async def _fake_secondary_label(
         subject: str,
