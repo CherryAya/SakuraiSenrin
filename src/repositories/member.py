@@ -183,7 +183,7 @@ class MemberRepository:
 
         self.cache.set_batch(
             {
-                self.cache._gen_key(m.user_id, m.group_id): MemberCacheItem(
+                self.cache.gen_key(m.user_id, m.group_id): MemberCacheItem(
                     card_hash=hash(m.group_card),
                     permission=m.permission,
                     group_card=m.group_card,

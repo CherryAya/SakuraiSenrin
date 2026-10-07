@@ -32,7 +32,7 @@ from .demo import (
     DEMO_AVATAR_PATH,
     DEMO_STANDEE_PATH,
     DocsFont,
-    _TurnSpec,
+    TurnSpec,
 )
 
 
@@ -282,7 +282,7 @@ class LegacyDemoImageRenderer:
             width=2,
         )
 
-    def _measure_turn(self, turn: DocsDemoTurn) -> "_TurnSpec":
+    def _measure_turn(self, turn: DocsDemoTurn) -> "TurnSpec":
         if turn.speaker == "SYSTEM":
             lines = self._wrap_inline_text(
                 self._normalize_demo_text(turn.text),
@@ -294,7 +294,7 @@ class LegacyDemoImageRenderer:
                 self._max_inline_line_width(lines, self.body_font)
                 + self.BUBBLE_PADDING_X * 2
             )
-            return _TurnSpec(
+            return TurnSpec(
                 turn=turn,
                 lines=lines,
                 width=max(width, self.SYSTEM_MIN_BUBBLE_WIDTH),
@@ -320,7 +320,7 @@ class LegacyDemoImageRenderer:
             + self.BUBBLE_PADDING_X * 2
         )
         min_width = self.USER_MIN_BUBBLE_WIDTH if is_user else self.BOT_MIN_BUBBLE_WIDTH
-        return _TurnSpec(
+        return TurnSpec(
             turn=turn,
             lines=lines,
             width=min(
@@ -336,7 +336,7 @@ class LegacyDemoImageRenderer:
         self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
-        spec: "_TurnSpec",
+        spec: "TurnSpec",
         top: int,
     ) -> None:
         if spec.turn.speaker == "SYSTEM":
@@ -816,7 +816,7 @@ class LegacyDemoImageRenderer:
 
     def _turn_rects(
         self,
-        spec: "_TurnSpec",
+        spec: "TurnSpec",
         top: int,
     ) -> list[tuple[str, tuple[int, int, int, int]]]:
         if spec.turn.speaker == "SYSTEM":
@@ -905,7 +905,7 @@ class LegacyDemoImageRenderer:
         height = max(int(bbox[3] - bbox[1] + 18), self.CHIP_HEIGHT)
         return (x, y, x + width, y + height)
 
-    def _conversation_height(self, turn_specs: Sequence["_TurnSpec"]) -> int:
+    def _conversation_height(self, turn_specs: Sequence["TurnSpec"]) -> int:
         return sum(spec.height for spec in turn_specs) + self.TURN_GAP * max(
             len(turn_specs) - 1,
             0,

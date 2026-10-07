@@ -29,8 +29,8 @@ from src.lib.utils.common import get_current_time
 from .demo import (
     DemoImageRenderer,
     DocsFont,
-    _ShowcaseNoteItem,
-    _ShowcaseTurnPlacement,
+    ShowcaseNoteItem,
+    ShowcaseTurnPlacement,
 )
 from .encoding import encode_docs_image
 from .helpers import (
@@ -44,7 +44,7 @@ from .helpers import (
 
 
 @dataclass(slots=True, frozen=True)
-class _DashboardCardLayout:
+class DashboardCardLayout:
     node: DocNode
     theme: DemoTheme
     title_lines: tuple[tuple[InlineTextSpan, ...], ...]
@@ -64,20 +64,20 @@ class _DashboardCardLayout:
 
 
 @dataclass(slots=True, frozen=True)
-class _GuideSectionLayout:
+class GuideSectionLayout:
     feature: FeatureDoc
     title_lines: tuple[tuple[InlineTextSpan, ...], ...]
     summary_lines: tuple[tuple[InlineTextSpan, ...], ...]
     trigger_layout: CommandLayout
     demo_layout: CommandLayout
     overview_layout: MarkdownLayout
-    note_items: tuple[_ShowcaseNoteItem, ...]
-    turn_placements: tuple[_ShowcaseTurnPlacement, ...]
+    note_items: tuple[ShowcaseNoteItem, ...]
+    turn_placements: tuple[ShowcaseTurnPlacement, ...]
     height: int
 
 
 @dataclass(slots=True, frozen=True)
-class _GuideAdvancedItemLayout:
+class GuideAdvancedItemLayout:
     feature: FeatureDoc
     title_lines: tuple[tuple[InlineTextSpan, ...], ...]
     summary_lines: tuple[tuple[InlineTextSpan, ...], ...]
@@ -415,7 +415,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
 
         cursor_y = hero_bottom
-        section_positions: list[tuple[_GuideSectionLayout, int]] = []
+        section_positions: list[tuple[GuideSectionLayout, int]] = []
         for layout in feature_layouts:
             section_positions.append((layout, cursor_y))
             cursor_y += layout.height + self.GUIDE_SECTION_GAP
@@ -571,12 +571,12 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         demo_turns = primary_feature.demo_turns if primary_feature is not None else ()
         demo_card_height = 0
         demo_card_rect: tuple[int, int, int, int] | None = None
-        demo_turn_placements: tuple[_ShowcaseTurnPlacement, ...] = ()
+        demo_turn_placements: tuple[ShowcaseTurnPlacement, ...] = ()
         if demo_turns:
             demo_inner_left = side + self.GUIDE_SECTION_PADDING_X
             demo_inner_right = self.WIDTH - side - self.GUIDE_SECTION_PADDING_X
             turn_top = 0
-            placements: list[_ShowcaseTurnPlacement] = []
+            placements: list[ShowcaseTurnPlacement] = []
             for turn in demo_turns:
                 spec = self._measure_turn(turn, demo_inner_right - demo_inner_left)
                 placement = self._place_turn(
@@ -800,7 +800,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             )
             shift_y = demo_card_rect[1] + 44 + 56 + 20
             for placement in demo_turn_placements:
-                shifted = _ShowcaseTurnPlacement(
+                shifted = ShowcaseTurnPlacement(
                     spec=placement.spec,
                     rect=(
                         placement.rect[0],
@@ -1071,7 +1071,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         self,
         node: DocNode,
         width: int,
-    ) -> _DashboardCardLayout:
+    ) -> DashboardCardLayout:
         theme = get_demo_theme(
             theme_name=SENRIN_V3_THEME.name,
             impression_color=node.bundle.impression_color,
@@ -1190,7 +1190,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             self.note_font,
             self.DASHBOARD_CARD_TEXT_SPACING,
         )
-        return _DashboardCardLayout(
+        return DashboardCardLayout(
             node=node,
             theme=theme,
             title_lines=title_lines,
@@ -1214,7 +1214,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
         *,
-        card: _DashboardCardLayout,
+        card: DashboardCardLayout,
         x: int,
         y: int,
         width: int,
@@ -1520,7 +1520,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         node: DocNode,
         feature: FeatureDoc,
         section_width: int,
-    ) -> _GuideSectionLayout:
+    ) -> GuideSectionLayout:
         content_width = section_width - self.GUIDE_SECTION_PADDING_X * 2
         title_lines = tuple(
             self._wrap_inline_text(
@@ -1575,7 +1575,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         )
         demo_left = self.theme.hero_side_padding
         demo_right = self.WIDTH - self.theme.hero_side_padding
-        turn_placements: list[_ShowcaseTurnPlacement] = []
+        turn_placements: list[ShowcaseTurnPlacement] = []
         y_cursor = 0
         for turn in feature.demo_turns:
             spec = self._measure_turn(turn, demo_right - demo_left)
@@ -1602,7 +1602,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + demo_height
             + 220
         )
-        return _GuideSectionLayout(
+        return GuideSectionLayout(
             feature=feature,
             title_lines=title_lines,
             summary_lines=summary_lines,
@@ -1620,7 +1620,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         draw: ImageDraw.ImageDraw,
         *,
         node: DocNode,
-        layout: _GuideSectionLayout,
+        layout: GuideSectionLayout,
         top: int,
         left: int,
         locale: LocaleCode,
@@ -1772,7 +1772,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             cursor_y += 8
 
         for placement in layout.turn_placements:
-            shifted = _ShowcaseTurnPlacement(
+            shifted = ShowcaseTurnPlacement(
                 spec=placement.spec,
                 rect=(
                     placement.rect[0],
@@ -1825,7 +1825,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         node: DocNode,
         feature: FeatureDoc,
         width: int,
-    ) -> _GuideAdvancedItemLayout:
+    ) -> GuideAdvancedItemLayout:
         title_lines = tuple(
             self._wrap_inline_text(
                 feature.title,
@@ -1863,7 +1863,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             + demo_layout.total_height
             + 48
         )
-        return _GuideAdvancedItemLayout(
+        return GuideAdvancedItemLayout(
             feature=feature,
             title_lines=title_lines,
             summary_lines=summary_lines,
@@ -1878,7 +1878,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         draw: ImageDraw.ImageDraw,
         *,
         node: DocNode,
-        layouts: Sequence[_GuideAdvancedItemLayout],
+        layouts: Sequence[GuideAdvancedItemLayout],
         top: int,
         left: int,
         width: int,

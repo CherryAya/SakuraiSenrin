@@ -37,7 +37,7 @@ class BlacklistRepository:
             data = await BlacklistOps(session).get_all()
         self.cache.set_batch(
             {
-                self.cache._gen_key(d.target_user_id, d.group_id): BlacklistCacheItem(
+                self.cache.gen_key(d.target_user_id, d.group_id): BlacklistCacheItem(
                     expiry=d.ban_expiry
                 )
                 for d in data

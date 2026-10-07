@@ -137,7 +137,7 @@ class GroupCache(BaseCache[GroupCacheItem]):
 
 
 class MemberCache(BaseCache[MemberCacheItem]):
-    def _gen_key(self, user_id: str, group_id: str) -> str:
+    def gen_key(self, user_id: str, group_id: str) -> str:
         return f"MEMBER:{group_id}:{user_id}"
 
     def upsert_member(
@@ -147,7 +147,7 @@ class MemberCache(BaseCache[MemberCacheItem]):
         permission: Permission | Unset = UNSET,
         group_card: str | Unset = UNSET,
     ) -> None:
-        key = self._gen_key(user_id, group_id)
+        key = self.gen_key(user_id, group_id)
         member = self.get(key)
         normalized_group_card = resolve_unset(group_card, "")
         new_hash = hash(normalized_group_card)
@@ -171,14 +171,14 @@ class MemberCache(BaseCache[MemberCacheItem]):
         self.set(key, member)
 
     def get_member(self, user_id: str, group_id: str) -> MemberCacheItem | None:
-        return self.get(self._gen_key(user_id, group_id))
+        return self.get(self.gen_key(user_id, group_id))
 
     def delete_member(self, user_id: str, group_id: str) -> None:
-        self.delete(self._gen_key(user_id, group_id))
+        self.delete(self.gen_key(user_id, group_id))
 
 
 class BlacklistCache(BaseCache[BlacklistCacheItem]):
-    def _gen_key(self, user_id: str, scope: str) -> str:
+    def gen_key(self, user_id: str, scope: str) -> str:
         return f"BAN:{scope}:{user_id}"
 
     def _check_and_clean(self, key: str) -> bool:
@@ -197,15 +197,15 @@ class BlacklistCache(BaseCache[BlacklistCacheItem]):
         group_id: str,
         expiry: int,
     ) -> None:
-        key = self._gen_key(user_id, group_id)
+        key = self.gen_key(user_id, group_id)
         self.set(key, BlacklistCacheItem(expiry=expiry))
 
     def set_unban(self, user_id: str, group_id: str) -> None:
-        key = self._gen_key(user_id, group_id)
+        key = self.gen_key(user_id, group_id)
         self.delete(key)
 
     def get_ban(self, user_id: str, group_id: str) -> BlacklistCacheItem | None:
-        key = self._gen_key(user_id, group_id)
+        key = self.gen_key(user_id, group_id)
         return self.get(key)
 
     def is_banned(self, user_id: str, group_id: str) -> bool:
@@ -213,8 +213,8 @@ class BlacklistCache(BaseCache[BlacklistCacheItem]):
         检查用户是否被封禁。
         优先级：全局封禁 -> 群内封禁
         """
-        if self._check_and_clean(self._gen_key(user_id, GLOBAL_GROUP_FLAG)):
+        if self._check_and_clean(self.gen_key(user_id, GLOBAL_GROUP_FLAG)):
             return True
-        if self._check_and_clean(self._gen_key(user_id, group_id)):
+        if self._check_and_clean(self.gen_key(user_id, group_id)):
             return True
         return False

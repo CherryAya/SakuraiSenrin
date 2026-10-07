@@ -109,7 +109,7 @@ def _blurred_shape_patch(
 
 
 @dataclass(slots=True, frozen=True)
-class _TurnSpec:
+class TurnSpec:
     turn: DocsDemoTurn
     lines: list[tuple[InlineTextSpan, ...]]
     width: int
@@ -117,7 +117,7 @@ class _TurnSpec:
 
 
 @dataclass(slots=True, frozen=True)
-class _ShowcaseNoteItem:
+class ShowcaseNoteItem:
     rect: tuple[int, int, int, int]
     layout: MarkdownLayout
     line_height: int
@@ -125,7 +125,7 @@ class _ShowcaseNoteItem:
 
 
 @dataclass(slots=True, frozen=True)
-class _ShowcaseTurnSpec:
+class ShowcaseTurnSpec:
     turn: DocsDemoTurn
     lines: tuple[tuple[InlineTextSpan, ...], ...]
     width: int
@@ -135,8 +135,8 @@ class _ShowcaseTurnSpec:
 
 
 @dataclass(slots=True, frozen=True)
-class _ShowcaseTurnPlacement:
-    spec: _ShowcaseTurnSpec
+class ShowcaseTurnPlacement:
+    spec: ShowcaseTurnSpec
     rect: tuple[int, int, int, int]
     avatar_rect: tuple[int, int, int, int] | None
     bubble_rect: tuple[int, int, int, int] | None
@@ -157,7 +157,7 @@ class _DemoSectionBand:
 
 
 @dataclass(slots=True, frozen=True)
-class _ShowcaseLayout:
+class ShowcaseLayout:
     plugin_title: str
     feature_title: str
     feature_summary: str
@@ -180,12 +180,12 @@ class _ShowcaseLayout:
     trigger_layout: CommandLayout
     overview_rect: tuple[int, int, int, int]
     overview_layout: MarkdownLayout
-    note_items: tuple[_ShowcaseNoteItem, ...]
+    note_items: tuple[ShowcaseNoteItem, ...]
     instruction_content_rects: tuple[tuple[int, int, int, int], ...]
     demo_heading_rect: tuple[int, int, int, int] | None
     demo_rect: tuple[int, int, int, int]
     demo_section_bands: tuple[_DemoSectionBand, ...]
-    turn_placements: tuple[_ShowcaseTurnPlacement, ...]
+    turn_placements: tuple[ShowcaseTurnPlacement, ...]
     footer_rect: tuple[int, int, int, int]
     footer_left_text: str
     footer_right_text: str
@@ -499,7 +499,7 @@ class DemoImageRenderer:
         turns: Sequence[DocsDemoTurn],
         locale: LocaleCode,
         generated_at: datetime | None,
-    ) -> _ShowcaseLayout:
+    ) -> ShowcaseLayout:
         _ = locale
         generated = generated_at or datetime.fromtimestamp(get_current_time()).replace(
             microsecond=0
@@ -764,7 +764,7 @@ class DemoImageRenderer:
         demo_heading_rect: tuple[int, int, int, int] | None = None
         demo_rect: tuple[int, int, int, int] | None = None
         demo_section_bands: list[_DemoSectionBand] = []
-        turn_placements: list[_ShowcaseTurnPlacement] = []
+        turn_placements: list[ShowcaseTurnPlacement] = []
         current_bottom = instruction_bottom
         if turns:
             heading_text = tr(locale, "docs.render.demo.how_it_works")
@@ -821,7 +821,7 @@ class DemoImageRenderer:
                     section_top + 16 + title_height,
                 )
                 turn_top += title_height + title_gap
-                section_turn_placements: list[_ShowcaseTurnPlacement] = []
+                section_turn_placements: list[ShowcaseTurnPlacement] = []
                 for turn in section_turns:
                     spec = self._measure_turn(turn, content_right - content_left)
                     placement = self._place_turn(
@@ -890,7 +890,7 @@ class DemoImageRenderer:
         footer_right_text = (
             f"Generated at {generated:%Y-%m-%d %H:%M:%S} | © SakuraiSenrin"
         )
-        return _ShowcaseLayout(
+        return ShowcaseLayout(
             plugin_title=plugin_title,
             feature_title=feature_title,
             feature_summary=summary_source,
@@ -942,7 +942,7 @@ class DemoImageRenderer:
         self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
-        layout: _ShowcaseLayout,
+        layout: ShowcaseLayout,
     ) -> None:
         for rect, pill in zip(layout.pill_rects, layout.pills, strict=True):
             self._draw_pill(
@@ -1022,7 +1022,7 @@ class DemoImageRenderer:
         self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
-        layout: _ShowcaseLayout,
+        layout: ShowcaseLayout,
     ) -> None:
         self._draw_outlined_panel(
             image,
@@ -1085,7 +1085,7 @@ class DemoImageRenderer:
         self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
-        layout: _ShowcaseLayout,
+        layout: ShowcaseLayout,
         *,
         locale: LocaleCode,
     ) -> None:
@@ -1184,7 +1184,7 @@ class DemoImageRenderer:
         self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
-        placement: _ShowcaseTurnPlacement,
+        placement: ShowcaseTurnPlacement,
         *,
         locale: LocaleCode,
     ) -> None:
@@ -1371,7 +1371,7 @@ class DemoImageRenderer:
     def _draw_footer(
         self,
         draw: ImageDraw.ImageDraw,
-        layout: _ShowcaseLayout,
+        layout: ShowcaseLayout,
     ) -> None:
         divider_y = layout.footer_rect[1] + 8
         self._draw_dashed_line(
@@ -1750,8 +1750,8 @@ class DemoImageRenderer:
         width: int,
         start_y: int,
         x: int,
-    ) -> list[_ShowcaseNoteItem]:
-        items: list[_ShowcaseNoteItem] = []
+    ) -> list[ShowcaseNoteItem]:
+        items: list[ShowcaseNoteItem] = []
         cursor_y = start_y
         source_items: list[tuple[str, str]] = []
         if feature_permission.strip() and feature_permission != "普通用户":
@@ -1780,7 +1780,7 @@ class DemoImageRenderer:
             height = layout.total_height
             rect = (x, cursor_y, x + width, cursor_y + height)
             items.append(
-                _ShowcaseNoteItem(
+                ShowcaseNoteItem(
                     rect=rect,
                     layout=layout,
                     line_height=line_height,
@@ -1981,12 +1981,12 @@ class DemoImageRenderer:
 
     def _place_turn(
         self,
-        spec: _ShowcaseTurnSpec,
+        spec: ShowcaseTurnSpec,
         *,
         top: int,
         left: int,
         right: int,
-    ) -> _ShowcaseTurnPlacement:
+    ) -> ShowcaseTurnPlacement:
         if spec.turn.speaker == "SYSTEM":
             text_width = self._max_inline_line_width(
                 spec.lines,
@@ -2019,7 +2019,7 @@ class DemoImageRenderer:
             available_height = max(content_bottom - content_top, text_block_height)
             text_top = content_top + max(0, (available_height - text_block_height) // 2)
             text_bottom = text_top + text_block_height
-            return _ShowcaseTurnPlacement(
+            return ShowcaseTurnPlacement(
                 spec=spec,
                 rect=bubble_rect,
                 avatar_rect=None,
@@ -2054,7 +2054,7 @@ class DemoImageRenderer:
             max(avatar_rect[2], bubble_right),
             max(avatar_rect[3], bubble_rect[3]),
         )
-        return _ShowcaseTurnPlacement(
+        return ShowcaseTurnPlacement(
             spec=spec,
             rect=rect,
             avatar_rect=avatar_rect,
@@ -2066,7 +2066,7 @@ class DemoImageRenderer:
         self,
         turn: DocsDemoTurn,
         content_width: int,
-    ) -> _ShowcaseTurnSpec:
+    ) -> ShowcaseTurnSpec:
         if turn.speaker == "SYSTEM":
             lines = tuple(
                 self._wrap_inline_text(
@@ -2076,7 +2076,7 @@ class DemoImageRenderer:
                 )
             )
             line_height = self._line_height_for_font(self.system_font)
-            return _ShowcaseTurnSpec(
+            return ShowcaseTurnSpec(
                 turn=turn,
                 lines=lines,
                 detail_lines=(),
@@ -2129,7 +2129,7 @@ class DemoImageRenderer:
             self._max_inline_line_width(lines, self.body_font)
             + self.theme.bubble_padding_x * 2
         )
-        return _ShowcaseTurnSpec(
+        return ShowcaseTurnSpec(
             turn=turn,
             lines=lines,
             detail_lines=detail_lines,
@@ -2140,7 +2140,7 @@ class DemoImageRenderer:
 
     def _turn_rects(
         self,
-        placement: _ShowcaseTurnPlacement,
+        placement: ShowcaseTurnPlacement,
     ) -> list[tuple[str, tuple[int, int, int, int]]]:
         if placement.avatar_rect is None:
             if placement.bubble_rect is not None:
@@ -2473,7 +2473,10 @@ class DemoImageRenderer:
             font_families=self.FONT_FAMILIES,
             stroke_ratio=0,
         )
-        draw._image.paste(text_layer, (int(x), int(y)), text_layer)
+        # ImageDraw 没有公开的「取回底层 Image」接口，只能直接 paste；
+        # 用 draw.im（公开的 ImagingCore）无法走 Image.paste 的 mask 语义。
+        # 保持 _image 直取，但在此显式豁免私有访问告警。
+        draw._image.paste(text_layer, (int(x), int(y)), text_layer)  # pyright: ignore[reportPrivateUsage]
 
     def _text_size(self, text: str, font: DocsFont) -> tuple[int, int, int, int]:
         if not text:

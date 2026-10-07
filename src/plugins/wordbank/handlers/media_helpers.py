@@ -59,7 +59,7 @@ class MessageShapeBuildContext:
     download_tasks: dict[str, asyncio.Task[bytes | None]] = field(default_factory=dict)
     resolution_tasks: dict[str, asyncio.Task[int | None]] = field(default_factory=dict)
     hint_cache: dict[tuple[str, ...], int | None] = field(default_factory=dict)
-    _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     download_semaphore: asyncio.Semaphore = field(init=False)
     ingest_semaphore: asyncio.Semaphore = field(init=False)
 
@@ -550,7 +550,7 @@ async def _resolve_message_image_ref(
             ref,
             build_context=build_context,
         )
-    async with build_context._lock:
+    async with build_context.lock:
         task = build_context.resolution_tasks.get(ref.url)
         if task is None:
             task = asyncio.create_task(
@@ -605,7 +605,7 @@ async def _download_image_bytes(
 ) -> bytes | None:
     if build_context is None:
         return await fetch_image_bytes_with_retry(url)
-    async with build_context._lock:
+    async with build_context.lock:
         task = build_context.download_tasks.get(url)
         if task is None:
             task = asyncio.create_task(
