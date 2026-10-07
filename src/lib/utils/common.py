@@ -43,7 +43,7 @@ def time_to_timedelta(time_str: str) -> timedelta:
     return timedelta(seconds=total_seconds)
 
 
-def split_list(input_list: list, size: int) -> list[list]:
+def split_list[T](input_list: list[T], size: int) -> list[list[T]]:
     return [input_list[i : i + size] for i in range(0, len(input_list), size)]
 
 
@@ -142,7 +142,7 @@ class AvatarFetcher:
     def create_default_avatar(
         size: int,
         text: str | None = None,
-        bg_color: tuple = SENRIN_V3_AVATAR_FALLBACK_THEME.bg_color,
+        bg_color: tuple[int, int, int] = SENRIN_V3_AVATAR_FALLBACK_THEME.bg_color,
     ) -> Image.Image:
         """生成默认头像"""
         from src.lib.i18n.runtime import tr

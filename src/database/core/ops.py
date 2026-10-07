@@ -9,13 +9,14 @@ Description: core db 操作类逻辑
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Unpack, cast
+from typing import Unpack
 
-from sqlalchemy import CursorResult, case, delete, func, select, text, update
+from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import aliased, selectinload
 
-from src.lib.db.ops import BaseOps
+from src.lib.db.ops import BaseOps, affected_rows
+from src.lib.types import JsonObject
 from src.lib.utils.common import get_current_time
 
 from .consts import GroupStatus, InvitationStatus, Permission
@@ -89,7 +90,7 @@ class UserOps(BaseOps[User]):
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def bulk_insert_ignore(self, users_data: list[UserPayload]) -> int:
         if not users_data:
@@ -97,7 +98,7 @@ class UserOps(BaseOps[User]):
         stmt = sqlite_insert(User).values(users_data)
         stmt = stmt.on_conflict_do_nothing()
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def bulk_upsert_names(
         self, users_data: list[BulkUpdateUserNamePayload]
@@ -113,7 +114,7 @@ class UserOps(BaseOps[User]):
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def bulk_update_permissions(
         self,
@@ -129,7 +130,7 @@ class UserOps(BaseOps[User]):
         """
         connection = await self.session.connection()
         result = await connection.execute(text(sql), users_data)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_by_user_id(self, user_id: str) -> User | None:
         stmt = select(User).where(User.user_id == user_id)
@@ -206,7 +207,7 @@ class GroupOps(BaseOps[Group]):
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def bulk_insert_ignore(self, groups_data: list[GroupPayload]) -> int:
         if not groups_data:
@@ -214,7 +215,7 @@ class GroupOps(BaseOps[Group]):
         stmt = sqlite_insert(Group).values(groups_data)
         stmt = stmt.on_conflict_do_nothing()
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def bulk_upsert_names(
         self, groups_data: list[BulkUpdateGroupNamePayload]
@@ -230,7 +231,7 @@ class GroupOps(BaseOps[Group]):
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def bulk_update_statuses(
         self,
@@ -247,7 +248,7 @@ class GroupOps(BaseOps[Group]):
         """
         connection = await self.session.connection()
         result = await connection.execute(text(sql), group_statuses)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_by_group_id(self, group_id: str) -> Group | None:
         stmt = select(Group).where(Group.group_id == group_id)
@@ -307,7 +308,7 @@ class GroupOps(BaseOps[Group]):
 
 
 class PluginConfigOps(BaseOps[PluginConfig]):
-    async def get_by_plugin_name(self, plugin_name: str) -> dict:
+    async def get_by_plugin_name(self, plugin_name: str) -> JsonObject:
         stmt = select(PluginConfig.config_data).where(
             PluginConfig.plugin_name == plugin_name
         )
@@ -317,7 +318,7 @@ class PluginConfigOps(BaseOps[PluginConfig]):
             return config
         return {}
 
-    async def upsert_config(self, plugin_name: str, config_data: dict) -> None:
+    async def upsert_config(self, plugin_name: str, config_data: JsonObject) -> None:
         stmt = sqlite_insert(PluginConfig).values(
             plugin_name=plugin_name,
             is_enabled=True,
@@ -370,7 +371,7 @@ class GroupLocaleSettingOps(BaseOps[GroupLocaleSetting]):
     async def delete_locale(self, group_id: str) -> bool:
         stmt = delete(GroupLocaleSetting).where(GroupLocaleSetting.group_id == group_id)
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount > 0
+        return affected_rows(result) > 0
 
     async def list_locales(self) -> list[tuple[str, str]]:
         stmt = select(GroupLocaleSetting.group_id, GroupLocaleSetting.locale).order_by(
@@ -422,7 +423,7 @@ class MemberOps(BaseOps[Member]):
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def bulk_upsert_cards(
         self, cards_data: list[BulkUpdateMemberCardPayload]
@@ -438,7 +439,7 @@ class MemberOps(BaseOps[Member]):
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def bulk_update_permissions(
         self,
@@ -456,7 +457,7 @@ class MemberOps(BaseOps[Member]):
         """
         connection = await self.session.connection()
         result = await connection.execute(text(sql), perms_data)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_by_uid_gid(self, user_id: str, group_id: str) -> Member | None:
         stmt = select(Member).where(
@@ -809,7 +810,7 @@ class BlacklistOps(BaseOps[Blacklist]):
             Blacklist.group_id == group_id,
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_all(self) -> Sequence[Blacklist]:
         result = await self.session.execute(select(Blacklist))

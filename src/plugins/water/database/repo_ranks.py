@@ -144,8 +144,18 @@ class WaterRepositoryRanksMixin:
         return dict(user_hourly)
 
     @staticmethod
-    def _extract_hourly_counts(row: Row, start_idx: int) -> list[int]:
-        return [int(row[idx] or 0) for idx in range(start_idx, start_idx + 24)]
+    def _extract_hourly_counts(row: Sequence[object], start_idx: int) -> list[int]:
+        """从行内偏移 start_idx 起取连续 24 个小时计数值。
+
+        行是按位置索引的聚合结果（无列名），元素类型无法在静态期确定，
+        这里显式收窄为 int；非数值一律按 0 处理，与原先 ``int(x or 0)`` 的
+        空值语义保持一致。
+        """
+        counts: list[int] = []
+        for idx in range(start_idx, start_idx + 24):
+            value = row[idx]
+            counts.append(value if isinstance(value, int) else 0)
+        return counts
 
     async def get_global_period_leaderboard(
         self,

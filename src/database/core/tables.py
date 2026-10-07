@@ -22,6 +22,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from src.lib.consts import GLOBAL_GROUP_FLAG
 from src.lib.db.orm import IntFlagType, TimeMixin
+from src.lib.types import JsonArray, JsonObject
 
 from .consts import GroupStatus, InvitationStatus, Permission
 
@@ -280,7 +281,7 @@ class PluginConfig(CoreBase):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     plugin_name: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     is_enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
-    config_data: Mapped[dict] = mapped_column(
+    config_data: Mapped[JsonObject] = mapped_column(
         JSON,
         nullable=False,
         default=dict,
@@ -308,7 +309,7 @@ class DeadLetter(CoreBase, TimeMixin):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     item_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # 原始批次，JSON 序列化后落库，供人工回溯与补偿重放
-    payload: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    payload: Mapped[JsonArray] = mapped_column(JSON, nullable=False, default=list)
     resolved: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     resolved_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
     resolved_note: Mapped[str | None] = mapped_column(String(255), nullable=True)

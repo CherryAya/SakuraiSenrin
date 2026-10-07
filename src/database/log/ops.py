@@ -11,11 +11,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
-from sqlalchemy import CursorResult, Table, select
+from sqlalchemy import Table, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from src.lib.db.ops import BaseOps
-from src.lib.types import UNSET, Unset, is_set
+from src.lib.db.ops import BaseOps, affected_rows
+from src.lib.types import UNSET, JsonObject, Unset, is_set
 from src.lib.utils.common import get_current_time
 
 from .base import BaseAuditEnum
@@ -32,7 +32,7 @@ class AuditLogOps(BaseOps[AuditLog]):
             return 0
         stmt = sqlite_insert(AuditLog).values(audit_logs)
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def create_audit_log(
         self,
@@ -43,7 +43,7 @@ class AuditLogOps(BaseOps[AuditLog]):
         context_id: str | Unset = UNSET,
         operator_id: str | Unset = UNSET,
         summary: str | Unset = UNSET,
-        meta_data: dict | Unset = UNSET,
+        meta_data: JsonObject | Unset = UNSET,
     ) -> AuditLog:
         event_time = get_current_time()
         audit_log_payload: AuditLogPayload = {
@@ -103,7 +103,7 @@ class PluginUsageLogOps(BaseOps[PluginUsageLog]):
             return 0
         stmt = sqlite_insert(PluginUsageLog).values(plugin_usage_logs)
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
 
 class TraceEventLogOps(BaseOps[TraceEventLog]):
@@ -116,7 +116,7 @@ class TraceEventLogOps(BaseOps[TraceEventLog]):
         table = cast(Table, TraceEventLog.__table__)
         stmt = sqlite_insert(table).values(trace_event_logs)
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def query_trace_events(
         self,

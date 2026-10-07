@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Sequence
 import json
 from pathlib import Path
 import sys
@@ -49,14 +50,14 @@ def _stub_plugin_packages() -> None:
         sys.modules["src.config"] = config_module
 
 
-def _build_handlers() -> dict:
+def _build_handlers() -> dict[str, object]:
     """按 worker_name 收集原 flush 回调，供重放使用。"""
     from src.lib.db.batch import BatchWriter
     from src.plugins.water.database import writers as water_writers
     from src.plugins.wordbank.database import writers as wordbank_writers
     from src.services import writers as core_writers
 
-    handlers: dict = {}
+    handlers: dict[str, object] = {}
     for module in (core_writers, water_writers, wordbank_writers):
         for value in vars(module).values():
             if isinstance(value, BatchWriter):
@@ -64,7 +65,7 @@ def _build_handlers() -> dict:
     return handlers
 
 
-def _print_records(records: list) -> None:
+def _print_records(records: Sequence[object]) -> None:
     if not records:
         print("no unresolved dead letters")
         return

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
+from src.lib.types import JsonObject
+
 if TYPE_CHECKING:
     from src.plugins.wordbank.message_model import MessageShape
 
@@ -44,7 +46,7 @@ class WordbankResponseItemPayload(TypedDict):
     scope: str
     priority: int
     weight: int
-    rule: dict
+    rule: JsonObject
     group_id: str
     created_by: str
     approved_by: str
@@ -173,7 +175,7 @@ class WordbankResponseItemRecord:
     scope: str
     priority: int
     weight: int
-    rule: dict
+    rule: JsonObject
     group_id: str
     created_by: str
     approved_by: str
@@ -397,7 +399,7 @@ class WordbankResponseItemDetail:
     enabled: int
     scope: str
     weight: int
-    rule: dict
+    rule: JsonObject
     group_id: str
     created_by: str
     approved_by: str

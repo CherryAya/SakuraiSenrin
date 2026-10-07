@@ -6,12 +6,9 @@ LastEditTime: 2026-02-19 22:33:56
 Description: snapshot db 操作类
 """
 
-from typing import cast
-
-from sqlalchemy import CursorResult
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from src.lib.db.ops import BaseOps
+from src.lib.db.ops import BaseOps, affected_rows
 
 from .tables import GroupSnapshot, MemberSnapshot, UserSnapshot
 from .types import GroupSnapshotPayload, MemberSnapshotPayload, UserSnapshotPayload
@@ -26,7 +23,7 @@ class UserSnapshotOps(BaseOps[UserSnapshot]):
             return 0
         stmt = sqlite_insert(UserSnapshot).values(snapshots)
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def create_user_snapshot(
         self,
@@ -51,7 +48,7 @@ class GroupSnapshotOps(BaseOps[GroupSnapshot]):
             return 0
         stmt = sqlite_insert(GroupSnapshot).values(snapshots)
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def create_group_snapshot(
         self,
@@ -76,7 +73,7 @@ class MemberSnapshotOps(BaseOps[MemberSnapshot]):
             return 0
         stmt = sqlite_insert(MemberSnapshot).values(snapshots)
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def create_member_snapshot(
         self,

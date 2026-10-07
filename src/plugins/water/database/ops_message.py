@@ -1,15 +1,14 @@
 """Water message shard operations."""
 
 from collections.abc import Sequence
-from typing import cast
 
 import arrow
-from sqlalchemy import CursorResult, delete, func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine.row import Row
 from sqlalchemy.sql import text
 
-from src.lib.db.ops import BaseOps
+from src.lib.db.ops import BaseOps, affected_rows
 from src.lib.utils.common import split_list
 
 from .tables import WaterHourlyCounter
@@ -70,7 +69,7 @@ class WaterMessageOps(BaseOps[WaterHourlyCounter]):
                 },
             )
             result = await self.session.execute(stmt)
-            inserted += cast(CursorResult, result).rowcount
+            inserted += affected_rows(result)
         return inserted
 
     async def get_top_users(
@@ -199,4 +198,4 @@ class WaterMessageOps(BaseOps[WaterHourlyCounter]):
             WaterHourlyCounter.record_date < before_date
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)

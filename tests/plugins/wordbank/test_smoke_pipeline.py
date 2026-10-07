@@ -32,6 +32,7 @@ if nonebot.get_plugin("study") is None:
 from src.database.consts import WritePolicy
 from src.lib.i18n.runtime import tr
 from src.lib.messages import text_message
+from src.lib.types import JsonObject
 from src.lib.utils.common import get_current_time
 from src.plugins import study as study_plugin
 from src.plugins import wordbank as wordbank_plugin
@@ -137,7 +138,7 @@ async def _add_approved_entry(
     trigger_shape: MessageShape,
     response_text: str,
     response_shape: MessageShape | None = None,
-    raw_rule: dict | None = None,
+    raw_rule: JsonObject | None = None,
     user_id: str = "10001",
 ) -> int:
     created = await wordbank_service.add_message_entry(

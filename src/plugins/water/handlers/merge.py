@@ -9,6 +9,7 @@ from src.config import config
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import finish_with_message
+from src.lib.types import JsonObject
 from src.plugins.water.database import water_repo
 
 
@@ -34,7 +35,7 @@ def is_water_merge_superuser_event(event: MessageEvent) -> bool:
     return str(event.user_id) in config.SUPERUSERS
 
 
-async def handle_merge_locked(ctx: WaterMergeContext, decision: dict) -> None:
+async def handle_merge_locked(ctx: WaterMergeContext, decision: JsonObject) -> None:
     group_id = str(ctx.event.group_id)
     old_action = str(decision.get("action", ""))
     if old_action == "no_need":

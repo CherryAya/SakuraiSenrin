@@ -12,6 +12,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.lib.db.orm import TimeMixin
+from src.lib.types import JsonObject
 
 
 class WordbankMainBase(DeclarativeBase):
@@ -108,7 +109,7 @@ class WordbankResponseItem(WordbankMainBase, TimeMixin):
     scope: Mapped[str] = mapped_column(String(32), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
     weight: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
-    rule: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    rule: Mapped[JsonObject] = mapped_column(JSON, nullable=False, default=dict)
     group_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     created_by: Mapped[str] = mapped_column(String(64), nullable=False)
     approved_by: Mapped[str] = mapped_column(String(64), nullable=False, default="")

@@ -9,6 +9,8 @@ Description: types
 from dataclasses import dataclass
 from typing import TypedDict
 
+from src.lib.types import JsonObject
+
 
 @dataclass(frozen=True, slots=True)
 class WaterSummaryRecord:
@@ -100,7 +102,7 @@ class WaterPenaltyPayload(TypedDict):
     delta_exp: int
     is_revoked: int
     revoked_at: int | None
-    extra: dict
+    extra: JsonObject
 
 
 class WaterSettlementJobPayload(TypedDict):

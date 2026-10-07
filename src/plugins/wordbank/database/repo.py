@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.db.schema import SchemaPatch
+from src.lib.types import JsonObject
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -92,7 +93,7 @@ class WordbankRepository(
         *,
         trigger_shape: MessageShape,
         response_shape: MessageShape,
-        rule: dict,
+        rule: JsonObject,
         scope: str,
         priority: int,
         trigger_probability: float,
@@ -191,7 +192,7 @@ class WordbankRepository(
         *,
         trigger_shape: MessageShape,
         response_shape: MessageShape,
-        rule: dict,
+        rule: JsonObject,
         scope: str,
         priority: int,
         trigger_probability: float,

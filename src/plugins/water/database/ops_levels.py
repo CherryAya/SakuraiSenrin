@@ -1,12 +1,12 @@
 """Water level and ranking operations."""
 
 from math import floor, sqrt
-from typing import cast
 
-from sqlalchemy import CursorResult, and_, func, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.lib.db.ops import affected_rows
 from src.lib.utils.common import split_list
 
 from .tables import WaterGlobalLevel, WaterMatrixLevel, WaterMatrixTotalLevel
@@ -252,7 +252,7 @@ class WaterLevelOps:
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def upsert_global_levels(self, data: list[WaterUserExpPayload]) -> int:
         if not data:
@@ -280,7 +280,7 @@ class WaterLevelOps:
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def upsert_matrix_totals(self, data: list[WaterMatrixExpPayload]) -> int:
         if not data:
@@ -308,7 +308,7 @@ class WaterLevelOps:
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def apply_exp_deduction_matrix(
         self,
@@ -328,7 +328,7 @@ class WaterLevelOps:
             )
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def apply_exp_compensation_matrix(
         self,
@@ -349,4 +349,4 @@ class WaterLevelOps:
             )
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)

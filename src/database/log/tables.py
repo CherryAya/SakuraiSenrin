@@ -14,6 +14,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from src.lib.types import JsonObject
+
 
 class LogBase(DeclarativeBase):
     pass
@@ -35,7 +37,7 @@ class AuditLog(LogBase):
     category: Mapped[str] = mapped_column(String(32), nullable=False)
     action: Mapped[str] = mapped_column(String(32), nullable=False)
     summary: Mapped[str | None] = mapped_column(String(255))
-    meta_data: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    meta_data: Mapped[JsonObject | None] = mapped_column(JSON, default=dict)
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
@@ -95,5 +97,5 @@ class TraceEventLog(LogBase):
     record_date: Mapped[int | None] = mapped_column(Integer)
     batch_size: Mapped[int | None] = mapped_column(Integer)
     attempt: Mapped[int | None] = mapped_column(Integer)
-    payload_json: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    payload_json: Mapped[JsonObject | None] = mapped_column(JSON, default=dict)
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)

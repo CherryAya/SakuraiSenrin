@@ -2,12 +2,11 @@
 
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import cast
 
-from sqlalchemy import CursorResult, Select, delete, func, or_, select, update
+from sqlalchemy import Select, delete, func, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from src.lib.db.ops import BaseOps
+from src.lib.db.ops import BaseOps, affected_rows
 
 from .tables import (
     WaterActivitySeason,
@@ -31,7 +30,7 @@ class WaterPenaltyOps(BaseOps[WaterPenaltyLog]):
             return 0
         stmt = sqlite_insert(WaterPenaltyLog).values(data)
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_penalty_by_id(self, penalty_id: int) -> WaterPenaltyLog | None:
         return await self.session.get(WaterPenaltyLog, penalty_id)
@@ -55,7 +54,7 @@ class WaterPenaltyOps(BaseOps[WaterPenaltyLog]):
             .values(is_revoked=1, revoked_at=revoked_at, updated_at=revoked_at)
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
 
 class WaterSettlementJobOps(BaseOps[WaterSettlementJob]):
@@ -65,7 +64,7 @@ class WaterSettlementJobOps(BaseOps[WaterSettlementJob]):
             index_elements=[WaterSettlementJob.record_date]
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_job(self, record_date: int) -> WaterSettlementJob | None:
         return await self.session.get(WaterSettlementJob, record_date)
@@ -124,7 +123,7 @@ class WaterSettlementJobOps(BaseOps[WaterSettlementJob]):
                 )
             )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount > 0
+        return affected_rows(result) > 0
 
     async def mark_success(self, record_date: int, now_ts: int) -> int:
         stmt = (
@@ -138,7 +137,7 @@ class WaterSettlementJobOps(BaseOps[WaterSettlementJob]):
             )
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def mark_failed(self, record_date: int, now_ts: int, error: str) -> int:
         stmt = (
@@ -152,7 +151,7 @@ class WaterSettlementJobOps(BaseOps[WaterSettlementJob]):
             )
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_latest_job(self) -> WaterSettlementJob | None:
         stmt = (
@@ -178,7 +177,7 @@ class WaterMatrixMergeStateOps(BaseOps[WaterMatrixMergeState]):
             index_elements=[WaterMatrixMergeState.group_id]
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_state(self, group_id: str) -> WaterMatrixMergeState | None:
         return await self.session.get(WaterMatrixMergeState, group_id)
@@ -205,7 +204,7 @@ class WaterMatrixMergeStateOps(BaseOps[WaterMatrixMergeState]):
             .values(first_seen_at=now_ts, updated_at=now_ts)
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount > 0
+        return affected_rows(result) > 0
 
     async def get_first_seen_groups(self) -> set[str]:
         stmt = select(WaterMatrixMergeState.group_id).where(
@@ -236,7 +235,7 @@ class WaterMatrixMergeStateOps(BaseOps[WaterMatrixMergeState]):
             .values(is_ignored=1, updated_at=now_ts)
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount > 0
+        return affected_rows(result) > 0
 
     async def get_ignored_groups(self) -> set[str]:
         stmt = select(WaterMatrixMergeState.group_id).where(
@@ -274,7 +273,7 @@ class WaterMatrixMergeStateOps(BaseOps[WaterMatrixMergeState]):
             )
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def set_intention_once(
         self,
@@ -313,7 +312,7 @@ class WaterMatrixMergeStateOps(BaseOps[WaterMatrixMergeState]):
             .values(**values)
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount > 0
+        return affected_rows(result) > 0
 
 
 class WaterAchievementOps(BaseOps[WaterUserAchievement]):
@@ -377,14 +376,14 @@ class WaterAchievementOps(BaseOps[WaterUserAchievement]):
             ]
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
 
 class WaterActivitySeasonOps(BaseOps[WaterActivitySeason]):
     async def create(self, payload: WaterActivitySeasonPayload) -> int:
         stmt = sqlite_insert(WaterActivitySeason).values(payload)
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_by_season_id(self, season_id: str) -> WaterActivitySeason | None:
         return await self.session.get(WaterActivitySeason, season_id)
@@ -400,14 +399,14 @@ class WaterActivitySeasonOps(BaseOps[WaterActivitySeason]):
             .values(**values)
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def delete(self, season_id: str) -> int:
         stmt = delete(WaterActivitySeason).where(
             WaterActivitySeason.season_id == season_id
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def list_by_status(
         self,

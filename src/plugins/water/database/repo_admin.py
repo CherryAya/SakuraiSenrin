@@ -13,6 +13,7 @@ from sqlalchemy import delete
 from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.lib.types import JsonObject
 from src.lib.utils.common import split_list
 
 from .instances import water_core_db, water_message, water_summary
@@ -769,7 +770,7 @@ class WaterRepositoryAdminMixin:
                 return False
             return state.status in {"merge", "reject"}
 
-    async def get_pending_matrix_suggestion(self, group_id: str) -> dict | None:
+    async def get_pending_matrix_suggestion(self, group_id: str) -> JsonObject | None:
         async with water_core_db.session(commit=False) as session:
             state = (
                 await _repo_module()
@@ -802,7 +803,7 @@ class WaterRepositoryAdminMixin:
         group_id: str,
         action: str,
         operator_id: str,
-    ) -> tuple[bool, dict]:
+    ) -> tuple[bool, JsonObject]:
         now_ts = _current_time()
         stale_target_corrected = False
         merge_applied = False

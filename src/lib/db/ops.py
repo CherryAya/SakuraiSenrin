@@ -6,12 +6,29 @@ LastEditTime: 2026-02-24 17:16:00
 Description: db 基类
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import cast, get_args
 
 from sqlalchemy import CursorResult, insert, select
+from sqlalchemy.engine import Result
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
+
+from src.lib.types import JsonValue
+
+
+def affected_rows(result: Result[object]) -> int:
+    """取 DML 影响行数。
+
+    ``AsyncSession.execute()`` 的静态返回类型是 ``Result``，但 INSERT/UPDATE/DELETE
+    实际拿到的都是 ``CursorResult``，只有后者带 ``rowcount``。
+
+    SQLAlchemy 把 ``CursorResult`` 声明成变长泛型 ``Result[Unpack[_Ts]]``，裸写
+    ``CursorResult`` 会被 pyright 判为缺少类型参数；集中在此处收口，
+    ops 层只需面对一个语义明确的 ``-> int``。
+    """
+    rowcount = cast("CursorResult[tuple[object, ...]]", result).rowcount
+    return rowcount or 0
 
 
 class BaseOps[T: DeclarativeBase]:
@@ -49,7 +66,11 @@ class BaseOps[T: DeclarativeBase]:
         result = await self.session.execute(select(self.model))
         return result.scalars().all()
 
-    async def bulk_create(self, data_list: list[dict], chunk_size: int = 1000) -> int:
+    async def bulk_create(
+        self,
+        data_list: Sequence[Mapping[str, JsonValue]],
+        chunk_size: int = 1000,
+    ) -> int:
         """
         【通用】极速批量插入 (Insert Only)
         适用于日志、流水等不涉及"更新旧数据"的场景。
@@ -66,6 +87,6 @@ class BaseOps[T: DeclarativeBase]:
             chunk = data_list[i : i + chunk_size]
             stmt = insert(self.model).values(chunk)
             result = await self.session.execute(stmt)
-            total_inserted += cast(CursorResult, result).rowcount
+            total_inserted += affected_rows(result)
 
         return total_inserted

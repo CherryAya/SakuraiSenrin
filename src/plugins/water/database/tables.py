@@ -4,6 +4,7 @@ from sqlalchemy import JSON, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.lib.db.orm import TimeMixin
+from src.lib.types import JsonObject
 
 from .hourly_counts import HourlyCountsType
 
@@ -177,7 +178,7 @@ class WaterPenaltyLog(WaterCoreBase, TimeMixin):
     delta_exp: Mapped[int] = mapped_column(Integer, nullable=False)
     is_revoked: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     revoked_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    extra: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    extra: Mapped[JsonObject] = mapped_column(JSON, nullable=False, default=dict)
 
 
 class WaterSettlementJob(WaterCoreBase, TimeMixin):

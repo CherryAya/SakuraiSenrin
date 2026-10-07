@@ -55,7 +55,7 @@ __plugin_meta__ = create_plugin_metadata(
         ),
     },
 )
-background_tasks: set[asyncio.Task] = set()
+background_tasks: set[asyncio.Task[None]] = set()
 
 # ActionFailed 代表平台侧拒绝了本次调用（限流、重复处理、非好友、权限不足等）。
 # 这类异常同样要通报管理员，只是它们通常不是代码缺陷，

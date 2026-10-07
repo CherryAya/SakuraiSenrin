@@ -3,12 +3,12 @@
 from collections.abc import Sequence
 from typing import ClassVar, cast
 
-from sqlalchemy import CursorResult, and_, func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.lib.db.ops import BaseOps
+from src.lib.db.ops import BaseOps, affected_rows
 from src.lib.utils.common import split_list
 
 from .tables import (
@@ -69,7 +69,7 @@ class _WaterSummaryOpsBase[T: WaterDailySummary | WaterArchivedDailySummary](
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_ranks_by_date(
         self,
@@ -295,7 +295,7 @@ class WaterGroupMatrixMapOps(BaseOps[WaterGroupMatrixMap]):
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def count_groups_by_matrix(self, matrix_id: str) -> int:
         stmt = select(func.count(WaterGroupMatrixMap.group_id)).where(
@@ -461,7 +461,7 @@ class WaterGroupStatsOps:
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def upsert_group_totals(self, data: list[WaterGroupTotalPayload]) -> int:
         if not data:
@@ -477,4 +477,4 @@ class WaterGroupStatsOps:
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)

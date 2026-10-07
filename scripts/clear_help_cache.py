@@ -13,15 +13,14 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 import sys
-from typing import cast
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from sqlalchemy import delete, select
-from sqlalchemy.engine import CursorResult
 
+from src.lib.db.ops import affected_rows
 from src.lib.message_assets import MessageAsset, message_asset_db
 from src.logger import logger
 
@@ -50,7 +49,7 @@ async def clear_help_cache() -> None:
             delete(MessageAsset).where(MessageAsset.source_kind == "help")
         )
         await session.commit()
-        deleted_count = cast(CursorResult, result).rowcount
+        deleted_count = affected_rows(result)
 
     logger.info(f"[ClearCache] Successfully deleted {deleted_count} help cache records")
 

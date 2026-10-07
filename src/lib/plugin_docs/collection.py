@@ -28,6 +28,10 @@ from .command_layout import (
 from .models import PluginDocBundle
 from .render.encoding import encode_docs_image
 
+"""一行内联排版的最小单元：(文本, 是否代码块) 组成的 span 序列。"""
+type InlineSpan = tuple[str, bool]
+type InlineLine = tuple[InlineSpan, ...]
+
 
 def _markdown_parser() -> MarkdownIt:
     parser = MarkdownIt("commonmark", {"html": False, "breaks": False})
@@ -611,9 +615,9 @@ class DemoCollectionRenderer:
         max_width: int,
         *,
         max_lines: int | None,
-    ) -> list[tuple]:
-        lines: list[tuple] = []
-        current: list = []
+    ) -> list[InlineLine]:
+        lines: list[InlineLine] = []
+        current: list[InlineSpan] = []
         for span in split_inline_text_spans(
             text,
             parse_inline_tokens=_parse_inline_tokens,
@@ -650,7 +654,7 @@ class DemoCollectionRenderer:
         clipped[-1] = (*clipped[-1], (suffix, False))
         return clipped
 
-    def _normalize_wrapped_lines(self, lines: list[tuple]) -> list[tuple]:
+    def _normalize_wrapped_lines(self, lines: list[InlineLine]) -> list[InlineLine]:
         separators = (" => ", " --", "|", "/", "_")
         normalized = [list(line) for line in lines]
         for index in range(1, len(normalized)):
@@ -675,12 +679,12 @@ class DemoCollectionRenderer:
 
     def _append_plain_span_wrapped(
         self,
-        current: list[tuple[str, bool]],
+        current: list[InlineSpan],
         text: str,
         font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
         max_width: int,
-    ) -> tuple[list[tuple[str, bool]], list[tuple]]:
-        flushed: list[tuple] = []
+    ) -> tuple[list[InlineSpan], list[InlineLine]]:
+        flushed: list[InlineLine] = []
         for segment in self._split_wrappable_segments(text):
             candidate = [*current, (segment, False)]
             if self._inline_line_width(candidate, font) <= max_width:
@@ -703,12 +707,12 @@ class DemoCollectionRenderer:
 
     def _append_code_span_wrapped(
         self,
-        current: list[tuple[str, bool]],
+        current: list[InlineSpan],
         text: str,
         font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
         max_width: int,
-    ) -> tuple[list[tuple[str, bool]], list[tuple]]:
-        flushed: list[tuple] = []
+    ) -> tuple[list[InlineSpan], list[InlineLine]]:
+        flushed: list[InlineLine] = []
         candidate = [*current, (text, True)]
         if self._inline_line_width(candidate, font) <= max_width:
             return candidate, flushed
@@ -808,7 +812,7 @@ class DemoCollectionRenderer:
 
     def _append_inline_char(
         self,
-        current: list[tuple[str, bool]],
+        current: list[InlineSpan],
         char: str,
         *,
         code: bool,
@@ -889,7 +893,7 @@ class DemoCollectionRenderer:
         *,
         x: int,
         y: int,
-        line: tuple,
+        line: InlineLine,
         font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
         fill: str,
         code_background: str | None = None,

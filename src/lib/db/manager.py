@@ -33,7 +33,7 @@ def _standalone_schema_map() -> dict[str | None, str | None]:
 class DatabaseManager:
     def __init__(self) -> None:
         self._engines: dict[str, AsyncEngine] = {}
-        self._session_factories: dict[str, async_sessionmaker] = {}
+        self._session_factories: dict[str, async_sessionmaker[AsyncSession]] = {}
         self._lock = asyncio.Lock()
 
     def _init_sqlite_pragma(

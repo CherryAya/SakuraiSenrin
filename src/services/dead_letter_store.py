@@ -16,15 +16,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import cast
 
-from sqlalchemy import CursorResult, delete, func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.database.core.tables import DeadLetter
 from src.database.instances import core_db
 from src.lib.db.batch import DeadLetterRecord
-from src.lib.db.ops import BaseOps
+from src.lib.db.ops import BaseOps, affected_rows
 from src.lib.trace_log import log_trace_event
 from src.lib.utils.common import get_current_time
 from src.logger import logger
@@ -106,7 +105,7 @@ class DeadLetterOps(BaseOps[DeadLetter]):
                 DeadLetter.created_at < int(cutoff),
             )
         )
-        return int(cast(CursorResult, result).rowcount or 0)
+        return affected_rows(result)
 
 
 @dataclass(slots=True, frozen=True)

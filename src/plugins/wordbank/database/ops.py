@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import cast
 
-from sqlalchemy import CursorResult, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from src.lib.db.ops import BaseOps
+from src.lib.db.ops import BaseOps, affected_rows
 
 from .tables import (
     WordbankDeleteVote,
@@ -61,7 +60,7 @@ class WordbankTriggerGroupOps(BaseOps[WordbankTriggerGroup]):
             )
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount > 0
+        return affected_rows(result) > 0
 
 
 class WordbankTriggerVariantOps(BaseOps[WordbankTriggerVariant]):
@@ -147,7 +146,7 @@ class WordbankDeleteVoteOps(BaseOps[WordbankDeleteVote]):
             .values(status=status, updated_at=updated_at)
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount > 0
+        return affected_rows(result) > 0
 
     async def support_count(self, vote_id: int) -> int:
         stmt = (
@@ -199,7 +198,7 @@ class WordbankMessageRouteOps(BaseOps[WordbankMessageRoute]):
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_by_message_id(
         self,
@@ -240,7 +239,7 @@ class WordbankMessageRefOps(BaseOps[WordbankMessageRef]):
             },
         )
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
 
     async def get_by_message_id(
         self,
@@ -258,4 +257,4 @@ class WordbankLogOps(BaseOps[WordbankLog]):
             return 0
         stmt = sqlite_insert(WordbankLog).values(data)
         result = await self.session.execute(stmt)
-        return cast(CursorResult, result).rowcount
+        return affected_rows(result)
