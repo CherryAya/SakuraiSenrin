@@ -88,8 +88,19 @@ class AchievementService:
         record_date: int,
         today_msg_count: int,
         season_id: str = "",
+        preloaded_items: list[tuple[str, str, str, int]] | None = None,
     ) -> list[str]:
-        unlocked_items = await water_repo.get_user_achievement_items(user_id)
+        """判定并解锁成就。
+
+        preloaded_items 由调用方批量预取（结算路径下每个用户会被调用
+        1 + len(seasons) 次，逐次查询是重复的会话开销）。传入的列表会被就地
+        追加本轮新解锁项，供同一用户的后续调用复用。
+        """
+        unlocked_items = (
+            preloaded_items
+            if preloaded_items is not None
+            else await water_repo.get_user_achievement_items(user_id)
+        )
         unlocked_forever = {
             achievement_id
             for achievement_id, track_type, _, _ in unlocked_items
@@ -133,6 +144,17 @@ class AchievementService:
         if not new_unlocks:
             return []
         await water_repo.unlock_achievements(new_unlocks)
+        if preloaded_items is not None:
+            # 回填到调用方持有的列表，供同一用户的赛季轮复用，避免重复判定
+            preloaded_items.extend(
+                (
+                    str(item["achievement_id"]),
+                    str(item["track_type"]),
+                    str(item["season_id"]),
+                    int(item["unlocked_at"]),
+                )
+                for item in new_unlocks
+            )
         return [item["achievement_id"] for item in new_unlocks]
 
     async def build_user_achievement_message(

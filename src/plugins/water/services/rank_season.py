@@ -10,7 +10,7 @@ from src.lib.i18n.types import LocaleCode
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo import WaterActivitySeasonRecord
 from src.plugins.water.renderers.season_overview import render_season_overview
-from src.repositories import user_repo
+from src.repositories import group_repo, user_repo
 from src.services.info import resolve_group_name
 
 SeasonSubject = Literal["personal", "group", "matrix"]
@@ -277,8 +277,9 @@ class SeasonRankService:
             )
             top = rankings[:10]
             own = next((item for item in rankings if item.group_id == group_id), None)
-            names = {
-                item.group_id: await resolve_group_name(None, item.group_id)
+            names = await group_repo.get_names_by_gids([item.group_id for item in top])
+            group_names = {
+                item.group_id: names.get(item.group_id) or f"群聊_{item.group_id[-4:]}"
                 for item in top
             }
             lines = [tr(locale, "water.query.season.rank.group.title")]
@@ -288,7 +289,7 @@ class SeasonRankService:
                         locale,
                         "water.query.season.rank.item",
                         rank=item.rank,
-                        name=names.get(item.group_id) or item.group_id,
+                        name=group_names.get(item.group_id) or item.group_id,
                         msg_count=item.msg_count,
                     )
                 )
@@ -334,9 +335,7 @@ class SeasonRankService:
             season.end_date,
         )
         top = rankings[:10]
-        names = {
-            item.user_id: await user_repo.get_name_by_uid(item.user_id) for item in top
-        }
+        names = await user_repo.get_names_by_uids([item.user_id for item in top])
         own = next((item for item in rankings if item.user_id == user_id), None)
         lines = [tr(locale, "water.query.season.rank.personal.title")]
         for item in top:

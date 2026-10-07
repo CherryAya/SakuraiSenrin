@@ -85,8 +85,8 @@ async def test_build_natural_period_rank_data_uses_settled_anchor(
     )
     monkeypatch.setattr(
         rank_service_module.user_repo,
-        "get_name_by_uid",
-        AsyncMock(return_value="Alice"),
+        "get_names_by_uids",
+        AsyncMock(side_effect=lambda ids: dict.fromkeys(ids, "Alice")),
     )
     monkeypatch.setattr(service, "_resolve_avatar", AsyncMock(return_value=None))
     monkeypatch.setattr(
@@ -192,8 +192,12 @@ async def test_build_natural_total_rank_data_uses_first_record_window(
     )
     monkeypatch.setattr(
         service,
-        "_resolve_display_name",
-        AsyncMock(return_value="矩阵一号"),
+        "_resolve_display_names",
+        AsyncMock(
+            side_effect=lambda _subject, items, _locale: dict.fromkeys(
+                (item.entity_id for item in items), "矩阵一号"
+            )
+        ),
     )
     monkeypatch.setattr(
         service,
@@ -258,9 +262,9 @@ async def test_build_natural_period_rank_data_uses_i18n_display_meta(
         AsyncMock(side_effect=_fake_period_snapshot),
     )
     monkeypatch.setattr(
-        service,
-        "_resolve_display_name",
-        AsyncMock(return_value="群聊 20001"),
+        rank_service_module.group_repo,
+        "get_names_by_gids",
+        AsyncMock(side_effect=lambda ids: dict.fromkeys(ids, "群聊 20001")),
     )
     monkeypatch.setattr(service, "_resolve_avatar", AsyncMock(return_value=None))
     monkeypatch.setattr(
@@ -1271,13 +1275,17 @@ async def test_build_rank_message_renders_all_legal_combinations(
         )
         return _build_fake_overview(_build_fake_natural_items(subject))
 
-    async def _fake_display_name(subject: str, entity_id: str, locale: str) -> str:
+    async def _fake_display_names(
+        subject: str,
+        items: list[object],
+        locale: str,
+    ) -> dict[str, str]:
         _ = locale
-        if subject == "user":
-            return f"用户 {entity_id}"
-        if subject == "group":
-            return f"群聊 {entity_id}"
-        return f"矩阵 {entity_id}"
+        prefix = {"user": "用户", "group": "群聊"}.get(subject, "矩阵")
+        return {
+            str(getattr(item, "entity_id")): f"{prefix} {item.entity_id}"
+            for item in items
+        }
 
     async def _fake_secondary_label(
         subject: str,
@@ -1332,8 +1340,8 @@ async def test_build_rank_message_renders_all_legal_combinations(
     )
     monkeypatch.setattr(
         query_module.water_rank_service,
-        "_resolve_display_name",
-        _fake_display_name,
+        "_resolve_display_names",
+        _fake_display_names,
     )
     monkeypatch.setattr(
         query_module.water_rank_service,

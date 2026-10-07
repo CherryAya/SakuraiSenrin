@@ -436,6 +436,16 @@ class WaterRepositoryAdminMixin:
         async with water_core_db.session(commit=False) as session:
             return await WaterAchievementOps(session).get_unlocked_items(user_id)
 
+    async def get_achievement_items_bulk(
+        self,
+        user_ids: list[str],
+    ) -> dict[str, list[tuple[str, str, str, int]]]:
+        """一次会话取回多用户已解锁成就（结算路径逐用户调用会产生 N 个会话）。"""
+        if not user_ids:
+            return {}
+        async with water_core_db.session(commit=False) as session:
+            return await WaterAchievementOps(session).get_unlocked_items_bulk(user_ids)
+
     async def create_activity_season(
         self,
         payload: WaterActivitySeasonPayload,

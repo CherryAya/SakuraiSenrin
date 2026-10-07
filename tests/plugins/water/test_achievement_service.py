@@ -7,6 +7,65 @@ from src.plugins.water.services.achievement import AchievementService
 
 
 @pytest.mark.asyncio
+async def test_preloaded_items_avoid_refetch_and_are_reused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """preloaded_items 必须既避免重复查询，又在 unlock 后回填供同用户后续轮复用。
+
+    结算路径下同一用户会被调用 1 + len(seasons) 次；若新解锁项不回填，赛季轮
+    会重复判定永久成就并重复计数。
+    """
+    service = AchievementService()
+
+    from src.plugins.water.services import achievement as achievement_module
+
+    fetch_mock = AsyncMock(return_value=[])
+    monkeypatch.setattr(
+        achievement_module.water_repo,
+        "get_user_achievement_items",
+        fetch_mock,
+    )
+    monkeypatch.setattr(service, "_check_night_owl", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        service, "_check_steady_companion", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(
+        achievement_module.water_repo,
+        "get_user_global_level",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        achievement_module.water_repo,
+        "unlock_achievements",
+        AsyncMock(return_value=1),
+    )
+
+    known: list[tuple[str, str, str, int]] = []
+    first = await service.check_and_unlock(
+        user_id="u1",
+        matrix_id="m1",
+        record_date=20260302,
+        today_msg_count=1,
+        preloaded_items=known,
+    )
+    assert first == ["FIRST_BLOOD"]
+    # FIRST_BLOOD 为 permanent，应已回填到调用方持有的列表
+    assert [item[0] for item in known] == ["FIRST_BLOOD"]
+
+    second = await service.check_and_unlock(
+        user_id="u1",
+        matrix_id="m1",
+        record_date=20260302,
+        today_msg_count=1,
+        season_id="season-1",
+        preloaded_items=known,
+    )
+    # 永久成就已在 known 中，赛季轮不应再次判定它
+    assert second == []
+    fetch_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_unlock_first_blood(monkeypatch: pytest.MonkeyPatch) -> None:
     service = AchievementService()
 

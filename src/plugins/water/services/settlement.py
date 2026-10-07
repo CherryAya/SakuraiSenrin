@@ -226,15 +226,26 @@ class WaterSettlementService:
         active_seasons = await water_repo.list_current_activity_seasons(record_date)
         sem = asyncio.Semaphore(20)
         unlocked_total = 0
+        # 一次性取回全部用户的已解锁成就：此前每个用户（且每个赛季）都会各开
+        # 一个会话重复查同一条记录
+        unlocked_by_user = await water_repo.get_achievement_items_bulk(
+            list(user_context),
+        )
 
         async def _task(user_id: str, matrix_id: str, msg_count: int) -> None:
             nonlocal unlocked_total
             async with sem:
+                # 同一用户的永久与赛季成就共享一份已解锁集合：unlock 后就地补入，
+                # 否则赛季轮会重复判定并重复计数（数据库侧靠冲突忽略兜底）
+                known: list[tuple[str, str, str, int]] = list(
+                    unlocked_by_user.get(user_id, [])
+                )
                 unlocked = await self.achievement_service.check_and_unlock(
                     user_id=user_id,
                     matrix_id=matrix_id,
                     record_date=record_date,
                     today_msg_count=msg_count,
+                    preloaded_items=known,
                 )
                 unlocked_total += len(unlocked)
                 for season in active_seasons:
@@ -244,6 +255,7 @@ class WaterSettlementService:
                         record_date=record_date,
                         today_msg_count=msg_count,
                         season_id=season.season_id,
+                        preloaded_items=known,
                     )
                     unlocked_total += len(seasonal_unlocks)
 

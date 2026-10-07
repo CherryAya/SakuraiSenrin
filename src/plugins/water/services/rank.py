@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
 from time import perf_counter
 from typing import ClassVar, Literal, cast
@@ -29,7 +30,7 @@ from src.plugins.water.services.rank_types import (
     WaterRankScope,
     WaterRankSubject,
 )
-from src.repositories import user_repo
+from src.repositories import group_repo, user_repo
 from src.services.info import resolve_group_name
 
 PeriodType = Literal["week", "month", "season", "year"]
@@ -400,13 +401,10 @@ class WaterRankService:
         locale: LocaleCode,
     ) -> list[WaterRankCardItem]:
         started = perf_counter()
-        names, secondary_labels, avatars = await asyncio.gather(
-            asyncio.gather(
-                *(
-                    self._resolve_display_name(subject, item.entity_id, locale)
-                    for item in items
-                )
-            ),
+        # 名字走批量接口：此前逐条 get_name_by_uid，在缓存未命中时是 N 个会话
+        display_names = await self._resolve_display_names(subject, items, locale)
+        names = [display_names.get(item.entity_id, "") for item in items]
+        secondary_labels, avatars = await asyncio.gather(
             asyncio.gather(
                 *(
                     self._resolve_secondary_label(
@@ -501,6 +499,35 @@ class WaterRankService:
         if subject == "group":
             return await resolve_group_name(None, entity_id)
         return entity_id
+
+    @staticmethod
+    async def _resolve_display_names(
+        subject: WaterRankSubject,
+        items: Sequence[NaturalRankItem],
+        locale: LocaleCode,
+    ) -> dict[str, str]:
+        """批量解析展示名，取代逐条 _resolve_display_name。
+
+        user / group 走 repo 的批量接口，一次会话即可覆盖全部条目；缓存未命中
+        时此前是 N 个并发会话。matrix 无展示名，直接返回空。
+        """
+        entity_ids = [item.entity_id for item in items]
+        if subject == "user":
+            resolved = await user_repo.get_names_by_uids(entity_ids)
+            return {
+                entity_id: resolved.get(entity_id)
+                or tr(locale, "water.rank.user_fallback", tail=entity_id[-4:])
+                for entity_id in entity_ids
+            }
+        if subject == "group":
+            resolved = await group_repo.get_names_by_gids(entity_ids)
+            # 与 resolve_group_name(None, ...) 的兜底保持一致：DB 无名时原本会
+            # 因 bot=None 走异常分支并返回 "群聊_<尾号>"
+            return {
+                entity_id: resolved.get(entity_id) or f"群聊_{entity_id[-4:]}"
+                for entity_id in entity_ids
+            }
+        return {}
 
     @staticmethod
     async def _resolve_secondary_label(

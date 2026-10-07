@@ -1,6 +1,8 @@
 """Water administrative state operations."""
 
-from typing import cast
+from collections import defaultdict
+from collections.abc import Sequence
+from typing import Any, cast
 
 from sqlalchemy import CursorResult, delete, func, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -315,17 +317,18 @@ class WaterMatrixMergeStateOps(BaseOps[WaterMatrixMergeState]):
 
 
 class WaterAchievementOps(BaseOps[WaterUserAchievement]):
+    @staticmethod
+    def _unlocked_stmt() -> Any:
+        return select(
+            WaterUserAchievement.user_id,
+            WaterUserAchievement.achievement_id,
+            WaterUserAchievement.track_type,
+            WaterUserAchievement.season_id,
+            WaterUserAchievement.unlocked_at,
+        ).order_by(WaterUserAchievement.unlocked_at.asc())
+
     async def get_unlocked_items(self, user_id: str) -> list[tuple[str, str, str, int]]:
-        stmt = (
-            select(
-                WaterUserAchievement.achievement_id,
-                WaterUserAchievement.track_type,
-                WaterUserAchievement.season_id,
-                WaterUserAchievement.unlocked_at,
-            )
-            .where(WaterUserAchievement.user_id == user_id)
-            .order_by(WaterUserAchievement.unlocked_at.asc())
-        )
+        stmt = self._unlocked_stmt().where(WaterUserAchievement.user_id == user_id)
         result = await self.session.execute(stmt)
         return [
             (
@@ -334,8 +337,33 @@ class WaterAchievementOps(BaseOps[WaterUserAchievement]):
                 str(season_id),
                 int(unlocked_at),
             )
-            for achievement_id, track_type, season_id, unlocked_at in result.all()
+            for _uid, achievement_id, track_type, season_id, unlocked_at in result.all()
         ]
+
+    async def get_unlocked_items_bulk(
+        self,
+        user_ids: Sequence[str],
+    ) -> dict[str, list[tuple[str, str, str, int]]]:
+        """一次会话取回多个用户的已解锁成就，按 user_id 分组。
+
+        结算路径逐用户调用 get_unlocked_items 会产生 N 个会话；这里批量取回。
+        """
+        unique_ids = list(dict.fromkeys(user_ids))
+        if not unique_ids:
+            return {}
+        stmt = self._unlocked_stmt().where(WaterUserAchievement.user_id.in_(unique_ids))
+        result = await self.session.execute(stmt)
+        grouped: dict[str, list[tuple[str, str, str, int]]] = defaultdict(list)
+        for user_id, achievement_id, track_type, season_id, unlocked_at in result.all():
+            grouped[str(user_id)].append(
+                (
+                    str(achievement_id),
+                    str(track_type),
+                    str(season_id),
+                    int(unlocked_at),
+                )
+            )
+        return dict(grouped)
 
     async def bulk_unlock(self, data: list[WaterAchievementPayload]) -> int:
         if not data:
