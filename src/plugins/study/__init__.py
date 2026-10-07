@@ -269,6 +269,30 @@ def _register_study_checkpoint(
     )
 
 
+def _guided_media_task(
+    *,
+    task_name: str,
+    locale: LocaleCode,
+    matcher: Matcher,
+) -> LongTaskRunner:
+    """构造引导式流程共用的媒体处理长任务。
+
+    所有引导步骤的 prompt、阈值与进度来源一致，仅 task_name 不同，故在此收口。
+    """
+    return LongTaskRunner(
+        LongTaskSpec(
+            task_name=task_name,
+            source_kind="study_guided",
+            prompt=tr(locale, "wordbank.add.processing_with_media"),
+            threshold_ms=800,
+        ),
+        sink=CompositeProgressSink(
+            LoggerProgressSink(),
+            MatcherProgressSink(matcher),
+        ),
+    )
+
+
 def _state_value[T](
     state: Mapping[str, Any],
     key: str,
@@ -412,17 +436,10 @@ async def _record_study_trigger(
     if has_meaningful_text(plain_text) and len(event.message) == 1:
         shape = shape_from_trigger_text_value(plain_text)
     else:
-        long_task = LongTaskRunner(
-            LongTaskSpec(
-                task_name="study.guided.trigger_shape",
-                source_kind="study_guided",
-                prompt=tr(locale, "wordbank.add.processing_with_media"),
-                threshold_ms=800,
-            ),
-            sink=CompositeProgressSink(
-                LoggerProgressSink(),
-                MatcherProgressSink(matcher),
-            ),
+        long_task = _guided_media_task(
+            task_name="study.guided.trigger_shape",
+            locale=locale,
+            matcher=matcher,
         )
         async with long_task:
             shape = await build_message_shape_from_message(
@@ -504,17 +521,10 @@ async def _record_study_response(
             message=tr(locale, "wordbank.guided.forward_response_prompt"),
         )
         return
-    long_task = LongTaskRunner(
-        LongTaskSpec(
-            task_name="study.guided.response_shape",
-            source_kind="study_guided",
-            prompt=tr(locale, "wordbank.add.processing_with_media"),
-            threshold_ms=800,
-        ),
-        sink=CompositeProgressSink(
-            LoggerProgressSink(),
-            MatcherProgressSink(matcher),
-        ),
+    long_task = _guided_media_task(
+        task_name="study.guided.response_shape",
+        locale=locale,
+        matcher=matcher,
     )
     async with long_task:
         payload = await build_response_input_payload(
@@ -601,17 +611,10 @@ async def _record_study_forward_response_choice(
         )
         return
     if choice in {"1", "whole", "整体"}:
-        long_task = LongTaskRunner(
-            LongTaskSpec(
-                task_name="study.guided.forward_response_whole",
-                source_kind="study_guided",
-                prompt=tr(locale, "wordbank.add.processing_with_media"),
-                threshold_ms=800,
-            ),
-            sink=CompositeProgressSink(
-                LoggerProgressSink(),
-                MatcherProgressSink(matcher),
-            ),
+        long_task = _guided_media_task(
+            task_name="study.guided.forward_response_whole",
+            locale=locale,
+            matcher=matcher,
         )
         async with long_task:
             payload = await build_response_input_payload(
@@ -648,17 +651,10 @@ async def _record_study_forward_response_choice(
         )
         return
     if choice in {"2", "split", "拆开"}:
-        long_task = LongTaskRunner(
-            LongTaskSpec(
-                task_name="study.guided.forward_response_split",
-                source_kind="study_guided",
-                prompt=tr(locale, "wordbank.add.processing_with_media"),
-                threshold_ms=800,
-            ),
-            sink=CompositeProgressSink(
-                LoggerProgressSink(),
-                MatcherProgressSink(matcher),
-            ),
+        long_task = _guided_media_task(
+            task_name="study.guided.forward_response_split",
+            locale=locale,
+            matcher=matcher,
         )
         async with long_task:
             payload = await build_response_input_payload(
