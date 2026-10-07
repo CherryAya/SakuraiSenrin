@@ -12,7 +12,8 @@ from src.database.snapshot.tables import GroupSnapshot
 async def test_create_group_snapshot_persists_created_at() -> None:
     created_at = 1_780_901_962
 
-    async with snapshot_db.session() as session:
+    # snapshot_db 是 AliasStore，需用显式 API（按业务时间路由到分片）
+    async with snapshot_db.write_session_for(created_at) as session:
         ops = GroupSnapshotOps(session)
         await ops.create_group_snapshot(
             group_id="20001",

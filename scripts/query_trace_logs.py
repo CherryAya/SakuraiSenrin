@@ -55,7 +55,8 @@ def _resolve_window(args: argparse.Namespace) -> tuple[arrow.Arrow, arrow.Arrow]
 
 async def main() -> None:
     args = parse_args()
-    await log_db.init(LogBase)
+    # AliasStore 不做隐式代理；init / map_reduce 属物理分片库职责，走 .store
+    await log_db.store.init(LogBase)
     start, end = _resolve_window(args)
 
     async def _query(session: AsyncSession) -> Sequence[TraceEventLog]:
@@ -70,7 +71,7 @@ async def main() -> None:
             limit=args.limit,
         )
 
-    shard_rows = await log_db.map_reduce(
+    shard_rows = await log_db.store.map_reduce(
         start.datetime,
         end.datetime,
         _query,

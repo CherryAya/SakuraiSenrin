@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
@@ -19,7 +19,10 @@ from src.lib.trace_log import log_trace_event, new_trace_id
 from src.lib.utils.common import get_current_time
 
 if TYPE_CHECKING:
-    from .connectors import SegmentStore
+    from sqlalchemy.orm import DeclarativeBase
+
+    from src.lib.types import JsonValue
+
     from .ops import BaseOps
 
 from .alias import AliasStore
@@ -388,29 +391,30 @@ class BatchWriter[T]:
                 self._mark_idle_if_needed()
 
 
-async def execute_batch_write[PayloadT: Mapping[str, Any], OpsT: BaseOps[Any]](
+async def execute_batch_write[
+    PayloadT: Mapping[str, JsonValue],
+    OpsT: BaseOps[DeclarativeBase],
+](
     batch: Sequence[PayloadT],
-    db_instance: AliasStore[OpsT] | SegmentStore,
-    ops_class: type[OpsT],
-    method: Callable[[OpsT, list[PayloadT]], Awaitable[Any]],
-    time_field: str,
+    db_instance: AliasStore[OpsT],
+    ops_class: type[OpsT] | None,
+    method: Callable[[OpsT, list[PayloadT]], Awaitable[int | None]],
+    time_field: str | None,
     *,
     emit_trace: bool = True,
 ) -> None:
-    """按时间戳分组路由并写入对应分片。
+    """按时间戳分组路由并写入对应分片（转发到 AliasStore.write_batch）。
 
-    分组与路由逻辑已收敛到 AliasStore.write_batch：原先这里手算
-    ``arrow.get(ts).to("Asia/Shanghai")`` 再 ``replace(day=1)``，与
-    SegmentStore 的时区口径是两套实现，正是历史时区错位 bug 的来源。
-
-    兼容层：若传入的是物理 SegmentStore，则在此包一层 AliasStore。调用点
-    迁移完成后可直接传 AliasStore 并省略 ops_class/time_field。
+    ops_class / time_field 已由 AliasStore 构造时携带，调用点可省略；保留两个
+    可选参数是为了兼容「同一 alias 上用另一套 ops」的少数场景（例如 log_db 既写
+    审计日志也写 trace 日志）。传了则以传入值为准。
     """
     if not batch:
         return
-    alias = (
-        db_instance
-        if isinstance(db_instance, AliasStore)
-        else AliasStore(db_instance, ops_class=ops_class, time_field=time_field)
-    )
-    await alias.write_batch(batch, method=method, emit_trace=emit_trace)
+    if ops_class is not None or time_field is not None:
+        db_instance = AliasStore(
+            db_instance.store,
+            ops_class=ops_class or db_instance._ops_class,
+            time_field=time_field or db_instance._time_field,
+        )
+    await db_instance.write_batch(batch, method=method, emit_trace=emit_trace)

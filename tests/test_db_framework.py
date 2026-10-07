@@ -14,8 +14,12 @@ from sqlalchemy import Integer, String, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from src.database.core.tables import CoreBase
+from src.database.core.consts import Permission
+from src.database.core.tables import CoreBase, User
+from src.database.log.consts import AuditAction, AuditCategory, AuditContext
+from src.database.log.tables import AuditLog
 from src.database.patches import build_core_patch_registry
+from src.database.snapshot.tables import UserSnapshot
 from src.lib.db.batch import BatchWriter
 from src.lib.db.connectors import ColdPolicy, EventStore, StateStore
 from src.lib.db.ops import BaseOps
@@ -1038,6 +1042,184 @@ async def test_writer_health_report_aggregates_registered_writers() -> None:
     assert "_flush_water_logs" in names
     assert "_flush_wordbank_logs" in names
     assert report.dead_letter_items >= 0
+
+
+def _read_table_text(db_file: Path, table: str) -> str:
+    if not db_file.exists():
+        return ""
+    conn = sqlite3.connect(db_file)
+    try:
+        return repr(conn.execute(f"SELECT * FROM {table}").fetchall())
+    finally:
+        conn.close()
+
+
+@pytest.mark.asyncio
+async def test_atomic_session_rolls_back_all_attached_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：跨库事务失败时 core / log / snapshot 三个物理文件必须全部回滚。
+
+    历史故障：_save_immediate 开三个独立会话，snapshot 写入失败时 core 行已提交，
+    留下「已改主库但缺审计/快照」的中间态。
+    """
+    from src.lib.db import connectors as connectors_module
+    from src.services.db import bind_cross_store_schemas
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-10-07 12:00:00+08:00").int_timestamp,
+    )
+
+    from src.database.core.ops import UserOps
+    from src.database.log.ops import AuditLogOps
+    from src.database.snapshot.ops import UserSnapshotOps
+    from src.lib.db.atomic import system_atomic_session
+
+    bind_cross_store_schemas()
+
+    with pytest.raises(Exception, match="NOT NULL|IntegrityError"):
+        async with system_atomic_session() as session:
+            await UserOps(session).add_user(
+                user_id="u1",
+                user_name="Alice",
+                permission=Permission.NORMAL,
+            )
+            await UserSnapshotOps(session).create_user_snapshot(
+                user_id="u1",
+                content="Alice",
+                created_at=1,
+            )
+            await AuditLogOps(session).create_audit_log(
+                target_id=None,  # type: ignore[arg-type]
+                context_type=AuditContext.USER,
+                category=AuditCategory.PERMISSION,
+                action=AuditAction.GRANT,
+            )
+
+    assert _read_table_text(tmp_path / "core_db" / "core.db", "biz_user") == "[]"
+    assert (
+        _read_table_text(
+            tmp_path / "snapshot_db" / "snapshot_202610.db",
+            "obs_user_snapshot",
+        )
+        == "[]"
+    )
+    assert (
+        _read_table_text(tmp_path / "log_db" / "log_202610.db", "sys_audit_log") == "[]"
+    )
+
+
+@pytest.mark.asyncio
+async def test_atomic_session_commits_across_all_attached_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """正向路径：一次原子事务把三张表分别写进三个物理文件，且单库会话可读。"""
+    from src.lib.db import connectors as connectors_module
+    from src.services.db import bind_cross_store_schemas
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-10-07 12:00:00+08:00").int_timestamp,
+    )
+
+    from src.database.core.ops import UserOps
+    from src.database.instances import core_db, log_db, snapshot_db
+    from src.database.log.ops import AuditLogOps
+    from src.database.snapshot.ops import UserSnapshotOps
+    from src.lib.db.atomic import system_atomic_session
+
+    bind_cross_store_schemas()
+    async with system_atomic_session() as session:
+        await UserOps(session).add_user(
+            user_id="u1",
+            user_name="Alice",
+            permission=Permission.NORMAL,
+        )
+        await UserSnapshotOps(session).create_user_snapshot(
+            user_id="u1",
+            content="Alice",
+            created_at=1,
+        )
+        await AuditLogOps(session).create_audit_log(
+            target_id="u1",
+            context_type=AuditContext.USER,
+            category=AuditCategory.PERMISSION,
+            action=AuditAction.GRANT,
+        )
+
+    assert "u1" in _read_table_text(tmp_path / "core_db" / "core.db", "biz_user")
+    assert "u1" in _read_table_text(
+        tmp_path / "snapshot_db" / "snapshot_202610.db",
+        "obs_user_snapshot",
+    )
+    assert "u1" in _read_table_text(
+        tmp_path / "log_db" / "log_202610.db", "sys_audit_log"
+    )
+
+    # 单库会话也能读到：attached schema 已映射回 main
+    async with core_db.session(commit=False) as s:
+        total = await s.scalar(select(func.count()).select_from(User))
+    assert int(total or 0) == 1
+
+    october = arrow.get("2026-10-07").datetime
+    async with log_db.read_session_for(october) as s:
+        total = await s.scalar(select(func.count()).select_from(AuditLog))
+    assert int(total or 0) == 1
+    async with snapshot_db.read_session_for(october) as s:
+        total = await s.scalar(select(func.count()).select_from(UserSnapshot))
+    assert int(total or 0) == 1
+
+
+@pytest.mark.asyncio
+async def test_atomic_session_uses_rollback_journal_for_cross_file_atomicity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """参与跨库事务的文件必须是 rollback journal。
+
+    应用层错误回滚在 WAL 下也成立，但 SQLite 官方明确 WAL 模式下跨 attached
+    database 的 commit **不原子**（进程/电源故障会撕裂）；只有 rollback journal
+    的 super-journal 才提供跨文件原子提交。因此这里锁定 journal_mode。
+    """
+    from src.lib.db import connectors as connectors_module
+    from src.services.db import bind_cross_store_schemas
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-10-07 12:00:00+08:00").int_timestamp,
+    )
+    bind_cross_store_schemas()
+
+    from src.database.core.ops import UserOps
+    from src.lib.db.atomic import system_atomic_session
+
+    async with system_atomic_session() as session:
+        await UserOps(session).add_user(
+            user_id="u1",
+            user_name="Alice",
+            permission=Permission.NORMAL,
+        )
+
+    for name in (
+        "core_db/core.db",
+        "log_db/log_202610.db",
+        "snapshot_db/snapshot_202610.db",
+    ):
+        conn = sqlite3.connect(tmp_path / name)
+        try:
+            mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+        finally:
+            conn.close()
+        assert mode == "delete", f"{name} 应为 delete，实际 {mode}"
 
 
 def test_database_manager_uses_debug_sql_echo_from_config(

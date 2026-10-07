@@ -34,6 +34,11 @@ class _FakeSessionContext:
         return None
 
 
+def _fake_atomic_session(*_args: object, **_kwargs: object) -> _FakeSessionContext:
+    """跨库原子会话的桩：产出对象本身，各 Ops 桩并不使用 session。"""
+    return _FakeSessionContext()
+
+
 class _FakeScalarResult:
     def __init__(self, items: list[object]) -> None:
         self._items = items
@@ -223,8 +228,7 @@ async def test_save_user_name_immediate_includes_snapshot_created_at(
     monkeypatch.setattr(user_module, "UserOps", _FakeUserOps)
     monkeypatch.setattr(user_module, "UserSnapshotOps", _FakeSnapshotOps)
     monkeypatch.setattr(user_module.core_db, "session", _FakeSessionContext)
-    monkeypatch.setattr(user_module.log_db, "session", _FakeSessionContext)
-    monkeypatch.setattr(user_module.snapshot_db, "session", _FakeSessionContext)
+    monkeypatch.setattr(user_module, "system_atomic_session", _fake_atomic_session)
 
     cache = UserCache()
     cache.upsert_user("10001", "Old Name", Permission.NORMAL)
@@ -270,8 +274,7 @@ async def test_save_group_name_immediate_includes_snapshot_created_at(
     monkeypatch.setattr(group_module, "GroupOps", _FakeGroupOps)
     monkeypatch.setattr(group_module, "GroupSnapshotOps", _FakeSnapshotOps)
     monkeypatch.setattr(group_module.core_db, "session", _FakeSessionContext)
-    monkeypatch.setattr(group_module.log_db, "session", _FakeSessionContext)
-    monkeypatch.setattr(group_module.snapshot_db, "session", _FakeSessionContext)
+    monkeypatch.setattr(group_module, "system_atomic_session", _fake_atomic_session)
 
     cache = GroupCache()
     cache.upsert_group("20001", "Old Group", GroupStatus.UNAUTHORIZED, False)
@@ -315,8 +318,7 @@ async def test_restore_pre_ban_status_restores_cached_status(
     monkeypatch.setattr(group_module, "GroupOps", _FakeGroupOps)
     monkeypatch.setattr(group_module, "AuditLogOps", _FakeAuditLogOps)
     monkeypatch.setattr(group_module.core_db, "session", _FakeSessionContext)
-    monkeypatch.setattr(group_module.log_db, "session", _FakeSessionContext)
-    monkeypatch.setattr(group_module.snapshot_db, "session", _FakeSessionContext)
+    monkeypatch.setattr(group_module, "system_atomic_session", _fake_atomic_session)
 
     cache = GroupCache()
     cache.upsert_group(
@@ -521,8 +523,7 @@ async def test_save_member_card_immediate_includes_snapshot_created_at(
     monkeypatch.setattr(member_module, "MemberOps", _FakeMemberOps)
     monkeypatch.setattr(member_module, "MemberSnapshotOps", _FakeSnapshotOps)
     monkeypatch.setattr(member_module.core_db, "session", _FakeSessionContext)
-    monkeypatch.setattr(member_module.log_db, "session", _FakeSessionContext)
-    monkeypatch.setattr(member_module.snapshot_db, "session", _FakeSessionContext)
+    monkeypatch.setattr(member_module, "system_atomic_session", _fake_atomic_session)
 
     cache = MemberCache()
     cache.upsert_member("10001", "20001", Permission.SUPERUSER, "Old Card")

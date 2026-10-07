@@ -13,12 +13,13 @@ from src.database.consts import WritePolicy
 from src.database.core.consts import Permission
 from src.database.core.ops import MemberOps
 from src.database.core.tables import Member
-from src.database.instances import core_db, log_db, snapshot_db
+from src.database.instances import core_db
 from src.database.log.consts import AuditAction, AuditCategory, AuditContext
 from src.database.log.ops import AuditLogOps
 from src.database.snapshot.ops import MemberSnapshotOps
 from src.lib.cache.field import MemberCacheItem
 from src.lib.cache.impl import MemberCache
+from src.lib.db.atomic import system_atomic_session
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
 from src.lib.utils.common import get_current_time
 from src.services.writers import (
@@ -103,14 +104,11 @@ class MemberRepository:
 
     async def _save_immediate(self, ctx: MemberChangeContext) -> None:
         event_time = get_current_time()
-        async with (
-            core_db.session() as core_session,
-            log_db.session() as log_session,
-            snapshot_db.session() as snapshot_session,
-        ):
-            member_ops = MemberOps(core_session)
-            audit_log_ops = AuditLogOps(log_session)
-            member_snapshot_ops = MemberSnapshotOps(snapshot_session)
+        # 单一事务：core + 当月 log 分片 + 当月 snapshot 分片。
+        async with system_atomic_session(event_time) as session:
+            member_ops = MemberOps(session)
+            audit_log_ops = AuditLogOps(session)
+            member_snapshot_ops = MemberSnapshotOps(session)
 
             if ctx.is_new:
                 await member_ops.add_member(

@@ -22,22 +22,33 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import _AsyncGeneratorContextManager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import TypeVar
 
 import arrow
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import DeclarativeBase
 
-from src.lib.db.connectors import ColdPolicy, SegmentStore
+from src.lib.db.backup import BackupSource
+from src.lib.db.connectors import ColdPolicy, MomentLike, SegmentStore
 from src.lib.db.ops import BaseOps
 from src.lib.db.schema import PatchRegistry
 from src.lib.trace_log import log_trace_event
+from src.lib.types import JsonValue
 
-OpsT = TypeVar("OpsT", bound=BaseOps[Any])
-PayloadT = TypeVar("PayloadT", bound=Mapping[str, Any])
+OpsT = TypeVar("OpsT", bound=BaseOps[DeclarativeBase])
+PayloadT = TypeVar("PayloadT", bound=Mapping[str, JsonValue])
+
+# 时间窗口边界的可选形态；比 MomentLike 少一档：窗口端点不接受分片键 / record_date
+# 字符串。
+type WindowBound = datetime | arrow.Arrow | int
 
 
-def _as_datetime(moment: Any) -> datetime:
-    """窗口边界转 datetime；不做取月（map_reduce 内部负责枚举分片）。"""
+def _as_datetime(moment: object) -> datetime:
+    """窗口边界转 datetime；不做取月（map_reduce 内部负责枚举分片）。
+
+    与 ``_route_ctx`` 同理：入参声明为 ``object``，形态校验由下面逐条 isinstance
+    收口，不合法的值照旧抛 TypeError。
+    """
     if isinstance(moment, datetime):
         return moment
     if isinstance(moment, arrow.Arrow):
@@ -47,7 +58,7 @@ def _as_datetime(moment: Any) -> datetime:
     raise TypeError(f"unsupported window bound: {type(moment)!r}")
 
 
-class AliasStore[OpsT: BaseOps[Any]]:
+class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
     """按时间维度自动路由的逻辑 db。
 
     ``store`` 是物理分片库；本类只负责把「业务时间」翻译成「目标分片」。
@@ -100,6 +111,10 @@ class AliasStore[OpsT: BaseOps[Any]]:
     def base_dir(self) -> Path:
         return self._store.base_dir
 
+    def shard_file_for(self, moment: MomentLike) -> Path:
+        """解析业务时间对应的物理分片文件路径（转发到物理 store）。"""
+        return self._store.shard_file_for(moment)
+
     @property
     def manifest_path(self) -> Path:
         return self._store.manifest_path
@@ -138,12 +153,17 @@ class AliasStore[OpsT: BaseOps[Any]]:
     # 路由：业务时间 -> 分片
     # ------------------------------------------------------------------
 
-    def shard_key_for(self, moment: Any) -> str:
+    def shard_key_for(self, moment: MomentLike) -> str:
         """把任意形式的时间（时间戳 / datetime / record_date）解析成分片键。"""
         return self._store._get_shard_key(self._route_ctx(moment))
 
-    def _route_ctx(self, moment: Any) -> datetime:
-        """归一化到「本分片月首零点」，交由 SegmentStore 统一处理时区。"""
+    def _route_ctx(self, moment: object) -> datetime:
+        """归一化到「本分片月首零点」，交由 SegmentStore 统一处理时区。
+
+        入参声明为 ``object``：调用方可能是分片键/record_date 字符串、时间戳，也
+        可能直接把 payload dict 里取出的原始 JSON 值丢进来（见 ``write_batch``）。
+        真正的形态校验由下面逐条 isinstance 收口，不合法的值照旧抛 TypeError。
+        """
         if isinstance(moment, arrow.Arrow):
             return self._floor_month(moment)
         if isinstance(moment, datetime):
@@ -190,14 +210,14 @@ class AliasStore[OpsT: BaseOps[Any]]:
 
     def write_session_for(
         self,
-        moment: Any,
+        moment: MomentLike,
     ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
         """按业务时间路由的写会话（替代手动计算 time_ctx）。"""
         return self._store.write_session(time_ctx=self._route_ctx(moment))
 
     def read_session_for(
         self,
-        moment: Any,
+        moment: MomentLike,
         *,
         cold_policy: ColdPolicy | None = None,
     ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
@@ -211,7 +231,7 @@ class AliasStore[OpsT: BaseOps[Any]]:
         self,
         payloads: Sequence[PayloadT],
         *,
-        method: Callable[[OpsT, list[PayloadT]], Awaitable[Any]],
+        method: Callable[[OpsT, list[PayloadT]], Awaitable[int | None]],
         time_field: str | None = None,
         emit_trace: bool = True,
     ) -> int:
@@ -297,10 +317,10 @@ class AliasStore[OpsT: BaseOps[Any]]:
         self,
         payload: PayloadT,
         *,
-        method: Callable[[OpsT, list[PayloadT]], Awaitable[Any]],
+        method: Callable[[OpsT, list[PayloadT]], Awaitable[int | None]],
         time_field: str | None = None,
         emit_trace: bool = False,
-    ) -> Any:
+    ) -> int:
         """单条写入，按数据自身时间戳路由。"""
         return await self.write_batch(
             [payload],
@@ -315,8 +335,8 @@ class AliasStore[OpsT: BaseOps[Any]]:
 
     async def scan[T](
         self,
-        start: Any,
-        end: Any,
+        start: WindowBound,
+        end: WindowBound,
         query_func: Callable[[AsyncSession], Awaitable[T]],
         *,
         cold_policy: ColdPolicy | None = None,
@@ -331,7 +351,7 @@ class AliasStore[OpsT: BaseOps[Any]]:
 
     async def scan_many[T](
         self,
-        windows: Sequence[tuple[Any, Any]],
+        windows: Sequence[tuple[WindowBound, WindowBound]],
         query_func: Callable[[AsyncSession], Awaitable[T]],
         *,
         cold_policy: ColdPolicy | None = None,
@@ -346,7 +366,7 @@ class AliasStore[OpsT: BaseOps[Any]]:
             return []
         semaphore = asyncio.Semaphore(concurrency)
 
-        async def _run(window: tuple[Any, Any]) -> list[T]:
+        async def _run(window: tuple[WindowBound, WindowBound]) -> list[T]:
             async with semaphore:
                 return await self.scan(*window, query_func, cold_policy=cold_policy)
 
@@ -391,8 +411,8 @@ class AliasStore[OpsT: BaseOps[Any]]:
 
     async def scan_pair[T1, T2](
         self,
-        start: Any,
-        end: Any,
+        start: WindowBound,
+        end: WindowBound,
         first: Callable[[AsyncSession], Awaitable[T1]],
         second: Callable[[AsyncSession], Awaitable[T2]],
         *,
@@ -418,7 +438,7 @@ class AliasStore[OpsT: BaseOps[Any]]:
     # 生命周期与运维（透传，alias 层无状态）
     # ------------------------------------------------------------------
 
-    async def init(self, base: Any) -> None:
+    async def init(self, base: type[DeclarativeBase]) -> None:
         await self._store.init(base)
 
     async def run_archiver_task(self) -> None:
@@ -437,10 +457,10 @@ class AliasStore[OpsT: BaseOps[Any]]:
         self._store._manifest_dirty = False
         self._store._manifest_flush_task = None
 
-    def shard_health(self) -> list[dict[str, Any]]:
+    def shard_health(self) -> list[dict[str, JsonValue]]:
         return self._store.shard_health()
 
-    def iter_backup_sources(self) -> Any:
+    def iter_backup_sources(self) -> list[BackupSource]:
         return self._store.iter_backup_sources()
 
     @property
@@ -448,7 +468,7 @@ class AliasStore[OpsT: BaseOps[Any]]:
         """物理分片库，仅在确实需要绕过 alias 时使用。"""
         return self._store
 
-    def __getattr__(self, item: str) -> Any:
+    def __getattr__(self, item: str) -> object:
         """不做隐式代理：私有成员与拼错的名字都直接报错。
 
         迁移期曾对全部属性无条件转发（``getattr(self._store, item)``），那会让
@@ -461,7 +481,7 @@ class AliasStore[OpsT: BaseOps[Any]]:
         )
 
 
-def build_alias[OpsT: BaseOps[Any]](
+def build_alias[OpsT: BaseOps[DeclarativeBase]](
     store: SegmentStore,
     ops_class: type[OpsT],
     *,

@@ -19,7 +19,6 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-from typing import Any
 
 import arrow
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -29,6 +28,7 @@ import zstandard as zstd
 from src.lib.consts import GLOBAL_DB_ROOT
 from src.lib.db.backup import BackupSource
 from src.lib.trace_log import log_trace_event
+from src.lib.types import JsonValue
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 
@@ -55,6 +55,10 @@ SEGMENT_SIZE_ROLLOVER_MB = 256
 
 # 两阶段归档的中间态后缀。归档先把分片 rename 成该后缀，压缩成功后再删除。
 ARCHIVE_STAGING_SUFFIX = ".archiving"
+
+# 业务时间入参的可选形态：Unix 时间戳 / datetime / arrow.Arrow / 分片键字符串
+# （store.fmt 形态，如 "2026_09"）/ record_date 字符串（"20260901"）。
+type MomentLike = datetime | arrow.Arrow | str | int
 
 
 class ColdPolicy(StrEnum):
@@ -162,27 +166,37 @@ class BaseDB(ABC):
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    @property
+    def db_path(self) -> Path:
+        """单文件库的物理路径（分片库没有单一路径，调用需自行判断）。"""
+        filename = getattr(self, "filename", None)
+        if filename is None:
+            raise TypeError(
+                f"{type(self).__name__} 是分片库，没有单一 db 文件",
+            )
+        return self.base_dir / filename
+
     @abstractmethod
     def read_session(
         self,
-        *args: Any,
-        **kwargs: Any,
+        *args: object,
+        **kwargs: object,
     ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
         pass
 
     @abstractmethod
     def write_session(
         self,
-        *args: Any,
-        **kwargs: Any,
+        *args: object,
+        **kwargs: object,
     ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
         pass
 
     def session(
         self,
         commit: bool = True,
-        *args: Any,
-        **kwargs: Any,
+        *args: object,
+        **kwargs: object,
     ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
         if commit:
             return self.write_session(*args, **kwargs)
@@ -253,7 +267,7 @@ class _ReentrantShardLock:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._depth = 0
-        self._owner: asyncio.Task[Any] | None = None
+        self._owner: asyncio.Task[object] | None = None
 
     async def __aenter__(self) -> None:
         task = asyncio.current_task()
@@ -372,6 +386,20 @@ class SegmentStore(BaseDB):
             for offset in range(self.active_window_months)
         }
         return shard_key in active_keys
+
+    def shard_file_for(self, moment: MomentLike) -> Path:
+        """解析业务时间对应的物理分片文件路径。
+
+        跨库原子事务需要在运行期决定 ATTACH 目标（log/snapshot 按月分片），
+        因此这条路径必须从绝对时间出发，不能让调用方自己拼分片名。
+        """
+        local = self._to_local(
+            moment if isinstance(moment, arrow.Arrow) else arrow.get(moment)
+        )
+        shard_key = self._get_shard_key(
+            local.replace(day=1, hour=0, minute=0, second=0, microsecond=0).datetime,
+        )
+        return self._get_file_paths(shard_key)[0]
 
     def _manifest_entry(
         self,
@@ -599,13 +627,13 @@ class SegmentStore(BaseDB):
         entry.archived_at = get_current_time()
         entry.updated_at = entry.archived_at
 
-    def shard_health(self) -> list[dict[str, Any]]:
+    def shard_health(self) -> list[dict[str, JsonValue]]:
         """分片健康快照，对应 ES 的 _cat/indices + _cluster/health。
 
         只读，不触碰磁盘以外的状态；供运维脚本与启动自检使用。
         """
         manifest = self._load_manifest()
-        rows: list[dict[str, Any]] = []
+        rows: list[dict[str, JsonValue]] = []
         for shard_key, entry in sorted(manifest.segments.items()):
             db_path = Path(entry.path)
             archive_path = Path(entry.archive_path) if entry.archive_path else None
@@ -1076,6 +1104,7 @@ __all__ = [
     "ColdPolicy",
     "CounterStore",
     "EventStore",
+    "MomentLike",
     "SegmentConfig",
     "SegmentManifest",
     "SegmentManifestEntry",

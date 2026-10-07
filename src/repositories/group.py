@@ -14,12 +14,13 @@ from src.database.consts import WritePolicy
 from src.database.core.consts import GroupStatus
 from src.database.core.ops import GroupOps
 from src.database.core.tables import Group
-from src.database.instances import core_db, log_db, snapshot_db
+from src.database.instances import core_db
 from src.database.log.consts import AuditAction, AuditCategory, AuditContext
 from src.database.log.ops import AuditLogOps
 from src.database.snapshot.ops import GroupSnapshotOps
 from src.lib.cache.field import GroupCacheItem
 from src.lib.cache.impl import GroupCache
+from src.lib.db.atomic import system_atomic_session
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
 from src.lib.utils.common import get_current_time
 from src.services.writers import (
@@ -112,14 +113,11 @@ class GroupRepository:
 
     async def _save_immediate(self, ctx: GroupChangeContext) -> None:
         event_time = get_current_time()
-        async with (
-            core_db.session() as core_session,
-            log_db.session() as log_session,
-            snapshot_db.session() as snapshot_session,
-        ):
-            group_ops = GroupOps(core_session)
-            audit_log_ops = AuditLogOps(log_session)
-            group_snapshot_ops = GroupSnapshotOps(snapshot_session)
+        # 单一事务：core + 当月 log 分片 + 当月 snapshot 分片。
+        async with system_atomic_session(event_time) as session:
+            group_ops = GroupOps(session)
+            audit_log_ops = AuditLogOps(session)
+            group_snapshot_ops = GroupSnapshotOps(session)
 
             if ctx.is_new:
                 await group_ops.add_group(

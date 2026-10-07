@@ -567,7 +567,8 @@ def test_backup_registration_loader_discovers_core_and_plugin_databases() -> Non
     databases = get_registered_backup_databases()
 
     assert len(databases) >= 10
-    assert databases[:3] == (core_db, log_db, snapshot_db)
+    # log/snapshot 已收敛为 AliasStore，注册表里存的是物理 store
+    assert databases[:3] == (core_db, log_db.store, snapshot_db.store)
     assert water_core_db in databases
     # water/wordbank 的分片库以 AliasStore 对外暴露，注册的是其物理 store
     assert water_message.store in databases

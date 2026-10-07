@@ -8,6 +8,7 @@ from sqlalchemy import select
 from src.database.instances import log_db
 from src.database.log.tables import TraceEventLog
 from src.lib.trace_log import configure_logging, flush_trace_logging, log_trace_event
+from src.lib.utils.common import get_current_time
 
 
 @pytest.mark.asyncio
@@ -27,7 +28,7 @@ async def test_log_trace_event_persists_to_log_db() -> None:
     await asyncio.sleep(0)
     await flush_trace_logging()
 
-    async with log_db.read_session() as session:
+    async with log_db.read_session_for(get_current_time()) as session:
         result = await session.execute(
             select(TraceEventLog).where(TraceEventLog.trace_id == trace_id)
         )

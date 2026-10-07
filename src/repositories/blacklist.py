@@ -11,12 +11,13 @@ from __future__ import annotations
 import arrow
 
 from src.database.core.ops import BlacklistOps
-from src.database.instances import core_db, log_db
+from src.database.instances import core_db
 from src.database.log.consts import AuditAction, AuditCategory, AuditContext
 from src.database.log.ops import AuditLogOps
 from src.lib.cache.field import BlacklistCacheItem
 from src.lib.cache.impl import BlacklistCache
 from src.lib.consts import GLOBAL_GROUP_FLAG, PERMANENT_BAN_FLAG
+from src.lib.db.atomic import system_atomic_session
 from src.lib.utils.common import get_current_time
 
 _AUDIT_CTX_TYPE_DICT = {
@@ -81,20 +82,20 @@ class BlacklistRepository:
         )
         self.cache.set_ban(target_user_id, group_id, expiry)
 
-        async with core_db.session() as core_session:
-            await BlacklistOps(core_session).add_ban(
+        async with system_atomic_session(with_snapshot=False) as session:
+            await BlacklistOps(session).add_ban(
                 target_user_id=target_user_id,
                 group_id=group_id,
                 operator_id=operator_id,
                 ban_expiry=expiry,
                 reason=reason,
             )
-        async with log_db.session() as log_session:
-            await AuditLogOps(log_session).create_audit_log(
+            await AuditLogOps(session).create_audit_log(
                 target_id=target_user_id,
                 context_type=_AUDIT_CTX_TYPE_DICT.get(group_id, AuditContext.GROUP),
                 category=AuditCategory.ACCESS,
                 action=AuditAction.BAN,
+                operator_id=operator_id,
             )
 
     async def set_unban(
@@ -108,11 +109,9 @@ class BlacklistRepository:
             return
         self.cache.set_unban(target_user_id, group_id)
 
-        async with core_db.session() as core_session:
-            await BlacklistOps(core_session).unban(target_user_id, group_id)
-
-        async with log_db.session() as log_session:
-            await AuditLogOps(log_session).create_audit_log(
+        async with system_atomic_session(with_snapshot=False) as session:
+            await BlacklistOps(session).unban(target_user_id, group_id)
+            await AuditLogOps(session).create_audit_log(
                 target_id=target_user_id,
                 context_type=_AUDIT_CTX_TYPE_DICT.get(group_id, AuditContext.GROUP),
                 category=AuditCategory.ACCESS,

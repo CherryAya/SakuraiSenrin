@@ -9,18 +9,25 @@ Description: db 管理器
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
 
 import nonebot
 from sqlalchemy import event, text
+from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import ConnectionPoolEntry
 
 from src.logger import logger
+
+
+def _standalone_schema_map() -> dict[str | None, str | None]:
+    from src.lib.db.atomic import STANDALONE_SCHEMA_TRANSLATE_MAP
+
+    return dict(STANDALONE_SCHEMA_TRANSLATE_MAP)
 
 
 class DatabaseManager:
@@ -31,8 +38,8 @@ class DatabaseManager:
 
     def _init_sqlite_pragma(
         self,
-        dbapi_connection: Any,
-        connection_record: Any,
+        dbapi_connection: DBAPIConnection,
+        connection_record: ConnectionPoolEntry,
     ) -> None:
         _ = connection_record
         cursor = dbapi_connection.cursor()
@@ -60,6 +67,11 @@ class DatabaseManager:
 
             echo = self._resolve_sql_echo()
             engine = create_async_engine(url, echo=echo)
+            # 单库会话把 attached schema 前缀映射回 main（SQLite 默认 schema）。
+            # 这样同一批 ORM 类既能用于单库写入，也能用于跨库原子写入。
+            engine = engine.execution_options(
+                schema_translate_map=_standalone_schema_map(),
+            )
             event.listen(engine.sync_engine, "connect", self._init_sqlite_pragma)
 
             async with engine.begin() as conn:

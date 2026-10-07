@@ -64,8 +64,8 @@ async def test_query_trace_logs_main_renders_json(
         return [result]
 
     monkeypatch.setattr(query_script, "parse_args", lambda: args)
-    monkeypatch.setattr(query_script.log_db, "init", _init)
-    monkeypatch.setattr(query_script.log_db, "map_reduce", _map_reduce)
+    monkeypatch.setattr(query_script.log_db.store, "init", _init)
+    monkeypatch.setattr(query_script.log_db.store, "map_reduce", _map_reduce)
     monkeypatch.setattr(
         query_script.TraceEventLogOps,
         "query_trace_events",

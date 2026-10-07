@@ -14,12 +14,13 @@ from src.database.consts import WritePolicy
 from src.database.core.consts import Permission
 from src.database.core.ops import UserOps
 from src.database.core.tables import User
-from src.database.instances import core_db, log_db, snapshot_db
+from src.database.instances import core_db
 from src.database.log.consts import AuditAction, AuditCategory, AuditContext
 from src.database.log.ops import AuditLogOps
 from src.database.snapshot.ops import UserSnapshotOps
 from src.lib.cache.field import UserCacheItem
 from src.lib.cache.impl import UserCache
+from src.lib.db.atomic import system_atomic_session
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
 from src.lib.utils.common import get_current_time
 from src.services.writers import (
@@ -91,14 +92,12 @@ class UserRepository:
 
     async def _save_immediate(self, ctx: UserChangeContext) -> None:
         event_time = get_current_time()
-        async with (
-            core_db.session() as core_session,
-            log_db.session() as log_session,
-            snapshot_db.session() as snapshot_session,
-        ):
-            user_ops = UserOps(core_session)
-            audit_log_ops = AuditLogOps(log_session)
-            user_snapshot_ops = UserSnapshotOps(snapshot_session)
+        # 单一事务：core + 当月 log 分片 + 当月 snapshot 分片。
+        # 此前开三个独立会话，任一失败都会留下「已改主库但缺审计/快照」的状态。
+        async with system_atomic_session(event_time) as session:
+            user_ops = UserOps(session)
+            audit_log_ops = AuditLogOps(session)
+            user_snapshot_ops = UserSnapshotOps(session)
             if ctx.is_new:
                 await user_ops.add_user(
                     user_id=ctx.user_id,
