@@ -36,10 +36,16 @@ async def _on_startup() -> None:
 
 @driver.on_shutdown
 async def _on_shutdown() -> None:
-    from src.services.writer_health import drain_all_writers, report_writer_health
+    from src.services.writer_health import (
+        drain_all_writers,
+        flush_dead_letters,
+        report_writer_health,
+    )
 
-    # 先落盘内存缓冲，再巡检死信，最后关日志（否则告警写不出去）
+    # 顺序要紧：先落盘内存缓冲，再把死信写入 sys_dead_letter 以便关机后回溯，
+    # 然后巡检告警，最后关日志（否则告警写不出去）
     await drain_all_writers()
+    await flush_dead_letters()
     await report_writer_health()
     await shutdown_logging()
 

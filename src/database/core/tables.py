@@ -13,6 +13,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -285,6 +286,32 @@ class PluginConfig(CoreBase):
         default=dict,
         server_default=text("'{}'"),
     )
+
+
+class DeadLetter(CoreBase, TimeMixin):
+    """Buffered writer 的死信落库表。
+
+    死信此前只存于内存，重启即丢且无上界（长期失败会持续占用内存）。这里
+    落库以支持回溯与补偿重放，并按 resolved 状态闭环。
+    """
+
+    __tablename__ = "sys_dead_letter"
+    __table_args__ = (
+        Index("idx_dead_letter_worker_created", "worker_name", "created_at"),
+        Index("idx_dead_letter_unresolved", "resolved", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    worker_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    item_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 原始批次，JSON 序列化后落库，供人工回溯与补偿重放
+    payload: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    resolved: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    resolved_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    resolved_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class GroupPluginSetting(CoreBase, TimeMixin):

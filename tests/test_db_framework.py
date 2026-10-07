@@ -928,6 +928,106 @@ async def test_batch_writer_pop_dead_letters_clears_queue() -> None:
 
 
 @pytest.mark.asyncio
+async def test_batch_writer_dead_letter_queue_is_bounded() -> None:
+    """回归：内存死信队列必须有上界，持续失败不能无限占用内存。"""
+
+    async def _boom(_batch: list[int]) -> None:
+        raise RuntimeError("down")
+
+    writer = BatchWriter[int](
+        flush_callback=_boom,
+        batch_size=1,
+        flush_interval=0.05,
+        max_retries=1,
+        retry_backoff=0.0,
+        max_dead_letters=3,
+    )
+    for item in range(6):
+        await writer.add(item)
+        with pytest.raises(RuntimeError, match="down"):
+            await writer.drain()
+
+    assert len(writer.dead_letters) == 3
+    # 保留最新的 3 条，丢弃最旧的 3 条
+    assert writer.health.dropped_dead_letters == 3
+    assert writer.dead_letters[-1].batch == (5,)
+    await writer.close()
+
+
+@pytest.mark.asyncio
+async def test_dead_letter_persists_and_replays(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """死信须落库以支持关机后回溯，并可用原 flush 回调重放后标记 resolved。"""
+    from src.lib.db import connectors as connectors_module
+    from src.services.dead_letter_store import (
+        DeadLetterOps,
+        persist_dead_letters,
+        replay_dead_letters,
+    )
+
+    monkeypatch.setattr(connectors_module, "GLOBAL_DB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        connectors_module,
+        "get_current_time",
+        lambda: arrow.get("2026-10-07 12:00:00+08:00").int_timestamp,
+    )
+
+    from src.database.core.tables import CoreBase
+
+    core_db = StateStore(namespace="core_db", filename="core.db")
+    core_db.patch_registry = build_core_patch_registry()
+    await core_db.init(CoreBase)
+
+    async def _boom(_batch: list[int]) -> None:
+        raise RuntimeError("db down")
+
+    writer = BatchWriter[int](
+        flush_callback=_boom,
+        batch_size=1,
+        flush_interval=0.05,
+        max_retries=1,
+        retry_backoff=0.0,
+    )
+    await writer.add_all([1, 2, 3])
+    with pytest.raises(RuntimeError, match="db down"):
+        await writer.drain()
+
+    records = writer.pop_dead_letters()
+    assert len(records) == 3
+
+    monkeypatch.setattr("src.services.dead_letter_store.core_db", core_db)
+    report = await persist_dead_letters(records)
+    assert report.persisted == 3
+    assert report.failed == 0
+
+    async with core_db.session(commit=False) as session:
+        stored = await DeadLetterOps(session).list_unresolved()
+    assert len(stored) == 3
+    assert {row.worker_name for row in stored} == {writer.worker_name}
+    assert sorted(row.payload for row in stored) == [[1], [2], [3]]
+    assert all(row.resolved == 0 for row in stored)
+
+    replayed_payloads: list[list[int]] = []
+
+    async def _replay(payload: list[int]) -> None:
+        replayed_payloads.append(payload)
+
+    total = await replay_dead_letters(handlers={writer.worker_name: _replay})
+    assert total == 3
+    assert sorted(replayed_payloads) == [[1], [2], [3]]
+
+    async with core_db.session(commit=False) as session:
+        remaining = await DeadLetterOps(session).list_unresolved()
+    assert remaining == []
+
+    async with core_db.session(commit=False) as session:
+        remaining = await DeadLetterOps(session).list_unresolved()
+    assert remaining == []
+
+
+@pytest.mark.asyncio
 async def test_writer_health_report_aggregates_registered_writers() -> None:
     """writer_health 必须能汇总 core/water/wordbank 三处注册的 writer。"""
     from src.services.writer_health import build_health_report

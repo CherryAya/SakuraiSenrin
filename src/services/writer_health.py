@@ -94,7 +94,8 @@ async def report_writer_health(*, alert: bool = True) -> WriterHealthReport:
         f"检测到 {len(report.degraded_writers)} 个 buffered writer 存在死信: "
         f"{', '.join(report.degraded_writers)}；"
         f"累计丢失 {report.dead_letter_items} 条（{report.dead_letter_batches} 批）。"
-        "死信仅存于内存，请尽快排查落库失败原因。"
+        "死信将在关机时落库到 sys_dead_letter；请尽快排查落库失败原因，"
+        "并可用 scripts/dead_letter.py 重放。"
     )
     log_trace_event(
         event_name="batch_writer_degraded",
@@ -124,6 +125,28 @@ async def drain_all_writers() -> None:
             logger.error(f"BatchWriter [{writer.worker_name}] drain 失败: {exc}")
 
 
+async def flush_dead_letters() -> int:
+    """把各 writer 的内存死信落库，返回落库条数。
+
+    须在 drain_all_writers 之后调用：drain 会把暂存错误重抛，而新产生的死信要
+    到这里才写入 sys_dead_letter，以便关机后仍可回溯与重放。
+    """
+    from src.services.dead_letter_store import persist_dead_letters
+
+    total = 0
+    for writer in _collect_writers():
+        records = writer.pop_dead_letters()
+        if not records:
+            continue
+        report = await persist_dead_letters(records)
+        total += report.persisted
+        if report.failed:
+            logger.error(
+                f"BatchWriter [{writer.worker_name}] 有 {report.failed} 条死信落库失败",
+            )
+    return total
+
+
 def render_health_table() -> str:
     """渲染成对齐的文本表格，供运维脚本直接打印。"""
     report = build_health_report()
@@ -149,6 +172,7 @@ __all__ = [
     "WriterHealthReport",
     "build_health_report",
     "drain_all_writers",
+    "flush_dead_letters",
     "render_health_table",
     "report_writer_health",
 ]

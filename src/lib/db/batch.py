@@ -48,6 +48,8 @@ class BatchWriterHealth:
     last_flush_items: int = 0
     total_flushed_items: int = 0
     total_failed_items: int = 0
+    # 因内存队列上界被丢弃的条数（已落库的记录不受影响）
+    dropped_dead_letters: int = 0
 
     @property
     def is_degraded(self) -> bool:
@@ -87,6 +89,7 @@ class BatchWriter[T]:
         retry_backoff: float = 0.2,
         dedupe_key: Callable[[T], str] | None = None,
         trace_persist: bool = True,
+        max_dead_letters: int = 500,
     ) -> None:
         self.queue: asyncio.Queue[T] = asyncio.Queue()
         self.flush_callback = flush_callback
@@ -101,6 +104,7 @@ class BatchWriter[T]:
         self._worker_name: str | None = None
         self._closed = False
         self._dead_letters: list[DeadLetterRecord[T]] = []
+        self._max_dead_letters = max(1, max_dead_letters)
         self._health = BatchWriterHealth(
             worker_name=self._worker_name
             or getattr(self.flush_callback, "__name__", "Unknown"),
@@ -338,6 +342,16 @@ class BatchWriter[T]:
                     attempts=self.config.max_retries,
                 )
                 self._dead_letters.append(dead_letter)
+                # 有上界：持续失败时不能让内存无限增长（旧实现是裸 list.append）
+                if len(self._dead_letters) > self._max_dead_letters:
+                    dropped = len(self._dead_letters) - self._max_dead_letters
+                    del self._dead_letters[:dropped]
+                    self._health.dropped_dead_letters += dropped
+                    logger.error(
+                        f"BatchWriter {self.worker_name} 死信队列超过上限 "
+                        f"{self._max_dead_letters}，丢弃最旧的 {dropped} 条"
+                        "（已落库的记录不受影响）",
+                    )
                 self._health.dead_letter_batches += 1
                 self._health.dead_letter_items += len(batch)
                 self._health.total_failed_items += len(batch)

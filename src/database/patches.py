@@ -70,8 +70,52 @@ async def _add_group_pre_ban_status(session: AsyncSession) -> None:
     )
 
 
+async def _add_dead_letter_table(session: AsyncSession) -> None:
+    await session.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS sys_dead_letter (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                worker_name VARCHAR(64) NOT NULL,
+                error TEXT NOT NULL DEFAULT '',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                item_count INTEGER NOT NULL DEFAULT 0,
+                payload JSON NOT NULL DEFAULT '[]',
+                resolved INTEGER NOT NULL DEFAULT 0,
+                resolved_at INTEGER,
+                resolved_note VARCHAR(255),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """
+        )
+    )
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_dead_letter_worker_created
+            ON sys_dead_letter (worker_name, created_at)
+            """
+        )
+    )
+    await session.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_dead_letter_unresolved
+            ON sys_dead_letter (resolved, created_at)
+            """
+        )
+    )
+
+
 def build_core_patch_registry() -> PatchRegistry:
     registry = PatchRegistry()
+    registry.register(
+        SchemaPatch(
+            patch_id="core:add_dead_letter:v1",
+            apply=_add_dead_letter_table,
+        )
+    )
     registry.register(
         SchemaPatch(
             patch_id="core:add_group_locale_setting:v1",
