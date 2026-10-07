@@ -860,6 +860,86 @@ async def test_alias_store_scan_shards_bounds_concurrency(
     assert peak <= 2
 
 
+@pytest.mark.asyncio
+async def test_batch_writer_health_tracks_flush_and_dead_letters() -> None:
+    """health 必须反映落盘量、失败量与死信批次，否则死信仍是不可见的静默丢数据。"""
+    flushed: list[list[int]] = []
+
+    async def _ok(batch: list[int]) -> None:
+        flushed.append(batch)
+
+    writer = BatchWriter[int](flush_callback=_ok, batch_size=10, flush_interval=0.05)
+    await writer.add_all([1, 2, 3])
+    await writer.drain()
+
+    health = writer.health
+    assert health.total_flushed_items == 3
+    assert health.dead_letter_batches == 0
+    assert health.is_degraded is False
+    assert health.consecutive_failures == 0
+    assert health.last_flush_at > 0
+
+    async def _boom(_batch: list[int]) -> None:
+        raise RuntimeError("db down")
+
+    bad = BatchWriter[int](
+        flush_callback=_boom,
+        batch_size=10,
+        flush_interval=0.05,
+        max_retries=2,
+        retry_backoff=0.0,
+    )
+    await bad.add_all([1, 2])
+    # drain 会把暂存的错误重抛出来，这正是既有的对外契约
+    with pytest.raises(RuntimeError, match="db down"):
+        await bad.drain()
+
+    bad_health = bad.health
+    assert bad_health.is_degraded is True
+    assert bad_health.dead_letter_batches == 1
+    assert bad_health.dead_letter_items == 2
+    assert bad_health.total_failed_items == 2
+    assert bad_health.last_dead_letter_error
+    assert bad_health.consecutive_failures == 1
+
+
+@pytest.mark.asyncio
+async def test_batch_writer_pop_dead_letters_clears_queue() -> None:
+    """pop_dead_letters 供上报/补偿使用，取出后必须清空避免重复上报。"""
+
+    async def _boom(_batch: list[int]) -> None:
+        raise RuntimeError("nope")
+
+    writer = BatchWriter[int](
+        flush_callback=_boom,
+        batch_size=10,
+        flush_interval=0.05,
+        max_retries=1,
+        retry_backoff=0.0,
+    )
+    await writer.add_all([7])
+    with pytest.raises(RuntimeError, match="nope"):
+        await writer.drain()
+
+    popped = writer.pop_dead_letters()
+    assert len(popped) == 1
+    assert popped[0].batch == (7,)
+    assert writer.pop_dead_letters() == ()
+
+
+@pytest.mark.asyncio
+async def test_writer_health_report_aggregates_registered_writers() -> None:
+    """writer_health 必须能汇总 core/water/wordbank 三处注册的 writer。"""
+    from src.services.writer_health import build_health_report
+
+    report = build_health_report()
+    names = {name for name, _ in report.detail}
+    assert "_flush_create_user" in names
+    assert "_flush_water_logs" in names
+    assert "_flush_wordbank_logs" in names
+    assert report.dead_letter_items >= 0
+
+
 def test_database_manager_uses_debug_sql_echo_from_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -36,6 +36,11 @@ async def _on_startup() -> None:
 
 @driver.on_shutdown
 async def _on_shutdown() -> None:
+    from src.services.writer_health import drain_all_writers, report_writer_health
+
+    # 先落盘内存缓冲，再巡检死信，最后关日志（否则告警写不出去）
+    await drain_all_writers()
+    await report_writer_health()
     await shutdown_logging()
 
 

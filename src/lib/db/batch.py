@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -32,6 +32,30 @@ class DeadLetterRecord[T]:
     error: str
     failed_at: int
     attempts: int
+
+
+@dataclass(slots=True)
+class BatchWriterHealth:
+    """writer 运行态快照，对应 ES 的 _cluster/health。"""
+
+    worker_name: str
+    dead_letter_batches: int = 0
+    dead_letter_items: int = 0
+    last_dead_letter_at: int = 0
+    last_dead_letter_error: str = ""
+    consecutive_failures: int = 0
+    last_flush_at: int = 0
+    last_flush_items: int = 0
+    total_flushed_items: int = 0
+    total_failed_items: int = 0
+
+    @property
+    def is_degraded(self) -> bool:
+        """存在未处理的死信即视为降级。
+
+        死信当前只进内存，不落盘；因此只要发生就必须有人看见，否则等于静默丢数据。
+        """
+        return self.dead_letter_batches > 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -77,6 +101,10 @@ class BatchWriter[T]:
         self._worker_name: str | None = None
         self._closed = False
         self._dead_letters: list[DeadLetterRecord[T]] = []
+        self._health = BatchWriterHealth(
+            worker_name=self._worker_name
+            or getattr(self.flush_callback, "__name__", "Unknown"),
+        )
         self._buffer: list[T] = []
         self._idle_event = asyncio.Event()
         self._idle_event.set()
@@ -93,12 +121,24 @@ class BatchWriter[T]:
     def dead_letters(self) -> tuple[DeadLetterRecord[T], ...]:
         return tuple(self._dead_letters)
 
+    @property
+    def health(self) -> BatchWriterHealth:
+        """返回运行态快照（含死信统计），供运维脚本与启动自检读取。"""
+        return replace(self._health)
+
+    def pop_dead_letters(self) -> tuple[DeadLetterRecord[T], ...]:
+        """取出并清空死信，供调用方上报或补偿。"""
+        records = tuple(self._dead_letters)
+        self._dead_letters.clear()
+        return records
+
     def _ensure_worker_running(self) -> None:
         if self._closed:
             raise RuntimeError(f"BatchWriter [{self.worker_name}] has been closed")
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._worker())
             self._worker_name = getattr(self.flush_callback, "__name__", "Unknown")
+            self._health.worker_name = self._worker_name
             logger.debug(f"BatchWriter worker [{self._worker_name}] started/restarted.")
             log_trace_event(
                 event_name="worker_started",
@@ -245,6 +285,10 @@ class BatchWriter[T]:
                 for attempts in range(1, self.config.max_retries + 1):
                     try:
                         await self.flush_callback(list(batch))
+                        self._health.consecutive_failures = 0
+                        self._health.last_flush_at = get_current_time()
+                        self._health.last_flush_items = len(batch)
+                        self._health.total_flushed_items += len(batch)
                         log_trace_event(
                             event_name="flush_finished",
                             source_kind="batch_writer",
@@ -295,6 +339,12 @@ class BatchWriter[T]:
                     attempts=self.config.max_retries,
                 )
                 self._dead_letters.append(dead_letter)
+                self._health.dead_letter_batches += 1
+                self._health.dead_letter_items += len(batch)
+                self._health.total_failed_items += len(batch)
+                self._health.last_dead_letter_at = dead_letter.failed_at
+                self._health.last_dead_letter_error = dead_letter.error
+                self._health.consecutive_failures += 1
                 logger.error(
                     f"BatchWriter {self.worker_name} moved batch to dead letter "
                     f"after {self.config.max_retries} attempts: {last_error}"
