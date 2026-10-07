@@ -56,24 +56,10 @@ __plugin_meta__ = create_plugin_metadata(
 )
 background_tasks: set[asyncio.Task] = set()
 
-# 平台侧正常业务拒绝，不属于代码缺陷。
-# 这些错误本身确实是异常抛出，但排查价值极低且数量庞大，统一降级为 warning。
-_EXPECTED_ACTION_FAILURE_MARKERS: tuple[str, ...] = (
-    # 群发言频率限制
-    "本群每分钟只能发",
-    "send group message rejected",
-    # 重复处理同一个加群申请
-    "already agree msg",
-    "已经处理过该申请",
-    # 对方不是好友，无法私聊
-    "请先添加对方为好友",
-    "send private message rejected",
-    # 消息发送过于频繁
-    "消息发送频率过快",
-    "too frequent",
-)
-
-_EXPECTED_REJECTION_TAG = {"key": "expected_platform_rejection", "value": "true"}
+# ActionFailed 代表平台侧拒绝了本次调用（限流、重复处理、非好友、权限不足等）。
+# 这类异常同样要通报管理员，只是它们通常不是代码缺陷，
+# 因此在 Sentry 侧降级为 warning，避免污染 error 列表。
+_ACTION_FAILED_TAG = {"key": "action_failed", "value": "true"}
 
 
 def _should_drop_event(hint: Hint) -> bool:
@@ -100,14 +86,14 @@ def _should_drop_event(hint: Hint) -> bool:
     return False
 
 
-def _is_expected_platform_rejection(exc_value: BaseException | None) -> bool:
-    """判断是否为平台侧可预期的业务拒绝。"""
-    if not isinstance(exc_value, ActionFailed):
-        return False
-    wording = str(getattr(exc_value, "wording", "") or "")
-    if not wording:
-        return False
-    return any(marker in wording for marker in _EXPECTED_ACTION_FAILURE_MARKERS)
+def _should_downgrade_level(exc_value: BaseException | None) -> bool:
+    """是否需要在 Sentry 侧降级为 warning。
+
+    仅依据异常类型判定，不做文案匹配：文案会随平台版本变化，
+    且任何新增的业务异常都不应被静默归类。
+    注意这只影响 Sentry 的 level，管理员通报不受影响，仍然全量发送。
+    """
+    return isinstance(exc_value, ActionFailed)
 
 
 def _set_tags(event: Event, tags: list[dict[str, str]]) -> None:
@@ -116,8 +102,8 @@ def _set_tags(event: Event, tags: list[dict[str, str]]) -> None:
     payload["tags"] = tags
 
 
-def _downgrade_expected_platform_rejection(event: Event) -> None:
-    """把平台业务拒绝降级为 warning，避免污染 error 列表。"""
+def _downgrade_level_to_warning(event: Event) -> None:
+    """把 ActionFailed 在 Sentry 侧降级为 warning，避免污染 error 列表。"""
     payload: Any = event
     payload["level"] = "warning"
     contexts = cast(dict[str, Any], event.get("contexts") or {})
@@ -125,7 +111,7 @@ def _downgrade_expected_platform_rejection(event: Event) -> None:
     default["level"] = "warning"
     contexts["default"] = default
     payload["contexts"] = contexts
-    _set_tags(event, [*_normalized_tags(event), _EXPECTED_REJECTION_TAG])
+    _set_tags(event, [*_normalized_tags(event), _ACTION_FAILED_TAG])
 
 
 def _build_error_message(
@@ -192,6 +178,8 @@ async def notify_admin(error_message: str) -> None:
 
 
 def before_send_handler(event: Event, hint: Hint) -> Event | None:
+    # 仅丢弃三方库心跳噪声（websockets keepalive 的空 AssertionError）。
+    # 业务异常一律不丢弃：平台拒绝、限流、重复处理等同样需要管理员知情。
     if _should_drop_event(hint):
         logger.debug("Skip reporting websocket keepalive AssertionError noise.")
         return None
@@ -201,25 +189,31 @@ def before_send_handler(event: Event, hint: Hint) -> Event | None:
         if not isinstance(exc_type, type):  # pragma: no cover - 防御
             return event
 
-        if _is_expected_platform_rejection(exc_value):
-            logger.debug(
-                "[Sentry] downgrade expected platform rejection "
-                f"exc_type={exc_type.__name__}"
-            )
-            _downgrade_expected_platform_rejection(event)
-
+        # 顺序有讲究：先补上下文，再按类型决定 Sentry level，最后无条件通报管理员。
         _attach_context_to_event(event)
 
-        error_msg = _build_error_message(exc_type, exc_value)
-        try:
-            loop = asyncio.get_running_loop()
-            task = loop.create_task(notify_admin(error_msg))
-            background_tasks.add(task)
-            task.add_done_callback(background_tasks.discard)
-        except RuntimeError:
-            pass
+        if _should_downgrade_level(exc_value):
+            logger.debug(
+                "[Sentry] downgrade ActionFailed to warning "
+                f"exc_type={exc_type.__name__}"
+            )
+            _downgrade_level_to_warning(event)
+
+        _schedule_admin_notify(_build_error_message(exc_type, exc_value))
 
     return event
+
+
+def _schedule_admin_notify(error_msg: str) -> None:
+    """把管理员通报投递出去；没有运行中的事件循环时跳过。"""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        logger.debug("[Sentry] no running loop, skip admin notify.")
+        return
+    task = loop.create_task(notify_admin(error_msg))
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
 
 
 sentry_sdk.init(

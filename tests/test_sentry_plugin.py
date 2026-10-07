@@ -14,12 +14,14 @@ from src.lib.error_context import (
     reset_error_context,
     snapshot_error_context,
 )
+from src.lib.i18n.keys import MessageKey
 from src.plugins.sentry import (
-    _is_expected_platform_rejection,
+    _should_downgrade_level,
     _should_drop_event,
     before_send_handler,
     notify_admin,
 )
+from src.plugins.wordbank.services.errors import WordbankUserError
 
 
 def _build_websocket_keepalive_assertion() -> AssertionError:
@@ -201,6 +203,9 @@ def test_error_context_is_isolated_between_events() -> None:
         reset_error_context()
 
 
+_FORWARD_TOO_MANY_KEY: MessageKey = "wordbank.error.forward_message_too_many"
+
+
 def _build_action_failed(wording: str) -> ActionFailed:
     """按 nonebot ActionFailed 的真实契约构造异常。"""
 
@@ -224,38 +229,65 @@ def _build_action_failed(wording: str) -> ActionFailed:
         "send group message rejected: result=299 err=本群每分钟只能发10条消息",
         "OIDB error 120162002 on 0x10c8_1: already agree msg",
         "send private message rejected: result=16 err=发送失败，请先添加对方为好友",
+        # 未知文案也必须降级：判定只看异常类型，不依赖文案
+        "some brand new platform rejection nobody has seen before",
     ],
 )
-def test_expected_platform_rejections_are_detected(wording: str) -> None:
-    assert _is_expected_platform_rejection(_build_action_failed(wording))
-
-
-def test_unrelated_action_failure_is_not_downgraded() -> None:
-    assert not _is_expected_platform_rejection(
-        _build_action_failed("some genuinely unexpected failure")
-    )
+def test_any_action_failed_is_downgraded_regardless_of_wording(wording: str) -> None:
+    assert _should_downgrade_level(_build_action_failed(wording))
 
 
 def test_non_action_failed_is_not_downgraded() -> None:
-    assert not _is_expected_platform_rejection(RuntimeError("boom"))
+    assert not _should_downgrade_level(RuntimeError("boom"))
+    assert not _should_downgrade_level(
+        WordbankUserError("too many nodes", key=_FORWARD_TOO_MANY_KEY)
+    )
+    assert not _should_downgrade_level(None)
 
 
-def test_before_send_handler_downgrades_platform_rejection(
+def test_before_send_handler_downgrades_action_failed_but_still_notifies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """ActionFailed 只降级 Sentry level，管理员通报必须照常发出。"""
     reset_error_context()
+    bind_error_context(group_id="10001", user_id="20002", message_id="30003")
     exc = _build_action_failed(
         "send group message rejected: result=299 err=本群每分钟只能发10条消息"
     )
     event = cast(Event, {"message": "rate-limited", "level": "error"})
     try:
-        _run_before_send(monkeypatch, event, exc)
+        recorded = _run_before_send(monkeypatch, event, exc)
     finally:
         reset_error_context()
 
     assert _event_dict(event)["level"] == "warning"
     assert _event_contexts(event)["default"]["level"] == "warning"
-    assert {"key": "expected_platform_rejection", "value": "true"} in _event_tags(event)
+    assert {"key": "action_failed", "value": "true"} in _event_tags(event)
+
+    # 关键断言：业务异常不能被静默，必须通报管理员，且带完整上下文
+    assert len(recorded) == 1
+    assert "Type: FakeActionFailed" in recorded[0]
+    assert "本群每分钟只能发10条消息" in recorded[0]
+    assert "来源群: 10001" in recorded[0]
+    assert "触发者: 20002" in recorded[0]
+    assert "消息 ID: 30003" in recorded[0]
+
+
+def test_before_send_handler_never_drops_business_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """除心跳噪声外，任何异常都不得被 before_send 丢弃。"""
+    reset_error_context()
+    for exc in (
+        _build_action_failed("already agree msg"),
+        WordbankUserError("合并转发节点过多", key=_FORWARD_TOO_MANY_KEY),
+        RuntimeError("boom"),
+        ValueError("bad"),
+    ):
+        event = cast(Event, {"message": "x"})
+        recorded = _run_before_send(monkeypatch, event, exc)
+        assert event is not None, f"{type(exc).__name__} 不应被丢弃"
+        assert len(recorded) == 1, f"{type(exc).__name__} 应通报管理员"
 
 
 def test_notify_admin_swallows_missing_bot(
