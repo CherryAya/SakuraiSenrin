@@ -65,6 +65,19 @@ def _should_call_group_send_api(ctx: Any, *, group_id: int, message: Message) ->
     )
 
 
+def _should_call_get_msg_api(ctx: Any, *, message_id: int = 1) -> None:
+    """被动响应发送后会回读消息以登记 reply_context，需要 get_msg 预期。"""
+    ctx.should_call_api(
+        "get_msg",
+        {"message_id": message_id},
+        result={
+            "message_id": message_id,
+            "sender": {"user_id": 99999},
+            "message": MessageSegment.text("GET_MSG_ECHO"),
+        },
+    )
+
+
 async def _cancel_pending_rebuild() -> None:
     task = wordbank_service._rebuild_task
     if task is None:
@@ -200,6 +213,7 @@ async def test_wordbank_add_command_pipeline_matches_after_approval(
             group_id=event.group_id,
             message=text_message("做个好梦"),
         )
+        _should_call_get_msg_api(ctx)
 
 
 @pytest.mark.asyncio
@@ -302,6 +316,7 @@ async def test_study_guided_pipeline_matches_after_approval(
             group_id=event.group_id,
             message=text_message("消息回复如下"),
         )
+        _should_call_get_msg_api(ctx)
 
 
 @pytest.mark.asyncio
@@ -332,6 +347,7 @@ async def test_passive_event_at_pipeline_hits_real_event_trigger(app: App) -> No
                 ]
             ),
         )
+        _should_call_get_msg_api(ctx)
 
 
 @pytest.mark.asyncio
@@ -367,6 +383,7 @@ async def test_passive_event_at_pipeline_uses_original_message_after_strip(
                 ]
             ),
         )
+        _should_call_get_msg_api(ctx)
 
 
 @pytest.mark.asyncio
@@ -392,6 +409,7 @@ async def test_passive_poke_pipeline_mentions_sender_from_response_shape(
             group_id=event.group_id,
             message=text_message(" 别戳啦"),
         )
+        _should_call_get_msg_api(ctx)
 
 
 @pytest.mark.asyncio
@@ -419,6 +437,7 @@ async def test_passive_response_pipeline_renders_sender_at_segment(app: App) -> 
                 ]
             ),
         )
+        _should_call_get_msg_api(ctx)
 
 
 @pytest.mark.asyncio
@@ -484,6 +503,7 @@ async def test_passive_text_pipeline_uses_original_message_after_callme_strip(
             group_id=event.group_id,
             message=text_message("完整原文命中"),
         )
+        _should_call_get_msg_api(ctx)
 
 
 @pytest.mark.asyncio
@@ -531,6 +551,7 @@ async def test_passive_invalid_call_count_window_does_not_break_matching(
             group_id=event.group_id,
             message=text_message("正常兜底"),
         )
+        _should_call_get_msg_api(ctx)
 
 
 @pytest.mark.asyncio
@@ -644,6 +665,7 @@ async def test_passive_rule_priority_and_call_count_pipeline(app: App) -> None:
             group_id=admin_event.group_id,
             message=text_message("管理员专属"),
         )
+        _should_call_get_msg_api(ctx)
 
         ctx.receive_event(bot, first_limited)
         _should_call_group_send_api(
@@ -651,6 +673,7 @@ async def test_passive_rule_priority_and_call_count_pipeline(app: App) -> None:
             group_id=first_limited.group_id,
             message=text_message("普通回退"),
         )
+        _should_call_get_msg_api(ctx)
 
 
 @pytest.mark.asyncio
@@ -728,3 +751,4 @@ async def test_passive_event_at_call_count_is_shared_for_same_user(app: App) -> 
                 ]
             ),
         )
+        _should_call_get_msg_api(ctx)
