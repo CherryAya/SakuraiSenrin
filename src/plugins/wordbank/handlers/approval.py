@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
 
 from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -19,6 +19,7 @@ from src.lib.admin_notifications import (
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.message_delivery import DeliveryResult
 from src.lib.message_plan import (
     DeliveryPlan,
     DeliveryPlanResult,
@@ -65,7 +66,9 @@ class _RenderedShapeField:
     rendered_entry: MessagePlanEntry
 
 
-def extract_sent_message_id(result: Any) -> str | None:
+def extract_sent_message_id(
+    result: DeliveryResult | Mapping[str, object],
+) -> str | None:
     if isinstance(result, dict):
         value = result.get("message_id")
     else:
@@ -987,7 +990,7 @@ async def record_submission_approval_message(
     *,
     event: MessageEvent,
     result: WordbankAddResult,
-    send_result: Any,
+    send_result: DeliveryResult | Mapping[str, object],
 ) -> None:
     if result.status != "pending":
         return
@@ -1016,7 +1019,7 @@ async def record_batch_submission_approval_message(
     *,
     event: MessageEvent,
     batch: WordbankBatchAddResult,
-    send_result: Any,
+    send_result: DeliveryResult | Mapping[str, object],
 ) -> None:
     pending_results = _pending_results(batch)
     if not pending_results:

@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import io
 from pathlib import Path
-from typing import Any
+from typing import TypedDict, cast
 
 import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -30,6 +30,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from src.database.consts import WritePolicy
 from src.database.core.consts import InvitationStatus, Permission
+from src.database.core.tables import Invitation
 from src.lib.consts import MAPLE_FONT_PATH, TriggerType
 from src.lib.demo_theme import SENRIN_V3_ADMIN_INVITE_IMAGE_THEME
 from src.lib.i18n.runtime import resolve_locale, tr
@@ -287,7 +288,7 @@ async def _ensure_operator_persisted(bot: Bot, operator_id: str) -> None:
     )
 
 
-def _render_processed_message(ctx: InviteContext, invitation: Any) -> str:
+def _render_processed_message(ctx: InviteContext, invitation: Invitation) -> str:
     operator = invitation.operator
     operator_name = operator.user_name if operator else "UNKNOWN"
     operator_id = operator.user_id if operator else (invitation.operator_id or "-")
@@ -302,6 +303,23 @@ def _render_processed_message(ctx: InviteContext, invitation: Any) -> str:
         inviter_name=invitation.inviter.user_name,
         flag=invitation.flag,
     )
+
+
+class InvitationRowBase(TypedDict):
+    invitation_id: int
+    group_name: str
+    group_id: str
+    inviter_name: str
+    inviter_id: str
+    time: str
+    flag: str
+
+
+class InvitationRenderRow(InvitationRowBase):
+    """补齐头像后的渲染行；头像由 ``generate_invitation_image_bytes`` 回填。"""
+
+    group_avatar_img: Image.Image
+    user_avatar_img: Image.Image
 
 
 class InvitationListRenderer:
@@ -350,7 +368,7 @@ class InvitationListRenderer:
         self.font_h2 = ImageFont.truetype(font_path, self.H2_SIZE)
         self.font_p = ImageFont.truetype(font_path, self.P_SIZE)
 
-    def render(self, invitations: list[dict[str, Any]]) -> bytes:
+    def render(self, invitations: list[InvitationRenderRow]) -> bytes:
         """渲染图像并返回 bytes"""
         item_spacing = int(20 * self.SCALE)
         card_padding = int(24 * self.SCALE)
@@ -518,7 +536,7 @@ class InvitationListRenderer:
 
 
 async def generate_invitation_image_bytes(
-    invitations_data: list[dict[str, Any]],
+    invitations_data: list[InvitationRowBase],
     locale: LocaleCode,
     *,
     task: LongTaskRunner | None = None,
@@ -569,8 +587,9 @@ async def generate_invitation_image_bytes(
         group_avatar, user_avatar = images
         assert group_avatar is not None
         assert user_avatar is not None
-        item["group_avatar_img"] = group_avatar
-        item["user_avatar_img"] = user_avatar
+        render_item = cast("InvitationRenderRow", item)
+        render_item["group_avatar_img"] = group_avatar
+        render_item["user_avatar_img"] = user_avatar
 
     if task is not None:
         await task.advance(
@@ -580,19 +599,19 @@ async def generate_invitation_image_bytes(
             metadata={"count": total},
         )
     renderer = InvitationListRenderer(locale)
-    return renderer.render(invitations_data)
+    return renderer.render(cast("list[InvitationRenderRow]", invitations_data))
 
 
 async def _load_invitation_avatar_pair(
     index: int,
-    item: dict[str, Any],
+    item: InvitationRowBase,
     limiter: asyncio.Semaphore,
 ) -> tuple[int, tuple[Image.Image, Image.Image]]:
     return index, await _fetch_invitation_avatars(item, limiter)
 
 
 async def _fetch_invitation_avatars(
-    item: dict[str, Any],
+    item: InvitationRowBase,
     limiter: asyncio.Semaphore,
 ) -> tuple[Image.Image, Image.Image]:
     group_avatar_size = 300
@@ -741,7 +760,7 @@ async def handle_list(ctx: AdminInviteContext) -> None:
         if not db_results:
             empty_message = tr(ctx.locale, "admin.invite.pending.none")
         else:
-            render_data = []
+            render_data: list[InvitationRowBase] = []
             for inv in db_results:
                 render_data.append(
                     {

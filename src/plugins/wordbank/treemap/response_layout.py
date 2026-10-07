@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import math
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
 from src.lib.i18n.types import LocaleCode
 
@@ -13,11 +13,15 @@ from .models import (
     SearchTreemapResponseCard,
     TreemapRect,
 )
+from .render_utils import TreemapFont
+
+if TYPE_CHECKING:
+    from .service import SearchTreemapRenderer
 
 
 class SearchTreemapResponseLayoutMixin:
     def _dual_response_rects(
-        self: Any,
+        self,
         *,
         width: int,
         height: int,
@@ -48,7 +52,7 @@ class SearchTreemapResponseLayoutMixin:
         )
 
     def _can_use_dual_response_layout(
-        self: Any,
+        self,
         *,
         responses: Sequence[SearchTreemapResponseCard],
         locale: LocaleCode,
@@ -67,7 +71,7 @@ class SearchTreemapResponseLayoutMixin:
         return True
 
     def _choose_card_layout(
-        self: Any,
+        self,
         *,
         width: int,
         height: int,
@@ -127,7 +131,7 @@ class SearchTreemapResponseLayoutMixin:
         return (cols, shown)
 
     def _build_masonry_layout(
-        self: Any,
+        self,
         *,
         responses: Sequence[SearchTreemapResponseCard],
         locale: LocaleCode,
@@ -166,7 +170,7 @@ class SearchTreemapResponseLayoutMixin:
         return placements
 
     def _expand_masonry_layout(
-        self: Any,
+        self,
         placements: Sequence[tuple[int, TreemapRect]],
         *,
         responses: Sequence[SearchTreemapResponseCard],
@@ -244,7 +248,7 @@ class SearchTreemapResponseLayoutMixin:
         return expanded
 
     def _estimate_card_flex_weight(
-        self: Any,
+        self,
         response: SearchTreemapResponseCard,
         estimated_height: int,
     ) -> int:
@@ -255,13 +259,14 @@ class SearchTreemapResponseLayoutMixin:
         return base_weight + segment_count + text_weight + image_weight
 
     def _estimate_response_card_height(
-        self: Any,
+        self,
         response: SearchTreemapResponseCard,
         locale: LocaleCode,
         *,
         width: int,
     ) -> int:
-        normalized_text = self._normalize_response_text(
+        repo_self = cast("SearchTreemapRenderer", self)
+        normalized_text = repo_self._normalize_response_text(
             response.visible_text,
             locale,
             has_image_preview=response.has_image,
@@ -281,20 +286,20 @@ class SearchTreemapResponseLayoutMixin:
             spacious=spacious_card,
             rule=response.rule,
         )
-        title_font = self._choose_response_title_font(
+        title_font = repo_self._choose_response_title_font(
             normalized_text,
             width=width - pad * 2,
             spacious=spacious_card,
             has_image=response.has_image,
         )
-        title_line_height = self._line_height(title_font)
+        title_line_height = repo_self._line_height(title_font)
         meta_lines = self._build_response_meta_lines(
             response,
             locale,
             font=meta_font,
             max_width=max(1, width - pad * 2),
         )
-        meta_line_height = self._line_height(meta_font)
+        meta_line_height = repo_self._line_height(meta_font)
         meta_height = (
             len(meta_lines) * meta_line_height + max(0, len(meta_lines) - 1) * 2
         )
@@ -321,13 +326,14 @@ class SearchTreemapResponseLayoutMixin:
         return max(minimum, min(maximum, base_height))
 
     def _estimate_response_content_height(
-        self: Any,
+        self,
         response: SearchTreemapResponseCard,
         locale: LocaleCode,
         *,
-        font: Any,
+        font: TreemapFont,
         width: int,
     ) -> int:
+        repo_self = cast("SearchTreemapRenderer", self)
         segments = tuple(
             segment
             for segment in response.ordered_segments
@@ -336,7 +342,7 @@ class SearchTreemapResponseLayoutMixin:
         )
         if not segments:
             return 0
-        line_height = self._line_height(font)
+        line_height = repo_self._line_height(font)
         if all(segment.kind == "image" for segment in segments):
             if len(segments) == 1 or width < 180:
                 return self._preferred_sequence_image_height(
@@ -356,8 +362,8 @@ class SearchTreemapResponseLayoutMixin:
         content_height = 0
         for index, segment in enumerate(segments):
             if segment.kind == "text":
-                text_lines = self._wrap_text(
-                    self._normalize_response_text(
+                text_lines = repo_self._wrap_text(
+                    repo_self._normalize_response_text(
                         segment.text,
                         locale,
                         has_image_preview=bool(response.primary_image_path),
@@ -377,13 +383,14 @@ class SearchTreemapResponseLayoutMixin:
         return content_height
 
     def _measure_response_content_height_for_layout(
-        self: Any,
+        self,
         response: SearchTreemapResponseCard,
         locale: LocaleCode,
         *,
-        font: Any,
+        font: TreemapFont,
         width: int,
     ) -> int:
+        repo_self = cast("SearchTreemapRenderer", self)
         single_text = self._single_text_response_text(response, locale)
         if single_text is not None:
             layout_width = self._single_text_layout_width(
@@ -391,7 +398,7 @@ class SearchTreemapResponseLayoutMixin:
                 height_cap=self._single_text_layout_height_cap(width, text=single_text),
                 text=single_text,
             )
-            layout_font, lines = self._fit_single_text_response_layout(
+            layout_font, lines = repo_self._fit_single_text_response_layout(
                 single_text,
                 max_width=layout_width,
                 max_height=self._single_text_layout_height_cap(width, text=single_text),
@@ -403,7 +410,7 @@ class SearchTreemapResponseLayoutMixin:
                 line_count=len(lines),
             )
             return (
-                len(lines) * self._line_height(layout_font)
+                len(lines) * repo_self._line_height(layout_font)
                 + max(0, len(lines) - 1) * line_gap
             )
         segments = tuple(
@@ -421,7 +428,7 @@ class SearchTreemapResponseLayoutMixin:
         for index, segment in enumerate(segments):
             if segment.kind == "text":
                 content_height += self._measure_response_text_height_for_layout(
-                    self._normalize_response_text(
+                    repo_self._normalize_response_text(
                         segment.text,
                         locale,
                         has_image_preview=bool(response.primary_image_path),
@@ -441,14 +448,15 @@ class SearchTreemapResponseLayoutMixin:
         return content_height
 
     def _measure_response_text_height_for_layout(
-        self: Any,
+        self,
         text: str,
         *,
         width: int,
         preferred_size: int | None,
         has_image: bool,
     ) -> int:
-        fitted_font, lines = self._fit_lxgw_text_block_layout(
+        repo_self = cast("SearchTreemapRenderer", self)
+        fitted_font, lines = repo_self._fit_lxgw_text_block_layout(
             text,
             max_width=width,
             max_height=self._layout_text_height_cap(
@@ -456,7 +464,7 @@ class SearchTreemapResponseLayoutMixin:
             ),
             preferred_size=preferred_size,
         )
-        return len(lines) * self._line_height(fitted_font)
+        return len(lines) * repo_self._line_height(fitted_font)
 
     def _layout_text_height_cap(self, width: int, *, has_image: bool, text: str) -> int:
         if width < 120:
@@ -489,7 +497,7 @@ class SearchTreemapResponseLayoutMixin:
         return base
 
     def _estimate_layout_image_height(
-        self: Any,
+        self,
         width: int,
         *,
         image_path: str,
@@ -504,12 +512,11 @@ class SearchTreemapResponseLayoutMixin:
         mixed_ceiling = max(72, int(width * 0.72))
         return max(mixed_floor, min(mixed_ceiling, natural_height))
 
-    def _preferred_sequence_image_height(
-        self: Any, width: int, *, image_path: str
-    ) -> int:
+    def _preferred_sequence_image_height(self, width: int, *, image_path: str) -> int:
+        repo_self = cast("SearchTreemapRenderer", self)
         if width <= 0:
             return 0
-        image_size = self._load_image_size(image_path)
+        image_size = repo_self._load_image_size(image_path)
         if image_size is None:
             natural_height = int(width * 0.62)
         else:
@@ -524,12 +531,13 @@ class SearchTreemapResponseLayoutMixin:
         return max(44, min(soft_ceiling, natural_height))
 
     def _response_content_mode(
-        self: Any,
+        self,
         response: SearchTreemapResponseCard,
         locale: LocaleCode,
         *,
         single_text: str | None,
     ) -> str:
+        repo_self = cast("SearchTreemapRenderer", self)
         if single_text is not None:
             return "single_text"
         segments = tuple(
@@ -544,7 +552,7 @@ class SearchTreemapResponseLayoutMixin:
             return "mixed"
         if has_image:
             return "image"
-        normalized = self._normalize_response_text(
+        normalized = repo_self._normalize_response_text(
             response.visible_text,
             locale,
             has_image_preview=False,
@@ -552,7 +560,7 @@ class SearchTreemapResponseLayoutMixin:
         return "text_short" if len(normalized) <= 24 else "text"
 
     def _compute_response_card_vertical_layout(
-        self: Any,
+        self,
         *,
         y: int,
         height: int,
@@ -591,30 +599,32 @@ class SearchTreemapResponseLayoutMixin:
         )
 
     def _choose_response_meta_font(
-        self: Any,
+        self,
         *,
         width: int,
         spacious: bool,
         rule: str,
-    ) -> Any:
+    ) -> TreemapFont:
+        repo_self = cast("SearchTreemapRenderer", self)
         if width < 220:
-            return self._load_lxgw_font(13)
+            return repo_self._load_lxgw_font(13)
         if spacious and len(rule.strip()) <= 16:
-            return self.card_large_meta_font
-        return self.card_meta_font
+            return repo_self.card_large_meta_font
+        return repo_self.card_meta_font
 
     def _build_response_meta_lines(
-        self: Any,
+        self,
         response: SearchTreemapResponseCard,
         locale: LocaleCode,
         *,
-        font: Any,
+        font: TreemapFont,
         max_width: int,
     ) -> list[str]:
-        rule_text = self._normalize_text(response.rule, locale)
+        repo_self = cast("SearchTreemapRenderer", self)
+        rule_text = repo_self._normalize_text(response.rule, locale)
         return [
-            self._truncate_line(
-                self._tr(
+            repo_self._truncate_line(
+                repo_self._tr(
                     locale,
                     "wordbank.search_card.created_by",
                     created_by=response.created_by,
@@ -622,23 +632,25 @@ class SearchTreemapResponseLayoutMixin:
                 font,
                 max_width,
             ),
-            self._truncate_line(
-                f"{self._tr(locale, 'wordbank.label.weight')}: {response.weight}",
+            repo_self._truncate_line(
+                f"{repo_self._tr(locale, 'wordbank.label.weight')}: {response.weight}",
                 font,
                 max_width,
             ),
-            self._truncate_line(
-                f"{self._tr(locale, 'wordbank.group.card.rule_label')}: {rule_text}",
+            repo_self._truncate_line(
+                f"{repo_self._tr(locale, 'wordbank.group.card.rule_label')}: "
+                f"{rule_text}",
                 font,
                 max_width,
             ),
         ]
 
     def _single_text_response_text(
-        self: Any,
+        self,
         response: SearchTreemapResponseCard,
         locale: LocaleCode,
     ) -> str | None:
+        repo_self = cast("SearchTreemapRenderer", self)
         segments = tuple(
             segment
             for segment in response.ordered_segments
@@ -647,7 +659,7 @@ class SearchTreemapResponseLayoutMixin:
         )
         if len(segments) != 1 or segments[0].kind != "text":
             return None
-        text = self._normalize_response_text(
+        text = repo_self._normalize_response_text(
             segments[0].text,
             locale,
             has_image_preview=False,

@@ -793,9 +793,10 @@ def test_wordbank_and_study_readmes_use_interactive_demos() -> None:
     assert pending.demo_filename == "wordbank-approval-pending.webp"
     assert pending.demo_turns[0].text == "#待审核词条 晚安"
     assert pending.demo_turns[1].text == "[一条合并转发消息]"
-    assert "回复我发送：y 1 2 5-8、n 全部（也兼容 通过 / 拒绝）" in pending.demo_turns[
-        2
-    ].text
+    assert (
+        "回复我发送：y 1 2 5-8、n 全部（也兼容 通过 / 拒绝）"
+        in pending.demo_turns[2].text
+    )
     assert pending.demo_turns[4].text == "[回复待审核首节点] @凛凛 通过 1-2"
     assert approve.demo_filename == "wordbank-approval-approve.webp"
     assert approve.permission == Permission.GROUP_ADMIN

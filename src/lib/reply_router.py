@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from nonebot.adapters.onebot.v11 import Bot, Message
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
@@ -15,6 +15,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from src.lib.backup import register_backup_database
 from src.lib.db.connectors import StateStore
 from src.lib.db.orm import TimeMixin
+from src.lib.types import JsonValue
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 
@@ -67,13 +68,15 @@ ReplyResolveReason = Literal[
     "ambiguous_hash",
 ]
 ReplyTextMatcher = Callable[[str], bool]
-ReplyRouteHandler = Callable[[Bot, MessageEvent, "ResolvedReplyTarget"], Awaitable[Any]]
+ReplyRouteHandler = Callable[
+    [Bot, MessageEvent, "ResolvedReplyTarget"], Awaitable[object]
+]
 
 
 @dataclass(slots=True, frozen=True)
 class ReplyContextSpec:
     context_kind: str
-    payload: Mapping[str, Any]
+    payload: Mapping[str, JsonValue]
     enable_hash_fallback: bool = True
 
 
@@ -86,7 +89,7 @@ class ReplyContextRecord:
     origin_message_type: str
     origin_target_id: str
     source_kind: str
-    payload: Mapping[str, Any]
+    payload: Mapping[str, JsonValue]
     status: str
     created_at: int
     updated_at: int
@@ -104,7 +107,7 @@ class ResolvedReplyTarget:
         return self.record.context_kind
 
     @property
-    def payload(self) -> Mapping[str, Any]:
+    def payload(self) -> Mapping[str, JsonValue]:
         return self.record.payload
 
 
@@ -161,7 +164,7 @@ class ReplyContextRepository:
         origin_message_type: str,
         origin_target_id: str,
         source_kind: str,
-        payload: Mapping[str, Any],
+        payload: Mapping[str, JsonValue],
         status: str = "active",
     ) -> ReplyContextRecord:
         await self.init_all_tables()
@@ -797,7 +800,7 @@ async def dispatch_reply_route(
     route_name: str,
     bot: Bot,
     event: MessageEvent,
-) -> Any:
+) -> object:
     route = get_reply_route(route_name)
     if route is None:
         raise RuntimeError(f"reply route {route_name!r} is not registered")

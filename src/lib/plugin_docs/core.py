@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, TypedDict, cast
+from typing import Literal, TypedDict, cast
 
 from markdown_it.token import Token
 from nonebot.plugin import PluginMetadata
@@ -14,6 +14,7 @@ from nonebot.plugin import PluginMetadata
 from src.database.core.consts import Permission
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.types import JsonValue
 
 DEFAULT_HELP_CATEGORY = "general"
 
@@ -288,7 +289,7 @@ def _derive_tree_identity_from_source(source_path: Path) -> tuple[str, str | Non
 
 
 def create_docs_meta(
-    provider: Any | None = None,
+    provider: Callable[..., object] | None = None,
     *,
     visible: bool,
     category: str,
@@ -353,7 +354,7 @@ def read_docs_metas(metadata: PluginMetadata) -> tuple[DocsMeta, ...]:
 
 
 def _normalize_docs_meta(
-    raw: dict[str, Any],
+    raw: dict[str, JsonValue],
     *,
     default_permission: Permission | int | str,
 ) -> DocsMeta | None:

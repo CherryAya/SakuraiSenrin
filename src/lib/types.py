@@ -8,6 +8,11 @@ Description: 公共 types
 
 from typing import TypeGuard
 
+type JsonScalar = str | int | float | bool | None
+type JsonArray = list[JsonValue]
+type JsonObject = dict[str, JsonValue]
+type JsonValue = JsonScalar | JsonArray | JsonObject
+
 
 class _Unset:
     def __repr__(self) -> str:

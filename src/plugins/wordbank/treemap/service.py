@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Any
 
 from PIL import Image, ImageDraw
 
 from src.lib.consts import LXGW_FONG_PATH, MAPLE_FONT_PATH
 from src.lib.demo_theme import SENRIN_V3_WORDBANK_TREEMAP_THEME
+from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
@@ -24,7 +24,7 @@ from .models import (
     TreemapRect,
     build_search_treemap_layout,
 )
-from .render_utils import SearchTreemapRenderUtilsMixin
+from .render_utils import SearchTreemapRenderUtilsMixin, TreemapFont
 from .response_draw import SearchTreemapResponseDrawMixin
 from .response_layout import SearchTreemapResponseLayoutMixin
 
@@ -65,8 +65,8 @@ class SearchTreemapRenderer(
         self.CARD_BG = self.theme.card_bg
         self.CARD_ACCENT = self.theme.card_accent
         self.DIVIDER = self.theme.divider
-        self._maple_font_cache: dict[int, Any] = {}
-        self._lxgw_font_cache: dict[int, Any] = {}
+        self._maple_font_cache: dict[int, TreemapFont] = {}
+        self._lxgw_font_cache: dict[int, TreemapFont] = {}
         self._maple_font_path = MAPLE_FONT_PATH
         self._lxgw_font_path = LXGW_FONG_PATH
         self._image_size_cache: dict[str, tuple[int, int] | None] = {}
@@ -85,7 +85,7 @@ class SearchTreemapRenderer(
         self.card_meta_font = self._load_lxgw_font(16)
 
     @staticmethod
-    def _tr(locale: LocaleCode, key: Any, /, **kwargs: object) -> str:
+    def _tr(locale: LocaleCode, key: MessageKey, /, **kwargs: object) -> str:
         return tr(locale, key, **kwargs)
 
     def render(self, page: SearchTreemapPage, *, locale: LocaleCode) -> bytes:

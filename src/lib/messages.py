@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+from io import BytesIO
+from pathlib import Path
 
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
@@ -15,7 +16,7 @@ def text_message(text: str) -> Message:
     return message
 
 
-def image_message(file: Any) -> Message:
+def image_message(file: str | bytes | BytesIO | Path) -> Message:
     message = empty_message()
     message += MessageSegment.image(file)
     return message

@@ -12,7 +12,6 @@ NoneBot 的 ``T_State`` 只是一个裸 dict，插件靠约定在其中存放流
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
 
 from src.lib.i18n.types import LocaleCode, normalize_locale_code
 from src.lib.interaction import clear_interaction_errors
@@ -33,7 +32,7 @@ __all__ = [
 
 
 def state_value[T](
-    state: Mapping[str, Any],
+    state: Mapping[str, object],
     key: str,
     expected: type[T],
 ) -> T | None:
@@ -46,29 +45,29 @@ def state_value[T](
     return value if isinstance(value, expected) else None
 
 
-def state_keys_with_prefix(state: Mapping[str, Any], prefix: str) -> list[str]:
+def state_keys_with_prefix(state: Mapping[str, object], prefix: str) -> list[str]:
     """列出属于当前流程的 state 键，供 debug 日志输出。"""
     return sorted(str(key) for key in state.keys() if str(key).startswith(prefix))
 
 
-def guided_locale(state: Mapping[str, Any], *, locale_key: str) -> LocaleCode:
+def guided_locale(state: Mapping[str, object], *, locale_key: str) -> LocaleCode:
     """读取会话语言，不受支持时回落到默认语言。"""
     return normalize_locale_code(state.get(locale_key))
 
 
 def copy_guided_state_snapshot(
-    state: Mapping[str, Any],
+    state: Mapping[str, object],
     *,
     locale_key: str,
     source_event_key: str,
     keep_keys: tuple[str, ...],
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """构造 recall 检查点快照：只保留会话身份与已确认的流程状态。
 
     ``keep_keys`` 由调用方给出，因为「走到第几步该保留哪些键」属于各插件自身的
     流程语义；本函数只负责搬运，不做判断。
     """
-    snapshot: dict[str, Any] = {}
+    snapshot: dict[str, object] = {}
     for key, value in state.items():
         if key.startswith("__nonebug"):
             snapshot[key] = value
@@ -89,7 +88,7 @@ def copy_guided_state_snapshot(
 
 
 async def cancel_guided_state_resources(
-    state: Mapping[str, Any],
+    state: Mapping[str, object],
     cleanup_keys: tuple[str, ...],
 ) -> None:
     """撤回时清理流程残留状态（转发缓存、待处理标记等）。"""

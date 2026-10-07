@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, cast
+from types import ModuleType
+from typing import TYPE_CHECKING, cast
 
 import arrow
 from sqlalchemy import delete
@@ -51,7 +52,7 @@ from .repo_models import (
 )
 
 
-def _repo_module() -> Any:
+def _repo_module() -> ModuleType:
     from . import repo as repo_module
 
     return repo_module

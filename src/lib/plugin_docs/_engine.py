@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
@@ -29,6 +29,7 @@ from src.lib.message_plan import (
     build_text_plan_entry,
     render_message_plan_entry,
 )
+from src.lib.types import JsonValue
 from src.lib.utils.common import get_current_time
 
 from .command_layout import (
@@ -339,7 +340,7 @@ def read_docs_metas(metadata: PluginMetadata) -> tuple[DocsMeta, ...]:
 
 
 def _normalize_docs_meta(
-    raw: dict[str, Any],
+    raw: dict[str, JsonValue],
     *,
     default_permission: Permission | int | str,
 ) -> DocsMeta | None:

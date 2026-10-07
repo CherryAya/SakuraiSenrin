@@ -3,7 +3,7 @@
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 import arrow
 
@@ -12,7 +12,10 @@ from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
-from src.plugins.water.database.types import WaterAchievementPayload
+from src.plugins.water.database.types import (
+    WaterAchievementPayload,
+    WaterSummaryRecord,
+)
 
 AchievementChecker = Callable[[str, str, int, int], Awaitable[bool]]
 
@@ -462,7 +465,7 @@ class AchievementService:
 
     @staticmethod
     def _merge_summaries_by_date(
-        summaries: Sequence[Any],
+        summaries: Sequence[WaterSummaryRecord],
     ) -> dict[int, list[int]]:
         merged: dict[int, list[int]] = defaultdict(lambda: [0] * 24)
         for item in summaries:

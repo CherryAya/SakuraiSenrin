@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 from time import perf_counter
-from typing import Any
 
 import arrow
 from PIL import Image, ImageChops, ImageDraw
@@ -35,7 +34,7 @@ from .renderers.models import (
     WaterDayRankCardData,
     WaterProfileCardData,
 )
-from .renderers.rank import WaterRankRenderer
+from .renderers.rank import WaterRankRenderer, WaterRankRowData
 from .services.achievement import ACHIEVEMENT_RULES
 
 FALLBACK_FONT_PATH = MAPLE_FONT_PATH
@@ -111,7 +110,7 @@ async def build_water_day_rank_image(
     if not data.top_items:
         return None
 
-    users_data: dict[str, dict[str, Any]] = {}
+    users_data: dict[str, WaterRankRowData] = {}
     for item in data.top_items:
         avatar_img = item.avatar or _build_avatar_fallback(
             128,

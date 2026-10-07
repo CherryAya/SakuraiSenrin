@@ -2,9 +2,9 @@
 
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import cast
 
-from sqlalchemy import CursorResult, delete, func, or_, select, update
+from sqlalchemy import CursorResult, Select, delete, func, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.db.ops import BaseOps
@@ -318,7 +318,7 @@ class WaterMatrixMergeStateOps(BaseOps[WaterMatrixMergeState]):
 
 class WaterAchievementOps(BaseOps[WaterUserAchievement]):
     @staticmethod
-    def _unlocked_stmt() -> Any:
+    def _unlocked_stmt() -> Select[tuple[str, str, str, str, int]]:
         return select(
             WaterUserAchievement.user_id,
             WaterUserAchievement.achievement_id,

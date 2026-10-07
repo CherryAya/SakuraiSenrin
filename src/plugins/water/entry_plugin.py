@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from nonebot import get_bots, get_driver, on_message, on_notice, require
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -176,7 +176,7 @@ def water_query_cooldown(
     cooldown: float = 30,
     *,
     skip_today_report: bool = False,
-) -> Any:
+) -> object:
     store = (
         _water_query_cooldown
         if cooldown == _water_query_cooldown.cooldown
@@ -254,8 +254,8 @@ def _copy_water_state(
     state: T_State,
     *,
     keep_keys: tuple[str, ...],
-) -> dict[str, Any]:
-    snapshot: dict[str, Any] = {}
+) -> dict[str, object]:
+    snapshot: dict[str, object] = {}
     for key, value in state.items():
         if key.startswith("__nonebug"):
             snapshot[key] = value
@@ -322,7 +322,7 @@ def _register_water_checkpoint(
     *,
     step_index: int,
     prompt: str,
-    snapshot: dict[str, Any],
+    snapshot: dict[str, object],
 ) -> None:
     register_recall_checkpoint(
         state,

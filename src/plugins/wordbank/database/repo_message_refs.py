@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -17,10 +17,13 @@ from .types import (
     WordbankMessageRouteRecord,
 )
 
+if TYPE_CHECKING:
+    from .repo import WordbankRepository
+
 
 class WordbankRepositoryMessageRefsMixin:
     async def _delete_message_ref_from_shard(
-        self: Any,
+        self,
         *,
         message_id: str,
         shard_key: str,
@@ -33,9 +36,10 @@ class WordbankRepositoryMessageRefsMixin:
             )
 
     async def record_message_ref(
-        self: Any,
+        self,
         payload: WordbankMessageRefPayload,
     ) -> None:
+        repo_self = cast("WordbankRepository", self)
         previous_route = await self.get_message_ref_route(payload["message_id"])
         async with wordbank_message_ref_db.write_session_for(
             payload["shard_key"],
@@ -72,7 +76,7 @@ class WordbankRepositoryMessageRefsMixin:
                 message_id=payload["message_id"],
                 shard_key=previous_route.shard_key,
             )
-        await self._upsert_message_route(
+        await repo_self._upsert_message_route(
             {
                 "message_id": payload["message_id"],
                 "ref_kind": payload["ref_kind"],
@@ -83,9 +87,10 @@ class WordbankRepositoryMessageRefsMixin:
         )
 
     async def get_message_ref_route(
-        self: Any,
+        self,
         message_id: str,
     ) -> WordbankMessageRouteRecord | None:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_message_route_db.read_session() as session:
             row = (
                 await session.execute(
@@ -94,9 +99,10 @@ class WordbankRepositoryMessageRefsMixin:
                     )
                 )
             ).scalar_one_or_none()
-        return self._to_message_route_record(row) if row else None
+        return repo_self._to_message_route_record(row) if row else None
 
-    async def list_message_ref_routes(self: Any) -> list[WordbankMessageRouteRecord]:
+    async def list_message_ref_routes(self) -> list[WordbankMessageRouteRecord]:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_message_route_db.read_session() as session:
             rows = (
                 (
@@ -109,14 +115,15 @@ class WordbankRepositoryMessageRefsMixin:
                 .scalars()
                 .all()
             )
-        return [self._to_message_route_record(row) for row in rows]
+        return [repo_self._to_message_route_record(row) for row in rows]
 
     async def get_message_ref(
-        self: Any,
+        self,
         message_id: str,
         *,
         expected_kind: WordbankMessageRefKind | None = None,
     ) -> WordbankMessageRefRecord | None:
+        repo_self = cast("WordbankRepository", self)
         route = await self.get_message_ref_route(message_id)
         if route is None:
             return None
@@ -136,14 +143,15 @@ class WordbankRepositoryMessageRefsMixin:
             return None
         if expected_kind is not None and row.ref_kind != expected_kind:
             return None
-        return self._to_message_ref_record(row)
+        return repo_self._to_message_ref_record(row)
 
     async def list_message_refs_by_response_item_ids(
-        self: Any,
+        self,
         response_item_ids: Sequence[int],
         *,
         expected_kind: WordbankMessageRefKind | None = None,
     ) -> list[WordbankMessageRefRecord]:
+        repo_self = cast("WordbankRepository", self)
         target_ids = tuple(
             response_item_id
             for response_item_id in response_item_ids
@@ -166,7 +174,7 @@ class WordbankRepositoryMessageRefsMixin:
             for row in rows:
                 if expected_kind is not None and row.ref_kind != expected_kind:
                     continue
-                record = self._to_message_ref_record(row)
+                record = repo_self._to_message_ref_record(row)
                 if record.response_item_id in target_ids or any(
                     response_item_id in target_ids
                     for response_item_id in record.group_ids

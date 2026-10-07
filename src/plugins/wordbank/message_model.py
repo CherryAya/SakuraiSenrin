@@ -7,17 +7,22 @@ from dataclasses import dataclass
 from hashlib import md5
 import json
 import re
-from typing import Any, Literal
+from typing import Literal
 import unicodedata
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.lib.i18n.runtime import tr
+from src.lib.types import JsonValue
 
 MessageAtomKind = Literal["text", "image", "face", "at", "event", "placeholder"]
 MessageAtomPayload = dict[str, int | str]
 type MessageInput = (
-    Message | MessageSegment | str | list[Any] | tuple[Any, ...] | dict[str, Any]
+    Message
+    | MessageSegment
+    | JsonValue
+    | tuple[JsonValue, ...]
+    | tuple[MessageSegment, ...]
 )
 _SPACE_RE = re.compile(r"\s+")
 _RESPONSE_PLACEHOLDER_RE = re.compile(r"(\[[^\]]+\]|【[^】]+】)")
@@ -283,7 +288,7 @@ def shape_from_message_input(
     return MessageShape(tuple(atoms))
 
 
-def _coerce_message_segment(raw: dict[str, Any]) -> MessageSegment | None:
+def _coerce_message_segment(raw: dict[str, JsonValue]) -> MessageSegment | None:
     segment_type = raw.get("type")
     data = raw.get("data")
     if not isinstance(segment_type, str) or not isinstance(data, dict):

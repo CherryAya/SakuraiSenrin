@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import json
-from typing import Any, Literal
+from typing import Literal
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
@@ -10,6 +10,7 @@ from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
 from src.lib.message_assets import serialize_message
 from src.lib.message_delivery import DeliveryTarget
+from src.lib.types import JsonValue
 from src.logger import logger
 
 ForwardReuseMode = Literal["bundle_hit", "prefix_hit", "rebuild_all"]
@@ -53,8 +54,8 @@ def serialize_custom_forward_payload(
     *,
     user_id: int,
     nickname: str,
-) -> list[dict[str, Any]]:
-    payload: list[dict[str, Any]] = []
+) -> list[dict[str, JsonValue]]:
+    payload: list[dict[str, JsonValue]] = []
     for message in messages:
         payload.append(
             {
@@ -75,7 +76,7 @@ async def send_custom_forward(
     fallback_nickname: str,
     bundle_asset_key: str = "",
     reuse_mode: ForwardReuseMode = "rebuild_all",
-) -> Any:
+) -> object:
     delivery_target = target
     if delivery_target is None:
         if event is None:

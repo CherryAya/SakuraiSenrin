@@ -7,7 +7,8 @@ from collections import defaultdict
 from collections.abc import Sequence
 from heapq import nsmallest
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, cast
+from types import ModuleType
+from typing import TYPE_CHECKING, cast
 
 import arrow
 from sqlalchemy.engine.row import Row
@@ -39,7 +40,7 @@ from .repo_models import (
 )
 
 
-def _repo_module() -> Any:
+def _repo_module() -> ModuleType:
     from . import repo as repo_module
 
     return repo_module

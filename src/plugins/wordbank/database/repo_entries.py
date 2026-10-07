@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 import json
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
 import arrow
 from sqlalchemy import case, delete, func, or_, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.message_model import (
@@ -46,6 +47,9 @@ from .types import (
     WordbankTriggerGroupRecord,
 )
 
+if TYPE_CHECKING:
+    from .repo import WordbankRepository
+
 
 class WordbankRepositoryEntriesMixin:
     @staticmethod
@@ -76,12 +80,13 @@ class WordbankRepositoryEntriesMixin:
         return json.dumps(payload, ensure_ascii=False)
 
     async def reset_all_data(
-        self: Any,
+        self,
         *,
         include_images: bool = True,
         include_logs: bool = False,
     ) -> None:
-        route_rows = await self.list_message_ref_routes()
+        repo_self = cast("WordbankRepository", self)
+        route_rows = await repo_self.list_message_ref_routes()
         for shard_key in {route.shard_key for route in route_rows}:
             async with wordbank_message_ref_db.write_session_for(shard_key) as session:
                 await session.execute(delete(WordbankMessageRef))
@@ -108,7 +113,8 @@ class WordbankRepositoryEntriesMixin:
             if include_images:
                 await session.execute(delete(WordbankImage))
 
-    async def list_enabled_entries(self: Any) -> list[WordbankTriggerGroupRecord]:
+    async def list_enabled_entries(self) -> list[WordbankTriggerGroupRecord]:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
             group_rows = (
                 (
@@ -126,8 +132,10 @@ class WordbankRepositoryEntriesMixin:
                 .all()
             )
             group_ids = [group.id for group in group_rows]
-            variant_rows = await self._load_variants_by_group_ids(session, group_ids)
-            response_rows = await self._load_responses_by_group_ids(
+            variant_rows = await repo_self._load_variants_by_group_ids(
+                session, group_ids
+            )
+            response_rows = await repo_self._load_responses_by_group_ids(
                 session,
                 group_ids,
                 include_deleted=False,
@@ -140,7 +148,7 @@ class WordbankRepositoryEntriesMixin:
         for response in response_rows:
             responses_by_group[response.trigger_group_id].append(response)
         return [
-            self._to_group_record(
+            repo_self._to_group_record(
                 group,
                 variants_by_group.get(group.id, []),
                 responses_by_group.get(group.id, []),
@@ -149,7 +157,7 @@ class WordbankRepositoryEntriesMixin:
         ]
 
     async def list_pending_entries(
-        self: Any,
+        self,
         *,
         keyword: str = "",
         limit: int = 10,
@@ -158,6 +166,7 @@ class WordbankRepositoryEntriesMixin:
         can_moderate_group: bool = False,
         is_superuser: bool = False,
     ) -> list[WordbankSearchItem]:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
             stmt = (
                 select(
@@ -193,12 +202,12 @@ class WordbankRepositoryEntriesMixin:
                 )
             rows = (await session.execute(stmt)).all()
         return [
-            self._pending_item_from_rows(group, variant, response)
+            repo_self._pending_item_from_rows(group, variant, response)
             for group, variant, response in rows
         ]
 
     async def get_creator_leaderboard(
-        self: Any,
+        self,
         *,
         period: WordbankRankPeriod,
         limit: int | None = 10,
@@ -332,7 +341,7 @@ class WordbankRepositoryEntriesMixin:
         )
 
     async def delete_response_item(
-        self: Any,
+        self,
         response_item_id: int,
         *,
         actor_user_id: str,
@@ -340,6 +349,7 @@ class WordbankRepositoryEntriesMixin:
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
+        repo_self = cast("WordbankRepository", self)
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
             response = await session.get(WordbankResponseItem, response_item_id)
@@ -354,11 +364,13 @@ class WordbankRepositoryEntriesMixin:
             response.deleted_at = now
             response.updated_at = now
             await session.flush()
-            await self._refresh_group_in_session(session, response.trigger_group_id)
+            await repo_self._refresh_group_in_session(
+                session, response.trigger_group_id
+            )
             return True
 
     async def restore_response_item(
-        self: Any,
+        self,
         response_item_id: int,
         *,
         actor_user_id: str,
@@ -366,6 +378,7 @@ class WordbankRepositoryEntriesMixin:
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
+        repo_self = cast("WordbankRepository", self)
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
             response = await session.get(WordbankResponseItem, response_item_id)
@@ -384,11 +397,13 @@ class WordbankRepositoryEntriesMixin:
             response.deleted_at = 0
             response.updated_at = now
             await session.flush()
-            await self._refresh_group_in_session(session, response.trigger_group_id)
+            await repo_self._refresh_group_in_session(
+                session, response.trigger_group_id
+            )
             return True
 
     async def update_trigger_probability(
-        self: Any,
+        self,
         trigger_group_id: int,
         *,
         probability: float,
@@ -397,6 +412,7 @@ class WordbankRepositoryEntriesMixin:
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
+        repo_self = cast("WordbankRepository", self)
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
             group = await session.get(WordbankTriggerGroup, trigger_group_id)
@@ -413,11 +429,11 @@ class WordbankRepositoryEntriesMixin:
             group.probability = probability
             group.updated_at = now
             await session.flush()
-            await self._refresh_group_in_session(session, trigger_group_id)
+            await repo_self._refresh_group_in_session(session, trigger_group_id)
             return True
 
     async def update_trigger_content(
-        self: Any,
+        self,
         trigger_group_id: int,
         *,
         trigger_shape: MessageShape,
@@ -426,6 +442,7 @@ class WordbankRepositoryEntriesMixin:
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
+        repo_self = cast("WordbankRepository", self)
         now = get_current_time()
         trigger_fingerprint = fingerprint_shape(trigger_shape)
         trigger_payload = shape_to_payload(trigger_shape)
@@ -441,7 +458,7 @@ class WordbankRepositoryEntriesMixin:
                 is_superuser=is_superuser,
             ):
                 return False
-            variants = await self._load_variants_by_group_ids(
+            variants = await repo_self._load_variants_by_group_ids(
                 session, [trigger_group_id]
             )
             if not variants:
@@ -455,7 +472,7 @@ class WordbankRepositoryEntriesMixin:
                 variant.search_tokens = trigger_fingerprint.search_tokens
                 variant.image_keys = trigger_fingerprint.image_keys
                 variant.updated_at = now
-            responses = await self._load_responses_by_group_ids(
+            responses = await repo_self._load_responses_by_group_ids(
                 session,
                 [trigger_group_id],
                 include_deleted=True,
@@ -469,11 +486,11 @@ class WordbankRepositoryEntriesMixin:
                 response.updated_at = now
             group.updated_at = now
             await session.flush()
-            await self._refresh_group_in_session(session, trigger_group_id)
+            await repo_self._refresh_group_in_session(session, trigger_group_id)
             return True
 
     async def update_response_weight(
-        self: Any,
+        self,
         response_item_id: int,
         *,
         weight: int,
@@ -482,6 +499,7 @@ class WordbankRepositoryEntriesMixin:
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
+        repo_self = cast("WordbankRepository", self)
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
             response = await session.get(WordbankResponseItem, response_item_id)
@@ -498,11 +516,13 @@ class WordbankRepositoryEntriesMixin:
             response.weight = weight
             response.updated_at = now
             await session.flush()
-            await self._refresh_group_in_session(session, response.trigger_group_id)
+            await repo_self._refresh_group_in_session(
+                session, response.trigger_group_id
+            )
             return True
 
     async def update_response_content(
-        self: Any,
+        self,
         response_item_id: int,
         *,
         response_shape: MessageShape,
@@ -511,6 +531,7 @@ class WordbankRepositoryEntriesMixin:
         can_moderate_group: bool,
         is_superuser: bool,
     ) -> bool:
+        repo_self = cast("WordbankRepository", self)
         now = get_current_time()
         response_fingerprint = fingerprint_shape(response_shape)
         response_payload = shape_to_payload(response_shape)
@@ -540,11 +561,13 @@ class WordbankRepositoryEntriesMixin:
             response.forward_node_count = 0
             response.updated_at = now
             await session.flush()
-            await self._refresh_group_in_session(session, response.trigger_group_id)
+            await repo_self._refresh_group_in_session(
+                session, response.trigger_group_id
+            )
             return True
 
     async def approve_response_item(
-        self: Any,
+        self,
         response_item_id: int,
         *,
         actor_user_id: str,
@@ -553,6 +576,7 @@ class WordbankRepositoryEntriesMixin:
         is_superuser: bool,
         allow_overwrite: bool = False,
     ) -> bool:
+        repo_self = cast("WordbankRepository", self)
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
             response = await session.get(WordbankResponseItem, response_item_id)
@@ -588,11 +612,13 @@ class WordbankRepositoryEntriesMixin:
             )
             response.updated_at = now
             await session.flush()
-            await self._refresh_group_in_session(session, response.trigger_group_id)
+            await repo_self._refresh_group_in_session(
+                session, response.trigger_group_id
+            )
             return True
 
     async def reject_response_item(
-        self: Any,
+        self,
         response_item_id: int,
         *,
         actor_user_id: str,
@@ -601,6 +627,7 @@ class WordbankRepositoryEntriesMixin:
         is_superuser: bool,
         allow_overwrite: bool = False,
     ) -> bool:
+        repo_self = cast("WordbankRepository", self)
         now = get_current_time()
         async with wordbank_main_db.write_session() as session:
             response = await session.get(WordbankResponseItem, response_item_id)
@@ -636,11 +663,13 @@ class WordbankRepositoryEntriesMixin:
             )
             response.updated_at = now
             await session.flush()
-            await self._refresh_group_in_session(session, response.trigger_group_id)
+            await repo_self._refresh_group_in_session(
+                session, response.trigger_group_id
+            )
             return True
 
     async def request_delete_vote(
-        self: Any,
+        self,
         *,
         response_item_id: int,
         group_id: str,
@@ -700,7 +729,7 @@ class WordbankRepositoryEntriesMixin:
             )
 
     async def support_delete_vote(
-        self: Any,
+        self,
         *,
         vote_id: int,
         group_id: str,
@@ -724,11 +753,12 @@ class WordbankRepositoryEntriesMixin:
             )
 
     async def get_delete_vote(
-        self: Any,
+        self,
         vote_id: int,
         *,
         group_id: str,
     ) -> WordbankDeleteVoteRecord | None:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
             vote = await session.get(WordbankDeleteVote, vote_id)
             if vote is None or vote.group_id != group_id:
@@ -741,22 +771,25 @@ class WordbankRepositoryEntriesMixin:
                 )
                 or 0
             )
-        return self._to_delete_vote_record(vote, support_count=support_count)
+        return repo_self._to_delete_vote_record(vote, support_count=support_count)
 
     async def get_group_detail(
-        self: Any,
+        self,
         trigger_group_id: int,
         response_item_id: int | None = None,
     ) -> WordbankGroupDetail | None:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
-            bundle = await self._load_group_bundle_in_session(
+            bundle = await repo_self._load_group_bundle_in_session(
                 session,
                 trigger_group_id,
                 include_deleted=True,
             )
         if bundle is None or not bundle.variants:
             return None
-        return self._group_detail_from_bundle(bundle, response_item_id=response_item_id)
+        return repo_self._group_detail_from_bundle(
+            bundle, response_item_id=response_item_id
+        )
 
     @staticmethod
     def _response_item_allows_delete(
@@ -841,8 +874,8 @@ class WordbankRepositoryEntriesMixin:
         return False
 
     async def _support_delete_vote_in_session(
-        self: Any,
-        session: Any,
+        self,
+        session: AsyncSession,
         *,
         response_item: WordbankResponseItem,
         vote: WordbankDeleteVote,
@@ -850,6 +883,7 @@ class WordbankRepositoryEntriesMixin:
         now: int,
         created: bool,
     ) -> WordbankDeleteVoteMutation:
+        repo_self = cast("WordbankRepository", self)
         support_count = int(
             await session.scalar(
                 select(func.count())
@@ -860,7 +894,9 @@ class WordbankRepositoryEntriesMixin:
         )
         if vote.status != "open":
             return WordbankDeleteVoteMutation(
-                vote=self._to_delete_vote_record(vote, support_count=support_count),
+                vote=repo_self._to_delete_vote_record(
+                    vote, support_count=support_count
+                ),
                 created=created,
                 already_supported=True,
                 passed=vote.status == "passed",
@@ -896,11 +932,11 @@ class WordbankRepositoryEntriesMixin:
             vote.updated_at = now
             await session.flush()
             if response_item_deleted:
-                await self._refresh_group_in_session(
+                await repo_self._refresh_group_in_session(
                     session, response_item.trigger_group_id
                 )
         return WordbankDeleteVoteMutation(
-            vote=self._to_delete_vote_record(vote, support_count=support_count),
+            vote=repo_self._to_delete_vote_record(vote, support_count=support_count),
             created=created,
             already_supported=already_supported,
             passed=passed,

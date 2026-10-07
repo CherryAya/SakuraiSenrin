@@ -6,7 +6,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
 import math
-from typing import Any
 
 import arrow
 from PIL import Image, ImageColor, ImageDraw, ImageFont
@@ -18,6 +17,7 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import MessagePlanEntry, build_image_plan_entry
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.database.types import WordbankSearchItem
+from src.plugins.wordbank.treemap.render_utils import TreemapFont
 
 from .search_card_helpers import (
     SearchCardContentBlock,
@@ -681,7 +681,7 @@ class SearchResultCardRenderer:
         x: int,
         y: int,
         max_width: int,
-        font: Any | None = None,
+        font: TreemapFont | None = None,
     ) -> None:
         cursor_x = x
         chip_font = font or self.item_tag_font
@@ -699,7 +699,7 @@ class SearchResultCardRenderer:
         chips: tuple[SearchCardChip, ...],
         right: int,
         y: int,
-        font: Any | None = None,
+        font: TreemapFont | None = None,
     ) -> None:
         chip_font = font or self.item_tag_font
         total_width = self._chip_row_width(chips, font=chip_font)
@@ -715,7 +715,7 @@ class SearchResultCardRenderer:
         chip: SearchCardChip,
         x: int,
         y: int,
-        font: Any | None = None,
+        font: TreemapFont | None = None,
     ) -> None:
         chip_font = font or self.item_tag_font
         chip_width = self._chip_width(chip.text, font=chip_font)
@@ -741,7 +741,7 @@ class SearchResultCardRenderer:
             fill=chip.text_fill,
         )
 
-    def _chip_width(self, text: str, *, font: Any | None = None) -> int:
+    def _chip_width(self, text: str, *, font: TreemapFont | None = None) -> int:
         chip_font = font or self.item_tag_font
         return text_width(text, chip_font) + CARD_CHIP_PADDING_X * 2
 
@@ -749,7 +749,7 @@ class SearchResultCardRenderer:
         self,
         chips: tuple[SearchCardChip, ...],
         *,
-        font: Any | None = None,
+        font: TreemapFont | None = None,
     ) -> int:
         chip_font = font or self.item_tag_font
         if not chips:
@@ -1059,7 +1059,7 @@ class SearchResultCardRenderer:
         x: float,
         y: float,
         text: str,
-        font: Any,
+        font: TreemapFont,
         fill: str,
         max_width: int,
         max_lines: int | None = None,
@@ -1084,7 +1084,7 @@ class SearchResultCardRenderer:
         x: int,
         y: int,
         max_width: int,
-        text_font: Any,
+        text_font: TreemapFont,
         text_fill: str,
     ) -> int:
         cursor_y = y
@@ -1138,7 +1138,7 @@ class SearchResultCardRenderer:
         blocks: tuple[SearchCardContentBlock, ...],
         *,
         max_width: int,
-        text_font: Any,
+        text_font: TreemapFont,
     ) -> int:
         total = 0
         visible = 0
@@ -1196,7 +1196,7 @@ class SearchResultCardRenderer:
     def _wrapped_text_height(
         self,
         text: str,
-        font: Any,
+        font: TreemapFont,
         *,
         max_width: int,
         max_lines: int | None = None,
@@ -1208,7 +1208,7 @@ class SearchResultCardRenderer:
     def _wrap_text(
         self,
         text: str,
-        font: Any,
+        font: TreemapFont,
         *,
         max_width: int,
         max_lines: int | None = None,
@@ -1238,7 +1238,7 @@ class SearchResultCardRenderer:
             lines[-1] = self._truncate_line(f"{lines[-1]}...", font, max_width)
         return [self._truncate_line(line, font, max_width) for line in lines]
 
-    def _truncate_line(self, text: str, font: Any, max_width: int) -> str:
+    def _truncate_line(self, text: str, font: TreemapFont, max_width: int) -> str:
         if text_width(text, font) <= max_width:
             return text
         candidate = text
@@ -1391,7 +1391,7 @@ class SearchResultCardRenderer:
     def _folded_preview_block_height(self) -> int:
         return CARD_FOLDED_HEIGHT
 
-    def _load_font(self, size: int) -> Any:
+    def _load_font(self, size: int) -> TreemapFont:
         try:
             return ImageFont.truetype(MAPLE_FONT_PATH, size)
         except Exception:

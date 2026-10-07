@@ -79,7 +79,7 @@ class GroupCache(BaseCache[GroupCacheItem]):
         group_name: str | Unset = UNSET,
         status: GroupStatus | Unset = UNSET,
         is_all_shut: bool | Unset = UNSET,
-        pre_ban_status: GroupStatus | None | Unset = UNSET,
+        pre_ban_status: GroupStatus | Unset | None = UNSET,
     ) -> None:
         group = self.get(group_id)
         name_hash = hash(group_name)

@@ -6,7 +6,6 @@ import argparse
 import asyncio
 from pathlib import Path
 import sys
-from typing import Any, cast
 
 import nonebot
 
@@ -147,7 +146,7 @@ def fetch_legacy_system_rows(
             rows: dict[str, list[dict[str, object]]] = {}
             for key, sql in tables.items():
                 cursor.execute(sql)
-                rows[key] = [dict(cast(Any, row)) for row in cursor.fetchall()]
+                rows[key] = [dict(row) for row in cursor.fetchall()]
     finally:
         conn.close()
     return rows

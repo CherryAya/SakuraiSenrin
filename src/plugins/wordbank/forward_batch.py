@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from os import cpu_count
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -21,6 +22,10 @@ from src.plugins.wordbank.message_model import (
     iter_message_segments,
 )
 from src.plugins.wordbank.services.errors import WordbankUserError
+
+if TYPE_CHECKING:
+    from src.plugins.wordbank.handlers.media_helpers import MessageShapeBuildContext
+    from src.plugins.wordbank.services.media import WordbankMediaService
 
 FORWARD_BATCH_NODE_LIMIT = 100
 FORWARD_BATCH_MAX_DEPTH = 3
@@ -93,7 +98,7 @@ async def build_forward_batch_payload(
     bot: Bot,
     event: MessageEvent,
     *,
-    media_service: Any,
+    media_service: WordbankMediaService | None,
     max_depth: int = FORWARD_BATCH_MAX_DEPTH,
     task: LongTaskRunner | None = None,
 ) -> ForwardBatchPayload:
@@ -115,7 +120,7 @@ async def build_forward_batch_payload(
 async def build_forward_batch_payload_by_source_message_id(
     bot: Bot,
     *,
-    media_service: Any,
+    media_service: WordbankMediaService | None,
     source_message_id: str,
     max_depth: int = FORWARD_BATCH_MAX_DEPTH,
     task: LongTaskRunner | None = None,
@@ -155,7 +160,7 @@ async def build_forward_batch_payload_by_source_message_id(
     async def _build_node_shape(
         index: int,
         message: MessageInput,
-        build_context: Any,
+        build_context: MessageShapeBuildContext | None,
     ) -> tuple[int, MessageShape]:
         from src.plugins.wordbank.handlers.media_helpers import (
             build_response_shape_from_message,
@@ -222,7 +227,7 @@ async def build_response_input_payload(
     bot: Bot,
     event: MessageEvent,
     *,
-    media_service: Any,
+    media_service: WordbankMediaService | None,
     max_forward_depth: int = FORWARD_BATCH_MAX_DEPTH,
     task: LongTaskRunner | None = None,
 ) -> ResponseInputPayload:
@@ -271,7 +276,7 @@ def _with_separators(shapes: tuple[MessageShape, ...]) -> tuple[MessageShape, ..
     return tuple(parts)
 
 
-def _extract_forward_messages(detail: Any) -> tuple[MessageInput, ...]:
+def _extract_forward_messages(detail: object) -> tuple[MessageInput, ...]:
     messages: list[MessageInput] = []
     for item in _extract_forward_raw_items(detail):
         message = _coerce_forward_input(item)
@@ -280,24 +285,26 @@ def _extract_forward_messages(detail: Any) -> tuple[MessageInput, ...]:
     return tuple(messages)
 
 
-def _extract_forward_raw_items(detail: Any) -> tuple[Any, ...]:
-    raw = None
+def _extract_forward_raw_items(detail: object) -> tuple[object, ...]:
+    raw: object = None
     if isinstance(detail, dict):
-        raw = detail.get("messages")
-        if raw is None and isinstance(detail.get("data"), dict):
-            raw = detail["data"].get("messages")
+        detail_map: Mapping[str, object] = cast("Mapping[str, object]", detail)
+        raw = detail_map.get("messages")
+        data = detail_map.get("data")
+        if raw is None and isinstance(data, dict):
+            raw = cast("Mapping[str, object]", data).get("messages")
         if raw is None:
-            raw = detail.get("data")
+            raw = cast("object", data)
     else:
         raw = getattr(detail, "messages", None)
     if raw is None:
         return ()
     if isinstance(raw, (list, tuple)):
-        return tuple(raw)
-    return (raw,)
+        return tuple(cast("Sequence[object]", raw))
+    return (cast("dict[str, object]", raw) if isinstance(raw, dict) else raw,)
 
 
-def _coerce_forward_input(raw: Any) -> MessageInput | None:
+def _coerce_forward_input(raw: object) -> MessageInput | None:
     if isinstance(raw, Message):
         return raw
     if isinstance(raw, MessageSegment):
@@ -305,28 +312,33 @@ def _coerce_forward_input(raw: Any) -> MessageInput | None:
     if isinstance(raw, str):
         return raw if raw.strip() else None
     if isinstance(raw, (list, tuple)):
-        items = tuple(item for item in raw if item is not None)
-        return items if items else None
+        items = tuple(
+            item for item in cast("Sequence[object]", raw) if item is not None
+        )
+        # 列表元素未逐个校验，整体按消息输入序列返回
+        return cast("MessageInput", items) if items else None
     if isinstance(raw, dict):
-        segment = _coerce_forward_segment(raw)
+        segment = _coerce_forward_segment(cast("object", raw))
         if segment is not None:
             return segment
+        raw_map: Mapping[str, object] = cast("Mapping[str, object]", raw)
         for key in ("content", "message", "messages", "raw_message"):
-            nested = raw.get(key)
+            nested = raw_map.get(key)
             message = _coerce_forward_input(nested)
             if message is not None:
                 return message
-        data = raw.get("data")
+        data = raw_map.get("data")
         if isinstance(data, dict):
+            data_map: Mapping[str, object] = cast("Mapping[str, object]", data)
             for key in ("content", "message", "messages", "raw_message"):
-                nested = data.get(key)
+                nested = data_map.get(key)
                 message = _coerce_forward_input(nested)
                 if message is not None:
                     return message
     return None
 
 
-def _coerce_forward_segment(raw: Any) -> MessageSegment | None:
+def _coerce_forward_segment(raw: object) -> MessageSegment | None:
     if isinstance(raw, MessageSegment):
         return raw
     if isinstance(raw, str):
@@ -335,12 +347,13 @@ def _coerce_forward_segment(raw: Any) -> MessageSegment | None:
         return MessageSegment.text(raw)
     if not isinstance(raw, dict):
         return None
-    segment_type = raw.get("type")
-    data = raw.get("data")
+    raw_map: Mapping[str, object] = cast("Mapping[str, object]", raw)
+    segment_type = raw_map.get("type")
+    data = raw_map.get("data")
     if not isinstance(segment_type, str) or not isinstance(data, dict):
         return None
     try:
-        return MessageSegment(segment_type, data)
+        return MessageSegment(segment_type, cast("dict[str, object]", data))
     except TypeError:
         return None
 
@@ -419,7 +432,7 @@ async def _fetch_forward_message_detail(
     bot: Bot,
     *,
     source_message_id: str,
-) -> Any:
+) -> object:
     candidates = _build_forward_message_id_candidates(source_message_id)
     last_exc: Exception | None = None
     for index, candidate in enumerate(candidates, start=1):

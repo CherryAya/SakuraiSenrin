@@ -8,7 +8,7 @@ Description: 帮助插件
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
 import nonebot
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -22,6 +22,7 @@ from nonebot.plugin import Plugin, PluginMetadata, on_command
 from src.database.core.consts import Permission
 from src.lib.consts import TriggerType
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
+from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.long_task import (
@@ -47,6 +48,7 @@ from src.lib.onebot_forward import resolve_forward_sender
 from src.lib.plugin_docs import (
     DocNode,
     DocsMeta,
+    FeatureDoc,
     VirtualPluginDocSpec,
     build_doc_tree,
     build_feature_copy_text,
@@ -158,7 +160,7 @@ def _resolve_metadata_text(
         key_name = f"{field}_key"
         maybe_key = raw_i18n.get(key_name)
         if isinstance(maybe_key, str):
-            return tr(locale, cast(Any, maybe_key))
+            return tr(locale, cast(MessageKey, maybe_key))
     raw_value = getattr(metadata, field, "")
     return _normalize_text(raw_value)
 
@@ -549,7 +551,7 @@ _build_text_plan_entry = build_text_plan_entry
 def _compose_plugin_guide_messages(
     entry: DocsEntry,
     *,
-    features: tuple[Any, ...],
+    features: tuple[FeatureDoc, ...],
     child_entries: list[DocsEntry],
     locale: LocaleCode,
     actor_permission: Permission,

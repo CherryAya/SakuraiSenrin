@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 import hashlib
-from typing import Any, Literal
+from typing import Literal
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
@@ -75,7 +75,7 @@ def should_bypass_message_api_hook() -> bool:
 
 
 @contextmanager
-def bypass_message_api_hook() -> Any:
+def bypass_message_api_hook() -> Iterator[None]:
     token = _MESSAGE_API_HOOK_BYPASS.set(_MESSAGE_API_HOOK_BYPASS.get() + 1)
     try:
         yield
@@ -99,7 +99,7 @@ def resolve_notice_delivery_target(event: NoticeEvent) -> DeliveryTarget:
     )
 
 
-def _extract_message_id(result: Any) -> str | None:
+def _extract_message_id(result: object) -> str | None:
     if isinstance(result, dict):
         value = result.get("message_id")
     else:
@@ -109,7 +109,7 @@ def _extract_message_id(result: Any) -> str | None:
     return str(value)
 
 
-def _normalize_send_result(result: Any) -> DeliveryResult:
+def _normalize_send_result(result: object) -> DeliveryResult:
     message_id = _extract_message_id(result) or ""
     return DeliveryResult(message_id=message_id, reused_asset=False, asset_key=None)
 
@@ -187,7 +187,7 @@ async def _send_message(
     bot: Bot,
     target: DeliveryTarget,
     message: Message | str,
-) -> Any:
+) -> object:
     logger.debug(
         "[MessageDelivery] send message "
         f"target={target.kind}:{target.target_id} "
@@ -213,7 +213,7 @@ async def _try_forward_single_message(
     target: DeliveryTarget,
     message_id: str,
     origin_message_type: str,
-) -> Any:
+) -> object:
     primary_api = (
         "forward_group_single_msg"
         if target.kind == "group"

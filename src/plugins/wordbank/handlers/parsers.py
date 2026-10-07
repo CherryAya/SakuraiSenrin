@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Any
 
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
@@ -13,6 +12,7 @@ from src.plugins.wordbank.database.types import WordbankRankPeriod
 from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.services.rules import (
     RuleError,
+    RuleValue,
     normalize_role_alias,
     normalize_scope_alias,
 )
@@ -116,7 +116,7 @@ def _normalize_inline_role_value(value: str) -> str:
 class ParsedTextAdd:
     trigger_text: str
     response_text: str
-    raw_rule: dict[str, Any]
+    raw_rule: dict[str, RuleValue]
 
 
 @dataclass(slots=True, frozen=True)
@@ -160,13 +160,13 @@ class ParsedResponseSet:
 
 @dataclass(slots=True, frozen=True)
 class GuidedAdvancedOptions:
-    raw_rule: dict[str, Any]
+    raw_rule: dict[str, RuleValue]
 
 
 @dataclass(slots=True, frozen=True)
 class ParsedStudyMediaPrefix:
     source: str
-    raw_rule: dict[str, Any]
+    raw_rule: dict[str, RuleValue]
 
 
 @dataclass(slots=True, frozen=True)
@@ -187,7 +187,7 @@ class ParsedSearchSessionCommand:
 @dataclass(slots=True, frozen=True)
 class ParsedAddMedia:
     source: str
-    raw_rule: dict[str, Any]
+    raw_rule: dict[str, RuleValue]
     pair: tuple[str, str] | None
 
 
@@ -372,7 +372,7 @@ def parse_add_media_args(text: str) -> ParsedAddMedia:
     )
 
 
-def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
+def _parse_flags(text: str) -> tuple[str, dict[str, RuleValue]]:
     try:
         tokens = tokenize_shell_like(text)
     except ValueError as exc:
@@ -382,7 +382,7 @@ def _parse_flags(text: str) -> tuple[str, dict[str, Any]]:
             reason=str(exc),
         ) from exc
     consumed_ranges: list[tuple[int, int]] = []
-    raw_rule: dict[str, Any] = {}
+    raw_rule: dict[str, RuleValue] = {}
     idx = 0
     while idx < len(tokens):
         token = tokens[idx].value

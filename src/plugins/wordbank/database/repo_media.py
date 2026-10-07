@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,32 +16,38 @@ from .tables import WordbankImage, WordbankLog
 from .types import WordbankImagePayload, WordbankImageRecord, WordbankLogPayload
 from .writers import wordbank_log_writer
 
+if TYPE_CHECKING:
+    from .repo import WordbankRepository
+
 
 class WordbankRepositoryMediaMixin:
-    async def get_image_by_md5(self: Any, md5: str) -> WordbankImageRecord | None:
+    async def get_image_by_md5(self, md5: str) -> WordbankImageRecord | None:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
             row = (
                 await session.execute(
                     select(WordbankImage).where(WordbankImage.md5 == md5)
                 )
             ).scalar_one_or_none()
-        return self._to_image_record(row) if row else None
+        return repo_self._to_image_record(row) if row else None
 
-    async def get_image_by_id(self: Any, image_id: int) -> WordbankImageRecord | None:
+    async def get_image_by_id(self, image_id: int) -> WordbankImageRecord | None:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
             row = (
                 await session.execute(
                     select(WordbankImage).where(WordbankImage.id == image_id)
                 )
             ).scalar_one_or_none()
-        return self._to_image_record(row) if row else None
+        return repo_self._to_image_record(row) if row else None
 
     async def get_image_candidates(
-        self: Any,
+        self,
         dhash_prefix: str,
         *,
         limit: int = 128,
     ) -> list[WordbankImageRecord]:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
             rows = (
                 (
@@ -55,12 +61,13 @@ class WordbankRepositoryMediaMixin:
                 .scalars()
                 .all()
             )
-        return [self._to_image_record(row) for row in rows]
+        return [repo_self._to_image_record(row) for row in rows]
 
     async def create_image(
-        self: Any,
+        self,
         payload: WordbankImagePayload,
     ) -> WordbankImageRecord:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.write_session() as session:
             image = WordbankImage(**payload)
             session.add(image)
@@ -68,15 +75,16 @@ class WordbankRepositoryMediaMixin:
             if image.canonical_image_id is None:
                 image.canonical_image_id = image.id
                 await session.flush()
-            return self._to_image_record(image)
+            return repo_self._to_image_record(image)
 
-    async def list_images(self: Any) -> list[WordbankImageRecord]:
+    async def list_images(self) -> list[WordbankImageRecord]:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
             rows = (await session.execute(select(WordbankImage))).scalars().all()
-        return [self._to_image_record(row) for row in rows]
+        return [repo_self._to_image_record(row) for row in rows]
 
     async def update_image_remote_sync(
-        self: Any,
+        self,
         image_id: int,
         *,
         remote_storage_path: str,
@@ -87,6 +95,7 @@ class WordbankRepositoryMediaMixin:
         storage_path: str | None = None,
         updated_at: int | None = None,
     ) -> WordbankImageRecord | None:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.write_session() as session:
             image = await session.get(WordbankImage, image_id)
             if image is None:
@@ -100,10 +109,10 @@ class WordbankRepositoryMediaMixin:
                 image.storage_path = storage_path
             image.updated_at = updated_at or get_current_time()
             await session.flush()
-            return self._to_image_record(image)
+            return repo_self._to_image_record(image)
 
     async def update_image_cache_metadata(
-        self: Any,
+        self,
         image_id: int,
         *,
         local_cache_path: str,
@@ -112,6 +121,7 @@ class WordbankRepositoryMediaMixin:
         cache_last_hit_at: int | None = None,
         updated_at: int | None = None,
     ) -> WordbankImageRecord | None:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.write_session() as session:
             image = await session.get(WordbankImage, image_id)
             if image is None:
@@ -124,9 +134,10 @@ class WordbankRepositoryMediaMixin:
                 image.cache_last_hit_at = cache_last_hit_at
             image.updated_at = updated_at or get_current_time()
             await session.flush()
-            return self._to_image_record(image)
+            return repo_self._to_image_record(image)
 
-    async def list_cached_images(self: Any) -> list[WordbankImageRecord]:
+    async def list_cached_images(self) -> list[WordbankImageRecord]:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
             rows = (
                 (
@@ -139,15 +150,16 @@ class WordbankRepositoryMediaMixin:
                 .scalars()
                 .all()
             )
-        return [self._to_image_record(row) for row in rows]
+        return [repo_self._to_image_record(row) for row in rows]
 
     async def list_images_for_remote_sync(
-        self: Any,
+        self,
         *,
         limit: int = 200,
         id_start: int = 0,
         only_unsynced: bool = True,
     ) -> list[WordbankImageRecord]:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
             stmt = select(WordbankImage).where(WordbankImage.id >= id_start)
             if only_unsynced:
@@ -166,10 +178,10 @@ class WordbankRepositoryMediaMixin:
                 .scalars()
                 .all()
             )
-        return [self._to_image_record(row) for row in rows]
+        return [repo_self._to_image_record(row) for row in rows]
 
     async def save_log(
-        self: Any,
+        self,
         payload: WordbankLogPayload,
         *,
         policy: WritePolicy = WritePolicy.BUFFERED,
@@ -181,7 +193,7 @@ class WordbankRepositoryMediaMixin:
             session.add(WordbankLog(**payload))
 
     async def count_trigger_group_calls_for_user_in_windows(
-        self: Any,
+        self,
         user_id: str,
         trigger_group_windows: dict[int, int],
         *,
@@ -236,12 +248,13 @@ class WordbankRepositoryMediaMixin:
             for trigger_group_id in normalized_windows
         }
 
-    async def drain_logs(self: Any) -> None:
+    async def drain_logs(self) -> None:
         await wordbank_log_writer.drain()
 
-    async def warm_up(self: Any) -> None:
-        await self.list_enabled_entries()
+    async def warm_up(self) -> None:
+        repo_self = cast("WordbankRepository", self)
+        await repo_self.list_enabled_entries()
 
-    async def archive_event_shards(self: Any) -> None:
+    async def archive_event_shards(self) -> None:
         await wordbank_log_db.run_archiver_task()
         await wordbank_message_ref_db.run_archiver_task()

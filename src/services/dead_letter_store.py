@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import cast
 
 from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -34,7 +34,7 @@ DEFAULT_DEAD_LETTER_KEEP = 2000
 
 
 class DeadLetterOps(BaseOps[DeadLetter]):
-    async def create(self, record: DeadLetterRecord[Any]) -> int:
+    async def create(self, record: DeadLetterRecord[object]) -> int:
         stmt = sqlite_insert(DeadLetter).values(
             {
                 "worker_name": record.worker_name,
@@ -116,7 +116,7 @@ class DeadLetterPersistReport:
 
 
 async def persist_dead_letters(
-    records: Sequence[DeadLetterRecord[Any]],
+    records: Sequence[DeadLetterRecord[object]],
     *,
     keep: int = DEFAULT_DEAD_LETTER_KEEP,
 ) -> DeadLetterPersistReport:
@@ -165,7 +165,7 @@ async def replay_dead_letters(
     *,
     worker_name: str | None = None,
     limit: int = 100,
-    handlers: dict[str, Callable[[list[Any]], Any]] | None = None,
+    handlers: dict[str, Callable[[list[object]], object]] | None = None,
 ) -> int:
     """按 worker 重放未处理死信，成功后标记 resolved。
 

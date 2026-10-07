@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import re
-from typing import Any
 
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
@@ -211,7 +210,7 @@ def wordbank_message_ref_from_reply_target(
 
 
 def _wordbank_message_ref_from_payload(
-    payload: Mapping[str, Any],
+    payload: Mapping[str, object],
     *,
     message_id: str,
 ) -> WordbankMessageRefRecord:

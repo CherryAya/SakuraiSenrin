@@ -7,8 +7,9 @@ Description: sentry 异常记录插件
 """
 
 import asyncio
+from collections.abc import MutableMapping
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from nonebot import get_bot
 from nonebot.adapters.onebot.v11 import ActionFailed, Bot
@@ -96,18 +97,22 @@ def _should_downgrade_level(exc_value: BaseException | None) -> bool:
     return isinstance(exc_value, ActionFailed)
 
 
+def _event_payload(event: Event) -> MutableMapping[str, object]:
+    """Sentry Event 本身是 dict，就地改写前先收窄成可变映射。"""
+    return cast(MutableMapping[str, object], event)
+
+
 def _set_tags(event: Event, tags: list[dict[str, str]]) -> None:
     """整体替换 event tags，规避 TypedDict 逐项赋值的类型限制。"""
-    payload: Any = event
-    payload["tags"] = tags
+    _event_payload(event)["tags"] = tags
 
 
 def _downgrade_level_to_warning(event: Event) -> None:
     """把 ActionFailed 在 Sentry 侧降级为 warning，避免污染 error 列表。"""
-    payload: Any = event
+    payload = _event_payload(event)
     payload["level"] = "warning"
-    contexts = cast(dict[str, Any], event.get("contexts") or {})
-    default = cast(dict[str, Any], contexts.get("default") or {})
+    contexts = cast(dict[str, object], event.get("contexts") or {})
+    default = cast(dict[str, object], contexts.get("default") or {})
     default["level"] = "warning"
     contexts["default"] = default
     payload["contexts"] = contexts
@@ -147,10 +152,9 @@ def _attach_context_to_event(event: Event) -> None:
     if context.is_empty():
         return
     payload = context.as_dict()
-    contexts = cast(dict[str, Any], event.get("contexts") or {})
+    contexts = cast(dict[str, object], event.get("contexts") or {})
     contexts["senrin"] = payload
-    mutable: Any = event
-    mutable["contexts"] = contexts
+    _event_payload(event)["contexts"] = contexts
     kept = [tag for tag in _normalized_tags(event) if not tag["key"].startswith("ctx_")]
     for key, value in payload.items():
         kept.append({"key": f"ctx_{key}", "value": value})

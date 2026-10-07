@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Mapping, MutableMapping
 from dataclasses import replace
 import math
-from typing import Any, cast
+from typing import cast
 
 from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.message import MessageSegment
@@ -23,6 +23,7 @@ from src.lib.message_plan import (
     build_preferred_message_plan,
     build_text_plan_entry,
 )
+from src.lib.types import JsonValue
 from src.lib.utils.img import QQAvatar
 from src.logger import logger
 from src.plugins.wordbank.database.types import (
@@ -98,8 +99,8 @@ async def build_shape_plan_entry(
         log_perf(
             "plugin.build_passive_message.render_shape.images_loaded",
             start=load_start,
-            **cast(Any, payload_stats),
-            **cast(Any, dict(trace_fields)),
+            **payload_stats,
+            **dict(trace_fields),
         )
     blocks: list[MessagePlanBlock] = []
     image_segments = 0
@@ -131,8 +132,8 @@ async def build_shape_plan_entry(
             "plugin.build_passive_message.render_shape.segment_built",
             segments=len(blocks),
             image_segments=image_segments,
-            **cast(Any, payload_stats),
-            **cast(Any, dict(trace_fields)),
+            **payload_stats,
+            **dict(trace_fields),
         )
     return entry
 
@@ -847,16 +848,18 @@ def _format_enabled(enabled: int, locale: LocaleCode) -> str:
     )
 
 
-def _format_rule_text(rule: dict[str, Any]) -> str:
+def _format_rule_text(rule: dict[str, JsonValue]) -> str:
     parts: list[str] = []
     role = str(rule.get("roles", "") or "").strip()
     if role:
         parts.append(f"roles={role}")
     call_count = rule.get("call_count")
     if isinstance(call_count, dict):
-        window_seconds = int(call_count.get("window_seconds", 0))
-        min_count = int(call_count.get("min", 0))
-        max_count = int(call_count.get("max", 0))
+        window_seconds = int(
+            cast("str | int | float | bool", call_count.get("window_seconds", 0))
+        )
+        min_count = int(cast("str | int | float | bool", call_count.get("min", 0)))
+        max_count = int(cast("str | int | float | bool", call_count.get("max", 0)))
         parts.append(f"call={window_seconds}:{min_count}:{max_count}")
     return ", ".join(parts) if parts else "-"
 

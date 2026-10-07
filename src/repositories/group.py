@@ -187,7 +187,7 @@ class GroupRepository:
             old_item = await self._hydrate_cache_item(group_id)
         ctx.is_new = old_item is None
 
-        next_pre_ban_status: GroupStatus | None | Unset = UNSET
+        next_pre_ban_status: GroupStatus | Unset | None = UNSET
         if old_item is not None and is_set(status):
             if status.is_banned:
                 if not old_item.status.is_banned:

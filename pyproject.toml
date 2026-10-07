@@ -60,7 +60,6 @@ select = [
     "COM",   # flake8-commas
 ]
 ignore = [
-    "ANN401",
     "E402",   # module-import-not-at-top-of-file
     "UP037",  # quoted-annotation
     "RUF001", # ambiguous-unicode-character-string
@@ -72,6 +71,8 @@ ignore = [
 extend-select = ["TID251"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.Any".msg = "禁止使用 typing.Any；请改用具体类型、object、TypeVar 或 src.lib.types 中的 JSON 别名"
+"typing_extensions.Any".msg = "禁止使用 typing_extensions.Any；请改用具体类型、object、TypeVar 或 src.lib.types 中的 JSON 别名"
 "datetime.datetime.now".msg = "禁止直接调用，请统一使用项目提供的 get_current_time()"
 "datetime.datetime.utcnow".msg = "utcnow 已被 Python 官方废弃，请统一使用 get_current_time()"
 "datetime.date.today".msg = "禁止直接获取日期，请统一使用 get_current_time()"

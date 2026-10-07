@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import Event
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
 
-from src.lib.message_delivery import DeliveryTarget, deliver_single_message
+from src.lib.message_delivery import (
+    DeliveryResult,
+    DeliveryTarget,
+    deliver_single_message,
+)
 from src.lib.message_plan import finish_with_message, send_with_message
 from src.lib.messages import text_message
 from src.locales.lzh import CATALOG as LZH_CATALOG
@@ -168,7 +171,7 @@ async def send_i18n(
     event: Event | None,
     key: MessageKey,
     **params: object,
-) -> Any:
+) -> DeliveryResult | None:
     locale = await resolve_locale(get_group_locale(event))
     bot = getattr(matcher, "bot", None)
     target = _resolve_event_delivery_target(event)
@@ -227,7 +230,7 @@ async def send_private_i18n(
     *,
     locale_group_id: str | None = None,
     **params: object,
-) -> dict[str, Any]:
+) -> dict[str, str]:
     locale = await resolve_locale(locale_group_id)
     result = await deliver_single_message(
         bot,
@@ -243,7 +246,7 @@ async def send_group_i18n(
     group_id: int,
     key: MessageKey,
     **params: object,
-) -> dict[str, Any]:
+) -> dict[str, str]:
     locale = await resolve_locale(str(group_id))
     result = await deliver_single_message(
         bot,

@@ -13,7 +13,7 @@ from pathlib import Path
 from queue import Full, Queue
 import threading
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Protocol, cast
 from zoneinfo import ZoneInfo
 
 import arrow
@@ -24,7 +24,14 @@ from src.plugins.water.database import water_repo
 from src.plugins.water.database.types import WaterMessagePayload
 from src.plugins.water.services.settlement import water_settlement_service
 
+if TYPE_CHECKING:
+    from psycopg2.extensions import connection as PsycopgConnection
+
 _LEGACY_TZ = ZoneInfo("Asia/Shanghai")
+
+
+class _IntConvertible(Protocol):
+    def __int__(self) -> int: ...
 
 
 @dataclass(slots=True, frozen=True)
@@ -95,7 +102,7 @@ def build_legacy_water_rows(
     ]
 
 
-def _connect_legacy_postgres(config: LegacyPgConfig) -> Any:
+def _connect_legacy_postgres(config: LegacyPgConfig) -> PsycopgConnection:
     import psycopg2
 
     return psycopg2.connect(
@@ -139,7 +146,7 @@ def _fetch_legacy_rows_sync(
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
-    return [dict(cast(Any, row)) for row in rows]
+    return [dict(row) for row in rows]
 
 
 def _iter_legacy_row_batches_sync(
@@ -182,7 +189,7 @@ def _iter_legacy_row_batches_sync(
                 rows = cursor.fetchmany(fetch_size)
                 if not rows:
                     break
-                yield build_legacy_water_rows([dict(cast(Any, row)) for row in rows])
+                yield build_legacy_water_rows([dict(row) for row in rows])
 
 
 async def fetch_legacy_water_rows(
@@ -532,7 +539,7 @@ def _coerce_int(value: object, *, field: str) -> int:
         if isinstance(value, str):
             return int(value)
         if hasattr(value, "__int__") or hasattr(value, "__index__"):
-            return int(cast(Any, value))
+            return int(cast(_IntConvertible, value))
         raise TypeError
     except (TypeError, ValueError) as exc:
         raise TypeError(f"invalid int for {field}: {value!r}") from exc

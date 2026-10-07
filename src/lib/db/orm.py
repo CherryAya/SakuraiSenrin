@@ -7,7 +7,6 @@ Description: db orm
 """
 
 from enum import IntFlag
-from typing import Any
 
 from sqlalchemy import Integer, TypeDecorator
 from sqlalchemy.engine import Dialect
@@ -18,7 +17,7 @@ class IntFlagType[T: IntFlag](TypeDecorator[T]):
     impl = Integer
     cache_ok = True
 
-    def __init__(self, enum_class: type[T], *args: Any, **kwargs: Any) -> None:
+    def __init__(self, enum_class: type[T], *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self._enum_class: type[T] = enum_class
 

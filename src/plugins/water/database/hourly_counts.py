@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 import json
 import struct
-from typing import Any
 
+from sqlalchemy.engine import Dialect
 from sqlalchemy.types import LargeBinary, TypeDecorator
 
 _HOURS_PER_DAY = 24
@@ -17,14 +17,14 @@ _PLAIN_HEADER = bytes([_FORMAT_PLAIN_U16])
 _SPARSE_HEADER = bytes([_FORMAT_SPARSE_U16])
 
 
-def normalize_hourly_counts(hourly_counts: Iterable[Any]) -> list[int]:
+def normalize_hourly_counts(hourly_counts: Iterable[int]) -> list[int]:
     values = [int(item) for item in list(hourly_counts)[:_HOURS_PER_DAY]]
     if len(values) < _HOURS_PER_DAY:
         values.extend([0] * (_HOURS_PER_DAY - len(values)))
     return values
 
 
-def encode_hourly_counts(hourly_counts: Iterable[Any]) -> bytes:
+def encode_hourly_counts(hourly_counts: Iterable[int]) -> bytes:
     values = normalize_hourly_counts(hourly_counts)
     non_zero = [(hour, count) for hour, count in enumerate(values) if count > 0]
     if len(non_zero) <= _SPARSE_THRESHOLD:
@@ -40,7 +40,7 @@ def encode_hourly_counts(hourly_counts: Iterable[Any]) -> bytes:
     return bytes(payload)
 
 
-def decode_hourly_counts(value: Any) -> list[int]:
+def decode_hourly_counts(value: object) -> list[int]:
     if value is None:
         return [0] * _HOURS_PER_DAY
     if isinstance(value, list):
@@ -87,7 +87,7 @@ def decode_hourly_counts(value: Any) -> list[int]:
 
 
 def merge_hourly_counts(
-    payloads: Iterable[Iterable[Any] | bytes | str | list[int]],
+    payloads: Iterable[Iterable[int] | bytes | str | list[int]],
 ) -> list[int]:
     merged = [0] * _HOURS_PER_DAY
     for payload in payloads:
@@ -104,7 +104,7 @@ class HourlyCountsType(TypeDecorator[list[int]]):
     def process_bind_param(
         self,
         value: list[int] | bytes | bytearray | memoryview | None,
-        dialect: Any,
+        dialect: Dialect,
     ) -> bytes:
         _ = dialect
         if value is None:
@@ -117,7 +117,7 @@ class HourlyCountsType(TypeDecorator[list[int]]):
             return value
         return encode_hourly_counts(value)
 
-    def process_result_value(self, value: Any, dialect: Any) -> list[int]:
+    def process_result_value(self, value: object, dialect: Dialect) -> list[int]:
         _ = dialect
         return decode_hourly_counts(value)
 

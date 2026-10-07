@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import shutil
-from typing import Any, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from nonebot.adapters.onebot.v11 import Bot
 
@@ -34,6 +34,15 @@ from src.services.backup import (
     resolve_app_env,
     resolve_default_backup_profile_name,
 )
+
+if TYPE_CHECKING:
+    from src.plugins.wordbank.services.matching import RuntimeIndex
+
+
+class _WordbankRuntimeHolder(Protocol):
+    """wordbank 服务的私有运行时字段持有者。"""
+
+    _index: RuntimeIndex | None
 
 
 @dataclass(slots=True, frozen=True)
@@ -468,7 +477,7 @@ async def _reload_wordbank_runtime_state() -> None:
     if empty_index is not None:
         wordbank_service._index = empty_index
     else:
-        setattr(cast(Any, wordbank_service), "_index", None)
+        setattr(cast("_WordbankRuntimeHolder", wordbank_service), "_index", None)
     wordbank_service._initialized = False
     await lifecycle.initialize_wordbank_plugin()
     await wordbank_media_service.rebuild_cache()

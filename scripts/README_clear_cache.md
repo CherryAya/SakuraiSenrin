@@ -113,7 +113,6 @@ delete(MessageAsset).where(MessageAsset.source_kind.in_(["help", "wordbank"]))
 # 清理 2026-08-01 之前的 help 缓存
 cutoff_time = int(datetime(2026, 8, 1).timestamp())
 delete(MessageAsset).where(
-    MessageAsset.source_kind == "help",
-    MessageAsset.created_at < cutoff_time
+    MessageAsset.source_kind == "help", MessageAsset.created_at < cutoff_time
 )
 ```

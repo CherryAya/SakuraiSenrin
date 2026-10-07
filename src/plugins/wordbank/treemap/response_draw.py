@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import math
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
 from PIL import Image, ImageDraw
 
@@ -16,11 +16,15 @@ from .models import (
     SearchTreemapResponseSegment,
     SearchTreemapTile,
 )
+from .render_utils import TreemapFont
+
+if TYPE_CHECKING:
+    from .service import SearchTreemapRenderer
 
 
 class SearchTreemapResponseDrawMixin:
     def _draw_response_card_grid(
-        self: Any,
+        self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
         tile: SearchTreemapTile,
@@ -31,6 +35,7 @@ class SearchTreemapResponseDrawMixin:
         width: int,
         height: int,
     ) -> None:
+        repo_self = cast("SearchTreemapRenderer", self)
         responses = tile.item.responses
         if width < 150 or height < 54:
             return
@@ -38,7 +43,9 @@ class SearchTreemapResponseDrawMixin:
         hidden_count = tile.item.hidden_response_count
         overflow_height = 0
         if hidden_count > 0 and height >= 112:
-            overflow_height = min(28, max(22, self._line_height(self.tile_meta_font)))
+            overflow_height = min(
+                28, max(22, repo_self._line_height(repo_self.tile_meta_font))
+            )
 
         grid_height = max(1, height - overflow_height)
         if len(responses) == 1:
@@ -66,11 +73,11 @@ class SearchTreemapResponseDrawMixin:
             return
 
         dual_rects = (
-            self._dual_response_rects(width=width, height=grid_height)
+            repo_self._dual_response_rects(width=width, height=grid_height)
             if len(responses) == 2 and tile.item.hidden_response_count <= 0
             else None
         )
-        if dual_rects and self._can_use_dual_response_layout(
+        if dual_rects and repo_self._can_use_dual_response_layout(
             responses=responses,
             locale=locale,
             rects=dual_rects,
@@ -87,14 +94,14 @@ class SearchTreemapResponseDrawMixin:
             )
             return
 
-        cols, _ = self._choose_card_layout(
+        cols, _ = repo_self._choose_card_layout(
             width=width,
             height=grid_height,
             responses=responses,
             response_count=len(responses),
             locale=locale,
         )
-        placements = self._build_masonry_layout(
+        placements = repo_self._build_masonry_layout(
             responses=responses,
             locale=locale,
             x=x,
@@ -103,7 +110,7 @@ class SearchTreemapResponseDrawMixin:
             height=grid_height,
             cols=cols,
         )
-        placements = self._expand_masonry_layout(
+        placements = repo_self._expand_masonry_layout(
             placements,
             responses=responses,
             x=x,
@@ -162,7 +169,7 @@ class SearchTreemapResponseDrawMixin:
             )
 
     def _draw_dual_response_cards(
-        self: Any,
+        self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
         *,
@@ -173,7 +180,8 @@ class SearchTreemapResponseDrawMixin:
         width: int,
         height: int,
     ) -> None:
-        rects = self._dual_response_rects(width=width, height=height)
+        repo_self = cast("SearchTreemapRenderer", self)
+        rects = repo_self._dual_response_rects(width=width, height=height)
         if rects is None:
             return
         for response, rect in zip(responses[:2], rects):
@@ -189,7 +197,7 @@ class SearchTreemapResponseDrawMixin:
             )
 
     def _draw_response_card(
-        self: Any,
+        self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
         response: SearchTreemapResponseCard,
@@ -200,18 +208,19 @@ class SearchTreemapResponseDrawMixin:
         width: int,
         height: int,
     ) -> None:
+        repo_self = cast("SearchTreemapRenderer", self)
         draw.rectangle(
             (x, y, x + width, y + height),
-            fill=self.CARD_BG,
-            outline=self.BORDER,
+            fill=repo_self.CARD_BG,
+            outline=repo_self.BORDER,
             width=1,
         )
-        normalized_text = self._normalize_response_text(
+        normalized_text = repo_self._normalize_response_text(
             response.visible_text,
             locale,
             has_image_preview=response.has_image,
         )
-        single_text = self._single_text_response_text(response, locale)
+        single_text = repo_self._single_text_response_text(response, locale)
         compact_card = len(normalized_text) <= 14 and len(response.rule) <= 10
         spacious_card = width >= 240 and height >= 150
         narrow_text_card = single_text is not None and width < 220 and height >= 220
@@ -222,24 +231,24 @@ class SearchTreemapResponseDrawMixin:
         else:
             pad = 8 if compact_card or min(width, height) < 120 else 10
 
-        meta_font = self._choose_response_meta_font(
+        meta_font = repo_self._choose_response_meta_font(
             width=width,
             spacious=spacious_card,
             rule=response.rule,
         )
-        title_font = self._choose_response_title_font(
+        title_font = repo_self._choose_response_title_font(
             normalized_text,
             width=width - pad * 2,
             spacious=spacious_card,
             has_image=response.has_image,
         )
-        meta_lines = self._build_response_meta_lines(
+        meta_lines = repo_self._build_response_meta_lines(
             response,
             locale,
             font=meta_font,
             max_width=max(1, width - pad * 2),
         )
-        meta_line_height = self._line_height(meta_font)
+        meta_line_height = repo_self._line_height(meta_font)
         meta_gap = 0 if narrow_text_card else (6 if compact_card else 8)
         meta_height = (
             len(meta_lines) * meta_line_height + max(0, len(meta_lines) - 1) * 2
@@ -248,19 +257,19 @@ class SearchTreemapResponseDrawMixin:
         content_width = max(1, width - pad * 2)
         measured_content_height = max(
             1,
-            self._measure_response_content_height_for_layout(
+            repo_self._measure_response_content_height_for_layout(
                 response,
                 locale,
                 font=title_font,
                 width=content_width,
             ),
         )
-        content_mode = self._response_content_mode(
+        content_mode = repo_self._response_content_mode(
             response,
             locale,
             single_text=single_text,
         )
-        card_layout = self._compute_response_card_vertical_layout(
+        card_layout = repo_self._compute_response_card_vertical_layout(
             y=y,
             height=height,
             width=width,
@@ -300,18 +309,18 @@ class SearchTreemapResponseDrawMixin:
                     content_x + content_width,
                     card_layout.divider_y,
                 ),
-                fill=self.DIVIDER,
+                fill=repo_self.DIVIDER,
                 width=1,
             )
         cursor_y = card_layout.meta_y
         for line in meta_lines:
             if cursor_y + meta_line_height > y + height - pad + 2:
                 break
-            draw.text((content_x, cursor_y), line, font=meta_font, fill=self.BODY)
+            draw.text((content_x, cursor_y), line, font=meta_font, fill=repo_self.BODY)
             cursor_y += meta_line_height + (0 if narrow_text_card else 2)
 
     def _draw_fitted_single_text_response(
-        self: Any,
+        self,
         draw: ImageDraw.ImageDraw,
         text: str,
         *,
@@ -320,20 +329,21 @@ class SearchTreemapResponseDrawMixin:
         width: int,
         height: int,
     ) -> None:
-        layout_width = self._single_text_layout_width(
+        repo_self = cast("SearchTreemapRenderer", self)
+        layout_width = repo_self._single_text_layout_width(
             width,
             height_cap=height,
             text=text,
         )
-        font, lines = self._fit_single_text_response_layout(
+        font, lines = repo_self._fit_single_text_response_layout(
             text,
             max_width=layout_width,
             max_height=height,
         )
         if not lines:
             return
-        line_height = self._line_height(font)
-        line_gap = self._single_text_line_gap(
+        line_height = repo_self._line_height(font)
+        line_gap = repo_self._single_text_line_gap(
             width=width,
             height_cap=height,
             text=text,
@@ -350,23 +360,24 @@ class SearchTreemapResponseDrawMixin:
         for line in lines:
             line_x = x
             if centered_lines:
-                line_x += max(0, (width - self._text_width(line, font)) // 2)
-            draw.text((line_x, cursor_y), line, font=font, fill=self.CARD_ACCENT)
+                line_x += max(0, (width - repo_self._text_width(line, font)) // 2)
+            draw.text((line_x, cursor_y), line, font=font, fill=repo_self.CARD_ACCENT)
             cursor_y += line_height + line_gap
 
     def _draw_response_content(
-        self: Any,
+        self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
         response: SearchTreemapResponseCard,
         locale: LocaleCode,
         *,
-        font: Any,
+        font: TreemapFont,
         x: int,
         y: int,
         width: int,
         height: int,
     ) -> None:
+        repo_self = cast("SearchTreemapRenderer", self)
         segments = tuple(
             segment
             for segment in response.ordered_segments
@@ -375,7 +386,7 @@ class SearchTreemapResponseDrawMixin:
         )
         if not segments:
             return
-        estimated_height = self._estimate_response_content_height(
+        estimated_height = repo_self._estimate_response_content_height(
             response,
             locale,
             font=font,
@@ -419,19 +430,20 @@ class SearchTreemapResponseDrawMixin:
         )
 
     def _draw_response_sequence_content(
-        self: Any,
+        self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
         response: SearchTreemapResponseCard,
         locale: LocaleCode,
         *,
         segments: Sequence[SearchTreemapResponseSegment],
-        font: Any,
+        font: TreemapFont,
         x: int,
         y: int,
         width: int,
         height: int,
     ) -> None:
+        repo_self = cast("SearchTreemapRenderer", self)
         gap = 6
         cursor_y = y
         for index, segment in enumerate(segments):
@@ -445,7 +457,7 @@ class SearchTreemapResponseDrawMixin:
             if segment.kind == "text":
                 used = self._draw_text_block(
                     draw,
-                    self._normalize_response_text(
+                    repo_self._normalize_response_text(
                         segment.text,
                         locale,
                         has_image_preview=bool(response.primary_image_path),
@@ -468,7 +480,7 @@ class SearchTreemapResponseDrawMixin:
                         44,
                         min(
                             available_height,
-                            self._preferred_sequence_image_height(
+                            repo_self._preferred_sequence_image_height(
                                 width,
                                 image_path=segment.image_path,
                             ),
@@ -480,7 +492,7 @@ class SearchTreemapResponseDrawMixin:
             cursor_y += used + gap
 
     def _draw_response_image_grid(
-        self: Any,
+        self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
         *,
@@ -520,35 +532,36 @@ class SearchTreemapResponseDrawMixin:
             )
 
     def _draw_text_block(
-        self: Any,
+        self,
         draw: ImageDraw.ImageDraw,
         text: str,
         *,
-        font: Any,
+        font: TreemapFont,
         x: int,
         y: int,
         width: int,
         height: int,
     ) -> int:
+        repo_self = cast("SearchTreemapRenderer", self)
         if not text or width <= 0 or height <= 0:
             return 0
-        fitted_font, lines = self._fit_lxgw_text_block_layout(
+        fitted_font, lines = repo_self._fit_lxgw_text_block_layout(
             text,
             max_width=width,
             max_height=height,
             preferred_size=getattr(font, "size", None),
         )
-        line_height = self._line_height(fitted_font)
+        line_height = repo_self._line_height(fitted_font)
         cursor_y = y
         for line in lines:
             if cursor_y + line_height > y + height + 2:
                 break
-            draw.text((x, cursor_y), line, font=fitted_font, fill=self.CARD_ACCENT)
+            draw.text((x, cursor_y), line, font=fitted_font, fill=repo_self.CARD_ACCENT)
             cursor_y += line_height
         return max(0, cursor_y - y)
 
     def _draw_image_block(
-        self: Any,
+        self,
         image: Image.Image,
         draw: ImageDraw.ImageDraw,
         image_path: str,
@@ -558,9 +571,10 @@ class SearchTreemapResponseDrawMixin:
         width: int,
         height: int,
     ) -> int:
+        repo_self = cast("SearchTreemapRenderer", self)
         if not image_path or width <= 0 or height <= 0:
             return 0
-        preview = self._fit_preview_image(
+        preview = repo_self._fit_preview_image(
             image_path,
             max_width=width,
             max_height=height,
@@ -577,13 +591,13 @@ class SearchTreemapResponseDrawMixin:
                 offset_x + preview.width,
                 offset_y + preview.height,
             ),
-            outline=self.BORDER,
+            outline=repo_self.BORDER,
             width=1,
         )
         return preview.height
 
     def _draw_overflow_banner(
-        self: Any,
+        self,
         draw: ImageDraw.ImageDraw,
         locale: LocaleCode,
         *,
@@ -593,12 +607,13 @@ class SearchTreemapResponseDrawMixin:
         height: int,
         hidden_count: int,
     ) -> None:
+        repo_self = cast("SearchTreemapRenderer", self)
         if hidden_count <= 0:
             return
         draw.rectangle(
             (x, y, x + width, y + height),
-            fill=self.theme.highlight_fill,
-            outline=self.BORDER,
+            fill=repo_self.theme.highlight_fill,
+            outline=repo_self.BORDER,
             width=1,
         )
         label = tr(
@@ -609,15 +624,20 @@ class SearchTreemapResponseDrawMixin:
         draw.text(
             (
                 x + 10,
-                y + max(2, (height - self._line_height(self.tile_meta_font)) // 2),
+                y
+                + max(
+                    2, (height - repo_self._line_height(repo_self.tile_meta_font)) // 2
+                ),
             ),
-            self._truncate_line(label, self.tile_meta_font, max(1, width - 20)),
-            font=self.tile_meta_font,
-            fill=self.ACCENT,
+            repo_self._truncate_line(
+                label, repo_self.tile_meta_font, max(1, width - 20)
+            ),
+            font=repo_self.tile_meta_font,
+            fill=repo_self.ACCENT,
         )
 
     def _draw_overflow_card(
-        self: Any,
+        self,
         draw: ImageDraw.ImageDraw,
         tile: SearchTreemapTile,
         locale: LocaleCode,
@@ -628,15 +648,16 @@ class SearchTreemapResponseDrawMixin:
         height: int,
         hidden_count: int,
     ) -> None:
+        repo_self = cast("SearchTreemapRenderer", self)
         draw.rectangle(
             (x, y, x + width, y + height),
-            fill=self.theme.highlight_fill,
-            outline=self.BORDER,
+            fill=repo_self.theme.highlight_fill,
+            outline=repo_self.BORDER,
             width=1,
         )
         pad = 10 if min(width, height) >= 120 else 8
         lines = (
-            self._normalize_text(
+            repo_self._normalize_text(
                 tr(
                     locale,
                     "wordbank.search_card.more_responses",
@@ -651,21 +672,21 @@ class SearchTreemapResponseDrawMixin:
             ),
             tr(locale, "wordbank.search_card.label.matched_by")
             + " "
-            + self._format_matched_by_label(tile.item.matched_by, locale),
+            + repo_self._format_matched_by_label(tile.item.matched_by, locale),
         )
         cursor_y = y + pad
         for index, line in enumerate(lines):
-            font = self.card_title_font if index == 0 else self.card_meta_font
-            color = self.ACCENT if index == 0 else self.BODY
-            wrapped = self._wrap_text(
+            font = repo_self.card_title_font if index == 0 else repo_self.card_meta_font
+            color = repo_self.ACCENT if index == 0 else repo_self.BODY
+            wrapped = repo_self._wrap_text(
                 line,
                 font,
                 max(1, width - pad * 2),
                 max_lines=2 if index == 0 else 1,
             )
             for item in wrapped:
-                if cursor_y + self._line_height(font) > y + height - pad:
+                if cursor_y + repo_self._line_height(font) > y + height - pad:
                     return
                 draw.text((x + pad, cursor_y), item, font=font, fill=color)
-                cursor_y += self._line_height(font)
+                cursor_y += repo_self._line_height(font)
             cursor_y += 2

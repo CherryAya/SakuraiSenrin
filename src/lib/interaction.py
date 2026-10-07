@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import MutableMapping
-from typing import Any, Protocol, cast
+from typing import Protocol, cast
+
+from nonebot.matcher import Matcher
 
 from src.lib.i18n.runtime import tr
-from src.lib.message_plan import finish_with_message, reject_with_message
+from src.lib.message_plan import (
+    MessagePlanInput,
+    finish_with_message,
+    reject_with_message,
+)
 
 REVOKE_MARKERS = ("revoke", "recall", "exit")
 DEFAULT_ABORT_MESSAGE = tr("zh-CN", "interaction.cancelled")
@@ -15,11 +21,15 @@ INTERACTION_ERROR_COUNT_KEY = "__interaction_error_count__"
 
 
 class SupportsFinish(Protocol):
-    async def finish(self, message: Any | None = None) -> Any: ...
+    async def finish(self, message: MessagePlanInput | None = None) -> object: ...
 
 
 class SupportsReject(Protocol):
-    async def reject(self, prompt: Any | None = None, **kwargs: Any) -> Any: ...
+    async def reject(
+        self,
+        prompt: MessagePlanInput | None = None,
+        **kwargs: object,
+    ) -> object: ...
 
 
 class SupportsInteractiveAbort(SupportsFinish, SupportsReject, Protocol):
@@ -64,7 +74,7 @@ async def abort_if_revoke_signal(
     event: object,
     matcher: SupportsFinish,
     *,
-    message: Any | None = DEFAULT_ABORT_MESSAGE,
+    message: MessagePlanInput | None = DEFAULT_ABORT_MESSAGE,
 ) -> None:
     if not is_revoke_signal(event):
         return
@@ -73,14 +83,14 @@ async def abort_if_revoke_signal(
         return
     await finish_with_message(
         None,
-        cast(Any, matcher),
+        cast(Matcher, matcher),
         message=message,
         source_kind="interaction_abort",
     )
 
 
 def clear_interaction_errors(
-    state: MutableMapping[str, Any],
+    state: MutableMapping[str, object],
     *,
     key: str = INTERACTION_ERROR_COUNT_KEY,
 ) -> None:
@@ -88,7 +98,7 @@ def clear_interaction_errors(
 
 
 def record_interaction_error(
-    state: MutableMapping[str, Any],
+    state: MutableMapping[str, object],
     *,
     key: str = INTERACTION_ERROR_COUNT_KEY,
 ) -> int:
@@ -99,11 +109,11 @@ def record_interaction_error(
 
 async def reject_or_abort_on_error(
     matcher: SupportsInteractiveAbort,
-    state: MutableMapping[str, Any],
-    error_message: Any,
+    state: MutableMapping[str, object],
+    error_message: MessagePlanInput,
     *,
     max_errors: int = 3,
-    abort_message: Any = DEFAULT_TOO_MANY_ERRORS_MESSAGE,
+    abort_message: MessagePlanInput | None = DEFAULT_TOO_MANY_ERRORS_MESSAGE,
     key: str = INTERACTION_ERROR_COUNT_KEY,
 ) -> None:
     count = record_interaction_error(state, key=key)
@@ -113,9 +123,9 @@ async def reject_or_abort_on_error(
             return
         await finish_with_message(
             None,
-            cast(Any, matcher),
+            cast(Matcher, matcher),
             message=abort_message,
             source_kind="interaction_abort",
         )
         return
-    await reject_with_message(cast(Any, matcher), message=error_message)
+    await reject_with_message(cast(Matcher, matcher), message=error_message)

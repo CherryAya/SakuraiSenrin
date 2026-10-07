@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 from nonebot.adapters import Bot as BaseBot
 from nonebot.adapters.onebot.v11 import Bot as OneBotV11Bot
@@ -14,6 +14,7 @@ from src.lib.message_delivery import (
     deliver_single_message,
     should_bypass_message_api_hook,
 )
+from src.lib.types import JsonValue
 
 _HOOKS_INSTALLED = False
 
@@ -41,8 +42,8 @@ async def delivery_send_handler(
     message: str | Message | MessageSegment,
     at_sender: bool = False,
     reply_message: bool = False,
-    **params: Any,
-) -> dict[str, Any]:
+    **params: JsonValue,
+) -> dict[str, JsonValue]:
     event_dict = model_dump(event)
 
     if "message_id" not in event_dict:
@@ -95,7 +96,7 @@ async def delivery_send_handler(
 async def intercept_message_send_api(
     bot: BaseBot,
     api: str,
-    data: dict[str, Any],
+    data: dict[str, JsonValue],
 ) -> None:
     if should_bypass_message_api_hook():
         return
@@ -125,7 +126,7 @@ async def intercept_message_send_api(
     if "message" not in data:
         return
     result = await deliver_single_message(
-        cast(Any, bot),
+        cast(OneBotV11Bot, bot),
         target=target,
         message=data["message"],
         source_kind="onebot_send_api",

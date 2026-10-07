@@ -15,7 +15,7 @@ from collections.abc import Iterable, Sequence
 from io import BytesIO
 from math import ceil
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import ClassVar, Literal
 
 from PIL import Image, ImageDraw, ImageFont
 from pil_utils import BuildImage
@@ -28,7 +28,12 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs.command_layout import InlineTextSpan, split_inline_text_spans
 from src.lib.plugin_docs.models import DocsDemoTurn
 
-from .demo import DEMO_AVATAR_PATH, DEMO_STANDEE_PATH, _TurnSpec
+from .demo import (
+    DEMO_AVATAR_PATH,
+    DEMO_STANDEE_PATH,
+    DocsFont,
+    _TurnSpec,
+)
 
 
 class LegacyDemoImageRenderer:
@@ -585,7 +590,7 @@ class LegacyDemoImageRenderer:
         text: str,
         fill: str,
         text_fill: str,
-        font: Any,
+        font: DocsFont,
         min_width: int = 0,
     ) -> None:
         rect = self._chip_rect(
@@ -610,7 +615,7 @@ class LegacyDemoImageRenderer:
         max_width: int,
         fill: str,
         text_fill: str,
-        font: Any,
+        font: DocsFont,
         min_width: int = 0,
     ) -> None:
         line = self._fit_inline_spans(split_inline_text_spans(text), font, max_width)
@@ -852,7 +857,7 @@ class LegacyDemoImageRenderer:
         x: int,
         y: int,
         text: str,
-        font: Any,
+        font: DocsFont,
     ) -> tuple[int, int, int, int]:
         left, top, right, bottom = self._text_size(text, font)
         return (
@@ -868,7 +873,7 @@ class LegacyDemoImageRenderer:
         rect: tuple[int, int, int, int],
         text: str,
         *,
-        font: Any,
+        font: DocsFont,
         fill: str,
         align: Literal["center", "left", "right"] = "center",
         padding_x: int = 0,
@@ -892,7 +897,7 @@ class LegacyDemoImageRenderer:
         x: int,
         y: int,
         text: str,
-        font: Any,
+        font: DocsFont,
         min_width: int = 0,
     ) -> tuple[int, int, int, int]:
         bbox = self._text_size(text, font)
@@ -954,7 +959,7 @@ class LegacyDemoImageRenderer:
         self,
         draw: ImageDraw.ImageDraw,
         text: str,
-        font: Any,
+        font: DocsFont,
         *,
         max_width: int,
     ) -> str:
@@ -978,7 +983,7 @@ class LegacyDemoImageRenderer:
         text: str,
         *,
         max_width: int,
-        font: Any,
+        font: DocsFont,
     ) -> list[tuple[InlineTextSpan, ...]]:
         lines: list[tuple[InlineTextSpan, ...]] = []
         for paragraph in text.splitlines():
@@ -1004,7 +1009,7 @@ class LegacyDemoImageRenderer:
     def _line_block_height(
         self,
         lines: Iterable[tuple[InlineTextSpan, ...]],
-        font: Any,
+        font: DocsFont,
     ) -> int:
         count = 0
         for _ in lines:
@@ -1016,7 +1021,7 @@ class LegacyDemoImageRenderer:
     def _max_inline_line_width(
         self,
         lines: Sequence[tuple[InlineTextSpan, ...]],
-        font: Any,
+        font: DocsFont,
     ) -> int:
         return int(
             max(
@@ -1032,7 +1037,7 @@ class LegacyDemoImageRenderer:
         x: int,
         y: int,
         lines: Sequence[tuple[InlineTextSpan, ...]],
-        font: Any,
+        font: DocsFont,
         fill: str,
     ) -> None:
         line_height = self._font_line_height(font)
@@ -1053,7 +1058,7 @@ class LegacyDemoImageRenderer:
         x: float,
         y: float,
         line: Sequence[InlineTextSpan],
-        font: Any,
+        font: DocsFont,
         fill: str,
     ) -> None:
         cursor_x = x
@@ -1099,7 +1104,7 @@ class LegacyDemoImageRenderer:
             )
             cursor_x += chip_width
 
-    def _font_line_height(self, font: Any) -> int:
+    def _font_line_height(self, font: DocsFont) -> int:
         bbox = self._text_size("Ag", font)
         return int(bbox[3] - bbox[1] + 10)
 
@@ -1110,7 +1115,7 @@ class LegacyDemoImageRenderer:
         x: float,
         y: float,
         text: str,
-        font: Any,
+        font: DocsFont,
         fill: str,
     ) -> None:
         if not text:
@@ -1132,7 +1137,7 @@ class LegacyDemoImageRenderer:
         )
         draw._image.paste(text_layer, (int(x), int(y)), text_layer)
 
-    def _text_size(self, text: str, font: Any) -> tuple[int, int, int, int]:
+    def _text_size(self, text: str, font: DocsFont) -> tuple[int, int, int, int]:
         if not text:
             return (0, 0, 0, self._font_line_height(font))
         if not self._contains_emoji(text):
@@ -1148,13 +1153,13 @@ class LegacyDemoImageRenderer:
         )
         return (0, 0, ceil(text_image.longest_line), ceil(text_image.height))
 
-    def _text_width(self, text: str, font: Any) -> int:
+    def _text_width(self, text: str, font: DocsFont) -> int:
         return self._text_size(text, font)[2]
 
     def _inline_line_width(
         self,
         line: Sequence[InlineTextSpan],
-        font: Any,
+        font: DocsFont,
     ) -> int:
         width = 0
         for span in line:
@@ -1185,7 +1190,7 @@ class LegacyDemoImageRenderer:
         x: int,
         y: int,
         line: Sequence[InlineTextSpan],
-        font: Any,
+        font: DocsFont,
         min_width: int = 0,
     ) -> tuple[int, int, int, int]:
         width = max(self._inline_line_width(line, font) + 28, min_width)
@@ -1195,7 +1200,7 @@ class LegacyDemoImageRenderer:
     def _fit_inline_spans(
         self,
         spans: Sequence[InlineTextSpan],
-        font: Any,
+        font: DocsFont,
         max_width: int,
     ) -> tuple[InlineTextSpan, ...]:
         if self._inline_line_width(spans, font) <= max_width:
@@ -1216,7 +1221,7 @@ class LegacyDemoImageRenderer:
                 return tuple(candidate)
         return (ellipsis,)
 
-    def _font_size(self, font: Any) -> int:
+    def _font_size(self, font: DocsFont) -> int:
         return int(getattr(font, "size", 16))
 
     def _contains_emoji(self, text: str) -> bool:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import NotRequired, Protocol, TypedDict
 
 from PIL import ImageFont
 from pil_utils import BuildImage
@@ -20,6 +20,24 @@ from .common import (
 )
 
 FALLBACK_FONT_PATH = MAPLE_FONT_PATH
+
+
+class _ResizableImage(Protocol):
+    def resize(self, size: tuple[int, int]) -> BuildImage: ...
+
+
+class _AvatarImage(Protocol):
+    def circle(self) -> _ResizableImage: ...
+
+
+class WaterRankRowData(TypedDict):
+    user_id: str
+    username: str
+    count: int
+    hourly_data: list[int]
+    avatar_img: _AvatarImage
+    trend: int | None
+    secondary_label: NotRequired[str]
 
 
 class WaterRankRenderer:
@@ -106,7 +124,7 @@ class WaterRankRenderer:
     def _render_user_row(
         self,
         rank: int,
-        user: dict[str, Any],
+        user: WaterRankRowData,
         locale: LocaleCode,
     ) -> BuildImage:
         item_h = int(110 * self.SCALE)
@@ -249,7 +267,7 @@ class WaterRankRenderer:
         group_avatar: BuildImage,
         today_king: str,
         group_rank: int,
-        users_data: dict[str, dict[str, Any]],
+        users_data: dict[str, WaterRankRowData],
         locale: LocaleCode,
         *,
         header_title: str | None = None,

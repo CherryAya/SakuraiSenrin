@@ -9,7 +9,7 @@ Description: 学习词库-传统版
 from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from nonebot import on_notice
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -82,7 +82,10 @@ from src.plugins.wordbank.forward_batch import (
     is_forward_input,
 )
 from src.plugins.wordbank.handlers.commands import _default_i18n_text
-from src.plugins.wordbank.handlers.submission import SubmissionLifecycle
+from src.plugins.wordbank.handlers.submission import (
+    SubmissionLifecycle,
+    SubmissionPayload,
+)
 from src.plugins.wordbank.message_model import MessageShape
 from src.plugins.wordbank.text_parsing import has_meaningful_text
 
@@ -204,7 +207,7 @@ async def _finalize_study_submission(
     matcher: Matcher,
     bot: Bot,
     event: MessageEvent,
-    submission: Any,
+    submission: SubmissionPayload,
     locale: LocaleCode,
     *,
     source_event: MessageEvent | None = None,
@@ -249,10 +252,10 @@ async def _reject_study_error(
 
 
 def _copy_study_state(
-    state: Mapping[str, Any],
+    state: Mapping[str, object],
     *,
     keep_keys: tuple[str, ...],
-) -> dict[str, Any]:
+) -> dict[str, object]:
     return copy_guided_state_snapshot(
         state,
         locale_key="study_locale",
@@ -278,7 +281,7 @@ def _register_study_checkpoint(
     *,
     step_index: int,
     locale: LocaleCode,
-    snapshot: Mapping[str, Any],
+    snapshot: Mapping[str, object],
     cleanup_keys: tuple[str, ...] = (),
 ) -> None:
     register_recall_checkpoint(
@@ -315,7 +318,7 @@ def _guided_media_task(
     )
 
 
-def _study_locale(state: Mapping[str, Any]) -> LocaleCode:
+def _study_locale(state: Mapping[str, object]) -> LocaleCode:
     return guided_locale(state, locale_key="study_locale")
 
 
@@ -323,7 +326,7 @@ def _contains_study_pair_separator(text: str) -> bool:
     return any(sep in text for sep in ("=>", "->", "回答", "回复"))
 
 
-def _study_state_keys(state: Mapping[str, Any]) -> list[str]:
+def _study_state_keys(state: Mapping[str, object]) -> list[str]:
     return state_keys_with_prefix(state, "study_")
 
 
@@ -420,7 +423,7 @@ async def _start_guided_study_from_partial_args(
 
 
 async def _cancel_study_resources(
-    state: Mapping[str, Any],
+    state: Mapping[str, object],
     cleanup_keys: tuple[str, ...] = STUDY_RECALL_PENDING_KEYS,
 ) -> None:
     await cancel_guided_state_resources(state, cleanup_keys)

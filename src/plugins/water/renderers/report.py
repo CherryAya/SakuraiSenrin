@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from time import perf_counter
-from typing import Any
 
 import arrow
 from PIL import ImageFont
 from pil_utils import BuildImage
 
 from src.lib.consts import MAPLE_FONT_PATH
+from src.lib.demo_theme import WaterImageTheme
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.logger import logger
@@ -33,6 +33,7 @@ from .models import (
     WaterGroupReportImageData,
     WaterGroupShareSlice,
     WaterPeriodRankCardData,
+    WaterRankCardItem,
 )
 from .rank import WaterRankRenderer
 from .report_layout import (
@@ -186,7 +187,7 @@ def _bucket_labels_for_days(
 
 def _format_period_board_summary(
     template: str,
-    item: Any,
+    item: WaterRankCardItem,
 ) -> str:
     active_days = max(1, int(item.active_days or 0))
     msg_count = int(item.msg_count or 0)
@@ -200,7 +201,7 @@ def _format_period_board_summary(
 
 def _format_period_active_hours(
     template: str,
-    item: Any,
+    item: WaterRankCardItem,
 ) -> str:
     return template.format(
         active_hours=int(item.active_hours or 0),
@@ -219,7 +220,7 @@ def _group_rank_row_fill(
     return mix_hex(base_fill, accent, 0.16)
 
 
-def _group_share_palette(theme: Any) -> tuple[str, ...]:
+def _group_share_palette(theme: WaterImageTheme) -> tuple[str, ...]:
     base = theme.tile_base_colors
     return (
         mix_hex(base[0], theme.white, 0.08),
@@ -233,7 +234,7 @@ def _group_share_palette(theme: Any) -> tuple[str, ...]:
     )
 
 
-def _group_trend_palette(theme: Any) -> tuple[str, ...]:
+def _group_trend_palette(theme: WaterImageTheme) -> tuple[str, ...]:
     base = theme.tile_base_colors
     return (
         mix_hex(base[0], theme.white, 0.02),
@@ -275,7 +276,7 @@ def _render_compact_group_rank_insights(
     h: int,
     data: WaterGroupReportImageData,
     locale: LocaleCode,
-    theme: Any,
+    theme: WaterImageTheme,
     scale: float,
     deep: str,
     accent: str,
@@ -355,7 +356,7 @@ def _render_group_rank_share_panel(
     h: int,
     data: WaterGroupReportImageData,
     locale: LocaleCode,
-    theme: Any,
+    theme: WaterImageTheme,
     scale: float,
     deep: str,
     accent: str,
@@ -600,7 +601,7 @@ def _render_group_rank_trend_panel(
     h: int,
     data: WaterGroupReportImageData,
     locale: LocaleCode,
-    theme: Any,
+    theme: WaterImageTheme,
     scale: float,
     deep: str,
     accent: str,

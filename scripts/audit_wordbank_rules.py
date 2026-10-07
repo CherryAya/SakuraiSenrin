@@ -8,7 +8,7 @@ from pathlib import Path
 import sqlite3
 import sys
 import types
-from typing import Any
+from typing import NotRequired, TypedDict
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -30,12 +30,38 @@ _ensure_pkg(
 )
 
 from src.lib.consts import GLOBAL_DB_ROOT
+from src.lib.types import JsonValue
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.wordbank.services.rules import MAX_CALL_COUNT_WINDOW_SECONDS
 
 DEFAULT_REPORT = "./data/db/wordbank-rule-audit-report.json"
 DEFAULT_MIGRATION_CALL_WINDOW_SECONDS = 60 * 60 * 24 * 90
+
+
+class _RowReport(TypedDict):
+    response_id: int
+    trigger_group_id: int
+    chat_id: str
+    created_by: str
+    status: str
+    enabled: int
+    scope: str
+    trigger_texts: str
+    rule: JsonValue
+    issues: list[str]
+    suggested_rule: dict[str, JsonValue] | None
+    suggested_update_sql: str | None
+
+
+class _AuditReport(TypedDict):
+    generated_at: int
+    db_path: str
+    max_call_count_window_seconds: int
+    scanned: int
+    issue_counts: dict[str, int]
+    rows: list[_RowReport]
+    applied_fix_count: NotRequired[int]
 
 
 def default_db_path() -> Path:
@@ -97,7 +123,9 @@ def _load_rows(connection: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(connection.execute(query).fetchall())
 
 
-def _normalize_rule(raw_rule: object) -> tuple[dict[str, Any] | None, str | None]:
+def _normalize_rule(
+    raw_rule: object,
+) -> tuple[dict[str, JsonValue] | None, str | None]:
     if isinstance(raw_rule, dict):
         return dict(raw_rule), None
     if raw_rule in (None, ""):
@@ -111,7 +139,7 @@ def _normalize_rule(raw_rule: object) -> tuple[dict[str, Any] | None, str | None
     return dict(loaded), None
 
 
-def _find_rule_issues(rule: dict[str, Any]) -> list[str]:
+def _find_rule_issues(rule: dict[str, JsonValue]) -> list[str]:
     call_count = rule.get("call_count")
     if call_count is None:
         return []
@@ -138,9 +166,9 @@ def _find_rule_issues(rule: dict[str, Any]) -> list[str]:
 
 
 def _build_suggested_rule(
-    rule: dict[str, Any],
+    rule: dict[str, JsonValue],
     issues: list[str],
-) -> dict[str, Any] | None:
+) -> dict[str, JsonValue] | None:
     if not issues:
         return None
     if not any(issue.startswith("call_count_") for issue in issues):
@@ -161,7 +189,7 @@ def _build_suggested_rule(
 def _build_update_sql(
     *,
     response_id: int,
-    suggested_rule: dict[str, Any] | None,
+    suggested_rule: dict[str, JsonValue] | None,
 ) -> str | None:
     if suggested_rule is None:
         return None
@@ -177,8 +205,8 @@ def _build_update_sql(
     )
 
 
-def audit_wordbank_rules(db_path: Path) -> dict[str, Any]:
-    rows_report: list[dict[str, Any]] = []
+def audit_wordbank_rules(db_path: Path) -> _AuditReport:
+    rows_report: list[_RowReport] = []
     issue_counts: dict[str, int] = {}
     scanned = 0
     with _connect(db_path) as connection:
@@ -222,7 +250,7 @@ def audit_wordbank_rules(db_path: Path) -> dict[str, Any]:
     }
 
 
-def apply_suggested_fixes(db_path: Path, report: dict[str, Any]) -> int:
+def apply_suggested_fixes(db_path: Path, report: _AuditReport) -> int:
     statements = [
         row["suggested_update_sql"]
         for row in report["rows"]
@@ -238,7 +266,7 @@ def apply_suggested_fixes(db_path: Path, report: dict[str, Any]) -> int:
     return len(statements)
 
 
-def write_report(path: Path, payload: dict[str, Any]) -> None:
+def write_report(path: Path, payload: _AuditReport) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 

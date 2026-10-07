@@ -7,7 +7,7 @@ Description: db 基类
 """
 
 from collections.abc import Sequence
-from typing import Any, cast, get_args
+from typing import cast, get_args
 
 from sqlalchemy import CursorResult, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +37,7 @@ class BaseOps[T: DeclarativeBase]:
         self,
         limit: int = 20,
         offset: int = 0,
-        **filters: Any,
+        **filters: object,
     ) -> Sequence[T]:
         stmt = select(self.model).limit(limit).offset(offset)
         if filters:

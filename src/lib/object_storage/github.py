@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
-from typing import Any
 
 import httpx
+
+from src.lib.types import JsonValue
 
 from .types import ObjectStorageConfigError, ObjectStorageError, StorageObject
 
@@ -62,7 +63,7 @@ class GitHubObjectStorageClient:
         _, repo, _ = self._require_config()
         return f"github://{repo}/{key.lstrip('/')}"
 
-    async def _get_metadata(self, key: str) -> dict[str, Any] | None:
+    async def _get_metadata(self, key: str) -> dict[str, JsonValue] | None:
         _, _, branch = self._require_config()
         async with self._client() as client:
             response = await client.get(
@@ -91,7 +92,7 @@ class GitHubObjectStorageClient:
         _, _, branch = self._require_config()
         normalized_key = key.lstrip("/")
         metadata = await self._get_metadata(normalized_key)
-        payload: dict[str, Any] = {
+        payload: dict[str, JsonValue] = {
             "message": f"store object {normalized_key}",
             "content": base64.b64encode(data).decode("ascii"),
             "branch": branch,

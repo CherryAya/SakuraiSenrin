@@ -14,9 +14,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
-from src.lib.db.batch import BatchWriter, DeadLetterRecord
+from src.lib.db.batch import BatchWriter, BatchWriterHealth, DeadLetterRecord
 from src.lib.trace_log import log_trace_event
 from src.logger import logger
 
@@ -26,11 +26,11 @@ class _WriterLike(Protocol):
     def worker_name(self) -> str: ...
 
     @property
-    def health(self) -> Any: ...
+    def health(self) -> BatchWriterHealth: ...
 
     async def drain(self) -> None: ...
 
-    def pop_dead_letters(self) -> tuple[DeadLetterRecord[Any], ...]: ...
+    def pop_dead_letters(self) -> tuple[DeadLetterRecord[object], ...]: ...
 
 
 @dataclass(slots=True, frozen=True)
@@ -40,7 +40,7 @@ class WriterHealthReport:
     degraded_writers: tuple[str, ...]
     dead_letter_batches: int
     dead_letter_items: int
-    detail: tuple[tuple[str, Any], ...]
+    detail: tuple[tuple[str, BatchWriterHealth], ...]
 
     @property
     def is_degraded(self) -> bool:
@@ -66,7 +66,7 @@ def build_health_report() -> WriterHealthReport:
     degraded: list[str] = []
     total_batches = 0
     total_items = 0
-    detail: list[tuple[str, Any]] = []
+    detail: list[tuple[str, BatchWriterHealth]] = []
     for writer in _collect_writers():
         health = writer.health
         detail.append((writer.worker_name, health))

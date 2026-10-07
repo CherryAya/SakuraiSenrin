@@ -5,12 +5,13 @@ from __future__ import annotations
 from copy import copy as shallow_copy
 from dataclasses import is_dataclass, replace
 from io import BytesIO
-from typing import Any, cast
+from typing import cast
 
 from PIL import Image, ImageDraw, ImageOps
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.types import JsonValue
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
     WordbankResponseItemDetail,
@@ -27,6 +28,7 @@ from src.plugins.wordbank.services.presentation import (
     format_scope_label,
     format_status_label,
 )
+from src.plugins.wordbank.treemap.render_utils import TreemapFont
 
 
 def build_copyright_text(year: int) -> str:
@@ -40,7 +42,7 @@ def format_enabled(enabled: int, locale: LocaleCode) -> str:
     )
 
 
-def format_rule_text(rule: dict[str, Any], *, locale: LocaleCode) -> str:
+def format_rule_text(rule: dict[str, JsonValue], *, locale: LocaleCode) -> str:
     parts: list[str] = []
     role = str(rule.get("roles", "") or "").strip()
     if role and role != "any":
@@ -49,9 +51,11 @@ def format_rule_text(rule: dict[str, Any], *, locale: LocaleCode) -> str:
         parts.append(tr(locale, "wordbank.rule.role", role=role_label))
     call_count = rule.get("call_count")
     if isinstance(call_count, dict):
-        window_seconds = int(call_count.get("window_seconds", 0))
-        min_count = int(call_count.get("min", 0))
-        max_count = int(call_count.get("max", 0))
+        window_seconds = int(
+            cast("str | int | float | bool", call_count.get("window_seconds", 0))
+        )
+        min_count = int(cast("str | int | float | bool", call_count.get("min", 0)))
+        max_count = int(cast("str | int | float | bool", call_count.get("max", 0)))
         if window_seconds > 0:
             parts.append(
                 tr(
@@ -65,7 +69,9 @@ def format_rule_text(rule: dict[str, Any], *, locale: LocaleCode) -> str:
     return " | ".join(parts) if parts else "-"
 
 
-def is_response_visible_in_group_detail(response: Any) -> bool:
+def is_response_visible_in_group_detail(
+    response: WordbankResponseItemDetail,
+) -> bool:
     return bool(
         getattr(response, "status", "") == "approved"
         and int(getattr(response, "enabled", 0) or 0) == 1
@@ -73,7 +79,7 @@ def is_response_visible_in_group_detail(response: Any) -> bool:
     )
 
 
-def display_group_detail(detail: Any) -> Any:
+def display_group_detail(detail: WordbankGroupDetail) -> WordbankGroupDetail:
     responses = tuple(getattr(detail, "responses", ()) or ())
     visible_responses = tuple(
         response
@@ -83,25 +89,25 @@ def display_group_detail(detail: Any) -> Any:
     if len(visible_responses) == len(responses):
         return detail
     if is_dataclass(detail):
-        return cast(Any, replace(cast(Any, detail), responses=visible_responses))
+        return replace(detail, responses=visible_responses)
     cloned = shallow_copy(detail)
     setattr(cloned, "responses", visible_responses)
     return cloned
 
 
-def line_height(font: Any) -> int:
+def line_height(font: TreemapFont) -> int:
     bbox = ImageDraw.Draw(Image.new("RGB", (10, 10))).textbbox((0, 0), "Ag", font=font)
     return int(bbox[3] - bbox[1] + 8)
 
 
-def text_width(text: str, font: Any) -> int:
+def text_width(text: str, font: TreemapFont) -> int:
     return int(ImageDraw.Draw(Image.new("RGB", (10, 10))).textlength(text, font=font))
 
 
 def centered_text_origin(
     draw: ImageDraw.ImageDraw,
     text: str,
-    font: Any,
+    font: TreemapFont,
     *,
     canvas_width: int,
     y: int,
@@ -301,7 +307,7 @@ def paste_rounded_image(
 
 def wrap_text(
     text: str,
-    font: Any,
+    font: TreemapFont,
     *,
     max_width: int,
     max_lines: int | None = None,
@@ -333,7 +339,7 @@ def wrap_text(
     return truncated
 
 
-def truncate_line(text: str, font: Any, max_width: int) -> str:
+def truncate_line(text: str, font: TreemapFont, max_width: int) -> str:
     if text_width(text, font) <= max_width:
         return text
     candidate = text

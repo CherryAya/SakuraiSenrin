@@ -20,10 +20,11 @@ import json
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
-from typing import Any
 
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.lib.types import JsonValue
 
 
 def _stub_plugin_packages() -> None:
@@ -70,7 +71,7 @@ async def main() -> int:
 
     if args.json:
         report = build_health_report()
-        payload: dict[str, Any] = {
+        payload: dict[str, JsonValue] = {
             "is_degraded": report.is_degraded,
             "degraded_writers": list(report.degraded_writers),
             "dead_letter_batches": report.dead_letter_batches,

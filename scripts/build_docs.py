@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from typing import Any, Literal, cast
+from typing import Literal, Protocol, cast
 
 from PIL import Image
 
@@ -70,9 +70,36 @@ from src.lib.plugin_docs import (
 )
 from src.lib.plugin_docs.meta import HELP_SUPPORT_QR_ASSET, resolve_support_groups
 from src.lib.plugin_docs.query import can_view_node, filter_features_by_permission
+from src.lib.types import JsonValue
 from src.lib.utils.common import get_current_time
 
 DemoCollectionRenderer = _DemoCollectionRenderer
+
+
+class _QrCodeFactory(Protocol):
+    """``qrcode`` 第三方模块的最小视图。"""
+
+    class _Constants(Protocol):
+        ERROR_CORRECT_M: int
+
+    class _Code(Protocol):
+        def add_data(self, data: str) -> None: ...
+
+        def make(self, *, fit: bool) -> None: ...
+
+        def make_image(self, **kwargs: str) -> Image.Image: ...
+
+    constants: _Constants
+
+    def QRCode(
+        self,
+        *,
+        version: int | None,
+        error_correction: int,
+        box_size: int,
+        border: int,
+    ) -> _Code: ...
+
 
 DOCS_ROOTS = (
     ROOT / "src" / "plugins",
@@ -347,10 +374,10 @@ def _build_content_fingerprint(*, columns: int) -> BuildContentFingerprint:
     )
 
 
-def _read_build_cache() -> dict[str, Any]:
+def _read_build_cache() -> dict[str, JsonValue]:
     cache_path = _build_docs_cache_path(root=ROOT)
     try:
-        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        payload: JsonValue = json.loads(cache_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
@@ -813,7 +840,7 @@ def _render_support_qr_image(
     pixels: int = SUPPORT_QR_IMAGE_SIZE,
 ) -> Image.Image:
     try:
-        qrcode = cast(Any, import_module("qrcode"))
+        qrcode = cast("_QrCodeFactory", import_module("qrcode"))
     except ModuleNotFoundError:
         return _render_qr_image_with_swift(payload, pixels=pixels)
 

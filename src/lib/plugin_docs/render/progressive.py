@@ -8,11 +8,11 @@ from datetime import datetime
 from io import BytesIO
 from math import ceil
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from PIL import Image, ImageChops, ImageDraw
 
-from src.lib.demo_theme import SENRIN_V3_THEME, get_demo_theme
+from src.lib.demo_theme import SENRIN_V3_THEME, DemoTheme, get_demo_theme
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.plugin_docs.command_layout import (
@@ -26,7 +26,12 @@ from src.lib.plugin_docs.markdown_layout import MarkdownLayout, build_markdown_l
 from src.lib.plugin_docs.models import DocNode, FeatureDoc, HelpDashboardSection
 from src.lib.utils.common import get_current_time
 
-from .demo import DemoImageRenderer, _ShowcaseNoteItem, _ShowcaseTurnPlacement
+from .demo import (
+    DemoImageRenderer,
+    DocsFont,
+    _ShowcaseNoteItem,
+    _ShowcaseTurnPlacement,
+)
 from .encoding import encode_docs_image
 from .helpers import (
     build_help_support_bundle,
@@ -41,7 +46,7 @@ from .helpers import (
 @dataclass(slots=True, frozen=True)
 class _DashboardCardLayout:
     node: DocNode
-    theme: Any
+    theme: DemoTheme
     title_lines: tuple[tuple[InlineTextSpan, ...], ...]
     summary_lines: tuple[tuple[InlineTextSpan, ...], ...]
     command_layout: CommandLayout
@@ -2509,7 +2514,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         self,
         text: str,
         *,
-        font: Any,
+        font: DocsFont,
         max_width: int,
         max_height: int,
         line_spacing: int,
@@ -2535,7 +2540,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         self,
         text: str,
         *,
-        font: Any,
+        font: DocsFont,
         max_width: int,
         max_height: int,
         line_spacing: int,
@@ -2605,7 +2610,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         self,
         text: str,
         *,
-        font: Any,
+        font: DocsFont,
         max_width: int,
     ) -> tuple[str, str]:
         if not text:
@@ -2638,7 +2643,7 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
     def _truncate_text_to_width_pixels(
         self,
         text: str,
-        font: Any,
+        font: DocsFont,
         *,
         max_width: int,
         ellipsis: str = "...",
@@ -2673,14 +2678,14 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
             candidate = candidate[:-1].rstrip()
         return f"{candidate}{ellipsis}" if candidate else ellipsis
 
-    def _pixel_text_width(self, text: str, font: Any) -> int:
+    def _pixel_text_width(self, text: str, font: DocsFont) -> int:
         if not text:
             return 0
         if not self._contains_emoji(text) and hasattr(font, "getlength"):
             return ceil(float(font.getlength(text)))
         return self._text_width(text, font)
 
-    def _pixel_text_height(self, text: str, font: Any) -> int:
+    def _pixel_text_height(self, text: str, font: DocsFont) -> int:
         sample = text or "Ag"
         if not self._contains_emoji(sample) and hasattr(font, "getbbox"):
             bbox = font.getbbox(sample)
@@ -2688,13 +2693,13 @@ class ProgressiveDisclosureRenderer(DemoImageRenderer):
         bbox = self._text_size(sample, font)
         return int(bbox[3] - bbox[1])
 
-    def _font_pixel_height(self, font: Any) -> int:
+    def _font_pixel_height(self, font: DocsFont) -> int:
         return self._pixel_text_height("Ag", font)
 
     def _line_block_height_with_spacing(
         self,
         lines: Sequence[str],
-        font: Any,
+        font: DocsFont,
         line_spacing: int,
     ) -> int:
         if not lines:

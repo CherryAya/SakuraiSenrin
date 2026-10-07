@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
 
 from scripts.migrations import wordbank as _impl
 from scripts.migrations.wordbank import (
@@ -35,13 +34,15 @@ from scripts.migrations.wordbank import (
     rebuild_legacy_row_from_failure_detail,
     rebuild_legacy_rows_from_failure_details,
 )
+from src.plugins.wordbank.database.repo import WordbankRepository
+from src.plugins.wordbank.services.media import WordbankMediaService
 
 
 async def migrate_legacy_wordbank(
     old_repo_root: Path,
     *,
-    repository: Any,
-    media_service: Any,
+    repository: WordbankRepository,
+    media_service: WordbankMediaService,
     image_root: Path | None = None,
     mapping_path: Path | None = None,
     pg_config: LegacyPgConfig | None = None,

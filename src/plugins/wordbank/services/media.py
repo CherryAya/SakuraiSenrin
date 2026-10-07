@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 from hashlib import md5
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from pybktree import BKTree
 
 from src.lib.i18n.runtime import tr
+from src.lib.types import JsonValue
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.wordbank.database.types import WordbankImageRecord
@@ -107,7 +108,7 @@ class WordbankMediaService(WordbankMediaRuntimeMixin):
     def describe_canonical_image_state(
         self,
         canonical_image_id: int,
-    ) -> dict[str, Any]:
+    ) -> dict[str, JsonValue]:
         image = self._by_canonical_id.get(canonical_image_id)
         if image is None:
             return {

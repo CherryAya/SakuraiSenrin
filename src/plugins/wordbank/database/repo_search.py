@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import delete, exists, func, or_, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -40,16 +40,20 @@ from .types import (
     WordbankTriggerGroupRecord,
 )
 
+if TYPE_CHECKING:
+    from .repo import WordbankRepository
+
 
 class WordbankRepositorySearchMixin:
     async def _load_group_bundles_by_ids(
-        self: Any,
+        self,
         session: AsyncSession,
         group_ids: list[int],
         *,
         include_deleted: bool = False,
         active_only: bool = False,
     ) -> list[GroupBundle]:
+        repo_self = cast("WordbankRepository", self)
         if not group_ids:
             return []
         unique_group_ids = list(dict.fromkeys(group_ids))
@@ -64,8 +68,10 @@ class WordbankRepositorySearchMixin:
             .scalars()
             .all()
         )
-        variants = await self._load_variants_by_group_ids(session, unique_group_ids)
-        responses = await self._load_responses_by_group_ids(
+        variants = await repo_self._load_variants_by_group_ids(
+            session, unique_group_ids
+        )
+        responses = await repo_self._load_responses_by_group_ids(
             session,
             unique_group_ids,
             include_deleted=include_deleted,
@@ -86,9 +92,10 @@ class WordbankRepositorySearchMixin:
             for group in group_rows
         ]
 
-    async def ensure_search_index(self: Any) -> None:
+    async def ensure_search_index(self) -> None:
+        repo_self = cast("WordbankRepository", self)
         start = perf_start()
-        await self._ensure_main_fts_tables()
+        await repo_self._ensure_main_fts_tables()
         async with wordbank_main_db.read_session() as session:
             expected_stmt = (
                 select(func.count())
@@ -174,9 +181,10 @@ class WordbankRepositorySearchMixin:
             image_entry_count=image_entry_count,
         )
 
-    async def rebuild_search_index(self: Any) -> None:
+    async def rebuild_search_index(self) -> None:
+        repo_self = cast("WordbankRepository", self)
         start = perf_start()
-        await self._ensure_main_fts_tables()
+        await repo_self._ensure_main_fts_tables()
         async with wordbank_main_db.read_session() as session:
             group_rows = (
                 (
@@ -190,8 +198,10 @@ class WordbankRepositorySearchMixin:
                 .all()
             )
             group_ids = [group.id for group in group_rows]
-            variant_rows = await self._load_variants_by_group_ids(session, group_ids)
-            response_rows = await self._load_responses_by_group_ids(
+            variant_rows = await repo_self._load_variants_by_group_ids(
+                session, group_ids
+            )
+            response_rows = await repo_self._load_responses_by_group_ids(
                 session,
                 group_ids,
                 include_deleted=True,
@@ -211,11 +221,11 @@ class WordbankRepositorySearchMixin:
                 variants=variants_by_group.get(group.id, []),
                 responses=responses_by_group.get(group.id, []),
             )
-            payload = self._document_payload(bundle)
+            payload = repo_self._document_payload(bundle)
             if payload is None:
                 continue
             documents.append(payload)
-            image_map_rows.extend(self._image_map_payloads(payload))
+            image_map_rows.extend(repo_self._image_map_payloads(payload))
         async with wordbank_main_db.write_session() as session:
             await session.execute(delete(WordbankSearchDocument))
             await session.execute(delete(WordbankSearchImageMap))
@@ -256,15 +266,16 @@ class WordbankRepositorySearchMixin:
         )
 
     async def find_trigger_group_by_shape(
-        self: Any,
+        self,
         shape: MessageShape,
         *,
         include_deleted: bool = False,
     ) -> WordbankTriggerGroupRecord | None:
+        repo_self = cast("WordbankRepository", self)
         fingerprint = fingerprint_shape(shape)
         payload = shape_to_payload(shape)
         async with wordbank_main_db.read_session() as session:
-            group = await self._find_group_by_fingerprint_in_session(
+            group = await repo_self._find_group_by_fingerprint_in_session(
                 session,
                 exact_md5=fingerprint.exact_md5,
                 message_json=payload,
@@ -272,23 +283,26 @@ class WordbankRepositorySearchMixin:
             )
             if group is None:
                 return None
-            bundle = await self._load_group_bundle_in_session(
+            bundle = await repo_self._load_group_bundle_in_session(
                 session,
                 group.id,
                 include_deleted=include_deleted,
             )
         if bundle is None:
             return None
-        return self._to_group_record(bundle.group, bundle.variants, bundle.responses)
+        return repo_self._to_group_record(
+            bundle.group, bundle.variants, bundle.responses
+        )
 
     async def list_group_response_items(
-        self: Any,
+        self,
         trigger_group_id: int,
         *,
         include_deleted: bool = False,
     ) -> list[WordbankResponseItemRecord]:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
-            bundle = await self._load_group_bundle_in_session(
+            bundle = await repo_self._load_group_bundle_in_session(
                 session,
                 trigger_group_id,
                 include_deleted=include_deleted,
@@ -296,47 +310,50 @@ class WordbankRepositorySearchMixin:
         if bundle is None:
             return []
         return [
-            self._to_response_item_record(response) for response in bundle.responses
+            repo_self._to_response_item_record(response)
+            for response in bundle.responses
         ]
 
     async def get_response_item_record(
-        self: Any,
+        self,
         response_item_id: int,
         *,
         include_deleted: bool = False,
     ) -> WordbankResponseItemRecord | None:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
             response = await session.get(WordbankResponseItem, response_item_id)
         if response is None:
             return None
         if not include_deleted and response.deleted_at != 0:
             return None
-        return self._to_response_item_record(response)
+        return repo_self._to_response_item_record(response)
 
     async def get_trigger_group_record(
-        self: Any,
+        self,
         trigger_group_id: int,
         *,
         include_deleted: bool = False,
         active_only: bool = False,
     ) -> WordbankTriggerGroupRecord | None:
+        repo_self = cast("WordbankRepository", self)
         async with wordbank_main_db.read_session() as session:
             group = await session.get(WordbankTriggerGroup, trigger_group_id)
             if group is None:
                 return None
-            variants = await self._load_variants_by_group_ids(
+            variants = await repo_self._load_variants_by_group_ids(
                 session, [trigger_group_id]
             )
-            responses = await self._load_responses_by_group_ids(
+            responses = await repo_self._load_responses_by_group_ids(
                 session,
                 [trigger_group_id],
                 include_deleted=include_deleted,
                 active_only=active_only,
             )
-        return self._to_group_record(group, variants, responses)
+        return repo_self._to_group_record(group, variants, responses)
 
     async def search(
-        self: Any,
+        self,
         request: WordbankSearchRequest,
         *,
         limit: int = 10,
@@ -346,12 +363,13 @@ class WordbankRepositorySearchMixin:
         return list(page.items)
 
     async def search_page(
-        self: Any,
+        self,
         request: WordbankSearchRequest,
         *,
         limit: int = 10,
         offset: int = 0,
     ) -> WordbankSearchPage:
+        repo_self = cast("WordbankRepository", self)
         start = perf_start()
         async with wordbank_main_db.read_session() as session:
             candidate_limit = max(
@@ -438,7 +456,7 @@ class WordbankRepositorySearchMixin:
                 )
                 return WordbankSearchPage(
                     items=tuple(
-                        self._search_item_from_document(
+                        repo_self._search_item_from_document(
                             document,
                             trigger_shape=(
                                 shape_from_payload(bundle.variants[0].message_json)
@@ -478,7 +496,7 @@ class WordbankRepositorySearchMixin:
                                 )
                                 else ()
                             ),
-                            preview_responses=self._search_preview_responses_from_bundle(
+                            preview_responses=repo_self._search_preview_responses_from_bundle(
                                 bundles_by_group_id.get(document.trigger_group_id)
                             ),
                         )
@@ -534,7 +552,7 @@ class WordbankRepositorySearchMixin:
         paged = ranked[offset : offset + limit]
         page = WordbankSearchPage(
             items=tuple(
-                self._search_item_from_document(
+                repo_self._search_item_from_document(
                     document,
                     score=score,
                     matched_by=matched_by,
@@ -576,7 +594,7 @@ class WordbankRepositorySearchMixin:
                         )
                         else ()
                     ),
-                    preview_responses=self._search_preview_responses_from_bundle(
+                    preview_responses=repo_self._search_preview_responses_from_bundle(
                         bundles_by_group_id.get(document.trigger_group_id)
                     ),
                 )
@@ -606,7 +624,7 @@ class WordbankRepositorySearchMixin:
         return page
 
     def _rank_search_document(
-        self: Any,
+        self,
         document: WordbankSearchDocument,
         *,
         request: WordbankSearchRequest,
@@ -645,7 +663,7 @@ class WordbankRepositorySearchMixin:
         return final_score
 
     async def _search_text_scores(
-        self: Any,
+        self,
         session: AsyncSession,
         keyword: str,
         *,
@@ -702,7 +720,7 @@ class WordbankRepositorySearchMixin:
         return scores, sources
 
     async def _search_image_scores(
-        self: Any,
+        self,
         session: AsyncSession,
         image_scores: dict[int, float],
         *,

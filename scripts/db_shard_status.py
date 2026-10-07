@@ -17,7 +17,10 @@ import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
-from typing import Any
+from typing import TypedDict, cast
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import DeclarativeBase
 
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -25,16 +28,51 @@ if str(Path(__file__).resolve().parents[1]) not in sys.path:
 from src.lib.db.alias import AliasStore
 from src.lib.db.connectors import SegmentStore
 from src.lib.db.ops import BaseOps
+from src.lib.types import JsonValue
 
 
-class _NoopOps(BaseOps[Any]):
+class _NoopOps(BaseOps[DeclarativeBase]):
     """运维脚本只读健康快照，不需要真实 ops。"""
 
-    def __init__(self, session: Any) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
 
-def _load_stores() -> dict[str, Any]:
+class _ShardHealth(TypedDict):
+    """``AliasStore.shard_health()`` 的行结构。"""
+
+    shard: str
+    state: str
+    is_active: bool
+    online: bool
+    archived: bool
+    size_bytes: int
+    last_access_at: int
+    archived_at: JsonValue
+
+
+class _ShardRow(TypedDict):
+    shard: str
+    state: str
+    active: bool
+    online: bool
+    archived: bool
+    size_mb: float
+    last_access_at: int
+    archived_at: JsonValue
+
+
+class _StorePayload(TypedDict):
+    namespace: str
+    prefix: str
+    tz: str
+    active_window_months: int
+    retention_months: int
+    shards: list[_ShardRow]
+    total_size_mb: float
+
+
+def _load_stores() -> dict[str, AliasStore[_NoopOps]]:
     """加载所有已注册的分片库实例（含 StateStore 之外的分片库）。"""
     project_root = Path(__file__).resolve().parents[1]
     if str(project_root) not in sys.path:
@@ -69,7 +107,7 @@ def _load_stores() -> dict[str, Any]:
     )
 
     ensure_backup_database_registrations_loaded()
-    stores: dict[str, Any] = {}
+    stores: dict[str, AliasStore[_NoopOps]] = {}
     for db in get_registered_backup_databases():
         if isinstance(db, SegmentStore):
             alias = AliasStore(db, ops_class=_NoopOps, time_field="created_at")
@@ -107,10 +145,10 @@ async def main() -> int:
         print("no segment stores registered")
         return 1
 
-    payload: dict[str, Any] = {}
+    payload: dict[str, _StorePayload] = {}
     for store_name, store in stores.items():
-        rows = []
-        for info in store.shard_health():
+        rows: list[_ShardRow] = []
+        for info in cast("list[_ShardHealth]", store.shard_health()):
             rows.append(
                 {
                     "shard": info["shard"],

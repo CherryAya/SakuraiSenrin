@@ -6,11 +6,12 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol, TypedDict
 
 from pybktree import BKTree
 
 from src.lib.object_storage.types import StorageObject
+from src.lib.types import JsonValue
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.wordbank.database.types import WordbankImageRecord
@@ -37,11 +38,27 @@ from .media_storage import (
 )
 
 
+class MediaBackfillReport(TypedDict):
+    """`backfill_local_cache_metadata` 的回填结果报告。"""
+
+    dry_run: bool
+    limit: int
+    id_start: int
+    only_missing: bool
+    scanned: int
+    updated: int
+    unchanged: int
+    skipped_existing: int
+    missing_files: int
+    failed: int
+    rows: list[dict[str, JsonValue]]
+
+
 def image_log_fields(
     image: WordbankImageRecord | None,
     *,
     canonical_image_id: int | None = None,
-) -> dict[str, Any]:
+) -> dict[str, JsonValue]:
     if image is None:
         return {
             "image_id": "-",
@@ -688,10 +705,10 @@ class WordbankMediaRuntimeMixin:
         limit: int = 0,
         id_start: int = 0,
         only_missing: bool = True,
-    ) -> dict[str, Any]:
+    ) -> MediaBackfillReport:
         images = await self.repository.list_images()
         scanned = updated = unchanged = skipped_existing = missing_files = failed = 0
-        rows: list[dict[str, Any]] = []
+        rows: list[dict[str, JsonValue]] = []
         remaining = max(limit, 0)
         for image in sorted(images, key=lambda item: item.id):
             if image.id < id_start:
@@ -703,7 +720,7 @@ class WordbankMediaRuntimeMixin:
                 image.remote_storage_path or image.storage_path
             )
             expected_path = self.cache_storage.cache_root / f"{image.md5}{extension}"
-            row: dict[str, Any] = {
+            row: dict[str, JsonValue] = {
                 "id": image.id,
                 "canonical_image_id": image.canonical_id,
                 "md5": image.md5,

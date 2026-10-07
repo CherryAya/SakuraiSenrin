@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
@@ -138,19 +138,19 @@ def _require_guided_bot(bot: Bot | None, matcher: Matcher) -> Bot:
     return resolved
 
 
-def state_message_shape(state: Mapping[str, Any], key: str) -> MessageShape | None:
+def state_message_shape(state: T_State, key: str) -> MessageShape | None:
     return state_value(state, key, MessageShape)
 
 
-def _guided_state_keys(state: Mapping[str, Any]) -> list[str]:
+def _guided_state_keys(state: T_State) -> list[str]:
     return state_keys_with_prefix(state, "wordbank_")
 
 
-def _guided_forward_response_event(state: Mapping[str, Any]) -> MessageEvent | None:
+def _guided_forward_response_event(state: T_State) -> MessageEvent | None:
     return state_value(state, "wordbank_guided_response_forward_event", MessageEvent)
 
 
-def _guided_submission_source_event(state: Mapping[str, Any]) -> MessageEvent | None:
+def _guided_submission_source_event(state: T_State) -> MessageEvent | None:
     return state_value(state, "wordbank_guided_submission_source_event", MessageEvent)
 
 
@@ -169,15 +169,15 @@ async def reject_guided_error(
     )
 
 
-def wordbank_guided_locale(state: Mapping[str, Any]) -> LocaleCode:
+def wordbank_guided_locale(state: T_State) -> LocaleCode:
     return guided_locale(state, locale_key="wordbank_locale")
 
 
 def copy_guided_state(
-    state: Mapping[str, Any],
+    state: T_State,
     *,
     keep_keys: tuple[str, ...],
-) -> dict[str, Any]:
+) -> dict[str, object]:
     return copy_guided_state_snapshot(
         state,
         locale_key="wordbank_locale",
@@ -186,7 +186,7 @@ def copy_guided_state(
     )
 
 
-def guided_response_state_keys(state: Mapping[str, Any]) -> tuple[str, ...]:
+def guided_response_state_keys(state: T_State) -> tuple[str, ...]:
     keys: list[str] = []
     for key in (
         "wordbank_guided_response_shape",
@@ -239,7 +239,7 @@ def register_guided_checkpoint(
     *,
     step_index: int,
     locale: LocaleCode,
-    snapshot: Mapping[str, Any],
+    snapshot: Mapping[str, object],
     cleanup_keys: tuple[str, ...] = (),
 ) -> None:
     register_recall_checkpoint(
@@ -257,7 +257,7 @@ def register_guided_checkpoint(
 
 
 async def cancel_guided_resources(
-    state: Mapping[str, Any],
+    state: T_State,
     cleanup_keys: tuple[str, ...] = WORDBANK_GUIDED_RECALL_PENDING_KEYS,
 ) -> None:
     await cancel_guided_state_resources(state, cleanup_keys)
@@ -707,12 +707,12 @@ async def finish_guided_add(
     )
 
 
-def guided_search_stage(state: Mapping[str, Any]) -> str:
+def guided_search_stage(state: T_State) -> str:
     value = state.get("wordbank_guided_search_stage", "")
     return value if isinstance(value, str) else ""
 
 
-def guided_search_image_scores(state: Mapping[str, Any]) -> dict[int, float]:
+def guided_search_image_scores(state: T_State) -> dict[int, float]:
     value = state.get("wordbank_guided_search_image_scores")
     if not isinstance(value, dict):
         return {}
@@ -745,7 +745,7 @@ async def collect_search_query_content(
 
 
 def build_guided_search_parsed(
-    state: Mapping[str, Any],
+    state: T_State,
     *,
     page: int = 1,
 ) -> ParsedSearch:
@@ -758,17 +758,17 @@ def build_guided_search_parsed(
     )
 
 
-def guided_search_current_page(state: Mapping[str, Any]) -> int:
+def guided_search_current_page(state: T_State) -> int:
     value = state.get("wordbank_guided_search_current_page", 1)
     return int(value) if isinstance(value, int) and value > 0 else 1
 
 
-def guided_search_total_pages(state: Mapping[str, Any]) -> int:
+def guided_search_total_pages(state: T_State) -> int:
     value = state.get("wordbank_guided_search_total_pages", 1)
     return int(value) if isinstance(value, int) and value > 0 else 1
 
 
-def guided_search_group_ids(state: Mapping[str, Any]) -> tuple[int, ...]:
+def guided_search_group_ids(state: T_State) -> tuple[int, ...]:
     value = state.get("wordbank_guided_search_group_ids")
     if not isinstance(value, (list, tuple)):
         return ()
@@ -777,7 +777,7 @@ def guided_search_group_ids(state: Mapping[str, Any]) -> tuple[int, ...]:
     )
 
 
-def guided_search_delete_target_map(state: Mapping[str, Any]) -> dict[str, int]:
+def guided_search_delete_target_map(state: T_State) -> dict[str, int]:
     value = state.get("wordbank_guided_search_delete_target_map")
     if isinstance(value, Mapping):
         pairs = value.items()

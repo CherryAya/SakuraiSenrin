@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import math
-from typing import Any
 
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
@@ -51,6 +50,7 @@ from src.plugins.wordbank.services.core import (
 from src.plugins.wordbank.services.media import WordbankMediaService
 from src.plugins.wordbank.services.rules import (
     RuleError,
+    RuleValue,
     build_legacy_study_shortcut_rule,
     parse_legacy_study_text,
 )
@@ -420,7 +420,7 @@ async def handle_study_media_with_rule_result(
     *,
     event: MessageEvent,
     source: str,
-    raw_rule: dict[str, Any],
+    raw_rule: dict[str, RuleValue],
     image_bytes: Sequence[bytes],
     task: LongTaskRunner | None = None,
 ) -> WordbankAddResult:

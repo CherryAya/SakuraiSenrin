@@ -6,8 +6,8 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 import random
-from typing import Any
 
+from src.lib.types import JsonValue
 from src.plugins.wordbank.database.types import (
     WordbankResponseItemRecord,
     WordbankTriggerGroupRecord,
@@ -33,7 +33,7 @@ class RuntimeResponseItem:
     scope: str
     priority: int
     weight: int
-    rule: dict[str, Any]
+    rule: dict[str, JsonValue]
     group_id: str
     created_by: str
 

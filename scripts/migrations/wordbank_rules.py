@@ -8,10 +8,10 @@ from io import BytesIO
 import json
 from pathlib import Path
 import re
-from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
+from src.lib.types import JsonValue
 from src.lib.utils.common import get_current_time
 
 from .wordbank_types import LegacyEntryState, LegacyImportTarget
@@ -35,7 +35,7 @@ class MigrationError(Exception):
     """Raised when a legacy wordbank record cannot be migrated."""
 
 
-def load_legacy_json(value: object) -> Any:
+def load_legacy_json(value: object) -> JsonValue:
     if value in (None, ""):
         return {}
     if isinstance(value, (dict, list)):
@@ -83,7 +83,7 @@ def message_ref_shard_key(timestamp: int) -> str:
 def normalize_legacy_rules(
     *,
     priority: int,
-    response_rule_conditions: Mapping[str, Any],
+    response_rule_conditions: Mapping[str, JsonValue],
     trigger_config: object = None,
 ) -> list[LegacyImportTarget]:
     branches = _expand_legacy_rule_tree(response_rule_conditions)
@@ -101,8 +101,8 @@ def normalize_legacy_rules(
 def normalize_legacy_scope(
     *,
     priority: int,
-    response_rule_conditions: Mapping[str, Any],
-) -> tuple[str, str, dict[str, Any]]:
+    response_rule_conditions: Mapping[str, JsonValue],
+) -> tuple[str, str, dict[str, JsonValue]]:
     targets = normalize_legacy_rules(
         priority=priority,
         response_rule_conditions=response_rule_conditions,
@@ -135,7 +135,7 @@ def normalize_legacy_state(
     raise MigrationError(f"unsupported approval status: {approval_status}")
 
 
-def _coerce_rule_mapping(value: object) -> Mapping[str, Any]:
+def _coerce_rule_mapping(value: object) -> Mapping[str, JsonValue]:
     payload = load_legacy_json(value)
     if isinstance(payload, Mapping):
         return payload
@@ -222,7 +222,9 @@ def _normalize_legacy_branch(
     )
 
 
-def _expand_legacy_rule_tree(rule: Mapping[str, Any]) -> list[dict[str, object]]:
+def _expand_legacy_rule_tree(
+    rule: Mapping[str, JsonValue],
+) -> list[dict[str, object]]:
     unknown_keys = set(rule) - _LEGACY_RULE_KEYS
     if unknown_keys:
         fields = ",".join(sorted(unknown_keys))
@@ -265,10 +267,14 @@ def _expand_legacy_rule_item(key: str, value: object) -> list[dict[str, object]]
     raise MigrationError(f"unsupported rule keys: {key}")
 
 
-def _coerce_rule_list(value: object, *, field: str) -> list[Mapping[str, Any]]:
+def _coerce_rule_list(
+    value: object,
+    *,
+    field: str,
+) -> list[Mapping[str, JsonValue]]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
         raise MigrationError(f"{field} must be a rule list")
-    items: list[Mapping[str, Any]] = []
+    items: list[Mapping[str, JsonValue]] = []
     for item in value:
         if not isinstance(item, Mapping):
             raise MigrationError(f"{field} contains a non-mapping rule")

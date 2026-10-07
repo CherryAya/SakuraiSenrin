@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -18,10 +18,13 @@ from .tables import (
     WordbankTriggerVariant,
 )
 
+if TYPE_CHECKING:
+    from .repo import WordbankRepository
+
 
 class WordbankRepositoryRuntimeMixin:
     async def _find_or_create_group_in_session(
-        self: Any,
+        self,
         session: AsyncSession,
         *,
         trigger_text: str,
@@ -83,7 +86,7 @@ class WordbankRepositoryRuntimeMixin:
         return group, variant, True
 
     async def _find_group_by_fingerprint_in_session(
-        self: Any,
+        self,
         session: AsyncSession,
         *,
         exact_md5: str,
@@ -108,7 +111,7 @@ class WordbankRepositoryRuntimeMixin:
         return (await session.execute(stmt)).scalar_one_or_none()
 
     async def _load_group_bundle_in_session(
-        self: Any,
+        self,
         session: AsyncSession,
         trigger_group_id: int,
         *,
@@ -131,7 +134,7 @@ class WordbankRepositoryRuntimeMixin:
         return GroupBundle(group=group, variants=variants, responses=responses)
 
     async def _load_variants_by_group_ids(
-        self: Any,
+        self,
         session: AsyncSession,
         group_ids: Sequence[int],
     ) -> Sequence[WordbankTriggerVariant]:
@@ -150,7 +153,7 @@ class WordbankRepositoryRuntimeMixin:
         )
 
     async def _load_responses_by_group_ids(
-        self: Any,
+        self,
         session: AsyncSession,
         group_ids: Sequence[int],
         *,
@@ -175,10 +178,11 @@ class WordbankRepositoryRuntimeMixin:
         return (await session.execute(stmt)).scalars().all()
 
     async def _refresh_group_in_session(
-        self: Any,
+        self,
         session: AsyncSession,
         trigger_group_id: int,
     ) -> None:
+        repo_self = cast("WordbankRepository", self)
         bundle = await self._load_group_bundle_in_session(
             session,
             trigger_group_id,
@@ -197,7 +201,7 @@ class WordbankRepositoryRuntimeMixin:
                 + [response.updated_at for response in bundle.responses]
             )
         await session.flush()
-        payload = self._document_payload(bundle)
+        payload = repo_self._document_payload(bundle)
         if payload is None:
             await self._delete_group_search_rows_in_session(session, trigger_group_id)
             return
@@ -250,12 +254,12 @@ class WordbankRepositoryRuntimeMixin:
             ),
             payload,
         )
-        image_map_rows = self._image_map_payloads(payload)
+        image_map_rows = repo_self._image_map_payloads(payload)
         if image_map_rows:
             await session.execute(sqlite_insert(WordbankSearchImageMap), image_map_rows)
 
     async def _delete_group_search_rows_in_session(
-        self: Any,
+        self,
         session: AsyncSession,
         trigger_group_id: int,
     ) -> None:

@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import (
@@ -33,7 +33,7 @@ from src.lib.long_task import (
     MatcherProgressSink,
     MessageEventProgressSink,
 )
-from src.lib.message_delivery import DeliveryTarget
+from src.lib.message_delivery import DeliveryResult, DeliveryTarget
 from src.lib.message_plan import (
     DeliveryPlan,
     MessagePlanInput,
@@ -549,7 +549,7 @@ async def deliver_passive_response(
     segment_count, image_segment_count = (
         message_segment_stats(message) if message is not None else (0, 0)
     )
-    send_result: Any = None
+    send_result: DeliveryResult | None = None
     send_ms = 0.0
     if message is not None:
         log_perf(
@@ -559,7 +559,7 @@ async def deliver_passive_response(
             segment_count=segment_count,
             image_segment_count=image_segment_count,
             post_action_count=post_action_count,
-            **cast(Any, image_trace_fields),
+            **image_trace_fields,
         )
         send_start = perf_start()
         plan_result = await deliver_message_plan(
@@ -581,7 +581,7 @@ async def deliver_passive_response(
             segment_count=segment_count,
             image_segment_count=image_segment_count,
             post_action_count=post_action_count,
-            **cast(Any, image_trace_fields),
+            **image_trace_fields,
         )
     action_start = perf_start()
     await execute_passive_post_actions(bot, response, compiled.post_actions)
@@ -609,6 +609,6 @@ async def deliver_passive_response(
         send_ms=f"{send_ms:.2f}",
         action_ms=f"{action_ms:.2f}",
         record_ms=f"{record_ms:.2f}",
-        **cast(Any, image_trace_fields),
+        **image_trace_fields,
     )
     return compiled

@@ -7,12 +7,11 @@ Description: 公共枚举
 """
 
 from enum import Enum, IntFlag
-from typing import Any
 
 
 class LocalizedMixin:
     @classmethod
-    def get_label(cls, member: Any) -> str:
+    def get_label(cls, member: "LocalizedMixin | Enum") -> str:
         val = member.value if isinstance(member, Enum) else member
         label_keys = getattr(cls, "__label_keys__", {})
         if val in label_keys:
@@ -25,7 +24,7 @@ class LocalizedMixin:
         if isinstance(labels, Enum):
             labels = labels.value
         elif isinstance(member, IntFlag) and member.value != 0:
-            decomposed_labels = []
+            decomposed_labels: list[str] = []
             for m in member.__class__:
                 is_atomic = (m.value & (m.value - 1)) == 0
                 if m.value == 0 or not is_atomic:

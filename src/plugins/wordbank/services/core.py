@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import json
 import random
-from typing import Any
+from typing import cast
 
 from src.database.consts import WritePolicy
 from src.lib.i18n.runtime import tr
@@ -61,6 +61,7 @@ from src.plugins.wordbank.services.presentation import (
 from src.plugins.wordbank.services.rules import (
     MAX_CALL_COUNT_WINDOW_SECONDS,
     RuleContext,
+    RuleValue,
     canonicalize_rule,
 )
 from src.repositories import user_repo
@@ -240,7 +241,7 @@ class WordbankService:
         group_id: str,
         user_id: str,
         is_group: bool,
-        raw_rule: dict[str, Any] | None = None,
+        raw_rule: Mapping[str, RuleValue] | None = None,
         response_mode: str = "normal",
         forward_source_message_id: str | None = None,
         forward_node_count: int = 0,
@@ -338,7 +339,7 @@ class WordbankService:
         response_shape: MessageShape,
         scope: str,
         group_id: str,
-        rule: dict[str, Any],
+        rule: dict[str, object],
     ) -> WordbankAddResult | None:
         existing_group = await self.repository.find_trigger_group_by_shape(
             trigger_shape,
@@ -388,7 +389,7 @@ class WordbankService:
         response_shape: MessageShape,
         scope: str,
         group_id: str,
-        rule: dict[str, Any],
+        rule: dict[str, object],
     ) -> WordbankResponseItemRecord | None:
         candidates = [
             response
@@ -426,7 +427,7 @@ class WordbankService:
         group_id: str,
         user_id: str,
         is_group: bool,
-        raw_rule: dict[str, Any] | None = None,
+        raw_rule: Mapping[str, RuleValue] | None = None,
         response_mode: str = "normal",
         forward_source_message_id: str | None = None,
         forward_node_count: int = 0,
@@ -1135,7 +1136,11 @@ class WordbankService:
                 call_count = response.rule.get("call_count")
                 if not isinstance(call_count, dict):
                     continue
-                window = int(call_count.get("window_seconds", 0))
+                window = int(
+                    cast(
+                        "str | int | float | bool", call_count.get("window_seconds", 0)
+                    )
+                )
                 trigger_group_id = response.trigger_group_id
                 existing_count = counts.get(trigger_group_id)
                 if window <= 0:
@@ -1213,7 +1218,9 @@ class WordbankService:
         call_count = response.rule.get("call_count")
         if not isinstance(call_count, dict):
             return
-        window = int(call_count.get("window_seconds", 0))
+        window = int(
+            cast("str | int | float | bool", call_count.get("window_seconds", 0))
+        )
         if window <= 0:
             return
         cache_key = (response.trigger_group_id, user_id, window)

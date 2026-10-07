@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any
 
 import arrow
 from PIL import Image, ImageDraw, ImageFont
@@ -24,6 +23,7 @@ from src.plugins.wordbank.database.types import (
     WordbankResponseItemDetail,
 )
 from src.plugins.wordbank.message_model import MessageShape
+from src.plugins.wordbank.treemap.render_utils import TreemapFont
 
 from .group_detail_card_helpers import (
     build_copyright_text,
@@ -980,7 +980,7 @@ class GroupDetailCardRenderer:
         x: int,
         y: int,
         text: str,
-        font: Any,
+        font: TreemapFont,
         fill: str,
         max_width: int,
         max_lines: int | None = None,
@@ -1000,7 +1000,7 @@ class GroupDetailCardRenderer:
     def _wrapped_text_height(
         self,
         text: str,
-        font: Any,
+        font: TreemapFont,
         *,
         max_width: int,
         max_lines: int | None = None,
@@ -1036,7 +1036,7 @@ class GroupDetailCardRenderer:
     def _trigger_trunk_anchor_offset(self) -> int:
         return CARD_PANEL_PADDING + 56
 
-    def _load_font(self, size: int) -> Any:
+    def _load_font(self, size: int) -> TreemapFont:
         try:
             return ImageFont.truetype(MAPLE_FONT_PATH, size)
         except Exception:

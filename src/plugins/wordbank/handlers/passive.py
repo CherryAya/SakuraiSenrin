@@ -6,7 +6,6 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -24,6 +23,7 @@ from src.lib.message_plan import (
     AtRefBlock,
     FaceBlock,
     ImageBytesBlock,
+    MessagePlanBlock,
     MessagePlanEntry,
     MessagePlanInput,
     RawMessageBlock,
@@ -709,9 +709,9 @@ async def compile_passive_response(
         "passive.build_passive_message.render_shape.images_loaded",
         start=start,
         response_item_id=response.response_item_id,
-        **cast(Any, payload_stats),
+        **payload_stats,
     )
-    blocks: list[Any] = []
+    blocks: list[MessagePlanBlock] = []
     post_actions: list[PassivePokeAction] = []
     image_segments = 0
     profile_data: PassiveProfilePlaceholderData | None = None
@@ -801,7 +801,7 @@ async def compile_passive_response(
         segments=len(blocks),
         image_segments=image_segments,
         post_action_count=len(post_actions),
-        **cast(Any, payload_stats),
+        **payload_stats,
         response_item_id=response.response_item_id,
     )
     image_trace_fields = _image_payload_trace_fields(payload_stats)
@@ -812,7 +812,7 @@ async def compile_passive_response(
         atoms=len(shape.atoms),
         segments=len(blocks),
         post_action_count=len(post_actions),
-        **cast(Any, image_trace_fields),
+        **image_trace_fields,
     )
     return CompiledPassiveResponse(
         message=message,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from importlib import import_module
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .achievement import ACHIEVEMENT_RULES as ACHIEVEMENT_RULES
@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> object:
     if name == "ACHIEVEMENT_RULES":
         from .achievement import ACHIEVEMENT_RULES
 

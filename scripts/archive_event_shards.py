@@ -7,7 +7,7 @@ import asyncio
 from pathlib import Path
 import sys
 import types
-from typing import Any
+from typing import Protocol
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -31,6 +31,16 @@ from src.plugins.wordbank.database.instances import (
     wordbank_log_db,
     wordbank_message_ref_db,
 )
+
+
+class _ArchivableStore(Protocol):
+    """``AliasStore`` 的最小归档视图（各分片库 ops 类型互不相同，故用鸭子类型收口）。"""
+
+    @property
+    def base_dir(self) -> Path: ...
+
+    @property
+    def prefix(self) -> str: ...
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,9 +68,9 @@ async def archive_targets(
     *,
     target: str,
     include_water_summary: bool = False,
-) -> tuple[list[str], list[tuple[str, Any]]]:
+) -> tuple[list[str], list[tuple[str, _ArchivableStore]]]:
     completed: list[str] = []
-    stores: list[tuple[str, Any]] = []
+    stores: list[tuple[str, _ArchivableStore]] = []
     if target in {"wordbank", "all"}:
         await wordbank_log_db.run_archiver_task()
         completed.append("wordbank_logs")
@@ -79,7 +89,9 @@ async def archive_targets(
     return completed, stores
 
 
-def cleanup_stale_sidecars(stores: list[tuple[str, Any]]) -> dict[str, int]:
+def cleanup_stale_sidecars(
+    stores: list[tuple[str, _ArchivableStore]],
+) -> dict[str, int]:
     cleaned: dict[str, int] = {}
     for label, store in stores:
         count = 0

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from httpx import AsyncClient
 from nonebot import on_regex
@@ -183,7 +183,7 @@ def get_engine_key(engine: PicsearchEngine) -> str | None:
     return config.ASCII2D_KEY
 
 
-def get_thumbnail_url(item: Any) -> str:
+def get_thumbnail_url(item: object) -> str:
     for attr in ("thumbnail", "thumbnail_url"):
         value = getattr(item, attr, "")
         if isinstance(value, str) and value:
@@ -193,7 +193,7 @@ def get_thumbnail_url(item: Any) -> str:
 
 def _to_result(
     engine: PicsearchEngine,
-    item: Any,
+    item: object,
     *,
     locale: LocaleCode = "zh-CN",
 ) -> PicsearchResult:

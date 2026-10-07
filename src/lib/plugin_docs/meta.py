@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
-from typing import Any, cast
+from typing import cast
 
 from nonebot.plugin import PluginMetadata
 
@@ -16,6 +16,7 @@ from src.database.core.consts import Permission
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.types import JsonValue
 
 from .models import DocNodeKind, DocsMeta, HelpSupportBundle, SupportGroupLink
 
@@ -182,7 +183,7 @@ def read_docs_metas(metadata: PluginMetadata) -> tuple[DocsMeta, ...]:
 
 
 def normalize_docs_meta(
-    raw: dict[str, Any],
+    raw: dict[str, JsonValue],
     *,
     default_permission: Permission | int | str,
 ) -> DocsMeta | None:

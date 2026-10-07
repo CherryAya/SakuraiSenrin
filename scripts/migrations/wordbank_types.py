@@ -6,7 +6,9 @@ from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
+
+from src.lib.types import JsonValue
 
 
 @dataclass(slots=True, frozen=True)
@@ -331,8 +333,8 @@ class LegacyImportTarget:
     call_count_window_seconds: int = 0
 
     @property
-    def rule(self) -> dict[str, Any]:
-        rule: dict[str, Any] = {}
+    def rule(self) -> dict[str, JsonValue]:
+        rule: dict[str, JsonValue] = {}
         if self.role != "any":
             rule["roles"] = self.role
         if self.call_count_window_seconds > 0:

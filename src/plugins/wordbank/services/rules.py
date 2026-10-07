@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from typing import Any, Literal, TypedDict, cast
+from typing import Literal, TypedDict, cast
 
 from src.lib.i18n.keys import MessageKey
+from src.lib.types import JsonValue
 from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.text_parsing import (
     has_meaningful_text,
@@ -21,6 +24,9 @@ Scope = Literal[
     "self_in_current_group",
 ]
 Role = Literal["any", "owner", "admin", "member"]
+
+# 规则 dict 中的原始值：普通 JSON 值，scope 位置额外允许集合字面量
+type RuleValue = JsonValue | AbstractSet[str]
 
 VALID_SCOPES: set[str] = {
     "current_group",
@@ -117,7 +123,7 @@ class RuleContext:
     sender_role: Role = "member"
 
 
-def _single_value(value: Any, field: str) -> Any:
+def _single_value(value: RuleValue, field: str) -> RuleValue:
     if isinstance(value, list | tuple | set):
         values = list(value)
         if len(values) != 1:
@@ -143,7 +149,7 @@ def normalize_role_alias(value: str) -> str | None:
     return ROLE_ALIASES.get(value.strip().casefold()) or ROLE_ALIASES.get(value.strip())
 
 
-def _normalize_scope(value: Any, *, is_group: bool) -> Scope:
+def _normalize_scope(value: RuleValue, *, is_group: bool) -> Scope:
     if value is None or value == "":
         return "current_group" if is_group else "self"
     if isinstance(value, list | tuple | set):
@@ -171,7 +177,7 @@ def _normalize_scope(value: Any, *, is_group: bool) -> Scope:
     return cast(Scope, scope)
 
 
-def _normalize_role(value: Any) -> Role:
+def _normalize_role(value: RuleValue) -> Role:
     value = _single_value(value, "roles")
     if value is None or value == "":
         return "any"
@@ -188,12 +194,12 @@ def _normalize_role(value: Any) -> Role:
     return cast(Role, role)
 
 
-def _normalize_probability(value: Any, *, short_trigger: bool) -> float:
+def _normalize_probability(value: RuleValue, *, short_trigger: bool) -> float:
     if value is None or value == "":
         return 0.5 if short_trigger else 1.0
     value = _single_value(value, "probability")
     try:
-        probability = float(value)
+        probability = float(cast("str | int | float | bool", value))
     except (TypeError, ValueError) as exc:
         raise _rule_error(
             _default_i18n_text("wordbank.error.probability_invalid"),
@@ -207,12 +213,12 @@ def _normalize_probability(value: Any, *, short_trigger: bool) -> float:
     return probability
 
 
-def _normalize_weight(value: Any) -> int:
+def _normalize_weight(value: RuleValue) -> int:
     if value is None or value == "":
         return 3
     value = _single_value(value, "weight")
     try:
-        weight = int(value)
+        weight = int(cast("str | int | float | bool", value))
     except (TypeError, ValueError) as exc:
         raise _rule_error(
             _default_i18n_text("wordbank.error.weight_invalid"),
@@ -226,7 +232,7 @@ def _normalize_weight(value: Any) -> int:
     return weight
 
 
-def _normalize_call_count(value: Any) -> CallCountRule | None:
+def _normalize_call_count(value: RuleValue) -> CallCountRule | None:
     if value in (None, "", {}):
         return None
     if not isinstance(value, dict):
@@ -247,9 +253,11 @@ def _normalize_call_count(value: Any) -> CallCountRule | None:
             fields=fields,
         )
     try:
-        window_seconds = int(value.get("window_seconds", 0))
-        min_count = int(value.get("min", 0))
-        max_count = int(value.get("max", 0))
+        window_seconds = int(
+            cast("str | int | float | bool", value.get("window_seconds", 0))
+        )
+        min_count = int(cast("str | int | float | bool", value.get("min", 0)))
+        max_count = int(cast("str | int | float | bool", value.get("max", 0)))
     except (TypeError, ValueError) as exc:
         raise _rule_error(
             _default_i18n_text("wordbank.error.call_integer"),
@@ -283,7 +291,7 @@ def _normalize_call_count(value: Any) -> CallCountRule | None:
 
 
 def canonicalize_rule(
-    raw_rule: dict[str, Any] | None = None,
+    raw_rule: Mapping[str, RuleValue] | None = None,
     *,
     is_group: bool,
     short_trigger: bool,
@@ -331,7 +339,7 @@ def rule_allows(
     scope: str,
     entry_group_id: str,
     entry_created_by: str,
-    rule: dict[str, Any],
+    rule: Mapping[str, RuleValue],
     context: RuleContext,
     current_call_count: int = 0,
 ) -> bool:
@@ -370,11 +378,13 @@ def rule_allows(
 
     call_count = rule.get("call_count")
     if isinstance(call_count, dict):
-        window_seconds = int(call_count.get("window_seconds", 0))
+        window_seconds = int(
+            cast("str | int | float | bool", call_count.get("window_seconds", 0))
+        )
         if window_seconds <= 0 or window_seconds > MAX_CALL_COUNT_WINDOW_SECONDS:
             return False
-        min_count = int(call_count.get("min", 0))
-        max_count = int(call_count.get("max", 0))
+        min_count = int(cast("str | int | float | bool", call_count.get("min", 0)))
+        max_count = int(cast("str | int | float | bool", call_count.get("max", 0)))
         if current_call_count < min_count:
             return False
         if max_count and current_call_count > max_count:
@@ -388,7 +398,7 @@ def _legacy_study_shortcut_rule(
     group_block: str,
     *,
     is_group: bool,
-) -> dict[str, Any]:
+) -> dict[str, RuleValue]:
     if trig_mode == "a":
         if not is_group:
             return {"scope": "all_groups" if group_block == "f" else "self"}
@@ -403,7 +413,7 @@ def build_legacy_study_shortcut_rule(
     group_block: str,
     *,
     is_group: bool = True,
-) -> dict[str, Any]:
+) -> dict[str, RuleValue]:
     return _legacy_study_shortcut_rule(
         trig_mode,
         group_block,
@@ -415,7 +425,7 @@ def parse_legacy_study_text(
     text: str,
     *,
     is_group: bool = True,
-) -> tuple[str, str, dict[str, Any]]:
+) -> tuple[str, str, dict[str, RuleValue]]:
     """Convert legacy study text into a fixed-schema add request.
 
     Supported forms:

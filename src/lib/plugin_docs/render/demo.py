@@ -8,7 +8,7 @@ from datetime import datetime
 from math import ceil
 from pathlib import Path
 import re
-from typing import Any, ClassVar, Literal
+from typing import ClassVar, Literal
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from pil_utils import BuildImage
@@ -42,6 +42,9 @@ from src.lib.utils.common import get_current_time
 DEMO_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 DEMO_AVATAR_PATH = DEMO_ASSETS_DIR / "senrin-demo-avatar.png"
 DEMO_STANDEE_PATH = DEMO_ASSETS_DIR / "senrin-demo-standee.png"
+
+# PIL 的 truetype / load_default 返回的是两个互不继承的字体类，这里统一收口。
+type DocsFont = ImageFont.FreeTypeFont | ImageFont.ImageFont
 
 
 def build_trace_footer_left_text(
@@ -1711,7 +1714,7 @@ class DemoImageRenderer:
         x: int,
         y: int,
         layout: CommandLayout,
-        font: Any,
+        font: DocsFont,
         default_fill: str,
         guide_fill: str,
     ) -> None:
@@ -1809,7 +1812,9 @@ class DemoImageRenderer:
         detail = "\n".join(lines[detail_start:]).strip()
         return summary or text, detail
 
-    def _measure_markdown_text_width(self, text: str, font: Any, *, code: bool) -> int:
+    def _measure_markdown_text_width(
+        self, text: str, font: DocsFont, *, code: bool
+    ) -> int:
         width = self._text_width(text, font)
         if code and text:
             width += self.theme.inline_code_pad_x * 2
@@ -1822,7 +1827,7 @@ class DemoImageRenderer:
         x: int,
         y: int,
         layout: MarkdownLayout,
-        font: Any,
+        font: DocsFont,
         fill: str,
         max_width: int | None = None,
     ) -> None:
@@ -1918,7 +1923,7 @@ class DemoImageRenderer:
         x: float,
         y: float,
         line: Sequence[InlineTextSpan],
-        font: Any,
+        font: DocsFont,
     ) -> None:
         cursor_x = x
         line_height = self._font_line_height(font)
@@ -2177,7 +2182,7 @@ class DemoImageRenderer:
         rect: tuple[int, int, int, int],
         text: str,
         *,
-        font: Any,
+        font: DocsFont,
         fill: str,
         align: Literal["center", "left", "right"] = "center",
         padding_x: int = 0,
@@ -2242,7 +2247,7 @@ class DemoImageRenderer:
         self,
         draw: ImageDraw.ImageDraw,
         text: str,
-        font: Any,
+        font: DocsFont,
         *,
         max_width: int,
     ) -> str:
@@ -2266,7 +2271,7 @@ class DemoImageRenderer:
         text: str,
         *,
         max_width: int,
-        font: Any,
+        font: DocsFont,
     ) -> list[tuple[InlineTextSpan, ...]]:
         if not text:
             return [()]
@@ -2286,7 +2291,7 @@ class DemoImageRenderer:
         spans: Sequence[InlineTextSpan],
         *,
         max_width: int,
-        font: Any,
+        font: DocsFont,
         code_padding: bool = True,
     ) -> list[tuple[InlineTextSpan, ...]]:
         lines: list[tuple[InlineTextSpan, ...]] = []
@@ -2327,7 +2332,7 @@ class DemoImageRenderer:
     def _max_inline_line_width(
         self,
         lines: Sequence[tuple[InlineTextSpan, ...]],
-        font: Any,
+        font: DocsFont,
         *,
         code_padding: bool = True,
     ) -> int:
@@ -2352,7 +2357,7 @@ class DemoImageRenderer:
         x: int,
         y: int,
         lines: Sequence[tuple[InlineTextSpan, ...]],
-        font: Any,
+        font: DocsFont,
         fill: str,
         line_height: int,
         align: Literal["left", "center"] = "left",
@@ -2385,7 +2390,7 @@ class DemoImageRenderer:
         x: float,
         y: float,
         line: Sequence[InlineTextSpan],
-        font: Any,
+        font: DocsFont,
         fill: str,
         render_code_chip: bool = True,
         render_inline_code_text: bool = True,
@@ -2437,7 +2442,7 @@ class DemoImageRenderer:
             )
             cursor_x += chip_width
 
-    def _font_line_height(self, font: Any) -> int:
+    def _font_line_height(self, font: DocsFont) -> int:
         bbox = self._text_size("Ag", font)
         return int(bbox[3] - bbox[1] + 10)
 
@@ -2448,7 +2453,7 @@ class DemoImageRenderer:
         x: float,
         y: float,
         text: str,
-        font: Any,
+        font: DocsFont,
         fill: str | tuple[int, int, int, int],
     ) -> None:
         if not text:
@@ -2470,7 +2475,7 @@ class DemoImageRenderer:
         )
         draw._image.paste(text_layer, (int(x), int(y)), text_layer)
 
-    def _text_size(self, text: str, font: Any) -> tuple[int, int, int, int]:
+    def _text_size(self, text: str, font: DocsFont) -> tuple[int, int, int, int]:
         if not text:
             return (0, 0, 0, self._font_line_height(font))
         if not self._contains_emoji(text):
@@ -2502,13 +2507,13 @@ class DemoImageRenderer:
         )
         return (0, 0, ceil(text_image.longest_line), ceil(text_image.height))
 
-    def _text_width(self, text: str, font: Any) -> int:
+    def _text_width(self, text: str, font: DocsFont) -> int:
         return self._text_size(text, font)[2]
 
     def _inline_line_width(
         self,
         line: Sequence[InlineTextSpan],
-        font: Any,
+        font: DocsFont,
         *,
         code_padding: bool = True,
     ) -> int:
@@ -2543,7 +2548,7 @@ class DemoImageRenderer:
     def _fit_inline_spans(
         self,
         spans: Sequence[InlineTextSpan],
-        font: Any,
+        font: DocsFont,
         max_width: int,
     ) -> tuple[InlineTextSpan, ...]:
         if self._inline_line_width(spans, font) <= max_width:
@@ -2590,7 +2595,7 @@ class DemoImageRenderer:
                 spans.append(InlineTextSpan(piece, code=True, fill=fill))
         return tuple(spans)
 
-    def _pill_width(self, text: str, font: Any) -> int:
+    def _pill_width(self, text: str, font: DocsFont) -> int:
         return max(88, self._text_width(text, font) + 32)
 
     def _draw_soft_subcard(
@@ -2652,7 +2657,7 @@ class DemoImageRenderer:
         *,
         rect: tuple[int, int, int, int],
         text: str,
-        font: Any,
+        font: DocsFont,
         fill: tuple[int, int, int, int],
         align: Literal["left", "right"] = "left",
     ) -> None:
@@ -2674,10 +2679,10 @@ class DemoImageRenderer:
             words.append((" " * self.WATERMARK_SPACING).join(word))
         return "  ".join(words)
 
-    def _font_size(self, font: Any) -> int:
+    def _font_size(self, font: DocsFont) -> int:
         return int(getattr(font, "size", 16))
 
-    def _line_height_for_font(self, font: Any, *, minimum: int = 0) -> int:
+    def _line_height_for_font(self, font: DocsFont, *, minimum: int = 0) -> int:
         natural = ceil(self._font_size(font) * 1.4)
         return max(minimum, ceil(natural / 8) * 8)
 

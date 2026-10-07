@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
 from PIL import Image
+
+from .render_utils import TreemapFont
+
+if TYPE_CHECKING:
+    from .service import SearchTreemapRenderer
 
 
 class SearchTreemapFittersMixin:
     def _fit_tile_title_layout(
-        self: Any,
+        self,
         text: str,
         *,
         max_width: int,
         max_height: int,
-    ) -> tuple[Any, list[str]]:
+    ) -> tuple[TreemapFont, list[str]]:
+        repo_self = cast("SearchTreemapRenderer", self)
         safe_text = text.strip() or "?"
         if len(safe_text) <= 4:
             preferred_lines = 1
@@ -25,14 +31,14 @@ class SearchTreemapFittersMixin:
             preferred_lines = 3
         else:
             preferred_lines = 4
-        fallback_fit: tuple[Any, list[str]] | None = None
+        fallback_fit: tuple[TreemapFont, list[str]] | None = None
         for size in (28, 24, 20, 18, 16, 14, 12, 10):
-            font = self._load_maple_font(size)
-            line_height = self._line_height(font)
+            font = repo_self._load_maple_font(size)
+            line_height = repo_self._line_height(font)
             max_lines = max(1, min(6, max_height // max(line_height, 1)))
             if max_lines <= 0:
                 continue
-            lines = self._wrap_text(
+            lines = repo_self._wrap_text(
                 safe_text,
                 font,
                 max_width,
@@ -45,10 +51,10 @@ class SearchTreemapFittersMixin:
                     fallback_fit = (font, lines)
         if fallback_fit is not None:
             return fallback_fit
-        fallback_font = self._load_maple_font(10)
-        fallback_line_height = self._line_height(fallback_font)
+        fallback_font = repo_self._load_maple_font(10)
+        fallback_line_height = repo_self._line_height(fallback_font)
         fallback_max_lines = max(1, min(7, max_height // max(fallback_line_height, 1)))
-        full_lines = self._wrap_text(
+        full_lines = repo_self._wrap_text(
             safe_text,
             fallback_font,
             max_width,
@@ -59,21 +65,22 @@ class SearchTreemapFittersMixin:
         return fallback_font, full_lines[:fallback_max_lines]
 
     def _fit_poster_tile_title_layout(
-        self: Any,
+        self,
         text: str,
         *,
         max_width: int,
         max_height: int,
-    ) -> tuple[Any, list[str]]:
+    ) -> tuple[TreemapFont, list[str]]:
+        repo_self = cast("SearchTreemapRenderer", self)
         safe_text = text.strip() or "?"
-        fallback_fit: tuple[Any, list[str]] | None = None
+        fallback_fit: tuple[TreemapFont, list[str]] | None = None
         for size in (20, 18, 16, 14, 12, 10):
-            font = self._load_maple_font(size)
-            line_height = self._line_height(font)
+            font = repo_self._load_maple_font(size)
+            line_height = repo_self._line_height(font)
             max_lines = max(1, min(2, max_height // max(line_height, 1)))
             if max_lines <= 0:
                 continue
-            lines = self._wrap_text(
+            lines = repo_self._wrap_text(
                 safe_text,
                 font,
                 max_width,
@@ -85,8 +92,8 @@ class SearchTreemapFittersMixin:
                 fallback_fit = (font, lines[:max_lines])
         if fallback_fit is not None:
             return fallback_fit
-        fallback_font = self._load_maple_font(10)
-        fallback_lines = self._wrap_text(
+        fallback_font = repo_self._load_maple_font(10)
+        fallback_lines = repo_self._wrap_text(
             safe_text,
             fallback_font,
             max_width,
@@ -95,16 +102,21 @@ class SearchTreemapFittersMixin:
         return fallback_font, fallback_lines[:2]
 
     def _choose_response_title_font(
-        self: Any,
+        self,
         text: str,
         *,
         width: int,
         spacious: bool,
         has_image: bool,
-    ) -> Any:
+    ) -> TreemapFont:
+        repo_self = cast("SearchTreemapRenderer", self)
         normalized = text.strip()
         if not normalized:
-            return self.card_large_title_font if spacious else self.card_title_font
+            return (
+                repo_self.card_large_title_font
+                if spacious
+                else repo_self.card_title_font
+            )
         if has_image:
             if width < 112:
                 candidate_sizes = (18, 16, 14)
@@ -130,8 +142,8 @@ class SearchTreemapFittersMixin:
             candidate_sizes = (28, 24, 22, 20, 18, 16)
         max_lines = 3 if has_image else 5
         for size in candidate_sizes:
-            font = self._load_lxgw_font(size)
-            lines = self._wrap_text(
+            font = repo_self._load_lxgw_font(size)
+            lines = repo_self._wrap_text(
                 normalized,
                 font,
                 max(1, width),
@@ -139,18 +151,19 @@ class SearchTreemapFittersMixin:
             )
             if len(lines) <= max_lines:
                 return font
-        return self._load_lxgw_font(candidate_sizes[-1])
+        return repo_self._load_lxgw_font(candidate_sizes[-1])
 
     def _fit_single_text_response_layout(
-        self: Any,
+        self,
         text: str,
         *,
         max_width: int,
         max_height: int,
-    ) -> tuple[Any, list[str]]:
+    ) -> tuple[TreemapFont, list[str]]:
+        repo_self = cast("SearchTreemapRenderer", self)
         normalized = text.strip()
         if not normalized:
-            return self.card_title_font, []
+            return repo_self.card_title_font, []
         largest_size = self._single_text_initial_font_size(
             text=normalized,
             max_width=max_width,
@@ -169,19 +182,20 @@ class SearchTreemapFittersMixin:
             preferred_lines = 3
         else:
             preferred_lines = 5
-        fallback_fit: tuple[Any, list[str]] | None = None
+        fallback_fit: tuple[TreemapFont, list[str]] | None = None
         if manual_lines and max_width < 220 and max_height >= 220:
-            manual_gap = self._single_text_line_gap(
+            manual_gap = repo_self._single_text_line_gap(
                 width=max_width,
                 height_cap=max_height,
                 text=normalized,
                 line_count=len(manual_lines),
             )
             for size in candidate_sizes:
-                font = self._load_lxgw_font(size)
-                line_height = self._line_height(font)
+                font = repo_self._load_lxgw_font(size)
+                line_height = repo_self._line_height(font)
                 if any(
-                    self._text_width(line, font) > max_width for line in manual_lines
+                    repo_self._text_width(line, font) > max_width
+                    for line in manual_lines
                 ):
                     continue
                 total_height = (
@@ -191,10 +205,10 @@ class SearchTreemapFittersMixin:
                 if total_height <= max_height:
                     return font, list(manual_lines)
         for size in candidate_sizes:
-            font = self._load_lxgw_font(size)
-            line_height = self._line_height(font)
+            font = repo_self._load_lxgw_font(size)
+            line_height = repo_self._line_height(font)
             max_lines = max(1, min(12, max_height // max(line_height, 1)))
-            lines = self._wrap_text(
+            lines = repo_self._wrap_text(
                 normalized,
                 font,
                 max_width,
@@ -207,8 +221,8 @@ class SearchTreemapFittersMixin:
                     fallback_fit = (font, lines)
         if fallback_fit is not None:
             return fallback_fit
-        fallback_font = self._load_lxgw_font(10)
-        fallback_lines = self._wrap_text(
+        fallback_font = repo_self._load_lxgw_font(10)
+        fallback_lines = repo_self._wrap_text(
             normalized,
             fallback_font,
             max_width,
@@ -252,27 +266,28 @@ class SearchTreemapFittersMixin:
         return max(12, min(text_cap, width_cap, height_cap))
 
     def _fit_lxgw_text_block_layout(
-        self: Any,
+        self,
         text: str,
         *,
         max_width: int,
         max_height: int,
         preferred_size: int | None,
-    ) -> tuple[Any, list[str]]:
+    ) -> tuple[TreemapFont, list[str]]:
+        repo_self = cast("SearchTreemapRenderer", self)
         normalized = text.strip()
         if not normalized:
-            return self.card_title_font, []
+            return repo_self.card_title_font, []
         if preferred_size is None or preferred_size <= 0:
             preferred_size = 20
         candidate_sizes = list(range(preferred_size, 7, -2))
         if candidate_sizes[-1] != 8:
             candidate_sizes.append(8)
-        fallback_fit: tuple[Any, list[str]] | None = None
+        fallback_fit: tuple[TreemapFont, list[str]] | None = None
         for size in candidate_sizes:
-            font = self._load_lxgw_font(size)
-            line_height = self._line_height(font)
+            font = repo_self._load_lxgw_font(size)
+            line_height = repo_self._line_height(font)
             max_lines = max(1, max_height // max(line_height, 1))
-            lines = self._wrap_text(
+            lines = repo_self._wrap_text(
                 normalized,
                 font,
                 max_width,
@@ -284,10 +299,10 @@ class SearchTreemapFittersMixin:
                 fallback_fit = (font, lines)
         if fallback_fit is not None:
             return fallback_fit
-        fallback_font = self._load_lxgw_font(8)
+        fallback_font = repo_self._load_lxgw_font(8)
         return (
             fallback_font,
-            self._wrap_text(
+            repo_self._wrap_text(
                 normalized,
                 fallback_font,
                 max_width,
@@ -296,12 +311,13 @@ class SearchTreemapFittersMixin:
         )
 
     def _fit_preview_image(
-        self: Any,
+        self,
         image_path: str,
         *,
         max_width: int,
         max_height: int,
     ) -> Image.Image | None:
+        repo_self = cast("SearchTreemapRenderer", self)
         try:
             with Image.open(image_path) as source:
                 image = source.convert("RGB")
@@ -317,19 +333,22 @@ class SearchTreemapFittersMixin:
             ),
             Image.Resampling.LANCZOS,
         )
-        canvas = Image.new("RGB", (resized.width, resized.height), self.theme.white)
+        canvas = Image.new(
+            "RGB", (resized.width, resized.height), repo_self.theme.white
+        )
         canvas.paste(resized, (0, 0))
         return canvas
 
-    def _load_image_size(self: Any, image_path: str) -> tuple[int, int] | None:
+    def _load_image_size(self, image_path: str) -> tuple[int, int] | None:
+        repo_self = cast("SearchTreemapRenderer", self)
         if not image_path:
             return None
-        if image_path in self._image_size_cache:
-            return self._image_size_cache[image_path]
+        if image_path in repo_self._image_size_cache:
+            return repo_self._image_size_cache[image_path]
         try:
             with Image.open(image_path) as source:
                 size = (source.width, source.height)
         except Exception:
             size = None
-        self._image_size_cache[image_path] = size
+        repo_self._image_size_cache[image_path] = size
         return size

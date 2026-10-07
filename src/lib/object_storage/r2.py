@@ -3,11 +3,77 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
 import inspect
-from typing import Any
+from typing import Protocol, TypedDict, cast
 
 from .types import ObjectStorageConfigError, StorageObject
+
+
+class _S3StreamingBody(Protocol):
+    async def read(self) -> bytes: ...
+
+
+class _S3ObjectPayload(TypedDict):
+    Body: _S3StreamingBody
+
+
+class _S3ListedObject(TypedDict):
+    Key: object
+    Size: object
+    ETag: object
+
+
+class _S3ListObjectsPayload(TypedDict, total=False):
+    Contents: list[_S3ListedObject]
+    IsTruncated: object
+    NextContinuationToken: object
+
+
+class _S3AsyncClient(Protocol):
+    async def get_object(
+        self,
+        *,
+        Bucket: str,
+        Key: str,
+    ) -> _S3ObjectPayload: ...
+
+    async def delete_object(self, *, Bucket: str, Key: str) -> object: ...
+
+    async def head_object(self, *, Bucket: str, Key: str) -> object: ...
+
+    async def list_objects_v2(self, **params: object) -> _S3ListObjectsPayload: ...
+
+    def generate_presigned_url(
+        self,
+        ClientMethod: str,
+        Params: Mapping[str, object],
+        ExpiresIn: int,
+    ) -> object: ...
+
+
+class _S3AsyncClientContext(Protocol):
+    async def __aenter__(self) -> _S3AsyncClient: ...
+
+    async def __aexit__(
+        self,
+        exc_type: object,
+        exc: object,
+        tb: object,
+    ) -> None: ...
+
+
+class _S3SyncClient(Protocol):
+    def put_object(self, **kwargs: object) -> Mapping[str, object]: ...
+
+
+class _S3AsyncSession(Protocol):
+    def client(self, service_name: str, **kwargs: object) -> _S3AsyncClientContext: ...
+
+
+class _S3SyncSession(Protocol):
+    def client(self, service_name: str, **kwargs: object) -> _S3SyncClient: ...
 
 
 @dataclass(slots=True, frozen=True)
@@ -59,16 +125,17 @@ class R2ObjectStorageClient:
             raise ObjectStorageConfigError("R2 object storage is not configured")
         return self.access_key_id, self.secret_access_key, self.bucket, endpoint
 
-    def _session(self) -> Any:
+    def _session(self) -> _S3AsyncSession:
         try:
             import aioboto3
         except ImportError as exc:
             raise ObjectStorageConfigError(
                 "aioboto3 is required for R2 storage"
             ) from exc
-        return aioboto3.Session()
+        return cast("_S3AsyncSession", aioboto3.Session())
 
-    def _client_context(self) -> Any:
+    def _client_context(self) -> object:
+        """aioboto3 无稳定类型注解，返回值按鸭子类型在使用处收窄。"""
         access_key_id, secret_access_key, _, endpoint = self._require_config()
         return self._session().client(
             "s3",
@@ -78,14 +145,17 @@ class R2ObjectStorageClient:
             region_name="auto",
         )
 
-    def _sync_session(self) -> Any:
+    def _async_client(self) -> _S3AsyncClientContext:
+        return cast("_S3AsyncClientContext", self._client_context())
+
+    def _sync_session(self) -> _S3SyncSession:
         try:
             import boto3
         except ImportError as exc:
             raise ObjectStorageConfigError("boto3 is required for R2 storage") from exc
-        return boto3.Session()
+        return cast("_S3SyncSession", boto3.Session())
 
-    def _sync_client_context(self) -> Any:
+    def _sync_client_context(self) -> _S3SyncClient:
         access_key_id, secret_access_key, _, endpoint = self._require_config()
         return self._sync_session().client(
             "s3",
@@ -102,7 +172,7 @@ class R2ObjectStorageClient:
         data: bytes,
         *,
         content_type: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         extra_args: dict[str, object] = {
             "ContentLength": len(data),
         }
@@ -152,7 +222,7 @@ class R2ObjectStorageClient:
     async def get_bytes(self, key: str) -> bytes:
         _, _, bucket, _ = self._require_config()
         normalized_key = key.lstrip("/")
-        async with self._client_context() as client:
+        async with self._async_client() as client:
             response = await client.get_object(Bucket=bucket, Key=normalized_key)
             body = response["Body"]
             try:
@@ -164,12 +234,12 @@ class R2ObjectStorageClient:
 
     async def delete_object(self, key: str) -> None:
         _, _, bucket, _ = self._require_config()
-        async with self._client_context() as client:
+        async with self._async_client() as client:
             await client.delete_object(Bucket=bucket, Key=key.lstrip("/"))
 
     async def exists(self, key: str) -> bool:
         _, _, bucket, _ = self._require_config()
-        async with self._client_context() as client:
+        async with self._async_client() as client:
             try:
                 await client.head_object(Bucket=bucket, Key=key.lstrip("/"))
             except Exception:
@@ -181,9 +251,9 @@ class R2ObjectStorageClient:
         normalized_prefix = prefix.strip("/")
         continuation_token: str | None = None
         objects: list[StorageObject] = []
-        async with self._client_context() as client:
+        async with self._async_client() as client:
             while True:
-                params: dict[str, Any] = {
+                params: dict[str, object] = {
                     "Bucket": bucket,
                     "Prefix": normalized_prefix,
                     "MaxKeys": 1000,
@@ -226,7 +296,7 @@ class R2ObjectStorageClient:
 
     async def presign_get_url(self, key: str, *, expires_in: int = 3600) -> str:
         _, _, bucket, _ = self._require_config()
-        async with self._client_context() as client:
+        async with self._async_client() as client:
             result = client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": bucket, "Key": key.lstrip("/")},

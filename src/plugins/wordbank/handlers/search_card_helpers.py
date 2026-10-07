@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Any, Literal
+from typing import Literal
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -23,6 +23,7 @@ from src.plugins.wordbank.services.presentation import (
     SCOPE_LABEL_KEYS,
     format_status_label,
 )
+from src.plugins.wordbank.treemap.render_utils import TreemapFont
 
 
 @dataclass(slots=True, frozen=True)
@@ -280,14 +281,14 @@ def creator_chip_text(created_by: str) -> str:
     return f"U:{created_by or '-'}"
 
 
-def line_height(font: Any) -> int:
+def line_height(font: TreemapFont) -> int:
     from PIL import Image, ImageDraw
 
     bbox = ImageDraw.Draw(Image.new("RGB", (10, 10))).textbbox((0, 0), "Ag", font=font)
     return int(bbox[3] - bbox[1] + 8)
 
 
-def text_width(text: str, font: Any) -> int:
+def text_width(text: str, font: TreemapFont) -> int:
     from PIL import Image, ImageDraw
 
     return int(
