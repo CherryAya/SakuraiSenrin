@@ -11,6 +11,7 @@ import pytest_asyncio
 from sqlalchemy import func, select
 
 from src.database.system_migration import LegacyPgConfig
+from src.lib.utils.common import get_current_time
 from src.plugins.water import migration as migration_module
 from src.plugins.water.database import ops as water_ops_module
 from src.plugins.water.database import water_repo
@@ -408,25 +409,31 @@ async def test_migrate_legacy_water_imports_and_rebuilds_runtime() -> None:
             "updated_at": now_ts,
         }
     )
+    # 结算结果按 SUMMARY_HOT_WINDOW_DAYS(90) 路由：窗口内写 water_core_db，
+    # 窗口外写归档分片。硬编码 2026-06-11 会在今天逐步滑出热窗口后失效，
+    # 因此这里取「昨天」，始终落在热窗口内并落到 water_core_db。
+    record_day = arrow.get(get_current_time()).to("Asia/Shanghai").shift(days=-1)
+    record_date = int(record_day.format("YYYYMMDD"))
+    day_at = record_day.datetime.replace(tzinfo=None)
     rows = build_legacy_water_rows(
         [
             {
                 "id": 1,
                 "user_id": "10001",
                 "group_id": "20001",
-                "created_at": datetime(2026, 6, 11, 8, 0, 0),
+                "created_at": day_at.replace(hour=8),
             },
             {
                 "id": 2,
                 "user_id": "10001",
                 "group_id": "20001",
-                "created_at": datetime(2026, 6, 11, 9, 0, 0),
+                "created_at": day_at.replace(hour=9),
             },
             {
                 "id": 3,
                 "user_id": "10002",
                 "group_id": "20001",
-                "created_at": datetime(2026, 6, 11, 10, 0, 0),
+                "created_at": day_at.replace(hour=10),
             },
         ]
     )
@@ -445,8 +452,8 @@ async def test_migrate_legacy_water_imports_and_rebuilds_runtime() -> None:
     assert report.imported_messages == 3
     assert report.imported_counter_rows == 3
     assert report.imported_date_range == {
-        "start_date": 20260611,
-        "end_date": 20260611,
+        "start_date": record_date,
+        "end_date": record_date,
     }
     assert report.settled_days == 1
     assert report.generated_summaries == 2

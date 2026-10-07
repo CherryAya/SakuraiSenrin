@@ -613,8 +613,9 @@ class WaterReportService:
         _set_report_push_stage(push_state, "rendering_groups")
 
         async def _render(
+            index: int,
             candidate: WaterDailyReportCandidate,
-        ) -> tuple[WaterDailyReportCandidate, WaterPreparedReportItem | None]:
+        ) -> tuple[int, WaterDailyReportCandidate, WaterPreparedReportItem | None]:
             render_started = perf_counter()
             async with sem:
                 try:
@@ -644,6 +645,7 @@ class WaterReportService:
                         (perf_counter() - render_started) * 1000,
                     )
                     return (
+                        index,
                         candidate,
                         WaterPreparedReportItem(
                             group_id=candidate.group_id,
@@ -660,19 +662,27 @@ class WaterReportService:
                         "[Water][ReportPush] group={} stage=render failed",
                         candidate.group_id,
                     )
-                    return candidate, None
+                    return index, candidate, None
 
         render_started = perf_counter()
-        rendered: list[
-            tuple[WaterDailyReportCandidate, WaterPreparedReportItem | None]
-        ] = []
+        # 并发渲染，但结果必须按 candidates 原始顺序（活跃度降序）归位：
+        # as_completed 只保证完成顺序，直接 append 会让推送顺序与超管通报里的
+        # 「序号」编号随并发调度漂移。
+        ordered_candidates = list(candidates)
+        rendered_by_index: list[
+            tuple[WaterDailyReportCandidate, WaterPreparedReportItem | None] | None
+        ] = [None] * len(ordered_candidates)
         for completed_count, render_task in enumerate(
             asyncio.as_completed(
-                [asyncio.create_task(_render(candidate)) for candidate in candidates]
+                [
+                    asyncio.create_task(_render(index, candidate))
+                    for index, candidate in enumerate(ordered_candidates)
+                ]
             ),
             start=1,
         ):
-            rendered.append(await render_task)
+            index, candidate, item = await render_task
+            rendered_by_index[index] = (candidate, item)
             if (
                 completed_count == 1
                 or completed_count == len(candidates)
@@ -694,6 +704,7 @@ class WaterReportService:
                     current=completed_count,
                     total=len(candidates),
                 )
+        rendered = [pair for pair in rendered_by_index if pair is not None]
         render_elapsed_ms = (perf_counter() - render_started) * 1000
         rendered_items = [item for _candidate, item in rendered if item is not None]
         push_state.rendered_groups = len(rendered_items)

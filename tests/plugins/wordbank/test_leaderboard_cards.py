@@ -4,6 +4,12 @@ from nonebot.adapters.onebot.v11 import Message
 
 from src.lib.message_plan import render_message_plan_entry
 from src.plugins.wordbank.handlers.leaderboard_cards import (
+    CHAMPION_HEIGHT as LEADERBOARD_CHAMPION_HEIGHT,
+)
+from src.plugins.wordbank.handlers.leaderboard_cards import (
+    ROW_HEIGHT as LEADERBOARD_ROW_HEIGHT,
+)
+from src.plugins.wordbank.handlers.leaderboard_cards import (
     WordbankLeaderboardCardRenderer,
     build_wordbank_leaderboard_card_plan_entry,
 )
@@ -131,4 +137,8 @@ def test_wordbank_leaderboard_height_excludes_duplicate_champion_row() -> None:
     one_height = renderer._measure_height(_data(items=items[:1]))  # pyright: ignore[reportPrivateUsage]
     two_height = renderer._measure_height(_data(items=items))  # pyright: ignore[reportPrivateUsage]
 
-    assert two_height - one_height == 124
+    # 冠军已在 hero 区单独占位，行区只应补一条普通行的高度，不能重复计入。
+    # 断言关系而非具体像素，避免排版微调即误报。
+    row_delta = two_height - one_height
+    assert row_delta == LEADERBOARD_ROW_HEIGHT
+    assert LEADERBOARD_CHAMPION_HEIGHT > row_delta

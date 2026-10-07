@@ -29,6 +29,8 @@ PADDING_Y = 52
 SECTION_GAP = 24
 ROW_GAP = 16
 FOOTER_HEIGHT = 72
+ROW_HEIGHT = 132
+CHAMPION_HEIGHT = 280
 SENRIN_MASCOT_PATH = Path("data/image/senrin-v3-transparent.png")
 SCOPE_CHIP_HEIGHT = 34
 SCOPE_CHIP_RADIUS = 17
@@ -110,10 +112,11 @@ class WordbankLeaderboardCardRenderer:
         height += 132
         height += 152 + SECTION_GAP
         if data.items:
-            height += 280 + SECTION_GAP
+            # 冠军在 hero 区单独占位，行区只统计其余条目，避免重复计入。
+            height += CHAMPION_HEIGHT + SECTION_GAP
             row_count = max(0, len(data.items) - 1)
             if row_count:
-                height += row_count * 132 + max(0, row_count - 1) * ROW_GAP
+                height += row_count * ROW_HEIGHT + max(0, row_count - 1) * ROW_GAP
         else:
             height += 190
         height += FOOTER_HEIGHT + PADDING_Y
