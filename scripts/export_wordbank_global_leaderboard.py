@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Callable
 import csv
 from dataclasses import replace
 import json
 from pathlib import Path
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, TypedDict
 
 import nonebot
 
@@ -17,9 +18,38 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+
+if TYPE_CHECKING:
+    from src.lib.utils.img import QQAvatar
+    from src.plugins.wordbank.services.core import WordbankService
+    from src.plugins.wordbank.services.presentation import WordbankLeaderboardCardItem
+
+    class _Runtime(TypedDict):
+        QQAvatar: type[QQAvatar]
+        wordbank_repo: object
+        wordbank_service: WordbankService
+        render_wordbank_leaderboard_card_bytes: Callable[..., bytes]
+
+
 DEFAULT_OUTPUT_DIR = ROOT / "output"
 DEFAULT_PERIOD = "total"
 DEFAULT_LOCALE = "zh-CN"
+
+
+class LeaderboardRow(TypedDict):
+    rank: int
+    user_id: str
+    display_name: str
+    approved_count: int
+    score: float
+    share: float
+    latest_created_at: int
+    group_count: int
+    current_group_count: int
+    all_groups_count: int
+    self_count: int
+    private_only_count: int
+    self_in_current_group_count: int
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,7 +91,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def _init_runtime() -> dict[str, Any]:
+async def _init_runtime() -> _Runtime:
     nonebot.init()
 
     from src.lib.utils.img import QQAvatar
@@ -94,7 +124,7 @@ def _png_path(output_dir: Path, prefix: str, period: str) -> Path:
     return output_dir / f"{prefix}-{period}.png"
 
 
-def _row_from_item(item: Any) -> dict[str, Any]:
+def _row_from_item(item: WordbankLeaderboardCardItem) -> LeaderboardRow:
     return {
         "rank": int(item.current_rank),
         "user_id": str(item.user_id),
@@ -112,7 +142,7 @@ def _row_from_item(item: Any) -> dict[str, Any]:
     }
 
 
-def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+def _write_csv(path: Path, rows: list[LeaderboardRow]) -> None:
     fieldnames = [
         "rank",
         "user_id",

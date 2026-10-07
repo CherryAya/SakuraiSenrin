@@ -7,7 +7,7 @@ import asyncio
 import json
 from pathlib import Path
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Protocol, TypedDict, cast
 
 import nonebot
 
@@ -15,11 +15,55 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.lib.types import JsonValue
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 
-wordbank_repo: Any = None
-wordbank_media_service: Any = None
+if TYPE_CHECKING:
+    from src.plugins.wordbank.services.media_runtime import MediaBackfillReport
+
+
+class _WordbankRepoLike(Protocol):
+    async def init_all_tables(self) -> None: ...
+
+
+class _WordbankMediaServiceLike(Protocol):
+    async def backfill_local_cache_metadata(
+        self,
+        *,
+        dry_run: bool = False,
+        limit: int = 0,
+        id_start: int = 0,
+        only_missing: bool = True,
+    ) -> MediaBackfillReport: ...
+
+
+class BackfillPayload(TypedDict):
+    """``backfill_wordbank_media_cache`` 的最终报告（service 报告 + 本次入参）。
+
+    结构上等价于 ``MediaBackfillReport`` 再补上 ``generated_at`` 与
+    ``include_existing``。
+    这里刻意不写成继承：该脚本被测试直接 import，而 ``MediaBackfillReport`` 所在的
+    wordbank 包入口会在导入期调用 ``on_command``，因此只能在 ``TYPE_CHECKING`` 下引用。
+    """
+
+    generated_at: int
+    dry_run: bool
+    limit: int
+    id_start: int
+    include_existing: bool
+    only_missing: bool
+    scanned: int
+    updated: int
+    unchanged: int
+    skipped_existing: int
+    missing_files: int
+    failed: int
+    rows: list[dict[str, JsonValue]]
+
+
+wordbank_repo: _WordbankRepoLike | None = None
+wordbank_media_service: _WordbankMediaServiceLike | None = None
 DEFAULT_REPORT_PATH = "./data/db/wordbank-media-cache-backfill-report.json"
 
 
@@ -72,7 +116,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def write_report(path: Path, payload: dict[str, Any]) -> None:
+def write_report(path: Path, payload: BackfillPayload) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -83,9 +127,10 @@ async def backfill_wordbank_media_cache(
     limit: int,
     id_start: int,
     include_existing: bool,
-) -> dict[str, Any]:
+) -> BackfillPayload:
     _load_wordbank_components()
-    report = await wordbank_media_service.backfill_local_cache_metadata(
+    media_service = cast("_WordbankMediaServiceLike", wordbank_media_service)
+    report = await media_service.backfill_local_cache_metadata(
         dry_run=dry_run,
         limit=limit,
         id_start=id_start,
@@ -105,7 +150,7 @@ async def main() -> None:
     nonebot.init()
     _load_wordbank_components()
     args = parse_args()
-    await wordbank_repo.init_all_tables()
+    await cast("_WordbankRepoLike", wordbank_repo).init_all_tables()
     report = await backfill_wordbank_media_cache(
         dry_run=args.dry_run,
         limit=args.limit,
