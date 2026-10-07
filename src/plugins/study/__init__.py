@@ -381,7 +381,8 @@ async def _start_guided_study_from_partial_args(
     clear_interaction_errors(state)
     register_root_message(state, event)
     state["study_trig_mode"] = trig_mode
-    state["study_mode_prefilled"] = True
+    # 命令行已带上触发词模式，对应的步骤处理器须跳过本次输入（见命令入口级联说明）。
+    state["study_skip_mode_step"] = True
 
     if len(tokens) == 1:
         await pause_with_message(
@@ -400,7 +401,8 @@ async def _start_guided_study_from_partial_args(
         return True
 
     state["study_group_block"] = group_block
-    state["study_group_prefilled"] = True
+    # 同上：分组范围已由命令行给出，分组范围步骤跳过本次输入。
+    state["study_skip_group_block_step"] = True
 
     if len(tokens) == 2:
         if has_images:
@@ -1009,8 +1011,9 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
 
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    if state.get("study_mode_prefilled"):
-        state.pop("study_mode_prefilled", None)
+    # 一次性跳过令牌：命中即消费，本次输入交给后续步骤。
+    if state.get("study_skip_mode_step"):
+        state.pop("study_skip_mode_step", None)
         return
     text = event.message.extract_plain_text()
     try:
@@ -1054,8 +1057,9 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
 
     locale = _study_locale(state)
     await _abort_study_on_revoke(matcher, event, locale)
-    if state.get("study_group_prefilled"):
-        state.pop("study_group_prefilled", None)
+    # 一次性跳过令牌：命中即消费。
+    if state.get("study_skip_group_block_step"):
+        state.pop("study_skip_group_block_step", None)
         return
     text = event.message.extract_plain_text()
     try:
