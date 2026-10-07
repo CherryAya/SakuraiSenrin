@@ -88,6 +88,7 @@ description = tr("zh-CN", "plugin.study.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "README.MD"
 
 
+# region 插件元数据与 matcher 注册
 def _study_error_plan_entry(
     exc: Exception,
     locale: LocaleCode,
@@ -134,12 +135,16 @@ study_command = on_command(
     block=True,
 )
 study_recall_notice = on_notice(priority=5, block=False)
+# endregion
+
 GUIDED_MAX_ERRORS = 3
 STUDY_STEP_MODE = 1
 STUDY_STEP_GROUP_BLOCK = 2
 STUDY_STEP_TRIGGER = 3
 STUDY_STEP_RESPONSE = 4
 STUDY_STEP_WEIGHT = 5
+# TODO: 本组仅覆盖转发/权重待处理键，而 TRIGGER / RESPONSE 步骤注册检查点时
+# 未传 cleanup_keys（默认空），撤回时各步的清理范围不一致，需确认是否有意为之。
 STUDY_RECALL_PENDING_KEYS: tuple[str, ...] = (
     "study_forward_response_pending",
     "study_forward_response_event",
@@ -171,6 +176,7 @@ STUDY_SNAPSHOT_KEYS_AFTER_WEIGHT: tuple[str, ...] = (
 # endregion
 
 
+# region 引导步骤处理
 @lru_cache(maxsize=1)
 def _build_study_submission_lifecycle() -> SubmissionLifecycle:
     from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
@@ -897,6 +903,21 @@ async def _start_guided_study_with_trigger_image(
     )
 
 
+# endregion
+
+
+# region 命令入口
+# 以下 handler 共享同一个 matcher（study_command, priority=5），按注册顺序级联：
+# 命中后 pause 终止整条链；不适用则直接 return，把事件交给下一个 handler。
+#
+#   #study <args> → 入口：带参直接提交 / 预填步骤
+#   模式          → 消费 study_skip_mode_step 后跳过
+#   分组范围      → 消费 study_skip_group_block_step 后跳过
+#   触发/回答     → 按 *_preloaded / *_after_preloaded_trigger 分流
+#   回答/权重     → 合并转发选择 / 记录回答
+#   权重与提交    → 仅在 study_weight_pending 时执行
+#
+# 注意：*_skip_* 均为一次性令牌，命中即 pop；重排 handler 顺序等同于改动行为。
 @study_command.handle()
 async def _(
     bot: Bot,
@@ -1149,6 +1170,10 @@ async def _(bot: Bot, matcher: Matcher, event: MessageEvent, state: T_State) -> 
     await _record_study_weight_and_finish(bot, matcher, event, state, locale)
 
 
+# endregion
+
+
+# region 撤回 notice（文件末）
 @study_recall_notice.handle()
 async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
     if not is_supported_recall_notice(event):
@@ -1200,3 +1225,6 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
         ),
         target=resolve_notice_delivery_target(event),
     )
+
+
+# endregion
