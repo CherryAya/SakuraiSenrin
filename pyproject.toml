@@ -99,6 +99,10 @@ extra-standard-library = ["typing_extensions"]
 "scripts/db_shard_status.py" = ["T201"]
 "scripts/dead_letter.py" = ["T201"]
 "scripts/writer_health.py" = ["T201"]
+# 测试与一次性脚本不是交付物，允许使用 Any 表达"框架/被测对象的动态形状"。
+# src/** 全量禁止 Any：运行时代码必须给出可审计的类型。
+"tests/**" = ["TID251", "ANN401"]
+"scripts/**" = ["TID251", "ANN401"]
 "tests/test_message_delivery_forward.py" = ["TID251"]
 "tests/test_onebot_forward.py" = ["TID251"]
 "tests/test_plugin_docs_*.py" = ["F403", "F405"]

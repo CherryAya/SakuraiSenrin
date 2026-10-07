@@ -41,7 +41,7 @@ class GroupChangeContext:
     group_name: str | Unset = UNSET
     status: GroupStatus | Unset = UNSET
     is_all_shut: bool | Unset = UNSET
-    pre_ban_status: GroupStatus | None | Unset = UNSET
+    pre_ban_status: GroupStatus | Unset | None = UNSET
     is_new: bool = False
     # 操作者：状态变更需可归因，审计表 operator_id 依赖它
     operator_id: str = ""

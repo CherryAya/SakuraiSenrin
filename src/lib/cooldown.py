@@ -108,7 +108,7 @@ class MemoryCooldown:
         return CooldownIsolateLevel.GLOBAL.name
 
 
-async def _maybe_await(
+async def _maybe_await[CooldownValueT](
     value: _CooldownValueT | Awaitable[_CooldownValueT],
 ) -> _CooldownValueT:
     if isawaitable(value):

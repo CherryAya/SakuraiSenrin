@@ -1081,7 +1081,7 @@ async def test_atomic_session_rolls_back_all_attached_files(
 
     bind_cross_store_schemas()
 
-    with pytest.raises(Exception, match="NOT NULL|IntegrityError"):
+    async def _write_across_all_stores() -> None:
         async with system_atomic_session() as session:
             await UserOps(session).add_user(
                 user_id="u1",
@@ -1099,6 +1099,9 @@ async def test_atomic_session_rolls_back_all_attached_files(
                 category=AuditCategory.PERMISSION,
                 action=AuditAction.GRANT,
             )
+
+    with pytest.raises(Exception, match=r"NOT NULL|IntegrityError"):
+        await _write_across_all_stores()
 
     assert _read_table_text(tmp_path / "core_db" / "core.db", "biz_user") == "[]"
     assert (
