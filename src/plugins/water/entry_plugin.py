@@ -67,6 +67,7 @@ from src.lib.message_plan import (
 )
 from src.lib.plugin_docs import build_doc_demo_plan_entry, create_docs_meta
 from src.lib.plugin_meta import create_plugin_metadata
+from src.lib.types import as_int
 from src.logger import logger
 from src.services.startup_sync import ensure_restore_not_in_progress
 
@@ -540,7 +541,7 @@ async def _water_summary_archive_job() -> None:
                     "water summary archive manifest missing, "
                     f"exit={worker_result.exit_code}"
                 )
-        pruned = int(worker_result.manifest.metrics.get("pruned", 0))
+        pruned = as_int(worker_result.manifest.metrics.get("pruned", 0), 0)
         logger.success(
             f"[Water] cron summary archive done: pruned={pruned} "
             f"elapsed_ms={worker_result.elapsed_ms:.2f}"

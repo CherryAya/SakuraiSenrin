@@ -32,6 +32,7 @@ from src.lib.message_plan import (
     deliver_message_plan,
     normalize_message_plan_entry,
 )
+from src.lib.types import as_float, as_int
 from src.lib.utils.common import get_current_time
 from src.lib.utils.img import QQAvatar
 from src.logger import logger
@@ -377,11 +378,11 @@ def build_daily_report_prepare_result_from_manifest(
 ) -> WaterDailyReportPrepareResult:
     return WaterDailyReportPrepareResult(
         record_date=manifest.record_date or 0,
-        candidate_groups=int(manifest.metrics.get("candidate_groups", 0)),
-        rendered_groups=int(manifest.metrics.get("rendered_groups", 0)),
-        skipped_groups=int(manifest.metrics.get("skipped_groups", 0)),
-        failed_groups=int(manifest.metrics.get("failed_groups", 0)),
-        total_elapsed_ms=float(manifest.metrics.get("total_elapsed_ms", 0.0)),
+        candidate_groups=as_int(manifest.metrics.get("candidate_groups", 0), 0),
+        rendered_groups=as_int(manifest.metrics.get("rendered_groups", 0), 0),
+        skipped_groups=as_int(manifest.metrics.get("skipped_groups", 0), 0),
+        failed_groups=as_int(manifest.metrics.get("failed_groups", 0), 0),
+        total_elapsed_ms=as_float(manifest.metrics.get("total_elapsed_ms", 0.0), 0.0),
         report_items=manifest.report_items,
     )
 

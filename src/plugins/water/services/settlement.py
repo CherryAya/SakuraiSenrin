@@ -7,6 +7,7 @@ import arrow
 from loguru import logger
 
 from src.lib.trace_log import log_trace_event, new_trace_id
+from src.lib.types import as_int, as_str
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo_models import DailyAggregateItem
@@ -276,9 +277,9 @@ def build_settlement_result_from_manifest(
         success=manifest.status in {"success", "partial"},
         skipped=manifest.status == "skipped",
         record_date=manifest.record_date or 0,
-        aggregate_rows=int(metrics.get("aggregate_rows", 0)),
-        unlocked_achievements=int(metrics.get("unlocked_achievements", 0)),
-        reason=str(metrics.get("reason", manifest.error or "")),
+        aggregate_rows=as_int(metrics.get("aggregate_rows", 0), 0),
+        unlocked_achievements=as_int(metrics.get("unlocked_achievements", 0), 0),
+        reason=as_str(metrics.get("reason", manifest.error or "")),
         forced=bool(metrics.get("forced", False)),
     )
 
