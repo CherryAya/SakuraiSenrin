@@ -114,7 +114,7 @@ async def test_send_pending_entries_review_uses_message_plan_for_summary_and_det
     )
     monkeypatch.setattr(pending_batch_module, "deliver_message_plan", deliver_plan)
 
-    bot = cast(Bot, SimpleNamespace())
+    bot = cast(Bot, SimpleNamespace(self_id="99999"))
     event = build_group_message_event("#wordbank.pending", message_id=1)
 
     await send_pending_entries_review(
@@ -199,7 +199,7 @@ async def test_send_pending_entries_review_appends_forward_source_for_forward_wh
     )
     monkeypatch.setattr(pending_batch_module, "deliver_message_plan", deliver_plan)
 
-    bot = cast(Bot, SimpleNamespace())
+    bot = cast(Bot, SimpleNamespace(self_id="99999"))
     event = build_group_message_event("#wordbank.pending", message_id=1)
 
     await send_pending_entries_review(

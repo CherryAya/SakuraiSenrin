@@ -524,7 +524,7 @@ def test_parse_group_view_args_supports_page_flag_and_positional_page() -> None:
 async def test_build_group_detail_message_renders_requested_page() -> None:
     responses = (
         *(
-            SimpleNamespace(
+            WordbankResponseItemDetail(
                 response_item_id=index,
                 status="approved",
                 enabled=1,
@@ -540,7 +540,7 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
             )
             for index in range(1, 11)
         ),
-        SimpleNamespace(
+        WordbankResponseItemDetail(
             response_item_id=11,
             status="pending",
             enabled=1,
@@ -557,7 +557,7 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
                 shape_from_image(11),
             ),
         ),
-        SimpleNamespace(
+        WordbankResponseItemDetail(
             response_item_id=12,
             status="approved",
             enabled=0,
@@ -574,7 +574,7 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
                 shape_from_image(12),
             ),
         ),
-        SimpleNamespace(
+        WordbankResponseItemDetail(
             response_item_id=13,
             status="approved",
             enabled=1,
@@ -591,7 +591,7 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
                 shape_from_image(13),
             ),
         ),
-        SimpleNamespace(
+        WordbankResponseItemDetail(
             response_item_id=14,
             status="approved",
             enabled=1,
@@ -609,7 +609,7 @@ async def test_build_group_detail_message_renders_requested_page() -> None:
             ),
         ),
     )
-    detail = SimpleNamespace(
+    detail = WordbankGroupDetail(
         trigger_group_id=271,
         status="approved",
         enabled=1,
