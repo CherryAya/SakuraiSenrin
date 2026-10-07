@@ -16,7 +16,7 @@ from src.database.core.consts import Permission
 from src.lib.demo_theme import DEFAULT_IMPRESSION_COLOR, normalize_hex_color
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.types import JsonValue
+from src.lib.types import JsonValue, as_int, as_str_tuple
 
 from .models import DocNodeKind, DocsMeta, HelpSupportBundle, SupportGroupLink
 
@@ -94,7 +94,7 @@ def _parse_support_groups_json(raw: str) -> tuple[SupportGroupLink, ...]:
     if not raw:
         return ()
     try:
-        payload = json.loads(raw)
+        payload: JsonValue = json.loads(raw)
     except json.JSONDecodeError:
         return ()
     if not isinstance(payload, list):
@@ -162,7 +162,7 @@ def read_docs_meta(metadata: PluginMetadata) -> DocsMeta | None:
 
 
 def read_docs_metas(metadata: PluginMetadata) -> tuple[DocsMeta, ...]:
-    raw = metadata.extra.get("docs")
+    raw: JsonValue = metadata.extra.get("docs")
     if isinstance(raw, dict):
         parsed = normalize_docs_meta(
             raw,
@@ -200,10 +200,13 @@ def normalize_docs_meta(
     if not readme_path or not slug:
         return None
     aliases = raw.get("aliases", ())
-    normalized_aliases = tuple(
-        alias.strip() for alias in aliases if isinstance(alias, str) and alias.strip()
+    normalized_aliases = as_str_tuple(aliases)
+    raw_permission = raw.get("permission", default_permission)
+    permission = (
+        raw_permission
+        if isinstance(raw_permission, (Permission, int, str))
+        else default_permission
     )
-    permission = raw.get("permission", default_permission)
     return {
         "kind": cast(DocNodeKind, raw.get("kind", "plugin")),
         "source": {
@@ -218,7 +221,7 @@ def normalize_docs_meta(
                 else None
             ),
             "category": category or "general",
-            "order": int(tree.get("order", 100)),
+            "order": as_int(tree.get("order", 100), 100),
         },
         "visibility": {
             "visible": bool(visibility.get("visible", True)),
