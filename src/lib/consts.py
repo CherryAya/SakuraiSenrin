@@ -17,7 +17,11 @@ RESERVED_USER_FLAG = "RESERVED_USER"
 PERMANENT_BAN_FLAG = -1
 
 
-LXGW_FONG_PATH = Path("./data/font/LXGWWenKaiMono-Regular.ttf")
+# 注意：文件名必须与 data/font/ 下实际跟踪的资源一致。此前这里写的是
+# LXGWWenKaiMono-Regular.ttf，该文件在仓库历史中从未存在过，导致
+# _load_lxgw_font 在任意平台都静默回落到 ImageFont.load_default()，
+# treemap 摘要字号恒定为首位默认字体。仓库实际跟踪的是 LXGW_NERD_NOTO.ttf。
+LXGW_FONG_PATH = Path("./data/font/LXGW_NERD_NOTO.ttf")
 MAPLE_FONT_PATH = Path("./data/font/MapleMono-NF-CN-Regular.ttf")
 MAPLE_FONT_NAME = "Maple Mono NF CN"
 
