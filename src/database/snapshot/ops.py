@@ -6,6 +6,8 @@ LastEditTime: 2026-02-19 22:33:56
 Description: snapshot db 操作类
 """
 
+from collections.abc import Sequence
+
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.db.ops import BaseOps, affected_rows
@@ -17,7 +19,7 @@ from .types import GroupSnapshotPayload, MemberSnapshotPayload, UserSnapshotPayl
 class UserSnapshotOps(BaseOps[UserSnapshot]):
     async def bulk_create_user_snapshots(
         self,
-        snapshots: list[UserSnapshotPayload],
+        snapshots: Sequence[UserSnapshotPayload],
     ) -> int:
         if not snapshots:
             return 0
@@ -42,7 +44,7 @@ class UserSnapshotOps(BaseOps[UserSnapshot]):
 class GroupSnapshotOps(BaseOps[GroupSnapshot]):
     async def bulk_create_group_snapshots(
         self,
-        snapshots: list[GroupSnapshotPayload],
+        snapshots: Sequence[GroupSnapshotPayload],
     ) -> int:
         if not snapshots:
             return 0
@@ -67,7 +69,7 @@ class GroupSnapshotOps(BaseOps[GroupSnapshot]):
 class MemberSnapshotOps(BaseOps[MemberSnapshot]):
     async def bulk_create_member_snapshots(
         self,
-        snapshots: list[MemberSnapshotPayload],
+        snapshots: Sequence[MemberSnapshotPayload],
     ) -> int:
         if not snapshots:
             return 0

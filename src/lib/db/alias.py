@@ -18,11 +18,11 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import _AsyncGeneratorContextManager
 from datetime import datetime
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, cast
 
 import arrow
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,7 +36,9 @@ from src.lib.trace_log import log_trace_event
 from src.lib.types import JsonValue
 
 OpsT = TypeVar("OpsT", bound=BaseOps[DeclarativeBase])
-PayloadT = TypeVar("PayloadT", bound=Mapping[str, JsonValue])
+# write_batch 只做 item[field] 取值，TypedDict 也满足；
+# 不绑定 Mapping[str, JsonValue]（TypedDict 的值类型是 object，无法赋值给它）。
+PayloadT = TypeVar("PayloadT")
 
 # 时间窗口边界的可选形态；比 MomentLike 少一档：窗口端点不接受分片键 / record_date
 # 字符串。
@@ -231,7 +233,7 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
         self,
         payloads: Sequence[PayloadT],
         *,
-        method: Callable[[OpsT, list[PayloadT]], Awaitable[int | None]],
+        method: Callable[[OpsT, Sequence[PayloadT]], Awaitable[int | None]],
         time_field: str | None = None,
         emit_trace: bool = True,
     ) -> int:
@@ -317,7 +319,7 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
         self,
         payload: PayloadT,
         *,
-        method: Callable[[OpsT, list[PayloadT]], Awaitable[int | None]],
+        method: Callable[[OpsT, Sequence[PayloadT]], Awaitable[int | None]],
         time_field: str | None = None,
         emit_trace: bool = False,
     ) -> int:
@@ -467,6 +469,14 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
     def store(self) -> SegmentStore:
         """物理分片库，仅在确实需要绕过 alias 时使用。"""
         return self._store
+
+    @property
+    def ops_class_ref(self) -> type[BaseOps[DeclarativeBase]]:
+        return cast("type[BaseOps[DeclarativeBase]]", self._ops_class)
+
+    @property
+    def time_field_ref(self) -> str:
+        return self._time_field
 
     def __getattr__(self, item: str) -> object:
         """不做隐式代理：私有成员与拼错的名字都直接报错。

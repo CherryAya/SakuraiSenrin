@@ -18,15 +18,19 @@ _registered_database_ids: set[int] = set()
 _attempted_modules: set[str] = set()
 
 
-def register_backup_database(
-    db: BaseDB | AliasStore[BaseOps[DeclarativeBase]],
+def register_backup_database[OpsT: BaseOps[DeclarativeBase]](
+    db: BaseDB | AliasStore[OpsT],
 ) -> None:
     """注册备份源。
 
     接受 BaseDB，也接受 AliasStore（内部解包为其物理 SegmentStore），
     这样 instances.py 只需把逻辑名注册一次。
+
+    用函数级 TypeVar 而非固定的 AliasStore[BaseOps[DeclarativeBase]]：
+    AliasStore 在 ops 参数上是不变的，固定基类参数会让任何具体 ops
+    （如 AliasStore[TraceEventLogOps]）都赋不进来。
     """
-    physical = db.store if isinstance(db, AliasStore) else db
+    physical: BaseDB = db.store if isinstance(db, AliasStore) else db
     db_id = id(physical)
     if db_id in _registered_database_ids:
         return

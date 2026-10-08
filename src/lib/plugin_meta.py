@@ -6,16 +6,16 @@ LastEditTime: 2026-04-04 15:17:04
 Description: plugin metadata 构造工具
 """
 
-from nonebot.plugin import PluginMetadata
+from collections.abc import Mapping
 
-from src.lib.types import JsonValue
+from nonebot.plugin import PluginMetadata
 
 
 def create_plugin_metadata(
     *,
     name: str,
     description: str,
-    extra: dict[str, JsonValue],
+    extra: Mapping[str, object],
 ) -> PluginMetadata:
     """统一构造 PluginMetadata。
 

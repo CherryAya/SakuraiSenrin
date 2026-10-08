@@ -27,7 +27,9 @@ if TYPE_CHECKING:
 
 
 class AuditLogOps(BaseOps[AuditLog]):
-    async def bulk_create_audit_logs(self, audit_logs: list[AuditLogPayload]) -> int:
+    async def bulk_create_audit_logs(
+        self, audit_logs: Sequence[AuditLogPayload]
+    ) -> int:
         if not audit_logs:
             return 0
         stmt = sqlite_insert(AuditLog).values(audit_logs)
@@ -97,7 +99,7 @@ class AuditLogOps(BaseOps[AuditLog]):
 class PluginUsageLogOps(BaseOps[PluginUsageLog]):
     async def bulk_create_plugin_usage_logs(
         self,
-        plugin_usage_logs: list[PluginUsageLogPayload],
+        plugin_usage_logs: Sequence[PluginUsageLogPayload],
     ) -> int:
         if not plugin_usage_logs:
             return 0
@@ -109,7 +111,7 @@ class PluginUsageLogOps(BaseOps[PluginUsageLog]):
 class TraceEventLogOps(BaseOps[TraceEventLog]):
     async def bulk_create_trace_event_logs(
         self,
-        trace_event_logs: list[TraceEventLogPayload],
+        trace_event_logs: Sequence[TraceEventLogPayload],
     ) -> int:
         if not trace_event_logs:
             return 0

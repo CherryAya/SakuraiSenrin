@@ -9,9 +9,9 @@ Description: 批量处理器
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast
 
 from loguru import logger
 
@@ -21,8 +21,7 @@ from src.lib.utils.common import get_current_time
 if TYPE_CHECKING:
     from sqlalchemy.orm import DeclarativeBase
 
-    from src.lib.types import JsonValue
-
+    from .connectors import SegmentStore
     from .ops import BaseOps
 
 from .alias import AliasStore
@@ -391,14 +390,25 @@ class BatchWriter[T]:
                 self._mark_idle_if_needed()
 
 
+class RoutableStore(Protocol):
+    @property
+    def store(self) -> SegmentStore: ...
+
+    @property
+    def ops_class_ref(self) -> type[BaseOps[DeclarativeBase]]: ...
+
+    @property
+    def time_field_ref(self) -> str: ...
+
+
 async def execute_batch_write[
-    PayloadT: Mapping[str, JsonValue],
+    PayloadT,
     OpsT: BaseOps[DeclarativeBase],
 ](
     batch: Sequence[PayloadT],
-    db_instance: AliasStore[OpsT],
+    db_instance: RoutableStore,
     ops_class: type[OpsT] | None,
-    method: Callable[[OpsT, list[PayloadT]], Awaitable[int | None]],
+    method: Callable[[OpsT, Sequence[PayloadT]], Awaitable[int | None]],
     time_field: str | None,
     *,
     emit_trace: bool = True,
@@ -411,10 +421,12 @@ async def execute_batch_write[
     """
     if not batch:
         return
+    target: RoutableStore = db_instance
     if ops_class is not None or time_field is not None:
-        db_instance = AliasStore(
+        resolved_ops = cast("type[OpsT]", ops_class or db_instance.ops_class_ref)
+        target = AliasStore[OpsT](
             db_instance.store,
-            ops_class=ops_class or db_instance._ops_class,
-            time_field=time_field or db_instance._time_field,
+            ops_class=resolved_ops,
+            time_field=time_field or db_instance.time_field_ref,
         )
-    await db_instance.write_batch(batch, method=method, emit_trace=emit_trace)
+    await target.write_batch(batch, method=method, emit_trace=emit_trace)
