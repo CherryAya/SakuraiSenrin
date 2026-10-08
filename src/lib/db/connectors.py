@@ -545,14 +545,22 @@ class SegmentStore(BaseDB):
 
     def _compress_file(self, source: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(source) as conn:
+        # `with sqlite3.connect(...)` 退出时只提交事务、不关闭连接，连接会一直
+        # 持有到被 GC 回收。Windows 下该句柄会钉住 .db 与 -wal/-shm，使调用方
+        # 随后的 rename/unlink 抛 WinError 32。这里显式关闭，保证归档前释放。
+        conn = sqlite3.connect(source)
+        try:
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            conn.close()
         cctx = zstd.ZstdCompressor(level=10)
         with source.open("rb") as src, destination.open("wb") as dst:
             cctx.copy_stream(src, dst)
 
     def _cleanup_sqlite_sidecars(self, db_path: Path) -> None:
-        for suffix in ("-wal", "-shm"):
+        # -journal 是回滚日志模式下的残留，同样需要清理，否则 rename 后会在
+        # 新路径旁留下孤儿文件。
+        for suffix in ("-wal", "-shm", "-journal"):
             sidecar = Path(f"{db_path}{suffix}")
             if sidecar.exists():
                 sidecar.unlink()

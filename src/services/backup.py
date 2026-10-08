@@ -139,13 +139,10 @@ class BackupService:
             BackupStarted(run_id=run_id, plan_id=plan.id, started_at=started_at)
         )
 
-        await self._ensure_restic_repository(stream_output=stream_output)
-
-        staging_dir = self.local_root / "staging" / run_id
-        manifest_dir = self.local_root / "manifests"
-        manifest_dir.mkdir(parents=True, exist_ok=True)
-        manifest_path = manifest_dir / f"{run_id}.json"
-        staging_manifest_path = staging_dir / "manifest.json"
+        # 授权判定必须排在 _ensure_restic_repository 之前：后者会探测 restic
+        # 可执行文件并对远端仓库执行 init/snapshots，属于有副作用的环境操作。
+        # 先做「这个 profile 是否允许在本环境备份」的纯策略判定，越权请求就不会
+        # 先碰到远端仓库；同时也避免环境缺少 restic 时把授权错误掩盖成环境错误。
         app_env = resolve_app_env()
         if not self.restic.allow_backup:
             raise RuntimeError(
@@ -158,6 +155,14 @@ class BackupService:
             raise RuntimeError(
                 f"app_env={app_env} cannot backup to profile {self.profile_name}"
             )
+
+        await self._ensure_restic_repository(stream_output=stream_output)
+
+        staging_dir = self.local_root / "staging" / run_id
+        manifest_dir = self.local_root / "manifests"
+        manifest_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = manifest_dir / f"{run_id}.json"
+        staging_manifest_path = staging_dir / "manifest.json"
 
         manifest = new_backup_manifest(
             run_id,

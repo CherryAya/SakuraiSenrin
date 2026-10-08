@@ -540,7 +540,7 @@ def _collect_legacy_wait_candidates(root: Path) -> list[LongTaskLegacyCandidate]
                 continue
             candidates.append(
                 LongTaskLegacyCandidate(
-                    path=str(path.relative_to(root)),
+                    path=path.relative_to(root).as_posix(),
                     line=line_number,
                     snippet=stripped,
                 )
@@ -555,7 +555,9 @@ def _collect_heavy_path_candidates(
 ) -> list[LongTaskHeavyPathCandidate]:
     candidates: list[LongTaskHeavyPathCandidate] = []
     for path in _iter_runtime_python_files(root):
-        relative_path = str(path.relative_to(root))
+        # 报告会写入 git 跟踪的 JSON endpoint，路径必须是 POSIX 形式，
+        # 否则 Windows 生成的产物与既有文件整体 diff 冲突。
+        relative_path = path.relative_to(root).as_posix()
         source = _read_text(path)
         if not source:
             continue
@@ -622,7 +624,9 @@ def build_long_task_progress_report(
     return {
         "version": 1,
         "generated_at": datetime.fromtimestamp(get_current_time()).isoformat(),
-        "root": str(root),
+        # 同上：endpoint 是跨平台提交物，绝对值按 POSIX 形式输出，
+        # 避免换机生成时整文件重写（当前提交版本即 macOS 生成的 POSIX 路径）。
+        "root": root.as_posix(),
         "summary": {
             "total_targets": len(target_rows),
             "complete_targets": complete_count,
