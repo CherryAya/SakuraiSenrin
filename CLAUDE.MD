@@ -243,7 +243,7 @@ Before committing ANY Python code changes, MUST pass:
 ```bash
 uv run ruff check --fix
 uv run ruff format
-uv run pyright
+uv run python scripts/check_pyright_baseline.py
 ```
 
 Recommended to also run:
@@ -252,8 +252,19 @@ Recommended to also run:
 uv run pytest
 ```
 
+**关于 pyright：** 裸跑 `uv run pyright` 当前会报出既有类型债（baseline 见
+`pyright-baseline.json`），它是"存量台账"而非"增量门禁"。判定标准是**本
+次改动不得新增诊断**，由 `scripts/check_pyright_baseline.py` 执行（按
+`file::rule` 聚合，忽略行号漂移）。
+
+- 新增诊断 → 门禁失败，请修掉；确属合理放宽时用 `--update` 刷新基线
+- 诊断减少 → 门禁通过，并提示可 `--update` 收敛基线
+- `pyrightconfig.json` 对 `tests/**`、`scripts/**` 放宽了 Unknown 类规则
+  （沿用 `1cf2e74` 对 `reportPrivateUsage` 的既有豁免思路），`src/**` 保持
+  strict；收敛时优先消除 `src/**` 的存量
+
 **Constraints:**
-1. NO merge with known lint/type errors
+1. NO merge with known lint errors, and NO merge that increases the pyright baseline
 2. If auto-fix introduces behavior changes, MUST add tests
 3. If ONLY doc changes (like this file), can skip Python quality commands
 
