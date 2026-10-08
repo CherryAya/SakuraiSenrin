@@ -1,0 +1,3 @@
+"""apscheduler.job 的类型存根（仅 Job 类的存在性声明）。"""
+
+class Job: ...
