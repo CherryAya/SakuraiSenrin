@@ -284,6 +284,15 @@ async def test_backup_service_rejects_cross_env_backup_target(
         "ensure_backup_database_registrations_loaded",
         lambda: None,
     )
+    # 本用例验证的是「跨环境备份授权」这一策略判定，与运行环境是否装了 restic
+    # 无关。若不隔离可用性探测，宿主机缺少 restic 时会先抛 "restic command is
+    # not installed"，授权检查根本走不到。与 test_backup_service.py 中的同类
+    # 用例保持一致，统一打桩。
+    monkeypatch.setattr(
+        backup_module.shutil,
+        "which",
+        lambda command: f"/bin/{command}",
+    )
 
     service = backup_module.build_backup_service_from_config("dev")
 

@@ -24,6 +24,7 @@ from src.database.patches import build_core_patch_registry
 from src.database.snapshot.tables import UserSnapshot
 from src.lib.db.batch import BatchWriter
 from src.lib.db.connectors import ColdPolicy, EventStore, StateStore
+from src.lib.db.manager import db_manager
 from src.lib.db.ops import BaseOps
 from src.lib.db.schema import SchemaPatch
 
@@ -497,6 +498,10 @@ async def test_segment_store_reinitializes_schema_after_shard_file_deleted(
     await db.flush_manifest()
 
     db_path = tmp_path / "framework_heal" / "events_2026_09.db"
+    # 模拟「分片文件被外部删除」：必须先释放连接池里的引擎，否则 Windows 下
+    # 引擎持有的句柄会钉住文件，unlink 报 WinError 32。产品代码在
+    # _retire_shard_file / 分片重建路径上同样先 dispose 再动文件。
+    await db_manager.dispose(str(db_path))
     db_path.unlink()
 
     async with db.write_session(time_ctx=september) as session:

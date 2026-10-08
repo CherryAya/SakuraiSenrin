@@ -1,3 +1,5 @@
+import contextlib
+
 from tests.plugins.wordbank.test_migration_support import *
 
 
@@ -50,7 +52,10 @@ async def test_migrate_legacy_rows_recreates_target_namespace_without_patches(
     sentinel = db_dir / "legacy-sentinel.txt"
     sentinel.write_text("legacy", encoding="utf-8")
 
-    with sqlite3.connect(db_path) as conn:
+    # 该目录稍后会被 _recreate_wordbank_target_namespace 整目录 rmtree；
+    # `with sqlite3.connect(...)` 退出时只提交不关闭连接，Windows 下句柄会钉住
+    # 文件导致 rmtree 报 WinError 32。用 closing() 提交后立即释放句柄。
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
         conn.execute(
             """
             CREATE TABLE wordbank_response_item (

@@ -269,4 +269,8 @@ async def test_main_runs_selected_steps_and_writes_report(
     assert report_payload["summary_backfill"] == {"moved_rows": 1}
     assert report_payload["log_index_cleanup"] == {"shards_touched": 2}
     assert report_payload["summary_prune"] == {"pruned_rows": 3}
-    assert report_payload["post_audit"] == {"db_root": "data/db"}
+    # db_root 是真实文件系统路径，Windows 下必然是反斜杠；按路径语义比较，
+    # 不绑定 POSIX 字面量（与 test_audit_water_storage_script.py 的写法一致）。
+    post_audit = report_payload["post_audit"]
+    assert isinstance(post_audit, dict)
+    assert Path(post_audit["db_root"]) == Path("data/db")

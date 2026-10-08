@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 import sqlite3
@@ -11,7 +12,7 @@ from scripts import audit_water_storage as audit_script
 
 
 def _create_log_db(path: Path) -> None:
-    with sqlite3.connect(path) as conn:
+    with contextlib.closing(sqlite3.connect(path)) as conn:
         conn.execute(
             """
             CREATE TABLE water_hourly_counter (
@@ -48,9 +49,11 @@ def _create_log_db(path: Path) -> None:
             ],
         )
 
+        conn.commit()
+
 
 def _create_summary_db(path: Path) -> None:
-    with sqlite3.connect(path) as conn:
+    with contextlib.closing(sqlite3.connect(path)) as conn:
         conn.execute(
             """
             CREATE TABLE water_daily_summary (
@@ -78,6 +81,8 @@ def _create_summary_db(path: Path) -> None:
                 bytes([1, 2, 8, 0, 9, 1, 0]),
             ),
         )
+
+        conn.commit()
 
 
 def _compress_to_zstd(source: Path, target: Path) -> None:
