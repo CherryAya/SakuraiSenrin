@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace, TracebackType
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -245,10 +245,14 @@ async def test_main_runs_selected_steps_and_writes_report(
         "prune_core_summaries",
         AsyncMock(return_value={"pruned_rows": 3}),
     )
+
+    def _fake_audit_report(path: Path) -> dict[str, str]:
+        return {"db_root": str(path)}
+
     monkeypatch.setattr(
         maintain_script,
         "build_water_storage_audit_report",
-        lambda path: {"db_root": str(path)},
+        _fake_audit_report,
     )
 
     async def _fake_to_thread(
@@ -263,14 +267,15 @@ async def test_main_runs_selected_steps_and_writes_report(
 
     await maintain_script.main()
 
-    report_record = captured["report"]
-    assert isinstance(report_record, tuple)
+    # captured 的值是 object，用 cast 显式收窄，避免下游 dict 取值全部退化成
+    # Unknown（运行期断言仍保留，不影响校验强度）。
+    report_record = cast("tuple[object, dict[str, object]]", captured["report"])
     report_payload = report_record[1]
     assert report_payload["summary_backfill"] == {"moved_rows": 1}
     assert report_payload["log_index_cleanup"] == {"shards_touched": 2}
     assert report_payload["summary_prune"] == {"pruned_rows": 3}
     # db_root 是真实文件系统路径，Windows 下必然是反斜杠；按路径语义比较，
     # 不绑定 POSIX 字面量（与 test_audit_water_storage_script.py 的写法一致）。
-    post_audit = report_payload["post_audit"]
-    assert isinstance(post_audit, dict)
-    assert Path(post_audit["db_root"]) == Path("data/db")
+    post_audit = cast("dict[str, object]", report_payload["post_audit"])
+    db_root = cast(str, post_audit["db_root"])
+    assert Path(db_root) == Path("data/db")
