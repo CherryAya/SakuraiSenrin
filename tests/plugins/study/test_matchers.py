@@ -9,7 +9,7 @@ import pytest
 from src.lib.messages import empty_message, text_message
 
 nonebot.init(
-    SUPERUSERS={"1"},
+    superusers={"1"},
     IGNORED_USERS=set(),
     MAIN_GROUP_ID="10001",
     GITHUB_TOKEN="test-token",

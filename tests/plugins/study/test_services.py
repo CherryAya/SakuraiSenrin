@@ -14,7 +14,7 @@ from src.lib.i18n.runtime import tr
 from tests.plugins.water.helpers import build_group_message_event
 
 nonebot.init(
-    SUPERUSERS={"1"},
+    superusers={"1"},
     IGNORED_USERS=set(),
     MAIN_GROUP_ID="10001",
     GITHUB_TOKEN="test-token",

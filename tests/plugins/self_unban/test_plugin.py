@@ -56,7 +56,7 @@ def processor_module(
             DEV_TEST_GROUPS=set(),
             DEV_TEST_USERS=set(),
             IGNORED_USERS=set(),
-            SUPERUSERS={"1"},
+            superusers={"1"},
         ),
     )
     monkeypatch.setattr(module, "sync_user_runtime", AsyncMock())

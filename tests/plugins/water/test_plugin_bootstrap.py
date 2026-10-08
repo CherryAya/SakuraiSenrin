@@ -13,6 +13,7 @@ def test_water_plugin_registers_archive_scheduler_job() -> None:
 import nonebot
 
 nonebot.init(
+    superusers={"1"},
     SUPERUSERS={"1"},
     IGNORED_USERS=set(),
     MAIN_GROUP_ID="10001",
@@ -68,6 +69,7 @@ import nonebot
 
 os.environ["SAKURAI_WATER_WORKER"] = "1"
 nonebot.init(
+    superusers={"1"},
     SUPERUSERS={"1"},
     IGNORED_USERS=set(),
     MAIN_GROUP_ID="10001",

@@ -12,6 +12,7 @@ def test_wordbank_plugin_loads_without_duplicate_command_prefix_warnings() -> No
 import nonebot
 
 nonebot.init(
+    superusers={"1"},
     SUPERUSERS={"1"},
     IGNORED_USERS=set(),
     MAIN_GROUP_ID="10001",
@@ -48,6 +49,7 @@ def test_wordbank_plugin_registers_archive_scheduler_job() -> None:
 import nonebot
 
 nonebot.init(
+    superusers={"1"},
     SUPERUSERS={"1"},
     IGNORED_USERS=set(),
     MAIN_GROUP_ID="10001",
@@ -87,6 +89,7 @@ def test_wordbank_plugin_registers_media_maintenance_scheduler_job() -> None:
 import nonebot
 
 nonebot.init(
+    superusers={"1"},
     SUPERUSERS={"1"},
     IGNORED_USERS=set(),
     MAIN_GROUP_ID="10001",

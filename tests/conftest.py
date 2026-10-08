@@ -76,8 +76,12 @@ if "src.config" not in sys.modules:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    # Ensure src.config.GlobalConfig can be built in tests.
+    # nonebug 会把这里的 kwargs 原样交给 nonebot.init(**kwargs)。
+    # pydantic-settings 按字段名精确匹配程序化 kwargs：nonebot 声明的字段是
+    # 小写 superusers，大写会被塞进 __pydantic_extra__ 而真实字段仍为空集。
+    # 生产走 .env（大小写不敏感查找）会同时填好两者，这里保持同样的双写语义。
     config.stash[NONEBOT_INIT_KWARGS] = {
+        "superusers": {"1"},
         "SUPERUSERS": {"1"},
         "IGNORED_USERS": set(),
         "MAIN_GROUP_ID": "10001",

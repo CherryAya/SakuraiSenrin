@@ -12,7 +12,7 @@ from src.lib.message_assets import message_asset_repo
 from src.lib.messages import text_message
 
 nonebot.init(
-    SUPERUSERS={"1"},
+    superusers={"1"},
     IGNORED_USERS=set(),
     MAIN_GROUP_ID="10001",
     GITHUB_TOKEN="test-token",
@@ -929,6 +929,13 @@ async def test_water_today_report_group_shared_cooldown(
 ) -> None:
     water_plugin.clear_water_query_cooldowns()
     water_plugin.water_report_service.clear_today_report_cooldowns()
+    # 剩余秒数是 int(expires_at - now) 截断值，真实时钟的快慢直接决定展示数字
+    # （同一秒内重放得到 60，跨过 1 秒才是 59），固定字面量断言因此天然不稳。
+    # 接管 monotonic 让两次请求之间恰好推进 1 秒，使断言确定。
+    from src.lib import cooldown as cooldown_module
+
+    clock = [1000.0]
+    monkeypatch.setattr(cooldown_module, "monotonic", lambda: clock[0])
     build_report_message = AsyncMock(return_value=text_message("REPORT_OK"))
     monkeypatch.setattr(
         water_plugin.water_report_service,
@@ -954,6 +961,9 @@ async def test_water_today_report_group_shared_cooldown(
         ctx.receive_event(bot, first)
         ctx.should_call_send(first, text_message("REPORT_OK"), bot=bot)
         ctx.should_finished()
+
+    # 推进 1 秒：剩余冷却时间恰为 60 - 1 = 59 秒。
+    clock[0] += 1.0
 
     async with app.test_matcher(water_plugin.water_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="99999")
