@@ -138,11 +138,19 @@ def _describe_context() -> str:
 def _normalized_tags(event: Event) -> list[dict[str, str]]:
     """把已有 tags 规整为 list[dict[str, str]]。"""
     tags: list[dict[str, str]] = []
-    for tag in event.get("tags") or []:
-        if isinstance(tag, dict):
-            tags.append(
-                {"key": str(tag.get("key", "")), "value": str(tag.get("value", ""))}
-            )
+    raw_tags: object = cast(object, event.get("tags"))
+    if not isinstance(raw_tags, list):
+        return tags
+    for tag in cast("list[object]", raw_tags):
+        if not isinstance(tag, dict):
+            continue
+        tag_map = cast("dict[str, object]", tag)
+        tags.append(
+            {
+                "key": str(tag_map.get("key", "")),
+                "value": str(tag_map.get("value", "")),
+            }
+        )
     return tags
 
 

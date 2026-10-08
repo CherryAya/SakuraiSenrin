@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from os import cpu_count
@@ -16,6 +16,7 @@ from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from src.lib.i18n.runtime import tr
 from src.lib.long_task import LongTaskRunner
 from src.plugins.wordbank.message_model import (
+    MessageAtom,
     MessageInput,
     MessageShape,
     combine_shapes,
@@ -56,9 +57,15 @@ class MessageShapeBuildContext:
     client: httpx.AsyncClient | None = None
     download_concurrency: int = ACTIVE_IMAGE_DOWNLOAD_CONCURRENCY
     ingest_concurrency: int = ACTIVE_IMAGE_INGEST_CONCURRENCY
-    download_tasks: dict[str, asyncio.Task[bytes | None]] = field(default_factory=dict)
-    resolution_tasks: dict[str, asyncio.Task[int | None]] = field(default_factory=dict)
-    hint_cache: dict[tuple[str, ...], int | None] = field(default_factory=dict)
+    download_tasks: dict[str, asyncio.Task[bytes | None]] = field(
+        default_factory=dict[str, asyncio.Task[bytes | None]]
+    )
+    resolution_tasks: dict[str, asyncio.Task[int | None]] = field(
+        default_factory=dict[str, asyncio.Task[int | None]]
+    )
+    hint_cache: dict[tuple[str, ...], int | None] = field(
+        default_factory=dict[tuple[str, ...], int | None]
+    )
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     download_semaphore: asyncio.Semaphore = field(init=False)
     ingest_semaphore: asyncio.Semaphore = field(init=False)
@@ -69,7 +76,9 @@ class MessageShapeBuildContext:
 
 
 @asynccontextmanager
-async def open_message_shape_build_context() -> AsyncIterator[MessageShapeBuildContext]:
+async def open_message_shape_build_context() -> AsyncGenerator[
+    MessageShapeBuildContext
+]:
     client = httpx.AsyncClient(timeout=5.0)
     try:
         yield MessageShapeBuildContext(client=client)
@@ -353,7 +362,7 @@ async def build_response_shape_from_message(
             "building_shape",
             metadata={"image_count": len(image_ids)},
         )
-    atoms = []
+    atoms: list[MessageAtom] = []
     image_index = 0
     for segment in iter_message_segments(message):
         if segment.type == "text":

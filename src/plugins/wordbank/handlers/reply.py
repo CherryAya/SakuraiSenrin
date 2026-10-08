@@ -9,10 +9,12 @@ import re
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 
+from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import MessagePlanInput
 from src.lib.reply_router import ReplyContextSpec, ResolvedReplyTarget
+from src.lib.types import JsonValue, as_int, as_str, is_object_sequence
 from src.logger import logger
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
@@ -43,12 +45,11 @@ from .mutation import (
     handle_trigger_probability_update,
 )
 from .parsers import (
-    _default_i18n_text,
-    _parse_probability_value,
-    _parse_weight_value,
     actor_can_review,
     parse_group_view_args,
     parse_response_set_args,
+    parse_response_weight_args,
+    parse_trigger_probability_args,
     parse_trigger_set_args,
 )
 from .rendering import GROUP_PAGE_SIZE, build_reply_detail_plan_entry
@@ -99,6 +100,10 @@ _COMPACT_GROUP_VIEW_RE = re.compile(
     r"^(?P<action>详情|展开|group)(?P<group_id>\d+)(?:\s+(?P<page>\d+))?$",
     re.IGNORECASE,
 )
+
+
+def _default_i18n_text(key: MessageKey, **params: object) -> str:
+    return tr("zh-CN", key, **params)
 
 
 @dataclass(slots=True, frozen=True)
@@ -210,37 +215,42 @@ def wordbank_message_ref_from_reply_target(
 
 
 def _wordbank_message_ref_from_payload(
-    payload: Mapping[str, object],
+    payload: Mapping[str, JsonValue],
     *,
     message_id: str,
 ) -> WordbankMessageRefRecord:
     raw_group_ids = payload.get("group_ids", ())
     group_ids: tuple[int, ...] = ()
-    if isinstance(raw_group_ids, Sequence) and not isinstance(raw_group_ids, str):
+    if is_object_sequence(raw_group_ids):
         group_ids = tuple(
-            int(item)
+            as_int(item, 0)
             for item in raw_group_ids
-            if isinstance(item, int) or (isinstance(item, str) and item.isdigit())
+            if isinstance(item, int) and not isinstance(item, bool)
         )
-    ref_kind = payload.get("ref_kind", "response")
-    if ref_kind not in {"response", "approval", "view"}:
+    raw_ref_kind = as_str(payload.get("ref_kind", "response"), "response")
+    ref_kind: WordbankMessageRefKind
+    if raw_ref_kind == "approval":
+        ref_kind = "approval"
+    elif raw_ref_kind == "view":
+        ref_kind = "view"
+    else:
         ref_kind = "response"
     return WordbankMessageRefRecord(
         message_id=message_id,
         ref_kind=ref_kind,
         shard_key="",
-        trigger_group_id=int(payload.get("trigger_group_id", 0) or 0),
-        trigger_variant_id=int(payload.get("trigger_variant_id", 0) or 0),
-        response_item_id=int(payload.get("response_item_id", 0) or 0),
-        group_id=str(payload.get("group_id", "") or ""),
-        user_id=str(payload.get("user_id", "") or ""),
-        message_type=str(payload.get("message_type", "") or ""),
-        source_message_id=str(payload.get("source_message_id", "") or ""),
-        context_type=str(payload.get("context_type", "") or ""),
-        current_page=int(payload.get("current_page", 1) or 1),
-        keyword=str(payload.get("keyword", "") or ""),
-        field=str(payload.get("field", "") or ""),
-        creator_id=str(payload.get("creator_id", "") or ""),
+        trigger_group_id=as_int(payload.get("trigger_group_id", 0), 0),
+        trigger_variant_id=as_int(payload.get("trigger_variant_id", 0), 0),
+        response_item_id=as_int(payload.get("response_item_id", 0), 0),
+        group_id=as_str(payload.get("group_id", "")),
+        user_id=as_str(payload.get("user_id", "")),
+        message_type=as_str(payload.get("message_type", "")),
+        source_message_id=as_str(payload.get("source_message_id", "")),
+        context_type=as_str(payload.get("context_type", "")),
+        current_page=as_int(payload.get("current_page", 1), 1),
+        keyword=as_str(payload.get("keyword", "")),
+        field=as_str(payload.get("field", "")),
+        creator_id=as_str(payload.get("creator_id", "")),
         has_image=bool(payload.get("has_image", False)),
         group_ids=group_ids,
     )
@@ -380,14 +390,15 @@ async def handle_reply_command(
         )
 
     if action.startswith("trigger prob"):
-        probability_text = text.strip()[len("trigger") :].strip()
-        _, _, value_text = probability_text.partition(" ")
-        probability = _parse_probability_value(value_text.strip())
+        probability_value = text.strip()[len("trigger") :].strip().partition(" ")[2]
+        parsed_probability = parse_trigger_probability_args(
+            f"{response_message.trigger_group_id} {probability_value.strip()}"
+        )
         return await handle_trigger_probability_update(
             service,
             event=event,
-            trigger_group_id=response_message.trigger_group_id,
-            probability=probability,
+            trigger_group_id=parsed_probability.trigger_group_id,
+            probability=parsed_probability.probability,
             locale=locale,
         )
 
@@ -407,14 +418,15 @@ async def handle_reply_command(
         )
 
     if action.startswith("response weight"):
-        weight_text = text.strip()[len("response") :].strip()
-        _, _, value_text = weight_text.partition(" ")
-        weight = _parse_weight_value(value_text.strip())
+        weight_value = text.strip()[len("response") :].strip().partition(" ")[2]
+        parsed_weight = parse_response_weight_args(
+            f"{response_message.response_item_id} {weight_value.strip()}"
+        )
         return await handle_response_weight_update(
             service,
             event=event,
-            response_item_id=response_message.response_item_id,
-            weight=weight,
+            response_item_id=parsed_weight.response_item_id,
+            weight=parsed_weight.weight,
             locale=locale,
         )
 
@@ -1145,14 +1157,3 @@ async def _load_group_detail(
         response_message.trigger_group_id,
         response_item_id=response_message.response_item_id,
     )
-
-
-def _format_enabled(enabled: int, locale: LocaleCode = "zh-CN") -> str:
-    return tr(
-        locale,
-        "wordbank.state.enabled" if enabled else "wordbank.state.disabled",
-    )
-
-
-def _format_deleted_at(deleted_at: int) -> str:
-    return str(deleted_at) if deleted_at else "0"

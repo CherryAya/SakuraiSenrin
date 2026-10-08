@@ -498,11 +498,7 @@ class WordbankMediaRuntimeMixin:
         log_perf(
             "media.load_canonical_storage_bytes.remote_fetch",
             start=fetch_start,
-            provider=(
-                self.remote_storage.object_storage.provider
-                if isinstance(self.remote_storage, ObjectStorageWordbankMediaStorage)
-                else "-"
-            ),
+            provider=self.remote_storage.object_storage.provider,
             uri=image.remote_storage_path,
             bytes=len(remote_bytes) if remote_bytes is not None else 0,
             hit=remote_bytes is not None,
@@ -781,7 +777,7 @@ class WordbankMediaRuntimeMixin:
             row["local_cache_path_after"] = refreshed.local_cache_path
             row["cache_file_size_after"] = refreshed.cache_file_size
             rows.append(row)
-        report = {
+        report: MediaBackfillReport = {
             "dry_run": dry_run,
             "limit": limit,
             "id_start": id_start,
@@ -1075,7 +1071,7 @@ class _MediaRuntimeHost(Protocol):
     _by_canonical_id: dict[int, WordbankImageRecord]
     _canonical_ids_by_dhash: dict[str, tuple[int, ...]]
     _canonical_hash_image: dict[int, WordbankImageRecord]
-    _dhash_tree: BKTree | None
+    _dhash_tree: BKTree[str] | None
     _remote_load_locks: dict[int, asyncio.Lock]
     _cache_maintenance_lock: asyncio.Lock
 

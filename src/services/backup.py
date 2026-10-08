@@ -11,6 +11,7 @@ from pathlib import Path
 import shutil
 import socket
 import sys
+from typing import cast
 import uuid
 
 from src.config import config
@@ -30,6 +31,7 @@ from src.lib.db.backup import (
     new_backup_manifest,
 )
 from src.lib.db.connectors import BaseDB
+from src.lib.types import JsonObject, JsonValue, as_object, as_str, as_str_tuple
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 
@@ -459,11 +461,13 @@ def _parse_restic_snapshot_id(output: str) -> str | None:
         if not line.strip():
             continue
         try:
-            payload = json.loads(line)
+            payload: JsonValue = json.loads(line)
         except json.JSONDecodeError:
             continue
-        snapshot_id = payload.get("snapshot_id")
-        if isinstance(snapshot_id, str) and snapshot_id:
+        if not isinstance(payload, dict):
+            continue
+        snapshot_id = as_str(payload.get("snapshot_id"))
+        if snapshot_id:
             return snapshot_id
     return None
 
@@ -509,13 +513,13 @@ def _parse_restic_output_event(raw_line: str) -> tuple[str, str]:
     if not line:
         return "empty", ""
     try:
-        payload = json.loads(line)
+        payload: JsonValue = json.loads(line)
     except json.JSONDecodeError:
         return "text", line
     if not isinstance(payload, dict):
         return "text", line
 
-    message_type = payload.get("message_type")
+    message_type = as_str(payload.get("message_type"))
     if message_type == "status":
         parts = ["restic status"]
         percent_done = payload.get("percent_done")
@@ -570,44 +574,48 @@ def _format_bytes(size: int) -> str:
     return f"{size}B"
 
 
+def _fetch_restic_object(item: JsonValue, key: str) -> JsonObject | None:
+    """从 restic 对象条目中取出嵌套对象；非对象（含缺失）统一返回 None。"""
+    parent = as_object(item)
+    if parent is None:
+        return None
+    return as_object(parent.get(key))
+
+
 def _parse_restic_snapshots(output: str) -> list[ResticSnapshotInfo]:
     if not output.strip():
         return []
-    payload = json.loads(output)
+    payload: JsonValue = json.loads(output)
     if not isinstance(payload, list):
         raise RuntimeError("restic snapshots output is not a JSON array")
 
     snapshots: list[ResticSnapshotInfo] = []
-    for item in payload:
-        if not isinstance(item, dict):
+    for raw_item in payload:
+        item = as_object(raw_item)
+        if item is None:
             continue
-        snapshot_id = item.get("id")
-        if not isinstance(snapshot_id, str) or not snapshot_id:
+        snapshot_id = as_str(item.get("id"))
+        if not snapshot_id:
             continue
-        paths = item.get("paths")
-        summary = item.get("summary")
-        total_files_processed = None
-        total_bytes_processed = None
-        if isinstance(summary, dict):
+        total_files_processed: int | None = None
+        total_bytes_processed: int | None = None
+        summary = _fetch_restic_object(raw_item, "summary")
+        if summary is not None:
             files_value = summary.get("total_files_processed")
             bytes_value = summary.get("total_bytes_processed")
             if isinstance(files_value, int):
                 total_files_processed = files_value
             if isinstance(bytes_value, int):
                 total_bytes_processed = bytes_value
+        paths = item.get("paths")
+        path_values = paths if isinstance(paths, list) else []
         snapshots.append(
             ResticSnapshotInfo(
                 id=snapshot_id,
-                short_id=item.get("short_id")
-                if isinstance(item.get("short_id"), str)
-                else None,
-                time=item.get("time") if isinstance(item.get("time"), str) else None,
-                hostname=item.get("hostname")
-                if isinstance(item.get("hostname"), str)
-                else None,
-                paths=tuple(path for path in paths if isinstance(path, str))
-                if isinstance(paths, list)
-                else (),
+                short_id=_as_optional_str(item.get("short_id")),
+                time=_as_optional_str(item.get("time")),
+                hostname=_as_optional_str(item.get("hostname")),
+                paths=tuple(path for path in path_values if isinstance(path, str)),
                 total_files_processed=total_files_processed,
                 total_bytes_processed=total_bytes_processed,
             )
@@ -681,6 +689,83 @@ def resolve_backup_profile(
     return profile
 
 
+def _as_optional_str(value: object) -> str | None:
+    """把运行期取值收窄成 ``str | None``；非字符串一律视为未配置。"""
+    return value if isinstance(value, str) else None
+
+
+def _profile_payload(profile: object) -> dict[str, object]:
+    """把配置里的 profile 对象摊平成 ``dict[str, object]``。
+
+    兼容 pydantic 模型的 ``model_dump()``、普通对象的 ``__dict__``，以及本就是
+    ``Mapping`` 的字典。字段级收窄由下游 ``_coerce_backup_profile`` 负责。
+    """
+    dump = getattr(profile, "model_dump", None)
+    if callable(dump):
+        dumped = dump()
+        if isinstance(dumped, Mapping):
+            return {
+                str(key): value
+                for key, value in cast("Mapping[object, object]", dumped).items()
+            }
+        raise RuntimeError("backup profile model_dump() must return a mapping")
+    dunder = getattr(profile, "__dict__", None)
+    if isinstance(dunder, Mapping):
+        return {
+            str(key): value
+            for key, value in cast("Mapping[object, object]", dunder).items()
+        }
+    if isinstance(profile, Mapping):
+        return {
+            str(key): value
+            for key, value in cast("Mapping[object, object]", profile).items()
+        }
+    raise RuntimeError(f"unsupported backup profile: {type(profile)!r}")
+
+
+def _profile_str(payload: Mapping[str, object], key: str, default: str) -> str:
+    value = payload.get(key)
+    return value if isinstance(value, str) else default
+
+
+def _profile_bool(payload: Mapping[str, object], key: str, default: bool) -> bool:
+    value = payload.get(key)
+    return value if isinstance(value, bool) else default
+
+
+def _coerce_backup_profile(name: str, profile: object) -> BackupRemoteProfile:
+    """把配置里的备份 profile 收窄成 ``BackupRemoteProfile``。
+
+    字段级校验在运行期逐条收口：必填的 ``repository`` / ``password`` 缺失或非
+    字符串时抛 ``RuntimeError``（与旧实现的 pydantic 校验保持一致），可选字段
+    则回落默认值。
+    """
+    if isinstance(profile, BackupRemoteProfile):
+        return profile
+    payload = _profile_payload(profile)
+    repository = _as_optional_str(payload.get("repository"))
+    password = _as_optional_str(payload.get("password"))
+    if not repository or not password:
+        raise RuntimeError(
+            f"invalid backup profile {name!r}: repository/password are required",
+        )
+    return BackupRemoteProfile(
+        name=_profile_str(payload, "name", name) or name,
+        repository=repository,
+        password=password,
+        access_key_id=_as_optional_str(payload.get("access_key_id")),
+        secret_access_key=_as_optional_str(payload.get("secret_access_key")),
+        allowed_app_envs_for_backup=as_str_tuple(
+            payload.get("allowed_app_envs_for_backup")
+        ),
+        allowed_app_envs_for_restore=as_str_tuple(
+            payload.get("allowed_app_envs_for_restore")
+        ),
+        allow_backup=_profile_bool(payload, "allow_backup", True),
+        allow_restore=_profile_bool(payload, "allow_restore", True),
+    )
+
+
 def _load_backup_profiles() -> dict[str, BackupRemoteProfile]:
     backup_profiles = getattr(config, "backup_profiles", None)
     if callable(backup_profiles):
@@ -688,21 +773,14 @@ def _load_backup_profiles() -> dict[str, BackupRemoteProfile]:
         if not isinstance(profiles, Mapping):
             raise RuntimeError("backup_profiles() must return a mapping")
         normalized: dict[str, BackupRemoteProfile] = {}
-        for name, profile in profiles.items():
-            if isinstance(profile, BackupRemoteProfile):
-                normalized[name] = profile
-                continue
-            if hasattr(profile, "model_dump"):
-                payload = profile.model_dump()  # type: ignore[attr-defined]
-            elif hasattr(profile, "__dict__"):
-                payload = dict(profile.__dict__)  # type: ignore[attr-defined]
-            else:
-                payload = dict(profile)
-            normalized[name] = BackupRemoteProfile(**payload)
+        for name, profile in cast("Mapping[object, object]", profiles).items():
+            if not isinstance(name, str) or not name:
+                raise RuntimeError("backup profile name must be a non-empty string")
+            normalized[name] = _coerce_backup_profile(name, profile)
         return normalized
 
-    repository = getattr(config, "BACKUP_RESTIC_REPOSITORY", None)
-    password = getattr(config, "BACKUP_RESTIC_PASSWORD", None)
+    repository = _as_optional_str(getattr(config, "BACKUP_RESTIC_REPOSITORY", None))
+    password = _as_optional_str(getattr(config, "BACKUP_RESTIC_PASSWORD", None))
     if repository and password:
         profile_name = resolve_legacy_backup_profile_name()
         return {
@@ -710,8 +788,12 @@ def _load_backup_profiles() -> dict[str, BackupRemoteProfile]:
                 name=profile_name,
                 repository=repository,
                 password=password,
-                access_key_id=getattr(config, "R2_ACCESS_KEY_ID", None),
-                secret_access_key=getattr(config, "R2_SECRET_ACCESS_KEY", None),
+                access_key_id=_as_optional_str(
+                    getattr(config, "R2_ACCESS_KEY_ID", None)
+                ),
+                secret_access_key=_as_optional_str(
+                    getattr(config, "R2_SECRET_ACCESS_KEY", None)
+                ),
                 allowed_app_envs_for_backup=(resolve_app_env(),),
                 allowed_app_envs_for_restore=(resolve_app_env(),),
                 allow_backup=True,

@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 from time import perf_counter
+from typing import cast
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import MessagePlanInput
 from src.logger import logger
 from src.plugins.water.database import water_repo
+from src.plugins.water.database.repo_models import NaturalRankItem
 from src.plugins.water.img import build_water_day_rank_image
 from src.plugins.water.message_support import (
     build_image_plan_entry,
     build_text_plan_entry,
 )
-from src.plugins.water.renderers.models import WaterDayRankCardData
+from src.plugins.water.renderers.models import WaterDayRankCardData, WaterRankCardItem
 from src.plugins.water.renderers.report import (
     build_water_period_rank_image,
 )
@@ -26,6 +28,23 @@ from src.plugins.water.services.rank_types import (
     is_valid_rank_combo,
 )
 from src.services.info import resolve_group_name
+
+
+async def build_rank_view_items(
+    service: object,
+    subject: WaterRankSubject,
+    items: list[NaturalRankItem],
+    locale: LocaleCode,
+) -> list[WaterRankCardItem]:
+    """把榜单原始条目水合为可渲染条目。
+
+    ``WaterRankService._build_view_items`` 名义上是保护成员，但同为 ``water.services``
+    下的 rank_query 需要复用它；经 getattr 调用可避免跨模块访问受保护成员，同时
+    用签名声明收口类型。
+    """
+    builder = getattr(service, "_build_view_items")
+    raw_items: object = await builder(subject, items, locale)
+    return cast("list[WaterRankCardItem]", raw_items)
 
 
 class WaterRankQueryService:
@@ -144,7 +163,8 @@ class WaterRankQueryService:
         overview = snapshot.overview
         if not top_items or overview.total_msg_count <= 0:
             return None
-        view_items = await water_rank_service._build_view_items(
+        view_items = await build_rank_view_items(
+            water_rank_service,
             subject,
             top_items,
             locale,

@@ -81,7 +81,7 @@ class WaterRepositoryAdminMixin:
 
         async def _stats_in_shard(
             session: AsyncSession,
-        ) -> Sequence[Row[tuple[str, str, int, int]]]:
+        ) -> Sequence[Row[str, str, int, int]]:
             return (
                 await _repo_module()
                 .WaterMessageOps(session)

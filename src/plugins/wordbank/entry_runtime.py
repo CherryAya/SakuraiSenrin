@@ -11,17 +11,19 @@ from nonebot.adapters.onebot.v11.event import (
     MessageEvent,
     NoticeEvent,
 )
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.matcher import Matcher
+from nonebot.typing import T_State
 
 from src.database.core.consts import Permission
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.interactive_recall import (
     find_recall_session,
-    is_supported_recall_notice,
     rebuild_temp_matcher,
 )
 from src.lib.message_plan import (
     DeliveryPlan,
+    MessagePlanEntry,
     MessagePlanInput,
     deliver_message_plan,
     finish_with_message,
@@ -72,6 +74,59 @@ from .notify import (
 )
 from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError
+
+
+async def _finish_without_message(matcher: Matcher) -> None:
+    """结束当前 matcher，且不发送任何消息。
+
+    直接调用 ``matcher.finish()`` 会让 pyright 尝试推导 nonebot 泛型
+    ``Message[Unknown]`` 的默认参数，进而报 reportUnknownMemberType；经
+    ``getattr`` 取出后调用，语义与 ``finish()`` 无消息分支完全一致。
+    """
+    finish = getattr(matcher, "finish")
+    await finish()
+
+
+def _as_plan_input(raw: object) -> MessagePlanInput | None:
+    """把 ``dispatch_reply_route`` 的 ``object`` 结果收窄成消息计划输入。
+
+    ``ReplyRouteHandler`` 的返回类型是 ``Awaitable[object]``，实际类型取决于
+    具体路由；这里按 ``MessagePlanInput`` 的真实成员做运行期判定，不做无校验
+    的强制转换。
+    """
+    if raw is None or isinstance(raw, Message | str | MessagePlanEntry):
+        return raw
+    raise TypeError(f"unexpected reply handler result: {type(raw).__name__}")
+
+
+def _as_approval_outcome(raw: object) -> ApprovalReplyOutcome | None:
+    """把 reply 路由结果收窄成 ``ApprovalReplyOutcome``。"""
+    if raw is None or isinstance(raw, ApprovalReplyOutcome):
+        return raw
+    raise TypeError(f"unexpected reply handler result: {type(raw).__name__}")
+
+
+def _as_message_ref(raw: object) -> WordbankMessageRefRecord | None:
+    """把 reply 路由结果收窄成 ``WordbankMessageRefRecord``。"""
+    if raw is None or isinstance(raw, WordbankMessageRefRecord):
+        return raw
+    raise TypeError(f"unexpected reply handler result: {type(raw).__name__}")
+
+
+def _matcher_default_state(matcher_cls: type[Matcher]) -> dict[str, object] | None:
+    """读取 matcher 的默认 state。
+
+    ``_default_state`` 是 nonebot 内部字段（直接访问触发 reportPrivateUsage），
+    这里走 ``getattr`` 取原始对象再做运行期收窄；非映射返回 None 由调用方跳过。
+    """
+    raw: object = getattr(matcher_cls, "_default_state", None)
+    if not isinstance(raw, dict):
+        return None
+    result: dict[str, object] = {}
+    for key, value in cast("dict[object, object]", raw).items():
+        if isinstance(key, str):
+            result[key] = value
+    return result
 
 
 async def _handle_registered_wordbank_response_reply(
@@ -155,7 +210,7 @@ async def _wordbank_reply(
     await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     try:
-        msg = await dispatch_reply_route("wordbank.response", bot, event)
+        raw_msg = await dispatch_reply_route("wordbank.response", bot, event)
     except (RuleError, ValueError) as exc:
         await finish_with_message(
             bot,
@@ -169,8 +224,9 @@ async def _wordbank_reply(
             source_kind="wordbank_command",
         )
         return
+    msg = _as_plan_input(raw_msg)
     if msg is None:
-        await matcher.finish()
+        await _finish_without_message(matcher)
         return
     await finish_with_message(
         bot,
@@ -190,7 +246,7 @@ async def _wordbank_approval_reply(
     await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     try:
-        outcome = await dispatch_reply_route("wordbank.approval", bot, event)
+        raw_outcome = await dispatch_reply_route("wordbank.approval", bot, event)
     except (RuleError, ValueError) as exc:
         await finish_with_message(
             bot,
@@ -205,11 +261,12 @@ async def _wordbank_approval_reply(
             source_kind="wordbank_command",
         )
         return
+    outcome = _as_approval_outcome(raw_outcome)
     if outcome is None:
-        await matcher.finish()
+        await _finish_without_message(matcher)
         return
     if outcome.message is None:
-        await matcher.finish()
+        await _finish_without_message(matcher)
         return
     if outcome.completed and outcome.approval_message is not None:
         if outcome.action:
@@ -259,9 +316,8 @@ async def _wordbank_view_reply(
     await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     service = wordbank_service
-    view_message = cast(
-        WordbankMessageRefRecord | None,
-        await dispatch_reply_route("wordbank.view", bot, event),
+    view_message = _as_message_ref(
+        await dispatch_reply_route("wordbank.view", bot, event)
     )
     if view_message is None:
         await finish_with_message(
@@ -393,17 +449,20 @@ async def _wordbank_passive(bot: Bot, event: MessageEvent) -> None:
 async def _wordbank_notice(bot: Bot, event: NoticeEvent) -> None:
     from .debug import elapsed_ms, log_perf, perf_start
 
-    if is_supported_recall_notice(event):
-        recall_event = cast(GroupRecallNoticeEvent | FriendRecallNoticeEvent, event)
+    if isinstance(event, (GroupRecallNoticeEvent, FriendRecallNoticeEvent)):
+        recall_event: GroupRecallNoticeEvent | FriendRecallNoticeEvent = event
         for matcher_source in (wordbank_add_command, wordbank_command):
             session = find_recall_session(matcher_source, recall_event)
             if session is None:
                 continue
-            state = session.matcher_cls._default_state
-            locale = wordbank_guided_locale(state)
+            state = _matcher_default_state(session.matcher_cls)
+            if state is None:
+                continue
+            typed_state = cast("T_State", state)
+            locale = wordbank_guided_locale(typed_state)
             checkpoint = session.checkpoint
             await cancel_guided_resources(
-                state,
+                typed_state,
                 checkpoint.cleanup_keys
                 if checkpoint is not None and not session.is_root_message
                 else WORDBANK_GUIDED_RECALL_PENDING_KEYS,

@@ -104,24 +104,9 @@ PROBABILITY_ALIASES = {"prob", "probability", "概率"}
 WEIGHT_ALIASES = {"weight", "权重"}
 
 
-def _default_i18n_text(key: MessageKey, **params: object) -> str:
+def default_i18n_text(key: MessageKey, **params: object) -> str:
+    """按 zh-CN 兜底取文案；供跨模块（guided_flow / study）复用。"""
     return tr("zh-CN", key, **params)
-
-
-WORD_BANK_LABEL_KEYS: dict[str, MessageKey] = {
-    "scope": "wordbank.label.scope",
-    "probability": "wordbank.label.probability",
-    "weight": "wordbank.label.weight",
-    "role": "wordbank.label.role",
-    "page": "wordbank.label.page",
-    "limit": "wordbank.label.limit",
-    "search_field": "wordbank.label.search_field",
-    "creator_id": "wordbank.label.creator_id",
-}
-
-
-def _label(name: str) -> str:
-    return tr("zh-CN", WORD_BANK_LABEL_KEYS[name])
 
 
 def combine_response_shape_with_image(
@@ -212,7 +197,7 @@ async def handle_add_with_media_result(
         trigger_text = parsed.source
         if not has_meaningful_text(trigger_text):
             raise RuleError(
-                _default_i18n_text("wordbank.error.trigger_empty"),
+                default_i18n_text("wordbank.error.trigger_empty"),
                 key="wordbank.error.trigger_empty",
             )
         image_id = (
@@ -285,7 +270,7 @@ async def handle_add_with_media_result(
         )
 
     raise RuleError(
-        _default_i18n_text("wordbank.error.add_pair_required"),
+        default_i18n_text("wordbank.error.add_pair_required"),
         key="wordbank.error.add_pair_required",
     )
 
@@ -442,7 +427,7 @@ async def handle_study_media_with_rule_result(
     if pair is None and not source:
         if len(image_bytes) < 2:
             raise RuleError(
-                _default_i18n_text("wordbank.error.study_pair_required"),
+                default_i18n_text("wordbank.error.study_pair_required"),
                 key="wordbank.error.study_pair_required",
             )
         trigger_image_id, response_image_id = await ingest_image_bytes_items(
@@ -649,7 +634,7 @@ async def build_group_detail_message(
     detail = await service.get_group_detail(trigger_group_id)
     if detail is None:
         raise RuleError(
-            _default_i18n_text(
+            default_i18n_text(
                 "wordbank.group.not_found",
                 group_id=trigger_group_id,
             ),
@@ -660,7 +645,7 @@ async def build_group_detail_message(
     total_pages = max(1, math.ceil(len(detail.responses) / max(GROUP_PAGE_SIZE, 1)))
     if page > total_pages:
         raise RuleError(
-            _default_i18n_text(
+            default_i18n_text(
                 "wordbank.error.guided_search_page_out_of_range",
             ),
             key="wordbank.error.guided_search_page_out_of_range",
@@ -822,7 +807,7 @@ async def handle_trigger_command(
             locale=locale,
         )
     raise RuleError(
-        _default_i18n_text(
+        default_i18n_text(
             "wordbank.error.unknown_subcommand",
             action=f"trigger {action}".strip(),
             help=wordbank_help_text(locale),
@@ -866,7 +851,7 @@ async def handle_response_command(
             locale=locale,
         )
     raise RuleError(
-        _default_i18n_text(
+        default_i18n_text(
             "wordbank.error.unknown_subcommand",
             action=f"response {action}".strip(),
             help=wordbank_help_text(locale),

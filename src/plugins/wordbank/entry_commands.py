@@ -23,6 +23,7 @@ from src.lib.long_task import (
 )
 from src.lib.message_plan import (
     MessagePlanInput,
+    finish_matcher,
     finish_with_message,
     pause_with_message,
 )
@@ -77,7 +78,7 @@ from .handlers.parsers import (
     parse_guided_search_mode_choice,
     parse_search_session_command,
 )
-from .lifecycle import _initialize_wordbank_plugin
+from .lifecycle import initialize_wordbank_plugin
 from .notify import notify_creator_review_result
 from .services import wordbank_media_service, wordbank_service
 from .services.rules import RuleError
@@ -134,7 +135,7 @@ async def handle_wordbank_command_message(
     action: str | None = None,
     state: T_State | None = None,
 ) -> None:
-    await _initialize_wordbank_plugin()
+    await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     text = arg.extract_plain_text()
     if action is None:
@@ -291,7 +292,7 @@ async def handle_wordbank_command_message(
         return
     if action in PENDING_ALIASES:
         await _send_pending_entries_view(bot, event, rest, locale)
-        await matcher.finish()
+        await finish_matcher(matcher)
         return
 
     async def _dispatch_command() -> MessagePlanInput:
@@ -367,7 +368,7 @@ async def _wordbank_root(
             else:
                 await guided_flow_module.start_guided_add(matcher, event, state, locale)
             return
-    await _initialize_wordbank_plugin()
+    await initialize_wordbank_plugin()
     handler = handle_wordbank_command_message
     await handler(bot, matcher, event, arg, state=state)
 
@@ -539,7 +540,7 @@ async def _wordbank_add_root(
     state: T_State,
     arg: Message = CommandArg(),
 ) -> None:
-    await _initialize_wordbank_plugin()
+    await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     await _abort_guided_on_revoke(matcher, event, locale)
     plain_text = arg.extract_plain_text()
@@ -630,7 +631,7 @@ async def _wordbank_search_root(
     state: T_State,
     arg: Message = CommandArg(),
 ) -> None:
-    await _initialize_wordbank_plugin()
+    await initialize_wordbank_plugin()
     locale = await resolve_locale(str(getattr(event, "group_id", "")) or None)
     await _abort_guided_on_revoke(matcher, event, locale)
     has_images = bool(handlers_media_helpers.extract_image_urls(arg))

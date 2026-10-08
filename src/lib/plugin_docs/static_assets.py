@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 from src.database.core.consts import Permission
+from src.lib.types import JsonValue
 
 from .models import DocNode, FeatureDoc, HelpDashboardSection
 
@@ -19,6 +20,23 @@ StaticPermissionProfile = Literal[
     "superuser",
 ]
 StaticTargetKind = Literal["dashboard", "feature", "guide", "summary", "static"]
+
+
+def _as_permission_profile(value: object) -> StaticPermissionProfile | None:
+    """把清单里的原始键收窄成权限档位；未知值返回 None。
+
+    用显式成员判定而非 ``in frozenset``：后者只把类型收窄到 ``str``，无法建立
+    与 ``StaticPermissionProfile`` 字面量联合的对应关系。
+    """
+    if value == "normal":
+        return "normal"
+    if value == "group_admin":
+        return "group_admin"
+    if value == "group_owner":
+        return "group_owner"
+    if value == "superuser":
+        return "superuser"
+    return None
 
 
 class StaticAssetManifest(TypedDict):
@@ -110,7 +128,9 @@ def load_manifest(source_path: Path) -> StaticAssetManifest | None:
     if not manifest_path.is_file():
         return None
     try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        # json.loads 的静态返回是 Any；显式声明为 JsonValue，后续 isinstance
+        # 收窄才有据可依。
+        payload: JsonValue = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(payload, dict):
@@ -121,17 +141,17 @@ def load_manifest(source_path: Path) -> StaticAssetManifest | None:
     if version != 1 or not isinstance(locale, str) or not isinstance(targets, dict):
         return None
     normalized: dict[str, dict[StaticPermissionProfile, str]] = {}
-    valid_profiles = {"normal", "group_admin", "group_owner", "superuser"}
     for target_key, variants in targets.items():
-        if not isinstance(target_key, str) or not isinstance(variants, dict):
+        if not isinstance(variants, dict):
             continue
         entries: dict[StaticPermissionProfile, str] = {}
-        for profile, filename in variants.items():
-            if profile not in valid_profiles or not isinstance(filename, str):
+        for raw_profile, filename in variants.items():
+            profile = _as_permission_profile(raw_profile)
+            if profile is None or not isinstance(filename, str):
                 continue
             trimmed = filename.strip()
             if trimmed:
-                entries[profile] = trimmed  # type: ignore[assignment]
+                entries[profile] = trimmed
         if entries:
             normalized[target_key] = entries
     return {

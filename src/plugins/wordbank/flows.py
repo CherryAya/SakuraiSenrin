@@ -112,3 +112,13 @@ def _build_wordbank_command_progress_spec(
             threshold_ms=800,
         )
     return None
+
+
+# 这三个符号是「装配层导出」：由 entry_commands 以包级名导入，供长任务审计
+# 按名定位本轮装配。显式导出可让 pyright 认可其被外部引用。
+__all__ = [
+    "_build_wordbank_command_progress_spec",
+    "_finish_guided_add",
+    "_send_pending_entries_view",
+    "_wordbank_submission_lifecycle",
+]

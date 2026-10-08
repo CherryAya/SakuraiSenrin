@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.schema import SchemaPatch
 from src.lib.types import JsonObject
@@ -249,17 +250,14 @@ class WordbankRepository(
             await session.execute(stmt)
 
 
-async def _add_wordbank_response_item_response_mode(session: object) -> None:
-    pragma_result = await session.execute(  # type: ignore[attr-defined]
+async def _add_wordbank_response_item_response_mode(session: AsyncSession) -> None:
+    pragma_result = await session.execute(
         text("PRAGMA table_info(wordbank_response_item)")
     )
-    columns = {
-        str(row[1])
-        for row in pragma_result.fetchall()  # type: ignore[attr-defined]
-    }
+    columns = {str(row[1]) for row in pragma_result.fetchall()}
     if "response_mode" in columns:
         return
-    await session.execute(  # type: ignore[attr-defined]
+    await session.execute(
         text(
             """
             ALTER TABLE wordbank_response_item
@@ -270,18 +268,15 @@ async def _add_wordbank_response_item_response_mode(session: object) -> None:
 
 
 async def _add_wordbank_response_item_forward_source_message_id(
-    session: object,
+    session: AsyncSession,
 ) -> None:
-    pragma_result = await session.execute(  # type: ignore[attr-defined]
+    pragma_result = await session.execute(
         text("PRAGMA table_info(wordbank_response_item)")
     )
-    columns = {
-        str(row[1])
-        for row in pragma_result.fetchall()  # type: ignore[attr-defined]
-    }
+    columns = {str(row[1]) for row in pragma_result.fetchall()}
     if "forward_source_message_id" in columns:
         return
-    await session.execute(  # type: ignore[attr-defined]
+    await session.execute(
         text(
             """
             ALTER TABLE wordbank_response_item
@@ -291,17 +286,16 @@ async def _add_wordbank_response_item_forward_source_message_id(
     )
 
 
-async def _add_wordbank_response_item_forward_node_count(session: object) -> None:
-    pragma_result = await session.execute(  # type: ignore[attr-defined]
+async def _add_wordbank_response_item_forward_node_count(
+    session: AsyncSession,
+) -> None:
+    pragma_result = await session.execute(
         text("PRAGMA table_info(wordbank_response_item)")
     )
-    columns = {
-        str(row[1])
-        for row in pragma_result.fetchall()  # type: ignore[attr-defined]
-    }
+    columns = {str(row[1]) for row in pragma_result.fetchall()}
     if "forward_node_count" in columns:
         return
-    await session.execute(  # type: ignore[attr-defined]
+    await session.execute(
         text(
             """
             ALTER TABLE wordbank_response_item
@@ -311,14 +305,16 @@ async def _add_wordbank_response_item_forward_node_count(session: object) -> Non
     )
 
 
-async def _add_wordbank_response_item_review_history_json(session: object) -> None:
-    pragma_result = await session.execute(  # type: ignore[attr-defined]
+async def _add_wordbank_response_item_review_history_json(
+    session: AsyncSession,
+) -> None:
+    pragma_result = await session.execute(
         text("PRAGMA table_info(wordbank_response_item)")
     )
-    columns = {str(row[1]) for row in pragma_result.fetchall()}  # type: ignore[attr-defined]
+    columns = {str(row[1]) for row in pragma_result.fetchall()}
     if "review_history_json" in columns:
         return
-    await session.execute(  # type: ignore[attr-defined]
+    await session.execute(
         text(
             """
             ALTER TABLE wordbank_response_item

@@ -290,8 +290,8 @@ class ObjectStorageWordbankMediaStorage:
             bucket=self.bucket or "-",
             key=key,
             uri=storage_path,
-            bytes=len(loaded) if loaded is not None else 0,
-            hit=loaded is not None,
+            bytes=len(loaded),
+            hit=True,
             fallback_used=False,
         )
         return loaded

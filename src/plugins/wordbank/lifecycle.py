@@ -34,7 +34,3 @@ def reset_wordbank_initialized() -> None:
     """复位初始化标记，供运行时重载流程强制重新初始化。"""
     global _wordbank_initialized
     _wordbank_initialized = False
-
-
-async def _initialize_wordbank_plugin() -> None:
-    await initialize_wordbank_plugin()

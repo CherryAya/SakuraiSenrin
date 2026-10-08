@@ -62,8 +62,8 @@ class WaterWorkerManifest:
     finished_at: int
     status: WaterWorkerStatus
     record_date: int | None = None
-    metrics: dict[str, JsonValue] = field(default_factory=dict)
-    artifacts: dict[str, JsonValue] = field(default_factory=dict)
+    metrics: dict[str, JsonValue] = field(default_factory=dict[str, JsonValue])
+    artifacts: dict[str, JsonValue] = field(default_factory=dict[str, JsonValue])
     report_items: tuple[WaterPreparedReportItem, ...] = ()
     error: str = ""
 

@@ -2,10 +2,36 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import Protocol, cast
+
 from nonebot import require
 
 from src.lib.long_task import LoggerProgressSink, LongTaskRunner, LongTaskSpec
 from src.logger import logger
+
+
+class _Scheduler(Protocol):
+    """本模块真正用到的 APScheduler 子集。
+
+    ``nonebot_plugin_apscheduler.scheduler`` 的类型经 apscheduler 3.x 传播后
+    参数退化成 ``Unknown``（apscheduler 未带 ``py.typed``）。这里只声明调用到的
+    两个方法，把第三方边界收口成一个明确的协议，避免整条调用链被判为未知。
+    """
+
+    def get_job(self, job_id: str, jobstore: str | None = ...) -> object | None: ...
+
+    def scheduled_job(
+        self,
+        trigger: str,
+        *,
+        hour: int = ...,
+        minute: int = ...,
+        id: str = ...,
+        coalesce: bool = ...,
+        misfire_grace_time: int = ...,
+        max_instances: int = ...,
+    ) -> Callable[[Callable[[], Awaitable[None]]], object]: ...
 
 
 def install_backup_scheduler() -> None:
@@ -20,7 +46,9 @@ def install_backup_scheduler() -> None:
         return
 
     require("nonebot_plugin_apscheduler")
-    from nonebot_plugin_apscheduler import scheduler
+    from nonebot_plugin_apscheduler import scheduler as _raw_scheduler
+
+    scheduler = cast(_Scheduler, _raw_scheduler)
 
     if scheduler.get_job("database_backup_default") is not None:
         return

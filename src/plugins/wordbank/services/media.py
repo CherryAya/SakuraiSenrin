@@ -100,7 +100,7 @@ class WordbankMediaService(WordbankMediaRuntimeMixin):
         self._by_canonical_id: dict[int, WordbankImageRecord] = {}
         self._canonical_ids_by_dhash: dict[str, tuple[int, ...]] = {}
         self._canonical_hash_image: dict[int, WordbankImageRecord] = {}
-        self._dhash_tree: BKTree | None = None
+        self._dhash_tree: BKTree[str] | None = None
         self._remote_load_locks: dict[int, asyncio.Lock] = {}
         self._cache_maintenance_lock = asyncio.Lock()
         self._background_remote_sync_tasks: set[asyncio.Task[None]] = set()

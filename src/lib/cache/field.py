@@ -55,7 +55,7 @@ class GroupCacheItem:
     is_all_shut: bool
     display_name: str = ""
     pre_ban_status: GroupStatus | None = None
-    disabled_plugins: frozenset[str] = field(default_factory=frozenset)
+    disabled_plugins: frozenset[str] = field(default_factory=frozenset[str])
 
     def with_name_hash(self, new_hash: int) -> Self:
         if self.name_hash == new_hash:

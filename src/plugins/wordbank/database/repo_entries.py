@@ -15,6 +15,7 @@ import arrow
 from sqlalchemy import case, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.lib.types import JsonArray, JsonValue
 from src.lib.utils.common import get_current_time
 from src.plugins.wordbank.message_model import (
     MessageShape,
@@ -68,12 +69,11 @@ class WordbankRepositoryEntriesMixin:
         overwritten: bool,
     ) -> str:
         try:
-            payload = json.loads(review_history_json or "[]")
+            raw_history: JsonValue = json.loads(review_history_json or "[]")
         except json.JSONDecodeError:
-            payload = []
-        if not isinstance(payload, list):
-            payload = []
-        payload.append(
+            raw_history = []
+        history: JsonArray = raw_history if isinstance(raw_history, list) else []
+        history.append(
             {
                 "action": action,
                 "actor_user_id": actor_user_id,
@@ -82,7 +82,7 @@ class WordbankRepositoryEntriesMixin:
                 "overwritten": overwritten,
             }
         )
-        return json.dumps(payload, ensure_ascii=False)
+        return json.dumps(history, ensure_ascii=False)
 
     async def reset_all_data(
         self,

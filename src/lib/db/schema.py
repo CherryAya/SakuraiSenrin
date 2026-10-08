@@ -30,7 +30,7 @@ class SchemaPatch:
 
 @dataclass(slots=True)
 class PatchRegistry:
-    patches: list[SchemaPatch] = field(default_factory=list)
+    patches: list[SchemaPatch] = field(default_factory=list[SchemaPatch])
 
     def register(self, patch: SchemaPatch) -> None:
         self.patches.append(patch)

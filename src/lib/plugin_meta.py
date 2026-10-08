@@ -22,9 +22,14 @@ def create_plugin_metadata(
     本项目已将详细帮助文档统一迁移到 `extra.docs`，
     因此不再维护独立 usage 文本。
     """
+    # PluginMetadata.extra 声明为 dict[Any, Any]；直接传 Mapping 会因不变性报错，
+    # 逐项拷贝成 dict[str, object] 后既满足契约又保留键值类型。
+    resolved_extra: dict[str, object] = {}
+    for key, value in extra.items():
+        resolved_extra[key] = value
     return PluginMetadata(
         name=name,
         description=description,
         usage="",
-        extra=extra,
+        extra=resolved_extra,
     )

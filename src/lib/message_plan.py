@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from typing import cast
+from typing import Protocol
+from typing_extensions import TypeIs
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
-from nonebot.matcher import Matcher
 
 from src.lib.message_delivery import (
     DeliveryResult,
@@ -17,6 +17,58 @@ from src.lib.message_delivery import (
     resolve_delivery_target,
 )
 from src.lib.messages import empty_message
+
+
+class _FinishCapable(Protocol):
+    """``matcher.finish(message)`` 的最小能力。
+
+    直接调用 ``matcher.finish`` 会把 nonebot 的类方法签名（含未参数化的
+    ``MessageSegment``/``MessageTemplate`` 与 ``**kwargs``）暴露进来，触发
+    “partially unknown”；经由本协议声明所需形态后，调用点只剩精确的
+    ``Message | str | None``，且真实 ``Matcher`` 仍结构匹配。
+    """
+
+    async def finish(self, message: Message | str | None = None) -> object: ...
+
+
+class _RejectCapable(Protocol):
+    async def reject(self, prompt: Message | str | None = None) -> object: ...
+
+
+class _SendCapable(Protocol):
+    async def send(self, message: Message | str) -> object: ...
+
+
+class _PauseCapable(Protocol):
+    async def pause(self, prompt: Message | str | None = None) -> object: ...
+
+
+async def _matcher_finish(
+    matcher: _FinishCapable,
+    message: Message | str | None,
+) -> None:
+    await matcher.finish(message)
+
+
+async def _matcher_reject(
+    matcher: _RejectCapable,
+    prompt: Message | str | None,
+) -> None:
+    await matcher.reject(prompt)
+
+
+async def _matcher_send(
+    matcher: _SendCapable,
+    message: Message | str,
+) -> None:
+    await matcher.send(message)
+
+
+async def _matcher_pause(
+    matcher: _PauseCapable,
+    prompt: Message | str | None,
+) -> None:
+    await matcher.pause(prompt)
 
 
 @dataclass(slots=True, frozen=True)
@@ -146,6 +198,15 @@ async def build_image_or_text_plan_entry(
     return build_text_plan_entry(fallback_text)
 
 
+def _is_awaitable[T](value: T | Awaitable[T]) -> TypeIs[Awaitable[T]]:
+    """``isinstance(value, Awaitable)`` 的收窄版（TypeIs 保真到元素类型）。
+
+    裸 ``isinstance`` 只把 ``alternative`` 收窄成 ``Awaitable[Unknown]``，返回值
+    因此带上 Unknown；TypeIs 让 else 分支保持 ``TPlanResult``。
+    """
+    return isinstance(value, Awaitable)
+
+
 async def build_preferred_message_plan[TPlanResult](
     *,
     preferred_builder: Callable[[], Awaitable[TPlanResult]],
@@ -159,7 +220,7 @@ async def build_preferred_message_plan[TPlanResult](
             on_preferred_error(exc)
 
     alternative = alternative_builder()
-    if isinstance(alternative, Awaitable):
+    if _is_awaitable(alternative):
         return await alternative
     return alternative
 
@@ -243,7 +304,7 @@ async def deliver_message_plan(
             used_forward=True,
         )
 
-    results = []
+    results: list[DeliveryResult] = []
     for rendered in rendered_messages:
         results.append(
             await deliver_single_message(
@@ -261,9 +322,19 @@ async def deliver_message_plan(
     )
 
 
+async def finish_matcher(matcher: _FinishCapable) -> None:
+    """结束当前响应器且不带正文（等价 ``matcher.finish()``）。
+
+    直接调用真实 ``Matcher.finish`` 会把 nonebot 的类方法签名（含未参数化的
+    ``MessageSegment``/``MessageTemplate`` 与 ``**kwargs``）暴露进诊断；经协议
+    收口后调用点干净，真实 ``Matcher`` 仍结构匹配。
+    """
+    await matcher.finish()
+
+
 async def finish_with_delivery_plan(
     bot: Bot,
-    matcher: Matcher,
+    matcher: _FinishCapable,
     *,
     plan: DeliveryPlan,
     event: MessageEvent | None = None,
@@ -280,7 +351,7 @@ async def finish_with_delivery_plan(
 
 async def finish_with_message(
     bot: Bot | None,
-    matcher: Matcher,
+    matcher: _FinishCapable,
     *,
     message: MessagePlanInput,
     source_kind: str,
@@ -292,14 +363,14 @@ async def finish_with_message(
 ) -> None:
     rendered_message = _render_matcher_message_input(message)
     if target is None and force_forward is not True and not fallback_nickname:
-        await matcher.finish(rendered_message)
+        await _matcher_finish(matcher, rendered_message)
         return
     delivery_capable_bot = isinstance(bot, Bot)
     if not delivery_capable_bot or (event is None and target is None):
-        await matcher.finish(rendered_message)
+        await _matcher_finish(matcher, rendered_message)
         return
     await finish_with_delivery_plan(
-        cast(Bot, bot),
+        bot,
         matcher,
         plan=DeliveryPlan(
             messages=(message,),
@@ -314,24 +385,24 @@ async def finish_with_message(
 
 
 async def reject_with_message(
-    matcher: Matcher,
+    matcher: _RejectCapable,
     *,
     message: MessagePlanInput,
 ) -> None:
-    await matcher.reject(_render_matcher_message_input(message))
+    await _matcher_reject(matcher, _render_matcher_message_input(message))
 
 
 async def send_with_message(
-    matcher: Matcher,
+    matcher: _SendCapable,
     *,
     message: MessagePlanInput,
 ) -> None:
-    await matcher.send(_render_matcher_message_input(message))
+    await _matcher_send(matcher, _render_matcher_message_input(message))
 
 
 async def pause_with_message(
-    matcher: Matcher,
+    matcher: _PauseCapable,
     *,
     message: MessagePlanInput,
 ) -> None:
-    await matcher.pause(_render_matcher_message_input(message))
+    await _matcher_pause(matcher, _render_matcher_message_input(message))

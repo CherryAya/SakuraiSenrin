@@ -9,7 +9,9 @@ from .types import ObjectStorageClient, ObjectStorageConfigError
 
 @dataclass(slots=True)
 class ObjectStorageRegistry:
-    _clients: dict[str, ObjectStorageClient] = field(default_factory=dict)
+    _clients: dict[str, ObjectStorageClient] = field(
+        default_factory=dict[str, ObjectStorageClient],
+    )
 
     def register(self, client: ObjectStorageClient) -> None:
         self._clients[client.provider] = client

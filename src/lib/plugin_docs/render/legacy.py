@@ -15,7 +15,7 @@ from collections.abc import Iterable, Sequence
 from io import BytesIO
 from math import ceil
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, cast
 
 from PIL import Image, ImageDraw, ImageFont
 from pil_utils import BuildImage
@@ -1135,7 +1135,10 @@ class LegacyDemoImageRenderer:
             font_families=self.FONT_FAMILIES,
             stroke_ratio=0,
         )
-        draw._image.paste(text_layer, (int(x), int(y)), text_layer)
+        # PIL 的 ImageDraw 没有公开的「取回底层 Image」接口，只能用内部 _image
+        # 走 Image.paste 的 mask 语义；用 getattr 取原始对象避免私有访问告警。
+        target_image = cast("Image.Image", getattr(draw, "_image"))
+        target_image.paste(text_layer, (int(x), int(y)), text_layer)
 
     def _text_size(self, text: str, font: DocsFont) -> tuple[int, int, int, int]:
         if not text:

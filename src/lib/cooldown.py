@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import IntEnum, auto
 from inspect import isawaitable
 from time import monotonic
-from typing import TypeVar, cast
+from typing import cast
 
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
@@ -16,9 +16,9 @@ from nonebot.matcher import Matcher
 from nonebot.params import Depends
 
 from src.config import config
+from src.lib.message_plan import finish_with_message
 
 CooldownPrompt = str | Message
-_CooldownValueT = TypeVar("_CooldownValueT")
 CooldownPromptBuilder = Callable[
     [MessageEvent, int],
     CooldownPrompt | Awaitable[CooldownPrompt],
@@ -109,11 +109,11 @@ class MemoryCooldown:
 
 
 async def _maybe_await[CooldownValueT](
-    value: _CooldownValueT | Awaitable[_CooldownValueT],
-) -> _CooldownValueT:
+    value: CooldownValueT | Awaitable[CooldownValueT],
+) -> CooldownValueT:
     if isawaitable(value):
-        return await cast("Awaitable[_CooldownValueT]", value)
-    return value
+        return await cast("Awaitable[CooldownValueT]", value)
+    return cast("CooldownValueT", value)
 
 
 def build_cooldown_dependency(
@@ -133,10 +133,13 @@ def build_cooldown_dependency(
         if result.acquired:
             return
 
-        await matcher.finish(
-            await _maybe_await(
+        await finish_with_message(
+            None,
+            matcher,
+            message=await _maybe_await(
                 prompt_builder(event, result.remaining_seconds),
-            )
+            ),
+            source_kind="cooldown",
         )
 
     return Depends(dependency)

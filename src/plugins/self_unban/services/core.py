@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Literal
@@ -100,7 +100,7 @@ class SelfUnbanService:
     async def _acquire_subject_locks(
         self,
         keys: tuple[str, ...],
-    ) -> AsyncIterator[None]:
+    ) -> AsyncGenerator[None]:
         unique_keys = sorted(set(keys))
         locks = [self._get_subject_lock(key) for key in unique_keys]
         for lock in locks:

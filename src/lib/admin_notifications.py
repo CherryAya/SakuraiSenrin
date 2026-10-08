@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 from nonebot.adapters.onebot.v11.bot import Bot
 
@@ -44,10 +44,12 @@ def parse_admin_notification_group_ids(raw: object) -> tuple[str, ...]:
     if raw is None:
         return ()
 
-    if isinstance(raw, (list, tuple, set, frozenset)):
-        payload = raw
-    else:
+    if not isinstance(raw, (list, tuple, set, frozenset)):
         raise ValueError("ADMIN_NOTIFY_GROUP_IDS must be an array-like value")
+
+    # isinstance 只把 object 收窄成「若干未知元素集合」；这里把元素类型写实为
+    # object（下列 str() 已能接受任意形态），不引入 Any 也不放松校验分支。
+    payload = cast("Collection[object]", raw)
 
     group_ids: list[str] = []
     for item in payload:

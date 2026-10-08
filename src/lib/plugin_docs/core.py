@@ -251,7 +251,17 @@ class NodeMatchResult:
 
 
 def _support_note(locale: LocaleCode) -> str:
+    """历史遗留副本，保留供按模块路径引用；实际实现在 _engine / meta。
+
+    无任何调用方（grep ``_support_note`` 只在此定义处命中），也不在门面
+    ``plugin_docs.__init__`` 的导出链上——门面用的是 _engine 的同名实现。列入
+    __all__ 以满足 strict 的 reportUnusedFunction，同时显式声明「可被外部按名
+    引用」的意图。新代码请直接用 ``plugin_docs.meta.support_note``。
+    """
     return tr(locale, "help.index.notice.item2").removeprefix("2. ").strip()
+
+
+__all__ = ["_support_note"]
 
 
 def _derive_tree_identity_from_source(source_path: Path) -> tuple[str, str | None]:

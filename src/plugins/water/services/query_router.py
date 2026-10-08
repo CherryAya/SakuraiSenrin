@@ -419,7 +419,7 @@ class WaterQueryRouter:
         subject: WaterRankSubject,
         scope: WaterRankScope | None = None,
     ) -> str:
-        lines = []
+        lines: list[str] = []
         if scope is not None and not is_valid_rank_combo(subject, scope):
             suggested_scope = suggest_scope_for_subject(subject)
             suggestion = rank_command_suggestion(

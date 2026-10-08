@@ -51,7 +51,7 @@ class WaterRankCardItem:
     current_rank: int
     trend: int | None
     group_count: int = 0
-    daily_msg_counts: list[int] = field(default_factory=list)
+    daily_msg_counts: list[int] = field(default_factory=list[int])
 
     @property
     def user_id(self) -> str:
@@ -172,12 +172,16 @@ class WaterGroupReportImageData:
     group_rank_title: str
     group_rank_summary: str
     group_rank_items: list[WaterGroupDailyRankCardItem]
-    previous_hourly_counts: list[int] = field(default_factory=list)
-    group_rank_insights: list[WaterReportInsightItem] = field(default_factory=list)
-    group_share_slices: list[WaterGroupShareSlice] = field(default_factory=list)
-    group_rank_trend_labels: list[str] = field(default_factory=list)
+    previous_hourly_counts: list[int] = field(default_factory=list[int])
+    group_rank_insights: list[WaterReportInsightItem] = field(
+        default_factory=list[WaterReportInsightItem]
+    )
+    group_share_slices: list[WaterGroupShareSlice] = field(
+        default_factory=list[WaterGroupShareSlice]
+    )
+    group_rank_trend_labels: list[str] = field(default_factory=list[str])
     group_rank_trend_series: list[WaterGroupRankTrendSeries] = field(
-        default_factory=list
+        default_factory=list[WaterGroupRankTrendSeries]
     )
     right_panel_layout_tier: WaterReportLayoutTier = "compact"
     group_rank_share_ratio: float = 0.0

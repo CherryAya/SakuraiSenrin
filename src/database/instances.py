@@ -18,14 +18,14 @@ from .patches import (
 )
 from .snapshot.ops import UserSnapshotOps
 
-core_db = StateStore(
+core_db: StateStore = StateStore(
     namespace="core_db",
     filename="core.db",
 )
 core_db.patch_registry = build_core_patch_registry()
 register_backup_database(core_db)
 
-log_db = AliasStore[TraceEventLogOps](
+log_db: AliasStore[TraceEventLogOps] = AliasStore(
     EventStore(
         namespace="log_db",
         prefix="log",
@@ -38,7 +38,7 @@ log_db = AliasStore[TraceEventLogOps](
 log_db.patch_registry = build_log_patch_registry()
 register_backup_database(log_db)
 
-snapshot_db = AliasStore[UserSnapshotOps](
+snapshot_db: AliasStore[UserSnapshotOps] = AliasStore(
     EventStore(
         namespace="snapshot_db",
         prefix="snapshot",

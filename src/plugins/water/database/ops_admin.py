@@ -317,7 +317,7 @@ class WaterMatrixMergeStateOps(BaseOps[WaterMatrixMergeState]):
 
 class WaterAchievementOps(BaseOps[WaterUserAchievement]):
     @staticmethod
-    def _unlocked_stmt() -> Select[tuple[str, str, str, str, int]]:
+    def _unlocked_stmt() -> Select[*tuple[str, str, str, str, int]]:
         return select(
             WaterUserAchievement.user_id,
             WaterUserAchievement.achievement_id,

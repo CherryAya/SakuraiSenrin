@@ -276,15 +276,6 @@ def _with_separators(shapes: tuple[MessageShape, ...]) -> tuple[MessageShape, ..
     return tuple(parts)
 
 
-def _extract_forward_messages(detail: object) -> tuple[MessageInput, ...]:
-    messages: list[MessageInput] = []
-    for item in _extract_forward_raw_items(detail):
-        message = _coerce_forward_input(item)
-        if message is not None:
-            messages.append(message)
-    return tuple(messages)
-
-
 def _extract_forward_raw_items(detail: object) -> tuple[object, ...]:
     raw: object = None
     if isinstance(detail, dict):

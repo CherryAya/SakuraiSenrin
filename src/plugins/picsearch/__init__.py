@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from httpx import AsyncClient
 from nonebot import on_regex
@@ -42,6 +43,7 @@ from src.lib.message_plan import (
     MessagePlanInput,
     TextBlock,
     deliver_message_plan,
+    finish_matcher,
     finish_with_message,
     reject_with_message,
 )
@@ -414,7 +416,7 @@ async def run_search(
                 event=event,
             )
 
-    await matcher.finish()
+    await finish_matcher(matcher)
 
 
 @picsearch_matcher.handle(
@@ -471,7 +473,29 @@ async def _(
         )
 
 
-@picsearch_matcher.got("indexes", prompt=MULTI_IMAGE_PROMPT)
+type _PicsearchHandler = Callable[..., Awaitable[object]]
+
+
+class _GotFactory(Protocol):
+    """``Matcher.got`` 的最小形态。
+
+    ``got`` 的返回装饰器签名引出了未参数化的 ``MessageSegment``/``MessageTemplate``
+    与裸 ``Any``，strict 下会报 partially unknown。本插件只用到「纯文本 prompt 的
+    got」，按此收口后调用点干净，且不影响运行时行为。
+    """
+
+    def __call__(
+        self,
+        key: str,
+        prompt: str | Message | None = ...,
+        parameterless: Iterable[object] | None = ...,
+    ) -> Callable[[_PicsearchHandler], _PicsearchHandler]: ...
+
+
+_picsearch_got = cast("_GotFactory", getattr(picsearch_matcher, "got"))
+
+
+@_picsearch_got("indexes", prompt=MULTI_IMAGE_PROMPT)
 async def _choose_indexes(
     bot: Bot,
     matcher: Matcher,
@@ -483,9 +507,7 @@ async def _choose_indexes(
     image_urls = state.get("picsearch_image_urls")
     engine_text = str(state.get("picsearch_engine", PicsearchEngine.SAUCENAO.value))
 
-    if not isinstance(image_urls, list) or not all(
-        isinstance(item, str) for item in image_urls
-    ):
+    if not isinstance(image_urls, list):
         await finish_with_message(
             bot,
             matcher,
@@ -494,7 +516,17 @@ async def _choose_indexes(
             source_kind="picsearch",
         )
         return
-    typed_image_urls = cast(list[str], image_urls)
+    raw_image_urls: list[object] = cast("list[object]", image_urls)
+    if not all(isinstance(item, str) for item in raw_image_urls):
+        await finish_with_message(
+            bot,
+            matcher,
+            event=event,
+            message=tr(locale, "picsearch.reply_required"),
+            source_kind="picsearch",
+        )
+        return
+    typed_image_urls = cast("list[str]", image_urls)
 
     try:
         parsed_indexes = parse_indexes(

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeGuard
 
 from nonebot.adapters.onebot.v11 import Bot, Message
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
@@ -15,7 +15,12 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from src.lib.backup import register_backup_database
 from src.lib.db.connectors import StateStore
 from src.lib.db.orm import TimeMixin
-from src.lib.types import JsonValue
+from src.lib.types import (
+    JsonValue,
+    as_object,
+    is_object_mapping,
+    is_object_sequence,
+)
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 
@@ -125,6 +130,12 @@ class ReplyMessageSnapshot:
     sender_user_id: str
 
 
+type _RouteCacheKey = tuple[str, ...]
+type _EventRouteCache = dict[_RouteCacheKey, ResolvedReplyTarget | None]
+type _EventSnapshotCache = dict[str, ReplyMessageSnapshot | None]
+type _EventHashCache = dict[tuple[str, str], str]
+
+
 class ReplyContextRepository:
     def __init__(self) -> None:
         self._initialized = False
@@ -137,9 +148,7 @@ class ReplyContextRepository:
 
     @staticmethod
     def _to_record(row: ReplyContext) -> ReplyContextRecord:
-        payload = json.loads(row.payload_json or "{}")
-        if not isinstance(payload, dict):
-            payload = {}
+        payload = as_object(json.loads(row.payload_json or "{}")) or {}
         return ReplyContextRecord(
             context_kind=row.context_kind,
             message_id=row.message_id,
@@ -349,6 +358,11 @@ def _normalize_image_key(data: Mapping[str, object]) -> str:
     return "image"
 
 
+def _normalize_text_map(data: Mapping[str, object]) -> dict[str, str]:
+    """按 key 排序、值统一转文本，供未知类型的 segment 载荷使用。"""
+    return {key: _normalize_text_value(data[key]) for key in sorted(data.keys())}
+
+
 def _normalize_segment_payload(
     segment_type: str, data: Mapping[str, object]
 ) -> dict[str, object]:
@@ -362,10 +376,7 @@ def _normalize_segment_payload(
         return {"type": "image", "key": _normalize_image_key(data)}
     return {
         "type": segment_type,
-        "data": {
-            str(key): _normalize_text_value(value)
-            for key, value in sorted(data.items(), key=lambda item: str(item[0]))
-        },
+        "data": _normalize_text_map(data),
     }
 
 
@@ -384,16 +395,16 @@ def _iter_message_segments(
         ]
     segments: list[dict[str, object]] = []
     for item in message:
-        if isinstance(item, dict):
+        if is_object_mapping(item):
             segment_type = item.get("type")
             data = item.get("data")
-            if isinstance(segment_type, str) and isinstance(data, dict):
-                segments.append({"type": segment_type, "data": data})
+            if isinstance(segment_type, str) and is_object_mapping(data):
+                segments.append({"type": segment_type, "data": dict(data)})
                 continue
         segment_type = getattr(item, "type", None)
         data = getattr(item, "data", None)
-        if isinstance(segment_type, str) and isinstance(data, dict):
-            segments.append({"type": segment_type, "data": data})
+        if isinstance(segment_type, str) and is_object_mapping(data):
+            segments.append({"type": segment_type, "data": dict(data)})
     return segments
 
 
@@ -405,7 +416,7 @@ def build_reply_message_hash(
     normalized_segments = [
         _normalize_segment_payload(
             str(segment["type"]),
-            segment["data"] if isinstance(segment["data"], Mapping) else {},
+            segment["data"] if is_object_mapping(segment["data"]) else {},
         )
         for segment in _iter_message_segments(message)
     ]
@@ -433,7 +444,7 @@ async def fetch_reply_message_snapshot(
             f"message_id={message_id} bot_id={bot.self_id} error={exc}"
         )
         return None
-    if not isinstance(raw_result, Mapping):
+    if not is_object_mapping(raw_result):
         logger.debug(
             "[ReplyRouter] get_msg invalid payload "
             f"message_id={message_id} bot_id={bot.self_id}"
@@ -441,7 +452,7 @@ async def fetch_reply_message_snapshot(
         return None
     sender = raw_result.get("sender")
     sender_user_id = ""
-    if isinstance(sender, Mapping):
+    if is_object_mapping(sender):
         sender_user_id = _normalize_text_value(sender.get("user_id", ""))
     if not sender_user_id:
         sender_user_id = _normalize_text_value(raw_result.get("user_id", ""))
@@ -450,7 +461,7 @@ async def fetch_reply_message_snapshot(
         resolved_message: Message | Sequence[object] | str = message
     elif isinstance(message, str):
         resolved_message = message
-    elif isinstance(message, Sequence):
+    elif is_object_sequence(message):
         resolved_message = message
     else:
         resolved_message = _normalize_text_value(raw_result.get("raw_message", ""))
@@ -527,7 +538,7 @@ async def record_reply_context_from_send_result(
     origin_target_id: str,
     fallback_message: Message | Sequence[object] | str,
 ) -> ReplyContextRecord | None:
-    if isinstance(send_result, Mapping):
+    if is_object_mapping(send_result):
         raw_message_id = send_result.get("message_id")
     else:
         raw_message_id = getattr(send_result, "message_id", None)
@@ -564,35 +575,47 @@ def _dedupe_hash_records(
     return tuple(deduped.values())
 
 
+def _is_route_cache(value: object) -> TypeGuard[_EventRouteCache]:
+    return isinstance(value, dict)
+
+
+def _is_snapshot_cache(value: object) -> TypeGuard[_EventSnapshotCache]:
+    return isinstance(value, dict)
+
+
+def _is_hash_cache(value: object) -> TypeGuard[_EventHashCache]:
+    return isinstance(value, dict)
+
+
 def _event_cache(
     event: MessageEvent,
-) -> dict[tuple[str, ...], ResolvedReplyTarget | None]:
+) -> _EventRouteCache:
     cache = getattr(event, "__reply_router_cache__", None)
-    if isinstance(cache, dict):
+    if _is_route_cache(cache):
         return cache
-    cache = {}
-    setattr(event, "__reply_router_cache__", cache)
-    return cache
+    fresh: _EventRouteCache = {}
+    setattr(event, "__reply_router_cache__", fresh)
+    return fresh
 
 
 def _event_snapshot_cache(
     event: MessageEvent,
-) -> dict[str, ReplyMessageSnapshot | None]:
+) -> _EventSnapshotCache:
     cache = getattr(event, "__reply_router_snapshot_cache__", None)
-    if isinstance(cache, dict):
+    if _is_snapshot_cache(cache):
         return cache
-    cache = {}
-    setattr(event, "__reply_router_snapshot_cache__", cache)
-    return cache
+    fresh: _EventSnapshotCache = {}
+    setattr(event, "__reply_router_snapshot_cache__", fresh)
+    return fresh
 
 
-def _event_hash_cache(event: MessageEvent) -> dict[tuple[str, str], str]:
+def _event_hash_cache(event: MessageEvent) -> _EventHashCache:
     cache = getattr(event, "__reply_router_hash_cache__", None)
-    if isinstance(cache, dict):
+    if _is_hash_cache(cache):
         return cache
-    cache = {}
-    setattr(event, "__reply_router_hash_cache__", cache)
-    return cache
+    fresh: _EventHashCache = {}
+    setattr(event, "__reply_router_hash_cache__", fresh)
+    return fresh
 
 
 async def _fetch_reply_message_snapshot_cached(

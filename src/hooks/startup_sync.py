@@ -46,11 +46,13 @@ startup_sync_reply = on_message(
 @startup_sync_reply.handle()
 async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     result = await dispatch_reply_route("startup_sync.restore", bot, event)
-    if result is not None:
-        await finish_with_message(
-            bot,
-            matcher,
-            event=event,
-            message=result,
-            source_kind="startup_sync",
-        )
+    # 该路由的 handler 契约为 str | None，dispatch 统一按 object 返回。
+    if not isinstance(result, str):
+        return
+    await finish_with_message(
+        bot,
+        matcher,
+        event=event,
+        message=result,
+        source_kind="startup_sync",
+    )

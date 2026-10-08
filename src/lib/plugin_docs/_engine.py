@@ -29,7 +29,6 @@ from src.lib.message_plan import (
     build_text_plan_entry,
     render_message_plan_entry,
 )
-from src.lib.types import JsonValue
 from src.lib.utils.common import get_current_time
 
 from .command_layout import (
@@ -77,9 +76,6 @@ from .copy import (
     build_static_entry_copy_text as build_static_entry_copy_text_impl,
 )
 from .copy import (
-    feature_command_for_display as feature_command_for_display_impl,
-)
-from .copy import (
     feature_command_sections as feature_command_sections_impl,
 )
 from .copy import (
@@ -98,15 +94,6 @@ from .meta import (
     create_docs_meta as create_docs_meta_impl,
 )
 from .meta import (
-    derive_tree_identity_from_source as derive_tree_identity_from_source_impl,
-)
-from .meta import (
-    extract_metadata_field as extract_metadata_field_impl,
-)
-from .meta import (
-    normalize_docs_meta as normalize_docs_meta_impl,
-)
-from .meta import (
     read_docs_meta as read_docs_meta_impl,
 )
 from .meta import (
@@ -116,13 +103,7 @@ from .meta import (
     resolve_doc_impression_color as resolve_doc_impression_color_impl,
 )
 from .meta import (
-    resolve_doc_owner_module_path as resolve_doc_owner_module_path_impl,
-)
-from .meta import (
     resolve_doc_signature as resolve_doc_signature_impl,
-)
-from .meta import (
-    resolve_main_group_id as resolve_main_group_id_impl,
 )
 from .meta import (
     support_note as support_note_impl,
@@ -167,9 +148,6 @@ from .query import (
     match_feature as match_feature_impl,
 )
 from .query import (
-    permission_allows as permission_allows_impl,
-)
-from .query import (
     rank_features_for_disclosure as rank_features_for_disclosure_impl,
 )
 from .query import (
@@ -188,25 +166,13 @@ from .readme import (
     normalize_heading as normalize_heading_impl,
 )
 from .readme import (
-    parse_bool_meta as parse_bool_meta_impl,
-)
-from .readme import (
-    parse_demo_turns as parse_demo_turns_impl,
-)
-from .readme import (
     parse_feature_details_tokens as parse_feature_details_tokens_impl,
-)
-from .readme import (
-    parse_feature_heading as parse_feature_heading_impl,
 )
 from .readme import (
     parse_feature_index_tokens as parse_feature_index_tokens_impl,
 )
 from .readme import (
     parse_flow_section_tokens as parse_flow_section_tokens_impl,
-)
-from .readme import (
-    parse_int_meta as parse_int_meta_impl,
 )
 from .readme import (
     parse_meta_block_tokens as parse_meta_block_tokens_impl,
@@ -223,9 +189,6 @@ from .readme import (
 from .readme import (
     split_csv as split_csv_impl,
 )
-from .readme import (
-    split_tokens_before_heading as split_tokens_before_heading_impl,
-)
 from .render.demo import DemoImageRenderer, build_trace_footer_left_text
 from .render.progressive import ProgressiveDisclosureRenderer
 from .static_assets import (
@@ -236,6 +199,11 @@ from .static_assets import (
     static_target_key,
     summary_target_key,
 )
+
+# ``_support_note`` 前缀虽为下划线，但它是包门面 ``plugin_docs.__init__`` 与
+# 测试显式再导出的公共对象（见 tests/test_plugin_docs_readme_bundle.py）。
+# 显式列入 __all__ 以声明该跨模块导出意图，而非私有实现细节。
+__all__ = ["_support_note"]
 
 
 def _support_note(locale: LocaleCode) -> str:
@@ -298,10 +266,6 @@ def _help_home_section_style(section: HelpHomeSectionKind) -> dict[str, str]:
     }[section]
 
 
-def _resolve_main_group_id(locale: LocaleCode = "zh-CN") -> str:
-    return resolve_main_group_id_impl(locale)
-
-
 def create_docs_meta(
     provider: DocsProvider | None = None,
     *,
@@ -337,14 +301,6 @@ def read_docs_meta(metadata: PluginMetadata) -> DocsMeta | None:
 
 def read_docs_metas(metadata: PluginMetadata) -> tuple[DocsMeta, ...]:
     return read_docs_metas_impl(metadata)
-
-
-def _normalize_docs_meta(
-    raw: dict[str, JsonValue],
-    *,
-    default_permission: Permission | int | str,
-) -> DocsMeta | None:
-    return normalize_docs_meta_impl(raw, default_permission=default_permission)
 
 
 def build_static_docs(
@@ -866,13 +822,6 @@ def split_features_for_disclosure(
     )
 
 
-def _permission_allows(
-    actor_permission: Permission,
-    required_permission: Permission,
-) -> bool:
-    return permission_allows_impl(actor_permission, required_permission)
-
-
 def load_plugin_doc_bundle(
     *,
     source: str | Path,
@@ -1015,19 +964,8 @@ def match_feature(
     return match_feature_impl(features, query)
 
 
-def _unique_nodes(nodes: Sequence[DocNode]) -> tuple[DocNode, ...]:
-    unique: dict[str, DocNode] = {}
-    for node in nodes:
-        unique.setdefault(node.slug, node)
-    return tuple(unique.values())
-
-
 def _coerce_permission(value: Permission | int | str) -> Permission:
     return coerce_permission_impl(value)
-
-
-def _derive_tree_identity_from_source(source_path: Path) -> tuple[str, str | None]:
-    return derive_tree_identity_from_source_impl(source_path)
 
 
 @lru_cache(maxsize=1)
@@ -1443,19 +1381,6 @@ def audit_demo_layout(
     return errors
 
 
-def _feature_command_for_display(
-    bundle: PluginDocBundle,
-    feature: FeatureDoc,
-    node_title: str,
-) -> str:
-    return feature_command_for_display_impl(
-        bundle,
-        feature,
-        node_title,
-        normalize_inline_text=_normalize_inline_text,
-    )
-
-
 def _format_feature_command_lines(
     bundle: PluginDocBundle,
     feature: FeatureDoc,
@@ -1686,58 +1611,14 @@ def _render_markdown_blocks(tokens: Sequence[Token]) -> str:
     return render_markdown_blocks_impl(tokens)
 
 
-def _extract_list_item_tokens(tokens: Sequence[Token]) -> tuple[tuple[Token, ...], ...]:
-    items: list[tuple[Token, ...]] = []
-    index = 0
-    while index < len(tokens):
-        if tokens[index].type != "list_item_open":
-            index += 1
-            continue
-        depth = 1
-        cursor = index + 1
-        while cursor < len(tokens) and depth > 0:
-            if tokens[cursor].type == "list_item_open":
-                depth += 1
-            elif tokens[cursor].type == "list_item_close":
-                depth -= 1
-            cursor += 1
-        items.append(tuple(tokens[index + 1 : max(index + 1, cursor - 1)]))
-        index = cursor
-    return tuple(items)
-
-
 def _parse_meta_block_tokens(tokens: Sequence[Token]) -> dict[str, str]:
     return parse_meta_block_tokens_impl(
         tokens, parse_inline_tokens=_parse_inline_tokens
     )
 
 
-def _split_key_value(value: str) -> tuple[str, str]:
-    for separator in (":", "："):
-        if separator not in value:
-            continue
-        key, payload = value.split(separator, 1)
-        return key.strip(), payload.strip()
-    return "", ""
-
-
-def _strip_wrapping_backticks(value: str) -> str:
-    inline_tokens = _parse_inline_tokens(value)
-    if len(inline_tokens) == 1 and inline_tokens[0].type == "code_inline":
-        return inline_tokens[0].content.strip()
-    return value
-
-
 def _parse_permission(value: str) -> Permission:
     return parse_permission_impl(value)
-
-
-def _parse_bool_meta(value: str, *, default: bool = False) -> bool:
-    return parse_bool_meta_impl(value, default=default)
-
-
-def _parse_int_meta(value: str, *, default: int = 1000) -> int:
-    return parse_int_meta_impl(value, default=default)
 
 
 def _parse_feature_index_tokens(tokens: Sequence[Token]) -> dict[str, tuple[str, str]]:
@@ -1756,26 +1637,10 @@ def _parse_feature_details_tokens(
     )
 
 
-def _split_tokens_before_heading(
-    tokens: Sequence[Token],
-    *,
-    tag: str,
-) -> tuple[tuple[Token, ...], tuple[Token, ...]]:
-    return split_tokens_before_heading_impl(tokens, tag=tag)
-
-
-def _parse_feature_heading(heading: Token) -> tuple[str, str]:
-    return parse_feature_heading_impl(heading)
-
-
 def _parse_flow_section_tokens(
     tokens: Sequence[Token],
 ) -> tuple[str, tuple[DocsDemoTurn, ...]]:
     return parse_flow_section_tokens_impl(tokens)
-
-
-def _parse_demo_turns(content: str) -> list[DocsDemoTurn]:
-    return parse_demo_turns_impl(content)
 
 
 def _merge_features(
@@ -1795,11 +1660,3 @@ def _resolve_doc_signature(source_path: Path) -> tuple[str, str]:
 
 def _resolve_doc_impression_color(source_path: Path) -> str:
     return resolve_doc_impression_color_impl(source_path)
-
-
-def _resolve_doc_owner_module_path(source_path: Path) -> Path | None:
-    return resolve_doc_owner_module_path_impl(source_path)
-
-
-def _extract_metadata_field(raw_text: str, field: str) -> str:
-    return extract_metadata_field_impl(raw_text, field)

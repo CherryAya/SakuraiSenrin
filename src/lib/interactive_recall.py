@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
+from typing import cast
 
 from nonebot.adapters.onebot.v11.event import (
     FriendRecallNoticeEvent,
@@ -11,9 +12,11 @@ from nonebot.adapters.onebot.v11.event import (
     MessageEvent,
     NoticeEvent,
 )
-from nonebot.matcher import Matcher, matchers
+from nonebot.dependencies import Dependent
+from nonebot.matcher import Matcher, MatcherSource, matchers
+from nonebot.permission import Permission
 from nonebot.rule import Rule
-from nonebot.typing import T_State
+from nonebot.typing import T_PermissionUpdater, T_State, T_TypeUpdater
 
 from src.lib.message_plan import MessagePlanInput
 
@@ -101,10 +104,21 @@ def find_recall_session(
             continue
         if matcher_cls.module_name != matcher_source.module_name:
             continue
-        if matcher_cls._source != matcher_source._source:
+        # _source / _default_state 是 nonebot 内部字段（直接访问触发
+        # reportPrivateUsage）；沿用仓库既有做法用 getattr 字符串取原始值再收窄，
+        # 不对类型做欺骗。
+        cls_source = cast("MatcherSource | None", getattr(matcher_cls, "_source", None))
+        source = cast("MatcherSource | None", getattr(matcher_source, "_source", None))
+        if cls_source != source:
             continue
 
-        state = matcher_cls._default_state
+        raw_state: object = getattr(matcher_cls, "_default_state", None)
+        if not isinstance(raw_state, dict):
+            continue
+        state: dict[str, object] = {}
+        for key, value in cast("dict[object, object]", raw_state).items():
+            if isinstance(key, str):
+                state[key] = value
         if get_interaction_session_key(state) != session_key:
             continue
 
@@ -147,6 +161,17 @@ def rebuild_temp_matcher(
     step_index: int,
     state: Mapping[str, object],
 ) -> type[Matcher]:
+    # _source / _default_*_updater 是 nonebot 内部字段（直接访问触发
+    # reportPrivateUsage）；getattr 取原始值后按 Matcher.new 的形参类型收窄。
+    source = cast("MatcherSource | None", getattr(matcher_source, "_source", None))
+    type_updater = cast(
+        "T_TypeUpdater | Dependent[str] | None",
+        getattr(matcher_source, "_default_type_updater", None),
+    )
+    permission_updater = cast(
+        "T_PermissionUpdater | Dependent[Permission] | None",
+        getattr(matcher_source, "_default_permission_updater", None),
+    )
     return matcher_source.new(
         type_=matcher_template.type,
         rule=Rule(),
@@ -155,10 +180,10 @@ def rebuild_temp_matcher(
         temp=True,
         priority=0,
         block=True,
-        source=matcher_source._source,
+        source=source,
         default_state=dict(state),
-        default_type_updater=matcher_source._default_type_updater,
-        default_permission_updater=matcher_source._default_permission_updater,
+        default_type_updater=type_updater,
+        default_permission_updater=permission_updater,
     )
 
 

@@ -191,7 +191,7 @@ async def replay_dead_letters(
             )
             continue
         try:
-            result = handler(record.payload)
+            result = handler(list(record.payload))
             if asyncio.iscoroutine(result):
                 await result
         except Exception as exc:

@@ -42,7 +42,7 @@ class NaturalRankItem:
     current_rank: int
     trend: int | None
     group_count: int = 0
-    daily_msg_counts: list[int] = field(default_factory=list)
+    daily_msg_counts: list[int] = field(default_factory=list[int])
 
 
 @dataclass

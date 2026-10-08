@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 
 from src.lib.db.batch import BatchWriter, BatchWriterHealth, DeadLetterRecord
 from src.lib.trace_log import log_trace_event
@@ -56,8 +56,11 @@ def _collect_writers() -> list[_WriterLike]:
     found: list[_WriterLike] = []
     for module in (core_writers, water_writers, wordbank_writers):
         for value in vars(module).values():
+            # isinstance 只能收窄到 BatchWriter[Unknown]（泛型参数无从推断），
+            # 而这里只把它当 _WriterLike 用；在动态发现边界 cast 成协议，
+            # 保持成员调用有据可依，不是把校验骗过去。
             if isinstance(value, BatchWriter):
-                found.append(value)
+                found.append(cast("_WriterLike", value))
     return found
 
 

@@ -113,8 +113,15 @@ def _rank_label_box_width(
     )
 
 
-def _bucket_labels_24() -> list[str]:
-    return [f"{hour:02d}" for hour in range(24)]
+class _TileChartRenderer(WaterRankRenderer):
+    """暴露 rank 渲染器内部热力瓦片生成能力的受控子类。
+
+    ``_generate_tile_chart`` 是 rank 渲染器的保护成员；本文件在子类内部调用它，
+    再以公开方法对外暴露，既复用了同一份实现，又不构成跨模块的私有访问。
+    """
+
+    def build_tile_chart(self, hourly_data: list[int]) -> BuildImage:
+        return self._generate_tile_chart(hourly_data)
 
 
 def _compress_daily_counts(values: list[int], bucket_count: int = 24) -> list[int]:
@@ -989,7 +996,7 @@ def _build_water_group_report_image_sync(
             ),
         }.items()
     }
-    tile_renderer = WaterRankRenderer()
+    tile_renderer = _TileChartRenderer()
     board_name_font = _load_font(int(14 * scale))
     for item in data.top_items:
         rank_theme = rank_themes.get(
@@ -1049,7 +1056,7 @@ def _build_water_group_report_image_sync(
         trend_w = int(48 * scale)
         trend_h = int(20 * scale)
         trend_y = badge_y
-        tile_chart = tile_renderer._generate_tile_chart(item.hourly_counts)
+        tile_chart = tile_renderer.build_tile_chart(item.hourly_counts)
         tile_region_top = row_y + int(36 * scale)
         tile_region_bottom = row_y + user_card_h - int(10 * scale)
         tile_scale = 0.72

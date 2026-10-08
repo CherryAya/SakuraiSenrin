@@ -195,13 +195,12 @@ async def build_my_water_simple_image(
             radius=int(8 * scale),
             fill=theme.matrix_group_active_bg,
         )
-        if isinstance(group_avatar, BuildImage):
-            g_avatar_size = chip_h - int(6 * scale)
-            card.paste(
-                group_avatar.circle().resize((g_avatar_size, g_avatar_size)),
-                (chip_x + int(4 * scale), chip_y + int(3 * scale)),
-                alpha=True,
-            )
+        g_avatar_size = chip_h - int(6 * scale)
+        card.paste(
+            group_avatar.circle().resize((g_avatar_size, g_avatar_size)),
+            (chip_x + int(4 * scale), chip_y + int(3 * scale)),
+            alpha=True,
+        )
         card.draw_text(
             (
                 chip_x + int(30 * scale),

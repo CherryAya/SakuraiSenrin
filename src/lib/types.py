@@ -6,12 +6,30 @@ LastEditTime: 2026-02-19 23:19:16
 Description: 公共 types
 """
 
+from collections.abc import Mapping, Sequence
 from typing import TypeGuard
 
 type JsonScalar = str | int | float | bool | None
 type JsonArray = list[JsonValue]
 type JsonObject = dict[str, JsonValue]
 type JsonValue = JsonScalar | JsonArray | JsonObject
+
+
+def is_object_mapping(value: object) -> TypeGuard[Mapping[str, object]]:
+    """把 ``object`` 收窄成键为 str、值为 object 的映射。
+
+    用于消费 JSON 解析结果时消掉 ``Mapping[Unknown, Unknown]`` 噪音：
+    ``json.loads`` 的返回值标注为 ``Any``，逐键 ``str()`` 转换既不安全也不必要。
+    """
+    return isinstance(value, Mapping)
+
+
+def is_object_sequence(value: object) -> TypeGuard[Sequence[object]]:
+    """把 ``object`` 收窄成「元素类型为 object 的序列」，排除 ``str``/``bytes``。
+
+    ``str``/``bytes`` 本身也是 ``Sequence``，若不排除会被逐字符拆开。
+    """
+    return isinstance(value, (list, tuple))
 
 
 def as_str_tuple(value: object) -> tuple[str, ...]:
@@ -21,13 +39,13 @@ def as_str_tuple(value: object) -> tuple[str, ...]:
     而插件元数据里的 ``extra["docs"]["aliases"]`` 直接写成元组。
     ``str``/``bytes`` 本身也是 Sequence，必须排除，否则会被逐字符拆开。
     """
-    if not isinstance(value, (list, tuple)):
+    if not is_object_sequence(value):
         return ()
     return tuple(item.strip() for item in value if isinstance(item, str) and item)
 
 
-def as_int(value: JsonValue, default: int) -> int:
-    """把 JSON 值收窄成 int；非整数（含 ``bool``）一律回落 default。
+def as_int(value: object, default: int) -> int:
+    """把任意来源值收窄成 int；非整数（含 ``bool``）一律回落 default。
 
     ``bool`` 是 ``int`` 的子类，JSON 里的 ``true`` 若不显式排除会被当成 1/0
     静默通过；``int("100")`` 这类字符串转换同样会掩盖数据来源问题。
@@ -37,8 +55,8 @@ def as_int(value: JsonValue, default: int) -> int:
     return value if isinstance(value, int) else default
 
 
-def as_float(value: JsonValue, default: float) -> float:
-    """把 JSON 值收窄成 float；``bool`` 同样排除。"""
+def as_float(value: object, default: float) -> float:
+    """把任意来源值收窄成 float；``bool`` 同样排除。"""
     if isinstance(value, bool):
         return default
     if isinstance(value, float):
@@ -47,12 +65,12 @@ def as_float(value: JsonValue, default: float) -> float:
 
 
 def as_object(value: JsonValue) -> JsonObject | None:
-    """把 JSON 值收窄成对象；非 dict（含 list）返回 None。"""
+    """把 JSON 值收窄成 JSON 对象；非 dict（含 list）返回 None。"""
     return value if isinstance(value, dict) else None
 
 
-def as_str(value: JsonValue, default: str = "") -> str:
-    """把 JSON 值收窄成字符串；非 str（含 int/float/bool）返回 default。"""
+def as_str(value: object, default: str = "") -> str:
+    """把任意来源值收窄成字符串；非 str（含 int/float/bool）返回 default。"""
     return value if isinstance(value, str) else default
 
 

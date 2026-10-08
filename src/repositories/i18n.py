@@ -19,8 +19,8 @@ SUPPORTED_LOCALES = SUPPORTED_LOCALE_CODES
 @dataclass(slots=True)
 class I18nRepository:
     default_locale: LocaleCode = DEFAULT_LOCALE
-    group_locales: dict[str, LocaleCode] = field(default_factory=dict)
-    missing_group_locales: set[str] = field(default_factory=set)
+    group_locales: dict[str, LocaleCode] = field(default_factory=dict[str, LocaleCode])
+    missing_group_locales: set[str] = field(default_factory=set[str])
     loaded_default: bool = False
 
     async def _ensure_default_loaded(self) -> None:

@@ -20,6 +20,7 @@ from src.lib.i18n.types import LocaleCode
 from src.lib.message_plan import (
     DeliveryPlan,
     deliver_message_plan,
+    finish_matcher,
     finish_with_message,
     reject_with_message,
 )
@@ -156,7 +157,7 @@ async def perform_remove(
         operator_id=event.get_user_id(),
         reason=reason_text,
     )
-    await matcher.finish()
+    await finish_matcher(matcher)
 
 
 @remove_matcher.handle()

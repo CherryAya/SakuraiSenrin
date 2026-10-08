@@ -74,8 +74,12 @@ class SelectedMatch:
 
 @dataclass(slots=True)
 class RuntimeIndex:
-    groups: dict[int, RuntimeTriggerGroup] = field(default_factory=dict)
-    exact_match: dict[str, list[RuntimeTriggerVariant]] = field(default_factory=dict)
+    groups: dict[int, RuntimeTriggerGroup] = field(
+        default_factory=dict[int, RuntimeTriggerGroup]
+    )
+    exact_match: dict[str, list[RuntimeTriggerVariant]] = field(
+        default_factory=dict[str, list[RuntimeTriggerVariant]]
+    )
 
     @classmethod
     def build(

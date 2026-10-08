@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from dataclasses import dataclass
 import time
 from typing import cast
 
@@ -10,6 +11,17 @@ import arrow
 
 from scripts.migrations import water as _impl
 from src.database.system_migration import LegacyPgConfig
+
+
+@dataclass(slots=True, frozen=True)
+class _BatchStreamFailure:
+    """生产者线程把异常回传主线程的包装（仅本模块内部使用）。"""
+
+    error: BaseException
+
+
+# 队列结束哨兵；仅在 iter_legacy_water_row_batches_prefetched 内部流转。
+_BATCH_STREAM_END = object()
 
 LegacyWaterMigrationProgressCallback = _impl.LegacyWaterMigrationProgressCallback
 LegacyWaterMigrationProgressPayload = _impl.LegacyWaterMigrationProgressPayload
@@ -72,9 +84,9 @@ async def iter_legacy_water_row_batches_prefetched(
                     break
                 _put(rows)
         except BaseException as exc:
-            _put(_impl._BatchStreamFailure(exc))
+            _put(_BatchStreamFailure(exc))
         finally:
-            _put(_impl._BATCH_STREAM_END)
+            _put(_BATCH_STREAM_END)
 
     producer = _impl.threading.Thread(
         target=_producer,
@@ -86,9 +98,9 @@ async def iter_legacy_water_row_batches_prefetched(
     try:
         while True:
             item = await _impl.asyncio.to_thread(batch_queue.get)
-            if item is _impl._BATCH_STREAM_END:
+            if item is _BATCH_STREAM_END:
                 break
-            if isinstance(item, _impl._BatchStreamFailure):
+            if isinstance(item, _BatchStreamFailure):
                 raise item.error
             yield cast(list[LegacyWaterRow], item)
     finally:

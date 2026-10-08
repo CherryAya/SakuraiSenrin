@@ -8,7 +8,7 @@ Description: 运行时异常上下文，用于异常上报时补全群组、用�
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -28,7 +28,7 @@ class ErrorContext:
     matcher_module: str = ""
     matcher_name: str = ""
     trace_id: str = ""
-    extra: dict[str, str] = field(default_factory=dict)
+    extra: dict[str, str] = field(default_factory=dict[str, str])
 
     def is_empty(self) -> bool:
         return not any(
@@ -150,7 +150,7 @@ def reset_error_context() -> None:
 
 
 @contextmanager
-def error_context_scope(context: ErrorContext | None = None) -> Iterator[ErrorContext]:
+def error_context_scope(context: ErrorContext | None = None) -> Generator[ErrorContext]:
     """在独立作用域内绑定上下文，退出时自动还原父级上下文。"""
     scoped = context if context is not None else ErrorContext()
     token = _current_context.set(scoped)
@@ -160,7 +160,7 @@ def error_context_scope(context: ErrorContext | None = None) -> Iterator[ErrorCo
         _current_context.reset(token)
 
 
-def bind_error_context(**fields: str) -> ErrorContext:
+def bind_error_context(**fields: str | Mapping[str, object] | None) -> ErrorContext:
     """向当前上下文补充字段。
 
     采用 copy-on-write：基于当前值派生新对象再写回 ContextVar，
@@ -178,7 +178,7 @@ def bind_error_context(**fields: str) -> ErrorContext:
             current.extra[key] = text
             continue
         setattr(current, key, text)
-    if isinstance(extra, dict):
+    if isinstance(extra, Mapping):
         for key, value in extra.items():
             text = str(value).strip() if value is not None else ""
             if text:

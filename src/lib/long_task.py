@@ -44,7 +44,7 @@ class LongTaskEvent:
     message: MessagePlanInput | None = None
     current: int | None = None
     total: int | None = None
-    metadata: Mapping[str, object] = field(default_factory=dict)
+    metadata: Mapping[str, object] = field(default_factory=dict[str, object])
 
 
 class LongTaskSink(Protocol):

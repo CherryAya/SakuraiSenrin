@@ -11,7 +11,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from contextlib import _AsyncGeneratorContextManager, asynccontextmanager, suppress
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+from typing import cast
 
 import arrow
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -28,7 +29,7 @@ import zstandard as zstd
 from src.lib.consts import GLOBAL_DB_ROOT
 from src.lib.db.backup import BackupSource
 from src.lib.trace_log import log_trace_event
-from src.lib.types import JsonValue
+from src.lib.types import JsonObject, JsonValue
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 
@@ -94,7 +95,9 @@ class SegmentManifestEntry:
 @dataclass(slots=True)
 class SegmentManifest:
     version: int = 1
-    segments: dict[str, SegmentManifestEntry] = field(default_factory=dict)
+    segments: dict[str, SegmentManifestEntry] = field(
+        default_factory=dict[str, SegmentManifestEntry]
+    )
 
     def to_json(self) -> str:
         payload = {
@@ -179,28 +182,29 @@ class BaseDB(ABC):
     @abstractmethod
     def read_session(
         self,
-        *args: object,
-        **kwargs: object,
-    ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+        time_ctx: datetime | None = None,
+        cold_policy: ColdPolicy | None = None,
+    ) -> AbstractAsyncContextManager[AsyncSession]:
         pass
 
     @abstractmethod
     def write_session(
         self,
-        *args: object,
-        **kwargs: object,
-    ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+        time_ctx: datetime | None = None,
+    ) -> AbstractAsyncContextManager[AsyncSession]:
         pass
 
     def session(
         self,
         commit: bool = True,
-        *args: object,
-        **kwargs: object,
-    ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+        *,
+        time_ctx: datetime | None = None,
+        cold_policy: ColdPolicy | None = None,
+    ) -> AbstractAsyncContextManager[AsyncSession]:
+        # 如实转发具名参数：子类分片库据此路由到指定分片；单文件库忽略多余参数。
         if commit:
-            return self.write_session(*args, **kwargs)
-        return self.read_session(*args, **kwargs)
+            return self.write_session(time_ctx=time_ctx)
+        return self.read_session(time_ctx=time_ctx, cold_policy=cold_policy)
 
     async def init(self, base: type[DeclarativeBase]) -> None:
         await self.init_schema(base)
@@ -223,11 +227,19 @@ class BaseDB(ABC):
 class StateStore(BaseDB):
     filename: str
 
-    def read_session(self) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+    def read_session(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> AbstractAsyncContextManager[AsyncSession]:
         path = self.base_dir / self.filename
         return db_manager.open(str(path), commit=False)
 
-    def write_session(self) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+    def write_session(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> AbstractAsyncContextManager[AsyncSession]:
         path = self.base_dir / self.filename
         return db_manager.open(str(path), commit=True)
 
@@ -299,8 +311,12 @@ class SegmentStore(BaseDB):
     tz: str = DEFAULT_SEGMENT_TZ
     max_segment_size_mb: int = DEFAULT_MAX_SEGMENT_SIZE_MB
     retention_months: int = 0
-    _locks: dict[str, _ReentrantShardLock] = field(default_factory=dict)
-    _initialized_shards: dict[str, tuple[int, int]] = field(default_factory=dict)
+    _locks: dict[str, _ReentrantShardLock] = field(
+        default_factory=dict[str, _ReentrantShardLock]
+    )
+    _initialized_shards: dict[str, tuple[int, int]] = field(
+        default_factory=dict[str, tuple[int, int]]
+    )
     _manifest: SegmentManifest | None = field(default=None, init=False, repr=False)
     _manifest_dirty: bool = field(default=False, init=False, repr=False)
     _manifest_flush_task: asyncio.Task[None] | None = field(
@@ -335,11 +351,16 @@ class SegmentStore(BaseDB):
         调用方可能传 naive datetime（本业务时区的墙钟时间）、aware datetime
         或 arrow.Arrow（绝对时刻），或三者混用；这里统一成「同一个绝对时刻在
         store 时区的表示」，保证分片枚举与写入路由口径一致。
+
+        注意 ``arrow.get(naive)`` 会按 UTC 解释 naive 输入、``.tzinfo`` 恒非 None，
+        因此可空判定必须落在原始 ``datetime`` 上（tzinfo 为 None 即墙钟时间），
+        arrow 输入本身总带时区、无需判定。
         """
-        raw = moment if isinstance(moment, arrow.Arrow) else arrow.get(moment)
-        if raw.tzinfo is None:
-            return raw.replace(tzinfo=self.tz)
-        return raw.to(self.tz)
+        if isinstance(moment, arrow.Arrow):
+            return moment.to(self.tz)
+        if moment.tzinfo is None:
+            return arrow.get(moment, tzinfo=self.tz)
+        return arrow.get(moment).to(self.tz)
 
     def _lock_key(self, shard_key: str) -> str:
         return f"shard:{shard_key}"
@@ -758,9 +779,12 @@ class SegmentStore(BaseDB):
     @asynccontextmanager
     async def read_session(
         self,
+        *args: object,
         time_ctx: datetime | None = None,
         cold_policy: ColdPolicy | None = None,
+        **kwargs: object,
     ) -> AsyncGenerator[AsyncSession, None]:
+        _ = (args, kwargs)
         if time_ctx is None:
             time_ctx = self._tz_now().datetime
         shard_key = self._get_shard_key(time_ctx)
@@ -780,8 +804,11 @@ class SegmentStore(BaseDB):
     @asynccontextmanager
     async def write_session(
         self,
+        *args: object,
         time_ctx: datetime | None = None,
+        **kwargs: object,
     ) -> AsyncGenerator[AsyncSession, None]:
+        _ = (args, kwargs)
         if time_ctx is None:
             time_ctx = self._tz_now().datetime
         shard_key = self._get_shard_key(time_ctx)
@@ -846,7 +873,9 @@ class SegmentStore(BaseDB):
                 f"{start_local.strftime('%Y-%m')} to {end_local.strftime('%Y-%m')}."
             ),
             batch_size=len(shard_keys),
-            payload_json={"shard_keys": shard_keys},
+            # list[str] 不能赋给不变量 JsonValue（= list[JsonValue]）；显式标注成
+            # JsonObject，键值类型与 log_trace_event 的契约一致。
+            payload_json=cast("JsonObject", {"shard_keys": list(shard_keys)}),
         )
         semaphore = asyncio.Semaphore(self.map_reduce_concurrency)
 

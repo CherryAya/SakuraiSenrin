@@ -233,7 +233,7 @@ def build_plugin_guide_copy_text(
             lines.append("")
 
     lines.append(support_text_block(locale))
-    return "\n".join(line for line in lines if line is not None).strip()
+    return "\n".join(lines).strip()
 
 
 def build_plugin_summary_copy_text(

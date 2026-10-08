@@ -9,13 +9,12 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from heapq import nsmallest
 from time import perf_counter
 from typing import TYPE_CHECKING, cast
 
 import arrow
-from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lib.db.connectors import ColdPolicy
@@ -47,6 +46,42 @@ from .repo_models import (
     WaterGroupReportMember,
     WaterGroupReportSnapshot,
 )
+
+
+def _row_text(value: object) -> str:
+    """把聚合结果里的文本列收窄成 str。"""
+    return value if isinstance(value, str) else str(value)
+
+
+def _row_int(value: object) -> int:
+    """把聚合结果里的数值列收窄成 int；非法值回落 0。"""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
+
+
+def _stats_row_tuple(row: object) -> tuple[str, str, int, int]:
+    """把聚合查询结果行归一成 ``(group_id, user_id, msg_count, active_hours)``。
+
+    ``aggregate_daily_stats`` 把行标注成 ``Row[tuple[str, str, int, int]]``（整个
+    四元组被当成单列），而 sqlalchemy 的 ``Row`` 泛型是按列可变的；该标注让
+    解包退化成 Unknown。这里不依赖行本身的类型，按列序显式收窄，既保留语义
+    又避开上游标注问题。
+    """
+    values: list[object] = list(cast("Iterable[object]", row))
+    return (
+        _row_text(values[0]),
+        _row_text(values[1]),
+        _row_int(values[2]),
+        _row_int(values[3]),
+    )
 
 
 class WaterRepositoryReportsMixin:
@@ -442,6 +477,28 @@ class WaterRepositoryReportsMixin:
             rows = await repo_self.get_summaries_in_window(record_date, record_date)
         return repo_self._build_group_distribution_items_from_rows(rows)
 
+    def build_group_report_snapshot_from_rows(
+        self,
+        *,
+        group_id: str,
+        record_date: int,
+        current_rows: Sequence[WaterSummaryRecord],
+        previous_rows: Sequence[WaterSummaryRecord],
+        limit: int,
+    ) -> "WaterGroupReportSnapshot | None":
+        """公开入口：由调用方提供已取好的 current/previous rows。
+
+        调用方（services/report.py）已经为「公开口径」聚合过一次 rows，
+        再由本方法复用同一批数据构造快照，避免重复查询与重复聚合实现。
+        """
+        return self._build_group_report_snapshot_from_rows(
+            group_id=group_id,
+            record_date=record_date,
+            current_rows=current_rows,
+            previous_rows=previous_rows,
+            limit=limit,
+        )
+
     def _build_group_report_snapshot_from_rows(
         self,
         *,
@@ -509,7 +566,7 @@ class WaterRepositoryReportsMixin:
                 active_hours,
                 hourly_counts,
                 _group_count,
-                daily_msg_counts,
+                _daily_msg_counts,
             ) in enumerate(ordered_current, 1)
         ]
         current_hourly = repo_self._sum_hourly(current_rows)
@@ -526,6 +583,26 @@ class WaterRepositoryReportsMixin:
             previous_active_hours=sum(1 for count in previous_hourly if count > 0),
             previous_hourly_counts=previous_hourly,
             leaderboard=leaderboard,
+        )
+
+    def build_group_daily_rank_snapshot_from_rows(
+        self,
+        *,
+        focus_group_id: str,
+        record_date: int,
+        current_rows: Sequence[WaterSummaryRecord],
+        previous_rows: Sequence[WaterSummaryRecord],
+        radius: int,
+        min_window_size: int = 0,
+    ) -> "WaterGroupDailyRankSnapshot | None":
+        """公开入口：同 build_group_report_snapshot_from_rows，供跨类复用。"""
+        return self._build_group_daily_rank_snapshot_from_rows(
+            focus_group_id=focus_group_id,
+            record_date=record_date,
+            current_rows=current_rows,
+            previous_rows=previous_rows,
+            radius=radius,
+            min_window_size=min_window_size,
         )
 
     def _build_group_daily_rank_snapshot_from_rows(
@@ -727,10 +804,11 @@ class WaterRepositoryReportsMixin:
 
         async def _stats_in_shard(
             session: AsyncSession,
-        ) -> Sequence[Row[tuple[str, str, int, int]]]:
-            return await WaterMessageOps(session).aggregate_daily_stats(
+        ) -> Sequence[tuple[str, str, int, int]]:
+            rows = await WaterMessageOps(session).aggregate_daily_stats(
                 start_ts, end_ts
             )
+            return [_stats_row_tuple(row) for row in rows]
 
         async def _hourly_in_shard(
             session: AsyncSession,

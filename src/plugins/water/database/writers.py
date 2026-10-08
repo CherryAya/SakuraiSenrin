@@ -6,6 +6,8 @@ LastEditTime: 2026-03-01 02:49:04
 Description: water db writers
 """
 
+from collections.abc import Sequence
+
 import arrow
 
 from src.lib.db.batch import BatchWriter, execute_batch_write
@@ -45,17 +47,17 @@ async def _flush_water_logs(batch: list[WaterMessageWritePayload]) -> None:
 
     async def _write_grouped(
         ops: WaterMessageOps,
-        grouped_batch: list[WaterMessageWritePayload],
-    ) -> None:
+        grouped_batch: Sequence[WaterMessageWritePayload],
+    ) -> int:
         if not grouped_batch:
-            return
+            return 0
         route_key = (
             arrow.get(int(grouped_batch[0]["created_at"]))
             .to("Asia/Shanghai")
             .floor("month")
             .format("YYYY_MM")
         )
-        await ops.bulk_insert_water_message(grouped_payloads.get(route_key, []))
+        return await ops.bulk_insert_water_message(grouped_payloads.get(route_key, []))
 
     await execute_batch_write(
         batch=batch,
@@ -72,7 +74,9 @@ async def _flush_water_logs(batch: list[WaterMessageWritePayload]) -> None:
         summary="Flushed buffered water logs.",
         trace_id=trace_id,
         batch_size=len(batch),
-        payload_json={"route_keys": sorted(grouped_payloads)},
+        payload_json={
+            "route_keys": [str(route_key) for route_key in sorted(grouped_payloads)]
+        },
     )
 
 

@@ -95,16 +95,10 @@ class SearchTreemapFittersMixin:
                 return font, lines
             if fallback_fit is None:
                 fallback_fit = (font, lines[:max_lines])
-        if fallback_fit is not None:
-            return fallback_fit
-        fallback_font = repo_self._load_maple_font(10)
-        fallback_lines = repo_self._wrap_text(
-            safe_text,
-            fallback_font,
-            max_width,
-            max_lines=2,
-        )
-        return fallback_font, fallback_lines[:2]
+        # max_lines 恒 >= 1（max(1, min(2, ...))），循环体至少执行一次且必然
+        # 命中上面的赋值分支，故此处 fallback_fit 必非 None；原先「最小字号兜底」
+        # 分支不可达。
+        return fallback_fit
 
     def _choose_response_title_font(
         self,

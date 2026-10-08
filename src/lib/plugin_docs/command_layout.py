@@ -559,7 +559,10 @@ def _wrap_command_token_roles(
     while index < len(roles):
         token, role = roles[index]
         available_width = max(0, max_width - current_indent * indent_px)
-        candidate = [*current, (token, role)]
+        candidate: list[tuple[str, Literal["root", "text", "param", "flag"]]] = [
+            *current,
+            (token, role),
+        ]
         if current and (
             _command_role_width(candidate, measure_text, palette) <= available_width
         ):

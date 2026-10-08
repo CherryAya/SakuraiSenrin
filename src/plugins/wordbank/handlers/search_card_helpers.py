@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Literal
+from typing import Literal, cast
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
@@ -255,6 +255,24 @@ def weight_chip_text(weight: int) -> str:
     return f"W:{weight}"
 
 
+def _rule_int(value: object) -> int:
+    """把规则 dict 中的数值字段收窄成 int。
+
+    ``call_count`` 来自 JSON 规则，可能是 int 也可能是数字字符串；``bool`` 是
+    ``int`` 子类需显式排除，其余非法值回落 0（渲染层不因脏数据抛错）。
+    """
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
+
+
 def response_rule_chips(
     rule: dict[str, object] | None,
     *,
@@ -268,9 +286,10 @@ def response_rule_chips(
         chips.append(tr(locale, role_key) if role_key else role)
     call_count = payload.get("call_count")
     if isinstance(call_count, dict):
-        window_seconds = int(call_count.get("window_seconds", 0) or 0)
-        min_count = int(call_count.get("min", 0) or 0)
-        max_count = int(call_count.get("max", 0) or 0)
+        call_count_map = cast("dict[str, object]", call_count)
+        window_seconds = _rule_int(call_count_map.get("window_seconds", 0))
+        min_count = _rule_int(call_count_map.get("min", 0))
+        max_count = _rule_int(call_count_map.get("max", 0))
         if window_seconds > 0:
             upper_bound = str(max_count) if max_count > 0 else "∞"
             chips.append(f"{window_seconds}s/{min_count}-{upper_bound}")

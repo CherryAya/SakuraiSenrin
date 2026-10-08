@@ -7,6 +7,7 @@ Description: 邀请通知处理
 """
 
 from pathlib import Path
+from typing import NoReturn, Protocol
 
 from nonebot import on_notice, on_request
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -37,6 +38,21 @@ from src.services.info import resolve_group_name, resolve_user_name
 name = tr("zh-CN", "plugin.notice_invite.name")
 description = tr("zh-CN", "plugin.notice_invite.description")
 DOCS_SOURCE = Path(__file__).parent / "docs" / "invite" / "README.MD"
+
+
+class _MatcherFinisher(Protocol):
+    """只暴露无参 ``finish`` 的最小协议。
+
+    nonebot 的 ``Matcher.finish`` 签名嵌套了 ``Message[Unknown]`` 等未绑定泛型，
+    strict 模式下直接调用点会被判为 partially unknown。passive 通知这里只用到
+    「结束当前事件」语义，用协议收窄即可，无需改动 nonebot 类型定义。
+    """
+
+    async def finish(self) -> NoReturn: ...
+
+
+async def _finish_event(matcher: _MatcherFinisher) -> NoReturn:
+    await matcher.finish()
 
 
 __plugin_meta__ = create_plugin_metadata(
@@ -248,7 +264,7 @@ async def _(
             status=InvitationStatus.APPROVED,
             operator_id=str(bot.self_id),
         )
-        await matcher.finish()
+        await _finish_event(matcher)
 
     elif group and group.status.is_banned:
         await _ensure_invitation_dependencies(
@@ -295,7 +311,7 @@ async def _(
                 allow_asset_reuse=False,
             ),
         )
-        await matcher.finish()
+        await _finish_event(matcher)
 
     await send_private_i18n(
         bot,

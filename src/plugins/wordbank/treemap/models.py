@@ -10,6 +10,13 @@ from pathlib import Path
 
 import squarify
 
+from src.lib.types import (
+    JsonObject,
+    JsonValue,
+    as_object,
+    as_str,
+)
+
 TREEMAP_LAYOUT_RESPONSE_CAP = 64
 TREEMAP_LAYOUT_MIN_WEIGHT = 14
 TREEMAP_LAYOUT_MAX_WEIGHT = 100
@@ -136,12 +143,12 @@ class ResponseCardVerticalLayout:
 
 
 def load_search_treemap_fixture(path: str | Path) -> SearchTreemapPage:
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
+    payload = as_object(json.loads(Path(path).read_text(encoding="utf-8")))
+    if payload is None:
         raise ValueError("Search treemap fixture must be a JSON object")
-    query_payload = payload.get("query")
+    query_payload = as_object(payload.get("query"))
     items_payload = payload.get("items")
-    if not isinstance(query_payload, dict):
+    if query_payload is None:
         raise ValueError("Search treemap fixture is missing object field: query")
     if not isinstance(items_payload, list):
         raise ValueError("Search treemap fixture is missing array field: items")
@@ -188,7 +195,7 @@ def build_search_treemap_layout(
     )
 
 
-def _parse_treemap_item(payload: object, index: int) -> SearchTreemapItem:
+def _parse_treemap_item(payload: JsonValue, index: int) -> SearchTreemapItem:
     if not isinstance(payload, dict):
         raise ValueError(f"Search treemap item at index {index} must be an object")
     response_count = _require_int(payload, "response_count", min_value=1)
@@ -220,12 +227,12 @@ def _parse_treemap_item(payload: object, index: int) -> SearchTreemapItem:
         response_count=response_count,
         responses=responses,
         remaining_response_count=remaining_count,
-        matched_by=str(payload.get("matched_by", "") or ""),
+        matched_by=as_str(payload.get("matched_by")),
     )
 
 
 def _parse_response_card(
-    payload: object, index: int, *, parent_index: int
+    payload: JsonValue, index: int, *, parent_index: int
 ) -> SearchTreemapResponseCard:
     if not isinstance(payload, dict):
         raise ValueError(
@@ -246,13 +253,13 @@ def _parse_response_card(
         created_by=_require_str(payload, "created_by"),
         weight=_require_int(payload, "weight", min_value=0),
         rule=_require_str(payload, "rule"),
-        image_path=str(payload.get("image_path", "") or ""),
+        image_path=as_str(payload.get("image_path")),
         segments=segments,
     )
 
 
 def _parse_response_segment(
-    payload: object, index: int, *, parent_index: int
+    payload: JsonValue, index: int, *, parent_index: int
 ) -> SearchTreemapResponseSegment:
     if not isinstance(payload, dict):
         raise ValueError(
@@ -264,31 +271,31 @@ def _parse_response_segment(
         raise ValueError(f"Unsupported response segment kind: {kind}")
     return SearchTreemapResponseSegment(
         kind=kind,
-        text=str(payload.get("text", "") or ""),
-        image_path=str(payload.get("image_path", "") or ""),
+        text=as_str(payload.get("text")),
+        image_path=as_str(payload.get("image_path")),
     )
 
 
-def _require_str(payload: dict[str, object], key: str) -> str:
+def _require_str(payload: JsonObject, key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str):
         raise ValueError(f"Search treemap fixture field must be string: {key}")
     return value
 
 
-def _require_bool(payload: dict[str, object], key: str) -> bool:
+def _require_bool(payload: JsonObject, key: str) -> bool:
     value = payload.get(key)
     if not isinstance(value, bool):
         raise ValueError(f"Search treemap fixture field must be bool: {key}")
     return value
 
 
-def _require_int(payload: dict[str, object], key: str, *, min_value: int) -> int:
+def _require_int(payload: JsonObject, key: str, *, min_value: int) -> int:
     return _coerce_int(payload.get(key), field_name=key, min_value=min_value)
 
 
-def _coerce_int(value: object, *, field_name: str, min_value: int) -> int:
-    if not isinstance(value, int):
+def _coerce_int(value: JsonValue | None, *, field_name: str, min_value: int) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
         raise ValueError(f"Search treemap fixture field must be int: {field_name}")
     if value < min_value:
         raise ValueError(

@@ -6,6 +6,7 @@ LastEditTime: 2026-06-12 01:10:00
 Description: 帮助插件
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
@@ -35,6 +36,7 @@ from src.lib.long_task import (
 from src.lib.message_plan import (
     DeliveryPlan,
     ImageBytesBlock,
+    MessagePlanBlock,
     MessagePlanEntry,
     MessagePlanInput,
     TextBlock,
@@ -42,6 +44,7 @@ from src.lib.message_plan import (
     build_image_plan_entry,
     build_text_plan_entry,
     deliver_message_plan,
+    finish_matcher,
     finish_with_message,
 )
 from src.lib.onebot_forward import resolve_forward_sender
@@ -157,8 +160,9 @@ def _resolve_metadata_text(
     extra = metadata.extra
     raw_i18n = extra.get("i18n")
     if isinstance(raw_i18n, dict):
+        i18n_map = cast("dict[object, object]", raw_i18n)
         key_name = f"{field}_key"
-        maybe_key = raw_i18n.get(key_name)
+        maybe_key = i18n_map.get(key_name)
         if isinstance(maybe_key, str):
             return tr(locale, cast(MessageKey, maybe_key))
     raw_value = getattr(metadata, field, "")
@@ -333,10 +337,15 @@ def _read_derived_help_specs(
     raw = metadata.extra.get("derived_help_provider")
     if not callable(raw):
         return ()
-    specs = raw(locale)
-    if not isinstance(specs, (list, tuple)):
+    provider: Callable[[LocaleCode], object] = raw
+    specs = provider(locale)
+    if isinstance(specs, list):
+        spec_values = cast("list[object]", specs)
+    elif isinstance(specs, tuple):
+        spec_values = list(cast("tuple[object, ...]", specs))
+    else:
         return ()
-    return tuple(spec for spec in specs if isinstance(spec, VirtualPluginDocSpec))
+    return tuple(spec for spec in spec_values if isinstance(spec, VirtualPluginDocSpec))
 
 
 async def _resolve_actor_permission(bot: Bot, event: MessageEvent) -> Permission:
@@ -558,7 +567,7 @@ def _compose_plugin_guide_messages(
 ) -> tuple[MessagePlanInput, ...]:
     messages: list[MessagePlanEntry] = []
     summary_text = build_plugin_summary_copy_text(entry.node)
-    summary_blocks = []
+    summary_blocks: list[MessagePlanBlock] = []
     if summary_text:
         summary_blocks.append(TextBlock(summary_text))
     summary_blocks.append(
@@ -681,7 +690,7 @@ async def _deliver_help_plan(
             ),
             event=event,
         )
-    await matcher.finish()
+    await finish_matcher(matcher)
 
 
 async def _resolve_docs_delivery_plan(
@@ -974,3 +983,11 @@ async def _(
         all_entries=entries,
     )
     await _deliver_help_plan(bot, matcher, event, docs_plan, locale=locale)
+
+
+# 这两个 forward 辅助被外部测试直接引用（校验登录昵称解析与群/私聊转发分支），
+# 显式导出可让 pyright 认可其被引用，而不是误判为死代码。
+__all__ = [
+    "_resolve_forward_sender",
+    "_send_help_forward",
+]

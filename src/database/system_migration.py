@@ -110,13 +110,17 @@ class LegacySystemData:
 
 @dataclass(slots=True)
 class SystemMigrationReport:
-    source_counts: dict[str, int] = field(default_factory=dict)
-    inserted_counts: dict[str, int] = field(default_factory=dict)
+    source_counts: dict[str, int] = field(default_factory=dict[str, int])
+    inserted_counts: dict[str, int] = field(default_factory=dict[str, int])
     placeholder_users: int = 0
     placeholder_groups: int = 0
-    status_counts: dict[str, dict[str, int]] = field(default_factory=dict)
-    plugin_info_summary: list[dict[str, str | None]] = field(default_factory=list)
-    dropped_fields: dict[str, list[str]] = field(default_factory=dict)
+    status_counts: dict[str, dict[str, int]] = field(
+        default_factory=dict[str, dict[str, int]]
+    )
+    plugin_info_summary: list[dict[str, str | None]] = field(
+        default_factory=list[dict[str, str | None]]
+    )
+    dropped_fields: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

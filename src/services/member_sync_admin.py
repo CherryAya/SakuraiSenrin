@@ -54,8 +54,8 @@ class SyncMembersAllTaskState:
     current_group_name: str = ""
     current_stage: str = "queued"
     current_stage_started_at: int = 0
-    pending_detail_lines: list[str] = field(default_factory=list)
-    failure_summaries: list[str] = field(default_factory=list)
+    pending_detail_lines: list[str] = field(default_factory=list[str])
+    failure_summaries: list[str] = field(default_factory=list[str])
     latest_error: str = ""
 
     @property

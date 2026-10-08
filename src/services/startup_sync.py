@@ -8,7 +8,6 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import shutil
-from typing import TYPE_CHECKING, Protocol, cast
 
 from nonebot.adapters.onebot.v11 import Bot
 
@@ -26,6 +25,7 @@ from src.lib.reply_router import (
     ResolvedReplyTarget,
     record_reply_context_from_send_result,
 )
+from src.lib.types import is_object_mapping, is_object_sequence
 from src.logger import logger
 from src.repositories import blacklist_repo, group_repo, member_repo, user_repo
 from src.services.backup import (
@@ -34,15 +34,6 @@ from src.services.backup import (
     resolve_app_env,
     resolve_default_backup_profile_name,
 )
-
-if TYPE_CHECKING:
-    from src.plugins.wordbank.services.matching import RuntimeIndex
-
-
-class _WordbankRuntimeHolder(Protocol):
-    """wordbank 服务的私有运行时字段持有者。"""
-
-    _index: RuntimeIndex | None
 
 
 @dataclass(slots=True, frozen=True)
@@ -404,14 +395,14 @@ async def _notify_superusers_for_remote_restore(
 
 
 async def _apply_restore_manifest(
-    manifest: dict[str, object], restore_root: Path
+    manifest: Mapping[str, object], restore_root: Path
 ) -> None:
-    files = manifest.get("files")
-    if not isinstance(files, list):
+    raw_files = manifest.get("files")
+    if not is_object_sequence(raw_files):
         raise RuntimeError("restore manifest is invalid: missing files")
     await db_manager.dispose_all()
-    for file_meta in files:
-        if not isinstance(file_meta, dict):
+    for file_meta in raw_files:
+        if not is_object_mapping(file_meta):
             continue
         source_path = file_meta.get("source_path")
         snapshot_path = file_meta.get("snapshot_path")
@@ -435,10 +426,13 @@ def _find_restore_manifest_path(restore_root: Path) -> Path:
     raise RuntimeError(f"restore manifest not found under: {restore_root}")
 
 
-def _load_restore_manifest(path: Path) -> dict[str, object]:
+def _load_restore_manifest(path: Path) -> Mapping[str, object]:
     if not path.is_file():
         raise RuntimeError(f"restore manifest not found: {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if not is_object_mapping(manifest):
+        raise RuntimeError(f"restore manifest is invalid: {path}")
+    return manifest
 
 
 async def _warm_up_core_repositories() -> None:
@@ -466,19 +460,20 @@ async def _reload_wordbank_runtime_state() -> None:
         empty_index = None
 
     lifecycle.reset_wordbank_initialized()
-    if (
-        wordbank_service._rebuild_task is not None
-        and not wordbank_service._rebuild_task.done()
-    ):
-        wordbank_service._rebuild_task.cancel()
-    wordbank_service._rebuild_task = None
-    wordbank_service._dirty_group_ids.clear()
-    wordbank_service._call_count_cache.clear()
-    if empty_index is not None:
-        wordbank_service._index = empty_index
-    else:
-        setattr(cast("_WordbankRuntimeHolder", wordbank_service), "_index", None)
-    wordbank_service._initialized = False
+    # wordbank 服务的运行时字段刻意私有，此处通过反射读写并显式标注真实类型。
+    rebuild_task: asyncio.Task[None] | None = getattr(
+        wordbank_service, "_rebuild_task", None
+    )
+    if rebuild_task is not None and not rebuild_task.done():
+        rebuild_task.cancel()
+    setattr(wordbank_service, "_rebuild_task", None)
+    dirty_group_ids: set[int] = getattr(wordbank_service, "_dirty_group_ids")
+    dirty_group_ids.clear()
+    # _call_count_cache 的值类型是服务内部私有类型，无法在不越界的前提下命名，
+    # 这里只做清空，直接对反射结果调用 clear()。
+    getattr(wordbank_service, "_call_count_cache").clear()
+    setattr(wordbank_service, "_index", empty_index)
+    setattr(wordbank_service, "_initialized", False)
     await lifecycle.initialize_wordbank_plugin()
     await wordbank_media_service.rebuild_cache()
 
@@ -498,10 +493,21 @@ async def _reload_water_runtime_state() -> None:
     setattr(water_plugin, "_water_plugin_initialized", False)
     clear_water_query_cooldowns()
     water_report_service.clear_today_report_cooldowns()
-    water_repo._group_matrix_cache.clear()
-    water_repo._group_matrix_locks.clear()
-    water_repo._merge_state_locks.clear()
-    water_matrix_suggestion_service._first_record_seen_cache.clear()
+    # water 仓库/服务的运行时缓存同样私有，反射清理并标注真实类型。
+    group_matrix_cache: dict[str, str] = getattr(water_repo, "_group_matrix_cache")
+    group_matrix_cache.clear()
+    group_matrix_locks: dict[str, asyncio.Lock] = getattr(
+        water_repo, "_group_matrix_locks"
+    )
+    group_matrix_locks.clear()
+    merge_state_locks: dict[str, asyncio.Lock] = getattr(
+        water_repo, "_merge_state_locks"
+    )
+    merge_state_locks.clear()
+    first_record_seen_cache: set[str] = getattr(
+        water_matrix_suggestion_service, "_first_record_seen_cache"
+    )
+    first_record_seen_cache.clear()
     await initialize_water_plugin()
 
 

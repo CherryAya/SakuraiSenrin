@@ -78,7 +78,7 @@ class WaterMessageOps(BaseOps[WaterHourlyCounter]):
         start_ts: int,
         end_ts: int,
         limit: int = 20,
-    ) -> Sequence[Row[tuple[str, int]]]:
+    ) -> Sequence[Row[*tuple[str, int]]]:
         _ = end_ts
         record_date = int(
             arrow.get(start_ts).to("Asia/Shanghai").floor("day").format("YYYYMMDD")
@@ -118,7 +118,7 @@ class WaterMessageOps(BaseOps[WaterHourlyCounter]):
 
     async def get_users_timestamps(
         self, group_id: str, user_ids: list[str], start_ts: int, end_ts: int
-    ) -> Sequence[Row[tuple[str, int, int]]]:
+    ) -> Sequence[Row[*tuple[str, int, int]]]:
         _ = end_ts
         record_date = int(
             arrow.get(start_ts).to("Asia/Shanghai").floor("day").format("YYYYMMDD")
@@ -139,7 +139,7 @@ class WaterMessageOps(BaseOps[WaterHourlyCounter]):
         self,
         start_ts: int,
         end_ts: int,
-    ) -> Sequence[Row[tuple[str, str, int, int]]]:
+    ) -> Sequence[Row[*tuple[str, str, int, int]]]:
         _ = end_ts
         record_date = int(
             arrow.get(start_ts).to("Asia/Shanghai").floor("day").format("YYYYMMDD")

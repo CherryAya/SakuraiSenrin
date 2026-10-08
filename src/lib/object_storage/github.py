@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from src.lib.types import JsonValue
+from src.lib.types import JsonObject, JsonValue, as_object
 
 from .types import ObjectStorageConfigError, ObjectStorageError, StorageObject
 
@@ -63,7 +63,7 @@ class GitHubObjectStorageClient:
         _, repo, _ = self._require_config()
         return f"github://{repo}/{key.lstrip('/')}"
 
-    async def _get_metadata(self, key: str) -> dict[str, JsonValue] | None:
+    async def _get_metadata(self, key: str) -> JsonObject | None:
         _, _, branch = self._require_config()
         async with self._client() as client:
             response = await client.get(
@@ -76,8 +76,8 @@ class GitHubObjectStorageClient:
             raise ObjectStorageError(
                 f"GitHub contents request failed: {response.status_code}"
             )
-        payload = response.json()
-        if not isinstance(payload, dict):
+        payload = as_object(response.json())
+        if payload is None:
             raise ObjectStorageError("GitHub contents response is not an object")
         return payload
 
@@ -92,13 +92,15 @@ class GitHubObjectStorageClient:
         _, _, branch = self._require_config()
         normalized_key = key.lstrip("/")
         metadata = await self._get_metadata(normalized_key)
-        payload: dict[str, JsonValue] = {
+        payload: JsonObject = {
             "message": f"store object {normalized_key}",
             "content": base64.b64encode(data).decode("ascii"),
             "branch": branch,
         }
-        if metadata and isinstance(metadata.get("sha"), str):
-            payload["sha"] = metadata["sha"]
+        if metadata is not None:
+            metadata_sha = metadata.get("sha")
+            if isinstance(metadata_sha, str):
+                payload["sha"] = metadata_sha
 
         async with self._client() as client:
             response = await client.put(
@@ -109,8 +111,8 @@ class GitHubObjectStorageClient:
             raise ObjectStorageError(
                 f"GitHub contents upload failed: {response.status_code}"
             )
-        body = response.json()
-        content = body.get("content") if isinstance(body, dict) else None
+        body = as_object(response.json())
+        content = body.get("content") if body is not None else None
         sha = content.get("sha") if isinstance(content, dict) else None
         return StorageObject(
             provider=self.provider,
@@ -172,13 +174,16 @@ class GitHubObjectStorageClient:
             raise ObjectStorageError(
                 f"GitHub contents list failed: {response.status_code}"
             )
-        payload = response.json()
+        # response.json() 的静态返回是 Any；显式声明为 JsonValue 后，下面的
+        # isinstance(payload, list) 会把元素收窄成 JsonValue，供 as_object 使用。
+        payload: JsonValue = response.json()
         if not isinstance(payload, list):
             raise ObjectStorageError("GitHub contents list response is not an array")
 
         objects: list[StorageObject] = []
-        for item in payload:
-            if not isinstance(item, dict):
+        for raw_item in payload:
+            item = as_object(raw_item)
+            if item is None:
                 continue
             if item.get("type") != "file":
                 continue

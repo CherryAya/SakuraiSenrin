@@ -7,9 +7,26 @@ Description: bot 全局配置类
 """
 
 import json
+from typing import cast
 
 import nonebot
 from pydantic import BaseModel
+
+
+def _string_object_map(value: object) -> dict[str, object] | None:
+    """把 JSON 解析结果的 dict 收窄成 ``dict[str, object]``。
+
+    ``json.loads`` 返回 ``Any``，strict 模式下其成员类型一律为 Unknown。这里
+    在边界处一次性收窄：只保留字符串键（JSON 对象的键必然是字符串），值保持
+    ``object``；非 dict 返回 ``None``，交由调用方报错。
+    """
+    if not isinstance(value, dict):
+        return None
+    result: dict[str, object] = {}
+    for key, item in cast("dict[object, object]", value).items():
+        if isinstance(key, str):
+            result[key] = item
+    return result
 
 
 class BackupRemoteProfile(BaseModel):
@@ -91,18 +108,18 @@ class GlobalConfig(BaseModel):
 
         raw = (self.BACKUP_PROFILES_JSON or "").strip()
         if raw:
-            payload = json.loads(raw)
-            if not isinstance(payload, dict):
+            payload = _string_object_map(json.loads(raw))
+            if payload is None:
                 raise ValueError("BACKUP_PROFILES_JSON must be a JSON object")
             profiles: dict[str, BackupRemoteProfile] = {}
             for name, item in payload.items():
-                if not isinstance(name, str) or not name.strip():
+                if not name.strip():
                     raise ValueError("backup profile name must be non-empty")
-                if not isinstance(item, dict):
+                profile_payload = _string_object_map(item)
+                if profile_payload is None:
                     raise ValueError(f"backup profile {name!r} must be a JSON object")
-                profile_payload = dict(item)
                 profile_payload.setdefault("name", name)
-                profile = BackupRemoteProfile(**profile_payload)
+                profile = BackupRemoteProfile.model_validate(profile_payload)
                 profiles[name] = profile
             return profiles
 

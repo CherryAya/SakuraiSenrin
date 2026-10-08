@@ -24,12 +24,15 @@ class LocalizedMixin:
         if isinstance(labels, Enum):
             labels = labels.value
         elif isinstance(member, IntFlag) and member.value != 0:
+            # member 是 IntFlag 时必为 Enum，val 即其数值；这里取成员自身的
+            # 整数形态，避免沿用上面可能含非数值分支的 val 联合类型。
+            flag_value = member.value
             decomposed_labels: list[str] = []
             for m in member.__class__:
                 is_atomic = (m.value & (m.value - 1)) == 0
                 if m.value == 0 or not is_atomic:
                     continue
-                if (val & m.value) == m.value:
+                if (flag_value & m.value) == m.value:
                     decomposed_labels.append(cls.get_label(m))
             if decomposed_labels:
                 return " | ".join(decomposed_labels)

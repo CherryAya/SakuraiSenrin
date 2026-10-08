@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol
 
 from loguru import logger
 
@@ -19,10 +19,7 @@ from src.lib.trace_log import log_trace_event, new_trace_id
 from src.lib.utils.common import get_current_time
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import DeclarativeBase
-
     from .connectors import SegmentStore
-    from .ops import BaseOps
 
 from .alias import AliasStore
 
@@ -391,23 +388,26 @@ class BatchWriter[T]:
 
 
 class RoutableStore(Protocol):
-    @property
-    def store(self) -> SegmentStore: ...
+    """``execute_batch_write`` 需要的全部能力：一个物理分片库与一个默认时间字段。
+
+    刻意只声明这两项，而不是直接写 ``AliasStore[OpsT]``：``AliasStore`` 在 ops
+    参数上不变（``ops_class`` 落在 ``__init__`` 输入位），而调用点需要「同一物理
+    分片上换一套 ops」（log_db 是 ``AliasStore[TraceEventLogOps]``，却要写
+    ``AuditLogOps``）。ops 由 ``execute_batch_write`` 的 ``ops_class`` 独立携带，
+    因此本协议不需要描述写入方法，任何具体 ``AliasStore`` 都能结构匹配。
+    """
 
     @property
-    def ops_class_ref(self) -> type[BaseOps[DeclarativeBase]]: ...
+    def store(self) -> SegmentStore: ...
 
     @property
     def time_field_ref(self) -> str: ...
 
 
-async def execute_batch_write[
-    PayloadT,
-    OpsT: BaseOps[DeclarativeBase],
-](
+async def execute_batch_write[PayloadT, OpsT](
     batch: Sequence[PayloadT],
     db_instance: RoutableStore,
-    ops_class: type[OpsT] | None,
+    ops_class: type[OpsT],
     method: Callable[[OpsT, Sequence[PayloadT]], Awaitable[int | None]],
     time_field: str | None,
     *,
@@ -415,18 +415,15 @@ async def execute_batch_write[
 ) -> None:
     """按时间戳分组路由并写入对应分片（转发到 AliasStore.write_batch）。
 
-    ops_class / time_field 已由 AliasStore 构造时携带，调用点可省略；保留两个
-    可选参数是为了兼容「同一 alias 上用另一套 ops」的少数场景（例如 log_db 既写
-    审计日志也写 trace 日志）。传了则以传入值为准。
+    ``ops_class`` 必须显式给出，因为调用点常常要用「与 db 自带的 ops 不同的 ops」
+    写同一物理分片（例如 log_db 既写审计日志也写 trace 日志）；``time_field``
+    省略时沿用 db_instance 自带的时间字段。
     """
     if not batch:
         return
-    target: RoutableStore = db_instance
-    if ops_class is not None or time_field is not None:
-        resolved_ops = cast("type[OpsT]", ops_class or db_instance.ops_class_ref)
-        target = AliasStore[OpsT](
-            db_instance.store,
-            ops_class=resolved_ops,
-            time_field=time_field or db_instance.time_field_ref,
-        )
+    target = AliasStore(
+        db_instance.store,
+        ops_class=ops_class,
+        time_field=time_field or db_instance.time_field_ref,
+    )
     await target.write_batch(batch, method=method, emit_trace=emit_trace)

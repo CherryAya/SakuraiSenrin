@@ -16,7 +16,7 @@ from src.lib.message_delivery import (
 )
 from src.lib.types import JsonValue
 
-_HOOKS_INSTALLED = False
+_hooks_installed = False
 
 
 def _resolve_send_target(
@@ -36,6 +36,16 @@ def _resolve_send_target(
     return None
 
 
+def _as_sender_id(value: JsonValue) -> int | str | None:
+    """把 JSON 值收窄成 ``at`` 可接受的发送者 ID。
+
+    ``bool`` 是 ``int`` 子类，需显式排除，避免 ``True`` 被当作 ID 1。
+    """
+    if isinstance(value, bool):
+        return None
+    return value if isinstance(value, (int, str)) else None
+
+
 async def delivery_send_handler(
     bot: OneBotV11Bot,
     event: Event,
@@ -46,11 +56,13 @@ async def delivery_send_handler(
 ) -> dict[str, JsonValue]:
     event_dict = model_dump(event)
 
-    if "message_id" not in event_dict:
+    message_id = _as_sender_id(event_dict.get("message_id"))
+    if message_id is None:
         reply_message = False
 
-    if "user_id" in event_dict:
-        params.setdefault("user_id", event_dict["user_id"])
+    sender_id = _as_sender_id(event_dict.get("user_id"))
+    if sender_id is not None:
+        params.setdefault("user_id", sender_id)
     else:
         at_sender = False
 
@@ -70,10 +82,10 @@ async def delivery_send_handler(
             raise ValueError("Cannot guess message type to reply!")
 
     full_message = Message()
-    if reply_message:
-        full_message += MessageSegment.reply(event_dict["message_id"])
-    if at_sender and message_type != "private":
-        full_message += MessageSegment.at(params["user_id"]) + " "
+    if reply_message and message_id is not None:
+        full_message += MessageSegment.reply(int(message_id))
+    if at_sender and message_type != "private" and sender_id is not None:
+        full_message += MessageSegment.at(sender_id) + " "
     full_message += message
 
     target = _resolve_send_target(
@@ -125,19 +137,22 @@ async def intercept_message_send_api(
 
     if "message" not in data:
         return
+    outgoing = data["message"]
+    if not isinstance(outgoing, (str, Message)):
+        return
     result = await deliver_single_message(
         cast(OneBotV11Bot, bot),
         target=target,
-        message=data["message"],
+        message=outgoing,
         source_kind="onebot_send_api",
     )
     raise MockApiException({"message_id": result.message_id})
 
 
 def install_message_delivery_hooks() -> None:
-    global _HOOKS_INSTALLED
-    if _HOOKS_INSTALLED:
+    global _hooks_installed
+    if _hooks_installed:
         return
     setattr(OneBotV11Bot, "send_handler", delivery_send_handler)
     BaseBot.on_calling_api(intercept_message_send_api)
-    _HOOKS_INSTALLED = True
+    _hooks_installed = True

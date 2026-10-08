@@ -6,11 +6,8 @@ from importlib import import_module
 from pathlib import Path
 import sys
 
-from sqlalchemy.orm import DeclarativeBase
-
-from src.lib.db.alias import AliasStore
+from src.lib.db.alias import AliasStore, OpsFactory
 from src.lib.db.connectors import BaseDB
-from src.lib.db.ops import BaseOps
 from src.logger import logger
 
 _registered_databases: list[BaseDB] = []
@@ -18,17 +15,17 @@ _registered_database_ids: set[int] = set()
 _attempted_modules: set[str] = set()
 
 
-def register_backup_database[OpsT: BaseOps[DeclarativeBase]](
-    db: BaseDB | AliasStore[OpsT],
-) -> None:
+def register_backup_database(db: BaseDB | AliasStore[OpsFactory]) -> None:
     """注册备份源。
 
     接受 BaseDB，也接受 AliasStore（内部解包为其物理 SegmentStore），
     这样 instances.py 只需把逻辑名注册一次。
 
-    用函数级 TypeVar 而非固定的 AliasStore[BaseOps[DeclarativeBase]]：
-    AliasStore 在 ops 参数上是不变的，固定基类参数会让任何具体 ops
-    （如 AliasStore[TraceEventLogOps]）都赋不进来。
+    参数写成 ``AliasStore[OpsFactory]`` 而非某个具体 ops：``AliasStore`` 的
+    OpsT 只出现在 ``__init__`` 输入位，对它是协变的，具体
+    ``AliasStore[TraceEventLogOps]`` 可赋给 ``AliasStore[OpsFactory]``。
+    反之若把参数固定成 ``AliasStore[BaseOps[DeclarativeBase]]``，
+    ``BaseOps`` 的模型参数不变，任何具体 ops 都判不进去（见 alias.OpsFactory）。
     """
     physical: BaseDB = db.store if isinstance(db, AliasStore) else db
     db_id = id(physical)

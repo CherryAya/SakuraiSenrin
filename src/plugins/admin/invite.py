@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from argparse import Namespace
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 import io
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import NoReturn, Protocol, TypedDict, cast
 
 import arrow
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -135,6 +135,32 @@ __plugin_meta__ = create_plugin_metadata(
 
 APPROVE_REPLY_ALIASES = {"y", "approve", "通过", "同意", "批准"}
 REJECT_REPLY_ALIASES = {"n", "reject", "拒绝", "驳回", "反对"}
+
+
+class _MatcherFinisher(Protocol):
+    """只暴露无参 ``finish`` 的最小协议。
+
+    nonebot 的 ``Matcher.finish`` 签名嵌套了 ``Message[Unknown]`` 等未绑定泛型，
+    strict 模式下直接调用点会被判为 partially unknown。此处只用到「结束当前事件」
+    语义，用协议收窄即可，无需改动 nonebot 类型定义。
+    """
+
+    async def finish(self) -> NoReturn: ...
+
+
+async def _finish_event(matcher: _MatcherFinisher) -> NoReturn:
+    await matcher.finish()
+
+
+class _ArgvParser(Protocol):
+    """``ArgumentParser.parse_args`` 的纯字符串重载。
+
+    nonebot 的 ``ArgumentParser`` 把重载签名写在 ``TYPE_CHECKING`` 分支里，
+    strict 模式下无法从实例推导，返回类型退化为 partially unknown。这里按本插件
+    实际用法（只传 ``list[str]``）声明最小协议。
+    """
+
+    def parse_args(self, args: Sequence[str]) -> Namespace: ...
 
 
 def _normalize_reply_text(text: str) -> str:
@@ -844,7 +870,7 @@ async def handle_reject(ctx: AdminInviteContext) -> None:
         return
 
     success_count = 0
-    details = []
+    details: list[str] = []
     for inv in invs:
         ic_ctx = InviteContext(
             bot=ctx.bot,
@@ -932,7 +958,7 @@ async def handle_ignore(ctx: AdminInviteContext) -> None:
         )
         return
 
-    details = []
+    details: list[str] = []
     for inv in invs:
         details.append(f"{inv.group.group_name} ({inv.group_id})")
     msg = tr(ctx.locale, "admin.invite.bulk.ignore.title") + "\n"
@@ -955,15 +981,16 @@ async def handle_log(ctx: AdminInviteContext) -> None:
 
 @approve_matcher.handle()
 async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
-    invitation_id = await dispatch_reply_route("admin.invite.approve", bot, event)
-    if invitation_id is None:
-        await matcher.finish()
+    reply_result = await dispatch_reply_route("admin.invite.approve", bot, event)
+    if not isinstance(reply_result, int):
+        await _finish_event(matcher)
+        return
     ctx = InviteContext(
         bot=bot,
         event=event,
         matcher=matcher,
         approve=True,
-        invitation_id=invitation_id,
+        invitation_id=reply_result,
         operator_id=str(event.user_id),
         locale=await resolve_locale(str(getattr(event, "group_id", "")) or None),
     )
@@ -972,15 +999,16 @@ async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
 
 @reject_matcher.handle()
 async def _(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
-    invitation_id = await dispatch_reply_route("admin.invite.reject", bot, event)
-    if invitation_id is None:
-        await matcher.finish()
+    reply_result = await dispatch_reply_route("admin.invite.reject", bot, event)
+    if not isinstance(reply_result, int):
+        await _finish_event(matcher)
+        return
     ctx = InviteContext(
         bot=bot,
         event=event,
         matcher=matcher,
         approve=False,
-        invitation_id=invitation_id,
+        invitation_id=reply_result,
         operator_id=str(event.user_id),
         locale=await resolve_locale(str(getattr(event, "group_id", "")) or None),
     )
@@ -1006,7 +1034,8 @@ async def _(
         )
         return
     try:
-        args: Namespace | ParserExit = invite_parser.parse_args(argv)
+        argv_parser = cast("_ArgvParser", invite_parser)
+        args: Namespace | ParserExit = argv_parser.parse_args(argv)
     except ParserExit as exc:
         args = exc
     if isinstance(args, ParserExit):
@@ -1080,4 +1109,4 @@ async def _(
             return
 
     await handler(ctx)
-    await admin_invite.finish()
+    await _finish_event(admin_invite)

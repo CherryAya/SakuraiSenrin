@@ -53,7 +53,7 @@ async def send_batch_add_feedback(
     )
     summary_result = plan_result.results[0]
     feedback_result = summary_result
-    detail_messages = []
+    detail_messages: list[MessagePlanEntry] = []
     for item in batch.items:
         if item.ok and item.result is not None:
             detail_messages.append(

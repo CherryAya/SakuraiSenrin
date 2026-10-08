@@ -21,8 +21,8 @@ from src.logger import logger
 from src.repositories import group_repo, member_repo, user_repo
 from src.services.info import resolve_group_name
 
-_group_runtime_locks = defaultdict(asyncio.Lock)
-_member_full_sync_locks = defaultdict(asyncio.Lock)
+_group_runtime_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+_member_full_sync_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 _ROLE_MAPPING = {
     "owner": Permission.GROUP_OWNER,
     "admin": Permission.GROUP_ADMIN,

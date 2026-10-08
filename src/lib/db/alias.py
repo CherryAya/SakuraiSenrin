@@ -18,11 +18,11 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Sequence
-from contextlib import _AsyncGeneratorContextManager
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from pathlib import Path
-from typing import TypeVar, cast
+from typing import Protocol, cast
 
 import arrow
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,14 +35,40 @@ from src.lib.db.schema import PatchRegistry
 from src.lib.trace_log import log_trace_event
 from src.lib.types import JsonValue
 
-OpsT = TypeVar("OpsT", bound=BaseOps[DeclarativeBase])
-# write_batch 只做 item[field] 取值，TypedDict 也满足；
-# 不绑定 Mapping[str, JsonValue]（TypedDict 的值类型是 object，无法赋值给它）。
-PayloadT = TypeVar("PayloadT")
+
+class OpsFactory(Protocol):
+    """「能用 ``AsyncSession`` 构造的 ops」结构化视图。
+
+    仅用于 ``write_batch`` 内部构造 ops 那一处的 cast：``AliasStore`` 的 OpsT
+    不带约束（原因见类头说明），静态期看不到「ops_class 可被 session 构造」，
+    这里把该运行时事实写实。不把 OpsFactory 反过来做成 AliasStore 的约束——
+    那会拦住 unbounded ``OpsT`` 的调用点（如 execute_batch_write）。
+
+    真实实现是 ``BaseOps.__init__(self, session: AsyncSession)``。
+    """
+
+    def __init__(self, session: AsyncSession) -> None: ...
+
 
 # 时间窗口边界的可选形态；比 MomentLike 少一档：窗口端点不接受分片键 / record_date
 # 字符串。
 type WindowBound = datetime | arrow.Arrow | int
+
+
+def _payload_field(payload: object, field: str) -> object:
+    """从批次元素按字段名取值（元素形态由调用方保证，见 write_batch）。
+
+    批次元素在调用点是 TypedDict（运行时即 dict），但 ``write_batch`` 的
+    PayloadT 不能绑 ``Mapping``——那样会排除 TypedDict；不绑则静态期看不到
+    下标操作。这里用 ``Mapping`` 收口这一处动态取值，非映射形态直接抛
+    TypeError，与原先 ``item[field]`` 的失败语义一致。
+    """
+    if not isinstance(payload, Mapping):
+        raise TypeError(f"batch payload must be a mapping, got {type(payload)!r}")
+    # isinstance 只把 object 收窄成 Mapping[Unknown, Unknown]；批次字段名恒为
+    # str，此处把「键为 str、值为 object」写实，值仍保持未知，不放松到 Any。
+    fields = cast("Mapping[str, object]", payload)
+    return fields[field]
 
 
 def _as_datetime(moment: object) -> datetime:
@@ -60,10 +86,17 @@ def _as_datetime(moment: object) -> datetime:
     raise TypeError(f"unsupported window bound: {type(moment)!r}")
 
 
-class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
+class AliasStore[OpsT]:
     """按时间维度自动路由的逻辑 db。
 
     ``store`` 是物理分片库；本类只负责把「业务时间」翻译成「目标分片」。
+
+    这里刻意不约束 ``OpsT``（旧写法 ``OpsT: BaseOps[DeclarativeBase]``）：具体
+    ops 都是 ``BaseOps[具体模型]``，而 ``BaseOps`` 的模型参数不变，
+    ``BaseOps[TraceEventLog]`` 判不进 ``BaseOps[DeclarativeBase]``，于是
+    ``AliasStore[TraceEventLogOps]`` 这类参数化会成片报
+    reportInvalidTypeArguments。真实约束是「``ops_class`` 能用 ``AsyncSession``
+    构造、实例可交给 ``method``」，运行时由构造参数保证。
     """
 
     def __init__(
@@ -138,12 +171,24 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
         return self._store.warm_ttl_seconds
 
     def get_shard_key(self, moment: datetime) -> str:
-        """按 store 的分片格式解析分片键。"""
-        return self._store._get_shard_key(moment)
+        """按 store 的分片格式解析分片键。
 
-    def to_local(self, moment: datetime) -> arrow.Arrow:
+        与 SegmentStore._get_shard_key 同语义：直接对给定时刻按 fmt 格式化，
+        不做时区换算（调用方传入的已是目标时区的墙钟时间）。
+        """
+        return moment.strftime(self.fmt)
+
+    def to_local(self, moment: datetime | arrow.Arrow) -> arrow.Arrow:
         """归一化到 store 时区（供业务侧需要本地时间语义时使用）。"""
-        return self._store._to_local(moment)
+        return self._to_local(moment)
+
+    def _to_local(self, moment: datetime | arrow.Arrow) -> arrow.Arrow:
+        """store 时区归一化，与 SegmentStore._to_local 口径一致。
+
+        ``arrow.get`` 对 naive datetime 也按 UTC 解释，返回的 Arrow 恒带 tzinfo，
+        因此「无时区则就地打标」的分支不可达；等价于直接换算到 store 时区。
+        """
+        return arrow.get(moment).to(self.tz)
 
     def __repr__(self) -> str:
         return (
@@ -157,7 +202,7 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
 
     def shard_key_for(self, moment: MomentLike) -> str:
         """把任意形式的时间（时间戳 / datetime / record_date）解析成分片键。"""
-        return self._store._get_shard_key(self._route_ctx(moment))
+        return self._floor_month(self._route_ctx_arrow(moment)).strftime(self.fmt)
 
     def _route_ctx(self, moment: object) -> datetime:
         """归一化到「本分片月首零点」，交由 SegmentStore 统一处理时区。
@@ -166,34 +211,37 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
         可能直接把 payload dict 里取出的原始 JSON 值丢进来（见 ``write_batch``）。
         真正的形态校验由下面逐条 isinstance 收口，不合法的值照旧抛 TypeError。
         """
+        return self._floor_month(self._route_ctx_arrow(moment)).datetime
+
+    def _route_ctx_arrow(self, moment: object) -> arrow.Arrow:
+        """把任意形态的时间归一化成 arrow，再取月首零点。"""
         if isinstance(moment, arrow.Arrow):
-            return self._floor_month(moment)
+            return moment
         if isinstance(moment, datetime):
-            return self._floor_month(arrow.get(moment))
+            return arrow.get(moment)
         if isinstance(moment, str):
             # 已是分片键（store.fmt 形态），直接反解
             shard = self._parse_shard_key(moment)
             if shard is not None:
-                return self._floor_month(shard)
+                return shard
             # record_date 形态，如 "20260901"
-            return self._floor_month(arrow.get(moment, "YYYYMMDD"))
+            return arrow.get(moment, "YYYYMMDD")
         if isinstance(moment, int):
             # 时间戳；小数值形态按 record_date 解析（YYYYMMDD）
             if 10_000_000 < moment < 100_000_000:
-                return self._floor_month(arrow.get(str(moment), "YYYYMMDD"))
-            return self._floor_month(arrow.get(moment))
+                return arrow.get(str(moment), "YYYYMMDD")
+            return arrow.get(moment)
         raise TypeError(f"unsupported time value: {type(moment)!r}")
 
-    def _floor_month(self, value: arrow.Arrow) -> datetime:
-        """先归一化到 store 时区再取月首零点（naive，供 _get_shard_key 使用）。"""
-        local = self._store._to_local(value)
-        return local.replace(
+    def _floor_month(self, value: arrow.Arrow) -> arrow.Arrow:
+        """先归一化到 store 时区再取月首零点（供分片键推导使用）。"""
+        return self._to_local(value).replace(
             day=1,
             hour=0,
             minute=0,
             second=0,
             microsecond=0,
-        ).datetime
+        )
 
     def _parse_shard_key(self, raw: str) -> arrow.Arrow | None:
         """把分片键字符串反解为该月的月初；不是分片键则返回 None。
@@ -213,7 +261,7 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
     def write_session_for(
         self,
         moment: MomentLike,
-    ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+    ) -> AbstractAsyncContextManager[AsyncSession]:
         """按业务时间路由的写会话（替代手动计算 time_ctx）。"""
         return self._store.write_session(time_ctx=self._route_ctx(moment))
 
@@ -222,18 +270,18 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
         moment: MomentLike,
         *,
         cold_policy: ColdPolicy | None = None,
-    ) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+    ) -> AbstractAsyncContextManager[AsyncSession]:
         """按业务时间路由的读会话。"""
         return self._store.read_session(
             time_ctx=self._route_ctx(moment),
             cold_policy=cold_policy,
         )
 
-    async def write_batch(
+    async def write_batch[PayloadT](
         self,
         payloads: Sequence[PayloadT],
         *,
-        method: Callable[[OpsT, Sequence[PayloadT]], Awaitable[int | None]],
+        method: Callable[[OpsT, list[PayloadT]], Awaitable[int | None]],
         time_field: str | None = None,
         emit_trace: bool = True,
     ) -> int:
@@ -241,6 +289,11 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
 
         取代原先散落在各 repo 的「先按月分组、再把 route_key 反解回 datetime」
         两步走；分片口径只在这里与 SegmentStore 各实现一次。
+
+        ``method`` 第二参声明为 ``list``（而非 ``Sequence``）：实现按分片把批次
+        以 ``list`` 形态交给 ops，且实际的 ops 方法签名就是 ``list[...]``；
+        ``Callable`` 参数逆变，声明成 ``Sequence`` 会拒绝真实方法，也会放过
+        与调用形态不符的签名。
         """
         if not payloads:
             return 0
@@ -249,11 +302,12 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
         route_map: dict[str, list[PayloadT]] = defaultdict(list)
         route_ctx_map: dict[str, datetime] = {}
         for item in payloads:
-            route_ctx = self._route_ctx(item[field])
-            shard_key = self._store._get_shard_key(route_ctx)
+            route_ctx = self._floor_month(
+                self._route_ctx_arrow(_payload_field(item, field))
+            )
+            shard_key = route_ctx.strftime(self.fmt)
             route_map[shard_key].append(item)
-            route_ctx_map[shard_key] = route_ctx
-
+            route_ctx_map[shard_key] = route_ctx.datetime
         total = 0
         for shard_key, grouped in route_map.items():
             trace_id: str | None = None
@@ -275,7 +329,10 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
                 async with self._store.write_session(
                     time_ctx=route_ctx_map[shard_key],
                 ) as session:
-                    result = await method(self._ops_class(session), grouped)
+                    # OpsT 已省略约束（见类头说明）；此处由构造参数保证
+                    # 「能用 session 构造」，静态期不可表达，显式 cast 收口。
+                    ops = cast("type[OpsFactory]", self._ops_class)(session)
+                    result = await method(ops, grouped)  # type: ignore[arg-type]
                 total += int(result) if isinstance(result, int) else 0
             except Exception as exc:
                 if emit_trace:
@@ -315,11 +372,11 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
                 )
         return total
 
-    async def write_one(
+    async def write_one[PayloadT](
         self,
         payload: PayloadT,
         *,
-        method: Callable[[OpsT, Sequence[PayloadT]], Awaitable[int | None]],
+        method: Callable[[OpsT, list[PayloadT]], Awaitable[int | None]],
         time_field: str | None = None,
         emit_trace: bool = False,
     ) -> int:
@@ -453,11 +510,16 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
         """清空内存态（schema 初始化标记、manifest 缓存、flush 任务）。
 
         分片文件被物理删除后必须调用，否则会沿用指向已失效 inode 的标记。
+
+        这里刻意触碰物理 store 的私有实现细节：这些字段由 SegmentStore 独占
+        维护，alias 层没有、也不应该有对应状态，transparent 透传是唯一入口。
+        结构化的 Protocol 无法绕开 reportPrivateUsage（作用域按声明类判定），
+        故在此显式豁免这四处直接访问。
         """
-        self._store._initialized_shards.clear()
-        self._store._manifest = None
-        self._store._manifest_dirty = False
-        self._store._manifest_flush_task = None
+        self._store._initialized_shards.clear()  # type: ignore[attr-defined]
+        self._store._manifest = None  # type: ignore[attr-defined]
+        self._store._manifest_dirty = False  # type: ignore[attr-defined]
+        self._store._manifest_flush_task = None  # type: ignore[attr-defined]
 
     def shard_health(self) -> list[dict[str, JsonValue]]:
         return self._store.shard_health()
@@ -472,6 +534,12 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
 
     @property
     def ops_class_ref(self) -> type[BaseOps[DeclarativeBase]]:
+        """物理 store 上 ops 类的公开视图，供 RoutableStore 协议结构匹配。
+
+        ops 类在运行时就是 BaseOps 的某个参数化子类；``BaseOps`` 的模型参数
+        不变，无法用类型系统表达「上转型到具体模型」，故这里 cast 成基类参数化
+        形态。该 cast 只用于跨层协议匹配，不参与任何业务判断。
+        """
         return cast("type[BaseOps[DeclarativeBase]]", self._ops_class)
 
     @property
@@ -491,7 +559,7 @@ class AliasStore[OpsT: BaseOps[DeclarativeBase]]:
         )
 
 
-def build_alias[OpsT: BaseOps[DeclarativeBase]](
+def build_alias[OpsT](
     store: SegmentStore,
     ops_class: type[OpsT],
     *,

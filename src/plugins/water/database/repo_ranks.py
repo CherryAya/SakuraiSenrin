@@ -68,7 +68,7 @@ class WaterRepositoryRanksMixin:
         end_ts = now.ceil("day").int_timestamp
         yesterday_int = int(now.shift(days=-1).format("YYYYMMDD"))
 
-        async def _fetch_today() -> Sequence[Row[tuple[str, int]]]:
+        async def _fetch_today() -> Sequence[Row[*tuple[str, int]]]:
             async with water_message.read_session_for(now) as session:
                 return (
                     await _repo_module()
@@ -96,17 +96,23 @@ class WaterRepositoryRanksMixin:
             _fetch_today(), _fetch_yesterday()
         )
 
-        return [
-            RankItem(
-                user_id=user_id,
-                msg_count=count,
-                current_rank=current_rank,
-                trend=(yesterday_ranks[user_id] - current_rank)
-                if user_id in yesterday_ranks
-                else None,
+        # get_top_users 返回 Row[tuple[str, int]]；解包遍历会退化成 tuple 元素，
+        # 这里按位置取列，user_id 统一转 str 后使用。
+        ranked_items: list[RankItem] = []
+        for current_rank, row in enumerate(today_data, 1):
+            user_id = str(row[0])
+            count = int(row[1])
+            ranked_items.append(
+                RankItem(
+                    user_id=user_id,
+                    msg_count=count,
+                    current_rank=current_rank,
+                    trend=(yesterday_ranks[user_id] - current_rank)
+                    if user_id in yesterday_ranks
+                    else None,
+                )
             )
-            for current_rank, (user_id, count) in enumerate(today_data, 1)
-        ]
+        return ranked_items
 
     async def get_today_group_rank(self, group_id: str) -> int:
         await water_writer.flush_now()

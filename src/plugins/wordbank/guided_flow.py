@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, cast
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
@@ -36,6 +36,7 @@ from src.lib.message_plan import (
     DeliveryPlan,
     MessagePlanInput,
     deliver_message_plan,
+    finish_matcher,
     finish_with_message,
     pause_with_message,
 )
@@ -58,7 +59,7 @@ from src.plugins.wordbank.handlers import media_helpers as handlers_media_helper
 from src.plugins.wordbank.handlers import mutation as handlers_mutation
 from src.plugins.wordbank.handlers.commands import (
     ParsedSearch,
-    _default_i18n_text,
+    default_i18n_text,
 )
 from src.plugins.wordbank.handlers.media_helpers import (
     build_response_shape_from_message,
@@ -591,7 +592,7 @@ async def finish_guided_add(
         trigger_shape = state_message_shape(state, "wordbank_guided_trigger_shape")
         if trigger_shape is None or trigger_shape.is_empty():
             raise RuleError(
-                _default_i18n_text("wordbank.error.trigger_empty"),
+                default_i18n_text("wordbank.error.trigger_empty"),
                 key="wordbank.error.trigger_empty",
             )
         if "wordbank_guided_response_split_shapes" in state:
@@ -611,7 +612,7 @@ async def finish_guided_add(
             )
             if not split_shapes:
                 raise RuleError(
-                    _default_i18n_text("wordbank.error.response_empty"),
+                    default_i18n_text("wordbank.error.response_empty"),
                     key="wordbank.error.response_empty",
                 )
             from src.plugins.wordbank.handlers.commands import (
@@ -652,7 +653,7 @@ async def finish_guided_add(
             )
             if batch.success == 0:
                 raise RuleError(
-                    _default_i18n_text("wordbank.error.response_empty"),
+                    default_i18n_text("wordbank.error.response_empty"),
                     key="wordbank.error.response_empty",
                 )
             await finalize_submission(
@@ -670,7 +671,7 @@ async def finish_guided_add(
             )
             if response_shape is None or response_shape.is_empty():
                 raise RuleError(
-                    _default_i18n_text("wordbank.error.response_empty"),
+                    default_i18n_text("wordbank.error.response_empty"),
                     key="wordbank.error.response_empty",
                 )
             forward_messages = state.get("wordbank_guided_response_forward_messages")
@@ -716,9 +717,19 @@ def guided_search_image_scores(state: T_State) -> dict[int, float]:
     value = state.get("wordbank_guided_search_image_scores")
     if not isinstance(value, dict):
         return {}
-    return {
-        int(key): float(score) for key, score in value.items() if str(key).isdigit()
-    }
+    raw_scores: Mapping[object, object] = cast("Mapping[object, object]", value)
+    scores: dict[int, float] = {}
+    for raw_key, raw_score in raw_scores.items():
+        key_text = str(raw_key)
+        if not key_text.isdigit():
+            continue
+        if isinstance(raw_score, bool):
+            continue
+        if isinstance(raw_score, int):
+            scores[int(key_text)] = float(raw_score)
+        elif isinstance(raw_score, float):
+            scores[int(key_text)] = raw_score
+    return scores
 
 
 async def collect_search_query_content(
@@ -772,30 +783,45 @@ def guided_search_group_ids(state: T_State) -> tuple[int, ...]:
     value = state.get("wordbank_guided_search_group_ids")
     if not isinstance(value, (list, tuple)):
         return ()
-    return tuple(
-        int(item) for item in value if isinstance(item, int) or str(item).isdigit()
-    )
+    raw_items: Sequence[object] = cast("Sequence[object]", value)
+    collected: list[int] = []
+    for item in raw_items:
+        if isinstance(item, bool):
+            continue
+        if isinstance(item, int):
+            collected.append(item)
+        elif isinstance(item, str) and item.isdigit():
+            collected.append(int(item))
+    return tuple(collected)
 
 
 def guided_search_delete_target_map(state: T_State) -> dict[str, int]:
     value = state.get("wordbank_guided_search_delete_target_map")
+    raw_pairs: Sequence[object]
     if isinstance(value, Mapping):
-        pairs = value.items()
+        mapping: Mapping[object, object] = cast("Mapping[object, object]", value)
+        raw_pairs = list(mapping.items())
     elif isinstance(value, (list, tuple)):
-        pairs = value
+        raw_pairs = cast("Sequence[object]", value)
     else:
         return {}
     target_map: dict[str, int] = {}
-    for pair in pairs:
-        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+    for pair in raw_pairs:
+        if not isinstance(pair, (list, tuple)):
             continue
-        raw_key, raw_value = pair
-        key = str(raw_key).strip()
+        items: Sequence[object] = cast("Sequence[object]", pair)
+        if len(items) != 2:
+            continue
+        key = str(items[0]).strip()
         if not key:
             continue
-        if not (isinstance(raw_value, int) or str(raw_value).isdigit()):
+        raw_value = items[1]
+        if isinstance(raw_value, bool):
             continue
-        target_map[key] = int(raw_value)
+        if isinstance(raw_value, int):
+            target_map[key] = raw_value
+        elif isinstance(raw_value, str) and raw_value.isdigit():
+            target_map[key] = int(raw_value)
     return target_map
 
 
@@ -934,7 +960,7 @@ async def finish_guided_search(
         has_image=bool(state.get("wordbank_guided_search_has_image")),
     )
     if page.total_count <= 0:
-        await matcher.finish()
+        await finish_matcher(matcher)
         return
     await pause_with_message(
         matcher,

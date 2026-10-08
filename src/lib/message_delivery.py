@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -16,6 +16,7 @@ from nonebot.adapters.onebot.v11.event import (
 from nonebot.adapters.onebot.v11.message import Message
 
 from src.lib.message_assets import describe_message_asset, message_asset_repo
+from src.lib.types import is_object_mapping
 from src.logger import logger
 
 TargetKind = Literal["group", "private"]
@@ -75,7 +76,7 @@ def should_bypass_message_api_hook() -> bool:
 
 
 @contextmanager
-def bypass_message_api_hook() -> Iterator[None]:
+def bypass_message_api_hook() -> Generator[None]:
     token = _MESSAGE_API_HOOK_BYPASS.set(_MESSAGE_API_HOOK_BYPASS.get() + 1)
     try:
         yield
@@ -100,7 +101,7 @@ def resolve_notice_delivery_target(event: NoticeEvent) -> DeliveryTarget:
 
 
 def _extract_message_id(result: object) -> str | None:
-    if isinstance(result, dict):
+    if is_object_mapping(result):
         value = result.get("message_id")
     else:
         value = getattr(result, "message_id", None)

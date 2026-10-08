@@ -103,7 +103,7 @@ wordbank_passive = on_message(priority=95, block=False)
 
 wordbank_notice = on_notice(priority=95, block=False)
 
-from . import bootstrap as _bootstrap  # noqa: F401  注册启动钩子与定时任务
+from . import bootstrap as bootstrap  # 注册启动钩子与定时任务
 
 # 导入入口模块即完成全部 matcher 注册（模块级 @matcher.handle()）：
 #   entry_commands —— 命令 / 引导流程

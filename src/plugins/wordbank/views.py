@@ -38,6 +38,7 @@ from src.lib.message_plan import (
     DeliveryPlan,
     MessagePlanInput,
     deliver_message_plan,
+    finish_matcher,
     render_message_plan_input,
 )
 from src.lib.reply_router import (
@@ -337,7 +338,7 @@ async def _render_search_result_view(
             page=page,
             has_image=image_scores is not None,
         )
-        await matcher.finish()
+        await finish_matcher(matcher)
         return
 
     clear_interaction_errors(state)
@@ -441,7 +442,7 @@ async def _render_group_detail_view(
         has_image=group_detail_has_image(detail),
     )
     if finish_after_send:
-        await matcher.finish()
+        await finish_matcher(matcher)
 
 
 async def send_group_detail_view(

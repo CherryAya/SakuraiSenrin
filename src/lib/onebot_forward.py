@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import json
-from typing import Literal
+from typing import Literal, cast
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent, MessageEvent
@@ -27,7 +27,8 @@ async def resolve_forward_sender(
     except Exception:
         return user_id, fallback_nickname
     if isinstance(login_info, dict):
-        nickname = str(login_info.get("nickname", "")).strip()
+        login_payload = cast("dict[str, object]", login_info)
+        nickname = str(login_payload.get("nickname", "")).strip()
         if nickname:
             return user_id, nickname
     return user_id, fallback_nickname

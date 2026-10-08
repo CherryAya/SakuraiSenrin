@@ -61,7 +61,6 @@ from src.plugins.water.renderers.report import build_water_group_report_image
 from src.plugins.water.renderers.report_layout import (
     pick_group_report_right_panel_tier,
 )
-from src.plugins.water.services.rank import water_rank_service
 from src.plugins.water.services.worker_jobs import (
     WaterPreparedReportItem,
     WaterPreparedReportMessageKind,
@@ -153,7 +152,7 @@ class WaterDailyReportPushState:
     current_group_id: str = ""
     current_stage: str = "queued"
     current_stage_started_at: int = 0
-    pending_detail_lines: list[str] = field(default_factory=list)
+    pending_detail_lines: list[str] = field(default_factory=list[str])
     latest_error: str = ""
 
     @property
@@ -180,7 +179,7 @@ class WaterDailyReportBatchContext:
     distribution_items: tuple[WaterGroupDailyRankItem, ...]
     history_dates: tuple[int, ...]
     history_by_group: dict[str, tuple[tuple[int, int | None], ...]]
-    group_name_map: dict[str, str] = field(default_factory=dict)
+    group_name_map: dict[str, str] = field(default_factory=dict[str, str])
 
 
 def _format_report_push_time(timestamp: int) -> str:
@@ -189,6 +188,13 @@ def _format_report_push_time(timestamp: int) -> str:
 
 def _format_report_group_label(group_id: str) -> str:
     return f"[{group_id}]" if group_id else "-"
+
+
+def _previous_record_date(record_date: int) -> int:
+    """``YYYYMMDD`` 形态的记录日前一天，供日报昨日结算窗口使用。"""
+    return int(
+        arrow.get(str(record_date), "YYYYMMDD").shift(days=-1).format("YYYYMMDD")
+    )
 
 
 WATER_REPORT_PUSH_STATUS_KEYS: dict[str, MessageKey] = {
@@ -789,7 +795,7 @@ class WaterReportService:
             )
         sent_groups = 0
         failed_send_groups = 0
-        for index, item in enumerate(prepared.report_items, start=1):
+        for item in prepared.report_items:
             send_started = perf_counter()
             _set_report_push_stage(
                 push_state,
@@ -987,7 +993,7 @@ class WaterReportService:
             and batch_context.record_date == record_date
             and window == "yesterday_settled"
         ):
-            return water_repo._build_group_report_snapshot_from_rows(
+            return water_repo.build_group_report_snapshot_from_rows(
                 group_id=group_id,
                 record_date=record_date,
                 current_rows=batch_context.current_rows_by_group.get(group_id, ()),
@@ -1173,22 +1179,8 @@ class WaterReportService:
             if not (user_id in seen or seen.add(user_id))
         ]
         name_map = await user_repo.get_names_by_uids(unique_user_ids)
-        secondary_labels = await asyncio.gather(
-            *(
-                water_rank_service._resolve_secondary_label(
-                    "user",
-                    item.user_id,
-                    0,
-                    locale,
-                )
-                for item in snapshot.leaderboard
-            )
-        )
         avatars = await asyncio.gather(
-            *(
-                water_rank_service._resolve_avatar("user", item.user_id)
-                for item in snapshot.leaderboard
-            ),
+            *(QQAvatar.fetch_user(item.user_id) for item in snapshot.leaderboard),
             return_exceptions=True,
         )
         return [
@@ -1198,7 +1190,7 @@ class WaterReportService:
                     item.user_id,
                     tr(locale, "water.rank.user_fallback", tail=item.user_id[-4:]),
                 ),
-                secondary_label=secondary_labels[idx],
+                secondary_label="",
                 avatar=self._normalize_avatar(avatars[idx]),
                 msg_count=item.msg_count,
                 active_days=1,
@@ -1234,7 +1226,7 @@ class WaterReportService:
             and batch_context.record_date == snapshot.record_date
             and window == "yesterday_settled"
         ):
-            return water_repo._build_group_daily_rank_snapshot_from_rows(
+            return water_repo.build_group_daily_rank_snapshot_from_rows(
                 focus_group_id=snapshot.group_id,
                 record_date=snapshot.record_date,
                 current_rows=batch_context.current_rows_all,
@@ -1387,7 +1379,7 @@ class WaterReportService:
         record_date: int,
     ) -> WaterDailyReportBatchContext:
         context_started = perf_counter()
-        previous_date = water_repo._previous_date(record_date)
+        previous_date = _previous_record_date(record_date)
         current_rows_all = tuple(
             await water_repo.get_summaries_in_window(record_date, record_date)
         )
@@ -1396,8 +1388,13 @@ class WaterReportService:
         )
         current_rows_by_group = self._group_summary_rows_by_group(current_rows_all)
         previous_rows_by_group = self._group_summary_rows_by_group(previous_rows_all)
+        # 与 repo 的公开口径一致：聚合与排序逻辑收口在
+        # get_group_daily_distribution_items，这里传入已取好的昨日记录日窗口，
+        # 避免重复一份 rows 聚合实现。
         distribution_items = tuple(
-            water_repo._build_group_distribution_items_from_rows(current_rows_all)
+            await water_repo.get_group_daily_distribution_items(
+                record_date=record_date,
+            )
         )
         current_group_ids = [item.group_id for item in distribution_items]
         group_name_map = await group_repo.get_names_by_gids(current_group_ids)
@@ -1440,61 +1437,19 @@ class WaterReportService:
     ) -> tuple[tuple[int, ...], dict[str, tuple[tuple[int, int | None], ...]]]:
         if not group_ids or days <= 0:
             return (), {}
+        # 排名历史按日聚合的口径与 repo 的公开查询一致（同一窗口、同一排序键），
+        # 直接复用避免两份实现漂移。
+        history = await water_repo.get_group_daily_rank_history(
+            group_ids=list(group_ids),
+            end_record_date=end_record_date,
+            days=days,
+        )
         end_day = arrow.get(str(end_record_date), "YYYYMMDD").to("Asia/Shanghai")
         start_day = end_day.shift(days=-(days - 1))
-        start_record_date = int(start_day.format("YYYYMMDD"))
-        summary_rows = await water_repo.get_summaries_in_window(
-            start_record_date,
-            end_record_date,
-        )
-        grouped_by_date: dict[int, list[WaterSummaryRecord]] = defaultdict(list)
-        for row in summary_rows:
-            grouped_by_date[int(row.record_date)].append(row)
         history_dates = tuple(
             int(start_day.shift(days=offset).format("YYYYMMDD"))
             for offset in range(days)
         )
-        tracked_group_ids = list(dict.fromkeys(group_ids))
-        history: dict[str, list[tuple[int, int | None]]] = {
-            group_id: [(record_date, None) for record_date in history_dates]
-            for group_id in tracked_group_ids
-        }
-        for index, record_date in enumerate(history_dates):
-            rows = grouped_by_date.get(record_date)
-            if not rows:
-                continue
-            current_aggregates = water_repo._build_entity_period_aggregates(
-                rows,
-                lambda item: item.group_id,
-            )
-            ordered_current = sorted(
-                (
-                    (
-                        entity_id,
-                        msg_count,
-                        active_days,
-                        active_hours,
-                        hourly_counts,
-                        group_count,
-                        daily_msg_counts,
-                    )
-                    for entity_id, (
-                        msg_count,
-                        active_days,
-                        active_hours,
-                        hourly_counts,
-                        group_count,
-                        daily_msg_counts,
-                    ) in current_aggregates.items()
-                ),
-                key=water_repo._natural_rank_sort_key,
-            )
-            ranks = {
-                entity_id: current_rank
-                for current_rank, (entity_id, *_rest) in enumerate(ordered_current, 1)
-            }
-            for group_id in tracked_group_ids:
-                history[group_id][index] = (record_date, ranks.get(group_id))
         return history_dates, {
             group_id: tuple(items) for group_id, items in history.items()
         }

@@ -9,9 +9,10 @@ Description: 用户管理插件
 from __future__ import annotations
 
 from argparse import Namespace
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol, cast
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
@@ -99,6 +100,18 @@ __plugin_meta__ = create_plugin_metadata(
 )
 
 # fmt: off
+
+
+class _ArgvParser(Protocol):
+    """``ArgumentParser.parse_args`` 的纯字符串重载。
+
+    nonebot 把重载写在 ``TYPE_CHECKING`` 分支里，strict 模式下无法从实例推导，
+    返回类型退化为 partially unknown；本插件只传 ``list[str]``，按此声明最小协议。
+    """
+
+    def parse_args(self, args: Sequence[str]) -> Namespace: ...
+
+
 user_parser = ArgumentParser()
 subparsers = user_parser.add_subparsers(dest="action", required=True, help="执行的操作")
 
@@ -208,7 +221,8 @@ async def _(
             source_kind="admin_user",
         )
     try:
-        args: Namespace | ParserExit = user_parser.parse_args(argv)
+        argv_parser = cast("_ArgvParser", user_parser)
+        args: Namespace | ParserExit = argv_parser.parse_args(argv)
     except ParserExit as exc:
         args = exc
     if isinstance(args, ParserExit):
@@ -269,7 +283,7 @@ async def _(
             return
 
     operator_id = str(event.user_id)
-    results = []
+    results: list[str] = []
 
     for uid in uids:
         if not uid.isdigit():

@@ -52,7 +52,9 @@ class BackupManifest:
     app_env: str | None = None
     backup_profile: str | None = None
     hostname: str | None = None
-    files: list[BackupManifestFile] = field(default_factory=list)
+    files: list[BackupManifestFile] = field(
+        default_factory=list[BackupManifestFile],
+    )
     restic_snapshot_id: str | None = None
 
     @property

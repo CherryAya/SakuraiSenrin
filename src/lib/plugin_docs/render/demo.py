@@ -2147,8 +2147,8 @@ class DemoImageRenderer:
                 return [("system bubble", placement.bubble_rect)]
             return [("system text", placement.text_rect)]
         rects: list[tuple[str, tuple[int, int, int, int]]] = []
-        if placement.avatar_rect is not None:
-            rects.append(("avatar", placement.avatar_rect))
+        # avatar_rect 为 None 的早退分支在上面，这里 avatar_rect 必定非空。
+        rects.append(("avatar", placement.avatar_rect))
         if placement.bubble_rect is not None:
             rects.append(("bubble", placement.bubble_rect))
         return rects
@@ -2677,7 +2677,7 @@ class DemoImageRenderer:
         self._draw_text(draw, x=x, y=y, text=fitted, font=font, fill=fill)
 
     def _spread_caps_text(self, text: str) -> str:
-        words = []
+        words: list[str] = []
         for word in text.upper().split():
             words.append((" " * self.WATERMARK_SPACING).join(word))
         return "  ".join(words)

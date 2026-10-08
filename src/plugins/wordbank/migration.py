@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from scripts.migrations import wordbank as _impl
+from scripts.migrations import wordbank_legacy_source as _legacy_source
 from scripts.migrations.wordbank import (
     LegacyImageCatalog,
     LegacyImportTarget,
@@ -64,11 +64,13 @@ async def migrate_legacy_wordbank(
         message_approval_rows = await fetch_legacy_message_approval_rows(
             resolved_pg_config
         )
-    resolved_image_root = image_root or _impl._default_legacy_image_root(old_repo_root)
+    resolved_image_root = image_root or _legacy_source._default_legacy_image_root(
+        old_repo_root
+    )
     resolved_mapping_path = (
         mapping_path
         if mapping_path is not None
-        else _impl._default_legacy_image_mapping_path(old_repo_root)
+        else _legacy_source._default_legacy_image_mapping_path(old_repo_root)
     )
     return await migrate_legacy_rows(
         rows,
@@ -89,7 +91,7 @@ async def migrate_legacy_wordbank(
 
 
 def load_legacy_pg_config(old_repo_root: Path) -> LegacyPgConfig:
-    return _impl.load_legacy_pg_config(old_repo_root)
+    return _legacy_source.load_legacy_pg_config(old_repo_root)
 
 
 __all__ = [

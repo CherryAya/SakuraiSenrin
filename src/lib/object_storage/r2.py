@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
+from importlib import import_module
 import inspect
 from typing import Protocol, TypedDict, cast
 
@@ -76,6 +77,17 @@ class _S3SyncSession(Protocol):
     def client(self, service_name: str, **kwargs: object) -> _S3SyncClient: ...
 
 
+class _SessionFactory(Protocol):
+    """``aioboto3.Session`` / ``boto3.Session`` 的最小构造协议。
+
+    这两个 SDK 均未发布 ``py.typed``，直接 ``import`` 会触发
+    ``reportMissingTypeStubs``；经 ``importlib`` 取得模块后再按协议取属性，
+    既保留运行时的可选依赖语义，又避免为第三方库维护存根。
+    """
+
+    def __call__(self) -> object: ...
+
+
 @dataclass(slots=True, frozen=True)
 class R2ObjectStorageClient:
     access_key_id: str | None
@@ -127,12 +139,13 @@ class R2ObjectStorageClient:
 
     def _session(self) -> _S3AsyncSession:
         try:
-            import aioboto3
+            module = import_module("aioboto3")
         except ImportError as exc:
             raise ObjectStorageConfigError(
                 "aioboto3 is required for R2 storage"
             ) from exc
-        return cast("_S3AsyncSession", aioboto3.Session())
+        session_factory = cast("_SessionFactory", module.Session)
+        return cast("_S3AsyncSession", session_factory())
 
     def _client_context(self) -> object:
         """aioboto3 无稳定类型注解，返回值按鸭子类型在使用处收窄。"""
@@ -150,10 +163,11 @@ class R2ObjectStorageClient:
 
     def _sync_session(self) -> _S3SyncSession:
         try:
-            import boto3
+            module = import_module("boto3")
         except ImportError as exc:
             raise ObjectStorageConfigError("boto3 is required for R2 storage") from exc
-        return cast("_S3SyncSession", boto3.Session())
+        session_factory = cast("_SessionFactory", module.Session)
+        return cast("_S3SyncSession", session_factory())
 
     def _sync_client_context(self) -> _S3SyncClient:
         access_key_id, secret_access_key, _, endpoint = self._require_config()

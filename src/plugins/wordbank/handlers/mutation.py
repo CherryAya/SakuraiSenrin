@@ -423,17 +423,6 @@ async def handle_trigger_probability_update(
     return tr(locale, "wordbank.mutation.trigger_not_found", group_id=trigger_group_id)
 
 
-def _format_enabled(enabled: int, locale: LocaleCode = "zh-CN") -> str:
-    return tr(
-        locale,
-        "wordbank.state.enabled" if enabled else "wordbank.state.disabled",
-    )
-
-
-def _format_deleted_at(deleted_at: int) -> str:
-    return str(deleted_at) if deleted_at else "0"
-
-
 async def handle_trigger_content_update(
     service: WordbankService,
     media_service: WordbankMediaService,

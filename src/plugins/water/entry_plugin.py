@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from nonebot import get_bots, get_driver, on_message, on_notice, require
 from nonebot.adapters.onebot.v11.bot import Bot
@@ -36,6 +36,8 @@ from src.lib.cooldown import (
 from src.lib.i18n.runtime import resolve_locale, tr
 from src.lib.i18n.types import LocaleCode, normalize_locale_code
 from src.lib.interaction import (
+    SupportsFinish,
+    SupportsInteractiveAbort,
     abort_if_revoke_signal,
     clear_interaction_errors,
     reject_or_abort_on_error,
@@ -229,9 +231,12 @@ async def _abort_water_on_revoke(
     event: MessageEvent,
     locale: LocaleCode,
 ) -> None:
+    # nonebot Matcher 的 finish 消息参数类型比 SupportsFinish 协议更窄
+    # （协议含 MessagePlanEntry），pyright 判其不满足协议；此处仅在动态分发
+    # 边界收口这一静态不可表达的事实，实际传入的始终是 str。
     await abort_if_revoke_signal(
         event,
-        matcher,
+        cast("SupportsFinish", matcher),
         message=tr(locale, "interaction.cancelled"),
     )
 
@@ -243,7 +248,7 @@ async def _reject_water_error(
     message: str,
 ) -> None:
     await reject_or_abort_on_error(
-        matcher,
+        cast("SupportsInteractiveAbort", matcher),
         state,
         message,
         max_errors=GUIDED_MAX_ERRORS,
@@ -631,8 +636,10 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
     if session is None:
         return
 
-    state = session.matcher_cls._default_state
-    locale = _water_rank_locale(state)
+    # _default_state 是 nonebot Matcher 的内部字段，直接访问触发
+    # reportPrivateUsage；沿用仓库既有做法用 getattr 取原始值，不做类型欺骗。
+    default_state = cast("T_State", getattr(session.matcher_cls, "_default_state", {}))
+    locale = _water_rank_locale(default_state)
     checkpoint = session.checkpoint
     session.matcher_cls.destroy()
 
@@ -793,7 +800,27 @@ async def _(
     )
 
 
-@water_query.got(
+type _GuidedStepHandler = Callable[..., Coroutine[object, object, None]]
+
+
+class _GuidedMatcher(Protocol):
+    """``Matcher.got`` 的结构化视图：返回一个能装饰步骤处理函数的装饰器。
+
+    nonebot 的 ``got`` 参数/返回在实现里大量使用 ``Any``，strict 下整条装饰器
+    调用被判为部分未知。类方法形态与真实 ``Matcher.got`` 一致；此处只声明调用
+    点真正用到的形态，把未知收口在装饰器注册处。
+    """
+
+    @classmethod
+    def got(
+        cls,
+        key: str,
+        *,
+        prompt: object = ...,
+    ) -> Callable[[_GuidedStepHandler], _GuidedStepHandler]: ...
+
+
+@cast("type[_GuidedMatcher]", water_query).got(
     "water_rank_guided_input",
     prompt=MessageTemplate("{water_rank_guided_prompt}"),
 )

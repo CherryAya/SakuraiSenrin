@@ -81,7 +81,7 @@ from src.plugins.wordbank.forward_batch import (
     build_response_input_payload,
     is_forward_input,
 )
-from src.plugins.wordbank.handlers.commands import _default_i18n_text
+from src.plugins.wordbank.handlers.commands import default_i18n_text
 from src.plugins.wordbank.handlers.submission import (
     SubmissionLifecycle,
     SubmissionPayload,
@@ -759,7 +759,7 @@ async def _finish_guided_study(
         response_shape = state_value(state, "study_response_shape", MessageShape)
         if trigger_shape is None or trigger_shape.is_empty():
             raise RuleError(
-                _default_i18n_text("wordbank.error.trigger_empty"),
+                default_i18n_text("wordbank.error.trigger_empty"),
                 key="wordbank.error.trigger_empty",
             )
         if "study_forward_split_shapes" in state:
@@ -779,7 +779,7 @@ async def _finish_guided_study(
             )
             if not split_shapes:
                 raise RuleError(
-                    _default_i18n_text("wordbank.error.response_empty"),
+                    default_i18n_text("wordbank.error.response_empty"),
                     key="wordbank.error.response_empty",
                 )
             raw_rule = build_legacy_study_shortcut_rule(
@@ -806,7 +806,7 @@ async def _finish_guided_study(
             )
             if batch.success <= 0:
                 raise RuleError(
-                    _default_i18n_text("wordbank.error.response_empty"),
+                    default_i18n_text("wordbank.error.response_empty"),
                     key="wordbank.error.response_empty",
                 )
             await _finalize_study_submission(
@@ -820,7 +820,7 @@ async def _finish_guided_study(
             return
         if response_shape is None or response_shape.is_empty():
             raise RuleError(
-                _default_i18n_text("wordbank.error.response_empty"),
+                default_i18n_text("wordbank.error.response_empty"),
                 key="wordbank.error.response_empty",
             )
         result = await handle_guided_study_shape_result(
@@ -1164,7 +1164,12 @@ async def _(bot: Bot, matcher: Matcher, event: NoticeEvent) -> None:
 
     locale = "zh-CN"
     checkpoint = session.checkpoint
-    state = session.matcher_cls._default_state
+    # Matcher._default_state 是 nonebot 的受保护类变量，直接访问会报
+    # reportPrivateUsage；经 getattr 收口成公开的只读映射视图。
+    state = cast(
+        "Mapping[str, object]",
+        getattr(session.matcher_cls, "_default_state"),
+    )
     if "study_locale" in state:
         locale = _study_locale(state)
 

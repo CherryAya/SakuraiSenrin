@@ -272,7 +272,7 @@ class WordbankSearchRequest:
     field: str = "all"
     creator_id: str = ""
     has_image: bool = False
-    image_scores: dict[int, float] = dataclass_field(default_factory=dict)
+    image_scores: dict[int, float] = dataclass_field(default_factory=dict[int, float])
 
 
 @dataclass(slots=True, frozen=True)

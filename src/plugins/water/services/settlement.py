@@ -7,7 +7,7 @@ import arrow
 from loguru import logger
 
 from src.lib.trace_log import log_trace_event, new_trace_id
-from src.lib.types import as_int, as_str
+from src.lib.types import JsonValue, as_int, as_str
 from src.lib.utils.common import get_current_time
 from src.plugins.water.database import water_repo
 from src.plugins.water.database.repo_models import DailyAggregateItem
@@ -75,6 +75,7 @@ class WaterSettlementService:
             active_user_count,
             total_msg_count,
         )
+        covered_hours_json: list[JsonValue] = [*covered_hours]
         log_trace_event(
             event_name="hour_coverage_anomaly",
             source_kind="water_settlement",
@@ -85,7 +86,7 @@ class WaterSettlementService:
             trace_id=trace_id,
             record_date=record_date,
             payload_json={
-                "covered_hours": covered_hours,
+                "covered_hours": covered_hours_json,
                 "active_group_count": active_group_count,
                 "active_user_count": active_user_count,
                 "total_msg_count": total_msg_count,

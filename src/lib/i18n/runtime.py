@@ -213,7 +213,9 @@ async def finish_i18n(
             message=message,
             source_kind="i18n_matcher_finish",
         )
-        await matcher.finish()
+        # 通过 getattr 取 finish，避免 pyright 对 nonebot 泛型默认参数推导成 Unknown。
+        finish = getattr(matcher, "finish")
+        await finish()
         return
     await finish_with_message(
         None,

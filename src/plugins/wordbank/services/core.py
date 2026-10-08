@@ -12,6 +12,7 @@ from typing import cast
 from src.database.consts import WritePolicy
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.types import JsonObject
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.wordbank.database.instances import wordbank_message_ref_db
@@ -61,6 +62,7 @@ from src.plugins.wordbank.services.presentation import (
 from src.plugins.wordbank.services.rules import (
     MAX_CALL_COUNT_WINDOW_SECONDS,
     RuleContext,
+    RuleSchema,
     RuleValue,
     canonicalize_rule,
 )
@@ -72,6 +74,26 @@ class _CallCountCacheEntry:
     count: int
     expires_at: int
     counted_until: int
+
+
+def _rule_to_json(rule: RuleSchema) -> JsonObject:
+    """把规则 schema 转成可存储的 JSON 对象。
+
+    ``dict(RuleSchema)`` 在 strict 下退化成 ``dict[str, object]``，无法赋给
+    ``JsonObject``；逐字段拷贝可让每个值的类型真实成立（roles 是 str，
+    call_count 是 JSON 对象）。
+    """
+    data: JsonObject = {}
+    if "roles" in rule:
+        data["roles"] = rule["roles"]
+    if "call_count" in rule:
+        call_count = rule["call_count"]
+        data["call_count"] = {
+            "window_seconds": call_count["window_seconds"],
+            "min": call_count["min"],
+            "max": call_count["max"],
+        }
+    return data
 
 
 class WordbankService:
@@ -286,7 +308,7 @@ class WordbankService:
         created = await self.repository.create_or_append_response(
             trigger_shape=trigger_shape,
             response_shape=response_shape,
-            rule=dict(rule.rule),
+            rule=_rule_to_json(rule.rule),
             scope=rule.scope,
             priority=rule.priority,
             trigger_probability=rule.probability,

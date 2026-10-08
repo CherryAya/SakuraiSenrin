@@ -6,6 +6,7 @@ from collections.abc import Sequence
 import json
 from typing import cast
 
+from src.lib.types import JsonValue, as_int, as_object, as_str
 from src.plugins.wordbank.message_model import MessageShape, shape_from_payload
 
 from .repo_shared import (
@@ -48,18 +49,19 @@ class WordbankRepositoryRecordsMixin:
     def _decode_review_history(
         review_history_json: str,
     ) -> tuple[WordbankReviewHistoryEntry, ...]:
-        raw_items = json.loads(review_history_json or "[]")
+        raw_items: JsonValue = json.loads(review_history_json or "[]")
         records: list[WordbankReviewHistoryEntry] = []
         if not isinstance(raw_items, list):
             return ()
         for item in raw_items:
-            if not isinstance(item, dict):
+            entry = as_object(item)
+            if entry is None:
                 continue
-            action = str(item.get("action", "") or "").strip()
-            actor_user_id = str(item.get("actor_user_id", "") or "").strip()
-            created_at = int(item.get("created_at", 0) or 0)
-            previous_status = str(item.get("previous_status", "") or "").strip()
-            overwritten = bool(item.get("overwritten", False))
+            action = as_str(entry.get("action", "")).strip()
+            actor_user_id = as_str(entry.get("actor_user_id", "")).strip()
+            created_at = as_int(entry.get("created_at", 0), 0)
+            previous_status = as_str(entry.get("previous_status", "")).strip()
+            overwritten = bool(entry.get("overwritten", False))
             if not action or created_at <= 0:
                 continue
             records.append(

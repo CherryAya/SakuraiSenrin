@@ -370,7 +370,7 @@ def rule_allows(
         role != "any"
         and role in VALID_ROLES
         and sender_role in VALID_ROLES
-        and ROLE_LEVELS[cast(Role, sender_role)] < ROLE_LEVELS[cast(Role, role)]
+        and ROLE_LEVELS[sender_role] < ROLE_LEVELS[cast(Role, role)]
     ):
         return False
     if role != "any" and (role not in VALID_ROLES or sender_role not in VALID_ROLES):

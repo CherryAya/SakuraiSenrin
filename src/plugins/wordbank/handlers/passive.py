@@ -34,11 +34,6 @@ from src.lib.message_plan import (
 from src.lib.utils.img import QQAvatar
 from src.logger import logger
 from src.plugins.wordbank.debug import elapsed_ms, log_perf, perf_start
-from src.plugins.wordbank.handlers.rendering import (
-    _build_image_payload_stats,
-    _load_shape_image_bytes,
-    _log_missing_image_fallbacks,
-)
 from src.plugins.wordbank.message_model import (
     PLACEHOLDER_ACCOUNT,
     PLACEHOLDER_AVATAR,
@@ -663,6 +658,75 @@ async def _render_profile_avatar(account: str) -> bytes | None:
     return None
 
 
+async def _load_passive_image_bytes(
+    shape: MessageShape,
+    media_service: WordbankMediaService,
+) -> dict[int, bytes | None]:
+    image_ids = {
+        atom.canonical_image_id
+        for atom in shape.atoms
+        if atom.kind == "image" and atom.canonical_image_id is not None
+    }
+    if not image_ids:
+        return {}
+    ordered_ids = sorted(image_ids)
+    loaded = await asyncio.gather(
+        *(
+            media_service.load_canonical_storage_bytes(image_id)
+            for image_id in ordered_ids
+        )
+    )
+    return dict(zip(ordered_ids, loaded, strict=False))
+
+
+def _passive_image_payload_stats(
+    image_bytes_by_id: Mapping[int, bytes | None],
+) -> dict[str, object]:
+    requested_image_ids = tuple(sorted(image_bytes_by_id))
+    loaded_pairs = tuple(
+        (image_id, len(image_bytes))
+        for image_id, image_bytes in sorted(image_bytes_by_id.items())
+        if image_bytes is not None
+    )
+    loaded_count = len(loaded_pairs)
+    image_total_bytes = sum(size for _, size in loaded_pairs)
+    return {
+        "requested_image_ids": requested_image_ids,
+        "loaded_image_ids": tuple(image_id for image_id, _ in loaded_pairs),
+        "loaded_image_sizes": tuple(size for _, size in loaded_pairs),
+        "loaded_count": loaded_count,
+        "missing_count": len(image_bytes_by_id) - loaded_count,
+        "image_total_bytes": image_total_bytes,
+        "image_max_bytes": max((size for _, size in loaded_pairs), default=0),
+    }
+
+
+def _log_passive_missing_images(
+    *,
+    locale: LocaleCode,
+    image_bytes_by_id: Mapping[int, bytes | None],
+    media_service: WordbankMediaService,
+    response_item_id: int,
+) -> None:
+    missing_image_ids = tuple(
+        image_id
+        for image_id, image_bytes in sorted(image_bytes_by_id.items())
+        if image_bytes is None
+    )
+    if not missing_image_ids:
+        return
+    details = [
+        media_service.describe_canonical_image_state(image_id)
+        for image_id in missing_image_ids
+    ]
+    logger.warning(
+        "[Wordbank] image render fallback | "
+        f"stage=compile_passive_response locale={locale} "
+        f"missing_image_ids={missing_image_ids} "
+        f"details={details} response_item_id={response_item_id}"
+    )
+
+
 async def compile_passive_response(
     response: PassiveResponse,
     *,
@@ -696,14 +760,13 @@ async def compile_passive_response(
         atom_count=len(shape.atoms),
         image_atom_count=image_atom_count,
     )
-    image_bytes_by_id = await _load_shape_image_bytes(shape, media_service)
-    payload_stats = _build_image_payload_stats(image_bytes_by_id)
-    _log_missing_image_fallbacks(
-        stage="compile_passive_response",
+    image_bytes_by_id = await _load_passive_image_bytes(shape, media_service)
+    payload_stats = _passive_image_payload_stats(image_bytes_by_id)
+    _log_passive_missing_images(
         locale=locale,
         image_bytes_by_id=image_bytes_by_id,
         media_service=media_service,
-        trace_fields={"response_item_id": response.response_item_id},
+        response_item_id=response.response_item_id,
     )
     log_perf(
         "passive.build_passive_message.render_shape.images_loaded",

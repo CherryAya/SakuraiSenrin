@@ -113,7 +113,7 @@ class _WaterSummaryOpsBase[T: WaterDailySummary | WaterArchivedDailySummary](
         self,
         user_id: str,
         record_date: int,
-    ) -> Sequence[Row[tuple[str, int, int]]]:
+    ) -> Sequence[Row[str, int, int]]:
         stmt = select(
             self.model.group_id,
             self.model.msg_count,
@@ -202,7 +202,7 @@ class _WaterSummaryOpsBase[T: WaterDailySummary | WaterArchivedDailySummary](
     async def get_group_summary_rows(
         self,
         group_id: str,
-    ) -> Sequence[Row[tuple[str, int, int]]]:
+    ) -> Sequence[Row[str, int, int]]:
         stmt = select(
             self.model.user_id,
             self.model.msg_count,

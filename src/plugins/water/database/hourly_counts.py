@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 import json
 import struct
+from typing import TypeGuard
 
 from sqlalchemy.engine import Dialect
 from sqlalchemy.types import LargeBinary, TypeDecorator
@@ -15,6 +16,22 @@ _FORMAT_PLAIN_U16 = 0
 _FORMAT_SPARSE_U16 = 1
 _PLAIN_HEADER = bytes([_FORMAT_PLAIN_U16])
 _SPARSE_HEADER = bytes([_FORMAT_SPARSE_U16])
+
+
+def _is_list_payload(value: object) -> TypeGuard[list[object]]:
+    """收窄成 ``list[object]``；元素形态交由 ``_coerce_int_list`` 逐项校验。"""
+    return isinstance(value, list)
+
+
+def _coerce_int_list(values: Iterable[object]) -> list[int]:
+    """把运行期列表逐项转成 int，非数值元素照旧抛 TypeError。"""
+    coerced: list[int] = []
+    for item in values:
+        if isinstance(item, (int, float, str)):
+            coerced.append(int(item))
+            continue
+        raise TypeError(f"unsupported hourly_counts element: {type(item)!r}")
+    return coerced
 
 
 def normalize_hourly_counts(hourly_counts: Iterable[int]) -> list[int]:
@@ -43,8 +60,8 @@ def encode_hourly_counts(hourly_counts: Iterable[int]) -> bytes:
 def decode_hourly_counts(value: object) -> list[int]:
     if value is None:
         return [0] * _HOURS_PER_DAY
-    if isinstance(value, list):
-        return normalize_hourly_counts(value)
+    if _is_list_payload(value):
+        return normalize_hourly_counts(_coerce_int_list(value))
     if isinstance(value, str):
         return normalize_hourly_counts(json.loads(value))
     if isinstance(value, memoryview):

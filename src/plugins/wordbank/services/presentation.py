@@ -10,6 +10,7 @@ import arrow
 from src.lib.i18n.keys import MessageKey
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
+from src.lib.types import as_int, is_object_mapping
 from src.plugins.wordbank.database.types import (
     WordbankRankPeriod,
     WordbankResponseItemDetail,
@@ -471,10 +472,10 @@ def format_rule_summary(
         role_label = tr(locale, role_key) if role_key else role
         parts.append(tr(locale, "wordbank.rule.role", role=role_label))
     call_count = payload.get("call_count")
-    if isinstance(call_count, dict):
-        window_seconds = int(call_count.get("window_seconds", 0) or 0)
-        min_count = int(call_count.get("min", 0) or 0)
-        max_count = int(call_count.get("max", 0) or 0)
+    if is_object_mapping(call_count):
+        window_seconds = as_int(call_count.get("window_seconds", 0), 0)
+        min_count = as_int(call_count.get("min", 0), 0)
+        max_count = as_int(call_count.get("max", 0), 0)
         if window_seconds > 0:
             parts.append(
                 tr(

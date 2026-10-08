@@ -17,6 +17,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.lib.backup import register_backup_database
@@ -80,7 +81,20 @@ register_backup_database(message_asset_db)
 
 AssetKind = Literal["single_message", "forward_node", "forward_bundle"]
 MessageShapeKind = Literal["plain", "rich", "contains_reply", "contains_at"]
-_MESSAGE_ASSET_REUSE_BLOCKED = False
+
+
+class _ReuseGate:
+    """复用闸的内存态。
+
+    用单例对象持有可变标记，而不是模块级全局变量：全局变量在 strict 下会被
+    判为「常量不可重定义」（reportConstantRedefinition），改用对象属性既保留
+    setter 语义，也无需 global 声明。
+    """
+
+    blocked: bool = False
+
+
+_reuse_gate = _ReuseGate()
 
 
 @dataclass(slots=True, frozen=True)
@@ -119,12 +133,11 @@ def _short_key(value: str, *, length: int = 12) -> str:
 
 
 def is_message_asset_reuse_blocked() -> bool:
-    return _MESSAGE_ASSET_REUSE_BLOCKED
+    return _reuse_gate.blocked
 
 
 def set_message_asset_reuse_blocked(blocked: bool, *, reason: str = "") -> None:
-    global _MESSAGE_ASSET_REUSE_BLOCKED
-    _MESSAGE_ASSET_REUSE_BLOCKED = blocked
+    _reuse_gate.blocked = blocked
     logger.info(
         f"[MessageAsset] reuse gate updated blocked={blocked} reason={reason or '-'}"
     )
@@ -435,15 +448,12 @@ class MessageAssetRepository:
 message_asset_repo = MessageAssetRepository()
 
 
-async def _add_message_asset_forward_context_key(session: object) -> None:
-    pragma_result = await session.execute(text("PRAGMA table_info(message_asset)"))  # type: ignore[attr-defined]
-    columns = {
-        str(row[1])
-        for row in pragma_result.fetchall()  # type: ignore[attr-defined]
-    }
+async def _add_message_asset_forward_context_key(session: AsyncSession) -> None:
+    pragma_result = await session.execute(text("PRAGMA table_info(message_asset)"))
+    columns = {str(row[1]) for row in pragma_result.fetchall()}
     if "forward_context_key" in columns:
         return
-    await session.execute(  # type: ignore[attr-defined]
+    await session.execute(
         text(
             """
             ALTER TABLE message_asset
@@ -453,15 +463,12 @@ async def _add_message_asset_forward_context_key(session: object) -> None:
     )
 
 
-async def _add_message_asset_forward_sort_key(session: object) -> None:
-    pragma_result = await session.execute(text("PRAGMA table_info(message_asset)"))  # type: ignore[attr-defined]
-    columns = {
-        str(row[1])
-        for row in pragma_result.fetchall()  # type: ignore[attr-defined]
-    }
+async def _add_message_asset_forward_sort_key(session: AsyncSession) -> None:
+    pragma_result = await session.execute(text("PRAGMA table_info(message_asset)"))
+    columns = {str(row[1]) for row in pragma_result.fetchall()}
     if "forward_sort_key" in columns:
         return
-    await session.execute(  # type: ignore[attr-defined]
+    await session.execute(
         text(
             """
             ALTER TABLE message_asset

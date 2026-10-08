@@ -305,7 +305,7 @@ async def _(
                 source_kind="admin_group",
             )
 
-    results = []
+    results: list[str] = []
     for gid in set(group_ids):
         if not gid.isdigit():
             await finish_with_message(

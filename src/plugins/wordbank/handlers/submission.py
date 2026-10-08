@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import NoReturn, Protocol
 
 from nonebot.adapters.onebot.v11.bot import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
@@ -52,6 +52,21 @@ class SubmissionHandler(Protocol):
         *,
         source_event: MessageEvent | None = None,
     ) -> Awaitable[None]: ...
+
+
+class _MatcherFinisher(Protocol):
+    """只暴露无参 ``finish`` 的最小协议。
+
+    nonebot 的 ``Matcher.finish`` 签名嵌套了 ``Message[Unknown]`` 等未绑定泛型，
+    strict 模式下直接调用点会被判为 partially unknown。这里只用到「结束当前事件」
+    语义，用协议收窄即可，无需改动 nonebot 类型定义。
+    """
+
+    async def finish(self) -> NoReturn: ...
+
+
+async def _finish_event(matcher: _MatcherFinisher) -> NoReturn:
+    await matcher.finish()
 
 
 @dataclass(slots=True, frozen=True)
@@ -152,4 +167,4 @@ async def finalize_submission(
             locale=locale,
             media_service=media_service,
         )
-    await matcher.finish()
+    await _finish_event(matcher)
