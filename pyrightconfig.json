@@ -23,5 +23,39 @@
     "**/__pycache__",
     "**/.*",
     "src/scripts"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "tests",
+      "extraPaths": [
+        ".",
+        "stubs"
+      ],
+      "reportUnknownMemberType": false,
+      "reportUnknownArgumentType": false,
+      "reportUnknownVariableType": false,
+      "reportUnknownLambdaType": false,
+      "reportUnknownParameterType": false,
+      "reportMissingTypeStubs": false,
+      "reportPrivateUsage": false,
+      "reportUnusedFunction": false,
+      "reportUnusedClass": false
+    },
+    {
+      "root": "scripts",
+      "extraPaths": [
+        ".",
+        "stubs"
+      ],
+      "reportUnknownMemberType": false,
+      "reportUnknownArgumentType": false,
+      "reportUnknownVariableType": false,
+      "reportUnknownLambdaType": false,
+      "reportUnknownParameterType": false,
+      "reportMissingTypeStubs": false,
+      "reportPrivateUsage": false,
+      "reportUnusedFunction": false,
+      "reportUnusedClass": false
+    }
   ]
 }
