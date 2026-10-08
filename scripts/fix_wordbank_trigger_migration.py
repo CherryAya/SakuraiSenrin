@@ -1057,7 +1057,10 @@ def apply_trigger_fix_plan(
             report.add_update(group_id, len(variant_ids))
 
         if changed and not dry_run:
-            connection.commit()
+            # 数据修复与索引重建必须在同一事务里提交：旧写法先 commit 再重建索引，
+            # 一旦 _rebuild_search_index 失败，变体已改而 FTS 索引仍是旧的，
+            # 留下「搜得到旧文案、数据已是新文案」的半应用状态。
+            # 失败时由外层 with sqlite3.connect(...) 统一回滚。
             _rebuild_search_index(connection)
             connection.commit()
     return report

@@ -8,17 +8,29 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import sys
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any
 
 import nonebot
 from pil_utils import BuildImage
+
+if TYPE_CHECKING:
+    # 仅供类型标注。运行期不导入 src.*：那会经 water 包 __init__ 触发
+    # nonebot 初始化链路，本脚本需要能独立运行（--help 也不能崩）。
+    from src.lib.i18n.types import LocaleCode
+    from src.plugins.water.services.rank_types import (
+        WaterRankPeriod,
+        WaterRankScope,
+        WaterRankSubject,
+    )
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 DEFAULT_OUTPUT_DIR = ROOT / "output" / "water-rank-debug"
-DEFAULT_LOCALE = "zh-CN"
+# 与 src.lib.i18n.types 的 LocaleCode 保持一致；就地声明以避开运行期导入。
+_LOCALE_CHOICES: tuple[LocaleCode, ...] = ("zh-CN", "lzh", "x-meme")
+DEFAULT_LOCALE: LocaleCode = "zh-CN"
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,6 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--locale",
         default=DEFAULT_LOCALE,
+        choices=_LOCALE_CHOICES,
         help="locale passed into water rank builders",
     )
     parser.add_argument(
@@ -90,7 +103,11 @@ def _image_path(output_dir: Path, prefix: str, subject: str) -> Path:
 
 
 def _serialize_card_data(
-    data: Any, *, subject: str, scope: str, period: str
+    data: Any,
+    *,
+    subject: WaterRankSubject,
+    scope: WaterRankScope,
+    period: WaterRankPeriod,
 ) -> dict[str, Any]:
     payload = asdict(data)
     for item in payload.get("top_items", []):
@@ -102,22 +119,46 @@ def _serialize_card_data(
     return payload
 
 
+def _as_locale(value: object) -> LocaleCode:
+    """把命令行传入的 locale 收窄成 LocaleCode，非法值回落默认语言。
+
+    ``--locale`` 已用 ``choices`` 限定，这里是第二道防线：直接给下游传裸 str
+    会在 ``tr()`` 里抛未捕获的 ``KeyError``（例如 ``--locale en``），
+    让整个调试脚本产出为空。
+    """
+    for candidate in _LOCALE_CHOICES:
+        if value == candidate:
+            return candidate
+    return DEFAULT_LOCALE
+
+
+def _as_rank_subject(value: object) -> WaterRankSubject:
+    """把缓存 JSON 里回读的 subject 收窄成字面量，非法值回落 ``user``。
+
+    缓存文件属于外部数据（可能被手工编辑或跨版本残留），直接 ``str()`` 再断言
+    会把非法值带进下游构建器。
+    """
+    if value in ("user", "group", "matrix"):
+        return value
+    return "user"
+
+
 async def _build_cache_payload(
     runtime: dict[str, Any],
     *,
-    subject: str,
-    scope: str,
-    period: str,
-    locale: str,
+    subject: WaterRankSubject,
+    scope: WaterRankScope,
+    period: WaterRankPeriod,
+    locale: LocaleCode,
     limit: int,
 ) -> dict[str, Any]:
     water_rank_service = runtime["water_rank_service"]
     data = await water_rank_service.build_natural_period_rank_data(
-        subject=cast(Any, subject),
-        scope=cast(Any, scope),
-        period=cast(Any, period),
+        subject=subject,
+        scope=scope,
+        period=period,
         group_id="",
-        locale=cast(Any, locale),
+        locale=locale,
         limit=limit,
     )
     if data is None:
@@ -132,11 +173,13 @@ async def _write_cache_files(
     *,
     output_dir: Path,
     prefix: str,
-    locale: str,
+    locale: LocaleCode,
     limit: int,
 ) -> list[Path]:
     await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
-    cache_specs = (
+    cache_specs: tuple[
+        tuple[WaterRankSubject, WaterRankScope, WaterRankPeriod], ...
+    ] = (
         ("user", "global", "total"),
         ("group", "global", "total"),
     )
@@ -161,11 +204,11 @@ async def _write_cache_files(
 async def _hydrate_avatar(
     water_rank_service: Any,
     *,
-    subject: str,
+    subject: WaterRankSubject,
     entity_id: str,
 ) -> BuildImage | None:
     try:
-        return await water_rank_service._resolve_avatar(cast(Any, subject), entity_id)
+        return await water_rank_service._resolve_avatar(subject, entity_id)
     except Exception:
         return None
 
@@ -183,7 +226,7 @@ async def _load_card_data_from_cache(
     WaterRankCardItem = runtime["WaterRankCardItem"]
     water_rank_service = runtime["water_rank_service"]
 
-    subject = str(payload["subject"])
+    subject = _as_rank_subject(payload.get("subject"))
     top_items_payload = payload.pop("top_items", [])
     payload.pop("cache_version", None)
     payload.pop("subject", None)
@@ -232,7 +275,7 @@ async def _render_images_from_cache(
     output_dir: Path,
     prefix: str,
     hydrate_avatars: bool,
-    locale: str,
+    locale: LocaleCode,
 ) -> list[Path]:
     await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
     build_water_period_rank_image = runtime["build_water_period_rank_image"]
@@ -246,7 +289,7 @@ async def _render_images_from_cache(
             cache_file=cache_file,
             hydrate_avatars=hydrate_avatars,
         )
-        image = await build_water_period_rank_image(data, cast(Any, locale))
+        image = await build_water_period_rank_image(data, locale)
         if image is None:
             raise RuntimeError(f"Renderer returned empty image for {cache_file.name}")
         image_path = _image_path(output_dir, prefix, subject)
@@ -258,6 +301,9 @@ async def _render_images_from_cache(
 async def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
+    # argparse 返回值静态是 str；--locale 已用 choices 限定，这里显式收窄成
+    # LocaleCode，避免把裸 str 带到需要字面量的构建器（旧写法是 cast(Any, ...)）。
+    locale: LocaleCode = _as_locale(args.locale)
     runtime = await _init_runtime()
 
     cache_files: list[Path] = []
@@ -268,7 +314,7 @@ async def main() -> None:
             runtime,
             output_dir=output_dir,
             prefix=args.cache_prefix,
-            locale=args.locale,
+            locale=locale,
             limit=max(1, int(args.limit)),
         )
 
@@ -278,7 +324,7 @@ async def main() -> None:
             output_dir=output_dir,
             prefix=args.cache_prefix,
             hydrate_avatars=not args.skip_avatar_hydration,
-            locale=args.locale,
+            locale=locale,
         )
 
     result = {

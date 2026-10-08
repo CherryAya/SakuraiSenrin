@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Literal, TypedDict, cast
 
 from src.lib.i18n.keys import MessageKey
-from src.lib.types import JsonValue
+from src.lib.types import JsonValue, as_int
 from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.text_parsing import (
     has_meaningful_text,
@@ -194,12 +194,32 @@ def _normalize_role(value: RuleValue) -> Role:
     return cast(Role, role)
 
 
+def _rule_int(value: RuleValue) -> int:
+    """把规则里的整数值收窄成 int，用于需要显式报错的校验路径。
+
+    刻意不用 ``int(cast(...))``：``bool`` 是 ``int`` 的子类，JSON 里的 ``true``
+    会被静默当成 1 绕过「必须为正」之类的校验。这里与 ``src.lib.types.as_int``
+    同一口径：``bool`` 一律拒绝；整值浮点（``3.0``）与数字字符串（``"3"``）仍
+    按原有语义接受，避免收紧口径误伤既有数据形态。
+    """
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        raise ValueError(f"rule value must be numeric, got {value!r}")
+    return int(value)
+
+
+def _rule_float(value: RuleValue) -> float:
+    """同上，浮点口径；``int``/``float`` 与数字字符串接受，``bool`` 拒绝。"""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        raise ValueError(f"rule value must be numeric, got {value!r}")
+    return float(value)
+
+
 def _normalize_probability(value: RuleValue, *, short_trigger: bool) -> float:
     if value is None or value == "":
         return 0.5 if short_trigger else 1.0
     value = _single_value(value, "probability")
     try:
-        probability = float(cast("str | int | float | bool", value))
+        probability = _rule_float(value)
     except (TypeError, ValueError) as exc:
         raise _rule_error(
             _default_i18n_text("wordbank.error.probability_invalid"),
@@ -218,7 +238,7 @@ def _normalize_weight(value: RuleValue) -> int:
         return 3
     value = _single_value(value, "weight")
     try:
-        weight = int(cast("str | int | float | bool", value))
+        weight = _rule_int(value)
     except (TypeError, ValueError) as exc:
         raise _rule_error(
             _default_i18n_text("wordbank.error.weight_invalid"),
@@ -253,11 +273,9 @@ def _normalize_call_count(value: RuleValue) -> CallCountRule | None:
             fields=fields,
         )
     try:
-        window_seconds = int(
-            cast("str | int | float | bool", value.get("window_seconds", 0))
-        )
-        min_count = int(cast("str | int | float | bool", value.get("min", 0)))
-        max_count = int(cast("str | int | float | bool", value.get("max", 0)))
+        window_seconds = _rule_int(value.get("window_seconds", 0))
+        min_count = _rule_int(value.get("min", 0))
+        max_count = _rule_int(value.get("max", 0))
     except (TypeError, ValueError) as exc:
         raise _rule_error(
             _default_i18n_text("wordbank.error.call_integer"),
@@ -378,13 +396,14 @@ def rule_allows(
 
     call_count = rule.get("call_count")
     if isinstance(call_count, dict):
-        window_seconds = int(
-            cast("str | int | float | bool", call_count.get("window_seconds", 0))
-        )
+        # 读取路径没有 try/except 兜底，必须用回落的取整数：
+        # 规则值来自存储，{"window_seconds": null} 之类会让 int(None) 直接抛
+        # TypeError 冒泡到被动链路（那里只 catch Exception 后静默禁用触发词）。
+        window_seconds = as_int(call_count.get("window_seconds"), 0)
         if window_seconds <= 0 or window_seconds > MAX_CALL_COUNT_WINDOW_SECONDS:
             return False
-        min_count = int(cast("str | int | float | bool", call_count.get("min", 0)))
-        max_count = int(cast("str | int | float | bool", call_count.get("max", 0)))
+        min_count = as_int(call_count.get("min"), 0)
+        max_count = as_int(call_count.get("max"), 0)
         if current_call_count < min_count:
             return False
         if max_count and current_call_count > max_count:

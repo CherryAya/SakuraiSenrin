@@ -5,13 +5,12 @@ from __future__ import annotations
 from copy import copy as shallow_copy
 from dataclasses import is_dataclass, replace
 from io import BytesIO
-from typing import cast
 
 from PIL import Image, ImageDraw, ImageOps
 
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.types import JsonValue
+from src.lib.types import JsonValue, as_int
 from src.plugins.wordbank.database.types import (
     WordbankGroupDetail,
     WordbankResponseItemDetail,
@@ -51,11 +50,9 @@ def format_rule_text(rule: dict[str, JsonValue], *, locale: LocaleCode) -> str:
         parts.append(tr(locale, "wordbank.rule.role", role=role_label))
     call_count = rule.get("call_count")
     if isinstance(call_count, dict):
-        window_seconds = int(
-            cast("str | int | float | bool", call_count.get("window_seconds", 0))
-        )
-        min_count = int(cast("str | int | float | bool", call_count.get("min", 0)))
-        max_count = int(cast("str | int | float | bool", call_count.get("max", 0)))
+        window_seconds = as_int(call_count.get("window_seconds"), 0)
+        min_count = as_int(call_count.get("min"), 0)
+        max_count = as_int(call_count.get("max"), 0)
         if window_seconds > 0:
             parts.append(
                 tr(

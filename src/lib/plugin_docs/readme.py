@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 from markdown_it.token import Token
 
@@ -450,6 +450,15 @@ def parse_flow_section_tokens(
     return "\n".join(cleaned).strip(), tuple(demo_turns)
 
 
+# 元组（而非 set）形态：pyright 对 ``x in <tuple>`` 能把 str 收窄成对应字面量，
+# 对 set 成员测试则不能——这正是原处需要 cast 的原因。
+_DEMO_SPEAKERS: tuple[Literal["USER", "BOT", "SYSTEM"], ...] = (
+    "USER",
+    "BOT",
+    "SYSTEM",
+)
+
+
 def parse_demo_turns(content: str) -> list[DocsDemoTurn]:
     demo_turns: list[DocsDemoTurn] = []
     current_section = ""
@@ -466,10 +475,10 @@ def parse_demo_turns(content: str) -> list[DocsDemoTurn]:
         if ":" in stripped:
             speaker, text = stripped.split(":", 1)
             normalized = speaker.strip().upper()
-            if normalized in {"USER", "BOT", "SYSTEM"}:
+            if normalized in _DEMO_SPEAKERS:
                 demo_turns.append(
                     DocsDemoTurn(
-                        cast(Literal["USER", "BOT", "SYSTEM"], normalized),
+                        normalized,
                         text.strip(),
                         current_section,
                     )

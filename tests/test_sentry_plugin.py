@@ -18,6 +18,7 @@ from src.lib.error_context import (
 )
 from src.lib.i18n.keys import MessageKey
 from src.plugins.sentry import (
+    _attach_context_to_event,
     _should_downgrade_level,
     _should_drop_event,
     before_send_handler,
@@ -111,8 +112,9 @@ def _event_contexts(event: Event) -> dict[str, Any]:
     return cast(dict[str, Any], _event_dict(event).get("contexts") or {})
 
 
-def _event_tags(event: Event) -> list[dict[str, str]]:
-    return cast(list[dict[str, str]], _event_dict(event).get("tags") or [])
+def _event_tags(event: Event) -> dict[str, str]:
+    """按 Sentry 的真实契约读取 tags：``Event["tags"]`` 是 ``Mapping[str, str]``。"""
+    return cast(dict[str, str], _event_dict(event).get("tags") or {})
 
 
 def _run_before_send(
@@ -172,7 +174,7 @@ def test_before_send_handler_attaches_error_context(
     contexts = _event_contexts(event)
     assert contexts["senrin"]["group_id"] == "10001"
     assert contexts["senrin"]["user_id"] == "20002"
-    assert {"key": "ctx_group_id", "value": "10001"} in _event_tags(event)
+    assert _event_tags(event)["ctx_group_id"] == "10001"
 
 
 def test_before_send_handler_skips_context_when_empty(
@@ -264,7 +266,7 @@ def test_before_send_handler_downgrades_action_failed_but_still_notifies(
 
     assert _event_dict(event)["level"] == "warning"
     assert _event_contexts(event)["default"]["level"] == "warning"
-    assert {"key": "action_failed", "value": "true"} in _event_tags(event)
+    assert _event_tags(event)["action_failed"] == "true"
 
     # 关键断言：业务异常不能被静默，必须通报管理员，且带完整上下文
     assert len(recorded) == 1
@@ -290,6 +292,50 @@ def test_before_send_handler_never_drops_business_exceptions(
         recorded = _run_before_send(monkeypatch, event, exc)
         assert event is not None, f"{type(exc).__name__} 不应被丢弃"
         assert len(recorded) == 1, f"{type(exc).__name__} 应通报管理员"
+
+
+def test_action_failed_downgrade_preserves_scope_tags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：降级 ActionFailed 时不得摧毁 scope/SDK 已写入的标签。
+
+    SDK 的 ``Scope._apply_tags_to_event`` 用
+    ``event.setdefault("tags", {}).update(...)`` 写入 dict 形状的标签；
+    本插件必须在该形状上增量合并，而不是整体替换成另一种形状。
+    """
+    reset_error_context()
+    exc = _build_action_failed("send group message rejected: result=299 err=限流")
+    # 模拟 scope 已先把标签写进 event（SDK 的真实行为）
+    event = cast(Event, {"message": "rate-limited", "tags": {"release": "v1.2"}})
+    try:
+        _run_before_send(monkeypatch, event, exc)
+    finally:
+        reset_error_context()
+
+    tags = _event_tags(event)
+    assert tags["release"] == "v1.2", "scope 写入的标签被降级逻辑摧毁"
+    assert tags["action_failed"] == "true"
+
+
+def test_attach_context_merges_without_clobbering_scope_tags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：附加异常上下文时，非 ctx_ 前缀的既有标签必须原样保留。"""
+    reset_error_context()
+    bind_error_context(group_id="10001", user_id="20002")
+    event = cast(
+        Event,
+        {"message": "ctx", "tags": {"release": "v1.2", "ctx_stale": "旧值"}},
+    )
+    try:
+        _attach_context_to_event(event)
+    finally:
+        reset_error_context()
+
+    tags = _event_tags(event)
+    assert tags["release"] == "v1.2", "既有标签被上下文写入逻辑摧毁"
+    assert tags["ctx_group_id"] == "10001"
+    assert "ctx_stale" not in tags, "过期的 ctx_ 标签应被清除而非累积"
 
 
 def test_notify_admin_swallows_missing_bot(

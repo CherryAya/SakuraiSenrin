@@ -329,3 +329,48 @@ async def test_verify_trigger_fix_plan_fails_before_apply(
     assert report.verified_groups == 0
     assert report.failed_groups == 1
     assert report.failed_reasons == {"desired_state_mismatch": 1}
+
+
+@pytest.mark.asyncio
+async def test_apply_is_atomic_when_search_index_rebuild_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回归：索引重建失败时，变体改动必须整体回滚而不是留下半应用状态。
+
+    旧实现先 commit 变体改动、再重建 FTS 索引：一旦重建抛错，数据已是新文案
+    而索引仍是旧文案，且报告 JSON 未写出——既不完整也很难恢复。
+    """
+    db_path = await _prepare_database(tmp_path, monkeypatch)
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+
+    plan_payload, _ = await asyncio.to_thread(
+        fix_script.build_trigger_fix_plan,
+        db_path=db_path,
+        legacy_rows=[_legacy_row()],
+        image_root=image_root,
+        mapping_path=None,
+    )
+
+    def _boom(connection: sqlite3.Connection) -> None:
+        raise RuntimeError("index rebuild failed")
+
+    monkeypatch.setattr(fix_script, "_rebuild_search_index", _boom)
+
+    with pytest.raises(RuntimeError, match="index rebuild failed"):
+        await asyncio.to_thread(
+            fix_script.apply_trigger_fix_plan,
+            db_path=db_path,
+            plan_payload=plan_payload,
+            dry_run=False,
+        )
+
+    # 事务整体回滚：变体文案必须还是旧值，不能出现「数据已改、索引没跟上」。
+    with sqlite3.connect(db_path) as connection:
+        row = connection.execute(
+            "SELECT trigger_text FROM wordbank_trigger_variant"
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] == "今天:好啊", "索引重建失败后变体改动未被回滚"

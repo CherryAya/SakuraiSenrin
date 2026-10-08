@@ -7,12 +7,13 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 import sqlite3
-from typing import Any
+from typing import Any, cast
 
 import arrow
 import nonebot
 import pytest
 from sqlalchemy import Integer, String, func, select, text
+from sqlalchemy.engine import Result
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -25,7 +26,7 @@ from src.database.snapshot.tables import UserSnapshot
 from src.lib.db.batch import BatchWriter
 from src.lib.db.connectors import ColdPolicy, EventStore, StateStore
 from src.lib.db.manager import db_manager
-from src.lib.db.ops import BaseOps
+from src.lib.db.ops import BaseOps, affected_rows
 from src.lib.db.schema import SchemaPatch
 
 
@@ -1264,3 +1265,51 @@ def test_database_manager_sql_echo_falls_back_when_nonebot_uninitialized(
     monkeypatch.setattr(nonebot, "get_driver", _raise)
 
     assert manager._resolve_sql_echo() is False
+
+
+class _RowcountStub:
+    """鸭子类型的 rowcount 提供者：证明契约不绑定具体类。"""
+
+    def __init__(self, rowcount: object) -> None:
+        self.rowcount = rowcount
+
+
+def test_affected_rows_accepts_cursor_result() -> None:
+    """affected_rows 对单参 execute 的 DML 返回值必须正常取到 rowcount。"""
+    from sqlalchemy import CursorResult
+
+    result = CursorResult.__new__(CursorResult)
+    object.__setattr__(result, "rowcount", 3)
+
+    assert affected_rows(result) == 3
+
+
+def test_affected_rows_accepts_duck_typed_result() -> None:
+    """契约是「有 rowcount 的结果对象」，不是具体类——代理/桩实现必须可用。"""
+    result = cast("Result[object]", _RowcountStub(1))
+
+    assert affected_rows(result) == 1
+
+
+def test_affected_rows_rejects_iterator_result_loudly() -> None:
+    """回归：executemany 返回的 IteratorResult 无 rowcount，必须 fail-fast。
+
+    旧实现用 cast 断言成 CursorResult，会在下游打开 rowcount 时抛
+    AttributeError——该异常沿 write_batch → BatchWriter 被重试后进死信，
+    整批写入静默中止。改为显式 TypeError 后，故障点前置且带指引。
+    """
+    from sqlalchemy.engine import IteratorResult
+
+    result = IteratorResult.__new__(IteratorResult)
+
+    with pytest.raises(TypeError, match="rowcount"):
+        affected_rows(result)
+
+
+@pytest.mark.parametrize("bad_rowcount", [True, False, "3", 3.5, None])
+def test_affected_rows_rejects_non_integer_rowcount(bad_rowcount: object) -> None:
+    """rowcount 必须是真整数：bool 会伪装成 1/0，字符串与浮点属异常形态。"""
+    result = cast("Result[object]", _RowcountStub(bad_rowcount))
+
+    with pytest.raises(TypeError, match="int"):
+        affected_rows(result)

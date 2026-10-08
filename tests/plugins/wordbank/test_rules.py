@@ -1,5 +1,6 @@
 import pytest
 
+from src.lib.types import JsonValue
 from src.plugins.wordbank.services.rules import (
     MAX_CALL_COUNT_WINDOW_SECONDS,
     RuleContext,
@@ -240,3 +241,87 @@ def test_canonicalize_private_only_in_private_chat_downgrades_to_self() -> None:
 
     with pytest.raises(RuleError, match="学习格式"):
         parse_legacy_study_text("a t 晚安")
+
+
+@pytest.mark.parametrize("bad", [None, True, False, "60", 60.5, [60]])
+def test_rule_allows_tolerates_malformed_window_seconds(bad: JsonValue) -> None:
+    """回归：call_count 的非法值必须回落为「不满足」，而不是抛异常。
+
+    历史故障：``int(cast(...))`` 遇到 ``{"window_seconds": null}`` 会抛
+    TypeError——``.get`` 的默认值对「键存在但值为 null」不生效。该异常不被
+    调用方的 except (RuleError, ValueError) 捕获，会冒泡到被动链路被静默吞掉，
+    导致触发词无声失效。
+    """
+    context = RuleContext(
+        group_id="20001",
+        user_id="10001",
+        message_type="group",
+        sender_role="admin",
+    )
+    rule: dict[str, JsonValue] = {
+        "roles": "admin",
+        "call_count": {"window_seconds": bad, "min": 0},
+    }
+    verdict = rule_allows(
+        scope="self_in_current_group",
+        entry_group_id="20001",
+        entry_created_by="10001",
+        rule=rule,
+        context=context,
+        current_call_count=1,
+    )
+
+    assert verdict is False, f"window_seconds={bad!r} 应判为不满足"
+
+
+def test_rule_allows_tolerates_malformed_min_max() -> None:
+    """min/max 非法同样不得抛异常。"""
+    context = RuleContext(
+        group_id="20001",
+        user_id="10001",
+        message_type="group",
+        sender_role="admin",
+    )
+    assert rule_allows(
+        scope="self_in_current_group",
+        entry_group_id="20001",
+        entry_created_by="10001",
+        rule={
+            "roles": "admin",
+            "call_count": {"window_seconds": 60, "min": None, "max": "x"},
+        },
+        context=context,
+        current_call_count=1,
+    )
+
+
+@pytest.mark.parametrize("bad", [True, False, "abc"])
+def test_canonicalize_rejects_boolean_weight(bad: JsonValue) -> None:
+    """weight 必须拒绝布尔值：``int(True) == 1`` 会绕过「权重 1..5」的下界校验。
+
+    注意 ``None``（缺省）、单元素列表（解包）、整值浮点 ``3.0`` 与数字字符串
+    ``"3"`` 都是既有合法形态，收紧口径时不得误伤——见下一条用例。
+    """
+    with pytest.raises(RuleError, match="权重"):
+        canonicalize_rule({"weight": bad}, is_group=True, short_trigger=False)
+
+
+@pytest.mark.parametrize("bad", [True, False, "abc"])
+def test_canonicalize_rejects_boolean_probability(bad: JsonValue) -> None:
+    with pytest.raises(RuleError, match="概率"):
+        canonicalize_rule({"probability": bad}, is_group=True, short_trigger=False)
+
+
+@pytest.mark.parametrize("bad", [[3, 4], [0.5, 0.6]])
+def test_canonicalize_rejects_multi_value_constraint(bad: JsonValue) -> None:
+    """多元素列表要走「只能设置一个约束」的既有分支。"""
+    with pytest.raises(RuleError, match="只能设置一个约束"):
+        canonicalize_rule({"weight": bad}, is_group=True, short_trigger=False)
+
+
+@pytest.mark.parametrize("value", [3, 3.0, "3", [3], None])
+def test_canonicalize_still_accepts_valid_weight_forms(value: JsonValue) -> None:
+    """确保收紧口径没有误伤既有合法形态（含 None 缺省与单元素列表解包）。"""
+    rule = canonicalize_rule({"weight": value}, is_group=True, short_trigger=False)
+
+    assert rule.weight == 3

@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, TypedDict, cast
+from typing import Literal, TypedDict
 
 from markdown_it.token import Token
 from nonebot.plugin import PluginMetadata
@@ -20,6 +20,13 @@ DEFAULT_HELP_CATEGORY = "general"
 
 
 type DocNodeKind = Literal["plugin", "overview", "internal", "static"]
+
+_DOC_NODE_KINDS: tuple[DocNodeKind, ...] = (
+    "plugin",
+    "overview",
+    "internal",
+    "static",
+)
 
 
 class DocSourceMeta(TypedDict):
@@ -388,8 +395,13 @@ def _normalize_docs_meta(
         if isinstance(raw_permission, (Permission, int, str))
         else default_permission
     )
+    raw_kind = raw.get("kind")
     return {
-        "kind": cast(DocNodeKind, raw.get("kind", "plugin")),
+        "kind": (
+            raw_kind
+            if isinstance(raw_kind, str) and raw_kind in _DOC_NODE_KINDS
+            else "plugin"
+        ),
         "source": {
             "kind": "readme",
             "readme_path": readme_path,

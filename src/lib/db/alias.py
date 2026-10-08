@@ -39,10 +39,16 @@ from src.lib.types import JsonValue
 class OpsFactory(Protocol):
     """「能用 ``AsyncSession`` 构造的 ops」结构化视图。
 
-    仅用于 ``write_batch`` 内部构造 ops 那一处的 cast：``AliasStore`` 的 OpsT
-    不带约束（原因见类头说明），静态期看不到「ops_class 可被 session 构造」，
-    这里把该运行时事实写实。不把 OpsFactory 反过来做成 AliasStore 的约束——
-    那会拦住 unbounded ``OpsT`` 的调用点（如 execute_batch_write）。
+    用作 ``AliasStore`` / ``build_alias`` / ``execute_batch_write`` 的 OpsT 上界：
+    这几处的真实契约就是「``ops_class`` 能被 ``AsyncSession`` 构造、实例可交给
+    ``method``」，此前该事实只存在于运行时注释里，靠一处 ``cast`` + 无条件的
+    ``# type: ignore[arg-type]`` 才通过检查。改成 bound 后契约由类型系统强制，
+    传错 ops 类会在静态期报错，而不是等到后台 flush 时抛 TypeError。
+
+    这不是 ``BaseOps[DeclarativeBase]``：``BaseOps`` 的模型参数不变，
+    ``BaseOps[TraceEventLog]`` 判不进 ``BaseOps[DeclarativeBase]``，用它会成片
+    触发 reportInvalidTypeArguments。结构化 Protocol 只约束构造签名，对具体
+    ops 类的模型参数保持透明。
 
     真实实现是 ``BaseOps.__init__(self, session: AsyncSession)``。
     """
@@ -86,17 +92,15 @@ def _as_datetime(moment: object) -> datetime:
     raise TypeError(f"unsupported window bound: {type(moment)!r}")
 
 
-class AliasStore[OpsT]:
+class AliasStore[OpsT: OpsFactory]:
     """按时间维度自动路由的逻辑 db。
 
     ``store`` 是物理分片库；本类只负责把「业务时间」翻译成「目标分片」。
 
-    这里刻意不约束 ``OpsT``（旧写法 ``OpsT: BaseOps[DeclarativeBase]``）：具体
-    ops 都是 ``BaseOps[具体模型]``，而 ``BaseOps`` 的模型参数不变，
-    ``BaseOps[TraceEventLog]`` 判不进 ``BaseOps[DeclarativeBase]``，于是
-    ``AliasStore[TraceEventLogOps]`` 这类参数化会成片报
-    reportInvalidTypeArguments。真实约束是「``ops_class`` 能用 ``AsyncSession``
-    构造、实例可交给 ``method``」，运行时由构造参数保证。
+    约束 ``OpsT: OpsFactory``（结构化 Protocol，只要求「能被 AsyncSession 构造」）。
+    不能用 ``BaseOps[DeclarativeBase]``：具体 ops 都是 ``BaseOps[具体模型]``，而
+    ``BaseOps`` 的模型参数不变，``BaseOps[TraceEventLog]`` 判不进
+    ``BaseOps[DeclarativeBase]``，会成片报 reportInvalidTypeArguments。
     """
 
     def __init__(
@@ -329,10 +333,9 @@ class AliasStore[OpsT]:
                 async with self._store.write_session(
                     time_ctx=route_ctx_map[shard_key],
                 ) as session:
-                    # OpsT 已省略约束（见类头说明）；此处由构造参数保证
-                    # 「能用 session 构造」，静态期不可表达，显式 cast 收口。
-                    ops = cast("type[OpsFactory]", self._ops_class)(session)
-                    result = await method(ops, grouped)  # type: ignore[arg-type]
+                    # OpsT: OpsFactory 已保证「能用 session 构造」，契约由类型
+                    # 系统强制，无需 cast 或 type: ignore。
+                    result = await method(self._ops_class(session), grouped)
                 total += int(result) if isinstance(result, int) else 0
             except Exception as exc:
                 if emit_trace:
@@ -559,7 +562,7 @@ class AliasStore[OpsT]:
         )
 
 
-def build_alias[OpsT](
+def build_alias[OpsT: OpsFactory](
     store: SegmentStore,
     ops_class: type[OpsT],
     *,

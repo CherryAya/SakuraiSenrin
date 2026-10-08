@@ -7,12 +7,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import json
 import random
-from typing import cast
 
 from src.database.consts import WritePolicy
 from src.lib.i18n.runtime import tr
 from src.lib.i18n.types import LocaleCode
-from src.lib.types import JsonObject
+from src.lib.types import JsonObject, as_int
 from src.lib.utils.common import get_current_time
 from src.logger import logger
 from src.plugins.wordbank.database.instances import wordbank_message_ref_db
@@ -1158,11 +1157,7 @@ class WordbankService:
                 call_count = response.rule.get("call_count")
                 if not isinstance(call_count, dict):
                     continue
-                window = int(
-                    cast(
-                        "str | int | float | bool", call_count.get("window_seconds", 0)
-                    )
-                )
+                window = as_int(call_count.get("window_seconds"), 0)
                 trigger_group_id = response.trigger_group_id
                 existing_count = counts.get(trigger_group_id)
                 if window <= 0:
@@ -1240,9 +1235,7 @@ class WordbankService:
         call_count = response.rule.get("call_count")
         if not isinstance(call_count, dict):
             return
-        window = int(
-            cast("str | int | float | bool", call_count.get("window_seconds", 0))
-        )
+        window = as_int(call_count.get("window_seconds"), 0)
         if window <= 0:
             return
         cache_key = (response.trigger_group_id, user_id, window)

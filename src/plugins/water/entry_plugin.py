@@ -16,7 +16,7 @@ from nonebot.adapters.onebot.v11.event import (
     MessageEvent,
     NoticeEvent,
 )
-from nonebot.adapters.onebot.v11.message import Message
+from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.internal.adapter import MessageTemplate
 from nonebot.matcher import Matcher
 from nonebot.params import Arg, CommandArg
@@ -809,6 +809,10 @@ class _GuidedMatcher(Protocol):
     nonebot 的 ``got`` 参数/返回在实现里大量使用 ``Any``，strict 下整条装饰器
     调用被判为部分未知。类方法形态与真实 ``Matcher.got`` 一致；此处只声明调用
     点真正用到的形态，把未知收口在装饰器注册处。
+
+    ``prompt`` 必须照实写成真实联合类型（对齐 ``Matcher.got`` 的签名）：
+    早期写成 ``object`` 等于单方面关掉 pyright 对该参数的检查，
+    传 ``prompt=12345`` 也能通过——那正是被审计点名的一处「让渡检查」。
     """
 
     @classmethod
@@ -816,7 +820,7 @@ class _GuidedMatcher(Protocol):
         cls,
         key: str,
         *,
-        prompt: object = ...,
+        prompt: str | Message | MessageSegment | MessageTemplate[str] | None = ...,
     ) -> Callable[[_GuidedStepHandler], _GuidedStepHandler]: ...
 
 

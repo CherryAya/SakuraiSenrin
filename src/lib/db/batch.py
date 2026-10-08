@@ -21,7 +21,7 @@ from src.lib.utils.common import get_current_time
 if TYPE_CHECKING:
     from .connectors import SegmentStore
 
-from .alias import AliasStore
+from .alias import AliasStore, OpsFactory
 
 
 @dataclass(slots=True, frozen=True)
@@ -404,7 +404,7 @@ class RoutableStore(Protocol):
     def time_field_ref(self) -> str: ...
 
 
-async def execute_batch_write[PayloadT, OpsT](
+async def execute_batch_write[PayloadT, OpsT: OpsFactory](
     batch: Sequence[PayloadT],
     db_instance: RoutableStore,
     ops_class: type[OpsT],

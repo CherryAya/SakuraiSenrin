@@ -7,7 +7,7 @@ Description: sentry 异常记录插件
 """
 
 import asyncio
-from collections.abc import MutableMapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
@@ -60,7 +60,7 @@ background_tasks: set[asyncio.Task[None]] = set()
 # ActionFailed 代表平台侧拒绝了本次调用（限流、重复处理、非好友、权限不足等）。
 # 这类异常同样要通报管理员，只是它们通常不是代码缺陷，
 # 因此在 Sentry 侧降级为 warning，避免污染 error 列表。
-_ACTION_FAILED_TAG = {"key": "action_failed", "value": "true"}
+_ACTION_FAILED_TAG: dict[str, str] = {"action_failed": "true"}
 
 
 def _should_drop_event(hint: Hint) -> bool:
@@ -97,26 +97,31 @@ def _should_downgrade_level(exc_value: BaseException | None) -> bool:
     return isinstance(exc_value, ActionFailed)
 
 
-def _event_payload(event: Event) -> MutableMapping[str, object]:
-    """Sentry Event 本身是 dict，就地改写前先收窄成可变映射。"""
-    return cast(MutableMapping[str, object], event)
+def _set_tags(event: Event, tags: Mapping[str, str]) -> None:
+    """整体替换 event tags。
+
+    形状必须是 ``Mapping[str, str]``：Sentry SDK 自身用
+    ``event.setdefault("tags", {}).update(...)`` 写入（见
+    ``Scope._apply_tags_to_event``）。若这里写成 list[dict] 会与 SDK 冲突：
+    轻则本插件的规范化逻辑丢弃既有标签，重则 SDK 侧 ``list.update`` 抛
+    AttributeError。
+    """
+    event["tags"] = dict(tags)
 
 
-def _set_tags(event: Event, tags: list[dict[str, str]]) -> None:
-    """整体替换 event tags，规避 TypedDict 逐项赋值的类型限制。"""
-    _event_payload(event)["tags"] = tags
+def _merge_tags(event: Event, extra: Mapping[str, str]) -> None:
+    """在既有标签基础上合并 ``extra``，保留 SDK/scope 写入的标签。"""
+    merged = dict(event.get("tags") or {})
+    merged.update(extra)
+    _set_tags(event, merged)
 
 
-def _downgrade_level_to_warning(event: Event) -> None:
-    """把 ActionFailed 在 Sentry 侧降级为 warning，避免污染 error 列表。"""
-    payload = _event_payload(event)
-    payload["level"] = "warning"
-    contexts = cast(dict[str, object], event.get("contexts") or {})
-    default = cast(dict[str, object], contexts.get("default") or {})
-    default["level"] = "warning"
-    contexts["default"] = default
-    payload["contexts"] = contexts
-    _set_tags(event, [*_normalized_tags(event), _ACTION_FAILED_TAG])
+def _normalized_tags(event: Event) -> dict[str, str]:
+    """把既有 tags 规整为 ``dict[str, str]``，非映射形态一律丢弃。"""
+    raw = event.get("tags")
+    if not isinstance(raw, Mapping):
+        return {}
+    return {str(key): str(value) for key, value in raw.items()}
 
 
 def _build_error_message(
@@ -135,23 +140,15 @@ def _describe_context() -> str:
     return describe_error_context(snapshot_error_context())
 
 
-def _normalized_tags(event: Event) -> list[dict[str, str]]:
-    """把已有 tags 规整为 list[dict[str, str]]。"""
-    tags: list[dict[str, str]] = []
-    raw_tags: object = cast(object, event.get("tags"))
-    if not isinstance(raw_tags, list):
-        return tags
-    for tag in cast("list[object]", raw_tags):
-        if not isinstance(tag, dict):
-            continue
-        tag_map = cast("dict[str, object]", tag)
-        tags.append(
-            {
-                "key": str(tag_map.get("key", "")),
-                "value": str(tag_map.get("value", "")),
-            }
-        )
-    return tags
+def _downgrade_level_to_warning(event: Event) -> None:
+    """把 ActionFailed 在 Sentry 侧降级为 warning，避免污染 error 列表。"""
+    event["level"] = "warning"
+    contexts = dict(event.get("contexts") or {})
+    default = dict(contexts.get("default") or {})
+    default["level"] = "warning"
+    contexts["default"] = default
+    event["contexts"] = contexts
+    _merge_tags(event, _ACTION_FAILED_TAG)
 
 
 def _attach_context_to_event(event: Event) -> None:
@@ -160,12 +157,15 @@ def _attach_context_to_event(event: Event) -> None:
     if context.is_empty():
         return
     payload = context.as_dict()
-    contexts = cast(dict[str, object], event.get("contexts") or {})
-    contexts["senrin"] = payload
-    _event_payload(event)["contexts"] = contexts
-    kept = [tag for tag in _normalized_tags(event) if not tag["key"].startswith("ctx_")]
-    for key, value in payload.items():
-        kept.append({"key": f"ctx_{key}", "value": value})
+    contexts = dict(event.get("contexts") or {})
+    contexts["senrin"] = dict(payload)
+    event["contexts"] = contexts
+    kept = {
+        key: value
+        for key, value in _normalized_tags(event).items()
+        if not key.startswith("ctx_")
+    }
+    kept.update({f"ctx_{key}": value for key, value in payload.items()})
     _set_tags(event, kept)
 
 
@@ -179,6 +179,9 @@ async def notify_admin(error_message: str) -> None:
         return
     try:
         await deliver_admin_notification_i18n(
+            # get_bot() 无参调用时静态返回基类 nonebot.adapter.Bot，而通报层要求
+            # OneBot V11 的 Bot。本仓库 bot.py 只注册 V11 适配器，故该收窄成立；
+            # 这里不做 isinstance 守卫——失败路径与现状等价，只会让告警更静默。
             cast(Bot, bot),
             locale="zh-CN",
             key="sentry.alert",

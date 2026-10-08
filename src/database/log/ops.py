@@ -9,9 +9,9 @@ Description: log db 操作类
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Table, select
+from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.db.ops import BaseOps, affected_rows
@@ -115,8 +115,7 @@ class TraceEventLogOps(BaseOps[TraceEventLog]):
     ) -> int:
         if not trace_event_logs:
             return 0
-        table = cast(Table, TraceEventLog.__table__)
-        stmt = sqlite_insert(table).values(trace_event_logs)
+        stmt = sqlite_insert(TraceEventLog).values(trace_event_logs)
         result = await self.session.execute(stmt)
         return affected_rows(result)
 

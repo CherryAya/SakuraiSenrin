@@ -6,7 +6,6 @@ import asyncio
 from collections.abc import Mapping, MutableMapping
 from dataclasses import replace
 import math
-from typing import cast
 
 from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.message import MessageSegment
@@ -23,7 +22,7 @@ from src.lib.message_plan import (
     build_preferred_message_plan,
     build_text_plan_entry,
 )
-from src.lib.types import JsonValue
+from src.lib.types import JsonValue, as_int
 from src.lib.utils.img import QQAvatar
 from src.logger import logger
 from src.plugins.wordbank.database.types import (
@@ -855,11 +854,9 @@ def _format_rule_text(rule: dict[str, JsonValue]) -> str:
         parts.append(f"roles={role}")
     call_count = rule.get("call_count")
     if isinstance(call_count, dict):
-        window_seconds = int(
-            cast("str | int | float | bool", call_count.get("window_seconds", 0))
-        )
-        min_count = int(cast("str | int | float | bool", call_count.get("min", 0)))
-        max_count = int(cast("str | int | float | bool", call_count.get("max", 0)))
+        window_seconds = as_int(call_count.get("window_seconds"), 0)
+        min_count = as_int(call_count.get("min"), 0)
+        max_count = as_int(call_count.get("max"), 0)
         parts.append(f"call={window_seconds}:{min_count}:{max_count}")
     return ", ".join(parts) if parts else "-"
 

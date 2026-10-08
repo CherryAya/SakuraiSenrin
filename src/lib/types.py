@@ -7,7 +7,7 @@ Description: 公共 types
 """
 
 from collections.abc import Mapping, Sequence
-from typing import TypeGuard
+from typing import TypeGuard, cast
 
 type JsonScalar = str | int | float | bool | None
 type JsonArray = list[JsonValue]
@@ -30,6 +30,43 @@ def is_object_sequence(value: object) -> TypeGuard[Sequence[object]]:
     ``str``/``bytes`` 本身也是 ``Sequence``，若不排除会被逐字符拆开。
     """
     return isinstance(value, (list, tuple))
+
+
+def is_json_value(value: object) -> TypeGuard[JsonValue]:
+    """校验 ``object`` 是否为合法 JSON 值。
+
+    用于 ``json.loads`` 的返回值：它静态是 ``Any``（strict 下成员为 Unknown），
+    直接声明成 ``JsonValue`` 只是断言、并不校验，成员类型仍会向下扩散成
+    ``Unknown | None``。这里做一次真正的递归校验，收窄成可审计的 ``JsonValue``；
+    非 JSON 形态（如自定义对象、bytes）返回 False，由调用方决定回落或报错。
+
+    注意：只判断形态，不做深度/循环引用防护——来源是本项目自己写出的 JSON 文件。
+    内部几处 cast 只用于消掉 ``isinstance`` 收窄出的 ``Mapping[Unknown, Unknown]``
+    噪音（与本模块 ``config._string_object_map`` 同一手法），不放松任何运行期校验。
+    """
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return True
+    if isinstance(value, Mapping):
+        for key, item in cast("Mapping[object, object]", value).items():
+            if not isinstance(key, str) or not is_json_value(item):
+                return False
+        return True
+    if isinstance(value, (list, tuple)):
+        return all(is_json_value(item) for item in cast("list[object]", value))
+    return False
+
+
+def is_json_object(value: object) -> TypeGuard[JsonObject]:
+    """把 ``object`` 收窄成 ``JsonObject``（键 str、值 JsonValue）。
+
+    与 ``is_object_mapping`` 的区别：后者只保证键为 str、值仍是 ``object``，
+    适合「先收窄、再逐键用 as_str/as_int 处理」；本函数额外校验值确实是 JSON
+    形态，适合直接把整个映射交给需要 ``dict[str, JsonValue]`` 的位置。
+    """
+    # is_json_value 的映射分支已校验「键为 str」，故此处只需排除非 dict 的映射。
+    if not isinstance(value, dict):
+        return False
+    return is_json_value(cast("Mapping[object, object]", value))
 
 
 def as_str_tuple(value: object) -> tuple[str, ...]:
