@@ -1,0 +1,75 @@
+# deadcode 基线：已核实「必须存在」的豁免清单。
+#
+# 由 scripts/check_deadcode.py 校验。判据见 CLAUDE.md「Deadcode 门禁」一节。
+# 两种登记方式，优先用行内标记（就近说明理由）；
+# 本文件用于批量豁免（ORM 列、测试替身等成组项）。
+#
+# 注意：orphan-modules 段由 `--update` 机械生成；若某模块已用行内标记豁免，
+# 无需在此重复登记。
+
+[orphan-modules]
+
+[allow]
+# --- ORM 列 / relationship：SQLAlchemy 按属性名读写，vulture 把注解当未使用变量 ---
+"src/database/core/tables.py::joined_groups" = "ORM relationship，SQLAlchemy 按属性名消费"
+"src/database/core/tables.py::sent_invitations" = "ORM relationship，SQLAlchemy 按属性名消费"
+"src/database/core/tables.py::operated_invitations" = "ORM relationship，SQLAlchemy 按属性名消费"
+"src/database/core/tables.py::operated_blacklists" = "ORM relationship，SQLAlchemy 按属性名消费"
+"src/database/core/tables.py::blacklist_records" = "ORM relationship，SQLAlchemy 按属性名消费"
+"src/database/core/tables.py::plugin_settings" = "ORM relationship，SQLAlchemy 按属性名消费"
+"src/database/core/tables.py::active_invitation" = "ORM relationship，SQLAlchemy 按属性名消费"
+"src/database/core/tables.py::target_user" = "ORM relationship，SQLAlchemy 按属性名消费"
+"src/database/core/tables.py::resolved_at" = "ORM 列，按属性名读写"
+"src/database/core/tables.py::resolved_note" = "ORM 列，按属性名读写"
+"src/database/log/tables.py::cost_ms" = "ORM 列 + TypedDict 字段，按名序列化"
+
+# --- 枚举状态访问器：pre-commit 的 status-equality-check 强制业务层走 is_xxx ---
+"src/database/core/consts.py::is_authorized" = "status-equality-check 强制的枚举访问器面"
+"src/database/core/consts.py::is_dormant" = "status-equality-check 强制的枚举访问器面"
+"src/database/core/consts.py::is_left" = "status-equality-check 强制的枚举访问器面"
+"src/database/core/consts.py::can_be_woken_up" = "status-equality-check 强制的枚举访问器面"
+"src/database/core/consts.py::is_pending" = "status-equality-check 强制的枚举访问器面"
+"src/database/core/consts.py::is_approved" = "status-equality-check 强制的枚举访问器面"
+"src/database/core/consts.py::is_rejected" = "status-equality-check 强制的枚举访问器面"
+"src/database/core/consts.py::is_denied" = "status-equality-check 强制的枚举访问器面"
+
+# --- 跨进程 / 序列化数据契约：asdict / JSON 两侧按名读写 ---
+"src/lib/db/batch.py::last_dead_letter_at" = "BatchWriterHealth DTO，随 asdict 进 scripts/writer_health.py 输出"
+"src/lib/db/batch.py::last_dead_letter_error" = "BatchWriterHealth DTO，tests/test_db_framework.py 断言"
+"src/lib/db/batch.py::last_flush_at" = "BatchWriterHealth DTO，tests/test_db_framework.py:892 断言"
+"src/lib/db/batch.py::last_flush_items" = "BatchWriterHealth DTO，随 asdict 进 writer_health --json 输出"
+"src/lib/db/batch.py::dropped_dead_letters" = "BatchWriterHealth DTO，tests/test_db_framework.py:964 断言"
+"src/lib/db/connectors.py::segment_id" = "SegmentManifestEntry 字段，asdict 落盘 manifest JSON"
+"src/lib/db/connectors.py::hydrated_at" = "SegmentManifestEntry 字段，由 audit_water_storage 脚本消费"
+"src/plugins/water/services/worker_jobs.py::artifacts" = "跨进程 manifest 字段，scripts/run_water_job.py 写入"
+"src/plugins/wordbank/forward_batch.py::node_count" = "ForwardBatchPayload 冻结 dataclass 字段，按名构造"
+"src/plugins/wordbank/services/matching.py::matched_text" = "MatchCandidate dataclass 字段，按名构造"
+"src/plugins/wordbank/treemap/models.py::raw_weight" = "SearchTreemapTile dataclass 字段，按名构造"
+"src/plugins/water/database/types.py::delta_season_exp" = "TypedDict 字段，按名读写"
+
+# --- Protocol / 结构化匹配成员：形参名须与第三方签名逐字一致 ---
+"src/services/backup_scheduler.py::jobstore" = "apscheduler scheduled_job 形参名，须逐字一致"
+"src/lib/db/alias.py::ops_class_ref" = "RoutableStore 协议成员，结构化匹配"
+"src/lib/object_storage/github.py::presign_get_url" = "ObjectStorageClient 协议成员"
+"src/lib/object_storage/types.py::get_object" = "ObjectStorageClient 协议成员"
+"src/plugins/water/entry_plugin.py::_GuidedMatcher" = "Matcher.got 结构化视图，仅用于装饰器注解"
+"src/plugins/admin/invite.py::_ArgvParser" = "argparse 结构化视图，仅用于 cast 注解"
+
+# --- 测试契约绑定：src 符号仅被 tests 直接消费 ---
+"src/lib/reply_router.py::clear_all_contexts" = "测试隔离入口，tests/plugins/wordbank/conftest.py 使用"
+"src/lib/backup/registry.py::reset_backup_database_registry_for_test" = "测试隔离入口，test_backup_service.py 使用"
+"src/plugins/self_unban/database/repo.py::clear_attempts" = "测试 fixture 入口，test_service.py 使用"
+"src/plugins/water/services/report.py::run_daily_group_report_push" = "test_report_service.py 直接调用"
+
+# --- 测试替身：方法名即契约，须与生产类/协议同形 ---
+"tests/plugins/wordbank/test_media_support.py::_ObjectStorage.available" = "ObjectStorageClient 协议成员；删除会让 pyright 新增 14 条诊断"
+"tests/plugins/admin/test_backup.py::run_id" = "运行时被 src/services/backup.py 读取（tr(..., run_id=...)）"
+
+# --- 公共 API / 预留面 ---
+"src/lib/db/atomic.py::attached_schemas" = "AtomicStore 公共只读内省面"
+"src/lib/db/connectors.py::SegmentConfig.granularity" = "SegmentConfig 经 __all__ 导出的公共配置面"
+"src/lib/db/connectors.py::SegmentConfig.hot_window" = "同上"
+"src/lib/db/connectors.py::SegmentConfig.archive_codec" = "同上"
+"src/lib/db/connectors.py::SegmentConfig.max_segment_size_mb" = "同上"
+"src/lib/db/connectors.py::SegmentStore.archive_codec" = "SegmentStore 公共构造配置面"
+"src/lib/db/connectors.py::SegmentStore.max_segment_size_mb" = "同上"

@@ -26,3 +26,9 @@ repos:
         language: system
         files: ^src/(?!database/|scripts/|locales/)
         entry: python3 scripts/check_hardcoded_user_strings.py
+      - id: deadcode-check
+        name: "deadcode-check"
+        description: 默认不允许 deadcode；必须存在的加 `# deadcode-keep: <类别> | <原因>` 标记，或在 deadcode-baseline.toml 登记
+        language: system
+        files: \.py$
+        entry: python3 scripts/check_deadcode.py

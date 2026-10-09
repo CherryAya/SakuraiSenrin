@@ -244,6 +244,7 @@ Before committing ANY Python code changes, MUST pass:
 uv run ruff check --fix
 uv run ruff format
 uv run python scripts/check_pyright_baseline.py
+uv run python scripts/check_deadcode.py
 ```
 
 Recommended to also run:
@@ -263,10 +264,47 @@ uv run pytest
   （沿用 `1cf2e74` 对 `reportPrivateUsage` 的既有豁免思路），`src/**` 保持
   strict；收敛时优先消除 `src/**` 的存量
 
+**关于 deadcode：** **默认不允许 deadcode**——零引用代码一律删除。确实必须
+存在（框架按名调用、数据契约等）的，**必须显式标记**，由
+`scripts/check_deadcode.py` 强制。
+
+为什么不能只靠 pyright：pyright 是类型检查器，判断的是"符号是否被引用"，
+对**模块级**死代码无能为力（本仓实测：对 487 行零引用的 `plugin_docs/core.py`
+报 0 error），且 `tests/**`、`scripts/**` 还显式关闭了
+`reportUnusedFunction`/`reportUnusedClass`。它只能抓到局部的未用 import/变量。
+
+两种标记方式（优先第一种，就近说明理由）：
+
+```python
+# 定义级：紧跟在被豁免的定义行上方，中间不隔空行
+# deadcode-keep: framework-hook | nonebot @driver.on_startup 回调，框架按名调用
+async def _on_startup() -> None: ...
+
+
+# 模块级：写在模块 docstring 内，整模块豁免（如 CLI 入口）
+"""...
+# deadcode-keep: manual-entry | 人工执行的运维脚本，无代码调用方
+"""
+```
+
+类别枚举（`check_deadcode.py:KEEP_KINDS`）：
+`framework-hook`（nonebot/apscheduler 装饰器回调）、`orm-contract`（SQLAlchemy
+列/relationship/TypeDecorator）、`protocol-member`（结构化匹配，形参名须与第三方
+逐字一致）、`data-contract`（TypedDict/dataclass/跨进程 manifest 字段）、
+`state-accessor`（枚举 `is_xxx`/`can_xxx`）、`test-double`（测试替身按属性名满足
+契约）、`test-binding`（src 符号仅被 tests 引用）、`module-protocol`
+（`__path__`/`__getattr__`/`__all__`）、`public-api`（有意保留的公共面）、
+`manual-entry`（人工执行的脚本入口）。
+
+批量豁免（成组的 ORM 列、测试替身等）登记在 `deadcode-baseline.toml` 的
+`[allow]` 段，格式为 `"path::name" = "理由"`。**理由必填**——空理由等于把门禁
+变成摆设。
+
 **Constraints:**
 1. NO merge with known lint errors, and NO merge that increases the pyright baseline
 2. If auto-fix introduces behavior changes, MUST add tests
 3. If ONLY doc changes (like this file), can skip Python quality commands
+4. NO new deadcode：新增零引用代码必须删除或标记（见上）
 
 ---
 

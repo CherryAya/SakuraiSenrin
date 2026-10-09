@@ -1,3 +1,17 @@
+"""i18n 目录完整性校验（人工执行的运维工具）。
+
+校验三语 catalog 与 `keys.py` 的一致性：未知键、必备键缺失、占位符不匹配。
+
+# deadcode-keep: manual-entry | 人工执行的 i18n 完整性校验入口，无代码调用方
+
+用法::
+
+    uv run python -m src.lib.i18n.check
+
+本模块零 import 者属预期形态：它是 CLI 入口而非库。删除它会丢掉「改文案后
+校验三语是否同步」的能力（当前测试未覆盖这三类校验）。
+"""
+
 from __future__ import annotations
 
 import re
