@@ -39,9 +39,11 @@ from src.lib.plugin_docs import (
 )
 from src.lib.plugin_meta import create_plugin_metadata
 from src.lib.types import UNSET, Unset, is_set, resolve_unset
-from src.lib.utils.common import get_current_time, time_to_timedelta
+from src.lib.utils.common import get_current_time
 from src.repositories import blacklist_repo, group_repo, user_repo
 from src.services.info import resolve_user_name
+
+from ._services.duration import parse_duration
 
 admin_command_group = CommandGroup("admin")
 
@@ -159,7 +161,7 @@ async def ban_user(ctx: AdminUserContext) -> str:
     human_time = tr(ctx.locale, "admin.user.duration.permanent")
     if is_set(ctx.time_str):
         try:
-            duration = int(time_to_timedelta(ctx.time_str).total_seconds())
+            duration = int(parse_duration(ctx.time_str).total_seconds())
             human_time = format_duration(ctx.locale, duration)
         except ValueError:
             return tr(ctx.locale, "admin.user.time_invalid")

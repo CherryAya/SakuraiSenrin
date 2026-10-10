@@ -31,7 +31,7 @@ if nonebot.get_plugin("help") is None:
 
 SUPERUSER_ID = int(next(iter(nonebot.get_driver().config.superusers)))
 
-from src.lib.i18n.runtime import tr
+from src.lib.i18n.catalog import tr
 from src.lib.message_plan import render_message_plan_input
 from src.plugins.admin.backup import _build_error_demo, admin_backup
 from src.plugins.help import (
