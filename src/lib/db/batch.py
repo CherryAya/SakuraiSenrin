@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from loguru import logger
 
@@ -76,7 +76,17 @@ class BufferedWriterConfig[T]:
 
 
 class BatchWriter[T]:
-    """通用内存缓冲写入器。"""
+    """通用内存缓冲写入器。
+
+    实例在构造时自注册，`iter_registered_writers` 供运行态巡检与关机落盘使用。
+    """
+
+    _registry: ClassVar[list["BatchWriter[object]"]] = []
+
+    @classmethod
+    def iter_registered(cls) -> tuple["BatchWriter[object]", ...]:
+        """返回进程内全部已注册的 writer（按注册顺序）。"""
+        return tuple(cls._registry)
 
     def __init__(
         self,
@@ -115,6 +125,7 @@ class BatchWriter[T]:
         self._is_flushing = False
         self._last_error: Exception | None = None
         self._trace_persist = trace_persist
+        type(self)._registry.append(self)  # type: ignore[arg-type]
 
     @property
     def worker_name(self) -> str:

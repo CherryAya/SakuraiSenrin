@@ -14,23 +14,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, cast
 
-from src.lib.db.batch import BatchWriter, BatchWriterHealth, DeadLetterRecord
+from src.lib.db.batch import BatchWriter, BatchWriterHealth
 from src.lib.trace_log import log_trace_event
 from src.logger import logger
-
-
-class _WriterLike(Protocol):
-    @property
-    def worker_name(self) -> str: ...
-
-    @property
-    def health(self) -> BatchWriterHealth: ...
-
-    async def drain(self) -> None: ...
-
-    def pop_dead_letters(self) -> tuple[DeadLetterRecord[object], ...]: ...
 
 
 @dataclass(slots=True, frozen=True)
@@ -47,21 +34,13 @@ class WriterHealthReport:
         return bool(self.degraded_writers)
 
 
-def _collect_writers() -> list[_WriterLike]:
-    """收集进程内所有已注册的 BatchWriter 实例。"""
-    from src.plugins.water.database import writers as water_writers
-    from src.plugins.wordbank.database import writers as wordbank_writers
-    from src.services import writers as core_writers
+def _collect_writers() -> tuple[BatchWriter[object], ...]:
+    """返回进程内全部已注册的 writer。
 
-    found: list[_WriterLike] = []
-    for module in (core_writers, water_writers, wordbank_writers):
-        for value in vars(module).values():
-            # isinstance 只能收窄到 BatchWriter[Unknown]（泛型参数无从推断），
-            # 而这里只把它当 _WriterLike 用；在动态发现边界 cast 成协议，
-            # 保持成员调用有据可依，不是把校验骗过去。
-            if isinstance(value, BatchWriter):
-                found.append(cast("_WriterLike", value))
-    return found
+    注册由 `BatchWriter.__init__` 自行完成，因此无论 writer 建在模块顶层还是
+    业务函数内都会被巡检到。
+    """
+    return BatchWriter.iter_registered()
 
 
 def build_health_report() -> WriterHealthReport:

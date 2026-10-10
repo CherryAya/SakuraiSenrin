@@ -151,66 +151,6 @@ async def flush_trace_logging() -> None:
     await _trace_writer.flush_now()
 
 
-def build_trace_payload(
-    *,
-    event_name: str,
-    source_kind: str,
-    component: str,
-    status: str,
-    summary: str,
-    level: str = "INFO",
-    trace_id: str | None = None,
-    parent_trace_id: str | None = None,
-    group_id: str | None = None,
-    user_id: str | None = None,
-    job_id: str | None = None,
-    shard_key: str | None = None,
-    record_date: int | None = None,
-    batch_size: int | None = None,
-    attempt: int | None = None,
-    payload_json: JsonObject | None = None,
-) -> TraceEventLogPayload:
-    payload: TraceEventLogPayload = {
-        "created_at": get_current_time(),
-        "trace_id": trace_id or new_trace_id(component),
-        "source_kind": source_kind,
-        "component": component,
-        "level": level.upper(),
-        "event_name": event_name,
-        "status": status,
-        "summary": summary[:255],
-        "log_role": _log_role,
-        "parent_trace_id": None,
-        "group_id": None,
-        "user_id": None,
-        "job_id": None,
-        "shard_key": None,
-        "record_date": None,
-        "batch_size": None,
-        "attempt": None,
-        "payload_json": {},
-    }
-    if parent_trace_id is not None:
-        payload["parent_trace_id"] = parent_trace_id
-    if group_id is not None:
-        payload["group_id"] = group_id
-    if user_id is not None:
-        payload["user_id"] = user_id
-    if job_id is not None:
-        payload["job_id"] = job_id
-    if shard_key is not None:
-        payload["shard_key"] = shard_key
-    if record_date is not None:
-        payload["record_date"] = record_date
-    if batch_size is not None:
-        payload["batch_size"] = batch_size
-    if attempt is not None:
-        payload["attempt"] = attempt
-    if payload_json:
-        payload["payload_json"] = payload_json
-    return payload
-
-
 def log_trace_event(
     *,
     event_name: str,
@@ -231,24 +171,26 @@ def log_trace_event(
     payload_json: JsonObject | None = None,
     persist: bool = True,
 ) -> str:
-    payload = build_trace_payload(
-        event_name=event_name,
-        source_kind=source_kind,
-        component=component,
-        status=status,
-        summary=summary,
-        level=level,
-        trace_id=trace_id,
-        parent_trace_id=parent_trace_id,
-        group_id=group_id,
-        user_id=user_id,
-        job_id=job_id,
-        shard_key=shard_key,
-        record_date=record_date,
-        batch_size=batch_size,
-        attempt=attempt,
-        payload_json=payload_json,
-    )
+    payload: TraceEventLogPayload = {
+        "created_at": get_current_time(),
+        "trace_id": trace_id or new_trace_id(component),
+        "source_kind": source_kind,
+        "component": component,
+        "level": level.upper(),
+        "event_name": event_name,
+        "status": status,
+        "summary": summary[:255],
+        "log_role": _log_role,
+        "parent_trace_id": parent_trace_id,
+        "group_id": group_id,
+        "user_id": user_id,
+        "job_id": job_id,
+        "shard_key": shard_key,
+        "record_date": record_date,
+        "batch_size": batch_size,
+        "attempt": attempt,
+        "payload_json": payload_json or {},
+    }
     bound_logger = logger.bind(
         **{
             TRACE_PAYLOAD_EXTRA_KEY: payload,
@@ -284,7 +226,6 @@ def _trace_log_sink(message: object) -> None:
 
 __all__ = [
     "TRACE_PAYLOAD_EXTRA_KEY",
-    "build_trace_payload",
     "configure_logging",
     "flush_trace_logging",
     "log_trace_event",

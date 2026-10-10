@@ -449,66 +449,15 @@ async def _reload_runtime_state_after_restore() -> None:
 
 
 async def _reload_wordbank_runtime_state() -> None:
-    from src.plugins.wordbank import lifecycle
-    from src.plugins.wordbank.services import wordbank_media_service, wordbank_service
+    from src.plugins.wordbank.lifecycle import reload_wordbank_runtime_state
 
-    try:
-        from src.plugins.wordbank.services.matching import RuntimeIndex
-
-        empty_index = RuntimeIndex()
-    except Exception:
-        empty_index = None
-
-    lifecycle.reset_wordbank_initialized()
-    # wordbank 服务的运行时字段刻意私有，此处通过反射读写并显式标注真实类型。
-    rebuild_task: asyncio.Task[None] | None = getattr(
-        wordbank_service, "_rebuild_task", None
-    )
-    if rebuild_task is not None and not rebuild_task.done():
-        rebuild_task.cancel()
-    setattr(wordbank_service, "_rebuild_task", None)
-    dirty_group_ids: set[int] = getattr(wordbank_service, "_dirty_group_ids")
-    dirty_group_ids.clear()
-    # _call_count_cache 的值类型是服务内部私有类型，无法在不越界的前提下命名，
-    # 这里只做清空，直接对反射结果调用 clear()。
-    getattr(wordbank_service, "_call_count_cache").clear()
-    setattr(wordbank_service, "_index", empty_index)
-    setattr(wordbank_service, "_initialized", False)
-    await lifecycle.initialize_wordbank_plugin()
-    await wordbank_media_service.rebuild_cache()
+    await reload_wordbank_runtime_state()
 
 
 async def _reload_water_runtime_state() -> None:
-    import src.plugins.water as water_plugin
-    from src.plugins.water import (
-        clear_water_query_cooldowns,
-        initialize_water_plugin,
-        water_repo,
-    )
-    from src.plugins.water import (
-        matrix_suggestion_service as water_matrix_suggestion_service,
-    )
-    from src.plugins.water.services.report import water_report_service
+    from src.plugins.water import reload_water_runtime_state
 
-    setattr(water_plugin, "_water_plugin_initialized", False)
-    clear_water_query_cooldowns()
-    water_report_service.clear_today_report_cooldowns()
-    # water 仓库/服务的运行时缓存同样私有，反射清理并标注真实类型。
-    group_matrix_cache: dict[str, str] = getattr(water_repo, "_group_matrix_cache")
-    group_matrix_cache.clear()
-    group_matrix_locks: dict[str, asyncio.Lock] = getattr(
-        water_repo, "_group_matrix_locks"
-    )
-    group_matrix_locks.clear()
-    merge_state_locks: dict[str, asyncio.Lock] = getattr(
-        water_repo, "_merge_state_locks"
-    )
-    merge_state_locks.clear()
-    first_record_seen_cache: set[str] = getattr(
-        water_matrix_suggestion_service, "_first_record_seen_cache"
-    )
-    first_record_seen_cache.clear()
-    await initialize_water_plugin()
+    await reload_water_runtime_state()
 
 
 async def _get_local_latest_data_mtime() -> int:

@@ -1042,7 +1042,10 @@ async def test_dead_letter_persists_and_replays(
 @pytest.mark.asyncio
 async def test_writer_health_report_aggregates_registered_writers() -> None:
     """writer_health 必须能汇总 core/water/wordbank 三处注册的 writer。"""
+    import src.plugins.water.database.writers
+    import src.plugins.wordbank.database.writers
     from src.services.writer_health import build_health_report
+    import src.services.writers  # noqa: F401
 
     report = build_health_report()
     names = {name for name, _ in report.detail}

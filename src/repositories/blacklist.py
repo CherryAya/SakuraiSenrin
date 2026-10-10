@@ -64,7 +64,6 @@ class BlacklistRepository:
         return self.cache.get_ban(user_id, group_id)
 
     async def is_banned(self, user_id: str, group_id: str) -> bool:
-        # await self.get_blacklist(user_id, group_id)   #TODO: 🤔
         return self.cache.is_banned(user_id, group_id)
 
     async def add_ban(
