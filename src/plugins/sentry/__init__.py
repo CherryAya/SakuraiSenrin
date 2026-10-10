@@ -8,6 +8,7 @@ Description: sentry 异常记录插件
 
 import asyncio
 from collections.abc import Mapping
+import os
 from pathlib import Path
 from typing import cast
 
@@ -61,6 +62,17 @@ background_tasks: set[asyncio.Task[None]] = set()
 # 这类异常同样要通报管理员，只是它们通常不是代码缺陷，
 # 因此在 Sentry 侧降级为 warning，避免污染 error 列表。
 _ACTION_FAILED_TAG: dict[str, str] = {"action_failed": "true"}
+
+
+def _sentry_notify_disabled() -> bool:
+    """测试环境不派发管理员告警。
+
+    `sentry_sdk.init()` 在模块导入时全局生效，会拦截**所有**未捕获异常。
+    测试里一条用例失败即触发告警派发，而派发是 `loop.create_task` 异步的，
+    task 会落到后续用例的 event loop 上并调用 send_private_msg，
+    导致「一条失败污染同 worker 的后续用例」（并行执行时尤其明显）。
+    """
+    return os.getenv("SAKURAI_DISABLE_SENTRY_NOTIFY") == "1"
 
 
 def _should_drop_event(hint: Hint) -> bool:
@@ -221,6 +233,8 @@ def before_send_handler(event: Event, hint: Hint) -> Event | None:
 
 def _schedule_admin_notify(error_msg: str) -> None:
     """把管理员通报投递出去；没有运行中的事件循环时跳过。"""
+    if _sentry_notify_disabled():
+        return
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

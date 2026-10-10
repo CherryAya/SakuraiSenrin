@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator, Iterator
+import os
 from pathlib import Path
 import sys
 import types
@@ -7,6 +8,11 @@ from types import SimpleNamespace
 from nonebug import NONEBOT_INIT_KWARGS
 import pytest
 import pytest_asyncio
+
+# 必须在任何测试模块导入 sentry 插件之前设置：
+# sentry_sdk.init() 在模块导入时全局生效，测试里一条用例失败就会派发管理员告警，
+# 该派发是异步 task，会落到后续用例的 event loop 上造成连锁失败。
+os.environ.setdefault("SAKURAI_DISABLE_SENTRY_NOTIFY", "1")
 
 # Prevent importing plugin bootstrap modules during test collection.
 # We only test submodules (handlers/services/repo), not NoneBot side effects.

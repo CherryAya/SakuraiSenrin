@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock
 from nonebot import message as message_module
 from nonebot import on_message
 from nonebot.adapters.onebot.v11 import Bot
+import nonebot.plugin as nonebot_plugin
 from nonebug import App
 import pytest
 
@@ -23,6 +24,9 @@ def _isolated_processor_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[ModuleType]:
     original_run_preprocessors = message_module._run_preprocessors.copy()
+    # nonebot 的插件注册表是进程级全局的，重新导入同名插件会撞
+    # "Plugin processor already exists"。同 worker 内跨文件顺序执行时必须先摘掉。
+    saved_plugin = nonebot_plugin._plugins.pop("processor", None)
     sys.modules.pop("src.hooks.processor", None)
     module = importlib.import_module("src.hooks.processor")
 
@@ -32,6 +36,9 @@ def _isolated_processor_module(
         message_module._run_preprocessors.clear()
         message_module._run_preprocessors.update(original_run_preprocessors)
         sys.modules.pop("src.hooks.processor", None)
+        nonebot_plugin._plugins.pop("processor", None)
+        if saved_plugin is not None:
+            nonebot_plugin._plugins["processor"] = saved_plugin
 
 
 @pytest.fixture(autouse=True)

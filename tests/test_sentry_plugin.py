@@ -88,6 +88,8 @@ def test_before_send_handler_keeps_real_errors_and_notifies(
     monkeypatch.setattr("src.plugins.sentry.notify_admin", _fake_notify)
     monkeypatch.setattr("src.plugins.sentry.background_tasks", set())
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    # 本用例校验「真实错误会通报管理员」，需绕开测试环境的全局静默开关。
+    monkeypatch.delenv("SAKURAI_DISABLE_SENTRY_NOTIFY", raising=False)
 
     try:
         result = before_send_handler(
@@ -98,6 +100,9 @@ def test_before_send_handler_keeps_real_errors_and_notifies(
         loop.run_until_complete(asyncio.gather(*pending))
     finally:
         loop.close()
+        # 不把已关闭的 loop 留在当前线程，否则同 worker 的后续用例
+        # 会撞上 "There is no current event loop in thread 'MainThread'"。
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
     assert result is event
     assert recorded_messages == ["Type: RuntimeError\nValue: boom"]
@@ -132,6 +137,8 @@ def _run_before_send(
     monkeypatch.setattr("src.plugins.sentry.notify_admin", _fake_notify)
     monkeypatch.setattr("src.plugins.sentry.background_tasks", set())
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    # 本用例校验「真实错误会通报管理员」，需绕开测试环境的全局静默开关。
+    monkeypatch.delenv("SAKURAI_DISABLE_SENTRY_NOTIFY", raising=False)
 
     try:
         before_send_handler(event, {"exc_info": (type(exc), exc, None)})
@@ -139,6 +146,9 @@ def _run_before_send(
         loop.run_until_complete(asyncio.gather(*pending))
     finally:
         loop.close()
+        # 不把已关闭的 loop 留在当前线程，否则同 worker 的后续用例
+        # 会撞上 "There is no current event loop in thread 'MainThread'"。
+        asyncio.set_event_loop(asyncio.new_event_loop())
     return recorded_messages
 
 
