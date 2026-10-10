@@ -13,6 +13,7 @@ from src.plugins.wordbank.services.errors import WordbankUserError
 from src.plugins.wordbank.services.rules import (
     RuleError,
     RuleValue,
+    build_legacy_study_shortcut_rule,
     normalize_role_alias,
     normalize_scope_alias,
 )
@@ -931,8 +932,6 @@ def parse_study_media_prefix(text: str, *, is_group: bool) -> ParsedStudyMediaPr
         and tokens[0].value.casefold() in {"a", "m"}
         and tokens[1].value.casefold() in {"t", "f"}
     ):
-        from src.plugins.wordbank.services.rules import build_legacy_study_shortcut_rule
-
         return ParsedStudyMediaPrefix(
             source=rest_after_token(text, tokens[1]),
             raw_rule=build_legacy_study_shortcut_rule(
